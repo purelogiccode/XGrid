@@ -174,7 +174,7 @@ public sealed class SystemInstructionTests
     public void Setcc_SetsByteFromCondition()
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x94, 0xC0, 0x0F, 0x95, 0xC3);
-        cpu.Context.Eflags = FlagBits.ZF;
+        cpu.Context.Eflags = FlagBits.Zf;
 
         cpu.Step();
         Assert.Equal(1u, cpu.Context.ReadRegister8(0));
@@ -189,7 +189,7 @@ public sealed class SystemInstructionTests
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x44, 0xC3);
         cpu.Context.WriteRegister(Gpr.Eax, 0x11111111);
         cpu.Context.WriteRegister(Gpr.Ebx, 0x22222222);
-        cpu.Context.Eflags = FlagBits.ZF;
+        cpu.Context.Eflags = FlagBits.Zf;
 
         cpu.Step();
 
@@ -219,7 +219,7 @@ public sealed class SystemInstructionTests
         cpu.Step();
 
         Assert.Equal(0xFFFF000Bu, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.NotEqual(0u, cpu.Context.Eflags & FlagBits.ZF);
+        Assert.NotEqual(0u, cpu.Context.Eflags & FlagBits.Zf);
     }
 
     [Fact]
@@ -228,12 +228,12 @@ public sealed class SystemInstructionTests
         XboxCpu cpu = CpuHarness.Create(0x63, 0xC8);
         cpu.Context.WriteRegister(Gpr.Eax, 0x000B);
         cpu.Context.WriteRegister(Gpr.Ecx, 0x0003);
-        cpu.Context.Eflags |= FlagBits.ZF;
+        cpu.Context.Eflags |= FlagBits.Zf;
 
         cpu.Step();
 
         Assert.Equal(0x000Bu, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.Equal(0u, cpu.Context.Eflags & FlagBits.ZF);
+        Assert.Equal(0u, cpu.Context.Eflags & FlagBits.Zf);
     }
 
     [Fact]
@@ -267,12 +267,12 @@ public sealed class SystemInstructionTests
     {
         XboxCpu cpu = CpuHarness.Create(0x66, 0x98);
         cpu.Context.WriteRegister(Gpr.Eax, 0x12345680);
-        cpu.Context.Eflags |= FlagBits.CF;
+        cpu.Context.Eflags |= FlagBits.Cf;
 
         cpu.Step();
 
         Assert.Equal(0x1234FF80u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.Equal(FlagBits.CF, cpu.Context.Eflags & FlagBits.CF);
+        Assert.Equal(FlagBits.Cf, cpu.Context.Eflags & FlagBits.Cf);
     }
 
     [Fact]
@@ -314,13 +314,13 @@ public sealed class SystemInstructionTests
         XboxCpu cpu = CpuHarness.Create(0x99);
         cpu.Context.WriteRegister(Gpr.Eax, 0xFF676980);
         cpu.Context.WriteRegister(Gpr.Edx, 0x12345678);
-        cpu.Context.Eflags |= FlagBits.ZF;
+        cpu.Context.Eflags |= FlagBits.Zf;
 
         cpu.Step();
 
         Assert.Equal(0xFF676980u, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.Equal(0xFFFFFFFFu, cpu.Context.ReadRegister(Gpr.Edx));
-        Assert.Equal(FlagBits.ZF, cpu.Context.Eflags & FlagBits.ZF);
+        Assert.Equal(FlagBits.Zf, cpu.Context.Eflags & FlagBits.Zf);
     }
 
     [Fact]

@@ -16,8 +16,6 @@ public sealed class IdeController : PciDevice
     /// <summary>Maximum bytes moved per bus-master start (runaway PRDT guard).</summary>
     private const uint MaxDmaBytes = 4u * 1024 * 1024;
 
-    private readonly AtaDevice _primaryMaster = new();
-    private readonly AtaDevice _primarySlave = new(atapi: true);
     private readonly System.Collections.Generic.List<string> _commandLog = new();
     private readonly System.Collections.Generic.List<string> _accessLog = new();
     private readonly BusMasterChannel _busMaster = new();
@@ -34,17 +32,17 @@ public sealed class IdeController : PciDevice
         DefineBar(2, 8, isIo: true);
         DefineBar(3, 4, isIo: true);
         DefineBar(4, 16, isIo: true);
-        _primaryMaster.Interrupt += RaiseInterrupt;
-        _primarySlave.Interrupt += RaiseInterrupt;
-        _primaryMaster.InterruptAcknowledged += LowerInterrupt;
-        _primarySlave.InterruptAcknowledged += LowerInterrupt;
+        PrimaryMaster.Interrupt += RaiseInterrupt;
+        PrimarySlave.Interrupt += RaiseInterrupt;
+        PrimaryMaster.InterruptAcknowledged += LowerInterrupt;
+        PrimarySlave.InterruptAcknowledged += LowerInterrupt;
     }
 
     /// <summary>Gets the primary master drive (HDD).</summary>
-    public AtaDevice PrimaryMaster => _primaryMaster;
+    public AtaDevice PrimaryMaster { get; } = new();
 
     /// <summary>Gets the primary slave drive (ATAPI DVD, empty).</summary>
-    public AtaDevice PrimarySlave => _primarySlave;
+    public AtaDevice PrimarySlave { get; } = new(atapi: true);
 
     /// <summary>Gets the recent command history (M/S + command byte, diagnostics).</summary>
     public System.Collections.Generic.IReadOnlyList<string> CommandLog => _commandLog;
@@ -62,7 +60,7 @@ public sealed class IdeController : PciDevice
     }
 
     /// <summary>Gets the total taskfile/control accesses seen on both drives (diagnostics).</summary>
-    public int AccessCount => _primaryMaster.AccessCount + _primarySlave.AccessCount;
+    public int AccessCount => PrimaryMaster.AccessCount + PrimarySlave.AccessCount;
 
     /// <summary>Gets the last command byte issued to the selected drive (diagnostics).</summary>
     public byte LastCommand => SelectedDrive.LastCommand;
@@ -79,7 +77,7 @@ public sealed class IdeController : PciDevice
     /// <summary>Gets or sets the guest-physical memory used for bus-master DMA.</summary>
     public IGuestMemory? DmaMemory { get; set; }
 
-    private AtaDevice SelectedDrive => _selected == 0 ? _primaryMaster : _primarySlave;
+    private AtaDevice SelectedDrive => _selected == 0 ? PrimaryMaster : PrimarySlave;
 
     private void LogCommand(byte command)
     {
@@ -97,7 +95,7 @@ public sealed class IdeController : PciDevice
     /// <summary>Attaches media to the primary master drive.</summary>
     public void AttachPrimaryMaster(IDiskImage disk)
     {
-        _primaryMaster.Attach(disk);
+        PrimaryMaster.Attach(disk);
     }
 
     /// <summary>Registers the legacy compatibility ports (0x1F0 and 0x3F6).</summary>
@@ -114,8 +112,8 @@ public sealed class IdeController : PciDevice
     {
         base.Reset();
         _selected = 0;
-        _primaryMaster.Reset();
-        _primarySlave.Reset();
+        PrimaryMaster.Reset();
+        PrimarySlave.Reset();
         _busMaster.Reset();
     }
 
@@ -138,8 +136,8 @@ public sealed class IdeController : PciDevice
     private void SelectDrive(uint driveHead)
     {
         _selected = ((driveHead >> 4) & 1) == 0 ? 0 : 1;
-        _primaryMaster.WriteTaskfile(6, 8, driveHead);
-        _primarySlave.WriteTaskfile(6, 8, driveHead);
+        PrimaryMaster.WriteTaskfile(6, 8, driveHead);
+        PrimarySlave.WriteTaskfile(6, 8, driveHead);
     }
 
     /// <summary>Runs a pending DMA transfer when the bus master is started (synchronous v1).</summary>
@@ -150,15 +148,15 @@ public sealed class IdeController : PciDevice
             return;
         }
 
-        AtaDevice? drive = _primaryMaster.DmaPending ? _primaryMaster
-            : _primarySlave.DmaPending ? _primarySlave
+        AtaDevice? drive = PrimaryMaster.DmaPending ? PrimaryMaster
+            : PrimarySlave.DmaPending ? PrimarySlave
             : null;
         if (drive is null)
         {
             // No DMA work staged: if a packet just errored, the driver still
             // started the bus master and waits for its interrupt. Complete it
             // (the drive already reported the packet error with its own IRQ).
-            if (_primaryMaster.ConsumePacketError() || _primarySlave.ConsumePacketError())
+            if (PrimaryMaster.ConsumePacketError() || PrimarySlave.ConsumePacketError())
             {
                 FinishDma(ok: true);
             }
@@ -259,7 +257,7 @@ public sealed class IdeController : PciDevice
             Read(destination.AsSpan());
         }
 
-        public void Read(Span<byte> destination)
+        private void Read(Span<byte> destination)
         {
             for (int i = 0; i < destination.Length; i++)
             {
@@ -278,7 +276,7 @@ public sealed class IdeController : PciDevice
             Write(source.AsSpan());
         }
 
-        public void Write(ReadOnlySpan<byte> source)
+        private void Write(ReadOnlySpan<byte> source)
         {
             for (int i = 0; i < source.Length; i++)
             {
@@ -334,9 +332,9 @@ public sealed class IdeController : PciDevice
         private uint Read32(uint address)
         {
             return (uint)(_memory.ReadPhysical(address)
-                | (_memory.ReadPhysical(address + 1) << 8)
-                | (_memory.ReadPhysical(address + 2) << 16)
-                | (_memory.ReadPhysical(address + 3) << 24));
+                          | (_memory.ReadPhysical(address + 1) << 8)
+                          | (_memory.ReadPhysical(address + 2) << 16)
+                          | (_memory.ReadPhysical(address + 3) << 24));
         }
     }
 
@@ -361,14 +359,13 @@ public sealed class IdeController : PciDevice
     private sealed class BusMasterWindow : IIoPortDevice
     {
         private readonly IdeController _controller;
-        private readonly string _name = "IDE bus master";
 
         public BusMasterWindow(IdeController controller)
         {
             _controller = controller;
         }
 
-        public string Name => _name;
+        public static string Name => "IDE bus master";
 
         public uint Read(ushort offset, int size)
         {
@@ -440,14 +437,13 @@ public sealed class IdeController : PciDevice
     private sealed class TaskfileWindow : IIoPortDevice
     {
         private readonly IdeController _controller;
-        private readonly string _name = "IDE taskfile";
 
         public TaskfileWindow(IdeController controller)
         {
             _controller = controller;
         }
 
-        public string Name => _name;
+        public static string Name => "IDE taskfile";
 
         public uint Read(ushort offset, int size)
         {
@@ -471,8 +467,8 @@ public sealed class IdeController : PciDevice
             if (offset is 1 or 2 or 3 or 4 or 5)
             {
                 // Shared bus: taskfile setup writes land on both drives (QEMU ide_ioport_write).
-                _controller._primaryMaster.WriteTaskfile(offset, size, value);
-                _controller._primarySlave.WriteTaskfile(offset, size, value);
+                _controller.PrimaryMaster.WriteTaskfile(offset, size, value);
+                _controller.PrimarySlave.WriteTaskfile(offset, size, value);
                 return;
             }
 
@@ -496,14 +492,13 @@ public sealed class IdeController : PciDevice
     private sealed class ControlWindow : IIoPortDevice
     {
         private readonly IdeController _controller;
-        private readonly string _name = "IDE control";
 
         public ControlWindow(IdeController controller)
         {
             _controller = controller;
         }
 
-        public string Name => _name;
+        public static string Name => "IDE control";
 
         public uint Read(ushort offset, int size)
         {
@@ -512,8 +507,8 @@ public sealed class IdeController : PciDevice
 
         public void Write(ushort offset, int size, uint value)
         {
-            _controller._primaryMaster.WriteControl(value);
-            _controller._primarySlave.WriteControl(value);
+            _controller.PrimaryMaster.WriteControl(value);
+            _controller.PrimarySlave.WriteControl(value);
         }
     }
 }

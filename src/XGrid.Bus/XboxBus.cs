@@ -33,7 +33,7 @@ public sealed class XboxBus : IXboxDevice
         Pci.Register(new NvNetController());
         Pci.Register(new McpxApu());
         Pci.Register(new McpxAci());
-        Pci.CreateSecondaryBus(agp).Register(Nv2aPci = new Nv2aGpu());
+        Pci.CreateSecondaryBus(agp).Register(Nv2APci = new Nv2AGpu());
         Lpc = new LpcController(Io, Pci);
         Smbus = new Amd756Smbus(Io, Pci);
         Pic = new Pic8259(Io);
@@ -41,7 +41,7 @@ public sealed class XboxBus : IXboxDevice
         Rtc = new Rtc146818(Io);
 
         Smc = new SmcDevice();
-        Eeprom = new Eeprom24c02();
+        Eeprom = new Eeprom24C02();
         Encoder = new ConexantCx25871();
         Smbus.Attach(Smc);
         Smbus.Attach(Eeprom);
@@ -61,7 +61,7 @@ public sealed class XboxBus : IXboxDevice
     public PciBus Pci { get; }
 
     /// <summary>Gets the NV2A GPU PCI function on the AGP secondary bus.</summary>
-    public Nv2aGpu Nv2aPci { get; }
+    public Nv2AGpu Nv2APci { get; }
 
     /// <summary>Gets the MCPX LPC bridge.</summary>
     public LpcController Lpc { get; }
@@ -73,7 +73,7 @@ public sealed class XboxBus : IXboxDevice
     public SmcDevice Smc { get; }
 
     /// <summary>Gets the SMBus EEPROM.</summary>
-    public Eeprom24c02 Eeprom { get; private set; }
+    public Eeprom24C02 Eeprom { get; private set; }
 
     /// <summary>Gets the video encoder stub.</summary>
     public ConexantCx25871 Encoder { get; }
@@ -81,8 +81,8 @@ public sealed class XboxBus : IXboxDevice
     /// <summary>Replaces the EEPROM image (e.g. with a user-supplied eeprom.bin).</summary>
     public void AttachEeprom(ReadOnlySpan<byte> image)
     {
-        Smbus.Detach(Eeprom24c02.DeviceAddress);
-        Eeprom = new Eeprom24c02(image);
+        Smbus.Detach(Eeprom24C02.DeviceAddress);
+        Eeprom = new Eeprom24C02(image);
         Smbus.Attach(Eeprom);
     }
 
@@ -169,7 +169,7 @@ public sealed class XboxBus : IXboxDevice
             return Lpc.ResolveAcpiIrq(1);
         }
 
-        if (device is Nv2aGpu)
+        if (device is Nv2AGpu)
         {
             return Lpc.ResolveSlotIrq(30);
         }

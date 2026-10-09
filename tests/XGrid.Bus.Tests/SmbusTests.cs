@@ -48,7 +48,7 @@ public sealed class SmbusTests
         (Amd756Smbus smbus, IoSpace io, _) = Create();
         byte[] image = new byte[256];
         image[0x10] = 0xAB;
-        smbus.Attach(new Eeprom24c02(image));
+        smbus.Attach(new Eeprom24C02(image));
 
         io.Write8(Base + Amd756Smbus.HostAddress, 0xA9);
         io.Write8(Base + Amd756Smbus.HostCommand, 0x10);
@@ -65,7 +65,7 @@ public sealed class SmbusTests
         byte[] image = new byte[256];
         image[0x10] = 0x34;
         image[0x11] = 0x12;
-        smbus.Attach(new Eeprom24c02(image));
+        smbus.Attach(new Eeprom24C02(image));
 
         io.Write8(Base + Amd756Smbus.HostAddress, 0xA9);
         io.Write8(Base + Amd756Smbus.HostCommand, 0x10);
@@ -82,7 +82,7 @@ public sealed class SmbusTests
         byte[] image = new byte[256];
         image[0x00] = 0xA8;
         image[0x01] = 0xC4;
-        smbus.Attach(new Eeprom24c02(image));
+        smbus.Attach(new Eeprom24C02(image));
 
         io.Write8(Base + Amd756Smbus.HostAddress, 0xA9);
         io.Write8(Base + Amd756Smbus.HostCommand, 0x00);
@@ -107,7 +107,7 @@ public sealed class SmbusTests
     public void EepromWriteReadRoundTrips()
     {
         (Amd756Smbus smbus, IoSpace io, _) = Create();
-        smbus.Attach(new Eeprom24c02());
+        smbus.Attach(new Eeprom24C02());
 
         io.Write8(Base + Amd756Smbus.HostAddress, 0xA8);
         io.Write8(Base + Amd756Smbus.HostCommand, 0x20);
@@ -198,7 +198,7 @@ public sealed class SmbusTests
     public void CompletedTransaction_WithInterruptEnabled_RaisesAndStatusWriteLowers()
     {
         (Amd756Smbus smbus, IoSpace io, PciBus pci) = Create();
-        smbus.Attach(new Eeprom24c02());
+        smbus.Attach(new Eeprom24C02());
         PciDevice? raised = null;
         PciDevice? lowered = null;
         pci.InterruptRaised += device => raised = device;
@@ -234,7 +234,7 @@ public sealed class SmbusTests
     public void TransactionDiagnostics_RecordLastTransaction()
     {
         (Amd756Smbus smbus, IoSpace io, _) = Create();
-        smbus.Attach(new Eeprom24c02());
+        smbus.Attach(new Eeprom24C02());
 
         Assert.Equal(0, smbus.TransactionCount);
 
@@ -254,7 +254,7 @@ public sealed class SmbusTests
     public void TransactionLog_RecordsHistoryOldestFirst()
     {
         (Amd756Smbus smbus, IoSpace io, _) = Create();
-        smbus.Attach(new Eeprom24c02());
+        smbus.Attach(new Eeprom24C02());
 
         io.Write8(Base + Amd756Smbus.HostAddress, 0xA9);
         io.Write8(Base + Amd756Smbus.HostCommand, 0x10);

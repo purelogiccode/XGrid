@@ -13,6 +13,18 @@ public sealed class UnhandledGuestException : Exception
         Eip = eip;
     }
 
+    public UnhandledGuestException()
+    {
+    }
+
+    public UnhandledGuestException(string? message) : base(message)
+    {
+    }
+
+    public UnhandledGuestException(string? message, Exception? innerException) : base(message, innerException)
+    {
+    }
+
     /// <summary>Gets the interrupt vector.</summary>
     public int Vector { get; }
 

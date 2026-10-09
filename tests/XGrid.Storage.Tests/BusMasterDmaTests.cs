@@ -46,7 +46,7 @@ public sealed class BusMasterDmaTests
 
         public byte ReadPhysical(uint address)
         {
-            return _cells.TryGetValue(address, out byte value) ? value : (byte)0;
+            return _cells.GetValueOrDefault(address, (byte)0);
         }
 
         public void WritePhysical(uint address, byte value)

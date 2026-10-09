@@ -19,31 +19,31 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         if (count < size && ((value >> (size - count)) & 1u) != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         result = count >= size ? 0u : (value << count) & mask;
         if (AluOps.ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
-        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.CF) != 0)))
+        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.Cf) != 0)))
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -63,31 +63,31 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         if (count < size && ((value >> (count - 1)) & 1u) != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (count == 1 && (value & sign) != 0)
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         result = count >= size ? 0u : (value >> count) & mask;
         if (AluOps.ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         return flags;
@@ -107,10 +107,10 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         if (count < size && ((value >> (count - 1)) & 1u) != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         int signedValue = size switch
@@ -126,17 +126,17 @@ public static class ShiftOps
 
         if (AluOps.ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         return flags;
@@ -156,7 +156,7 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
         int effective = count % size;
         result = effective == 0
             ? value
@@ -164,12 +164,12 @@ public static class ShiftOps
 
         if ((result & 1u) != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
-        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.CF) != 0)))
+        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.Cf) != 0)))
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -189,7 +189,7 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
         int effective = count % size;
         result = effective == 0
             ? value
@@ -197,7 +197,7 @@ public static class ShiftOps
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (count == 1)
@@ -206,7 +206,7 @@ public static class ShiftOps
             bool next = (result & (sign >> 1)) != 0;
             if (top != next)
             {
-                flags |= FlagBits.OF;
+                flags |= FlagBits.Of;
             }
         }
 
@@ -227,8 +227,8 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.OF);
-        bool carry = (eflags & FlagBits.CF) != 0;
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
+        bool carry = (eflags & FlagBits.Cf) != 0;
 
         for (int i = 0; i < count; i++)
         {
@@ -240,12 +240,12 @@ public static class ShiftOps
         result = value;
         if (carry)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
-        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.CF) != 0)))
+        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.Cf) != 0)))
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -265,8 +265,8 @@ public static class ShiftOps
             return eflags;
         }
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.OF);
-        bool carry = (eflags & FlagBits.CF) != 0;
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
+        bool carry = (eflags & FlagBits.Cf) != 0;
 
         for (int i = 0; i < count; i++)
         {
@@ -278,7 +278,7 @@ public static class ShiftOps
         result = value;
         if (carry)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (count == 1)
@@ -287,7 +287,7 @@ public static class ShiftOps
             bool next = (result & (sign >> 1)) != 0;
             if (top != next)
             {
-                flags |= FlagBits.OF;
+                flags |= FlagBits.Of;
             }
         }
 
@@ -314,36 +314,36 @@ public static class ShiftOps
             ? (ulong)destination | ((ulong)source << 16) | ((ulong)destination << 32)
             : ((ulong)destination << 32) | source;
         result = size == 16
-            ? (uint)((wide << count >> 32) & mask)
+            ? (uint)(((wide << count) >> 32) & mask)
             : (uint)((wide >> (32 - count)) & mask);
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         uint outBit = count <= size
             ? (destination >> (size - count)) & 1u
             : (uint)((wide >> (33 - count)) & 1u);
         if (outBit != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (AluOps.ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
-        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.CF) != 0)))
+        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.Cf) != 0)))
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -370,28 +370,28 @@ public static class ShiftOps
             : (ulong)destination | ((ulong)source << 32);
         result = (uint)((wide >> count) & mask);
 
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         uint outBit = count <= size
             ? (destination >> (count - 1)) & 1u
             : (uint)((wide >> (count - 1)) & 1u);
         if (outBit != 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (AluOps.ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         if (count == 1)
@@ -400,7 +400,7 @@ public static class ShiftOps
             bool next = (result & (sign >> 1)) != 0;
             if (top != next)
             {
-                flags |= FlagBits.OF;
+                flags |= FlagBits.Of;
             }
         }
 

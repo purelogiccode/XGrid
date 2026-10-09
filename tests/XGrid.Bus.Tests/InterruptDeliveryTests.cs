@@ -35,7 +35,7 @@ public sealed class InterruptDeliveryTests
         cpu.Context.SetSegment(SegmentRegister.Cs, 0x08, 0);
         cpu.Context.SetSegment(SegmentRegister.Ds, 0x10, 0);
         cpu.Context.SetSegment(SegmentRegister.Ss, 0x10, 0);
-        cpu.Context.Eflags = FlagBits.Reserved1 | FlagBits.IF;
+        cpu.Context.Eflags = FlagBits.Reserved1 | FlagBits.If;
         cpu.Context.Esp = 0x8000;
 
         memory.Write8(0x1000, 0x90);
@@ -74,7 +74,7 @@ public sealed class InterruptDeliveryTests
         cpu.Context.Cr0 = 1;
         cpu.Context.SetSegment(SegmentRegister.Cs, 0x08, 0);
         cpu.Context.SetSegment(SegmentRegister.Ss, 0x10, 0);
-        cpu.Context.Eflags = FlagBits.Reserved1 | FlagBits.IF;
+        cpu.Context.Eflags = FlagBits.Reserved1 | FlagBits.If;
         cpu.Context.Esp = 0x8000;
         memory.Write8(0x1000, 0x90);
         cpu.Context.Eip = 0x1000;

@@ -167,7 +167,7 @@ public sealed class FatxFileSystemTests
         FillCluster(disk, 6, (byte)'N', 0);
         return FatxFileSystem.Open(disk, Base, PartSectors);
 
-        void FillCluster(FakeDisk d, uint cluster, byte fill, byte last)
+        static void FillCluster(FakeDisk d, uint cluster, byte fill, byte last)
         {
             uint lba = DataStart + ((cluster - 1u) * ClusterSectors);
             Span<byte> sector = stackalloc byte[512];
@@ -229,14 +229,13 @@ public sealed class FatxFileSystemTests
     private sealed class FakeDisk : IDiskImage
     {
         private readonly Dictionary<uint, byte[]> _sectors = new();
-        private readonly uint _count;
 
         public FakeDisk(uint sectors)
         {
-            _count = sectors;
+            SectorCount = sectors;
         }
 
-        public uint SectorCount => _count;
+        public uint SectorCount { get; }
 
         public void WriteFatEntry(uint baseLba, uint index, uint value, bool wide)
         {

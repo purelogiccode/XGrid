@@ -21,31 +21,21 @@ public sealed class FpuState
     public const int TagEmpty = 3;
 
     private readonly Fpu80[] _registers = new Fpu80[8];
-    private ushort _statusWord;
-    private ushort _tagWord = 0xFFFF;
 
     /// <summary>Gets or sets the control word.</summary>
     public ushort ControlWord { get; set; } = DefaultControlWord;
 
     /// <summary>Gets or sets the status word.</summary>
-    public ushort StatusWord
-    {
-        get => _statusWord;
-        set => _statusWord = value;
-    }
+    public ushort StatusWord { get; set; }
 
     /// <summary>Gets or sets the tag word.</summary>
-    public ushort TagWord
-    {
-        get => _tagWord;
-        set => _tagWord = value;
-    }
+    public ushort TagWord { get; set; } = 0xFFFF;
 
     /// <summary>Gets or sets the stack top pointer (status word bits 11-13).</summary>
     public int Top
     {
-        get => (_statusWord >> 11) & 7;
-        set => _statusWord = (ushort)((_statusWord & ~0x3800) | ((value & 7) << 11));
+        get => (StatusWord >> 11) & 7;
+        set => StatusWord = (ushort)((StatusWord & ~0x3800) | ((value & 7) << 11));
     }
 
     /// <summary>Gets the rounding mode from the control word (0 nearest, 1 down, 2 up, 3 truncate).</summary>
@@ -106,21 +96,21 @@ public sealed class FpuState
     public void Init()
     {
         ControlWord = DefaultControlWord;
-        _statusWord = 0;
-        _tagWord = 0xFFFF;
+        StatusWord = 0;
+        TagWord = 0xFFFF;
         Array.Clear(_registers);
     }
 
     /// <summary>Clears all exception flags (FNCLEX).</summary>
     public void ClearExceptions()
     {
-        _statusWord &= 0x7F00;
+        StatusWord &= 0x7F00;
     }
 
     /// <summary>Sets an exception flag (bit 0 IE, 1 DE, 2 ZE, 3 OE, 4 UE, 5 PE, 6 SF).</summary>
     public void SetException(int bit)
     {
-        _statusWord |= (ushort)(1 << bit);
+        StatusWord |= (ushort)(1 << bit);
     }
 
     /// <summary>Gets whether an unmasked exception is pending (would trigger #MF on FWAIT).</summary>
@@ -128,7 +118,7 @@ public sealed class FpuState
     {
         get
         {
-            ushort exceptions = (ushort)(_statusWord & 0x3F);
+            ushort exceptions = (ushort)(StatusWord & 0x3F);
             ushort unmasked = (ushort)(~ControlWord & 0x3F);
             return (exceptions & unmasked) != 0;
         }
@@ -154,7 +144,7 @@ public sealed class FpuState
             value |= 0x0100;
         }
 
-        _statusWord = (ushort)((_statusWord & ~mask) | value);
+        StatusWord = (ushort)((StatusWord & ~mask) | value);
     }
 
     /// <summary>Sets the C1 condition flag (bit 9).</summary>
@@ -162,11 +152,11 @@ public sealed class FpuState
     {
         if (value)
         {
-            _statusWord |= 0x0200;
+            StatusWord |= 0x0200;
         }
         else
         {
-            _statusWord &= unchecked((ushort)~0x0200);
+            StatusWord &= unchecked((ushort)~0x0200);
         }
     }
 
@@ -175,11 +165,11 @@ public sealed class FpuState
     {
         if (value)
         {
-            _statusWord |= 0x0100;
+            StatusWord |= 0x0100;
         }
         else
         {
-            _statusWord &= unchecked((ushort)~0x0100);
+            StatusWord &= unchecked((ushort)~0x0100);
         }
     }
 
@@ -206,7 +196,7 @@ public sealed class FpuState
     /// <summary>Marks every register empty (EMMS).</summary>
     public void EmptyAll()
     {
-        _tagWord = 0xFFFF;
+        TagWord = 0xFFFF;
     }
 
     /// <summary>Reads the raw register at physical index.</summary>
@@ -217,13 +207,13 @@ public sealed class FpuState
 
     private int GetTag(int physicalIndex)
     {
-        return (_tagWord >> (physicalIndex * 2)) & 3;
+        return (TagWord >> (physicalIndex * 2)) & 3;
     }
 
     private void SetTag(int physicalIndex, int tag)
     {
         int shift = (physicalIndex & 7) * 2;
-        _tagWord = (ushort)((_tagWord & ~(3 << shift)) | ((tag & 3) << shift));
+        TagWord = (ushort)((TagWord & ~(3 << shift)) | ((tag & 3) << shift));
     }
 
     private static int ClassifyTag(Fpu80 value)

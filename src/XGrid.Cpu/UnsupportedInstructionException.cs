@@ -13,6 +13,18 @@ public sealed class UnsupportedInstructionException : Exception
         Opcode = opcode;
     }
 
+    public UnsupportedInstructionException()
+    {
+    }
+
+    public UnsupportedInstructionException(string? message) : base(message)
+    {
+    }
+
+    public UnsupportedInstructionException(string? message, Exception? innerException) : base(message, innerException)
+    {
+    }
+
     /// <summary>Gets the instruction pointer where the opcode was encountered.</summary>
     public uint Eip { get; }
 

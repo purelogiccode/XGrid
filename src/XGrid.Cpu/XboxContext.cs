@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
 
@@ -266,5 +267,6 @@ public sealed class XboxContext
         _segments[(int)segment] = new SegmentState(selector, baseAddress);
     }
 
+    [StructLayout(LayoutKind.Auto)]
     private readonly record struct SegmentState(ushort Selector, uint Base);
 }

@@ -7,7 +7,8 @@ public sealed class InterruptTests
     private const uint IdtAddress = 0x4000;
     private const uint HandlerAddress = 0x3000;
 
-    private static void InstallIdt(XboxCpu cpu, int vector, uint handler, ushort selector = 0x08, ushort attributes = 0x8E00)
+    private static void InstallIdt(XboxCpu cpu, int vector, uint handler, ushort selector = 0x08,
+        ushort attributes = 0x8E00)
     {
         uint gate = IdtAddress + (uint)vector * 8;
         cpu.Bus().Write16(gate, (ushort)(handler & 0xFFFF));
@@ -94,7 +95,7 @@ public sealed class InterruptTests
     {
         XboxCpu cpu = CpuHarness.Create(0xCE, 0xF4);
         InstallIdt(cpu, 4, HandlerAddress);
-        cpu.Context.Eflags = FlagBits.OF;
+        cpu.Context.Eflags = FlagBits.Of;
 
         cpu.Step();
 
@@ -143,12 +144,12 @@ public sealed class InterruptTests
     {
         XboxCpu cpu = CpuHarness.Create(0xCD, 0x21, 0xF4);
         InstallIdt(cpu, 0x21, HandlerAddress);
-        cpu.Context.Eflags = FlagBits.IF | FlagBits.TF;
+        cpu.Context.Eflags = FlagBits.If | FlagBits.Tf;
 
         cpu.Step();
 
-        Assert.False((cpu.Context.Eflags & FlagBits.IF) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.TF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.If) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Tf) != 0);
     }
 
     [Fact]

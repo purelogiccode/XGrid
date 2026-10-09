@@ -6,9 +6,11 @@ namespace XGrid.Benchmarks;
 [MemoryDiagnoser]
 public class LoggingBenchmarks
 {
+    private readonly LogLevel _level = LogLevel.Trace;
+
     [Benchmark]
-    public static bool IsEnabled_DefaultSink()
+    public bool IsEnabled_DefaultSink()
     {
-        return XGridLog.IsEnabled(LogCategory.Cpu, LogLevel.Trace);
+        return XGridLog.IsEnabled(LogCategory.Cpu, _level);
     }
 }

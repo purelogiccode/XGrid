@@ -21,7 +21,8 @@ public sealed class MmuTests
         return (context, bus, mmu);
     }
 
-    private static void Map4K(AddressSpace bus, uint virtualAddress, uint physicalAddress, bool writable = true, bool present = true)
+    private static void Map4K(AddressSpace bus, uint virtualAddress, uint physicalAddress, bool writable = true,
+        bool present = true)
     {
         uint pdeAddress = PageDirectory + ((virtualAddress >> 22) & 0x3FF) * 4;
         if ((bus.Read32(pdeAddress) & 1u) == 0)

@@ -18,7 +18,7 @@ public sealed class ControlFlowTests
     public void Jcc_Taken()
     {
         XboxCpu cpu = CpuHarness.Create(0x74, 0x02, 0x90, 0x90, 0x90);
-        cpu.Context.Eflags = FlagBits.ZF;
+        cpu.Context.Eflags = FlagBits.Zf;
 
         cpu.Step();
 
@@ -100,7 +100,7 @@ public sealed class ControlFlowTests
 
         cpu.Execute(3);
 
-        Assert.True((cpu.Context.ReadRegister(Gpr.Eax) & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.ReadRegister(Gpr.Eax) & FlagBits.Cf) != 0);
     }
 
     [Fact]

@@ -5,16 +5,15 @@ namespace XGrid.Memory.Tests;
 
 public sealed class AddressSpaceTests
 {
-    private static AddressSpace CreateSpace(out PhysicalMemory ram, uint ramSize = 64u * 1024 * 1024)
+    private static AddressSpace CreateSpace(uint ramSize = 64u * 1024 * 1024)
     {
-        ram = new PhysicalMemory(ramSize);
-        return new AddressSpace(ram);
+        return new AddressSpace(new PhysicalMemory(ramSize));
     }
 
     [Fact]
     public void UnmappedAccesses_AreCountedPerMegabyteBucket()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         space.Read32(0xFD000000);
         space.Read32(0xFD000010);
@@ -27,7 +26,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void WatchRange_ReportsWritesInsideRangeOnly()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         uint hitAddress = 0;
         space.WatchStart = 0xFD000000;
         space.WatchEnd = 0xFD000100;
@@ -42,7 +41,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Ram_ReadWrite_UsesFastPath()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         space.Write32(0x100, 0xCAFEBABE);
 
@@ -53,7 +52,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Ram_Read64_UsesFastPath()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         space.Write64(0x200, 0x0123456789ABCDEF);
 
@@ -63,7 +62,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void MmioRegion_RoutesAbsoluteAddressAndSize()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         var device = new RecordingMmioDevice { ReadValue = 0x12345678 };
         space.AddRegion("usb0", 0xFED00000, 0x1000, device);
 
@@ -83,7 +82,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void MmioRegion_SupportsByteAndWordSizes()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         var device = new RecordingMmioDevice { ReadValue = 0x0000FF00 };
         space.AddRegion("dev", 0xFD000000, 0x100, device);
 
@@ -101,7 +100,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Unmapped_Read_ReturnsSentinel()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         Assert.Equal(0xFF, space.Read8(0xFD000000));
         Assert.Equal(0xFFFF, space.Read16(0xFD000000));
@@ -111,7 +110,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Unmapped_Write_IsIgnored()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         space.Write32(0xFD000000, 0x12345678);
 
@@ -121,7 +120,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void ThrowPolicy_UnmappedAccess_Throws()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         space.UnmappedPolicy = UnmappedAccessPolicy.Throw;
 
         Assert.Throws<MemoryAccessException>(() => space.Read32(0xFD000000));
@@ -131,7 +130,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void OverlappingRegions_HighestPriorityWins()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         var low = new RecordingMmioDevice { ReadValue = 0x11111111 };
         var high = new RecordingMmioDevice { ReadValue = 0x22222222 };
         space.AddRegion("low", 0xFD000000, 0x1000, low, priority: 0);
@@ -143,7 +142,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void OverlappingRegions_EqualPriority_LatestWins()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         var first = new RecordingMmioDevice { ReadValue = 0x11111111 };
         var second = new RecordingMmioDevice { ReadValue = 0x22222222 };
         space.AddRegion("first", 0xFD000000, 0x1000, first);
@@ -155,7 +154,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void TryGetRegion_Unmapped_ReturnsFalse()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         Assert.False(space.TryGetRegion(0xFD000000, out _));
     }
@@ -163,18 +162,18 @@ public sealed class AddressSpaceTests
     [Fact]
     public void TryGetRegion_Mapped_ReturnsRegion()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         space.AddRegion("nv2a", 0xFD000000, 0x1000, new RecordingMmioDevice());
 
         Assert.True(space.TryGetRegion(0xFD000500, out AddressRegion? region));
         Assert.NotNull(region);
-        Assert.Equal("nv2a", region!.Name);
+        Assert.Equal("nv2a", region.Name);
     }
 
     [Fact]
     public void Regions_AreExposedInRegistrationOrder()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         space.AddRegion("a", 0xFD000000, 0x1000, new RecordingMmioDevice());
         space.AddRegion("b", 0xFE000000, 0x1000, new RecordingMmioDevice());
 
@@ -186,7 +185,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void GetSpan_OutsideRam_Throws()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
 
         Assert.Throws<MemoryAccessException>(() => space.GetSpan(0xFD000000, 4).Length.ToString());
     }
@@ -194,7 +193,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Read64_Mmio_ComposesTwo32BitReads()
     {
-        AddressSpace space = CreateSpace(out _);
+        AddressSpace space = CreateSpace();
         var device = new RecordingMmioDevice { ReadValue = 0x00000002 };
         space.AddRegion("dev", 0xFD000000, 0x1000, device);
 
@@ -209,7 +208,7 @@ public sealed class AddressSpaceTests
     [Fact]
     public void Read64_CrossingRamBoundary_UsesSentinelForUnmappedHalf()
     {
-        AddressSpace space = CreateSpace(out _, ramSize: 8);
+        AddressSpace space = CreateSpace(ramSize: 8);
         space.Write32(4, 0x11223344);
 
         ulong value = space.Read64(4);

@@ -149,7 +149,7 @@ public sealed class DecoderTier67Tests
     {
         DecodedInstruction instruction = Decode(0x0F, 0xC7, 0x0D, 0x00, 0x20, 0x00, 0x00);
 
-        Assert.Equal(Mnemonic.Cmpxchg8b, instruction.Mnemonic);
+        Assert.Equal(Mnemonic.Cmpxchg8B, instruction.Mnemonic);
         Assert.Equal(OperandKind.Memory, instruction.Operand1.Kind);
         Assert.Equal(64, instruction.Operand1.Size);
         Assert.Equal(7, instruction.Length);

@@ -8,7 +8,7 @@ public enum LogCategory
     Mmio = 2,
     Pci = 3,
     Mcpx = 4,
-    Nv2a = 5,
+    Nv2A = 5,
     Apu = 6,
     Usb = 7,
     Ide = 8,

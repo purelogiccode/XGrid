@@ -54,19 +54,11 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     private readonly Dictionary<byte, ISmbusDevice> _devices = new();
     private readonly byte[] _blockData = new byte[32];
     private IDisposable? _window;
-    private byte _status;
-    private byte _control;
     private byte _address;
     private byte _data0;
     private byte _data1;
     private byte _command;
     private int _blockIndex;
-    private int _transactionCount;
-    private byte _lastSlave;
-    private int _lastProtocol;
-    private byte _lastCommand;
-    private bool _lastRead;
-    private bool _lastOk;
     private readonly List<Transaction> _recent = new();
 
     /// <summary>Creates the controller and registers it on the PCI bus.</summary>
@@ -81,28 +73,28 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     }
 
     /// <summary>Gets the global status register value.</summary>
-    public byte Status => _status;
+    public byte Status { get; private set; }
 
     /// <summary>Gets the global enable register value.</summary>
-    public byte Control => _control;
+    public byte Control { get; private set; }
 
     /// <summary>Gets the number of executed transactions. Diagnostics.</summary>
-    public int TransactionCount => _transactionCount;
+    public int TransactionCount { get; private set; }
 
     /// <summary>Gets the slave address of the most recent transaction. Diagnostics.</summary>
-    public byte LastSlaveAddress => _lastSlave;
+    public byte LastSlaveAddress { get; private set; }
 
     /// <summary>Gets the protocol of the most recent transaction. Diagnostics.</summary>
-    public int LastProtocol => _lastProtocol;
+    public int LastProtocol { get; private set; }
 
     /// <summary>Gets the command byte of the most recent transaction. Diagnostics.</summary>
-    public byte LastCommand => _lastCommand;
+    public byte LastCommand { get; private set; }
 
     /// <summary>Gets whether the most recent transaction was a read. Diagnostics.</summary>
-    public bool LastRead => _lastRead;
+    public bool LastRead { get; private set; }
 
     /// <summary>Gets whether the most recent transaction succeeded. Diagnostics.</summary>
-    public bool LastOk => _lastOk;
+    public bool LastOk { get; private set; }
 
     /// <summary>Gets the recent transaction history (oldest first, at most 192 entries). Diagnostics.</summary>
     public IReadOnlyList<Transaction> RecentTransactions => _recent;
@@ -124,20 +116,20 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     public override void Reset()
     {
         base.Reset();
-        _status = 0;
-        _control = 0;
+        Status = 0;
+        Control = 0;
         _address = 0;
         _data0 = 0;
         _data1 = 0;
         _command = 0;
         _blockIndex = 0;
         _recent.Clear();
-        _transactionCount = 0;
-        _lastSlave = 0;
-        _lastProtocol = 0;
-        _lastCommand = 0;
-        _lastRead = false;
-        _lastOk = false;
+        TransactionCount = 0;
+        LastSlaveAddress = 0;
+        LastProtocol = 0;
+        LastCommand = 0;
+        LastRead = false;
+        LastOk = false;
         Array.Clear(_blockData);
     }
 
@@ -180,8 +172,8 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     {
         return register switch
         {
-            GlobalStatus => _status,
-            GlobalEnable => (byte)(_control & 0x1F),
+            GlobalStatus => Status,
+            GlobalEnable => (byte)(Control & 0x1F),
             HostAddress => _address,
             HostData => _data0,
             HostDataHigh => _data1,
@@ -196,8 +188,8 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
         switch (register)
         {
             case GlobalStatus:
-                if ((_control & InterruptEnable) != 0
-                    && ((value & ClearStatusMask) & ~(_status & ClearStatusMask)) != 0)
+                if ((Control & InterruptEnable) != 0
+                    && ((value & ClearStatusMask) & ~(Status & ClearStatusMask)) != 0)
                 {
                     RaiseInterrupt();
                 }
@@ -208,27 +200,27 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
 
                 if ((value & ClearStatusMask) != 0)
                 {
-                    _status = 0;
+                    Status = 0;
                 }
                 else
                 {
-                    _status = HcycStatus;
+                    Status = HcycStatus;
                 }
 
                 _blockIndex = 0;
                 break;
 
             case GlobalEnable:
-                _control = value;
+                Control = value;
                 if ((value & AbortBit) != 0)
                 {
-                    _status |= AbrtStatus;
+                    Status |= AbrtStatus;
                 }
 
                 if ((value & TransactionGo) != 0)
                 {
                     ExecuteTransaction();
-                    if ((value & InterruptEnable) != 0 && (_status & ClearStatusMask) != 0)
+                    if ((value & InterruptEnable) != 0 && (Status & ClearStatusMask) != 0)
                     {
                         RaiseInterrupt();
                     }
@@ -263,19 +255,19 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
 
     private void ExecuteTransaction()
     {
-        int protocol = _control & 7;
+        int protocol = Control & 7;
         bool read = (_address & 1) != 0;
         byte address = (byte)((_address >> 1) & 0x7F);
 
-        _transactionCount++;
-        _lastSlave = address;
-        _lastProtocol = protocol;
-        _lastCommand = _command;
-        _lastRead = read;
+        TransactionCount++;
+        LastSlaveAddress = address;
+        LastProtocol = protocol;
+        LastCommand = _command;
+        LastRead = read;
 
         if (!_devices.TryGetValue(address, out ISmbusDevice? device))
         {
-            _status |= PrerrStatus;
+            Status |= PrerrStatus;
             RecordTransaction(address, protocol, read, false, 0, 0);
             return;
         }
@@ -344,18 +336,18 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                 break;
 
             default:
-                _status |= PrerrStatus;
+                Status |= PrerrStatus;
                 RecordTransaction(address, protocol, read, false, 0, 0);
                 return;
         }
 
         RecordTransaction(address, protocol, read, ok, _data0, _data1);
-        _status |= ok ? HcycStatus : PrerrStatus;
+        Status |= ok ? HcycStatus : PrerrStatus;
     }
 
     private void RecordTransaction(byte address, int protocol, bool read, bool ok, byte data0, byte data1)
     {
-        _lastOk = ok;
+        LastOk = ok;
         _recent.Add(new Transaction(address, protocol, _command, read, ok, data0, data1));
         if (_recent.Count > 192)
         {

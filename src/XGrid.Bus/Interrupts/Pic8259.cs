@@ -121,7 +121,6 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
     {
         private const byte InitFlag = 0x10;
 
-        private byte _vectorBase;
         private int _initStep;
         private bool _autoEoi;
         private bool _readInService;
@@ -129,7 +128,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
 
         public byte Mask { get; private set; } = 0xFF;
 
-        public byte VectorBase => _vectorBase;
+        public byte VectorBase { get; private set; }
 
         public byte RequestRegister { get; private set; }
 
@@ -137,7 +136,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
 
         public void Reset(byte vectorBase)
         {
-            _vectorBase = vectorBase;
+            VectorBase = vectorBase;
             Mask = 0xFF;
             RequestRegister = 0;
             InServiceRegister = 0;
@@ -196,7 +195,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
                 InServiceRegister |= (byte)(1 << line);
             }
 
-            return _vectorBase | line;
+            return VectorBase | line;
         }
 
         public void WriteCommand(byte value)
@@ -240,7 +239,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
             switch (_initStep)
             {
                 case 1:
-                    _vectorBase = (byte)(value & 0xF8);
+                    VectorBase = (byte)(value & 0xF8);
                     _initStep = 2;
                     break;
                 case 2:

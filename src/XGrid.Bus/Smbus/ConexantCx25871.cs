@@ -18,10 +18,7 @@ public sealed class ConexantCx25871 : SmbusDevice
     }
 
     /// <summary>Gets the register file (indexed by register number).</summary>
-    public byte this[byte register]
-    {
-        get => _registers[register];
-    }
+    public byte this[byte register] => _registers[register];
 
     /// <inheritdoc />
     public override bool TryReceiveByte(out byte value)

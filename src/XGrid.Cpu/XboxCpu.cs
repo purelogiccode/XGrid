@@ -7,9 +7,6 @@ namespace XGrid.Cpu;
 /// <summary>Interpreted Pentium III-class CPU (plan section 8).</summary>
 public sealed class XboxCpu
 {
-    private readonly IMemoryBus _memory;
-    private readonly IIoBus _io;
-    private readonly Mmu _mmu;
     private uint _sysenterCs;
     private uint _sysenterEsp;
     private uint _sysenterEip;
@@ -17,20 +14,20 @@ public sealed class XboxCpu
     /// <summary>Creates a CPU over the given memory and I/O buses.</summary>
     public XboxCpu(IMemoryBus memory, IIoBus? ioBus = null)
     {
-        _memory = memory ?? throw new ArgumentNullException(nameof(memory));
-        _io = ioBus ?? NullIoBus.Instance;
+        Memory = memory ?? throw new ArgumentNullException(nameof(memory));
+        Io = ioBus ?? NullIoBus.Instance;
         Context = new XboxContext();
-        _mmu = new Mmu(Context, memory);
+        Mmu = new Mmu(Context, memory);
     }
 
     /// <summary>Gets the architectural state.</summary>
     public XboxContext Context { get; }
 
     /// <summary>Gets the memory bus.</summary>
-    public IMemoryBus Memory => _memory;
+    public IMemoryBus Memory { get; }
 
     /// <summary>Gets the I/O port bus.</summary>
-    public IIoBus Io => _io;
+    public IIoBus Io { get; }
 
     /// <summary>Gets or sets the external interrupt controller (PIC) acknowledged when IF is set.</summary>
     public IInterruptSource? InterruptSource { get; set; }
@@ -39,7 +36,7 @@ public sealed class XboxCpu
     public int InterruptCount { get; private set; }
 
     /// <summary>Gets the paging unit.</summary>
-    public Mmu Mmu => _mmu;
+    public Mmu Mmu { get; }
 
     /// <summary>Gets the vector of the most recent guest fault delivered to the IDT (0 if none).</summary>
     public int LastFaultVector { get; private set; }
@@ -54,7 +51,7 @@ public sealed class XboxCpu
     public void Reset()
     {
         Context.Reset();
-        _mmu.Flush();
+        Mmu.Flush();
         LastFaultVector = 0;
         LastFaultEip = 0;
         LastFaultErrorCode = 0;
@@ -67,7 +64,7 @@ public sealed class XboxCpu
         {
             Context.Tsc++;
 
-            if (InterruptSource is not null && (Context.Eflags & FlagBits.IF) != 0)
+            if (InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
             {
                 int vector = InterruptSource.Acknowledge();
                 if (vector >= 0)
@@ -137,7 +134,7 @@ public sealed class XboxCpu
         for (int i = 0; i < buffer.Length; i++)
         {
             uint linear = segmentBase + Context.Eip + (uint)i;
-            buffer[i] = _memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
+            buffer[i] = Memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
         }
     }
 
@@ -294,7 +291,8 @@ public sealed class XboxCpu
                 break;
 
             case Mnemonic.MovSregRead:
-                WriteOperand(instruction.Operand1, Context.GetSegmentSelector((SegmentRegister)instruction.Operand2.Immediate));
+                WriteOperand(instruction.Operand1,
+                    Context.GetSegmentSelector((SegmentRegister)instruction.Operand2.Immediate));
                 break;
 
             case Mnemonic.PushSegment:
@@ -305,7 +303,8 @@ public sealed class XboxCpu
                 break;
 
             case Mnemonic.PopSegment:
-                LoadSegment((SegmentRegister)instruction.Operand1.Immediate, (ushort)Pop(instruction.OperandSize, instruction.AddressSize));
+                LoadSegment((SegmentRegister)instruction.Operand1.Immediate,
+                    (ushort)Pop(instruction.OperandSize, instruction.AddressSize));
                 break;
 
             case Mnemonic.Loop:
@@ -318,8 +317,8 @@ public sealed class XboxCpu
                     bool take = instruction.Mnemonic switch
                     {
                         Mnemonic.Loop => counter != 0,
-                        Mnemonic.LoopE => counter != 0 && (Context.Eflags & FlagBits.ZF) != 0,
-                        _ => counter != 0 && (Context.Eflags & FlagBits.ZF) == 0,
+                        Mnemonic.LoopE => counter != 0 && (Context.Eflags & FlagBits.Zf) != 0,
+                        _ => counter != 0 && (Context.Eflags & FlagBits.Zf) == 0,
                     };
 
                     if (take)
@@ -345,27 +344,27 @@ public sealed class XboxCpu
                 break;
 
             case Mnemonic.Clc:
-                Context.Eflags &= ~FlagBits.CF;
+                Context.Eflags &= ~FlagBits.Cf;
                 break;
 
             case Mnemonic.Stc:
-                Context.Eflags |= FlagBits.CF;
+                Context.Eflags |= FlagBits.Cf;
                 break;
 
             case Mnemonic.Cld:
-                Context.Eflags &= ~FlagBits.DF;
+                Context.Eflags &= ~FlagBits.Df;
                 break;
 
             case Mnemonic.Std:
-                Context.Eflags |= FlagBits.DF;
+                Context.Eflags |= FlagBits.Df;
                 break;
 
             case Mnemonic.Cli:
-                Context.Eflags &= ~FlagBits.IF;
+                Context.Eflags &= ~FlagBits.If;
                 break;
 
             case Mnemonic.Sti:
-                Context.Eflags |= FlagBits.IF;
+                Context.Eflags |= FlagBits.If;
                 break;
 
             case Mnemonic.Pushf:
@@ -428,7 +427,7 @@ public sealed class XboxCpu
                 return;
 
             case Mnemonic.Into:
-                if ((Context.Eflags & FlagBits.OF) != 0)
+                if ((Context.Eflags & FlagBits.Of) != 0)
                 {
                     if (!TryTransferToInterrupt(4, nextEip, false, 0))
                     {
@@ -485,12 +484,12 @@ public sealed class XboxCpu
                 break;
 
             case Mnemonic.Invlpg:
-                _mmu.FlushPage(ComputeAddress(instruction.Operand1.Memory));
+                Mmu.FlushPage(ComputeAddress(instruction.Operand1.Memory));
                 break;
 
             case Mnemonic.Invd:
             case Mnemonic.Wbinvd:
-                _mmu.Flush();
+                Mmu.Flush();
                 break;
 
             case Mnemonic.Arpl:
@@ -661,8 +660,8 @@ public sealed class XboxCpu
                 ExecuteCmpxchg(instruction);
                 break;
 
-            case Mnemonic.Cmpxchg8b:
-                ExecuteCmpxchg8b(instruction);
+            case Mnemonic.Cmpxchg8B:
+                ExecuteCmpxchg8B(instruction);
                 break;
 
             case Mnemonic.Bsf:
@@ -701,7 +700,7 @@ public sealed class XboxCpu
         uint first = ReadOperand(instruction.Operand1);
         uint second = ReadOperand(instruction.Operand2);
         int size = instruction.Operand1.Size;
-        uint carry = (Context.Eflags & FlagBits.CF) != 0 ? 1u : 0u;
+        uint carry = (Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
 
         uint flags;
         uint result;
@@ -757,7 +756,7 @@ public sealed class XboxCpu
             case OperandKind.Memory:
                 return ReadMemory(ComputeAddress(operand.Memory), operand.Size);
             default:
-                throw new System.InvalidOperationException("Cannot read an empty operand.");
+                throw new InvalidOperationException("Cannot read an empty operand.");
         }
     }
 
@@ -786,7 +785,7 @@ public sealed class XboxCpu
                 break;
 
             default:
-                throw new System.InvalidOperationException("Cannot write an immediate operand.");
+                throw new InvalidOperationException("Cannot write an immediate operand.");
         }
     }
 
@@ -825,7 +824,7 @@ public sealed class XboxCpu
 
     private uint ReadMemory(uint address, int size)
     {
-        if (!_mmu.IsEnabled)
+        if (!Mmu.IsEnabled)
         {
             return RawRead(address, size);
         }
@@ -836,7 +835,8 @@ public sealed class XboxCpu
             uint value = 0;
             for (int i = 0; i < bytes; i++)
             {
-                value |= (uint)_memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false)) << (8 * i);
+                value |= (uint)Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false)) <<
+                         (8 * i);
             }
 
             return value;
@@ -847,7 +847,7 @@ public sealed class XboxCpu
 
     private void WriteMemory(uint address, int size, uint value)
     {
-        if (!_mmu.IsEnabled)
+        if (!Mmu.IsEnabled)
         {
             RawWrite(address, size, value);
             return;
@@ -858,7 +858,7 @@ public sealed class XboxCpu
             int bytes = size / 8;
             for (int i = 0; i < bytes; i++)
             {
-                _memory.Write8(
+                Memory.Write8(
                     TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false),
                     (byte)(value >> (8 * i)));
             }
@@ -873,9 +873,9 @@ public sealed class XboxCpu
     {
         return size switch
         {
-            8 => _memory.Read8(address),
-            16 => _memory.Read16(address),
-            _ => _memory.Read32(address),
+            8 => Memory.Read8(address),
+            16 => Memory.Read16(address),
+            _ => Memory.Read32(address),
         };
     }
 
@@ -884,13 +884,13 @@ public sealed class XboxCpu
         switch (size)
         {
             case 8:
-                _memory.Write8(address, (byte)value);
+                Memory.Write8(address, (byte)value);
                 break;
             case 16:
-                _memory.Write16(address, (ushort)value);
+                Memory.Write16(address, (ushort)value);
                 break;
             default:
-                _memory.Write32(address, value);
+                Memory.Write32(address, value);
                 break;
         }
     }
@@ -902,7 +902,7 @@ public sealed class XboxCpu
 
     private uint TranslateLinear(uint linearAddress, bool isWrite, bool isInstruction)
     {
-        uint physical = _mmu.Translate(linearAddress, isWrite, isInstruction, out bool faulted, out uint errorCode);
+        uint physical = Mmu.Translate(linearAddress, isWrite, isInstruction, out bool faulted, out uint errorCode);
         if (faulted)
         {
             throw new PageFaultSignal(linearAddress, errorCode);
@@ -917,6 +917,18 @@ public sealed class XboxCpu
         {
             LinearAddress = linearAddress;
             ErrorCode = errorCode;
+        }
+
+        public PageFaultSignal()
+        {
+        }
+
+        public PageFaultSignal(string? message) : base(message)
+        {
+        }
+
+        public PageFaultSignal(string? message, Exception? innerException) : base(message, innerException)
+        {
         }
 
         public uint LinearAddress { get; }
@@ -996,14 +1008,15 @@ public sealed class XboxCpu
         if (Context.IsProtectedMode && (selector & 0xFFF8) != 0)
         {
             uint descriptor = Context.Gdtr.Base + (uint)(selector & 0xFFF8);
-            uint descriptorPhysical = _mmu.Translate(descriptor, isWrite: false, isInstruction: false, out bool descriptorFaulted, out _);
+            uint descriptorPhysical = Mmu.Translate(descriptor, isWrite: false, isInstruction: false,
+                out bool descriptorFaulted, out _);
             if (descriptorFaulted)
             {
                 descriptorPhysical = descriptor;
             }
 
-            uint low = _memory.Read32(descriptorPhysical);
-            uint high = _memory.Read32(descriptorPhysical + 4);
+            uint low = Memory.Read32(descriptorPhysical);
+            uint high = Memory.Read32(descriptorPhysical + 4);
             baseAddress = ((low >> 16) & 0xFFFFu) | ((high & 0xFFu) << 16) | (high & 0xFF000000u);
             code32 = ((high >> 22) & 1u) != 0;
         }
@@ -1085,9 +1098,8 @@ public sealed class XboxCpu
             : (int)instruction.Operand3.Immediate;
         int size = instruction.Operand1.Size;
 
-        uint result;
         uint flags = instruction.Mnemonic == Mnemonic.Shld
-            ? ShiftOps.Shld(destination, source, count, size, Context.Eflags, out result)
+            ? ShiftOps.Shld(destination, source, count, size, Context.Eflags, out var result)
             : ShiftOps.Shrd(destination, source, count, size, Context.Eflags, out result);
 
         Context.Eflags = flags;
@@ -1178,7 +1190,7 @@ public sealed class XboxCpu
         {
             int size = instruction.Operand1.Size;
             long product = SignedValue(ReadOperand(instruction.Operand2), size)
-                * SignedValue(instruction.Operand3.Immediate, size);
+                           * SignedValue(instruction.Operand3.Immediate, size);
             uint result = (uint)product & AluOps.Mask(size);
             Context.Eflags = SetMultiplyFlags(Context.Eflags, product != SignedValue(result, size));
             WriteOperand(instruction.Operand1, result);
@@ -1189,7 +1201,7 @@ public sealed class XboxCpu
         {
             int size = instruction.Operand1.Size;
             long product = SignedValue(ReadOperand(instruction.Operand1), size)
-                * SignedValue(ReadOperand(instruction.Operand2), size);
+                           * SignedValue(ReadOperand(instruction.Operand2), size);
             uint result = (uint)product & AluOps.Mask(size);
             Context.Eflags = SetMultiplyFlags(Context.Eflags, product != SignedValue(result, size));
             WriteOperand(instruction.Operand1, result);
@@ -1394,10 +1406,10 @@ public sealed class XboxCpu
 
     private static uint SetMultiplyFlags(uint eflags, bool overflow)
     {
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Of);
         if (overflow)
         {
-            flags |= FlagBits.CF | FlagBits.OF;
+            flags |= FlagBits.Cf | FlagBits.Of;
         }
 
         return flags;
@@ -1413,16 +1425,16 @@ public sealed class XboxCpu
             }
 
             uint gate = Context.Idtr.Base + (uint)vector * 8;
-            uint gatePhysical = _mmu.Translate(gate, isWrite: false, isInstruction: false, out bool gateFaulted, out _);
+            uint gatePhysical = Mmu.Translate(gate, isWrite: false, isInstruction: false, out bool gateFaulted, out _);
             if (gateFaulted)
             {
                 return false;
             }
 
-            ushort offsetLow = _memory.Read16(gatePhysical);
-            ushort selector = _memory.Read16(gatePhysical + 2);
-            ushort attributes = _memory.Read16(gatePhysical + 4);
-            ushort offsetHigh = _memory.Read16(gatePhysical + 6);
+            ushort offsetLow = Memory.Read16(gatePhysical);
+            ushort selector = Memory.Read16(gatePhysical + 2);
+            ushort attributes = Memory.Read16(gatePhysical + 4);
+            ushort offsetHigh = Memory.Read16(gatePhysical + 6);
             uint handler = offsetLow | ((uint)offsetHigh << 16);
 
             if ((attributes & 0x8000) == 0)
@@ -1435,7 +1447,7 @@ public sealed class XboxCpu
             bool interruptGate = ((attributes >> 8) & 0x1Fu) == 0x0Eu;
             if (interruptGate)
             {
-                Context.Eflags &= ~(FlagBits.IF | FlagBits.TF);
+                Context.Eflags &= ~(FlagBits.If | FlagBits.Tf);
             }
 
             LoadSegment(SegmentRegister.Cs, selector);
@@ -1444,11 +1456,11 @@ public sealed class XboxCpu
         }
 
         uint entry = (uint)vector * 4;
-        ushort offset = _memory.Read16(entry);
-        ushort segment = _memory.Read16(entry + 2);
+        ushort offset = Memory.Read16(entry);
+        ushort segment = Memory.Read16(entry + 2);
 
         PushInterruptFrame(segment, returnEip, hasErrorCode, errorCode, 16);
-        Context.Eflags &= ~(FlagBits.IF | FlagBits.TF);
+        Context.Eflags &= ~(FlagBits.If | FlagBits.Tf);
         Context.SetSegment(SegmentRegister.Cs, segment, (uint)segment << 4);
         Context.Eip = offset;
         return true;
@@ -1515,7 +1527,7 @@ public sealed class XboxCpu
                     Context.Cr0 = value;
                     if (((previous ^ value) & ControlRegisterBits.Cr0Paging) != 0)
                     {
-                        _mmu.Flush();
+                        Mmu.Flush();
                     }
 
                     break;
@@ -1526,7 +1538,7 @@ public sealed class XboxCpu
                 break;
             case 3:
                 Context.Cr3 = value;
-                _mmu.Flush();
+                Mmu.Flush();
                 break;
             case 4:
                 {
@@ -1534,7 +1546,7 @@ public sealed class XboxCpu
                     Context.Cr4 = value;
                     if (((previous ^ value) & ControlRegisterBits.Cr4PageSizeExtensions) != 0)
                     {
-                        _mmu.Flush();
+                        Mmu.Flush();
                     }
 
                     break;
@@ -1544,7 +1556,7 @@ public sealed class XboxCpu
                 return;
         }
 
-        _mmu.Flush();
+        Mmu.Flush();
     }
 
     private void ExecuteMoveExtend(in DecodedInstruction instruction)
@@ -1570,12 +1582,12 @@ public sealed class XboxCpu
 
         if ((destination & 3) < (source & 3))
         {
-            Context.Eflags |= FlagBits.ZF;
+            Context.Eflags |= FlagBits.Zf;
             WriteOperand(instruction.Operand1, (uint)((destination & 0xFFFC) | (source & 3)));
         }
         else
         {
-            Context.Eflags &= ~FlagBits.ZF;
+            Context.Eflags &= ~FlagBits.Zf;
         }
     }
 
@@ -1615,7 +1627,7 @@ public sealed class XboxCpu
             }
 
             uint frameBase = Context.GetSegmentBase(SegmentRegister.Ss)
-                + (addressSize == 16 ? Context.Ebp & 0xFFFFu : Context.Ebp);
+                             + (addressSize == 16 ? Context.Ebp & 0xFFFFu : Context.Ebp);
             Push(ReadMemory(frameBase, size), size, addressSize);
         }
 
@@ -1643,14 +1655,15 @@ public sealed class XboxCpu
         if ((selector & 0xFFF8) != 0)
         {
             uint descriptor = Context.Gdtr.Base + (uint)(selector & 0xFFF8);
-            uint descriptorPhysical = _mmu.Translate(descriptor, isWrite: false, isInstruction: false, out bool faulted, out _);
+            uint descriptorPhysical =
+                Mmu.Translate(descriptor, isWrite: false, isInstruction: false, out bool faulted, out _);
             if (!faulted)
             {
-                uint high = _memory.Read32(descriptorPhysical + 4);
+                uint high = Memory.Read32(descriptorPhysical + 4);
                 bool present = (high & 0x8000u) != 0;
                 int type = (int)((high >> 8) & 0x0Fu);
                 bool code = (type & 0x8) != 0;
-                bool readable = code ? (type & 0x2) != 0 : true;
+                bool readable = !code || (type & 0x2) != 0;
                 bool writable = !code && (type & 0x2) != 0;
                 valid = present && (forWrite ? writable : readable);
             }
@@ -1658,11 +1671,11 @@ public sealed class XboxCpu
 
         if (valid)
         {
-            Context.Eflags |= FlagBits.ZF;
+            Context.Eflags |= FlagBits.Zf;
         }
         else
         {
-            Context.Eflags &= ~FlagBits.ZF;
+            Context.Eflags &= ~FlagBits.Zf;
         }
     }
 
@@ -1806,7 +1819,7 @@ public sealed class XboxCpu
 
             if (instruction.Mnemonic is Mnemonic.Cmps or Mnemonic.Scas)
             {
-                bool zero = (Context.Eflags & FlagBits.ZF) != 0;
+                bool zero = (Context.Eflags & FlagBits.Zf) != 0;
                 if (instruction.Rep == RepPrefix.Rep && !zero)
                 {
                     break;
@@ -1822,7 +1835,7 @@ public sealed class XboxCpu
 
     private void ExecuteStringIteration(in DecodedInstruction instruction, int size, int addressSize)
     {
-        bool decrement = (Context.Eflags & FlagBits.DF) != 0;
+        bool decrement = (Context.Eflags & FlagBits.Df) != 0;
         int delta = size / 8;
         uint sourceIndex = ReadIndex(Gpr.Esi, addressSize);
         uint destinationIndex = ReadIndex(Gpr.Edi, addressSize);
@@ -1932,21 +1945,22 @@ public sealed class XboxCpu
 
     private ulong ReadMemory64(uint address)
     {
-        if (!_mmu.IsEnabled)
+        if (!Mmu.IsEnabled)
         {
-            return (ulong)_memory.Read32(address) | ((ulong)_memory.Read32(address + 4) << 32);
+            return (ulong)Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
         }
 
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: false, isInstruction: false);
-            return (ulong)_memory.Read32(physical) | ((ulong)_memory.Read32(physical + 4) << 32);
+            return (ulong)Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
         }
 
         ulong value = 0;
         for (int i = 0; i < 8; i++)
         {
-            value |= (ulong)_memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false)) << (8 * i);
+            value |= (ulong)Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false)) <<
+                     (8 * i);
         }
 
         return value;
@@ -1954,24 +1968,25 @@ public sealed class XboxCpu
 
     private void WriteMemory64(uint address, ulong value)
     {
-        if (!_mmu.IsEnabled)
+        if (!Mmu.IsEnabled)
         {
-            _memory.Write32(address, (uint)value);
-            _memory.Write32(address + 4, (uint)(value >> 32));
+            Memory.Write32(address, (uint)value);
+            Memory.Write32(address + 4, (uint)(value >> 32));
             return;
         }
 
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
-            _memory.Write32(physical, (uint)value);
-            _memory.Write32(physical + 4, (uint)(value >> 32));
+            Memory.Write32(physical, (uint)value);
+            Memory.Write32(physical + 4, (uint)(value >> 32));
             return;
         }
 
         for (int i = 0; i < 8; i++)
         {
-            _memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false), (byte)(value >> (8 * i)));
+            Memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false),
+                (byte)(value >> (8 * i)));
         }
     }
 
@@ -1992,9 +2007,9 @@ public sealed class XboxCpu
     {
         for (int i = 0; i < destination.Length; i++)
         {
-            destination[i] = _mmu.IsEnabled
-                ? _memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false))
-                : _memory.Read8(address + (uint)i);
+            destination[i] = Mmu.IsEnabled
+                ? Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false))
+                : Memory.Read8(address + (uint)i);
         }
     }
 
@@ -2002,13 +2017,13 @@ public sealed class XboxCpu
     {
         for (int i = 0; i < source.Length; i++)
         {
-            if (_mmu.IsEnabled)
+            if (Mmu.IsEnabled)
             {
-                _memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false), source[i]);
+                Memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false), source[i]);
             }
             else
             {
-                _memory.Write8(address + (uint)i, source[i]);
+                Memory.Write8(address + (uint)i, source[i]);
             }
         }
     }
@@ -2048,9 +2063,9 @@ public sealed class XboxCpu
     {
         return size switch
         {
-            8 => _io.Read8(port),
-            16 => _io.Read16(port),
-            _ => _io.Read32(port),
+            8 => Io.Read8(port),
+            16 => Io.Read16(port),
+            _ => Io.Read32(port),
         };
     }
 
@@ -2059,13 +2074,13 @@ public sealed class XboxCpu
         switch (size)
         {
             case 8:
-                _io.Write8(port, (byte)value);
+                Io.Write8(port, (byte)value);
                 break;
             case 16:
-                _io.Write16(port, (ushort)value);
+                Io.Write16(port, (ushort)value);
                 break;
             default:
-                _io.Write32(port, value);
+                Io.Write32(port, value);
                 break;
         }
     }
@@ -2100,7 +2115,7 @@ public sealed class XboxCpu
         }
     }
 
-    private void ExecuteCmpxchg8b(in DecodedInstruction instruction)
+    private void ExecuteCmpxchg8B(in DecodedInstruction instruction)
     {
         uint address = ComputeAddress(instruction.Operand1.Memory);
         uint low = ReadMemory(address, 32);
@@ -2109,13 +2124,13 @@ public sealed class XboxCpu
         {
             WriteMemory(address, 32, Context.ReadRegister(Gpr.Ebx));
             WriteMemory(address + 4, 32, Context.ReadRegister(Gpr.Ecx));
-            Context.Eflags |= FlagBits.ZF;
+            Context.Eflags |= FlagBits.Zf;
         }
         else
         {
             Context.WriteRegister(Gpr.Eax, low);
             Context.WriteRegister(Gpr.Edx, high);
-            Context.Eflags &= ~FlagBits.ZF;
+            Context.Eflags &= ~FlagBits.Zf;
         }
     }
 
@@ -2126,11 +2141,11 @@ public sealed class XboxCpu
         uint masked = size == 16 ? source & 0xFFFFu : source;
         if (masked == 0)
         {
-            Context.Eflags |= FlagBits.ZF;
+            Context.Eflags |= FlagBits.Zf;
             return;
         }
 
-        Context.Eflags &= ~FlagBits.ZF;
+        Context.Eflags &= ~FlagBits.Zf;
         uint index = reverse
             ? (uint)System.Numerics.BitOperations.Log2(masked)
             : (uint)System.Numerics.BitOperations.TrailingZeroCount(masked);
@@ -2189,11 +2204,11 @@ public sealed class XboxCpu
     {
         if (value)
         {
-            Context.Eflags |= FlagBits.CF;
+            Context.Eflags |= FlagBits.Cf;
         }
         else
         {
-            Context.Eflags &= ~FlagBits.CF;
+            Context.Eflags &= ~FlagBits.Cf;
         }
     }
 
@@ -2353,11 +2368,12 @@ public sealed class XboxCpu
 
     private void SetFpuFlagsCompare(Fpu80 left, Fpu80 right)
     {
-        uint flags = Context.Eflags & ~(FlagBits.ZF | FlagBits.PF | FlagBits.CF | FlagBits.OF | FlagBits.SF | FlagBits.AF);
+        uint flags = Context.Eflags &
+                     ~(FlagBits.Zf | FlagBits.Pf | FlagBits.Cf | FlagBits.Of | FlagBits.Sf | FlagBits.Af);
 
         if (left.IsNaN || right.IsNaN)
         {
-            flags |= FlagBits.ZF | FlagBits.PF | FlagBits.CF;
+            flags |= FlagBits.Zf | FlagBits.Pf | FlagBits.Cf;
         }
         else
         {
@@ -2365,11 +2381,11 @@ public sealed class XboxCpu
             double b = right.ToDouble();
             if (a < b)
             {
-                flags |= FlagBits.CF;
+                flags |= FlagBits.Cf;
             }
             else if (a == b)
             {
-                flags |= FlagBits.ZF;
+                flags |= FlagBits.Zf;
             }
         }
 
@@ -2445,7 +2461,8 @@ public sealed class XboxCpu
                 {
                     Fpu80 left = Fpu.GetRegister(instruction.Operand1.RegisterIndex);
                     Fpu80 right = Fpu.GetRegister(0);
-                    Fpu.SetRegister(instruction.Operand1.RegisterIndex, ApplyFpuArithmetic(instruction.Mnemonic, left, right));
+                    Fpu.SetRegister(instruction.Operand1.RegisterIndex,
+                        ApplyFpuArithmetic(instruction.Mnemonic, left, right));
                     Fpu.Pop();
                     break;
                 }
@@ -2456,7 +2473,8 @@ public sealed class XboxCpu
             case Mnemonic.Fisubr:
             case Mnemonic.Fidiv:
             case Mnemonic.Fidivr:
-                Fpu.SetRegister(0, ApplyFpuArithmetic(instruction.Mnemonic, Fpu.GetRegister(0), ReadFpuInteger(instruction.Operand1)));
+                Fpu.SetRegister(0,
+                    ApplyFpuArithmetic(instruction.Mnemonic, Fpu.GetRegister(0), ReadFpuInteger(instruction.Operand1)));
                 break;
 
             case Mnemonic.Fcom:
@@ -2624,10 +2642,10 @@ public sealed class XboxCpu
             case Mnemonic.Fld1:
                 Fpu.Push(Fpu80.One);
                 break;
-            case Mnemonic.Fldl2t:
+            case Mnemonic.Fldl2T:
                 Fpu.Push(Fpu80.Log2Ten);
                 break;
-            case Mnemonic.Fldl2e:
+            case Mnemonic.Fldl2E:
                 Fpu.Push(Fpu80.Log2E);
                 break;
             case Mnemonic.Fldpi:
@@ -2643,11 +2661,11 @@ public sealed class XboxCpu
                 Fpu.Push(Fpu80.Zero);
                 break;
 
-            case Mnemonic.F2xm1:
+            case Mnemonic.F2Xm1:
                 Fpu.SetRegister(0, Fpu80.FromDouble(Math.Pow(2.0, Fpu.GetRegister(0).ToDouble()) - 1.0));
                 break;
 
-            case Mnemonic.Fyl2x:
+            case Mnemonic.Fyl2X:
                 {
                     double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble());
                     Fpu.SetRegister(1, Fpu80.FromDouble(result));
@@ -2655,7 +2673,7 @@ public sealed class XboxCpu
                     break;
                 }
 
-            case Mnemonic.Fyl2xp1:
+            case Mnemonic.Fyl2Xp1:
                 {
                     double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble() + 1.0);
                     Fpu.SetRegister(1, Fpu80.FromDouble(result));
@@ -2804,9 +2822,9 @@ public sealed class XboxCpu
     private bool EvaluateFcmovCondition(Mnemonic mnemonic)
     {
         uint flags = Context.Eflags;
-        bool cf = (flags & FlagBits.CF) != 0;
-        bool zf = (flags & FlagBits.ZF) != 0;
-        bool pf = (flags & FlagBits.PF) != 0;
+        bool cf = (flags & FlagBits.Cf) != 0;
+        bool zf = (flags & FlagBits.Zf) != 0;
+        bool pf = (flags & FlagBits.Pf) != 0;
 
         return mnemonic switch
         {
@@ -2984,7 +3002,8 @@ public sealed class XboxCpu
                     ulong destination = Context.ReadMmx(instruction.Operand1.RegisterIndex);
                     int lane = (int)(instruction.Operand3.Immediate & 3);
                     ulong mask = 0xFFFFUL << (16 * lane);
-                    destination = (destination & ~mask) | (((ulong)ReadGprOrMemory(instruction.Operand2) & 0xFFFF) << (16 * lane));
+                    destination = (destination & ~mask) |
+                                  (((ulong)ReadGprOrMemory(instruction.Operand2) & 0xFFFF) << (16 * lane));
                     Context.WriteMmx(instruction.Operand1.RegisterIndex, destination);
                     break;
                 }
@@ -2993,7 +3012,8 @@ public sealed class XboxCpu
                 {
                     ulong source = Context.ReadMmx(instruction.Operand2.RegisterIndex);
                     int lane = (int)(instruction.Operand3.Immediate & 3);
-                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)((source >> (16 * lane)) & 0xFFFF));
+                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex,
+                        (uint)((source >> (16 * lane)) & 0xFFFF));
                     break;
                 }
 
@@ -3014,7 +3034,8 @@ public sealed class XboxCpu
                 }
 
             case Mnemonic.Movntq:
-                WriteMemory64(ComputeAddress(instruction.Operand1.Memory), Context.ReadMmx(instruction.Operand2.RegisterIndex));
+                WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
+                    Context.ReadMmx(instruction.Operand2.RegisterIndex));
                 break;
 
             case Mnemonic.Maskmovq:
@@ -3395,7 +3416,8 @@ public sealed class XboxCpu
                 {
                     if (instruction.Operand1.Kind == OperandKind.Memory)
                     {
-                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory), Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0));
+                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
+                            Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0));
                     }
                     else if (instruction.Operand2.Kind == OperandKind.Memory)
                     {
@@ -3410,7 +3432,8 @@ public sealed class XboxCpu
                 {
                     if (instruction.Operand1.Kind == OperandKind.Memory)
                     {
-                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory), Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1));
+                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
+                            Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1));
                     }
                     else if (instruction.Operand2.Kind == OperandKind.Memory)
                     {
@@ -3517,28 +3540,28 @@ public sealed class XboxCpu
                     break;
                 }
 
-            case Mnemonic.Cvtsi2ss:
+            case Mnemonic.Cvtsi2Ss:
                 {
                     int value = (int)ReadGprOrMemory(instruction.Operand2);
                     Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, BitConverter.SingleToUInt32Bits(value));
                     break;
                 }
 
-            case Mnemonic.Cvtss2si:
-            case Mnemonic.Cvttss2si:
+            case Mnemonic.Cvtss2Si:
+            case Mnemonic.Cvttss2Si:
                 {
                     (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
                     float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
-                    int result = ConvertFloatToInt32(value, instruction.Mnemonic == Mnemonic.Cvttss2si);
+                    int result = ConvertFloatToInt32(value, instruction.Mnemonic == Mnemonic.Cvttss2Si);
                     Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)result);
                     break;
                 }
 
-            case Mnemonic.Cvtps2pi:
-            case Mnemonic.Cvttps2pi:
+            case Mnemonic.Cvtps2Pi:
+            case Mnemonic.Cvttps2Pi:
                 {
                     (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
-                    bool truncate = instruction.Mnemonic == Mnemonic.Cvttps2pi;
+                    bool truncate = instruction.Mnemonic == Mnemonic.Cvttps2Pi;
                     ulong result = 0;
                     for (int i = 0; i < 2; i++)
                     {
@@ -3550,7 +3573,7 @@ public sealed class XboxCpu
                     break;
                 }
 
-            case Mnemonic.Cvtpi2ps:
+            case Mnemonic.Cvtpi2Ps:
                 {
                     ulong source = ReadMmxOperand(instruction.Operand2);
                     ulong result = 0;
@@ -3602,7 +3625,8 @@ public sealed class XboxCpu
         {
             float a = BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(instruction.Operand1.RegisterIndex, 0));
             float b = BitConverter.UInt32BitsToSingle(ElementBits((slow, shigh), 0));
-            Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, BitConverter.SingleToUInt32Bits(ApplySseArithmetic(instruction.Mnemonic, a, b)));
+            Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0,
+                BitConverter.SingleToUInt32Bits(ApplySseArithmetic(instruction.Mnemonic, a, b)));
             return;
         }
 
@@ -3658,7 +3682,8 @@ public sealed class XboxCpu
         if (scalar)
         {
             float a = BitConverter.UInt32BitsToSingle(ElementBits((slow, shigh), 0));
-            Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, BitConverter.SingleToUInt32Bits(ApplySseUnary(instruction.Mnemonic, a)));
+            Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0,
+                BitConverter.SingleToUInt32Bits(ApplySseUnary(instruction.Mnemonic, a)));
             return;
         }
 
@@ -3764,18 +3789,19 @@ public sealed class XboxCpu
         (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
         float right = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
 
-        uint flags = Context.Eflags & ~(FlagBits.ZF | FlagBits.PF | FlagBits.CF | FlagBits.OF | FlagBits.SF | FlagBits.AF);
+        uint flags = Context.Eflags &
+                     ~(FlagBits.Zf | FlagBits.Pf | FlagBits.Cf | FlagBits.Of | FlagBits.Sf | FlagBits.Af);
         if (float.IsNaN(left) || float.IsNaN(right))
         {
-            flags |= FlagBits.ZF | FlagBits.PF | FlagBits.CF;
+            flags |= FlagBits.Zf | FlagBits.Pf | FlagBits.Cf;
         }
         else if (left < right)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
         else if (left == right)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         Context.Eflags = flags;
@@ -3941,11 +3967,11 @@ public sealed class XboxCpu
     private bool EvaluateCondition(ConditionCode condition)
     {
         uint flags = Context.Eflags;
-        bool cf = (flags & FlagBits.CF) != 0;
-        bool zf = (flags & FlagBits.ZF) != 0;
-        bool sf = (flags & FlagBits.SF) != 0;
-        bool of = (flags & FlagBits.OF) != 0;
-        bool pf = (flags & FlagBits.PF) != 0;
+        bool cf = (flags & FlagBits.Cf) != 0;
+        bool zf = (flags & FlagBits.Zf) != 0;
+        bool sf = (flags & FlagBits.Sf) != 0;
+        bool of = (flags & FlagBits.Of) != 0;
+        bool pf = (flags & FlagBits.Pf) != 0;
 
         return condition switch
         {

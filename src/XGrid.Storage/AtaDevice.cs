@@ -18,9 +18,7 @@ public sealed class AtaDevice
     private const byte ErrorAbort = 0x04;
 
     private readonly byte[] _identify = new byte[SectorSize];
-    private readonly byte[] _data = new byte[SectorSize];
     private readonly byte[] _packet = new byte[PacketSize];
-    private readonly bool _atapi;
     private IDiskImage? _disk;
     private int _dataIndex;
     private int _transferLength = SectorSize;
@@ -34,10 +32,10 @@ public sealed class AtaDevice
     /// <param name="atapi">When true, the drive behaves as an ATAPI DVD device (no media).</param>
     public AtaDevice(bool atapi = false)
     {
-        _atapi = atapi;
+        IsAtapi = atapi;
         Status = StatusReady;
         DriveHead = 0xA0;
-        if (_atapi)
+        if (IsAtapi)
         {
             BuildAtapiIdentify();
         }
@@ -65,7 +63,7 @@ public sealed class AtaDevice
     public event Action? InterruptAcknowledged;
 
     /// <summary>Gets whether this drive behaves as an ATAPI packet device.</summary>
-    public bool IsAtapi => _atapi;
+    public bool IsAtapi { get; }
 
     /// <summary>Gets whether a DMA transfer is pending bus-master start.</summary>
     public bool DmaPending => _phase is Phase.ReadDma or Phase.WriteDma or Phase.PacketDma or Phase.PacketDataDma;
@@ -80,13 +78,13 @@ public sealed class AtaDevice
     public bool DmaResponseReady => _phase == Phase.PacketDataDma;
 
     /// <summary>Gets the staged DMA response bytes (valid while <see cref="DmaResponseReady"/>).</summary>
-    public System.ReadOnlySpan<byte> DmaResponse => _data.AsSpan(0, _transferLength);
+    public ReadOnlySpan<byte> DmaResponse => DmaBuffer.AsSpan(0, _transferLength);
 
     /// <summary>Gets the drive staging buffer for bus-master sector copies.</summary>
-    public byte[] DmaBuffer => _data;
+    public byte[] DmaBuffer { get; } = new byte[SectorSize];
 
     /// <summary>Receives a 12-byte packet delivered by bus-master DMA (no IRQ; the engine completes).</summary>
-    public void ReceiveDmaPacket(System.ReadOnlySpan<byte> packet)
+    public void ReceiveDmaPacket(ReadOnlySpan<byte> packet)
     {
         packet[..PacketSize].CopyTo(_packet);
         _packetDma = true;
@@ -109,13 +107,13 @@ public sealed class AtaDevice
     /// <summary>Loads the current DMA LBA sector into the staging buffer (read path).</summary>
     public void FetchDmaSector()
     {
-        _disk!.ReadSector(_lba, _data);
+        _disk!.ReadSector(_lba, DmaBuffer);
     }
 
     /// <summary>Stores the staging buffer to the current DMA LBA sector (write path).</summary>
     public void CommitDmaSector()
     {
-        _disk?.WriteSector(_lba, _data);
+        _disk?.WriteSector(_lba, DmaBuffer);
     }
 
     /// <summary>Advances the DMA transfer; completes the command when the last sector is done.</summary>
@@ -237,7 +235,7 @@ public sealed class AtaDevice
     {
         SectorCount = 1;
         LbaLow = 1;
-        if (_atapi)
+        if (IsAtapi)
         {
             LbaMid = 0x14;
             LbaHigh = 0xEB;
@@ -273,6 +271,7 @@ public sealed class AtaDevice
 
         uint value = offset switch
         {
+            // ReSharper disable once UnreachableSwitchArmDueToIntegerAnalysis
             0 => ReadData(),
             1 => Error,
             2 => SectorCount,
@@ -361,7 +360,7 @@ public sealed class AtaDevice
             return 0;
         }
 
-        byte value = _data[_dataIndex];
+        byte value = DmaBuffer[_dataIndex];
         _dataIndex++;
         if (_dataIndex >= _transferLength)
         {
@@ -394,7 +393,7 @@ public sealed class AtaDevice
             return;
         }
 
-        _data[_dataIndex] = value;
+        DmaBuffer[_dataIndex] = value;
         _dataIndex++;
         if (_dataIndex >= SectorSize)
         {
@@ -448,7 +447,7 @@ public sealed class AtaDevice
         _lba++;
         if (_remaining > 0 && _disk is not null)
         {
-            _disk.ReadSector(_lba, _data);
+            _disk.ReadSector(_lba, DmaBuffer);
             Status = StatusDataRequest;
         }
         else
@@ -463,7 +462,7 @@ public sealed class AtaDevice
     private void OnSectorWritten()
     {
         _dataIndex = 0;
-        _disk?.WriteSector(_lba, _data);
+        _disk?.WriteSector(_lba, DmaBuffer);
         _remaining--;
         _lba++;
         if (_remaining > 0)
@@ -499,7 +498,7 @@ public sealed class AtaDevice
         switch (command)
         {
             case 0xEC:
-                if (_atapi)
+                if (IsAtapi)
                 {
                     // IDENTIFY on a packet device aborts and leaves the ATAPI
                     // signature (QEMU cmd_identify with drive_kind == IDE_CD).
@@ -511,7 +510,7 @@ public sealed class AtaDevice
                     _phase = Phase.Identify;
                     _dataIndex = 0;
                     _transferLength = SectorSize;
-                    _identify.CopyTo(_data, 0);
+                    _identify.CopyTo(DmaBuffer, 0);
                     Status = StatusDataRequest;
                     Interrupt?.Invoke();
                 }
@@ -519,12 +518,12 @@ public sealed class AtaDevice
                 break;
 
             case 0xA1:
-                if (_atapi)
+                if (IsAtapi)
                 {
                     _phase = Phase.Identify;
                     _dataIndex = 0;
                     _transferLength = SectorSize;
-                    _identify.CopyTo(_data, 0);
+                    _identify.CopyTo(DmaBuffer, 0);
                     Status = StatusDataRequest;
                     Interrupt?.Invoke();
                 }
@@ -536,7 +535,7 @@ public sealed class AtaDevice
                 break;
 
             case 0xA0:
-                if (!_atapi)
+                if (!IsAtapi)
                 {
                     Abort();
                 }
@@ -577,9 +576,9 @@ public sealed class AtaDevice
                 _phase = Phase.None;
                 _dataIndex = 0;
                 _transferLength = SectorSize;
-                Error = _atapi ? (byte)0x01 : (byte)0;
+                Error = IsAtapi ? (byte)0x01 : (byte)0;
                 SetSignature();
-                Status = _atapi ? (byte)0x00 : StatusReady;
+                Status = IsAtapi ? (byte)0x00 : StatusReady;
                 break;
 
             case 0x20 or 0x24:
@@ -601,7 +600,7 @@ public sealed class AtaDevice
             case 0xF2:
                 _phase = Phase.SecurityUnlock;
                 _dataIndex = 0;
-                Array.Clear(_data);
+                Array.Clear(DmaBuffer);
                 Status = StatusDataRequest;
                 break;
 
@@ -621,6 +620,7 @@ public sealed class AtaDevice
         Status = StatusError;
         Interrupt?.Invoke();
     }
+
     /// <summary>Completes a PIO-delivered packet (both PIO and DMA data phases).</summary>
     private void CompletePacket()
     {
@@ -655,11 +655,11 @@ public sealed class AtaDevice
             // REQUEST SENSE succeeds without media: 18-byte fixed-format data
             // reporting NOT_READY / MEDIUM_NOT_PRESENT (QEMU cmd_request_sense).
             int alloc = _packet[4] == 0 ? 18 : Math.Min(18, (int)_packet[4]);
-            Array.Clear(_data);
-            _data[0] = 0x70;
-            _data[2] = 0x02;
-            _data[7] = 10;
-            _data[12] = 0x3A;
+            Array.Clear(DmaBuffer);
+            DmaBuffer[0] = 0x70;
+            DmaBuffer[2] = 0x02;
+            DmaBuffer[7] = 10;
+            DmaBuffer[12] = 0x3A;
             StagePacketData(alloc);
             SenseKey = 0;
             SenseAsc = 0;
@@ -669,12 +669,12 @@ public sealed class AtaDevice
         if (opcode == 0x12)
         {
             // INQUIRY succeeds without media: 36-byte standard response.
-            Array.Clear(_data);
-            _data[0] = 0x05;
-            _data[1] = 0x80;
-            _data[2] = 0x02;
-            _data[3] = 0x02;
-            _data[4] = 31;
+            Array.Clear(DmaBuffer);
+            DmaBuffer[0] = 0x05;
+            DmaBuffer[1] = 0x80;
+            DmaBuffer[2] = 0x02;
+            DmaBuffer[3] = 0x02;
+            DmaBuffer[4] = 31;
             WriteAscii(8, "XGRID   ");
             WriteAscii(16, "VIRTUAL DVD     ");
             WriteAscii(32, "1.0 ");
@@ -713,6 +713,7 @@ public sealed class AtaDevice
         _packetError = true;
         Interrupt?.Invoke();
     }
+
     /// <summary>Stages a packet-data response for PIO delivery or bus-master pickup.</summary>
     /// <param name="length">Response length in bytes (already placed in the staging buffer).</param>
     /// <param name="raiseIrq">Whether the PIO path raises the completion interrupt.</param>
@@ -741,9 +742,9 @@ public sealed class AtaDevice
 
     private void WriteAscii(int offset, string text)
     {
-        for (int i = 0; i < text.Length && offset + i < _data.Length; i++)
+        for (int i = 0; i < text.Length && offset + i < DmaBuffer.Length; i++)
         {
-            _data[offset + i] = (byte)text[i];
+            DmaBuffer[offset + i] = (byte)text[i];
         }
     }
 
@@ -754,7 +755,7 @@ public sealed class AtaDevice
             return;
         }
 
-        _disk!.ReadSector(_lba, _data);
+        _disk!.ReadSector(_lba, DmaBuffer);
         _dataIndex = 0;
         _transferLength = SectorSize;
         _phase = Phase.Read;

@@ -49,10 +49,10 @@ public sealed class McpxAci : PciDevice
 }
 
 /// <summary>NV2A GPU on the AGP secondary bus (bus N, device 0, 10DE:02A0). Configuration space only.</summary>
-public sealed class Nv2aGpu : PciDevice
+public sealed class Nv2AGpu : PciDevice
 {
     /// <summary>Creates the NV2A.</summary>
-    public Nv2aGpu()
+    public Nv2AGpu()
         : base("NV2A", 0, 0, 0x10DE, 0x02A0, 0xA1, 0x03, 0x00, 0x00)
     {
         DefineBar(0, 0x1000000, isIo: false);
