@@ -293,4 +293,117 @@ public static class ShiftOps
 
         return flags;
     }
+
+    /// <summary>Double-precision shift left. Count is masked to 5 bits; 16-bit counts
+    /// above 16 use Intel doubling. OF is defined only for count 1.</summary>
+    public static uint Shld(uint destination, uint source, int count, int size, uint eflags, out uint result)
+    {
+        uint mask = AluOps.Mask(size);
+        uint sign = AluOps.SignBit(size);
+        destination &= mask;
+        source &= mask;
+        count &= CountMask;
+
+        if (count == 0)
+        {
+            result = destination;
+            return eflags;
+        }
+
+        ulong wide = size == 16
+            ? (ulong)destination | ((ulong)source << 16) | ((ulong)destination << 32)
+            : ((ulong)destination << 32) | source;
+        result = size == 16
+            ? (uint)((wide << count >> 32) & mask)
+            : (uint)((wide >> (32 - count)) & mask);
+
+        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint outBit = count <= size
+            ? (destination >> (size - count)) & 1u
+            : (uint)((wide >> (33 - count)) & 1u);
+        if (outBit != 0)
+        {
+            flags |= FlagBits.CF;
+        }
+
+        if (AluOps.ParityEven(result))
+        {
+            flags |= FlagBits.PF;
+        }
+
+        if (result == 0)
+        {
+            flags |= FlagBits.ZF;
+        }
+
+        if ((result & sign) != 0)
+        {
+            flags |= FlagBits.SF;
+        }
+
+        if (count == 1 && (((result & sign) != 0) != ((flags & FlagBits.CF) != 0)))
+        {
+            flags |= FlagBits.OF;
+        }
+
+        return flags;
+    }
+
+    /// <summary>Double-precision shift right. Count is masked to 5 bits; 16-bit counts
+    /// above 16 use Intel doubling. OF is defined only for count 1.</summary>
+    public static uint Shrd(uint destination, uint source, int count, int size, uint eflags, out uint result)
+    {
+        uint mask = AluOps.Mask(size);
+        uint sign = AluOps.SignBit(size);
+        destination &= mask;
+        source &= mask;
+        count &= CountMask;
+
+        if (count == 0)
+        {
+            result = destination;
+            return eflags;
+        }
+
+        ulong wide = size == 16
+            ? (ulong)destination | ((ulong)source << 16) | ((ulong)destination << 32)
+            : (ulong)destination | ((ulong)source << 32);
+        result = (uint)((wide >> count) & mask);
+
+        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint outBit = count <= size
+            ? (destination >> (count - 1)) & 1u
+            : (uint)((wide >> (count - 1)) & 1u);
+        if (outBit != 0)
+        {
+            flags |= FlagBits.CF;
+        }
+
+        if (AluOps.ParityEven(result))
+        {
+            flags |= FlagBits.PF;
+        }
+
+        if (result == 0)
+        {
+            flags |= FlagBits.ZF;
+        }
+
+        if ((result & sign) != 0)
+        {
+            flags |= FlagBits.SF;
+        }
+
+        if (count == 1)
+        {
+            bool top = (result & sign) != 0;
+            bool next = (result & (sign >> 1)) != 0;
+            if (top != next)
+            {
+                flags |= FlagBits.OF;
+            }
+        }
+
+        return flags;
+    }
 }

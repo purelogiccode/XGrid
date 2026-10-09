@@ -23,8 +23,18 @@ public sealed class DecoderFpuSseTests
     [Fact]
     public void FpuMemoryArithmetic_DecodesSizes()
     {
-        Assert.Equal(32, Decode(0xD8, 0x05, 0x00, 0x00, 0x00, 0x00).Operand1.Size);
-        Assert.Equal(64, Decode(0xDC, 0x05, 0x00, 0x00, 0x00, 0x00).Operand1.Size);
+        DecodedInstruction d8 = Decode(0xD8, 0x05, 0x00, 0x00, 0x00, 0x00);
+        Assert.Equal(0, d8.Operand1.RegisterIndex);
+        Assert.Equal(80, d8.Operand1.Size);
+        Assert.Equal(OperandKind.Memory, d8.Operand2.Kind);
+        Assert.Equal(32, d8.Operand2.Size);
+
+        DecodedInstruction dc = Decode(0xDC, 0x05, 0x00, 0x00, 0x00, 0x00);
+        Assert.Equal(0, dc.Operand1.RegisterIndex);
+        Assert.Equal(80, dc.Operand1.Size);
+        Assert.Equal(OperandKind.Memory, dc.Operand2.Kind);
+        Assert.Equal(64, dc.Operand2.Size);
+
         Assert.Equal(32, Decode(0xDA, 0x05, 0x00, 0x00, 0x00, 0x00).Operand1.Size);
         Assert.Equal(16, Decode(0xDE, 0x05, 0x00, 0x00, 0x00, 0x00).Operand1.Size);
     }

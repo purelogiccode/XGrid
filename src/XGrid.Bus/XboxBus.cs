@@ -33,7 +33,7 @@ public sealed class XboxBus : IXboxDevice
         Pci.Register(new NvNetController());
         Pci.Register(new McpxApu());
         Pci.Register(new McpxAci());
-        Pci.CreateSecondaryBus(agp).Register(new Nv2aGpu());
+        Pci.CreateSecondaryBus(agp).Register(Nv2aPci = new Nv2aGpu());
         Lpc = new LpcController(Io, Pci);
         Smbus = new Amd756Smbus(Io, Pci);
         Pic = new Pic8259(Io);
@@ -59,6 +59,9 @@ public sealed class XboxBus : IXboxDevice
 
     /// <summary>Gets the PCI bus.</summary>
     public PciBus Pci { get; }
+
+    /// <summary>Gets the NV2A GPU PCI function on the AGP secondary bus.</summary>
+    public Nv2aGpu Nv2aPci { get; }
 
     /// <summary>Gets the MCPX LPC bridge.</summary>
     public LpcController Lpc { get; }
@@ -164,6 +167,11 @@ public sealed class XboxBus : IXboxDevice
         if (device is Amd756Smbus)
         {
             return Lpc.ResolveAcpiIrq(1);
+        }
+
+        if (device is Nv2aGpu)
+        {
+            return Lpc.ResolveSlotIrq(30);
         }
 
         return Lpc.ResolveSlotIrq(device.DeviceNumber);

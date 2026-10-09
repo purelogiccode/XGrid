@@ -370,9 +370,14 @@ public static class Decoder
                     addressSize,
                     opcode);
 
+            case 0x98:
+                return Make(Mnemonic.Cbw, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
+
+            case 0x99:
+                return Make(Mnemonic.Cdq, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
+
             case 0x9C:
                 return Make(Mnemonic.Pushf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
-
             case 0x9D:
                 return Make(Mnemonic.Popf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
 
@@ -674,6 +679,41 @@ public static class Decoder
                 opcode);
         }
 
+        if (opcode is 0xA4 or 0xA5 or 0xAC or 0xAD)
+        {
+            if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int shiftReg, out Operand shiftRm))
+            {
+                return Unsupported(position, opcode, operandSize, addressSize);
+            }
+
+            Operand shiftCount;
+            if (opcode is 0xA4 or 0xAC)
+            {
+                if (!TryReadImmediate(code, ref position, 8, out uint shiftImmediate))
+                {
+                    return Unsupported(position, opcode, operandSize, addressSize);
+                }
+
+                shiftCount = Operand.ImmediateOperand(shiftImmediate, 8);
+            }
+            else
+            {
+                shiftCount = Operand.RegisterOperand(1, 8);
+            }
+
+            return new DecodedInstruction
+            {
+                Mnemonic = opcode is 0xA4 or 0xA5 ? Mnemonic.Shld : Mnemonic.Shrd,
+                Operand1 = shiftRm,
+                Operand2 = Operand.RegisterOperand(shiftReg, operandSize),
+                Operand3 = shiftCount,
+                Length = position,
+                OperandSize = operandSize,
+                AddressSize = addressSize,
+                Opcode = opcode,
+            };
+        }
+
         if (opcode is 0xBC or 0xBD)
         {
             if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int destinationReg, out Operand source))
@@ -705,6 +745,25 @@ public static class Decoder
                 atomicMnemonic,
                 destination,
                 Operand.RegisterOperand(sourceReg, size),
+                position,
+                operandSize,
+                addressSize,
+                opcode);
+        }
+
+        if (opcode is 0xC7)
+        {
+            if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int groupReg, out Operand groupRm)
+                || groupReg != 1
+                || groupRm.Kind != OperandKind.Memory)
+            {
+                return Unsupported(position, opcode, operandSize, addressSize);
+            }
+
+            return Make(
+                Mnemonic.Cmpxchg8b,
+                groupRm,
+                Operand.None,
                 position,
                 operandSize,
                 addressSize,
@@ -1659,6 +1718,11 @@ public static class Decoder
         if (!TryParseModRm(code, ref position, memorySize, addressSize, segmentOverride, out _, out Operand memory))
         {
             return Unsupported(position, opcode, operandSize, addressSize);
+        }
+
+        if (opcode is 0xD8 or 0xDC)
+        {
+            return Make(mnemonic, Operand.RegisterOperand(0, 80), memory, position, operandSize, addressSize, opcode);
         }
 
         return Make(mnemonic, memory, Operand.None, position, operandSize, addressSize, opcode);

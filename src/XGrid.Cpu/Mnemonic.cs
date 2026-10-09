@@ -407,4 +407,19 @@ public enum Mnemonic
 
     /// <summary>Bit test and complement.</summary>
     Btc = 308,
+
+    /// <summary>Convert byte to word / word to doubleword (sign extension).</summary>
+    Cbw = 311,
+
+    /// <summary>Convert word to doubleword / doubleword to quadword (sign extension).</summary>
+    Cdq = 312,
+
+    /// <summary>Double-precision shift left.</summary>
+    Shld = 313,
+
+    /// <summary>Double-precision shift right.</summary>
+    Shrd = 314,
+
+    /// <summary>Compare and exchange 8 bytes.</summary>
+    Cmpxchg8b = 315,
 }

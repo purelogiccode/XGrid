@@ -117,4 +117,52 @@ public sealed class DecoderTier45Tests
 
         Assert.Equal(Mnemonic.Sgdt, instruction.Mnemonic);
     }
+
+    [Fact]
+    public void Shld_Immediate_DecodesOperands()
+    {
+        DecodedInstruction instruction = Decode(0x0F, 0xA4, 0xD8, 0x04);
+
+        Assert.Equal(Mnemonic.Shld, instruction.Mnemonic);
+        Assert.Equal(0, instruction.Operand1.RegisterIndex);
+        Assert.Equal(32, instruction.Operand1.Size);
+        Assert.Equal(3, instruction.Operand2.RegisterIndex);
+        Assert.Equal(OperandKind.Immediate, instruction.Operand3.Kind);
+        Assert.Equal(4u, instruction.Operand3.Immediate);
+        Assert.Equal(4, instruction.Length);
+    }
+
+    [Fact]
+    public void Shld_ClCount_DecodesRegisterCount()
+    {
+        DecodedInstruction instruction = Decode(0x0F, 0xA5, 0xD8);
+
+        Assert.Equal(Mnemonic.Shld, instruction.Mnemonic);
+        Assert.Equal(OperandKind.Register, instruction.Operand3.Kind);
+        Assert.Equal(1, instruction.Operand3.RegisterIndex);
+        Assert.Equal(3, instruction.Length);
+    }
+
+    [Fact]
+    public void Shrd_Immediate_DecodesOperands()
+    {
+        DecodedInstruction instruction = Decode(0x0F, 0xAC, 0xD8, 0x0D);
+
+        Assert.Equal(Mnemonic.Shrd, instruction.Mnemonic);
+        Assert.Equal(0, instruction.Operand1.RegisterIndex);
+        Assert.Equal(3, instruction.Operand2.RegisterIndex);
+        Assert.Equal(13u, instruction.Operand3.Immediate);
+        Assert.Equal(4, instruction.Length);
+    }
+
+    [Fact]
+    public void Shrd_WordForm_UsesSixteenBitOperand()
+    {
+        DecodedInstruction instruction = Decode(0x66, 0x0F, 0xAD, 0xD8);
+
+        Assert.Equal(Mnemonic.Shrd, instruction.Mnemonic);
+        Assert.Equal(16, instruction.Operand1.Size);
+        Assert.Equal(16, instruction.Operand2.Size);
+        Assert.Equal(4, instruction.Length);
+    }
 }

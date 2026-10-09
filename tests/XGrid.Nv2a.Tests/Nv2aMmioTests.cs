@@ -30,7 +30,29 @@ public sealed class Nv2aMmioTests
 
         Assert.Equal(64u * 1024 * 1024, nv2a.Read(Base + 0x10020Cu, 4));
         Assert.Equal(0x03070103u, nv2a.Read(Base + 0x100200u, 4));
-        Assert.Equal(0u, nv2a.Read(Base + 0x10030Cu, 4));
+        Assert.Equal(0u, nv2a.Read(Base + 0x100410u, 4));
+    }
+
+    [Fact]
+    public void Pfb_WriteBufferFlushNeverPends()
+    {
+        var nv2a = new Nv2aMmio();
+
+        nv2a.Write(Base + 0x100410u, 4, 0x00000001u);
+
+        Assert.Equal(0u, nv2a.Read(Base + 0x100410u, 4));
+    }
+
+    [Fact]
+    public void UserDmaPut_MirrorsCache1Put()
+    {
+        var nv2a = new Nv2aMmio();
+
+        nv2a.Write(Base + 0x2504u, 4, 1u);
+        nv2a.Write(Base + 0x3204u, 4, 0x100u);
+        nv2a.Write(Base + 0x3240u, 4, 0x03EDD000u);
+
+        Assert.Equal(0x03EDD000u, nv2a.Read(Base + 0x800040u, 4));
     }
 
     [Fact]
@@ -157,5 +179,29 @@ public sealed class Nv2aMmioTests
         Assert.Equal(0x00011C01u, nv2a.Read(Base + 0x680500u, 4));
         Assert.Equal(0u, nv2a.Read(Base + 0x600800u, 4));
         Assert.Equal(0x10u, nv2a.Read(Base + 0x003214u, 4));
+    }
+
+    [Fact]
+    public void Prmcio_RetraceBitTogglesEachStatusRead()
+    {
+        var nv2a = new Nv2aMmio();
+
+        uint first = nv2a.Read(Base + 0x6013DAu, 1);
+        uint second = nv2a.Read(Base + 0x6013DAu, 1);
+        uint third = nv2a.Read(Base + 0x6013DAu, 1);
+
+        Assert.Equal(0x09u, first);
+        Assert.Equal(0u, second);
+        Assert.Equal(0x09u, third);
+    }
+
+    [Fact]
+    public void Prmcio_OtherRegistersRoundTrip()
+    {
+        var nv2a = new Nv2aMmio();
+
+        nv2a.Write(Base + 0x6013C0u, 4, 0x12345678u);
+
+        Assert.Equal(0x12345678u, nv2a.Read(Base + 0x6013C0u, 4));
     }
 }

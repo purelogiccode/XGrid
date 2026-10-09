@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -9,11 +10,12 @@ namespace XGrid.Nv2a;
 /// NV2A GPU control register window: 16 MB at 0xFD000000 (BAR0).
 /// Block map and reset defaults follow xemu <c>hw/xbox/nv2a/</c> (blocktable in
 /// <c>nv2a.c</c>, per-block read/write in <c>pmc.c</c>/<c>pbus.c</c>/<c>pfb.c</c>/
-/// <c>pcrtc.c</c>/<c>pramdac.c</c>/<c>ptimer.c</c>/<c>user.c</c>, zero-read stubs in
-/// <c>stubs.c</c>); PFB CFG0 reset default 0x03070103 is the 64 MB hardware value
-/// recorded in the Xermu notes. PFIFO/PGRAPH command execution and interrupt
-/// assertion through the PIC are deferred: pending/enabled state is tracked but
-/// no IRQ is raised yet.
+/// <c>pcrtc.c</c>/<c>pramdac.c</c>/<c>ptimer.c</c>/<c>user.c</c>, pushbuffer parsing in
+/// <c>pfifo.c</c>, DMA object layout in <c>nv2a.c</c>); PFB CFG0 reset default 0x03070103
+/// is the 64 MB hardware value recorded in the Xermu notes. The PFIFO pusher runs
+/// synchronously on submission (no thread) and dispatches PGRAPH methods to a
+/// recording sink; rendering and interrupt assertion through the PIC are deferred:
+/// pending/enabled state is tracked but no IRQ is raised yet.
 /// </summary>
 public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 {
@@ -60,6 +62,91 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private const uint PfifoCache1DmaGet = 0x1244u;
     private const uint PfifoCache1Ref = 0x1248u;
 
+    private const uint PfifoIntr0 = 0x100u;
+    private const uint PfifoIntrEn0 = 0x140u;
+    private const uint PfifoRamht = 0x210u;
+    private const uint PfifoRunoutStatus = 0x400u;
+    private const uint PfifoCache1Push0 = 0x1200u;
+    private const uint PfifoCache1DmaPush = 0x1220u;
+    private const uint PfifoCache1DmaState = 0x1228u;
+    private const uint PfifoCache1DmaInstance = 0x122Cu;
+    private const uint PfifoCache1DmaSubroutine = 0x124Cu;
+    private const uint PfifoCache1Pull0 = 0x1250u;
+    private const uint PfifoCache1Pull1 = 0x1254u;
+    private const uint PfifoCache1Engine = 0x1280u;
+    private const uint PfifoCache1DmaDcount = 0x12A0u;
+    private const uint PfifoCache1GetJmpShadow = 0x12A4u;
+    private const uint PfifoCache1RsvdShadow = 0x12A8u;
+    private const uint PfifoCache1DataShadow = 0x12ACu;
+
+    private const uint Push0Access = 1u << 0;
+    private const uint Push1ChidMask = 0x1Fu;
+    private const uint Push1ModeDma = 0x100u;
+    private const uint DmaPushAccess = 1u << 0;
+    private const uint DmaPushSuspended = 1u << 12;
+    private const uint DmaStateMethodType = 1u;
+    private const uint DmaStateMethod = 0x1FFCu;
+    private const uint DmaStateSubchannel = 0xE000u;
+    private const uint DmaStateMethodCount = 0x1FFC0000u;
+    private const uint DmaStateError = 0xE0000000u;
+    private const uint DmaErrorNone = 0u;
+    private const uint DmaErrorCall = 1u;
+    private const uint DmaErrorReturn = 3u;
+    private const uint DmaErrorReservedCommand = 4u;
+    private const uint DmaErrorProtection = 6u;
+    private const uint SubroutineActive = 1u;
+    private const uint Pull0Access = 1u << 0;
+    private const uint Pull1EngineMask = 0x3u;
+    private const uint MethodType = 1u;
+    private const uint MethodAddress = 0x1FFCu;
+    private const uint MethodSubchannel = 0xE000u;
+    private const uint ObjectParamLow = 0x180u;
+    private const uint ObjectParamHigh = 0x200u;
+    private const uint EngineGraphics = 1u;
+    private const uint RamhtBaseMask = 0x1F0u;
+    private const uint RamhtSizeMask = 0x30000u;
+    private const uint RamhtInstanceMask = 0xFFFFu;
+    private const uint RamhtEngineMask = 0x30000u;
+    private const uint RamhtEngineGraphics = 0x10000u;
+    private const uint RamhtChidMask = 0x1F000000u;
+    private const uint RamhtValid = 0x80000000u;
+    private const uint DmaInstanceAddressMask = 0xFFFFu;
+    private const uint DmaAddressMask = 0xFFFFF000u;
+    private const uint DmaAdjustMask = 0xFFF00000u;
+    private const uint GpuAddressMask = 0x07FFFFFFu;
+    private const uint PgraphFifo = 0x720u;
+    private const uint PgraphFifoAccess = 1u << 0;
+    private const uint PgraphContextSwitch = 1u << 12;
+    private const uint PcrtcVblank = 1u << 0;
+    private const ulong VsyncTicksPerFrame = CoreClockHz / 60;
+
+    private const uint MethodSurfaceClipH = 0x200u;
+    private const uint MethodSurfaceClipV = 0x204u;
+    private const uint MethodSurfaceFormat = 0x208u;
+    private const uint MethodSurfacePitch = 0x20Cu;
+    private const uint MethodSurfaceColorOffset = 0x210u;
+    private const uint MethodSurfaceZetaOffset = 0x214u;
+    private const uint MethodFlipRead = 0x120u;
+    private const uint MethodFlipWrite = 0x124u;
+    private const uint MethodFlipModulo = 0x128u;
+    private const uint MethodZetaClearValue = 0x1D8Cu;
+    private const uint MethodColorClearValue = 0x1D90u;
+    private const uint MethodClearSurface = 0x1D94u;
+    private const uint MethodClearRectH = 0x1D98u;
+    private const uint MethodClearRectV = 0x1D9Cu;
+    private const uint MethodVertexFormatBase = 0x1760u;
+    private const uint MethodVertexFormatEnd = 0x179Cu;
+    private const uint MethodBeginEnd = 0x17FCu;
+    private const uint MethodInlineArray = 0x1818u;
+    private const uint BeginEndTriangles = 5u;
+    private const uint BeginEndTriangleStrip = 6u;
+    private const uint BeginEndTriangleFan = 7u;
+    private const uint BeginEndQuads = 8u;
+    private const uint MaxInlineWords = 65536u; private const uint SurfaceTypePitch = 1u;
+    private const uint MaxClearPixels = 16u * 1024u * 1024u;
+
+    private const uint MaxPusherWords = 4000000u;
+
     private const uint PtimerIntr0 = 0x100u;
     private const uint PtimerIntrEn0 = 0x140u;
     private const uint PtimerNumerator = 0x200u;
@@ -70,7 +157,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private const uint PfbCfg0 = 0x200u;
     private const uint PfbCfg0Reset = 0x03070103u;
     private const uint PfbCstatus = 0x20Cu;
-    private const uint PfbWbc = 0x30Cu;
+    private const uint PfbWbc = 0x410u;
 
     private const uint PcrtcIntr0 = 0x100u;
     private const uint PcrtcIntrEn0 = 0x140u;
@@ -86,18 +173,27 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private const uint PramdacPllLocks = 0xD8000000u;
     private const uint PramdacGeneralControl = 0x600u;
 
+    private const uint PrmcioBase = 0x601000u;
+    private const uint PrmcioStatus1 = 0x3DAu;
+    private const uint VgaRetraceBits = 0x09u;
     private const uint UserDmaPut = 0x40u;
     private const uint UserDmaGet = 0x44u;
     private const uint UserRef = 0x48u;
 
     private readonly string _name;
+    private readonly IGpuMemory? _memory;
+    private readonly uint[] _boundEngine = new uint[8];
+    private readonly uint[] _boundInstance = new uint[8];
     private readonly uint[] _pfifo = new uint[PfifoSize / 4];
     private readonly uint[] _pvideo = new uint[0x1000 / 4];
     private readonly uint[] _pfb = new uint[0x1000 / 4];
     private readonly uint[] _pgraph = new uint[PgraphSize / 4];
     private readonly byte[] _ramin = new byte[PraminSize];
+    private readonly uint[] _prmcio = new uint[0x1000 / 4];
+    private bool _retrace;
     private readonly Dictionary<uint, int> _readCounts = new();
     private readonly Dictionary<uint, int> _writeCounts = new();
+    private readonly Dictionary<uint, int> _userReadOffsets = new();
 
     private uint _pmcEnabled;
     private uint _pmcPending;
@@ -119,13 +215,43 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private uint _pgraphEnabled;
     private uint _pfifoPending;
     private uint _pfifoEnabled;
+    private ulong _pusherWords;
+    private bool _pusherCapped;
+    private uint _pusherError;
+    private bool _irqAsserted;
+    private ulong _vsyncRemainder;
+    private uint _contextSwitches;
+    private uint _clearsExecuted;
+    private uint _surfaceFormat;
+    private uint _surfacePitch;
+    private uint _surfaceColorOffset;
+    private uint _surfaceZetaOffset;
+    private uint _surfaceClipH;
+    private uint _surfaceClipV;
+    private uint _zetaClearValue;
+    private uint _colorClearValue;
+    private uint _clearRectH;
+    private uint _clearRectV;
+    private uint _flipRead;
+    private uint _flipWrite;
+    private uint _flipModulo;
+    private readonly uint[] _vertexFormat = new uint[16];
+    private readonly List<uint> _inlineWords = new();
+    private uint _beginMode;
+    private ulong _drawsExecuted;
+    private ulong _drawnPixels;
+    private ulong _skippedDraws;
+    private readonly Dictionary<uint, int> _methodCounts = new();
+    private readonly Dictionary<uint, uint> _methodParams = new();
+    private readonly List<(uint Subchannel, uint Method, uint Parameter)> _methodStream = new();
 
     /// <summary>Creates the NV2A register window for the given RAM size in bytes.</summary>
-    public Nv2aMmio(uint ramSize = 64u * 1024 * 1024, string name = "NV2A")
+    public Nv2aMmio(uint ramSize = 64u * 1024 * 1024, string name = "NV2A", IGpuMemory? memory = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         RamSize = ramSize;
         _name = name;
+        _memory = memory;
         Reset();
     }
 
@@ -141,10 +267,88 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets write counts keyed by register-block base offset. Diagnostics.</summary>
     public IReadOnlyDictionary<uint, int> WriteCounts => _writeCounts;
 
+    /// <summary>Gets USER-area read counts keyed by suboffset. Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> UserReadCounts => _userReadOffsets;
+
+    /// <summary>Gets the number of pushbuffer words consumed by the PFIFO pusher. Diagnostics.</summary>
+    public ulong PusherWordsConsumed => _pusherWords;
+
+    /// <summary>Gets whether the pusher hit its per-kick word cap. Diagnostics.</summary>
+    public bool PusherCapped => _pusherCapped;
+
+    /// <summary>Gets the last pusher DMA error code (0 when none). Diagnostics.</summary>
+    public uint PusherError => _pusherError;
+
+    /// <summary>Gets the number of PGRAPH context switches observed. Diagnostics.</summary>
+    public uint ContextSwitches => _contextSwitches;
+
+    /// <summary>Gets PGRAPH method counts keyed by subchannel and method. Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> MethodCounts => _methodCounts;
+
+    /// <summary>Gets the last parameter per PGRAPH method key. Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, uint> MethodParams => _methodParams;
+
+    /// <summary>Gets the ordered PGRAPH method stream (capped). Diagnostics.</summary>
+    public IReadOnlyList<(uint Subchannel, uint Method, uint Parameter)> MethodStream => _methodStream;
+
+    /// <summary>Gets the number of executed surface clears. Diagnostics.</summary>
+    public uint ClearsExecuted => _clearsExecuted;
+
+    /// <summary>Gets the number of executed draws. Diagnostics.</summary>
+    public ulong DrawsExecuted => _drawsExecuted;
+
+    /// <summary>Gets the number of pixels written by draws. Diagnostics.</summary>
+    public ulong DrawnPixels => _drawnPixels;
+
+    /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
+    public ulong SkippedDraws => _skippedDraws;
+
+    /// <summary>Gets the current color surface offset in guest memory. Diagnostics.</summary>
+    public uint PresentedColorOffset => _surfaceColorOffset;
+
+    /// <summary>Gets the current color surface pitch in bytes. Diagnostics.</summary>
+    public uint PresentedColorPitch => _surfacePitch & 0xFFFFu;
+
+    /// <summary>Gets the current surface width in pixels. Diagnostics.</summary>
+    public uint PresentedWidth => _surfaceClipH >> 16;
+
+    /// <summary>Gets the current surface height in pixels. Diagnostics.</summary>
+    public uint PresentedHeight => _surfaceClipV >> 16;
+
+    /// <summary>Raised when the PCI interrupt line changes state (true asserted).</summary>
+    public event Action<bool>? InterruptChanged;
+
+    /// <summary>Gets whether the PCI interrupt line is currently asserted. Diagnostics.</summary>
+    public bool InterruptAsserted => _irqAsserted;
+
+    /// <summary>Gets the current color format code. Diagnostics.</summary>
+    public uint PresentedColorFormat => _surfaceFormat & 0xFu;
+    /// <summary>Gets the current color surface bytes per pixel (0 for unknown formats). Diagnostics.</summary>
+    public uint PresentedColorBpp => ColorBytesPerPixel(_surfaceFormat & 0xFu);
+
     /// <summary>Advances the PTIMER free-running counter by the given core-clock ticks.</summary>
     public void Advance(ulong coreTicks)
     {
         _ptimerClock += coreTicks;
+        _vsyncRemainder += coreTicks;
+        while (_vsyncRemainder >= VsyncTicksPerFrame)
+        {
+            _vsyncRemainder -= VsyncTicksPerFrame;
+            _pcrtcPending |= PcrtcVblank;
+            _pcrtcRaster = 0;
+            UpdateIrq();
+        }
+    }
+
+    private void UpdateIrq()
+    {
+        uint pending = AggregatePending();
+        bool asserted = (pending & _pmcEnabled) != 0;
+        if (asserted != _irqAsserted)
+        {
+            _irqAsserted = asserted;
+            InterruptChanged?.Invoke(asserted);
+        }
     }
 
     /// <inheritdoc />
@@ -174,6 +378,39 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         _pgraphEnabled = 0;
         _pfifoPending = 0;
         _pfifoEnabled = 0;
+        _pusherWords = 0;
+        _pusherCapped = false;
+        _pusherError = 0;
+        _irqAsserted = false;
+        _vsyncRemainder = 0;
+        _contextSwitches = 0;
+        _clearsExecuted = 0;
+        _surfaceFormat = 0;
+        _surfacePitch = 0;
+        _surfaceColorOffset = 0;
+        _surfaceZetaOffset = 0;
+        _surfaceClipH = 0;
+        _surfaceClipV = 0;
+        _zetaClearValue = 0;
+        _colorClearValue = 0;
+        _clearRectH = 0;
+        _clearRectV = 0;
+        _flipRead = 0;
+        _flipWrite = 0;
+        _flipModulo = 0;
+        Array.Clear(_vertexFormat);
+        _inlineWords.Clear();
+        _beginMode = 0;
+        _drawsExecuted = 0;
+        _drawnPixels = 0;
+        _skippedDraws = 0;
+        _methodCounts.Clear();
+        _methodParams.Clear();
+        _methodStream.Clear();
+        Array.Clear(_boundEngine);
+        Array.Clear(_boundInstance);
+        Array.Clear(_prmcio);
+        _retrace = false;
         _pfifo[PfifoCache1Status / 4] = PfifoCache1StatusLowMark;
         _pfb[PfbCfg0 / 4] = PfbCfg0Reset;
     }
@@ -219,6 +456,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         if (offset >= UserBase && offset < UserBase + UserSize)
         {
             CountRead(UserBase);
+            _userReadOffsets.TryGetValue(offset - UserBase, out int userCount);
+            _userReadOffsets[offset - UserBase] = userCount + 1;
             return ReadUser(offset - UserBase);
         }
 
@@ -237,7 +476,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         if (offset >= PfifoBase && offset < PfifoBase + PfifoSize)
         {
             CountRead(PfifoBase);
-            return _pfifo[(offset - PfifoBase) / 4];
+            return ReadPfifo(offset - PfifoBase);
         }
 
         if (offset >= PvideoBase && offset < PvideoBase + 0x1000u)
@@ -268,6 +507,12 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         {
             CountRead(PcrtcBase);
             return ReadPcrtc(offset - PcrtcBase);
+        }
+
+        if (offset >= PrmcioBase && offset < PrmcioBase + 0x1000u)
+        {
+            CountRead(PrmcioBase);
+            return ReadPrmcio(offset - PrmcioBase);
         }
 
         if (offset >= PramdacBase && offset < PramdacBase + 0x1000u)
@@ -312,7 +557,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         if (offset >= PfifoBase && offset < PfifoBase + PfifoSize)
         {
             CountWrite(PfifoBase);
-            _pfifo[(offset - PfifoBase) / 4] = value;
+            WritePfifo(offset - PfifoBase, value);
             return;
         }
 
@@ -348,6 +593,13 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         {
             CountWrite(PcrtcBase);
             WritePcrtc(offset - PcrtcBase, value);
+            return;
+        }
+
+        if (offset >= PrmcioBase && offset < PrmcioBase + 0x1000u)
+        {
+            CountWrite(PrmcioBase);
+            _prmcio[(offset - PrmcioBase) / 4] = value;
             return;
         }
 
@@ -388,6 +640,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             default:
                 break;
         }
+
+        UpdateIrq();
     }
 
     private uint AggregatePending()
@@ -478,6 +732,36 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         };
     }
 
+    private uint ReadPfifo(uint register)
+    {
+        return register switch
+        {
+            PfifoIntr0 => _pfifoPending,
+            PfifoIntrEn0 => _pfifoEnabled,
+            PfifoRunoutStatus => PfifoCache1StatusLowMark,
+            _ => _pfifo[register / 4],
+        };
+    }
+
+    private void WritePfifo(uint register, uint value)
+    {
+        switch (register)
+        {
+            case PfifoIntr0:
+                _pfifoPending &= ~value;
+                break;
+            case PfifoIntrEn0:
+                _pfifoEnabled = value;
+                break;
+            default:
+                _pfifo[register / 4] = value;
+                break;
+        }
+
+        UpdateIrq();
+        RunPusher();
+    }
+
     private uint ReadPgraph(uint register)
     {
         return register switch
@@ -498,10 +782,16 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             case 0x140u:
                 _pgraphEnabled = value;
                 break;
+            case PgraphFifo:
+                _pgraph[register / 4] = value;
+                RunPusher();
+                break;
             default:
                 _pgraph[register / 4] = value;
                 break;
         }
+
+        UpdateIrq();
     }
 
     private uint ReadPcrtc(uint register)
@@ -514,6 +804,18 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             PcrtcRaster => _pcrtcRaster++,
             _ => 0u,
         };
+    }
+
+    private uint ReadPrmcio(uint register)
+    {
+        if (register == (PrmcioStatus1 & ~3u))
+        {
+            _retrace = !_retrace;
+            uint stored = _prmcio[register / 4] & ~0xFF0000u;
+            return stored | ((_retrace ? VgaRetraceBits : 0u) << 16);
+        }
+
+        return _prmcio[register / 4];
     }
 
     private void WritePcrtc(uint register, uint value)
@@ -532,6 +834,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             default:
                 break;
         }
+
+        UpdateIrq();
     }
 
     private uint ReadPramdac(uint register)
@@ -623,8 +927,10 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
                 _pfifo[PfifoCache1Ref / 4] = value;
                 break;
             default:
-                break;
+                return;
         }
+
+        RunPusher();
     }
 
     private bool TryGetDmaChannel(uint offset, out uint channel)
@@ -636,6 +942,726 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         }
 
         return channel == (_pfifo[PfifoCache1Push1 / 4] & 0x1Fu);
+    }
+
+    private uint RaminWord(uint offset)
+    {
+        return (uint)(_ramin[offset] | (_ramin[offset + 1] << 8) | (_ramin[offset + 2] << 16) | (_ramin[offset + 3] << 24));
+    }
+
+    private void SuspendPusher(uint error)
+    {
+        _pusherError = error;
+        uint state = _pfifo[PfifoCache1DmaState / 4];
+        _pfifo[PfifoCache1DmaState / 4] = (state & ~DmaStateError) | ((error << 29) & DmaStateError);
+        _pfifo[PfifoCache1DmaPush / 4] |= DmaPushSuspended;
+    }
+
+    private bool TryRamhtLookup(uint handle, uint channel, out uint instance, out uint engine)
+    {
+        instance = 0;
+        engine = 0;
+        uint ramht = _pfifo[PfifoRamht / 4];
+        uint size = 1u << (int)(((ramht & RamhtSizeMask) >> 16) + 12);
+        int bits = BitOperations.TrailingZeroCount(size) - 1;
+        uint folded = 0;
+        uint remaining = handle;
+        uint mask = (1u << bits) - 1u;
+        while (remaining != 0)
+        {
+            folded ^= remaining & mask;
+            remaining >>= bits;
+        }
+
+        uint hash = folded ^ (channel << (bits - 4));
+        uint offset = ((ramht & RamhtBaseMask) << 8) + hash * 8;
+        if (offset + 8 > PraminSize)
+        {
+            return false;
+        }
+
+        if (RaminWord(offset) != handle || (RaminWord(offset + 4) & RamhtValid) == 0)
+        {
+            return false;
+        }
+
+        uint context = RaminWord(offset + 4);
+        instance = (context & RamhtInstanceMask) << 4;
+        engine = (context & RamhtEngineMask) >> 16;
+        return true;
+    }
+
+    private void RunPusher()
+    {
+        if (_memory is null)
+        {
+            return;
+        }
+
+        if ((_pfifo[PfifoCache1Push0 / 4] & Push0Access) == 0)
+        {
+            return;
+        }
+
+        uint push1 = _pfifo[PfifoCache1Push1 / 4];
+        uint channel = push1 & Push1ChidMask;
+        if (((_pfifo[PfifoMode / 4] >> (int)channel) & 1u) == 0)
+        {
+            return;
+        }
+
+        if ((push1 & Push1ModeDma) == 0)
+        {
+            return;
+        }
+
+        uint dmaPush = _pfifo[PfifoCache1DmaPush / 4];
+        if ((dmaPush & DmaPushAccess) == 0 || (dmaPush & DmaPushSuspended) != 0)
+        {
+            return;
+        }
+
+        if ((_pfifo[PfifoCache1DmaState / 4] & DmaStateError) != DmaErrorNone)
+        {
+            return;
+        }
+
+        uint instance = (_pfifo[PfifoCache1DmaInstance / 4] & DmaInstanceAddressMask) << 4;
+        if (instance + 12 > PraminSize)
+        {
+            SuspendPusher(DmaErrorProtection);
+            return;
+        }
+
+        uint dmaFlags = RaminWord(instance);
+        uint dmaLimit = RaminWord(instance + 4);
+        uint dmaFrame = RaminWord(instance + 8);
+        uint dmaBase = ((dmaFrame & DmaAddressMask) | (dmaFlags & DmaAdjustMask)) & GpuAddressMask;
+
+        uint get = _pfifo[PfifoCache1DmaGet / 4];
+        uint put = _pfifo[PfifoCache1DmaPut / 4];
+        uint words = 0;
+        while (true)
+        {
+            if ((_pgraph[PgraphFifo / 4] & PgraphFifoAccess) == 0)
+            {
+                break;
+            }
+
+            if (get == put)
+            {
+                break;
+            }
+
+            if (get >= dmaLimit)
+            {
+                SuspendPusher(DmaErrorProtection);
+                break;
+            }
+
+            if (++words > MaxPusherWords)
+            {
+                _pusherCapped = true;
+                break;
+            }
+
+            uint word = _memory.ReadPhysical(dmaBase + get);
+            get += 4;
+
+            uint state = _pfifo[PfifoCache1DmaState / 4];
+            uint count = (state & DmaStateMethodCount) >> 18;
+            if (count != 0)
+            {
+                _pfifo[PfifoCache1DataShadow / 4] = word;
+                _pfifo[PfifoCache1Status / 4] &= ~PfifoCache1StatusLowMark;
+                int processed = RunPuller(
+                    channel,
+                    state & DmaStateMethod,
+                    (state & DmaStateSubchannel) >> 13,
+                    (state & DmaStateMethodType) == 0,
+                    word);
+                if (processed < 0)
+                {
+                    break;
+                }
+
+                uint consumed = (uint)processed;
+                if (consumed > 0)
+                {
+                    if ((state & DmaStateMethodType) == 0)
+                    {
+                        uint advanced = ((state & DmaStateMethod) + 4 * consumed) & DmaStateMethod;
+                        _pfifo[PfifoCache1DmaState / 4] =
+                            (_pfifo[PfifoCache1DmaState / 4] & ~DmaStateMethod) | advanced;
+                    }
+
+                    uint remaining = count - Math.Min(count, consumed);
+                    _pfifo[PfifoCache1DmaState / 4] =
+                        (_pfifo[PfifoCache1DmaState / 4] & ~DmaStateMethodCount) |
+                        ((remaining << 18) & DmaStateMethodCount);
+                    _pfifo[PfifoCache1DmaDcount / 4] += consumed;
+                    get += (consumed - 1) * 4;
+                    _pfifo[PfifoCache1Status / 4] |= PfifoCache1StatusLowMark;
+                }
+            }
+            else
+            {
+                _pfifo[PfifoCache1RsvdShadow / 4] = word;
+                if ((word & 0xE0000003u) == 0x20000000u)
+                {
+                    _pfifo[PfifoCache1GetJmpShadow / 4] = get;
+                    get = word & 0x1FFFFFFFu;
+                }
+                else if ((word & 3u) == 1u)
+                {
+                    _pfifo[PfifoCache1GetJmpShadow / 4] = get;
+                    get = word & 0xFFFFFFFCu;
+                }
+                else if ((word & 3u) == 2u)
+                {
+                    uint subroutine = _pfifo[PfifoCache1DmaSubroutine / 4];
+                    if ((subroutine & SubroutineActive) != 0)
+                    {
+                        SuspendPusher(DmaErrorCall);
+                    }
+                    else
+                    {
+                        _pfifo[PfifoCache1DmaSubroutine / 4] = get | SubroutineActive;
+                        get = word & 0xFFFFFFFCu;
+                    }
+                }
+                else if (word == 0x00020000u)
+                {
+                    uint subroutine = _pfifo[PfifoCache1DmaSubroutine / 4];
+                    if ((subroutine & SubroutineActive) == 0)
+                    {
+                        SuspendPusher(DmaErrorReturn);
+                    }
+                    else
+                    {
+                        get = subroutine & 0xFFFFFFFCu;
+                        _pfifo[PfifoCache1DmaSubroutine / 4] &= ~SubroutineActive;
+                    }
+                }
+                else if ((word & 0xE0030003u) == 0u)
+                {
+                    SetDmaMethod(word, increment: true);
+                    _pfifo[PfifoCache1DmaDcount / 4] = 0;
+                }
+                else if ((word & 0xE0030003u) == 0x40000000u)
+                {
+                    SetDmaMethod(word, increment: false);
+                    _pfifo[PfifoCache1DmaDcount / 4] = 0;
+                }
+                else
+                {
+                    SuspendPusher(DmaErrorReservedCommand);
+                }
+            }
+
+            _pfifo[PfifoCache1DmaGet / 4] = get;
+            if ((_pfifo[PfifoCache1DmaState / 4] & DmaStateError) != DmaErrorNone)
+            {
+                break;
+            }
+        }
+
+        _pusherWords += words;
+    }
+
+    private void SetDmaMethod(uint word, bool increment)
+    {
+        uint state = _pfifo[PfifoCache1DmaState / 4];
+        state = (state & ~DmaStateMethod) | (word & DmaStateMethod);
+        state = (state & ~DmaStateSubchannel) | (word & DmaStateSubchannel);
+        state = (state & ~DmaStateMethodCount) | (word & DmaStateMethodCount);
+        if (increment)
+        {
+            state &= ~DmaStateMethodType;
+        }
+        else
+        {
+            state |= DmaStateMethodType;
+        }
+
+        _pfifo[PfifoCache1DmaState / 4] = state;
+    }
+
+    private int RunPuller(uint channel, uint method, uint subchannel, bool increment, uint parameter)
+    {
+        if (((_pfifo[PfifoCache1Pull0 / 4] & Pull0Access) == 0) ||
+            ((_pfifo[PfifoCache1Status / 4] & PfifoCache1StatusLowMark) != 0))
+        {
+            return -1;
+        }
+
+        if (subchannel >= 8)
+        {
+            SuspendPusher(DmaErrorProtection);
+            return -1;
+        }
+
+        uint engine;
+        if (method == 0)
+        {
+            if (!TryRamhtLookup(parameter, channel, out uint instance, out engine))
+            {
+                SuspendPusher(DmaErrorProtection);
+                return -1;
+            }
+
+            if (engine != EngineGraphics)
+            {
+                _boundEngine[subchannel] = engine;
+                return 1;
+            }
+
+            if (_boundEngine[subchannel] != engine)
+            {
+                _boundEngine[subchannel] = engine;
+                _contextSwitches++;
+                _pgraphPending |= PgraphContextSwitch;
+                UpdateIrq();
+            }
+
+            _boundInstance[subchannel] = instance;
+
+            RecordMethod(subchannel, method, parameter);
+            return 1;
+        }
+
+        if (method >= ObjectParamLow && method < ObjectParamHigh)
+        {
+            if (!TryRamhtLookup(parameter, channel, out uint instance, out _))
+            {
+                SuspendPusher(DmaErrorProtection);
+                return -1;
+            }
+
+            RecordMethod(subchannel, method, parameter);
+            return 1;
+        }
+
+        if (method >= 0x100u)
+        {
+            RecordMethod(subchannel, method, parameter);
+            return 1;
+        }
+
+        SuspendPusher(DmaErrorReservedCommand);
+        return -1;
+    }
+
+    private void RecordMethod(uint subchannel, uint method, uint parameter)
+    {
+        uint key = (subchannel << 16) | method;
+        _methodCounts.TryGetValue(key, out int count);
+        _methodCounts[key] = count + 1;
+        _methodParams[key] = parameter;
+        if (_methodStream.Count < 262144)
+        {
+            _methodStream.Add((subchannel, method, parameter));
+        }
+
+        switch (method)
+        {
+            case MethodSurfaceClipH:
+                _surfaceClipH = parameter;
+                break;
+            case MethodSurfaceClipV:
+                _surfaceClipV = parameter;
+                break;
+            case MethodSurfaceFormat:
+                _surfaceFormat = parameter;
+                break;
+            case MethodSurfacePitch:
+                _surfacePitch = parameter;
+                break;
+            case MethodSurfaceColorOffset:
+                _surfaceColorOffset = parameter;
+                break;
+            case MethodSurfaceZetaOffset:
+                _surfaceZetaOffset = parameter;
+                break;
+            case MethodZetaClearValue:
+                _zetaClearValue = parameter;
+                break;
+            case MethodColorClearValue:
+                _colorClearValue = parameter;
+                break;
+            case MethodClearRectH:
+                _clearRectH = parameter;
+                break;
+            case MethodClearRectV:
+                _clearRectV = parameter;
+                break;
+            case MethodFlipRead:
+                _flipRead = parameter;
+                break;
+            case MethodFlipWrite:
+                _flipWrite = parameter;
+                break;
+            case MethodFlipModulo:
+                _flipModulo = parameter;
+                break;
+            case MethodClearSurface:
+                ExecuteClear(parameter);
+                break;
+            case MethodBeginEnd:
+                if (parameter == 0)
+                {
+                    FlushInlineDraw();
+                }
+                else
+                {
+                    _beginMode = parameter;
+                }
+
+                break;
+            case MethodInlineArray:
+                if (_inlineWords.Count < MaxInlineWords)
+                {
+                    _inlineWords.Add(parameter);
+                }
+
+                break;
+            default:
+                break;
+        }
+
+        if (method >= MethodVertexFormatBase && method <= MethodVertexFormatEnd &&
+            ((method - MethodVertexFormatBase) & 3u) == 0)
+        {
+            _vertexFormat[(method - MethodVertexFormatBase) / 4] = parameter;
+        }
+    }
+
+    private void ExecuteClear(uint parameter)
+    {
+        _clearsExecuted++;
+        if (_memory is null)
+        {
+            return;
+        }
+
+        if ((_surfaceFormat & 0xF00u) >> 8 != SurfaceTypePitch)
+        {
+            return;
+        }
+
+        bool clearColor = (parameter & 0xF0u) != 0;
+        bool clearZeta = (parameter & 0x3u) != 0;
+        if (!clearColor && !clearZeta)
+        {
+            return;
+        }
+
+        uint width = _surfaceClipH >> 16;
+        uint height = _surfaceClipV >> 16;
+        if (width == 0 || height == 0)
+        {
+            return;
+        }
+
+        uint xmin = _clearRectH & 0xFFFu;
+        uint xmax = (_clearRectH >> 16) & 0xFFFu;
+        uint ymin = _clearRectV & 0xFFFu;
+        uint ymax = (_clearRectV >> 16) & 0xFFFu;
+        if (xmax < xmin || ymax < ymin)
+        {
+            return;
+        }
+
+        uint x1 = Math.Min(xmax, width - 1);
+        uint y1 = Math.Min(ymax, height - 1);
+        if ((ulong)(x1 - xmin + 1) * (y1 - ymin + 1) > MaxClearPixels)
+        {
+            return;
+        }
+
+        if (clearColor)
+        {
+            uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+            if (bytes != 0)
+            {
+                uint pitch = _surfacePitch & 0xFFFFu;
+                uint pixel = _colorClearValue & (bytes == 4 ? 0xFFFFFFFFu : bytes == 2 ? 0xFFFFu : 0xFFu);
+                FillSurface(_surfaceColorOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+            }
+        }
+
+        if (clearZeta)
+        {
+            uint zetaFormat = (_surfaceFormat >> 4) & 0xFu;
+            uint bytes = zetaFormat == 1u ? 2u : zetaFormat == 2u ? 4u : 0u;
+            if (bytes != 0)
+            {
+                uint pitch = (_surfacePitch >> 16) & 0xFFFFu;
+                uint pixel = _zetaClearValue & (bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu);
+                FillSurface(_surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+            }
+        }
+    }
+
+    private void FillSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax, uint pixel)
+    {
+        if (_memory is null || pitch == 0)
+        {
+            return;
+        }
+
+        for (uint y = ymin; y <= ymax; y++)
+        {
+            uint row = offset + y * pitch;
+            for (uint x = xmin; x <= xmax; x++)
+            {
+                uint address = row + x * bytes;
+                if (address + bytes > RamSize)
+                {
+                    return;
+                }
+
+                if (bytes == 4)
+                {
+                    _memory.WritePhysical(address, pixel);
+                }
+                else
+                {
+                    uint current = _memory.ReadPhysical(address & ~3u);
+                    uint shift = (address & 3u) * 8;
+                    uint mask = bytes == 2 ? 0xFFFFu << (int)shift : 0xFFu << (int)shift;
+                    _memory.WritePhysical(address & ~3u, (current & ~mask) | ((pixel << (int)shift) & mask));
+                }
+            }
+        }
+    }
+
+    private static uint ColorBytesPerPixel(uint format)
+    {
+        return format switch
+        {
+            0x09u => 1u,
+            0x0Au => 2u,
+            0x01u or 0x02u or 0x03u => 2u,
+            0x04u or 0x05u or 0x06u or 0x07u or 0x08u => 4u,
+            _ => 0u,
+        };
+    }
+
+    private void WritePixel(uint address, uint bytes, uint pixel)
+    {
+        if (_memory is null || address + bytes > RamSize)
+        {
+            return;
+        }
+
+        if (bytes == 4)
+        {
+            _memory.WritePhysical(address, pixel);
+            return;
+        }
+
+        uint aligned = address & ~3u;
+        uint shift = (address & 3u) * 8;
+        uint current = _memory.ReadPhysical(aligned);
+        uint mask = bytes == 2 ? 0xFFFFu << (int)shift : 0xFFu << (int)shift;
+        _memory.WritePhysical(aligned, (current & ~mask) | ((pixel << (int)shift) & mask));
+    }
+
+    private void FlushInlineDraw()
+    {
+        try
+        {
+            if (_beginMode != BeginEndTriangles && _beginMode != BeginEndTriangleStrip &&
+                _beginMode != BeginEndTriangleFan && _beginMode != BeginEndQuads)
+            {
+                _skippedDraws++;
+                return;
+            }
+
+            uint[] offsets = new uint[16];
+            int positionSlot = -1;
+            int colorSlot = -1;
+            uint cursor = 0;
+            for (int slot = 0; slot < 16; slot++)
+            {
+                uint format = _vertexFormat[slot];
+                if (((format >> 4) & 0xFu) == 0)
+                {
+                    continue;
+                }
+
+                if ((format & 0xFu) != 2u)
+                {
+                    _skippedDraws++;
+                    return;
+                }
+
+                offsets[slot] = cursor / 4;
+                cursor += 4u * ((format >> 4) & 0xFu);
+                if (positionSlot < 0)
+                {
+                    positionSlot = slot;
+                }
+                else if (colorSlot < 0)
+                {
+                    colorSlot = slot;
+                }
+            }
+
+            if (positionSlot < 0 || colorSlot < 0 || cursor == 0 ||
+                _inlineWords.Count % (cursor / 4) != 0)
+            {
+                _skippedDraws++;
+                return;
+            }
+
+            uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+            uint pitch = _surfacePitch & 0xFFFFu;
+            if (bytes != 4 && bytes != 2)
+            {
+                _skippedDraws++;
+                return;
+            }
+
+            uint clipX = _surfaceClipH & 0xFFFFu;
+            uint clipY = _surfaceClipV & 0xFFFFu;
+            uint clipW = _surfaceClipH >> 16;
+            uint clipH = _surfaceClipV >> 16;
+            if (clipW == 0 || clipH == 0 || pitch == 0)
+            {
+                _skippedDraws++;
+                return;
+            }
+
+            uint vertexWords = cursor / 4;
+            int vertexCount = _inlineWords.Count / (int)vertexWords;
+            uint colorCount = (_vertexFormat[colorSlot] >> 4) & 0xFu;
+            _drawsExecuted++;
+            switch (_beginMode)
+            {
+                case BeginEndTriangles:
+                    for (int first = 0; first + 2 < vertexCount; first += 3)
+                    {
+                        RasterizeTriangle(first, first + 1, first + 2);
+                    }
+
+                    break;
+                case BeginEndTriangleStrip:
+                    for (int first = 0; first + 2 < vertexCount; first++)
+                    {
+                        RasterizeTriangle(first, first + 1, first + 2);
+                    }
+
+                    break;
+                case BeginEndTriangleFan:
+                    for (int first = 1; first + 1 < vertexCount; first++)
+                    {
+                        RasterizeTriangle(0, first, first + 1);
+                    }
+
+                    break;
+                default:
+                    for (int first = 0; first + 3 < vertexCount; first += 4)
+                    {
+                        RasterizeTriangle(first, first + 1, first + 2);
+                        RasterizeTriangle(first, first + 2, first + 3);
+                    }
+
+                    break;
+            }
+
+            void RasterizeTriangle(int a, int b, int c)
+            {
+                float ax = InlineFloat(a, (int)offsets[positionSlot]);
+                float ay = InlineFloat(a, (int)offsets[positionSlot] + 1);
+                float bx = InlineFloat(b, (int)offsets[positionSlot]);
+                float by = InlineFloat(b, (int)offsets[positionSlot] + 1);
+                float cx = InlineFloat(c, (int)offsets[positionSlot]);
+                float cy = InlineFloat(c, (int)offsets[positionSlot] + 1);
+                float ar = InlineColor(a, 0);
+                float ag = InlineColor(a, 1);
+                float ab = InlineColor(a, 2);
+                float aa = colorCount >= 4 ? InlineColor(a, 3) : 1f;
+                float br = InlineColor(b, 0);
+                float bg = InlineColor(b, 1);
+                float bb = InlineColor(b, 2);
+                float ba = colorCount >= 4 ? InlineColor(b, 3) : 1f;
+                float cr = InlineColor(c, 0);
+                float cg = InlineColor(c, 1);
+                float cb = InlineColor(c, 2);
+                float ca = colorCount >= 4 ? InlineColor(c, 3) : 1f;
+
+                float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
+                if (area == 0f)
+                {
+                    return;
+                }
+
+                uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
+                uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
+                uint y0 = (uint)Math.Max(0f, Math.Min(Math.Min(ay, by), cy));
+                uint y1 = (uint)Math.Min((float)clipY + clipH - 1, Math.Max(Math.Max(ay, by), cy));
+                if (x1 < x0 || y1 < y0)
+                {
+                    return;
+                }
+
+                float invArea = 1f / area;
+                for (uint y = y0; y <= y1; y++)
+                {
+                    for (uint x = x0; x <= x1; x++)
+                    {
+                        float px = x + 0.5f;
+                        float py = y + 0.5f;
+                        float w0 = (((bx - ax) * (py - ay)) - ((by - ay) * (px - ax))) * invArea;
+                        float w1 = (((cx - bx) * (py - by)) - ((cy - by) * (px - bx))) * invArea;
+                        float w2 = 1f - w0 - w1;
+                        bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
+                            (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                        if (!inside)
+                        {
+                            continue;
+                        }
+
+                        float r = (w1 * ar) + (w2 * br) + (w0 * cr);
+                        float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
+                        float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
+                        float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
+                        uint pixel = bytes == 4
+                            ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
+                                ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
+                                ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
+                                (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
+                            : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
+                                ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
+                                (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
+                        WritePixel(_surfaceColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
+                        _drawnPixels++;
+                    }
+                }
+            }
+
+            float InlineFloat(int vertex, int word)
+            {
+                return BitConverter.Int32BitsToSingle((int)_inlineWords[(vertex * (int)vertexWords) + word]);
+            }
+
+            float InlineColor(int vertex, int component)
+            {
+                uint baseWord = (uint)(vertex * (int)vertexWords) + offsets[colorSlot];
+                if (colorCount <= (uint)component)
+                {
+                    return component == 3 ? 1f : 0f;
+                }
+
+                return Math.Clamp(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component]), 0f, 1f);
+            }
+        }
+        finally
+        {
+            _inlineWords.Clear();
+        }
     }
 
     private void CountRead(uint block)

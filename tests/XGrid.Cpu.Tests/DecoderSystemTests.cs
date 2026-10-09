@@ -123,6 +123,34 @@ public sealed class DecoderSystemTests
     }
 
     [Fact]
+    public void Cbw_Decodes()
+    {
+        DecodedInstruction instruction = Decode(0x98);
+
+        Assert.Equal(Mnemonic.Cbw, instruction.Mnemonic);
+        Assert.Equal(1, instruction.Length);
+    }
+
+    [Fact]
+    public void Cdq_Decodes()
+    {
+        DecodedInstruction instruction = Decode(0x99);
+
+        Assert.Equal(Mnemonic.Cdq, instruction.Mnemonic);
+        Assert.Equal(1, instruction.Length);
+    }
+
+    [Fact]
+    public void Cwd_DecodesWithOperandSizeOverride()
+    {
+        DecodedInstruction instruction = Decode(0x66, 0x99);
+
+        Assert.Equal(Mnemonic.Cdq, instruction.Mnemonic);
+        Assert.Equal(16, instruction.OperandSize);
+        Assert.Equal(2, instruction.Length);
+    }
+
+    [Fact]
     public void Ltr_Decodes()
     {
         DecodedInstruction instruction = Decode(0x0F, 0x00, 0xD8);

@@ -219,6 +219,47 @@ public sealed class FpuTests
     }
 
     [Fact]
+    public void Fdiv_MemoryDividesSt0()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xDB, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD8, 0x35, 0x00, 0x21, 0x00, 0x00);
+        cpu.Ram().Write32(Data, 10);
+        cpu.Ram().Write32(Data2, BitConverter.SingleToUInt32Bits(4f));
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(2.5, St(cpu, 0));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(4f), cpu.Ram().Read32(Data2));
+    }
+
+    [Fact]
+    public void Fadd_MemoryAddsToSt0()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xDB, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD8, 0x05, 0x00, 0x21, 0x00, 0x00);
+        cpu.Ram().Write32(Data, 10);
+        cpu.Ram().Write32(Data2, BitConverter.SingleToUInt32Bits(4f));
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(14.0, St(cpu, 0));
+    }
+
+    [Fact]
+    public void Fcom_MemoryComparesSt0()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xDB, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD8, 0x15, 0x00, 0x21, 0x00, 0x00);
+        cpu.Ram().Write32(Data, 10);
+        cpu.Ram().Write32(Data2, BitConverter.SingleToUInt32Bits(10f));
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) == 0);
+    }
+
+    [Fact]
     public void Fiadd_AddsIntegerMemory()
     {
         XboxCpu cpu = CpuHarness.Create(0xDB, 0x05, 0x00, 0x20, 0x00, 0x00, 0xDA, 0x05, 0x04, 0x20, 0x00, 0x00);

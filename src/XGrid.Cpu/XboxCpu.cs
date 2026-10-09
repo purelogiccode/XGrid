@@ -41,11 +41,23 @@ public sealed class XboxCpu
     /// <summary>Gets the paging unit.</summary>
     public Mmu Mmu => _mmu;
 
+    /// <summary>Gets the vector of the most recent guest fault delivered to the IDT (0 if none).</summary>
+    public int LastFaultVector { get; private set; }
+
+    /// <summary>Gets the EIP of the most recent guest fault delivered to the IDT (0 if none).</summary>
+    public uint LastFaultEip { get; private set; }
+
+    /// <summary>Gets the error code of the most recent guest fault (0 if none or not applicable).</summary>
+    public uint LastFaultErrorCode { get; private set; }
+
     /// <summary>Returns the CPU to its power-on state.</summary>
     public void Reset()
     {
         Context.Reset();
         _mmu.Flush();
+        LastFaultVector = 0;
+        LastFaultEip = 0;
+        LastFaultErrorCode = 0;
     }
 
     /// <summary>Fetches, decodes, and executes one instruction.</summary>
@@ -79,6 +91,9 @@ public sealed class XboxCpu
 
             if (!instruction.IsValid)
             {
+                LastFaultVector = 6;
+                LastFaultEip = Context.Eip;
+                LastFaultErrorCode = 0;
                 if (!TryTransferToInterrupt(6, Context.Eip, false, 0))
                 {
                     throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode);
@@ -92,6 +107,9 @@ public sealed class XboxCpu
         catch (PageFaultSignal fault)
         {
             Context.Cr2 = fault.LinearAddress;
+            LastFaultVector = 14;
+            LastFaultEip = Context.Eip;
+            LastFaultErrorCode = fault.ErrorCode;
             if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
             {
                 throw new UnhandledGuestException(14, Context.Eip);
@@ -368,6 +386,11 @@ public sealed class XboxCpu
                 ExecuteShift(instruction);
                 break;
 
+            case Mnemonic.Shld:
+            case Mnemonic.Shrd:
+                ExecuteDoubleShift(instruction);
+                break;
+
             case Mnemonic.Mul:
             case Mnemonic.Imul:
             case Mnemonic.Div:
@@ -492,6 +515,38 @@ public sealed class XboxCpu
                     break;
                 }
 
+            case Mnemonic.Cbw:
+                {
+                    if (instruction.OperandSize == 16)
+                    {
+                        sbyte value = (sbyte)Context.ReadRegister8(0);
+                        Context.WriteRegister16(Gpr.Eax, (ushort)value);
+                    }
+                    else
+                    {
+                        short value = (short)Context.ReadRegister16(Gpr.Eax);
+                        Context.WriteRegister(Gpr.Eax, (uint)value);
+                    }
+
+                    break;
+                }
+
+            case Mnemonic.Cdq:
+                {
+                    if (instruction.OperandSize == 16)
+                    {
+                        short value = (short)Context.ReadRegister16(Gpr.Eax);
+                        Context.WriteRegister16(Gpr.Edx, value < 0 ? (ushort)0xFFFF : (ushort)0);
+                    }
+                    else
+                    {
+                        int value = (int)Context.ReadRegister(Gpr.Eax);
+                        Context.WriteRegister(Gpr.Edx, value < 0 ? 0xFFFFFFFFu : 0u);
+                    }
+
+                    break;
+                }
+
             case Mnemonic.Sldt:
                 WriteOperand(instruction.Operand1, Context.Ldtr);
                 break;
@@ -604,6 +659,10 @@ public sealed class XboxCpu
 
             case Mnemonic.Cmpxchg:
                 ExecuteCmpxchg(instruction);
+                break;
+
+            case Mnemonic.Cmpxchg8b:
+                ExecuteCmpxchg8b(instruction);
                 break;
 
             case Mnemonic.Bsf:
@@ -1012,6 +1071,24 @@ public sealed class XboxCpu
                 flags = ShiftOps.Rcr(value, count, size, Context.Eflags, out result);
                 break;
         }
+
+        Context.Eflags = flags;
+        WriteOperand(instruction.Operand1, result);
+    }
+
+    private void ExecuteDoubleShift(in DecodedInstruction instruction)
+    {
+        uint destination = ReadOperand(instruction.Operand1);
+        uint source = ReadOperand(instruction.Operand2);
+        int count = instruction.Operand3.Kind == OperandKind.Register
+            ? Context.ReadRegister8(1)
+            : (int)instruction.Operand3.Immediate;
+        int size = instruction.Operand1.Size;
+
+        uint result;
+        uint flags = instruction.Mnemonic == Mnemonic.Shld
+            ? ShiftOps.Shld(destination, source, count, size, Context.Eflags, out result)
+            : ShiftOps.Shrd(destination, source, count, size, Context.Eflags, out result);
 
         Context.Eflags = flags;
         WriteOperand(instruction.Operand1, result);
@@ -2020,6 +2097,25 @@ public sealed class XboxCpu
         else
         {
             WriteAccumulator(size, destination);
+        }
+    }
+
+    private void ExecuteCmpxchg8b(in DecodedInstruction instruction)
+    {
+        uint address = ComputeAddress(instruction.Operand1.Memory);
+        uint low = ReadMemory(address, 32);
+        uint high = ReadMemory(address + 4, 32);
+        if (low == Context.ReadRegister(Gpr.Eax) && high == Context.ReadRegister(Gpr.Edx))
+        {
+            WriteMemory(address, 32, Context.ReadRegister(Gpr.Ebx));
+            WriteMemory(address + 4, 32, Context.ReadRegister(Gpr.Ecx));
+            Context.Eflags |= FlagBits.ZF;
+        }
+        else
+        {
+            Context.WriteRegister(Gpr.Eax, low);
+            Context.WriteRegister(Gpr.Edx, high);
+            Context.Eflags &= ~FlagBits.ZF;
         }
     }
 
