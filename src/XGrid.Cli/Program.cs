@@ -52,6 +52,8 @@ internal static class Program
         uint? breakAddress = null;
         uint ramMb = 64;
         List<(uint Address, int Length, bool Virtual)> dumps = new();
+        string? fbPath = null;
+        string? pgraphPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -111,6 +113,12 @@ internal static class Program
                     }
                 case "--ram":
                     ramMb = uint.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--fb":
+                    fbPath = NextValue(args, ref i);
+                    break;
+                case "--pgraph":
+                    pgraphPath = NextValue(args, ref i);
                     break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
@@ -235,6 +243,23 @@ internal static class Program
             }
 
             PrintState(machine, executed, dumps);
+            if (fbPath is not null)
+            {
+                DumpFramebuffer(machine, fbPath);
+            }
+
+            if (pgraphPath is not null)
+            {
+                var lines = new System.Text.StringBuilder();
+                foreach ((uint subchannel, uint method, uint parameter) in machine.Nv2a.MethodStream)
+                {
+                    lines.Append(subchannel).Append(' ').Append(method.ToString("X4")).Append(' ').AppendLine(parameter.ToString("X8"));
+                }
+
+                File.WriteAllText(pgraphPath, lines.ToString());
+                Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2a.MethodStream.Count}");
+            }
+
             foreach (string pattern in scans)
             {
                 ScanRam(machine, pattern);
@@ -279,6 +304,32 @@ internal static class Program
             Console.Error.WriteLine($"Cannot read firmware: {exception.Message}");
             return 4;
         }
+    }
+
+    private static void DumpFramebuffer(XboxMachine machine, string path)
+    {
+        uint address = machine.Nv2a.PresentedColorOffset;
+        uint pitch = machine.Nv2a.PresentedColorPitch;
+        uint width = machine.Nv2a.PresentedWidth;
+        uint height = machine.Nv2a.PresentedHeight;
+        uint bpp = machine.Nv2a.PresentedColorBpp;
+        uint ramSize = (uint)machine.Ram.Size;
+        if (width == 0 || width > 4096 || height == 0 || height > 4096 ||
+            (bpp != 1 && bpp != 2 && bpp != 4) || pitch < width * bpp ||
+            address + (height - 1) * pitch + width * bpp > ramSize)
+        {
+            Console.WriteLine($"FB skipped: addr=0x{address:X8} {width}x{height} bpp={bpp} pitch={pitch}");
+            return;
+        }
+
+        byte[] raw = new byte[width * height * bpp];
+        for (uint y = 0; y < height; y++)
+        {
+            machine.Ram.GetSpan(address + y * pitch, (int)(width * bpp)).CopyTo(new Span<byte>(raw, (int)(y * width * bpp), (int)(width * bpp)));
+        }
+
+        File.WriteAllBytes(path, raw);
+        Console.WriteLine($"FB {path} {width}x{height} bpp={bpp} pitch={pitch} addr=0x{address:X8}");
     }
 
     private static DecodedInstruction Trace(XboxMachine machine, bool print, bool traceRegs)
@@ -328,6 +379,7 @@ internal static class Program
         XboxContext context = machine.Cpu.Context;
         Console.WriteLine($"Executed {executed} instruction(s)");
         Console.WriteLine($"EIP=0x{context.Eip:X8} Halted={context.Halted} CR0=0x{context.Cr0:X8} EFLAGS=0x{context.Eflags:X8}");
+        Console.WriteLine($"LastFault vec={machine.Cpu.LastFaultVector} EIP=0x{machine.Cpu.LastFaultEip:X8} err=0x{machine.Cpu.LastFaultErrorCode:X8} CR2=0x{context.Cr2:X8}");
         Console.WriteLine($"EAX=0x{context.Eax:X8} EBX=0x{context.Ebx:X8} ECX=0x{context.Ecx:X8} EDX=0x{context.Edx:X8}");
         Console.WriteLine($"ESI=0x{context.Esi:X8} EDI=0x{context.Edi:X8} EBP=0x{context.Ebp:X8} ESP=0x{context.Esp:X8}");
         Console.WriteLine($"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
@@ -430,6 +482,42 @@ internal static class Program
         }
 
         Console.WriteLine($"NV2A regs:{nv2aLog}");
+        var userLog = new System.Text.StringBuilder();
+        foreach (var entry in machine.Nv2a.UserReadCounts)
+        {
+            userLog.Append($" R{entry.Key:X6}={entry.Value}");
+        }
+
+        Console.WriteLine($"NV2A user:{userLog}");
+        Console.WriteLine(
+            $"NV2A pusher words={machine.Nv2a.PusherWordsConsumed} capped={machine.Nv2a.PusherCapped} ctxsw={machine.Nv2a.ContextSwitches} irq={machine.Nv2a.InterruptAsserted} draws={machine.Nv2a.DrawsExecuted} skipped={machine.Nv2a.SkippedDraws} px={machine.Nv2a.DrawnPixels}");
+        var methodLog = new System.Text.StringBuilder();
+        foreach (var entry in machine.Nv2a.MethodCounts)
+        {
+            methodLog.Append($" {entry.Key:X8}={entry.Value}");
+        }
+
+        Console.WriteLine($"NV2A methods:{methodLog}");
+        var paramLog = new System.Text.StringBuilder();
+        foreach (var entry in machine.Nv2a.MethodParams)
+        {
+            if ((entry.Key & 0xFFFFu) is 0x200u or 0x204u or 0x208u or 0x20Cu or 0x210u or 0x214u or 0x180u or 0x0u)
+            {
+                paramLog.Append($" {entry.Key:X8}={entry.Value:X8}");
+            }
+        }
+
+        Console.WriteLine($"NV2A surface:{paramLog}");
+        var clearLog = new System.Text.StringBuilder();
+        foreach (var entry in machine.Nv2a.MethodParams)
+        {
+            if ((entry.Key & 0xFFFFu) is 0x1D8Cu or 0x1D90u or 0x1D94u or 0x1D98u or 0x1D9Cu or 0x120u or 0x124u or 0x128u)
+            {
+                clearLog.Append($" {entry.Key:X8}={entry.Value:X8}");
+            }
+        }
+
+        Console.WriteLine($"NV2A clearflip:{clearLog}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {

@@ -30,7 +30,8 @@ public sealed class XboxMachine
         Ide = new IdeController();
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
-        Nv2a = new Nv2aMmio(ramSize);
+        Nv2a = new Nv2aMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory));
+        Nv2a.InterruptChanged += OnNv2aInterrupt;
         Memory.AddRegion(
             "NV2A",
             XboxAddressMap.Nv2aBase,
@@ -189,6 +190,38 @@ public sealed class XboxMachine
         if (_overlay is not null)
         {
             _overlay.Enabled = false;
+        }
+    }
+
+    private void OnNv2aInterrupt(bool asserted)
+    {
+        if (asserted)
+        {
+            Bus.Nv2aPci.RaiseInterrupt();
+        }
+        else
+        {
+            Bus.Nv2aPci.LowerInterrupt();
+        }
+    }
+
+    private sealed class PhysicalGpuMemory : IGpuMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public PhysicalGpuMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public uint ReadPhysical(uint address)
+        {
+            return _memory.Read32(address);
+        }
+
+        public void WritePhysical(uint address, uint value)
+        {
+            _memory.Write32(address, value);
         }
     }
 

@@ -610,4 +610,198 @@ defaults already match xemu here (`SmcDevice`: version `P01`, AV `HDTV`, scratch
   were verified structurally sound from the trace. Next: break at digest-fn
   `0x8002F6xx` entry (args identify message/key), or per-round trace-vs-model
   comparison of the first `0x800320B0`-family compression to find the first
-  diverging instruction.
+   diverging instruction.
+
+## 22. SHA1 compression verified bit-exact; xemu stalls identically (2026-10-09)
+
+- Digest-framework map (all from `--break`+`--trace` runs, same firmware set):
+  `0x8002F741`/`0x8002F6E2`/`0x8002F70D` = per-message digest call sites;
+  `0x80031490` = SHA1-final (pad+length, len at `[ESI+0x30]`);
+  `0x80031370` = SHA1-update buffering (`REP MOVSD/MOVSB`, calls compression when a
+  64 B block fills); `0x800320B0` = dword byte-reverse copy helper
+  (`dst[i]=rev32(src[i])`, NOT a compression — corrects note 21);
+  `0x80031550` = single-block SHA1 compression (BSWAP `W[0..15]` load,
+  standard `W[16..79]` expansion `ROL1(w[i-3]^w[i-8]^w[i-14]^w[i-16])`,
+  80 rounds from `0x800315BD`, feedforward adds standard IVs).
+- Decisive trace-vs-model: first `0x80031550` call hashes the HMAC inner-pad
+  block (`1C0D9B1A 87A279A5 9CFBFB48 3CF4D86C` + `0x36`*48) from standard IVs;
+  guest output `72127625 336472B9 BE609BEA F55E226B 99958DAC` EQUALS an
+  independent C# reference SHA1 compression bit-exact. The interpreter runs
+  SHA1-family code (ROL/ADD/XOR/AND/OR/NOT/BSWAP) flawlessly — no CPU bug here.
+- Differential vs xemu CORRECTION (same session): the first headless sample
+  (EIP `0x80014F2D`, frozen) was misread as a shared stall. `info blockstats`
+  proves xemu passes the gate: `ide0-hd0 rd_bytes=847872` in 27 ops (FATX +
+  dashboard XBE loaded), then EIP parks at `0x800426D4` = dashboard idle, zero
+  further reads. The user is right: this exact triple boots the custom
+  dashboard on xemu. XGrid's gate mismatch is a REAL divergence — forensics
+  REOPENED (the "faithful stall" conclusion above is retracted). `ide0-cd1`
+  shows 3 probe reads (54 B): the kernel also probes the DVD (ATAPI work will
+  matter for the game path).
+
+## 23. Gate passes; dashboard driver runs; parked at PFIFO (2026-10-09)
+
+Supersedes the §22 "stop forensics" decision: xemu blockstats + gdbstub proved the
+gate SHOULD pass (xemu reads 847 KB off disk, idles at `0x800426D4`), so forensics
+reopened and the divergence was hunted to its root causes. Fixes this session
+(all reference-first against xemu, all with regression tests):
+
+- SMBus word-read (THE gate bug): `IoSpace.Read16` dispatches one
+  `device.Read(offset, 16)`; our `Amd756Smbus` returned only `_data0`. xemu's
+  `amd_smbus.c` exposes byte-only handlers, so QEMU splits word INs into two
+  byte reads. The kernel driver reads EEPROM words with 16-bit INs (proven: port
+  histogram shows `C006` reads but never `C007`), got `0x00A8` instead of `0xC4A8`
+  (proven by xemu gdbstub register compare at filler `0x800134A9`), built a
+  decimated WCHAR EEPROM table at `0x8003AEE8` (xemu: raw bytes, proven by `xp`),
+  and failed the HMAC gate. Fix: compose consecutive byte registers for
+  multi-byte accesses (matches HW bus + QEMU). Gate `REPE CMPSD` at `0x800551B6`
+  now falls through to the match path.
+- Missing instructions found by the new `XboxCpu.LastFaultVector/Eip/ErrorCode`
+  + `CR2` diagnostics (printed by CLI; each was a kernel `BugCheck 0x1E`):
+  CBW/CWDE/CWD/CDQ (`0x98/0x99`; CDQ faulted at `0x80024975` doing 64-bit disk
+  math), SHLD/SHRD (`0F A4/A5/AC/AD`; SHRD faulted at `0x8001CD24`; result model
+  follows QEMU `gen_shiftd_rm_T1` incl. 16-bit Intel doubling), CMPXCHG8B
+  (`0F C7 /1`, faulted at `0x80012C9A` in a CAS retry loop), and the FPU ST(0)
+  operand bug (D8/DC memory arithmetic decoded `(mem, None)`; `ReadFpuReal(None)`
+  read linear 0, so `FDIV [0x80066760]` faulted with CR2=0 — fixed decode to
+  `(ST(0), mem)`; DA/DE integer forms were already correct).
+- PFB WBC offset: polled register is `NV_PFB_WBC = 0x100410` (xemu `nv2a_regs.h`),
+  not `0x30C`; our stored-regs model kept the driver's flush request bit set
+  forever (`TEST [FD000000+0x100410],1` spin, 39.8M reads). Fix: WBC reads 0.
+- Status at 200M instructions: no faults, no halt, timer IRQs flowing (390),
+  IDE IDENTIFY + 153 accesses done, SMC fan/LED writes done, NV2A driver active.
+  Main thread parked in a countdown-retry loop at `0x800422B4` (`DEC EAX /
+  MOV [ESP],EAX / JNZ`) while PFIFO USER-area reads grow (`R800000` 49K at 120M
+  to 99K at 200M, `W800000=1`): the driver submits pushbuffer work and waits for
+  completion that needs real PFIFO execution (registers-only today). Next:
+  Phase 11 PFIFO (CACHE1 parse, DMA push, method dispatch per xemu `pfifo.c`).
+
+## 24. PFIFO pusher runs; driver passes the GPU wait (2026-10-09)
+
+Reference facts (xemu `hw/xbox/nv2a/`, no code copied): PFIFO pusher gates
+(PUSH0_ACCESS, per-channel DMA MODE, PUSH1 DMA mode, DMA_PUSH ACCESS/not
+suspended, DMA_STATE error NONE, `PGRAPH_FIFO_ACCESS`), DMA loop over
+GET→PUT with old-jump/jump/call/return/increasing/non-increasing parsing,
+puller (`PULL0_ACCESS`, LOW_MARK clear) dispatching method 0 (RAMHT bind),
+`0x180-0x200` (RAMHT object substitution) and `>= 0x100` (engine methods) to
+`pgraph_method`, RAMHT hash (folded handle XOR channel, 8-byte entries in
+RAMIN), DMA objects (`flags/limit/frame` in PRAMIN, address =
+`(frame & 0xFFFFF000) | (flags & 0xFFF00000)`, masked to 27 bits into VRAM),
+USER PUT/GET/REF mirrors of CACHE1 regs per DMA channel, INTR_0 W1C /
+INTR_EN_0 / RUNOUT_STATUS LOW_MARK, kick on PFIFO/USER/PGRAPH_FIFO writes.
+
+- Observed on XGrid (120M boot, MMIO dumps): channel 0 DMA, PUSH/PULL access
+  set, DMA_INSTANCE `0x111C` (object: class 2 FROM_MEMORY, limit `0x03FFAFFF`,
+  base 0), PUT `0x03EDD000`, GET 0; pushbuffer word 0 is `JMP PUT` (idle ring).
+  Driver polls USER DMA_GET (`R000044`, was 49K).
+- Observed on xemu (method + reg traces, same boot): same DMA setup, 657
+  handled PGRAPH methods + 13 unhandled (NV097 state: object/context-DMA
+  binds, transform constants, texgen, eye position...), PUT/GET chase with
+  `USER 0x40/0x44` traffic, PGRAPH `0x720` toggled 0/1 per submission.
+- Implemented (`src/XGrid.Nv2a`, `IGpuMemory` fed by `XboxMachine` over
+  `AddressSpace`, synchronous on kick for determinism): gate checks, DMA loop
+  with jump/call/return/inc/non-inc, RAMHT lookup, puller with LOW_MARK
+  clear/set, GET writeback per word, DCOUNT, ERROR+suspend (no xemu-style
+  asserts), 4M-word cap with `PusherCapped` diagnostic, PGRAPH method sink
+  (bind/instance tracking, per-method counts; engine check logged not asserted),
+  PFIFO INTR W1C/EN/RUNOUT semantics, per-offset USER read counts. IRQ wiring
+  deferred (driver polls; pending/enabled tracked).
+- Result at 200M: USER GET polls collapsed 49K to 1, EIP moved `0x800422B4` →
+  `0x800308EC` (display init, `EAX=0xFD6013DA`), timer IRQs flowing (479), no
+  faults, no halt. 605 tests pass.
+- Detour logged: a `--dumpv FD080000` red herring (missing-zero address;
+  correct USER VA is `FD800000`) and unit-test hex-digit slips (`0x711C0` for
+  `0x7111C0`, `0x4720` for `0x400720`) — all caught by the new tests.
+
+## 25. Dashboard idle reached; VGA retrace unblocked it (2026-10-09)
+
+- After the pusher landed, the driver parked polling PRMCIO (`R601000` 104M
+  reads) at a `JZ` spin (`0x800308EC`) with `EAX=0xFD6013DA` (VGA Input
+  Status 1). Our block map had no PRMCIO (`0x601000` fell through to 0).
+  xemu's PRMCIO is QEMU VGA (`vga_ioport_read`); QEMU's dumb retrace returns
+  `st01 ^ (V_RETRACE | DISP_ENABLE)` per read (toggles `0x00/0x09`), which
+  terminates any set/clear spin within 2 reads.
+- Implemented PRMCIO block (stored regs + retrace toggle on the `0x3D8` word,
+  matching QEMU dumb behavior) with roundtrip/reset tests.
+- Result: boot runs 400M instructions fault-free. EIP `0x800426D4/DC` —
+  the SAME address xemu parks at with the dashboard up — same regs
+  (`EAX=2 EBX=0x8004AB88 ECX=3 EDX=0x83FDF000 ESI=6 EDI=9`), IF=1, timer IRQs
+  flowing (774), IDE quiet after 153 accesses. GET polls: 1. Pusher consumed
+  1221 words; ~355 method keys recorded in xemu-identical order (object/context
+  binds, semaphore, transform constants, texgen, eye position...). No new GPU
+  work 300M→400M (pusher words frozen) — xemu's 80 s trace likewise shows only
+  ~657 methods (on-demand UI, no continuous animation). The custom dashboard
+  is up and idling, waiting for input.
+- Next (M4): framebuffer extraction — read PGRAPH surface regs, dump the
+  surface from RAM, untile/swizzle-decode to PPM offline (Cxbx swizzle facts).
+
+## 26. Framebuffer path works; screen is black on both emulators (2026-10-09)
+
+- Surface methods (xemu `nv2a_regs.h` facts): FORMAT `0x208` (color/zeta/type/
+  AA/W/H), PITCH `0x20C`, COLOR/ZETA_OFFSET `0x210/0x214`, CLIP `0x200/0x204`;
+  CLEAR values `0x1D8C/0x1D90`, CLEAR_RECT `0x1D98/0x1D9C` (inclusive min/max,
+  12-bit fields), CLEAR_SURFACE `0x1D94` (bit0=Z, bit1=stencil, `0xF0`=RGBA),
+  FLIP_READ/WRITE/MODULO `0x120/0x124/0x128`. Z24S8 clear: stencil low byte,
+  depth upper 24 (pixel = value as-is); color clear = raw value (xemu: "works
+  like memset"). Observed boot values: format `0x128` (A8R8G8B8/PITCH/Z24S8),
+  pitch `0x14001400`, color `0x03C84000`, zeta `0x03A2C000`, clip 1280x480,
+  clears `0x3` (Z+stencil only) — color never cleared/drawn.
+- Implemented: surface/clear/flip state tracking in the sink, `CLEAR_SURFACE`
+  execution (pitch-linear fills with bounds caps; swizzle deferred), `IGpuMemory
+  .WritePhysical`, CLI `boot --fb <path>` dumping the presented surface as raw
+  bytes (bounds-checked). Tests drive clears through the pushbuffer, incl. an
+  unaligned 16-bit merge case.
+- Result: `fb0.raw` 1280x480 A8R8G8B8 decodes to pure black — and xemu's own
+  surface bytes at `0x03C84000` (`xp`) are zeros too. Pixel-faithful.
+- Driver then arms PGRAPH+PCRTC+PFIFO interrupts (`INTR_EN` all set) and idles
+  at `0x800426DC` with no MMIO polling — IRQ wait. xemu routes NV2A via AGP
+  bridge to PIRQC (`xbox_pci.c`: `case 30`), default PIRQ routing sends PIRQC
+  to PIC IRQ 3. Next: NV2A interrupt delivery (PMC aggregation → PIRQC → PIC →
+  CPU) with VSYNC/frame event sources.
+
+## 27. NV2A IRQs wired; dashboard idle is stable and black-faithful (2026-10-09)
+
+- Reference facts: `nv2a_update_irq` (PFIFO/PCRTC/PGRAPH pending&enabled →
+  PMC bits 8/24/12; line asserts iff PMC pending & enabled), VBLANK set by
+  display refresh (`nv2a_vga_gfx_update`, raster reset), PGRAPH CONTEXT_SWITCH
+  bit 12, PMC INTR_0 `0x100` / INTR_EN_0 `0x140`, UMA (`vram is ram`).
+- Implemented: `Nv2aMmio.InterruptChanged` + `UpdateIrq` on every INTR/INTR_EN
+  write, VBLANK heartbeat in `Advance` (60 Hz emulated, deterministic),
+  CONTEXT_SWITCH pending on bind change, PMC INTR W1C incl. subordinate
+  clear-down; `XboxBus.Nv2aPci` stub reference; `ResolveDeviceIrq` routes
+  `Nv2aGpu` via slot 30 → PIRQC → IRQ 3 (xemu `case 30` parity, honors driver
+  PIRQ reprogramming); `XboxMachine` subscribes line to stub raise/lower.
+  Tests: vsync assert/silent/clear, bind-raises-IRQ.
+- Boot truth at 400M: PMC INTR `0x01001000` (PGRAPH+PCRTC pending — vsync and
+  binds DO fire) but PMC INTR_EN `0x01` (subordinate bits NOT enabled by the
+  driver) → line correctly down (`irq=False`). No spurious IRQs; unit INTR_ENs
+  armed as on xemu. IRQ path proven by tests, dormant by driver choice.
+- Stability: 300M→700M identical idle (`0x800426D4/DC/DA`, same regs),
+  pusher words frozen at 1221 after the init burst (12 BEGIN_END draws flowed
+  300M→400M through the recording sink), interrupts PIT-only, screen black on
+  both emulators (xemu surface bytes also zero). Dashboard waits for input/time;
+  UI draws need PGRAPH rasterization (no pixels rasterized yet) and more
+  emulated time (~1 s emulated so far).
+- Next tracks: (1) PGRAPH draw execution — vertex fetch, shaders, raster,
+  textures → non-black pixels (M5–M8); (2) CPU speed (JIT, Track C) — the menu
+  likely appears after more emulated seconds than the interpreter can reach
+  interactively.
+
+## 28. First rendered frame: Gouraud triangle (M4, 2026-10-09)
+
+- The dashboard submits one TRIANGLES draw (BEGIN 5, 12 INLINE_ARRAY words,
+  END 0): slots 0+6 active (float2 each), 3 verts, into a 640x480 surface.
+  Decoded per xemu `bind_inline_array` packing (count-0 slots skipped,
+  4-byte-aligned).
+- Implemented a minimal software rasterizer: inline vertex assembly, TRIANGLES/
+  STRIP/FAN/QUADS, edge-function fill (double-sided v1 deviation), scissor to
+  clip rect, Gouraud RGB lerp, A8R8G8B8 + R5G6B5 writes with bounds guards;
+  no transforms/shaders/textures/zeta yet (documented). Position = first
+  active slot (x,y), color = second (rgb clamped, a defaults 1).
+- Result: 307,188 non-black pixels; the 640x480 extract shows a black→red→
+  green Gouraud triangle. Pushbuffer command-encoding lessons logged: INC vs
+  NON-INC is bit 30 (`0x40000000`), so BEGIN/END use `0x400417FC` (not
+  `0x40417FC`, which parses as INC count 257 and desyncs the stream); inline
+  data requires a NON-INC `0x1818` header command. Test scene renders through
+  the full path (CACHE1 → pusher → puller → raster → RAM → PPM).
+- Next: correct attribute roles/transforms (vertex shaders or fixed-function
+  matrices), textures, zeta, flip/display (M5–M8).

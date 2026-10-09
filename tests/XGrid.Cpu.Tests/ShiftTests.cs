@@ -155,4 +155,142 @@ public sealed class ShiftTests
         Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
         Assert.False((cpu.Context.Eflags & FlagBits.OF) != 0);
     }
+
+    [Fact]
+    public void Shrd_ByCl_ShiftsBootCase()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAD, 0xD8);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x007D2000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x12345678);
+        cpu.Context.WriteRegister(Gpr.Ecx, 0x0D);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0xB3C003E9u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+    }
+
+    [Fact]
+    public void Shrd_ByImmediate_ShiftsInSourceBits()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAC, 0xD8, 0x01);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x80000000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x00000001);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0xC0000000u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.OF) != 0);
+    }
+
+    [Fact]
+    public void Shrd_ByOne_SetsOverflowOnSignChange()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAC, 0xD8, 0x01);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x80000000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x00000000);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0x40000000u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+    }
+
+    [Fact]
+    public void Shrd_ByZero_LeavesValueAndFlags()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAC, 0xD8, 0x00);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x12345678);
+        cpu.Context.Eflags = FlagBits.CF;
+
+        cpu.Step();
+
+        Assert.Equal(0x12345678u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+    }
+
+    [Fact]
+    public void Shrd_CountIsMaskedToFiveBits()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAC, 0xD8, 0x21);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x80000000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x00000000);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0x40000000u, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Shrd_Word_ShiftsSixteenBits()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x0F, 0xAD, 0xD8);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x00008000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x00000001);
+        cpu.Context.WriteRegister(Gpr.Ecx, 0x00000001);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0x0000C000u, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Shrd_MemoryDestination_WritesBack()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAD, 0x1D, 0x00, 0x20, 0x00, 0x00);
+        cpu.Ram().Write32(0x2000, 0x007D2000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x12345678);
+        cpu.Context.WriteRegister(Gpr.Ecx, 0x0D);
+
+        cpu.Step();
+
+        Assert.Equal(0xB3C003E9u, cpu.Ram().Read32(0x2000));
+    }
+
+    [Fact]
+    public void Shld_ByImmediate_ShiftsInSourceBits()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xA4, 0xD8, 0x01);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x40000000);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x80000000);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0x80000001u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+    }
+
+    [Fact]
+    public void Shld_ByCl_ShiftsLeft()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xA5, 0xD8);
+        cpu.Context.WriteRegister(Gpr.Eax, 1);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0xFFFFFFFF);
+        cpu.Context.WriteRegister(Gpr.Ecx, 4);
+
+        cpu.Step();
+
+        Assert.Equal(0x1Fu, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Shld_WordAboveSixteen_UsesDoubling()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x0F, 0xA4, 0xD8, 0x14);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x00001234);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x0000ABCD);
+        cpu.Context.Eflags = 0;
+
+        cpu.Step();
+
+        Assert.Equal(0x0000BCD1u, cpu.Context.ReadRegister(Gpr.Eax));
+    }
 }

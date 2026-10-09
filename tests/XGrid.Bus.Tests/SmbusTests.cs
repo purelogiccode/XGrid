@@ -76,6 +76,34 @@ public sealed class SmbusTests
     }
 
     [Fact]
+    public void EepromWordDataRead_Read16ReturnsFullWord()
+    {
+        (Amd756Smbus smbus, IoSpace io, _) = Create();
+        byte[] image = new byte[256];
+        image[0x00] = 0xA8;
+        image[0x01] = 0xC4;
+        smbus.Attach(new Eeprom24c02(image));
+
+        io.Write8(Base + Amd756Smbus.HostAddress, 0xA9);
+        io.Write8(Base + Amd756Smbus.HostCommand, 0x00);
+        io.Write8(Base + Amd756Smbus.GlobalEnable, 0x0B);
+
+        Assert.Equal(0xC4A8, io.Read16(Base + Amd756Smbus.HostData));
+    }
+
+    [Fact]
+    public void WordDataWrite_SplitsAcrossBothBytes()
+    {
+        (_, IoSpace io, _) = Create();
+
+        io.Write16(Base + Amd756Smbus.HostData, 0x1234);
+
+        Assert.Equal(0x34, io.Read8(Base + Amd756Smbus.HostData));
+        Assert.Equal(0x12, io.Read8(Base + Amd756Smbus.HostDataHigh));
+        Assert.Equal(0x1234, io.Read16(Base + Amd756Smbus.HostData));
+    }
+
+    [Fact]
     public void EepromWriteReadRoundTrips()
     {
         (Amd756Smbus smbus, IoSpace io, _) = Create();

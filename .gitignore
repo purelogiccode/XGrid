@@ -30,7 +30,14 @@ References/
 *.xiso
 *.cso
 *.img
+*.qcow2
+*.qcow2c
 *.xbe
+*.exe
+*.log
 eeprom.bin
 bios.bin
 mcpx.bin
+
+# Local emulator runtime data (disk images, shader caches, configs) - never committed
+data/

@@ -261,4 +261,101 @@ public sealed class SystemInstructionTests
 
         Assert.Equal(0x18u, cpu.Context.ReadRegister(Gpr.Eax));
     }
+
+    [Fact]
+    public void Cbw_SignExtendsNegativeByte()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x98);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x12345680);
+        cpu.Context.Eflags |= FlagBits.CF;
+
+        cpu.Step();
+
+        Assert.Equal(0x1234FF80u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.Equal(FlagBits.CF, cpu.Context.Eflags & FlagBits.CF);
+    }
+
+    [Fact]
+    public void Cbw_ZeroExtendsPositiveByte()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x98);
+        cpu.Context.WriteRegister(Gpr.Eax, 0xABCD007F);
+
+        cpu.Step();
+
+        Assert.Equal(0xABCD007Fu, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Cwde_SignExtendsNegativeWord()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x98);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x12348000);
+
+        cpu.Step();
+
+        Assert.Equal(0xFFFF8000u, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Cwde_ZeroExtendsPositiveWord()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x98);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x12347FFF);
+
+        cpu.Step();
+
+        Assert.Equal(0x00007FFFu, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void Cdq_SignExtendsNegativeEax()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x99);
+        cpu.Context.WriteRegister(Gpr.Eax, 0xFF676980);
+        cpu.Context.WriteRegister(Gpr.Edx, 0x12345678);
+        cpu.Context.Eflags |= FlagBits.ZF;
+
+        cpu.Step();
+
+        Assert.Equal(0xFF676980u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.Equal(0xFFFFFFFFu, cpu.Context.ReadRegister(Gpr.Edx));
+        Assert.Equal(FlagBits.ZF, cpu.Context.Eflags & FlagBits.ZF);
+    }
+
+    [Fact]
+    public void Cdq_ZeroExtendsPositiveEax()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x99);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x12345678);
+        cpu.Context.WriteRegister(Gpr.Edx, 0xFFFFFFFF);
+
+        cpu.Step();
+
+        Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Edx));
+    }
+
+    [Fact]
+    public void Cwd_SignExtendsNegativeAx()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x99);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x00008000);
+        cpu.Context.WriteRegister(Gpr.Edx, 0xABCD1234);
+
+        cpu.Step();
+
+        Assert.Equal(0xABCDFFFFu, cpu.Context.ReadRegister(Gpr.Edx));
+    }
+
+    [Fact]
+    public void Cwd_ZeroExtendsPositiveAx()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x66, 0x99);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x00007FFF);
+        cpu.Context.WriteRegister(Gpr.Edx, 0xABCD1234);
+
+        cpu.Step();
+
+        Assert.Equal(0xABCD0000u, cpu.Context.ReadRegister(Gpr.Edx));
+    }
 }

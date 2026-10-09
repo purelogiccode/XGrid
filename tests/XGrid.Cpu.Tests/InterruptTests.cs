@@ -150,4 +150,17 @@ public sealed class InterruptTests
         Assert.False((cpu.Context.Eflags & FlagBits.IF) != 0);
         Assert.False((cpu.Context.Eflags & FlagBits.TF) != 0);
     }
+
+    [Fact]
+    public void InvalidOpcode_RecordsLastFault()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xD6);
+        InstallIdt(cpu, 6, HandlerAddress);
+
+        cpu.Step();
+
+        Assert.Equal(6, cpu.LastFaultVector);
+        Assert.Equal(CpuHarness.CodeAddress, cpu.LastFaultEip);
+        Assert.Equal(HandlerAddress, cpu.Context.Eip);
+    }
 }

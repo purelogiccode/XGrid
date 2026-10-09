@@ -408,6 +408,49 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void Cmpxchg8b_Equal_ExchangesPair()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xC7, 0x0D, 0x00, 0x20, 0x00, 0x00);
+        cpu.Bus().Write32(0x2000, 0x11111111);
+        cpu.Bus().Write32(0x2004, 0x22222222);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x11111111);
+        cpu.Context.WriteRegister(Gpr.Edx, 0x22222222);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x33333333);
+        cpu.Context.WriteRegister(Gpr.Ecx, 0x44444444);
+        cpu.Context.Eflags = FlagBits.CF | FlagBits.SF;
+
+        cpu.Step();
+
+        Assert.Equal(0x33333333u, cpu.Bus().Read32(0x2000));
+        Assert.Equal(0x44444444u, cpu.Bus().Read32(0x2004));
+        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.SF) != 0);
+    }
+
+    [Fact]
+    public void Cmpxchg8b_NotEqual_LoadsPair()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xC7, 0x0D, 0x00, 0x20, 0x00, 0x00);
+        cpu.Bus().Write32(0x2000, 0x11111111);
+        cpu.Bus().Write32(0x2004, 0x99999999);
+        cpu.Context.WriteRegister(Gpr.Eax, 0x11111111);
+        cpu.Context.WriteRegister(Gpr.Edx, 0x22222222);
+        cpu.Context.WriteRegister(Gpr.Ebx, 0x33333333);
+        cpu.Context.WriteRegister(Gpr.Ecx, 0x44444444);
+        cpu.Context.Eflags = FlagBits.ZF | FlagBits.CF;
+
+        cpu.Step();
+
+        Assert.Equal(0x11111111u, cpu.Bus().Read32(0x2000));
+        Assert.Equal(0x99999999u, cpu.Bus().Read32(0x2004));
+        Assert.Equal(0x11111111u, cpu.Context.ReadRegister(Gpr.Eax));
+        Assert.Equal(0x99999999u, cpu.Context.ReadRegister(Gpr.Edx));
+        Assert.True((cpu.Context.Eflags & FlagBits.ZF) == 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+    }
+
+    [Fact]
     public void Bsr_FindsHighestBit()
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0xBD, 0xC1);

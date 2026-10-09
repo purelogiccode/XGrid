@@ -157,17 +157,11 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     public uint Read(ushort offset, int size)
     {
         byte register = (byte)(offset & 0x3F);
-        uint value = register switch
+        uint value = 0;
+        for (int i = 0; i < size / 8; i++)
         {
-            GlobalStatus => _status,
-            GlobalEnable => (byte)(_control & 0x1F),
-            HostAddress => _address,
-            HostData => _data0,
-            HostDataHigh => _data1,
-            HostCommand => _command,
-            HostBlockData => _blockData[_blockIndex++ & 31],
-            _ => 0u,
-        };
+            value |= (uint)ReadByte((byte)((register + i) & 0x3F)) << (8 * i);
+        }
 
         return value & Mask(size);
     }
@@ -176,6 +170,29 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     public void Write(ushort offset, int size, uint value)
     {
         byte register = (byte)(offset & 0x3F);
+        for (int i = 0; i < size / 8; i++)
+        {
+            WriteByte((byte)((register + i) & 0x3F), (byte)(value >> (8 * i)));
+        }
+    }
+
+    private byte ReadByte(byte register)
+    {
+        return register switch
+        {
+            GlobalStatus => _status,
+            GlobalEnable => (byte)(_control & 0x1F),
+            HostAddress => _address,
+            HostData => _data0,
+            HostDataHigh => _data1,
+            HostCommand => _command,
+            HostBlockData => _blockData[_blockIndex++ & 31],
+            _ => 0,
+        };
+    }
+
+    private void WriteByte(byte register, byte value)
+    {
         switch (register)
         {
             case GlobalStatus:
@@ -202,7 +219,7 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                 break;
 
             case GlobalEnable:
-                _control = (byte)value;
+                _control = value;
                 if ((value & AbortBit) != 0)
                 {
                     _status |= AbrtStatus;
@@ -220,23 +237,23 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                 break;
 
             case HostAddress:
-                _address = (byte)value;
+                _address = value;
                 break;
 
             case HostData:
-                _data0 = (byte)value;
+                _data0 = value;
                 break;
 
             case HostDataHigh:
-                _data1 = (byte)value;
+                _data1 = value;
                 break;
 
             case HostCommand:
-                _command = (byte)value;
+                _command = value;
                 break;
 
             case HostBlockData:
-                _blockData[_blockIndex++ & 31] = (byte)value;
+                _blockData[_blockIndex++ & 31] = value;
                 break;
 
             default:
