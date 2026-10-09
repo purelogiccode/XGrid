@@ -16,4 +16,8 @@ public sealed class MemoryAccessException : Exception
         : base(message, innerException)
     {
     }
+
+    public MemoryAccessException()
+    {
+    }
 }

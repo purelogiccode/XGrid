@@ -7,6 +7,4 @@ namespace XGrid.Core.Configuration;
     WriteIndented = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(EmulatorConfiguration))]
-internal sealed partial class EmulatorConfigurationJsonContext : JsonSerializerContext
-{
-}
+internal sealed partial class EmulatorConfigurationJsonContext : JsonSerializerContext;

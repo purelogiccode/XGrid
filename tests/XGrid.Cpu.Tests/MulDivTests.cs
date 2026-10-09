@@ -15,7 +15,7 @@ public sealed class MulDivTests
 
         Assert.Equal(0x10000u, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Edx));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -29,8 +29,8 @@ public sealed class MulDivTests
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.Equal(1u, cpu.Context.ReadRegister(Gpr.Edx));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class MulDivTests
         cpu.Step();
 
         Assert.Equal(6u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class MulDivTests
 
         Assert.Equal(0xFFFFFFFAu, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.Equal(0xFFFFFFFFu, cpu.Context.ReadRegister(Gpr.Edx));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -140,8 +140,8 @@ public sealed class MulDivTests
         cpu.Step();
 
         Assert.Equal(0x0000001Du, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.ZF) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.SF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Sf) != 0);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public sealed class MulDivTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public sealed class MulDivTests
         cpu.Step();
 
         Assert.Equal(0x00000209u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.ZF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Zf) != 0);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class MulDivTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
     }
 
     [Fact]

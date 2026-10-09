@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
 
@@ -7,6 +8,7 @@ namespace XGrid.Cpu;
 /// IEEE 754 80-bit extended-precision value in the x87 register format.
 /// Arithmetic is performed in double precision and rounded back (documented limitation).
 /// </summary>
+[StructLayout(LayoutKind.Auto)]
 public readonly struct Fpu80 : IEquatable<Fpu80>
 {
     /// <summary>Exponent bias of the extended format.</summary>

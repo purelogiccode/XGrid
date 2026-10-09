@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using XGrid.Cpu.Testing;
 using Xunit;
 
@@ -6,18 +7,18 @@ namespace XGrid.Cpu.Tests;
 public sealed class CpuTestRunnerTests
 {
     private const string PlanSampleJson = """
-        {
-          "name": "ADD_EAX_EBX",
-          "registers": {
-            "EAX": "0x00000005",
-            "EBX": "0x00000007"
-          },
-          "code": "01D8",
-          "expected": {
-            "EAX": "0x0000000C"
-          }
-        }
-        """;
+                                          {
+                                            "name": "ADD_EAX_EBX",
+                                            "registers": {
+                                              "EAX": "0x00000005",
+                                              "EBX": "0x00000007"
+                                            },
+                                            "code": "01D8",
+                                            "expected": {
+                                              "EAX": "0x0000000C"
+                                            }
+                                          }
+                                          """;
 
     [Fact]
     public void Run_PlanSample_Passes()
@@ -47,8 +48,8 @@ public sealed class CpuTestRunnerTests
         {
             Name = "MOV_TEST",
             Code = "B878563412",
-            Registers = new() { ["EAX"] = "0x00000000" },
-            Expected = new() { ["EAX"] = "0x12345678" },
+            Registers = new Dictionary<string, string>(System.StringComparer.Ordinal) { ["EAX"] = "0x00000000" },
+            Expected = new Dictionary<string, string>(System.StringComparer.Ordinal) { ["EAX"] = "0x12345678" },
         };
 
         string json = CpuTestLoader.Save(original);
@@ -63,13 +64,13 @@ public sealed class CpuTestRunnerTests
     public void Run_WrongExpectation_ReportsFailure()
     {
         CpuTest test = CpuTestLoader.Load("""
-            {
-              "name": "FAIL",
-              "registers": { "EAX": "0x00000005", "EBX": "0x00000007" },
-              "code": "01D8",
-              "expected": { "EAX": "0x00000000" }
-            }
-            """);
+                                          {
+                                            "name": "FAIL",
+                                            "registers": { "EAX": "0x00000005", "EBX": "0x00000007" },
+                                            "code": "01D8",
+                                            "expected": { "EAX": "0x00000000" }
+                                          }
+                                          """);
 
         CpuTestResult result = CpuTestRunner.Run(test);
 

@@ -99,9 +99,8 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
 
     private sealed class Channel
     {
-        private ushort _reload; private ushort _counter;
+        private ushort _counter;
         private int _access;
-        private int _mode;
         private int _writePhase;
         private int _readPhase;
         private byte _writeLow;
@@ -111,10 +110,10 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
 
         public void Reset()
         {
-            _reload = 0;
+            Divisor = 0;
             _counter = 0;
             _access = 3;
-            _mode = 0;
+            Mode = 0;
             _writePhase = 0;
             _readPhase = 0;
             _running = false;
@@ -125,23 +124,23 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
         public void Configure(int access, int mode)
         {
             _access = access;
-            _mode = mode;
+            Mode = mode;
             _writePhase = 0;
         }
 
-        public ushort Divisor => _reload;
+        public ushort Divisor { get; private set; }
 
-        public int Mode => _mode;
+        public int Mode { get; private set; }
 
         public void WriteCounter(byte value)
         {
             switch (_access)
             {
                 case 1:
-                    _reload = value;
+                    Divisor = value;
                     break;
                 case 2:
-                    _reload = (ushort)(value << 8);
+                    Divisor = (ushort)(value << 8);
                     break;
                 default:
                     if (_writePhase == 0)
@@ -151,13 +150,13 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
                         return;
                     }
 
-                    _reload = (ushort)(_writeLow | (value << 8));
+                    Divisor = (ushort)(_writeLow | (value << 8));
                     _writePhase = 0;
                     break;
             }
 
-            _counter = _reload;
-            _running = _reload != 0;
+            _counter = Divisor;
+            _running = Divisor != 0;
         }
 
         public void Latch()
@@ -206,7 +205,7 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
                 return false;
             }
 
-            switch (_mode)
+            switch (Mode)
             {
                 case 0:
                     _counter = 0;
@@ -215,17 +214,17 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
                 case 2:
                 case 3:
                     {
-                        ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, _reload);
-                        _counter = (ushort)(_reload - remainder);
+                        ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, Divisor);
+                        _counter = (ushort)(Divisor - remainder);
                         if (_counter == 0)
                         {
-                            _counter = _reload;
+                            _counter = Divisor;
                         }
 
                         return true;
                     }
                 default:
-                    _counter = _reload;
+                    _counter = Divisor;
                     return true;
             }
         }

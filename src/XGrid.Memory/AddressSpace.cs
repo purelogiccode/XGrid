@@ -10,7 +10,6 @@ namespace XGrid.Memory;
 /// </summary>
 public sealed class AddressSpace : IMemoryBus
 {
-    private readonly PhysicalMemory _ram;
     private readonly List<AddressRegion> _regions = [];
     private readonly Dictionary<uint, int> _unmappedCounts = new();
 
@@ -18,12 +17,12 @@ public sealed class AddressSpace : IMemoryBus
     public AddressSpace(PhysicalMemory ram, UnmappedAccessPolicy unmappedPolicy = UnmappedAccessPolicy.Sentinel)
     {
         ArgumentNullException.ThrowIfNull(ram);
-        _ram = ram;
+        Ram = ram;
         UnmappedPolicy = unmappedPolicy;
     }
 
     /// <summary>Gets the backing RAM.</summary>
-    public PhysicalMemory Ram => _ram;
+    public PhysicalMemory Ram { get; }
 
     /// <summary>Gets or sets how accesses outside all regions behave.</summary>
     public UnmappedAccessPolicy UnmappedPolicy { get; set; }
@@ -52,7 +51,7 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Returns whether the address maps directly to RAM.</summary>
     public bool IsRam(uint address)
     {
-        return address < _ram.Size;
+        return address < Ram.Size;
     }
 
     /// <summary>Finds the highest-priority region containing the address.</summary>
@@ -81,9 +80,9 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {
-        if (address < _ram.Size)
+        if (address < Ram.Size)
         {
-            return _ram.Read8(address);
+            return Ram.Read8(address);
         }
 
         if (TryGetRegion(address, out AddressRegion? region))
@@ -97,9 +96,9 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Reads a 16-bit little-endian value.</summary>
     public ushort Read16(uint address)
     {
-        if ((ulong)address + 2 <= _ram.Size)
+        if ((ulong)address + 2 <= Ram.Size)
         {
-            return _ram.Read16(address);
+            return Ram.Read16(address);
         }
 
         if (TryGetRegion(address, out AddressRegion? region))
@@ -113,9 +112,9 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Reads a 32-bit little-endian value.</summary>
     public uint Read32(uint address)
     {
-        if ((ulong)address + 4 <= _ram.Size)
+        if ((ulong)address + 4 <= Ram.Size)
         {
-            return _ram.Read32(address);
+            return Ram.Read32(address);
         }
 
         if (TryGetRegion(address, out AddressRegion? region))
@@ -129,9 +128,9 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Reads a 64-bit little-endian value as two 32-bit accesses.</summary>
     public ulong Read64(uint address)
     {
-        if ((ulong)address + 8 <= _ram.Size)
+        if ((ulong)address + 8 <= Ram.Size)
         {
-            return _ram.Read64(address);
+            return Ram.Read64(address);
         }
 
         uint low = Read32(address);
@@ -143,9 +142,9 @@ public sealed class AddressSpace : IMemoryBus
     public void Write8(uint address, byte value)
     {
         CheckWatch(address, 1, value);
-        if (address < _ram.Size)
+        if (address < Ram.Size)
         {
-            _ram.Write8(address, value);
+            Ram.Write8(address, value);
             return;
         }
 
@@ -162,9 +161,9 @@ public sealed class AddressSpace : IMemoryBus
     public void Write16(uint address, ushort value)
     {
         CheckWatch(address, 2, value);
-        if ((ulong)address + 2 <= _ram.Size)
+        if ((ulong)address + 2 <= Ram.Size)
         {
-            _ram.Write16(address, value);
+            Ram.Write16(address, value);
             return;
         }
 
@@ -181,9 +180,9 @@ public sealed class AddressSpace : IMemoryBus
     public void Write32(uint address, uint value)
     {
         CheckWatch(address, 4, value);
-        if ((ulong)address + 4 <= _ram.Size)
+        if ((ulong)address + 4 <= Ram.Size)
         {
-            _ram.Write32(address, value);
+            Ram.Write32(address, value);
             return;
         }
 
@@ -199,9 +198,9 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Writes a 64-bit little-endian value as two 32-bit accesses.</summary>
     public void Write64(uint address, ulong value)
     {
-        if ((ulong)address + 8 <= _ram.Size)
+        if ((ulong)address + 8 <= Ram.Size)
         {
-            _ram.Write64(address, value);
+            Ram.Write64(address, value);
             return;
         }
 
@@ -212,13 +211,13 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Returns a writable span over RAM. Only valid for RAM addresses.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {
-        if ((ulong)address + (ulong)length > _ram.Size)
+        if ((ulong)address + (ulong)length > Ram.Size)
         {
             throw new MemoryAccessException(
                 $"Span request outside RAM: address 0x{address:X8}, length {length}.");
         }
 
-        return _ram.GetSpan(address, length);
+        return Ram.GetSpan(address, length);
     }
 
     private void CheckWatch(uint address, int size, uint value)

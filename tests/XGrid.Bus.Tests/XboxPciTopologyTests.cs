@@ -95,7 +95,7 @@ public sealed class XboxPciTopologyTests
     }
 
     [Fact]
-    public void Nv2aBar1IsSixtyFourMegabytePrefetchableAperture()
+    public void Nv2ABar1IsSixtyFourMegabytePrefetchableAperture()
     {
         var bus = new XboxBus();
         bus.Pci.WriteConfig(PciBus.MakeConfigAddress(30, 0, 0x18), 4, 0x00010100u);

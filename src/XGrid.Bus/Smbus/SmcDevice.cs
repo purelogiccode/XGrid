@@ -22,8 +22,6 @@ public sealed class SmcDevice : SmbusDevice
     private byte _scratch = ScratchShortAnimation;
     private byte _error;
     private byte _interruptStatus = TrayClosedStatus;
-    private byte _trayState = 0x40;
-    private byte _avPack = 0x01;
 
     /// <summary>Creates the SMC with default register values.</summary>
     public SmcDevice()
@@ -32,11 +30,7 @@ public sealed class SmcDevice : SmbusDevice
     }
 
     /// <summary>Gets or sets the tray state register (0x40 = no media).</summary>
-    public byte TrayState
-    {
-        get => _trayState;
-        set => _trayState = value;
-    }
+    public byte TrayState { get; set; } = 0x40;
 
     /// <summary>Gets read counts per command byte (diagnostics).</summary>
     public IReadOnlyDictionary<byte, int> ReadCounts => _readCounts;
@@ -45,11 +39,7 @@ public sealed class SmcDevice : SmbusDevice
     public IReadOnlyDictionary<byte, int> WriteCounts => _writeCounts;
 
     /// <summary>Gets or sets the AV pack register (default HDTV).</summary>
-    public byte AvPack
-    {
-        get => _avPack;
-        set => _avPack = value;
-    }
+    public byte AvPack { get; set; } = 0x01;
 
     /// <inheritdoc />
     public override bool SendByte(byte value)
@@ -111,9 +101,9 @@ public sealed class SmcDevice : SmbusDevice
             case 0x01:
                 return (byte)_version[_versionIndex++ % _version.Length];
             case 0x03:
-                return _trayState;
+                return TrayState;
             case 0x04:
-                return _avPack;
+                return AvPack;
             case 0x0F:
                 return _error;
             case 0x11:

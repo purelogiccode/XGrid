@@ -18,7 +18,7 @@ public sealed class XboxMachine
 
     private RomOverlayDevice? _overlay;
     private byte[]? _bios;
-    private ulong _nv2aRemainder;
+    private ulong _nv2ARemainder;
 
     /// <summary>Creates the machine with RAM, bus, and CPU wired together.</summary>
     public XboxMachine(uint ramSize = DefaultRamSize)
@@ -31,13 +31,13 @@ public sealed class XboxMachine
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
         Ide.DmaMemory = new AddressSpaceGuestMemory(Memory);
-        Nv2a = new Nv2aMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory));
-        Nv2a.InterruptChanged += OnNv2aInterrupt;
+        Nv2A = new Nv2AMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory));
+        Nv2A.InterruptChanged += OnNv2aInterrupt;
         Memory.AddRegion(
             "NV2A",
-            XboxAddressMap.Nv2aBase,
-            XboxAddressMap.Nv2aSize,
-            Nv2a);
+            XboxAddressMap.Nv2ABase,
+            XboxAddressMap.Nv2ASize,
+            Nv2A);
 
         Memory.AddRegion(
             "RAM mirror",
@@ -57,7 +57,7 @@ public sealed class XboxMachine
     public IdeController Ide { get; }
 
     /// <summary>Gets the NV2A GPU register window.</summary>
-    public Nv2aMmio Nv2a { get; }
+    public Nv2AMmio Nv2A { get; }
 
     /// <summary>Gets the physical RAM.</summary>
     public PhysicalMemory Ram { get; }
@@ -150,8 +150,8 @@ public sealed class XboxMachine
     {
         Cpu.Reset();
         Bus.Reset();
-        Nv2a.Reset();
-        _nv2aRemainder = 0;
+        Nv2A.Reset();
+        _nv2ARemainder = 0;
         if (_overlay is not null)
         {
             _overlay.Enabled = true;
@@ -162,23 +162,23 @@ public sealed class XboxMachine
     public void Advance(ulong cycles)
     {
         Bus.Advance(cycles);
-        _nv2aRemainder += cycles * Nv2aMmio.CoreClockHz;
-        ulong ticks = _nv2aRemainder / XboxBus.CpuClockHz;
-        _nv2aRemainder %= XboxBus.CpuClockHz;
+        _nv2ARemainder += cycles * Nv2AMmio.CoreClockHz;
+        ulong ticks = _nv2ARemainder / XboxBus.CpuClockHz;
+        _nv2ARemainder %= XboxBus.CpuClockHz;
         if (ticks != 0)
         {
-            Nv2a.Advance(ticks);
+            Nv2A.Advance(ticks);
         }
     }
 
     /// <summary>Runs up to the given number of instructions, advancing bus timers.</summary>
     public int Run(int maxInstructions)
     {
-        const int BatchSize = 65536;
+        const int batchSize = 65536;
         int executed = 0;
         while (executed < maxInstructions && !Cpu.Context.Halted)
         {
-            int batch = Math.Min(maxInstructions - executed, BatchSize);
+            int batch = Math.Min(maxInstructions - executed, batchSize);
             int done = Cpu.Execute(batch);
             executed += done;
             Advance((ulong)done);
@@ -203,11 +203,11 @@ public sealed class XboxMachine
     {
         if (asserted)
         {
-            Bus.Nv2aPci.RaiseInterrupt();
+            Bus.Nv2APci.RaiseInterrupt();
         }
         else
         {
-            Bus.Nv2aPci.LowerInterrupt();
+            Bus.Nv2APci.LowerInterrupt();
         }
     }
 

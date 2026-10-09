@@ -24,7 +24,6 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
     private readonly PciDevice?[] _devices = new PciDevice[256];
     private readonly List<(PciDevice Bridge, PciBus Secondary)> _secondaries = new();
     private readonly Dictionary<ushort, int> _configAccesses = new();
-    private uint _configAddress;
 
     /// <summary>Creates the root PCI bus and registers its configuration ports in the I/O space.</summary>
     public PciBus(IoSpace io)
@@ -47,7 +46,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
     public event Action<PciDevice>? InterruptLowered;
 
     /// <summary>Gets the configuration address register value.</summary>
-    public uint ConfigAddress => _configAddress;
+    public uint ConfigAddress { get; private set; }
 
     /// <summary>Gets configuration access counts keyed by (bus << 8) | devfn. Diagnostics.</summary>
     public IReadOnlyDictionary<ushort, int> ConfigAccessCounts => _configAccesses;
@@ -82,7 +81,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
 
     private void CountConfig(uint address)
     {
-        ushort key = (ushort)(((address >> 16) & 0xFFu) << 8 | ((address >> 8) & 0xFFu));
+        ushort key = (ushort)((((address >> 16) & 0xFFu) << 8) | ((address >> 8) & 0xFFu));
         _configAccesses.TryGetValue(key, out int count);
         _configAccesses[key] = count + 1;
     }
@@ -97,7 +96,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
 
         CountConfig(address);
         PciBus? target = Route(address);
-        return target is null ? Mask(size) : target.ReadLocal(address, size);
+        return target?.ReadLocal(address, size) ?? Mask(size);
     }
 
     /// <summary>Writes a configuration dword to a raw configuration address.</summary>
@@ -141,7 +140,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
     /// <inheritdoc />
     public void Reset()
     {
-        _configAddress = 0;
+        ConfigAddress = 0;
         foreach (PciDevice? device in _devices)
         {
             device?.Reset();
@@ -169,9 +168,9 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
     public static uint MakeConfigAddress(byte deviceNumber, byte functionNumber, byte register)
     {
         return 0x80000000u
-            | (register & 0xFCu)
-            | ((uint)(deviceNumber & 0x1F) << 11)
-            | ((uint)(functionNumber & 7) << 8);
+               | (register & 0xFCu)
+               | ((uint)(deviceNumber & 0x1F) << 11)
+               | ((uint)(functionNumber & 7) << 8);
     }
 
     private PciBus? Route(uint address)
@@ -225,7 +224,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
 
     private uint ReadAddressRegister(ushort offset, int size)
     {
-        uint value = _configAddress;
+        uint value = ConfigAddress;
         return (value >> (offset * 8)) & Mask(size);
     }
 
@@ -234,21 +233,21 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
         for (int i = 0; i < size; i++)
         {
             int shift = (offset + i) * 8;
-            _configAddress = (_configAddress & ~(0xFFu << shift)) | (((value >> (8 * i)) & 0xFFu) << shift);
+            ConfigAddress = (ConfigAddress & ~(0xFFu << shift)) | (((value >> (8 * i)) & 0xFFu) << shift);
         }
 
-        _configAddress &= 0xFFFFFFFCu;
+        ConfigAddress &= 0xFFFFFFFCu;
     }
 
     private uint ReadDataRegister(int byteOffset, int size)
     {
-        uint address = _configAddress | (uint)(byteOffset & 3);
+        uint address = ConfigAddress | (uint)(byteOffset & 3);
         return ReadConfig(address, size);
     }
 
     private void WriteDataRegister(int byteOffset, int size, uint value)
     {
-        uint address = _configAddress | (uint)(byteOffset & 3);
+        uint address = ConfigAddress | (uint)(byteOffset & 3);
         WriteConfig(address, size, value);
     }
 

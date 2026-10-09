@@ -17,7 +17,7 @@ namespace XGrid.Nv2a;
 /// recording sink; rendering and interrupt assertion through the PIC are deferred:
 /// pending/enabled state is tracked but no IRQ is raised yet.
 /// </summary>
-public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
+public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 {
     /// <summary>NV2A control window base (BAR0).</summary>
     public const uint BaseAddress = 0xFD000000u;
@@ -142,7 +142,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private const uint BeginEndTriangleStrip = 6u;
     private const uint BeginEndTriangleFan = 7u;
     private const uint BeginEndQuads = 8u;
-    private const uint MaxInlineWords = 65536u; private const uint SurfaceTypePitch = 1u;
+    private const uint MaxInlineWords = 65536u;
+    private const uint SurfaceTypePitch = 1u;
     private const uint MaxClearPixels = 16u * 1024u * 1024u;
 
     private const uint MaxPusherWords = 4000000u;
@@ -180,7 +181,6 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private const uint UserDmaGet = 0x44u;
     private const uint UserRef = 0x48u;
 
-    private readonly string _name;
     private readonly IGpuMemory? _memory;
     private readonly uint[] _boundEngine = new uint[8];
     private readonly uint[] _boundInstance = new uint[8];
@@ -215,16 +215,9 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private uint _pgraphEnabled;
     private uint _pfifoPending;
     private uint _pfifoEnabled;
-    private ulong _pusherWords;
-    private bool _pusherCapped;
-    private uint _pusherError;
-    private bool _irqAsserted;
     private ulong _vsyncRemainder;
-    private uint _contextSwitches;
-    private uint _clearsExecuted;
     private uint _surfaceFormat;
     private uint _surfacePitch;
-    private uint _surfaceColorOffset;
     private uint _surfaceZetaOffset;
     private uint _surfaceClipH;
     private uint _surfaceClipV;
@@ -238,25 +231,22 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _vertexFormat = new uint[16];
     private readonly List<uint> _inlineWords = new();
     private uint _beginMode;
-    private ulong _drawsExecuted;
-    private ulong _drawnPixels;
-    private ulong _skippedDraws;
     private readonly Dictionary<uint, int> _methodCounts = new();
     private readonly Dictionary<uint, uint> _methodParams = new();
     private readonly List<(uint Subchannel, uint Method, uint Parameter)> _methodStream = new();
 
     /// <summary>Creates the NV2A register window for the given RAM size in bytes.</summary>
-    public Nv2aMmio(uint ramSize = 64u * 1024 * 1024, string name = "NV2A", IGpuMemory? memory = null)
+    public Nv2AMmio(uint ramSize = 64u * 1024 * 1024, string name = "NV2A", IGpuMemory? memory = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         RamSize = ramSize;
-        _name = name;
+        Name = name;
         _memory = memory;
         Reset();
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
-    public string Name => _name;
+    public string Name { get; }
 
     /// <summary>Gets the guest RAM size reported by PFB CSTATUS.</summary>
     public uint RamSize { get; }
@@ -271,16 +261,16 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     public IReadOnlyDictionary<uint, int> UserReadCounts => _userReadOffsets;
 
     /// <summary>Gets the number of pushbuffer words consumed by the PFIFO pusher. Diagnostics.</summary>
-    public ulong PusherWordsConsumed => _pusherWords;
+    public ulong PusherWordsConsumed { get; private set; }
 
     /// <summary>Gets whether the pusher hit its per-kick word cap. Diagnostics.</summary>
-    public bool PusherCapped => _pusherCapped;
+    public bool PusherCapped { get; private set; }
 
     /// <summary>Gets the last pusher DMA error code (0 when none). Diagnostics.</summary>
-    public uint PusherError => _pusherError;
+    public uint PusherError { get; private set; }
 
     /// <summary>Gets the number of PGRAPH context switches observed. Diagnostics.</summary>
-    public uint ContextSwitches => _contextSwitches;
+    public uint ContextSwitches { get; private set; }
 
     /// <summary>Gets PGRAPH method counts keyed by subchannel and method. Diagnostics.</summary>
     public IReadOnlyDictionary<uint, int> MethodCounts => _methodCounts;
@@ -292,19 +282,19 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     public IReadOnlyList<(uint Subchannel, uint Method, uint Parameter)> MethodStream => _methodStream;
 
     /// <summary>Gets the number of executed surface clears. Diagnostics.</summary>
-    public uint ClearsExecuted => _clearsExecuted;
+    public uint ClearsExecuted { get; private set; }
 
     /// <summary>Gets the number of executed draws. Diagnostics.</summary>
-    public ulong DrawsExecuted => _drawsExecuted;
+    public ulong DrawsExecuted { get; private set; }
 
     /// <summary>Gets the number of pixels written by draws. Diagnostics.</summary>
-    public ulong DrawnPixels => _drawnPixels;
+    public ulong DrawnPixels { get; private set; }
 
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
-    public ulong SkippedDraws => _skippedDraws;
+    public ulong SkippedDraws { get; private set; }
 
     /// <summary>Gets the current color surface offset in guest memory. Diagnostics.</summary>
-    public uint PresentedColorOffset => _surfaceColorOffset;
+    public uint PresentedColorOffset { get; private set; }
 
     /// <summary>Gets the current color surface pitch in bytes. Diagnostics.</summary>
     public uint PresentedColorPitch => _surfacePitch & 0xFFFFu;
@@ -319,10 +309,11 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     public event Action<bool>? InterruptChanged;
 
     /// <summary>Gets whether the PCI interrupt line is currently asserted. Diagnostics.</summary>
-    public bool InterruptAsserted => _irqAsserted;
+    public bool InterruptAsserted { get; private set; }
 
     /// <summary>Gets the current color format code. Diagnostics.</summary>
     public uint PresentedColorFormat => _surfaceFormat & 0xFu;
+
     /// <summary>Gets the current color surface bytes per pixel (0 for unknown formats). Diagnostics.</summary>
     public uint PresentedColorBpp => ColorBytesPerPixel(_surfaceFormat & 0xFu);
 
@@ -344,9 +335,9 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     {
         uint pending = AggregatePending();
         bool asserted = (pending & _pmcEnabled) != 0;
-        if (asserted != _irqAsserted)
+        if (asserted != InterruptAsserted)
         {
-            _irqAsserted = asserted;
+            InterruptAsserted = asserted;
             InterruptChanged?.Invoke(asserted);
         }
     }
@@ -378,16 +369,16 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         _pgraphEnabled = 0;
         _pfifoPending = 0;
         _pfifoEnabled = 0;
-        _pusherWords = 0;
-        _pusherCapped = false;
-        _pusherError = 0;
-        _irqAsserted = false;
+        PusherWordsConsumed = 0;
+        PusherCapped = false;
+        PusherError = 0;
+        InterruptAsserted = false;
         _vsyncRemainder = 0;
-        _contextSwitches = 0;
-        _clearsExecuted = 0;
+        ContextSwitches = 0;
+        ClearsExecuted = 0;
         _surfaceFormat = 0;
         _surfacePitch = 0;
-        _surfaceColorOffset = 0;
+        PresentedColorOffset = 0;
         _surfaceZetaOffset = 0;
         _surfaceClipH = 0;
         _surfaceClipV = 0;
@@ -401,9 +392,9 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         Array.Clear(_vertexFormat);
         _inlineWords.Clear();
         _beginMode = 0;
-        _drawsExecuted = 0;
-        _drawnPixels = 0;
-        _skippedDraws = 0;
+        DrawsExecuted = 0;
+        DrawnPixels = 0;
+        SkippedDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
         _methodStream.Clear();
@@ -875,7 +866,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
     private uint ReadRamin(uint offset)
     {
         CountRead(PraminBase);
-        return (uint)(_ramin[offset] | (_ramin[offset + 1] << 8) | (_ramin[offset + 2] << 16) | (_ramin[offset + 3] << 24));
+        return (uint)(_ramin[offset] | (_ramin[offset + 1] << 8) | (_ramin[offset + 2] << 16) |
+                      (_ramin[offset + 3] << 24));
     }
 
     private void WriteRamin(uint offset, uint value)
@@ -889,7 +881,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 
     private uint ReadUser(uint offset)
     {
-        if (TryGetDmaChannel(offset, out _) && (offset & 0xFFFFu) switch
+        if (IsActiveDmaChannel(offset) && (offset & 0xFFFFu) switch
         {
             UserDmaPut => true,
             UserDmaGet => true,
@@ -910,7 +902,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 
     private void WriteUser(uint offset, uint value)
     {
-        if (!TryGetDmaChannel(offset, out _))
+        if (!IsActiveDmaChannel(offset))
         {
             return;
         }
@@ -933,25 +925,26 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         RunPusher();
     }
 
-    private bool TryGetDmaChannel(uint offset, out uint channel)
+    private bool IsActiveDmaChannel(uint offset)
     {
-        channel = offset >> 16;
+        uint channel = offset >> 16;
         if (((_pfifo[PfifoMode / 4] >> (int)channel) & 1u) == 0)
         {
             return false;
         }
 
-        return channel == (_pfifo[PfifoCache1Push1 / 4] & 0x1Fu);
+        return channel == (_pfifo[PfifoCache1Push1 / 4] & Push1ChidMask);
     }
 
     private uint RaminWord(uint offset)
     {
-        return (uint)(_ramin[offset] | (_ramin[offset + 1] << 8) | (_ramin[offset + 2] << 16) | (_ramin[offset + 3] << 24));
+        return (uint)(_ramin[offset] | (_ramin[offset + 1] << 8) | (_ramin[offset + 2] << 16) |
+                      (_ramin[offset + 3] << 24));
     }
 
     private void SuspendPusher(uint error)
     {
-        _pusherError = error;
+        PusherError = error;
         uint state = _pfifo[PfifoCache1DmaState / 4];
         _pfifo[PfifoCache1DmaState / 4] = (state & ~DmaStateError) | ((error << 29) & DmaStateError);
         _pfifo[PfifoCache1DmaPush / 4] |= DmaPushSuspended;
@@ -1061,7 +1054,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 
             if (++words > MaxPusherWords)
             {
-                _pusherCapped = true;
+                PusherCapped = true;
                 break;
             }
 
@@ -1166,7 +1159,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             }
         }
 
-        _pusherWords += words;
+        PusherWordsConsumed += words;
     }
 
     private void SetDmaMethod(uint word, bool increment)
@@ -1201,10 +1194,9 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             return -1;
         }
 
-        uint engine;
         if (method == 0)
         {
-            if (!TryRamhtLookup(parameter, channel, out uint instance, out engine))
+            if (!TryRamhtLookup(parameter, channel, out uint instance, out var engine))
             {
                 SuspendPusher(DmaErrorProtection);
                 return -1;
@@ -1219,7 +1211,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             if (_boundEngine[subchannel] != engine)
             {
                 _boundEngine[subchannel] = engine;
-                _contextSwitches++;
+                ContextSwitches++;
                 _pgraphPending |= PgraphContextSwitch;
                 UpdateIrq();
             }
@@ -1278,7 +1270,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
                 _surfacePitch = parameter;
                 break;
             case MethodSurfaceColorOffset:
-                _surfaceColorOffset = parameter;
+                PresentedColorOffset = parameter;
                 break;
             case MethodSurfaceZetaOffset:
                 _surfaceZetaOffset = parameter;
@@ -1338,7 +1330,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 
     private void ExecuteClear(uint parameter)
     {
-        _clearsExecuted++;
+        ClearsExecuted++;
         if (_memory is null)
         {
             return;
@@ -1385,15 +1377,25 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             if (bytes != 0)
             {
                 uint pitch = _surfacePitch & 0xFFFFu;
-                uint pixel = _colorClearValue & (bytes == 4 ? 0xFFFFFFFFu : bytes == 2 ? 0xFFFFu : 0xFFu);
-                FillSurface(_surfaceColorOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+                uint pixel = _colorClearValue & (bytes switch
+                {
+                    4 => 0xFFFFFFFFu,
+                    2 => 0xFFFFu,
+                    _ => 0xFFu
+                });
+                FillSurface(PresentedColorOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
             }
         }
 
         if (clearZeta)
         {
             uint zetaFormat = (_surfaceFormat >> 4) & 0xFu;
-            uint bytes = zetaFormat == 1u ? 2u : zetaFormat == 2u ? 4u : 0u;
+            uint bytes = zetaFormat switch
+            {
+                1u => 2u,
+                2u => 4u,
+                _ => 0u
+            };
             if (bytes != 0)
             {
                 uint pitch = (_surfacePitch >> 16) & 0xFFFFu;
@@ -1403,7 +1405,8 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
         }
     }
 
-    private void FillSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax, uint pixel)
+    private void FillSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
+        uint pixel)
     {
         if (_memory is null || pitch == 0)
         {
@@ -1475,7 +1478,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             if (_beginMode != BeginEndTriangles && _beginMode != BeginEndTriangleStrip &&
                 _beginMode != BeginEndTriangleFan && _beginMode != BeginEndQuads)
             {
-                _skippedDraws++;
+                SkippedDraws++;
                 return;
             }
 
@@ -1493,7 +1496,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
 
                 if ((format & 0xFu) != 2u)
                 {
-                    _skippedDraws++;
+                    SkippedDraws++;
                     return;
                 }
 
@@ -1512,7 +1515,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             if (positionSlot < 0 || colorSlot < 0 || cursor == 0 ||
                 _inlineWords.Count % (cursor / 4) != 0)
             {
-                _skippedDraws++;
+                SkippedDraws++;
                 return;
             }
 
@@ -1520,7 +1523,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             uint pitch = _surfacePitch & 0xFFFFu;
             if (bytes != 4 && bytes != 2)
             {
-                _skippedDraws++;
+                SkippedDraws++;
                 return;
             }
 
@@ -1530,14 +1533,14 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
             uint clipH = _surfaceClipV >> 16;
             if (clipW == 0 || clipH == 0 || pitch == 0)
             {
-                _skippedDraws++;
+                SkippedDraws++;
                 return;
             }
 
             uint vertexWords = cursor / 4;
             int vertexCount = _inlineWords.Count / (int)vertexWords;
             uint colorCount = (_vertexFormat[colorSlot] >> 4) & 0xFu;
-            _drawsExecuted++;
+            DrawsExecuted++;
             switch (_beginMode)
             {
                 case BeginEndTriangles:
@@ -1618,7 +1621,7 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
                         float w1 = (((cx - bx) * (py - by)) - ((cy - by) * (px - bx))) * invArea;
                         float w2 = 1f - w0 - w1;
                         bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
-                            (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                                      (w0 <= 0f && w1 <= 0f && w2 <= 0f);
                         if (!inside)
                         {
                             continue;
@@ -1630,14 +1633,14 @@ public sealed class Nv2aMmio : IMmioDevice, IXboxDevice
                         float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
                         uint pixel = bytes == 4
                             ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
-                                ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
-                                ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
-                                (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
+                              ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
+                              ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
+                              (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
                             : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
-                                ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
-                                (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
-                        WritePixel(_surfaceColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
-                        _drawnPixels++;
+                              ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
+                              (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
+                        WritePixel(PresentedColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
+                        DrawnPixels++;
                     }
                 }
             }

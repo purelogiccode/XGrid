@@ -45,7 +45,7 @@ public sealed class DecoderFpuSseTests
         Assert.Equal(Mnemonic.Fld1, Decode(0xD9, 0xE8).Mnemonic);
         Assert.Equal(Mnemonic.Fldz, Decode(0xD9, 0xEE).Mnemonic);
         Assert.Equal(Mnemonic.Fldpi, Decode(0xD9, 0xEB).Mnemonic);
-        Assert.Equal(Mnemonic.Fldl2e, Decode(0xD9, 0xEA).Mnemonic);
+        Assert.Equal(Mnemonic.Fldl2E, Decode(0xD9, 0xEA).Mnemonic);
     }
 
     [Fact]
@@ -141,12 +141,12 @@ public sealed class DecoderFpuSseTests
     [Fact]
     public void SseConversions_Decode()
     {
-        Assert.Equal(Mnemonic.Cvtsi2ss, Decode(0xF3, 0x0F, 0x2A, 0xC0).Mnemonic);
-        Assert.Equal(Mnemonic.Cvtpi2ps, Decode(0x0F, 0x2A, 0xC1).Mnemonic);
-        Assert.Equal(Mnemonic.Cvttss2si, Decode(0xF3, 0x0F, 0x2C, 0xC0).Mnemonic);
-        Assert.Equal(Mnemonic.Cvtss2si, Decode(0xF3, 0x0F, 0x2D, 0xC0).Mnemonic);
-        Assert.Equal(Mnemonic.Cvtps2pi, Decode(0x0F, 0x2D, 0xC1).Mnemonic);
-        Assert.Equal(Mnemonic.Cvttps2pi, Decode(0x0F, 0x2C, 0xC1).Mnemonic);
+        Assert.Equal(Mnemonic.Cvtsi2Ss, Decode(0xF3, 0x0F, 0x2A, 0xC0).Mnemonic);
+        Assert.Equal(Mnemonic.Cvtpi2Ps, Decode(0x0F, 0x2A, 0xC1).Mnemonic);
+        Assert.Equal(Mnemonic.Cvttss2Si, Decode(0xF3, 0x0F, 0x2C, 0xC0).Mnemonic);
+        Assert.Equal(Mnemonic.Cvtss2Si, Decode(0xF3, 0x0F, 0x2D, 0xC0).Mnemonic);
+        Assert.Equal(Mnemonic.Cvtps2Pi, Decode(0x0F, 0x2D, 0xC1).Mnemonic);
+        Assert.Equal(Mnemonic.Cvttps2Pi, Decode(0x0F, 0x2C, 0xC1).Mnemonic);
     }
 
     [Fact]

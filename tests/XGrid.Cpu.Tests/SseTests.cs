@@ -287,9 +287,9 @@ public sealed class SseTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) == 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.PF) == 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) == 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Pf) == 0);
     }
 
     [Fact]
@@ -301,9 +301,9 @@ public sealed class SseTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.PF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Pf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -381,7 +381,8 @@ public sealed class SseTests
     public void Movlps_LoadsLowHalf()
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x12, 0x05, 0x00, 0x20, 0x00, 0x00);
-        cpu.Ram().Write64(Data, (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
+        cpu.Ram().Write64(Data,
+            (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
         cpu.Context.WriteXmm128(0, Floats(1, 2, 3, 4).Low, Floats(1, 2, 3, 4).High);
 
         cpu.Step();
@@ -396,7 +397,8 @@ public sealed class SseTests
     public void Movhps_LoadsHighHalf()
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x16, 0x05, 0x00, 0x20, 0x00, 0x00);
-        cpu.Ram().Write64(Data, (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
+        cpu.Ram().Write64(Data,
+            (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
         cpu.Context.WriteXmm128(0, Floats(1, 2, 3, 4).Low, Floats(1, 2, 3, 4).High);
 
         cpu.Step();

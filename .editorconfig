@@ -36,5 +36,20 @@ dotnet_style_require_accessibility_modifiers = for_non_interface_members:silent
 
 dotnet_diagnostic.IDE0005.severity = warning
 
+
+dotnet_diagnostic.MA0051.severity = none
+
+
+dotnet_diagnostic.MA0048.severity = none
+
+
+dotnet_diagnostic.MA0046.severity = none
+
+
+dotnet_diagnostic.MA0016.severity = none
+
+
+dotnet_diagnostic.MA0015.severity = none
+
 [*.{cs,vb}]
 dotnet_analyzer_diagnostic.category-Style.severity = suggestion

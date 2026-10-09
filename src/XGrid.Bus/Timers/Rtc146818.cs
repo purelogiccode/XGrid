@@ -12,7 +12,6 @@ public sealed class Rtc146818 : IIoPortDevice
     private static readonly DateTime BaseTime = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private readonly byte[] _cmos = new byte[64];
-    private readonly string _name = "MC146818 RTC";
     private byte _index;
     private byte _statusA = 0x26;
     private byte _statusB = 0x02;
@@ -30,7 +29,7 @@ public sealed class Rtc146818 : IIoPortDevice
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
-    public string Name => _name;
+    public static string Name => "MC146818 RTC";
 
     /// <summary>Gets the number of port accesses seen (diagnostics).</summary>
     public int AccessCount { get; private set; }

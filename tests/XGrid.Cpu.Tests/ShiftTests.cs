@@ -13,9 +13,9 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.ZF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
     }
 
     [Fact]
@@ -46,12 +46,12 @@ public sealed class ShiftTests
     {
         XboxCpu cpu = CpuHarness.Create(0xC1, 0xE0, 0x00);
         cpu.Context.WriteRegister(Gpr.Eax, 0x1234);
-        cpu.Context.Eflags = FlagBits.CF;
+        cpu.Context.Eflags = FlagBits.Cf;
 
         cpu.Step();
 
         Assert.Equal(0x1234u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x00000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(1u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x40000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0xFFFFFFFFu, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -111,8 +111,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x00000003u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -124,8 +124,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x80000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -138,8 +138,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -152,8 +152,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0xB3C003E9u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0xC0000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x40000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]
@@ -205,12 +205,12 @@ public sealed class ShiftTests
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0xAC, 0xD8, 0x00);
         cpu.Context.WriteRegister(Gpr.Eax, 0x12345678);
-        cpu.Context.Eflags = FlagBits.CF;
+        cpu.Context.Eflags = FlagBits.Cf;
 
         cpu.Step();
 
         Assert.Equal(0x12345678u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.CF) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
     }
 
     [Fact]
@@ -264,8 +264,8 @@ public sealed class ShiftTests
         cpu.Step();
 
         Assert.Equal(0x80000001u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.CF) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.OF) != 0);
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
     }
 
     [Fact]

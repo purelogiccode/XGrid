@@ -70,29 +70,29 @@ public sealed class ConfigurationTests
     public void Load_PlanSample_ParsesValues()
     {
         const string json = """
-            {
-              "system": {
-                "bios": "bios.bin",
-                "mcpx": "mcpx.bin",
-                "hardDisk": "xbox_hdd.img"
-              },
-              "graphics": {
-                "backend": "Vulkan",
-                "resolutionScale": 1,
-                "vsync": true
-              },
-              "cpu": {
-                "backend": "Jit",
-                "jitEnabled": true
-              },
-              "audio": {
-                "enabled": true
-              },
-              "input": {
-                "backend": "Default"
-              }
-            }
-            """;
+                            {
+                              "system": {
+                                "bios": "bios.bin",
+                                "mcpx": "mcpx.bin",
+                                "hardDisk": "xbox_hdd.img"
+                              },
+                              "graphics": {
+                                "backend": "Vulkan",
+                                "resolutionScale": 1,
+                                "vsync": true
+                              },
+                              "cpu": {
+                                "backend": "Jit",
+                                "jitEnabled": true
+                              },
+                              "audio": {
+                                "enabled": true
+                              },
+                              "input": {
+                                "backend": "Default"
+                              }
+                            }
+                            """;
 
         EmulatorConfiguration configuration = ConfigurationLoader.Load(json);
 

@@ -11,7 +11,7 @@ public static class CpuTestLoader
     {
         ArgumentNullException.ThrowIfNull(json);
         return JsonSerializer.Deserialize(json, CpuTestJsonContext.Default.CpuTest)
-            ?? throw new FormatException("CPU test JSON did not contain an object.");
+               ?? throw new FormatException("CPU test JSON did not contain an object.");
     }
 
     /// <summary>Serializes a CPU test to JSON.</summary>

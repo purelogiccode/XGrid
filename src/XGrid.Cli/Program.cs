@@ -100,7 +100,9 @@ internal static class Program
                 case "--dump":
                     {
                         string[] parts = NextValue(args, ref i).Split(',');
-                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parts[0][2..] : parts[0];
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
                         uint address = Convert.ToUInt32(addressText, 16);
                         int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
                         dumps.Add((address, length, false));
@@ -109,7 +111,9 @@ internal static class Program
                 case "--dumpv":
                     {
                         string[] parts = NextValue(args, ref i).Split(',');
-                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parts[0][2..] : parts[0];
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
                         uint address = Convert.ToUInt32(addressText, 16);
                         int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
                         dumps.Add((address, length, true));
@@ -130,8 +134,12 @@ internal static class Program
                 case "--watch":
                     {
                         string[] parts = NextValue(args, ref i).Split(',');
-                        string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parts[0][2..] : parts[0];
-                        string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? parts[1][2..] : parts[1];
+                        string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[1][2..]
+                            : parts[1];
                         machineWatchStart = Convert.ToUInt32(startText, 16);
                         machineWatchEnd = Convert.ToUInt32(endText, 16);
                         break;
@@ -169,7 +177,7 @@ internal static class Program
 
             machine.Memory.WatchStart = machineWatchStart;
             machine.Memory.WatchEnd = machineWatchEnd;
-            var watchHits = new System.Collections.Generic.Dictionary<uint, (int Count, string First, string Last)>();
+            var watchHits = new Dictionary<uint, (int Count, string First, string Last)>();
             machine.Memory.WatchHit += (address, size, value) =>
             {
                 string mark = $"{machine.Cpu.Context.Eip:X8}:{size}={value:X}";
@@ -185,7 +193,7 @@ internal static class Program
 
             int executed = 0;
             bool breakHit = false;
-            if (breakAddress is uint breakEip)
+            if (breakAddress is { } breakEip)
             {
                 int breakAdvance = 0;
                 while (executed < steps && !machine.Cpu.Context.Halted)
@@ -237,7 +245,8 @@ internal static class Program
                     uint port = instruction.Operand1.Kind == OperandKind.Register
                         ? machine.Cpu.Context.Edx & 0xFFFF
                         : instruction.Operand1.Immediate;
-                    Console.WriteLine($"    {(instruction.Mnemonic == Mnemonic.In ? "IN " : "OUT")} port=0x{port:X4} value=0x{machine.Cpu.Context.Eax & 0xFFFF:X4}");
+                    Console.WriteLine(
+                        $"    {(instruction.Mnemonic == Mnemonic.In ? "IN " : "OUT")} port=0x{port:X4} value=0x{machine.Cpu.Context.Eax & 0xFFFF:X4}");
                 }
             }
 
@@ -255,20 +264,22 @@ internal static class Program
             if (pgraphPath is not null)
             {
                 var lines = new System.Text.StringBuilder();
-                foreach ((uint subchannel, uint method, uint parameter) in machine.Nv2a.MethodStream)
+                foreach ((uint subchannel, uint method, uint parameter) in machine.Nv2A.MethodStream)
                 {
-                    lines.Append(subchannel).Append(' ').Append(method.ToString("X4")).Append(' ').AppendLine(parameter.ToString("X8"));
+                    lines.Append(subchannel).Append(' ').Append(method.ToString("X4")).Append(' ')
+                        .AppendLine(parameter.ToString("X8"));
                 }
 
                 File.WriteAllText(pgraphPath, lines.ToString());
-                Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2a.MethodStream.Count}");
+                Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2A.MethodStream.Count}");
             }
 
             foreach (string pattern in scans)
             {
                 ScanRam(machine, pattern);
             }
-            var watchKeys = new System.Collections.Generic.List<uint>(watchHits.Keys);
+
+            var watchKeys = new List<uint>(watchHits.Keys);
             watchKeys.Sort();
             foreach (uint key in watchKeys)
             {
@@ -312,11 +323,11 @@ internal static class Program
 
     private static void DumpFramebuffer(XboxMachine machine, string path)
     {
-        uint address = machine.Nv2a.PresentedColorOffset;
-        uint pitch = machine.Nv2a.PresentedColorPitch;
-        uint width = machine.Nv2a.PresentedWidth;
-        uint height = machine.Nv2a.PresentedHeight;
-        uint bpp = machine.Nv2a.PresentedColorBpp;
+        uint address = machine.Nv2A.PresentedColorOffset;
+        uint pitch = machine.Nv2A.PresentedColorPitch;
+        uint width = machine.Nv2A.PresentedWidth;
+        uint height = machine.Nv2A.PresentedHeight;
+        uint bpp = machine.Nv2A.PresentedColorBpp;
         uint ramSize = (uint)machine.Ram.Size;
         if (width == 0 || width > 4096 || height == 0 || height > 4096 ||
             (bpp != 1 && bpp != 2 && bpp != 4) || pitch < width * bpp ||
@@ -329,7 +340,8 @@ internal static class Program
         byte[] raw = new byte[width * height * bpp];
         for (uint y = 0; y < height; y++)
         {
-            machine.Ram.GetSpan(address + y * pitch, (int)(width * bpp)).CopyTo(new Span<byte>(raw, (int)(y * width * bpp), (int)(width * bpp)));
+            machine.Ram.GetSpan(address + y * pitch, (int)(width * bpp))
+                .CopyTo(new Span<byte>(raw, (int)(y * width * bpp), (int)(width * bpp)));
         }
 
         File.WriteAllBytes(path, raw);
@@ -344,7 +356,8 @@ internal static class Program
         uint firstPhysical = 0;
         for (int i = 0; i < bytes.Length; i++)
         {
-            uint physical = machine.Cpu.Mmu.Translate(linear + (uint)i, isWrite: false, isInstruction: true, out _, out _, sideEffects: false);
+            uint physical = machine.Cpu.Mmu.Translate(linear + (uint)i, isWrite: false, isInstruction: true, out _,
+                out _, sideEffects: false);
             if (i == 0)
             {
                 firstPhysical = physical;
@@ -378,15 +391,21 @@ internal static class Program
         return instruction;
     }
 
-    private static void PrintState(XboxMachine machine, int executed, IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
+    private static void PrintState(XboxMachine machine, int executed,
+        IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
     {
         XboxContext context = machine.Cpu.Context;
         Console.WriteLine($"Executed {executed} instruction(s)");
-        Console.WriteLine($"EIP=0x{context.Eip:X8} Halted={context.Halted} CR0=0x{context.Cr0:X8} EFLAGS=0x{context.Eflags:X8}");
-        Console.WriteLine($"LastFault vec={machine.Cpu.LastFaultVector} EIP=0x{machine.Cpu.LastFaultEip:X8} err=0x{machine.Cpu.LastFaultErrorCode:X8} CR2=0x{context.Cr2:X8}");
-        Console.WriteLine($"EAX=0x{context.Eax:X8} EBX=0x{context.Ebx:X8} ECX=0x{context.Ecx:X8} EDX=0x{context.Edx:X8}");
-        Console.WriteLine($"ESI=0x{context.Esi:X8} EDI=0x{context.Edi:X8} EBP=0x{context.Ebp:X8} ESP=0x{context.Esp:X8}");
-        Console.WriteLine($"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
+        Console.WriteLine(
+            $"EIP=0x{context.Eip:X8} Halted={context.Halted} CR0=0x{context.Cr0:X8} EFLAGS=0x{context.Eflags:X8}");
+        Console.WriteLine(
+            $"LastFault vec={machine.Cpu.LastFaultVector} EIP=0x{machine.Cpu.LastFaultEip:X8} err=0x{machine.Cpu.LastFaultErrorCode:X8} CR2=0x{context.Cr2:X8}");
+        Console.WriteLine(
+            $"EAX=0x{context.Eax:X8} EBX=0x{context.Ebx:X8} ECX=0x{context.Ecx:X8} EDX=0x{context.Edx:X8}");
+        Console.WriteLine(
+            $"ESI=0x{context.Esi:X8} EDI=0x{context.Edi:X8} EBP=0x{context.Ebp:X8} ESP=0x{context.Esp:X8}");
+        Console.WriteLine(
+            $"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
         Console.WriteLine($"OverlayEnabled={machine.Bus.RomOverlayEnabled}");
         Console.WriteLine(
             $"PIC master base=0x{machine.Bus.Pic.MasterBase:X2} mask=0x{machine.Bus.Pic.MasterMask:X2} " +
@@ -402,33 +421,35 @@ internal static class Program
             $"slave=0x{machine.Ide.PrimarySlave.LastCommand:X2})");
         Console.WriteLine($"IDE cmds: {string.Join(" ", machine.Ide.CommandLog)}");
         Console.WriteLine($"ATAPI pkts: {string.Join(" ", machine.Ide.PrimarySlave.PacketLog)}");
-        Console.WriteLine($"ATAPI partial: master={machine.Ide.PrimaryMaster.PacketBytesReceived} slave={machine.Ide.PrimarySlave.PacketBytesReceived}");
-        Console.WriteLine($"IDE BMIBA=0x{machine.Ide.GetBarBase(4):X} status=0x{machine.Ide.BusMasterStatus:X2} prdt=0x{machine.Ide.BusMasterPrdt:X8} starts={machine.Ide.BusMasterStarts} pktbytes={machine.Ide.PrimarySlave.TotalPacketBytes}");
+        Console.WriteLine(
+            $"ATAPI partial: master={machine.Ide.PrimaryMaster.PacketBytesReceived} slave={machine.Ide.PrimarySlave.PacketBytesReceived}");
+        Console.WriteLine(
+            $"IDE BMIBA=0x{machine.Ide.GetBarBase(4):X} status=0x{machine.Ide.BusMasterStatus:X2} prdt=0x{machine.Ide.BusMasterPrdt:X8} starts={machine.Ide.BusMasterStarts} pktbytes={machine.Ide.PrimarySlave.TotalPacketBytes}");
         Console.WriteLine($"IDE trace: {string.Join(" ", machine.Ide.AccessLog)}");
         Console.WriteLine(
             $"RTC accesses={machine.Bus.Rtc.AccessCount} pie={machine.Bus.Rtc.PeriodicEnabled}");
         var portLog = new System.Text.StringBuilder();
         foreach (var entry in machine.Bus.Io.PortAccessCounts)
         {
-            portLog.Append($" {entry.Key:X4}={entry.Value}");
+            portLog.Append(CultureInfo.InvariantCulture, $" {entry.Key:X4}={entry.Value}");
         }
 
         Console.WriteLine($"Port accesses:{portLog}");
-        var unmappedBuckets = new System.Collections.Generic.List<uint>(machine.Memory.UnmappedAccessCounts.Keys);
+        var unmappedBuckets = new List<uint>(machine.Memory.UnmappedAccessCounts.Keys);
         unmappedBuckets.Sort();
         var unmappedLog = new System.Text.StringBuilder();
         foreach (uint bucket in unmappedBuckets)
         {
-            unmappedLog.Append($" {bucket:X3}={machine.Memory.UnmappedAccessCounts[bucket]}");
+            unmappedLog.Append(CultureInfo.InvariantCulture, $" {bucket:X3}={machine.Memory.UnmappedAccessCounts[bucket]}");
         }
 
         Console.WriteLine($"Unmapped phys (1MB buckets):{unmappedLog}");
-        var configKeys = new System.Collections.Generic.List<ushort>(machine.Bus.Pci.ConfigAccessCounts.Keys);
+        var configKeys = new List<ushort>(machine.Bus.Pci.ConfigAccessCounts.Keys);
         configKeys.Sort();
         var configLog = new System.Text.StringBuilder();
         foreach (ushort key in configKeys)
         {
-            configLog.Append($" {key:X4}={machine.Bus.Pci.ConfigAccessCounts[key]}");
+            configLog.Append(CultureInfo.InvariantCulture, $" {key:X4}={machine.Bus.Pci.ConfigAccessCounts[key]}");
         }
 
         Console.WriteLine($"PCI cfg (bus+devfn):{configLog}");
@@ -436,36 +457,36 @@ internal static class Program
         int[] barSlots = { 0x10, 0x18, 0x20, 0x28, 0x30, 0x48 };
         foreach (int devfn in barSlots)
         {
-            uint cmdAddr = XGrid.Bus.Pci.PciBus.MakeConfigAddress((byte)(devfn >> 3), 0, 0x04);
-            uint barAddr = XGrid.Bus.Pci.PciBus.MakeConfigAddress((byte)(devfn >> 3), 0, 0x10);
+            uint cmdAddr = Bus.Pci.PciBus.MakeConfigAddress((byte)(devfn >> 3), 0, 0x04);
+            uint barAddr = Bus.Pci.PciBus.MakeConfigAddress((byte)(devfn >> 3), 0, 0x10);
             barLog.Append(
                 $" {devfn:X2}:cmd={machine.Bus.Pci.ReadConfig(cmdAddr, 2):X4}," +
                 $"bar0={machine.Bus.Pci.ReadConfig(barAddr, 4):X8}");
         }
 
-        uint nvCmdAddr = XGrid.Bus.Pci.PciBus.MakeConfigAddress(0, 0, 0x04) | (1u << 16);
-        uint nvBarAddr = XGrid.Bus.Pci.PciBus.MakeConfigAddress(0, 0, 0x10) | (1u << 16);
+        uint nvCmdAddr = Bus.Pci.PciBus.MakeConfigAddress(0, 0, 0x04) | (1u << 16);
+        uint nvBarAddr = Bus.Pci.PciBus.MakeConfigAddress(0, 0, 0x10) | (1u << 16);
         barLog.Append(
             $" NV1:cmd={machine.Bus.Pci.ReadConfig(nvCmdAddr, 2):X4}," +
             $"bar0={machine.Bus.Pci.ReadConfig(nvBarAddr, 4):X8}");
         uint intRoute = machine.Bus.Pci.ReadConfig(
-            XGrid.Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x6C), 4);
+            Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x6C), 4);
         uint pirqRoute = machine.Bus.Pci.ReadConfig(
-            XGrid.Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x68), 4);
+            Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x68), 4);
         uint acpiRoute = machine.Bus.Pci.ReadConfig(
-            XGrid.Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x64), 4);
+            Bus.Pci.PciBus.MakeConfigAddress(1, 0, 0x64), 4);
         barLog.Append($" introute={intRoute:X8} pirq={pirqRoute:X8} acpi={acpiRoute:X8}");
 
         Console.WriteLine($"PCI state:{barLog}");
         var smcLog = new System.Text.StringBuilder();
         foreach (var entry in machine.Bus.Smc.ReadCounts)
         {
-            smcLog.Append($" R{entry.Key:X2}={entry.Value}");
+            smcLog.Append(CultureInfo.InvariantCulture, $" R{entry.Key:X2}={entry.Value}");
         }
 
         foreach (var entry in machine.Bus.Smc.WriteCounts)
         {
-            smcLog.Append($" W{entry.Key:X2}={entry.Value}");
+            smcLog.Append(CultureInfo.InvariantCulture, $" W{entry.Key:X2}={entry.Value}");
         }
 
         Console.WriteLine($"SMC cmds:{smcLog}");
@@ -477,22 +498,23 @@ internal static class Program
         var txnLog = new System.Text.StringBuilder();
         foreach (var txn in machine.Bus.Smbus.RecentTransactions)
         {
-            txnLog.Append($" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}{(txn.Ok ? string.Empty : "!")}");
+            txnLog.Append(
+CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}{(txn.Ok ? string.Empty : "!")}");
         }
 
         Console.WriteLine($"SMBus log:{txnLog}");
-        var nv2aLog = new System.Text.StringBuilder();
-        foreach (var entry in machine.Nv2a.ReadCounts)
+        var nv2ALog = new System.Text.StringBuilder();
+        foreach (var entry in machine.Nv2A.ReadCounts)
         {
-            nv2aLog.Append($" R{entry.Key:X6}={entry.Value}");
+            nv2ALog.Append(CultureInfo.InvariantCulture, $" R{entry.Key:X6}={entry.Value}");
         }
 
-        foreach (var entry in machine.Nv2a.WriteCounts)
+        foreach (var entry in machine.Nv2A.WriteCounts)
         {
-            nv2aLog.Append($" W{entry.Key:X6}={entry.Value}");
+            nv2ALog.Append(CultureInfo.InvariantCulture, $" W{entry.Key:X6}={entry.Value}");
         }
 
-        Console.WriteLine($"NV2A regs:{nv2aLog}");
+        Console.WriteLine($"NV2A regs:{nv2ALog}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
@@ -504,7 +526,8 @@ internal static class Program
                     uint linear = address + (uint)offset + (uint)i;
                     if (virtualDump)
                     {
-                        uint physical = machine.Cpu.Mmu.Translate(linear, isWrite: false, isInstruction: false, out bool faulted, out _, sideEffects: false);
+                        uint physical = machine.Cpu.Mmu.Translate(linear, isWrite: false, isInstruction: false,
+                            out bool faulted, out _, sideEffects: false);
                         hex += faulted ? " ??" : $" {machine.Memory.Read8(physical):X2}";
                     }
                     else
@@ -562,13 +585,14 @@ internal static class Program
 
     private static int Fatx(string[] args)
     {
-        if (args.Length < 2 || (args[1] != "ls" && args[1] != "cat"))
+        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) && !string.Equals(args[1], "cat", StringComparison.Ordinal)))
         {
-            Console.Error.WriteLine("Usage: xgrid fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
+            Console.Error.WriteLine(
+                "Usage: xgrid fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
             return 1;
         }
 
-        bool list = args[1] == "ls";
+        bool list = string.Equals(args[1], "ls", StringComparison.Ordinal);
         string? imagePath = null;
         uint partition = 0;
         uint size = 0;
@@ -608,13 +632,13 @@ internal static class Program
 
         try
         {
-            using XGrid.Storage.IDiskImage image = XboxMachine.OpenDiskImage(imagePath);
+            using Storage.IDiskImage image = XboxMachine.OpenDiskImage(imagePath);
             if (size == 0)
             {
                 size = FindNextSuperblock(image, partition);
             }
 
-            var fs = XGrid.XboxFs.FatxFileSystem.Open(image, partition, size);
+            var fs = XboxFs.FatxFileSystem.Open(image, partition, size);
             if (list)
             {
                 foreach (var entry in fs.ListDirectory(path))
@@ -638,14 +662,16 @@ internal static class Program
 
             return 0;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException)
         {
             Console.Error.WriteLine($"FATX error: {exception.Message}");
             return 4;
         }
     }
 
-    private static uint FindNextSuperblock(XGrid.Storage.IDiskImage image, uint partition)
+    private static uint FindNextSuperblock(Storage.IDiskImage image, uint partition)
     {
         Span<byte> sector = stackalloc byte[512];
         for (uint lba = partition + 0x400; lba < image.SectorCount; lba += 0x400)
@@ -667,9 +693,10 @@ internal static class Program
 
     private static int Xbe(string[] args)
     {
-        if (args.Length < 2 || args[1] != "info")
+        if (args.Length < 2 || !string.Equals(args[1], "info", StringComparison.Ordinal))
         {
-            Console.Error.WriteLine("Usage: xgrid xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file.xbe)");
+            Console.Error.WriteLine(
+                "Usage: xgrid xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file.xbe)");
             return 1;
         }
 
@@ -719,23 +746,27 @@ internal static class Program
                     return 1;
                 }
 
-                using XGrid.Storage.IDiskImage disk = XboxMachine.OpenDiskImage(imagePath);
+                using Storage.IDiskImage disk = XboxMachine.OpenDiskImage(imagePath);
                 if (size == 0)
                 {
                     size = FindNextSuperblock(disk, partition);
                 }
 
-                var fs = XGrid.XboxFs.FatxFileSystem.Open(disk, partition, size);
+                var fs = XboxFs.FatxFileSystem.Open(disk, partition, size);
                 image = fs.ReadFile(path);
             }
 
             var xbe = XGrid.Xbe.XbeImage.Load(image);
-            Console.WriteLine($"Type={xbe.Type} Base=0x{xbe.BaseAddress:X8} Entry=0x{xbe.EntryPoint:X8} (stored 0x{xbe.EntryPointStored:X8})");
-            Console.WriteLine($"TitleId=0x{xbe.TitleId:X8} Title='{xbe.TitleName}' Media=0x{xbe.AllowedMedia:X} Region=0x{xbe.GameRegion:X} Version=0x{xbe.Version:X}");
-            Console.WriteLine($"Sections={xbe.Sections.Count} Libraries={xbe.Libraries.Count} Tls={(xbe.Tls is null ? "none" : "present")}");
+            Console.WriteLine(
+                $"Type={xbe.Type} Base=0x{xbe.BaseAddress:X8} Entry=0x{xbe.EntryPoint:X8} (stored 0x{xbe.EntryPointStored:X8})");
+            Console.WriteLine(
+                $"TitleId=0x{xbe.TitleId:X8} Title='{xbe.TitleName}' Media=0x{xbe.AllowedMedia:X} Region=0x{xbe.GameRegion:X} Version=0x{xbe.Version:X}");
+            Console.WriteLine(
+                $"Sections={xbe.Sections.Count} Libraries={xbe.Libraries.Count} Tls={(xbe.Tls is null ? "none" : "present")}");
             foreach (var section in xbe.Sections)
             {
-                Console.WriteLine($"  {section.Name,-12} VA=0x{section.VirtualAddress:X8} vsize=0x{section.VirtualSize:X} raw=0x{section.RawSize:X} flags=0x{section.Flags:X}");
+                Console.WriteLine(
+                    $"  {section.Name,-12} VA=0x{section.VirtualAddress:X8} vsize=0x{section.VirtualSize:X} raw=0x{section.RawSize:X} flags=0x{section.Flags:X}");
             }
 
             foreach (var library in xbe.Libraries)
@@ -745,7 +776,9 @@ internal static class Program
 
             return 0;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException)
         {
             Console.Error.WriteLine($"XBE error: {exception.Message}");
             return 4;
@@ -769,11 +802,14 @@ internal static class Program
         Console.WriteLine("Usage: xgrid <command> [options]");
         Console.WriteLine();
         Console.WriteLine("Commands:");
-        Console.WriteLine("  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ram MB]");
+        Console.WriteLine(
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ram MB]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
-        Console.WriteLine("  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
+        Console.WriteLine(
+            "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
         Console.WriteLine("                   List or extract files from a FATX partition");
-        Console.WriteLine("  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
+        Console.WriteLine(
+            "  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
         Console.WriteLine("                   Show XBE headers, sections, and libraries");
         Console.WriteLine("  --help, -h       Show this help");
         Console.WriteLine("  --version, -v    Show the version");

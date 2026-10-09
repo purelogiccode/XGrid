@@ -16,4 +16,8 @@ public sealed class ConfigurationException : Exception
         : base(message, innerException)
     {
     }
+
+    public ConfigurationException()
+    {
+    }
 }

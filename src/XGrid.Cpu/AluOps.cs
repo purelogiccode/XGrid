@@ -40,32 +40,32 @@ public static class AluOps
         uint flags = eflags & ~FlagBits.ArithmeticMask;
         if (sum > mask)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (((a ^ b ^ result) & 0x10u) != 0)
         {
-            flags |= FlagBits.AF;
+            flags |= FlagBits.Af;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         if (((a ^ result) & (b ^ result) & sign) != 0)
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -86,32 +86,32 @@ public static class AluOps
         uint flags = eflags & ~FlagBits.ArithmeticMask;
         if (difference < 0)
         {
-            flags |= FlagBits.CF;
+            flags |= FlagBits.Cf;
         }
 
         if (ParityEven(result))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (((a ^ b ^ result) & 0x10u) != 0)
         {
-            flags |= FlagBits.AF;
+            flags |= FlagBits.Af;
         }
 
         if (result == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((result & sign) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         if (((a ^ b) & (a ^ result) & sign) != 0)
         {
-            flags |= FlagBits.OF;
+            flags |= FlagBits.Of;
         }
 
         return flags;
@@ -120,20 +120,20 @@ public static class AluOps
     /// <summary>Computes flags for AND/OR/XOR/TEST: CF=OF=AF=0, PF/ZF/SF from the result.</summary>
     public static uint Logical(uint value, int size, uint eflags)
     {
-        uint flags = eflags & ~(FlagBits.CF | FlagBits.PF | FlagBits.AF | FlagBits.ZF | FlagBits.SF | FlagBits.OF);
+        uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Af | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);
         if (ParityEven(value))
         {
-            flags |= FlagBits.PF;
+            flags |= FlagBits.Pf;
         }
 
         if (value == 0)
         {
-            flags |= FlagBits.ZF;
+            flags |= FlagBits.Zf;
         }
 
         if ((value & SignBit(size)) != 0)
         {
-            flags |= FlagBits.SF;
+            flags |= FlagBits.Sf;
         }
 
         return flags;
@@ -143,14 +143,14 @@ public static class AluOps
     public static uint Inc(uint a, int size, uint eflags, out uint result)
     {
         uint flags = Add(a, 1, 0, size, eflags, out result);
-        return (flags & ~FlagBits.CF) | (eflags & FlagBits.CF);
+        return (flags & ~FlagBits.Cf) | (eflags & FlagBits.Cf);
     }
 
     /// <summary>Decrements, preserving CF.</summary>
     public static uint Dec(uint a, int size, uint eflags, out uint result)
     {
         uint flags = Sub(a, 1, 0, size, eflags, out result);
-        return (flags & ~FlagBits.CF) | (eflags & FlagBits.CF);
+        return (flags & ~FlagBits.Cf) | (eflags & FlagBits.Cf);
     }
 
     /// <summary>Negates (two's complement); CF is set when the operand is non-zero.</summary>

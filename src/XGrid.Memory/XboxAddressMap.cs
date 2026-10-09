@@ -31,10 +31,10 @@ public static class XboxAddressMap
     public const uint McpxRomSize = 0x00000200;
 
     /// <summary>NV2A register window base.</summary>
-    public const uint Nv2aBase = 0xFD000000;
+    public const uint Nv2ABase = 0xFD000000;
 
     /// <summary>NV2A register window size (16 MB).</summary>
-    public const uint Nv2aSize = 0x01000000;
+    public const uint Nv2ASize = 0x01000000;
 
     /// <summary>MCPX APU window base.</summary>
     public const uint ApuBase = 0xFE800000;

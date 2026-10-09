@@ -6,7 +6,8 @@ namespace XGrid.Cpu.Testing;
 public sealed class CpuTestResult
 {
     /// <summary>Creates a result.</summary>
-    public CpuTestResult(string name, bool passed, IReadOnlyList<string> failures, IReadOnlyDictionary<string, uint> actual)
+    public CpuTestResult(string name, bool passed, IReadOnlyList<string> failures,
+        IReadOnlyDictionary<string, uint> actual)
     {
         Name = name;
         Passed = passed;
