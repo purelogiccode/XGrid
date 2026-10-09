@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>XGrid.Cpu</RootNamespace>
+    <AssemblyName>XGrid.Cpu</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
+  </ItemGroup>
+
+</Project>

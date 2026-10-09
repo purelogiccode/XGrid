@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>XGrid.Host</RootNamespace>
+    <AssemblyName>XGrid.Host</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Cpu\XGrid.Cpu.csproj" />
+    <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
+    <ProjectReference Include="..\XGrid.Nv2a\XGrid.Nv2a.csproj" />
+    <ProjectReference Include="..\XGrid.Storage\XGrid.Storage.csproj" />
+  </ItemGroup>
+
+</Project>

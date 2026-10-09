@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>XGrid.Storage</RootNamespace>
+    <AssemblyName>XGrid.Storage</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
+    <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
+  </ItemGroup>
+
+</Project>
