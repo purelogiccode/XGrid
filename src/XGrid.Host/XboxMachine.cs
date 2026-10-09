@@ -30,6 +30,7 @@ public sealed class XboxMachine
         Ide = new IdeController();
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
+        Ide.DmaMemory = new AddressSpaceGuestMemory(Memory);
         Nv2a = new Nv2aMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory));
         Nv2a.InterruptChanged += OnNv2aInterrupt;
         Memory.AddRegion(
@@ -126,6 +127,12 @@ public sealed class XboxMachine
     /// <summary>Attaches a raw or qcow2 HDD image to the primary master IDE drive.</summary>
     public void AttachHdd(string path)
     {
+        Ide.AttachPrimaryMaster(OpenDiskImage(path));
+    }
+
+    /// <summary>Opens a raw or qcow2 disk image by magic number.</summary>
+    public static IDiskImage OpenDiskImage(string path)
+    {
         ArgumentException.ThrowIfNullOrEmpty(path);
         Span<byte> magic = stackalloc byte[4];
         using (System.IO.FileStream stream = System.IO.File.OpenRead(path))
@@ -133,10 +140,9 @@ public sealed class XboxMachine
             stream.ReadExactly(magic);
         }
 
-        IDiskImage image = magic[0] == 0x51 && magic[1] == 0x46 && magic[2] == 0x49 && magic[3] == 0xFB
+        return magic[0] == 0x51 && magic[1] == 0x46 && magic[2] == 0x49 && magic[3] == 0xFB
             ? new Qcow2DiskImage(path)
             : new RawDiskImage(path);
-        Ide.AttachPrimaryMaster(image);
     }
 
     /// <summary>Returns the CPU and bus to the power-on state and re-enables the MCPX overlay.</summary>
@@ -222,6 +228,26 @@ public sealed class XboxMachine
         public void WritePhysical(uint address, uint value)
         {
             _memory.Write32(address, value);
+        }
+    }
+
+    private sealed class AddressSpaceGuestMemory : IGuestMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public AddressSpaceGuestMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public byte ReadPhysical(uint address)
+        {
+            return _memory.Read8(address);
+        }
+
+        public void WritePhysical(uint address, byte value)
+        {
+            _memory.Write8(address, value);
         }
     }
 

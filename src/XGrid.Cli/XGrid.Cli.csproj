@@ -10,6 +10,9 @@
   <ItemGroup>
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
     <ProjectReference Include="..\XGrid.Host\XGrid.Host.csproj" />
+    <ProjectReference Include="..\XGrid.Storage\XGrid.Storage.csproj" />
+    <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
+    <ProjectReference Include="..\XGrid.XboxFs\XGrid.XboxFs.csproj" />
   </ItemGroup>
 
 </Project>

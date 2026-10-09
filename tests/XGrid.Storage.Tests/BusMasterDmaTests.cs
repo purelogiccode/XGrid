@@ -1,0 +1,189 @@
+using System;
+using System.Collections.Generic;
+using XGrid.Bus.Io;
+using Xunit;
+
+namespace XGrid.Storage.Tests;
+
+public sealed class BusMasterDmaTests
+{
+    private const ushort Taskfile = 0x1F0;
+    private const uint BmBase = 0xFF60;
+
+    private sealed class ArrayDisk : IDiskImage
+    {
+        private readonly byte[] _data;
+
+        public ArrayDisk(int sectors)
+        {
+            _data = new byte[sectors * AtaDevice.SectorSize];
+            for (int i = 0; i < _data.Length; i++)
+            {
+                _data[i] = (byte)(i + 7);
+            }
+        }
+
+        public uint SectorCount => (uint)(_data.Length / AtaDevice.SectorSize);
+
+        public void Dispose()
+        {
+        }
+
+        public void ReadSector(uint lba, Span<byte> destination)
+        {
+            _data.AsSpan((int)lba * AtaDevice.SectorSize, AtaDevice.SectorSize).CopyTo(destination);
+        }
+
+        public void WriteSector(uint lba, ReadOnlySpan<byte> source)
+        {
+            source.CopyTo(_data.AsSpan((int)lba * AtaDevice.SectorSize, AtaDevice.SectorSize));
+        }
+    }
+
+    private sealed class SparseMemory : IGuestMemory
+    {
+        private readonly Dictionary<uint, byte> _cells = new();
+
+        public byte ReadPhysical(uint address)
+        {
+            return _cells.TryGetValue(address, out byte value) ? value : (byte)0;
+        }
+
+        public void WritePhysical(uint address, byte value)
+        {
+            _cells[address] = value;
+        }
+
+        public void WritePrdt(uint table, uint buffer, uint count)
+        {
+            Write32(table, buffer);
+            Write32(table + 4, count | 0x80000000u);
+        }
+
+        private void Write32(uint address, uint value)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                WritePhysical(address + (uint)i, (byte)(value >> (8 * i)));
+            }
+        }
+    }
+
+    private static (IdeController Ide, IoSpace Io, SparseMemory Ram) Channel()
+    {
+        IdeController ide = new();
+        ide.AttachPrimaryMaster(new ArrayDisk(16));
+        IoSpace io = new();
+        ide.RegisterPorts(io);
+        SparseMemory ram = new();
+        ide.DmaMemory = ram;
+        ide.WriteConfig(0x20, 4, BmBase | 1u);
+        return (ide, io, ram);
+    }
+
+    [Fact]
+    public void AtaReadDmaMovesSectorToMemory()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+
+        io.Write8(Taskfile + 6, 0xA0);
+        io.Write8(Taskfile + 2, 0x01);
+        io.Write8(Taskfile + 3, 0x00);
+        io.Write8(Taskfile + 4, 0x00);
+        io.Write8(Taskfile + 5, 0x00);
+        io.Write8(Taskfile + 7, 0xC8);
+
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+
+        ram.WritePrdt(0x1000, 0x2000, 512);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal((byte)(i + 7), ram.ReadPhysical(0x2000u + (uint)i));
+        }
+
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void AtapiDmaInquiryMovesDataToMemory()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+
+        io.Write8(Taskfile + 6, 0xB0);
+        io.Write8(Taskfile + 1, 0x01);
+        io.Write8(Taskfile + 7, 0xA0);
+        Assert.Equal(0x58u, io.Read8(Taskfile + 7));
+
+        byte[] packet = new byte[12];
+        packet[0] = 0x12;
+        packet[4] = 36;
+        foreach (byte b in packet)
+        {
+            io.Write8(Taskfile, b);
+        }
+
+        // Mixed delivery (PIO packet despite DMA flag, DMA data): ready, awaiting the bus master.
+        Assert.True(ide.PrimarySlave.DmaResponseReady);
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+
+        ram.WritePrdt(0x1000, 0x3000, 36);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        Assert.Equal(0x05u, ram.ReadPhysical(0x3000));
+        Assert.Equal(0x80u, ram.ReadPhysical(0x3001));
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void BusMasterInterruptClearsOnWrite()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+
+        io.Write8(Taskfile + 6, 0xA0);
+        io.Write8(Taskfile + 2, 0x01);
+        io.Write8(Taskfile + 7, 0xC8);
+        ram.WritePrdt(0x1000, 0x2000, 512);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+
+        io.Write8((ushort)(BmBase + 2), 0x04);
+        Assert.Equal(0u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void AtapiDmaPacketArrivesViaPrdtStream()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+
+        // DMA packet command: no PIO bytes follow; the engine pulls the
+        // 12-byte packet and the 36-byte INQUIRY reply through one stream.
+        io.Write8(Taskfile + 6, 0xB0);
+        io.Write8(Taskfile + 1, 0x01);
+        io.Write8(Taskfile + 7, 0xA0);
+        Assert.Equal(0x58u, io.Read8(Taskfile + 7));
+
+        byte[] packet = new byte[12];
+        packet[0] = 0x12;
+        packet[4] = 36;
+        for (int i = 0; i < packet.Length; i++)
+        {
+            ram.WritePhysical(0x4000u + (uint)i, packet[i]);
+        }
+
+        ram.WritePrdt(0x1000, 0x4000, 48);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        Assert.Equal(0x05u, ram.ReadPhysical(0x4000 + 12));
+        Assert.Equal(0x80u, ram.ReadPhysical(0x4000 + 13));
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+}

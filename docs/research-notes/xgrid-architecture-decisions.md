@@ -862,3 +862,41 @@ load demands bus-master DMA with the kernel's IDEXPRDT PRDT plus a DVD-side
 ATAPI model that at least NAKs probes like xemu's empty drive. Implementation
 order: wake-up first (else DMA is untestable), then BM-DMA + ATAPI-probe
 handling before any dashboard-load attempt.
+
+## 31. Gate 1 DONE: kernel loads the dashboard via DMA (2026-10-09)
+
+The whole §30 wall fell in one session, driven by guest-behavior evidence
+(port/command/packet/BM diagnostics) plus a second xemu oracle capture
+(`ide_atapi_cmd*` traces). Fixes, all reference-first against xemu
+`hw/ide/{core,atapi}.c` + `ide-internal.h`, all with regression tests:
+
+- ATA data-port width: NT moves IDENTIFY/sectors with 32-bit `REP INSD`;
+  our port returned 2 bytes per 32-bit read, so IDENTIFY never completed
+  (128 accesses, guest parked). Now 8/16/32 all advance correctly.
+- Dual-drive taskfile: master HDD + ATAPI DVD slave, QEMU-style shared setup
+  writes + drive-select routing; slave returns the ATAPI signature
+  (`0x14/0xEB`) and IDENTIFY PACKET block (word 0 `0x85C0`).
+- ATAPI protocol details the driver polls: DRQ for the packet phase,
+  interrupt-reason bits (`CoD|IO`), READY|ERR (`0x41`, no SEEK) on packet
+  errors, REQUEST SENSE with 18 B fixed-format data, per-cause sense
+  (TUR/media `2/0x3A`, unknown opcode `5/0x20`, MODE SENSE page `5/0x24`).
+- Bus-master DMA engine (synchronous v1): BAR4 window via `OnBarWritten`,
+  PRDT walk through `IGuestMemory` (wired to RAM in `XboxMachine`), ATA
+  READ/WRITE DMA, ATAPI packet-in + packet-data DMA, IRQ ack on status
+  read/command write, BM INT/ERROR bits. Three evidence-driven corrections:
+  DMA-pending status stays READY (BSY deadlocks the driver into DEVICE
+  RESET), the packet arrives via DMA for F01 (zero PIO bytes, BM started)
+  but the driver still requires DRQ after A0, and both START-then-command
+  and command-then-START orders are kicked.
+- Packet errors always IRQ (no data follows), and a BM START that finds an
+  errored packet completes with INT so the driver reaches REQUEST SENSE.
+
+Result at 700M steps: guest sequence matches the xemu oracle through the
+entire DVD probe (`TUR→SENSE→MODE SENSE(0x3E)→SENSE→READ CAPACITY→SENSE`,
+sense bytes identical), then **27 `READ DMA (0xC8)` commands** moving ~828 KB
+(FATX metadata stride + 256-sector XBE bulk + tail). RAM forensics prove the
+bytes are the real dashboard: `XBEH` at phys `0xBF000`, the kernel's
+`CMP [ESI],"XBEH"` loader check at `0x2EE98`, and the `EvoX` cert string —
+matching the parallel FATX track's identification (softmod `xboxdash.xbe` at
+`0x465400`). Next gate: XBE launch (kernel idles at `0x800426D8` after the
+load; verify/relocate/entry-call, then menu draws + USB input).
