@@ -2715,11 +2715,11 @@ earlier one except where explicitly parallel (Track B/C).
 | 4 — x86 MMU | **Done** | 4 KB/4 MB paging, software TLB (large pages always walk), A/D bits, WP, `#PF` error codes, MOV CR/DR, INVLPG, CR0/CR3/CR4 TLB flushes, paging-aware GDT/IDT access |
 | 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI stubs with xemu IDs (OHCI x2, nvnet, APU, ACI, bus-1 NV2A); IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A diagnostics; DMA helper pending |
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O, ACI pending |
-| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--watch`); real MCPX 1.0 ROM -> 1BL -> 2BL -> **kernel at 0x80010000 with valid MZ header** (XboxWiki Boot Process: kernel comes from flash via RC4+LZX, not disk). Kernel parks in KiIdleLoop at ~25.06M instructions (idle thread only); a second Phase-1 worker thread (prio 8) runs encoder/SMC/full-EEPROM/RTC/LED init, then exits with status 0 at ~25.2M after a 5-byte security `CMPSB` mismatch (match path returns into the IDE-unlock path, which never runs; IDE/USB/video HW untouched, 50M/100M frozen). See kernel-phase notes below; next: find the divergent input behind the mismatch |
-| 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`); ATA-1 PIO `AtaDevice` (IDENTIFY, READ/WRITE SECTORS, MULTIPLE, SET FEATURES, FLUSH), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing); `XGrid.XboxFs/FatxFileSystem` (read-only: XTAF superblock, u16/u32 FAT selected by cluster count, cluster-1 root with entry-density auto-detect, 64B entries, chains with loop guards) + `xgrid fatx ls/cat`; kernel loads from flash so no IDE I/O occurs during boot (XboxWiki Boot Process) — disk path is for the dashboard phase; ATA SECURITY (unlock), XDVDFS/DVD pending |
-| 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side mapping/execution pending |
-| 10 — Kernel Interface | Not started | |
-| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine` (region + reset + PTIMER advance); xemu-faithful blocks/defaults (PMC/PBUS/PFIFO/PVIDEO/PTIMER/PFB/PGRAPH/PCRTC/PRAMDAC/PRAMIN/USER + stubs); 15 tests; boot shows kernel probes hitting real regs (PSTRAPS/PBUS/PMC) with FD unmapped buckets gone, still idling; PFIFO/PGRAPH exec + IRQ + VGA deferred |
+| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--watch`); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. Kernel then idles at `0x800426D8` — XBE verify/relocate/entry-call (the launch gate) is the next task. See M9 + research-notes §31 |
+| 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA, proven against an xemu `-trace` oracle (research-notes §30–31); XDVDFS/DVD media pending |
+| 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate, kernel idles at `0x800426D8` after the DMA load) |
+| 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
+| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + inline-vertex software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK, PMC/PFIFO IRQ path wired to PIC IRQ3 (correctly down under the driver's EN mask); textures/transforms/shaders/zeta/present pending (M5–M8) |
 | 12 — APU | Not started | |
 | 13 — USB & Controllers | Not started | |
 | 14 — Networking | Not started | |
@@ -2727,6 +2727,16 @@ earlier one except where explicitly parallel (Track B/C).
 
 Current test baseline: **653 tests passing** (36 Core, 396 Cpu, 49 Memory, 88 Bus, 11 Integration, 34 Nv2a, 22 Storage, 11 XboxFs, 6 Xbe);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
+
+**NEXT SESSION — XBE launch gate (start here).** Reproduce: `xgrid boot` (700M steps,
+`data/xemu-0.8.136-windows-x86_64/` set) → confirm `EIP=0x800426D8`, `lastCmd=0xC8`,
+`XBEH` at phys `0xBF000`. Then trace from the loader (`CMP [ESI],"XBEH"` at `0x2EE98`)
+to find what the kernel waits on after the dashboard DMA load (thread/wait state,
+object insert; xemu gdbstub oracle for the same point). Expect XBE verify/relocate/
+section-map/entry-call next; menu rendering then needs NV2A M5–M8 + present, input
+needs USB/OHCI. Full ordered plan: `AGENTS.md` "Next session"; gaps: M9 above;
+evidence trail: research-notes §30–31. Interpreter speed measured 2.34 M guest-insn/s
+(100M steps / 42.8 s) — fine for headless gates, needs Track C JIT for interactivity.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
@@ -2739,15 +2749,17 @@ disables the ROM overlay, copies itself to 0x400000, then runs from the high-RAM
 its own GDT/IDT/TSS (`LTR`) before executing `HLT` (waiting on an interrupt source) at ~24M
 instructions. `xgrid boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--steps N] [--trace N]
 [--trace-start N] [--trace-regs] [--dump addr[,len]]` runs user firmware and prints the final CPU state.
-Remaining for M1: the 1BL has already loaded and jumped to the **2BL** (compiled runtime executing at
-virtual 0x8000xxxx = physical 0x0xxxx via PDE[0x200]; interrupt entry + IRET + SEH frames observed).
-The 2BL reaches its fatal-error path from a dispatch-table call at 0x8002E6EB (table at 0x80010CD8:
-16-byte entries `{0xFFFFFFFF, thunkA, thunkB, 0}`; index 0 selects thunkB = 0x8001C785, a generated
-stub that raises internal error 0x78 after storing 0xFFFFFFFF = "not found"). Identify the
-object/table (likely a device/driver descriptor) and which missing hardware or unmodeled register
-makes the lookup fail; then continue the 2BL → kernel handshake.
+Remaining for M1: none — M1 (BIOS execution) is complete; the boot chain now runs
+MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard DMA load. The paragraphs below are
+historical (2BL-era forensics kept for reference).
 
 Kernel-phase diagnosis (session 2026-10-09; all with Complex_4627 + mcpx_1.0 + user eeprom/hdd):
+**RESOLVED — kept as history.** The CMPSB mismatch below was the SMBus word-read bug
+(kernel got `0x00A8` instead of `0xC4A8`, built a decimated WCHAR table); the fix
+(compose consecutive byte registers for multi-byte reads, matching HW/QEMU) let the
+gate fall through, after which the IDE path ran and Gate 1 completed (kernel loads the
+EvoX dashboard via DMA; see M9 + research-notes §23, §31). Current kernel idle is
+`0x800426D8` after the dashboard load; the next task is the XBE launch gate.
 - Idle loop decoded (`0x8001B02E`: STI/NOP/NOP/CLI, empty-DPC check at `[EBP]`, wake flag at
   `[EBX+0x2C]` = `0x80035C08` = PRCB NextThread). Parks at instruction 25,062,717 with zero
   interrupts delivered; 50M/100M runs are frozen past that point (only tick counts grow).
