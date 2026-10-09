@@ -805,3 +805,38 @@ INTR_EN_0 / RUNOUT_STATUS LOW_MARK, kick on PFIFO/USER/PGRAPH_FIFO writes.
   the full path (CACHE1 → pusher → puller → raster → RAM → PPM).
 - Next: correct attribute roles/transforms (vertex shaders or fixed-function
   matrices), textures, zeta, flip/display (M5–M8).
+
+## 29. Gate 1 reference facts: kernel-to-dashboard handoff (2026-10-09)
+
+XboxWiki Boot Process (p.51): 2BL enables IDE+NIC via PCI (`0x8000088C <-
+0x40000000`); kernel (stripped NT 5.0 + HAL + filesystems + HDD/DVD drivers,
+base `0x80010000`; INIT section holds cold-boot init + boot animation and is
+discarded after) inits hardware, plays the animation with direct register
+access (no audio/video drivers in kernel), unlocks the HDD, checks DVD, then
+loads `xboxdash.xbe` from partition 3 (dashboard) or starts the game; errors
+(no/wrong HDD, bad signature) show the Fatal Error screen and halt. Reboot
+re-init skips PCI setup, EEPROM decrypt, AV-pack check, video mode, "some IDE
+stuff", "some SMC stuff", allocator init, and debugger init (Kernel p.49 notes
+the IDEXPRDT PRDT section is allocation-only).
+
+Gate 1 consequences: the guest kernel itself performs HDD unlock (ATA SECURITY
+UNLOCK with the EEPROM key), FATX reads, and XBE load — no host FATX/XBE code
+is on the boot path. Our `AtaDevice` already implements the Xbox-critical set
+(IDENTIFY `0xEC`, READ `0x20`/`0x24`, SECURITY UNLOCK `0xF2`, init
+`0x91`/`0xEF`/`0xE7`) and the IDE controller is PCI-registered with legacy
+ports (`XboxMachine` wiring); the guest enumerates IDE on PCI but never issues
+ATA commands. So Gate 1 is NOT a missing-command problem — the open question
+is purely what the post-storage-init idle kernel waits on (candidates: DVD
+check/tray, USB stack, SMC event, PM timer, VBLANK IRQ, or simply more
+emulated time per §27).
+
+Differential tool (confirmed in tree): xemu is QEMU-based, so `xemu -trace`
+with `hw/ide/trace-events` (`ide_ioport_read/write`, `ide_bus_exec_cmd`,
+`ide_sector_read`) yields the reference kernel IDE timeline for the same
+BIOS/HDD; our port histogram is the symmetric probe. Experiment plan: (1) run
+xemu with IDE tracing to dashboard, record first ATA command + guest-time;
+(2) run XGrid longer-boot IDE histogram (late vs never); (3) diff PCI/SMBus/
+USB activity just before first ATA command on xemu vs ours to find the missing
+wake-up. Xermu corroborates direction only: its "Guided Executor" is a JIT
+(host regs = guest regs, fastmem + VEH-trapped MMIO) targeting dashboard +
+retail games — same Track C conclusion as our Gap 3.
