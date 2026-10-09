@@ -33,28 +33,49 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 
 ## Current state
 
-- Real MCPX ROM -> 1BL -> 2BL executes to its scheduler idle loop; all 2BL threads blocked.
-- Timer IRQ0 works; RTC is read but PIE never enabled; IDE is never accessed (IDE is nForce 10DE:01BC, as in xemu).
-- PCI stubs present with xemu IDs: OHCI x2 (0:2.0/0:3.0), nvnet 0:4.0, APU 0:5.0, ACI 0:6.0, NV2A on AGP bus 1
-  (AGP bridge at 0:30.0). Config space only; BAR MMIO is not routed yet. Secondary-bus routing in `PciBus`.
-- These did NOT unblock the 2BL. Port histogram (`Port accesses:` in CLI): PCI enumeration, SMBus, PM, PIC/PIT/RTC
-  and Super I/O are touched; IDE ports and the PM timer are not.
-- SMC matches xemu's register map; PCI stubs are all enumerated by the 2BL (incl. NV2A on bus 1,
-  which the 2BL reaches by programming the AGP secondary bus itself). No MMIO polling observed
-  (NV2A MMIO: 30 one-time probes). IDE PCI is probed but legacy ports never touched.
-- SMC handshake completes (challenge R1C-R1F + W20/W21, version, AV pack); tray/INTSTATUS never read.
-- Drivers are active (USB/nvnet/APU/NV2A cmd=0007 with BARs assigned) but MMIO never read back;
-  IDE is legacy cmd=0005 with ports untouched; LPC routing still default (all device IRQs masked).
-- **Reframe (XboxWiki Boot Process, page 51): the kernel at 0x80010000 has a valid MZ header —
-  the 2BL finished (flash copy + RC4 + LZX + MZ/PE check + entry call). We are in the KERNEL's
-  idle loop, not the 2BL's. All device activity completes before 50M instructions (50M and 100M
-  histograms are identical except tick/PIC-EOI counts). Kernel cold-boot init (PCI setup, SMC,
-  Super-I/O debugger, RTC) matches the wiki's list; IDE and video-progress never start.
-- Timer ISR is 0x80030E4C (EOI helper 0x80014F10, tick+quantum accounting, IRET); DPC branch
-  never fires. Exactly one thread exists (0x80035A90, Running); the wait is KiIdleLoop on an
-  empty DPC queue with no waiter object.
-- NV2A MMIO region at 0xFD000000 is online (`XGrid.Nv2a/Nv2aMmio`, xemu block map/defaults):
-  FD0/FD1 unmapped buckets gone, kernel probes hit real regs (PMC/PBUS/PSTRAPS), counts frozen
-  before 50M; 50M→100M otherwise identical to baseline (IRQ 36→108, same idle loop, IDE=0).
-  Presence alone did not unblock the kernel.
-- Next (kernel phase): USB OHCI MMIO + SOF interrupt, or IDE+FATX+XBE dashboard path.
+- Real MCPX ROM -> 1BL -> 2BL -> kernel executes (LLE). Kernel cold-boot init,
+  SMC handshake, PCI setup, RTC, NV2A driver all complete; timer IRQ0 + PIT flow.
+- **Gate 1 DONE (2026-10-09): the kernel loads the dashboard off the HDD.**
+  Guest sequence matches an xemu `-trace` oracle through HDD SECURITY UNLOCK,
+  the full ATAPI DVD probe (TUR/SENSE/MODE SENSE/READ CAPACITY with identical
+  sense bytes), then 27 READ DMA (`0xC8`) commands (~828 KB). RAM holds the
+  real EvoX XBE (`XBEH` at phys `0xBF000`, loader `CMP [ESI],"XBEH"` at
+  `0x2EE98`, `EvoX` cert string). See research-notes §31.
+- IDE engine (all xemu-faithful, tested): 8/16/32-bit data port, dual-drive
+  taskfile (HDD master + ATAPI DVD slave with `0x14/0xEB` signature), ATAPI
+  DRQ/reason-bit/error protocol, REQUEST SENSE, synchronous BM-DMA (BAR4
+  window via `OnBarWritten`, PRDT walk through `IGuestMemory` wired to RAM,
+  ATA + ATAPI DMA, IRQ ack). CLI prints `IDE cmds`, `ATAPI pkts`, `IDE BMIBA`.
+- Host-side dashboard tooling (parallel track, merged): `XGrid.XboxFs`
+  FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info`;
+  identified the boot dashboard as softmod `xboxdash.xbe` (770048 B, `EvoX`,
+  entry `0x12A17`) in partition at `0x465400`.
+- NV2A at `0xFD000000`: PFIFO pusher + PGRAPH inline-draw software rasterizer
+  render one Gouraud triangle (307K px; M4 done). No textures/shaders/zeta/
+  transforms yet; no present path (`XGrid.Graphics` empty; CLI dumps raw fb).
+- Interrupts: PIT/PIC/PIT-EOI fine, NV2A IRQ path wired (PMC INTR pending but
+  EN `0x01` keeps the line down, matching the driver). IDE IRQ14 works.
+- **Next gate (XBE launch):** the kernel idles at `0x800426D8` after the
+  dashboard load. Verify/relocate/entry-call of the XBE, then the dashboard
+  menu draws + USB input. Widen M5–M8 (transforms/textures/zeta/blits) and
+  Track C (CPU JIT) as needed; five remaining M9 gaps are tracked in
+  `ImplementationPlan.md`.
+- Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
+  once; conflicts were purged 2026-10-09). Baseline: 653 tests green,
+  `dotnet build`/`format --verify-no-changes` clean.
+
+## Next session — XBE launch gate
+
+1. Reproduce the idle: `xgrid boot` (700M steps) and confirm `EIP=0x800426D8`,
+   `lastCmd=0xC8`, `XBEH` at phys `0xBF000` (all verified 2026-10-09).
+2. Find what the kernel waits on after the load (trace from `0x2EE98`; watch
+   the thread/wait state, any object insert, and whether xemu's kernel
+   proceeds to XBE verify/relocate/entry-call from the same point).
+3. Then the dashboard runs: expect XBE section mapping, TLS, kernel-thunk
+   imports (needs Phase 10 kernel-HLE surface for dashboard ordinals only if
+   we choose HLE for its imports — LLE-first remains the rule).
+4. Parallel tracks when blocked: NV2A M5–M8 (textures/transforms/zeta/flip)
+   and Track C JIT for interactivity.
+5. Reference oracles: `xemu -trace` + gdbstub (`-s`) for guest-time compares;
+   `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
+   KTHREAD/KWAIT offsets if thread-state forensics are needed.
