@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XGrid.Benchmarks</RootNamespace>
+    <AssemblyName>XGrid.Benchmarks</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\..\src\XGrid.Memory\XGrid.Memory.csproj" />
+  </ItemGroup>
+
+</Project>

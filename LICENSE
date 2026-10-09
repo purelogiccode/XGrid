@@ -1,0 +1,7 @@
+XGrid is in early development. A project license has not been finalized yet.
+
+Until a license is selected and committed, all rights are reserved by the project authors.
+
+Third-party reference projects studied during development, and their licenses, are documented in
+docs/research-notes/sources.md. No source code from those projects is copied into XGrid except
+where a license explicitly permits it and the reuse is recorded.

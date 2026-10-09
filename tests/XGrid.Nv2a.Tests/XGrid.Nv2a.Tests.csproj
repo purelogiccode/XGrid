@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>XGrid.Nv2a.Tests</RootNamespace>
+    <AssemblyName>XGrid.Nv2a.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\..\src\XGrid.Memory\XGrid.Memory.csproj" />
+    <ProjectReference Include="..\..\src\XGrid.Nv2a\XGrid.Nv2a.csproj" />
+  </ItemGroup>
+
+</Project>
