@@ -840,3 +840,25 @@ USB activity just before first ATA command on xemu vs ours to find the missing
 wake-up. Xermu corroborates direction only: its "Guided Executor" is a JIT
 (host regs = guest regs, fastmem + VEH-trapped MMIO) targeting dashboard +
 retail games — same Track C conclusion as our Gap 3.
+
+## 30. xemu IDE differential capture: DMA-only dashboard load (2026-10-09)
+
+Ran headless `xemu.exe -display none -trace` (`ide_ioport_read/write`,
+`ide_bus_exec_cmd`, `ide_sector_read`, `ide_status_read`, `ide_ctrl_write`,
+data-phase events excluded) with our exact set (Complex_4627, mcpx_1.0,
+eeprom, xbox_hdd.qcow2), 110 s to dashboard idle. Whole-boot IDE traffic is
+42 commands: `EF EF EC F2 EC 91 EF EF A1 A0 x5 C8 x27+`. Facts: SET FEATURES
+init, IDENTIFY, SECURITY UNLOCK (`0xF2`, HDD unlock with EEPROM key) comes
+4th — very early; second IDENTIFY, init `0x91`, more `EF`; DVD probe
+(`0xA1` IDENTIFY PACKET + five `0xA0` PACKETs, empty DVD attached); then the
+entire dashboard load is READ DMA (`0xC8`) — no PIO data reads at all.
+
+Two consequences for XGrid. (1) Wake-up question stands: our guest never
+issues even the first `EF`, so the stall precedes IDE init (§29 candidates
+unchanged; longer-boot histogram still needed). (2) NEW second wall: our IDE
+stack has zero DMA support (no BMIBA/PRDT engine, no `0xC8`/`0xC4`, no ATAPI
+slave for `0xA1`/`0xA0`) — verified by grep. Once the kernel wakes, dashboard
+load demands bus-master DMA with the kernel's IDEXPRDT PRDT plus a DVD-side
+ATAPI model that at least NAKs probes like xemu's empty drive. Implementation
+order: wake-up first (else DMA is untestable), then BM-DMA + ATAPI-probe
+handling before any dashboard-load attempt.

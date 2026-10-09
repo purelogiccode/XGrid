@@ -1155,6 +1155,11 @@ Gap 1 — kernel→storage handoff (gate: guest ATA commands). The kernel idles 
 and dashboard load never start. Guest kernel does FATX/XBE itself, so no host
 FATX/XBE code is needed for boot; host `AtaDevice` already covers the
 Xbox-critical set (IDENTIFY `0xEC`, READ `0x20`/`0x24`, SECURITY UNLOCK `0xF2`).
+xemu `-trace` differential (research-notes §30) adds a second wall: the
+reference kernel loads the dashboard exclusively via READ DMA (`0xC8`, 27+
+commands; DVD side probed with `0xA1`/`0xA0`), and our IDE stack has no
+bus-master DMA/PRDT engine and no ATAPI slave. Implementation order: wake-up
+first (else DMA is untestable), then BM-DMA + ATAPI-probe handling.
 Resolve with the differential experiment in research-notes §29, not guesses:
 xemu `-trace` IDE timeline for the same BIOS/HDD vs our port histogram, then
 diff pre-first-command PCI/SMBus/USB activity to find the missing wake-up
