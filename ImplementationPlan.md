@@ -1150,15 +1150,17 @@ dashboard renders its menu through our NV2A path, and a controller input
 navigates it. Distance: far — six ordered gaps, each weeks-scale. Order
 matters; do not work on later gaps before earlier gates pass.
 
-Gap 1 — kernel→storage handoff (gate: guest IDE traffic). The kernel idles at
-400M steps with IDE ports never touched, so the dashboard load never starts.
-Guest kernel does FATX/XBE itself, so no host FATX/XBE code is needed for
-boot; the host needs functional ATA IDENTIFY/PIO reads + IDE interrupt, then
-proof via the port histogram (1F0/170 traffic, then FATX-pattern reads).
-First unknown to resolve with traces, not guesses: what the idle kernel waits
-on (thread/wait state, missing interrupt/event) and whether longer boots reach
-IDE init. (`IdeController`/`AtaDevice`/`Qcow2DiskImage` are wired; depth and
-the wake-up condition are unproven.)
+Gap 1 — kernel→storage handoff (gate: guest ATA commands). The kernel idles at
+400M steps: IDE is PCI-enumerated but legacy ports never touched, so HDD unlock
+and dashboard load never start. Guest kernel does FATX/XBE itself, so no host
+FATX/XBE code is needed for boot; host `AtaDevice` already covers the
+Xbox-critical set (IDENTIFY `0xEC`, READ `0x20`/`0x24`, SECURITY UNLOCK `0xF2`).
+Resolve with the differential experiment in research-notes §29, not guesses:
+xemu `-trace` IDE timeline for the same BIOS/HDD vs our port histogram, then
+diff pre-first-command PCI/SMBus/USB activity to find the missing wake-up
+(candidates: DVD check, USB stack, SMC event, PM timer, VBLANK IRQ, or more
+emulated time). (`IdeController`/`AtaDevice`/`Qcow2DiskImage` are wired; depth
+and the wake-up condition are unproven.)
 
 Gap 2 — exact dashboard identity. The HDD image contains UnleashX, Avalaunch,
 XBMC, and xboxdash strings (1.5 GB qcow2); which XBE the Complex_4627 BIOS
