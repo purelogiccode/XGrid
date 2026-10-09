@@ -32,6 +32,10 @@ internal static class Program
                 return 0;
             case "boot":
                 return Boot(args);
+            case "fatx":
+                return Fatx(args);
+            case "xbe":
+                return Xbe(args);
             default:
                 Console.Error.WriteLine($"Unknown command: {args[0]}");
                 PrintUsage();
@@ -392,8 +396,15 @@ internal static class Program
             $"PIT ch0 divisor={machine.Bus.Pit.Channel0Divisor} mode={machine.Bus.Pit.Channel0Mode}");
         Console.WriteLine($"Interrupts delivered={machine.Cpu.InterruptCount}");
         Console.WriteLine(
-            $"IDE accesses={machine.Ide.PrimaryMaster.AccessCount} " +
-            $"lastCmd=0x{machine.Ide.PrimaryMaster.LastCommand:X2}");
+            $"IDE accesses={machine.Ide.AccessCount} " +
+            $"lastCmd=0x{machine.Ide.LastCommand:X2} " +
+            $"(master=0x{machine.Ide.PrimaryMaster.LastCommand:X2} " +
+            $"slave=0x{machine.Ide.PrimarySlave.LastCommand:X2})");
+        Console.WriteLine($"IDE cmds: {string.Join(" ", machine.Ide.CommandLog)}");
+        Console.WriteLine($"ATAPI pkts: {string.Join(" ", machine.Ide.PrimarySlave.PacketLog)}");
+        Console.WriteLine($"ATAPI partial: master={machine.Ide.PrimaryMaster.PacketBytesReceived} slave={machine.Ide.PrimarySlave.PacketBytesReceived}");
+        Console.WriteLine($"IDE BMIBA=0x{machine.Ide.GetBarBase(4):X} status=0x{machine.Ide.BusMasterStatus:X2} prdt=0x{machine.Ide.BusMasterPrdt:X8} starts={machine.Ide.BusMasterStarts} pktbytes={machine.Ide.PrimarySlave.TotalPacketBytes}");
+        Console.WriteLine($"IDE trace: {string.Join(" ", machine.Ide.AccessLog)}");
         Console.WriteLine(
             $"RTC accesses={machine.Bus.Rtc.AccessCount} pie={machine.Bus.Rtc.PeriodicEnabled}");
         var portLog = new System.Text.StringBuilder();
@@ -466,7 +477,7 @@ internal static class Program
         var txnLog = new System.Text.StringBuilder();
         foreach (var txn in machine.Bus.Smbus.RecentTransactions)
         {
-            txnLog.Append($" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}={txn.Data0:X2}{txn.Data1:X2}{(txn.Ok ? string.Empty : "!")}");
+            txnLog.Append($" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}{(txn.Ok ? string.Empty : "!")}");
         }
 
         Console.WriteLine($"SMBus log:{txnLog}");
@@ -482,42 +493,6 @@ internal static class Program
         }
 
         Console.WriteLine($"NV2A regs:{nv2aLog}");
-        var userLog = new System.Text.StringBuilder();
-        foreach (var entry in machine.Nv2a.UserReadCounts)
-        {
-            userLog.Append($" R{entry.Key:X6}={entry.Value}");
-        }
-
-        Console.WriteLine($"NV2A user:{userLog}");
-        Console.WriteLine(
-            $"NV2A pusher words={machine.Nv2a.PusherWordsConsumed} capped={machine.Nv2a.PusherCapped} ctxsw={machine.Nv2a.ContextSwitches} irq={machine.Nv2a.InterruptAsserted} draws={machine.Nv2a.DrawsExecuted} skipped={machine.Nv2a.SkippedDraws} px={machine.Nv2a.DrawnPixels}");
-        var methodLog = new System.Text.StringBuilder();
-        foreach (var entry in machine.Nv2a.MethodCounts)
-        {
-            methodLog.Append($" {entry.Key:X8}={entry.Value}");
-        }
-
-        Console.WriteLine($"NV2A methods:{methodLog}");
-        var paramLog = new System.Text.StringBuilder();
-        foreach (var entry in machine.Nv2a.MethodParams)
-        {
-            if ((entry.Key & 0xFFFFu) is 0x200u or 0x204u or 0x208u or 0x20Cu or 0x210u or 0x214u or 0x180u or 0x0u)
-            {
-                paramLog.Append($" {entry.Key:X8}={entry.Value:X8}");
-            }
-        }
-
-        Console.WriteLine($"NV2A surface:{paramLog}");
-        var clearLog = new System.Text.StringBuilder();
-        foreach (var entry in machine.Nv2a.MethodParams)
-        {
-            if ((entry.Key & 0xFFFFu) is 0x1D8Cu or 0x1D90u or 0x1D94u or 0x1D98u or 0x1D9Cu or 0x120u or 0x124u or 0x128u)
-            {
-                clearLog.Append($" {entry.Key:X8}={entry.Value:X8}");
-            }
-        }
-
-        Console.WriteLine($"NV2A clearflip:{clearLog}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
@@ -585,6 +560,198 @@ internal static class Program
         Console.WriteLine($"Scan {hex} complete: {hits} hit(s).");
     }
 
+    private static int Fatx(string[] args)
+    {
+        if (args.Length < 2 || (args[1] != "ls" && args[1] != "cat"))
+        {
+            Console.Error.WriteLine("Usage: xgrid fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
+            return 1;
+        }
+
+        bool list = args[1] == "ls";
+        string? imagePath = null;
+        uint partition = 0;
+        uint size = 0;
+        string path = "\\";
+        string? output = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                    imagePath = NextValue(args, ref i);
+                    break;
+                case "--partition":
+                    partition = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--size":
+                    size = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--path":
+                    path = NextValue(args, ref i);
+                    break;
+                case "--out":
+                    output = NextValue(args, ref i);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown fatx option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        if (imagePath is null)
+        {
+            Console.Error.WriteLine("fatx requires --image <path> --partition <lba>");
+            return 1;
+        }
+
+        try
+        {
+            using XGrid.Storage.IDiskImage image = XboxMachine.OpenDiskImage(imagePath);
+            if (size == 0)
+            {
+                size = FindNextSuperblock(image, partition);
+            }
+
+            var fs = XGrid.XboxFs.FatxFileSystem.Open(image, partition, size);
+            if (list)
+            {
+                foreach (var entry in fs.ListDirectory(path))
+                {
+                    Console.WriteLine($"{(entry.IsDirectory ? "<DIR>" : $"{entry.Size,12}")} {entry.Name}");
+                }
+            }
+            else
+            {
+                byte[] data = fs.ReadFile(path);
+                if (output is null)
+                {
+                    using var stdout = Console.OpenStandardOutput();
+                    stdout.Write(data, 0, data.Length);
+                }
+                else
+                {
+                    File.WriteAllBytes(output, data);
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            Console.Error.WriteLine($"FATX error: {exception.Message}");
+            return 4;
+        }
+    }
+
+    private static uint FindNextSuperblock(XGrid.Storage.IDiskImage image, uint partition)
+    {
+        Span<byte> sector = stackalloc byte[512];
+        for (uint lba = partition + 0x400; lba < image.SectorCount; lba += 0x400)
+        {
+            image.ReadSector(lba, sector);
+            if (sector[0] == 'F' && sector[1] == 'A' && sector[2] == 'T' && sector[3] == 'X')
+            {
+                return lba - partition;
+            }
+        }
+
+        return image.SectorCount - partition;
+    }
+
+    private static string HexText(string text)
+    {
+        return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+    }
+
+    private static int Xbe(string[] args)
+    {
+        if (args.Length < 2 || args[1] != "info")
+        {
+            Console.Error.WriteLine("Usage: xgrid xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file.xbe)");
+            return 1;
+        }
+
+        string? filePath = null;
+        string? imagePath = null;
+        uint partition = 0;
+        uint size = 0;
+        string path = "\\default.xbe";
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--file":
+                    filePath = NextValue(args, ref i);
+                    break;
+                case "--image":
+                    imagePath = NextValue(args, ref i);
+                    break;
+                case "--partition":
+                    partition = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--size":
+                    size = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--path":
+                    path = NextValue(args, ref i);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown xbe option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        try
+        {
+            byte[] image;
+            if (filePath is not null)
+            {
+                image = File.ReadAllBytes(filePath);
+            }
+            else
+            {
+                if (imagePath is null)
+                {
+                    Console.Error.WriteLine("xbe info requires --file or --image with --partition and --path");
+                    return 1;
+                }
+
+                using XGrid.Storage.IDiskImage disk = XboxMachine.OpenDiskImage(imagePath);
+                if (size == 0)
+                {
+                    size = FindNextSuperblock(disk, partition);
+                }
+
+                var fs = XGrid.XboxFs.FatxFileSystem.Open(disk, partition, size);
+                image = fs.ReadFile(path);
+            }
+
+            var xbe = XGrid.Xbe.XbeImage.Load(image);
+            Console.WriteLine($"Type={xbe.Type} Base=0x{xbe.BaseAddress:X8} Entry=0x{xbe.EntryPoint:X8} (stored 0x{xbe.EntryPointStored:X8})");
+            Console.WriteLine($"TitleId=0x{xbe.TitleId:X8} Title='{xbe.TitleName}' Media=0x{xbe.AllowedMedia:X} Region=0x{xbe.GameRegion:X} Version=0x{xbe.Version:X}");
+            Console.WriteLine($"Sections={xbe.Sections.Count} Libraries={xbe.Libraries.Count} Tls={(xbe.Tls is null ? "none" : "present")}");
+            foreach (var section in xbe.Sections)
+            {
+                Console.WriteLine($"  {section.Name,-12} VA=0x{section.VirtualAddress:X8} vsize=0x{section.VirtualSize:X} raw=0x{section.RawSize:X} flags=0x{section.Flags:X}");
+            }
+
+            foreach (var library in xbe.Libraries)
+            {
+                Console.WriteLine($"  lib {library.Name} v{library.Major}.{library.Minor}.{library.Build}");
+            }
+
+            return 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or FileNotFoundException or DirectoryNotFoundException)
+        {
+            Console.Error.WriteLine($"XBE error: {exception.Message}");
+            return 4;
+        }
+    }
+
     private static string NextValue(string[] args, ref int index)
     {
         if (index + 1 >= args.Length)
@@ -604,6 +771,10 @@ internal static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ram MB]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
+        Console.WriteLine("  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
+        Console.WriteLine("                   List or extract files from a FATX partition");
+        Console.WriteLine("  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
+        Console.WriteLine("                   Show XBE headers, sections, and libraries");
         Console.WriteLine("  --help, -h       Show this help");
         Console.WriteLine("  --version, -v    Show the version");
     }

@@ -8,6 +8,7 @@ namespace XGrid.Storage;
 public sealed class Qcow2DiskImage : IDiskImage
 {
     private const ulong OffsetMask = 0x00FFFFFFFFFFFE00ul;
+    private const ulong ZeroFlag = 0x01ul;
 
     private readonly FileStream _stream;
     private readonly int _clusterBits;
@@ -81,7 +82,14 @@ public sealed class Qcow2DiskImage : IDiskImage
         Span<byte> entry = stackalloc byte[8];
         _stream.Position = (long)(l2Offset + (l2Index * 8));
         _stream.ReadExactly(entry);
-        ulong clusterOffset = BinaryPrimitives.ReadUInt64BigEndian(entry) & OffsetMask;
+        ulong l2Entry = BinaryPrimitives.ReadUInt64BigEndian(entry);
+        if ((l2Entry & ZeroFlag) != 0)
+        {
+            destination[..512].Clear();
+            return;
+        }
+
+        ulong clusterOffset = l2Entry & OffsetMask;
         if (clusterOffset == 0)
         {
             destination[..512].Clear();
