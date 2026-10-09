@@ -1159,12 +1159,12 @@ dual-drive taskfile, ATAPI protocol details, synchronous BM-DMA engine
 (BAR4/PRDT/IRQ). See research-notes §31. Next gate: XBE launch (verify,
 relocate, entry call — kernel idles at `0x800426D8` after the load).
 
-Gap 2 — exact dashboard identity. ANSWERED host-side (parallel track): the
-`0x465400` partition holds a softmod dashboard (`xboxdash.xbe` 770048 B,
-`evox.ini`, HeXEn); `XGrid.XboxFs` FATX reader + `XGrid.Xbe` parser +
-`xgrid fatx ls/cat` + `xgrid xbe info` verify end-to-end (see phase rows 8/9).
-Remaining: confirm the Complex_4627 BIOS boot order selects it (xemu boot-log
-comparison) before claiming "same dashboard".
+Gap 2 — exact dashboard identity [DONE 2026-10-09]. Both sides agree: the host
+FATX track identified softmod `xboxdash.xbe` (770048 B, `EvoX`, entry
+`0x12A17`) at partition `0x465400`, and Gate 1's guest RAM forensics proved the
+kernel itself DMA-loads that exact image (`XBEH` at phys `0xBF000`, loader
+`CMP [ESI],"XBEH"` at `0x2EE98`, `EvoX` cert string). "Same dashboard" claim
+is now evidence-backed; no further confirmation needed.
 
 Gap 3 — CPU throughput. Dashboard boot + menu needs billions of guest
 instructions; the interpreter cannot do that interactively. Needs JIT (Phase
