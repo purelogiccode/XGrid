@@ -1469,6 +1469,37 @@ invalid-surface refusal) + 4 `DisplayFrame` tests (new
 `XGrid.Graphics.Tests` project: dims, mismatch rejection, BMP byte layout
 incl. bottom-up rows, no-frame error). 725 green (Nv2a 67, Graphics 4).
 
+## 44. Surface-operation scoping + 2.5B-step run (2026-10-10)
+
+**Texture provenance (no felled tree).** The dashboard samples 7 texture
+offsets; RAM analysis shows all have plausible asset content — `0x321C000`
+blue gradient, `0x3022000`/`0x3066000` near-black fills, `0x2053000`/
+`0x3026000` zeros — i.e. **CPU-uploaded dashboard assets, dark by nature**,
+not missing GPU output. The M6 sampler reads them correctly. Only
+`0x3628000` is both a render target and a texture (true render-to-texture),
+and it is black solely because the draws targeting it are degenerate (§42).
+**There is no missing blit operation:** the 2D surfaces context (subs 3/4)
+is bound once (~line 160824, offsets `0x3BA1000`/`0x2053000`) but no blit
+command ever follows (15 non-3D methods total). So "surface operations" as a
+work category is real future work (render-to-texture will matter once
+programs go live) but blocks nothing today.
+
+**CLI 64-bit steps.** `--steps` used `int.Parse`, overflowing past 2.1B
+(`OverflowException` at 2.5B). Widened CLI counters to `ulong` with chunked
+`RunBatch` dispatch (`XboxMachine.Run` stays `int`-batched); verified by the
+run below reporting exactly `Executed 2500000000 instruction(s)`.
+
+**2.5B-step run: genuine forward progress.** Completes with no fault, not
+halted, at **new EIP `0x26402`** (dashboard image RVA `0x16402`, a `ret`
+site amid thiscall prologues — translated via CR3 page walk to phys
+`0x113402`). GPU state frozen (draws/pixels/frames/stalls identical to 1.7B;
+frame still #33/black) while the CPU moved on: IDE accesses 5727→8292 with
+**new ATA READ DMA LBAs**, interrupts 3110→4566, no new unmapped buckets.
+The dashboard is in an **asset-loading phase** (HDD reads, module code),
+past the black-frame render loop — the boot continues. Next: map the new
+READ DMA LBAs to HDD content to name the phase; continue longer runs; XID
+input for the eventual menu.
+
 
 
 

@@ -50,7 +50,7 @@ internal static class Program
         string? mcpxPath = null;
         string? eepromPath = null;
         string? hddPath = null;
-        int steps = 1_000_000;
+        ulong steps = 1_000_000;
         int trace = 0;
         int traceStart = 0;
         bool traceRegs = false;
@@ -84,7 +84,7 @@ internal static class Program
                     hddPath = NextValue(args, ref i);
                     break;
                 case "--steps":
-                    steps = int.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    steps = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--trace":
                     trace = int.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
@@ -212,7 +212,7 @@ internal static class Program
                 }
             };
 
-            int executed = 0;
+            ulong executed = 0;
             bool breakHit = false;
             if (breakAddress is null && breakLogAddress is { } logEip)
             {
@@ -284,7 +284,7 @@ internal static class Program
 
             if (breakAddress is null && trace > 0 && traceStart > 0)
             {
-                executed += machine.Run(Math.Min(traceStart, steps));
+                executed += RunBatch(machine, Math.Min((ulong)traceStart, steps));
             }
 
             int advanceCounter = 0;
@@ -310,9 +310,15 @@ internal static class Program
                 }
             }
 
-            if (!breakHit && executed < steps)
+            while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
             {
-                executed += machine.Run(steps - executed);
+                ulong ran = RunBatch(machine, steps - executed);
+                if (ran == 0)
+                {
+                    break;
+                }
+
+                executed += ran;
             }
 
             PrintState(machine, executed, dumps);
@@ -426,6 +432,12 @@ internal static class Program
         Console.WriteLine($"FB {path} {width}x{height} bpp={bpp} pitch={pitch} addr=0x{address:X8}");
     }
 
+    private static ulong RunBatch(XboxMachine machine, ulong remaining)
+    {
+        int batch = remaining > (ulong)int.MaxValue ? int.MaxValue : (int)remaining;
+        return batch <= 0 ? 0 : (ulong)machine.Run(batch);
+    }
+
     private static void SavePresentedFrame(XboxMachine machine, string path)
     {
         if (machine.Nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra))
@@ -486,7 +498,7 @@ internal static class Program
         return instruction;
     }
 
-    private static void PrintState(XboxMachine machine, int executed,
+    private static void PrintState(XboxMachine machine, ulong executed,
         IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
     {
         XboxContext context = machine.Cpu.Context;
