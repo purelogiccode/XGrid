@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace XGrid.Storage;
@@ -70,5 +71,60 @@ public sealed class RawDiskImage : IDiskImage
     public void Dispose()
     {
         _stream.Dispose();
+    }
+}
+
+/// <summary>
+/// Wraps a (possibly read-only) disk image with an in-memory copy-on-write
+/// overlay: writes are retained in RAM and reads consult the overlay first, so
+/// the backing image is never modified. Used for the HDD so guest filesystem
+/// writes cannot corrupt the shared reference image.
+/// </summary>
+public sealed class OverlayDiskImage : IDiskImage
+{
+    private readonly IDiskImage _backing;
+    private readonly Dictionary<uint, byte[]> _overlay = new();
+
+    /// <summary>Creates an overlay over the given backing image (which it owns).</summary>
+    public OverlayDiskImage(IDiskImage backing)
+    {
+        ArgumentNullException.ThrowIfNull(backing);
+        _backing = backing;
+    }
+
+    /// <inheritdoc />
+    public uint SectorCount => _backing.SectorCount;
+
+    /// <summary>Gets the number of sectors modified in the overlay (diagnostics).</summary>
+    public int ModifiedSectorCount => _overlay.Count;
+
+    /// <inheritdoc />
+    public void ReadSector(uint lba, Span<byte> destination)
+    {
+        if (_overlay.TryGetValue(lba, out byte[]? sector))
+        {
+            sector.AsSpan(0, 512).CopyTo(destination);
+            return;
+        }
+
+        _backing.ReadSector(lba, destination);
+    }
+
+    /// <inheritdoc />
+    public void WriteSector(uint lba, ReadOnlySpan<byte> source)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
+        if (source.Length < 512)
+        {
+            throw new ArgumentException("Source must hold one sector.", nameof(source));
+        }
+
+        _overlay[lba] = source[..512].ToArray();
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _backing.Dispose();
     }
 }
