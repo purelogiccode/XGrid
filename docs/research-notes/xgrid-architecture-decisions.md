@@ -1532,6 +1532,32 @@ logging, future work).
 dispatch (`--steps` overflowed past 2.1B); new `xgrid sector` raw-sector
 tool. 725 tests green, format clean.
 
+## 45. Phase named: content-discovery scan for menu population (2026-10-10)
+
+**Heap-string forensics settles it.** Diffing RAM 1.7B→2.5B (9 of 64 MB
+buckets changed; all GPU regions bit-identical; ~80–270 KB of heap churn at
+phys `0x33D000–0x3FC000`) exposes newly arrived strings: `unleashx.xbe`,
+`evoxdash.xbe`, `evox.ini`, `disk.bin`, `config.xml`, `Screensavers`,
+`Skin`, `backup`, `EvolutionX`, `UnleashX`, plus volume/content labels
+`FATX(P)`, `TDATA`, `UDATA`, `CACHE`, `Dash`, `SAVES`. The dashboard is
+**enumerating installed content** — alternate dashboards, screensavers,
+configs, save/cache volumes — i.e. populating its menu (games/apps/saves
+lists). Corroborated by `fatx ls`: C:\ holds `xboxdash.xbe`,
+`xboxdash2.xbe`, `evox.ini`, `disk.bin`, `Skin/HeXEn`, `backup/`; X:\ holds
+game-like data (`levels/`, `characters/`, `gui/`, …).
+
+**The strided reads stay mechanistically open** but narrowed: blind
+`0x80000`-spaced ×8-sector LBAs (not file-driven — unallocated areas),
+concurrent with the enumeration, content zeros + stale blobs. Leading
+hypotheses: sparse sampling of large content files, or a surface scan;
+attribution needs full IDE logging (the `--ide-log` idea stands).
+
+**Code context refined:** EIP `0x26402` is a vtable leaf getter called from
+VA `0x14C48` (return address on stack); page walks place caller (phys
+`0xE1C4D`) and helper (phys `0x113402`) in dashboard-loaded module mappings
+distinct from the XBE image — the caller is an MSVC SEH poll/retry loop
+issuing the probes.
+
 
 
 
