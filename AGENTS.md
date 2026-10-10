@@ -93,38 +93,39 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   bit-stream decompressor at `0x5C4A0` (RVA `0x24A0`; 16 KB ring buffer
   `[ctx+0x34]` masked `0x3FFF`, bit reader). At 700M the CPU is inside that
   decompressor (`srcIndex=0x19174`, state=12).
-- **Next gate (2026-10-10, §35): USB/OHCI.** The dashboard's init decompression
-  is real (monotonic `srcIndex`), it then issues ATA **WRITE DMA (`0xCA`)** to
-  LBA `0x80000` — the qcow2 reader was read-only, so `OverlayDiskImage`
-  (in-memory copy-on-write, wrapped in `XboxMachine.AttachHdd`) was added to
-  keep the reference image pristine. With it `xgrid boot --steps 1600000000`
-  completes with no fault (EIP `0x76192`, still in the dashboard image). It now
-  polls **USB0 (`0xFED00000`)** — `Unmapped phys FED=375651421` — a PCI stub
-  (`NForceUsbController`, 0:2.0) whose MMIO window isn't mapped. Implement OHCI
-  (xemu `hw/usb/hcd-ohci.c`, `hw/usb/`) and map the window. Then D3D/menu
-  (NV2A M5-M8 + present).
+- **USB/OHCI gate passed (2026-10-10, §36):** `OhciUsbController`
+  (`src/XGrid.Bus/Usb/`, xemu `hcd-ohci.c`-faithful: 256-byte region, 4 root
+  ports, HcRevision `0x10`, HcRhDescriptorA `0x204`, port/hub status semantics,
+  soft reset on HCR, `MIE && status&enable` IRQ gating, 1 ms frames via
+  `Advance` → SOF + HCCA writeback) is mapped at USB0 `0xFED00000` / USB1
+  `0xFED08000` (PCI 0:2.0/0:3.0, IRQ1/IRQ9 via `introute`). The
+  `FED=375651421` unmapped poll is gone; `xgrid boot --steps 1600000000`
+  completes with no fault at EIP `0x22DE2` (phys `0x10FDE2` — a **newly loaded
+  dashboard module**, real code calling module functions). Only tiny unmapped
+  buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub).
+- **Next gate:** continue the dashboard module toward D3D/menu bring-up
+  (NV2A M5-M8 + present); watch for the next blocked device (nvnet
+  `0xFEF00000` MMIO is still a PCI stub).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 681 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 690 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
 
-1. The dashboard XBE entry executes (phys `0x5CA17`) and its init runs:
-   decompresses its payload (`0x5C390` → `0x5C4A0`, monotonic progress),
-   writes the HDD via ATA WRITE DMA (handled by `OverlayDiskImage`), and
-   `xgrid boot --steps 1600000000` (1.6B steps,
-   `data/xemu-0.8.136-windows-x86_64/` set) completes with no fault.
-2. **Implement USB/OHCI** at `0xFED00000` (USB0) / `0xFED08000` (USB1): the
-   dashboard polls USB0 (375M unmapped reads). `NForceUsbController`
-   (`src/XGrid.Bus/Pci/XboxPciStubs.cs`, PCI 0:2.0/0:3.0, IRQ1/IRQ9 via
-   `introute=0E065491`) is a stub; register the MMIO window with an OHCI device.
-   References: xemu `hw/usb/hcd-ohci.c`, `hw/usb/`; `References/XboxWiki` USB
-   page (41). A minimal-but-correct OHCI (registers + root hub + ED/TD) should
-   let the kernel USB stack init; a controller with no attached device reports
-   empty ports.
-3. Then the dashboard continues: D3D device setup, menu rendering (needs NV2A
-   M5-M8 + present). LLE-first remains the rule; Phase 10 kernel-HLE only if we
-   choose HLE for dashboard ordinals.
+1. The dashboard XBE entry executes (phys `0x5CA17`), decompresses its payload,
+   writes the HDD via ATA WRITE DMA (handled by `OverlayDiskImage`), and now
+   passes the USB poll (OHCI implemented). `xgrid boot --steps 1600000000`
+   (1.6B steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no
+   fault at EIP `0x22DE2` (phys `0x10FDE2`, a newly mapped module).
+2. Characterize the module at phys `0x10FDE2` (page-walk VA→phys via CR3
+   `0xF000`; `objdump` from the RAM dump) — is it the dashboard's DirectX/menu
+   code? Find the next blocker (likely D3D device setup needing NV2A M5-M8, or
+   the nvnet stub at `0xFEF00000`). Tools: `--break-log`, `--watch`,
+   `--ramdump`, the CLI's unmapped-bucket report.
+3. Then menu rendering (NV2A M5-M8 + present) and controller input (the OHCI
+   root hub currently reports empty ports; an XID/gamepad device is future
+   work). LLE-first remains the rule; Phase 10 kernel-HLE only if we choose HLE
+   for dashboard ordinals.
 4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
 5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
