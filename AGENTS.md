@@ -125,10 +125,15 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   color → shared barycentric `FillTriangle`. **Validated on the real
   dashboard:** `xgrid boot --steps 1700000000` reports `draws executed=2670
   skipped=0 pixels=10137600` and the framebuffer at phys `0x1000` has rendered
-  content (previously skipped). Next: M6 (textures/lighting), M7 (zeta/blend),
-  M8 (present); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
+  content (previously skipped). **M6 textures done (§40):** per-slot texture
+  state, swizzled/linear A8R8G8B8 + R5G6B5 sampling with wrap/mirror/clamp,
+  modulate by `oD0`, texcoords from `oT0`; all 10.1M pixels now sample
+  (`textured=10137600`). The dashboard's visible textures are black/GPU-
+  generated (render-to-texture/blits not yet produced), so the image needs
+  M7 (zeta/blend), M8 (present) and surface operations. Next: M7/M8; inline
+  `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 707 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 708 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
