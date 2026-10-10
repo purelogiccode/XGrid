@@ -53,29 +53,43 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 - NV2A at `0xFD000000`: PFIFO pusher + PGRAPH inline-draw software rasterizer
   render one Gouraud triangle (307K px; M4 done). No textures/shaders/zeta/
   transforms yet; no present path (`XGrid.Graphics` empty; CLI dumps raw fb).
-- Interrupts: PIT/PIC/PIT-EOI fine, NV2A IRQ path wired (PMC INTR pending but
-  EN `0x01` keeps the line down, matching the driver). IDE IRQ14 works.
-- **Next gate (XBE launch):** the kernel idles at `0x800426D8` after the
-  dashboard load. Verify/relocate/entry-call of the XBE, then the dashboard
-  menu draws + USB input. Widen M5–M8 (transforms/textures/zeta/blits) and
-  Track C (CPU JIT) as needed; five remaining M9 gaps are tracked in
-  `ImplementationPlan.md`.
+- **Animation wait passed (2026-10-10, research-notes §32):** the `0x800426D8`
+  park was the boot animation waiting on the NV2A notifies page. Implemented
+  `NV097_BACK_END_WRITE_SEMAPHORE_RELEASE` (`0x1D70`) with the semaphore DMA
+  context resolved as a RAMHT handle (xemu's raw-PRAMIN-offset handling is a
+  TODO bug and deadlocks there — XGrid is now ahead of xemu on this path) and
+  `NV097_NO_OPERATION` (`0x100`) PGRAPH notifications; `UpdateIrq` now matches
+  xemu's `pending && enabled` assert. The loader runs the full animation and
+  reaches the video-mode-set path.
+- Interrupts: PIT/PIC/PIT-EOI fine, NV2A IRQ path live (PMC/PGRAPH/PCRTC
+  pending → PIC IRQ3; the kernel toggles `PMC_INTR_EN_0` around its DPC). IDE
+  IRQ14 works.
+- **Next gate (XBE launch):** the kernel faults on a null video-device object:
+  `#PF` at `0x8004E147` (`mov ecx,[eax]`, EAX=0) from `0x80057A33`; the object
+  came from `0x80053302` (video-device open/create) and stayed NULL →
+  BugCheck `0x1E` (`0xC0000005`). Then XBE verify/relocate/entry-call, menu
+  draws + USB input. Widen M5–M8 (transforms/textures/zeta/blits) and Track C
+  (CPU JIT) as needed; remaining M9 gaps tracked in `ImplementationPlan.md`.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 653 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 655 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
 
-1. Reproduce the idle: `xgrid boot` (700M steps) and confirm `EIP=0x800426D8`,
-   `lastCmd=0xC8`, `XBEH` at phys `0xBF000` (all verified 2026-10-09).
-2. Find what the kernel waits on after the load (trace from `0x2EE98`; watch
-   the thread/wait state, any object insert, and whether xemu's kernel
-   proceeds to XBE verify/relocate/entry-call from the same point).
+1. Run `xgrid boot` (700M steps, `data/xemu-0.8.136-windows-x86_64/` set); the
+   old park is gone; expect the null-object fault (BugCheck 0x1E) at ~157.5M
+   instructions (verified 2026-10-10).
+2. Trace `0x80053302` (first hit ~25.3M; the faulting call is later) to find
+   why the video-device object is NULL (candidates: a device object registered
+   by an earlier driver init, encoder/AV-pack path, missing NV2A interface).
+   `--ramdump`/`--ramin` snapshots + `objdump -b binary -m i386` (kernel image
+   at phys `0x10000`, VA = phys + `0x80000000`) were the working tools.
 3. Then the dashboard runs: expect XBE section mapping, TLS, kernel-thunk
    imports (needs Phase 10 kernel-HLE surface for dashboard ordinals only if
    we choose HLE for its imports — LLE-first remains the rule).
 4. Parallel tracks when blocked: NV2A M5–M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
-5. Reference oracles: `xemu -trace` + gdbstub (`-s`) for guest-time compares;
-   `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
-   KTHREAD/KWAIT offsets if thread-state forensics are needed.
+5. Reference oracles: `xemu -trace` + QEMU monitor (`-monitor tcp:...`,
+   `xp` physical reads; xemu deadlocks at the animation wait, so it is no
+   longer an oracle past that point); `References/Cxbx-Reloaded-master/src/
+   core/kernel/common/types.h` for KTHREAD/KWAIT offsets if needed.

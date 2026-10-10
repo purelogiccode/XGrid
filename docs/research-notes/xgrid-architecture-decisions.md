@@ -900,3 +900,52 @@ bytes are the real dashboard: `XBEH` at phys `0xBF000`, the kernel's
 matching the parallel FATX track's identification (softmod `xboxdash.xbe` at
 `0x465400`). Next gate: XBE launch (kernel idles at `0x800426D8` after the
 load; verify/relocate/entry-call, then menu draws + USB input).
+
+## 32. XBE-launch gate: animation wait solved via NV2A semaphore/notification LLE (2026-10-10)
+
+The `0x800426D8` park was fully diagnosed and passed. Evidence trail, in order:
+
+- **xemu reproduces the stall bit-for-bit** (0.8.136, same BIOS/HDD/EEPROM,
+  both `short-animation` settings, 6 min + 7.8 h CPU observed): `EIP=0x800426D4`,
+  `[P+0x1C]=9`, flag `[0x8004D878]=0`, notifies page < 7. So the park is
+  kernel behavior for this configuration, not an XGrid gap. (xemu's notifies
+  page read 3 or 5 depending on timing; ours always 3.)
+- **The wait**: boot-animation/loading-screen frame pacing in INIT. `waitHelper`
+  (`0x80042620`) spins until the notifies-page dword reaches `[P+0x1C]`; the
+  page is the `NV097_SET_CONTEXT_DMA_NOTIFIES` (method `0x180`) target: RAMHT
+  handle 2 → PRAMIN `0x11180` DMA object → phys page (frame `0x03FDF003`),
+  seeded `3` by `0x800422C0` (T=5). The wait target in the observed frame was 7.
+- **The missing writer**: the kernel's animation pushbuffer issues
+  `NV097_BACK_END_WRITE_SEMAPHORE_RELEASE` (`0x1D70`) with increasing values
+  (5, 7, 9, … up to 0x1F observed) using `SET_CONTEXT_DMA_SEMAPHORE`
+  (`0x1A4`, value **8 = RAMHT handle**, resolved to PRAMIN `0x111B0`, whose
+  object targets the same page). xemu's `pgraph.c` stores the parameter and
+  `nv_dma_map`s it as a **raw PRAMIN offset** (its own `TODO` comment) → the
+  write never reaches the page; XGrid now resolves it through the RAMHT
+  (`TryRamhtLookup`) and writes `parameter` to `object.address + semaphore
+  offset` through `IGpuMemory`. The loader then passes the wait.
+- **IRQ gating**: xemu's `nv2a_update_irq` asserts the PCI line when
+  `pmc.pending && pmc.enabled` (logical AND, `nv2a.c:48`); XGrid required a
+  bitwise match, so the kernel's `PMC_INTR_EN_0 = 1` never let PGRAPH pending
+  (bit 12) through. Matched xemu.
+- **Notification**: `NV097_NO_OPERATION` (`0x100`, parameter != 0) raises the
+  PGRAPH notification (xemu parity): `NV_PGRAPH_INTR` ERROR `1<<20`,
+  `NV_PGRAPH_NSOURCE`=NOTIFICATION, `NV_PGRAPH_TRAPPED_ADDR` with method
+  `0x100`, `NV_PGRAPH_TRAPPED_DATA_LOW` = parameter. The kernel's NV2A DPC
+  (`0x80045F80` → `0x80045D80`) dispatches command codes `0x300`-`0x320`
+  (observed `0x31C`, `0x320`, `0x304`) and acked through `PGRAPH_INTR`.
+- **Result**: at 700M steps the kernel no longer parks; it runs the whole
+  animation (14 semaphore releases to `0x1F`, 470 IRQs) and enters the
+  video-mode-set path. New gate: a **null object release** faults at
+  `0x8004E147` (`mov ecx,[eax]`, EAX=0) called from `0x80057A33`; the object
+  came from `0x80053302` (video-device open/create) and stayed NULL, then
+  BugCheck `0x1E` (KMODE_EXCEPTION_NOT_HANDLED) with `0xC0000005`. Next:
+  trace why `0x80053302` returns NULL (device creation) — see plan "Next
+  session".
+- Tooling added this session: `xgrid boot --ramdump <path>` and `--ramin
+  <path>` (RAM/PRAMIN snapshots), NV2A semaphore/notification/IRQ diagnostics
+  in the CLI; workflow used `objdump -b binary -m i386` (kernel image at phys
+  `0x10000`, VA = phys + `0x80000000`) and xemu's QEMU monitor (`xp`) as the
+  oracle. Kernel exports (366, ordinal-only) parse from the PE at
+  `0x80010000`; ordinal names come from Cxbx `kernel/common/kernel.h`.
+

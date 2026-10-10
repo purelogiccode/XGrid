@@ -300,6 +300,56 @@ public sealed class PfifoPusherTests
     }
 
     [Fact]
+    public void SemaphoreRelease_WritesValueToDmaTarget()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        nv2A.Write(Base + 0x2210u, 4, 0x00000100u);
+        nv2A.Write(Base + 0x710000u + 0x40u, 4, 0x00000008u);
+        nv2A.Write(Base + 0x710000u + 0x44u, 4, 0x8000111Bu);
+        nv2A.Write(Base + 0x7111B0u, 4, 0x0000003Du);
+        nv2A.Write(Base + 0x7111B4u, 4, 0x00000020u);
+        nv2A.Write(Base + 0x7111B8u, 4, 0x00008000u);
+        memory.WritePhysical(0x0000u, 0x000401A4u);
+        memory.WritePhysical(0x0004u, 0x00000008u);
+        memory.WritePhysical(0x0008u, 0x00041D6Cu);
+        memory.WritePhysical(0x000Cu, 0x00000004u);
+        memory.WritePhysical(0x0010u, 0x00041D70u);
+        memory.WritePhysical(0x0014u, 0x0000CAFEu);
+        memory.WritePhysical(0x0018u, 0x00001001u);
+
+        nv2A.Write(Base + 0x800040u, 4, 0x00001000u);
+
+        Assert.Equal(0u, nv2A.PusherError);
+        Assert.True(nv2A.MethodCounts.ContainsKey(0x1A4u));
+        Assert.True(nv2A.MethodCounts.ContainsKey(0x1D6Cu));
+        Assert.True(nv2A.MethodCounts.ContainsKey(0x1D70u));
+        Assert.Equal(1, nv2A.SemaphoreReleases);
+        Assert.Equal(0x0000CAFEu, memory.ReadPhysical(0x00008004u));
+    }
+
+    [Fact]
+    public void NoOperation_RaisesPgraphNotification()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        bool asserted = false;
+        nv2A.InterruptChanged += level => asserted = level;
+        nv2A.Write(Base + 0x400140u, 4, 0x00100000u);
+        nv2A.Write(Base + 0x0140u, 4, 0x00000001u);
+        memory.WritePhysical(0x0000u, 0x00040100u);
+        memory.WritePhysical(0x0004u, 0x0000031Cu);
+        memory.WritePhysical(0x0008u, 0x00001001u);
+
+        nv2A.Write(Base + 0x800040u, 4, 0x00001000u);
+
+        Assert.True(asserted);
+        Assert.True(nv2A.InterruptAsserted);
+        Assert.Equal(0x00100000u, nv2A.Read(Base + 0x400100u, 4));
+        Assert.Equal(1u, nv2A.Read(Base + 0x400108u, 4));
+        Assert.Equal(0x00000100u, nv2A.Read(Base + 0x400704u, 4));
+        Assert.Equal(0x0000031Cu, nv2A.Read(Base + 0x400708u, 4));
+    }
+
+    [Fact]
     public void InlineTriangle_RasterizesGouraudFill()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
