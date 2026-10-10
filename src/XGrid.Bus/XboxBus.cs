@@ -28,8 +28,8 @@ public sealed class XboxBus : IXboxDevice
         Pci.Register(new PciHostBridge());
         var agp = new PciAgpBridge();
         Pci.Register(agp);
-        Pci.Register(new NForceUsbController("nForce USB (OHCI) 0", 2));
-        Pci.Register(new NForceUsbController("nForce USB (OHCI) 1", 3));
+        Pci.Register(Usb0Pci = new NForceUsbController("nForce USB (OHCI) 0", 2));
+        Pci.Register(Usb1Pci = new NForceUsbController("nForce USB (OHCI) 1", 3));
         Pci.Register(new NvNetController());
         Pci.Register(ApuPci = new McpxApu());
         Pci.Register(new McpxAci());
@@ -65,6 +65,12 @@ public sealed class XboxBus : IXboxDevice
 
     /// <summary>Gets the MCPX APU PCI function (0:5.0).</summary>
     public McpxApu ApuPci { get; }
+
+    /// <summary>Gets the OHCI USB0 PCI function (0:2.0).</summary>
+    public NForceUsbController Usb0Pci { get; }
+
+    /// <summary>Gets the OHCI USB1 PCI function (0:3.0).</summary>
+    public NForceUsbController Usb1Pci { get; }
 
     /// <summary>Gets the MCPX LPC bridge.</summary>
     public LpcController Lpc { get; }

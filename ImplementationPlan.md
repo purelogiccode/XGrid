@@ -2750,7 +2750,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 2 — Memory System | **Done** | `PhysicalMemory`, `Endian`, `AddressSpace` (regions/priority/aliases), `IMmioDevice`, RAM benchmark; flash/MCPX/PCI-hole regions register in their phases |
 | 3 — x86/Pentium III CPU | **Done** | Tiers 1–10 done (integer, control flow, shifts/rotates, MUL/DIV, strings, system incl. CPUID/RDTSC/MSR/SETcc/CMOVcc, x87, MMX, SSE1) plus boot-path instructions (WBINVD/INVD, ARPL, BSWAP, LEAVE, ENTER, 0F 00 group, `FF /6`, `8F /0`, INS/OUTS, XADD/CMPXCHG, BSF/BSR, BT/BTS/BTR/BTC, AAM/AAD with #DE on base 0 and QEMU-verified flag semantics); exceptions #DE/#UD/#PF/#BP; x87 arithmetic uses double-precision rounding (documented limitation). Fixed 2026-10-10: `FCOM`/`FCOMP` memory operands (`D8`/`DC`) compared ST0 with itself instead of memory (research-notes §34) |
 | 4 — x86 MMU | **Done** | 4 KB/4 MB paging, software TLB (large pages always walk), A/D bits, WP, `#PF` error codes, MOV CR/DR, INVLPG, CR0/CR3/CR4 TLB flushes, paging-aware GDT/IDT access |
-| 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI stubs with xemu IDs (OHCI x2, nvnet, APU, ACI, bus-1 NV2A); IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A diagnostics; DMA helper pending |
+| 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI devices with xemu IDs — **OHCI USB0/USB1 implemented** (`OhciUsbController`, 0:2.0/0:3.0, `0xFED00000`/`0xFED08000`, IRQ1/IRQ9), nvnet/APU/ACI as config-space devices (APU has an MMIO model in `XGrid.Audio`, ACI in `XGrid.Bus/Aci`); bus-1 NV2A; IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A diagnostics; DMA helper pending |
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub, **MCPX ACI (AC'97) register model at 0xFEC00000, xemu `ac97.c`-faithful NAM/NABM (`McpxAciDevice`)**; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O pending |
 | 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin`); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot now runs the full intro animation and **executes the dashboard XBE image** — `xgrid boot --steps 700000000` completes with no fault, ending in the XBE's decompressor before its entry (`0x22A17`). See M9 + research-notes §31-34 |
 | 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); XDVDFS/DVD media pending |
@@ -2762,31 +2762,31 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **681 tests passing** (36 Core, 398 Cpu, 49 Memory, 101 Bus, 11 Integration, 36 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
+Current test baseline: **690 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 36 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — XBE launch gate (start here).** The animation wait (§32), the
-ACI/APU AV-device gates (§33), the **`fcomp` memory-operand CPU bug (§34)** and
-the **HDD-write gate (§35)** are solved. `xgrid boot --steps 1600000000` (1.6B
-steps, `data/xemu-0.8.136-windows-x86_64/` set) completes **with no fault**
-(`LastFault vec=0`): the intro animation ticks, the AV teardown runs clean, the
-**dashboard XBE entry executes** (entry field VA `0x10128` = absolute VA
-`0x12A17`, XOR-decrypted by the kernel, called at `0x800158DA`; entry runs at
-phys `0x5CA17`, resolves kernel thunks `[0x12C4B]=0x8001EEAC`), its init
-decompresses its payload (monotonic `srcIndex` 0→0x19174) and issues ATA
-**WRITE DMA `0xCA`** to LBA `0x80000` (now captured by `OverlayDiskImage`, an
-in-memory COW wrapper added in `AttachHdd`). It ends at EIP `0x76192` polling
-**USB0 (`0xFED00000`)** — `Unmapped phys FED=375651421`. Next: **implement
-USB/OHCI** at `0xFED00000`/`0xFED08000` (`NForceUsbController` is a PCI stub
-whose window isn't mapped) — xemu `hw/usb/hcd-ohci.c` + `hw/usb/`, XboxWiki USB
-page (41); a minimal-but-correct OHCI (registers + root hub + ED/TD, no
-attached device) should let the kernel USB stack init. Then D3D device setup and
-menu rendering (needs NV2A M5-M8 + present). LLE-first remains the rule; Phase
-10 kernel-HLE only if we choose HLE for dashboard ordinals. Tools: `--break-log
-<addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg per hit and continues), APU/ACI
-diagnostics + `APU log`, `--ramdump`/`--ramin`, objdump (XBE image at phys
-0x5A000; kernel at phys 0x10000, VA = phys + 0x80000000). Evidence trail:
-research-notes §30-35.
+ACI/APU AV-device gates (§33), the **`fcomp` memory-operand CPU bug (§34)**, the
+**HDD-write gate (§35)** and the **USB/OHCI gate (§36)** are solved.
+`xgrid boot --steps 1600000000` (1.6B steps, `data/xemu-0.8.136-windows-x86_64/`
+set) completes **with no fault** (`LastFault vec=0`): the intro animation ticks,
+the AV teardown runs clean, the **dashboard XBE entry executes** (entry field VA
+`0x10128` = absolute VA `0x12A17`, XOR-decrypted by the kernel, called at
+`0x800158DA`; entry runs at phys `0x5CA17`, resolves kernel thunks), its init
+decompresses its payload, writes the HDD via ATA WRITE DMA `0xCA` (captured by
+`OverlayDiskImage`), initializes USB against the new `OhciUsbController`, and now
+executes a **newly loaded module** at EIP `0x22DE2` (phys `0x10FDE2`). Only tiny
+unmapped buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub). Next:
+characterize the module at phys `0x10FDE2` (page-walk VA→phys via CR3 `0xF000`,
+`objdump` from the RAM dump) — is it the dashboard's DirectX/menu code? Find the
+next blocker (likely D3D device setup needing NV2A M5-M8, or the nvnet stub at
+`0xFEF00000`). Then menu rendering (NV2A M5-M8 + present) and controller input
+(the OHCI root hub reports empty ports; XID/gamepad is future work). LLE-first
+remains the rule; Phase 10 kernel-HLE only if we choose HLE for dashboard
+ordinals. Tools: `--break-log <addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg
+per hit and continues), APU/ACI diagnostics + `APU log`, `--ramdump`/`--ramin`,
+objdump (XBE image at phys 0x5A000; kernel at phys 0x10000, VA = phys +
+0x80000000). Evidence trail: research-notes §30-36.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

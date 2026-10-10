@@ -1111,4 +1111,45 @@ Implement the OHCI USB controller (register model + ED/TD + root hub) and map
 its window; references: xemu `hw/usb/hcd-ohci.c`, `hw/usb/`, and xqemu. Then
 the dashboard's D3D/menu bring-up (NV2A M5-M8 + present).
 
+## 36. OHCI USB implemented — USB gate passed (2026-10-10)
+
+`OhciUsbController` (`src/XGrid.Bus/Usb/OhciUsbController.cs`) models the MCPX
+OHCI 1.0 controller following xemu `hw/usb/hcd-ohci.c`:
+- 256-byte register region (xemu registers a 256-byte OHCI memory region),
+  four root ports (xemu `hw/xbox/xbox.c`: `num-ports=4`), base `0xFED00000`
+  (USB0) / `0xFED08000` (USB1), PCI 0:2.0/0:3.0 (`NForceUsbController`).
+- Register semantics: HcRevision `0x10`; HcRhDescriptorA = `NPS | num_ports` =
+  `0x204`; HcRhDescriptorB/RhStatus; HcControl (HCFS state machine; operational
+  starts frames, suspend stops and clears SF, reset re-inits the root hub);
+  HcCommandStatus (HCR triggers a **soft** reset — status/intr cleared, root hub
+  and descriptors kept — and SOC reads as `0`); HcInterruptStatus/Enable/Disable
+  with xemu's `asserted = (intr & MIE) && (intr_status & intr)` gating;
+  HcFmInterval (`fi=0x2EDF`, FSMPS/FIT bitfields); HcFmNumber; HcLSThreshold
+  `0x628`; HCCA/ED pointer masks (`0xFFFFFF00`/`0xFFFFFFF0`); unaligned access
+  returns `0xFFFFFFFF` and writes are ignored (xemu).
+- Root hub: port status reads return `ctrl | PPS`; writes apply the
+  write-1-to-clear WTC bits and the PES/PSS/PRS "set if connected" logic — with
+  **no attached device** `CCS=0`, so an enable write sets `CSC` and raises RHSC;
+  hub LPSC/LPS power the ports; `old != new` raises RHSC.
+- Frame timing: `Advance(cycles)` runs 1 ms frames only while operational
+  (`HCFS=Operational`), incrementing HcFmNumber, raising the SOF interrupt, and
+  writing the HCCA frame/pad/done back to guest memory (`hcca+0x80/0x82/0x84`)
+  via `IUsbMemory`. USB0/USB1 are wired to the machine (`XboxMachine.Usb0/1`,
+  PCI IRQ via `introute` slot 2→IRQ1, slot 3→IRQ9) and advanced from
+  `XboxMachine.Advance`. 9 tests (`OhciUsbTests`).
+
+**Result**: the `FED=375651421` unmapped bucket is gone — the USB register
+accesses now land in the OHCI model. `xgrid boot --steps 1600000000` completes
+**with no fault** (`LastFault vec=0`) at EIP `0x22DE2` (page-walks to phys
+`0x10FDE2`, a **newly mapped module** — the kernel remaps as the dashboard
+loads code; the code is real x86 with calls into the module at
+`0x113400`/`0x153910`/`0x119B24`). IDE activity continues (277 PRDT starts,
+reads at LBA `0xF8F7xx`). Remaining unmapped buckets are tiny (`045=4 065=8
+FEF=3970` — the nvnet stub is probed briefly).
+
+**Next gate**: the dashboard is executing a loaded module; continue toward
+D3D/menu bring-up (NV2A M5-M8 + present) and watch for the next blocked
+device (nvnet `0xFEF00000` MMIO is still a stub).
+
+
 

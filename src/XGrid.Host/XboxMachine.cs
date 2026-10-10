@@ -2,6 +2,7 @@ using System;
 using XGrid.Audio;
 using XGrid.Bus;
 using XGrid.Bus.Aci;
+using XGrid.Bus.Usb;
 using XGrid.Cpu;
 using XGrid.Memory;
 using XGrid.Nv2a;
@@ -56,6 +57,14 @@ public sealed class XboxMachine
             XboxAddressMap.ApuSize,
             Apu);
 
+        Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory));
+        Usb0.InterruptChanged += OnUsb0Interrupt;
+        Memory.AddRegion("USB0", XboxAddressMap.Usb0Base, XboxAddressMap.UsbSize, Usb0);
+
+        Usb1 = new OhciUsbController(XboxAddressMap.Usb1Base, new PhysicalUsbMemory(Memory));
+        Usb1.InterruptChanged += OnUsb1Interrupt;
+        Memory.AddRegion("USB1", XboxAddressMap.Usb1Base, XboxAddressMap.UsbSize, Usb1);
+
         Memory.AddRegion(
             "RAM mirror",
             XboxAddressMap.RamMirrorBase,
@@ -81,6 +90,12 @@ public sealed class XboxMachine
 
     /// <summary>Gets the MCPX APU register window.</summary>
     public McpxApuDevice Apu { get; }
+
+    /// <summary>Gets the OHCI USB0 register window.</summary>
+    public OhciUsbController Usb0 { get; }
+
+    /// <summary>Gets the OHCI USB1 register window.</summary>
+    public OhciUsbController Usb1 { get; }
 
     /// <summary>Gets the physical RAM.</summary>
     public PhysicalMemory Ram { get; }
@@ -189,6 +204,8 @@ public sealed class XboxMachine
     {
         Bus.Advance(cycles);
         Apu.Advance(cycles);
+        Usb0.Advance(cycles);
+        Usb1.Advance(cycles);
         _nv2ARemainder += cycles * Nv2AMmio.CoreClockHz;
         ulong ticks = _nv2ARemainder / XboxBus.CpuClockHz;
         _nv2ARemainder %= XboxBus.CpuClockHz;
@@ -250,6 +267,30 @@ public sealed class XboxMachine
         }
     }
 
+    private void OnUsb0Interrupt(bool asserted)
+    {
+        if (asserted)
+        {
+            Bus.Usb0Pci.RaiseInterrupt();
+        }
+        else
+        {
+            Bus.Usb0Pci.LowerInterrupt();
+        }
+    }
+
+    private void OnUsb1Interrupt(bool asserted)
+    {
+        if (asserted)
+        {
+            Bus.Usb1Pci.RaiseInterrupt();
+        }
+        else
+        {
+            Bus.Usb1Pci.LowerInterrupt();
+        }
+    }
+
     private sealed class PhysicalApuMemory : IApuMemory
     {
         private readonly AddressSpace _memory;
@@ -272,6 +313,26 @@ public sealed class XboxMachine
         public void Write8(uint address, byte value)
         {
             _memory.Write8(address, value);
+        }
+    }
+
+    private sealed class PhysicalUsbMemory : IUsbMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public PhysicalUsbMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public void Write16(uint address, ushort value)
+        {
+            _memory.Write16(address, value);
+        }
+
+        public void Write32(uint address, uint value)
+        {
+            _memory.Write32(address, value);
         }
     }
 
