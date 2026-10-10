@@ -2765,28 +2765,35 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **690 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 36 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — XBE launch gate (start here).** The animation wait (§32), the
-ACI/APU AV-device gates (§33), the **`fcomp` memory-operand CPU bug (§34)**, the
-**HDD-write gate (§35)** and the **USB/OHCI gate (§36)** are solved.
-`xgrid boot --steps 1600000000` (1.6B steps, `data/xemu-0.8.136-windows-x86_64/`
-set) completes **with no fault** (`LastFault vec=0`): the intro animation ticks,
-the AV teardown runs clean, the **dashboard XBE entry executes** (entry field VA
-`0x10128` = absolute VA `0x12A17`, XOR-decrypted by the kernel, called at
-`0x800158DA`; entry runs at phys `0x5CA17`, resolves kernel thunks), its init
-decompresses its payload, writes the HDD via ATA WRITE DMA `0xCA` (captured by
-`OverlayDiskImage`), initializes USB against the new `OhciUsbController`, and now
-executes a **newly loaded module** at EIP `0x22DE2` (phys `0x10FDE2`). Only tiny
-unmapped buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub). Next:
-characterize the module at phys `0x10FDE2` (page-walk VA→phys via CR3 `0xF000`,
-`objdump` from the RAM dump) — is it the dashboard's DirectX/menu code? Find the
-next blocker (likely D3D device setup needing NV2A M5-M8, or the nvnet stub at
-`0xFEF00000`). Then menu rendering (NV2A M5-M8 + present) and controller input
-(the OHCI root hub reports empty ports; XID/gamepad is future work). LLE-first
-remains the rule; Phase 10 kernel-HLE only if we choose HLE for dashboard
-ordinals. Tools: `--break-log <addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg
-per hit and continues), APU/ACI diagnostics + `APU log`, `--ramdump`/`--ramin`,
-objdump (XBE image at phys 0x5A000; kernel at phys 0x10000, VA = phys +
-0x80000000). Evidence trail: research-notes §30-36.
+**NEXT SESSION — NV2A fixed-function pipeline (M5-M8).** The animation wait
+(§32), the ACI/APU AV-device gates (§33), the **`fcomp` memory-operand CPU bug
+(§34)**, the **HDD-write gate (§35)** and the **USB/OHCI gate (§36)** are
+solved. `xgrid boot --steps 1600000000` (1.6B steps,
+`data/xemu-0.8.136-windows-x86_64/` set) completes **with no fault**: the intro
+animation ticks, the AV teardown runs clean, the **dashboard XBE entry
+executes** (entry field VA `0x10128` = absolute VA `0x12A17`, XOR-decrypted by
+the kernel, called at `0x800158DA`; entry runs at phys `0x5CA17`, resolves
+kernel thunks), its init decompresses its payload, writes the HDD via ATA WRITE
+DMA `0xCA` (captured by `OverlayDiskImage`), initializes USB against
+`OhciUsbController`, and the dashboard reaches its **rendering phase**. A
+1.7B-step run (`--pgraph`) shows EIP `0x14C72` (dashboard `.text`) and 186844
+PGRAPH methods: `NV097_ARRAY_ELEMENT16 0x1800`×58577,
+`NV097_SET_TRANSFORM_CONSTANT_LOAD 0x1EA4`×8301 + transform constants `0xB80`+,
+`NV097_SET_BEGIN_END 0x17FC`×5340 draws, `INLINE_ARRAY 0x1818`×396,
+`DRAW_ARRAYS 0x1810`×32, surface format/color/zeta, clears×41, flips×70.
+XGrid's NV2A handles inline draws (`0x1818`+`0x17FC`), surface set/clear and the
+semaphore/notification path, but **ignores `0x1800`, transform constants,
+vertex formats, textures, lighting and zeta** → no transformed geometry
+(screen effectively black). Implement **M5** first: transform-constant loading
+(`0xB80`, `0x1EA4`), the fixed-function vertex transform (modelview/projection/
+viewport → clip/screen space), and the inline-array element semantics
+(`0x1800`/`0x1808`/`0x1810`/`0x1818`); then M6 (textures/lighting), M7
+(zeta/blend), M8 (present). Reference: xemu `hw/xbox/nv2a/pgraph/`
+(`methods.h.inc`, `vertex.c`, `draw.c`, `vsh-ff.c`), `nv2a_regs.h`. The CLI now
+prints draw stats (`draws executed/skipped/pixels/clears`) to quantify.
+Tools: `--break-log <addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg per hit and
+continues), `--pgraph`, `--ramdump`/`--ramin`, objdump. Evidence trail:
+research-notes §30-36.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

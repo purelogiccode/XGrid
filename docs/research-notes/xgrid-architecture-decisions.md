@@ -1147,9 +1147,27 @@ loads code; the code is real x86 with calls into the module at
 reads at LBA `0xF8F7xx`). Remaining unmapped buckets are tiny (`045=4 065=8
 FEF=3970` — the nvnet stub is probed briefly).
 
-**Next gate**: the dashboard is executing a loaded module; continue toward
-D3D/menu bring-up (NV2A M5-M8 + present) and watch for the next blocked
-device (nvnet `0xFEF00000` MMIO is still a stub).
+**Next gate — NV2A fixed-function pipeline (M5-M8).** A 1.7B-step run
+(`--pgraph`) shows the dashboard has reached its **rendering phase**: EIP
+`0x14C72` (dashboard `.text`, page-mapped in pieces; 1.6B EIP was `0x22DE2`,
+so the CPU is progressing), NV2A semaphores unchanged (52), and 186844 PGRAPH
+methods submitted — dominated by `NV097_ARRAY_ELEMENT16` (`0x1800`, 58577),
+`NV097_SET_TRANSFORM_CONSTANT_LOAD` (`0x1EA4`, 8301) + transform constants
+(`0xB80`.., 8301/3387/3255 per dword), `NV097_SET_BEGIN_END` (`0x17FC`, 5340
+draws), `NV097_DRAW_ARRAYS` (`0x1810`, 32), `NV097_INLINE_ARRAY` (`0x1818`,
+396), surface format/color/zeta (`0x208`/`0x210`/`0x214`), `NV097_CLEAR_SURFACE`
+(`0x1D94`, 41) and flips (`0x1D84`/`0x1D90`, 70/151). XGrid's NV2A handles
+inline draws (`0x1818` + `0x17FC`), surface set/clear, and the semaphore/
+notification path, but **ignores `0x1800` (ARRAY_ELEMENT16), transform
+constants (`0xB80`/`0x1EA4`), vertex formats, textures, lighting, and zeta** —
+so the dashboard's geometry is not transformed/rendered (screen effectively
+black). Next: implement the fixed-function vertex pipeline (M5: transform
+constants → vertex transform → clip/screen space, plus the inline-array
+element semantics), then textures/lighting (M6), zeta/blend (M7), and present
+(M8). The CLI now prints draw stats (`draws executed/skipped/pixels/clears`)
+to quantify progress. Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`,
+`vertex.c`, `draw.c`, `vsh-ff.c`), `nv2a_regs.h`.
+
 
 
 
