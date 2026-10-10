@@ -585,7 +585,9 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine($"NV2A regs:{nv2ALog}");
         Console.WriteLine(
             $"NV2A draws executed={machine.Nv2A.DrawsExecuted} skipped={machine.Nv2A.SkippedDraws} " +
-            $"pixels={machine.Nv2A.DrawnPixels} clears={machine.Nv2A.ClearsExecuted}");
+            $"pixels={machine.Nv2A.DrawnPixels} clears={machine.Nv2A.ClearsExecuted} " +
+            $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
+            $"inlineElements={machine.Nv2A.InlineElementCount}");
         Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
         var pmcEnLogText = new System.Text.StringBuilder();
         foreach (uint entry in machine.Nv2A.PmcIntrEnLog)

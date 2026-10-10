@@ -135,10 +135,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodClearSurface = 0x1D94u;
     private const uint MethodClearRectH = 0x1D98u;
     private const uint MethodClearRectV = 0x1D9Cu;
+    private const uint MethodVertexArrayOffsetBase = 0x1720u;
+    private const uint MethodVertexArrayOffsetEnd = 0x175Cu;
     private const uint MethodVertexFormatBase = 0x1760u;
     private const uint MethodVertexFormatEnd = 0x179Cu;
     private const uint MethodBeginEnd = 0x17FCu;
+    private const uint MethodArrayElement16 = 0x1800u;
+    private const uint MethodArrayElement32 = 0x1808u;
+    private const uint MethodDrawArrays = 0x1810u;
     private const uint MethodInlineArray = 0x1818u;
+    private const uint MethodTransformProgramBase = 0x0B00u;
+    private const uint MethodTransformProgramEnd = 0x0B7Cu;
+    private const uint MethodTransformConstantBase = 0x0B80u;
+    private const uint MethodTransformConstantEnd = 0x0BFCu;
+    private const uint MethodTransformExecutionMode = 0x1E94u;
+    private const uint MethodTransformProgramCxtWriteEn = 0x1E98u;
+    private const uint MethodTransformProgramLoad = 0x1E9Cu;
+    private const uint MethodTransformProgramStart = 0x1EA0u;
+    private const uint MethodTransformConstantLoad = 0x1EA4u;
+    private const int MaxTransformProgramLength = 136;
+    private const int MaxVertexShaderConstants = 192;
+    private const int MaxInlineElements = 65536;
     private const uint BeginEndTriangles = 5u;
     private const uint BeginEndTriangleStrip = 6u;
     private const uint BeginEndTriangleFan = 7u;
@@ -230,6 +247,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _flipWrite;
     private uint _flipModulo;
     private readonly uint[] _vertexFormat = new uint[16];
+    private readonly uint[] _vertexArrayOffset = new uint[16];
+    private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
+    private readonly uint[][] _transformConstants = new uint[MaxVertexShaderConstants][];
+    private uint _transformProgramLoad;
+    private uint _transformProgramStart;
+    private uint _transformExecutionMode;
+    private uint _transformProgramCxtWriteEn;
+    private uint _transformConstantLoad;
+    private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
     private uint _beginMode;
     private readonly Dictionary<uint, int> _methodCounts = new();
@@ -243,6 +269,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         RamSize = ramSize;
         Name = name;
         _memory = memory;
+        for (int i = 0; i < MaxTransformProgramLength; i++)
+        {
+            _transformProgram[i] = new uint[4];
+        }
+
+        for (int i = 0; i < MaxVertexShaderConstants; i++)
+        {
+            _transformConstants[i] = new uint[4];
+        }
+
         Reset();
     }
 
@@ -357,6 +393,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the current color surface bytes per pixel (0 for unknown formats). Diagnostics.</summary>
     public uint PresentedColorBpp => ColorBytesPerPixel(_surfaceFormat & 0xFu);
 
+    /// <summary>Gets the number of collected inline array elements. Diagnostics.</summary>
+    public int InlineElementCount => _inlineElements.Count;
+
+    /// <summary>Gets the transform program load pointer. Diagnostics.</summary>
+    public uint TransformProgramLoadDebug => _transformProgramLoad;
+
+    /// <summary>Gets the transform constant load pointer. Diagnostics.</summary>
+    public uint TransformConstantLoadDebug => _transformConstantLoad;
+
+    /// <summary>Reads a transform program word (diagnostics).</summary>
+    public uint ReadTransformProgramWord(uint index, int part)
+    {
+        return index < MaxTransformProgramLength && part is >= 0 and < 4 ? _transformProgram[index][part] : 0;
+    }
+
+    /// <summary>Reads a transform constant word (diagnostics).</summary>
+    public uint ReadTransformConstantWord(uint index, int part)
+    {
+        return index < MaxVertexShaderConstants && part is >= 0 and < 4 ? _transformConstants[index][part] : 0;
+    }
+
     /// <summary>Advances the PTIMER free-running counter by the given core-clock ticks.</summary>
     public void Advance(ulong coreTicks)
     {
@@ -430,7 +487,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _flipWrite = 0;
         _flipModulo = 0;
         Array.Clear(_vertexFormat);
+        Array.Clear(_vertexArrayOffset);
         _inlineWords.Clear();
+        _inlineElements.Clear();
+        foreach (uint[] row in _transformProgram)
+        {
+            Array.Clear(row);
+        }
+
+        foreach (uint[] row in _transformConstants)
+        {
+            Array.Clear(row);
+        }
+
+        _transformProgramLoad = 0;
+        _transformProgramStart = 0;
+        _transformExecutionMode = 0;
+        _transformProgramCxtWriteEn = 0;
+        _transformConstantLoad = 0;
         _beginMode = 0;
         DrawsExecuted = 0;
         DrawnPixels = 0;
@@ -1365,12 +1439,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 if (parameter == 0)
                 {
                     FlushInlineDraw();
+                    ResetInlineBuffers();
                 }
                 else
                 {
                     _beginMode = parameter;
+                    ResetInlineBuffers();
                 }
 
+                break;
+            case MethodArrayElement16:
+                AppendInlineElement16(parameter);
+                break;
+            case MethodArrayElement32:
+                if (_inlineElements.Count < MaxInlineElements)
+                {
+                    _inlineElements.Add(parameter);
+                }
+
+                break;
+            case MethodDrawArrays:
+                AppendDrawArrays(parameter);
                 break;
             case MethodInlineArray:
                 if (_inlineWords.Count < MaxInlineWords)
@@ -1378,6 +1467,21 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     _inlineWords.Add(parameter);
                 }
 
+                break;
+            case MethodTransformExecutionMode:
+                _transformExecutionMode = parameter;
+                break;
+            case MethodTransformProgramCxtWriteEn:
+                _transformProgramCxtWriteEn = parameter;
+                break;
+            case MethodTransformProgramLoad:
+                _transformProgramLoad = parameter;
+                break;
+            case MethodTransformProgramStart:
+                _transformProgramStart = parameter;
+                break;
+            case MethodTransformConstantLoad:
+                _transformConstantLoad = parameter;
                 break;
             default:
                 break;
@@ -1387,6 +1491,89 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             ((method - MethodVertexFormatBase) & 3u) == 0)
         {
             _vertexFormat[(method - MethodVertexFormatBase) / 4] = parameter;
+        }
+
+        if (method >= MethodVertexArrayOffsetBase && method <= MethodVertexArrayOffsetEnd &&
+            ((method - MethodVertexArrayOffsetBase) & 3u) == 0)
+        {
+            _vertexArrayOffset[(method - MethodVertexArrayOffsetBase) / 4] = parameter;
+        }
+
+        if (method >= MethodTransformProgramBase && method <= MethodTransformProgramEnd &&
+            ((method - MethodTransformProgramBase) & 3u) == 0)
+        {
+            WriteTransformProgram((method - MethodTransformProgramBase) / 4, parameter);
+        }
+
+        if (method >= MethodTransformConstantBase && method <= MethodTransformConstantEnd &&
+            ((method - MethodTransformConstantBase) & 3u) == 0)
+        {
+            WriteTransformConstant((method - MethodTransformConstantBase) / 4, parameter);
+        }
+    }
+
+    private void ResetInlineBuffers()
+    {
+        _inlineElements.Clear();
+        _inlineWords.Clear();
+    }
+
+    private void AppendInlineElement16(uint parameter)
+    {
+        if (_inlineElements.Count + 2 > MaxInlineElements)
+        {
+            return;
+        }
+
+        _inlineElements.Add(parameter & 0xFFFFu);
+        _inlineElements.Add(parameter >> 16);
+    }
+
+    private void AppendDrawArrays(uint parameter)
+    {
+        int start = (int)(parameter & 0x00FFFFFFu);
+        int count = (int)((parameter >> 24) & 0xFFu) + 1;
+        if (_inlineElements.Count != 0)
+        {
+            for (int i = 0; i < count && _inlineElements.Count < MaxInlineElements; i++)
+            {
+                _inlineElements.Add((uint)(start + i));
+            }
+
+            return;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            _inlineElements.Add((uint)(start + i));
+        }
+    }
+
+    private void WriteTransformProgram(uint slot, uint value)
+    {
+        if (_transformProgramLoad >= MaxTransformProgramLength)
+        {
+            return;
+        }
+
+        _transformProgram[_transformProgramLoad][slot & 3u] = value;
+        if ((slot & 3u) == 3u)
+        {
+            _transformProgramLoad++;
+        }
+    }
+
+    private void WriteTransformConstant(uint slot, uint value)
+    {
+        if (_transformConstantLoad >= MaxVertexShaderConstants)
+        {
+            return;
+        }
+
+        _transformConstants[_transformConstantLoad][slot & 3u] = value;
+        if ((slot & 3u) == 3u)
+        {
+            _transformConstantLoad++;
         }
     }
 

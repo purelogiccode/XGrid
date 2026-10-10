@@ -1168,6 +1168,51 @@ element semantics), then textures/lighting (M6), zeta/blend (M7), and present
 to quantify progress. Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`,
 `vertex.c`, `draw.c`, `vsh-ff.c`), `nv2a_regs.h`.
 
+## 37. NV2A M5 started: transform program/constant + inline element foundation (2026-10-10)
+
+**Discovery — the dashboard uses the programmable vertex pipeline.** Dumping
+the PGRAPH method stream and reconstructing the writes shows the dashboard's
+`0xB00`..`0xB7C` traffic is `NV097_SET_TRANSFORM_PROGRAM` (the NV2A vertex
+shader program, 136 dwords max), not fixed-function T&L: it uploads real
+NV2A vertex programs (e.g. first instruction
+`0x00000000 0x0020001B 0x0836106C 0x2F100FF8`) and feeds them constants via
+`NV097_SET_TRANSFORM_CONSTANT` (`0xB80`+)/`SET_TRANSFORM_CONSTANT_LOAD`
+(`0x1EA4`). On the Xbox, Direct3D's fixed-function T&L is implemented by the
+driver generating vertex programs, so M5 for this title requires a
+**transform-program interpreter** (xemu `vsh-prog.c`), not only `vsh-ff.c`.
+Vertex data is fetched from guest memory: the dashboard sets vertex array
+formats (`0x1760`-`0x179C`) and offsets (`0x1720`-`0x175C`) and submits
+indexed draws via `ARRAY_ELEMENT16` (`0x1800`) + `SET_BEGIN_END`.
+
+**Implemented (foundation slice, xemu `pgraph.c`-faithful):**
+- Transform program storage: `SET_TRANSFORM_PROGRAM` (`0xB00`..) writes
+  `programData[PROG_LD_PTR][slot%4]`, advancing `PROG_LD_PTR` every 4 dwords;
+  `SET_TRANSFORM_PROGRAM_LOAD` (`0x1E9C`), `SET_TRANSFORM_PROGRAM_START`
+  (`0x1EA0`), `SET_TRANSFORM_EXECUTION_MODE` (`0x1E94`),
+  `SET_TRANSFORM_PROGRAM_CXT_WRITE_EN` (`0x1E98`) stored.
+- Transform constants: `SET_TRANSFORM_CONSTANT` (`0xB80`..) writes
+  `vshConstants[CONST_LD_PTR][slot%4]`, advancing `CONST_LD_PTR` every 4
+  dwords; `SET_TRANSFORM_CONSTANT_LOAD` (`0x1EA4`) selects the block. 136
+  program slots and 192 constant registers, matching xemu.
+- Inline element semantics: `ARRAY_ELEMENT16` (`0x1800`) appends two 16-bit
+  elements, `ARRAY_ELEMENT32` (`0x1808`) appends one, `DRAW_ARRAYS` (`0x1810`)
+  appends `start..start+count` (count = bits 31-24 + 1), `INLINE_ARRAY`
+  (`0x1818`) keeps the raw word stream; `SET_BEGIN_END` (`0x17FC`) resets the
+  inline buffers on begin/end (xemu `pgraph_reset_inline_buffers`).
+- Vertex array format/offset registers (`0x1760`/`0x1720`) stored per attribute.
+- Diagnostics: CLI prints `programLoad`, `constLoad`, `inlineElements`
+  alongside the draw stats; `ReadTransformProgramWord`/`ReadTransformConstantWord`
+  accessors for tests. 6 tests (`PgraphTransformTests`).
+
+**Next (M5 continued):** implement the NV2A transform-program interpreter
+(xemu `vsh-prog.c`: 4-dword instruction decode, input/output register files,
+swizzles, write masks, the standard opcodes), vertex attribute fetching from
+the vertex arrays (DMA context A/B, format decode per
+`NV097_SET_VERTEX_DATA_ARRAY_FORMAT`, stride/offset), then the transform →
+clip/screen-space step and feeding the resulting screen-space vertices into
+the existing rasterizer. Then M6-M8.
+
+
 
 
 

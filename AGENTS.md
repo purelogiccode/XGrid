@@ -103,20 +103,23 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   completes with no fault at EIP `0x22DE2` (phys `0x10FDE2` — a **newly loaded
   dashboard module**, real code calling module functions). Only tiny unmapped
   buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub).
-- **Next gate — NV2A fixed-function pipeline (M5-M8).** A 1.7B-step run with
+- **Next gate — NV2A M5 (programmable vertex pipeline).** A 1.7B-step run with
   `--pgraph` shows the dashboard in its **rendering phase** (EIP `0x14C72`,
   186844 PGRAPH methods: `ARRAY_ELEMENT16 0x1800`×58577,
   `SET_TRANSFORM_CONSTANT_LOAD 0x1EA4`×8301 + transform constants `0xB80`+,
   `SET_BEGIN_END 0x17FC`×5340 draws, `INLINE_ARRAY 0x1818`×396, `DRAW_ARRAYS
-  0x1810`×32, surface/clear/flip). XGrid's NV2A handles inline draws, surface
-  set/clear and semaphores but ignores `0x1800`, transform constants, vertex
-  formats, textures, lighting and zeta → no transformed geometry. Implement
-  M5 (transform constants → vertex transform → clip/screen space + inline
-  array element semantics), then M6-M8. CLI now prints draw stats. Reference:
-  xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `vertex.c`, `draw.c`,
-  `vsh-ff.c`), `nv2a_regs.h`.
+  0x1810`×32, surface/clear/flip). **The dashboard uses NV2A vertex programs**
+  (`SET_TRANSFORM_PROGRAM 0xB00`.. — D3D fixed-function is driver-generated
+  programs), so M5 needs a **transform-program interpreter** (xemu
+  `vsh-prog.c`), not just fixed-function. Foundation done (§37):
+  transform-program/constant storage with PROG_LD_PTR/CONST_LD_PTR advance
+  semantics, inline element/array semantics (`0x1800`/`0x1808`/`0x1810`/
+  `0x1818`), `SET_BEGIN_END` buffer resets, vertex array format/offset regs;
+  CLI prints `programLoad`/`constLoad`/`inlineElements`. Next: the interpreter
+  + vertex attribute fetch (DMA vertex arrays, format decode) + transform →
+  screen space → existing rasterizer; then M6-M8.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 690 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 696 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
