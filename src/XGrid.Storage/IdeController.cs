@@ -365,8 +365,6 @@ public sealed class IdeController : PciDevice
             _controller = controller;
         }
 
-        public static string Name => "IDE bus master";
-
         public uint Read(ushort offset, int size)
         {
             uint result = (offset & 8) == 0 ? ReadPrimary((ushort)(offset & 7)) : 0;
@@ -443,8 +441,6 @@ public sealed class IdeController : PciDevice
             _controller = controller;
         }
 
-        public static string Name => "IDE taskfile";
-
         public uint Read(ushort offset, int size)
         {
             uint result = _controller.SelectedDrive.ReadTaskfile(offset, size);
@@ -497,8 +493,6 @@ public sealed class IdeController : PciDevice
         {
             _controller = controller;
         }
-
-        public static string Name => "IDE control";
 
         public uint Read(ushort offset, int size)
         {

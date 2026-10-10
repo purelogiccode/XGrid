@@ -10,6 +10,7 @@ public sealed class Pit8254Tests
     public void ConfigureAndLatchReturnsReload()
     {
         var io = new IoSpace();
+        // ReSharper disable once UnusedVariable
         var pit = new Pit8254(io);
 
         io.Write8(0x43, 0x34);

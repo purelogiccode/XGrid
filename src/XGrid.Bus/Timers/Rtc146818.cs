@@ -28,9 +28,6 @@ public sealed class Rtc146818 : IIoPortDevice
         _cmos[0x0D] = 0x80;
     }
 
-    /// <summary>Gets the device name used in traces and diagnostics.</summary>
-    public static string Name => "MC146818 RTC";
-
     /// <summary>Gets the number of port accesses seen (diagnostics).</summary>
     public int AccessCount { get; private set; }
 

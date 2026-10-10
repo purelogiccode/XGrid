@@ -72,8 +72,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint PfifoCache1DmaInstance = 0x122Cu;
     private const uint PfifoCache1DmaSubroutine = 0x124Cu;
     private const uint PfifoCache1Pull0 = 0x1250u;
-    private const uint PfifoCache1Pull1 = 0x1254u;
-    private const uint PfifoCache1Engine = 0x1280u;
     private const uint PfifoCache1DmaDcount = 0x12A0u;
     private const uint PfifoCache1GetJmpShadow = 0x12A4u;
     private const uint PfifoCache1RsvdShadow = 0x12A8u;
@@ -96,10 +94,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint DmaErrorProtection = 6u;
     private const uint SubroutineActive = 1u;
     private const uint Pull0Access = 1u << 0;
-    private const uint Pull1EngineMask = 0x3u;
-    private const uint MethodType = 1u;
-    private const uint MethodAddress = 0x1FFCu;
-    private const uint MethodSubchannel = 0xE000u;
     private const uint ObjectParamLow = 0x180u;
     private const uint ObjectParamHigh = 0x200u;
     private const uint EngineGraphics = 1u;
@@ -107,8 +101,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint RamhtSizeMask = 0x30000u;
     private const uint RamhtInstanceMask = 0xFFFFu;
     private const uint RamhtEngineMask = 0x30000u;
-    private const uint RamhtEngineGraphics = 0x10000u;
-    private const uint RamhtChidMask = 0x1F000000u;
     private const uint RamhtValid = 0x80000000u;
     private const uint DmaInstanceAddressMask = 0xFFFFu;
     private const uint DmaAddressMask = 0xFFFFF000u;
@@ -1224,7 +1216,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         if (method >= ObjectParamLow && method < ObjectParamHigh)
         {
-            if (!TryRamhtLookup(parameter, channel, out uint instance, out _))
+            if (!TryRamhtLookup(parameter, channel, out _, out _))
             {
                 SuspendPusher(DmaErrorProtection);
                 return -1;

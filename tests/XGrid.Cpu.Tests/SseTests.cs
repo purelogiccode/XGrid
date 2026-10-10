@@ -15,14 +15,6 @@ public sealed class SseTests
         return (low, high);
     }
 
-    private static float Element((ulong Low, ulong High) value, int index)
-    {
-        uint bits = index < 2
-            ? (uint)(value.Low >> (32 * index))
-            : (uint)(value.High >> (32 * (index - 2)));
-        return BitConverter.UInt32BitsToSingle(bits);
-    }
-
     private static float Xmm(XboxCpu cpu, int register, int index)
     {
         return BitConverter.UInt32BitsToSingle(cpu.Context.ReadXmmElement(register, index));
