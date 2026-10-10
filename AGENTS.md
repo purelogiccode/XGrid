@@ -119,11 +119,15 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   `VshProgram` decodes/executes NV2A vertex programs (MAC/ILU opcodes,
   R/V/C input muxes with shared V/const fields, swizzles/negates, write masks,
   paired MAC+ILU, R12=oPos alias, A0-relative constants, FINAL; screen-space
-  oPos). Next: vertex attribute fetch (inline `SET_VERTEX_DATA*` + DMA vertex
-  arrays with format decode), feed `VshProgram`, rasterize screen-space
-  triangles; then M6-M8.
+  oPos). **Attribute fetch + element draw done (§39):** vertex arrays decoded
+  per format (UB_D3D BGRA/UB_OGL/S1/F/S32K/CMP, count/stride), elements
+  (`0x1800`/`0x1808`) → `VshProgram` per vertex → screen-space `oPos` + `oD0`
+  color → shared barycentric `FillTriangle`. Next: validate against the
+  dashboard's real programs/constants, then M6 (textures/lighting), M7
+  (zeta/blend), M8 (present); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS`
+  ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 706 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 707 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
