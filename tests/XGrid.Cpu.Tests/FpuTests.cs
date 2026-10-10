@@ -303,6 +303,35 @@ public sealed class FpuTests
     }
 
     [Fact]
+    public void Fcomp_MemoryOperand_ComparesAgainstMemory()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD8, 0x1D, 0x00, 0x21, 0x00, 0x00);
+        cpu.Ram().Write32(Data, BitConverter.SingleToUInt32Bits(7.5f));
+        cpu.Ram().Write32(Data2, BitConverter.SingleToUInt32Bits(8.0f));
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) != 0);
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) == 0);
+        Assert.Equal(0, cpu.Context.Fpu.Top);
+    }
+
+    [Fact]
+    public void Fcomp_MemoryOperand_EqualSetsC3()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD8, 0x1D, 0x00, 0x21, 0x00, 0x00);
+        cpu.Ram().Write32(Data, BitConverter.SingleToUInt32Bits(4.0f));
+        cpu.Ram().Write32(Data2, BitConverter.SingleToUInt32Bits(4.0f));
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
+        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) == 0);
+    }
+
+    [Fact]
     public void Fcompp_PopsTwice()
     {
         XboxCpu cpu = CpuHarness.Create(0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xD9);

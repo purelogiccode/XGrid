@@ -2485,7 +2485,10 @@ public sealed class XboxCpu
             case Mnemonic.Fucom:
             case Mnemonic.Fucomp:
                 {
-                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(instruction.Operand1));
+                    Operand compared = instruction.Operand2.Kind == OperandKind.None
+                        ? instruction.Operand1
+                        : instruction.Operand2;
+                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(compared));
                     if (instruction.Mnemonic is Mnemonic.Fcomp or Mnemonic.Fucomp)
                     {
                         Fpu.Pop();

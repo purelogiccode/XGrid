@@ -205,7 +205,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
                 MixerStore(reg, (ushort)(value & 0x8F0F));
                 break;
             case Ac97RecordSelect:
-                MixerStore(reg, (ushort)((value & 7) | ((value >> 8) & 7) << 8));
+                MixerStore(reg, (ushort)((value & 7) | (((value >> 8) & 7) << 8)));
                 break;
             case Ac97VendorId1:
             case Ac97VendorId2:
@@ -290,7 +290,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
         BmBlock block = _bm[BlockIndex(offset)];
         return BlockRegister(offset) switch
         {
-            0x00 => block.BdbAR,
+            0x00 => block.BdbAr,
             0x04 => block.Civ | ((uint)block.Lvi << 8) | ((uint)block.Sr << 16),
             0x08 => block.Picb | ((uint)block.Piv << 16) | ((uint)block.Cr << 24),
             _ => ReadNabmWord(offset) | (ReadNabmWord(offset + 2) << 16),
@@ -392,7 +392,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
 
         if (IsBusMasterBlock(offset) && BlockRegister(offset) == 0x00)
         {
-            _bm[BlockIndex(offset)].BdbAR = value & ~3u;
+            _bm[BlockIndex(offset)].BdbAr = value & ~3u;
             return;
         }
 
@@ -402,7 +402,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
 
     private static void ResetBlock(BmBlock block)
     {
-        block.BdbAR = 0;
+        block.BdbAr = 0;
         block.Civ = 0;
         block.Lvi = 0;
         block.Sr = SrDch;
@@ -454,7 +454,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
 
     private sealed class BmBlock
     {
-        public uint BdbAR { get; set; }
+        public uint BdbAr { get; set; }
 
         public byte Civ { get; set; }
 
@@ -470,7 +470,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
 
         public void Clear()
         {
-            BdbAR = 0;
+            BdbAr = 0;
             Civ = 0;
             Lvi = 0;
             Sr = 0;

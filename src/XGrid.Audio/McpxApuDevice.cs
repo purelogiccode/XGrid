@@ -73,7 +73,6 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly IApuMemory _memory;
     private readonly List<ushort> _pendingIdleVoices = new();
-    private bool _irqAsserted;
     private ulong _frameRemainder;
 
     /// <summary>Creates the APU in its power-on state.</summary>
@@ -108,7 +107,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice
     public uint FrontEndControl => _regs[Fectl >> 2];
 
     /// <summary>Gets whether the APU interrupt line is asserted, for diagnostics.</summary>
-    public bool InterruptAsserted => _irqAsserted;
+    public bool InterruptAsserted { get; private set; }
 
     /// <summary>Gets a bounded log of interrupt-relevant events, for diagnostics.</summary>
     public IReadOnlyList<string> EventLog => _eventLog;
@@ -292,12 +291,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice
 
     private void SetAsserted(bool asserted)
     {
-        if (_irqAsserted == asserted)
+        if (InterruptAsserted == asserted)
         {
             return;
         }
 
-        _irqAsserted = asserted;
+        InterruptAsserted = asserted;
         Log(asserted ? "irq assert" : "irq deassert");
         InterruptChanged?.Invoke(asserted);
     }

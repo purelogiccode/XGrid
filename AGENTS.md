@@ -73,37 +73,47 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 - Interrupts: PIT/PIC/PIT-EOI fine, NV2A IRQ path live (PMC/PGRAPH/PCRTC
   pending → PIC IRQ3; the kernel toggles `PMC_INTR_EN_0` around its DPC). IDE
   IRQ14 works; APU IRQ5 now handled by the kernel (ISR acks ISTS).
-- **Next gate (XBE launch):** the AV teardown (`0x80056E03` → `0x8005BACE`)
-  releases a NULL D3D surface handle `[AV+0x64C]` → `#PF` at `0x800409F5`
-  (`mov eax,[esi]`, ESI=0), BugCheck `0x1E` at ~137.5M. The setter `0x8005C366`
-  (creates a 0x400×0x400 surface via the D3D runtime `0x8003E630`) never ran —
-  XMV/AV playback path, likely NV2A M5-M8 depth. Then XBE
-  verify/relocate/entry-call (XBE already mapped: header phys `0xE0000`, base
-  `0x10000`, entry RVA `0x12A17` → VA `0x22A17`, never executed).
+- **FCOMP bug fixed → animation runs + XBE executes (2026-10-10, §34):** the
+  §33 NULL-surface crash was a **CPU bug**, not an NV2A gap. `fcomp mem`
+  (`D8`/`DC` forms) was decoded as `(ST0, memory)` but the executor compared
+  against `Operand1` (=ST0), so `fcomp` always compared ST0 with itself
+  ("equal"), the intro-animation tick loop (`0x800579B8` → `0x80057949` →
+  `0x800571AD`) never ran, and the AV teardown released the never-created D3D
+  surface. Fix: compare against `Operand2` when present. Now the animation
+  ticks (32 scene updates, 137.4M→488.9M), the teardown no longer faults, and
+  `xgrid boot --steps 700000000` completes **all 700M steps with no fault**,
+  executing the dashboard XBE image (loaded phys `0x5A000`, base VA `0x10000`,
+  entry VA `0x22A17`).
+- **Next gate:** the XBE entry `0x22A17` is not yet reached; execution is in a
+  bit-stream decompressor in the XBE's early `.text` (RVA ~0x24A0-0x27E0: 16 KB
+  ring buffer `[ctx+0x34]` masked `0x3FFF`, bit reader `shl/or`). Decide if it
+  is a legitimate slow decompression or a second emulation bug; find which
+  section RVA 0x24A3 is and why it runs before the entry.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 676 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 678 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
 
-1. Run `xgrid boot` (700M steps, `data/xemu-0.8.136-windows-x86_64/` set); the
-   kernel reaches ~137.5M and BugChecks 0x1E on the NULL surface release
-   (verified 2026-10-10). Use `--break-log 0x800409F0` (new: logs ESI/EDI/ESP/
-   caller/arg per hit) to see each release call; the NULL is at
-   `0x8005BB37` (arg 0).
-2. Find why `0x8005C366` (surface setter) never ran: it is called from
-   `0x8005C65C` in the XMV/AV per-frame update; check the D3D runtime calls
-   (`0x8003E630` etc. create surfaces/draw against the video device → NV2A
-   pushbuffer methods) and whether an NV2A response/notification is missing
-   (M5-M8: transforms/textures/zeta/surface methods). `--ramdump`/`--ramin`,
-   objdump (kernel phys 0x10000, VA = phys + 0x80000000), the APU/ACI
-   diagnostics are the working tools.
-3. Then the dashboard runs: expect XBE section mapping, TLS, kernel-thunk
-   imports (needs Phase 10 kernel-HLE surface for dashboard ordinals only if
-   we choose HLE for its imports — LLE-first remains the rule).
-4. Parallel tracks when blocked: NV2A M5–M8 (textures/transforms/zeta/flip)
+1. The animation/AV-teardown crash is fixed (CPU `fcomp`/`fcom` memory-operand
+   bug, §34). `xgrid boot --steps 700000000` (700M steps,
+   `data/xemu-0.8.136-windows-x86_64/` set) now completes without faulting and
+   ends executing the dashboard XBE image.
+2. Trace the XBE `.text` decompressor at phys `0x5C4A0` (VA `0x124A0`):
+   disassemble from the RAM dump (`objdump -D -b binary -m i386 -M intel`),
+   then `--break-log` its inner loops and `--watch` the 16 KB ring buffer /
+   source pointer `[ctx+0x2C]` to see whether progress is made. The XBE header
+   is at phys `0x5A000` (base `0x10000`, entry RVA `0x12A17`); the entry
+   `0x22A17` never ran in a 560M-step run.
+3. Then the dashboard entry: XBE section mapping, TLS, kernel-thunk imports
+   (Phase 10 kernel-HLE surface only if we choose HLE for dashboard ordinals;
+   LLE-first remains the rule). Menu rendering needs NV2A M5-M8 + present.
+4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
 5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h`
    for KTHREAD/KWAIT offsets if needed.
+
+Earlier AV-device gate details (research-notes §33, for reference):
+

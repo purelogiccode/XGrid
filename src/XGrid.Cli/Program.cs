@@ -228,7 +228,8 @@ internal static class Program
                         }
 
                         Console.WriteLine(
-                            $"HIT {executed} ESI={logs.Esi:X8} EDI={logs.Edi:X8} ESP={logs.Esp:X8} " +
+                            $"HIT {executed} ESI={logs.Esi:X8} EDI={logs.Edi:X8} EAX={logs.Eax:X8} " +
+                            $"EFLAGS={logs.Eflags:X8} ESP={logs.Esp:X8} " +
                             $"caller={caller:X8} arg={argument:X8}");
                     }
 

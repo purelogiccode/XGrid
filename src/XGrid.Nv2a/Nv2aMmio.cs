@@ -196,7 +196,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly Dictionary<uint, int> _writeCounts = new();
     private readonly Dictionary<uint, int> _userReadOffsets = new();
 
-    private uint _pmcEnabled;
     private readonly List<uint> _pmcIntrEnLog = new();
     private uint _pmcPending;
     private uint _pbusCommand;
@@ -213,8 +212,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _mpllCoeff;
     private uint _vpllCoeff = PramdacVpllReset;
     private uint _generalControl;
-    private uint _pgraphPending;
-    private uint _pgraphEnabled;
     private uint _pfifoPending;
     private uint _pfifoEnabled;
     private ulong _vsyncRemainder;
@@ -298,13 +295,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     public string SemaphoreDebug { get; private set; } = string.Empty;
 
     /// <summary>Gets the PGRAPH interrupt enable mask. Diagnostics.</summary>
-    public uint PgraphEnabledDebug => _pgraphEnabled;
+    public uint PgraphEnabledDebug { get; private set; }
 
     /// <summary>Gets the PGRAPH pending interrupt mask. Diagnostics.</summary>
-    public uint PgraphPendingDebug => _pgraphPending;
+    public uint PgraphPendingDebug { get; private set; }
 
     /// <summary>Gets the PMC interrupt enable mask. Diagnostics.</summary>
-    public uint PmcEnabledDebug => _pmcEnabled;
+    public uint PmcEnabledDebug { get; private set; }
 
     /// <summary>Gets the PMC_INTR_EN_0 write log. Diagnostics.</summary>
     public IReadOnlyList<uint> PmcIntrEnLog => _pmcIntrEnLog;
@@ -377,7 +374,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private void UpdateIrq()
     {
         uint pending = AggregatePending();
-        bool asserted = pending != 0 && _pmcEnabled != 0;
+        bool asserted = pending != 0 && PmcEnabledDebug != 0;
         if (asserted != InterruptAsserted)
         {
             InterruptAsserted = asserted;
@@ -392,7 +389,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Array.Clear(_pvideo);
         Array.Clear(_pfb);
         Array.Clear(_pgraph);
-        _pmcEnabled = 0;
+        PmcEnabledDebug = 0;
         _pmcPending = 0;
         _pbusCommand = 0;
         _ptimerPending = 0;
@@ -408,8 +405,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _mpllCoeff = 0;
         _vpllCoeff = PramdacVpllReset;
         _generalControl = 0;
-        _pgraphPending = 0;
-        _pgraphEnabled = 0;
+        PgraphPendingDebug = 0;
+        PgraphEnabledDebug = 0;
         _pfifoPending = 0;
         _pfifoEnabled = 0;
         PusherWordsConsumed = 0;
@@ -653,7 +650,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             0x0u => PmcBoot0,
             PmcIntr0 => AggregatePending(),
-            PmcIntrEn0 => _pmcEnabled,
+            PmcIntrEn0 => PmcEnabledDebug,
             _ => 0u,
         };
     }
@@ -665,11 +662,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case PmcIntr0:
                 _pmcPending &= ~value;
                 _pfifoPending &= ~((value >> 8) & 1u);
-                _pgraphPending &= ~((value >> 12) & 1u);
+                PgraphPendingDebug &= ~((value >> 12) & 1u);
                 _pcrtcPending &= ~((value >> 24) & 1u);
                 break;
             case PmcIntrEn0:
-                _pmcEnabled = value;
+                PmcEnabledDebug = value;
                 if (_pmcIntrEnLog.Count < 32)
                 {
                     _pmcIntrEnLog.Add(value);
@@ -691,7 +688,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             pending |= 1u << 8;
         }
 
-        if ((_pgraphPending & _pgraphEnabled) != 0)
+        if ((PgraphPendingDebug & PgraphEnabledDebug) != 0)
         {
             pending |= 1u << 12;
         }
@@ -805,8 +802,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     {
         return register switch
         {
-            0x100u => _pgraphPending,
-            0x140u => _pgraphEnabled,
+            0x100u => PgraphPendingDebug,
+            0x140u => PgraphEnabledDebug,
             _ => _pgraph[register / 4],
         };
     }
@@ -816,10 +813,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         switch (register)
         {
             case 0x100u:
-                _pgraphPending &= ~value;
+                PgraphPendingDebug &= ~value;
                 break;
             case 0x140u:
-                _pgraphEnabled = value;
+                PgraphEnabledDebug = value;
                 break;
             case PgraphFifo:
                 _pgraph[register / 4] = value;
@@ -1261,7 +1258,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             {
                 _boundEngine[subchannel] = engine;
                 ContextSwitches++;
-                _pgraphPending |= PgraphContextSwitch;
+                PgraphPendingDebug |= PgraphContextSwitch;
                 UpdateIrq();
             }
 
@@ -1399,7 +1396,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             ((channel & 0x1Fu) << 20) | ((subchannel & 7u) << 16) | (MethodNoOperation & 0x1FFFu);
         _pgraph[PgraphTrappedDataLow / 4] = parameter;
         _pgraph[PgraphNsource / 4] = PgraphNsourceNotification;
-        _pgraphPending |= PgraphIntrError;
+        PgraphPendingDebug |= PgraphIntrError;
         NotificationsRaised++;
         UpdateIrq();
         NotificationAsserted = InterruptAsserted;

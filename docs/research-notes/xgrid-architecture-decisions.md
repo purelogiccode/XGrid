@@ -1017,4 +1017,53 @@ Tooling added this session: `--break-log <addr>`; `McpxAciDevice`/`McpxApuDevice
 access counters and an APU `EventLog` ring (ISTS acks, FECTL writes, IRQ
 raise/lower, voice-off/idle-voice) printed by the CLI.
 
+## 34. FCOMP memory-operand bug fixed — animation runs, XBE launches (2026-10-10)
+
+**Root cause of the §33 NULL-surface crash was a CPU bug, not an NV2A gap.**
+
+The kernel's AV per-frame loop is `0x800579F4` (run intro to completion) →
+`0x800579B8` (tick loop) → `0x80057949` (tick) → `0x800571AD` (scene update).
+The tick loop condition is `fld [esi+0x10]; fcomp [0x80065E54]; fnstsw ax;
+test ah,0x5; jnp` — loop while the AV media clock (`[AV+0x10]`) is *less than*
+the duration (`[0x80065E54]=8.0`). At the loop entry the clock is `0x40F00000`
+(7.5, set by the AV init at `0x80056B63`) and the duration is `0x41000000`
+(8.0), so the loop must run. It never did: the animation "completed" with zero
+ticks and the teardown then released the never-created surface `[AV+0x64C]`.
+
+Diagnosis (all via `--break-log`, extended to print EAX/EFLAGS):
+- `0x800571AD`/`0x80057949` had **zero hits** in a full run; `0x800579B8`
+  (loop entry) ran once at 137,485,043.
+- Halting at the loop test `0x800579D2` confirmed `[AV+0x10]=7.5` and
+  `[0x80065E54]=8.0`, yet the fall-through after the `jnp` (`0x800579E2`)
+  executed with `EAX=0x4001` — i.e. the FNSTSW status had **C3=1, C0=0**
+  ("equal"), so `test ah,0x5`/`jnp` exited the loop.
+
+**Bug**: `Decoder` builds the `D8`/`DC` memory forms of the x87 compare
+instructions as `(ST(0), memory)` (Decoder.cs:1805), but the execution in
+`XboxCpu.ExecuteFpu` compared against `instruction.Operand1` — which for these
+forms is ST(0) itself — so `fcomp mem` always compared ST0 with ST0 (equal).
+Register forms (`FCOM/FCOMP ST(i)`, decoded as `(ST(i), None)`) were correct.
+Fix: compare against `Operand2` when present, else `Operand1`. `FICOM/FICOMP`
+(`DA`/`DB` memory forms decode as `(memory, None)`) were already correct.
+Regression tests: `FpuTests.Fcomp_MemoryOperand_ComparesAgainstMemory` and
+`Fcomp_MemoryOperand_EqualSetsC3`.
+
+**Result**: with the fix, the animation ticks (32 scene updates from
+137.4M→488.9M instructions — one per frame, gated on the timer tick global
+`0x8003A89C`), the animation completes, the AV teardown runs **without
+faulting**, and `xgrid boot --steps 700000000` now completes all 700M steps
+with `LastFault vec=0`. Execution ends in user space (VA ≈ `0x124A3`/
+`0x127D9`) which page-walks (CR3=0xF000) to phys `0x5C4A3` — the dashboard
+XBE image loaded at phys `0x5A000` (base VA `0x10000`, size_of_image `0xBB300`,
+entry RVA `0x12A17` → VA `0x22A17`). The XBE `EvoX` cert is present in RAM.
+
+**Next gate**: the documented entry (`0x22A17`) has not been reached; the CPU
+is inside a bit-stream decompressor in the XBE's early `.text` (RVA ≈ 0x24A0–
+0x27E0): a 16 KB ring buffer (`[ctx+0x34]`, mask `0x3FFF`) read bit-by-bit
+(`shl bl,cl`/`or`) with state at `[ctx+8]`, `[ctx+0x20..0x30]` — an LZX/Xpress
+style payload decoder (the EvoX-patched dashboard's compressed body). Determine
+whether it is legitimately decompressing a large payload (interpreter is
+2.3 M insn/s) or stuck on a second emulation bug; also identify which section
+RVA 0x24A3 belongs to and why it runs before the entry.
+
 
