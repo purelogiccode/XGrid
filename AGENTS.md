@@ -136,33 +136,38 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 708 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — XBE launch gate
+## Next session — NV2A M7/M8 + surface operations
 
 1. The dashboard XBE entry executes (phys `0x5CA17`), decompresses its payload,
-   writes the HDD via ATA WRITE DMA (handled by `OverlayDiskImage`), and now
-   passes the USB poll (OHCI implemented). `xgrid boot --steps 1600000000`
-   (1.6B steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no
-   fault at EIP `0x22DE2` (phys `0x10FDE2`, a newly mapped module).
-2. The dashboard is now in its **rendering phase**: a 1.7B-step run
-   (`--pgraph`) shows `ARRAY_ELEMENT16 0x1800`×58577, transform constants
-   (`0xB80`/`0x1EA4`)×8301, `SET_BEGIN_END`×5340 draws, flips×70. XGrid's
-   NV2A ignores `0x1800` and transform constants → no transformed geometry.
-   Implement M5 first: transform-constant loading (`0xB80`, `0x1EA4`), the
-   fixed-function vertex transform (modelview/projection/viewport → screen
-   space), and the inline-array element semantics (`0x1800`/`0x1808`/`0x1810`/
-   `0x1818`). Reference xemu `hw/xbox/nv2a/pgraph/` (`vertex.c`, `draw.c`,
-   `vsh-ff.c`, `methods.h.inc`) and `nv2a_regs.h`. The CLI prints draw stats
-   (executed/skipped/pixels/clears) to quantify.
-3. Then M6-M8 (textures/lighting, zeta/blend, present) and controller input
-   (the OHCI root hub currently reports empty ports; an XID/gamepad device is
-   future work). LLE-first remains the rule; Phase 10 kernel-HLE only if we
-   choose HLE for dashboard ordinals.
-4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
-   and Track C JIT for interactivity.
-5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+   writes the HDD via ATA WRITE DMA (`OverlayDiskImage`), passes the USB poll
+   (OHCI implemented), and **renders**: `xgrid boot --steps 1700000000` (1.7B
+   steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no fault and
+   reports `draws executed=2670 skipped=0 pixels=10137600 textured=10137600
+   clears=41` at EIP `0x14C72`; the framebuffer at phys `0x1000` has content.
+2. **M5** (transform-program interpreter, attribute fetch, element draws,
+   §37–39) and **M6** (per-slot texture state, swizzled/linear A8R8G8B8 +
+   R5G6B5 sampling, modulate by `oD0`, texcoords from `oT0`, §40) are done and
+   unit-tested. The dashboard's visible textures sample black because they are
+   **GPU-generated (render-to-texture/blits not yet produced)** — the texture
+   data at its offsets is mostly black (one colored texture at `0x321C000`).
+3. Next: **M7** — zeta test/write (`NV097_SET_ZETA_*`, surface zeta
+   offset/format, `NV097_CLEAR_SURFACE` zeta path) and alpha blending
+   (`NV097_SET_BLEND_*`, `NV097_SET_COLOR_MASK`); then **M8** — the present/flip
+   path (`NV097_FLIP_*` → `XGrid.Graphics`, CLI currently dumps the raw
+   framebuffer) and the **surface operations** (render-to-texture, additional
+   surface targets, 2D blits) that generate the dashboard's textures. Remaining
+   M5 gaps: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
+4. Controller input: the OHCI root hub reports empty ports; an XID/gamepad
+   device is future work. LLE-first remains the rule; Phase 10 kernel-HLE only
+   if we choose HLE for dashboard ordinals.
+5. Parallel tracks when blocked: Track C JIT for interactivity (dashboard boot
+   + menu needs billions of instructions; the interpreter is 2.3 M insn/s).
+6. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
-   point); `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h`
-   for KTHREAD/KWAIT offsets if needed.
+   point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
+   `vsh-prog.c`), `nv2a_regs.h`;
+   `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
+   KTHREAD/KWAIT offsets if needed.
 
 Earlier AV-device gate details (research-notes §33, for reference):
 
