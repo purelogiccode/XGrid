@@ -1187,10 +1187,14 @@ immediately, the animation never ran, and the teardown released the
 never-created surface. Fix: compare `Operand2` when present (XboxCpu.cs;
 regression tests in `FpuTests`). Now the animation ticks (32 scene updates,
 137.4M→488.9M), the teardown no longer faults, and `xgrid boot --steps
-700000000` completes **all 700M steps with no fault**, executing the dashboard
-XBE image (loaded phys `0x5A000`, base VA `0x10000`, entry VA `0x22A17`). See
-research-notes §34. Next gate: the entry `0x22A17` is not yet reached — the CPU
-is in a bit-stream decompressor in the XBE's early `.text` (RVA ~0x24A0-0x27E0).
+700000000` completes **all 700M steps with no fault**. **The dashboard XBE
+entry executes**: the header entry field (VA `base+0x128` = `0x10128`) is an
+absolute VA (`0x12A17`), XOR-encrypted in the file; the kernel decrypts it
+(`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`) and calls it (`call [0x10128]` at
+`0x800158DA`); the entry runs at phys `0x5CA17`, resolves its kernel thunks
+(`[0x12C4B]=0x8001EEAC`) and starts its init (bit-stream decompressor at
+`0x5C4A0`). See research-notes §34. Next gate: determine whether the
+dashboard's init decompression progresses (EvoX payload) or loops.
 
 Gap 2 — exact dashboard identity [DONE 2026-10-09]. Both sides agree: the host
 FATX track identified softmod `xboxdash.xbe` (770048 B, `EvoX`, entry
@@ -2766,24 +2770,23 @@ ACI/APU AV-device gates (§33) and the **`fcomp` memory-operand CPU bug (§34)**
 are solved. `xgrid boot --steps 700000000` (700M steps, `data/xemu-0.8.136-
 windows-x86_64/` set) now completes **with no fault** (`LastFault vec=0`): the
 intro animation ticks (32 scene updates, 137.4M→488.9M), the AV teardown runs
-clean, and execution moves into the **dashboard XBE image** (phys `0x5A000`,
-base VA `0x10000`, size_of_image `0xBB300`, entry RVA `0x12A17` → VA `0x22A17`).
-The entry `0x22A17` is not yet reached — the CPU is inside a bit-stream
-decompressor in the XBE's early `.text` at RVA ~0x24A0-0x27E0 (phys `0x5C4A0`,
-VA `0x124A0`): a 16 KB ring buffer `[ctx+0x34]` masked `0x3FFF`, bit reader
-(`movzx`/`shl bl,cl`/`or`), state at `[ctx+8]`/`[ctx+0x20..0x30]` — an LZX/Xpress
-style payload decoder (the EvoX-patched dashboard body). Next: decide whether it
-is a legitimate large decompression (interpreter is 2.3 M insn/s) or a second
-emulation bug — disassemble phys `0x5C4A0` from the RAM dump, `--break-log` its
-inner loops, `--watch` the ring buffer / source pointer `[ctx+0x2C]`; find which
-XBE section RVA 0x24A3 belongs to and why it runs before the entry. Then the
-entry: XBE section mapping, TLS, kernel-thunk imports (Phase 10 kernel-HLE
-surface only if we choose HLE for dashboard ordinals; LLE-first remains the
-rule). Menu rendering needs NV2A M5-M8 + present, input needs USB/OHCI. Tools:
-`--break-log <addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg per hit and
-continues), APU/ACI diagnostics + `APU log`, `--ramdump`/`--ramin`, objdump
-(XBE image at phys 0x5A000; kernel at phys 0x10000, VA = phys + 0x80000000).
-Evidence trail: research-notes §30-34.
+clean, and **the dashboard XBE entry executes** — the header entry field (VA
+`0x10128`) is an absolute VA (`0x12A17`), XOR-decrypted by the kernel
+(`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`), called at `0x800158DA`; the entry
+runs at phys `0x5CA17`, resolves kernel thunks (`[0x12C4B]=0x8001EEAC`) and
+starts its init (decompressor at `0x5C4A0`, RVA `0x24A0`). Next: decide whether
+the dashboard's init decompression progresses (EvoX payload; interpreter is
+2.3 M insn/s) or loops (a second bug) — disassemble phys `0x5C4A0`/`0x5C390`/
+`0x5C420` from the RAM dump, `--break-log` the inner loops, sample the ctx
+fields (`+0x24/+0x28/+0x2C/+0x30`; ctx VA ≈ `0x7FDCB800`, page-walk via CR3
+`0xF000`) at two step counts (`--ramdump`); `srcIndex` must advance if progress
+is real. Then the dashboard continues: D3D device setup, menu rendering (needs
+NV2A M5-M8 + present), input (USB/OHCI). LLE-first remains the rule; Phase 10
+kernel-HLE only if we choose HLE for dashboard ordinals. Tools: `--break-log
+<addr>` (logs ESI/EDI/EAX/EFLAGS/ESP/caller/arg per hit and continues), APU/ACI
+diagnostics + `APU log`, `--ramdump`/`--ramin`, objdump (XBE image at phys
+0x5A000; kernel at phys 0x10000, VA = phys + 0x80000000). Evidence trail:
+research-notes §30-34.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

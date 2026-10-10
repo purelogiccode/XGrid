@@ -1054,16 +1054,29 @@ Regression tests: `FpuTests.Fcomp_MemoryOperand_ComparesAgainstMemory` and
 faulting**, and `xgrid boot --steps 700000000` now completes all 700M steps
 with `LastFault vec=0`. Execution ends in user space (VA ≈ `0x124A3`/
 `0x127D9`) which page-walks (CR3=0xF000) to phys `0x5C4A3` — the dashboard
-XBE image loaded at phys `0x5A000` (base VA `0x10000`, size_of_image `0xBB300`,
-entry RVA `0x12A17` → VA `0x22A17`). The XBE `EvoX` cert is present in RAM.
+XBE image loaded at phys `0x5A000`.
 
-**Next gate**: the documented entry (`0x22A17`) has not been reached; the CPU
-is inside a bit-stream decompressor in the XBE's early `.text` (RVA ≈ 0x24A0–
-0x27E0): a 16 KB ring buffer (`[ctx+0x34]`, mask `0x3FFF`) read bit-by-bit
-(`shl bl,cl`/`or`) with state at `[ctx+8]`, `[ctx+0x20..0x30]` — an LZX/Xpress
-style payload decoder (the EvoX-patched dashboard's compressed body). Determine
-whether it is legitimately decompressing a large payload (interpreter is
-2.3 M insn/s) or stuck on a second emulation bug; also identify which section
-RVA 0x24A3 belongs to and why it runs before the entry.
+**The XBE launch gate is PASSED (corrected analysis).** The XBE header's entry
+field (file offset 0x128, VA `base+0x128` = `0x10128`) is an **absolute VA**,
+not an RVA: the file stores it XOR-encrypted (`0xA8FD7DBC`); the kernel
+decrypts it in place (`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`) giving
+`0x12A17`, then calls it directly (`call DWORD PTR ds:0x10128` at `0x800158DA`
+— the XBE launch function; return address `0x800158E0` is on the guest stack).
+The XBE (base `0x10000`, 1 section `EvoX` VA `0x11000` vsize `0xBA2F4`,
+size_of_image `0xBB300`, `EvoX` cert) is mapped at VA `0x10000` ↔ phys
+`0x5A000`, so the entry executes at phys `0x5CA17` (= VA `0x12A17`). The entry
+resolves its kernel-thunk imports (`[0x12C4B] = 0x8001EEAC`) and runs its init:
+`call 0x5C850`/`0x5C7F0` (VA `0x12850`/`0x127F0`) → `0x5C390` (VA `0x12390`)
+→ the bit-stream decompressor at `0x5C4A0` (RVA `0x24A0`) — a 16 KB ring buffer
+(`[ctx+0x34]`, mask `0x3FFF`) read bit-by-bit (`movzx`/`shl bl,cl`/`or`), state
+at `[ctx+8]`/`[ctx+0x20..0x30]`, with saved state copies at `[ctx+0x4034..0x4040]`.
+At 700M the decompressor context (`ESI` ≈ `0x7FDCB800` → phys `0x4DC800`) has
+`srcIndex=0x19174` (102772) and state=12.
+
+**Next gate**: decide whether the dashboard's init decompression is progressing
+(it likely decompresses the EvoX dashboard payload) or looping (a second bug) —
+watch the decompressor context fields across step counts, or trace the
+`0x5C390`/`0x5C420` orchestrator. Then the dashboard's D3D/menu bring-up
+(NV2A M5-M8 + present) and USB input.
 
 

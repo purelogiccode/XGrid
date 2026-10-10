@@ -84,11 +84,20 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   `xgrid boot --steps 700000000` completes **all 700M steps with no fault**,
   executing the dashboard XBE image (loaded phys `0x5A000`, base VA `0x10000`,
   entry VA `0x22A17`).
-- **Next gate:** the XBE entry `0x22A17` is not yet reached; execution is in a
-  bit-stream decompressor in the XBE's early `.text` (RVA ~0x24A0-0x27E0: 16 KB
-  ring buffer `[ctx+0x34]` masked `0x3FFF`, bit reader `shl/or`). Decide if it
-  is a legitimate slow decompression or a second emulation bug; find which
-  section RVA 0x24A3 is and why it runs before the entry.
+- **XBE launch gate PASSED (2026-10-10, §34):** the XBE header entry field
+  (VA `base+0x128` = `0x10128`) is an **absolute VA** (`0x12A17`), XOR-encrypted
+  in the file; the kernel decrypts it in place (`xor [0x10128],0xA8FC57AB` at
+  `0x8002EFE6`) and calls it directly (`call [0x10128]` at `0x800158DA`). The
+  dashboard entry executes at phys `0x5CA17`, resolves its kernel-thunk imports
+  (`[0x12C4B]=0x8001EEAC`), and runs its init: `0x5C7F0` → `0x5C390` → the
+  bit-stream decompressor at `0x5C4A0` (RVA `0x24A0`; 16 KB ring buffer
+  `[ctx+0x34]` masked `0x3FFF`, bit reader). At 700M the CPU is inside that
+  decompressor (`srcIndex=0x19174`, state=12).
+- **Next gate:** decide whether the dashboard's init decompression progresses
+  (EvoX payload) or loops (second bug) — watch the decompressor context
+  (`ESI` ≈ `0x7FDCB800`, ctx fields `+0x24/+0x28/+0x2C/+0x30`) across step
+  counts, or trace the `0x5C390`/`0x5C420` orchestrator. Then D3D/menu bring-up
+  (NV2A M5-M8 + present) and USB input.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: 678 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
@@ -96,18 +105,22 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 ## Next session — XBE launch gate
 
 1. The animation/AV-teardown crash is fixed (CPU `fcomp`/`fcom` memory-operand
-   bug, §34). `xgrid boot --steps 700000000` (700M steps,
-   `data/xemu-0.8.136-windows-x86_64/` set) now completes without faulting and
-   ends executing the dashboard XBE image.
-2. Trace the XBE `.text` decompressor at phys `0x5C4A0` (VA `0x124A0`):
-   disassemble from the RAM dump (`objdump -D -b binary -m i386 -M intel`),
-   then `--break-log` its inner loops and `--watch` the 16 KB ring buffer /
-   source pointer `[ctx+0x2C]` to see whether progress is made. The XBE header
-   is at phys `0x5A000` (base `0x10000`, entry RVA `0x12A17`); the entry
-   `0x22A17` never ran in a 560M-step run.
-3. Then the dashboard entry: XBE section mapping, TLS, kernel-thunk imports
-   (Phase 10 kernel-HLE surface only if we choose HLE for dashboard ordinals;
-   LLE-first remains the rule). Menu rendering needs NV2A M5-M8 + present.
+   bug, §34) and the **dashboard XBE entry now executes** (phys `0x5CA17`).
+   `xgrid boot --steps 700000000` (700M steps,
+   `data/xemu-0.8.136-windows-x86_64/` set) completes without faulting.
+2. Determine if the entry's decompression completes: the orchestrator is
+   `0x5C390`/`0x5C420` called from `0x5C7F0` (entry's init); the decompressor
+   loop is at phys `0x5C4A0` (VA `0x124A0`). Disassemble from the RAM dump
+   (`objdump -D -b binary -m i386 -M intel`), then `--break-log` its inner
+   loops and sample the ctx fields (`+0x24/+0x28/+0x2C/+0x30`) at two step
+   counts (`--ramdump`) — `srcIndex` must advance if progress is real. The
+   decompressor ctx is allocated in user space (page-walk VA→phys via CR3
+   `0xF000`). XBE header/entry facts: header phys `0x5A000`, base `0x10000`,
+   entry VA `0x12A17`, section `EvoX` VA `0x11000` vsize `0xBA2F4`.
+3. Then the dashboard init continues: kernel-thunk imports, D3D device setup,
+   menu rendering (needs NV2A M5-M8 + present), input (USB/OHCI). LLE-first
+   remains the rule; Phase 10 kernel-HLE only if we choose HLE for dashboard
+   ordinals.
 4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
 5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
