@@ -103,9 +103,18 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   completes with no fault at EIP `0x22DE2` (phys `0x10FDE2` — a **newly loaded
   dashboard module**, real code calling module functions). Only tiny unmapped
   buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub).
-- **Next gate:** continue the dashboard module toward D3D/menu bring-up
-  (NV2A M5-M8 + present); watch for the next blocked device (nvnet
-  `0xFEF00000` MMIO is still a PCI stub).
+- **Next gate — NV2A fixed-function pipeline (M5-M8).** A 1.7B-step run with
+  `--pgraph` shows the dashboard in its **rendering phase** (EIP `0x14C72`,
+  186844 PGRAPH methods: `ARRAY_ELEMENT16 0x1800`×58577,
+  `SET_TRANSFORM_CONSTANT_LOAD 0x1EA4`×8301 + transform constants `0xB80`+,
+  `SET_BEGIN_END 0x17FC`×5340 draws, `INLINE_ARRAY 0x1818`×396, `DRAW_ARRAYS
+  0x1810`×32, surface/clear/flip). XGrid's NV2A handles inline draws, surface
+  set/clear and semaphores but ignores `0x1800`, transform constants, vertex
+  formats, textures, lighting and zeta → no transformed geometry. Implement
+  M5 (transform constants → vertex transform → clip/screen space + inline
+  array element semantics), then M6-M8. CLI now prints draw stats. Reference:
+  xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `vertex.c`, `draw.c`,
+  `vsh-ff.c`), `nv2a_regs.h`.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: 690 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
@@ -117,15 +126,20 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    passes the USB poll (OHCI implemented). `xgrid boot --steps 1600000000`
    (1.6B steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no
    fault at EIP `0x22DE2` (phys `0x10FDE2`, a newly mapped module).
-2. Characterize the module at phys `0x10FDE2` (page-walk VA→phys via CR3
-   `0xF000`; `objdump` from the RAM dump) — is it the dashboard's DirectX/menu
-   code? Find the next blocker (likely D3D device setup needing NV2A M5-M8, or
-   the nvnet stub at `0xFEF00000`). Tools: `--break-log`, `--watch`,
-   `--ramdump`, the CLI's unmapped-bucket report.
-3. Then menu rendering (NV2A M5-M8 + present) and controller input (the OHCI
-   root hub currently reports empty ports; an XID/gamepad device is future
-   work). LLE-first remains the rule; Phase 10 kernel-HLE only if we choose HLE
-   for dashboard ordinals.
+2. The dashboard is now in its **rendering phase**: a 1.7B-step run
+   (`--pgraph`) shows `ARRAY_ELEMENT16 0x1800`×58577, transform constants
+   (`0xB80`/`0x1EA4`)×8301, `SET_BEGIN_END`×5340 draws, flips×70. XGrid's
+   NV2A ignores `0x1800` and transform constants → no transformed geometry.
+   Implement M5 first: transform-constant loading (`0xB80`, `0x1EA4`), the
+   fixed-function vertex transform (modelview/projection/viewport → screen
+   space), and the inline-array element semantics (`0x1800`/`0x1808`/`0x1810`/
+   `0x1818`). Reference xemu `hw/xbox/nv2a/pgraph/` (`vertex.c`, `draw.c`,
+   `vsh-ff.c`, `methods.h.inc`) and `nv2a_regs.h`. The CLI prints draw stats
+   (executed/skipped/pixels/clears) to quantify.
+3. Then M6-M8 (textures/lighting, zeta/blend, present) and controller input
+   (the OHCI root hub currently reports empty ports; an XID/gamepad device is
+   future work). LLE-first remains the rule; Phase 10 kernel-HLE only if we
+   choose HLE for dashboard ordinals.
 4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
 5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
