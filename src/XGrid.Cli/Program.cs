@@ -58,6 +58,8 @@ internal static class Program
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
         string? pgraphPath = null;
+        string? ramDumpPath = null;
+        string? raminPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -127,6 +129,12 @@ internal static class Program
                     break;
                 case "--pgraph":
                     pgraphPath = NextValue(args, ref i);
+                    break;
+                case "--ramdump":
+                    ramDumpPath = NextValue(args, ref i);
+                    break;
+                case "--ramin":
+                    raminPath = NextValue(args, ref i);
                     break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
@@ -256,6 +264,19 @@ internal static class Program
             }
 
             PrintState(machine, executed, dumps);
+            if (ramDumpPath is not null)
+            {
+                File.WriteAllBytes(ramDumpPath, machine.Ram.GetSpan(0, (int)machine.Ram.Size).ToArray());
+                Console.WriteLine($"RAM {ramDumpPath} {machine.Ram.Size} bytes");
+            }
+
+            if (raminPath is not null)
+            {
+                byte[] ramin = machine.Nv2A.PraminSnapshot();
+                File.WriteAllBytes(raminPath, ramin);
+                Console.WriteLine($"PRAMIN {raminPath} {ramin.Length} bytes");
+            }
+
             if (fbPath is not null)
             {
                 DumpFramebuffer(machine, fbPath);
@@ -515,6 +536,22 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
 
         Console.WriteLine($"NV2A regs:{nv2ALog}");
+        Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
+        var pmcEnLogText = new System.Text.StringBuilder();
+        foreach (uint entry in machine.Nv2A.PmcIntrEnLog)
+        {
+            pmcEnLogText.Append(CultureInfo.InvariantCulture, $"{entry:X8},");
+        }
+
+        Console.WriteLine(
+            $"NV2A irq pgraphEn={machine.Nv2A.PgraphEnabledDebug:X8} pgraphPending={machine.Nv2A.PgraphPendingDebug:X8} " +
+            $"pmcEn={machine.Nv2A.PmcEnabledDebug:X8} notifications={machine.Nv2A.NotificationsRaised} asserted={machine.Nv2A.NotificationAsserted} " +
+            $"pmcEnLog=[{pmcEnLogText}]");
+        Console.WriteLine(
+            $"NV2A pramin writes={machine.Nv2A.PraminWrites} " +
+            $"w0={machine.Nv2A.ReadRaminWord(0):X8} w4={machine.Nv2A.ReadRaminWord(4):X8} " +
+            $"w8={machine.Nv2A.ReadRaminWord(8):X8} wC={machine.Nv2A.ReadRaminWord(0xC):X8} " +
+            $"w10={machine.Nv2A.ReadRaminWord(0x10):X8}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
@@ -803,7 +840,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ram MB]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--ram MB]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

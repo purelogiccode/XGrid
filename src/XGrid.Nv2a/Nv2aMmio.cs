@@ -121,6 +121,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodFlipRead = 0x120u;
     private const uint MethodFlipWrite = 0x124u;
     private const uint MethodFlipModulo = 0x128u;
+    private const uint MethodSetContextDmaSemaphore = 0x1A4u;
+    private const uint MethodSetSemaphoreOffset = 0x1D6Cu;
+    private const uint MethodBackEndWriteSemaphoreRelease = 0x1D70u;
+    private const uint MethodNoOperation = 0x100u;
+    private const uint PgraphNsource = 0x108u;
+    private const uint PgraphTrappedAddr = 0x704u;
+    private const uint PgraphTrappedDataLow = 0x708u;
+    private const uint PgraphIntrError = 1u << 20;
+    private const uint PgraphNsourceNotification = 1u;
     private const uint MethodZetaClearValue = 0x1D8Cu;
     private const uint MethodColorClearValue = 0x1D90u;
     private const uint MethodClearSurface = 0x1D94u;
@@ -188,6 +197,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly Dictionary<uint, int> _userReadOffsets = new();
 
     private uint _pmcEnabled;
+    private readonly List<uint> _pmcIntrEnLog = new();
     private uint _pmcPending;
     private uint _pbusCommand;
     private uint _ptimerPending;
@@ -215,6 +225,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _surfaceClipV;
     private uint _zetaClearValue;
     private uint _colorClearValue;
+    private uint _dmaSemaphore;
+    private uint _semaphoreOffset;
     private uint _clearRectH;
     private uint _clearRectV;
     private uint _flipRead;
@@ -279,6 +291,45 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of executed draws. Diagnostics.</summary>
     public ulong DrawsExecuted { get; private set; }
 
+    /// <summary>Gets the number of semaphore release writes performed. Diagnostics.</summary>
+    public int SemaphoreReleases { get; private set; }
+
+    /// <summary>Gets the last semaphore release resolution state. Diagnostics.</summary>
+    public string SemaphoreDebug { get; private set; } = string.Empty;
+
+    /// <summary>Gets the PGRAPH interrupt enable mask. Diagnostics.</summary>
+    public uint PgraphEnabledDebug => _pgraphEnabled;
+
+    /// <summary>Gets the PGRAPH pending interrupt mask. Diagnostics.</summary>
+    public uint PgraphPendingDebug => _pgraphPending;
+
+    /// <summary>Gets the PMC interrupt enable mask. Diagnostics.</summary>
+    public uint PmcEnabledDebug => _pmcEnabled;
+
+    /// <summary>Gets the PMC_INTR_EN_0 write log. Diagnostics.</summary>
+    public IReadOnlyList<uint> PmcIntrEnLog => _pmcIntrEnLog;
+
+    /// <summary>Gets the number of PGRAPH notifications raised. Diagnostics.</summary>
+    public int NotificationsRaised { get; private set; }
+
+    /// <summary>Gets whether the PGRAPH interrupt line was asserted when the last notification fired. Diagnostics.</summary>
+    public bool NotificationAsserted { get; private set; }
+
+    /// <summary>Gets the number of PRAMIN writes observed. Diagnostics.</summary>
+    public int PraminWrites { get; private set; }
+
+    /// <summary>Reads a PRAMIN word for diagnostics.</summary>
+    public uint ReadRaminWord(uint offset)
+    {
+        return offset + 4 <= PraminSize ? RaminWord(offset) : 0;
+    }
+
+    /// <summary>Gets a snapshot of PRAMIN contents for diagnostics.</summary>
+    public byte[] PraminSnapshot()
+    {
+        return (byte[])_ramin.Clone();
+    }
+
     /// <summary>Gets the number of pixels written by draws. Diagnostics.</summary>
     public ulong DrawnPixels { get; private set; }
 
@@ -326,7 +377,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private void UpdateIrq()
     {
         uint pending = AggregatePending();
-        bool asserted = (pending & _pmcEnabled) != 0;
+        bool asserted = pending != 0 && _pmcEnabled != 0;
         if (asserted != InterruptAsserted)
         {
             InterruptAsserted = asserted;
@@ -619,6 +670,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 break;
             case PmcIntrEn0:
                 _pmcEnabled = value;
+                if (_pmcIntrEnLog.Count < 32)
+                {
+                    _pmcIntrEnLog.Add(value);
+                }
+
                 break;
             default:
                 break;
@@ -865,6 +921,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private void WriteRamin(uint offset, uint value)
     {
         CountWrite(PraminBase);
+        PraminWrites++;
         _ramin[offset] = (byte)value;
         _ramin[offset + 1] = (byte)(value >> 8);
         _ramin[offset + 2] = (byte)(value >> 16);
@@ -1210,7 +1267,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             _boundInstance[subchannel] = instance;
 
-            RecordMethod(subchannel, method, parameter);
+            RecordMethod(channel, subchannel, method, parameter);
             return 1;
         }
 
@@ -1222,13 +1279,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 return -1;
             }
 
-            RecordMethod(subchannel, method, parameter);
+            RecordMethod(channel, subchannel, method, parameter);
             return 1;
         }
 
         if (method >= 0x100u)
         {
-            RecordMethod(subchannel, method, parameter);
+            RecordMethod(channel, subchannel, method, parameter);
             return 1;
         }
 
@@ -1236,7 +1293,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         return -1;
     }
 
-    private void RecordMethod(uint subchannel, uint method, uint parameter)
+    private void RecordMethod(uint channel, uint subchannel, uint method, uint parameter)
     {
         uint key = (subchannel << 16) | method;
         _methodCounts.TryGetValue(key, out int count);
@@ -1249,6 +1306,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         switch (method)
         {
+            case MethodNoOperation:
+                if (parameter != 0)
+                {
+                    RaiseNotification(channel, subchannel, parameter);
+                }
+
+                break;
             case MethodSurfaceClipH:
                 _surfaceClipH = parameter;
                 break;
@@ -1269,6 +1333,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 break;
             case MethodZetaClearValue:
                 _zetaClearValue = parameter;
+                break;
+            case MethodSetContextDmaSemaphore:
+                _dmaSemaphore = parameter;
+                break;
+            case MethodSetSemaphoreOffset:
+                _semaphoreOffset = parameter;
+                break;
+            case MethodBackEndWriteSemaphoreRelease:
+                WriteSemaphoreRelease(channel, parameter);
                 break;
             case MethodColorClearValue:
                 _colorClearValue = parameter;
@@ -1317,6 +1390,54 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             ((method - MethodVertexFormatBase) & 3u) == 0)
         {
             _vertexFormat[(method - MethodVertexFormatBase) / 4] = parameter;
+        }
+    }
+
+    private void RaiseNotification(uint channel, uint subchannel, uint parameter)
+    {
+        _pgraph[PgraphTrappedAddr / 4] =
+            ((channel & 0x1Fu) << 20) | ((subchannel & 7u) << 16) | (MethodNoOperation & 0x1FFFu);
+        _pgraph[PgraphTrappedDataLow / 4] = parameter;
+        _pgraph[PgraphNsource / 4] = PgraphNsourceNotification;
+        _pgraphPending |= PgraphIntrError;
+        NotificationsRaised++;
+        UpdateIrq();
+        NotificationAsserted = InterruptAsserted;
+    }
+
+    private void WriteSemaphoreRelease(uint channel, uint value)
+    {
+        if (_memory is null)
+        {
+            return;
+        }
+
+        uint instance;
+        if (TryRamhtLookup(_dmaSemaphore, channel, out uint handleInstance, out _))
+        {
+            instance = handleInstance;
+        }
+        else
+        {
+            instance = _dmaSemaphore & DmaInstanceAddressMask;
+        }
+
+        if (instance + 12 > PraminSize)
+        {
+            SemaphoreDebug = $"dma={_dmaSemaphore:X} instance={instance:X} out-of-range";
+            return;
+        }
+
+        uint flags = RaminWord(instance);
+        uint frame = RaminWord(instance + 8);
+        uint address = ((frame & DmaAddressMask) | (flags & DmaAdjustMask)) & GpuAddressMask;
+        uint target = (address + _semaphoreOffset) & GpuAddressMask;
+        SemaphoreDebug =
+            $"dma={_dmaSemaphore:X} off={_semaphoreOffset:X} flags={flags:X8} frame={frame:X8} target={target:X8} value={value:X}";
+        if (target + 4 <= RamSize)
+        {
+            _memory.WritePhysical(target, value);
+            SemaphoreReleases++;
         }
     }
 
