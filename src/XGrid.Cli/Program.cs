@@ -54,6 +54,7 @@ internal static class Program
         int traceStart = 0;
         bool traceRegs = false;
         uint? breakAddress = null;
+        uint? breakLogAddress = null;
         uint ramMb = 64;
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
@@ -97,6 +98,13 @@ internal static class Program
                         string text = NextValue(args, ref i);
                         string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
                         breakAddress = Convert.ToUInt32(hex, 16);
+                        break;
+                    }
+                case "--break-log":
+                    {
+                        string text = NextValue(args, ref i);
+                        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+                        breakLogAddress = Convert.ToUInt32(hex, 16);
                         break;
                     }
                 case "--dump":
@@ -201,7 +209,45 @@ internal static class Program
 
             int executed = 0;
             bool breakHit = false;
-            if (breakAddress is { } breakEip)
+            if (breakAddress is null && breakLogAddress is { } logEip)
+            {
+                int logAdvance = 0;
+                while (executed < steps && !machine.Cpu.Context.Halted)
+                {
+                    if (machine.Cpu.Context.Eip == logEip)
+                    {
+                        XboxContext logs = machine.Cpu.Context;
+                        uint caller = 0;
+                        uint argument = 0;
+                        uint espPhysical = machine.Cpu.Mmu.Translate(
+                            logs.Esp, isWrite: false, isInstruction: false, out bool logFaulted, out _);
+                        if (!logFaulted)
+                        {
+                            caller = machine.Memory.Read32(espPhysical);
+                            argument = machine.Memory.Read32(espPhysical + 4);
+                        }
+
+                        Console.WriteLine(
+                            $"HIT {executed} ESI={logs.Esi:X8} EDI={logs.Edi:X8} ESP={logs.Esp:X8} " +
+                            $"caller={caller:X8} arg={argument:X8}");
+                    }
+
+                    machine.Cpu.Step();
+                    executed++;
+
+                    if (++logAdvance >= 4096)
+                    {
+                        machine.Advance((ulong)logAdvance);
+                        logAdvance = 0;
+                    }
+                }
+
+                if (logAdvance > 0)
+                {
+                    machine.Advance((ulong)logAdvance);
+                }
+            }
+            else if (breakAddress is { } breakEip)
             {
                 int breakAdvance = 0;
                 while (executed < steps && !machine.Cpu.Context.Halted)
@@ -552,6 +598,16 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"w0={machine.Nv2A.ReadRaminWord(0):X8} w4={machine.Nv2A.ReadRaminWord(4):X8} " +
             $"w8={machine.Nv2A.ReadRaminWord(8):X8} wC={machine.Nv2A.ReadRaminWord(0xC):X8} " +
             $"w10={machine.Nv2A.ReadRaminWord(0x10):X8}");
+        Console.WriteLine(
+            $"APU ist={machine.Apu.InterruptStatus:X8} ien={machine.Apu.InterruptEnable:X8} " +
+            $"fectl={machine.Apu.FrontEndControl:X8} asserted={machine.Apu.InterruptAsserted} " +
+            $"reads={machine.Apu.ReadCount} writes={machine.Apu.WriteCount} voiceOff={machine.Apu.VoiceOffCompletions}");
+        foreach (string entry in machine.Apu.EventLog)
+        {
+            Console.WriteLine($"APU log: {entry}");
+        }
+        Console.WriteLine(
+            $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
@@ -840,7 +896,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--ram MB]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

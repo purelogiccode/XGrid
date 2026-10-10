@@ -39,14 +39,14 @@ public static class XboxAddressMap
     /// <summary>MCPX APU window base.</summary>
     public const uint ApuBase = 0xFE800000;
 
-    /// <summary>MCPX APU window size (4 MB).</summary>
-    public const uint ApuSize = 0x00400000;
+    /// <summary>MCPX APU window size (512 KB, XboxDevWiki Memory).</summary>
+    public const uint ApuSize = 0x00080000;
 
-    /// <summary>I/O APIC window base (devkit-era; optional).</summary>
-    public const uint IoApicBase = 0xFEC00000;
+    /// <summary>MCPX ACI (AC'97 audio) register window base (PCI 0:6.0 BAR2, XboxDevWiki Memory/PCI).</summary>
+    public const uint AciBase = 0xFEC00000;
 
-    /// <summary>I/O APIC window size.</summary>
-    public const uint IoApicSize = 0x00001000;
+    /// <summary>MCPX ACI register window size (4 KB).</summary>
+    public const uint AciSize = 0x00001000;
 
     /// <summary>USB0 OHCI window base.</summary>
     public const uint Usb0Base = 0xFED00000;

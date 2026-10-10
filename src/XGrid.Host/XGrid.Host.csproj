@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\XGrid.Audio\XGrid.Audio.csproj" />
     <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
     <ProjectReference Include="..\XGrid.Cpu\XGrid.Cpu.csproj" />

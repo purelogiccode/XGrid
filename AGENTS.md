@@ -61,35 +61,49 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   `NV097_NO_OPERATION` (`0x100`) PGRAPH notifications; `UpdateIrq` now matches
   xemu's `pending && enabled` assert. The loader runs the full animation and
   reaches the video-mode-set path.
+- **AV-device gates passed (2026-10-10, research-notes §33):** the video-device
+  open needed two MCPX devices — **ACI (AC'97) at `0xFEC00000`** (`McpxAciDevice`,
+  xemu `ac97.c`-faithful; the kernel polls CAS bit 0 with a 1000×
+  `StallExecution` timeout) and **APU at `0xFE800000`** (`XGrid.Audio/
+  McpxApuDevice`; voice-off completion = `SE2FE_IDLE_VOICE` FE message, which
+  must be delivered on a VP frame boundary via `Advance`, not synchronously, or
+  the stop method deadlocks on its own `[dev+0x1C4]` operation counter). Both
+  PCI IRQs wired (APU=PIC IRQ5, ACI=IRQ6 via the LPC INT routing nibbles). The
+  boot now runs the animation + video mode set.
 - Interrupts: PIT/PIC/PIT-EOI fine, NV2A IRQ path live (PMC/PGRAPH/PCRTC
   pending → PIC IRQ3; the kernel toggles `PMC_INTR_EN_0` around its DPC). IDE
-  IRQ14 works.
-- **Next gate (XBE launch):** the kernel faults on a null video-device object:
-  `#PF` at `0x8004E147` (`mov ecx,[eax]`, EAX=0) from `0x80057A33`; the object
-  came from `0x80053302` (video-device open/create) and stayed NULL →
-  BugCheck `0x1E` (`0xC0000005`). Then XBE verify/relocate/entry-call, menu
-  draws + USB input. Widen M5–M8 (transforms/textures/zeta/blits) and Track C
-  (CPU JIT) as needed; remaining M9 gaps tracked in `ImplementationPlan.md`.
+  IRQ14 works; APU IRQ5 now handled by the kernel (ISR acks ISTS).
+- **Next gate (XBE launch):** the AV teardown (`0x80056E03` → `0x8005BACE`)
+  releases a NULL D3D surface handle `[AV+0x64C]` → `#PF` at `0x800409F5`
+  (`mov eax,[esi]`, ESI=0), BugCheck `0x1E` at ~137.5M. The setter `0x8005C366`
+  (creates a 0x400×0x400 surface via the D3D runtime `0x8003E630`) never ran —
+  XMV/AV playback path, likely NV2A M5-M8 depth. Then XBE
+  verify/relocate/entry-call (XBE already mapped: header phys `0xE0000`, base
+  `0x10000`, entry RVA `0x12A17` → VA `0x22A17`, never executed).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 655 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 676 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
 
 1. Run `xgrid boot` (700M steps, `data/xemu-0.8.136-windows-x86_64/` set); the
-   old park is gone; expect the null-object fault (BugCheck 0x1E) at ~157.5M
-   instructions (verified 2026-10-10).
-2. Trace `0x80053302` (first hit ~25.3M; the faulting call is later) to find
-   why the video-device object is NULL (candidates: a device object registered
-   by an earlier driver init, encoder/AV-pack path, missing NV2A interface).
-   `--ramdump`/`--ramin` snapshots + `objdump -b binary -m i386` (kernel image
-   at phys `0x10000`, VA = phys + `0x80000000`) were the working tools.
+   kernel reaches ~137.5M and BugChecks 0x1E on the NULL surface release
+   (verified 2026-10-10). Use `--break-log 0x800409F0` (new: logs ESI/EDI/ESP/
+   caller/arg per hit) to see each release call; the NULL is at
+   `0x8005BB37` (arg 0).
+2. Find why `0x8005C366` (surface setter) never ran: it is called from
+   `0x8005C65C` in the XMV/AV per-frame update; check the D3D runtime calls
+   (`0x8003E630` etc. create surfaces/draw against the video device → NV2A
+   pushbuffer methods) and whether an NV2A response/notification is missing
+   (M5-M8: transforms/textures/zeta/surface methods). `--ramdump`/`--ramin`,
+   objdump (kernel phys 0x10000, VA = phys + 0x80000000), the APU/ACI
+   diagnostics are the working tools.
 3. Then the dashboard runs: expect XBE section mapping, TLS, kernel-thunk
    imports (needs Phase 10 kernel-HLE surface for dashboard ordinals only if
    we choose HLE for its imports — LLE-first remains the rule).
 4. Parallel tracks when blocked: NV2A M5–M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
-5. Reference oracles: `xemu -trace` + QEMU monitor (`-monitor tcp:...`,
-   `xp` physical reads; xemu deadlocks at the animation wait, so it is no
-   longer an oracle past that point); `References/Cxbx-Reloaded-master/src/
-   core/kernel/common/types.h` for KTHREAD/KWAIT offsets if needed.
+5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+   deadlocks at the animation wait, so it is no longer an oracle past that
+   point); `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h`
+   for KTHREAD/KWAIT offsets if needed.
