@@ -121,6 +121,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodFlipRead = 0x120u;
     private const uint MethodFlipWrite = 0x124u;
     private const uint MethodFlipModulo = 0x128u;
+    private const uint MethodFlipIncrementWrite = 0x12Cu;
+    private const uint MethodFlipStall = 0x130u;
+    private const uint MaxPresentDimension = 4096u;
+    private const ulong MaxPresentPixels = (ulong)MaxPresentDimension * MaxPresentDimension;
     private const uint MethodSetContextDmaSemaphore = 0x1A4u;
     private const uint MethodSetSemaphoreOffset = 0x1D6Cu;
     private const uint MethodBackEndWriteSemaphoreRelease = 0x1D70u;
@@ -282,6 +286,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _flipRead;
     private uint _flipWrite;
     private uint _flipModulo;
+    private uint _presentedOffset;
+    private uint _presentedWidth;
+    private uint _presentedHeight;
+    private uint _presentedPitch;
+    private uint _presentedBytes;
+    private bool _presentedValid;
+    private ulong _presentedFrame;
     private readonly uint[] _vertexFormat = new uint[16];
     private readonly uint[] _vertexArrayOffset = new uint[16];
     private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
@@ -439,6 +450,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of fragments that ran the depth test. Diagnostics.</summary>
     public ulong DepthTestedPixels { get; private set; }
 
+    /// <summary>Gets the number of presented frames (flip increment events). Diagnostics.</summary>
+    public ulong FramesPresented { get; private set; }
+
+    /// <summary>Gets the number of flip stall waits observed. Diagnostics.</summary>
+    public ulong FlipStalls { get; private set; }
+
+    /// <summary>Gets the presented-frame state summary. Diagnostics.</summary>
+    public string PresentedFrameDebug =>
+        $"frames={FramesPresented} stalls={FlipStalls} read={_flipRead} write={_flipWrite} modulo={_flipModulo} " +
+        $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
+        $"valid={_presentedValid} frame={_presentedFrame}";
+
+    /// <summary>Gets the flip read buffer index. Diagnostics.</summary>
+    public uint FlipReadDebug => _flipRead;
+
+    /// <summary>Gets the flip write buffer index. Diagnostics.</summary>
+    public uint FlipWriteDebug => _flipWrite;
+
+    /// <summary>Gets the flip buffer modulo. Diagnostics.</summary>
+    public uint FlipModuloDebug => _flipModulo;
+
     /// <summary>Gets the fragment-pipeline state summary. Diagnostics.</summary>
     public string FragmentStateDebug =>
         $"alpha={_alphaTestEnable}:{_alphaFunc:X} blend={_blendEnable}:{_blendSrcFactor:X}/{_blendDstFactor:X} " +
@@ -503,8 +535,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             _vsyncRemainder -= VsyncTicksPerFrame;
             _pcrtcPending |= PcrtcVblank;
             _pcrtcRaster = 0;
+            AdvanceFlipRead();
             UpdateIrq();
         }
+    }
+
+    private void AdvanceFlipRead()
+    {
+        if (_flipRead == _flipWrite)
+        {
+            return;
+        }
+
+        uint modulo = _flipModulo == 0 ? 1u : _flipModulo;
+        _flipRead = (_flipRead + 1) % modulo;
     }
 
     private void UpdateIrq()
@@ -565,6 +609,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _flipRead = 0;
         _flipWrite = 0;
         _flipModulo = 0;
+        _presentedOffset = 0;
+        _presentedWidth = 0;
+        _presentedHeight = 0;
+        _presentedPitch = 0;
+        _presentedBytes = 0;
+        _presentedValid = false;
+        _presentedFrame = 0;
+        FramesPresented = 0;
+        FlipStalls = 0;
         _alphaTestEnable = false;
         _alphaFunc = CompareAlways;
         _alphaRef = 0;
@@ -1609,6 +1662,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case MethodFlipModulo:
                 _flipModulo = parameter;
                 break;
+            case MethodFlipIncrementWrite:
+                {
+                    uint flipModulo = _flipModulo == 0 ? 1u : _flipModulo;
+                    _flipWrite = (_flipWrite + 1) % flipModulo;
+                    FramesPresented++;
+                    CapturePresentedFrame();
+                    break;
+                }
+            case MethodFlipStall:
+                FlipStalls++;
+                break;
             case MethodClearSurface:
                 ExecuteClear(parameter);
                 break;
@@ -2646,10 +2710,97 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         };
     }
 
-    private uint ReadZetaHalf(uint address)
+    private uint ReadHalf(uint address)
     {
         uint word = _memory!.ReadPhysical(address & ~3u);
         return ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
+    }
+
+    private void CapturePresentedFrame()
+    {
+        _presentedFrame = FramesPresented;
+        uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+        uint width = _surfaceClipH >> 16;
+        uint height = _surfaceClipV >> 16;
+        uint pitch = _surfacePitch & 0xFFFFu;
+        bool pitchType = ((_surfaceFormat & 0xF00u) >> 8) == SurfaceTypePitch;
+        _presentedValid = (bytes == 2 || bytes == 4) &&
+            width != 0 && width <= MaxPresentDimension &&
+            height != 0 && height <= MaxPresentDimension &&
+            pitch != 0 && pitchType && _memory is not null;
+        if (_presentedValid)
+        {
+            _presentedOffset = PresentedColorOffset;
+            _presentedWidth = width;
+            _presentedHeight = height;
+            _presentedPitch = pitch;
+            _presentedBytes = bytes;
+        }
+    }
+
+    /// <summary>Copies the latest presented frame as BGRA bytes (one byte per channel).</summary>
+    /// <returns>False when no valid presented frame is available.</returns>
+    public bool TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra)
+    {
+        width = 0;
+        height = 0;
+        bgra = Array.Empty<byte>();
+        if (!_presentedValid || _memory is null)
+        {
+            return false;
+        }
+
+        ulong count = (ulong)_presentedWidth * _presentedHeight;
+        if (count == 0 || count > MaxPresentPixels)
+        {
+            return false;
+        }
+
+        byte[] pixels = new byte[count * 4];
+        for (uint y = 0; y < _presentedHeight; y++)
+        {
+            uint row = _presentedOffset + (y * _presentedPitch);
+            for (uint x = 0; x < _presentedWidth; x++)
+            {
+                uint address = row + (x * _presentedBytes);
+                if (address + _presentedBytes > RamSize)
+                {
+                    return false;
+                }
+
+                uint red;
+                uint green;
+                uint blue;
+                uint alpha;
+                if (_presentedBytes == 4)
+                {
+                    uint pixel = _memory.ReadPhysical(address);
+                    blue = pixel & 0xFFu;
+                    green = (pixel >> 8) & 0xFFu;
+                    red = (pixel >> 16) & 0xFFu;
+                    alpha = (pixel >> 24) & 0xFFu;
+                }
+                else
+                {
+                    uint half = ReadHalf(address);
+                    red = (((half >> 11) & 0x1Fu) * 255u) / 31u;
+                    green = (((half >> 5) & 0x3Fu) * 255u) / 63u;
+                    blue = (half & 0x1Fu) * 255u / 31u;
+                    alpha = 255u;
+                }
+
+                int at = (int)(((ulong)y * _presentedWidth + x) * 4);
+                pixels[at] = (byte)blue;
+                pixels[at + 1] = (byte)green;
+                pixels[at + 2] = (byte)red;
+                pixels[at + 3] = (byte)alpha;
+            }
+        }
+
+        width = _presentedWidth;
+        height = _presentedHeight;
+        bgra = pixels;
+        return true;
     }
 
     private void WriteZeta(uint address, uint bytes, bool writeDepth, float depth, bool writeStencil, uint stencil)
@@ -2742,7 +2893,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             zetaAddress = _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
             if (zetaAddress + zetaBytes <= RamSize)
             {
-                storedZeta = zetaBytes == 4 ? _memory.ReadPhysical(zetaAddress) : ReadZetaHalf(zetaAddress);
+                storedZeta = zetaBytes == 4 ? _memory.ReadPhysical(zetaAddress) : ReadHalf(zetaAddress);
                 haveZeta = true;
             }
         }

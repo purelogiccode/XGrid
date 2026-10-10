@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using XGrid.Cpu;
+using XGrid.Graphics;
 using XGrid.Host;
 using XGrid.Memory;
 
@@ -58,6 +59,7 @@ internal static class Program
         uint ramMb = 64;
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
+        string? framePath = null;
         string? pgraphPath = null;
         string? ramDumpPath = null;
         string? raminPath = null;
@@ -134,6 +136,9 @@ internal static class Program
                     break;
                 case "--fb":
                     fbPath = NextValue(args, ref i);
+                    break;
+                case "--frame":
+                    framePath = NextValue(args, ref i);
                     break;
                 case "--pgraph":
                     pgraphPath = NextValue(args, ref i);
@@ -329,6 +334,11 @@ internal static class Program
                 DumpFramebuffer(machine, fbPath);
             }
 
+            if (framePath is not null)
+            {
+                SavePresentedFrame(machine, framePath);
+            }
+
             if (pgraphPath is not null)
             {
                 var lines = new System.Text.StringBuilder();
@@ -414,6 +424,23 @@ internal static class Program
 
         File.WriteAllBytes(path, raw);
         Console.WriteLine($"FB {path} {width}x{height} bpp={bpp} pitch={pitch} addr=0x{address:X8}");
+    }
+
+    private static void SavePresentedFrame(XboxMachine machine, string path)
+    {
+        if (machine.Nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra))
+        {
+            var frame = new DisplayFrame();
+            frame.Show(width, height, bgra);
+            frame.SaveBmp(path);
+            Console.WriteLine(
+                $"Frame {path} {width}x{height} nonzero={frame.CountNonZeroPixels()} " +
+                machine.Nv2A.PresentedFrameDebug);
+        }
+        else
+        {
+            Console.WriteLine($"Frame unavailable ({machine.Nv2A.PresentedFrameDebug})");
+        }
     }
 
     private static DecodedInstruction Trace(XboxMachine machine, bool print, bool traceRegs)
@@ -587,6 +614,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"NV2A draws executed={machine.Nv2A.DrawsExecuted} skipped={machine.Nv2A.SkippedDraws} " +
             $"pixels={machine.Nv2A.DrawnPixels} textured={machine.Nv2A.TexturedPixels} clears={machine.Nv2A.ClearsExecuted} " +
             $"blended={machine.Nv2A.BlendedPixels} depth={machine.Nv2A.DepthTestedPixels} " +
+            $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount}");
         Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
@@ -903,7 +931,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

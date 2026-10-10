@@ -520,4 +520,106 @@ public sealed class PgraphTransformTests
         Assert.True(nv2A.DrawnPixels > 0);
         Assert.Equal(0xABu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
     }
+
+    [Fact]
+    public void FlipIncrementWrite_WrapsWriteIndex()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0128u, 2u),
+            (0x0124u, 1u),
+            (0x012Cu, 0u),
+            (0x012Cu, 0u));
+
+        Assert.Equal(2uL, nv2A.FramesPresented);
+        Assert.Equal(1u, nv2A.FlipWriteDebug);
+        Assert.Equal(2u, nv2A.FlipModuloDebug);
+    }
+
+    [Fact]
+    public void FlipStall_CountsWaits()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(nv2A, memory, (0x0130u, 0u));
+
+        Assert.Equal(1uL, nv2A.FlipStalls);
+    }
+
+    [Fact]
+    public void FlipRead_AdvancesTowardWriteOnVblank()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0128u, 2u),
+            (0x0124u, 1u));
+        nv2A.Advance(1_000_000_000uL);
+
+        Assert.Equal(1u, nv2A.FlipReadDebug);
+    }
+
+    [Fact]
+    public void PresentedFrame_CapturesSurfaceAtFlip()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x3000u, 0xFF112233u);
+        memory.WritePhysical(0x3004u, 0x80404040u);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000008u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00020000u),
+            (0x0204u, 0x00010000u),
+            (0x012Cu, 0u));
+
+        Assert.Equal(1uL, nv2A.FramesPresented);
+        Assert.True(nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra));
+        Assert.Equal(2u, width);
+        Assert.Equal(1u, height);
+        Assert.Equal(new byte[] { 0x33, 0x22, 0x11, 0xFF, 0x40, 0x40, 0x40, 0x80 }, bgra);
+    }
+
+    [Fact]
+    public void PresentedFrame_ConvertsR5G6B5()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x3000u, 0x0000F800u);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000103u),
+            (0x020Cu, 0x00000002u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00010000u),
+            (0x0204u, 0x00010000u),
+            (0x012Cu, 0u));
+
+        Assert.True(nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra));
+        Assert.Equal(1u, width);
+        Assert.Equal(1u, height);
+        Assert.Equal(new byte[] { 0, 0, 255, 255 }, bgra);
+    }
+
+    [Fact]
+    public void PresentedFrame_InvalidWithoutSurface()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(nv2A, memory, (0x012Cu, 0u));
+
+        Assert.Equal(1uL, nv2A.FramesPresented);
+        Assert.False(nv2A.TryCopyPresentedFrame(out _, out _, out _));
+    }
 }
