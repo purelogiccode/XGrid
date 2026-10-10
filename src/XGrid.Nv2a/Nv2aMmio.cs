@@ -1438,7 +1438,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case MethodBeginEnd:
                 if (parameter == 0)
                 {
-                    FlushInlineDraw();
+                    FlushDraw();
                     ResetInlineBuffers();
                 }
                 else
@@ -1892,54 +1892,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float cb = InlineColor(c, 2);
                 float ca = colorCount >= 4 ? InlineColor(c, 3) : 1f;
 
-                float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
-                if (area == 0f)
-                {
-                    return;
-                }
-
-                uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
-                uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
-                uint y0 = (uint)Math.Max(0f, Math.Min(Math.Min(ay, by), cy));
-                uint y1 = (uint)Math.Min((float)clipY + clipH - 1, Math.Max(Math.Max(ay, by), cy));
-                if (x1 < x0 || y1 < y0)
-                {
-                    return;
-                }
-
-                float invArea = 1f / area;
-                for (uint y = y0; y <= y1; y++)
-                {
-                    for (uint x = x0; x <= x1; x++)
-                    {
-                        float px = x + 0.5f;
-                        float py = y + 0.5f;
-                        float w0 = (((bx - ax) * (py - ay)) - ((by - ay) * (px - ax))) * invArea;
-                        float w1 = (((cx - bx) * (py - by)) - ((cy - by) * (px - bx))) * invArea;
-                        float w2 = 1f - w0 - w1;
-                        bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
-                                      (w0 <= 0f && w1 <= 0f && w2 <= 0f);
-                        if (!inside)
-                        {
-                            continue;
-                        }
-
-                        float r = (w1 * ar) + (w2 * br) + (w0 * cr);
-                        float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
-                        float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
-                        float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
-                        uint pixel = bytes == 4
-                            ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
-                              ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
-                              ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
-                              (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
-                            : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
-                              ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
-                              (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
-                        WritePixel(PresentedColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
-                        DrawnPixels++;
-                    }
-                }
+                FillTriangle(
+                    ax, ay, ar, ag, ab, aa,
+                    bx, by, br, bg, bb, ba,
+                    cx, cy, cr, cg, cb, ca,
+                    clipX, clipY, clipW, clipH, bytes, pitch);
             }
 
             float InlineFloat(int vertex, int word)
@@ -1961,6 +1918,290 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         finally
         {
             _inlineWords.Clear();
+        }
+    }
+
+    private void FlushDraw()
+    {
+        if (_inlineElements.Count != 0)
+        {
+            FlushElementDraw();
+            return;
+        }
+
+        FlushInlineDraw();
+    }
+
+    private void FlushElementDraw()
+    {
+        if (_memory is null || _transformProgramLoad == 0)
+        {
+            SkippedDraws++;
+            return;
+        }
+
+        uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
+        uint pitch = _surfacePitch & 0xFFFFu;
+        uint clipX = _surfaceClipH & 0xFFFFu;
+        uint clipY = _surfaceClipV & 0xFFFFu;
+        uint clipW = _surfaceClipH >> 16;
+        uint clipH = _surfaceClipV >> 16;
+        if ((bytes != 4 && bytes != 2) || pitch == 0 || clipW == 0 || clipH == 0)
+        {
+            SkippedDraws++;
+            return;
+        }
+
+        if (_beginMode is not (BeginEndTriangles or BeginEndTriangleStrip or BeginEndTriangleFan or BeginEndQuads))
+        {
+            SkippedDraws++;
+            return;
+        }
+
+        var constants = new float[VshProgram.ConstantCount][];
+        for (int i = 0; i < constants.Length; i++)
+        {
+            constants[i] = new float[4];
+            for (int j = 0; j < 4; j++)
+            {
+                constants[i][j] = BitConverter.UInt32BitsToSingle(_transformConstants[i][j]);
+            }
+        }
+
+        var inputs = new float[VshProgram.RegisterCount][];
+        var outputs = new float[VshProgram.RegisterCount][];
+        for (int i = 0; i < inputs.Length; i++)
+        {
+            inputs[i] = new float[4];
+            outputs[i] = new float[4];
+        }
+
+        var transformed = new Dictionary<int, (float X, float Y, float R, float G, float B, float A)>();
+        (float X, float Y, float R, float G, float B, float A) Vertex(uint element)
+        {
+            int index = (int)element;
+            if (transformed.TryGetValue(index, out (float, float, float, float, float, float) cached))
+            {
+                return cached;
+            }
+
+            for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
+            {
+                FetchVertexAttribute(slot, index, inputs[slot]);
+                Array.Clear(outputs[slot]);
+            }
+
+            VshProgram.Execute(
+                _transformProgram,
+                (int)Math.Min(_transformProgramLoad, (uint)VshProgram.MaxInstructions),
+                constants,
+                inputs,
+                outputs);
+
+            (float X, float Y, float R, float G, float B, float A) vertex = (
+                outputs[0][0], outputs[0][1],
+                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3]);
+            transformed[index] = vertex;
+            return vertex;
+        }
+
+        void Triangle(uint a, uint b, uint c)
+        {
+            (float ax, float ay, float ar, float ag, float ab, float aa) = Vertex(a);
+            (float bx, float by, float br, float bg, float bb, float ba) = Vertex(b);
+            (float cx, float cy, float cr, float cg, float cb, float ca) = Vertex(c);
+            FillTriangle(
+                ax, ay, ar, ag, ab, aa,
+                bx, by, br, bg, bb, ba,
+                cx, cy, cr, cg, cb, ca,
+                clipX, clipY, clipW, clipH, bytes, pitch);
+        }
+
+        uint[] elements = _inlineElements.ToArray();
+        int count = elements.Length;
+        DrawsExecuted++;
+        switch (_beginMode)
+        {
+            case BeginEndTriangles:
+                for (int i = 0; i + 2 < count; i += 3)
+                {
+                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
+                }
+
+                break;
+            case BeginEndTriangleStrip:
+                for (int i = 0; i + 2 < count; i++)
+                {
+                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
+                }
+
+                break;
+            case BeginEndTriangleFan:
+                for (int i = 1; i + 1 < count; i++)
+                {
+                    Triangle(elements[0], elements[i], elements[i + 1]);
+                }
+
+                break;
+            default:
+                for (int i = 0; i + 3 < count; i += 4)
+                {
+                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
+                    Triangle(elements[i], elements[i + 2], elements[i + 3]);
+                }
+
+                break;
+        }
+    }
+
+    private void FetchVertexAttribute(int slot, int index, float[] destination)
+    {
+        destination[0] = 0f;
+        destination[1] = 0f;
+        destination[2] = 0f;
+        destination[3] = 1f;
+
+        uint format = _vertexFormat[slot];
+        int count = (int)((format >> 4) & 0xFu);
+        if (count == 0 || _memory is null)
+        {
+            return;
+        }
+
+        int type = (int)(format & 0xFu);
+        int stride = (int)(format >> 8);
+        int size = type switch
+        {
+            0 or 4 => 1,
+            1 or 5 => 2,
+            _ => 4,
+        };
+        int step = stride != 0 ? stride : size * count;
+        uint address = _vertexArrayOffset[slot] + (uint)(index * step);
+
+        switch (type)
+        {
+            case 0:
+                destination[0] = ReadByte(address + 2) / 255f;
+                destination[1] = ReadByte(address + 1) / 255f;
+                destination[2] = ReadByte(address) / 255f;
+                destination[3] = ReadByte(address + 3) / 255f;
+                break;
+            case 1:
+                for (int i = 0; i < count; i++)
+                {
+                    destination[i] = Math.Max(-1f, ReadInt16(address + (uint)(i * 2)) / 32767f);
+                }
+
+                break;
+            case 2:
+                for (int i = 0; i < count; i++)
+                {
+                    destination[i] = BitConverter.Int32BitsToSingle((int)_memory.ReadPhysical(address + (uint)(i * 4)));
+                }
+
+                break;
+            case 4:
+                for (int i = 0; i < count; i++)
+                {
+                    destination[i] = ReadByte(address + (uint)i) / 255f;
+                }
+
+                break;
+            case 5:
+                for (int i = 0; i < count; i++)
+                {
+                    destination[i] = ReadInt16(address + (uint)(i * 2));
+                }
+
+                break;
+            case 6:
+                {
+                    int packed = (int)_memory.ReadPhysical(address);
+                    int x = SignExtend(packed & 0x7FF, 11);
+                    int y = SignExtend((packed >> 11) & 0x7FF, 11);
+                    int z = SignExtend((packed >> 22) & 0x3FF, 10);
+                    destination[0] = Math.Max(-1f, x / 1023f);
+                    destination[1] = Math.Max(-1f, y / 1023f);
+                    destination[2] = Math.Max(-1f, z / 511f);
+                    destination[3] = 1f;
+                    break;
+                }
+
+            default:
+                break;
+        }
+    }
+
+    private byte ReadByte(uint address)
+    {
+        return (byte)(_memory!.ReadPhysical(address) & 0xFFu);
+    }
+
+    private short ReadInt16(uint address)
+    {
+        return (short)(_memory!.ReadPhysical(address) & 0xFFFFu);
+    }
+
+    private static int SignExtend(int value, int bits)
+    {
+        int sign = 1 << (bits - 1);
+        return (value & sign) != 0 ? value | ~((sign << 1) - 1) : value;
+    }
+
+    private void FillTriangle(
+        float ax, float ay, float ar, float ag, float ab, float aa,
+        float bx, float by, float br, float bg, float bb, float ba,
+        float cx, float cy, float cr, float cg, float cb, float ca,
+        uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch)
+    {
+        float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
+        if (area == 0f)
+        {
+            return;
+        }
+
+        uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
+        uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
+        uint y0 = (uint)Math.Max(0f, Math.Min(Math.Min(ay, by), cy));
+        uint y1 = (uint)Math.Min((float)clipY + clipH - 1, Math.Max(Math.Max(ay, by), cy));
+        if (x1 < x0 || y1 < y0)
+        {
+            return;
+        }
+
+        float invArea = 1f / area;
+        for (uint y = y0; y <= y1; y++)
+        {
+            for (uint x = x0; x <= x1; x++)
+            {
+                float px = x + 0.5f;
+                float py = y + 0.5f;
+                float w0 = (((bx - ax) * (py - ay)) - ((by - ay) * (px - ax))) * invArea;
+                float w1 = (((cx - bx) * (py - by)) - ((cy - by) * (px - bx))) * invArea;
+                float w2 = 1f - w0 - w1;
+                bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
+                              (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                if (!inside)
+                {
+                    continue;
+                }
+
+                float r = (w1 * ar) + (w2 * br) + (w0 * cr);
+                float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
+                float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
+                float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
+                uint pixel = bytes == 4
+                    ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
+                      ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
+                      ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
+                      (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
+                    : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
+                      ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
+                      (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
+                WritePixel(PresentedColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
+                DrawnPixels++;
+            }
         }
     }
 

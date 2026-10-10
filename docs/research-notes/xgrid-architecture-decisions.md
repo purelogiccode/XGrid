@@ -1245,6 +1245,46 @@ types UB_D3D/S1/F/UB_OGL/S32K/CMP, sizes, stride), feed inputs into
 and rasterize the resulting screen-space triangles (clip/w-divide per xemu's
 `roundScreenCoords`/`clampAwayZeroInf` conventions). Then M6-M8.
 
+## 39. NV2A M5: vertex attribute fetch + element draw path (2026-10-10)
+
+**Attribute fetch.** `Nv2aMmio.FetchVertexAttribute(slot, index, dest)` reads
+the vertex array for attribute `slot` at element `index`, decoding the format
+per xemu (`pgraph.c` `SET_VERTEX_DATA_ARRAY_FORMAT` + `vertex.c`
+`pgraph_update_inline_value`):
+- `count = (format >> 4) & 0xF`, `stride = format >> 8` (0 = tightly packed),
+  `size` by type: UB_D3D/UB_OGL 1, S1/S32K 2, F/CMP 4.
+- UB_D3D: four bytes normalized /255 in **BGRA** memory order (xemu binds
+  GL_BGRA); UB_OGL: bytes in order; S1: `max(-1, int16/32767)`; F: floats;
+  S32K: int16 as float; CMP: 11/11/10-bit signed normalized packed in a dword.
+- Address = `vertexArrayOffset[slot] + index * step`; data read through
+  `IGpuMemory` (physical RAM), matching the GPU's physical addressing.
+- Attributes with `count == 0` are disabled and default to (0,0,0,1).
+
+**Element draw path.** `MethodBeginEnd` end now dispatches through
+`FlushDraw`: when `ARRAY_ELEMENT16`/`ARRAY_ELEMENT32`/`DRAW_ARRAYS` collected
+elements, `FlushElementDraw` runs — for each element index it fetches the 16
+attributes, runs `VshProgram` (program length = `PROG_LD_PTR` after upload,
+constants converted from the 192 transform-constant registers), and takes the
+screen-space `oPos` plus `oD0` color. Triangles are assembled per the begin
+mode (triangles/strip/fan/quads) and filled by `FillTriangle`, the barycentric
+rasterizer refactored out of the legacy inline path (which is kept as the
+fallback when no elements are pending). Draws are counted; unsupported modes
+increment `SkippedDraws`.
+
+**Test:** `PgraphTransformTests.ElementDraw_RunsVertexProgramAndRasterizes` —
+sets up a 4-byte pitch surface, an F-format vertex array (stride 0), a
+two-instruction program (`MOV oPos, v0; MOV oD0, c0`), constants, elements
+0/1/2 and `BEGIN_END` triangles; asserts `DrawsExecuted == 1`,
+`DrawnPixels > 0`, and the centroid pixel equals `0xFFFF8040` (the constant
+color). 53 NV2A tests total.
+
+**Next:** validate against the dashboard's real programs (the 8301 constant
+loads map to c0..c191 via `convert_c_register`; confirm the program at `0xB00`
+transforms to the expected screen space), then M6 (textures/lighting), M7
+(zeta/blend), M8 (present); the inline `SET_VERTEX_DATA*` immediate path and
+`DRAW_ARRAYS` ranges remain unimplemented.
+
+
 
 
 
