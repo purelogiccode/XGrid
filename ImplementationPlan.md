@@ -1245,8 +1245,10 @@ snapshot) + `FLIP_STALL` counting + vblank read-advance;
 `XGrid.Graphics/DisplayFrame` (frame store, BMP export); CLI `--frame`
 saves the presented frame — `frames=33 stalls=33`, 640×480 from `0x32A4000`,
 opaque black (flip chain presents the dashboard surface, not `0x1000`).
-Remaining: the **surface operations that generate the dashboard's textures**
-(render-to-texture, additional surface targets, 2D blits).
+**Surface scoping (§44):** textures are CPU-uploaded assets (dark by
+nature); only `0x3628000` is a true render target (blocked on degenerate
+program draws); the 2D engine is bound once but never issues a blit — no
+missing blit op. Remaining: longer runs toward UI, then XID input.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [OHCI DONE 2026-10-10]. The
 OHCI host controller is implemented (`OhciUsbController`, §36) and the
@@ -2807,19 +2809,16 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **725 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — surface operations + live program draws.** The
+**NEXT SESSION — asset-loading phase + longer runs.** The
 animation wait (§32), ACI/APU gates (§33), `fcomp` CPU bug (§34), HDD-write
 gate (§35), USB/OHCI gate (§36), NV2A **M5** (§37–39), **M6** (§40), **M7**
-(§41–42) and **M8** (§43) are solved. `xgrid boot --steps 1700000000` (1.7B steps,
-`data/xemu-0.8.136-windows-x86_64/` set) completes **with no fault**: the intro
-animation ticks, the AV teardown runs clean, the **dashboard XBE entry
-executes** (entry field VA `0x10128` = absolute VA `0x12A17`, XOR-decrypted by
-the kernel, called at `0x800158DA`; entry runs at phys `0x5CA17`, resolves
-kernel thunks), its init decompresses its payload, writes the HDD via ATA WRITE
-DMA `0xCA` (`OverlayDiskImage`), initializes USB (`OhciUsbController`), and the
-dashboard renders: CLI reports `draws executed=2670 skipped=0
-pixels=10137600 textured=10137600 clears=41 blended=0 depth=0 frames=33
-stalls=33` at EIP `0x14C72`.
+(§41–42) and **M8** (§43) are solved, and **surface-operation scoping (§44)**
+showed textures are CPU-uploaded assets (dark by nature; 2D engine bound but
+unused — no missing blit op). `xgrid boot --steps 2500000000` (2.5B steps;
+CLI counters are `ulong` now, chunked dispatch) completes **with no fault**
+at **new EIP `0x26402`** (dashboard RVA `0x16402`): GPU frozen (same
+2670/10.1M/33/33), IDE 5727→8292 accesses with new READ DMA LBAs, interrupts
+3110→4566 — the dashboard is **loading assets past the black-frame stage**.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2832,13 +2831,13 @@ no-ops on xemu too), so `blended=0 depth=0` is correct and **live
 program-draw rasterization is still unvalidated**. The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
 presents the dashboard surface, not the `0x1000` early-boot region.
-Next: the **surface operations** (render-to-texture, additional surface
-targets, 2D blits) that generate the dashboard's textures, then longer runs
-toward visible UI. Remaining M5 gaps: inline `SET_VERTEX_DATA*` immediate
-path and `DRAW_ARRAYS` ranges. Reference: xemu `hw/xbox/nv2a/pgraph/`
-(`methods.h.inc`, `draw.c`, `surface.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools:
-`--break-log <addr>`, `--pgraph`, `--ramdump`/`--ramin`, `--fb`/`--frame`,
-objdump. Evidence trail: research-notes §30-43.
+Next: map the new READ DMA LBAs to HDD content to name the load phase;
+continue longer runs toward UI (then XID input for the menu). Remaining M5
+gaps: inline `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges.
+Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`,
+`surface.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`,
+`--pgraph`, `--ramdump`/`--ramin`, `--fb`/`--frame`, objdump. Evidence
+trail: research-notes §30-44.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
