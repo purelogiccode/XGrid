@@ -48,7 +48,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
     /// <summary>Gets the configuration address register value.</summary>
     public uint ConfigAddress { get; private set; }
 
-    /// <summary>Gets configuration access counts keyed by (bus << 8) | devfn. Diagnostics.</summary>
+    /// <summary>Gets configuration access counts keyed by (bus &lt;&lt; 8) | devfn. Diagnostics.</summary>
     public IReadOnlyDictionary<ushort, int> ConfigAccessCounts => _configAccesses;
 
     /// <summary>Attaches a device to the bus.</summary>

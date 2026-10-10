@@ -919,15 +919,18 @@ public sealed class XboxCpu
             ErrorCode = errorCode;
         }
 
+        // ReSharper disable once UnusedMember.Local
+        public PageFaultSignal(string? message, Exception? innerException) : base(message, innerException)
+        {
+        }
+
+        // ReSharper disable once UnusedMember.Local
         public PageFaultSignal()
         {
         }
 
+        // ReSharper disable once UnusedMember.Local
         public PageFaultSignal(string? message) : base(message)
-        {
-        }
-
-        public PageFaultSignal(string? message, Exception? innerException) : base(message, innerException)
         {
         }
 
