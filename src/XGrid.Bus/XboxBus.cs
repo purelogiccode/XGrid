@@ -31,7 +31,7 @@ public sealed class XboxBus : IXboxDevice
         Pci.Register(new NForceUsbController("nForce USB (OHCI) 0", 2));
         Pci.Register(new NForceUsbController("nForce USB (OHCI) 1", 3));
         Pci.Register(new NvNetController());
-        Pci.Register(new McpxApu());
+        Pci.Register(ApuPci = new McpxApu());
         Pci.Register(new McpxAci());
         Pci.CreateSecondaryBus(agp).Register(Nv2APci = new Nv2AGpu());
         Lpc = new LpcController(Io, Pci);
@@ -62,6 +62,9 @@ public sealed class XboxBus : IXboxDevice
 
     /// <summary>Gets the NV2A GPU PCI function on the AGP secondary bus.</summary>
     public Nv2AGpu Nv2APci { get; }
+
+    /// <summary>Gets the MCPX APU PCI function (0:5.0).</summary>
+    public McpxApu ApuPci { get; }
 
     /// <summary>Gets the MCPX LPC bridge.</summary>
     public LpcController Lpc { get; }

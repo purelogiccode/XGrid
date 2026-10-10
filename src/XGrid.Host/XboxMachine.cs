@@ -1,5 +1,7 @@
 using System;
+using XGrid.Audio;
 using XGrid.Bus;
+using XGrid.Bus.Aci;
 using XGrid.Cpu;
 using XGrid.Memory;
 using XGrid.Nv2a;
@@ -39,6 +41,21 @@ public sealed class XboxMachine
             XboxAddressMap.Nv2ASize,
             Nv2A);
 
+        Aci = new McpxAciDevice();
+        Memory.AddRegion(
+            "MCPX ACI",
+            XboxAddressMap.AciBase,
+            XboxAddressMap.AciSize,
+            Aci);
+
+        Apu = new McpxApuDevice(new PhysicalApuMemory(Memory));
+        Apu.InterruptChanged += OnApuInterrupt;
+        Memory.AddRegion(
+            "MCPX APU",
+            XboxAddressMap.ApuBase,
+            XboxAddressMap.ApuSize,
+            Apu);
+
         Memory.AddRegion(
             "RAM mirror",
             XboxAddressMap.RamMirrorBase,
@@ -58,6 +75,12 @@ public sealed class XboxMachine
 
     /// <summary>Gets the NV2A GPU register window.</summary>
     public Nv2AMmio Nv2A { get; }
+
+    /// <summary>Gets the MCPX ACI (AC'97 audio) register window.</summary>
+    public McpxAciDevice Aci { get; }
+
+    /// <summary>Gets the MCPX APU register window.</summary>
+    public McpxApuDevice Apu { get; }
 
     /// <summary>Gets the physical RAM.</summary>
     public PhysicalMemory Ram { get; }
@@ -151,6 +174,8 @@ public sealed class XboxMachine
         Cpu.Reset();
         Bus.Reset();
         Nv2A.Reset();
+        Aci.Reset();
+        Apu.Reset();
         _nv2ARemainder = 0;
         if (_overlay is not null)
         {
@@ -162,6 +187,7 @@ public sealed class XboxMachine
     public void Advance(ulong cycles)
     {
         Bus.Advance(cycles);
+        Apu.Advance(cycles);
         _nv2ARemainder += cycles * Nv2AMmio.CoreClockHz;
         ulong ticks = _nv2ARemainder / XboxBus.CpuClockHz;
         _nv2ARemainder %= XboxBus.CpuClockHz;
@@ -208,6 +234,43 @@ public sealed class XboxMachine
         else
         {
             Bus.Nv2APci.LowerInterrupt();
+        }
+    }
+
+    private void OnApuInterrupt(bool asserted)
+    {
+        if (asserted)
+        {
+            Bus.ApuPci.RaiseInterrupt();
+        }
+        else
+        {
+            Bus.ApuPci.LowerInterrupt();
+        }
+    }
+
+    private sealed class PhysicalApuMemory : IApuMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public PhysicalApuMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public uint Read32(uint address)
+        {
+            return _memory.Read32(address);
+        }
+
+        public void Write32(uint address, uint value)
+        {
+            _memory.Write32(address, value);
+        }
+
+        public void Write8(uint address, byte value)
+        {
+            _memory.Write8(address, value);
         }
     }
 

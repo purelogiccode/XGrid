@@ -72,8 +72,8 @@ This document converts the reference study into concrete decisions for the plan'
     contiguous alias 0x80000000 (kernel physical map); write-combined alias 0xF0000000.
   - Flash 0xF0000000 (1 MB) mirrored at 0xFF000000 (16 MB); MCPX ROM 512 bytes at 0xFFFFFE00.
   - PCI hole alias `[ram_size, 0x1_0000_0000)`.
-  - NV2A 0xFD000000 (16 MB), APU 0xFE800000, IOAPIC 0xFEC00000, USB0 0xFED00000,
-    USB1 0xFED08000.
+  - NV2A 0xFD000000 (16 MB), APU 0xFE800000 (512 KB), ACI 0xFEC00000 (4 KB),
+    USB0 0xFED00000, USB1 0xFED08000.
 - MMIO interface per plan §7.4; invalid accesses deterministic and logged.
 
 ## 4. Xbox bus / interrupts (Phase 5)
@@ -255,8 +255,8 @@ Flash            0xF0000000  1 MB, mirrored at 0xFF000000 (16 MB)
 MCPX ROM         0xFFFFFE00  512 bytes (overlay, disabled by LPC cfg 0x80 bit1)
 PCI hole alias   [ram_size, 0x1_0000_0000)
 NV2A             0xFD000000  16 MB
-APU              0xFE800000  4 MB (VP 0x20000, GP 0x30000, EP 0x50000)
-IOAPIC           0xFEC00000  4 KB (devkit-era; optional)
+APU              0xFE800000  512 KB (VP 0x20000, GP 0x30000, EP 0x50000)
+ACI (AC'97)      0xFEC00000  4 KB (PCI 0:6.0 BAR2; no I/O APIC on Xbox)
 USB0 / USB1      0xFED00000 / 0xFED08000  4 KB
 ```
 
@@ -948,4 +948,73 @@ The `0x800426D8` park was fully diagnosed and passed. Evidence trail, in order:
   `0x10000`, VA = phys + `0x80000000`) and xemu's QEMU monitor (`xp`) as the
   oracle. Kernel exports (366, ordinal-only) parse from the PE at
   `0x80010000`; ordinal names come from Cxbx `kernel/common/kernel.h`.
+
+## 33. XBE-launch gate progress: MCPX ACI and APU register models (2026-10-10)
+
+Two more gates passed after the animation fix (§32), each a missing MCPX device.
+Both devices are fixed-address MMIO windows (the guest uses the hardcoded
+addresses, not BAR values):
+
+**ACI = AC'97 at 0xFEC00000 (not an I/O APIC).** XboxDevWiki "Memory"/"PCI":
+`0xFEC00000-0xFEC00FFF` is the ACI register window (PCI 0:6.0 BAR2, 4 KB).
+`XboxAddressMap.IoApicBase` was a misnomer; renamed `AciBase`. Layout and
+semantics follow xemu's QEMU AC'97 core (`hw/audio/ac97.c` via
+`hw/xbox/mcpx/aci.c`): NAM codec register file at 0x000-0x0FF, NABM bus-master
+block at 0x100-0x17F (PI/PO/MC at 0x00/0x10/0x20, SO at 0x70, GLOB_CNT 0x2C,
+GLOB_STA 0x30, CAS 0x34). Key semantics: GLOB_STA reads with `GS_S0CR`
+(bit 8) always set; CAS read returns `cas` then sets it, any NAM access
+clears it; CR bit 1 (RR) resets the block (SR=DCH); GLOB_CNT writes with
+COLD_RST/WARM_RST bits are ignored. The kernel's AV-device init
+(`0x800531F7` → `0x800530F6` → `0x80053028` → `0x80050BA7` → `0x80052D01` →
+`0x80052B2A`) writes codec reg 0x26 (powerdown) = 0, reg 0x02 = 0, reg 0x18 =
+0x808 and resets PO_CR/SO_CR — but **first polls CAS bit 0 until clear with a
+1000×`StallExecution(0x14)` timeout**. With the window unmapped (reads all
+ones) the bit never cleared → E_FAIL (0x80004005) → video-device open
+(`0x80053302`) returned NULL → the `0x8004E147` release fault (BugCheck 0x1E)
+seen after the animation fix. `McpxAciDevice` implements the register model;
+the boot now runs the full animation and proceeds.
+
+**APU at 0xFE800000.** 512 KB window (PCI 0:5.0 BAR0). Registers follow
+xemu `hw/xbox/mcpx/apu/apu.c` + `apu/vp/vp.c`: global regs below 0x20000
+(ISTS 0x1000, IEN 0x1004, FECTL 0x1100, FEDECMETH 0x1300, FEDECPARAM 0x1304,
+FEMEMADDR/FEMEMDATA 0x1324/0x1334 `magic write`, FETFORCE1 0x1504), VP
+front-end PIO at 0x20000+ (`NV1BA0_PIO_FREE` 0x20010 reads 0x80 — xemu does
+not model the queue; VOICE_ON 0x20124, VOICE_OFF 0x20128, voice-list regs
+TVL/CVL/NVL 0x2054-0x2074). IRQ: ISTS write clears the written bits, then
+`update_irq` sets `FETINTSTS` if FECTL is trapped and asserts `GINTSTS` +
+PCI IRQ when `(IEN & GINTSTS) && (ISTS & ~GINTSTS & IEN)`; the kernel's IEN
+is 0xAFA (bits 1,3-7,9,11) plus bit 0 toggled when audio starts
+(`0x8004F428`). The kernel stops a voice by writing SET_CURRENT_VOICE +
+VOICE_OFF in `0x80051B6C`, sets bit 28 of the stream object, and then
+spins at its tail (`0x80051C93` → `0x8004EDCD`) until the completion clears
+bit 28. The completion (`0x80051B0D` → `0x80051426` → `0x8005037D` →
+`0x8004E6BE`) runs from the ISR's FETINTSTS path (`0x80052499`) and requires
+`[dev+0x1C4] == 0` (the AV device operation counter held for the duration of
+the FE command sequence). **Delivering the `SE2FE_IDLE_VOICE` message
+(0x8000) synchronously in the VOICE_OFF write races it**: the ISR fires 72
+instructions later while the counter is still 1, the completion is skipped,
+and the stop method's tail wait deadlocks. xemu avoids this because its VP
+frame loop sends the idle-voice message **asynchronously** (per ~5.33 ms
+frame, `EP_FRAME_US` = 256 samples @ 48 kHz); `McpxApuDevice` queues the voice
+on VOICE_OFF and delivers it from `Advance()` on frame boundaries. With that,
+the completion runs, bit 28 clears, and the boot continues.
+
+**New gate (current).** At ~137.5M instructions the video-mode function
+(`0x800579F4`, called from the callback stub `0x80055F7F`) succeeds, then
+calls the AV-device teardown `0x80056E03` → sub-object teardown `0x8005BACE`
+(AV+0x57C) → releases handles at +0x00/+0x10/...+0xD0 via `0x800409F0`
+(NULL-dereferencing release helper: `mov eax,[esi]`). `[AV+0x64C]` (= sub+0xD0)
+is **NULL**; the initializer (`0x8005BBEE`) explicitly clears it and the
+setter `0x8005C366` (creates a 0x400×0x400 surface through the D3D runtime
+`0x8003E630`) never ran. Found with a new `--break-log` CLI option
+(logs every hit of an address with ESI/EDI/ESP/caller/arg and continues):
+the crash call is `0x8005BB37` with arg 0 at 137,529,024. Likely tied to the
+XMV/AV playback path (D3D surface creation depends on NV2A operations we do
+not implement) — i.e. NV2A M5-M8 depth. Crash: `#PF` at `0x800409F5`
+(CR2=0), BugCheck 0x1E (`0xC0000005`).
+
+Tooling added this session: `--break-log <addr>`; `McpxAciDevice`/`McpxApuDevice`
+access counters and an APU `EventLog` ring (ISTS acks, FECTL writes, IRQ
+raise/lower, voice-off/idle-voice) printed by the CLI.
+
 

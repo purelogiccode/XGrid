@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
+    <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
   </ItemGroup>
 
   <ItemGroup>
