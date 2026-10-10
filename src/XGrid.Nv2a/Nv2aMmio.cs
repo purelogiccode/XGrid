@@ -135,6 +135,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodClearSurface = 0x1D94u;
     private const uint MethodClearRectH = 0x1D98u;
     private const uint MethodClearRectV = 0x1D9Cu;
+    private const uint MethodContextDmaZeta = 0x198u;
+    private const uint MethodAlphaTestEnable = 0x300u;
+    private const uint MethodBlendEnable = 0x304u;
+    private const uint MethodDepthTestEnable = 0x30Cu;
+    private const uint MethodStencilTestEnable = 0x32Cu;
+    private const uint MethodAlphaFunc = 0x33Cu;
+    private const uint MethodAlphaRef = 0x340u;
+    private const uint MethodBlendSrcFactor = 0x344u;
+    private const uint MethodBlendDstFactor = 0x348u;
+    private const uint MethodBlendColor = 0x34Cu;
+    private const uint MethodBlendEquation = 0x350u;
+    private const uint MethodDepthFunc = 0x354u;
+    private const uint MethodColorMask = 0x358u;
+    private const uint MethodDepthMask = 0x35Cu;
+    private const uint MethodStencilWriteMask = 0x360u;
+    private const uint MethodStencilFunc = 0x364u;
+    private const uint MethodStencilRef = 0x368u;
+    private const uint MethodStencilReadMask = 0x36Cu;
+    private const uint MethodStencilOpFail = 0x370u;
+    private const uint MethodStencilOpZfail = 0x374u;
+    private const uint MethodStencilOpZpass = 0x378u;
     private const uint MethodVertexArrayOffsetBase = 0x1720u;
     private const uint MethodVertexArrayOffsetEnd = 0x175Cu;
     private const uint MethodVertexFormatBase = 0x1760u;
@@ -167,6 +188,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint BeginEndQuads = 8u;
     private const uint MaxInlineWords = 65536u;
     private const uint SurfaceTypePitch = 1u;
+    private const uint ZetaFormatZ16 = 1u;
+    private const uint ZetaFormatZ24S8 = 2u;
+    private const uint CompareLess = 1u;
+    private const uint CompareAlways = 7u;
+    private const uint BlendZero = 0u;
+    private const uint BlendOne = 1u;
+    private const uint EquationAdd = 2u;
+    private const uint StencilOpKeep = 1u;
+    private const uint ColorMaskAll = 0x01010101u;
+    private const uint StencilByteMask = 0xFFu;
     private const uint MaxClearPixels = 16u * 1024u * 1024u;
 
     private const uint MaxPusherWords = 4000000u;
@@ -269,6 +300,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
+    private bool _alphaTestEnable;
+    private uint _alphaFunc;
+    private uint _alphaRef;
+    private bool _blendEnable;
+    private uint _blendSrcFactor;
+    private uint _blendDstFactor;
+    private uint _blendColor;
+    private uint _blendEquation;
+    private bool _depthTestEnable;
+    private uint _depthFunc;
+    private bool _depthMask;
+    private uint _colorMask;
+    private bool _stencilTestEnable;
+    private uint _stencilWriteMask;
+    private uint _stencilFunc;
+    private uint _stencilRef;
+    private uint _stencilReadMask;
+    private uint _stencilOpFail;
+    private uint _stencilOpZfail;
+    private uint _stencilOpZpass;
+    private uint _dmaZeta;
     private uint _beginMode;
     private readonly Dictionary<uint, int> _methodCounts = new();
     private readonly Dictionary<uint, uint> _methodParams = new();
@@ -380,6 +432,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the number of pixels that sampled a texture. Diagnostics.</summary>
     public ulong TexturedPixels { get; private set; }
+
+    /// <summary>Gets the number of pixels that ran the blend equation. Diagnostics.</summary>
+    public ulong BlendedPixels { get; private set; }
+
+    /// <summary>Gets the number of fragments that ran the depth test. Diagnostics.</summary>
+    public ulong DepthTestedPixels { get; private set; }
+
+    /// <summary>Gets the fragment-pipeline state summary. Diagnostics.</summary>
+    public string FragmentStateDebug =>
+        $"alpha={_alphaTestEnable}:{_alphaFunc:X} blend={_blendEnable}:{_blendSrcFactor:X}/{_blendDstFactor:X} " +
+        $"depth={_depthTestEnable}:{_depthFunc:X}:{_depthMask} stencil={_stencilTestEnable}:{_stencilFunc:X} " +
+        $"mask={_colorMask:X8} zetaDma={_dmaZeta:X}";
 
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
     public ulong SkippedDraws { get; private set; }
@@ -501,6 +565,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _flipRead = 0;
         _flipWrite = 0;
         _flipModulo = 0;
+        _alphaTestEnable = false;
+        _alphaFunc = CompareAlways;
+        _alphaRef = 0;
+        _blendEnable = false;
+        _blendSrcFactor = BlendOne;
+        _blendDstFactor = BlendZero;
+        _blendColor = 0;
+        _blendEquation = EquationAdd;
+        _depthTestEnable = false;
+        _depthFunc = CompareLess;
+        _depthMask = true;
+        _colorMask = ColorMaskAll;
+        _stencilTestEnable = false;
+        _stencilWriteMask = StencilByteMask;
+        _stencilFunc = CompareAlways;
+        _stencilRef = 0;
+        _stencilReadMask = StencilByteMask;
+        _stencilOpFail = StencilOpKeep;
+        _stencilOpZfail = StencilOpKeep;
+        _stencilOpZpass = StencilOpKeep;
+        _dmaZeta = 0;
         Array.Clear(_vertexFormat);
         Array.Clear(_vertexArrayOffset);
         Array.Clear(_textureOffset);
@@ -531,6 +616,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         DrawsExecuted = 0;
         DrawnPixels = 0;
         TexturedPixels = 0;
+        BlendedPixels = 0;
+        DepthTestedPixels = 0;
         SkippedDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
@@ -1446,6 +1533,73 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case MethodClearRectV:
                 _clearRectV = parameter;
                 break;
+            case MethodContextDmaZeta:
+                _dmaZeta = parameter;
+                break;
+            case MethodAlphaTestEnable:
+                _alphaTestEnable = (parameter & 1u) != 0;
+                break;
+            case MethodBlendEnable:
+                _blendEnable = (parameter & 1u) != 0;
+                break;
+            case MethodDepthTestEnable:
+                _depthTestEnable = (parameter & 1u) != 0;
+                break;
+            case MethodStencilTestEnable:
+                _stencilTestEnable = (parameter & 1u) != 0;
+                break;
+            case MethodAlphaFunc:
+                _alphaFunc = parameter & 0xFu;
+                break;
+            case MethodAlphaRef:
+                _alphaRef = parameter & 0xFFu;
+                break;
+            case MethodBlendSrcFactor:
+                _blendSrcFactor = MapBlendFactor(parameter, _blendSrcFactor);
+                break;
+            case MethodBlendDstFactor:
+                _blendDstFactor = MapBlendFactor(parameter, _blendDstFactor);
+                break;
+            case MethodBlendColor:
+                _blendColor = parameter;
+                break;
+            case MethodBlendEquation:
+                _blendEquation = MapBlendEquation(parameter, _blendEquation);
+                break;
+            case MethodDepthFunc:
+                if (parameter is >= 0x200u and <= 0x207u)
+                {
+                    _depthFunc = parameter & 0x7u;
+                }
+
+                break;
+            case MethodColorMask:
+                _colorMask = parameter;
+                break;
+            case MethodDepthMask:
+                _depthMask = (parameter & 1u) != 0;
+                break;
+            case MethodStencilWriteMask:
+                _stencilWriteMask = parameter & 0xFFu;
+                break;
+            case MethodStencilFunc:
+                _stencilFunc = parameter & 0xFu;
+                break;
+            case MethodStencilRef:
+                _stencilRef = parameter & 0xFFu;
+                break;
+            case MethodStencilReadMask:
+                _stencilReadMask = parameter & 0xFFu;
+                break;
+            case MethodStencilOpFail:
+                _stencilOpFail = MapStencilOp(parameter, _stencilOpFail);
+                break;
+            case MethodStencilOpZfail:
+                _stencilOpZfail = MapStencilOp(parameter, _stencilOpZfail);
+                break;
+            case MethodStencilOpZpass:
+                _stencilOpZpass = MapStencilOp(parameter, _stencilOpZpass);
+                break;
             case MethodFlipRead:
                 _flipRead = parameter;
                 break;
@@ -1806,6 +1960,127 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         };
     }
 
+    private static uint MapBlendFactor(uint parameter, uint current)
+    {
+        return parameter switch
+        {
+            0x0000u => 0u,
+            0x0001u => 1u,
+            0x0300u => 2u,
+            0x0301u => 3u,
+            0x0302u => 4u,
+            0x0303u => 5u,
+            0x0304u => 6u,
+            0x0305u => 7u,
+            0x0306u => 8u,
+            0x0307u => 9u,
+            0x0308u => 10u,
+            0x8001u => 12u,
+            0x8002u => 13u,
+            0x8003u => 14u,
+            0x8004u => 15u,
+            _ => current,
+        };
+    }
+
+    private static uint MapBlendEquation(uint parameter, uint current)
+    {
+        return parameter switch
+        {
+            0x800Au => 0u,
+            0x800Bu => 1u,
+            0x8006u => 2u,
+            0x8007u => 3u,
+            0x8008u => 4u,
+            0xF005u => 1u,
+            0xF006u => 2u,
+            _ => current,
+        };
+    }
+
+    private static uint MapStencilOp(uint parameter, uint current)
+    {
+        return parameter switch
+        {
+            0x1E00u => 1u,
+            0x0000u => 2u,
+            0x1E01u => 3u,
+            0x1E02u => 4u,
+            0x1E03u => 5u,
+            0x150Au => 6u,
+            0x8507u => 7u,
+            0x8508u => 8u,
+            _ => current,
+        };
+    }
+
+    private static bool CompareFunc(uint func, float x, float y)
+    {
+        return func switch
+        {
+            0u => false,
+            1u => x < y,
+            2u => x == y,
+            3u => x <= y,
+            4u => x > y,
+            5u => x != y,
+            6u => x >= y,
+            _ => true,
+        };
+    }
+
+    private static uint ApplyStencilOp(uint op, uint stencil, uint reference)
+    {
+        return op switch
+        {
+            2u => 0u,
+            3u => reference & StencilByteMask,
+            4u => Math.Min(stencil + 1, StencilByteMask),
+            5u => stencil == 0 ? 0u : stencil - 1,
+            6u => ~stencil & StencilByteMask,
+            7u => (stencil + 1) & StencilByteMask,
+            8u => (stencil - 1) & StencilByteMask,
+            _ => stencil,
+        };
+    }
+
+    private static (float R, float G, float B, float A) BlendFactor(uint index,
+        (float R, float G, float B, float A) src,
+        (float R, float G, float B, float A) dst,
+        (float R, float G, float B, float A) constant)
+    {
+        return index switch
+        {
+            0u => (0f, 0f, 0f, 0f),
+            2u => src,
+            3u => (1f - src.R, 1f - src.G, 1f - src.B, 1f - src.A),
+            4u => (src.A, src.A, src.A, src.A),
+            5u => (1f - src.A, 1f - src.A, 1f - src.A, 1f - src.A),
+            6u => (dst.A, dst.A, dst.A, dst.A),
+            7u => (1f - dst.A, 1f - dst.A, 1f - dst.A, 1f - dst.A),
+            8u => dst,
+            9u => (1f - dst.R, 1f - dst.G, 1f - dst.B, 1f - dst.A),
+            10u => (Math.Min(src.A, 1f - dst.A), Math.Min(src.A, 1f - dst.A), Math.Min(src.A, 1f - dst.A), 1f),
+            12u => constant,
+            13u => (1f - constant.R, 1f - constant.G, 1f - constant.B, 1f - constant.A),
+            14u => (constant.A, constant.A, constant.A, constant.A),
+            15u => (1f - constant.A, 1f - constant.A, 1f - constant.A, 1f - constant.A),
+            _ => (1f, 1f, 1f, 1f),
+        };
+    }
+
+    private static uint PackPixel(uint bytes, float r, float g, float b, float a)
+    {
+        return bytes == 4
+            ? ((uint)(Math.Clamp(a, 0f, 1f) * 255f + 0.5f) << 24) |
+              ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
+              ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
+              (uint)(Math.Clamp(b, 0f, 1f) * 255f + 0.5f)
+            : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
+              ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
+              (uint)(Math.Clamp(b, 0f, 1f) * 31f + 0.5f);
+    }
+
     private void WritePixel(uint address, uint bytes, uint pixel)
     {
         if (_memory is null || address + bytes > RamSize)
@@ -1951,9 +2226,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float ca = colorCount >= 4 ? InlineColor(c, 3) : 1f;
 
                 FillTriangle(
-                    ax, ay, ar, ag, ab, aa, 0f, 0f,
-                    bx, by, br, bg, bb, ba, 0f, 0f,
-                    cx, cy, cr, cg, cb, ca, 0f, 0f,
+                    ax, ay, 0f, ar, ag, ab, aa, 0f, 0f,
+                    bx, by, 0f, br, bg, bb, ba, 0f, 0f,
+                    cx, cy, 0f, cr, cg, cb, ca, 0f, 0f,
                     clipX, clipY, clipW, clipH, bytes, pitch);
             }
 
@@ -2034,11 +2309,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             outputs[i] = new float[4];
         }
 
-        var transformed = new Dictionary<int, (float X, float Y, float R, float G, float B, float A, float U, float V)>();
-        (float X, float Y, float R, float G, float B, float A, float U, float V) Vertex(uint element)
+        var transformed = new Dictionary<int, (float X, float Y, float Z, float R, float G, float B, float A, float U, float V)>();
+        (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) Vertex(uint element)
         {
             int index = (int)element;
-            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float) cached))
+            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float) cached))
             {
                 return cached;
             }
@@ -2056,8 +2331,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 inputs,
                 outputs);
 
-            (float X, float Y, float R, float G, float B, float A, float U, float V) vertex = (
-                outputs[0][0], outputs[0][1],
+            (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) vertex = (
+                outputs[0][0], outputs[0][1], outputs[0][2],
                 outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3],
                 outputs[9][0], outputs[9][1]);
             transformed[index] = vertex;
@@ -2066,19 +2341,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         void Triangle(uint a, uint b, uint c)
         {
-            (float ax, float ay, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
-            (float bx, float by, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
-            (float cx, float cy, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
+            (float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
+            (float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
+            (float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
             FillTriangle(
-                ax, ay, ar, ag, ab, aa, au, av,
-                bx, by, br, bg, bb, ba, bu, bv,
-                cx, cy, cr, cg, cb, ca, cu, cv,
+                ax, ay, az, ar, ag, ab, aa, au, av,
+                bx, by, bz, br, bg, bb, ba, bu, bv,
+                cx, cy, cz, cr, cg, cb, ca, cu, cv,
                 clipX, clipY, clipW, clipH, bytes, pitch);
         }
 
         uint[] elements = _inlineElements.ToArray();
         int count = elements.Length;
         DrawsExecuted++;
+        bool colorWrite = (_colorMask & ColorMaskAll) != 0;
+        if (!colorWrite && !_depthTestEnable && !_stencilTestEnable)
+        {
+            return;
+        }
+
         switch (_beginMode)
         {
             case BeginEndTriangles:
@@ -2345,10 +2626,240 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         return (value & sign) != 0 ? value | ~((sign << 1) - 1) : value;
     }
 
+    private uint ZetaBytesPerPixel()
+    {
+        if (((_surfaceFormat & 0xF00u) >> 8) != SurfaceTypePitch)
+        {
+            return 0;
+        }
+
+        if (((_surfacePitch >> 16) & 0xFFFFu) == 0)
+        {
+            return 0;
+        }
+
+        return ((_surfaceFormat >> 4) & 0xFu) switch
+        {
+            ZetaFormatZ16 => 2u,
+            ZetaFormatZ24S8 => 4u,
+            _ => 0u,
+        };
+    }
+
+    private uint ReadZetaHalf(uint address)
+    {
+        uint word = _memory!.ReadPhysical(address & ~3u);
+        return ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
+    }
+
+    private void WriteZeta(uint address, uint bytes, bool writeDepth, float depth, bool writeStencil, uint stencil)
+    {
+        if (_memory is null || address + bytes > RamSize)
+        {
+            return;
+        }
+
+        if (bytes == 4)
+        {
+            uint current = _memory.ReadPhysical(address);
+            uint depthBits = writeDepth
+                ? (uint)(Math.Clamp(depth, 0f, 1f) * 16777215f + 0.5f)
+                : (current >> 8) & 0xFFFFFFu;
+            uint writeMask = _stencilWriteMask & StencilByteMask;
+            uint newStencil = writeStencil
+                ? ((current & StencilByteMask) & ~writeMask) | (stencil & writeMask)
+                : current & StencilByteMask;
+            _memory.WritePhysical(address, (depthBits << 8) | newStencil);
+            return;
+        }
+
+        uint wordAddress = address & ~3u;
+        int shift = (int)((address & 2u) * 8);
+        uint currentWord = _memory.ReadPhysical(wordAddress);
+        uint half = writeDepth
+            ? (uint)(Math.Clamp(depth, 0f, 1f) * 65535f + 0.5f)
+            : (currentWord >> shift) & 0xFFFFu;
+        uint halfMask = 0xFFFFu << shift;
+        _memory.WritePhysical(wordAddress, (currentWord & ~halfMask) | ((half << shift) & halfMask));
+    }
+
+    private bool TryReadPixelFloat(uint address, uint bytes, out float r, out float g, out float b, out float a)
+    {
+        r = 0f;
+        g = 0f;
+        b = 0f;
+        a = 1f;
+        if (_memory is null || address + bytes > RamSize)
+        {
+            return false;
+        }
+
+        if (bytes == 4)
+        {
+            uint pixel = _memory.ReadPhysical(address);
+            a = ((pixel >> 24) & 0xFFu) / 255f;
+            r = ((pixel >> 16) & 0xFFu) / 255f;
+            g = ((pixel >> 8) & 0xFFu) / 255f;
+            b = (pixel & 0xFFu) / 255f;
+            return true;
+        }
+
+        uint word = _memory.ReadPhysical(address & ~3u);
+        uint half = ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
+        r = ((half >> 11) & 0x1Fu) / 31f;
+        g = ((half >> 5) & 0x3Fu) / 63f;
+        b = (half & 0x1Fu) / 31f;
+        return true;
+    }
+
+    private void ProcessFragment(uint x, uint y, uint bytes, uint pitch,
+        float r, float g, float b, float a, float depth,
+        uint zetaBytes, uint zetaPitch)
+    {
+        if (_memory is null)
+        {
+            return;
+        }
+
+        if (_alphaTestEnable && !CompareFunc(_alphaFunc, a, _alphaRef / 255f))
+        {
+            return;
+        }
+
+        bool colorWrite = (_colorMask & ColorMaskAll) != 0;
+        if (!colorWrite && !_depthTestEnable && !_stencilTestEnable)
+        {
+            return;
+        }
+
+        bool stencilActive = _stencilTestEnable && zetaBytes == 4;
+        bool depthActive = _depthTestEnable && zetaBytes != 0;
+        uint zetaAddress = 0;
+        uint storedZeta = 0;
+        bool haveZeta = false;
+        if ((stencilActive || depthActive) && zetaBytes != 0)
+        {
+            zetaAddress = _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
+            if (zetaAddress + zetaBytes <= RamSize)
+            {
+                storedZeta = zetaBytes == 4 ? _memory.ReadPhysical(zetaAddress) : ReadZetaHalf(zetaAddress);
+                haveZeta = true;
+            }
+        }
+
+        stencilActive &= haveZeta;
+        depthActive &= haveZeta;
+
+        float storedDepth = 0f;
+        uint stencil = 0u;
+        if (haveZeta)
+        {
+            if (zetaBytes == 4)
+            {
+                storedDepth = ((storedZeta >> 8) & 0xFFFFFFu) / 16777215f;
+                stencil = storedZeta & StencilByteMask;
+            }
+            else
+            {
+                storedDepth = (storedZeta & 0xFFFFu) / 65535f;
+            }
+        }
+
+        uint stencilRef = _stencilRef & StencilByteMask;
+        if (stencilActive)
+        {
+            uint readMask = _stencilReadMask & StencilByteMask;
+            if (!CompareFunc(_stencilFunc, (stencil & readMask) / 255f, (stencilRef & readMask) / 255f))
+            {
+                WriteZeta(zetaAddress, zetaBytes, false, 0f, true, ApplyStencilOp(_stencilOpFail, stencil, stencilRef));
+                return;
+            }
+        }
+
+        float clampedDepth = Math.Clamp(depth, 0f, 1f);
+        bool depthPass = true;
+        if (depthActive)
+        {
+            DepthTestedPixels++;
+            depthPass = CompareFunc(_depthFunc, clampedDepth, storedDepth);
+            if (!depthPass)
+            {
+                if (stencilActive)
+                {
+                    WriteZeta(zetaAddress, zetaBytes, false, 0f, true,
+                        ApplyStencilOp(_stencilOpZfail, stencil, stencilRef));
+                }
+
+                return;
+            }
+        }
+
+        bool writeStencil = stencilActive;
+        uint stencilValue = stencilActive ? ApplyStencilOp(_stencilOpZpass, stencil, stencilRef) : 0u;
+        bool writeDepth = depthActive && _depthMask;
+        if (writeStencil || writeDepth)
+        {
+            WriteZeta(zetaAddress, zetaBytes, writeDepth, clampedDepth, writeStencil, stencilValue);
+        }
+
+        if (colorWrite)
+        {
+            uint address = PresentedColorOffset + (y * pitch) + (x * bytes);
+            (float R, float G, float B, float A) src = (r, g, b, a);
+            (float R, float G, float B, float A) result = src;
+            bool needDst = _blendEnable || (_colorMask & ColorMaskAll) != ColorMaskAll;
+            (float R, float G, float B, float A) dst = (0f, 0f, 0f, 1f);
+            if (needDst &&
+                TryReadPixelFloat(address, bytes, out float dr, out float dg, out float db, out float da))
+            {
+                dst = (dr, dg, db, da);
+            }
+
+            if (_blendEnable)
+            {
+                uint blend = _blendColor;
+                (float R, float G, float B, float A) constant = (
+                    ((blend >> 16) & 0xFFu) / 255f,
+                    ((blend >> 8) & 0xFFu) / 255f,
+                    (blend & 0xFFu) / 255f,
+                    ((blend >> 24) & 0xFFu) / 255f);
+                (float R, float G, float B, float A) fs = BlendFactor(_blendSrcFactor, src, dst, constant);
+                (float R, float G, float B, float A) fd = BlendFactor(_blendDstFactor, src, dst, constant);
+                result = _blendEquation switch
+                {
+                    0u => (src.R * fs.R - dst.R * fd.R, src.G * fs.G - dst.G * fd.G,
+                        src.B * fs.B - dst.B * fd.B, src.A * fs.A - dst.A * fd.A),
+                    1u or 5u => (dst.R * fd.R - src.R * fs.R, dst.G * fd.G - src.G * fs.G,
+                        dst.B * fd.B - src.B * fs.B, dst.A * fd.A - src.A * fs.A),
+                    3u => (Math.Min(src.R, dst.R), Math.Min(src.G, dst.G),
+                        Math.Min(src.B, dst.B), Math.Min(src.A, dst.A)),
+                    4u => (Math.Max(src.R, dst.R), Math.Max(src.G, dst.G),
+                        Math.Max(src.B, dst.B), Math.Max(src.A, dst.A)),
+                    _ => (src.R * fs.R + dst.R * fd.R, src.G * fs.G + dst.G * fd.G,
+                        src.B * fs.B + dst.B * fd.B, src.A * fs.A + dst.A * fd.A),
+                };
+                result = (
+                    Math.Clamp(result.R, 0f, 1f),
+                    Math.Clamp(result.G, 0f, 1f),
+                    Math.Clamp(result.B, 0f, 1f),
+                    Math.Clamp(result.A, 0f, 1f));
+                BlendedPixels++;
+            }
+
+            uint mask = _colorMask;
+            float fr = (mask & (1u << 16)) != 0 ? result.R : dst.R;
+            float fg = (mask & (1u << 8)) != 0 ? result.G : dst.G;
+            float fb = (mask & 1u) != 0 ? result.B : dst.B;
+            float fa = (mask & (1u << 24)) != 0 ? result.A : dst.A;
+            WritePixel(address, bytes, PackPixel(bytes, fr, fg, fb, fa));
+            DrawnPixels++;
+        }
+    }
+
     private void FillTriangle(
-        float ax, float ay, float ar, float ag, float ab, float aa, float au, float av,
-        float bx, float by, float br, float bg, float bb, float ba, float bu, float bv,
-        float cx, float cy, float cr, float cg, float cb, float ca, float cu, float cv,
+        float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av,
+        float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv,
+        float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch)
     {
         float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
@@ -2356,6 +2867,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             return;
         }
+
+        uint zetaBytes = ZetaBytesPerPixel();
+        uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
 
         uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
         uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
@@ -2387,6 +2901,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
                 float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
                 float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
+                float depth = (w1 * az) + (w2 * bz) + (w0 * cz);
                 float tu = (w1 * au) + (w2 * bu) + (w0 * cu);
                 float tv = (w1 * av) + (w2 * bv) + (w0 * cv);
                 if (TrySampleTexture0(tu, tv, out float tr, out float tg, out float tb, out float ta))
@@ -2398,16 +2913,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     TexturedPixels++;
                 }
 
-                uint pixel = bytes == 4
-                    ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
-                      ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
-                      ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
-                      (uint)(Math.Clamp(bl, 0f, 1f) * 255f + 0.5f)
-                    : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
-                      ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
-                      (uint)(Math.Clamp(bl, 0f, 1f) * 31f + 0.5f);
-                WritePixel(PresentedColorOffset + (y * pitch) + (x * bytes), bytes, pixel);
-                DrawnPixels++;
+                ProcessFragment(x, y, bytes, pitch, r, g, bl, al, depth, zetaBytes, zetaPitch);
             }
         }
     }

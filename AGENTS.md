@@ -128,35 +128,45 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   content (previously skipped). **M6 textures done (§40):** per-slot texture
   state, swizzled/linear A8R8G8B8 + R5G6B5 sampling with wrap/mirror/clamp,
   modulate by `oD0`, texcoords from `oT0`; all 10.1M pixels now sample
-  (`textured=10137600`). The dashboard's visible textures are black/GPU-
-  generated (render-to-texture/blits not yet produced), so the image needs
-  M7 (zeta/blend), M8 (present) and surface operations. Next: M7/M8; inline
-  `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
+  (`textured=10137600`). **M7 fragment pipeline done (§41):** alpha test,
+  stencil (fail/zfail/zpass ops), depth test/write (Z16/Z24S8), full blend
+  factors/equations, color mask, nop-draw skip. **Interpreter fixes (§42):**
+  R/V/C mux was rotated (now 1=R/2=V/3=C per xemu) and ORB polarity inverted
+  (now ORB==1 writes oPos/oD0/oT0/A0.x); unpaired temp writes confirmed
+  correct (R3/R4/R6/R7/R8 chain). **Pixel accounting (§42):** all 10137600 px
+  come from 33 legacy fullscreen 640×480 inline draws; the ~2637 program
+  draws are degenerate (their programs read never-loaded zero constants
+  c58/c59 — no-ops on xemu too), so `blended=0 depth=0` is correct and live
+  program-draw rasterization is still unvalidated. Next: M8 (present) +
+  surface operations (render-to-texture/blits); inline `SET_VERTEX_DATA*`
+  and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 708 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 715 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — NV2A M7/M8 + surface operations
+## Next session — NV2A M8 (present) + surface operations
 
 1. The dashboard XBE entry executes (phys `0x5CA17`), decompresses its payload,
    writes the HDD via ATA WRITE DMA (`OverlayDiskImage`), passes the USB poll
    (OHCI implemented), and **renders**: `xgrid boot --steps 1700000000` (1.7B
    steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no fault and
    reports `draws executed=2670 skipped=0 pixels=10137600 textured=10137600
-   clears=41` at EIP `0x14C72`; the framebuffer at phys `0x1000` has content.
+   clears=41 blended=0 depth=0` at EIP `0x14C72`; the framebuffer at phys
+   `0x1000` has content (from 33 legacy fullscreen inline draws — the ~2637
+   program draws are degenerate at this boot stage, §42).
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
-   §37–39) and **M6** (per-slot texture state, swizzled/linear A8R8G8B8 +
-   R5G6B5 sampling, modulate by `oD0`, texcoords from `oT0`, §40) are done and
-   unit-tested. The dashboard's visible textures sample black because they are
+   §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
+   swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
+   pipeline: alpha/stencil/depth/blend/mask, §41) are done and unit-tested.
+   The dashboard's visible textures sample black because they are
    **GPU-generated (render-to-texture/blits not yet produced)** — the texture
    data at its offsets is mostly black (one colored texture at `0x321C000`).
-3. Next: **M7** — zeta test/write (`NV097_SET_ZETA_*`, surface zeta
-   offset/format, `NV097_CLEAR_SURFACE` zeta path) and alpha blending
-   (`NV097_SET_BLEND_*`, `NV097_SET_COLOR_MASK`); then **M8** — the present/flip
-   path (`NV097_FLIP_*` → `XGrid.Graphics`, CLI currently dumps the raw
-   framebuffer) and the **surface operations** (render-to-texture, additional
-   surface targets, 2D blits) that generate the dashboard's textures. Remaining
-   M5 gaps: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
+3. Next: **M8** — the present/flip path (`NV097_FLIP_*` → `XGrid.Graphics`,
+   CLI currently dumps the raw framebuffer) and the **surface operations**
+   (render-to-texture, additional surface targets, 2D blits) that generate
+   the dashboard's textures. Live program-draw rasterization is still
+   unvalidated (pending non-degenerate program traffic). Remaining M5 gaps:
+   inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
 4. Controller input: the OHCI root hub reports empty ports; an XID/gamepad
    device is future work. LLE-first remains the rule; Phase 10 kernel-HLE only
    if we choose HLE for dashboard ordinals.

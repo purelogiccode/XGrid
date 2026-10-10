@@ -22,6 +22,7 @@ public static class VshProgram
 
     /// <summary>D3D scene constant correction (VSH_D3DSCM_CORRECTION).</summary>
     private const int D3dScmCorrection = 96;
+    private const int AddressOutput = 15;
 
     private enum Mac
     {
@@ -172,12 +173,16 @@ public static class VshProgram
             }
         }
 
-        if (outMask != 0 && outOrb == 0)
+        if (outMask != 0 && outOrb == 1)
         {
             float[]? result = outMux == 0 ? macResult : iluResult;
             if (result is not null)
             {
                 WriteMasked(outputs[outAddress], result, outMask);
+                if (outAddress == AddressOutput)
+                {
+                    address = (int)outputs[outAddress][0];
+                }
             }
         }
     }
@@ -344,8 +349,8 @@ public static class VshProgram
     {
         float[] source = mux switch
         {
-            1 => inputs[Field(token, 1, 9, 4)],
-            2 => constants[ConstantIndex(token, address)],
+            2 => inputs[Field(token, 1, 9, 4)],
+            3 => constants[ConstantIndex(token, address)],
             _ => ReadRegister(registers, outputs, registerIndex),
         };
 

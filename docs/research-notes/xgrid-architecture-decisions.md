@@ -1329,6 +1329,105 @@ surface/blit operations) are needed before the image is meaningful.
 the surface operations that generate the dashboard's textures (render-to-
 texture, `NV097_SET_SURFACE_*` targets beyond the color buffer, blits).
 
+## 41. NV2A M7: depth/stencil/alpha/blend fragment pipeline (2026-10-10)
+
+**Method IDs** (from xemu `nv2a_regs.h`, all observed in dashboard traffic):
+`0x300` alpha-test enable, `0x304` blend enable, `0x30C` depth-test enable,
+`0x32C` stencil-test enable, `0x33C` alpha func (low nibble), `0x340` alpha ref,
+`0x344/0x348` blend src/dst factors (raw GL-style codes mapped to indices;
+unknown codes keep previous, as xemu discards), `0x34C` blend color (ARGB),
+`0x350` blend equation (`0x800A` SUB, `0x800B` RSUB, `0x8006` ADD, `0x8007`
+MIN, `0x8008` MAX, signed variants fold to RSUB/ADD per xemu's GL map),
+`0x354` depth func (accepted `0x200-0x207`, low 3 bits), `0x358` color mask
+(blue bit 0, green bit 8, red bit 16, alpha bit 24), `0x35C` depth mask,
+`0x360/0x364/0x368/0x36C` stencil write mask/func/ref/read mask,
+`0x370/0x374/0x378` stencil fail/zfail/zpass ops (mapped to internal 1-8),
+`0x198` zeta DMA context (record-only; offsets are direct into flat RAM).
+
+**Zeta layout** (xemu `pgraph.c` + `vk/surface-compute.c`): Z16 = 16-bit
+normalized depth; Z24S8 = dword `(depth24 << 8) | stencil`. The existing
+`NV097_CLEAR_SURFACE` zeta fill already matches this layout, so no clear-path
+change was needed. Zeta pitch = high 16 bits of `SET_SURFACE_PITCH`.
+
+**Fragment pipeline** (`ProcessFragment`, GL order): alpha test → nop-draw
+early-out (no color write and no depth/stencil test, mirroring xemu
+`gl/draw.c`) → stencil test (Z24S8 only; fail applies op-fail and kills) →
+depth test (fail applies op-zfail and kills) → stencil zpass op → single
+zeta read-modify-write (depth and/or stencil) → blend (all 13 factor codes
+with per-channel semantics incl. `SRC_ALPHA_SATURATE` and `CONSTANT_*` via
+`BLEND_COLOR`; MIN/MAX on raw src/dst) → color-mask merge → write.
+Depth test without a bound zeta buffer (format not Z16/Z24S8, non-pitch type,
+or zero zeta pitch) passes through with no access. oPos.z (interpolated) is
+the depth value, clamped to [0,1].
+
+**Tests (7, all in `PgraphTransformTests`):** depth kill (LEQUAL vs nearer
+zeta, buffer unchanged), depth pass + write (exact `0x40000000` dword),
+depth-mask-off (pass without write), alpha blend (`SRC_ALPHA` /
+`ONE_MINUS_SRC_ALPHA` → exact `0xBF800080`), color mask (blue-only →
+`0xFFFFFF00`), alpha-test NEVER (kills), stencil REPLACE (`0xAB` byte).
+
+**Validation:** 1.7B-step run completes with no fault at EIP `0x14C72`;
+`draws=2670 skipped=0 pixels=10137600 textured=10137600 clears=41` (identical
+to M5/M6), but `blended=0 depth=0` — investigated in §42.
+
+## 42. M7 validation: two VshProgram bugs fixed; program draws are degenerate (2026-10-10)
+
+**Why `blended=0 depth=0`.** The method stream shows 34 element draws
+flushed with blend on and 32 with depth on plus a bound zeta buffer — yet no
+fragment ever reached either path. Probing the real 15-instruction program
+(active at those draws) with the real constants/vertices from the RAM dump
+showed oPos collapsing to a degenerate line (x≈300-302, y=z=0). Root cause
+chain, all verified against xemu (`vsh_regs.h`, `glsl/vsh-prog.c`,
+`gl/constants.h`):
+
+1. **R/V/C input mux mapping was rotated.** XGrid mapped mux 1→vertex,
+   2→constant, 0/3→temp; xemu's `VshParameterType` is `PARAM_UNKNOWN=0,
+   PARAM_R=1, PARAM_V=2, PARAM_C=3` (1→temp, 2→vertex, 3→constant). Fixed
+   `ReadInput`; fixed the test encoder (`MuxR/MuxV/MuxC` 0/1/2 → 1/2/3) and
+   the hand-written draw-test tokens (position input mux 1→2, color input
+   mux 2→3).
+2. **Output-bank (ORB) polarity was inverted.** XGrid wrote the output
+   namespace only when ORB==0; xemu writes `out_reg_name[]`
+   (oPos/oD0/oT0/…/A0.x) when `ORB==OUTPUT_O (1)` and asserts on ORB==0
+   (const-write TODO). Every real token uses ORB==1. Fixed the o-write gate
+   and set bit 11 in all hand-written test tokens (including one missed
+   `0x0000F018` → `0x0000F818` that broke the texture test until fixed).
+   Also added A0.x write-back to the address register (real programs compute
+   A0.x in o15; nothing reads it via A0X yet, but the feedback is
+   hardware-faithful).
+3. **Unpaired temp writes were already correct** (kept): the 60-word
+   program's R3/R4/R6/R7/R8 chain (i7→i11, i8→i10, i10→i12, i11→i13) only
+   works if unpaired MAC instructions write R[OUT_R] — confirmed against
+   xemu's `decode_opcode` else-branch, which emits the R-write whenever the
+   MAC mask is nonzero. Paired-ILU→R1 also kept (i14 reads R1; xemu's comment
+   documents it).
+
+**Degenerate draws are driver reality, not an XGrid gap.** After the fixes,
+the probe yields the program's true output — still degenerate — because the
+program scales by c58 and offsets by c59, and **constants 58/59 are never
+loaded in the entire 186844-method run** (verified: indices ever written are
+0-107 minus gaps; only c0/c1/c60-c62/c96-c104 are nonzero). Identical stream
++ identical semantics ⇒ identical (empty) result on xemu. All 34 blend draws
+and all 32 zeta-buffered depth draws (60-word and 48-word programs, first and
+last in the run) are no-ops everywhere.
+
+**Pixel accounting correction (supersedes §39's validation claim).** Exact
+analysis: all 10137600 drawn pixels come from **33 legacy-path fullscreen
+640×480 inline draws** (33 × 307200; clip/pitch/offset verified per flush;
+`textured=` matches because the shared rasterizer samples texel (0,0)).
+The ~2637 program draws contribute **exactly 0 pixels** — their geometry is
+degenerate at this boot stage. So the M5 element-draw path is implemented,
+unit-tested, and runs real traffic without fault, but **live program-draw
+rasterization is still unvalidated** — pending a workload whose programs
+produce non-degenerate geometry. The M5/M6 framebuffer content stands (from
+inline draws), but §39's "transform and rasterize its geometry" applies to
+the synthetic tests only.
+
+**Revalidation with fixed interpreter:** 1.7B steps, no fault, EIP
+`0x14C72`, counters identical, **RAM byte-identical** (64 MB, hash-matched)
+— expected, since program draws contribute 0 pixels and inline draws don't
+touch the interpreter. 715 tests green (Nv2a 61).
+
 
 
 

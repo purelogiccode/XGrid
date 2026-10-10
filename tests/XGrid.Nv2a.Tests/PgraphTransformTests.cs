@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -59,6 +60,59 @@ public sealed class PgraphTransformTests
 
         memory.WritePhysical(address, 0x00001001u);
         nv2A.Write(Base + 0x800040u, 4, address + 4);
+    }
+
+    private static void WriteTriangleVertices(ArrayMemory memory, uint zBits)
+    {
+        memory.WritePhysical(0x2000u, 0x40000000u);
+        memory.WritePhysical(0x2004u, 0x40000000u);
+        memory.WritePhysical(0x2008u, zBits);
+        memory.WritePhysical(0x200Cu, 0x3F800000u);
+        memory.WritePhysical(0x2010u, 0x41400000u);
+        memory.WritePhysical(0x2014u, 0x40000000u);
+        memory.WritePhysical(0x2018u, zBits);
+        memory.WritePhysical(0x201Cu, 0x3F800000u);
+        memory.WritePhysical(0x2020u, 0x40000000u);
+        memory.WritePhysical(0x2024u, 0x41400000u);
+        memory.WritePhysical(0x2028u, zBits);
+        memory.WritePhysical(0x202Cu, 0x3F800000u);
+    }
+
+    private static void PushProgramDraw(Nv2AMmio nv2A, ArrayMemory memory,
+        uint c0x, uint c0y, uint c0z, uint c0w,
+        params (uint Method, uint Parameter)[] state)
+    {
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000124u),
+            (0x020Cu, 0x00400040u),
+            (0x0210u, 0x00003000u),
+            (0x0214u, 0x00005000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00000042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, c0x),
+            (0x0B84u, c0y),
+            (0x0B88u, c0z),
+            (0x0B8Cu, c0w),
+        };
+        methods.AddRange(state);
+        methods.Add((0x17FCu, 5u));
+        methods.Add((0x1800u, 0x00010000u));
+        methods.Add((0x1808u, 0x00000002u));
+        methods.Add((0x17FCu, 0u));
+        PushMethods(nv2A, memory, methods.ToArray());
     }
 
     [Fact]
@@ -178,12 +232,12 @@ public sealed class PgraphTransformTests
             (0x1E9Cu, 0u),
             (0x0B00u, 0u),
             (0x0B04u, 0x0020001Bu),
-            (0x0B08u, 0x0436006Cu),
-            (0x0B0Cu, 0x0000F000u),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
             (0x0B10u, 0u),
             (0x0B14u, 0x0020001Bu),
-            (0x0B18u, 0x0836006Cu),
-            (0x0B1Cu, 0x0000F019u),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
             (0x1EA4u, 0u),
             (0x0B80u, 0x3F800000u),
             (0x0B84u, 0x3F000000u),
@@ -244,16 +298,16 @@ public sealed class PgraphTransformTests
             (0x1E9Cu, 0u),
             (0x0B00u, 0u),
             (0x0B04u, 0x0020001Bu),
-            (0x0B08u, 0x0436006Cu),
-            (0x0B0Cu, 0x0000F000u),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
             (0x0B10u, 0u),
             (0x0B14u, 0x0020001Bu),
-            (0x0B18u, 0x0836006Cu),
-            (0x0B1Cu, 0x0000F018u),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F818u),
             (0x0B20u, 0u),
             (0x0B24u, 0x0020021Bu),
-            (0x0B28u, 0x0436006Cu),
-            (0x0B2Cu, 0x00003049u), (0x1EA4u, 0u),
+            (0x0B28u, 0x0836006Cu),
+            (0x0B2Cu, 0x00003849u), (0x1EA4u, 0u),
             (0x0B80u, 0x3F800000u),
             (0x0B84u, 0x3F800000u),
             (0x0B88u, 0x3F800000u),
@@ -271,5 +325,199 @@ public sealed class PgraphTransformTests
         Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u));
         Assert.Equal(0xFF00FF00u, memory.ReadPhysical(0x3000u + 8u));
         Assert.Equal(0xFF0000FFu, memory.ReadPhysical(0x3000u + (2u * 0x10u)));
+    }
+
+    [Fact]
+    public void DepthTest_KillsFartherFragments()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x3F666666u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0x19999900u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+        Assert.True(nv2A.DepthTestedPixels > 0);
+        Assert.Equal(0x19999900u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void DepthTest_PassesNearerAndWrites()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x3E800000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0x40000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+        Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void DepthMask_DisablesDepthWrite()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x3E800000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x035Cu, 0u));
+
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFFFFFF00u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Blend_AlphaBlendsOverDestination()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x3000u + (y * 0x40u) + (x * 4u), 0xFF0000FFu);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F000000u,
+            (0x0304u, 1u),
+            (0x0344u, 0x0302u),
+            (0x0348u, 0x0303u),
+            (0x0350u, 0x8006u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.BlendedPixels > 0);
+        Assert.Equal(0xBF800080u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void ColorMask_PreservesMaskedChannels()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x3000u + (y * 0x40u) + (x * 4u), 0xFFFFFFFFu);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x0358u, 0x00000001u));
+
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFFFFFF00u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void AlphaTest_NeverKillsFragments()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x0300u, 1u),
+            (0x033Cu, 0x0200u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+    }
+
+    [Fact]
+    public void Stencil_ReplaceUpdatesStencilByte()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x032Cu, 1u),
+            (0x0364u, 0x0207u),
+            (0x0368u, 0xABu),
+            (0x036Cu, 0xFFu),
+            (0x0360u, 0xFFu),
+            (0x0370u, 0x1E01u),
+            (0x0374u, 0x1E01u),
+            (0x0378u, 0x1E01u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xABu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
     }
 }
