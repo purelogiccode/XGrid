@@ -150,13 +150,14 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 725 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — asset-loading phase + longer runs
+## Next session — disk-probing phase: attribute or outrun it
 
-1. `xgrid boot --steps 2500000000` (2.5B steps — CLI counters are `ulong`
-   now, chunked dispatch) completes with no fault at **new EIP `0x26402`**
-   (dashboard RVA `0x16402`); GPU frozen (same 2670/10.1M/33/33), IDE
-   5727→8292 accesses with new READ DMA LBAs, interrupts 3110→4566.
-   The dashboard is **loading assets past the black-frame stage** (§44).
+1. 2.5B-step run completes with no fault at **EIP `0x26402`** (leaf getter
+   called from the main-loop module at VA `0x14C48`; page-walked mappings).
+   New READ DMAs form 3 strided groups (`0x80000`-spaced ×8-sector reads
+   across X/Y/Z/C/E); content is zeros + stale blobs (unallocated areas —
+   file-driven loading ruled out). The main loop is **probing the disk**,
+   purpose TBD (§45).
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

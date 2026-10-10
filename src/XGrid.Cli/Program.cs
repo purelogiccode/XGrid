@@ -35,6 +35,8 @@ internal static class Program
                 return Boot(args);
             case "fatx":
                 return Fatx(args);
+            case "sector":
+                return Sector(args);
             case "xbe":
                 return Xbe(args);
             default:
@@ -811,6 +813,89 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
     }
 
+    private static int Sector(string[] args)
+    {
+        string? imagePath = null;
+        uint lba = 0;
+        uint count = 1;
+        string? output = null;
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                    imagePath = NextValue(args, ref i);
+                    break;
+                case "--lba":
+                    lba = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--count":
+                    count = Convert.ToUInt32(HexText(NextValue(args, ref i)), 16);
+                    break;
+                case "--out":
+                    output = NextValue(args, ref i);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown sector option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        if (imagePath is null)
+        {
+            Console.Error.WriteLine("Usage: xgrid sector --image <path> --lba <hex> [--count N] [--out <file>]");
+            return 1;
+        }
+
+        if (count == 0 || count > 256)
+        {
+            Console.Error.WriteLine("sector count must be 1-256");
+            return 1;
+        }
+
+        try
+        {
+            using Storage.IDiskImage image = XboxMachine.OpenDiskImage(imagePath);
+            byte[] data = new byte[count * 512];
+            for (uint i = 0; i < count; i++)
+            {
+                image.ReadSector(lba + i, new Span<byte>(data, (int)(i * 512), 512));
+            }
+
+            if (output is not null)
+            {
+                File.WriteAllBytes(output, data);
+                Console.WriteLine($"Sector {output} lba=0x{lba:X} count={count}");
+                return 0;
+            }
+
+            for (uint i = 0; i < count; i++)
+            {
+                Console.WriteLine($"LBA 0x{lba + i:X}:");
+                for (int row = 0; row < 512; row += 16)
+                {
+                    Console.Write($"  {row:X3}:");
+                    for (int b = 0; b < 16; b++)
+                    {
+                        Console.Write($" {data[(i * 512) + row + b]:X2}");
+                    }
+
+                    Console.WriteLine();
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                               or InvalidDataException or FileNotFoundException
+                                               or DirectoryNotFoundException or ArgumentOutOfRangeException)
+        {
+            Console.Error.WriteLine($"Sector error: {exception.Message}");
+            return 4;
+        }
+    }
+
     private static uint FindNextSuperblock(Storage.IDiskImage image, uint partition)
     {
         Span<byte> sector = stackalloc byte[512];
@@ -948,6 +1033,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
         Console.WriteLine("                   List or extract files from a FATX partition");
+        Console.WriteLine("  sector --image <path> --lba <hex> [--count N] [--out <file>]");
+        Console.WriteLine("                   Dump raw disk sectors as hex");
         Console.WriteLine(
             "  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
         Console.WriteLine("                   Show XBE headers, sections, and libraries");
