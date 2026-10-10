@@ -1278,11 +1278,20 @@ two-instruction program (`MOV oPos, v0; MOV oD0, c0`), constants, elements
 `DrawnPixels > 0`, and the centroid pixel equals `0xFFFF8040` (the constant
 color). 53 NV2A tests total.
 
-**Next:** validate against the dashboard's real programs (the 8301 constant
-loads map to c0..c191 via `convert_c_register`; confirm the program at `0xB00`
-transforms to the expected screen space), then M6 (textures/lighting), M7
-(zeta/blend), M8 (present); the inline `SET_VERTEX_DATA*` immediate path and
-`DRAW_ARRAYS` ranges remain unimplemented.
+**Validation against the real dashboard (2026-10-10).** `xgrid boot --steps
+1700000000` (1.7B steps) now reports **`draws executed=2670 skipped=0
+pixels=10137600`** (previously the element draws were skipped) and the
+framebuffer at physical `0x1000` holds rendered content (685/1024 non-zero
+dwords). The run still completes with no fault at EIP `0x14C72`. So the
+dashboard's real vertex programs, constants and vertex arrays now transform
+and rasterize its geometry.
+
+**Next:** validate the rendered image semantically (compare against xemu's
+output or the expected dashboard frame once M6-M8 exist); then M6
+(textures/lighting), M7 (zeta/blend), M8 (present); the inline
+`SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges remain
+unimplemented.
+
 
 
 
