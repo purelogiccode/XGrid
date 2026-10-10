@@ -79,7 +79,7 @@ public sealed class PgraphTransformTests
     }
 
     private static void PushProgramDraw(Nv2AMmio nv2A, ArrayMemory memory,
-        uint c0x, uint c0y, uint c0z, uint c0w,
+        uint c0X, uint c0Y, uint c0Z, uint c0W,
         params (uint Method, uint Parameter)[] state)
     {
         var methods = new List<(uint Method, uint Parameter)>
@@ -102,10 +102,10 @@ public sealed class PgraphTransformTests
             (0x0B18u, 0x0C36006Cu),
             (0x0B1Cu, 0x0000F819u),
             (0x1EA4u, 0u),
-            (0x0B80u, c0x),
-            (0x0B84u, c0y),
-            (0x0B88u, c0z),
-            (0x0B8Cu, c0w),
+            (0x0B80u, c0X),
+            (0x0B84u, c0Y),
+            (0x0B88u, c0Z),
+            (0x0B8Cu, c0W),
         };
         methods.AddRange(state);
         methods.Add((0x17FCu, 5u));
