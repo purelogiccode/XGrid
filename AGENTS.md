@@ -122,10 +122,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   oPos). **Attribute fetch + element draw done (§39):** vertex arrays decoded
   per format (UB_D3D BGRA/UB_OGL/S1/F/S32K/CMP, count/stride), elements
   (`0x1800`/`0x1808`) → `VshProgram` per vertex → screen-space `oPos` + `oD0`
-  color → shared barycentric `FillTriangle`. Next: validate against the
-  dashboard's real programs/constants, then M6 (textures/lighting), M7
-  (zeta/blend), M8 (present); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS`
-  ranges remain.
+  color → shared barycentric `FillTriangle`. **Validated on the real
+  dashboard:** `xgrid boot --steps 1700000000` reports `draws executed=2670
+  skipped=0 pixels=10137600` and the framebuffer at phys `0x1000` has rendered
+  content (previously skipped). Next: M6 (textures/lighting), M7 (zeta/blend),
+  M8 (present); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: 707 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
