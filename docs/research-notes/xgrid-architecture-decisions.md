@@ -1212,6 +1212,40 @@ the vertex arrays (DMA context A/B, format decode per
 clip/screen-space step and feeding the resulting screen-space vertices into
 the existing rasterizer. Then M6-M8.
 
+## 38. NV2A transform-program interpreter (M5 continued, 2026-10-10)
+
+`VshProgram` (`src/XGrid.Nv2a/VshProgram.cs`) interprets NV2A vertex programs,
+following xemu's field mapping (`glsl/vsh-prog.c`) and register encoding
+(`vsh_regs.h`):
+- Instruction = four dwords; fields decoded exactly per xemu's
+  `field_mapping` (ILU/MAC opcodes, shared V register index and constant index,
+  per-input muxes/swizzles/negates, output register/mask/orb, A0X, FINAL).
+- MAC opcodes MOV/MUL/ADD/MAD/DP3/DPH/DP4/DST/MIN/MAX/SLT/SGE/ARL and ILU
+  opcodes MOV/RCP/RCC/RSQ/EXP/LOG/LIT with xemu's math (broadcast results,
+  `ClampAwayZeroInf` for RCC, `floor(x+0.001)` for ARL).
+- Register file: R0-R11 temporaries, **R12 aliases oPos** (xemu `#define R12
+  oPos`), output registers o0..o15; input registers v0..v15; 192 constants.
+- Input muxes PARAM_R/PARAM_V/PARAM_C with the shared `FLD_V`/`FLD_CONST`
+  fields; constants mapped through `convert_c_register`
+  (`((((c>>5)&7)-3)*32)+(c&31)+96`) with A0-relative addressing when A0X is
+  set; the ILU force-scalar rule (RCP..LOG) applies to the shared C input.
+- Paired MAC+ILU semantics per xemu: the ILU writes R1, the MAC writes
+  R<OUT_R> (mask dropped when OUT_MUX=MAC and OUT_R=1), and only the op
+  selected by OUT_MUX writes the output register with OUT_O_MASK.
+- Programs leave **screen-space position** in oPos (xemu converts it back to
+  clip space for OpenGL; our software rasterizer consumes screen space
+  directly). 10 tests (`VshProgramTests`) with a token encoder covering MOV,
+  MAD, DP3/DP4, swizzle/negate, write masks, paired MAC+ILU, FINAL, ARL +
+  relative constants and ILU-only instructions.
+
+**Next (M5 continued):** vertex attribute fetch (inline `SET_VERTEX_DATA*`
+values and DMA vertex arrays with `NV097_SET_VERTEX_DATA_ARRAY_FORMAT` decode:
+types UB_D3D/S1/F/UB_OGL/S32K/CMP, sizes, stride), feed inputs into
+`VshProgram`, run per vertex for the collected inline elements/draw-arrays,
+and rasterize the resulting screen-space triangles (clip/w-divide per xemu's
+`roundScreenCoords`/`clampAwayZeroInf` conventions). Then M6-M8.
+
+
 
 
 

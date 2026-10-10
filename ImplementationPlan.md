@@ -2762,7 +2762,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **696 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 42 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
+Current test baseline: **706 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 52 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — NV2A fixed-function pipeline (M5-M8).** The animation wait
@@ -2787,16 +2787,20 @@ vertex formats, textures, lighting and zeta** → no transformed geometry
 (screen effectively black). **M5 started (§37):** the dashboard uses NV2A
 **vertex programs** (`SET_TRANSFORM_PROGRAM 0xB00`..) — D3D fixed-function is
 driver-generated programs — so M5 needs a transform-program interpreter (xemu
-`vsh-prog.c`), not only `vsh-ff.c`. Foundation done: transform
+`vsh-prog.c`), not only `vsh-ff.c`. Foundation done (§37): transform
 program/constant storage with PROG_LD_PTR/CONST_LD_PTR advance semantics,
 inline element/array semantics (`0x1800`/`0x1808`/`0x1810`/`0x1818`),
 `SET_BEGIN_END` buffer resets, vertex array format/offset registers; CLI prints
-`programLoad`/`constLoad`/`inlineElements`. Next: the interpreter + vertex
-attribute fetch (DMA vertex arrays, format decode) + transform → screen space →
-existing rasterizer; then M6 (textures/lighting), M7 (zeta/blend), M8 (present).
-Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `vertex.c`, `draw.c`,
-`vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
-`--ramdump`/`--ramin`, objdump. Evidence trail: research-notes §30-37.
+`programLoad`/`constLoad`/`inlineElements`. **Interpreter done (§38):**
+`VshProgram` decodes/executes NV2A vertex programs (MAC/ILU opcodes, R/V/C
+input muxes with shared V/const fields, swizzles/negates, write masks, paired
+MAC+ILU, R12=oPos alias, A0-relative constants, FINAL; programs leave
+screen-space oPos). Next: vertex attribute fetch (inline `SET_VERTEX_DATA*` +
+DMA vertex arrays with format decode) → feed `VshProgram` → rasterize
+screen-space triangles; then M6 (textures/lighting), M7 (zeta/blend), M8
+(present). Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `vertex.c`,
+`draw.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
+`--ramdump`/`--ramin`, objdump. Evidence trail: research-notes §30-38.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
