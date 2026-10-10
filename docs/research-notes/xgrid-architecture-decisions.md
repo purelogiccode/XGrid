@@ -1490,15 +1490,47 @@ programs go live) but blocks nothing today.
 run below reporting exactly `Executed 2500000000 instruction(s)`.
 
 **2.5B-step run: genuine forward progress.** Completes with no fault, not
-halted, at **new EIP `0x26402`** (dashboard image RVA `0x16402`, a `ret`
-site amid thiscall prologues — translated via CR3 page walk to phys
-`0x113402`). GPU state frozen (draws/pixels/frames/stalls identical to 1.7B;
-frame still #33/black) while the CPU moved on: IDE accesses 5727→8292 with
-**new ATA READ DMA LBAs**, interrupts 3110→4566, no new unmapped buckets.
-The dashboard is in an **asset-loading phase** (HDD reads, module code),
-past the black-frame render loop — the boot continues. Next: map the new
-READ DMA LBAs to HDD content to name the phase; continue longer runs; XID
-input for the eventual menu.
+halted, at **new EIP `0x26402`** (a `ret` site amid thiscall prologues —
+translated via CR3 page walk to phys `0x113402`, refined in §45 to a
+dashboard-loaded module mapping, not the XBE image). GPU state frozen
+(draws/pixels/frames/stalls identical to 1.7B; frame still #33/black) while
+the CPU moved on: IDE accesses 5727→8292 with **new ATA READ DMA LBAs**,
+interrupts 3110→4566, no new unmapped buckets. The dashboard is in an
+**asset-loading phase** (HDD reads, module code), past the black-frame
+render loop — the boot continues. Next: map the new READ DMA LBAs to HDD
+content to name the phase; continue longer runs; XID input for the eventual
+menu.
+
+## 45. Naming the 2.5B load phase: blind strided disk probing (2026-10-10)
+
+**New READ DMA LBAs** (2.5B tail vs 1.7B tail; all `0xC8` ×8 sectors,
+master/HDD): three groups strided `0x80000` sectors (256 MB) —
+`0x280400…0xC00400` (×20, spanning Y→Z→C→E), `0x7417…0x307417` (×7, X→Y→Z),
+`0xE42E…0x20E42E` (×5, X→Y). Partition map confirmed empirically (`sector`
+reads: LBA 0 zeros = no MBR; `FATX` superblock at `0x400` = X partition;
+prior session: C partition at `0x465400`).
+
+**Content sampled** (new `xgrid sector` command): group 1 all zeros
+(unallocated/zeroed clusters, incl. C: `0x480400`); groups 2–3 mixed zeros
+and stale high-entropy blobs (`0x7417`: entropy 7.76, no magic). C:\ root
+listed via `fatx ls`: `xboxdash.xbe`, `xboxdash2.xbe`, `evox.ini`,
+`disk.bin`, `Skin/`, `backup/`. The reads hit unallocated areas, so
+**file-driven loading is ruled out for these LBAs** — a blind LBA scan.
+
+**Code context:** EIP `0x26402` is a leaf getter (`mov eax,[ecx]; ret`,
+ECX=`0x005E2A10` heap object) called from VA `0x14C48` (`call 0x26400`,
+return address on stack confirms); page walks place the caller at phys
+`0xE1C4D` and the helper at phys `0x113402` — dashboard-loaded module
+mappings distinct from the XBE image (phys `0x5A000`). The caller sits in an
+MSVC SEH function with a poll/retry loop (`cmp [0x591AA2],bl; jne`,
+handle-or-`-1` wrappers). So the dashboard's main loop is **probing the
+disk** (purpose undetermined — content/signature scan across cache
+partitions is the leading hypothesis; exact API attribution needs full IDE
+logging, future work).
+
+**Also this turn:** CLI counters widened to `ulong` with chunked `RunBatch`
+dispatch (`--steps` overflowed past 2.1B); new `xgrid sector` raw-sector
+tool. 725 tests green, format clean.
 
 
 

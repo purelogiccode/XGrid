@@ -2809,16 +2809,15 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **725 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — asset-loading phase + longer runs.** The
-animation wait (§32), ACI/APU gates (§33), `fcomp` CPU bug (§34), HDD-write
-gate (§35), USB/OHCI gate (§36), NV2A **M5** (§37–39), **M6** (§40), **M7**
-(§41–42) and **M8** (§43) are solved, and **surface-operation scoping (§44)**
-showed textures are CPU-uploaded assets (dark by nature; 2D engine bound but
-unused — no missing blit op). `xgrid boot --steps 2500000000` (2.5B steps;
-CLI counters are `ulong` now, chunked dispatch) completes **with no fault**
-at **new EIP `0x26402`** (dashboard RVA `0x16402`): GPU frozen (same
-2670/10.1M/33/33), IDE 5727→8292 accesses with new READ DMA LBAs, interrupts
-3110→4566 — the dashboard is **loading assets past the black-frame stage**.
+**NEXT SESSION — disk-probing phase: attribute or outrun it.** The
+animation wait (§32) through **M8** (§43) plus surface scoping (§44) are
+solved. `xgrid boot --steps 2500000000` (2.5B steps; CLI counters `ulong`,
+chunked dispatch) completes **with no fault at new EIP `0x26402`** (leaf
+getter in a dashboard-loaded module, called from the main loop at VA
+`0x14C48`; page-walked mappings): GPU frozen, IDE 5727→8292 with new READ
+DMA LBAs in 3 strided groups (`0x80000`-spaced ×8-sector reads across
+X/Y/Z/C/E; content zeros + stale blobs — file-driven loading ruled out).
+The main loop is **probing the disk**, purpose TBD (§45).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2831,13 +2830,13 @@ no-ops on xemu too), so `blended=0 depth=0` is correct and **live
 program-draw rasterization is still unvalidated**. The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
 presents the dashboard surface, not the `0x1000` early-boot region.
-Next: map the new READ DMA LBAs to HDD content to name the load phase;
-continue longer runs toward UI (then XID input for the menu). Remaining M5
-gaps: inline `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges.
-Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`,
-`surface.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`,
-`--pgraph`, `--ramdump`/`--ramin`, `--fb`/`--frame`, objdump. Evidence
-trail: research-notes §30-44.
+Next: attribute the probing reads (full IDE logging or `sector`/`fatx`
+correlation) or outrun the phase with longer runs (then XID input for the
+menu). Remaining M5 gaps: inline `SET_VERTEX_DATA*` immediate path and
+`DRAW_ARRAYS` ranges. Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`,
+`draw.c`, `surface.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools:
+`--break-log <addr>`, `--pgraph`, `--ramdump`/`--ramin`, `--fb`/`--frame`,
+`sector`, objdump. Evidence trail: research-notes §30-45.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
