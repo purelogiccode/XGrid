@@ -13,9 +13,9 @@ public sealed class VshProgramTests
     private const int IluMov = 1;
     private const int IluRcp = 2;
 
-    private const int MuxR = 0;
-    private const int MuxV = 1;
-    private const int MuxC = 2;
+    private const int MuxR = 1;
+    private const int MuxV = 2;
+    private const int MuxC = 3;
 
     private static int Swizzle(int x, int y, int z, int w)
     {
@@ -79,6 +79,7 @@ public sealed class VshProgramTests
         t3 |= (uint)outR << 20;
         t3 |= (uint)iluMask << 16;
         t3 |= (uint)outMask << 12;
+        t3 |= 1u << 11;
         t3 |= (uint)outAddress << 3;
         t3 |= (uint)outMux << 2;
         if (a0x)
