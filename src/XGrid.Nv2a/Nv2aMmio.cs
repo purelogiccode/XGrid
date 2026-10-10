@@ -153,6 +153,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodTransformProgramLoad = 0x1E9Cu;
     private const uint MethodTransformProgramStart = 0x1EA0u;
     private const uint MethodTransformConstantLoad = 0x1EA4u;
+    private const uint MethodTextureBase = 0x1B00u;
+    private const uint MethodTextureEnd = 0x1BFCu;
+    private const uint TextureSlotStride = 0x40u;
+    private const uint TextureControl0Enable = 1u << 30;
+    private const int MaxTextureSlots = 4;
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
     private const int MaxInlineElements = 65536;
@@ -257,6 +262,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _transformConstantLoad;
     private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
+    private readonly uint[] _textureOffset = new uint[MaxTextureSlots];
+    private readonly uint[] _textureFormat = new uint[MaxTextureSlots];
+    private readonly uint[] _textureAddress = new uint[MaxTextureSlots];
+    private readonly uint[] _textureControl0 = new uint[MaxTextureSlots];
+    private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
+    private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
+    private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
     private uint _beginMode;
     private readonly Dictionary<uint, int> _methodCounts = new();
     private readonly Dictionary<uint, uint> _methodParams = new();
@@ -365,6 +377,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the number of pixels written by draws. Diagnostics.</summary>
     public ulong DrawnPixels { get; private set; }
+
+    /// <summary>Gets the number of pixels that sampled a texture. Diagnostics.</summary>
+    public ulong TexturedPixels { get; private set; }
 
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
     public ulong SkippedDraws { get; private set; }
@@ -488,6 +503,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _flipModulo = 0;
         Array.Clear(_vertexFormat);
         Array.Clear(_vertexArrayOffset);
+        Array.Clear(_textureOffset);
+        Array.Clear(_textureFormat);
+        Array.Clear(_textureAddress);
+        Array.Clear(_textureControl0);
+        Array.Clear(_textureControl1);
+        Array.Clear(_textureFilter);
+        Array.Clear(_textureImageRect);
         _inlineWords.Clear();
         _inlineElements.Clear();
         foreach (uint[] row in _transformProgram)
@@ -508,6 +530,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _beginMode = 0;
         DrawsExecuted = 0;
         DrawnPixels = 0;
+        TexturedPixels = 0;
         SkippedDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
@@ -1510,6 +1533,41 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             WriteTransformConstant((method - MethodTransformConstantBase) / 4, parameter);
         }
+
+        if (method >= MethodTextureBase && method <= MethodTextureEnd)
+        {
+            int slot = (int)((method - MethodTextureBase) / TextureSlotStride);
+            uint register = (method - MethodTextureBase) % TextureSlotStride;
+            if (slot < MaxTextureSlots)
+            {
+                switch (register)
+                {
+                    case 0x00u:
+                        _textureOffset[slot] = parameter;
+                        break;
+                    case 0x04u:
+                        _textureFormat[slot] = parameter;
+                        break;
+                    case 0x08u:
+                        _textureAddress[slot] = parameter;
+                        break;
+                    case 0x0Cu:
+                        _textureControl0[slot] = parameter;
+                        break;
+                    case 0x10u:
+                        _textureControl1[slot] = parameter;
+                        break;
+                    case 0x14u:
+                        _textureFilter[slot] = parameter;
+                        break;
+                    case 0x1Cu:
+                        _textureImageRect[slot] = parameter;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
     }
 
     private void ResetInlineBuffers()
@@ -1893,9 +1951,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float ca = colorCount >= 4 ? InlineColor(c, 3) : 1f;
 
                 FillTriangle(
-                    ax, ay, ar, ag, ab, aa,
-                    bx, by, br, bg, bb, ba,
-                    cx, cy, cr, cg, cb, ca,
+                    ax, ay, ar, ag, ab, aa, 0f, 0f,
+                    bx, by, br, bg, bb, ba, 0f, 0f,
+                    cx, cy, cr, cg, cb, ca, 0f, 0f,
                     clipX, clipY, clipW, clipH, bytes, pitch);
             }
 
@@ -1976,11 +2034,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             outputs[i] = new float[4];
         }
 
-        var transformed = new Dictionary<int, (float X, float Y, float R, float G, float B, float A)>();
-        (float X, float Y, float R, float G, float B, float A) Vertex(uint element)
+        var transformed = new Dictionary<int, (float X, float Y, float R, float G, float B, float A, float U, float V)>();
+        (float X, float Y, float R, float G, float B, float A, float U, float V) Vertex(uint element)
         {
             int index = (int)element;
-            if (transformed.TryGetValue(index, out (float, float, float, float, float, float) cached))
+            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float) cached))
             {
                 return cached;
             }
@@ -1998,22 +2056,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 inputs,
                 outputs);
 
-            (float X, float Y, float R, float G, float B, float A) vertex = (
+            (float X, float Y, float R, float G, float B, float A, float U, float V) vertex = (
                 outputs[0][0], outputs[0][1],
-                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3]);
+                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3],
+                outputs[9][0], outputs[9][1]);
             transformed[index] = vertex;
             return vertex;
         }
 
         void Triangle(uint a, uint b, uint c)
         {
-            (float ax, float ay, float ar, float ag, float ab, float aa) = Vertex(a);
-            (float bx, float by, float br, float bg, float bb, float ba) = Vertex(b);
-            (float cx, float cy, float cr, float cg, float cb, float ca) = Vertex(c);
+            (float ax, float ay, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
+            (float bx, float by, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
+            (float cx, float cy, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
             FillTriangle(
-                ax, ay, ar, ag, ab, aa,
-                bx, by, br, bg, bb, ba,
-                cx, cy, cr, cg, cb, ca,
+                ax, ay, ar, ag, ab, aa, au, av,
+                bx, by, br, bg, bb, ba, bu, bv,
+                cx, cy, cr, cg, cb, ca, cu, cv,
                 clipX, clipY, clipW, clipH, bytes, pitch);
         }
 
@@ -2143,6 +2202,143 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         return (short)(_memory!.ReadPhysical(address) & 0xFFFFu);
     }
 
+    private bool TrySampleTexture0(float u, float v, out float r, out float g, out float b, out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        if (_memory is null || (_textureControl0[0] & TextureControl0Enable) == 0)
+        {
+            return false;
+        }
+
+        int width = (int)(_textureImageRect[0] >> 16);
+        int height = (int)(_textureImageRect[0] & 0xFFFFu);
+        if (width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(_textureAddress[0] & 0xFu));
+        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((_textureAddress[0] >> 4) & 0xFu));
+        uint color = (_textureFormat[0] >> 8) & 0xFFu;
+        uint address = _textureOffset[0];
+        uint texel;
+        switch (color)
+        {
+            case 0x06u:
+                address += SwizzleOffset(x, y, width, height) * 4u;
+                texel = _memory.ReadPhysical(address);
+                break;
+            case 0x12u:
+                {
+                    int pitch = (int)(_textureControl1[0] >> 16);
+                    if (pitch <= 0)
+                    {
+                        pitch = width * 4;
+                    }
+
+                    address += (uint)((y * pitch) + (x * 4));
+                    texel = _memory.ReadPhysical(address);
+                    break;
+                }
+            case 0x05u:
+                address += SwizzleOffset(x, y, width, height) * 2u;
+                texel = _memory.ReadPhysical(address) & 0xFFFFu;
+                r = ((texel >> 11) & 0x1Fu) / 31f;
+                g = ((texel >> 5) & 0x3Fu) / 63f;
+                b = (texel & 0x1Fu) / 31f;
+                a = 1f;
+                return true;
+            default:
+                return false;
+        }
+
+        a = ((texel >> 24) & 0xFFu) / 255f;
+        r = ((texel >> 16) & 0xFFu) / 255f;
+        g = ((texel >> 8) & 0xFFu) / 255f;
+        b = (texel & 0xFFu) / 255f;
+        return true;
+    }
+
+    private static int WrapCoordinate(int value, int size, int mode)
+    {
+        switch (mode)
+        {
+            case 0:
+                value %= size;
+                return value < 0 ? value + size : value;
+            case 1:
+                {
+                    int period = size * 2;
+                    value %= period;
+                    if (value < 0)
+                    {
+                        value += period;
+                    }
+
+                    return value < size ? value : period - 1 - value;
+                }
+            default:
+                return Math.Clamp(value, 0, size - 1);
+        }
+    }
+
+    private static uint SwizzleOffset(int x, int y, int width, int height)
+    {
+        uint maskX = 0u;
+        uint maskY = 0u;
+        uint bit = 1u;
+        uint maskBit = 1u;
+        bool done;
+        do
+        {
+            done = true;
+            if (bit < (uint)width)
+            {
+                maskX |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            if (bit < (uint)height)
+            {
+                maskY |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            bit <<= 1;
+        }
+        while (!done);
+
+        return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY);
+    }
+
+    private static uint InterleaveBits(uint value, uint mask)
+    {
+        uint result = 0u;
+        uint maskBit = 1u;
+        int valueBit = 0;
+        while (maskBit != 0u)
+        {
+            if ((mask & maskBit) != 0u)
+            {
+                if ((value & (1u << valueBit)) != 0u)
+                {
+                    result |= maskBit;
+                }
+
+                valueBit++;
+            }
+
+            maskBit <<= 1;
+        }
+
+        return result;
+    }
+
     private static int SignExtend(int value, int bits)
     {
         int sign = 1 << (bits - 1);
@@ -2150,9 +2346,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     }
 
     private void FillTriangle(
-        float ax, float ay, float ar, float ag, float ab, float aa,
-        float bx, float by, float br, float bg, float bb, float ba,
-        float cx, float cy, float cr, float cg, float cb, float ca,
+        float ax, float ay, float ar, float ag, float ab, float aa, float au, float av,
+        float bx, float by, float br, float bg, float bb, float ba, float bu, float bv,
+        float cx, float cy, float cr, float cg, float cb, float ca, float cu, float cv,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch)
     {
         float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
@@ -2191,6 +2387,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
                 float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
                 float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
+                float tu = (w1 * au) + (w2 * bu) + (w0 * cu);
+                float tv = (w1 * av) + (w2 * bv) + (w0 * cv);
+                if (TrySampleTexture0(tu, tv, out float tr, out float tg, out float tb, out float ta))
+                {
+                    r *= tr;
+                    g *= tg;
+                    bl *= tb;
+                    al *= ta;
+                    TexturedPixels++;
+                }
+
                 uint pixel = bytes == 4
                     ? ((uint)(Math.Clamp(al, 0f, 1f) * 255f + 0.5f) << 24) |
                       ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |

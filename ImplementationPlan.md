@@ -2762,7 +2762,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **707 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 53 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
+Current test baseline: **708 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 54 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — NV2A fixed-function pipeline (M5-M8).** The animation wait

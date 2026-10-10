@@ -1292,6 +1292,44 @@ output or the expected dashboard frame once M6-M8 exist); then M6
 `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges remain
 unimplemented.
 
+## 40. NV2A M6: texture state + sampling (2026-10-10)
+
+**Texture state.** Per-slot (4 slots, 0x40 stride from `0x1B00`) storage of
+offset (`0x1B00`), format (`0x1B04`), address/wrap (`0x1B08`), control0
+(`0x1B0C`, enable = bit 30), control1 (`0x1B10`, pitch = bits 16-31), filter
+(`0x1B14`) and image rect (`0x1B1C`, width = bits 16-31, height = bits 0-15).
+
+**Sampling** (`TrySampleTexture0`): with texture 0 enabled, sample at
+`(floor(u*w), floor(v*h))` with wrap/mirror/clamp addressing
+(`HcTextureAddress` nibbles) and modulate the interpolated `oD0` by the texel.
+Supported formats: `SZ_A8R8G8B8` (`0x06`, Morton-swizzled), `SZ_R5G6B5`
+(`0x05`), `LU_IMAGE_A8R8G8B8` (`0x12`, linear with control1 pitch). The swizzle
+offset is computed with xemu's mask-generation algorithm
+(`swizzle.c` `generate_swizzle_masks` + bit interleave), handling
+non-power-of-two dimensions. Texcoords come from output register `oT0`
+(`o9`); the program draw path captures `(u,v)` per vertex and `FillTriangle`
+interpolates them.
+
+**Test:** `PgraphTransformTests.ElementDraw_SamplesSwizzledTexture` — 2×2
+swizzled A8R8G8B8 texture (red/green/blue/white), a program writing
+`oPos`/`oD0`/`oT0` from `v0`/`c0`/`v1`, position + texcoord vertex arrays;
+asserts the red/green/blue texels appear at the expected framebuffer pixels.
+
+**Validation on the real dashboard (1.7B steps, no fault).** The CLI now
+reports `textured=10137600` — **every drawn pixel samples texture 0**. The
+framebuffer at phys `0x1000` is byte-identical to the M5 run, and the texture
+data at the dashboard's offsets is mostly black (`0x2053000`/`0x3628000` zero
+or opaque black; one colored texture at `0x321C000`). This indicates the
+dashboard's *visible* textures are **GPU-generated** (render-to-texture or
+blits we do not yet produce), so M6 sampling is active but samples black —
+consistent with the M6-M8 ordering: M7/M8 (zeta/blend/present and the
+surface/blit operations) are needed before the image is meaningful.
+
+**Next:** M7 (zeta test/write + alpha blending), M8 (present/flip path), and
+the surface operations that generate the dashboard's textures (render-to-
+texture, `NV097_SET_SURFACE_*` targets beyond the color buffer, blits).
+
+
 
 
 
