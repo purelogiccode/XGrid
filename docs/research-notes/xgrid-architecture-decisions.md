@@ -1428,6 +1428,47 @@ the synthetic tests only.
 — expected, since program draws contribute 0 pixels and inline draws don't
 touch the interpreter. 715 tests green (Nv2a 61).
 
+## 43. NV2A M8: flip tracking + present path (2026-10-10)
+
+**Flip semantics** (xemu `pfifo.c`/`pgraph.c`): `SET_FLIP_READ (0x120)` /
+`SET_FLIP_WRITE (0x124)` select the displayed/rendered buffer index,
+`SET_FLIP_MODULO (0x128)` the buffer count; `FLIP_INCREMENT_WRITE (0x12C)`
+rotates `write = (write+1) % modulo` and bumps `frame_time` — this is the
+**present event**; `FLIP_STALL (0x130)` parks the FIFO until `read != write`;
+the display side advances read toward write each vsync (`INCREMENT_READ_3D`).
+
+**Dashboard traffic:** read=0, write=1, modulo=2 (each written once), then
+33× `FLIP_INCREMENT_WRITE` + 33× `FLIP_STALL` — one flip+vsync-wait per
+frame, paired 1:1 with the 33 fullscreen inline draws (§42). All 33 frames
+render to the **same** color offset (`0x32A4000`); no buffer ping-pong in
+practice.
+
+**Implementation:** `0x12C` rotates the write index (modulo 0 guarded),
+counts `FramesPresented`, and captures the at-flip surface record (color
+offset, clip w/h, pitch, bytes-per-pixel; valid only for 2/4-byte pitch
+surfaces with sane dims); `0x130` counts `FlipStalls`; each 60 Hz vblank in
+`Advance` steps read toward write. `TryCopyPresentedFrame` snapshots the
+surface as BGRA bytes (A8R8G8B8 direct, R5G6B5 upconverted; fails cleanly on
+OOB/unset state). `XGrid.Graphics` gained its first source file:
+`DisplayFrame` (`Show` + 32-bit bottom-up BMP export + nonzero-pixel count).
+CLI: `--frame <path>` saves the flip-captured frame as BMP; `--fb` (raw
+current-surface dump) unchanged. Draw stats now print `frames=`/`stalls=`.
+
+**Validation:** 1.7B steps, no fault, EIP `0x14C72`: `frames=33 stalls=33`
+(exact stream-oracle match), final frame `640x480 pitch=2560` from surface
+`0x32A4000`, saved BMP hash-verified structurally (BM magic, 1228854 bytes).
+Content: every pixel `(0,0,0,255)` — **opaque black**. This clarifies the
+display story: the flip chain presents `0x32A4000` (black at this boot
+stage), not the `0x1000` region previously eyeballed (early-boot fb with
+stale animation content). The all-black presented frame is consistent with
+§40 (black textures) — the dashboard is pre-UI / fading in at EIP `0x14C72`.
+
+**Tests:** 6 flip/present tests (`PgraphTransformTests`: wrap counting,
+stall counting, vblank read-advance, exact BGRA snapshot incl. R5G6B5,
+invalid-surface refusal) + 4 `DisplayFrame` tests (new
+`XGrid.Graphics.Tests` project: dims, mismatch rejection, BMP byte layout
+incl. bottom-up rows, no-frame error). 725 green (Nv2a 67, Graphics 4).
+
 
 
 

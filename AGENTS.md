@@ -137,23 +137,27 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   come from 33 legacy fullscreen 640×480 inline draws; the ~2637 program
   draws are degenerate (their programs read never-loaded zero constants
   c58/c59 — no-ops on xemu too), so `blended=0 depth=0` is correct and live
-  program-draw rasterization is still unvalidated. Next: M8 (present) +
-  surface operations (render-to-texture/blits); inline `SET_VERTEX_DATA*`
-  and `DRAW_ARRAYS` ranges remain.
+  program-draw rasterization is still unvalidated. **M8 present done (§43):**
+  flip read/write/modulo + `FLIP_INCREMENT_WRITE` (present event, captures
+  the at-flip surface) + `FLIP_STALL` counting + vblank read-advance;
+  `XGrid.Graphics/DisplayFrame` (BGRA frame store, 32-bit BMP export); CLI
+  `--frame` saves the presented frame (`--fb` raw dump unchanged). Validated:
+  `frames=33 stalls=33` (exact oracle match), final frame 640×480 from
+  `0x32A4000` — opaque black (the flip chain presents the dashboard surface,
+  not the `0x1000` region). Next: surface operations (render-to-texture/
+  blits); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 715 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 725 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — NV2A M8 (present) + surface operations
+## Next session — surface operations + live program draws
 
 1. The dashboard XBE entry executes (phys `0x5CA17`), decompresses its payload,
    writes the HDD via ATA WRITE DMA (`OverlayDiskImage`), passes the USB poll
    (OHCI implemented), and **renders**: `xgrid boot --steps 1700000000` (1.7B
    steps, `data/xemu-0.8.136-windows-x86_64/` set) completes with no fault and
    reports `draws executed=2670 skipped=0 pixels=10137600 textured=10137600
-   clears=41 blended=0 depth=0` at EIP `0x14C72`; the framebuffer at phys
-   `0x1000` has content (from 33 legacy fullscreen inline draws — the ~2637
-   program draws are degenerate at this boot stage, §42).
+   clears=41 blended=0 depth=0 frames=33 stalls=33` at EIP `0x14C72`.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
@@ -161,12 +165,15 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    The dashboard's visible textures sample black because they are
    **GPU-generated (render-to-texture/blits not yet produced)** — the texture
    data at its offsets is mostly black (one colored texture at `0x321C000`).
-3. Next: **M8** — the present/flip path (`NV097_FLIP_*` → `XGrid.Graphics`,
-   CLI currently dumps the raw framebuffer) and the **surface operations**
-   (render-to-texture, additional surface targets, 2D blits) that generate
-   the dashboard's textures. Live program-draw rasterization is still
-   unvalidated (pending non-degenerate program traffic). Remaining M5 gaps:
-   inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
+3. **M8 present done (§43):** `frames=33 stalls=33` (exact oracle match);
+   `xgrid boot --frame out.bmp` saves the flip-captured 640×480 frame
+   (surface `0x32A4000`) — currently opaque black, which clarifies the
+   display story (flip chain presents the dashboard surface, not the `0x1000`
+   early-boot region). Next: the **surface operations** (render-to-texture,
+   additional surface targets, 2D blits) that generate the dashboard's
+   textures. Live program-draw rasterization is still unvalidated (pending
+   non-degenerate program traffic). Remaining M5 gaps: inline
+   `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
 4. Controller input: the OHCI root hub reports empty ports; an XID/gamepad
    device is future work. LLE-first remains the rule; Phase 10 kernel-HLE only
    if we choose HLE for dashboard ordinals.
