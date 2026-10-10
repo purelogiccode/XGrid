@@ -114,12 +114,16 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   `vsh-prog.c`), not just fixed-function. Foundation done (§37):
   transform-program/constant storage with PROG_LD_PTR/CONST_LD_PTR advance
   semantics, inline element/array semantics (`0x1800`/`0x1808`/`0x1810`/
-  `0x1818`), `SET_BEGIN_END` buffer resets, vertex array format/offset regs;
-  CLI prints `programLoad`/`constLoad`/`inlineElements`. Next: the interpreter
-  + vertex attribute fetch (DMA vertex arrays, format decode) + transform →
-  screen space → existing rasterizer; then M6-M8.
+  `0x1818`),   `SET_BEGIN_END` buffer resets, vertex array format/offset regs; CLI prints
+  `programLoad`/`constLoad`/`inlineElements`. **Interpreter done (§38):**
+  `VshProgram` decodes/executes NV2A vertex programs (MAC/ILU opcodes,
+  R/V/C input muxes with shared V/const fields, swizzles/negates, write masks,
+  paired MAC+ILU, R12=oPos alias, A0-relative constants, FINAL; screen-space
+  oPos). Next: vertex attribute fetch (inline `SET_VERTEX_DATA*` + DMA vertex
+  arrays with format decode), feed `VshProgram`, rasterize screen-space
+  triangles; then M6-M8.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 696 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 706 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
