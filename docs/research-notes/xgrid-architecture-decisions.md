@@ -1079,4 +1079,36 @@ watch the decompressor context fields across step counts, or trace the
 `0x5C390`/`0x5C420` orchestrator. Then the dashboard's D3D/menu bring-up
 (NV2A M5-M8 + present) and USB input.
 
+## 35. Dashboard init progresses: decompression works, HDD writes, USB gate (2026-10-10)
+
+**Decompression is real, not a loop.** The init decompressor's context
+(`0x5C390` orchestrator called from the entry at `0x5C7F0`; ctx VA ≈
+`0x7FDCB800` → phys `0x4DC800`, deterministic) shows `srcIndex` (`ctx+0x2C`)
+advancing **monotonically 0 → 0x19174 with ~102781 writes** (≈ one write per
+byte, no resets) and the 16 KB ring buffer receiving real data — a legitimate
+LZX/Xpress-style decode. The orchestrator is called twice (525.9M, 690.9M
+instructions) with output buffer `0x7FA00000` and size `0x3CB000`; the source
+is fed in by the entry's kernel-thunk reads (`[0x12C4B] = 0x8001EEAC`). So the
+dashboard entry runs, resolves its imports, and decompresses its payload.
+
+**HDD-write gate.** After the decompression the dashboard issues an ATA
+**WRITE DMA (`0xCA`)** to LBA `0x80000` (and reads `0xC8`/`0xEC`); the qcow2
+reader threw `NotSupportedException: The qcow2 reader is read-only`
+(`Qcow2DiskImage.WriteSector`) from `AtaDevice.CommitDmaSector`. Fix:
+`OverlayDiskImage` — an in-memory copy-on-write wrapper (reads consult the
+overlay first; writes are retained in RAM) — applied in `XboxMachine.AttachHdd`
+so guest filesystem writes cannot corrupt the shared reference image. 3 tests
+(`OverlayDiskImageTests`). With it, `xgrid boot --steps 1600000000` completes
+**all 1.6B steps with no fault** (`LastFault vec=0`), ending at EIP `0x76192`
+(still inside the dashboard image, base `0x10000`), with the IDE trace showing
+the WRITE DMA (`0xCA`) succeeding.
+
+**Next gate — USB/OHCI.** At 1.6B the CLI reports `Unmapped phys (1MB buckets):
+FED=375651421` — the dashboard is polling **USB0 (`0xFED00000`)**, which is a
+PCI stub (`NForceUsbController`, 0:2.0) whose MMIO window is **not registered**
+in the memory map, so reads return the sentinel and the poll never satisfies.
+Implement the OHCI USB controller (register model + ED/TD + root hub) and map
+its window; references: xemu `hw/usb/hcd-ohci.c`, `hw/usb/`, and xqemu. Then
+the dashboard's D3D/menu bring-up (NV2A M5-M8 + present).
+
 

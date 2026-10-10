@@ -148,9 +148,10 @@ public sealed class XboxMachine
     }
 
     /// <summary>Attaches a raw or qcow2 HDD image to the primary master IDE drive.</summary>
+    /// <remarks>Writes are captured by an in-memory overlay so the backing image is not modified.</remarks>
     public void AttachHdd(string path)
     {
-        Ide.AttachPrimaryMaster(OpenDiskImage(path));
+        Ide.AttachPrimaryMaster(new OverlayDiskImage(OpenDiskImage(path)));
     }
 
     /// <summary>Opens a raw or qcow2 disk image by magic number.</summary>

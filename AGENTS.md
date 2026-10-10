@@ -93,34 +93,38 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   bit-stream decompressor at `0x5C4A0` (RVA `0x24A0`; 16 KB ring buffer
   `[ctx+0x34]` masked `0x3FFF`, bit reader). At 700M the CPU is inside that
   decompressor (`srcIndex=0x19174`, state=12).
-- **Next gate:** decide whether the dashboard's init decompression progresses
-  (EvoX payload) or loops (second bug) — watch the decompressor context
-  (`ESI` ≈ `0x7FDCB800`, ctx fields `+0x24/+0x28/+0x2C/+0x30`) across step
-  counts, or trace the `0x5C390`/`0x5C420` orchestrator. Then D3D/menu bring-up
-  (NV2A M5-M8 + present) and USB input.
+- **Next gate (2026-10-10, §35): USB/OHCI.** The dashboard's init decompression
+  is real (monotonic `srcIndex`), it then issues ATA **WRITE DMA (`0xCA`)** to
+  LBA `0x80000` — the qcow2 reader was read-only, so `OverlayDiskImage`
+  (in-memory copy-on-write, wrapped in `XboxMachine.AttachHdd`) was added to
+  keep the reference image pristine. With it `xgrid boot --steps 1600000000`
+  completes with no fault (EIP `0x76192`, still in the dashboard image). It now
+  polls **USB0 (`0xFED00000`)** — `Unmapped phys FED=375651421` — a PCI stub
+  (`NForceUsbController`, 0:2.0) whose MMIO window isn't mapped. Implement OHCI
+  (xemu `hw/usb/hcd-ohci.c`, `hw/usb/`) and map the window. Then D3D/menu
+  (NV2A M5-M8 + present).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 678 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 681 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — XBE launch gate
 
-1. The animation/AV-teardown crash is fixed (CPU `fcomp`/`fcom` memory-operand
-   bug, §34) and the **dashboard XBE entry now executes** (phys `0x5CA17`).
-   `xgrid boot --steps 700000000` (700M steps,
-   `data/xemu-0.8.136-windows-x86_64/` set) completes without faulting.
-2. Determine if the entry's decompression completes: the orchestrator is
-   `0x5C390`/`0x5C420` called from `0x5C7F0` (entry's init); the decompressor
-   loop is at phys `0x5C4A0` (VA `0x124A0`). Disassemble from the RAM dump
-   (`objdump -D -b binary -m i386 -M intel`), then `--break-log` its inner
-   loops and sample the ctx fields (`+0x24/+0x28/+0x2C/+0x30`) at two step
-   counts (`--ramdump`) — `srcIndex` must advance if progress is real. The
-   decompressor ctx is allocated in user space (page-walk VA→phys via CR3
-   `0xF000`). XBE header/entry facts: header phys `0x5A000`, base `0x10000`,
-   entry VA `0x12A17`, section `EvoX` VA `0x11000` vsize `0xBA2F4`.
-3. Then the dashboard init continues: kernel-thunk imports, D3D device setup,
-   menu rendering (needs NV2A M5-M8 + present), input (USB/OHCI). LLE-first
-   remains the rule; Phase 10 kernel-HLE only if we choose HLE for dashboard
-   ordinals.
+1. The dashboard XBE entry executes (phys `0x5CA17`) and its init runs:
+   decompresses its payload (`0x5C390` → `0x5C4A0`, monotonic progress),
+   writes the HDD via ATA WRITE DMA (handled by `OverlayDiskImage`), and
+   `xgrid boot --steps 1600000000` (1.6B steps,
+   `data/xemu-0.8.136-windows-x86_64/` set) completes with no fault.
+2. **Implement USB/OHCI** at `0xFED00000` (USB0) / `0xFED08000` (USB1): the
+   dashboard polls USB0 (375M unmapped reads). `NForceUsbController`
+   (`src/XGrid.Bus/Pci/XboxPciStubs.cs`, PCI 0:2.0/0:3.0, IRQ1/IRQ9 via
+   `introute=0E065491`) is a stub; register the MMIO window with an OHCI device.
+   References: xemu `hw/usb/hcd-ohci.c`, `hw/usb/`; `References/XboxWiki` USB
+   page (41). A minimal-but-correct OHCI (registers + root hub + ED/TD) should
+   let the kernel USB stack init; a controller with no attached device reports
+   empty ports.
+3. Then the dashboard continues: D3D device setup, menu rendering (needs NV2A
+   M5-M8 + present). LLE-first remains the rule; Phase 10 kernel-HLE only if we
+   choose HLE for dashboard ordinals.
 4. Parallel tracks when blocked: NV2A M5-M8 (textures/transforms/zeta/flip)
    and Track C JIT for interactivity.
 5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
