@@ -45,7 +45,7 @@ public sealed class VshProgramTests
         bool aNeg = false,
         bool bNeg = false,
         bool cNeg = false,
-        bool a0x = false,
+        bool a0X = false,
         bool final = false)
     {
         uint t1 = ((uint)ilu << 25) | ((uint)mac << 21) | ((uint)constIndex << 13) | ((uint)v << 9);
@@ -82,7 +82,7 @@ public sealed class VshProgramTests
         t3 |= 1u << 11;
         t3 |= (uint)outAddress << 3;
         t3 |= (uint)outMux << 2;
-        if (a0x)
+        if (a0X)
         {
             t3 |= 1u << 1;
         }
@@ -278,7 +278,7 @@ public sealed class VshProgramTests
         uint[][] program =
         {
             Insn(mac: MacArl, aMux: MuxV, v: 0),
-            Insn(mac: MacMov, aMux: MuxC, constIndex: 0, a0x: true, outR: 0, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxC, constIndex: 0, a0X: true, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
         };
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
