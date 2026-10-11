@@ -1586,6 +1586,57 @@ overlay introspection (future tooling alongside full IDE logging).
 (chunked `RunBatch` loop), so killed long runs still yield partial data;
 validated on a 300M run. 725 tests green, format clean.
 
+## 47. File-save identified: dashboard rewriting C:\evox.ini (2026-10-11)
+
+**Tooling built:** `OverlayDiskImage` now journals every sector write
+(`WriteLog` in issue order incl. repeats, `WriteCount`, sorted
+`GetModifiedSectors()`; `XboxMachine.HddOverlay` exposes the overlay) and
+`xgrid boot --writedump <dir>` dumps each dirtied sector as `<LBA8X>.bin`
+plus a `manifest.txt` (first-16-bytes preview per sector), printing
+coalesced LBA ranges and top repeated-write LBAs. Two unit tests cover
+order/repeats/snapshot. 727 tests green (Storage 25→27), format clean;
+1M-step smoke run prints `sectors=0 writes=0` correctly.
+
+**3.2B run with capture: EIP `0x67BFD`, no fault, `WRITEDUMP sectors=93
+writes=200`, ranges `000008 465409 465488 467548-4675A1`, repeats
+`465488x56 465409x4 …`.** Every range decodes (C: partition base
+`0x465400`, FATX superblock, 32-sector clusters, narrow u16 FAT of 128
+sectors ⇒ ~512 MB = C:, root dir = cluster 1 = LBA `0x465488`):
+
+- `0x465488` (56 writes) = **root-dir sector**; dirent #4 is `evox.ini`
+  (start cluster 263), size 79868 (base image) → **45781** (final). All
+  other dirents in the sector byte-identical — the 56 flushes track the
+  shrinking/growing size field as the file streams.
+- `0x465409` (4 writes) = FAT sector (base+9, clusters 256–511). Diff
+  base→final: FAT[265] `0x010A`→`0xFFFF`, FAT[266] `0x010B`→`0x0000`,
+  FAT[267] `0xFFFF`→`0x0000` — chain **truncated 263→264→265→END**,
+  clusters 266–267 freed (neighbour chains `disk.bin` 231–262,
+  `xboxdash.xbe` 268+ untouched).
+- `0x467548–0x4675A1` (90 sectors) = clusters 263–265 partial:
+  `0x465488+(263−1)*32 = 0x467548` exactly; 89 full sectors + 213 bytes.
+- Payload is **all-ASCII `evox.ini`, byte-identical to the on-disk file's
+  first 45781 bytes**, ending mid-line (`…0xB64C` + `0xFF` pad): `[Misc]`
+  (`SkinName=HeXEn`, `ScreenSaver=5`, `DVDPlayer=…`), `[Network]`
+  (`Ip=192.168.1.250`, `Subnetmask=255.255.255.0`,
+  `Defaultgateway=192.168.1.254`), then the `ROM = "…" ,0x…` BIOS hash
+  list (`Complex 4627`, `Cromwell`, `Xecuter2…`). Final dirent size 45781
+  = valid byte count. **The dashboard is re-saving `C:\evox.ini` in place
+  (truncate + streaming rewrite); the write is still in progress at 3.2B**
+  (46 KB of 79,868). Why it re-saves with no input (first-boot settings
+  commit vs dirty-flag save) is open.
+- `LBA 8`: single early write (absent from the 32-entry `CommandLog`
+  tail), 60 nonzero bytes, `55 AA` boot signature at 510–511 and
+  `50 43 42 58` (`PCBX`) at `0x1F4` — MBR-signature-like disk system-area
+  sector; attribution open.
+
+**§46 correction (LBA radix):** `IdeController.LogCommand` prints
+`l{LbaLow:X2}{LbaMid:X2}{LbaHigh:X2}` — raw taskfile bytes concatenated
+(`IdeController.cs:85-86`). So tail entry `l885446` = bytes 88 54 46 =
+true LBA **`0x465488`** (the root-dir sector above), and `897546…A07546`
+= `0x467589…0x4675A1` (the data run). The "E: +1.6 GB" reading was
+byte-reversed; all file-save I/O is C:-local (`+0x88` dirent, `+9` FAT,
+`+0x2148` data).
+
 
 
 
