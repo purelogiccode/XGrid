@@ -64,6 +64,7 @@ internal static class Program
         string? fbPath = null;
         string? framePath = null;
         string? pgraphPath = null;
+        ulong pgraphMax = 262144;
         string? ramDumpPath = null;
         string? raminPath = null;
         string? writeDumpDir = null;
@@ -150,6 +151,9 @@ internal static class Program
                 case "--pgraph":
                     pgraphPath = NextValue(args, ref i);
                     break;
+                case "--pgraph-max":
+                    pgraphMax = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
                 case "--ramdump":
                     ramDumpPath = NextValue(args, ref i);
                     break;
@@ -214,6 +218,7 @@ internal static class Program
             }
 
             machine.Reset();
+            machine.Nv2A.MethodStreamCap = pgraphMax;
 
             if (padButtons is not null || padAnalog is not null || padSticks is not null)
             {
