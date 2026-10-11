@@ -2832,20 +2832,19 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **768 tests passing** (36 Core, 398 Cpu, 52 Memory, 148 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — menu response: XID gate III (input injection).** The
-animation wait (§32) through **M8** (§43), surface scoping (§44), content
-discovery (§45), file-save (§47–48), shadow alias (§50–51), NIC gates
-I+II (§52–53) and XID gates I+II (§54–55: OHCI schedule engine, neutral
-pad on USB0 port 0, **enumeration completes first try — `addr=1
-cfg=True`, 11 TDs, zero resets**, xemu-faithful incl. CBP-on-error and
-Rounding-empty semantics; 764 green) are done. The runner is an
-XBApp-framework dash (EvoX skin, FTP/telnet servers, static IP) that
-wants gamepads (`CreateGamepads() failed!`) — but `intr=0` at 5B, so
-nothing polls yet. Next: `--pad` CLI injection + response test (does
-interrupt polling start? XInput RAM state? EIP/draws deltas? establish
-CreateGamepads once-vs-loop) — or pivot to the nvnet packet engine if
-the dash proves network-driven. Static bonus: chain-loaded 10-section
-**`RemoteX`** dash (save triggered post-`Start!`).
+**NEXT SESSION — menu response: app intent.** The animation wait (§32)
+through **M8** (§43), surface scoping (§44), content discovery (§45),
+file-save (§47–48), shadow alias (§50–51), NIC gates I+II (§52–53), XID
+gates I–III (§54–56), D3D probe (§57), oPos verdict (§58), C0 provenance
+(§59), zeta verdict (§60) and viewport writers (§61) are done: the
+app's sole 640×480 viewport is sane (0,1) yet the driver bakes 16.7M
+from the first frame — guest-side, all emulator channels exonerated
+(passthrough, no readback, complete PFIFO, exact int math). The guest
+deterministically draws nothing visible from boot. Next: what is the
+black idle scene WAITING for — XBApp-flow evidence (init completion?
+content gating? failure-string execution proof?) + nvnet packet engine
+(the network half). Static notes: **`RemoteX`** dash (XBApp, static IP);
+streams in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
