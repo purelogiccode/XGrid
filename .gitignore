@@ -33,6 +33,7 @@ References/
 *.qcow2
 *.qcow2c
 *.xbe
+!src/XGrid.Xbe/
 *.exe
 *.log
 eeprom.bin
