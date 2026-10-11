@@ -155,7 +155,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 768 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: zeta + device-creation probes.
+## Next session — menu response: viewport writers.
 
 1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
    injection (latched; Bus 144→148). Enumeration completes first try;
@@ -166,10 +166,12 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    shows `C0.z=16777215` baked from viewport params (`0AF8`/`0398`)
    from the first upload — junk-from-start, zero drift; menu-idle
    double-buffers `0x3D00000↔0x3E2C000` with the identical viewport.
-   Hottest lead: zeta never set → failed D3D device creation → Z24MAX
-   Z default. Next: zeta-ever-set scan/CLI, device-creation probe,
-   app viewport forensics, nvnet engine last. Issuer EIP, `F36A2` gap
-   and LBA 8 (`55 AA`, `PCBX`) still open.
+   Zeta verdict (§60): set at boot (depth surfaces + formats, ~187K
+   methods of bring-up) then never again — color-only flips to the end;
+   only pixels ever are 33 legacy textured draws (logo?) vs 800K
+   clipped program draws. Next: app viewport writers (who stores
+   16.7M?), our surface/zeta/caps audit, nvnet engine last. Issuer
+   EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
