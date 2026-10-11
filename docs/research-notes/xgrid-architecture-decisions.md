@@ -1868,6 +1868,33 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 56. XID gate III: injection works, guest ignores the pad (2026-10-11)
+
+**Input path built end-to-end.** `--pad-buttons/--pad-analog/--pad-sticks`
+CLI flags → `PadInput.TryParse` → `XidGamepad.SetInput`, latched across
+port resets (enumeration resets no longer wipe held buttons). 4 tests
+(Bus 144→148); 768 green; smoke confirms the Pad line + CCS from boot.
+
+**A-press 5B run: byte-identical to neutral.** Same EIP `0x2D3B9`, same
+draws 806958 / frames 16789, same USB (`acc=133 ctl=10 addr=1 cfg=True
+intr=0`), same black frame from `0x3E2C000`. Our side delivers (device
+configured, reports carry A=`FF` whenever polled); the guest never
+polls — no periodic EDs, no GET_REPORT, no state delta. The blocker is
+not delivery but the title never opening XInput.
+
+**Triage for next (three forks, D3D-first favored).** (1) The dash also
+prints `Could not create D3D device!`, and every observed draw is
+degenerate with black flips — consistent with XBApp stuck in an
+init-retry loop where graphics (not input) is the Blocker, the flips
+coming from an orphaned context. Probe: `--pgraph` method mix (D3D-create
+signature vs loader leftovers), identify who flips. (2) XInput-open
+forensics: once-vs-loop for `CreateGamepads` (thunk/call-site analysis
+in the dashboard image; note the strings are statically present, not
+proof of execution). (3) Network pivot: RemoteX runs telnet/FTP/RDTOOLS
+servers with a static IP — if the UI is remote, interaction needs the
+nvnet packet engine (TX/RX rings + host networking), a much bigger gate.
+Do (1) first: it decides whether input was ever the right gate.
+
 ## 55. XID gate II: enumeration completes — gamepad configured (2026-10-11)
 
 **Three-iteration diagnosis, all offline-analyzed from CLI logs.** (1) The
