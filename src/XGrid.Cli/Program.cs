@@ -801,7 +801,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             $"USB0 acc={machine.Usb0.RegisterAccesses} irq={machine.Usb0.InterruptAsserted} " +
             $"ctl={machine.Usb0.ControlTransfers} intr={machine.Usb0.InterruptTransfers} addr={machine.Usb0.DeviceAddress} " +
-            $"cfg={machine.Usb0.Function?.Configured} " +
+            $"cfg={machine.Usb0.Function?.Configured} chead=0x{machine.Usb0.ControlHead:X8} hcca=0x{machine.Usb0.Hcca:X8} " +
             $"p0=0x{machine.Usb0.GetPortStatus(0):X8} p1=0x{machine.Usb0.GetPortStatus(1):X8} " +
             $"p2=0x{machine.Usb0.GetPortStatus(2):X8} p3=0x{machine.Usb0.GetPortStatus(3):X8}");
         Console.WriteLine(
@@ -817,6 +817,12 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             {
                 Console.WriteLine($"USB0 log: {usbLog[i]}");
             }
+        }
+
+        var usbXfer = machine.Usb0.TransferLog;
+        for (int i = Math.Max(0, usbXfer.Count - 16); i < usbXfer.Count; i++)
+        {
+            Console.WriteLine($"USB0 xfer: {usbXfer[i]}");
         }
 
         foreach ((uint address, int length, bool virtualDump) in dumps)

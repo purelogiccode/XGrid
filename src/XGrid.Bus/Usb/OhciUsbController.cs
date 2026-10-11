@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -150,8 +151,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private ulong _frameRemainder;
     private uint _doneCount;
     private uint _doneHeadReg;
-    private bool _pendingSetup;
-    private bool _pendingIn;
+    private readonly List<string> _transferLog = new();
+    private bool _pendingSetup; private bool _pendingIn;
     private byte[] _pendingPayload = Array.Empty<byte>();
     private int _pendingOffset;
     private byte[] _pendingOut = Array.Empty<byte>();
@@ -202,6 +203,15 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the attached device address, for diagnostics.</summary>
     public uint DeviceAddress => Function?.Address ?? 0;
+
+    /// <summary>Gets the programmed control list head, for diagnostics.</summary>
+    public uint ControlHead => _ctrlHead;
+
+    /// <summary>Gets the programmed HCCA address, for diagnostics.</summary>
+    public uint Hcca => _hcca;
+
+    /// <summary>Gets recent retired transfer outcomes, for diagnostics.</summary>
+    public IReadOnlyList<string> TransferLog => _transferLog;
 
     /// <summary>Raised when the interrupt line level changes.</summary>
     public event Action<bool>? InterruptChanged;
@@ -735,6 +745,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 
         if (result == UsbTransferResult.Nak)
         {
+            LogTransfer(isPeriodic, direction, endpoint, length, 0, tdFlags, "nak");
             return true;
         }
 
@@ -770,6 +781,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         }
 
         RetireTd(tdAddress, tdFlags, cbp, tdNext, (tdFlags >> TdDelayShift) & 7u, condition, isPeriodic, ref edHead);
+        LogTransfer(
+            isPeriodic, direction, endpoint, length, consumed, tdFlags,
+            condition == CcNoError ? string.Empty : FormattableString.Invariant($"cc={condition}"));
         if (condition != CcNoError)
         {
             edHead |= EdHalted;
@@ -777,6 +791,27 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         }
 
         return false;
+    }
+
+    private void LogTransfer(
+        bool periodic, int direction, uint endpoint, int length, int consumed, uint tdFlags, string note)
+    {
+        // Successful periodic polls would flood the log; only errors are kept there.
+        if (periodic && string.IsNullOrEmpty(note))
+        {
+            return;
+        }
+
+        if (_transferLog.Count >= 128)
+        {
+            _transferLog.RemoveAt(0);
+        }
+
+        string kind = periodic ? "int" : "ctl";
+        string stage = direction == 0 ? "setup" : direction == 1 ? "out" : "in";
+        string round = direction == 2 ? FormattableString.Invariant($" r={(tdFlags & TdRound) != 0}") : string.Empty;
+        _transferLog.Add(FormattableString.Invariant(
+            $"{kind} {stage} ep{endpoint} len={length} got={consumed}{round} {note}").TrimEnd());
     }
 
     private UsbTransferResult ServiceSetup(uint cbp, out int consumed)

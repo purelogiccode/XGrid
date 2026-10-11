@@ -297,6 +297,7 @@ public sealed class OhciUsbTests
         Assert.Equal(3, ohci.ControlTransfers);
         Assert.NotEqual(0u, ohci.Read(Base + 0x30, 4));
         Assert.NotEqual(0u, ohci.Read(Base + HcInterruptStatus, 4) & 0x2u);
+        Assert.Contains(ohci.TransferLog, e => e.StartsWith("ctl in", StringComparison.Ordinal));
     }
 
     [Fact]
