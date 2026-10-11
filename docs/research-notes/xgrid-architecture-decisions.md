@@ -1637,6 +1637,46 @@ true LBA **`0x465488`** (the root-dir sector above), and `897546…A07546`
 byte-reversed; all file-save I/O is C:-local (`+0x88` dirent, `+9` FAT,
 `+0x2148` data).
 
+## 48. Save completes; runner is a chain-loaded "RemoteX" dash; post-save poll storm (2026-10-11)
+
+**Static detour (all offline, no guest steps).** `C:\xboxdash.xbe` (770048 B,
+1 section) is **encrypted on disk**: section entropy 7.98, no ASCII/UTF-16
+strings at all — only the entry stub is plaintext (`push 0x12C4B; push
+0x80010000; call…`, matching the §34 thunk table). It decrypts itself in
+RAM and chain-loads the real dashboard: the 0x5A000 image region is
+zeroed by 3.2B and the running image is a **10-section `RemoteX` XBE at
+phys `0xDD000`** (base VA `0x10000`, TitleId `0x586F7645`, sections
+`.text/D3D/D3DX/XGRPH/XNET/XPP/.rdata`/5.3 MB `.data`), carrying the EvoX
+`dash` debug strings (`e:\secure\xbox\source\dash\Release\dash.pdb` leak)
+— the EvoX loader-to-dash handoff, not a module.
+
+**Main flow, from its own debug strings (in order):** `Check
+LaunchInfo` → `Check Launch msdash` → `Init Hdd` → **`Load q:\evox.ini`**
+(Q: drive) → `dash root %s` → `Fill!` → `Start!` → … →
+`OpenX_Dash.Create` → `OpenX_Dash.Run`. There is **no save string in the
+main flow** and no absolute `imm32` reference to the `q:\evox.ini`
+constant anywhere in the image — the path flows through runtime pointers.
+So the re-save is triggered **post-`Start!`** (menu `Run` loop or `Fill!`),
+not by init; narrowing further needs the save call site, which takes
+dynamic work (12 KB chunk buffer at phys `0x401000` holds ROM-section
+text — the rewrite streams in ~12 KB chunks; a 16-byte `SkinName=HeXEn`
+parse fragment sits at `0x6B8230`).
+
+**4.0B run: save COMPLETE, new phase begins.** Dirent size = **79868**
+(full file), 156 data sectors with **zero byte-differences vs the base
+ini**, FAT chain re-extended 263→264→265→266→267→END (the §47 "truncate"
+was just progressive streaming). Final state: EIP `0x67BFF` (+2 bytes in
+800M steps — parked), `lastCmd=0xC8`. Post-save novelties, all absent at
+3.2B: **reads of the `disk.bin` region** (`0x4662C8–0x4670F0`, clusters
+~243–262); **GPU stirrings** (+48 draws / 4 skipped / 0 px, +2 clears,
+**frame #34**); and an **unmapped-MMIO poll storm: ~1.05M accesses in
+buckets `F34–F38`** (`0xF3400000–0xF38FFFFF`, nothing mapped there in xemu
+either). EIP disassembles as a **data pointer table** (XNET range) — the
+sampled thread is parked in (or lost into) data while another thread spins
+on the unmapped region. Next gate: instrument unmapped accesses with
+(EIP, exact address) to identify the poller + stack forensics on the
+parked thread (`--writedump`/`ram_40b.bin` artifacts in temp).
+
 
 
 
