@@ -63,6 +63,118 @@ public sealed class PgraphTransformTests
         nv2A.Write(Base + 0x800040u, 4, address + 4);
     }
 
+    private const int MacMov = 1;
+    private const int MacAdd = 3;
+    private const int MuxR = 1;
+    private const int MuxC = 3;
+
+    private static uint[] Insn(
+        int mac = 0,
+        int ilu = 0,
+        int outR = 0,
+        int outMux = 0,
+        int outMask = 0,
+        int outAddress = 0,
+        int aMux = MuxR,
+        int aR = 0,
+        int bMux = MuxR,
+        int bR = 0,
+        int cMux = MuxR,
+        int cR = 0,
+        int macMask = 0,
+        int iluMask = 0,
+        int v = 0,
+        int constIndex = 0,
+        int aSwz = 0x1B,
+        int bSwz = 0x1B,
+        int cSwz = 0x1B,
+        bool aNeg = false,
+        bool bNeg = false,
+        bool cNeg = false,
+        bool a0X = false,
+        bool final = false)
+    {
+        uint t1 = ((uint)ilu << 25) | ((uint)mac << 21) | ((uint)constIndex << 13) | ((uint)v << 9);
+        if (aNeg)
+        {
+            t1 |= 1u << 8;
+        }
+
+        t1 |= (uint)(aSwz & 0xFF);
+
+        uint t2 = ((uint)aR << 28) | ((uint)aMux << 26);
+        if (bNeg)
+        {
+            t2 |= 1u << 25;
+        }
+
+        t2 |= (uint)((bSwz & 0xFF) << 17);
+        t2 |= (uint)bR << 13;
+        t2 |= (uint)bMux << 11;
+        if (cNeg)
+        {
+            t2 |= 1u << 10;
+        }
+
+        t2 |= (uint)((cSwz & 0xFF) << 2);
+        t2 |= (uint)((cR >> 2) & 3);
+
+        uint t3 = (uint)((cR & 3) << 30);
+        t3 |= (uint)cMux << 28;
+        t3 |= (uint)macMask << 24;
+        t3 |= (uint)outR << 20;
+        t3 |= (uint)iluMask << 16;
+        t3 |= (uint)outMask << 12;
+        t3 |= 1u << 11;
+        t3 |= (uint)outAddress << 3;
+        t3 |= (uint)outMux << 2;
+        if (a0X)
+        {
+            t3 |= 1u << 1;
+        }
+
+        if (final)
+        {
+            t3 |= 1u;
+        }
+
+        return new[] { 0u, t1, t2, t3 };
+    }
+
+    private static float[][] ZeroRegisters(int count)
+    {
+        var registers = new float[count][];
+        for (int i = 0; i < count; i++)
+        {
+            registers[i] = new float[4];
+        }
+
+        return registers;
+    }
+
+    private static float[][] ReadConstants(Nv2AMmio nv2A)
+    {
+        var constants = new float[VshProgram.ConstantCount][];
+        for (int i = 0; i < constants.Length; i++)
+        {
+            constants[i] = new float[4];
+            for (int j = 0; j < 4; j++)
+            {
+                constants[i][j] = BitConverter.UInt32BitsToSingle(nv2A.ReadTransformConstantWord((uint)i, j));
+            }
+        }
+
+        return constants;
+    }
+
+    private static void AssertPosition(float[][] outputs, float x, float y, float z, float w)
+    {
+        Assert.Equal(x, outputs[0][0]);
+        Assert.Equal(y, outputs[0][1]);
+        Assert.Equal(z, outputs[0][2]);
+        Assert.Equal(w, outputs[0][3]);
+    }
+
     private static void WriteTriangleVertices(ArrayMemory memory, uint zBits)
     {
         memory.WritePhysical(0x2000u, 0x40000000u);
@@ -860,5 +972,186 @@ public sealed class PgraphTransformTests
 
         Assert.Equal(1uL, nv2A.FramesPresented);
         Assert.False(nv2A.TryCopyPresentedFrame(out _, out _, out _));
+    }
+
+    [Fact]
+    public void ViewportScaleAndOffset_ProgramReadsAliasedConstants()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0AF0u, 0x40000000u),
+            (0x0AF4u, 0x40400000u),
+            (0x0AF8u, 0x40800000u),
+            (0x0AFCu, 0x3F800000u),
+            (0x0A20u, 0x41200000u),
+            (0x0A24u, 0x41A00000u),
+            (0x0A28u, 0x41F00000u),
+            (0x0A2Cu, 0x42200000u));
+
+        uint[][] program =
+        {
+            Insn(mac: MacMov, aMux: MuxC, constIndex: 58, outR: 0, macMask: 0xF),
+            Insn(mac: MacAdd, aMux: MuxR, aR: 0, cMux: MuxC, constIndex: 59, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+        };
+        float[][] constants = ReadConstants(nv2A);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+
+        VshProgram.Execute(program, 2, constants, inputs, outputs);
+
+        AssertPosition(outputs, 12.0f, 23.0f, 34.0f, 41.0f);
+    }
+
+    [Fact]
+    public void EyePosition_WritesConstant56()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0A50u, 0x3F800000u),
+            (0x0A54u, 0x40000000u),
+            (0x0A58u, 0x40400000u),
+            (0x0A5Cu, 0x40800000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(56, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(56, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(56, 2));
+        Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(56, 3));
+    }
+
+    [Fact]
+    public void FogPlane_WritesConstant57()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x09D0u, 0x3F800000u),
+            (0x09D4u, 0x40000000u),
+            (0x09D8u, 0x40400000u),
+            (0x09DCu, 0x40800000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(57, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(57, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(57, 2));
+        Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(57, 3));
+    }
+
+    [Fact]
+    public void TexGenPlanes_WriteConstants64To91()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0840u, 0x3F800000u),
+            (0x0844u, 0x40000000u),
+            (0x0850u, 0x40400000u),
+            (0x0860u, 0x40800000u),
+            (0x0870u, 0x40A00000u),
+            (0x0880u, 0x40C00000u),
+            (0x0930u, 0x40E00000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(64, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(64, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(65, 0));
+        Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(66, 0));
+        Assert.Equal(0x40A00000u, nv2A.ReadTransformConstantWord(67, 0));
+        Assert.Equal(0x40C00000u, nv2A.ReadTransformConstantWord(72, 0));
+        Assert.Equal(0x40E00000u, nv2A.ReadTransformConstantWord(91, 0));
+    }
+
+    [Fact]
+    public void CompositeMatrix_WritesConstants0To3()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0680u, 0x3F800000u),
+            (0x0684u, 0x40000000u),
+            (0x06BCu, 0x40400000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(0, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(0, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(3, 3));
+    }
+
+    [Fact]
+    public void ProjectionMatrix_WritesConstants4To7()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0440u, 0x3F800000u),
+            (0x0444u, 0x40000000u),
+            (0x047Cu, 0x40400000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(4, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(4, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(7, 3));
+    }
+
+    [Fact]
+    public void ModelViewMatrix_WritesConstants8To39()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0480u, 0x3F800000u),
+            (0x0484u, 0x40000000u),
+            (0x04C0u, 0x40400000u),
+            (0x057Cu, 0x40800000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(8, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(8, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(16, 0));
+        Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(35, 3));
+    }
+
+    [Fact]
+    public void InverseModelViewMatrix_WritesConstants12To39()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0580u, 0x3F800000u),
+            (0x067Cu, 0x40000000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(12, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(39, 3));
+    }
+
+    [Fact]
+    public void TextureMatrix_WritesConstants68To95()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x06C0u, 0x3F800000u),
+            (0x06C4u, 0x40000000u),
+            (0x0700u, 0x40400000u),
+            (0x07BCu, 0x40800000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadTransformConstantWord(68, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(68, 1));
+        Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(76, 0));
+        Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(95, 3));
     }
 }
