@@ -66,6 +66,7 @@ public sealed class PgraphTransformTests
     private const int MacMov = 1;
     private const int MacAdd = 3;
     private const int MuxR = 1;
+    private const int MuxV = 2;
     private const int MuxC = 3;
 
     private static uint[] Insn(
@@ -204,7 +205,7 @@ public sealed class PgraphTransformTests
             (0x0200u, 0x00100000u),
             (0x0204u, 0x00100000u),
             (0x1720u, 0x00002000u),
-            (0x1760u, 0x00000042u),
+            (0x1760u, 0x00001042u),
             (0x1E9Cu, 0u),
             (0x0B00u, 0u),
             (0x0B04u, 0x0020001Bu),
@@ -525,7 +526,7 @@ public sealed class PgraphTransformTests
             (0x0200u, 0x00100000u),
             (0x0204u, 0x00100000u),
             (0x1720u, 0x00002000u),
-            (0x1760u, 0x00000042u),
+            (0x1760u, 0x00001042u),
             (0x1E9Cu, 0u),
             (0x0B00u, 0u),
             (0x0B04u, 0x0020001Bu),
@@ -589,9 +590,9 @@ public sealed class PgraphTransformTests
             (0x0200u, 0x00040000u),
             (0x0204u, 0x00040000u),
             (0x1720u, 0x00002000u),
-            (0x1760u, 0x00000042u),
+            (0x1760u, 0x00001042u),
             (0x1724u, 0x00002100u),
-            (0x1764u, 0x00000022u),
+            (0x1764u, 0x00000822u),
             (0x1E9Cu, 0u),
             (0x0B00u, 0u),
             (0x0B04u, 0x0020001Bu),
@@ -1153,5 +1154,216 @@ public sealed class PgraphTransformTests
         Assert.Equal(0x40000000u, nv2A.ReadTransformConstantWord(68, 1));
         Assert.Equal(0x40400000u, nv2A.ReadTransformConstantWord(76, 0));
         Assert.Equal(0x40800000u, nv2A.ReadTransformConstantWord(95, 3));
+    }
+
+    [Fact]
+    public void ElementDraw_StrideZeroUsesFirstElement()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+        memory.WritePhysical(0x2100u, 0xFFFF0000u);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] color = Insn(mac: MacMov, aMux: MuxV, v: 3, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x172Cu, 0x00002100u),
+            (0x176Cu, 0x00000040u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, position[0]),
+            (0x0B04u, position[1]),
+            (0x0B08u, position[2]),
+            (0x0B0Cu, position[3]),
+            (0x0B10u, color[0]),
+            (0x0B14u, color[1]),
+            (0x0B18u, color[2]),
+            (0x0B1Cu, color[3]),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void ElementDraw_MasksDmaSelectBitInArrayOffset()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x80002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0u),
+            (0x0B88u, 0u),
+            (0x0B8Cu, 0x3F800000u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void TransformProgramStart_SelectsProgramFromStartSlot()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        uint[] firstPosition = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] firstColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+        uint[] secondPosition = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] secondColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 1, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, firstPosition[0]),
+            (0x0B04u, firstPosition[1]),
+            (0x0B08u, firstPosition[2]),
+            (0x0B0Cu, firstPosition[3]),
+            (0x0B10u, firstColor[0]),
+            (0x0B14u, firstColor[1]),
+            (0x0B18u, firstColor[2]),
+            (0x0B1Cu, firstColor[3]),
+            (0x1E9Cu, 2u),
+            (0x0B00u, secondPosition[0]),
+            (0x0B04u, secondPosition[1]),
+            (0x0B08u, secondPosition[2]),
+            (0x0B0Cu, secondPosition[3]),
+            (0x0B10u, secondColor[0]),
+            (0x0B14u, secondColor[1]),
+            (0x0B18u, secondColor[2]),
+            (0x0B1Cu, secondColor[3]),
+            (0x1EA0u, 2u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0u),
+            (0x0B88u, 0u),
+            (0x0B8Cu, 0x3F800000u),
+            (0x0B90u, 0u),
+            (0x0B94u, 0x3F800000u),
+            (0x0B98u, 0u),
+            (0x0B9Cu, 0x3F800000u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFF00FF00u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void ElementDraw_UnwrittenColorDefaultsToOpaqueBlack()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        uint[] program = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, program[0]),
+            (0x0B04u, program[1]),
+            (0x0B08u, program[2]),
+            (0x0B0Cu, program[3]),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFF000000u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void TransformExecutionMode_NonProgrammableModeDrawsCounted()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        uint[] program = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, program[0]),
+            (0x0B04u, program[1]),
+            (0x0B08u, program[2]),
+            (0x0B0Cu, program[3]),
+            (0x1E94u, 0u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u),
+            (0x1E94u, 2u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(2uL, nv2A.DrawsExecuted);
+        Assert.Equal(1uL, nv2A.NonProgrammableModeDraws);
+        Assert.True(nv2A.DrawnPixels > 0);
     }
 }

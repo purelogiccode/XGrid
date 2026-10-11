@@ -61,7 +61,7 @@ public static class VshProgram
     /// <param name="length">Number of valid instructions.</param>
     /// <param name="constants">Constant register file (192 entries of four floats).</param>
     /// <param name="inputs">Input registers v0..v15 (four floats each).</param>
-    /// <param name="outputs">Output registers o0..o15 (four floats each); o0 receives the screen-space position.</param>
+    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position.</param>
     public static void Execute(
         uint[][] program,
         int length,
@@ -78,6 +78,10 @@ public static class VshProgram
         for (int i = 0; i < RegisterCount; i++)
         {
             registers[i] = new float[4];
+            outputs[i][0] = 0.0f;
+            outputs[i][1] = 0.0f;
+            outputs[i][2] = 0.0f;
+            outputs[i][3] = 1.0f;
         }
 
         int address = 0;

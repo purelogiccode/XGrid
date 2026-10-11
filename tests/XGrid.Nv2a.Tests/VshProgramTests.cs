@@ -309,4 +309,25 @@ public sealed class VshProgramTests
 
         AssertPosition(outputs, 1.5f, 2.5f, 3.5f, 4.5f);
     }
+
+    [Fact]
+    public void UnwrittenOutputs_DefaultToZeroWithUnitAlpha()
+    {
+        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+
+        VshProgram.Execute(program, 1, constants, inputs, outputs);
+
+        AssertPosition(outputs, 1.0f, 2.0f, 3.0f, 4.0f);
+        for (int i = 1; i < VshProgram.RegisterCount; i++)
+        {
+            Assert.Equal(0.0f, outputs[i][0]);
+            Assert.Equal(0.0f, outputs[i][1]);
+            Assert.Equal(0.0f, outputs[i][2]);
+            Assert.Equal(1.0f, outputs[i][3]);
+        }
+    }
 }
