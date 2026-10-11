@@ -238,7 +238,7 @@ public sealed class BusMasterDmaTests
         }
 
         string path = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), "xgrid-dvddma-" + System.Guid.NewGuid().ToString("N") + ".iso");
+            System.IO.Path.GetTempPath(), "xgrid-dvddma-" + Guid.NewGuid().ToString("N") + ".iso");
         try
         {
             System.IO.File.WriteAllBytes(path, file);

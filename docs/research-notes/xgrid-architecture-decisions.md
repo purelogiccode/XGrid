@@ -2313,3 +2313,45 @@ dashboard runs), not the wait. PIT IRQs flow (16342).
 load streams -> timing wait with everything idle. The wait condition
 (caller of the timing func? QPF source? flip gating?) is the next
 probe. TOC/STRUCTURE still unneeded (never requested).
+
+## 67. Game wait decoded: frame limiter + 2 Hz tick pump (2026-10-11)
+
+**Wait loop (`0x20E40`).** `while (delta() < [AFE34]-2) { 0x26C60(ebx); }`
+with a second driver looping back via `je 0x20E40`; exit falls into
+object housekeeping. Delta comes from `0x207C0` (tick global minus
+baseline through udiv-heavy scaling, float return).
+
+**Wait body (`0x2654D`).** Builds a negative relative timeout
+(`0x26400`: ms x 10000, negated) and calls kernel ordinal 99 =
+**KeDelayExecutionThread**, retrying while the return is `0x101`
+(ALERTED). A timed sleep, not a spin - so the 47% udiv burn is the
+OUTER delta recompute, spinning because delta never reaches target.
+
+**Tick pump (`0x26B60`).** `tick++; tick2++`, then fires up to 8
+callbacks from table `0x1183A0` - which is EMPTY at 6B. No direct
+E8/jmp callers anywhere in the image.
+
+**gate76 (watch on tick phys `0x1991E0`, 5.5B): `n=720` writes.**
+First = kernel zero-init (`0x8001FAF5`, value 0), last = pump
+(`0x26B66`, value 718). The tick advances at ~2 Hz, steadily - a
+slow trickle, not a freeze. Snapshot at 6B: tick 790, baseline 4,
+target `[AFE34]` = 26, `[AFE30]`/`[AFE38]` = 0.
+
+**gate77 (pump break-log, IN FLIGHT at session end): 251+ hits from
+step ~550M, ALL from a single invoker `0x379CA`, object
+`ESI=D005CB30` stable.** The invoker is an object-table iterator:
+lock (RtlEnter 294) -> indirect `call [ebp-0xC]` (callback pointer
+loaded from `obj+0x28` = the pump) -> unlock (RtlLeave 277). Sibling
+flag bits dispatch to NtSetEvent (225) / NtPulseEvent (205) - an
+event/object manager update. Game thunk census: 96 kernel ordinals
+incl. PsCreateSystemThreadEx (255), timers/DPCs
+(97/107/113/119/137/149/150), events, full file I/O.
+
+**Position.** Leading theory is TIME DILATION, not deadlock: the
+frame limiter waits on a tick pumped at ~2 Hz (vs the 60 Hz-ish rate
+a frame-driven pump would give), so game-time crawls and the udiv
+recompute dominates. Still open: what schedules the pump invoker
+(worker thread? DPC?); full gate77 cadence distribution; whether the
+wait expires with enough steps. Next session: finish gate77
+(`gate77_pump.log`), identify the invoker's thread context, then
+decide emulation-gap vs long-wait.
