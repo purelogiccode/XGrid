@@ -796,6 +796,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
         Console.WriteLine(
             $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
+        Console.WriteLine(
+            $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
