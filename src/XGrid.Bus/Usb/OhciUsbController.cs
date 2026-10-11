@@ -33,9 +33,11 @@ public interface IUsbMemory
 /// xemu <c>hw/usb/hcd-ohci.c</c> (region size 256, four root ports per xemu
 /// <c>hw/xbox/xbox.c</c>). Frame timing is driven by <see cref="Advance"/> (1 ms frames)
 /// producing SOF interrupts and HCCA writeback. A single
-/// <see cref="IUsbDeviceFunction"/> (normally an <see cref="XidGamepad"/> on port 0)
-/// can be attached; the frame boundary walks the control, bulk, and periodic
-/// endpoint lists and retires general transfer descriptors synchronously
+/// <see cref="IUsbDeviceFunction"/> (normally a <see cref="UsbHub"/> topology with
+/// an <see cref="XidGamepad"/> behind it) can be attached to root port 0; transfers
+/// addressed to other device addresses are routed through attached hubs
+/// (<see cref="IUsbDeviceHub"/>). The frame boundary walks the control, bulk, and
+/// periodic endpoint lists and retires general transfer descriptors synchronously
 /// (NoError/STALL/DataUnderrun completion codes, done-queue writeback with the
 /// WDH interrupt). Isochronous transfers are not serviced.
 /// </summary>
@@ -67,6 +69,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     // HcInterruptStatus / HcInterruptEnable.
     private const uint IntrWd = 1u << 1;
     private const uint IntrSf = 1u << 2;
+    private const uint IntrRd = 1u << 3;
     private const uint IntrUe = 1u << 4;
     private const uint IntrRhsc = 1u << 6;
     private const uint IntrMie = 1u << 31;
@@ -148,12 +151,13 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private bool _busRunning;
     private ulong _frameRemainder;
     private uint _doneCount;
-    private uint _doneHeadReg;
     private readonly List<string> _transferLog = new();
     private readonly Dictionary<uint, int> _regReads = new();
     private readonly Dictionary<uint, int> _regWrites = new();
     private bool _pendingSetup;
     private bool _pendingIn;
+    private IUsbDeviceFunction? _pendingFunction;
+    private byte _pendingFunctionAddress;
     private byte[] _pendingPayload = Array.Empty<byte>();
     private int _pendingOffset;
     private byte[] _pendingOut = Array.Empty<byte>();
@@ -185,7 +189,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of register accesses, for diagnostics.</summary>
     public long RegisterAccesses { get; private set; }
 
-    /// <summary>Gets the attached device function (a gamepad on port 0), if any.</summary>
+    /// <summary>Gets the device function attached to root port 0 (normally the daughterboard hub), if any.</summary>
     public IUsbDeviceFunction? Function
     {
         get => _function;
@@ -228,8 +232,6 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     {
         SoftResetState();
         _ctl = 0;
-        _doneHeadReg = 0;
-        Function?.Reset();
         RootHubReset();
     }
 
@@ -267,7 +269,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             9 => _ctrlCur,
             10 => _bulkHead,
             11 => _bulkCur,
-            12 => _doneHeadReg,
+            12 => _done,
             13 => (_fit << 31) | (_fsmps << 16) | _fi,
             14 => _frt << 31,
             15 => _frameNumber,
@@ -430,6 +432,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         _frameRemainder = 0;
         _doneCount = 7;
         _pendingSetup = false;
+        _pendingFunction = null;
+        _pendingFunctionAddress = 0;
         _pendingPayload = Array.Empty<byte>();
         _pendingOut = Array.Empty<byte>();
         _pendingOffset = 0;
@@ -472,10 +476,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 
     private void RootHubReset()
     {
+        _busRunning = false;
         _rhdescA = RhaNps | PortCount;
         _rhdescB = 0;
         _rhstatus = 0;
         Array.Clear(_ports);
+        Function?.Reset();
         ReportPortZeroConnect();
     }
 
@@ -484,9 +490,21 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     {
         // The hub reports no power switching, so port 0 is powered by default
         // and an attached function reads connected without guest power writes.
-        if (_function is not null)
+        if (_function is null)
         {
-            _ports[0] |= PortCcs | PortCsc;
+            return;
+        }
+
+        uint oldState = _ports[0];
+        _ports[0] |= PortCcs | PortCsc;
+        if ((_ctl & CtlHcfs) == UsbSuspend)
+        {
+            SetInterrupt(IntrRd);
+        }
+
+        if (oldState != _ports[0])
+        {
+            SetInterrupt(IntrRhsc);
         }
     }
 
@@ -535,12 +553,6 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         if (power)
         {
             _ports[index] |= PortPps;
-            if (index == 0 && Function is not null)
-            {
-                // The attached function appears as a full-speed device once powered.
-                _ports[index] |= PortCcs | PortCsc;
-                SetInterrupt(IntrRhsc);
-            }
         }
         else
         {
@@ -622,6 +634,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         ServiceLists();
 
         _frt = _fit;
+        _frameNumber = (_frameNumber + 1) & 0xFFFF;
+        bool wroteDone = false;
         uint doneWriteback = 0;
         if (_doneCount == 0 && (_intrStatus & IntrWd) == 0 && _done != 0)
         {
@@ -631,9 +645,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
                 doneWriteback |= 1;
             }
 
-            _doneHeadReg = doneWriteback;
             _done = 0;
             _doneCount = 7;
+            wroteDone = true;
             SetInterrupt(IntrWd);
         }
         else if (_doneCount != 7 && _doneCount != 0)
@@ -641,13 +655,14 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             _doneCount--;
         }
 
-        _frameNumber = (_frameNumber + 1) & 0xFFFF;
         if (Hcca != 0)
         {
             _memory.Write16(Hcca + 0x80, (ushort)_frameNumber);
             _memory.Write16(Hcca + 0x82, 0);
-            _memory.Write32(Hcca + 0x84, doneWriteback);
-            _done = 0;
+            if (wroteDone)
+            {
+                _memory.Write32(Hcca + 0x84, doneWriteback);
+            }
         }
 
         SetInterrupt(IntrSf);
@@ -742,7 +757,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         }
 
         uint endpoint = (edFlags >> EdEndpointShift) & 0xFu;
-        if (Function is null || (edFlags & EdFuncMask) != Function.Address)
+        byte functionAddress = (byte)(edFlags & EdFuncMask);
+        IUsbDeviceFunction? target = ResolveTarget(functionAddress, isPeriodic);
+        if (target is null)
         {
             RetireTd(tdAddress, tdFlags, cbp, tdNext, 0, CcStall, isPeriodic, ref edHead);
             edHead |= EdHalted;
@@ -755,13 +772,13 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         switch (direction)
         {
             case 0 when endpoint == 0:
-                result = ServiceSetup(cbp, out consumed);
+                result = ServiceSetup(target, functionAddress, cbp, out consumed);
                 break;
             case 1:
-                result = ServiceOut(endpoint, cbp, length, isPeriodic, out consumed);
+                result = ServiceOut(target, endpoint, cbp, length, isPeriodic, out consumed);
                 break;
             case 2:
-                result = ServiceIn(endpoint, cbp, length, isPeriodic, (tdFlags & TdRound) != 0, out consumed);
+                result = ServiceIn(target, endpoint, cbp, length, isPeriodic, (tdFlags & TdRound) != 0, out consumed);
                 break;
             default:
                 result = UsbTransferResult.Stall;
@@ -849,7 +866,38 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             $"f={_frameNumber} {kind} {stage} ep{endpoint} len={length} got={consumed}{round} {note}").TrimEnd());
     }
 
-    private UsbTransferResult ServiceSetup(uint cbp, out int consumed)
+    /// <summary>Resolves the function addressed by an endpoint descriptor, routing through hubs.</summary>
+    private IUsbDeviceFunction? ResolveFunction(byte address)
+    {
+        if (_function is null)
+        {
+            return null;
+        }
+
+        if (_function.Address == address)
+        {
+            return _function;
+        }
+
+        return _function is IUsbDeviceHub hub ? hub.FindDevice(address) : null;
+    }
+
+    /// <summary>
+    /// Resolves the target of a transfer. Control data and status stages stay
+    /// bound to the function captured at setup time so an address change on the
+    /// status stage cannot retarget the transfer.
+    /// </summary>
+    private IUsbDeviceFunction? ResolveTarget(byte address, bool isPeriodic)
+    {
+        if (!isPeriodic && _pendingSetup && _pendingFunction is not null && address == _pendingFunctionAddress)
+        {
+            return _pendingFunction;
+        }
+
+        return ResolveFunction(address);
+    }
+
+    private UsbTransferResult ServiceSetup(IUsbDeviceFunction target, byte address, uint cbp, out int consumed)
     {
         consumed = 8;
         var setup = new UsbSetupPacket(
@@ -858,13 +906,15 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             _memory.Read16(cbp + 2),
             _memory.Read16(cbp + 4),
             _memory.Read16(cbp + 6));
-        UsbTransferResult result = Function!.HandleSetup(in setup, out byte[] payload);
+        UsbTransferResult result = target.HandleSetup(in setup, out byte[] payload);
         if (result != UsbTransferResult.Ack)
         {
             return result;
         }
 
         _pendingSetup = true;
+        _pendingFunction = target;
+        _pendingFunctionAddress = address;
         _pendingIn = (setup.RequestType & 0x80) != 0 && setup.Length > 0;
         _pendingPayload = payload;
         _pendingOut = setup.Length > 0 && !_pendingIn ? new byte[setup.Length] : Array.Empty<byte>();
@@ -872,16 +922,18 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         return UsbTransferResult.Ack;
     }
 
-    private UsbTransferResult ServiceOut(uint endpoint, uint cbp, int length, bool isPeriodic, out int consumed)
+    private UsbTransferResult ServiceOut(
+        IUsbDeviceFunction target, uint endpoint, uint cbp, int length, bool isPeriodic, out int consumed)
     {
         consumed = length;
         if (length == 0)
         {
             // Zero-length stage completes a control transfer (status stage).
-            if (_pendingSetup && !isPeriodic)
+            if (_pendingSetup && !isPeriodic && target == _pendingFunction)
             {
-                Function!.CompleteStatusStage();
+                target.CompleteStatusStage();
                 _pendingSetup = false;
+                _pendingFunction = null;
             }
 
             return UsbTransferResult.Ack;
@@ -895,10 +947,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 
         if (isPeriodic)
         {
-            return Function!.HandleOut((byte)endpoint, data);
+            return target.HandleOut((byte)endpoint, data);
         }
 
-        if (!_pendingSetup || _pendingIn)
+        if (!_pendingSetup || _pendingIn || target != _pendingFunction)
         {
             return UsbTransferResult.Stall;
         }
@@ -916,22 +968,28 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             return UsbTransferResult.Ack;
         }
 
-        UsbTransferResult result = Function!.CompleteControlOut(_pendingOut);
+        UsbTransferResult result = target.CompleteControlOut(_pendingOut);
         _pendingSetup = result == UsbTransferResult.Ack;
+        if (!_pendingSetup)
+        {
+            _pendingFunction = null;
+        }
+
         return result;
     }
 
     private UsbTransferResult ServiceIn(
-        uint endpoint, uint cbp, int length, bool isPeriodic, bool round, out int consumed)
+        IUsbDeviceFunction target, uint endpoint, uint cbp, int length, bool isPeriodic, bool round, out int consumed)
     {
         consumed = 0;
         if (length == 0)
         {
             // Zero-length IN is the status stage of an OUT control transfer.
-            if (_pendingSetup && !isPeriodic)
+            if (_pendingSetup && !isPeriodic && target == _pendingFunction)
             {
-                Function!.CompleteStatusStage();
+                target.CompleteStatusStage();
                 _pendingSetup = false;
+                _pendingFunction = null;
             }
 
             return UsbTransferResult.Ack;
@@ -941,11 +999,11 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         UsbTransferResult result;
         if (isPeriodic)
         {
-            result = Function!.HandleIn((byte)endpoint, length, out payload);
+            result = target.HandleIn((byte)endpoint, length, out payload);
         }
         else
         {
-            if (!_pendingSetup || !_pendingIn)
+            if (!_pendingSetup || !_pendingIn || target != _pendingFunction)
             {
                 return UsbTransferResult.Stall;
             }

@@ -67,7 +67,12 @@ public sealed class XboxMachine
 
         Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory));
         Usb0.InterruptChanged += OnUsb0Interrupt;
-        Usb0.Function = new XidGamepad();
+        Gamepad = new XidGamepad();
+        var controllerHub = new UsbHub(3);
+        controllerHub.Attach(0, Gamepad);
+        var daughterboard = new UsbHub(4);
+        daughterboard.Attach(2, controllerHub);
+        Usb0.Function = daughterboard;
         Memory.AddRegion("USB0", XboxAddressMap.Usb0Base, XboxAddressMap.UsbSize, Usb0);
 
         Usb1 = new OhciUsbController(XboxAddressMap.Usb1Base, new PhysicalUsbMemory(Memory));
@@ -115,6 +120,9 @@ public sealed class XboxMachine
 
     /// <summary>Gets the OHCI USB0 register window.</summary>
     public OhciUsbController Usb0 { get; }
+
+    /// <summary>Gets the player-1 XID gamepad behind the USB0 hub topology.</summary>
+    public XidGamepad Gamepad { get; }
 
     /// <summary>Gets the OHCI USB1 register window.</summary>
     public OhciUsbController Usb1 { get; }

@@ -175,10 +175,12 @@ public sealed class OhciUsbTests
     }
 
     [Fact]
-    public void FrameBoundary_WritesHccaFrameAndDone()
+    public void FrameBoundary_WritesHccaFrameAndPreservesGuestDone()
     {
         var memory = new FakeUsbMemory();
         var ohci = new OhciUsbController(Base, memory);
+        memory.Write32(0x10000084, 0xCAFEBABE);
+        memory.Writes32.Clear();
         ohci.Write(Base + HcHcca, 4, 0x10000000);
         ohci.Write(Base + HcControl, 4, UsbOperational);
 
@@ -186,7 +188,8 @@ public sealed class OhciUsbTests
 
         Assert.Contains((0x10000080u, (ushort)1), memory.Writes16);
         Assert.Contains((0x10000082u, (ushort)0), memory.Writes16);
-        Assert.Contains((0x10000084u, 0u), memory.Writes32);
+        Assert.DoesNotContain(memory.Writes32, w => w.Address == 0x10000084u);
+        Assert.Equal(0xCAFEBABEu, memory.Read32(0x10000084));
     }
 
     [Fact]
@@ -295,9 +298,64 @@ public sealed class OhciUsbTests
         Assert.Equal(0x02, data[10]);
         Assert.Equal(0x02, data[11]);
         Assert.Equal(3, ohci.ControlTransfers);
-        Assert.NotEqual(0u, ohci.Read(Base + 0x30, 4));
+        Assert.Equal(0u, ohci.Read(Base + 0x30, 4));
         Assert.NotEqual(0u, ohci.Read(Base + HcInterruptStatus, 4) & 0x2u);
         Assert.Contains(ohci.TransferLog, e => e.Contains(" ctl in ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HcDoneHead_ReturnsLiveDoneQueueUntilWriteback()
+    {
+        var memory = new FakeUsbMemory();
+        var ohci = new OhciUsbController(Base, memory)
+        {
+            Function = new XidGamepad(),
+        };
+        StartControl(ohci);
+        memory.WriteBlock(0x1000, EdBytes(0, 0x1100, 0x1120));
+        memory.WriteBlock(0x2000, new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 });
+        memory.WriteBlock(0x1100, TdBytes(1u << 21, 0x2000, 0x2007, 0x1120));
+        ohci.Write(Base + 0x20, 4, 0x1000);
+        ohci.Write(Base + HcCommandStatus, 4, 0x02);
+        ohci.Write(Base + HcHcca, 4, 0x10000000);
+        ohci.Write(Base + HcInterruptEnable, 4, IntrMie | IntrSf);
+
+        ohci.Advance(733334);
+
+        Assert.Equal(0x1100u, ohci.Read(Base + 0x30, 4));
+        Assert.DoesNotContain(memory.Writes32, w => w.Address == 0x10000084u);
+
+        ohci.Advance(733334);
+
+        Assert.Equal(0u, ohci.Read(Base + 0x30, 4));
+        Assert.Contains((0x10000084u, 0x1101u), memory.Writes32);
+    }
+
+    [Fact]
+    public void AttachFunction_RaisesRootHubStatusChange()
+    {
+        var ohci = new OhciUsbController(Base, new FakeUsbMemory());
+        ohci.Write(Base + HcInterruptEnable, 4, IntrMie | IntrRhsc);
+        ohci.Write(Base + HcInterruptStatus, 4, IntrRhsc);
+
+        ohci.Function = new XidGamepad();
+
+        Assert.NotEqual(0u, ohci.Read(Base + HcInterruptStatus, 4) & IntrRhsc);
+        Assert.NotEqual(0u, ohci.Read(Base + HcRhPortStatus1, 4) & PortCsc);
+    }
+
+    [Fact]
+    public void ControlUsbReset_StopsFrameClock()
+    {
+        var ohci = new OhciUsbController(Base, new FakeUsbMemory());
+        ohci.Write(Base + HcControl, 4, UsbOperational);
+        ohci.Advance(733334);
+        Assert.Equal(1u, ohci.Read(Base + HcFmNumber, 4));
+
+        ohci.Write(Base + HcControl, 4, 0x00);
+        ohci.Advance(733334 * 5);
+
+        Assert.Equal(1u, ohci.Read(Base + HcFmNumber, 4));
     }
 
     [Fact]
@@ -454,6 +512,79 @@ public sealed class OhciUsbTests
         Assert.Equal(new byte[] { 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, report);
         Assert.Equal(1, ohci.InterruptTransfers);
         Assert.NotEqual(0u, ohci.Read(Base + HcInterruptStatus, 4) & 0x2u);
+    }
+
+    [Fact]
+    public void HubTopology_EnumeratesDownstreamGamepad()
+    {
+        var memory = new FakeUsbMemory();
+        var ohci = new OhciUsbController(Base, memory);
+        var pad = new XidGamepad();
+        var controllerHub = new UsbHub(3);
+        controllerHub.Attach(0, pad);
+        var daughterboard = new UsbHub(4);
+        daughterboard.Attach(2, controllerHub);
+        ohci.Function = daughterboard;
+        StartControl(ohci);
+
+        RunControlTransfer(
+            memory, ohci, 0,
+            new byte[] { 0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.Equal(1, daughterboard.Address);
+
+        RunControlTransfer(
+            memory, ohci, 1,
+            new byte[] { 0x23, 0x03, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.NotEqual(0, daughterboard.GetPortStatus(2) & 0x2);
+
+        RunControlTransfer(
+            memory, ohci, 0,
+            new byte[] { 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.Equal(2, controllerHub.Address);
+
+        RunControlTransfer(
+            memory, ohci, 2,
+            new byte[] { 0x23, 0x03, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.NotEqual(0, controllerHub.GetPortStatus(0) & 0x2);
+
+        RunControlTransfer(
+            memory, ohci, 0,
+            new byte[] { 0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.Equal(3, pad.Address);
+
+        byte[] descriptor = RunControlTransfer(
+            memory, ohci, 3,
+            new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 }, null, 0x12);
+        Assert.Equal(0x5E, descriptor[8]);
+        Assert.Equal(0x04, descriptor[9]);
+        Assert.Equal(0x02, descriptor[10]);
+        Assert.Equal(0x02, descriptor[11]);
+    }
+
+    [Fact]
+    public void HubInterruptReport_IsRoutedByAddress()
+    {
+        var memory = new FakeUsbMemory();
+        var ohci = new OhciUsbController(Base, memory);
+        var controllerHub = new UsbHub(3);
+        controllerHub.Attach(0, new XidGamepad());
+        var daughterboard = new UsbHub(4);
+        daughterboard.Attach(2, controllerHub);
+        ohci.Function = daughterboard;
+        Assert.True(daughterboard.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0001, 0, 0), out _)
+            == UsbTransferResult.Ack);
+        daughterboard.CompleteStatusStage();
+
+        memory.Write32(0x3000 + 4, 0x1500);
+        memory.WriteBlock(0x1500, EdBytes(1u | (2u << 11) | (1u << 7) | (1u << 16), 0x1600, 0x1400));
+        memory.WriteBlock(0x1600, TdBytes(0, 0x2100, 0x2100, 0x1400));
+        ohci.Write(Base + HcHcca, 4, 0x3000);
+        ohci.Write(Base + HcControl, 4, UsbOperational | 0x04);
+
+        ohci.Advance(733334 * 3);
+
+        Assert.Equal(0x08, memory.Read8(0x2100));
+        Assert.Equal(1, ohci.InterruptTransfers);
     }
 
     private static void StartControl(OhciUsbController ohci)
