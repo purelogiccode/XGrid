@@ -188,6 +188,36 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodTransformProgramLoad = 0x1E9Cu;
     private const uint MethodTransformProgramStart = 0x1EA0u;
     private const uint MethodTransformConstantLoad = 0x1EA4u;
+    private const uint MethodCompositeMatrix = 0x0680u;
+    private const uint MethodCompositeMatrixEnd = 0x06BCu;
+    private const uint MethodProjectionMatrix = 0x0440u;
+    private const uint MethodProjectionMatrixEnd = 0x047Cu;
+    private const uint MethodModelViewMatrix = 0x0480u;
+    private const uint MethodModelViewMatrixEnd = 0x057Cu;
+    private const uint MethodInverseModelViewMatrix = 0x0580u;
+    private const uint MethodInverseModelViewMatrixEnd = 0x067Cu;
+    private const uint MethodTextureMatrix = 0x06C0u;
+    private const uint MethodTextureMatrixEnd = 0x07BCu;
+    private const uint MethodTexGenPlane = 0x0840u;
+    private const uint MethodTexGenPlaneEnd = 0x093Cu;
+    private const uint MethodFogPlane = 0x09D0u;
+    private const uint MethodFogPlaneEnd = 0x09DCu;
+    private const uint MethodViewportOffset = 0x0A20u;
+    private const uint MethodViewportOffsetEnd = 0x0A2Cu;
+    private const uint MethodEyePosition = 0x0A50u;
+    private const uint MethodEyePositionEnd = 0x0A5Cu;
+    private const uint MethodViewportScale = 0x0AF0u;
+    private const uint MethodViewportScaleEnd = 0x0AFCu;
+    private const int XfConstantComposite = 0x00;
+    private const int XfConstantProjection = 0x04;
+    private const int XfConstantModelView = 0x08;
+    private const int XfConstantInverseModelView = 0x0C;
+    private const int XfConstantEyePosition = 0x38;
+    private const int XfConstantFogPlane = 0x39;
+    private const int XfConstantViewportScale = 0x3A;
+    private const int XfConstantViewportOffset = 0x3B;
+    private const int XfConstantTexGen = 0x40;
+    private const int XfConstantTexture = 0x44;
     private const uint MethodTextureBase = 0x1B00u;
     private const uint MethodTextureEnd = 0x1BFCu;
     private const uint TextureSlotStride = 0x40u;
@@ -1793,6 +1823,56 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             WriteTransformConstant((method - MethodTransformConstantBase) / 4, parameter);
         }
 
+        if (method >= MethodCompositeMatrix && method <= MethodCompositeMatrixEnd)
+        {
+            WriteAliasedConstant(method, MethodCompositeMatrix, XfConstantComposite, parameter);
+        }
+
+        if (method >= MethodProjectionMatrix && method <= MethodProjectionMatrixEnd)
+        {
+            WriteAliasedConstant(method, MethodProjectionMatrix, XfConstantProjection, parameter);
+        }
+
+        if (method >= MethodModelViewMatrix && method <= MethodModelViewMatrixEnd)
+        {
+            WriteAliasedTextureConstant(method, MethodModelViewMatrix, XfConstantModelView, parameter);
+        }
+
+        if (method >= MethodInverseModelViewMatrix && method <= MethodInverseModelViewMatrixEnd)
+        {
+            WriteAliasedTextureConstant(method, MethodInverseModelViewMatrix, XfConstantInverseModelView, parameter);
+        }
+
+        if (method >= MethodTextureMatrix && method <= MethodTextureMatrixEnd)
+        {
+            WriteAliasedTextureConstant(method, MethodTextureMatrix, XfConstantTexture, parameter);
+        }
+
+        if (method >= MethodTexGenPlane && method <= MethodTexGenPlaneEnd)
+        {
+            WriteAliasedTextureConstant(method, MethodTexGenPlane, XfConstantTexGen, parameter);
+        }
+
+        if (method >= MethodFogPlane && method <= MethodFogPlaneEnd)
+        {
+            WriteAliasedConstant(method, MethodFogPlane, XfConstantFogPlane, parameter);
+        }
+
+        if (method >= MethodViewportOffset && method <= MethodViewportOffsetEnd)
+        {
+            WriteAliasedConstant(method, MethodViewportOffset, XfConstantViewportOffset, parameter);
+        }
+
+        if (method >= MethodEyePosition && method <= MethodEyePositionEnd)
+        {
+            WriteAliasedConstant(method, MethodEyePosition, XfConstantEyePosition, parameter);
+        }
+
+        if (method >= MethodViewportScale && method <= MethodViewportScaleEnd)
+        {
+            WriteAliasedConstant(method, MethodViewportScale, XfConstantViewportScale, parameter);
+        }
+
         if (method >= MethodTextureBase && method <= MethodTextureEnd)
         {
             int slot = (int)((method - MethodTextureBase) / TextureSlotStride);
@@ -2029,6 +2109,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         if ((slot & 3u) == 3u)
         {
             TransformConstantLoadDebug++;
+        }
+    }
+
+    private void WriteAliasedConstant(uint method, uint baseMethod, int constant, uint value)
+    {
+        int slot = (int)(method - baseMethod) / 4;
+        WriteConstantWord(constant + (slot / 4), slot % 4, value);
+    }
+
+    private void WriteAliasedTextureConstant(uint method, uint baseMethod, int constant, uint value)
+    {
+        int slot = (int)(method - baseMethod) / 4;
+        int entry = slot % 16;
+        WriteConstantWord(constant + ((slot / 16) * 8) + (entry / 4), entry % 4, value);
+    }
+
+    private void WriteConstantWord(int index, int part, uint value)
+    {
+        if (index is >= 0 and < MaxVertexShaderConstants)
+        {
+            _transformConstants[index][part & 3] = value;
         }
     }
 
