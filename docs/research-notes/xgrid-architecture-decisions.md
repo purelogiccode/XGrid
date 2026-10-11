@@ -1771,6 +1771,35 @@ polling — link? DHCP? — and does the wait gate UI?), XID gamepad input,
 then a menu-response test (does the "idle menu" react?). The black
 degenerate draws remain unvalidated as menu rendering vs no-content.
 
+## 52. NIC gate I: driver init loops decoded, minimal nvnet device live (2026-10-11)
+
+**Register ID (static, ram_50b.bin).** 137 `0xFEF00xxx` immediates cluster
+in kernel driver code (0x5C3xx + copies at 0x9Cxxx/0xBBxxx); hottest:
+`0x144` (×20), `0x000` (×15), `0x004`/`0x180`, `0x110`/`0x188`, `0x080…`.
+Disassembly at `0x8005C39F` is the driver's start function: zero
+`0x110/0x094/0x084`, then two bounded (500×) `KeStall(10)` retry loops —
+wait TX/RX STATUS busy-clear (`0x088`/`0x098`), poke `0x144`=4, wait
+`0x144` IDLE-bit-set — then clear `0x144`. Cross-ref with xemu
+`nvnet_regs.h`: `0x084/0x088` TX control/status, `0x094/0x098` RX,
+`0x110` LINKSPEED, `0x144` TX_RX_CONTROL (KICK/IDLE/RESET),
+`0x180` MII_STATUS, `0x188` ADAPTER_CONTROL (LINKUP), `0x190/0x194`
+MDIO. With sentinel `0xFF` the busy bits read SET, so loop 1 always burns
+its 500 stalls (the init churn: ~30 re-inits in 4–5B, 14.8K reads).
+
+**Minimal device (`XGrid.Bus/Net/McpxNvNetDevice`, wired at `0xFEF00000`
++ `XboxAddressMap.NvNetBase/Size`, CLI `NVNET` line).** xemu-faithful
+power-on/link-up-steady-state defaults (as with xemu's default always-up
+link — and sentinel already showed the driver LINKUP=1, so trajectory is
+preserved, only the stall-burn is removed): TX/RX STATUS forced idle,
+`0x144` IDLE-sticky + BIT1-clears-IRQ + write-0-sets-REG5-bit31 quirks,
+IRQ/MII W1C (never raised — no backend), LINKUP set, instant MDIO with a
+tiny PHY file (BMSR link-up per xemu `phy_reg_init`), latches elsewhere,
+qemu-default MAC. No DMA/packet engine, no IRQ wiring yet. 10 unit tests
+(Bus 110→120); 742 green, format clean, 1M-step smoke identical. **Not
+yet behaviorally validated** (NIC traffic is post-4B): next long run
+should show FEF unmapped collapse + faster init; then DHCP-without-link
+timeouts are the following question, then XID input for the menu test.
+
 
 
 
