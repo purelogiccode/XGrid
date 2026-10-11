@@ -65,6 +65,7 @@ internal static class Program
         string? pgraphPath = null;
         string? ramDumpPath = null;
         string? raminPath = null;
+        string? writeDumpDir = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -150,6 +151,9 @@ internal static class Program
                     break;
                 case "--ramin":
                     raminPath = NextValue(args, ref i);
+                    break;
+                case "--writedump":
+                    writeDumpDir = NextValue(args, ref i);
                     break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
@@ -369,6 +373,11 @@ internal static class Program
                 Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2A.MethodStream.Count}");
             }
 
+            if (writeDumpDir is not null)
+            {
+                DumpHddWrites(machine, writeDumpDir);
+            }
+
             foreach (string pattern in scans)
             {
                 ScanRam(machine, pattern);
@@ -464,6 +473,87 @@ internal static class Program
         {
             Console.WriteLine($"Frame unavailable ({machine.Nv2A.PresentedFrameDebug})");
         }
+    }
+
+    private static void DumpHddWrites(XboxMachine machine, string directory)
+    {
+        Storage.OverlayDiskImage? overlay = machine.HddOverlay;
+        if (overlay is null)
+        {
+            Console.WriteLine("WRITEDUMP none (no HDD attached)");
+            return;
+        }
+
+        uint[] sectors = overlay.GetModifiedSectors();
+        Directory.CreateDirectory(directory);
+        byte[] buffer = new byte[512];
+        var manifest = new System.Text.StringBuilder();
+        manifest.Append("sectors=").Append(sectors.Length)
+            .Append(" writes=").AppendLine(overlay.WriteCount.ToString(CultureInfo.InvariantCulture));
+        foreach (uint lba in sectors)
+        {
+            overlay.ReadSector(lba, buffer);
+            File.WriteAllBytes(Path.Combine(directory, $"{lba:X8}.bin"), buffer);
+            manifest.Append(lba.ToString("X8", CultureInfo.InvariantCulture)).Append(' ');
+            for (int i = 0; i < 16; i++)
+            {
+                manifest.Append(buffer[i].ToString("X2", CultureInfo.InvariantCulture));
+            }
+
+            manifest.AppendLine();
+        }
+
+        File.WriteAllText(Path.Combine(directory, "manifest.txt"), manifest.ToString());
+
+        var ranges = new List<string>();
+        for (int i = 0; i < sectors.Length;)
+        {
+            uint first = sectors[i];
+            uint last = first;
+            while (i + 1 < sectors.Length && sectors[i + 1] == last + 1)
+            {
+                last = sectors[++i];
+            }
+
+            i++;
+            ranges.Add(first == last
+                ? first.ToString("X6", CultureInfo.InvariantCulture)
+                : first.ToString("X6", CultureInfo.InvariantCulture) + "-" +
+                  last.ToString("X6", CultureInfo.InvariantCulture));
+        }
+
+        var repeats = new Dictionary<uint, int>();
+        foreach (uint lba in overlay.WriteLog)
+        {
+            repeats.TryGetValue(lba, out int count);
+            repeats[lba] = count + 1;
+        }
+
+        var top = new List<(uint Lba, int Count)>();
+        foreach (var entry in repeats)
+        {
+            if (entry.Value > 1)
+            {
+                top.Add((entry.Key, entry.Value));
+            }
+        }
+
+        top.Sort((a, b) => b.Count.CompareTo(a.Count));
+
+        var topText = new List<string>();
+        for (int i = 0; i < top.Count && i < 10; i++)
+        {
+            topText.Add(
+                top[i].Lba.ToString("X6", CultureInfo.InvariantCulture) + "x" +
+                top[i].Count.ToString(CultureInfo.InvariantCulture));
+        }
+
+        string rangeText = ranges.Count > 40
+            ? string.Join(" ", ranges.GetRange(0, 40)) + $" (+{ranges.Count - 40} more)"
+            : string.Join(" ", ranges);
+        Console.WriteLine($"WRITEDUMP {directory} sectors={sectors.Length} writes={overlay.WriteCount}");
+        Console.WriteLine($"  ranges: {rangeText}");
+        Console.WriteLine($"  repeats: {(topText.Count == 0 ? "(none)" : string.Join(" ", topText))}");
     }
 
     private static DecodedInstruction Trace(XboxMachine machine, bool print, bool traceRegs)
@@ -1037,7 +1127,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
