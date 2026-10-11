@@ -152,17 +152,20 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 742 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 743 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu-idle: NIC validation run + XID input.
+## Next session — menu response: XID gamepad gate.
 
-1. NIC gate I (§52): driver start loops decoded (bounded TX/RX-busy +
-   `0x144`-IDLE waits); minimal `McpxNvNetDevice` live at `0xFEF00000`
-   (idle/link-up/MDIO/PHY, no DMA/IRQ; Bus 110→120). 5.0B baseline: no
-   fault, kernel delay-loop EIP `0x800153D3`, FEF →14815/704. Next: long
-   validation run, then XID gamepad + menu-response test. Issuer EIP,
-   `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+1. NIC gates I+II done (§52–53): minimal `McpxNvNetDevice` live
+   (`0xFEF00000`; Bus 110→121 with USB port accessor); 5.0B validation
+   run — no fault, FEF unmapped gone (NVNET 44/350), dashboard in a
+   **live render loop** (806958 draws / 16789 flips, EIP `0x2D42C`),
+   frame black (`0x3E2C000`), USB0 probed 31× (ports empty), disk save
+   footprint identical. System is a waiting menu. Next: XID gamepad
+   behind the OHCI (ED/TD path unimplemented — scope via xemu USB +
+   Cxbx XID first), then menu-response test. Issuer EIP, `F36A2` gap
+   and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
