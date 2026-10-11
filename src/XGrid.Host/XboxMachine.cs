@@ -76,6 +76,16 @@ public sealed class XboxMachine
             ramSize,
             new RamAliasDevice(Ram, ContiguousAliasBase));
 
+        // Tiled / write-combined RAM view ("Shadow RAM", 0xF0000000-0xF3FFFFFF).
+        // Registered before LoadBios maps flash at the same base, so the flash
+        // window keeps precedence over its first megabyte by tie order; the rest
+        // of the range newly mirrors RAM (previously sentinel void).
+        Memory.AddRegion(
+            "RAM write-combined",
+            XboxAddressMap.WriteCombinedBase,
+            XboxAddressMap.WriteCombinedSize,
+            new RamAliasDevice(Ram, XboxAddressMap.WriteCombinedBase));
+
         Bus.Lpc.RomOverlayDisabled += OnRomOverlayDisabled;
     }
 
