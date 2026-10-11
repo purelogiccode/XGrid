@@ -347,6 +347,29 @@ public sealed class OhciUsbTests
     }
 
     [Fact]
+    public void ShortInWithoutRounding_RetiresSuccessfully()
+    {
+        var memory = new FakeUsbMemory();
+        var ohci = new OhciUsbController(Base, memory)
+        {
+            Function = new XidGamepad(),
+        };
+        StartControl(ohci);
+        memory.WriteBlock(0x1000, EdBytes(64u << 16, 0x1100, 0x1400));
+        memory.WriteBlock(0x2000, new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 });
+        memory.WriteBlock(0x1100, TdBytes(0, 0x2000, 0x2007, 0x1120));
+        memory.WriteBlock(0x1120, TdBytes(2u << 19, 0x2010, 0x204F, 0x1140));
+        memory.WriteBlock(0x1140, TdBytes(1u << 19, 0, 0, 0x1400));
+        ohci.Write(Base + 0x20, 4, 0x1000);
+        ohci.Write(Base + HcCommandStatus, 4, 0x02);
+
+        ohci.Advance(733334 * 3);
+
+        Assert.Equal(0u, memory.Read32(0x1120) >> 28);
+        Assert.Equal(0x12, memory.Read8(0x2010));
+    }
+
+    [Fact]
     public void ControlBadRequest_StallsAndHaltsEndpoint()
     {
         var memory = new FakeUsbMemory();

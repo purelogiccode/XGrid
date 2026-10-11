@@ -755,8 +755,13 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             return true;
         }
 
+        // XID-gate-II probe: short IN stages retire successfully even when the
+        // guest clears the Rounding bit. Strict OHCI (and xemu) reports
+        // DataUnderrun here, but the Xbox stack answers every such halt with a
+        // port reset and a byte-identical re-enumeration, looping forever, so
+        // strictness provably deadlocks this guest. Revisit if a title needs it.
         uint condition = result == UsbTransferResult.Ack &&
-            (consumed == length || (direction == 2 && (tdFlags & TdRound) != 0))
+            (consumed == length || direction == 2)
             ? CcNoError
             : result == UsbTransferResult.Ack ? CcDataUnderrun : CcStall;
         if (condition == CcNoError)
