@@ -7,8 +7,8 @@ namespace XGrid.Bus.Timers;
 /// <summary>8254 programmable interval timer (ports 0x40-0x43).</summary>
 public sealed class Pit8254 : IXboxDevice, IIoPortDevice
 {
-    /// <summary>PIT input clock (1.193182 MHz).</summary>
-    public const uint InputFrequency = 1193182;
+    /// <summary>PIT input clock (Xbox 1.125 MHz; matches xemu i8254.h PIT_FREQ).</summary>
+    public const uint InputFrequency = 1125001;
 
     private readonly Channel[] _channels = { new(), new(), new() };
     private byte _control;
