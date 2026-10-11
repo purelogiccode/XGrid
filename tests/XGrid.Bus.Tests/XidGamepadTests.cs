@@ -184,4 +184,17 @@ public sealed class XidGamepadTests
         Assert.True(pad.HandleOut(2, new byte[] { 0, 6, 0, 0, 0, 0 }) == UsbTransferResult.Ack);
         Assert.True(pad.HandleOut(1, Array.Empty<byte>()) == UsbTransferResult.Stall);
     }
+
+    [Fact]
+    public void RequestLog_RecordsSetupOutcomes()
+    {
+        var pad = new XidGamepad();
+
+        Assert.True(pad.HandleSetup(new UsbSetupPacket(0x80, 0x06, 0x0100, 0, 18), out _)
+            == UsbTransferResult.Ack);
+        Assert.True(pad.HandleSetup(new UsbSetupPacket(0x80, 0x06, 0xFF00, 0, 8), out _)
+            == UsbTransferResult.Stall);
+
+        Assert.Equal(2, pad.RequestLog.Count);
+    }
 }

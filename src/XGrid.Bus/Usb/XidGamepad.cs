@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace XGrid.Bus.Usb;
@@ -51,6 +52,12 @@ public interface IUsbDeviceFunction
 {
     /// <summary>Gets the currently assigned device address.</summary>
     byte Address { get; }
+
+    /// <summary>Gets whether a configuration is active.</summary>
+    bool Configured { get; }
+
+    /// <summary>Gets recent request outcomes, for diagnostics.</summary>
+    IReadOnlyList<string> RequestLog { get; }
 
     /// <summary>Resets function state (address zero, unconfigured).</summary>
     void Reset();
@@ -121,6 +128,7 @@ public sealed class XidGamepad : IUsbDeviceFunction
     private readonly byte[] _outputReport = new byte[OutputReportSize];
     private readonly byte[] _inputCapabilities = new byte[InputReportSize];
     private readonly byte[] _outputCapabilities = new byte[OutputReportSize];
+    private readonly List<string> _requestLog = new();
     private byte _pendingAddress = 0xFF;
     private byte _pendingConfig;
     private bool _hasPendingConfig;
@@ -134,8 +142,11 @@ public sealed class XidGamepad : IUsbDeviceFunction
     /// <inheritdoc />
     public byte Address { get; private set; }
 
-    /// <summary>Gets whether a configuration is active.</summary>
+    /// <inheritdoc />
     public bool Configured { get; private set; }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> RequestLog => _requestLog;
 
     /// <inheritdoc />
     public void Reset()
@@ -183,6 +194,14 @@ public sealed class XidGamepad : IUsbDeviceFunction
 
     /// <inheritdoc />
     public UsbTransferResult HandleSetup(in UsbSetupPacket setup, out byte[] payload)
+    {
+        UsbTransferResult result = HandleSetupCore(in setup, out payload);
+        LogRequest(FormattableString.Invariant(
+            $"setup {setup.RequestType:X2}/{setup.Request:X2} {setup.Value:X4} len={setup.Length} -> {result} [{payload.Length}]"));
+        return result;
+    }
+
+    private UsbTransferResult HandleSetupCore(in UsbSetupPacket setup, out byte[] payload)
     {
         payload = Array.Empty<byte>();
         if (setup.RequestType == 0x80 && setup.Request == 0x06)
@@ -265,6 +284,13 @@ public sealed class XidGamepad : IUsbDeviceFunction
     /// <inheritdoc />
     public UsbTransferResult CompleteControlOut(byte[] data)
     {
+        UsbTransferResult result = CompleteControlOutCore(data);
+        LogRequest(FormattableString.Invariant($"cout len={data.Length} -> {result}"));
+        return result;
+    }
+
+    private UsbTransferResult CompleteControlOutCore(byte[] data)
+    {
         if (data.Length != OutputReportSize)
         {
             return UsbTransferResult.Stall;
@@ -276,6 +302,13 @@ public sealed class XidGamepad : IUsbDeviceFunction
 
     /// <inheritdoc />
     public UsbTransferResult HandleOut(byte endpoint, byte[] data)
+    {
+        UsbTransferResult result = HandleOutCore(endpoint, data);
+        LogRequest(FormattableString.Invariant($"out ep{endpoint} len={data.Length} -> {result}"));
+        return result;
+    }
+
+    private UsbTransferResult HandleOutCore(byte endpoint, byte[] data)
     {
         if (endpoint != InterruptEndpoint)
         {
@@ -293,6 +326,13 @@ public sealed class XidGamepad : IUsbDeviceFunction
 
     /// <inheritdoc />
     public UsbTransferResult HandleIn(byte endpoint, int length, out byte[] payload)
+    {
+        UsbTransferResult result = HandleInCore(endpoint, length, out payload);
+        LogRequest(FormattableString.Invariant($"in ep{endpoint} len={length} -> {result} [{payload.Length}]"));
+        return result;
+    }
+
+    private UsbTransferResult HandleInCore(byte endpoint, int length, out byte[] payload)
     {
         payload = Array.Empty<byte>();
         if (endpoint != InterruptEndpoint || length <= 0)
@@ -318,6 +358,8 @@ public sealed class XidGamepad : IUsbDeviceFunction
             Configured = _pendingConfig != 0;
             _hasPendingConfig = false;
         }
+
+        LogRequest(FormattableString.Invariant($"status addr={Address} cfg={Configured}"));
     }
 
     private static UsbTransferResult GetDescriptor(byte type, byte index, ushort length, out byte[] payload)
@@ -344,6 +386,16 @@ public sealed class XidGamepad : IUsbDeviceFunction
             default:
                 return UsbTransferResult.Stall;
         }
+    }
+
+    private void LogRequest(string entry)
+    {
+        if (_requestLog.Count >= 128)
+        {
+            _requestLog.RemoveAt(0);
+        }
+
+        _requestLog.Add(entry);
     }
 
     private static byte[] Slice(byte[] source, int length)

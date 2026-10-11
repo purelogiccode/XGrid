@@ -801,13 +801,23 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             $"USB0 acc={machine.Usb0.RegisterAccesses} irq={machine.Usb0.InterruptAsserted} " +
             $"ctl={machine.Usb0.ControlTransfers} intr={machine.Usb0.InterruptTransfers} addr={machine.Usb0.DeviceAddress} " +
+            $"cfg={machine.Usb0.Function?.Configured} " +
             $"p0=0x{machine.Usb0.GetPortStatus(0):X8} p1=0x{machine.Usb0.GetPortStatus(1):X8} " +
             $"p2=0x{machine.Usb0.GetPortStatus(2):X8} p3=0x{machine.Usb0.GetPortStatus(3):X8}");
         Console.WriteLine(
             $"USB1 acc={machine.Usb1.RegisterAccesses} irq={machine.Usb1.InterruptAsserted} " +
             $"ctl={machine.Usb1.ControlTransfers} intr={machine.Usb1.InterruptTransfers} addr={machine.Usb1.DeviceAddress} " +
+            $"cfg={machine.Usb1.Function?.Configured} " +
             $"p0=0x{machine.Usb1.GetPortStatus(0):X8} p1=0x{machine.Usb1.GetPortStatus(1):X8} " +
             $"p2=0x{machine.Usb1.GetPortStatus(2):X8} p3=0x{machine.Usb1.GetPortStatus(3):X8}");
+        if (machine.Usb0.Function is not null)
+        {
+            var usbLog = machine.Usb0.Function.RequestLog;
+            for (int i = Math.Max(0, usbLog.Count - 16); i < usbLog.Count; i++)
+            {
+                Console.WriteLine($"USB0 log: {usbLog[i]}");
+            }
+        }
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
