@@ -12,7 +12,9 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `References/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
   `src/core/kernel/common/types.h` (KTHREAD/KWAIT_BLOCK/KAPC offsets, e.g. KTHREAD+0x2C = State).
 - `References/Xermu-main` — HLE, C# (kernel-facing behavior; not an LLE device model).
-- `References/CSharp_XISOSharp` — approved MIT dependency for XDVDFS.
+- `CSharp_XISOSharp` — MIT XDVDFS library: sibling repo (`C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp`,
+  docs + source used for API/on-disk facts) + NuGet `XISOSharp` 1.4.2 referenced by `XGrid.XboxFs`
+  (`XdvdfsFileSystem` adapter + `xgrid xdvdfs ls/cat`, §64). `CSharp_CHDSharp` sibling covers CHD later.
 - `References/XboxWiki` — XboxDevWiki vendored locally (99 `.mhtml` pages, numeric file names;
   identify by `<title>`). Key pages: `51` Boot Process, `50` BIOS, `49` Kernel, `24` MCPX,
   `30` PCI, `41` USB, `16` NV2A, `33` SMC, `48` MCPX ROM, `90` Hidden Boot Code, `22` Memory.
@@ -166,7 +168,9 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    state 0 (sub-state 0) through 5B. No emulation blocker left
    on this path — black is the correct state-0 steady state +
    guest-baked clip. Next: what moves 0→N (submenu 200–299?
-   input-consuming titles?) + Track C JIT. Issuer EIP,
+   input-consuming titles?) + Track C JIT. Parallel: game media
+   readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007
+   validated DVD_X2). Issuer EIP,
    `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,

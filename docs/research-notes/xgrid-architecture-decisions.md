@@ -2211,3 +2211,39 @@ states 200-299 via default handler?) - needs a title that consumes;
 (b) visible pixels need state advance or the viewport-bake root cause
 (guest driver behavior, out of emulator scope); (c) Track C JIT for
 interactivity. Open micro-items unchanged: issuer EIP, `F36A2`, LBA 8.
+
+## 64. Game media readable: XDVDFS via XISOSharp (2026-10-11)
+
+**Retail layout (007 Agent Under Fire, Redump).** Sectors 0+ are an
+ISO9660 DVD-video partition (`CD001` @16, `VIDEO_TS`, 6992 sectors),
+then zeros; the game area starts at file offset `0x18310000`
+(sector 198176), volume descriptor at +32 sectors with magic at 0x00
+and 0x7EC (the XGD-family fallback pattern from cxbx.md §6, shifted
+`+0x10000` vs the 360 value). XISOSharp auto-detects all of this
+(`Volume.IsValid`, `DescriptorSector=32`, `DiscLseek=405798912`).
+
+**Integration (no source copied).** NuGet `XISOSharp` 1.4.2, centrally
+pinned, consumed by `XGrid.XboxFs` through a new `XdvdfsFileSystem`
+adapter (Open/ListDirectory/ReadFile + Entry, mirroring
+`FatxFileSystem`; `\`→`/` normalization; `XisoExplorer` keep-open
+mode; `XisoFormatException`→`InvalidDataException`). CLI `xgrid xdvdfs
+ls|cat --image <iso> [--path] [--out]`. 8 unit tests over a hand-built
+37-sector synthetic image (descriptor + AVL tree + subdir + content),
+which independently validates the on-disk facts (u16 l/r in dwords,
+u32 sector/size, attrs, Latin-1 names, pad-to-4, 0xFFFF terminator).
+
+**Validation.** `xdvdfs ls` on 007: `default.xbe` 696320 B, `bond.xbe`,
+`Driving.xbe`, `Assets/`, `driving.dat`. Extracted `default.xbe`
+parses via `xbe info`: Retail, base `0x10000`, TitleId `0x4541000D`,
+Media `0x2` (DVD_X2, pressed), 9 sections, 5 libraries, TLS present.
+
+**Correction.** `CSharp_XISOSharp` is NOT vendored under `References/`
+(AGENTS.md + plan §13.5 wording was wrong) - it lives as the sibling
+repo `C:/Users/HomePC/Dropbox/source/repos/CSharp_XISOSharp` (docs/ +
+source used for API + on-disk facts) and as the NuGet package. Same
+situation for `CSharp_CHDSharp` (covers the 945-CHD set later).
+
+**Next.** ATAPI DVD sector serving from ISO (guest LBA*2048 maps the
+file directly - the ISO *is* the disc); DVD-auth scope (what the
+kernel's ATAPI probe needs beyond TUR/SENSE/CAPACITY); CHDSharp for
+`E:/Microsoft Xbox`.
