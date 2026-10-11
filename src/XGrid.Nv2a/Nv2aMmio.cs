@@ -169,6 +169,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodArrayElement32 = 0x1808u;
     private const uint MethodDrawArrays = 0x1810u;
     private const uint MethodInlineArray = 0x1818u;
+    private const uint MethodVertexData2FBase = 0x1880u;
+    private const uint MethodVertexData2FEnd = 0x18FCu;
+    private const uint MethodVertexData2SBase = 0x1900u;
+    private const uint MethodVertexData2SEnd = 0x193Cu;
+    private const uint MethodVertexData4UbBase = 0x1940u;
+    private const uint MethodVertexData4UbEnd = 0x197Cu;
+    private const uint MethodVertexData4SBase = 0x1980u;
+    private const uint MethodVertexData4SEnd = 0x19FCu;
+    private const uint MethodVertexData4FBase = 0x1A00u;
+    private const uint MethodVertexData4FEnd = 0x1AFCu;
     private const uint MethodTransformProgramBase = 0x0B00u;
     private const uint MethodTransformProgramEnd = 0x0B7Cu;
     private const uint MethodTransformConstantBase = 0x0B80u;
@@ -186,6 +196,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
     private const int MaxInlineElements = 65536;
+    private const int MaxDrawArrayRanges = 1250;
+    private const int VertexAttributeCount = 16;
+    private const int VertexAttributeComponentCount = 4;
+    private const int InlineVertexWordCount = VertexAttributeCount * VertexAttributeComponentCount;
     private const uint BeginEndTriangles = 5u;
     private const uint BeginEndTriangleStrip = 6u;
     private const uint BeginEndTriangleFan = 7u;
@@ -299,6 +313,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _transformProgramCxtWriteEn;
     private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
+    private readonly List<float> _inlineVertices = new();
+    private readonly List<(int Start, int Count)> _drawArraysRanges = new();
+    private readonly float[][] _inlineValues;
     private readonly uint[] _textureOffset = new uint[MaxTextureSlots];
     private readonly uint[] _textureFormat = new uint[MaxTextureSlots];
     private readonly uint[] _textureAddress = new uint[MaxTextureSlots];
@@ -347,6 +364,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         for (int i = 0; i < MaxVertexShaderConstants; i++)
         {
             _transformConstants[i] = new uint[4];
+        }
+
+        _inlineValues = new float[VertexAttributeCount][];
+        for (int i = 0; i < VertexAttributeCount; i++)
+        {
+            _inlineValues[i] = new float[VertexAttributeComponentCount];
         }
 
         Reset();
@@ -505,6 +528,21 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of collected inline array elements. Diagnostics.</summary>
     public int InlineElementCount => _inlineElements.Count;
 
+    /// <summary>Gets the number of collected inline vertices. Diagnostics.</summary>
+    public int InlineVertexCount => _inlineVertices.Count / InlineVertexWordCount;
+
+    /// <summary>Gets the number of pending DRAW_ARRAYS ranges. Diagnostics.</summary>
+    public int DrawArrayRangeCount => _drawArraysRanges.Count;
+
+    /// <summary>Reads a current inline attribute component (diagnostics).</summary>
+    public uint ReadInlineValueWord(int attribute, int component)
+    {
+        return attribute is >= 0 and < VertexAttributeCount &&
+               component is >= 0 and < VertexAttributeComponentCount
+            ? BitConverter.SingleToUInt32Bits(_inlineValues[attribute][component])
+            : 0u;
+    }
+
     /// <summary>Gets the transform program load pointer. Diagnostics.</summary>
     public uint TransformProgramLoadDebug { get; private set; }
 
@@ -648,6 +686,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Array.Clear(_textureImageRect);
         _inlineWords.Clear();
         _inlineElements.Clear();
+        _inlineVertices.Clear();
+        _drawArraysRanges.Clear();
+        foreach (float[] value in _inlineValues)
+        {
+            value[0] = 0f;
+            value[1] = 0f;
+            value[2] = 0f;
+            value[3] = 1f;
+        }
         foreach (uint[] row in _transformProgram)
         {
             Array.Clear(row);
@@ -1691,11 +1738,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 AppendInlineElement16(parameter);
                 break;
             case MethodArrayElement32:
-                if (_inlineElements.Count < MaxInlineElements)
-                {
-                    _inlineElements.Add(parameter);
-                }
-
+                AppendInlineElement32(parameter);
                 break;
             case MethodDrawArrays:
                 AppendDrawArrays(parameter);
@@ -1784,16 +1827,113 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 }
             }
         }
+
+        HandleVertexDataMethod(method, parameter);
+    }
+
+    private void HandleVertexDataMethod(uint method, uint parameter)
+    {
+        if (method >= MethodVertexData2FBase && method <= MethodVertexData2FEnd)
+        {
+            int slot = (int)(method - MethodVertexData2FBase) / 4;
+            int attribute = slot / 2;
+            int part = slot % 2;
+            _inlineValues[attribute][part] = BitConverter.Int32BitsToSingle((int)parameter);
+            _inlineValues[attribute][2] = 0f;
+            _inlineValues[attribute][3] = 1f;
+            if (attribute == 0 && part == 1)
+            {
+                FinishInlineVertex();
+            }
+
+            return;
+        }
+
+        if (method >= MethodVertexData2SBase && method <= MethodVertexData2SEnd)
+        {
+            int attribute = (int)(method - MethodVertexData2SBase) / 4;
+            _inlineValues[attribute][0] = (short)(parameter & 0xFFFFu);
+            _inlineValues[attribute][1] = (short)(parameter >> 16);
+            _inlineValues[attribute][2] = 0f;
+            _inlineValues[attribute][3] = 1f;
+            if (attribute == 0)
+            {
+                FinishInlineVertex();
+            }
+
+            return;
+        }
+
+        if (method >= MethodVertexData4UbBase && method <= MethodVertexData4UbEnd)
+        {
+            int attribute = (int)(method - MethodVertexData4UbBase) / 4;
+            _inlineValues[attribute][0] = (parameter & 0xFFu) / 255f;
+            _inlineValues[attribute][1] = ((parameter >> 8) & 0xFFu) / 255f;
+            _inlineValues[attribute][2] = ((parameter >> 16) & 0xFFu) / 255f;
+            _inlineValues[attribute][3] = ((parameter >> 24) & 0xFFu) / 255f;
+            if (attribute == 0)
+            {
+                FinishInlineVertex();
+            }
+
+            return;
+        }
+
+        if (method >= MethodVertexData4SBase && method <= MethodVertexData4SEnd)
+        {
+            int slot = (int)(method - MethodVertexData4SBase) / 4;
+            int attribute = slot / 2;
+            int part = slot % 2;
+            _inlineValues[attribute][part * 2] = (short)(parameter & 0xFFFFu);
+            _inlineValues[attribute][part * 2 + 1] = (short)(parameter >> 16);
+            if (attribute == 0 && part == 1)
+            {
+                FinishInlineVertex();
+            }
+
+            return;
+        }
+
+        if (method >= MethodVertexData4FBase && method <= MethodVertexData4FEnd)
+        {
+            int slot = (int)(method - MethodVertexData4FBase) / 4;
+            int attribute = slot / 4;
+            int part = slot % 4;
+            _inlineValues[attribute][part] = BitConverter.Int32BitsToSingle((int)parameter);
+            if (attribute == 0 && part == 3)
+            {
+                FinishInlineVertex();
+            }
+        }
+    }
+
+    private void FinishInlineVertex()
+    {
+        if (InlineVertexCount >= MaxInlineElements)
+        {
+            return;
+        }
+
+        foreach (float[] value in _inlineValues)
+        {
+            _inlineVertices.Add(value[0]);
+            _inlineVertices.Add(value[1]);
+            _inlineVertices.Add(value[2]);
+            _inlineVertices.Add(value[3]);
+        }
     }
 
     private void ResetInlineBuffers()
     {
         _inlineElements.Clear();
         _inlineWords.Clear();
+        _inlineVertices.Clear();
+        _drawArraysRanges.Clear();
     }
 
     private void AppendInlineElement16(uint parameter)
     {
+        ExpandPendingDrawArrays();
         if (_inlineElements.Count + 2 > MaxInlineElements)
         {
             return;
@@ -1801,6 +1941,37 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         _inlineElements.Add(parameter & 0xFFFFu);
         _inlineElements.Add(parameter >> 16);
+    }
+
+    private void AppendInlineElement32(uint parameter)
+    {
+        ExpandPendingDrawArrays();
+        if (_inlineElements.Count < MaxInlineElements)
+        {
+            _inlineElements.Add(parameter);
+        }
+    }
+
+    private void ExpandPendingDrawArrays()
+    {
+        if (_drawArraysRanges.Count == 0)
+        {
+            return;
+        }
+
+        (int start, int count) = _drawArraysRanges[^1];
+        if (_drawArraysRanges.Count > 1)
+        {
+            FlushDrawArraysDraw();
+            ResetInlineBuffers();
+        }
+
+        for (int i = 0; i < count && _inlineElements.Count < MaxInlineElements; i++)
+        {
+            _inlineElements.Add((uint)(start + i));
+        }
+
+        _drawArraysRanges.Clear();
     }
 
     private void AppendDrawArrays(uint parameter)
@@ -1817,9 +1988,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             return;
         }
 
-        for (int i = 0; i < count; i++)
+        if (_drawArraysRanges.Count > 0)
         {
-            _inlineElements.Add((uint)(start + i));
+            (int lastStart, int lastCount) = _drawArraysRanges[^1];
+            if (start == lastStart + lastCount)
+            {
+                _drawArraysRanges[^1] = (lastStart, lastCount + count);
+                return;
+            }
+        }
+
+        if (_drawArraysRanges.Count < MaxDrawArrayRanges)
+        {
+            _drawArraysRanges.Add((start, count));
         }
     }
 
@@ -2318,16 +2499,50 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     private void FlushDraw()
     {
+        if (_drawArraysRanges.Count != 0)
+        {
+            FlushDrawArraysDraw();
+            return;
+        }
+
         if (_inlineElements.Count != 0)
         {
             FlushElementDraw();
             return;
         }
 
+        if (_inlineVertices.Count != 0)
+        {
+            FlushInlineVertexDraw();
+            return;
+        }
+
         FlushInlineDraw();
     }
 
+    private void FlushDrawArraysDraw()
+    {
+        FlushProgramDraw(VertexFetchMode.Arrays);
+    }
+
     private void FlushElementDraw()
+    {
+        FlushProgramDraw(VertexFetchMode.Elements);
+    }
+
+    private void FlushInlineVertexDraw()
+    {
+        FlushProgramDraw(VertexFetchMode.Inline);
+    }
+
+    private enum VertexFetchMode
+    {
+        Arrays,
+        Elements,
+        Inline,
+    }
+
+    private void FlushProgramDraw(VertexFetchMode mode)
     {
         if (_memory is null || TransformProgramLoadDebug == 0)
         {
@@ -2373,8 +2588,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         var transformed = new Dictionary<int, (float X, float Y, float Z, float R, float G, float B, float A, float U, float V)>();
 
-        uint[] elements = _inlineElements.ToArray();
-        int count = elements.Length;
+        uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
         DrawsExecuted++;
         bool colorWrite = (_colorMask & ColorMaskAll) != 0;
         if (!colorWrite && !_depthTestEnable && !_stencilTestEnable)
@@ -2382,40 +2596,70 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             return;
         }
 
-        switch (_beginMode)
+        switch (mode)
         {
-            case BeginEndTriangles:
-                for (int i = 0; i + 2 < count; i += 3)
+            case VertexFetchMode.Arrays:
+                foreach ((int start, int count) in _drawArraysRanges)
                 {
-                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
+                    AssemblePrimitives(start, count);
                 }
 
                 break;
-            case BeginEndTriangleStrip:
-                for (int i = 0; i + 2 < count; i++)
-                {
-                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
-                }
-
-                break;
-            case BeginEndTriangleFan:
-                for (int i = 1; i + 1 < count; i++)
-                {
-                    Triangle(elements[0], elements[i], elements[i + 1]);
-                }
-
+            case VertexFetchMode.Inline:
+                AssemblePrimitives(0, InlineVertexCount);
                 break;
             default:
-                for (int i = 0; i + 3 < count; i += 4)
-                {
-                    Triangle(elements[i], elements[i + 1], elements[i + 2]);
-                    Triangle(elements[i], elements[i + 2], elements[i + 3]);
-                }
-
+                AssemblePrimitives(0, elements.Length);
                 break;
         }
 
         return;
+
+        uint ElementAt(int offset, int i)
+        {
+            return mode switch
+            {
+                VertexFetchMode.Arrays => (uint)(offset + i),
+                VertexFetchMode.Elements => elements[offset + i],
+                _ => (uint)i,
+            };
+        }
+
+        void AssemblePrimitives(int offset, int count)
+        {
+            switch (_beginMode)
+            {
+                case BeginEndTriangles:
+                    for (int i = 0; i + 2 < count; i += 3)
+                    {
+                        Triangle(ElementAt(offset, i), ElementAt(offset, i + 1), ElementAt(offset, i + 2));
+                    }
+
+                    break;
+                case BeginEndTriangleStrip:
+                    for (int i = 0; i + 2 < count; i++)
+                    {
+                        Triangle(ElementAt(offset, i), ElementAt(offset, i + 1), ElementAt(offset, i + 2));
+                    }
+
+                    break;
+                case BeginEndTriangleFan:
+                    for (int i = 1; i + 1 < count; i++)
+                    {
+                        Triangle(ElementAt(offset, 0), ElementAt(offset, i), ElementAt(offset, i + 1));
+                    }
+
+                    break;
+                default:
+                    for (int i = 0; i + 3 < count; i += 4)
+                    {
+                        Triangle(ElementAt(offset, i), ElementAt(offset, i + 1), ElementAt(offset, i + 2));
+                        Triangle(ElementAt(offset, i), ElementAt(offset, i + 2), ElementAt(offset, i + 3));
+                    }
+
+                    break;
+            }
+        }
 
         (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) Vertex(uint element)
         {
@@ -2427,7 +2671,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
             {
-                FetchVertexAttribute(slot, index, inputs[slot]);
+                if (mode == VertexFetchMode.Inline)
+                {
+                    CopyInlineVertex(index, slot, inputs[slot]);
+                }
+                else
+                {
+                    FetchVertexAttribute(slot, index, inputs[slot]);
+                }
+
                 Array.Clear(outputs[slot]);
             }
 
@@ -2459,12 +2711,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
     }
 
+    private void CopyInlineVertex(int index, int attribute, float[] destination)
+    {
+        int offset = (index * InlineVertexWordCount) + (attribute * VertexAttributeComponentCount);
+        for (int i = 0; i < VertexAttributeComponentCount; i++)
+        {
+            destination[i] = _inlineVertices[offset + i];
+        }
+    }
+
     private void FetchVertexAttribute(int slot, int index, float[] destination)
     {
-        destination[0] = 0f;
-        destination[1] = 0f;
-        destination[2] = 0f;
-        destination[3] = 1f;
+        float[] inline = _inlineValues[slot];
+        destination[0] = inline[0];
+        destination[1] = inline[1];
+        destination[2] = inline[2];
+        destination[3] = inline[3];
 
         uint format = _vertexFormat[slot];
         int count = (int)((format >> 4) & 0xFu);
