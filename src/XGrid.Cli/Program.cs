@@ -312,15 +312,24 @@ internal static class Program
                 }
             }
 
+            const ulong progressInterval = 250_000_000;
+            ulong nextProgress = (executed / progressInterval + 1) * progressInterval;
             while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
             {
-                ulong ran = RunBatch(machine, steps - executed);
+                ulong remaining = steps - executed;
+                ulong target = Math.Min(remaining, nextProgress - executed);
+                ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
                     break;
                 }
 
                 executed += ran;
+                if (executed >= nextProgress)
+                {
+                    Console.WriteLine($"Progress {executed} instruction(s)");
+                    nextProgress += progressInterval;
+                }
             }
 
             PrintState(machine, executed, dumps);

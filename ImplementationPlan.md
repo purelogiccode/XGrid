@@ -2809,17 +2809,14 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **725 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — content-discovery scan: menu population or stall point.**
-The animation wait (§32) through **M8** (§43) plus surface scoping (§44) are
-solved. `xgrid boot --steps 2500000000` (2.5B steps; CLI counters `ulong`,
-chunked dispatch) completes **with no fault at new EIP `0x26402`** (leaf
-getter in a dashboard-loaded module, called from the main loop at VA
-`0x14C48`; page-walked mappings). Heap forensics (RAM diff 1.7B→2.5B, GPU
-frozen) proves **content discovery**: newly arrived strings `unleashx.xbe`,
-`Screensavers`, `config.xml`, `EvolutionX`/`UnleashX`,
-`TDATA`/`UDATA`/`CACHE`/`Dash`/`SAVES` — the dashboard enumerates installed
-content for its menu (§45). The concurrent strided READ DMAs (3 groups,
-`0x80000`-spaced, zeros + stale blobs) are a blind scan, mechanism TBD.
+**NEXT SESSION — file-save phase: what is it writing?** The animation wait
+(§32) through **M8** (§43), surface scoping (§44) and content discovery
+(§45) are solved. `xgrid boot --steps 3200000000` (3.2B steps) completes
+**with no fault at new EIP `0x67BFD`** (phys `0xD4BFD`, another module
+mapping): GPU frozen, **new `0xCA` WRITE DMAs** — repeated 1-sector write
+at LBA `0x885446` (E: +1.6 GB) plus ascending writes `0x897546`→`0xA07546`
+(a growing file with dirent updates); EIP past a file-open wrapper (`call
+[0x7D688]` thunk). The dashboard moved from discovery to **saving** (§46).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2832,12 +2829,14 @@ no-ops on xemu too), so `blended=0 depth=0` is correct and **live
 program-draw rasterization is still unvalidated**. The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
 presents the dashboard surface, not the `0x1000` early-boot region.
-Next: determine whether the content scan completes into menu population or
-a stall point (longer runs; then XID input for the menu). Remaining M5
-gaps: inline `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Reference: xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`,
-`draw.c`, `surface.c`, `vsh-prog.c`), `nv2a_regs.h`. Tools:
-`--break-log <addr>`, `--pgraph`, `--ramdump`/`--ramin`, `--fb`/`--frame`,
-`sector`, objdump. Evidence trail: research-notes §30-45.
+The 2.5B content scan (§45) gave way to file saving at 3.2B (§46). Next:
+capture what it writes (overlay introspection + full IDE logging), then
+longer runs toward UI (XID input for the menu). Remaining M5 gaps: inline
+`SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Reference: xemu
+`hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
+`vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
+`--ramdump`/`--ramin`, `--fb`/`--frame`, `sector`, objdump. Evidence
+trail: research-notes §30-46.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

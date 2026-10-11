@@ -150,16 +150,16 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 725 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — content-discovery scan: menu population or stall point
+## Next session — file-save phase: what is it writing?
 
-1. 2.5B-step run completes with no fault at **EIP `0x26402`** (leaf getter
-   called from the main-loop module at VA `0x14C48`; page-walked mappings).
-   Heap forensics (RAM diff 1.7B→2.5B) proves **content discovery**: newly
-   arrived strings `unleashx.xbe`, `Screensavers`, `config.xml`,
-   `EvolutionX`/`UnleashX`, `TDATA`/`UDATA`/`CACHE`/`Dash`/`SAVES` — the
-   dashboard is enumerating installed content for its menu (§45). The
-   concurrent strided READ DMAs (3 groups, `0x80000`-spaced, zeros + stale
-   blobs) are a blind scan, mechanism TBD.
+1. 3.2B-step run completes with no fault at **new EIP `0x67BFD`** (phys
+   `0xD4BFD`, another module mapping). GPU frozen (same 2670/10.1M/33/33);
+   new **`0xCA` WRITE DMAs**: repeated 1-sector write at LBA `0x885446`
+   (E: +1.6 GB) interleaved with ascending writes `0x897546`→`0xA07546` —
+   a **growing file with dirent updates**. EIP sits past a file-open wrapper
+   (`call [0x7D688]` thunk, custom statuses `0x8007274x`). The dashboard
+   moved from discovery to **saving** (§46). Boot prints progress every
+   250M steps now.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
