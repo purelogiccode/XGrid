@@ -2084,6 +2084,76 @@ be network-driven (RemoteX remote shell), in which case the nvnet packet
 engine becomes the gate. The `CreateGamepads` retry behavior (once vs
 loop) is the first thing to establish.
 
+## 62. Menu-idle loop decoded: state machine + hot memcpy (2026-10-11)
+
+**Runner carved from RAM (offline, ram_60_5b.bin).** Guest page walk
+(CR3=`0xF000`, PDE[0]=`0x15D067` → PT @ phys `0x15D000`) translates the
+menu-idle EIP trail: the running image sits at VA `0x10000` → phys
+`0x13E000` (moved since §48's `0xDD000`; `XBEH` header present, base
+`0x10000`, 10 sections, entry(enc) `0x29F53`, cert `0x10178`). All 10
+sections carved from loaded VAs (raw addrs are file offsets): `.text`
+`0x11000`/`0x24ACC`, `D3D` `0x35AE0`/`0x124A8`, `D3DX` `0x47FA0`/`0x1C778`,
+`XGRPH`, `XNET` `0x66880`/`0xE858`, `XPP`, `.rdata`, `.data`
+`0x836E0`/`0x5121B8` (5.3 MB ✓), `_text`, `text`. Artifacts in temp
+(`runner/*.bin`, `text.asm`), not the repo.
+
+**250M-trail decode (all real code).** Final EIP `0x2D3B9` = inside an
+idiv helper (`0x2D3B0`: `push esi`, null-test, `div ecx`; 11 callers);
+`0x2EA10` = UTF-16 tolower loop (`cmp A/Z`, `+0x20`; multi-sampled);
+`0x2DE26` = wcslen (7 callers); `0x254C0` = COM-style accessor
+(`[esi+0x48/0x38]` null-check + call; 7 callers); `0x320C7` = string
+scan; `0x181EB` = FPU spill code; `0x3Fxxx`/`0x48CA7` = D3D/D3DX
+sections. Profile = D3D + string processing + FPU: a working loop, not
+a stall.
+
+**D3D frame function (~`0x3E200`, state dispatch).** FPU prologue, a
+div/mod global (`0x94B58`), flag checks (`0x47BC59`, `0xCE9F8`), then
+`[esi+0x280]` compared against `0x64` → byte table `0x1EE98` → jump
+table `0x1EE50`: ~19 distinct handlers + default `0x1E72B` (most states,
+incl. 25–99). Handler anatomy: `[esi+0x280]` = state (ebx = next),
+`[esi+0x284]` = sub-state, `[esi+0xFC0]` = mode fnptr (states
+4/100/1/13/33 install `0x47BC60/A8/F0/CC…`). State 10 (`0x1E33A`) =
+debug-dump path (file-op calls + `e:\dump.txt` via D3DX
+`0x2CD56/0x2CD69`); state 9 = sub `0x19` + init call. No `int3` padding
+in range — one large function.
+
+**XBApp string block (heap).** Phys `0xEE000` → VA `0x80000` holds the
+Creating…/failed! pairs (`CreateGamepads`, `D3D device`, `Direct3D`) +
+menu/skin strings (`SkinName`, `MenuColor*`, `q:\skin`, `Skin_%s`,
+`screendump.bmp`, `e:\dump.txt`, `d:\default.xbe`) + server strings
+(`Start FTP/Debug`, `XBApp:`). 9 code xrefs (`push`/`mov reg,imm32`)
+from D3D/XNET/XPP — live references, but execution of the failure
+branches is unproven (heap-resident, no image-relative anchors).
+
+**gate66 `--eip-hist` (new CLI probe, 5000 samples over 5B).**
+`EipHistogram` (`XGrid.Core/Diagnostics`, 3 tests) samples EIP every N
+instructions between batches; prints top-40. Result: kernel idle
+`0x800422Bx` 7%, then a **D3D-section MMX streaming-memcpy loop
+`0x39F90` ~10%** (`movq`/`movntq` 64 B blocks + `prefetchnta`, `dec
+ecx/jne`, then `call 0x3C880`), wcslen cluster (`0x2DE2A+`), tolower
+cluster (`0x2DC49+`). The loop copies heavily every frame while issuing
+periodic identical draws/flips. IDE shows reads only (`0xC8`, no `0xCA`
+writes) → no per-frame dump writes; memcpy targets RAM (doomed
+surfaces? audio? scratch — open).
+
+**Forensics limit hit.** Kernel exports are ordinal-only (no
+`KeWaitForSingleObject`-style names in the image), so import-based wait
+classification needs the Cxbx 4627 ordinal map — deferred. Current
+state value needs the menu object (`esi`); handler-level attribution is
+the next probe (`--break-log` on handler VAs or finer hist).
+
+**gate67 verdict (NVNET regs, 5B, no fault).** Per-reg histograms
+(`McpxNvNetDevice.RegReadCounts/RegWriteCounts` + CLI `NVNET regs:`,
+2 tests): reads=44 (`190`=22 MDIO_ADDR, `194`=10 MDIO_DATA, the rest
+2× status/IRQ/link), writes=350 (`144`=40 TxRxControl init dance,
+`190`=12 MDIO, `188/184/00/110/94/84` ≤4 each). **Zero accesses to
+ring regs `0x100`–`0x138`, zero KICK traffic, zero status polling.**
+The guest initializes the NIC and never drives it — the packet engine
+stays scoped-not-built per the trace-driven rule. There is no network
+half to "waiting for what": init-only NIC, unpolled pad, present
+content, advancing timer. What remains is the state machine itself —
+current state value + wait primitive (Cxbx ordinal map deferred).
+
 
 
 
