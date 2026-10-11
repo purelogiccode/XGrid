@@ -231,6 +231,20 @@ public sealed class OhciUsbTests
     }
 
     [Fact]
+    public void AttachGamepad_ReportsConnectWithoutPowerWrites()
+    {
+        var ohci = new OhciUsbController(Base, new FakeUsbMemory())
+        {
+            Function = new XidGamepad(),
+        };
+
+        uint status = ohci.Read(Base + HcRhPortStatus1, 4);
+
+        Assert.NotEqual(0u, status & PortCcs);
+        Assert.NotEqual(0u, status & PortCsc);
+    }
+
+    [Fact]
     public void Port0PowerUp_WithGamepad_ReportsConnect()
     {
         var ohci = new OhciUsbController(Base, new FakeUsbMemory())
