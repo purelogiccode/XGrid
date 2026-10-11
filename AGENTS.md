@@ -164,9 +164,9 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    frames) — dash D3D issues fully-formed content-free draws (real
    7–11-insn shaders, `C0=[1,1,16777215,1]`, degenerate inline
    geometry → correctly zero pixels); no fidelity gap, no init churn.
-   Next: RAM-backed indexed-draw trace → oPos verdict, then XBApp flow
-   evidence, nvnet engine last. Issuer EIP, `F36A2` gap and LBA 8
-   (`55 AA`, `PCBX`) still open.
+   Next: C0 provenance (early-stream capture: was boot C0 sane?),
+   then XBApp flow evidence, nvnet engine last. Issuer EIP, `F36A2`
+   gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

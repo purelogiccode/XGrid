@@ -1868,6 +1868,31 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 58. Indexed-draw trace: oPos verdict — proven total clip, guest-side (2026-10-11)
+
+**Array state + buffers (all offline python over the §57 stream +
+ram_60_5b.bin, no repo changes).** Steady-state arrays: one interleaved
+f32 buffer at `0x389C000` (stride 32: pos×3 @0, v2×3 @12, tex×2 @24);
+buffer holds a REAL scene (positions ±4–8, y∈{0,1}, 73% nonzero) —
+indexed geometry is genuine, not degenerate.
+
+**Full program decode (bit-exact vs our `VshProgram` layout).** The
+re-uploaded 11–14-insn program: `R1=V0`; `R2=R1*C0` (B-mux is const,
+raw 0); `oPos=R2+C0`; varying passthrough; dead SGE/LIT after FINAL.
+So `oPos = V0*C0 + C0` with stable `C0=(1,1,16777215,1)` (195 identical
+batches): z/w ≈ ±50M for every real vertex → **every triangle fails
+depth clip; zero pixels proven independent of vertex inputs.** Our
+engine computes the identical math (same clip) — M5–M7 fidelity fully
+exonerated for this traffic; the 1818-inline draws collapse the same
+way (zero verts → single point at C0).
+
+**Open (narrowed to one word).** Why is `C0.z=16777215`? App
+junk-state (waiting menu re-issuing stale blocks) vs driver miscompute
+under emulation is undecided; skin content is present
+(`Skin/HeXEn`: main/load.bmp + skin.ini), so not missing-skin; whether
+boot-time C0 was ever sane needs an early-stream capture. Next: (a) C0
+provenance, (b) XBApp flow evidence, (c) nvnet packet engine last.
+
 ## 57. D3D probe: steady no-op draws — real shaders, degenerate geometry (2026-10-11)
 
 **Method stream captured** (`--pgraph`, 5B run; ring-capped at 262144
