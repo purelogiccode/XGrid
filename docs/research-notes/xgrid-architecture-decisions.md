@@ -1868,6 +1868,40 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 55. XID gate II: enumeration completes — gamepad configured (2026-10-11)
+
+**Three-iteration diagnosis, all offline-analyzed from CLI logs.** (1) The
+guest looped a byte-identical re-enumeration (GET_DESC8 → SET_ADDRESS →
+GET_CONFIG(80) → port reset) with `ctl` frozen and `cfg=False`. (2) TD
+logging exposed the chunking: setup(80) + data#1(64, no Rounding) +
+data#2(16, Rounding set) + status. data#1 shorted 32/64; strict OHCI
+(DataUnderrun + halt, xemu-faithful) made the guest reset. A short-IN
+leniency probe completed nothing — the guest still reset — killing the
+underrun theory. (3) Frame stamps showed data#2 STALLing (`available=0`
+→ STALL): with Rounding EXPLICITLY set the stack expects an empty short
+packet, not a stall. Fixing that (zero-length success when Rounding is
+set; still STALL without it) plus a port-reset→function-reset fix (bus
+reset returns the device to address 0 — without it the guest's recovery
+re-enumeration STALLed on a stale address) completed enumeration on the
+next run: **one clean pass (11 TDs), `addr=1 cfg=True`, zero resets.**
+
+**Strictness vindicated.** A follow-up run removed the leniency probe
+AND added the one xemu line I had missed (CBP advances by transferred
+bytes even on error retirements — the stack reads back CBP for the
+actual length). Enumeration still completes (10 TDs: underrun noted,
+guest un-halts, skips to status, configures). Final engine is
+xemu-faithful with zero deviations; 764 green.
+
+**Static bonus (ram_58_5b.bin):** the runner is an XBApp-framework dash
+(EvoX skin strings, FTP/telnet/RDTOOLS servers, static IP 192.168.0.2)
+that prints `Call to CreateGamepads() failed!` — the title wants the
+pad. But `intr=0` at 5B: nothing programs interrupt EDs yet, so no
+XInput polling. Gate III: `--pad` button injection + response test
+(polling starts? XInput RAM state? EIP/draws change?) — or the dash may
+be network-driven (RemoteX remote shell), in which case the nvnet packet
+engine becomes the gate. The `CreateGamepads` retry behavior (once vs
+loop) is the first thing to establish.
+
 
 
 

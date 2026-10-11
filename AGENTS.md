@@ -152,18 +152,20 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 760 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 764 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: XID gate II (guest validation).
+## Next session — menu response: XID gate III (input injection).
 
-1. XID gate I done (§54): OHCI schedule engine (control/bulk/periodic,
-   done-queue + WDH, STALL/NAK semantics) + neutral `XidGamepad` on
-   USB0 port 0 (Bus 121→138). 5.0B NIC-validation baseline: live render
-   loop (806958 draws / 16789 flips, EIP `0x2D42C`), FEF gone (NVNET
-   44/350). Next: 5.0B run with pad attached (check `ctl/intr/addr`
-   enumeration + no-fault), then CLI button injection + menu-response
-   test. Issuer EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+1. XID gates I+II done (§54–55): OHCI schedule engine + neutral pad on
+   USB0 port 0; **enumeration completes first try** (`addr=1 cfg=True`,
+   11 TDs, zero resets; xemu-faithful CBP-on-error + Rounding-empty;
+   Bus 121→144). Diagnosed via TD logs: 64+16 chunked config reads,
+   port-reset bus semantics, `CreateGamepads() failed!` (XBApp dash
+   wants the pad). But `intr=0` at 5B — nothing polls. Next: `--pad`
+   CLI injection + response test (polling? XInput state? EIP/draws?),
+   or nvnet packet engine if the dash is network-driven. Issuer EIP,
+   `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
