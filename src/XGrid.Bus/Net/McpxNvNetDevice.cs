@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -64,6 +65,8 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
 
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly ushort[] _phy = new ushort[PhyCount];
+    private readonly Dictionary<uint, int> _regReads = new();
+    private readonly Dictionary<uint, int> _regWrites = new();
 
     /// <summary>Creates the nvnet controller in its power-on state.</summary>
     public McpxNvNetDevice()
@@ -80,11 +83,19 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of MMIO writes, for diagnostics.</summary>
     public long Writes { get; private set; }
 
+    /// <summary>Gets per-register read counts, for diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> RegReadCounts => _regReads;
+
+    /// <summary>Gets per-register write counts, for diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> RegWriteCounts => _regWrites;
+
     /// <inheritdoc />
     public void Reset()
     {
         Array.Clear(_regs, 0, _regs.Length);
         Array.Clear(_phy, 0, _phy.Length);
+        _regReads.Clear();
+        _regWrites.Clear();
         _regs[TxRxControl / 4] |= TxRxIdle;
         _regs[AdapterControl / 4] |= AdapterLinkUp;
         _regs[MacAddrA / 4] = MacDefaultA;
@@ -105,7 +116,10 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
         }
 
         Reads++;
-        uint word = ReadReg(offset & ~3u);
+        uint aligned = offset & ~3u;
+        _regReads.TryGetValue(aligned, out int reads);
+        _regReads[aligned] = reads + 1;
+        uint word = ReadReg(aligned);
         int shift = (int)(offset & 3u) * 8;
         return size switch
         {
@@ -126,6 +140,8 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
 
         Writes++;
         uint aligned = offset & ~3u;
+        _regWrites.TryGetValue(aligned, out int writes);
+        _regWrites[aligned] = writes + 1;
         uint shift = (offset & 3u) * 8;
         uint mask = size switch
         {

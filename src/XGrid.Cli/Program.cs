@@ -881,7 +881,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
         Console.WriteLine(
-            $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes}");
+            $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes} " +
+            $"regs:{TopOffsets(machine.Net.RegReadCounts)} wr:{TopOffsets(machine.Net.RegWriteCounts)}");
         Console.WriteLine(
             $"USB0 acc={machine.Usb0.RegisterAccesses} irq={machine.Usb0.InterruptAsserted} " +
             $"ctl={machine.Usb0.ControlTransfers} intr={machine.Usb0.InterruptTransfers} addr={machine.Usb0.DeviceAddress} " +
