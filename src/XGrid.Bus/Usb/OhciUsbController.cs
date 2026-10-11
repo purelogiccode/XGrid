@@ -123,6 +123,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     /// <summary>Gets whether the controller interrupt line is asserted, for diagnostics.</summary>
     public bool InterruptAsserted { get; private set; }
 
+    /// <summary>Gets the raw root-hub port status register, for diagnostics.</summary>
+    public uint GetPortStatus(int index)
+    {
+        return (uint)index < (uint)PortCount ? _ports[index] : 0;
+    }
+
     /// <summary>Gets the number of register accesses, for diagnostics.</summary>
     public long RegisterAccesses { get; private set; }
 

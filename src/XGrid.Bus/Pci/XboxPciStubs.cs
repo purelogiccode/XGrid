@@ -2,7 +2,8 @@ namespace XGrid.Bus.Pci;
 
 /// <summary>
 /// nForce OHCI USB controller (MCPX USB at 0:2.0 and 0:3.0, 10DE:01C2, class 0C03 prog-if 10).
-/// Configuration space and BAR0 sizing only; the OHCI register block is not emulated yet.
+/// Configuration space and BAR0 sizing only; the OHCI register block lives in
+/// <c>XGrid.Bus.Usb.OhciUsbController</c> at 0xFED00000/0xFED08000.
 /// </summary>
 public sealed class NForceUsbController : PciDevice
 {
@@ -14,7 +15,10 @@ public sealed class NForceUsbController : PciDevice
     }
 }
 
-/// <summary>nForce Ethernet controller (MCPX nvnet at 0:4.0, 10DE:01C3). Configuration space only.</summary>
+/// <summary>
+/// nForce Ethernet controller (MCPX nvnet at 0:4.0, 10DE:01C3). Configuration space only;
+/// the MMIO register block lives in <c>XGrid.Bus.Net.McpxNvNetDevice</c> at 0xFEF00000.
+/// </summary>
 public sealed class NvNetController : PciDevice
 {
     /// <summary>Creates the nvnet controller.</summary>
