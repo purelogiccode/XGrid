@@ -124,6 +124,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 
     private readonly IUsbMemory _memory;
     private readonly uint[] _ports = new uint[PortCount];
+    private IUsbDeviceFunction? _function;
     private uint _ctl;
     private uint _status;
     private uint _intrStatus;
@@ -183,7 +184,15 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     public long RegisterAccesses { get; private set; }
 
     /// <summary>Gets the attached device function (a gamepad on port 0), if any.</summary>
-    public IUsbDeviceFunction? Function { get; set; }
+    public IUsbDeviceFunction? Function
+    {
+        get => _function;
+        set
+        {
+            _function = value;
+            ReportPortZeroConnect();
+        }
+    }
 
     /// <summary>Gets the number of retired control transfer descriptors, for diagnostics.</summary>
     public long ControlTransfers { get; private set; }
@@ -438,6 +447,18 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         _rhdescB = 0;
         _rhstatus = 0;
         Array.Clear(_ports);
+        ReportPortZeroConnect();
+    }
+
+    /// <summary>Reports the attached function as connected on port 0, if any.</summary>
+    private void ReportPortZeroConnect()
+    {
+        // The hub reports no power switching, so port 0 is powered by default
+        // and an attached function reads connected without guest power writes.
+        if (_function is not null)
+        {
+            _ports[0] |= PortCcs | PortCsc;
+        }
     }
 
     private void SetHubStatus(uint value)
