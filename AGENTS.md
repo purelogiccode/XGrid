@@ -155,15 +155,17 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 727 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — after the evox.ini save: why re-save, then longer runs?
+## Next session — post-save poll storm: identify the F34–F38 poller.
 
-1. 3.2B-step run completes with no fault at EIP `0x67BFD`; `--writedump`
-   proves the `0xCA` WRITE DMAs are the dashboard **re-saving `C:\evox.ini`
-   in place** (FAT chain truncated 263→264→265→END, 45781/79868 bytes,
-   byte-identical, dirent flushed per chunk). §46 LBAs were byte-reversed
-   taskfile bytes (`l885446` = true LBA `0x465488`, C: root-dir sector).
-   Open: re-save trigger with no input; single early write to disk LBA 8
-   (`55 AA`, `PCBX`). See research-notes §47.
+1. 4.0B-step run completes with no fault at EIP `0x67BFF` (parked); the
+   evox.ini re-save is **complete** (dirent 79868, zero diff, FAT chain
+   re-extended 263–267). Post-save: reads of the `disk.bin` region,
+   +48 degenerate draws/+2 clears/**frame #34**, and **~1.05M
+   unmapped-MMIO accesses in `F34–F38`** (all new in 3.2–4.0B). Static:
+   the runner is a chain-loaded 10-section **`RemoteX`** dash (EvoX
+   loader decrypts + hands off; save triggered post-`Start!`). Next:
+   unmapped-access (EIP, address) instrumentation + stack forensics.
+   See research-notes §48. LBA 8 write (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

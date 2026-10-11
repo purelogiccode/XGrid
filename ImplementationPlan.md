@@ -2832,20 +2832,22 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **727 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — after the evox.ini save: why re-save, then longer runs.**
+**NEXT SESSION — post-save poll storm: identify the F34–F38 poller.**
 The animation wait (§32) through **M8** (§43), surface scoping (§44),
-content discovery (§45) and file-save identification (§47) are solved.
-`xgrid boot --steps 3200000000` (3.2B steps) completes **with no fault at
-EIP `0x67BFD`** (phys `0xD4BFD`, another module mapping): GPU frozen, and
-`--writedump` proves the `0xCA` WRITE DMAs are the dashboard **re-saving
-`C:\evox.ini` in place** — truncate (FAT 263→264→265→END, clusters
-266–267 freed) + streaming rewrite, 45781 of 79868 bytes so far,
-byte-identical to the on-disk file, dirent flushed per chunk
-(`465488x56`). Note the §46 LBAs were byte-reversed taskfile bytes
-(`LogCommand` prints lo/mid/hi concatenated): `l885446` = true LBA
-`0x465488` (C: root-dir sector), all file-save I/O C:-local. One open
-side item: a single early write to disk LBA 8 (MBR-signature-like sector,
-`55 AA`, `PCBX` marker — attribution unknown).
+content discovery (§45), file-save (§47: dashboard re-saves `C:\evox.ini`
+in place — truncate + streaming rewrite, proved byte-identical) and
+save-completion (§48) are solved. `xgrid boot --steps 4000000000` (4.0B
+steps) completes **with no fault at EIP `0x67BFF`** (parked, +2 bytes):
+the ini is fully rewritten (dirent 79868, FAT chain re-extended
+263–267), then the dashboard reads the `disk.bin` region
+(`0x4662C8–0x4670F0`), stirs the GPU (+48 degenerate draws, +2 clears,
+**frame #34**) and spins **~1.05M unmapped-MMIO accesses in `F34–F38`**
+(all new in the 3.2–4.0B window). Static bonus this turn: the runner is a
+chain-loaded 10-section **`RemoteX`** dash (EvoX loader decrypts +
+hands off; main flow `Load q:\evox.ini` → `Fill!` → `Start!` →
+`OpenX_Dash.Run`, save triggered post-`Start!`). Next: instrument
+unmapped accesses with (EIP, exact address) to name the poller + stack
+forensics on the parked thread (EIP sits in a data table).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2859,9 +2861,10 @@ program-draw rasterization is still unvalidated**. The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
 presents the dashboard surface, not the `0x1000` early-boot region.
 The 2.5B content scan (§45) gave way to the evox.ini re-save at 3.2B
-(§47). Next: find the re-save trigger (first-boot settings commit vs
-dirty-flag save — watch the ini buffer / size field), then longer runs
-toward UI (XID input for the menu). Remaining M5 gaps: inline
+(§47), complete at 4.0B with post-save disk.bin reads, GPU stirrings and
+the F34–F38 poll storm (§48). Next: name the poller (unmapped-access
+EIP instrumentation), then longer runs toward UI (XID input for the
+menu). Remaining M5 gaps: inline
 `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Test media
 for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
@@ -2869,7 +2872,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-47.
+trail: research-notes §30-48.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
