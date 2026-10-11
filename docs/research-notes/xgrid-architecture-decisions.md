@@ -1984,11 +1984,13 @@ provenance, (b) XBApp flow evidence, (c) nvnet packet engine last.
 
 ## 57. D3D probe: steady no-op draws — real shaders, degenerate geometry (2026-10-11)
 
-**Method stream captured** (`--pgraph`, 5B run; ring-capped at 262144
-entries so the file IS the menu-idle tail: ~150 structurally identical
-frames, ~28 draws each — no bursts, no surface creation, i.e. a steady
-loop, not init churn). Artifacts in temp (`pgraph_61_5b.txt`,
-`vp_tail.json`), not the repo. Per frame: transform-program re-uploads
+**Method stream captured** (`--pgraph`, 5B run; capped at 262144
+entries so the file IS the boot window — **correction (§59): the cap
+keeps the FIRST methods, not a tail; gate61/62 files are byte-identical.
+The ~150 identical frames below are the animation loop, not menu-idle;
+menu-idle differs (denser draws, slot-0-only constants)** — no bursts,
+no surface creation, i.e. a steady loop, not init churn). Artifacts in
+temp (`pgraph_61_5b.txt`, `vp_tail.json`), not the repo. Per frame: transform-program re-uploads
 (7–11 instruction fixed-function-style shaders: `R1=V0`, perspective
 RCP, `R2=R1*X`, `oPos=R2+C0`, varying passthrough, FINAL-terminated),
 constant batches (slots 0 with `C0=[1,1,16777215,1]` + slots 96–104 via
