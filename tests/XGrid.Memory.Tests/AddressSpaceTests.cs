@@ -24,6 +24,46 @@ public sealed class AddressSpaceTests
     }
 
     [Fact]
+    public void UnmappedAccesses_AreCountedPerPage_SeparatingReadsAndWrites()
+    {
+        AddressSpace space = CreateSpace();
+
+        space.Read32(0xFD000000);
+        space.Read32(0xFD000010);
+        space.Read32(0xFD001000);
+        space.Write32(0xFD000000, 1);
+
+        Assert.Equal(2, space.UnmappedPageReads[0xFD000]);
+        Assert.Equal(1, space.UnmappedPageReads[0xFD001]);
+        Assert.Equal(1, space.UnmappedPageWrites[0xFD000]);
+        Assert.False(space.UnmappedPageWrites.ContainsKey(0xFD001));
+    }
+
+    [Fact]
+    public void UnmappedPageCounts_Empty_WhenNoUnmappedAccesses()
+    {
+        AddressSpace space = CreateSpace();
+
+        space.Read32(0);
+        space.Write32(0, 1);
+
+        Assert.Empty(space.UnmappedPageReads);
+        Assert.Empty(space.UnmappedPageWrites);
+    }
+
+    [Fact]
+    public void UnmappedAccessTotal_CountsReadsAndWrites()
+    {
+        AddressSpace space = CreateSpace();
+
+        Assert.Equal(0, space.UnmappedAccessTotal);
+        space.Read32(0xFD000000);
+        space.Write32(0xFD000000, 1);
+
+        Assert.Equal(2, space.UnmappedAccessTotal);
+    }
+
+    [Fact]
     public void WatchRange_ReportsWritesInsideRangeOnly()
     {
         AddressSpace space = CreateSpace();

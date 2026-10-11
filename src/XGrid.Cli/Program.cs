@@ -331,7 +331,8 @@ internal static class Program
                 executed += ran;
                 if (executed >= nextProgress)
                 {
-                    Console.WriteLine($"Progress {executed} instruction(s)");
+                    Console.WriteLine(
+                        $"Progress {executed} instruction(s) EIP=0x{machine.Cpu.Context.Eip:X8}");
                     nextProgress += progressInterval;
                 }
             }
@@ -599,6 +600,43 @@ internal static class Program
         return instruction;
     }
 
+    private static void PrintUnmappedTopPages(
+        string kind, System.Collections.Generic.IReadOnlyDictionary<uint, int> pages)
+    {
+        if (pages.Count == 0)
+        {
+            return;
+        }
+
+        var sorted = new List<(uint Page, int Count)>();
+        foreach (var entry in pages)
+        {
+            sorted.Add((entry.Key, entry.Value));
+        }
+
+        sorted.Sort((a, b) => b.Count.CompareTo(a.Count));
+        var log = new System.Text.StringBuilder();
+        long total = 0;
+        int shown = 0;
+        int limit = sorted.Count <= 2048 ? sorted.Count : 20;
+        foreach (var entry in sorted)
+        {
+            total += entry.Count;
+            if (shown < limit)
+            {
+                log.Append(CultureInfo.InvariantCulture, $" {entry.Page:X5}={entry.Count}");
+                shown++;
+            }
+        }
+
+        if (sorted.Count > shown)
+        {
+            log.Append(CultureInfo.InvariantCulture, $" (+{sorted.Count - shown} pages)");
+        }
+
+        Console.WriteLine($"Unmapped {kind} pages ({sorted.Count}, total {total}):{log}");
+    }
+
     private static void PrintState(XboxMachine machine, ulong executed,
         IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
     {
@@ -652,6 +690,8 @@ internal static class Program
         }
 
         Console.WriteLine($"Unmapped phys (1MB buckets):{unmappedLog}");
+        PrintUnmappedTopPages("read", machine.Memory.UnmappedPageReads);
+        PrintUnmappedTopPages("write", machine.Memory.UnmappedPageWrites);
         var configKeys = new List<ushort>(machine.Bus.Pci.ConfigAccessCounts.Keys);
         configKeys.Sort();
         var configLog = new System.Text.StringBuilder();
