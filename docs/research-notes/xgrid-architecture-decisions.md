@@ -2247,3 +2247,34 @@ situation for `CSharp_CHDSharp` (covers the 945-CHD set later).
 file directly - the ISO *is* the disc); DVD-auth scope (what the
 kernel's ATAPI probe needs beyond TUR/SENSE/CAPACITY); CHDSharp for
 `E:/Microsoft Xbox`.
+
+## 65. DVD reads served: ATAPI media + guest probe (2026-10-11)
+
+**Device work (`XGrid.Storage`).** New `IDvdImage`/`IsoDvdImage`
+(2048 B sectors, read-only, shared reads) + `AtaDevice.AttachDvd`
+(ATAPI-only) plumbed through `IdeController`/`XboxMachine` to CLI
+`boot --dvd <iso>`. With media: TUR succeeds (`CompletePacketOk`),
+READ CAPACITY returns BE last-LBA + 2048, READ(10/12) serve
+sectors (bounds-checked 5/0x21, 128-sector cap 5/0x24, zero-length =
+OK, single-DRQ staging shared by PIO + BM-DMA via `_dmaLarge`),
+unimplemented-with-media (TOC/STRUCTURE/CD) fails 5/0x20.
+REQUEST SENSE now returns latched sense (fresh empty drive still
+2/0x3A via Reset init - no-media oracle unchanged). 17 new tests
+(PIO packets, image file, PRDT DMA incl. a real-file path test).
+
+**gate72 validation (`--dvd` 007, 5B, no fault).** Dashboard boot is
+bit-identical (same HDD cmds, draws 806958 / frames 16789). The
+guest, finding a ready DVD, probes it: TUR + READ CAPACITY + 16x
+READ(10) at LBAs `0x10`-`0x13` (ISO9660 PVD check), `0x20` (XDVDFS
+magic check), `0x100/0x101/0x102/0x112` follow-ups - all served live
+from the ISO. No auth opcodes observed (no 0xAD/D5/vendor): the
+kernel sector-probes, nothing more, on this path.
+
+**Ops lesson.** `Start-Process` single-string `ArgumentList` splits
+on spaces: ISO paths with spaces need embedded quotes (array form
+failed the same way through the tool layer); foreground quoted runs
+verify parsing.
+
+**Next.** READ TOC/STRUCTURE if a title demands them; real game boot
+needs title flow to `D:` (dashboard stays in state 0); CHDSharp for
+the 945-CHD set.

@@ -8,6 +8,12 @@ public sealed class AtaDevice
     /// <summary>Sector size in bytes.</summary>
     public const int SectorSize = 512;
 
+    /// <summary>DVD sector size in bytes (ATAPI reads).</summary>
+    public const int DvdSectorSize = 2048;
+
+    /// <summary>Maximum DVD sectors served per READ command (256 KiB cap).</summary>
+    private const int MaxDvdTransferSectors = 128;
+
     /// <summary>ATAPI packet command size in bytes.</summary>
     public const int PacketSize = 12;
 
@@ -20,6 +26,8 @@ public sealed class AtaDevice
     private readonly byte[] _identify = new byte[SectorSize];
     private readonly byte[] _packet = new byte[PacketSize];
     private IDiskImage? _disk;
+    private IDvdImage? _dvd;
+    private byte[]? _dmaLarge;
     private int _dataIndex;
     private int _transferLength = SectorSize;
     private int _packetIndex;
@@ -78,7 +86,9 @@ public sealed class AtaDevice
     public bool DmaResponseReady => _phase == Phase.PacketDataDma;
 
     /// <summary>Gets the staged DMA response bytes (valid while <see cref="DmaResponseReady"/>).</summary>
-    public ReadOnlySpan<byte> DmaResponse => DmaBuffer.AsSpan(0, _transferLength);
+    public ReadOnlySpan<byte> DmaResponse => StagedData();
+
+    private Span<byte> StagedData() => (_dmaLarge ?? DmaBuffer).AsSpan(0, _transferLength);
 
     /// <summary>Gets the drive staging buffer for bus-master sector copies.</summary>
     public byte[] DmaBuffer { get; } = new byte[SectorSize];
@@ -99,6 +109,7 @@ public sealed class AtaDevice
     public void FinishDmaResponse()
     {
         _dataIndex = 0;
+        _dmaLarge = null;
         _phase = Phase.None;
         Status = StatusReady;
         SectorCount = (byte)((SectorCount & ~7) | 0x03);
@@ -206,6 +217,22 @@ public sealed class AtaDevice
         Reset();
     }
 
+    /// <summary>Attaches DVD media to an ATAPI drive.</summary>
+    public void AttachDvd(IDvdImage dvd)
+    {
+        ArgumentNullException.ThrowIfNull(dvd);
+        if (!IsAtapi)
+        {
+            throw new InvalidOperationException("DVD media requires an ATAPI drive.");
+        }
+
+        _dvd = dvd;
+        Reset();
+    }
+
+    /// <summary>Gets whether DVD media is attached.</summary>
+    public bool HasDvdMedia => _dvd is not null;
+
     /// <summary>Returns the drive to its power-on state.</summary>
     public void Reset()
     {
@@ -219,6 +246,14 @@ public sealed class AtaDevice
         Features = 0;
         SenseKey = 0;
         SenseAsc = 0;
+        if (IsAtapi && _dvd is null)
+        {
+            // A fresh empty drive reports NOT_READY / MEDIUM_NOT_PRESENT until
+            // a command latches real sense (matches the no-media probe oracle).
+            SenseKey = 0x02;
+            SenseAsc = 0x3A;
+        }
+
         Status = StatusReady;
         SectorCount = 0;
         LbaLow = 0;
@@ -227,6 +262,7 @@ public sealed class AtaDevice
         DriveHead = 0xA0;
         _packetDma = false;
         _packetError = false;
+        _dmaLarge = null;
         SetSignature();
     }
 
@@ -360,7 +396,7 @@ public sealed class AtaDevice
             return 0;
         }
 
-        byte value = DmaBuffer[_dataIndex];
+        byte value = StagedData()[_dataIndex];
         _dataIndex++;
         if (_dataIndex >= _transferLength)
         {
@@ -643,6 +679,7 @@ public sealed class AtaDevice
     private void DispatchPacket(bool raiseIrq)
     {
         _packetIndex = 0;
+        _dmaLarge = null;
         byte opcode = _packet[0];
         _packetLog.Add($"{opcode:X2}:{_packet[1]:X2}{_packet[2]:X2}{_packet[3]:X2}{_packet[4]:X2}{_packet[5]:X2}");
         if (_packetLog.Count > 16)
@@ -652,14 +689,14 @@ public sealed class AtaDevice
 
         if (opcode == 0x03)
         {
-            // REQUEST SENSE succeeds without media: 18-byte fixed-format data
-            // reporting NOT_READY / MEDIUM_NOT_PRESENT (QEMU cmd_request_sense).
+            // REQUEST SENSE returns the latched sense (QEMU cmd_request_sense);
+            // a fresh empty drive reports NOT_READY / MEDIUM_NOT_PRESENT.
             int alloc = _packet[4] == 0 ? 18 : Math.Min(18, (int)_packet[4]);
             Array.Clear(DmaBuffer);
             DmaBuffer[0] = 0x70;
-            DmaBuffer[2] = 0x02;
+            DmaBuffer[2] = SenseKey;
             DmaBuffer[7] = 10;
-            DmaBuffer[12] = 0x3A;
+            DmaBuffer[12] = SenseAsc;
             StagePacketData(alloc);
             SenseKey = 0;
             SenseAsc = 0;
@@ -682,8 +719,45 @@ public sealed class AtaDevice
             return;
         }
 
+        // TEST UNIT READY succeeds only with media loaded.
+        if (opcode == 0x00)
+        {
+            if (_dvd is null)
+            {
+                FailPacket(0x02, 0x3A);
+            }
+            else
+            {
+                CompletePacketOk();
+            }
+
+            return;
+        }
+
+        // Media-backed reads (LBA counts 2048-byte DVD sectors).
+        if (_dvd is not null)
+        {
+            switch (opcode)
+            {
+                case 0x25:
+                    StageDvdCapacity();
+                    return;
+                case 0x28:
+                    StageDvdRead(ReadBe32(_packet, 2), ReadBe16(_packet, 7));
+                    return;
+                case 0xA8:
+                    StageDvdRead(ReadBe32(_packet, 2), ReadBe32(_packet, 6));
+                    return;
+                default:
+                    // 0x43/0xAD/0xBE and friends are unimplemented with media.
+                    FailPacket(0x05, 0x20);
+                    return;
+            }
+        }
+
         // Media-dependent commands on an empty drive: NOT_READY / MEDIUM_NOT_PRESENT.
-        if (opcode is 0x00 or 0x25 or 0x28 or 0x43 or 0xA8 or 0xAD or 0xBE)
+        // (TEST UNIT READY is handled above.)
+        if (opcode is 0x25 or 0x28 or 0x43 or 0xA8 or 0xAD or 0xBE)
         {
             FailPacket(0x02, 0x3A);
             return;
@@ -699,6 +773,75 @@ public sealed class AtaDevice
 
         // Unknown opcodes: ILLEGAL_REQUEST / ILLEGAL_OPCODE (QEMU ide_atapi_cmd).
         FailPacket(0x05, 0x20);
+    }
+
+    /// <summary>Completes a packet command with no data phase (e.g. TEST UNIT READY).</summary>
+    private void CompletePacketOk()
+    {
+        Error = 0;
+        Status = StatusReady;
+        SectorCount = (byte)((SectorCount & ~7) | 0x03);
+        _phase = Phase.None;
+        Interrupt?.Invoke();
+    }
+
+    /// <summary>Stages a READ CAPACITY response: big-endian last LBA + 2048-byte blocks.</summary>
+    private void StageDvdCapacity()
+    {
+        Array.Clear(DmaBuffer);
+        WriteBe32(DmaBuffer, 0, _dvd!.SectorCount - 1);
+        WriteBe32(DmaBuffer, 4, DvdSectorSize);
+        StagePacketData(8);
+    }
+
+    /// <summary>Stages DVD sectors for a READ(10/12) command (single DRQ, PIO or DMA).</summary>
+    private void StageDvdRead(uint lba, uint sectors)
+    {
+        if (sectors == 0)
+        {
+            CompletePacketOk();
+            return;
+        }
+
+        if ((ulong)lba + sectors > _dvd!.SectorCount)
+        {
+            FailPacket(0x05, 0x21);
+            return;
+        }
+
+        if (sectors > MaxDvdTransferSectors)
+        {
+            FailPacket(0x05, 0x24);
+            return;
+        }
+
+        byte[] data = new byte[(int)sectors * DvdSectorSize];
+        for (uint i = 0; i < sectors; i++)
+        {
+            _dvd.ReadSector(lba + i, data.AsSpan((int)i * DvdSectorSize, DvdSectorSize));
+        }
+
+        _dmaLarge = data;
+        StagePacketData(data.Length);
+    }
+
+    private static uint ReadBe32(byte[] buffer, int offset)
+    {
+        return ((uint)buffer[offset] << 24) | ((uint)buffer[offset + 1] << 16)
+            | ((uint)buffer[offset + 2] << 8) | buffer[offset + 3];
+    }
+
+    private static ushort ReadBe16(byte[] buffer, int offset)
+    {
+        return (ushort)(((uint)buffer[offset] << 8) | buffer[offset + 1]);
+    }
+
+    private static void WriteBe32(byte[] buffer, int offset, uint value)
+    {
+        buffer[offset] = (byte)(value >> 24);
+        buffer[offset + 1] = (byte)(value >> 16);
+        buffer[offset + 2] = (byte)(value >> 8);
+        buffer[offset + 3] = (byte)value;
     }
 
     /// <summary>Fails a packet command with sense data (QEMU ide_atapi_cmd_error).</summary>

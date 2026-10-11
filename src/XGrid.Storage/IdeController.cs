@@ -98,6 +98,11 @@ public sealed class IdeController : PciDevice
         PrimaryMaster.Attach(disk);
     }
 
+    /// <summary>Attaches DVD media to the ATAPI slave drive.</summary>
+    public void AttachDvd(IDvdImage dvd)
+    {
+        PrimarySlave.AttachDvd(dvd);
+    }
     /// <summary>Registers the legacy compatibility ports (0x1F0 and 0x3F6).</summary>
     public void RegisterPorts(IoSpace io)
     {

@@ -195,6 +195,16 @@ public sealed class XboxMachine
     /// <summary>Gets the HDD copy-on-write overlay, or null when no hard disk is attached.</summary>
     public OverlayDiskImage? HddOverlay { get; private set; }
 
+    /// <summary>Attaches a DVD image to the ATAPI slave drive (read-only, no overlay).</summary>
+    public void AttachDvd(string path)
+    {
+        Dvd = new IsoDvdImage(path);
+        Ide.AttachDvd(Dvd);
+    }
+
+    /// <summary>Gets the attached DVD image, or null when no disc is present.</summary>
+    public IDvdImage? Dvd { get; private set; }
+
     /// <summary>Opens a raw or qcow2 disk image by magic number.</summary>
     public static IDiskImage OpenDiskImage(string path)
     {
