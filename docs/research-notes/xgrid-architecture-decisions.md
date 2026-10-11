@@ -1713,6 +1713,34 @@ wiki's Shadow RAM range — xemu maps nothing there either, but xemu never
 reaches this phase so it is no oracle); the `F36A2` gap (guard page vs
 two back-to-back 2 MB clears vs scatter-list run boundary).
 
+## 50. Shadow RAM verdict: tiled/write-combined mirror — alias implemented (2026-10-11)
+
+**Offline evidence, no guest steps.** Cxbx `AddressRanges.h` (kernel-header
+reference, vendored) is definitive: `TILED_MEMORY_BASE = 0xF0000000` (64
+MB retail, matching the wiki's Shadow RAM column) with the comment
+*"WC (The WC memory is another name of the tiled memory)"*; debug-size
+128 MB (`XBOX_WRITE_COMBINED_*`) matches the wiki's Debug/Chihiro column.
+xemu maps nothing at `0xF0000000` (and deadlocks long before this phase —
+no oracle either way). Verdict: **mirror, not discard** — the 4 MB fill
+lands in RAM top on hardware, and XGrid was diverging by dropping it.
+
+**Implementation (small, fully tested).** `XboxAddressMap.WriteCombinedBase/
+Size` (`0xF0000000`/`0x04000000`) + a `RamAliasDevice` region ("RAM
+write-combined") registered in the `XboxMachine` constructor. Overlap
+with the 1 MB flash window at the same base is resolved by registration
+tie-order: the constructor alias registers first, `LoadBios` flash later,
+so flash keeps precedence over `F00–F0F` (all existing flash tests pass
+unchanged) while `F10–F3F` newly mirrors RAM. The 4.0B unmapped histograms
+prove no pre-fill code reads `F10–F3F` (reads there: zero), so boot
+behavior through the fill is bit-identical; 1M-step smoke confirms
+(same EIP/buckets). 732 tests green (Integration 11→13). Next long run
+will show the fill landing in RAM top (`0x34A2000+`) — watch whether
+anything downstream reads it back.
+
+**Still open:** exact hardware priority inside `F00–F0F` (flash-first is
+our modeling choice, preserves 4.0B-validated boot); fill issuer EIP;
+`F36A2` gap; LBA 8 attribution.
+
 
 
 
