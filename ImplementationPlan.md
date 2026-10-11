@@ -2870,7 +2870,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-59.
+trail: research-notes §30-60.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

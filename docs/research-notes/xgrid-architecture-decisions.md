@@ -1868,6 +1868,36 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 60. Zeta verdict: set at boot, never after; logo-vs-scene split (2026-10-11)
+
+**Full-stream surface timeline** (single pass, 463M methods): `0x214`
+zeta IS set — 78 writes, all within the first ~187K methods
+(`0x33D0000`×36 with color `0x3628000`, `0`×33 with `0x32A4000`,
+`0x2813000`×6 with `0x2853000/0x2893000`, `0x3BD4000` last) — then
+never again; color `0x210` flips the `0x3D00000↔0x3E2C000` pair to the
+last line (16.7K ≈ frame count); format/pitch/`0x290` also boot-only.
+Program/const uploads run all file long at uniform cadence
+(1E9C ~486K, 1EA4 ~494K, 1EA0 ~251K, all slot/start 0). So: genuine
+device bring-up with depth at boot (several surface configs), then a
+steady color-only present loop. Zeta absence can't explain the clip
+(clip precedes depth), and M-fidelity stands.
+
+**Logo-vs-scene split hypothesis.** The only pixels ever drawn (10.1M)
+come from 33 legacy fullscreen TEXTURED inline draws — plausibly the
+visible boot logo — while all 800K program draws (real scene @
+`0x389C000`, real shaders) clip on `C0.z`. I.e. the animation you see
+and the scene you don't are different draw populations; the menu may
+be black because its scene-graph draws through the same poisoned
+viewport, not because the app is stuck.
+
+**Remaining fork, sharpened.** Both GPU clients emit viewport-Z 16.7M
+from frame one — either the app sets it (both clients broken the same
+way?) or the driver bakes it from emulated state (surface/zeta/caps
+query we misreport). Next probes: (a) find the app's D3DVIEWPORT8 in
+RAM and x-ref its writers (who stores 16.7M?); (b) audit OUR
+surface/zeta/caps responses at bake time; (c) EIP-anchored SetViewport
+trace. nvnet engine stays last.
+
 ## 59. C0 provenance: viewport-baked junk from the first upload (2026-10-11)
 
 **Cap semantics corrected.** `MethodStream` keeps the FIRST 262144
