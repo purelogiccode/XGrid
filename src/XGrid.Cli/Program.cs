@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using XGrid.Bus.Usb;
 using XGrid.Cpu;
 using XGrid.Graphics;
 using XGrid.Host;
@@ -66,6 +67,9 @@ internal static class Program
         string? ramDumpPath = null;
         string? raminPath = null;
         string? writeDumpDir = null;
+        string? padButtons = null;
+        string? padAnalog = null;
+        string? padSticks = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -155,6 +159,15 @@ internal static class Program
                 case "--writedump":
                     writeDumpDir = NextValue(args, ref i);
                     break;
+                case "--pad-buttons":
+                    padButtons = NextValue(args, ref i);
+                    break;
+                case "--pad-analog":
+                    padAnalog = NextValue(args, ref i);
+                    break;
+                case "--pad-sticks":
+                    padSticks = NextValue(args, ref i);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -201,6 +214,21 @@ internal static class Program
             }
 
             machine.Reset();
+
+            if (padButtons is not null || padAnalog is not null || padSticks is not null)
+            {
+                if (!PadInput.TryParse(padButtons, padAnalog, padSticks, out PadInput pad))
+                {
+                    Console.Error.WriteLine("Invalid --pad options (buttons: hex16; analog: 16 hex chars; sticks: lx,ly,rx,ry)");
+                    return 1;
+                }
+
+                if (machine.Usb0.Function is XidGamepad gamepad)
+                {
+                    gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
+                    Console.WriteLine($"Pad buttons=0x{pad.Buttons:X4} analog={BitConverter.ToString(pad.Analog)}");
+                }
+            }
 
             machine.Memory.WatchStart = machineWatchStart;
             machine.Memory.WatchEnd = machineWatchEnd;
@@ -1215,7 +1243,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

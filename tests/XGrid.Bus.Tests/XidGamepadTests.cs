@@ -186,6 +186,19 @@ public sealed class XidGamepadTests
     }
 
     [Fact]
+    public void SetInput_SurvivesReset()
+    {
+        var pad = new XidGamepad();
+        pad.SetInput(0x0010, new byte[] { 0, 0, 0xFF, 0, 0, 0, 0, 0 }, new short[] { 0, 0, 0, 0 });
+
+        pad.Reset();
+
+        Assert.True(pad.HandleIn(2, 20, out byte[] report) == UsbTransferResult.Ack);
+        Assert.Equal(0x10, report[2] | (report[3] << 8));
+        Assert.Equal(0xFF, report[6]);
+    }
+
+    [Fact]
     public void RequestLog_RecordsSetupOutcomes()
     {
         var pad = new XidGamepad();
