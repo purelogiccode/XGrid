@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Xunit;
 
@@ -115,6 +116,91 @@ public sealed class PgraphTransformTests
         PushMethods(nv2A, memory, methods.ToArray());
     }
 
+    private static List<(uint Method, uint Parameter)> ProgramSurfaceState(bool vertexColor)
+    {
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+        };
+        if (vertexColor)
+        {
+            methods.Add((0x0B10u, 0u));
+            methods.Add((0x0B14u, 0x0020021Bu));
+            methods.Add((0x0B18u, 0x0836006Cu));
+            methods.Add((0x0B1Cu, 0x0000F819u));
+        }
+
+        return methods;
+    }
+
+    private static void WriteStripVertices(ArrayMemory memory)
+    {
+        (uint X, uint Y)[] vertices =
+        {
+            (0u, 0u),
+            (8u, 0u),
+            (0u, 8u),
+            (8u, 8u),
+            (15u, 8u),
+            (8u, 15u),
+            (15u, 15u),
+        };
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            uint address = 0x2000u + ((uint)i * 16u);
+            memory.WritePhysical(address, BitConverter.SingleToUInt32Bits(vertices[i].X));
+            memory.WritePhysical(address + 4, BitConverter.SingleToUInt32Bits(vertices[i].Y));
+            memory.WritePhysical(address + 8, 0u);
+            memory.WritePhysical(address + 12, 0x3F800000u);
+        }
+    }
+
+    private static List<(uint Method, uint Parameter)> StripProgramState()
+    {
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0x3F800000u),
+            (0x0B88u, 0x3F800000u),
+            (0x0B8Cu, 0x3F800000u),
+        };
+        return methods;
+    }
+
+    private static void AddInlineVertex(List<(uint Method, uint Parameter)> methods, uint x, uint y)
+    {
+        methods.Add((0x1A00u, x));
+        methods.Add((0x1A04u, y));
+        methods.Add((0x1A08u, 0u));
+        methods.Add((0x1A0Cu, 0x3F800000u));
+    }
+
     [Fact]
     public void TransformConstantLoad_StoresConstantsAndAdvances()
     {
@@ -176,13 +262,112 @@ public sealed class PgraphTransformTests
     }
 
     [Fact]
-    public void DrawArrays_AppendsCountPlusOneElements()
+    public void DrawArrays_CollectsPendingRange()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
 
         PushMethods(nv2A, memory, (0x1810u, (3u << 24) | 0u));
 
+        Assert.Equal(1, nv2A.DrawArrayRangeCount);
+        Assert.Equal(0, nv2A.InlineElementCount);
+    }
+
+    [Fact]
+    public void DrawArrays_ExpandsSingleRangeOnArrayElement()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x17FCu, 6u),
+            (0x1810u, (3u << 24) | 0u),
+            (0x1808u, 9u));
+
+        Assert.Equal(0, nv2A.DrawArrayRangeCount);
+        Assert.Equal(5, nv2A.InlineElementCount);
+        Assert.Equal(0uL, nv2A.DrawsExecuted);
+    }
+
+    [Fact]
+    public void DrawArrays_ExpandsPendingRangesOnArrayElement()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        var methods = ProgramSurfaceState(vertexColor: false);
+        methods.Add((0x17FCu, 6u));
+        methods.Add((0x1810u, (2u << 24) | 0u));
+        methods.Add((0x1810u, (2u << 24) | 4u));
+        methods.Add((0x1808u, 1u));
+        PushMethods(nv2A, memory, methods.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0, nv2A.DrawArrayRangeCount);
         Assert.Equal(4, nv2A.InlineElementCount);
+    }
+
+    [Fact]
+    public void VertexData2F_WritesXYAndFinishesVertex()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x1880u, 0x3F800000u),
+            (0x1884u, 0x40000000u));
+
+        Assert.Equal(0x3F800000u, nv2A.ReadInlineValueWord(0, 0));
+        Assert.Equal(0x40000000u, nv2A.ReadInlineValueWord(0, 1));
+        Assert.Equal(0u, nv2A.ReadInlineValueWord(0, 2));
+        Assert.Equal(0x3F800000u, nv2A.ReadInlineValueWord(0, 3));
+        Assert.Equal(1, nv2A.InlineVertexCount);
+    }
+
+    [Fact]
+    public void VertexData2S_WritesSignedComponentsAndFinishesVertex()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(nv2A, memory, (0x1900u, 0xFFFE0005u));
+
+        Assert.Equal(BitConverter.SingleToUInt32Bits(5f), nv2A.ReadInlineValueWord(0, 0));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(-2f), nv2A.ReadInlineValueWord(0, 1));
+        Assert.Equal(0u, nv2A.ReadInlineValueWord(0, 2));
+        Assert.Equal(0x3F800000u, nv2A.ReadInlineValueWord(0, 3));
+        Assert.Equal(1, nv2A.InlineVertexCount);
+    }
+
+    [Fact]
+    public void VertexData4Ub_WritesNormalizedBytes()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(nv2A, memory, (0x194Cu, 0xFF8040C0u));
+
+        Assert.Equal(BitConverter.SingleToUInt32Bits(0xC0 / 255f), nv2A.ReadInlineValueWord(3, 0));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(0x40 / 255f), nv2A.ReadInlineValueWord(3, 1));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(0x80 / 255f), nv2A.ReadInlineValueWord(3, 2));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(0xFF / 255f), nv2A.ReadInlineValueWord(3, 3));
+        Assert.Equal(0, nv2A.InlineVertexCount);
+    }
+
+    [Fact]
+    public void VertexData4S_WritesRawInt16Pairs()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x1990u, 0x0004FFFCu),
+            (0x1994u, 0x00080006u));
+
+        Assert.Equal(BitConverter.SingleToUInt32Bits(-4f), nv2A.ReadInlineValueWord(2, 0));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(4f), nv2A.ReadInlineValueWord(2, 1));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(6f), nv2A.ReadInlineValueWord(2, 2));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(8f), nv2A.ReadInlineValueWord(2, 3));
+        Assert.Equal(0, nv2A.InlineVertexCount);
     }
 
     [Fact]
@@ -325,6 +510,60 @@ public sealed class PgraphTransformTests
         Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u));
         Assert.Equal(0xFF00FF00u, memory.ReadPhysical(0x3000u + 8u));
         Assert.Equal(0xFF0000FFu, memory.ReadPhysical(0x3000u + (2u * 0x10u)));
+    }
+
+    [Fact]
+    public void DrawArrays_SeparateRangesDrawSeparatePrimitives()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteStripVertices(memory);
+
+        var methods = StripProgramState();
+        methods.Add((0x17FCu, 6u));
+        methods.Add((0x1810u, (2u << 24) | 0u));
+        methods.Add((0x1810u, (2u << 24) | 4u));
+        methods.Add((0x17FCu, 0u));
+        PushMethods(nv2A, memory, methods.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFFFFFFFFu, memory.ReadPhysical(0x3000u + (2u * 0x40u) + (2u * 4u)));
+        Assert.Equal(0u, memory.ReadPhysical(0x3000u + (4u * 0x40u) + (4u * 4u)));
+    }
+
+    [Fact]
+    public void DrawArrays_ContiguousRangesMergeIntoOnePrimitive()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteStripVertices(memory);
+
+        var methods = StripProgramState();
+        methods.Add((0x17FCu, 6u));
+        methods.Add((0x1810u, (2u << 24) | 0u));
+        methods.Add((0x1810u, (2u << 24) | 3u));
+        methods.Add((0x17FCu, 0u));
+        PushMethods(nv2A, memory, methods.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFFFFFFFFu, memory.ReadPhysical(0x3000u + (4u * 0x40u) + (4u * 4u)));
+    }
+
+    [Fact]
+    public void InlineVertexDraw_RunsVertexProgramAndPersistsAttributes()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        var methods = ProgramSurfaceState(vertexColor: true);
+        methods.Add((0x17FCu, 5u));
+        methods.Add((0x1944u, 0xFF8040C0u));
+        AddInlineVertex(methods, 0x3F800000u, 0x3F800000u);
+        AddInlineVertex(methods, 0x41100000u, 0x3F800000u);
+        AddInlineVertex(methods, 0x3F800000u, 0x41100000u);
+        methods.Add((0x17FCu, 0u));
+        PushMethods(nv2A, memory, methods.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0xFFC04080u, memory.ReadPhysical(0x3000u + (2u * 0x40u) + (2u * 4u)));
     }
 
     [Fact]
