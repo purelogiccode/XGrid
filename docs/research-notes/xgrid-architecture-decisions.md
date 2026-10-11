@@ -2154,11 +2154,60 @@ half to "waiting for what": init-only NIC, unpolled pad, present
 content, advancing timer. What remains is the state machine itself —
 current state value + wait primitive (Cxbx ordinal map deferred).
 
+## 63. App-intent closed: init succeeds, menu parked in state 0 (2026-10-11)
 
+**Method correction (glob dotfile trap).** Python `glob('*.bin')`
+skipped the dotfile carves (`.text/.rdata/.data`) - the §62 "9 xrefs"
+and "63 thunks" censuses covered only 7 sections. Redone with
+`os.listdir`: the six XBApp creation/failure strings ARE referenced,
+all from `.text` (`0x1D952`-`0x1DA29`). Lesson: never trust glob counts
+on this dir; the §62 census numbers are superseded here.
 
+**XBApp init decoded (`.text 0x1D920`, thiscall, SEH).** Print
+"Creating Direct3D" -> `0x3AEF0(0)` (D3D object -> `[esi+0x48]`, NULL ->
+"Unable to create Direct3D", E_FAIL) -> print "Creating D3D device" ->
+`call 0x35AE0` (**D3D section entry = CreateDevice**) -> HRESULT<0 ->
+"Could not create D3D device!" -> stores + `0x37D40/0x379C0/0x7698B` ->
+print "Creating gamepads" -> `call 0x26490` -> <0 -> "Call to
+CreateGamepads() failed!" -> success path: `0x23D70/0x23F70`,
+`0x25250`, `0x374C0`, then `0x395D0(0x280,0x1E0,...)` = **640x480
+window**, `0x396A0`, D3DX `0x483A6`, `[esi+0x1F4]=1`. Single caller
+(`.text 0x24B4B`); single-shot, no retry. Thunk census (corrected, all
+sections): 63+ kernel imports, XNET-heavy (`0x80014368`x66,
+`0x80014348`x50 - string/mem routines by context).
 
+**gate70: INIT SUCCEEDS (dynamic proof).** `--break-log 0x1DA49`
+(gamepad-success continuation): `HIT 645040997 ESI=D003B500` - D3D
+device created AND gamepads created at step ~645M. Both failure
+theories dead. ESI=`0xD003B500` = the menu object (stable across runs:
+gate65 final ESI identical).
 
+**Current state = 0.** `[ESI+0x280]` in ram_66_5b.bin = `0` (sub-state
+`+0x284` = 0, flag `+0x27C` = 1). State 0 -> handler `0x1E77F`
+(object housekeeping). The menu never leaves state 0 through 5B.
 
+**Dispatch twins resolved.** `.text 0x1E2F9` is the real dispatcher
+(aligned function context, `je`-in at `0x1E2EE`); the D3D-section
+`0x3E2F9` is a byte-identical dead copy - **gate69 (`--break-log
+0x3E2FF`, full 5B single-step, ~15 min) recorded ZERO hits.**
+(Side finding: single-step 5B is practical, ~15-20 min.)
 
+**gate71: first dispatch @ step 816,778,581** (`--break 0x1E2FF`).
+Init success (645M) -> dispatch live (817M) -> content scan (2.5B) ->
+save (3.2B) -> menu-idle (5B, state 0). The loop has run ~16.7k
+dispatches; handlers are thin vs the memcpy/string bulk, hence absent
+from the top-40 hist.
 
+**Verdict: no emulation blocker remains on this path.** D3D device:
+created. Gamepads: created. Input polling: never attempted by the
+title (idle screen reads nothing - A-press identical). Network: init-
+only. Content: present. Failures: none executed. The black idle scene
+is the CORRECT steady state of state 0 (renders nothing; what it does
+draw clips on the guest-baked C0.z, §§57-61). State advance needs input
+events the title never samples - title logic, not a device gap.
 
+**Next.** (a) What moves 0->N (deeper input-event paths? submenu
+states 200-299 via default handler?) - needs a title that consumes;
+(b) visible pixels need state advance or the viewport-bake root cause
+(guest driver behavior, out of emulator scope); (c) Track C JIT for
+interactivity. Open micro-items unchanged: issuer EIP, `F36A2`, LBA 8.

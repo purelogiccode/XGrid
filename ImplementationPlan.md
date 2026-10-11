@@ -2863,20 +2863,15 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 Current test baseline: **775 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — menu state machine.** §62 decoded the menu-idle loop:
-the 10-section RemoteX runner carved from RAM via guest page walk (VA
-`0x10000` → phys `0x13E000`); the trail maps to a live working loop
-(idiv helper, UTF-16 tolower/wcslen, COM accessors, FPU, D3D frame
-code); the D3D-section frame function dispatches `[esi+0x280]` through
-a byte table + jump table (~19 handlers + default `0x1E72B`; state 10 =
-`e:\dump.txt` debug-dump path); new `--eip-hist` probe (5000 samples/5B)
-shows kernel idle 7% + an MMX streaming-memcpy loop `0x39F90` ~10% +
-string clusters — busy every frame, IDE reads only. gate67 proved the
-NIC init-only (44/350, zero ring/KICK/poll; packet engine stays
-scoped-not-built). No network/pad/content/timer wait remains — what is
-left is the state machine itself: current state value + wait primitive
-(Cxbx 4627 ordinal map deferred; kernel exports are ordinal-only).
-Probes: `--break-log` on handler VAs, finer hist. Static notes:
+**NEXT SESSION — beyond state 0.** §63 closed app-intent: XBApp init
+succeeds fully (gate70: D3D device + gamepads created @645M, ESI menu
+object `0xD003B500`), the live dispatcher is `.text 0x1E2FF` (first
+fire @817M, gate71; the D3D twin is dead - gate69 zero hits in 5B),
+and the menu sits in state 0 through 5B (sub-state 0). No emulation
+blocker remains on this path (created devices, unpolled pad, init-only
+NIC, present content, no executed failures) - black = correct state-0
+steady state + guest-baked clip. Next: what moves 0->N (submenu states
+200-299? titles that consume input?) + Track C JIT. Static notes:
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture

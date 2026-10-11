@@ -157,20 +157,17 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    once; conflicts were purged 2026-10-09). Baseline: 775 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu state machine.
+## Next session — beyond state 0.
 
-1. §62 decoded the menu-idle loop: 10-section RemoteX runner carved
-   from RAM via guest page walk (VA `0x10000` → phys `0x13E000`);
-   trail = live working loop (idiv/tolower/wcslen/COM/FPU/D3D);
-   D3D frame function dispatches `[esi+0x280]` via jump table (~19
-   handlers + default; state 10 = `e:\dump.txt` path); new
-   `--eip-hist` probe (Core 39, Bus 150; 775 green) shows kernel idle
-   7% + MMX streaming-memcpy `0x39F90` ~10% + string clusters.
-   gate67: NIC proven init-only (44/350, zero ring/KICK/poll) —
-   packet engine stays scoped-not-built. No network/pad/content/
-   timer wait remains. Next: current state value + wait primitive
-   (`--break-log` on handler VAs; Cxbx 4627 ordinal map deferred).
-   Issuer EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+1. §63 closed app-intent: XBApp init fully succeeds (gate70 HIT
+   @645M — D3D device + gamepads created, object `0xD003B500`);
+   live dispatcher is `.text 0x1E2FF` (first fire @817M, gate71;
+   D3D twin dead — gate69 zero hits in 5B); menu parked in
+   state 0 (sub-state 0) through 5B. No emulation blocker left
+   on this path — black is the correct state-0 steady state +
+   guest-baked clip. Next: what moves 0→N (submenu 200–299?
+   input-consuming titles?) + Track C JIT. Issuer EIP,
+   `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
