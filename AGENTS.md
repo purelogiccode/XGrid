@@ -155,18 +155,21 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 768 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: D3D-device probe first.
+## Next session — menu response: zeta + device-creation probes.
 
 1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
    injection (latched; Bus 144→148). Enumeration completes first try;
    **A-press 5B run byte-identical to neutral** (intr=0 — guest never
-   polls). D3D probe done (§57): `--pgraph` tail (~150 identical
-   frames) — dash D3D issues fully-formed content-free draws (real
-   7–11-insn shaders, `C0=[1,1,16777215,1]`, degenerate inline
-   geometry → correctly zero pixels); no fidelity gap, no init churn.
-   Next: C0 provenance (early-stream capture: was boot C0 sane?),
-   then XBApp flow evidence, nvnet engine last. Issuer EIP, `F36A2`
-   gap and LBA 8 (`55 AA`, `PCBX`) still open.
+   polls). D3D probe done (§57, re-attributed: boot window, not tail)
+   + oPos verdict (§58, proven guest-side clip) + C0 provenance (§59):
+   full 5B stream (463M methods; `--pgraph-max` + streaming dump added)
+   shows `C0.z=16777215` baked from viewport params (`0AF8`/`0398`)
+   from the first upload — junk-from-start, zero drift; menu-idle
+   double-buffers `0x3D00000↔0x3E2C000` with the identical viewport.
+   Hottest lead: zeta never set → failed D3D device creation → Z24MAX
+   Z default. Next: zeta-ever-set scan/CLI, device-creation probe,
+   app viewport forensics, nvnet engine last. Issuer EIP, `F36A2` gap
+   and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

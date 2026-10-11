@@ -1868,6 +1868,36 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 59. C0 provenance: viewport-baked junk from the first upload (2026-10-11)
+
+**Cap semantics corrected.** `MethodStream` keeps the FIRST 262144
+methods, not a tail — gate61/62 files are byte-identical, and §57's
+"menu-idle tail" was the boot window (the steady-frames finding stands,
+re-attributed to the animation loop; menu-idle differs: denser inline
+draws, slot-0-only constants, ongoing uploads). Added `--pgraph-max`
+(0 = uncap) + streaming dump (the StringBuilder OOM'd on 463M methods).
+
+**Full 5B stream (463M methods, 1.68M BEGIN_ENDs ≈ engine draw counts,
+462 fixed methods):** `C0=(1,1,16777215,1)` from the first const batch
+(line ~462) through the last (line ~463M), 486K batches sampled
+head→tail identical — junk-from-start, zero drift, no sane phase ever.
+
+**Source found one level up.** The init sequence writes viewport params
+first: `0AF0=320.0, 0AF4=-240.0, 0AF8=4B7FFFFF(16777215.0)` +
+`0398=4B7FFFFF`, i.e. the 16.7M enters through the VIEWPORT depth
+entry, then surface setup (`0x210=0x32A4000`, zeta `0x214=0`), then the
+const batches bake it into C0. Menu-idle re-emits the identical
+viewport while double-buffering `0x3D00000↔0x3E2C000`. So C0 is
+viewport-derived, and the viewport Z is insane from the first frame.
+
+**Hottest lead (untested): zeta is never set** (`0x214=0` at init,
+absent from the 6MB end window) — if D3D device creation failed
+(XBApp string!), no depth buffer exists and the fixed-function
+viewport bake may default Z scale to Z24MAX-as-float. Next: (a) does
+any phase ever set a zeta surface (full-file `0x214` scan or CLI
+line); (b) D3D device-creation probe (called? where fails?);
+(c) app viewport-struct forensics. Only then the nvnet engine.
+
 ## 58. Indexed-draw trace: oPos verdict — proven total clip, guest-side (2026-10-11)
 
 **Array state + buffers (all offline python over the §57 stream +
