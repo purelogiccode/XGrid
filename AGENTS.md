@@ -152,21 +152,17 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 730 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 732 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — Shadow-RAM fill: issuer + semantics.
+## Next session — fill lands in RAM now; longer runs toward UI.
 
-1. 4.0B-step run completes with no fault at EIP `0x67BFF` (parked); the
-   evox.ini re-save is **complete**. Post-save: disk.bin-region reads,
-   +48 degenerate draws/+2 clears/**frame #34**, then the "poll storm"
-   resolved (§49) into **two 2 MB sequential dword fills
-   (`[F34A2,F36A2)` + `[F36A3,F38A3)`, writes-only)** in wiki Shadow RAM
-   (`0xF0000000–0xF3FFFFFF`) — a post-present surface clear via the
-   shadow alias (or into the void). No dominant loop on the EIP trail.
-   Next: issuer EIP (value/size capture or plumbing) + Shadow semantics
-   (mirror → alias region at `0xF0000000`; discard → current OK).
-   See research-notes §49. LBA 8 write (`55 AA`, `PCBX`) still open.
+1. Shadow RAM verdict (§50): Cxbx headers prove `0xF0000000` is the
+   tiled/write-combined RAM mirror — XGrid now aliases RAM there (flash
+   keeps its 1 MB window by tie-order; boot bit-identical, smoke-clean).
+   Next long run: fill lands in RAM top (`0x34A2000+`), watch for
+   readback; then XID input for the menu. Issuer EIP, `F36A2` gap and
+   LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

@@ -2829,27 +2829,20 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **730 tests passing** (36 Core, 398 Cpu, 52 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **732 tests passing** (36 Core, 398 Cpu, 52 Memory, 110 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — Shadow-RAM fill: issuer + semantics.** The animation
-wait (§32) through **M8** (§43), surface scoping (§44), content discovery
-(§45), file-save (§47: `C:\evox.ini` re-saved byte-identical) and
-save-completion (§48) are solved. `xgrid boot --steps 4000000000` (4.0B
-steps) completes **with no fault at EIP `0x67BFF`** (parked in a data
-table): post-save reads of the `disk.bin` region, GPU stirrings (+48
-degenerate draws, +2 clears, **frame #34**), then the §48 "poll storm"
-resolved by page histograms (§49) into **two 2 MB sequential dword fills
-(`[F34A2,F36A2)` + `[F36A3,F38A3)`, 1024 writes/page uniform,
-writes-only)** inside wiki **Shadow RAM** (`0xF0000000–0xF3FFFFFF`) —
-shadow of RAM top (GPU area), right after flip #34: a post-present
-surface clear via the shadow alias (or into the void). EIP trail shows
-no dominant loop (fill is ~1%-duty background work). Next: name the
-issuer (value/size capture or EIP plumbing) and settle Shadow RAM
-semantics (mirror → XGrid needs a RAM-alias region at `0xF0000000`;
-discard → current behavior correct). Static bonus: runner is a
-chain-loaded 10-section **`RemoteX`** dash (save triggered
-post-`Start!`).
+**NEXT SESSION — Shadow-RAM fill lands in RAM now; longer runs toward UI.**
+The animation wait (§32) through **M8** (§43), surface scoping (§44),
+content discovery (§45), file-save (§47) and save-completion (§48) are
+solved, and the §49 fill is settled (§50): Cxbx headers prove `0xF0000000`
+is the tiled/write-combined RAM mirror, so XGrid now aliases RAM there
+(flash keeps its 1 MB window by tie-order; 4.0B-validated boot
+bit-identical). `xgrid boot --steps 4000000000` completes with no fault
+at EIP `0x67BFF`. Next: a longer run (fill lands in RAM top — watch for
+readback) toward UI (XID input for the menu); fill issuer EIP still open
+(value/size capture or plumbing). Static bonus: runner is a chain-loaded
+10-section **`RemoteX`** dash (save triggered post-`Start!`).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2864,9 +2857,9 @@ program-draw rasterization is still unvalidated**. The presented frame
 presents the dashboard surface, not the `0x1000` early-boot region.
 The 2.5B content scan (§45) gave way to the evox.ini re-save at 3.2B
 (§47), complete at 4.0B with post-save disk.bin reads, GPU stirrings and
-the F34–F38 poll storm (§48). Next: name the poller (unmapped-access
-EIP instrumentation), then longer runs toward UI (XID input for the
-menu). Remaining M5 gaps: inline
+the 2×2 MB Shadow-RAM fill (§48–49) — now landing in RAM top via the
+write-combined alias (§50). Next: longer runs toward UI (XID input for
+the menu; watch for fill readback). Remaining M5 gaps: inline
 `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Test media
 for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
@@ -2874,7 +2867,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-49.
+trail: research-notes §30-50.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
