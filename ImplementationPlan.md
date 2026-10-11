@@ -1139,15 +1139,18 @@ boot triangle extracts as a black→red→green gradient (307K pixels, viewed).
 Transform-program interpreter (`VshProgram`, §38), transform
 program/constant storage with load-pointer semantics, inline element/array
 semantics, vertex attribute fetch (all formats) and the element draw path
-through the program to the shared barycentric rasterizer (§39). Validated on
-the real dashboard: 2670 draws, 10.1M pixels.
+through the program to the shared barycentric rasterizer (§39). Ran on the
+real dashboard without fault (2670 draws); §42 later proved all 10.1M pixels
+come from legacy inline draws while program draws are degenerate at this
+boot stage — live program-draw rasterization still unvalidated.
 
 ### M6 — basic 3D [DONE 2026-10-10]
 
 Per-slot texture state, swizzled (Morton via xemu's mask algorithm) and linear
 A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp addressing, modulate by `oD0`,
-texcoords from `oT0` (§40). All 10.1M dashboard pixels sample; the visible
-textures are GPU-generated (render-to-texture/blits) so the image needs M7/M8.
+texcoords from `oT0` (§40). All 10.1M dashboard pixels sample; §44 later
+showed the textures are CPU-uploaded assets, dark by nature (only
+`0x3628000` is a true render target).
 
 ### M7 — shaders [DONE 2026-10-10]
 
@@ -1170,11 +1173,13 @@ Validated: `frames=33 stalls=33` (exact oracle match), 640×480 from
 ### M9 — Dashboard boot (target: same dashboard xemu boots from `xbox_hdd.qcow2`)
 
 Status 2026-10-10: IN PROGRESS (Gate 1 done; animation/ACI/APU gates passed;
-HDD-write, USB/OHCI, NV2A M5 and M6 gates passed). Definition of done: the real
-kernel (LLE, no HLE) loads the dashboard XBE off the attached HDD image, the
-dashboard renders its menu through our NV2A path, and a controller input
-navigates it. Distance: far — six ordered gaps, each weeks-scale. Order
-matters; do not work on later gaps before earlier gates pass.
+HDD-write, USB/OHCI, NV2A M5–M8 gates passed; content-discovery (§45) and
+file-save (§46) phases reached — 3.2B steps, no fault, EIP `0x67BFD`).
+Definition of done: the real kernel (LLE, no HLE) loads the dashboard XBE
+off the attached HDD image, the dashboard renders its menu through our
+NV2A path, and a controller input navigates it. Distance: far — six
+ordered gaps, each weeks-scale. Order matters; do not work on later gaps
+before earlier gates pass.
 
 Gap 1 — kernel→storage handoff [DONE 2026-10-09]. The kernel loads the
 dashboard: guest sequence matches the xemu oracle through HDD unlock
@@ -1218,8 +1223,8 @@ absolute VA (`0x12A17`), XOR-encrypted in the file; the kernel decrypts it
 (`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`) and calls it (`call [0x10128]` at
 `0x800158DA`); the entry runs at phys `0x5CA17`, resolves its kernel thunks
 (`[0x12C4B]=0x8001EEAC`) and starts its init (bit-stream decompressor at
-`0x5C4A0`). See research-notes §34. Next gate: determine whether the
-dashboard's init decompression progresses (EvoX payload) or loops.
+`0x5C4A0`). See research-notes §34. (Init long completed: the dashboard went
+on to render (§37–43), discover content (§45) and save files (§46).)
 
 Gap 2 — exact dashboard identity [DONE 2026-10-09]. Both sides agree: the host
 FATX track identified softmod `xboxdash.xbe` (770048 B, `EvoX`, entry
@@ -1248,7 +1253,10 @@ opaque black (flip chain presents the dashboard surface, not `0x1000`).
 **Surface scoping (§44):** textures are CPU-uploaded assets (dark by
 nature); only `0x3628000` is a true render target (blocked on degenerate
 program draws); the 2D engine is bound once but never issues a blit — no
-missing blit op. Remaining: longer runs toward UI, then XID input.
+missing blit op. **Content discovery (§45) + file-save (§46):** the dashboard
+enumerates installed content for its menu, then writes files (journal-style
+WRITE DMAs on E:). Remaining: capture what it writes (overlay introspection
++ full IDE logging), longer runs toward UI, then XID input.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [OHCI DONE 2026-10-10]. The
 OHCI host controller is implemented (`OhciUsbController`, §36) and the
@@ -2796,11 +2804,11 @@ earlier one except where explicitly parallel (Track B/C).
 | 4 — x86 MMU | **Done** | 4 KB/4 MB paging, software TLB (large pages always walk), A/D bits, WP, `#PF` error codes, MOV CR/DR, INVLPG, CR0/CR3/CR4 TLB flushes, paging-aware GDT/IDT access |
 | 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI devices with xemu IDs — **OHCI USB0/USB1 implemented** (`OhciUsbController`, 0:2.0/0:3.0, `0xFED00000`/`0xFED08000`, IRQ1/IRQ9), nvnet/APU/ACI as config-space devices (APU has an MMIO model in `XGrid.Audio`, ACI in `XGrid.Bus/Aci`); bus-1 NV2A; IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A diagnostics; DMA helper pending |
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub, **MCPX ACI (AC'97) register model at 0xFEC00000, xemu `ac97.c`-faithful NAM/NABM (`McpxAciDevice`)**; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O pending |
-| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin`); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot now runs the full intro animation and **executes the dashboard XBE image** — `xgrid boot --steps 700000000` completes with no fault, ending in the XBE's decompressor before its entry (`0x22A17`). See M9 + research-notes §31-34 |
+| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin/--fb/--frame/--pgraph`, 250M-step progress, `ulong` steps; `xgrid sector` raw LBA dump); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot runs the full intro animation, **executes the dashboard XBE**, renders through NV2A (M5–M8, §37–43), discovers content (§45) and saves files (§46) — `xgrid boot --steps 3200000000` completes with no fault at EIP `0x67BFD`. See M9 + research-notes §31-34 |
 | 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); XDVDFS/DVD media pending |
-| 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; guest code now executes in the XBE's early `.text` decompressor; see M9 Gap 1d) |
+| 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; guest code long past the early `.text` decompressor — rendering, discovering and saving at 3.2B steps, EIP `0x67BFD`; see M9 Gap 1d) |
 | 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
-| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — validated on the dashboard (2670 draws, 10.1M px); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; visible textures are GPU-generated). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — live program rasterization unvalidated). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Remaining: render-to-texture/blits; inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges |
+| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — live program rasterization unvalidated). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46) reached at 2.5–3.2B steps. Remaining: write capture (overlay introspection + IDE logging), longer runs, XID input; inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | Not started | |
 | 14 — Networking | Not started | |

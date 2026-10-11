@@ -47,12 +47,16 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   window via `OnBarWritten`, PRDT walk through `IGuestMemory` wired to RAM,
   ATA + ATAPI DMA, IRQ ack). CLI prints `IDE cmds`, `ATAPI pkts`, `IDE BMIBA`.
 - Host-side dashboard tooling (parallel track, merged): `XGrid.XboxFs`
-  FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info`;
-  identified the boot dashboard as softmod `xboxdash.xbe` (770048 B, `EvoX`,
-  entry `0x12A17`) in partition at `0x465400`.
-- NV2A at `0xFD000000`: PFIFO pusher + PGRAPH inline-draw software rasterizer
-  render one Gouraud triangle (307K px; M4 done). No textures/shaders/zeta/
-  transforms yet; no present path (`XGrid.Graphics` empty; CLI dumps raw fb).
+  FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info` /
+  `xgrid sector` (raw LBA dump); identified the boot dashboard as softmod
+  `xboxdash.xbe` (770048 B, `EvoX`, entry `0x12A17`) in partition at `0x465400`.
+- NV2A at `0xFD000000`: PFIFO pusher + PGRAPH software rasterizer (M4–M8
+  done: inline draws, vertex-program interpreter, textures, zeta/blend
+  fragment pipeline, flip present path). `XGrid.Graphics/DisplayFrame`
+  exports the presented frame as BMP (`xgrid boot --frame out.bmp`); CLI
+  also prints draw/blend/depth/flip counters and saves `--fb`/`--pgraph`/
+  `--ramdump`. Dashboard renders 2670 draws / 10.1M px / 33 flips at 1.7B
+  steps (EIP `0x14C72`); 3.2B steps reach file-save code (EIP `0x67BFD`).
 - **Animation wait passed (2026-10-10, research-notes §32):** the `0x800426D8`
   park was the boot animation waiting on the NV2A notifies page. Implemented
   `NV097_BACK_END_WRITE_SEMAPHORE_RELEASE` (`0x1D70`) with the semaphore DMA
@@ -122,10 +126,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   oPos). **Attribute fetch + element draw done (§39):** vertex arrays decoded
   per format (UB_D3D BGRA/UB_OGL/S1/F/S32K/CMP, count/stride), elements
   (`0x1800`/`0x1808`) → `VshProgram` per vertex → screen-space `oPos` + `oD0`
-  color → shared barycentric `FillTriangle`. **Validated on the real
-  dashboard:** `xgrid boot --steps 1700000000` reports `draws executed=2670
-  skipped=0 pixels=10137600` and the framebuffer at phys `0x1000` has rendered
-  content (previously skipped). **M6 textures done (§40):** per-slot texture
+   color → shared barycentric `FillTriangle`. **Ran on the real
+   dashboard:** `xgrid boot --steps 1700000000` reports `draws executed=2670
+   skipped=0 pixels=10137600` with no fault (§42 later showed all pixels come
+   from the 33 legacy inline draws; program draws are degenerate at this
+   stage). **M6 textures done (§40):** per-slot texture
   state, swizzled/linear A8R8G8B8 + R5G6B5 sampling with wrap/mirror/clamp,
   modulate by `oD0`, texcoords from `oT0`; all 10.1M pixels now sample
   (`textured=10137600`). **M7 fragment pipeline done (§41):** alpha test,
@@ -142,10 +147,10 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   the at-flip surface) + `FLIP_STALL` counting + vblank read-advance;
   `XGrid.Graphics/DisplayFrame` (BGRA frame store, 32-bit BMP export); CLI
   `--frame` saves the presented frame (`--fb` raw dump unchanged). Validated:
-  `frames=33 stalls=33` (exact oracle match), final frame 640×480 from
-  `0x32A4000` — opaque black (the flip chain presents the dashboard surface,
-  not the `0x1000` region). Next: surface operations (render-to-texture/
-  blits); inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
+   `frames=33 stalls=33` (exact oracle match), final frame 640×480 from
+   `0x32A4000` — opaque black (the flip chain presents the dashboard surface,
+   not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
+   inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: 725 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
@@ -171,11 +176,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    `xgrid boot --frame out.bmp` saves the flip-captured 640×480 frame
    (surface `0x32A4000`) — currently opaque black, which clarifies the
    display story (flip chain presents the dashboard surface, not the `0x1000`
-   early-boot region). Next: map the new READ DMA LBAs to HDD content to
-   name the load phase; continue longer runs toward UI. Live program-draw
-   rasterization is still unvalidated (pending non-degenerate program
-   traffic). Remaining M5 gaps: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS`
-   ranges.
+   early-boot region). Next: capture what the file-save phase writes
+   (overlay introspection + full IDE logging), longer runs toward UI, XID
+   input for the menu. Live program-draw rasterization is still unvalidated
+   (pending non-degenerate program traffic). Remaining M5 gaps: inline
+   `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
 4. Controller input: the OHCI root hub reports empty ports; an XID/gamepad
    device is future work. LLE-first remains the rule; Phase 10 kernel-HLE only
    if we choose HLE for dashboard ordinals.
