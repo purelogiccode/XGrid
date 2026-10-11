@@ -1,3 +1,4 @@
+using System;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -9,9 +10,15 @@ public sealed class VshProgramTests
     private const int MacMad = 4;
     private const int MacDp3 = 5;
     private const int MacDp4 = 7;
+    private const int MacMin = 9;
+    private const int MacMax = 10;
+    private const int MacSlt = 11;
+    private const int MacSge = 12;
     private const int MacArl = 13;
     private const int IluMov = 1;
     private const int IluRcp = 2;
+    private const int IluLog = 6;
+    private const int IluLit = 7;
 
     private const int MuxR = 1;
     private const int MuxV = 2;
@@ -329,5 +336,455 @@ public sealed class VshProgramTests
             Assert.Equal(0.0f, outputs[i][2]);
             Assert.Equal(1.0f, outputs[i][3]);
         }
+    }
+
+    private static float[][] ExecuteIlu(int ilu, float x, float y, float z, float w)
+    {
+        uint[][] program =
+        {
+            Insn(ilu: ilu, cMux: MuxC, constIndex: 0, outR: 1, iluMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { x, y, z, w };
+
+        VshProgram.Execute(program, 2, constants, inputs, outputs);
+
+        return outputs;
+    }
+
+    [Theory]
+    [InlineData(0x7F800000u)]
+    [InlineData(0xFF800000u)]
+    [InlineData(0x7FC00000u)]
+    public void Mul_NonFiniteTimesZero_ReturnsZero(uint operandBits)
+    {
+        float operand = BitConverter.UInt32BitsToSingle(operandBits);
+        uint[][] program =
+        {
+            Insn(
+                mac: MacMul,
+                aMux: MuxC,
+                constIndex: 0,
+                bMux: MuxR,
+                bR: 0,
+                outR: 1,
+                macMask: 0xF,
+                outMux: 0,
+                outMask: 0x7,
+                outAddress: 0,
+                final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { operand, operand, operand, operand };
+
+        VshProgram.Execute(program, 1, constants, inputs, outputs);
+
+        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    [Fact]
+    public void Mad_NonFiniteTimesZero_AddsConstant()
+    {
+        uint[][] program =
+        {
+            Insn(
+                mac: MacMad,
+                aMux: MuxC,
+                constIndex: 0,
+                bMux: MuxR,
+                bR: 0,
+                cMux: MuxV,
+                v: 0,
+                outR: 1,
+                macMask: 0xF,
+                outMux: 0,
+                outMask: 0xF,
+                outAddress: 0,
+                final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity };
+        inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
+
+        VshProgram.Execute(program, 1, constants, inputs, outputs);
+
+        AssertPosition(outputs, 5.0f, 6.0f, 7.0f, 8.0f);
+    }
+
+    [Fact]
+    public void Min_WithNaN_MatchesGLSLComparisons()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacMin, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMin, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0xE, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
+        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        Assert.True(float.IsNaN(outputs[0][0]));
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(1.0f, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Max_WithNaN_MatchesGLSLComparisons()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacMax, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMax, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0xE, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
+        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        Assert.True(float.IsNaN(outputs[0][0]));
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(1.0f, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Min_WithSignedZeros_ReturnsFirstOperandWhenEqual()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacMin, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMin, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x6, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
+        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        Assert.Equal(0x80000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][1]));
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][2]));
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Max_WithSignedZeros_ReturnsFirstOperandWhenEqual()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacMax, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMax, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x6, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
+        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        Assert.Equal(0x80000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][1]));
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][2]));
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Slt_WithNaN_ReturnsZero()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacSlt, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacSlt, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacSlt, aMux: MuxR, aR: 0, bMux: MuxV, v: 0, outR: 3, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 3, outMux: 0, outMask: 0x4, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
+        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+
+        VshProgram.Execute(program, 6, constants, inputs, outputs);
+
+        AssertPosition(outputs, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    [Fact]
+    public void Slt_WithSignedZeros_ReturnsZero()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacSlt, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacSlt, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
+        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    [Fact]
+    public void Sge_WithNaN_ReturnsZero()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacSge, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacSge, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacSge, aMux: MuxV, bMux: MuxV, v: 0, outR: 3, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 3, outMux: 0, outMask: 0x4, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
+        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+
+        VshProgram.Execute(program, 6, constants, inputs, outputs);
+
+        AssertPosition(outputs, 0.0f, 0.0f, 1.0f, 1.0f);
+    }
+
+    [Fact]
+    public void Sge_WithSignedZeros_ReturnsOne()
+    {
+        uint[][] program =
+        {
+            Insn(mac: MacSge, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacSge, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
+            Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
+        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        VshProgram.Execute(program, 4, constants, inputs, outputs);
+
+        AssertPosition(outputs, 1.0f, 1.0f, 0.0f, 1.0f);
+    }
+
+    [Fact]
+    public void Log_Zero_ReturnsNegativeInfinityExponentAndUnitMantissa()
+    {
+        float[][] outputs = ExecuteIlu(IluLog, 0.0f, 0.0f, 0.0f, 0.0f);
+
+        Assert.Equal(float.NegativeInfinity, outputs[0][0]);
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(float.NegativeInfinity, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Log_NegativeZero_ReturnsNegativeInfinityExponentAndUnitMantissa()
+    {
+        float[][] outputs = ExecuteIlu(IluLog, -0.0f, -0.0f, -0.0f, -0.0f);
+
+        Assert.Equal(float.NegativeInfinity, outputs[0][0]);
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(float.NegativeInfinity, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Log_Infinity_ReturnsInfiniteExponentAndNaNMantissa()
+    {
+        float[][] outputs = ExecuteIlu(IluLog, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+
+        Assert.Equal(float.PositiveInfinity, outputs[0][0]);
+        Assert.True(float.IsNaN(outputs[0][1]));
+        Assert.Equal(float.PositiveInfinity, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Log_DecomposesExponentAndMantissa()
+    {
+        float[][] outputs = ExecuteIlu(IluLog, 12.0f, 12.0f, 12.0f, 12.0f);
+
+        Assert.Equal(3.0f, outputs[0][0]);
+        Assert.Equal(1.5f, outputs[0][1]);
+        Assert.Equal(MathF.Log2(12.0f), outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+
+        outputs = ExecuteIlu(IluLog, 0.75f, 0.75f, 0.75f, 0.75f);
+
+        Assert.Equal(-1.0f, outputs[0][0]);
+        Assert.Equal(1.5f, outputs[0][1]);
+        Assert.Equal(MathF.Log2(0.75f), outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Lit_ComputesPowerFromZeroAndPositiveInputs()
+    {
+        float[][] outputs = ExecuteIlu(IluLit, 1.0f, 2.0f, 0.0f, 3.0f);
+
+        Assert.Equal(1.0f, outputs[0][0]);
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(8.0f, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Lit_ZeroX_ZeroesPower()
+    {
+        float[][] outputs = ExecuteIlu(IluLit, 0.0f, 2.0f, 0.0f, 3.0f);
+
+        Assert.Equal(1.0f, outputs[0][0]);
+        Assert.Equal(0.0f, outputs[0][1]);
+        Assert.Equal(0.0f, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void Lit_ZeroY_WithPositiveW_ZeroesPower()
+    {
+        float[][] outputs = ExecuteIlu(IluLit, 1.0f, 0.0f, 0.0f, 3.0f);
+
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.Equal(0.0f, outputs[0][2]);
+    }
+
+    [Fact]
+    public void Lit_ZeroY_WithZeroW_ProducesNaNPower()
+    {
+        float[][] outputs = ExecuteIlu(IluLit, 1.0f, 0.0f, 0.0f, 0.0f);
+
+        Assert.Equal(1.0f, outputs[0][1]);
+        Assert.True(float.IsNaN(outputs[0][2]));
+    }
+
+    [Fact]
+    public void Lit_ClampsWTo128MinusEpsilon()
+    {
+        float limit = 128.0f - (1.0f / 256.0f);
+
+        float[][] positive = ExecuteIlu(IluLit, 1.0f, 2.0f, 0.0f, 200.0f);
+        float[][] positiveAtLimit = ExecuteIlu(IluLit, 1.0f, 2.0f, 0.0f, limit);
+        Assert.Equal(positiveAtLimit[0][2], positive[0][2]);
+        Assert.False(float.IsInfinity(positive[0][2]));
+
+        float[][] negative = ExecuteIlu(IluLit, 1.0f, 2.0f, 0.0f, -200.0f);
+        float[][] negativeAtLimit = ExecuteIlu(IluLit, 1.0f, 2.0f, 0.0f, -limit);
+        Assert.Equal(negativeAtLimit[0][2], negative[0][2]);
+        Assert.NotEqual(0.0f, negative[0][2]);
+    }
+
+    [Fact]
+    public void Lit_NegativeZeroX_PreservesNegativeZeroY()
+    {
+        float[][] outputs = ExecuteIlu(IluLit, -0.0f, 2.0f, 0.0f, 3.0f);
+
+        Assert.Equal(1.0f, outputs[0][0]);
+        Assert.Equal(0x80000000u, BitConverter.SingleToUInt32Bits(outputs[0][1]));
+        Assert.Equal(0.0f, outputs[0][2]);
+        Assert.Equal(1.0f, outputs[0][3]);
+    }
+
+    [Fact]
+    public void PairedMacAndIlu_OutMuxIluWithOutR1_IluValueWins()
+    {
+        uint[][] program =
+        {
+            Insn(
+                mac: MacMov,
+                ilu: IluMov,
+                aMux: MuxV,
+                v: 0,
+                cMux: MuxC,
+                constIndex: 0,
+                outR: 1,
+                outMux: 1,
+                outMask: 0,
+                macMask: 0xF,
+                iluMask: 0xF),
+            Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+        };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        constants[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
+
+        VshProgram.Execute(program, 2, constants, inputs, outputs);
+
+        AssertPosition(outputs, 1.0f, 2.0f, 3.0f, 4.0f);
+    }
+
+    [Fact]
+    public void Position_TruncatesXyTowardZeroToSixteenthUnits()
+    {
+        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        inputs[0] = new[] { 0.099f, -1.01f, 2.5f, 3.5f };
+
+        VshProgram.Execute(program, 1, constants, inputs, outputs);
+
+        Assert.Equal(0.0625f, outputs[0][0]);
+        Assert.Equal(-1.0f, outputs[0][1]);
+        Assert.Equal(2.5f, outputs[0][2]);
+        Assert.Equal(3.5f, outputs[0][3]);
+    }
+
+    [Theory]
+    [InlineData(0x00000000u, 0x1F800000u)]
+    [InlineData(0x80000000u, 0x9F800000u)]
+    [InlineData(0x7F800000u, 0x5F800000u)]
+    [InlineData(0xFF800000u, 0xDF800000u)]
+    [InlineData(0x00000001u, 0x1F800000u)]
+    [InlineData(0x7FC00000u, 0x7FC00000u)]
+    [InlineData(0x3F800000u, 0x3F800000u)]
+    public void Position_ClampsWAwayFromZeroAndInfinity(uint wBits, uint expectedBits)
+    {
+        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, BitConverter.UInt32BitsToSingle(wBits) };
+
+        VshProgram.Execute(program, 1, constants, inputs, outputs);
+
+        Assert.Equal(expectedBits, BitConverter.SingleToUInt32Bits(outputs[0][3]));
     }
 }
