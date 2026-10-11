@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using XGrid.Bus.Usb;
+using XGrid.Core.Diagnostics;
 using XGrid.Cpu;
 using XGrid.Graphics;
 using XGrid.Host;
@@ -65,6 +66,7 @@ internal static class Program
         string? framePath = null;
         string? pgraphPath = null;
         ulong pgraphMax = 262144;
+        ulong eipHistInterval = 0;
         string? ramDumpPath = null;
         string? raminPath = null;
         string? writeDumpDir = null;
@@ -153,6 +155,9 @@ internal static class Program
                     break;
                 case "--pgraph-max":
                     pgraphMax = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--eip-hist":
+                    eipHistInterval = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--ramdump":
                     ramDumpPath = NextValue(args, ref i);
@@ -351,10 +356,17 @@ internal static class Program
 
             const ulong progressInterval = 250_000_000;
             ulong nextProgress = (executed / progressInterval + 1) * progressInterval;
+            EipHistogram? eipHist = eipHistInterval > 0 ? new EipHistogram() : null;
+            ulong sinceHist = 0;
             while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
             {
                 ulong remaining = steps - executed;
                 ulong target = Math.Min(remaining, nextProgress - executed);
+                if (eipHist is not null)
+                {
+                    target = Math.Min(target, eipHistInterval - sinceHist);
+                }
+
                 ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
@@ -362,6 +374,16 @@ internal static class Program
                 }
 
                 executed += ran;
+                if (eipHist is not null)
+                {
+                    sinceHist += ran;
+                    if (sinceHist >= eipHistInterval)
+                    {
+                        eipHist.Sample(machine.Cpu.Context.Eip);
+                        sinceHist = 0;
+                    }
+                }
+
                 if (executed >= nextProgress)
                 {
                     Console.WriteLine(
@@ -425,6 +447,15 @@ internal static class Program
             {
                 var entry = watchHits[key];
                 Console.WriteLine($"Watch: W{key:X8} n={entry.Count} first={entry.First} last={entry.Last}");
+            }
+
+            if (eipHist is not null)
+            {
+                Console.WriteLine($"EIPHIST samples={eipHist.Total}");
+                foreach ((uint eip, ulong count) in eipHist.Top(40))
+                {
+                    Console.WriteLine($"EIPHIST {eip:X8} n={count}");
+                }
             }
 
             return 0;
@@ -1250,7 +1281,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
