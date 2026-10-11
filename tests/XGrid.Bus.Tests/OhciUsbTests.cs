@@ -41,7 +41,7 @@ public sealed class OhciUsbTests
 
         public byte Read8(uint address)
         {
-            return _ram.TryGetValue(address, out byte value) ? value : (byte)0;
+            return _ram.GetValueOrDefault(address, (byte)0);
         }
 
         public ushort Read16(uint address)

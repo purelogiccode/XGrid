@@ -130,9 +130,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private uint _status;
     private uint _intrStatus;
     private uint _intr;
-    private uint _hcca;
     private uint _perCur;
-    private uint _ctrlHead;
     private uint _ctrlCur;
     private uint _bulkHead;
     private uint _bulkCur;
@@ -154,7 +152,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private readonly List<string> _transferLog = new();
     private readonly Dictionary<uint, int> _regReads = new();
     private readonly Dictionary<uint, int> _regWrites = new();
-    private bool _pendingSetup; private bool _pendingIn;
+    private bool _pendingSetup;
+    private bool _pendingIn;
     private byte[] _pendingPayload = Array.Empty<byte>();
     private int _pendingOffset;
     private byte[] _pendingOut = Array.Empty<byte>();
@@ -207,10 +206,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     public uint DeviceAddress => Function?.Address ?? 0;
 
     /// <summary>Gets the programmed control list head, for diagnostics.</summary>
-    public uint ControlHead => _ctrlHead;
+    public uint ControlHead { get; private set; }
 
     /// <summary>Gets the programmed HCCA address, for diagnostics.</summary>
-    public uint Hcca => _hcca;
+    public uint Hcca { get; private set; }
 
     /// <summary>Gets recent retired transfer outcomes, for diagnostics.</summary>
     public IReadOnlyList<string> TransferLog => _transferLog;
@@ -262,9 +261,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             2 => _status,
             3 => _intrStatus,
             4 or 5 => _intr,
-            6 => _hcca,
+            6 => Hcca,
             7 => _perCur,
-            8 => _ctrlHead,
+            8 => ControlHead,
             9 => _ctrlCur,
             10 => _bulkHead,
             11 => _bulkCur,
@@ -335,11 +334,11 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
                 break;
 
             case 6:
-                _hcca = value & HccaMask;
+                Hcca = value & HccaMask;
                 break;
 
             case 8:
-                _ctrlHead = value & EdptrMask;
+                ControlHead = value & EdptrMask;
                 break;
 
             case 9:
@@ -413,9 +412,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         _status = 0;
         _intrStatus = 0;
         _intr = IntrMie;
-        _hcca = 0;
+        Hcca = 0;
         _perCur = 0;
-        _ctrlHead = 0;
+        ControlHead = 0;
         _ctrlCur = 0;
         _bulkHead = 0;
         _bulkCur = 0;
@@ -643,11 +642,11 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         }
 
         _frameNumber = (_frameNumber + 1) & 0xFFFF;
-        if (_hcca != 0)
+        if (Hcca != 0)
         {
-            _memory.Write16(_hcca + 0x80, (ushort)_frameNumber);
-            _memory.Write16(_hcca + 0x82, 0);
-            _memory.Write32(_hcca + 0x84, doneWriteback);
+            _memory.Write16(Hcca + 0x80, (ushort)_frameNumber);
+            _memory.Write16(Hcca + 0x82, 0);
+            _memory.Write32(Hcca + 0x84, doneWriteback);
             _done = 0;
         }
 
@@ -657,15 +656,15 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     /// <summary>Walks the periodic, control, and bulk endpoint lists once per frame.</summary>
     private void ServiceLists()
     {
-        if ((_ctl & CtlPle) != 0 && _hcca != 0)
+        if ((_ctl & CtlPle) != 0 && Hcca != 0)
         {
-            uint head = _memory.Read32(_hcca + ((uint)(_frameNumber & 0x1F) * 4));
+            uint head = _memory.Read32(Hcca + ((uint)(_frameNumber & 0x1F) * 4));
             ServiceEdList(head & DptrMask, isPeriodic: true);
         }
 
-        if ((_ctl & CtlCle) != 0 && (_status & StatusClf) != 0 && _ctrlHead != 0)
+        if ((_ctl & CtlCle) != 0 && (_status & StatusClf) != 0 && ControlHead != 0)
         {
-            if (!ServiceEdList(_ctrlHead, isPeriodic: false))
+            if (!ServiceEdList(ControlHead, isPeriodic: false))
             {
                 _ctrlCur = 0;
                 _status &= ~StatusClf;
@@ -839,7 +838,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         }
 
         string kind = periodic ? "int" : "ctl";
-        string stage = direction == 0 ? "setup" : direction == 1 ? "out" : "in";
+        string stage = direction switch
+        {
+            0 => "setup",
+            1 => "out",
+            _ => "in"
+        };
         string round = direction == 2 ? FormattableString.Invariant($" r={(tdFlags & TdRound) != 0}") : string.Empty;
         _transferLog.Add(FormattableString.Invariant(
             $"f={_frameNumber} {kind} {stage} ep{endpoint} len={length} got={consumed}{round} {note}").TrimEnd());

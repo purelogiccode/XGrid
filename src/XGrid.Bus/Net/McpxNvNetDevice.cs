@@ -24,6 +24,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
 
     // Register offsets (xemu nvnet_regs.h).
     private const uint IrqStatus = 0x000;
+    // ReSharper disable once UnusedMember.Local
     private const uint IrqMask = 0x004;
     private const uint TxStatus = 0x088;
     private const uint RxStatus = 0x098;

@@ -90,6 +90,7 @@ public interface IUsbDeviceFunction
 /// </summary>
 public sealed class XidGamepad : IUsbDeviceFunction
 {
+    // ReSharper disable once UnusedMember.Local
     private const byte ControlEndpoint = 0;
     private const byte InterruptEndpoint = 2;
 
@@ -270,7 +271,7 @@ public sealed class XidGamepad : IUsbDeviceFunction
                 _hasPendingConfig = true;
                 return UsbTransferResult.Ack;
             case (0x80, 0x08):
-                payload = new byte[] { Configured ? (byte)1 : (byte)0 };
+                payload = new[] { Configured ? (byte)1 : (byte)0 };
                 return UsbTransferResult.Ack;
             case (0x80, 0x00):
             case (0x81, 0x00):
