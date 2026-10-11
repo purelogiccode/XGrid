@@ -168,17 +168,14 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 
 ## Next session — beyond state 0.
 
-1. §63 closed app-intent: XBApp init fully succeeds (gate70 HIT
-   @645M — D3D device + gamepads created, object `0xD003B500`);
-   live dispatcher is `.text 0x1E2FF` (first fire @817M, gate71;
-   D3D twin dead — gate69 zero hits in 5B); menu parked in
-   state 0 (sub-state 0) through 5B. No emulation blocker left
-   on this path — black is the correct state-0 steady state +
-   guest-baked clip. Next: what moves 0→N (submenu 200–299?
-   input-consuming titles?) + Track C JIT. Parallel: game media
-   readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007
-   validated DVD_X2). Issuer EIP,
-   `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+1. §63 closed app-intent (menu state 0, no blocker); §§64–66:
+   game media via XISOSharp/CHDSharp, 007 USA boots off CHD
+   (SHA-identical XBE) into a timing wait. §67 decoded it:
+   frame-limiter (`delta < 26`) + KeDelay retry + udiv delta;
+   tick pump advances ~2 Hz (gate76: 720 writes/5.5B); gate77
+   pump-trace in flight (251+ hits, single invoker `0x379CA`).
+   Theory: TIME DILATION. Next: finish gate77, name invoker
+   thread, gap-vs-long-wait. `F36A2`/LBA 8 still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

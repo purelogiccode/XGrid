@@ -2878,7 +2878,16 @@ readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007 validated
 DVD_X2) and now served to the guest (§65 — `boot --dvd`, kernel
 sector-probes live, no auth traffic), including compressed CHDs
 (§66 — `ChdDvdImage`, 007 USA boots its XBE off CHD and parks in a
-timing wait: 47% udiv, frozen DVD, slow flips). Static notes:
+timing wait: 47% udiv, frozen DVD, slow flips). §67 decoded the wait:
+frame-limiter loop (`delta < [AFE34]-2`, target 26) around a
+KeDelayExecutionThread retry (ord 99) + udiv-heavy delta recompute;
+the tick pump (`0x26B60`, empty callback table) advances the tick at
+~2 Hz (gate76 watch: 720 writes/5.5B, kernel-init then pump-owned).
+gate77 (pump break-log, in flight) already shows 251+ invocations
+from 550M via a single object-callback invoker (`0x379CA`, under
+critical section). Leading theory: TIME DILATION, not deadlock.
+Next session: finish gate77 (`gate77_pump.log`), name the invoker's
+thread context, then decide emulation-gap vs long-wait. Static notes:
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
