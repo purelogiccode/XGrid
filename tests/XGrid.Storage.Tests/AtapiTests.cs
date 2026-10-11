@@ -36,6 +36,51 @@ public sealed class AtapiTests
         return new AtaDevice(atapi: true);
     }
 
+    private sealed class ArrayDvd : IDvdImage
+    {
+        private readonly byte[] _data;
+
+        public ArrayDvd(int sectors)
+        {
+            _data = new byte[sectors * AtaDevice.DvdSectorSize];
+            for (int s = 0; s < sectors; s++)
+            {
+                for (int i = 0; i < AtaDevice.DvdSectorSize; i++)
+                {
+                    _data[s * AtaDevice.DvdSectorSize + i] = (byte)s;
+                }
+            }
+        }
+
+        public uint SectorCount => (uint)(_data.Length / AtaDevice.DvdSectorSize);
+
+        public void Dispose()
+        {
+        }
+
+        public void ReadSector(uint lba, Span<byte> destination)
+        {
+            _data.AsSpan((int)lba * AtaDevice.DvdSectorSize, AtaDevice.DvdSectorSize).CopyTo(destination);
+        }
+    }
+
+    private static AtaDevice AtapiDriveWithMedia(int sectors = 16)
+    {
+        var drive = new AtaDevice(atapi: true);
+        drive.AttachDvd(new ArrayDvd(sectors));
+        return drive;
+    }
+
+    private static void SendPacket(AtaDevice drive, byte[] packet)
+    {
+        drive.WriteTaskfile(1, 8, 0x00);
+        drive.WriteTaskfile(7, 8, 0xA0);
+        foreach (byte b in packet)
+        {
+            drive.WriteTaskfile(0, 8, b);
+        }
+    }
+
     [Fact]
     public void IdentifyPacketReturnsAtapiSignatureBlock()
     {
@@ -227,5 +272,176 @@ public sealed class AtapiTests
         Assert.Equal(0x3Au, sense[12]);
         Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
         Assert.Equal(0u, drive.SenseKey);
+    }
+
+    [Fact]
+    public void TestUnitReadySucceedsWithMedia()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        SendPacket(drive, new byte[12]);
+
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+        Assert.Equal(0u, drive.SenseKey);
+    }
+
+    [Fact]
+    public void ReadCapacityReturnsLastLbaAndBlockSize()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0x25;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x58u, drive.ReadTaskfile(7, 8));
+        uint first = drive.ReadTaskfile(0, 32);
+        uint second = drive.ReadTaskfile(0, 32);
+
+        // Big-endian last LBA (15) then block length (2048); PIO words assemble LE.
+        Assert.Equal(0x0F000000u, first);
+        Assert.Equal(0x00080000u, second);
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+    }
+
+    [Fact]
+    public void Read10ReturnsSectorData()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0x28;
+        packet[2] = 0x00;
+        packet[3] = 0x00;
+        packet[4] = 0x00;
+        packet[5] = 0x05;
+        packet[7] = 0x00;
+        packet[8] = 0x01;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x58u, drive.ReadTaskfile(7, 8));
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal(0x05050505u, drive.ReadTaskfile(0, 32));
+        }
+
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+    }
+
+    [Fact]
+    public void Read10MultiSectorReturnsConcatenatedData()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0x28;
+        packet[5] = 0x02;
+        packet[8] = 0x02;
+        SendPacket(drive, packet);
+
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal(0x02020202u, drive.ReadTaskfile(0, 32));
+        }
+
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal(0x03030303u, drive.ReadTaskfile(0, 32));
+        }
+
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+    }
+
+    [Fact]
+    public void Read12ReturnsSectorData()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0xA8;
+        packet[5] = 0x07;
+        packet[6] = 0x00;
+        packet[7] = 0x00;
+        packet[8] = 0x00;
+        packet[9] = 0x01;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x58u, drive.ReadTaskfile(7, 8));
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal(0x07070707u, drive.ReadTaskfile(0, 32));
+        }
+
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+    }
+
+    [Fact]
+    public void ReadBeyondEndFailsLbaOutOfRange()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0x28;
+        packet[5] = 0x0F;
+        packet[8] = 0x02;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x41u, drive.ReadTaskfile(7, 8));
+        Assert.Equal(0x05u, drive.SenseKey);
+        Assert.Equal(0x21u, drive.SenseAsc);
+    }
+
+    [Fact]
+    public void ReadOverTransferCapFailsInvalidField()
+    {
+        AtaDevice drive = AtapiDriveWithMedia(256);
+        byte[] packet = new byte[12];
+        packet[0] = 0xA8;
+        packet[9] = 0x81;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x41u, drive.ReadTaskfile(7, 8));
+        Assert.Equal(0x05u, drive.SenseKey);
+        Assert.Equal(0x24u, drive.SenseAsc);
+    }
+
+    [Fact]
+    public void ReadZeroLengthCompletesWithoutData()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] packet = new byte[12];
+        packet[0] = 0x28;
+        packet[5] = 0x03;
+        SendPacket(drive, packet);
+
+        Assert.Equal(0x50u, drive.ReadTaskfile(7, 8));
+    }
+
+    [Fact]
+    public void RequestSenseAfterIllegalWithMediaReportsIllegal()
+    {
+        AtaDevice drive = AtapiDriveWithMedia();
+        byte[] bad = new byte[12];
+        bad[0] = 0xFF;
+        SendPacket(drive, bad);
+        Assert.Equal(0x05u, drive.SenseKey);
+
+        byte[] packet = new byte[12];
+        packet[0] = 0x03;
+        packet[4] = 18;
+        SendPacket(drive, packet);
+
+        byte[] sense = new byte[18];
+        for (int i = 0; i < 18; i++)
+        {
+            sense[i] = (byte)drive.ReadTaskfile(0, 8);
+        }
+
+        Assert.Equal(0x70u, sense[0]);
+        Assert.Equal(0x05u, sense[2]);
+        Assert.Equal(0x20u, sense[12]);
+        Assert.Equal(0u, drive.SenseKey);
+    }
+
+    [Fact]
+    public void AttachDvdOnHddThrows()
+    {
+        var drive = new AtaDevice();
+
+        Assert.Throws<InvalidOperationException>(() => drive.AttachDvd(new ArrayDvd(4)));
     }
 }

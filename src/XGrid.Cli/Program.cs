@@ -56,6 +56,7 @@ internal static class Program
         string? mcpxPath = null;
         string? eepromPath = null;
         string? hddPath = null;
+        string? dvdPath = null;
         ulong steps = 1_000_000;
         int trace = 0;
         int traceStart = 0;
@@ -94,6 +95,9 @@ internal static class Program
                     break;
                 case "--hdd":
                     hddPath = NextValue(args, ref i);
+                    break;
+                case "--dvd":
+                    dvdPath = NextValue(args, ref i);
                     break;
                 case "--steps":
                     steps = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
@@ -222,6 +226,11 @@ internal static class Program
             if (hddPath is not null)
             {
                 machine.AttachHdd(hddPath);
+            }
+
+            if (dvdPath is not null)
+            {
+                machine.AttachDvd(dvdPath);
             }
 
             machine.Reset();
@@ -1358,7 +1367,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

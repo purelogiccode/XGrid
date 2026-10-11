@@ -10,6 +10,34 @@ public sealed class BusMasterDmaTests
     private const ushort Taskfile = 0x1F0;
     private const uint BmBase = 0xFF60;
 
+    private sealed class ArrayDvd : IDvdImage
+    {
+        private readonly byte[] _data;
+
+        public ArrayDvd(int sectors)
+        {
+            _data = new byte[sectors * AtaDevice.DvdSectorSize];
+            for (int s = 0; s < sectors; s++)
+            {
+                for (int i = 0; i < AtaDevice.DvdSectorSize; i++)
+                {
+                    _data[s * AtaDevice.DvdSectorSize + i] = (byte)(s + 3);
+                }
+            }
+        }
+
+        public uint SectorCount => (uint)(_data.Length / AtaDevice.DvdSectorSize);
+
+        public void Dispose()
+        {
+        }
+
+        public void ReadSector(uint lba, Span<byte> destination)
+        {
+            _data.AsSpan((int)lba * AtaDevice.DvdSectorSize, AtaDevice.DvdSectorSize).CopyTo(destination);
+        }
+    }
+
     private sealed class ArrayDisk : IDiskImage
     {
         private readonly byte[] _data;
@@ -138,6 +166,113 @@ public sealed class BusMasterDmaTests
         Assert.Equal(0x80u, ram.ReadPhysical(0x3001));
         Assert.Equal(0x50u, io.Read8(Taskfile + 7));
         Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+    [Fact]
+    public void AtapiDmaReadCapacityMovesDataToMemory()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+        ide.PrimarySlave.AttachDvd(new ArrayDvd(16));
+
+        io.Write8(Taskfile + 6, 0xB0);
+        io.Write8(Taskfile + 1, 0x01);
+        io.Write8(Taskfile + 7, 0xA0);
+        byte[] packet = new byte[12];
+        packet[0] = 0x25;
+        foreach (byte b in packet)
+        {
+            io.Write8(Taskfile, b);
+        }
+
+        Assert.True(ide.PrimarySlave.DmaResponseReady);
+
+        ram.WritePrdt(0x1000, 0x3000, 8);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        // Big-endian last LBA (15), block length (2048).
+        Assert.Equal(0x00u, ram.ReadPhysical(0x3000));
+        Assert.Equal(0x0Fu, ram.ReadPhysical(0x3003));
+        Assert.Equal(0x08u, ram.ReadPhysical(0x3006));
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void AtapiDmaRead10MovesSectorToMemory()
+    {
+        (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+        ide.PrimarySlave.AttachDvd(new ArrayDvd(16));
+
+        io.Write8(Taskfile + 6, 0xB0);
+        io.Write8(Taskfile + 1, 0x01);
+        io.Write8(Taskfile + 7, 0xA0);
+        byte[] packet = new byte[12];
+        packet[0] = 0x28;
+        packet[5] = 0x04;
+        packet[8] = 0x01;
+        foreach (byte b in packet)
+        {
+            io.Write8(Taskfile, b);
+        }
+
+        Assert.True(ide.PrimarySlave.DmaResponseReady);
+
+        ram.WritePrdt(0x1000, 0x4000, 2048);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        // Sector 4 is filled with 0x07.
+        Assert.Equal(0x07u, ram.ReadPhysical(0x4000));
+        Assert.Equal(0x07u, ram.ReadPhysical(0x47FF));
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void AtapiDmaRead10FromIsoFileMovesSectorToMemory()
+    {
+        byte[] file = new byte[4 * AtaDevice.DvdSectorSize];
+        for (int i = 0; i < file.Length; i++)
+        {
+            file[i] = (byte)(0xA0 + (i & 0x0F));
+        }
+
+        string path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "xgrid-dvddma-" + System.Guid.NewGuid().ToString("N") + ".iso");
+        try
+        {
+            System.IO.File.WriteAllBytes(path, file);
+            (IdeController ide, IoSpace io, SparseMemory ram) = Channel();
+            using var dvd = new IsoDvdImage(path);
+            ide.PrimarySlave.AttachDvd(dvd);
+
+            io.Write8(Taskfile + 6, 0xB0);
+            io.Write8(Taskfile + 1, 0x01);
+            io.Write8(Taskfile + 7, 0xA0);
+            byte[] packet = new byte[12];
+            packet[0] = 0x28;
+            packet[5] = 0x02;
+            packet[8] = 0x01;
+            foreach (byte b in packet)
+            {
+                io.Write8(Taskfile, b);
+            }
+
+            Assert.True(ide.PrimarySlave.DmaResponseReady);
+
+            ram.WritePrdt(0x1000, 0x5000, 2048);
+            io.Write32((ushort)(BmBase + 4), 0x1000);
+            io.Write8((ushort)BmBase, 0x01);
+
+            Assert.Equal(0xA0u, ram.ReadPhysical(0x5000));
+            Assert.Equal(0xAFu, ram.ReadPhysical(0x500F));
+            Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+            Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+        }
+        finally
+        {
+            System.IO.File.Delete(path);
+        }
     }
 
     [Fact]
