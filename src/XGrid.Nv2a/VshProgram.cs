@@ -61,7 +61,7 @@ public static class VshProgram
     /// <param name="length">Number of valid instructions.</param>
     /// <param name="constants">Constant register file (192 entries of four floats).</param>
     /// <param name="inputs">Input registers v0..v15 (four floats each).</param>
-    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position.</param>
+    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position, with xy truncated to 1/16 units and w clamped away from zero/infinity (shader epilogue).</param>
     public static void Execute(
         uint[][] program,
         int length,
@@ -102,6 +102,9 @@ public static class VshProgram
                 break;
             }
         }
+
+        RoundScreenCoords(outputs[0]);
+        outputs[0][3] = ClampAwayZeroInf(outputs[0][3]);
     }
 
     private static void ExecuteToken(
@@ -149,12 +152,7 @@ public static class VshProgram
 
             if (macResult is not null)
             {
-                int macMask = Field(token, 3, 24, 4);
-                if (outMux == 0 && outR == 1)
-                {
-                    macMask = 0;
-                }
-
+                int macMask = outR == 1 ? 0 : Field(token, 3, 24, 4);
                 WriteMasked(ReadRegister(registers, outputs, outR), macResult, macMask);
             }
             else if (mac == (int)Mac.Arl)
@@ -240,14 +238,14 @@ public static class VshProgram
             case Mac.Min:
                 for (int i = 0; i < 4; i++)
                 {
-                    result[i] = Math.Min(a[i], b[i]);
+                    result[i] = Min(a[i], b[i]);
                 }
 
                 break;
             case Mac.Max:
                 for (int i = 0; i < 4; i++)
                 {
-                    result[i] = Math.Max(a[i], b[i]);
+                    result[i] = Max(a[i], b[i]);
                 }
 
                 break;
@@ -322,9 +320,9 @@ public static class VshProgram
             case Ilu.Lit:
                 {
                     const float epsilon = 1.0f / 256.0f;
-                    float w = Math.Clamp(c[3], -(128.0f - epsilon), 128.0f - epsilon);
-                    float x = MathF.Max(c[0], 0.0f);
-                    float y = MathF.Max(c[1], 0.0f);
+                    float w = Clamp(c[3], -(128.0f - epsilon), 128.0f - epsilon);
+                    float x = Max(c[0], 0.0f);
+                    float y = Max(c[1], 0.0f);
                     result[0] = 1.0f;
                     result[1] = x;
                     result[2] = x > 0.0f ? MathF.Pow(2.0f, w * MathF.Log2(y)) : 0.0f;
@@ -422,7 +420,7 @@ public static class VshProgram
     {
         for (int i = 0; i < 4; i++)
         {
-            result[i] = a[i] * b[i];
+            result[i] = a[i] == 0.0f || b[i] == 0.0f ? 0.0f : a[i] * b[i];
         }
     }
 
@@ -456,6 +454,27 @@ public static class VshProgram
         }
 
         return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0xDF800000u), BitConverter.UInt32BitsToSingle(0x9F800000u));
+    }
+
+    private static float Min(float x, float y)
+    {
+        return y < x ? y : x;
+    }
+
+    private static float Max(float x, float y)
+    {
+        return y > x ? y : x;
+    }
+
+    private static float Clamp(float value, float minimum, float maximum)
+    {
+        return Min(Max(value, minimum), maximum);
+    }
+
+    private static void RoundScreenCoords(float[] position)
+    {
+        position[0] = MathF.Truncate(position[0] * 16.0f) / 16.0f;
+        position[1] = MathF.Truncate(position[1] * 16.0f) / 16.0f;
     }
 
     private static bool IsScalarIlu(int ilu)
