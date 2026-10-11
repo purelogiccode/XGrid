@@ -1558,6 +1558,34 @@ VA `0x14C48` (return address on stack); page walks place caller (phys
 distinct from the XBE image — the caller is an MSVC SEH poll/retry loop
 issuing the probes.
 
+## 46. Outrunning the scan: file-save phase at 3.2B (2026-10-10)
+
+**3.2B-step run completes with no fault** (not halted) at **new EIP
+`0x67BFD`** (phys `0xD4BFD`, another dashboard-loaded module mapping; VA
+`0x10000` now walks to phys `0xDD000`). GPU still frozen (same
+2670/10.1M/33/33; frame #33/black). New behavior: **`0xCA` WRITE DMAs** —
+`lastCmd=0xCA`, tail shows a repeated 1-sector write at LBA `0x885446`
+(E partition, +1.6 GB in) interleaved with ascending 1–3-sector writes
+`0x897546`→`0xA07546`. That pattern (same sector rewritten per data chunk)
+is a **growing file with directory-entry updates**. IDE 8292→10452
+accesses, interrupts 4566→5799, no new unmapped buckets.
+
+**Code context:** EIP sits in a function epilogue just past a file-open
+wrapper — `call [0x7D688]` kernel thunk with object-attribute args,
+`test eax,eax` error check, bitfield-dispatched custom statuses
+(`0x80072749/26/4A/7B`, dashboard-internal, not in Cxbx headers). So the
+dashboard moved from content discovery into **saving files** (config/cache/
+content DB candidates) — still progressing, no stall.
+
+**False alarm logged:** `OverlayEnabled=False` in every gate file is the
+**ROM** overlay (LPC), unrelated to the HDD COW overlay — writes may be
+landing in the discarded in-memory overlay. Capturing write content needs
+overlay introspection (future tooling alongside full IDE logging).
+
+**Also this turn:** boot prints `Progress …` every 250M instructions
+(chunked `RunBatch` loop), so killed long runs still yield partial data;
+validated on a 300M run. 725 tests green, format clean.
+
 
 
 
