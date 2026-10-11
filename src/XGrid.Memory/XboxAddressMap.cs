@@ -12,6 +12,16 @@ public static class XboxAddressMap
     /// <summary>RAM mirror window size (128 MB window over 64 MB RAM).</summary>
     public const uint RamMirrorSize = 0x08000000;
 
+    /// <summary>
+    /// Tiled / write-combined RAM view base (Cxbx AddressRanges TILED_MEMORY_BASE /
+    /// XBOX_WRITE_COMBINED_BASE; XboxDevWiki "Shadow RAM"). Mirrors RAM; overlaps the
+    /// flash window below, which keeps precedence there by registration order.
+    /// </summary>
+    public const uint WriteCombinedBase = 0xF0000000;
+
+    /// <summary>Tiled / write-combined RAM view size, retail 64 MB (matches RAM).</summary>
+    public const uint WriteCombinedSize = 0x04000000;
+
     /// <summary>Flash ROM base.</summary>
     public const uint FlashBase = 0xF0000000;
 

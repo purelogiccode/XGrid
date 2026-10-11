@@ -102,6 +102,30 @@ public sealed class XboxMachineTests
     }
 
     [Fact]
+    public void WriteCombinedAliasMirrorsRam()
+    {
+        XboxMachine machine = CreateLoadedMachine();
+        machine.Ram.Clear();
+
+        machine.Memory.Write32(XboxAddressMap.WriteCombinedBase + 0x34A2000, 0xAABBCCDD);
+
+        Assert.Equal(0xAABBCCDDu, machine.Ram.Read32(0x34A2000));
+        Assert.Equal(0xAABBCCDDu, machine.Memory.Read32(0x34A2000));
+        Assert.Equal(0xAABBCCDDu, machine.Memory.Read32(XboxAddressMap.WriteCombinedBase + 0x34A2000));
+    }
+
+    [Fact]
+    public void FlashWindowKeepsPrecedenceOverWriteCombinedAlias()
+    {
+        XboxMachine machine = CreateLoadedMachine();
+
+        Assert.Equal(0x90, machine.Memory.Read8(XboxAddressMap.FlashBase));
+        machine.Memory.Write8(XboxAddressMap.FlashBase, 0x00);
+
+        Assert.Equal(0x90, machine.Memory.Read8(XboxAddressMap.FlashBase));
+    }
+
+    [Fact]
     public void ResetRestoresOverlayAfterDisable()
     {
         XboxMachine machine = CreateLoadedMachine();
