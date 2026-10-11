@@ -2829,25 +2829,27 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **727 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **730 tests passing** (36 Core, 398 Cpu, 52 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — post-save poll storm: identify the F34–F38 poller.**
-The animation wait (§32) through **M8** (§43), surface scoping (§44),
-content discovery (§45), file-save (§47: dashboard re-saves `C:\evox.ini`
-in place — truncate + streaming rewrite, proved byte-identical) and
+**NEXT SESSION — Shadow-RAM fill: issuer + semantics.** The animation
+wait (§32) through **M8** (§43), surface scoping (§44), content discovery
+(§45), file-save (§47: `C:\evox.ini` re-saved byte-identical) and
 save-completion (§48) are solved. `xgrid boot --steps 4000000000` (4.0B
-steps) completes **with no fault at EIP `0x67BFF`** (parked, +2 bytes):
-the ini is fully rewritten (dirent 79868, FAT chain re-extended
-263–267), then the dashboard reads the `disk.bin` region
-(`0x4662C8–0x4670F0`), stirs the GPU (+48 degenerate draws, +2 clears,
-**frame #34**) and spins **~1.05M unmapped-MMIO accesses in `F34–F38`**
-(all new in the 3.2–4.0B window). Static bonus this turn: the runner is a
-chain-loaded 10-section **`RemoteX`** dash (EvoX loader decrypts +
-hands off; main flow `Load q:\evox.ini` → `Fill!` → `Start!` →
-`OpenX_Dash.Run`, save triggered post-`Start!`). Next: instrument
-unmapped accesses with (EIP, exact address) to name the poller + stack
-forensics on the parked thread (EIP sits in a data table).
+steps) completes **with no fault at EIP `0x67BFF`** (parked in a data
+table): post-save reads of the `disk.bin` region, GPU stirrings (+48
+degenerate draws, +2 clears, **frame #34**), then the §48 "poll storm"
+resolved by page histograms (§49) into **two 2 MB sequential dword fills
+(`[F34A2,F36A2)` + `[F36A3,F38A3)`, 1024 writes/page uniform,
+writes-only)** inside wiki **Shadow RAM** (`0xF0000000–0xF3FFFFFF`) —
+shadow of RAM top (GPU area), right after flip #34: a post-present
+surface clear via the shadow alias (or into the void). EIP trail shows
+no dominant loop (fill is ~1%-duty background work). Next: name the
+issuer (value/size capture or EIP plumbing) and settle Shadow RAM
+semantics (mirror → XGrid needs a RAM-alias region at `0xF0000000`;
+discard → current behavior correct). Static bonus: runner is a
+chain-loaded 10-section **`RemoteX`** dash (save triggered
+post-`Start!`).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2872,7 +2874,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-48.
+trail: research-notes §30-49.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

@@ -1677,6 +1677,42 @@ on the unmapped region. Next gate: instrument unmapped accesses with
 (EIP, exact address) to identify the poller + stack forensics on the
 parked thread (`--writedump`/`ram_40b.bin` artifacts in temp).
 
+## 49. The "poll storm" is a 2×2 MB Shadow-RAM surface clear (2026-10-11)
+
+**Tooling:** `AddressSpace` now counts unmapped accesses per 4 KB page
+(`UnmappedPageReads`/`UnmappedPageWrites`), keeps a monotonic
+`UnmappedAccessTotal`, and `PrintState` prints top/all pages (full list
+when ≤2048) plus an **EIP trail** (every 250M-step `Progress` line now
+carries `EIP=`). 3 tests, 730 green, format clean.
+
+**Deterministic re-run (4.0B) + exact page list settles the shape.** The
+storm is **writes-only, two contiguous 2 MB dword fills —
+`[F34A2,F36A2)` + `[F36A3,F38A3)` — every one of the 1024 pages hit
+exactly 1024 times** (1,048,576 writes; single skipped page `F36A2`).
+Not a poll loop: no register is re-read, nothing is ever read back (F34+
+reads: zero in 4.0B steps). Per XboxDevWiki Memory (vendored page 22),
+`0xF0000000–0xF3FFFFFF` is **Shadow RAM** (64 MB retail); the fill sits
+inside it at shadow+52–56 MB, i.e. the shadow of **RAM top, GPU surface
+area** (flip surface `0x32A4000` neighborhood), issued right after flip
+#34. Reads as: **post-present double-buffer clear, 2×2 MB, through the
+uncached shadow alias** (or into the void — XGrid drops the writes).
+Corroborating: EIP trail shows **no dominant loop** during the window
+(render `0x14Cxx`, net `0x688xx`, save `0x678xx`, module `0x22Dxx`
+interleave) — the fill is ~1%-duty background work, i.e. a clear call,
+not a spin. No `0xF34…` literal exists in the RemoteX image — the address
+is a computed surface pointer. Our NV2A semaphore path already
+range-checks bogus targets (drops them); APU `FEMEMDATA` and USB HCCA
+writes are guest-register-driven one-shots, not the filler.
+
+**Open (next):** issuer EIP (needs value/size capture or EIP plumbing —
+`UnmappedAccessTotal` + interval sampling exists as the hook); **Shadow
+RAM semantics** (write-through mirror vs discard — if mirror, XGrid needs
+a RAM-alias region at `0xF0000000` and the clear must land in RAM top;
+note the map oddity that our `FlashBase = 0xF0000000` (1 MB) overlaps the
+wiki's Shadow RAM range — xemu maps nothing there either, but xemu never
+reaches this phase so it is no oracle); the `F36A2` gap (guard page vs
+two back-to-back 2 MB clears vs scatter-list run boundary).
+
 
 
 

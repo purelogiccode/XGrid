@@ -152,20 +152,21 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 727 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 730 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — post-save poll storm: identify the F34–F38 poller.
+## Next session — Shadow-RAM fill: issuer + semantics.
 
 1. 4.0B-step run completes with no fault at EIP `0x67BFF` (parked); the
-   evox.ini re-save is **complete** (dirent 79868, zero diff, FAT chain
-   re-extended 263–267). Post-save: reads of the `disk.bin` region,
-   +48 degenerate draws/+2 clears/**frame #34**, and **~1.05M
-   unmapped-MMIO accesses in `F34–F38`** (all new in 3.2–4.0B). Static:
-   the runner is a chain-loaded 10-section **`RemoteX`** dash (EvoX
-   loader decrypts + hands off; save triggered post-`Start!`). Next:
-   unmapped-access (EIP, address) instrumentation + stack forensics.
-   See research-notes §48. LBA 8 write (`55 AA`, `PCBX`) still open.
+   evox.ini re-save is **complete**. Post-save: disk.bin-region reads,
+   +48 degenerate draws/+2 clears/**frame #34**, then the "poll storm"
+   resolved (§49) into **two 2 MB sequential dword fills
+   (`[F34A2,F36A2)` + `[F36A3,F38A3)`, writes-only)** in wiki Shadow RAM
+   (`0xF0000000–0xF3FFFFFF`) — a post-present surface clear via the
+   shadow alias (or into the void). No dominant loop on the EIP trail.
+   Next: issuer EIP (value/size capture or plumbing) + Shadow semantics
+   (mirror → alias region at `0xF0000000`; discard → current OK).
+   See research-notes §49. LBA 8 write (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
