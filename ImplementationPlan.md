@@ -2832,17 +2832,21 @@ earlier one except where explicitly parallel (Track B/C).
 Current test baseline: **732 tests passing** (36 Core, 398 Cpu, 52 Memory, 110 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — Shadow-RAM fill lands in RAM now; longer runs toward UI.**
-The animation wait (§32) through **M8** (§43), surface scoping (§44),
-content discovery (§45), file-save (§47) and save-completion (§48) are
-solved, and the §49 fill is settled (§50): Cxbx headers prove `0xF0000000`
-is the tiled/write-combined RAM mirror, so XGrid now aliases RAM there
-(flash keeps its 1 MB window by tie-order; 4.0B-validated boot
-bit-identical). `xgrid boot --steps 4000000000` completes with no fault
-at EIP `0x67BFF`. Next: a longer run (fill lands in RAM top — watch for
-readback) toward UI (XID input for the menu); fill issuer EIP still open
-(value/size capture or plumbing). Static bonus: runner is a chain-loaded
-10-section **`RemoteX`** dash (save triggered post-`Start!`).
+**NEXT SESSION — menu-idle: NIC gate + XID input.** The animation wait
+(§32) through **M8** (§43), surface scoping (§44), content discovery
+(§45), file-save (§47) and save-completion (§48) are solved; the §49
+fill is a surface DATA upload landing in RAM top via the write-combined
+alias (§50–51: 59% BGRA pixels, zeros banded). `xgrid boot --steps
+5000000000` (5.0B steps) completes **with no fault at kernel EIP
+`0x800153D3`** (delay loop, stable 500M+): F34–F38 unmapped gone (alias
+verified), no new disk I/O, +384 degenerate draws/+8 flips (frame #42,
+still black, surface `0x3D04000`), and **new NIC traffic** (FEF reads
+→14815, writes →704) against a config-space-only stub. The system reads
+as a waiting menu loop. Next: identify the NIC registers polled (xemu
+`mcpx/nvnet/`, link-status design — does the wait gate UI?), implement
+XID gamepad input, then test menu response. Static bonus: runner is a
+chain-loaded 10-section **`RemoteX`** dash (save triggered
+post-`Start!`).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2857,9 +2861,9 @@ program-draw rasterization is still unvalidated**. The presented frame
 presents the dashboard surface, not the `0x1000` early-boot region.
 The 2.5B content scan (§45) gave way to the evox.ini re-save at 3.2B
 (§47), complete at 4.0B with post-save disk.bin reads, GPU stirrings and
-the 2×2 MB Shadow-RAM fill (§48–49) — now landing in RAM top via the
-write-combined alias (§50). Next: longer runs toward UI (XID input for
-the menu; watch for fill readback). Remaining M5 gaps: inline
+the 2×2 MB Shadow-RAM surface upload (§48–51) — landing in RAM top via
+the write-combined alias (§50), 59% BGRA pixels. Next: NIC gate + XID
+input, then a menu-response test. Remaining M5 gaps: inline
 `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Test media
 for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
@@ -2867,7 +2871,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-50.
+trail: research-notes §30-51.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

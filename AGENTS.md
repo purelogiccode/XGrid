@@ -155,14 +155,16 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 732 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — fill lands in RAM now; longer runs toward UI.
+## Next session — menu-idle: NIC gate + XID input.
 
-1. Shadow RAM verdict (§50): Cxbx headers prove `0xF0000000` is the
-   tiled/write-combined RAM mirror — XGrid now aliases RAM there (flash
-   keeps its 1 MB window by tie-order; boot bit-identical, smoke-clean).
-   Next long run: fill lands in RAM top (`0x34A2000+`), watch for
-   readback; then XID input for the menu. Issuer EIP, `F36A2` gap and
-   LBA 8 (`55 AA`, `PCBX`) still open.
+1. Alias verified live (§51): 5.0B run, no fault, F34–F38 unmapped gone,
+   fill landed as surface DATA (59% BGRA pixels, zeros banded). System
+   menu-idle at kernel delay-loop EIP `0x800153D3`: no new disk I/O,
+   +384 degenerate draws/+8 flips (frame #42 black, surface `0x3D04000`),
+   new NIC traffic (FEF reads →14815, writes →704) vs config-only stub.
+   Next: NIC register ID + link design (xemu `mcpx/nvnet/`), XID gamepad,
+   menu-response test. Issuer EIP, `F36A2` gap and LBA 8 (`55 AA`,
+   `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment

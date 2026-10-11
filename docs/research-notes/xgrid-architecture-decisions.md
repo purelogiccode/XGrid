@@ -1741,6 +1741,36 @@ anything downstream reads it back.
 our modeling choice, preserves 4.0B-validated boot); fill issuer EIP;
 `F36A2` gap; LBA 8 attribution.
 
+## 51. Alias verified live; menu-idle state with NIC traffic (2026-10-11)
+
+**5.0B run (WC alias live), no fault.** Alias interception proven by the
+dog that didn't bark: `F34–F38` unmapped counts drop to ~0 (only
+`045=4 065=8 FEF` remain) while everything else stays deterministic
+(IDE 12132, writedump 159/352 identical, no new disk I/O). The fill
+landed in RAM top — and it is **surface DATA, not a clear**: the region
+is now 59% BGRA pixels (`97512CFF`-style, alpha `FF`) vs 99% stale blobs
+pre-alias, zeros clustered in bands (64 fully-zero pages incl. a 13-page
+gutter straddling the `F36A2` boundary). Single-variable attribution
+(alias on/off is the only delta). §49 "clear" framing corrected: a
+4 MB surface/texture upload through the shadow alias.
+
+**System looks menu-idle, waiting.** End EIP `0x800153D3` (stable
+500M+ steps) disassembles as a kernel delay loop (`sub eax,1; jne` +
+alignment NOPs, `rep ins` port-I/O helpers nearby — KeStall-style
+busy-wait). The save thread revisited `0x67BFD` at 4.5B with no new
+writes (parked wait loop). GPU: +384 draws (32 skipped, 0 px), +8 flips
+(frame #42, still black, surface moved `0x32A4000`→`0x3D04000`).
+**NIC traffic is new:** `FEF` reads 4652→14815, writes 0→704 in 4–5B —
+the network stack configuring/polling a config-space-only stub
+(`NvNetController`: PCI 0:4.0 BARs only, no MMIO), reads returning
+sentinel `0xFF`. xemu reference exists for the future gate
+(`mcpx/nvnet/nvnet.c` + `nvnet_regs.h`).
+
+**Next:** NIC register identification + link-status design (what is it
+polling — link? DHCP? — and does the wait gate UI?), XID gamepad input,
+then a menu-response test (does the "idle menu" react?). The black
+degenerate draws remain unvalidated as menu rendering vs no-content.
+
 
 
 
