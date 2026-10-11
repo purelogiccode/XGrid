@@ -1868,6 +1868,45 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 57. D3D probe: steady no-op draws — real shaders, degenerate geometry (2026-10-11)
+
+**Method stream captured** (`--pgraph`, 5B run; ring-capped at 262144
+entries so the file IS the menu-idle tail: ~150 structurally identical
+frames, ~28 draws each — no bursts, no surface creation, i.e. a steady
+loop, not init churn). Artifacts in temp (`pgraph_61_5b.txt`,
+`vp_tail.json`), not the repo. Per frame: transform-program re-uploads
+(7–11 instruction fixed-function-style shaders: `R1=V0`, perspective
+RCP, `R2=R1*X`, `oPos=R2+C0`, varying passthrough, FINAL-terminated),
+constant batches (slots 0 with `C0=[1,1,16777215,1]` + slots 96–104 via
+the 1EA4 load pointer), texture state, indexed (ARRAY_ELEMENT16) +
+inline-array geometry. START=0/LOAD=0 always; the 12 boot programs are
+never selected in the tail.
+
+**Zero pixels explained, no emulator gap found.** The in-stream
+geometry (INLINE_ARRAY) is zeros/denormals: every vertex identical, so
+oPos collapses to a point (`C0` offset) — zero-area, correctly zero
+pixels. Our interpreter/rasterizer faithfully reproduces this (same math
+→ same nothing). The indexed path references RAM arrays (16-bit indices
+8–22, 380+ — normal-looking) and still needs RAM-backed tracing to
+close fully, but nothing so far implicates M5–M7 fidelity: programs
+decode cleanly, constants land, no unknown methods/opcodes in 462
+distinct methods.
+
+**Verdict matrix.** The flip producer is the dashboard's own D3D layer
+issuing fully-formed but content-free draws (EIP samples span dash
+.text + D3D/D3DX libs + kernel waits — a running-D3D-app profile).
+Black frames + degenerate geometry = the menu genuinely has nothing to
+show. Init-retry (XBApp `Could not create D3D device!`) vs waiting-menu
+(network/pad/content-gated) stays open, but the evidence pool now
+favors *waiting*: perfectly periodic identical frames with zero error
+churn. Next: (a) RAM-backed trace of one indexed draw (array
+format/offset methods + buffers → execute → oPos verdict); (b) XBApp
+flow evidence (EIP-loop analysis or D3D-device-object forensics);
+(c) only then the nvnet packet engine if the dash proves
+network-gated. The string-anchored call-site forensics stalled on heap
+residence (message VAs aren't image-relative — the 0xEE2E3 block sits
+outside every loaded image).
+
 ## 56. XID gate III: injection works, guest ignores the pad (2026-10-11)
 
 **Input path built end-to-end.** `--pad-buttons/--pad-analog/--pad-sticks`

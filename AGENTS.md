@@ -160,11 +160,13 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
    injection (latched; Bus 144→148). Enumeration completes first try;
    **A-press 5B run byte-identical to neutral** (intr=0 — guest never
-   polls). Input path verified; title never opens XInput. Next: probe
-   who flips (`--pgraph` method mix; `Could not create D3D device!` +
-   black degenerate draws suggest init-retry blocked on graphics),
-   else XInput-open forensics, else nvnet packet engine. Issuer EIP,
-   `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+   polls). D3D probe done (§57): `--pgraph` tail (~150 identical
+   frames) — dash D3D issues fully-formed content-free draws (real
+   7–11-insn shaders, `C0=[1,1,16777215,1]`, degenerate inline
+   geometry → correctly zero pixels); no fidelity gap, no init churn.
+   Next: RAM-backed indexed-draw trace → oPos verdict, then XBApp flow
+   evidence, nvnet engine last. Issuer EIP, `F36A2` gap and LBA 8
+   (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
