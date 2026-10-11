@@ -152,6 +152,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private uint _doneCount;
     private uint _doneHeadReg;
     private readonly List<string> _transferLog = new();
+    private readonly Dictionary<uint, int> _regReads = new();
+    private readonly Dictionary<uint, int> _regWrites = new();
     private bool _pendingSetup; private bool _pendingIn;
     private byte[] _pendingPayload = Array.Empty<byte>();
     private int _pendingOffset;
@@ -213,6 +215,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     /// <summary>Gets recent retired transfer outcomes, for diagnostics.</summary>
     public IReadOnlyList<string> TransferLog => _transferLog;
 
+    /// <summary>Gets per-offset register read counts, for diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> RegReadCounts => _regReads;
+
+    /// <summary>Gets per-offset register write counts, for diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> RegWriteCounts => _regWrites;
+
     /// <summary>Raised when the interrupt line level changes.</summary>
     public event Action<bool>? InterruptChanged;
 
@@ -231,6 +239,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     {
         uint offset = address - BaseAddress;
         RegisterAccesses++;
+        if (offset < WindowSize)
+        {
+            _regReads.TryGetValue(offset, out int reads);
+            _regReads[offset] = reads + 1;
+        }
+
         if (offset >= WindowSize || (offset & 3) != 0)
         {
             return 0xFFFFFFFFu;
@@ -272,6 +286,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     {
         uint offset = address - BaseAddress;
         RegisterAccesses++;
+        if (offset < WindowSize)
+        {
+            _regWrites.TryGetValue(offset, out int writes);
+            _regWrites[offset] = writes + 1;
+        }
+
         if (offset >= WindowSize || (offset & 3) != 0)
         {
             return;
@@ -822,7 +842,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         string stage = direction == 0 ? "setup" : direction == 1 ? "out" : "in";
         string round = direction == 2 ? FormattableString.Invariant($" r={(tdFlags & TdRound) != 0}") : string.Empty;
         _transferLog.Add(FormattableString.Invariant(
-            $"{kind} {stage} ep{endpoint} len={length} got={consumed}{round} {note}").TrimEnd());
+            $"f={_frameNumber} {kind} {stage} ep{endpoint} len={length} got={consumed}{round} {note}").TrimEnd());
     }
 
     private UsbTransferResult ServiceSetup(uint cbp, out int consumed)

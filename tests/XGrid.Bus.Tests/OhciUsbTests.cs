@@ -297,7 +297,7 @@ public sealed class OhciUsbTests
         Assert.Equal(3, ohci.ControlTransfers);
         Assert.NotEqual(0u, ohci.Read(Base + 0x30, 4));
         Assert.NotEqual(0u, ohci.Read(Base + HcInterruptStatus, 4) & 0x2u);
-        Assert.Contains(ohci.TransferLog, e => e.StartsWith("ctl in", StringComparison.Ordinal));
+        Assert.Contains(ohci.TransferLog, e => e.Contains(" ctl in ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -344,6 +344,19 @@ public sealed class OhciUsbTests
 
         Assert.Equal(0u, ohci.DeviceAddress);
         Assert.False(((XidGamepad)ohci.Function!).Configured);
+    }
+
+    [Fact]
+    public void RegisterHistograms_CountOffsets()
+    {
+        var ohci = new OhciUsbController(Base, new FakeUsbMemory());
+
+        ohci.Read(Base, 4);
+        ohci.Read(Base, 4);
+        ohci.Write(Base + HcControl, 4, UsbOperational);
+
+        Assert.Equal(2, ohci.RegReadCounts[0]);
+        Assert.Equal(1, ohci.RegWriteCounts[HcControl]);
     }
 
     [Fact]
