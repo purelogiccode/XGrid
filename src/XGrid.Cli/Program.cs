@@ -62,7 +62,7 @@ internal static class Program
         int traceStart = 0;
         bool traceRegs = false;
         uint? breakAddress = null;
-        uint? breakLogAddress = null;
+        List<uint> breakLogAddresses = new();
         uint ramMb = 64;
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
@@ -122,7 +122,7 @@ internal static class Program
                     {
                         string text = NextValue(args, ref i);
                         string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
-                        breakLogAddress = Convert.ToUInt32(hex, 16);
+                        breakLogAddresses.Add(Convert.ToUInt32(hex, 16));
                         break;
                     }
                 case "--dump":
@@ -269,12 +269,12 @@ internal static class Program
 
             ulong executed = 0;
             bool breakHit = false;
-            if (breakAddress is null && breakLogAddress is { } logEip)
+            if (breakAddress is null && breakLogAddresses.Count > 0)
             {
                 int logAdvance = 0;
                 while (executed < steps && !machine.Cpu.Context.Halted)
                 {
-                    if (machine.Cpu.Context.Eip == logEip)
+                    if (breakLogAddresses.Contains(machine.Cpu.Context.Eip))
                     {
                         XboxContext logs = machine.Cpu.Context;
                         uint caller = 0;
@@ -288,7 +288,7 @@ internal static class Program
                         }
 
                         Console.WriteLine(
-                            $"HIT {executed} ESI={logs.Esi:X8} EDI={logs.Edi:X8} EAX={logs.Eax:X8} " +
+                            $"HIT {executed} EIP={logs.Eip:X8} ESI={logs.Esi:X8} EDI={logs.Edi:X8} EAX={logs.Eax:X8} " +
                             $"EFLAGS={logs.Eflags:X8} ESP={logs.Esp:X8} " +
                             $"caller={caller:X8} arg={argument:X8}");
                     }
@@ -1367,7 +1367,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr] [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
