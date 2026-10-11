@@ -129,6 +129,9 @@ public sealed class XidGamepad : IUsbDeviceFunction
     private readonly byte[] _inputCapabilities = new byte[InputReportSize];
     private readonly byte[] _outputCapabilities = new byte[OutputReportSize];
     private readonly List<string> _requestLog = new();
+    private readonly byte[] _heldAnalog = new byte[8];
+    private readonly short[] _heldSticks = new short[4];
+    private ushort _heldButtons;
     private byte _pendingAddress = 0xFF;
     private byte _pendingConfig;
     private bool _hasPendingConfig;
@@ -156,7 +159,7 @@ public sealed class XidGamepad : IUsbDeviceFunction
         _pendingAddress = 0xFF;
         _hasPendingConfig = false;
         Array.Clear(_outputReport, 0, _outputReport.Length);
-        SetInput(0, default, default);
+        BuildReport();
         _inputCapabilities[0] = 0;
         _inputCapabilities[1] = InputReportSize;
         for (int i = 2; i < _inputCapabilities.Length; i++)
@@ -173,22 +176,30 @@ public sealed class XidGamepad : IUsbDeviceFunction
     }
 
     /// <summary>Drives the input report (buttons, 8 analog bytes, 4 sticks).</summary>
+    /// <remarks>The held state survives <see cref="Reset"/> (port resets during
+    /// enumeration restore it), modelling a button held from boot.</remarks>
     public void SetInput(ushort buttons, ReadOnlySpan<byte> analogButtons, ReadOnlySpan<short> sticks)
+    {
+        _heldButtons = buttons;
+        Array.Clear(_heldAnalog, 0, _heldAnalog.Length);
+        analogButtons.Slice(0, Math.Min(analogButtons.Length, _heldAnalog.Length)).CopyTo(_heldAnalog);
+        Array.Clear(_heldSticks, 0, _heldSticks.Length);
+        sticks.Slice(0, Math.Min(sticks.Length, _heldSticks.Length)).CopyTo(_heldSticks);
+        BuildReport();
+    }
+
+    private void BuildReport()
     {
         Array.Clear(_inputReport, 0, _inputReport.Length);
         _inputReport[0] = 0;
         _inputReport[1] = InputReportSize;
-        _inputReport[2] = (byte)buttons;
-        _inputReport[3] = (byte)(buttons >> 8);
-        for (int i = 0; i < 8 && i < analogButtons.Length; i++)
+        _inputReport[2] = (byte)_heldButtons;
+        _inputReport[3] = (byte)(_heldButtons >> 8);
+        Array.Copy(_heldAnalog, 0, _inputReport, 4, _heldAnalog.Length);
+        for (int i = 0; i < 4; i++)
         {
-            _inputReport[4 + i] = analogButtons[i];
-        }
-
-        for (int i = 0; i < 4 && i < sticks.Length; i++)
-        {
-            _inputReport[12 + (i * 2)] = (byte)sticks[i];
-            _inputReport[13 + (i * 2)] = (byte)(sticks[i] >> 8);
+            _inputReport[12 + (i * 2)] = (byte)_heldSticks[i];
+            _inputReport[13 + (i * 2)] = (byte)(_heldSticks[i] >> 8);
         }
     }
 
