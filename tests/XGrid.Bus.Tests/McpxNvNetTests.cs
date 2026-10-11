@@ -136,4 +136,29 @@ public sealed class McpxNvNetTests
         Assert.NotEqual(0u, net.Read(Base + AdapterControl, 4) & (1u << 2));
         Assert.NotEqual(0u, net.Read(Base + TxRxControl, 4) & (1u << 3));
     }
+
+    [Fact]
+    public void RegisterHistograms_CountAlignedAccesses()
+    {
+        var net = new McpxNvNetDevice();
+
+        net.Read(Base + TxStatus, 4);
+        net.Read(Base + TxStatus + 1, 1);
+        net.Write(Base + TxRxControl, 4, 0x4);
+
+        Assert.Equal(2, net.RegReadCounts[TxStatus]);
+        Assert.Equal(1, net.RegWriteCounts[TxRxControl]);
+    }
+
+    [Fact]
+    public void Reset_ClearsRegisterHistograms()
+    {
+        var net = new McpxNvNetDevice();
+
+        net.Read(Base + TxStatus, 4);
+        net.Reset();
+
+        Assert.Empty(net.RegReadCounts);
+        Assert.Empty(net.RegWriteCounts);
+    }
 }
