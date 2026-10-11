@@ -155,7 +155,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   once; conflicts were purged 2026-10-09). Baseline: 768 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: viewport writers.
+## Next session — menu response: app intent.
 
 1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
    injection (latched; Bus 144→148). Enumeration completes first try;
@@ -169,8 +169,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    Zeta verdict (§60): set at boot (depth surfaces + formats, ~187K
    methods of bring-up) then never again — color-only flips to the end;
    only pixels ever are 33 legacy textured draws (logo?) vs 800K
-   clipped program draws. Next: app viewport writers (who stores
-   16.7M?), our surface/zeta/caps audit, nvnet engine last. Issuer
+   clipped program draws. Viewport writers (§61): sole 640×480
+   viewport in RAM is sane (0,1) — driver bakes the junk guest-side;
+   emulator channels exonerated. Next: app intent (what is the black
+   idle scene waiting for — XBApp flow? network? content?) + nvnet
+   packet engine. Issuer
    EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,

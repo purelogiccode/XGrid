@@ -1868,6 +1868,35 @@ polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
 injection (`SetInput` wired to CLI) and the menu-response read-out are
 gate II, after seeing what the guest does with a pad.
 
+## 61. Viewport writers: app sane, driver bakes junk — guest-side (2026-10-11)
+
+**The fork is decided.** RAM holds exactly one 640×480 D3DVIEWPORT8
+(phys `0x154670`) with **MinZ=0.0, MaxZ=1.0 — sane**. Yet the
+pushbuffer carries viewport-Z 16.7M from the first viewport write, for
+both GPU clients, all 5B steps. The corruption happens between the
+app's SetViewport and the pushbuffer: inside the D3D runtime as
+faithfully executed. App-level junk is out.
+
+**Emulator channels exonerated (audit).** Surface/zeta/format state is
+guest-write passthrough (nothing for the driver to misread — and
+NV2A methods are guest-authored verbatim in the 463M-method stream);
+there is no GPU readback path feeding driver math; PFIFO capture is
+complete (no suspends/caps hit); the 16.7M repeats identically across
+486K batches, runs and phases (corruption/DMA-misread would be chaotic,
+and int math is exact in our CPU). The driver really emits Z24MAX from
+MaxZ=1.0 on this configuration — deterministically, from boot.
+
+**Position.** The guest AS OBSERVED draws nothing visible,
+deterministically, from the first frame: real app viewport, junk
+driver bake, total clip, black flips. No GPU-fidelity item remains on
+this path. What is left is APP-INTENT: is the black idle scene the
+correct waiting state (for input? network? content? timer?), or is the
+driver bake itself symptom of an earlier missed trigger (XBApp flow:
+does init complete; what gates content)? Next: XBApp-flow evidence
+(EIP-loop structure at higher resolution than 250M samples? D3D-object
+forensics? failure-string execution proof?) alongside the nvnet packet
+engine (the other half of "waiting for what").
+
 ## 60. Zeta verdict: set at boot, never after; logo-vs-scene split (2026-10-11)
 
 **Full-stream surface timeline** (single pass, 463M methods): `0x214`
