@@ -798,6 +798,14 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
         Console.WriteLine(
             $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes}");
+        Console.WriteLine(
+            $"USB0 acc={machine.Usb0.RegisterAccesses} irq={machine.Usb0.InterruptAsserted} " +
+            $"p0=0x{machine.Usb0.GetPortStatus(0):X8} p1=0x{machine.Usb0.GetPortStatus(1):X8} " +
+            $"p2=0x{machine.Usb0.GetPortStatus(2):X8} p3=0x{machine.Usb0.GetPortStatus(3):X8}");
+        Console.WriteLine(
+            $"USB1 acc={machine.Usb1.RegisterAccesses} irq={machine.Usb1.InterruptAsserted} " +
+            $"p0=0x{machine.Usb1.GetPortStatus(0):X8} p1=0x{machine.Usb1.GetPortStatus(1):X8} " +
+            $"p2=0x{machine.Usb1.GetPortStatus(2):X8} p3=0x{machine.Usb1.GetPortStatus(3):X8}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {

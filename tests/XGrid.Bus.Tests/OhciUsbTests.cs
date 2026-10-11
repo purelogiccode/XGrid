@@ -166,4 +166,18 @@ public sealed class OhciUsbTests
         ohci.Write(Base + 2, 4, 0x1234);
         Assert.Equal(0x10u, ohci.Read(Base, 4));
     }
+
+    [Fact]
+    public void PortStatusAccessor_MirrorsEmptyPorts()
+    {
+        var ohci = new OhciUsbController(Base, new FakeUsbMemory());
+
+        for (int i = 0; i < OhciUsbController.PortCount; i++)
+        {
+            Assert.Equal(0u, ohci.GetPortStatus(i));
+        }
+
+        Assert.Equal(0u, ohci.GetPortStatus(-1));
+        Assert.Equal(0u, ohci.GetPortStatus(OhciUsbController.PortCount));
+    }
 }
