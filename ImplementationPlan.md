@@ -2829,7 +2829,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **764 tests passing** (36 Core, 398 Cpu, 52 Memory, 144 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **768 tests passing** (36 Core, 398 Cpu, 52 Memory, 148 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — menu response: XID gate III (input injection).** The
@@ -2870,7 +2870,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-55.
+trail: research-notes §30-56.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

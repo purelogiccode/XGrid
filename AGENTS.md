@@ -152,19 +152,18 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 764 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 768 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: XID gate III (input injection).
+## Next session — menu response: D3D-device probe first.
 
-1. XID gates I+II done (§54–55): OHCI schedule engine + neutral pad on
-   USB0 port 0; **enumeration completes first try** (`addr=1 cfg=True`,
-   11 TDs, zero resets; xemu-faithful CBP-on-error + Rounding-empty;
-   Bus 121→144). Diagnosed via TD logs: 64+16 chunked config reads,
-   port-reset bus semantics, `CreateGamepads() failed!` (XBApp dash
-   wants the pad). But `intr=0` at 5B — nothing polls. Next: `--pad`
-   CLI injection + response test (polling? XInput state? EIP/draws?),
-   or nvnet packet engine if the dash is network-driven. Issuer EIP,
+1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
+   injection (latched; Bus 144→148). Enumeration completes first try;
+   **A-press 5B run byte-identical to neutral** (intr=0 — guest never
+   polls). Input path verified; title never opens XInput. Next: probe
+   who flips (`--pgraph` method mix; `Could not create D3D device!` +
+   black degenerate draws suggest init-retry blocked on graphics),
+   else XInput-open forensics, else nvnet packet engine. Issuer EIP,
    `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
