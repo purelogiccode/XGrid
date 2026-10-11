@@ -946,13 +946,14 @@ H:\Tests\XBOXTest      37 Redump retail XISO .iso files (~263 GB: NTSC-U/Europe/
 E:\Microsoft Xbox      945 USA retail .chd files (~1.44 TB) + 1403 .dummy placeholders
 ```
 
-Libraries needed to read them (both pure C#, zero native deps, target
-net8.0/net9.0/net10.0 — compatible with this repo's net9.0): NuGet
-`XISOSharp` (purelogiccode's C# extract-xiso implementation; same author
-org as the vendored `CSharp_XISOSharp` MIT reference in `References/`)
-for ISO/XISO, and NuGet `CHDSharp` 1.4.3 (pure C# MAME CHD V1–V5 reader,
-all codecs) for CHD. Neither is referenced yet — add when DVD-drive
-testing / XDVDFS validation needs real discs.
+Libraries for them (both pure C#, zero native deps, target
+net8.0/net9.0/net10.0 - compatible with this repo's net9.0): NuGet
+`XISOSharp` 1.4.2 (purelogiccode's C# extract-xiso implementation;
+sibling repo `CSharp_XISOSharp` holds docs + source) for ISO/XISO -
+**referenced since §64** (`XGrid.XboxFs/XdvdfsFileSystem` + `xgrid
+xdvdfs ls/cat`; 007 validated: DVD_X2, TitleId `0x4541000D`), and NuGet
+`CHDSharp` 1.4.3 (pure C# MAME CHD V1-V5 reader, all codecs) for CHD -
+not referenced yet (sibling `CSharp_CHDSharp` covers docs/source).
 
 ## Milestone
 
@@ -2851,7 +2852,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub, **MCPX ACI (AC'97) register model at 0xFEC00000, xemu `ac97.c`-faithful NAM/NABM (`McpxAciDevice`)** + **APU at 0xFE800000 (`McpxApuDevice`, §33)**; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O pending |
 | 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin/--fb/--frame/--pgraph/--pgraph-max/--writedump/--pad-buttons/--pad-analog/--pad-sticks`, 250M-step progress with EIP trail, `ulong` steps; `xgrid sector` raw LBA dump); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and the system runs menu-idle at 5B steps with no fault** (EIP `0x2D3B9`, live dashboard render loop, configured USB pad + link-up NIC, black degenerate flips; §§51–61): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot runs the full intro animation, **executes the dashboard XBE**, renders through NV2A (M5–M8, §37–43), discovers content (§45) and re-saves `C:\evox.ini` (§47) — then runs
 menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + research-notes §31-34, §51-61 |
-| 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); XDVDFS/DVD media pending |
+| 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); host-side XDVDFS reader done (`XGrid.XboxFs/XdvdfsFileSystem` over NuGet `XISOSharp` 1.4.2 + `xgrid xdvdfs ls/cat`, §64); guest DVD sector serving + auth pending |
 | 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; the guest runs the full dashboard lifetime — rendering, discovering, saving, menu-idle render loop at 5B steps, EIP `0x2D3B9`; see M9 Gap 1d, §§51–61) |
 | 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
 | 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — steady-state program draws validated live in §§57–58). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46–48) done; menu-idle render loop at 5B (EIP `0x2D3B9`, double-buffer `0x3D00000↔0x3E2C000`, still black) with viewport-baked `C0.z` clip proven guest-side (§§57–61). Remaining: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges |
@@ -2860,7 +2861,7 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 | 14 — Networking | Partial (MMIO only) | nvnet MMIO + per-reg histograms (§52–53, §62: guest init-only, engine scoped-not-built) |
 | 15–23 | Not started | |
 
-Current test baseline: **775 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **783 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — beyond state 0.** §63 closed app-intent: XBApp init
@@ -2871,7 +2872,9 @@ and the menu sits in state 0 through 5B (sub-state 0). No emulation
 blocker remains on this path (created devices, unpolled pad, init-only
 NIC, present content, no executed failures) - black = correct state-0
 steady state + guest-baked clip. Next: what moves 0->N (submenu states
-200-299? titles that consume input?) + Track C JIT. Static notes:
+200-299? titles that consume input?) + Track C JIT. Parallel: game media
+readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007 validated
+DVD_X2). Static notes:
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture

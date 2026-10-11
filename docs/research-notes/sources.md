@@ -64,6 +64,10 @@ the reuse is recorded below.
   must be preserved. `References/` inside that repo (extract-xiso, xdvdfs 0.8.3, XboxKit 0.7,
   Avalonia sources) is third-party material — do not copy.
 - Caveat: `XISOSharp` has a runtime dependency on `ZArchiveSharp 1.4.0` (not BCL-only).
+- Integrated 2026-10-11: `XGrid.XboxFs` references NuGet `XISOSharp` 1.4.2
+  (centrally pinned in `Directory.Packages.props`; transitive `ZArchiveSharp`
+  1.4.0 confirmed in restore graph). No source copied — consumption is via
+  the public `XisoExplorer` API behind `XGrid.XboxFs/XdvdfsFileSystem`.
 
 ## Subsystem → reference map (facts)
 

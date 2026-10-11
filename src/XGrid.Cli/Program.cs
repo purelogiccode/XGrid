@@ -37,6 +37,8 @@ internal static class Program
                 return Boot(args);
             case "fatx":
                 return Fatx(args);
+            case "xdvdfs":
+                return Xdvdfs(args);
             case "sector":
                 return Sector(args);
             case "xbe":
@@ -1067,6 +1069,80 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
     }
 
+    private static int Xdvdfs(string[] args)
+    {
+        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) && !string.Equals(args[1], "cat", StringComparison.Ordinal)))
+        {
+            Console.Error.WriteLine(
+                "Usage: xgrid xdvdfs <ls|cat> --image <path> [--path \\dir] [--out <file>]");
+            return 1;
+        }
+
+        bool list = string.Equals(args[1], "ls", StringComparison.Ordinal);
+        string? imagePath = null;
+        string path = "\\";
+        string? output = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                    imagePath = NextValue(args, ref i);
+                    break;
+                case "--path":
+                    path = NextValue(args, ref i);
+                    break;
+                case "--out":
+                    output = NextValue(args, ref i);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown xdvdfs option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        if (imagePath is null)
+        {
+            Console.Error.WriteLine("xdvdfs requires --image <path>");
+            return 1;
+        }
+
+        try
+        {
+            using var fs = XboxFs.XdvdfsFileSystem.Open(imagePath);
+            if (list)
+            {
+                foreach (var entry in fs.ListDirectory(path))
+                {
+                    Console.WriteLine($"{(entry.IsDirectory ? "<DIR>" : $"{entry.Size,12}")} {entry.Name}");
+                }
+            }
+            else
+            {
+                byte[] data = fs.ReadFile(path);
+                if (output is null)
+                {
+                    using var stdout = Console.OpenStandardOutput();
+                    stdout.Write(data, 0, data.Length);
+                }
+                else
+                {
+                    File.WriteAllBytes(output, data);
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                               or InvalidDataException or FileNotFoundException
+                                               or DirectoryNotFoundException)
+        {
+            Console.Error.WriteLine($"XDVDFS error: {exception.Message}");
+            return 4;
+        }
+    }
+
     private static int Sector(string[] args)
     {
         string? imagePath = null;
@@ -1287,6 +1363,9 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
         Console.WriteLine("                   List or extract files from a FATX partition");
+        Console.WriteLine(
+            "  xdvdfs <ls|cat> --image <path> [--path \\dir] [--out <file>]");
+        Console.WriteLine("                   List or extract files from an XDVDFS (Xbox DVD) image");
         Console.WriteLine("  sector --image <path> --lba <hex> [--count N] [--out <file>]");
         Console.WriteLine("                   Dump raw disk sectors as hex");
         Console.WriteLine(
