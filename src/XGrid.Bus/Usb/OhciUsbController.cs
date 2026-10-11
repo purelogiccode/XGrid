@@ -546,10 +546,16 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         SetPortIfConnected(index, value & PortPss);
         if (SetPortIfConnected(index, value & PortPrs))
         {
-            // No device is attached, so there is nothing to reset; the port
-            // reports enable plus reset-status-change as xemu does.
+            // Reset completes immediately; the port reports enable plus
+            // reset-status-change as xemu does.
             _ports[index] &= ~PortPrs;
             _ports[index] |= PortPes | PortPrsc;
+            if (index == 0)
+            {
+                // Port reset is a bus reset: the attached function returns to
+                // the Default state (address zero, unconfigured), as hardware.
+                Function?.Reset();
+            }
         }
 
         if ((value & PortLsda) != 0)

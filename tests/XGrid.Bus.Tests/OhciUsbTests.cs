@@ -324,6 +324,29 @@ public sealed class OhciUsbTests
     }
 
     [Fact]
+    public void PortReset_ResetsAttachedFunction()
+    {
+        var memory = new FakeUsbMemory();
+        var ohci = new OhciUsbController(Base, memory)
+        {
+            Function = new XidGamepad(),
+        };
+        StartControl(ohci);
+        RunControlTransfer(
+            memory, ohci, 0,
+            new byte[] { 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+        RunControlTransfer(
+            memory, ohci, 2,
+            new byte[] { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+        Assert.True(((XidGamepad)ohci.Function!).Configured);
+
+        ohci.Write(Base + HcRhPortStatus1, 4, 0x10);
+
+        Assert.Equal(0u, ohci.DeviceAddress);
+        Assert.False(((XidGamepad)ohci.Function!).Configured);
+    }
+
+    [Fact]
     public void ControlBadRequest_StallsAndHaltsEndpoint()
     {
         var memory = new FakeUsbMemory();
