@@ -388,6 +388,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the ordered PGRAPH method stream (capped). Diagnostics.</summary>
     public IReadOnlyList<(uint Subchannel, uint Method, uint Parameter)> MethodStream => _methodStream;
 
+    /// <summary>Gets or sets the method stream cap (0 uncaps). Diagnostics.</summary>
+    public ulong MethodStreamCap { get; set; } = 262144;
+
     /// <summary>Gets the number of executed surface clears. Diagnostics.</summary>
     public uint ClearsExecuted { get; private set; }
 
@@ -1528,7 +1531,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _methodCounts.TryGetValue(key, out int count);
         _methodCounts[key] = count + 1;
         _methodParams[key] = parameter;
-        if (_methodStream.Count < 262144)
+        if (MethodStreamCap == 0 || (ulong)_methodStream.Count < MethodStreamCap)
         {
             _methodStream.Add((subchannel, method, parameter));
         }
