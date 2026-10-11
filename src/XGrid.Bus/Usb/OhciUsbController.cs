@@ -4,9 +4,21 @@ using XGrid.Memory;
 
 namespace XGrid.Bus.Usb;
 
-/// <summary>Guest memory access used by the OHCI HCCA writeback.</summary>
+/// <summary>Guest memory access used by the OHCI schedule engine and HCCA writeback.</summary>
 public interface IUsbMemory
 {
+    /// <summary>Reads an 8-bit little-endian value.</summary>
+    byte Read8(uint address);
+
+    /// <summary>Reads a 16-bit little-endian value.</summary>
+    ushort Read16(uint address);
+
+    /// <summary>Reads a 32-bit little-endian value.</summary>
+    uint Read32(uint address);
+
+    /// <summary>Writes an 8-bit value.</summary>
+    void Write8(uint address, byte value);
+
     /// <summary>Writes a 16-bit little-endian value.</summary>
     void Write16(uint address, ushort value);
 
@@ -18,9 +30,13 @@ public interface IUsbMemory
 /// OHCI 1.0 host controller as found in the MCPX (PCI 0:2.0 at 0xFED00000 and
 /// 0:3.0 at 0xFED08000). Register model, root hub, and interrupt semantics follow
 /// xemu <c>hw/usb/hcd-ohci.c</c> (region size 256, four root ports per xemu
-/// <c>hw/xbox/xbox.c</c>). No USB devices are attached, so the root hub reports
-/// empty ports; frame timing is driven by <see cref="Advance"/> (1 ms frames)
-/// producing SOF interrupts and HCCA writeback.
+/// <c>hw/xbox/xbox.c</c>). Frame timing is driven by <see cref="Advance"/> (1 ms frames)
+/// producing SOF interrupts and HCCA writeback. A single
+/// <see cref="IUsbDeviceFunction"/> (normally an <see cref="XidGamepad"/> on port 0)
+/// can be attached; the frame boundary walks the control, bulk, and periodic
+/// endpoint lists and retires general transfer descriptors synchronously
+/// (NoError/STALL/DataUnderrun completion codes, done-queue writeback with the
+/// WDH interrupt). Isochronous transfers are not serviced.
 /// </summary>
 public sealed class OhciUsbController : IMmioDevice, IXboxDevice
 {
@@ -37,12 +53,18 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private const uint UsbOperational = 0x80;
     private const uint UsbSuspend = 0xc0;
     private const uint CtlIr = 1u << 8;
+    private const uint CtlPle = 1u << 2;
+    private const uint CtlCle = 1u << 4;
+    private const uint CtlBle = 1u << 5;
 
     // HcCommandStatus.
     private const uint StatusHcr = 1u << 0;
+    private const uint StatusClf = 1u << 1;
+    private const uint StatusBlf = 1u << 2;
     private const uint StatusSoc = (1u << 6) | (1u << 7);
 
     // HcInterruptStatus / HcInterruptEnable.
+    private const uint IntrWd = 1u << 1;
     private const uint IntrSf = 1u << 2;
     private const uint IntrUe = 1u << 4;
     private const uint IntrRhsc = 1u << 6;
@@ -79,6 +101,27 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private const uint PortPrsc = 1u << 20;
     private const uint PortWtc = PortCsc | PortPesc | PortPssc | PortOcic | PortPrsc;
 
+    // Endpoint/transfer descriptor fields (OHCI 1.0a §4; xemu hcd-ohci.c bit facts).
+    private const uint EdFuncMask = 0x7Fu;
+    private const int EdEndpointShift = 7;
+    private const int EdDirectionShift = 11;
+    private const uint EdSkip = 1u << 14;
+    private const uint EdIsochronous = 1u << 15;
+    private const uint EdHalted = 1u;
+    private const uint EdToggleCarry = 2u;
+    private const uint DptrMask = 0xFFFFFFF0u;
+    private const uint TdRound = 1u << 18;
+    private const int TdDirectionShift = 19;
+    private const int TdDelayShift = 21;
+    private const uint TdToggle0 = 1u << 24;
+    private const uint TdToggle1 = 1u << 25;
+    private const int TdConditionShift = 28;
+    private const uint CcNoError = 0u;
+    private const uint CcStall = 4u;
+    private const uint CcDataUnderrun = 9u;
+    private const int EdLinkLimit = 32;
+    private const int MaxTransferBytes = 512;
+
     private readonly IUsbMemory _memory;
     private readonly uint[] _ports = new uint[PortCount];
     private uint _ctl;
@@ -104,6 +147,13 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     private uint _rhstatus;
     private bool _busRunning;
     private ulong _frameRemainder;
+    private uint _doneCount;
+    private uint _doneHeadReg;
+    private bool _pendingSetup;
+    private bool _pendingIn;
+    private byte[] _pendingPayload = Array.Empty<byte>();
+    private int _pendingOffset;
+    private byte[] _pendingOut = Array.Empty<byte>();
 
     /// <summary>Creates the controller at the given MMIO base.</summary>
     public OhciUsbController(uint baseAddress, IUsbMemory memory)
@@ -132,6 +182,18 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of register accesses, for diagnostics.</summary>
     public long RegisterAccesses { get; private set; }
 
+    /// <summary>Gets the attached device function (a gamepad on port 0), if any.</summary>
+    public IUsbDeviceFunction? Function { get; set; }
+
+    /// <summary>Gets the number of retired control transfer descriptors, for diagnostics.</summary>
+    public long ControlTransfers { get; private set; }
+
+    /// <summary>Gets the number of retired periodic (interrupt) transfer descriptors.</summary>
+    public long InterruptTransfers { get; private set; }
+
+    /// <summary>Gets the attached device address, for diagnostics.</summary>
+    public uint DeviceAddress => Function?.Address ?? 0;
+
     /// <summary>Raised when the interrupt line level changes.</summary>
     public event Action<bool>? InterruptChanged;
 
@@ -140,6 +202,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     {
         SoftResetState();
         _ctl = 0;
+        _doneHeadReg = 0;
+        Function?.Reset();
         RootHubReset();
     }
 
@@ -171,7 +235,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             9 => _ctrlCur,
             10 => _bulkHead,
             11 => _bulkCur,
-            12 => _done,
+            12 => _doneHeadReg,
             13 => (_fit << 31) | (_fsmps << 16) | _fi,
             14 => _frt << 31,
             15 => _frameNumber,
@@ -326,6 +390,11 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         _lst = LsThresh;
         _busRunning = false;
         _frameRemainder = 0;
+        _doneCount = 7;
+        _pendingSetup = false;
+        _pendingPayload = Array.Empty<byte>();
+        _pendingOut = Array.Empty<byte>();
+        _pendingOffset = 0;
         UpdateIrq();
     }
 
@@ -416,6 +485,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         if (power)
         {
             _ports[index] |= PortPps;
+            if (index == 0 && Function is not null)
+            {
+                // The attached function appears as a full-speed device once powered.
+                _ports[index] |= PortCcs | PortCsc;
+                SetInterrupt(IntrRhsc);
+            }
         }
         else
         {
@@ -488,17 +563,372 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             return;
         }
 
+        ServiceLists();
+
         _frt = _fit;
+        uint doneWriteback = 0;
+        if (_doneCount == 0 && (_intrStatus & IntrWd) == 0 && _done != 0)
+        {
+            doneWriteback = _done;
+            if ((_intr & _intrStatus) != 0)
+            {
+                doneWriteback |= 1;
+            }
+
+            _doneHeadReg = doneWriteback;
+            _done = 0;
+            _doneCount = 7;
+            SetInterrupt(IntrWd);
+        }
+        else if (_doneCount != 7 && _doneCount != 0)
+        {
+            _doneCount--;
+        }
+
         _frameNumber = (_frameNumber + 1) & 0xFFFF;
         if (_hcca != 0)
         {
             _memory.Write16(_hcca + 0x80, (ushort)_frameNumber);
             _memory.Write16(_hcca + 0x82, 0);
-            _memory.Write32(_hcca + 0x84, _done);
+            _memory.Write32(_hcca + 0x84, doneWriteback);
             _done = 0;
         }
 
         SetInterrupt(IntrSf);
+    }
+
+    /// <summary>Walks the periodic, control, and bulk endpoint lists once per frame.</summary>
+    private void ServiceLists()
+    {
+        if ((_ctl & CtlPle) != 0 && _hcca != 0)
+        {
+            uint head = _memory.Read32(_hcca + ((uint)(_frameNumber & 0x1F) * 4));
+            ServiceEdList(head & DptrMask, isPeriodic: true);
+        }
+
+        if ((_ctl & CtlCle) != 0 && (_status & StatusClf) != 0 && _ctrlHead != 0)
+        {
+            if (!ServiceEdList(_ctrlHead, isPeriodic: false))
+            {
+                _ctrlCur = 0;
+                _status &= ~StatusClf;
+            }
+        }
+
+        if ((_ctl & CtlBle) != 0 && (_status & StatusBlf) != 0 && _bulkHead != 0)
+        {
+            if (!ServiceEdList(_bulkHead, isPeriodic: false))
+            {
+                _bulkCur = 0;
+                _status &= ~StatusBlf;
+            }
+        }
+    }
+
+    /// <summary>Services one endpoint list; returns true when transfer work remains.</summary>
+    private bool ServiceEdList(uint head, bool isPeriodic)
+    {
+        bool active = false;
+        uint current = head;
+        for (int link = 0; link < EdLinkLimit && current != 0; link++)
+        {
+            uint flags = _memory.Read32(current);
+            uint tail = _memory.Read32(current + 4);
+            uint edHead = _memory.Read32(current + 8);
+            uint next = _memory.Read32(current + 12) & DptrMask;
+            if ((edHead & EdHalted) != 0 || (flags & EdSkip) != 0 || (flags & EdIsochronous) != 0)
+            {
+                current = next;
+                continue;
+            }
+
+            bool dirty = false;
+            while ((edHead & DptrMask) != (tail & DptrMask))
+            {
+                active = true;
+                dirty = true;
+                if (ServiceTd(flags, ref edHead, isPeriodic))
+                {
+                    break;
+                }
+            }
+
+            if (dirty)
+            {
+                _memory.Write32(current, flags);
+                _memory.Write32(current + 8, edHead);
+            }
+
+            current = next;
+        }
+
+        return active;
+    }
+
+    /// <summary>Services one transfer descriptor; returns true when the list must stop.</summary>
+    private bool ServiceTd(uint edFlags, ref uint edHead, bool isPeriodic)
+    {
+        uint tdAddress = edHead & DptrMask;
+        if (tdAddress == 0)
+        {
+            edHead |= EdHalted;
+            return true;
+        }
+
+        uint tdFlags = _memory.Read32(tdAddress);
+        uint cbp = _memory.Read32(tdAddress + 4);
+        uint tdNext = _memory.Read32(tdAddress + 8);
+        uint be = _memory.Read32(tdAddress + 12);
+        int direction = (int)((edFlags >> EdDirectionShift) & 3u);
+        if (direction != 1 && direction != 2)
+        {
+            direction = (int)((tdFlags >> TdDirectionShift) & 3u);
+        }
+
+        uint endpoint = (edFlags >> EdEndpointShift) & 0xFu;
+        if (Function is null || (edFlags & EdFuncMask) != Function.Address)
+        {
+            RetireTd(tdAddress, tdFlags, cbp, tdNext, 0, CcStall, isPeriodic, ref edHead);
+            edHead |= EdHalted;
+            return true;
+        }
+
+        int length = TransferLength(cbp, be);
+        UsbTransferResult result;
+        int consumed = 0;
+        switch (direction)
+        {
+            case 0 when endpoint == 0:
+                result = ServiceSetup(cbp, out consumed);
+                break;
+            case 1:
+                result = ServiceOut(endpoint, cbp, length, isPeriodic, out consumed);
+                break;
+            case 2:
+                result = ServiceIn(endpoint, cbp, length, isPeriodic, out consumed);
+                break;
+            default:
+                result = UsbTransferResult.Stall;
+                break;
+        }
+
+        if (result == UsbTransferResult.Nak)
+        {
+            return true;
+        }
+
+        uint condition = result == UsbTransferResult.Ack &&
+            (consumed == length || (direction == 2 && (tdFlags & TdRound) != 0))
+            ? CcNoError
+            : result == UsbTransferResult.Ack ? CcDataUnderrun : CcStall;
+        if (condition == CcNoError)
+        {
+            // Successful stages advance the buffer pointer; a fully consumed
+            // buffer retires with CBP cleared, per the OHCI retire path.
+            if (((cbp & 0xFFFu) + (uint)consumed) > 0xFFFu)
+            {
+                cbp = (be & ~0xFFFu) + ((cbp + (uint)consumed) & 0xFFFu);
+            }
+            else
+            {
+                cbp += (uint)consumed;
+            }
+
+            if (consumed == length)
+            {
+                cbp = 0;
+            }
+
+            tdFlags |= TdToggle1;
+            tdFlags ^= TdToggle0;
+            edHead &= ~EdToggleCarry;
+            if ((tdFlags & TdToggle0) != 0)
+            {
+                edHead |= EdToggleCarry;
+            }
+        }
+
+        RetireTd(tdAddress, tdFlags, cbp, tdNext, (tdFlags >> TdDelayShift) & 7u, condition, isPeriodic, ref edHead);
+        if (condition != CcNoError)
+        {
+            edHead |= EdHalted;
+            return true;
+        }
+
+        return false;
+    }
+
+    private UsbTransferResult ServiceSetup(uint cbp, out int consumed)
+    {
+        consumed = 8;
+        var setup = new UsbSetupPacket(
+            _memory.Read8(cbp),
+            _memory.Read8(cbp + 1),
+            _memory.Read16(cbp + 2),
+            _memory.Read16(cbp + 4),
+            _memory.Read16(cbp + 6));
+        UsbTransferResult result = Function!.HandleSetup(in setup, out byte[] payload);
+        if (result != UsbTransferResult.Ack)
+        {
+            return result;
+        }
+
+        _pendingSetup = true;
+        _pendingIn = (setup.RequestType & 0x80) != 0 && setup.Length > 0;
+        _pendingPayload = payload;
+        _pendingOut = setup.Length > 0 && !_pendingIn ? new byte[setup.Length] : Array.Empty<byte>();
+        _pendingOffset = 0;
+        return UsbTransferResult.Ack;
+    }
+
+    private UsbTransferResult ServiceOut(uint endpoint, uint cbp, int length, bool isPeriodic, out int consumed)
+    {
+        consumed = length;
+        if (length == 0)
+        {
+            // Zero-length stage completes a control transfer (status stage).
+            if (_pendingSetup && !isPeriodic)
+            {
+                Function!.CompleteStatusStage();
+                _pendingSetup = false;
+            }
+
+            return UsbTransferResult.Ack;
+        }
+
+        byte[] data = new byte[length];
+        for (int i = 0; i < length; i++)
+        {
+            data[i] = _memory.Read8(cbp + (uint)i);
+        }
+
+        if (isPeriodic)
+        {
+            return Function!.HandleOut((byte)endpoint, data);
+        }
+
+        if (!_pendingSetup || _pendingIn)
+        {
+            return UsbTransferResult.Stall;
+        }
+
+        if (_pendingOffset >= _pendingOut.Length)
+        {
+            return UsbTransferResult.Stall;
+        }
+
+        int room = Math.Min(length, _pendingOut.Length - _pendingOffset);
+        Array.Copy(data, 0, _pendingOut, _pendingOffset, room);
+        _pendingOffset += room;
+        if (_pendingOffset < _pendingOut.Length)
+        {
+            return UsbTransferResult.Ack;
+        }
+
+        UsbTransferResult result = Function!.CompleteControlOut(_pendingOut);
+        _pendingSetup = result == UsbTransferResult.Ack;
+        return result;
+    }
+
+    private UsbTransferResult ServiceIn(
+        uint endpoint, uint cbp, int length, bool isPeriodic, out int consumed)
+    {
+        consumed = 0;
+        if (length == 0)
+        {
+            // Zero-length IN is the status stage of an OUT control transfer.
+            if (_pendingSetup && !isPeriodic)
+            {
+                Function!.CompleteStatusStage();
+                _pendingSetup = false;
+            }
+
+            return UsbTransferResult.Ack;
+        }
+
+        byte[] payload;
+        UsbTransferResult result;
+        if (isPeriodic)
+        {
+            result = Function!.HandleIn((byte)endpoint, length, out payload);
+        }
+        else
+        {
+            if (!_pendingSetup || !_pendingIn)
+            {
+                return UsbTransferResult.Stall;
+            }
+
+            int available = _pendingPayload.Length - _pendingOffset;
+            if (available <= 0)
+            {
+                return UsbTransferResult.Stall;
+            }
+
+            payload = new byte[Math.Min(length, available)];
+            Array.Copy(_pendingPayload, _pendingOffset, payload, 0, payload.Length);
+            result = UsbTransferResult.Ack;
+        }
+
+        if (result != UsbTransferResult.Ack)
+        {
+            return result;
+        }
+
+        for (int i = 0; i < payload.Length; i++)
+        {
+            _memory.Write8(cbp + (uint)i, payload[i]);
+        }
+
+        consumed = payload.Length;
+        if (!isPeriodic)
+        {
+            _pendingOffset += consumed;
+        }
+
+        return UsbTransferResult.Ack;
+    }
+
+    private void RetireTd(
+        uint tdAddress, uint tdFlags, uint cbp, uint tdNext, uint delay, uint condition, bool isPeriodic, ref uint edHead)
+    {
+        edHead &= ~DptrMask;
+        edHead |= tdNext & DptrMask;
+        _memory.Write32(tdAddress, (tdFlags & ~(0xFu << TdConditionShift)) | (condition << TdConditionShift));
+        _memory.Write32(tdAddress + 4, cbp);
+        _memory.Write32(tdAddress + 8, _done);
+        _done = tdAddress;
+        if (delay < _doneCount)
+        {
+            _doneCount = delay;
+        }
+
+        if (condition != CcNoError)
+        {
+            _doneCount = 0;
+        }
+
+        if (isPeriodic)
+        {
+            InterruptTransfers++;
+        }
+        else
+        {
+            ControlTransfers++;
+        }
+    }
+
+    private static int TransferLength(uint cbp, uint be)
+    {
+        if (cbp == 0 || be == 0)
+        {
+            return 0;
+        }
+
+        int length = (cbp & 0xFFFFF000u) != (be & 0xFFFFF000u)
+            ? (int)(be & 0xFFFu) + 0x1001 - (int)(cbp & 0xFFFu)
+            : (int)(be - cbp) + 1;
+        return Math.Min(Math.Max(length, 0), MaxTransferBytes);
     }
 
     private void SetInterrupt(uint bits)

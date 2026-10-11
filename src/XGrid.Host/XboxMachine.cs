@@ -67,6 +67,7 @@ public sealed class XboxMachine
 
         Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory));
         Usb0.InterruptChanged += OnUsb0Interrupt;
+        Usb0.Function = new XidGamepad();
         Memory.AddRegion("USB0", XboxAddressMap.Usb0Base, XboxAddressMap.UsbSize, Usb0);
 
         Usb1 = new OhciUsbController(XboxAddressMap.Usb1Base, new PhysicalUsbMemory(Memory));
@@ -349,6 +350,26 @@ public sealed class XboxMachine
         public PhysicalUsbMemory(AddressSpace memory)
         {
             _memory = memory;
+        }
+
+        public byte Read8(uint address)
+        {
+            return _memory.Read8(address);
+        }
+
+        public ushort Read16(uint address)
+        {
+            return _memory.Read16(address);
+        }
+
+        public uint Read32(uint address)
+        {
+            return _memory.Read32(address);
+        }
+
+        public void Write8(uint address, byte value)
+        {
+            _memory.Write8(address, value);
         }
 
         public void Write16(uint address, ushort value)
