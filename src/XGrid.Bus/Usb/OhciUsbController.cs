@@ -762,7 +762,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
                 result = ServiceOut(endpoint, cbp, length, isPeriodic, out consumed);
                 break;
             case 2:
-                result = ServiceIn(endpoint, cbp, length, isPeriodic, out consumed);
+                result = ServiceIn(endpoint, cbp, length, isPeriodic, (tdFlags & TdRound) != 0, out consumed);
                 break;
             default:
                 result = UsbTransferResult.Stall;
@@ -918,7 +918,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
     }
 
     private UsbTransferResult ServiceIn(
-        uint endpoint, uint cbp, int length, bool isPeriodic, out int consumed)
+        uint endpoint, uint cbp, int length, bool isPeriodic, bool round, out int consumed)
     {
         consumed = 0;
         if (length == 0)
@@ -949,12 +949,23 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             int available = _pendingPayload.Length - _pendingOffset;
             if (available <= 0)
             {
-                return UsbTransferResult.Stall;
-            }
+                // The function has no more bytes for this stage: with Rounding
+                // set the stage completes as an empty short packet, otherwise
+                // the over-request stalls, per the OHCI data-stage rules.
+                if (!round)
+                {
+                    return UsbTransferResult.Stall;
+                }
 
-            payload = new byte[Math.Min(length, available)];
-            Array.Copy(_pendingPayload, _pendingOffset, payload, 0, payload.Length);
-            result = UsbTransferResult.Ack;
+                payload = Array.Empty<byte>();
+                result = UsbTransferResult.Ack;
+            }
+            else
+            {
+                payload = new byte[Math.Min(length, available)];
+                Array.Copy(_pendingPayload, _pendingOffset, payload, 0, payload.Length);
+                result = UsbTransferResult.Ack;
+            }
         }
 
         if (result != UsbTransferResult.Ack)
