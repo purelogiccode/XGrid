@@ -2860,7 +2860,7 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **768 tests passing** (36 Core, 398 Cpu, 52 Memory, 148 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **770 tests passing** (36 Core, 398 Cpu, 52 Memory, 148 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — menu response: app intent.** The animation wait (§32)

@@ -154,7 +154,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 768 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 770 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — menu response: app intent.

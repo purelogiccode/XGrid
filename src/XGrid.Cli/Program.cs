@@ -636,7 +636,7 @@ internal static class Program
     }
 
     private static void PrintUnmappedTopPages(
-        string kind, System.Collections.Generic.IReadOnlyDictionary<uint, int> pages)
+        string kind, IReadOnlyDictionary<uint, int> pages)
     {
         if (pages.Count == 0)
         {
