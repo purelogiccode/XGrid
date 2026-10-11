@@ -12,6 +12,8 @@ public sealed class AddressSpace : IMemoryBus
 {
     private readonly List<AddressRegion> _regions = [];
     private readonly Dictionary<uint, int> _unmappedCounts = new();
+    private readonly Dictionary<uint, int> _unmappedPageReads = new();
+    private readonly Dictionary<uint, int> _unmappedPageWrites = new();
 
     /// <summary>Creates an address space over the given RAM.</summary>
     public AddressSpace(PhysicalMemory ram, UnmappedAccessPolicy unmappedPolicy = UnmappedAccessPolicy.Sentinel)
@@ -29,6 +31,15 @@ public sealed class AddressSpace : IMemoryBus
 
     /// <summary>Gets unmapped access counts keyed by 1 MB bucket (address >> 20). Diagnostics.</summary>
     public IReadOnlyDictionary<uint, int> UnmappedAccessCounts => _unmappedCounts;
+
+    /// <summary>Gets unmapped read counts keyed by 4 KB page (address >> 12). Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> UnmappedPageReads => _unmappedPageReads;
+
+    /// <summary>Gets unmapped write counts keyed by 4 KB page (address >> 12). Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, int> UnmappedPageWrites => _unmappedPageWrites;
+
+    /// <summary>Gets the total number of unmapped accesses (reads and writes). Diagnostics.</summary>
+    public long UnmappedAccessTotal { get; private set; }
 
     /// <summary>Gets or sets the start of the watched physical range (diagnostics; WatchEnd exclusive).</summary>
     public uint WatchStart { get; set; }
@@ -228,16 +239,22 @@ public sealed class AddressSpace : IMemoryBus
         }
     }
 
-    private void CountUnmapped(uint address)
+    private void CountUnmapped(uint address, bool isWrite)
     {
         uint bucket = address >> 20;
         _unmappedCounts.TryGetValue(bucket, out int count);
         _unmappedCounts[bucket] = count + 1;
+        UnmappedAccessTotal++;
+
+        Dictionary<uint, int> pages = isWrite ? _unmappedPageWrites : _unmappedPageReads;
+        uint page = address >> 12;
+        pages.TryGetValue(page, out int pageCount);
+        pages[page] = pageCount + 1;
     }
 
     private uint UnmappedRead(uint address, int size)
     {
-        CountUnmapped(address);
+        CountUnmapped(address, isWrite: false);
         if (UnmappedPolicy == UnmappedAccessPolicy.Throw)
         {
             throw new MemoryAccessException($"Unmapped memory read at 0x{address:X8} ({size} bytes).");
@@ -258,7 +275,7 @@ public sealed class AddressSpace : IMemoryBus
 
     private void UnmappedWrite(uint address, int size, uint value)
     {
-        CountUnmapped(address);
+        CountUnmapped(address, isWrite: true);
         if (UnmappedPolicy == UnmappedAccessPolicy.Throw)
         {
             throw new MemoryAccessException(
