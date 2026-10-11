@@ -637,6 +637,24 @@ internal static class Program
         Console.WriteLine($"Unmapped {kind} pages ({sorted.Count}, total {total}):{log}");
     }
 
+    private static string TopOffsets(IReadOnlyDictionary<uint, int> counts)
+    {
+        var sorted = new List<(uint Offset, int Count)>();
+        foreach (var entry in counts)
+        {
+            sorted.Add((entry.Key, entry.Value));
+        }
+
+        sorted.Sort((a, b) => b.Count.CompareTo(a.Count));
+        var log = new System.Text.StringBuilder();
+        for (int i = 0; i < sorted.Count && i < 8; i++)
+        {
+            log.Append(CultureInfo.InvariantCulture, $" {sorted[i].Offset:X2}={sorted[i].Count}");
+        }
+
+        return log.ToString();
+    }
+
     private static void PrintState(XboxMachine machine, ulong executed,
         IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
     {
@@ -824,6 +842,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         {
             Console.WriteLine($"USB0 xfer: {usbXfer[i]}");
         }
+
+        Console.WriteLine($"USB0 regs:{TopOffsets(machine.Usb0.RegReadCounts)} wr:{TopOffsets(machine.Usb0.RegWriteCounts)}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
