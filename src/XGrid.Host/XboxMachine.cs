@@ -2,6 +2,7 @@ using System;
 using XGrid.Audio;
 using XGrid.Bus;
 using XGrid.Bus.Aci;
+using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
 using XGrid.Cpu;
 using XGrid.Memory;
@@ -57,6 +58,13 @@ public sealed class XboxMachine
             XboxAddressMap.ApuSize,
             Apu);
 
+        Net = new McpxNvNetDevice();
+        Memory.AddRegion(
+            "MCPX NVNET",
+            XboxAddressMap.NvNetBase,
+            XboxAddressMap.NvNetSize,
+            Net);
+
         Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory));
         Usb0.InterruptChanged += OnUsb0Interrupt;
         Memory.AddRegion("USB0", XboxAddressMap.Usb0Base, XboxAddressMap.UsbSize, Usb0);
@@ -100,6 +108,9 @@ public sealed class XboxMachine
 
     /// <summary>Gets the MCPX APU register window.</summary>
     public McpxApuDevice Apu { get; }
+
+    /// <summary>Gets the MCPX nvnet (Ethernet) register window.</summary>
+    public McpxNvNetDevice Net { get; }
 
     /// <summary>Gets the OHCI USB0 register window.</summary>
     public OhciUsbController Usb0 { get; }
@@ -206,6 +217,7 @@ public sealed class XboxMachine
         Nv2A.Reset();
         Aci.Reset();
         Apu.Reset();
+        Net.Reset();
         _nv2ARemainder = 0;
         if (_overlay is not null)
         {

@@ -66,4 +66,10 @@ public static class XboxAddressMap
 
     /// <summary>OHCI window size.</summary>
     public const uint UsbSize = 0x00001000;
+
+    /// <summary>MCPX nvnet (nForce Ethernet) window base (PCI 0:4.0 BAR0, XboxDevWiki Memory).</summary>
+    public const uint NvNetBase = 0xFEF00000;
+
+    /// <summary>MCPX nvnet window size (PCI BAR0 size).</summary>
+    public const uint NvNetSize = 0x00000400;
 }
