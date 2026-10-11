@@ -396,14 +396,16 @@ internal static class Program
 
             if (pgraphPath is not null)
             {
-                var lines = new System.Text.StringBuilder();
+                using var pgraphOut = new StreamWriter(pgraphPath);
                 foreach ((uint subchannel, uint method, uint parameter) in machine.Nv2A.MethodStream)
                 {
-                    lines.Append(subchannel).Append(' ').Append(method.ToString("X4")).Append(' ')
-                        .AppendLine(parameter.ToString("X8"));
+                    pgraphOut.Write(subchannel);
+                    pgraphOut.Write(' ');
+                    pgraphOut.Write(method.ToString("X4"));
+                    pgraphOut.Write(' ');
+                    pgraphOut.WriteLine(parameter.ToString("X8"));
                 }
 
-                File.WriteAllText(pgraphPath, lines.ToString());
                 Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2A.MethodStream.Count}");
             }
 
