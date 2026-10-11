@@ -166,8 +166,12 @@ public sealed class XboxMachine
     /// <remarks>Writes are captured by an in-memory overlay so the backing image is not modified.</remarks>
     public void AttachHdd(string path)
     {
-        Ide.AttachPrimaryMaster(new OverlayDiskImage(OpenDiskImage(path)));
+        HddOverlay = new OverlayDiskImage(OpenDiskImage(path));
+        Ide.AttachPrimaryMaster(HddOverlay);
     }
+
+    /// <summary>Gets the HDD copy-on-write overlay, or null when no hard disk is attached.</summary>
+    public OverlayDiskImage? HddOverlay { get; private set; }
 
     /// <summary>Opens a raw or qcow2 disk image by magic number.</summary>
     public static IDiskImage OpenDiskImage(string path)

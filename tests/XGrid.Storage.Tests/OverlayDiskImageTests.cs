@@ -74,4 +74,29 @@ public sealed class OverlayDiskImageTests
         using var overlay = new OverlayDiskImage(new MemoryDiskImage(4));
         Assert.Equal(4u, overlay.SectorCount);
     }
+
+    [Fact]
+    public void WriteLog_RecordsOrderAndRepeats()
+    {
+        using var overlay = new OverlayDiskImage(new MemoryDiskImage(8));
+        Span<byte> data = stackalloc byte[512];
+
+        overlay.WriteSector(5, data);
+        overlay.WriteSector(2, data);
+        overlay.WriteSector(5, data);
+
+        Assert.Equal(3, overlay.WriteCount);
+        Assert.Equal(new uint[] { 5, 2, 5 }, overlay.WriteLog);
+        Assert.Equal(2, overlay.ModifiedSectorCount);
+        Assert.Equal(new uint[] { 2, 5 }, overlay.GetModifiedSectors());
+    }
+
+    [Fact]
+    public void WriteLog_Empty_WhenNoWrites()
+    {
+        using var overlay = new OverlayDiskImage(new MemoryDiskImage(4));
+        Assert.Equal(0, overlay.WriteCount);
+        Assert.Empty(overlay.WriteLog);
+        Assert.Empty(overlay.GetModifiedSectors());
+    }
 }

@@ -84,6 +84,7 @@ public sealed class OverlayDiskImage : IDiskImage
 {
     private readonly IDiskImage _backing;
     private readonly Dictionary<uint, byte[]> _overlay = new();
+    private readonly List<uint> _writeLog = new();
 
     /// <summary>Creates an overlay over the given backing image (which it owns).</summary>
     public OverlayDiskImage(IDiskImage backing)
@@ -97,6 +98,24 @@ public sealed class OverlayDiskImage : IDiskImage
 
     /// <summary>Gets the number of sectors modified in the overlay (diagnostics).</summary>
     public int ModifiedSectorCount => _overlay.Count;
+
+    /// <summary>Gets the total number of sector writes issued (including repeats).</summary>
+    public int WriteCount => _writeLog.Count;
+
+    /// <summary>
+    /// Gets every sector write LBA in issue order, including repeats of the same
+    /// LBA. Used to reconstruct guest write patterns (e.g. journal updates).
+    /// </summary>
+    public IReadOnlyList<uint> WriteLog => _writeLog;
+
+    /// <summary>Returns the modified sector LBAs in ascending order.</summary>
+    public uint[] GetModifiedSectors()
+    {
+        uint[] sectors = new uint[_overlay.Count];
+        _overlay.Keys.CopyTo(sectors, 0);
+        Array.Sort(sectors);
+        return sectors;
+    }
 
     /// <inheritdoc />
     public void ReadSector(uint lba, Span<byte> destination)
@@ -120,6 +139,7 @@ public sealed class OverlayDiskImage : IDiskImage
         }
 
         _overlay[lba] = source[..512].ToArray();
+        _writeLog.Add(lba);
     }
 
     /// <inheritdoc />
