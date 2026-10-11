@@ -2829,24 +2829,22 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **732 tests passing** (36 Core, 398 Cpu, 52 Memory, 110 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **742 tests passing** (36 Core, 398 Cpu, 52 Memory, 120 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — menu-idle: NIC gate + XID input.** The animation wait
-(§32) through **M8** (§43), surface scoping (§44), content discovery
-(§45), file-save (§47) and save-completion (§48) are solved; the §49
-fill is a surface DATA upload landing in RAM top via the write-combined
-alias (§50–51: 59% BGRA pixels, zeros banded). `xgrid boot --steps
-5000000000` (5.0B steps) completes **with no fault at kernel EIP
-`0x800153D3`** (delay loop, stable 500M+): F34–F38 unmapped gone (alias
-verified), no new disk I/O, +384 degenerate draws/+8 flips (frame #42,
-still black, surface `0x3D04000`), and **new NIC traffic** (FEF reads
-→14815, writes →704) against a config-space-only stub. The system reads
-as a waiting menu loop. Next: identify the NIC registers polled (xemu
-`mcpx/nvnet/`, link-status design — does the wait gate UI?), implement
-XID gamepad input, then test menu response. Static bonus: runner is a
-chain-loaded 10-section **`RemoteX`** dash (save triggered
-post-`Start!`).
+**NEXT SESSION — menu-idle: NIC validation run + XID input.** The
+animation wait (§32) through **M8** (§43), surface scoping (§44), content
+discovery (§45), file-save (§47) and save-completion (§48) are solved;
+the §49 fill is a surface DATA upload landing in RAM top via the
+write-combined alias (§50–51). NIC gate I (§52): driver start loops
+decoded (bounded 500× TX/RX-busy + `0x144`-IDLE waits — sentinel made
+them burn; link-up trajectory preserved) and a minimal `McpxNvNetDevice`
+is live (`0xFEF00000`, idle/link-up/MDIO/PHY defaults, no DMA/IRQ yet;
+10 tests). `xgrid boot --steps 5000000000` previously reached kernel
+delay-loop EIP `0x800153D3` with FEF reads →14815/writes →704. Next: a
+long validation run (FEF collapse? faster init? DHCP timeouts?), then
+XID gamepad + menu-response test. Static bonus: runner is a chain-loaded
+10-section **`RemoteX`** dash (save triggered post-`Start!`).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2871,7 +2869,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-51.
+trail: research-notes §30-52.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
