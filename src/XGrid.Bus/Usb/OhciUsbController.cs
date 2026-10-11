@@ -775,19 +775,16 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             return true;
         }
 
-        // XID-gate-II probe: short IN stages retire successfully even when the
-        // guest clears the Rounding bit. Strict OHCI (and xemu) reports
-        // DataUnderrun here, but the Xbox stack answers every such halt with a
-        // port reset and a byte-identical re-enumeration, looping forever, so
-        // strictness provably deadlocks this guest. Revisit if a title needs it.
+        // XID-gate-II finding: the buffer pointer advances by every transferred
+        // byte even when the stage completes with an error (xemu retire path);
+        // only the CBP=0 clear and the toggle update are success-only. The
+        // Xbox stack reads back the advanced CBP to learn the actual length.
         uint condition = result == UsbTransferResult.Ack &&
-            (consumed == length || direction == 2)
+            (consumed == length || (direction == 2 && (tdFlags & TdRound) != 0))
             ? CcNoError
             : result == UsbTransferResult.Ack ? CcDataUnderrun : CcStall;
-        if (condition == CcNoError)
+        if (consumed > 0)
         {
-            // Successful stages advance the buffer pointer; a fully consumed
-            // buffer retires with CBP cleared, per the OHCI retire path.
             if (((cbp & 0xFFFu) + (uint)consumed) > 0xFFFu)
             {
                 cbp = (be & ~0xFFFu) + ((cbp + (uint)consumed) & 0xFFFu);
@@ -796,7 +793,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
             {
                 cbp += (uint)consumed;
             }
+        }
 
+        if (condition == CcNoError)
+        {
             if (consumed == length)
             {
                 cbp = 0;
