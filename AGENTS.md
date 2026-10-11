@@ -105,8 +105,9 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   `0xFED08000` (PCI 0:2.0/0:3.0, IRQ1/IRQ9 via `introute`). The
   `FED=375651421` unmapped poll is gone; `xgrid boot --steps 1600000000`
   completes with no fault at EIP `0x22DE2` (phys `0x10FDE2` — a **newly loaded
-  dashboard module**, real code calling module functions). Only tiny unmapped
-  buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub).
+   dashboard module**, real code calling module functions). Only tiny unmapped
+   buckets remain (`045=4 065=8 FEF=3970`, the nvnet stub — FEF eliminated
+   by the nvnet device in §53).
 - **Next gate — NV2A M5 (programmable vertex pipeline).** A 1.7B-step run with
   `--pgraph` shows the dashboard in its **rendering phase** (EIP `0x14C72`,
   186844 PGRAPH methods: `ARRAY_ELEMENT16 0x1800`×58577,
@@ -141,8 +142,9 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   correct (R3/R4/R6/R7/R8 chain). **Pixel accounting (§42):** all 10137600 px
   come from 33 legacy fullscreen 640×480 inline draws; the ~2637 program
   draws are degenerate (their programs read never-loaded zero constants
-  c58/c59 — no-ops on xemu too), so `blended=0 depth=0` is correct and live
-  program-draw rasterization is still unvalidated. **M8 present done (§43):**
+  c58/c59 — no-ops on xemu too), so `blended=0 depth=0` is correct at
+  this stage. Program draws validated live later (§§57–58: steady-state
+  shaders read loaded C0, zero pixels proven guest-side clip). **M8 present done (§43):**
   flip read/write/modulo + `FLIP_INCREMENT_WRITE` (present event, captures
   the at-flip surface) + `FLIP_STALL` counting + vblank read-advance;
   `XGrid.Graphics/DisplayFrame` (BGRA frame store, 32-bit BMP export); CLI
@@ -186,15 +188,17 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    `xgrid boot --frame out.bmp` saves the flip-captured 640×480 frame
    (surface `0x32A4000`) — currently opaque black, which clarifies the
    display story (flip chain presents the dashboard surface, not the `0x1000`
-   early-boot region). Next: re-save trigger, longer runs toward UI, XID
-   input for the menu. Live program-draw rasterization is still unvalidated
-   (pending non-degenerate program traffic). Remaining M5 gaps: inline
-   `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
-4. Controller input: the OHCI root hub reports empty ports; an XID/gamepad
-   device is future work. LLE-first remains the rule; Phase 10 kernel-HLE only
+   early-boot region). Program draws validated live (§§57–58: real
+   shaders execute, zero pixels proven guest-side clip). Remaining M5
+   gaps: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
+4. Controller input: neutral `XidGamepad` on USB0 port 0, enumerated
+   first try (§55); `--pad` injection latched across resets, but the
+   A-press run is byte-identical to neutral (§56 — title never polls).
+   LLE-first remains the rule; Phase 10 kernel-HLE only
    if we choose HLE for dashboard ordinals.
-5. Parallel tracks when blocked: Track C JIT for interactivity (dashboard boot
-   + menu needs billions of instructions; the interpreter is 2.3 M insn/s).
+5. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
+   batch runs take ~6 min at ~14M insn/s Release; true interactive
+   rates still need JIT).
 6. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
