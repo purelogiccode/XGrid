@@ -283,9 +283,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private uint _semaphoreOffset;
     private uint _clearRectH;
     private uint _clearRectV;
-    private uint _flipRead;
-    private uint _flipWrite;
-    private uint _flipModulo;
     private uint _presentedOffset;
     private uint _presentedWidth;
     private uint _presentedHeight;
@@ -297,11 +294,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _vertexArrayOffset = new uint[16];
     private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
     private readonly uint[][] _transformConstants = new uint[MaxVertexShaderConstants][];
-    private uint _transformProgramLoad;
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
-    private uint _transformConstantLoad;
     private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
     private readonly uint[] _textureOffset = new uint[MaxTextureSlots];
@@ -458,18 +453,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the presented-frame state summary. Diagnostics.</summary>
     public string PresentedFrameDebug =>
-        $"frames={FramesPresented} stalls={FlipStalls} read={_flipRead} write={_flipWrite} modulo={_flipModulo} " +
+        $"frames={FramesPresented} stalls={FlipStalls} read={FlipReadDebug} write={FlipWriteDebug} modulo={FlipModuloDebug} " +
         $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
         $"valid={_presentedValid} frame={_presentedFrame}";
 
     /// <summary>Gets the flip read buffer index. Diagnostics.</summary>
-    public uint FlipReadDebug => _flipRead;
+    public uint FlipReadDebug { get; private set; }
 
     /// <summary>Gets the flip write buffer index. Diagnostics.</summary>
-    public uint FlipWriteDebug => _flipWrite;
+    public uint FlipWriteDebug { get; private set; }
 
     /// <summary>Gets the flip buffer modulo. Diagnostics.</summary>
-    public uint FlipModuloDebug => _flipModulo;
+    public uint FlipModuloDebug { get; private set; }
 
     /// <summary>Gets the fragment-pipeline state summary. Diagnostics.</summary>
     public string FragmentStateDebug =>
@@ -508,10 +503,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     public int InlineElementCount => _inlineElements.Count;
 
     /// <summary>Gets the transform program load pointer. Diagnostics.</summary>
-    public uint TransformProgramLoadDebug => _transformProgramLoad;
+    public uint TransformProgramLoadDebug { get; private set; }
 
     /// <summary>Gets the transform constant load pointer. Diagnostics.</summary>
-    public uint TransformConstantLoadDebug => _transformConstantLoad;
+    public uint TransformConstantLoadDebug { get; private set; }
 
     /// <summary>Reads a transform program word (diagnostics).</summary>
     public uint ReadTransformProgramWord(uint index, int part)
@@ -542,13 +537,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     private void AdvanceFlipRead()
     {
-        if (_flipRead == _flipWrite)
+        if (FlipReadDebug == FlipWriteDebug)
         {
             return;
         }
 
-        uint modulo = _flipModulo == 0 ? 1u : _flipModulo;
-        _flipRead = (_flipRead + 1) % modulo;
+        uint modulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
+        FlipReadDebug = (FlipReadDebug + 1) % modulo;
     }
 
     private void UpdateIrq()
@@ -606,9 +601,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _colorClearValue = 0;
         _clearRectH = 0;
         _clearRectV = 0;
-        _flipRead = 0;
-        _flipWrite = 0;
-        _flipModulo = 0;
+        FlipReadDebug = 0;
+        FlipWriteDebug = 0;
+        FlipModuloDebug = 0;
         _presentedOffset = 0;
         _presentedWidth = 0;
         _presentedHeight = 0;
@@ -660,11 +655,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             Array.Clear(row);
         }
 
-        _transformProgramLoad = 0;
+        TransformProgramLoadDebug = 0;
         _transformProgramStart = 0;
         _transformExecutionMode = 0;
         _transformProgramCxtWriteEn = 0;
-        _transformConstantLoad = 0;
+        TransformConstantLoadDebug = 0;
         _beginMode = 0;
         DrawsExecuted = 0;
         DrawnPixels = 0;
@@ -1654,18 +1649,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 _stencilOpZpass = MapStencilOp(parameter, _stencilOpZpass);
                 break;
             case MethodFlipRead:
-                _flipRead = parameter;
+                FlipReadDebug = parameter;
                 break;
             case MethodFlipWrite:
-                _flipWrite = parameter;
+                FlipWriteDebug = parameter;
                 break;
             case MethodFlipModulo:
-                _flipModulo = parameter;
+                FlipModuloDebug = parameter;
                 break;
             case MethodFlipIncrementWrite:
                 {
-                    uint flipModulo = _flipModulo == 0 ? 1u : _flipModulo;
-                    _flipWrite = (_flipWrite + 1) % flipModulo;
+                    uint flipModulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
+                    FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
                     FramesPresented++;
                     CapturePresentedFrame();
                     break;
@@ -1716,13 +1711,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 _transformProgramCxtWriteEn = parameter;
                 break;
             case MethodTransformProgramLoad:
-                _transformProgramLoad = parameter;
+                TransformProgramLoadDebug = parameter;
                 break;
             case MethodTransformProgramStart:
                 _transformProgramStart = parameter;
                 break;
             case MethodTransformConstantLoad:
-                _transformConstantLoad = parameter;
+                TransformConstantLoadDebug = parameter;
                 break;
             default:
                 break;
@@ -1827,29 +1822,29 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     private void WriteTransformProgram(uint slot, uint value)
     {
-        if (_transformProgramLoad >= MaxTransformProgramLength)
+        if (TransformProgramLoadDebug >= MaxTransformProgramLength)
         {
             return;
         }
 
-        _transformProgram[_transformProgramLoad][slot & 3u] = value;
+        _transformProgram[TransformProgramLoadDebug][slot & 3u] = value;
         if ((slot & 3u) == 3u)
         {
-            _transformProgramLoad++;
+            TransformProgramLoadDebug++;
         }
     }
 
     private void WriteTransformConstant(uint slot, uint value)
     {
-        if (_transformConstantLoad >= MaxVertexShaderConstants)
+        if (TransformConstantLoadDebug >= MaxVertexShaderConstants)
         {
             return;
         }
 
-        _transformConstants[_transformConstantLoad][slot & 3u] = value;
+        _transformConstants[TransformConstantLoadDebug][slot & 3u] = value;
         if ((slot & 3u) == 3u)
         {
-            _transformConstantLoad++;
+            TransformConstantLoadDebug++;
         }
     }
 
@@ -2331,7 +2326,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     private void FlushElementDraw()
     {
-        if (_memory is null || _transformProgramLoad == 0)
+        if (_memory is null || TransformProgramLoadDebug == 0)
         {
             SkippedDraws++;
             return;
@@ -2374,46 +2369,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
 
         var transformed = new Dictionary<int, (float X, float Y, float Z, float R, float G, float B, float A, float U, float V)>();
-        (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) Vertex(uint element)
-        {
-            int index = (int)element;
-            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float) cached))
-            {
-                return cached;
-            }
-
-            for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
-            {
-                FetchVertexAttribute(slot, index, inputs[slot]);
-                Array.Clear(outputs[slot]);
-            }
-
-            VshProgram.Execute(
-                _transformProgram,
-                (int)Math.Min(_transformProgramLoad, (uint)VshProgram.MaxInstructions),
-                constants,
-                inputs,
-                outputs);
-
-            (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) vertex = (
-                outputs[0][0], outputs[0][1], outputs[0][2],
-                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3],
-                outputs[9][0], outputs[9][1]);
-            transformed[index] = vertex;
-            return vertex;
-        }
-
-        void Triangle(uint a, uint b, uint c)
-        {
-            (float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
-            (float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
-            (float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
-            FillTriangle(
-                ax, ay, az, ar, ag, ab, aa, au, av,
-                bx, by, bz, br, bg, bb, ba, bu, bv,
-                cx, cy, cz, cr, cg, cb, ca, cu, cv,
-                clipX, clipY, clipW, clipH, bytes, pitch);
-        }
 
         uint[] elements = _inlineElements.ToArray();
         int count = elements.Length;
@@ -2455,6 +2410,49 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 }
 
                 break;
+        }
+
+        return;
+
+        (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) Vertex(uint element)
+        {
+            int index = (int)element;
+            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float) cached))
+            {
+                return cached;
+            }
+
+            for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
+            {
+                FetchVertexAttribute(slot, index, inputs[slot]);
+                Array.Clear(outputs[slot]);
+            }
+
+            VshProgram.Execute(
+                _transformProgram,
+                (int)Math.Min(TransformProgramLoadDebug, (uint)VshProgram.MaxInstructions),
+                constants,
+                inputs,
+                outputs);
+
+            (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) vertex = (
+                outputs[0][0], outputs[0][1], outputs[0][2],
+                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3],
+                outputs[9][0], outputs[9][1]);
+            transformed[index] = vertex;
+            return vertex;
+        }
+
+        void Triangle(uint a, uint b, uint c)
+        {
+            (float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
+            (float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
+            (float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
+            FillTriangle(
+                ax, ay, az, ar, ag, ab, aa, au, av,
+                bx, by, bz, br, bg, bb, ba, bu, bv,
+                cx, cy, cz, cr, cg, cb, ca, cu, cv,
+                clipX, clipY, clipW, clipH, bytes, pitch);
         }
     }
 

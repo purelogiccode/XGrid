@@ -21,11 +21,12 @@ public static class VshProgram
     public const int RegisterCount = 16;
 
     /// <summary>D3D scene constant correction (VSH_D3DSCM_CORRECTION).</summary>
-    private const int D3dScmCorrection = 96;
+    private const int D3DScmCorrection = 96;
     private const int AddressOutput = 15;
 
     private enum Mac
     {
+        // ReSharper disable once UnusedMember.Local
         Nop = 0,
         Mov,
         Mul,
@@ -44,6 +45,7 @@ public static class VshProgram
 
     private enum Ilu
     {
+        // ReSharper disable once UnusedMember.Local
         Nop = 0,
         Mov,
         Rcp,
@@ -382,7 +384,7 @@ public static class VshProgram
     private static int ConstantIndex(uint[] token, int address)
     {
         int raw = Field(token, 1, 13, 8);
-        int index = ((((raw >> 5) & 7) - 3) * 32) + (raw & 31) + D3dScmCorrection;
+        int index = ((((raw >> 5) & 7) - 3) * 32) + (raw & 31) + D3DScmCorrection;
         if (Field(token, 3, 1, 1) != 0)
         {
             index += address;
