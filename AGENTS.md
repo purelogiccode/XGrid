@@ -51,6 +51,10 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   DVD media serving (§65): `IDvdImage`/`IsoDvdImage` (2048 B) + `boot --dvd`;
   TUR/capacity/READ(10/12) with latched sense; gate72 served the kernel's
   real sector probe (PVD + XDVDFS-magic LBAs) with no auth traffic.
+  Compressed CHDs (§66): `ChdDvdImage` (CHDSharp 1.4.3, magic dispatch
+  in `OpenDvdImage`); 007 USA boots its XBE off CHD (SHA-identical
+  `default.xbe`) and parks in a timing wait (gate74: 47% udiv, frozen
+  DVD tail, 62→83 slow flips).
 - Host-side dashboard tooling (parallel track, merged): `XGrid.XboxFs`
   FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info` /
   `xgrid sector` (raw LBA dump); identified the boot dashboard as softmod
@@ -159,7 +163,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 800 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 804 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — beyond state 0.

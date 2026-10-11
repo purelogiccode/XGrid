@@ -198,8 +198,25 @@ public sealed class XboxMachine
     /// <summary>Attaches a DVD image to the ATAPI slave drive (read-only, no overlay).</summary>
     public void AttachDvd(string path)
     {
-        Dvd = new IsoDvdImage(path);
+        Dvd = OpenDvdImage(path);
         Ide.AttachDvd(Dvd);
+    }
+
+    /// <summary>Opens an ISO/XISO or CHD DVD image by magic number.</summary>
+    public static IDvdImage OpenDvdImage(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        Span<byte> magic = stackalloc byte[8];
+        using (System.IO.FileStream stream = System.IO.File.OpenRead(path))
+        {
+            stream.ReadExactly(magic);
+        }
+
+        return magic[0] == (byte)'M' && magic[1] == (byte)'C' && magic[2] == (byte)'o'
+            && magic[3] == (byte)'m' && magic[4] == (byte)'p' && magic[5] == (byte)'r'
+            && magic[6] == (byte)'H' && magic[7] == (byte)'D'
+            ? ChdDvdImage.Open(path)
+            : new IsoDvdImage(path);
     }
 
     /// <summary>Gets the attached DVD image, or null when no disc is present.</summary>

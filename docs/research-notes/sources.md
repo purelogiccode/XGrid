@@ -66,8 +66,17 @@ the reuse is recorded below.
 - Caveat: `XISOSharp` has a runtime dependency on `ZArchiveSharp 1.4.0` (not BCL-only).
 - Integrated 2026-10-11: `XGrid.XboxFs` references NuGet `XISOSharp` 1.4.2
   (centrally pinned in `Directory.Packages.props`; transitive `ZArchiveSharp`
-  1.4.0 confirmed in restore graph). No source copied — consumption is via
+  1.4.0 confirmed in restore graph). No source copied - consumption is via
   the public `XisoExplorer` API behind `XGrid.XboxFs/XdvdfsFileSystem`.
+
+### CHDSharp (MIT)
+- MIT License, Copyright (c) 2026 Peterson Fernandes and Gordon Jefferyes
+  (sibling repo `C:/Users/HomePC/Dropbox/source/repos/CSharp_CHDSharp`,
+  docs + source used for API facts).
+- Integrated 2026-10-11: `XGrid.Storage` references NuGet `CHDSharp` 1.4.3
+  (centrally pinned). No source copied - consumption is via the public
+  `ChdFile` API (`Open`/`Read`/`TotalBytes`) behind
+  `XGrid.Storage/ChdDvdImage`.
 
 ## Subsystem → reference map (facts)
 

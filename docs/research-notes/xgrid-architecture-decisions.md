@@ -2278,3 +2278,38 @@ verify parsing.
 **Next.** READ TOC/STRUCTURE if a title demands them; real game boot
 needs title flow to `D:` (dashboard stays in state 0); CHDSharp for
 the 945-CHD set.
+
+## 66. CHD games boot: compressed DVD + 007 in a timing wait (2026-10-11)
+
+**CHDSharp integration (no source copied).** NuGet `CHDSharp` 1.4.3
+(MIT; transitive MS.Extensions.Logging/Hashing), consumed by
+`XGrid.Storage` through `ChdDvdImage : IDvdImage` (`ChdFile.Open` /
+byte-offset `Read` / `TotalBytes`; 2048 B scratch + copy; not
+thread-safe, single-threaded use documented). `XboxMachine.OpenDvdImage`
+sniffs magic (`MComprHD` -> CHD, else raw ISO); `boot --dvd` accepts
+both. 4 tests (CHD error paths, magic dispatch both ways).
+
+**Layout discovery.** The 007 USA CHD is a REBUILT XISO, not the raw
+dump: 839520 sectors (1.7 GB), descriptor at CHD sector 32, root at
+33, no video partition (`DVD` metadata tag). Cross-proof:
+`default.xbe` extracted from the CHD is SHA-identical to the Redump
+ISO's (696320 B) - same title, different container.
+
+**gate73: the kernel boots the GAME off the CHD.** TUR + capacity +
+probe, then sequential READ(10)s at `0x96E34+` step 2 (bulk streaming);
+game XBE executes (base `0x10000`): hot code = software udiv loop
+(`0x138C0`, 32-iteration) + QPF timing math (`0x112D2`: `imul 1000 /
+div` - perf-counter-to-microseconds). NVNET 0/0, USB `intr=0`; draws
+stay at boot-logo 2670, frames 62. No auth opcodes anywhere.
+
+**gate74 (10B, +eip-hist): parked in the wait.** No fault; DVD tail
+FROZEN (same 16 LBAs - zero new reads after ~5B); **47% of all 10B
+instructions inside the udiv loop**, kernel idle 3.6%; flips crawl
+62->83 (~240M steps/flip) with no new clears; EIP ends inside udiv.
+SMBus port reads (`C000`=1375) are background (10x less than
+dashboard runs), not the wait. PIT IRQs flow (16342).
+
+**Position.** First real game boot: kernel -> DVD -> XBE executes ->
+load streams -> timing wait with everything idle. The wait condition
+(caller of the timing func? QPF source? flip gating?) is the next
+probe. TOC/STRUCTURE still unneeded (never requested).
