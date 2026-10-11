@@ -2857,25 +2857,27 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 | 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — steady-state program draws validated live in §§57–58). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46–48) done; menu-idle render loop at 5B (EIP `0x2D3B9`, double-buffer `0x3D00000↔0x3E2C000`, still black) with viewport-baked `C0.z` clip proven guest-side (§§57–61). Remaining: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | Not started | |
-| 14 — Networking | Not started | |
+| 14 — Networking | Partial (MMIO only) | nvnet MMIO + per-reg histograms (§52–53, §62: guest init-only, engine scoped-not-built) |
 | 15–23 | Not started | |
 
-Current test baseline: **770 tests passing** (36 Core, 398 Cpu, 52 Memory, 148 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **775 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — menu response: app intent.** The animation wait (§32)
-through **M8** (§43), surface scoping (§44), content discovery (§45),
-file-save (§47–48), shadow alias (§50–51), NIC gates I+II (§52–53), XID
-gates I–III (§54–56), D3D probe (§57), oPos verdict (§58), C0 provenance
-(§59), zeta verdict (§60) and viewport writers (§61) are done: the
-app's sole 640×480 viewport is sane (0,1) yet the driver bakes 16.7M
-from the first frame — guest-side, all emulator channels exonerated
-(passthrough, no readback, complete PFIFO, exact int math). The guest
-deterministically draws nothing visible from boot. Next: what is the
-black idle scene WAITING for — XBApp-flow evidence (init completion?
-content gating? failure-string execution proof?) + nvnet packet engine
-(the network half). Static notes: **`RemoteX`** dash (XBApp, static IP);
-streams in temp.
+**NEXT SESSION — menu state machine.** §62 decoded the menu-idle loop:
+the 10-section RemoteX runner carved from RAM via guest page walk (VA
+`0x10000` → phys `0x13E000`); the trail maps to a live working loop
+(idiv helper, UTF-16 tolower/wcslen, COM accessors, FPU, D3D frame
+code); the D3D-section frame function dispatches `[esi+0x280]` through
+a byte table + jump table (~19 handlers + default `0x1E72B`; state 10 =
+`e:\dump.txt` debug-dump path); new `--eip-hist` probe (5000 samples/5B)
+shows kernel idle 7% + an MMX streaming-memcpy loop `0x39F90` ~10% +
+string clusters — busy every frame, IDE reads only. gate67 proved the
+NIC init-only (44/350, zero ring/KICK/poll; packet engine stays
+scoped-not-built). No network/pad/content/timer wait remains — what is
+left is the state machine itself: current state value + wait primitive
+(Cxbx 4627 ordinal map deferred; kernel exports are ordinal-only).
+Probes: `--break-log` on handler VAs, finer hist. Static notes:
+**`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2903,7 +2905,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
 (see §13.5). Reference: xemu
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
-`vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`/`--pgraph-max`, `--pad-*`,
+`vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`/`--pgraph-max`, `--pad-*`, `--eip-hist N`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
 trail: research-notes §30-61.
 
@@ -2918,7 +2920,7 @@ disables the ROM overlay, copies itself to 0x400000, then runs from the high-RAM
 its own GDT/IDT/TSS (`LTR`) before executing `HLT` (waiting on an interrupt source) at ~24M
 instructions. `xgrid boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--steps N] [--trace N]
 [--trace-start N] [--trace-regs] [--dump addr[,len]] [--ramdump <path>] [--frame <path>] [--pgraph <path> [--pgraph-max N]]
-[--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>]` runs user firmware and prints the final CPU/device state.
+[--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]` runs user firmware and prints the final CPU/device state.
 Remaining for M1: none — M1 (BIOS execution) is complete; the boot chain now runs
 MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard DMA load. The paragraphs below are
 historical (2BL-era forensics kept for reference).
@@ -3386,9 +3388,13 @@ unvalidated against real hardware; front-panel mapping untested.
 **Status**: nvnet register/MMIO model DONE (`McpxNvNetDevice` at
 `0xFEF00000`: idle TX/RX, link-up, instant MDIO/PHY, qemu-default MAC;
 xemu `nvnet_regs.h`-faithful; §52) and validated live (FEF unmapped
-collapse, init succeeds first try, live render loop; §53). Remaining:
-descriptor/DMA packet engine, RX/TX interrupts, link-state/DHCP
-behavior, all behind `INetworkBackend`.
+collapse, init succeeds first try, live render loop; §53). gate67
+proved init-only (§62: 44/350 per-reg, zero ring/KICK/poll) — the
+packet engine stays scoped-not-built per the trace-driven rule.
+Remaining (when a title drives it): descriptor/DMA packet engine
+(`RingDesc` `{u32 buf; u16 len; u16 flags}`, rings `0x100`–`0x138` per
+xemu `nvnet.c`), RX/TX interrupts, link-state/DHCP behavior, all behind
+`INetworkBackend`.
 
 ## Phase 15 — CPU JIT (detailed)
 

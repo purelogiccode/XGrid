@@ -154,29 +154,23 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 770 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 775 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — menu response: app intent.
+## Next session — menu state machine.
 
-1. XID gates I–III done (§54–56): schedule engine + pad + `--pad`
-   injection (latched; Bus 144→148). Enumeration completes first try;
-   **A-press 5B run byte-identical to neutral** (intr=0 — guest never
-   polls). D3D probe done (§57, re-attributed: boot window, not tail)
-   + oPos verdict (§58, proven guest-side clip) + C0 provenance (§59):
-   full 5B stream (463M methods; `--pgraph-max` + streaming dump added)
-   shows `C0.z=16777215` baked from viewport params (`0AF8`/`0398`)
-   from the first upload — junk-from-start, zero drift; menu-idle
-   double-buffers `0x3D00000↔0x3E2C000` with the identical viewport.
-   Zeta verdict (§60): set at boot (depth surfaces + formats, ~187K
-   methods of bring-up) then never again — color-only flips to the end;
-   only pixels ever are 33 legacy textured draws (logo?) vs 800K
-   clipped program draws. Viewport writers (§61): sole 640×480
-   viewport in RAM is sane (0,1) — driver bakes the junk guest-side;
-   emulator channels exonerated. Next: app intent (what is the black
-   idle scene waiting for — XBApp flow? network? content?) + nvnet
-   packet engine. Issuer
-   EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
+1. §62 decoded the menu-idle loop: 10-section RemoteX runner carved
+   from RAM via guest page walk (VA `0x10000` → phys `0x13E000`);
+   trail = live working loop (idiv/tolower/wcslen/COM/FPU/D3D);
+   D3D frame function dispatches `[esi+0x280]` via jump table (~19
+   handlers + default; state 10 = `e:\dump.txt` path); new
+   `--eip-hist` probe (Core 39, Bus 150; 775 green) shows kernel idle
+   7% + MMX streaming-memcpy `0x39F90` ~10% + string clusters.
+   gate67: NIC proven init-only (44/350, zero ring/KICK/poll) —
+   packet engine stays scoped-not-built. No network/pad/content/
+   timer wait remains. Next: current state value + wait primitive
+   (`--break-log` on handler VAs; Cxbx 4627 ordinal map deferred).
+   Issuer EIP, `F36A2` gap and LBA 8 (`55 AA`, `PCBX`) still open.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
