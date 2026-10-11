@@ -9,6 +9,7 @@
     <ProjectReference Include="..\XGrid.Core\XGrid.Core.csproj" />
     <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
     <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
+    <PackageReference Include="CHDSharp" />
   </ItemGroup>
 
   <ItemGroup>

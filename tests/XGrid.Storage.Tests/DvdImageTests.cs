@@ -53,6 +53,18 @@ public sealed class DvdImageTests : IDisposable
         Assert.Throws<FileNotFoundException>(() => new IsoDvdImage(WriteTempPath("no-such.iso")));
     }
 
+    [Fact]
+    public void ChdDvdImage_RejectsNonChdFile()
+    {
+        Assert.Throws<InvalidDataException>(() => ChdDvdImage.Open(WriteTemp(new byte[4096])));
+    }
+
+    [Fact]
+    public void ChdDvdImage_RejectsMissingFile()
+    {
+        Assert.Throws<InvalidDataException>(() => ChdDvdImage.Open(WriteTempPath("no-such.chd")));
+    }
+
     public void Dispose()
     {
         if (!_disposed)

@@ -953,7 +953,8 @@ sibling repo `CSharp_XISOSharp` holds docs + source) for ISO/XISO -
 **referenced since §64** (`XGrid.XboxFs/XdvdfsFileSystem` + `xgrid
 xdvdfs ls/cat`; 007 validated: DVD_X2, TitleId `0x4541000D`), and NuGet
 `CHDSharp` 1.4.3 (pure C# MAME CHD V1-V5 reader, all codecs) for CHD -
-not referenced yet (sibling `CSharp_CHDSharp` covers docs/source).
+**referenced since §66** (`XGrid.Storage/ChdDvdImage`, `boot --dvd`
+accepts `.chd` by magic; 007 USA validated, SHA-identical XBE).
 
 ## Milestone
 
@@ -2861,7 +2862,7 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 | 14 — Networking | Partial (MMIO only) | nvnet MMIO + per-reg histograms (§52–53, §62: guest init-only, engine scoped-not-built) |
 | 15–23 | Not started | |
 
-Current test baseline: **800 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 13 Integration, 67 Nv2a, 8 Audio, 44 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **804 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 15 Integration, 67 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 **NEXT SESSION — beyond state 0.** §63 closed app-intent: XBApp init
@@ -2875,7 +2876,9 @@ steady state + guest-baked clip. Next: what moves 0->N (submenu states
 200-299? titles that consume input?) + Track C JIT. Parallel: game media
 readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007 validated
 DVD_X2) and now served to the guest (§65 — `boot --dvd`, kernel
-sector-probes live, no auth traffic). Static notes:
+sector-probes live, no auth traffic), including compressed CHDs
+(§66 — `ChdDvdImage`, 007 USA boots its XBE off CHD and parks in a
+timing wait: 47% udiv, frozen DVD, slow flips). Static notes:
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
@@ -2901,7 +2904,7 @@ viewport-baked clip proven guest-side (§57–61). Indexed draws are fully
 traced through RAM arrays to oPos (§58). Remaining M5 gaps: inline
 `SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Test media
 for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
-`E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
+`E:\Microsoft Xbox` (945 CHDs) — read via `ChdDvdImage` (§66).
 (see §13.5). Reference: xemu
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`/`--pgraph-max`, `--pad-*`, `--eip-hist N`,
