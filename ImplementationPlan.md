@@ -2829,22 +2829,20 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **743 tests passing** (36 Core, 398 Cpu, 52 Memory, 121 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **760 tests passing** (36 Core, 398 Cpu, 52 Memory, 138 Bus, 13 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — menu response: XID gamepad gate.** The animation wait
-(§32) through **M8** (§43), surface scoping (§44), content discovery
-(§45), file-save (§47–48), shadow alias (§50–51) and NIC gates I+II
-(§52–53) are solved: with the nvnet device live a 5.0B run advances
-past the kernel park into a **live dashboard render loop** (806958
-draws / 16789 flips, ~48 zero-pixel degenerate draws + clear + flip per
-frame, EIP `0x2D42C` in module dispatch code, frame still black,
-surface `0x3E2C000`; FEF unmapped gone, NVNET 44/350; USB0 probed 31×
-with empty ports; disk save footprint identical). The system reads as
-a waiting menu with no input. Next: scope/implement a gamepad behind
-the OHCI (xemu USB + Cxbx XID first — ED/TD path unimplemented), then
-the menu-response test. Static bonus: runner is a chain-loaded
-10-section **`RemoteX`** dash (save triggered post-`Start!`).
+**NEXT SESSION — menu response: XID gate II (guest validation).** The
+animation wait (§32) through **M8** (§43), surface scoping (§44), content
+discovery (§45), file-save (§47–48), shadow alias (§50–51), NIC gates
+I+II (§52–53) and XID gate I (§54: OHCI schedule engine + neutral
+gamepad on USB0 port 0, 17 tests, 760 green) are done. A 5.0B run with
+the pad attached is queued/in flight — read `ctl/intr/addr` for
+enumeration (address assign, config set, interrupt polling), confirm
+no-fault + the live render loop, then wire `SetInput` to a CLI flag and
+run the menu-response test (input consumed? EIP/draws change?). Static
+bonus: runner is a chain-loaded 10-section **`RemoteX`** dash (save
+triggered post-`Start!`).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2869,7 +2867,7 @@ for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
 `--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
-trail: research-notes §30-53.
+trail: research-notes §30-54.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size

@@ -1834,6 +1834,40 @@ response needs a gamepad device behind the OHCI (ED/TD transfer path,
 currently unimplemented — SOF/HCCA only). Reference-first: xemu USB
 passthrough + Cxbx XID to scope it.
 
+## 54. XID gate I: OHCI schedule engine + gamepad function, unit-verified (2026-10-11)
+
+**Reference facts extracted (no code copied).** Cxbx `XidGamepad.cpp`:
+VID `0x045E`/PID `0x0202`, XID interface class `0x58`/subclass `0x42`,
+IN+OUT ep2 interrupt (32 B, interval 4), 20-B input / 6-B output reports,
+16-B XID descriptor (`42`, caps 20/6), request matrix (standard
+descriptors/SET_ADDRESS/SET_CONFIGURATION/GET_STATUS/FEATURE/INTERFACE;
+class GET_REPORT `0x0100` with oversize→STALL, SET_REPORT `0x0200`
+exact-length; vendor XID descriptor `0x4200`, GET_CAPABILITIES
+`0x0100/0x0200`; real-pad quirks noted). xemu `hcd-ohci.c`: ED/TD
+layouts + bitfields, direction resolution (ED.D else TD.DP), page-split
+lengths, CBP advance with `CBP=0`-on-complete, toggle carry, retire
+(ED.HeadP:=TD.Next, done-queue link, DI minimum, error→0+H), NAK defer,
+periodic via `HCCA.intr[frame&31]`, control iff CLE+CLF (clear on idle),
+done writeback with WDH + toggle bit.
+
+**Implementation (`XGrid.Bus/Usb/`, clean-room).** `XidGamepad`
+(`IUsbDeviceFunction`: setup matrix, deferred SET_ADDRESS/CONFIG commit
+on status stage, neutral report + `SetInput` for later injection, rumble
+accepted/dropped) attached to USB0 port 0 (CCS on power, reset→enable);
+`OhciUsbController` grew a synchronous schedule engine (control/bulk/
+periodic walkers, link-limit 32, 512-B cap, general TDs only — no ISO;
+STALL+halt on bad requests/addresses; NAK defers; done_count/WDH/HcDoneHead
+per xemu). `IUsbMemory` gained reads (`PhysicalUsbMemory` passes
+through); CLI USB lines gained `ctl/intr/addr`. 17 tests (Bus 121→138):
+programmed ED/TD GET_DESCRIPTOR lands bytes with CC=0 + WDH, address
+assign, STALL-halt, periodic IN delivers the report, port sequence.
+760 green, format clean, 1M smoke identical. **Guest validation pending:**
+USB traffic is post-4B, so a 5.0B run with the neutral pad attached is
+queued — expect enumeration (address assigned, config set, interrupt
+polling starts) in `ctl/intr/addr` + no-fault + same render loop. Button
+injection (`SetInput` wired to CLI) and the menu-response read-out are
+gate II, after seeing what the guest does with a pad.
+
 
 
 
