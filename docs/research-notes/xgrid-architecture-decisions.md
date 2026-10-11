@@ -1800,6 +1800,40 @@ yet behaviorally validated** (NIC traffic is post-4B): next long run
 should show FEF unmapped collapse + faster init; then DHCP-without-link
 timeouts are the following question, then XID input for the menu test.
 
+## 53. NIC gate II: validation run — FEF collapse, dashboard goes live (2026-10-11)
+
+**5.0B run with the §52 device live (~26 min, no fault, vec=0).**
+Unmapped `FEF` collapses to zero (`045=4 065=8` remain); `NVNET
+reads=44 writes=350` (was 14815/704 — busy-loops exit on first read,
+init succeeds first try). CLI gained `USB0/USB1` lines (`acc`, `irq`,
+raw port regs; +1 Bus test).
+
+**The trajectory advanced past the menu-idle park.** With no 500-stall
+burns the system enters a live dashboard render loop: draws 806958
+(skipped 33610), flips/stalls 16789, clears 16798, semaphore releases
+269574 — ~48 draws + clear + flip per frame — while pixels stay frozen
+at 10137600 (every new draw is a zero-pixel degenerate program draw, as
+§42 predicts). End EIP `0x2D42C` with zeroed data regs disassembles
+clean (VA+0xEE000 → phys `0x11C42C`: a `cmp cl,0x0C/0x48` byte-dispatch
+in the §36 dashboard module) — real running code, not a kernel park.
+Frame #16789 is still black (surface `0x3E2C000`, nonzero=0).
+
+**Rest of the system corroborates "alive and waiting".** Disk save
+footprint identical (159 sectors, ranges through `4675E3`, writes
+353 vs 352 — one extra rewrite). IDE 11060 (was 12132, faster init).
+`USB0 acc=31` — first guest USB traffic past early boot — but ports
+never powered (all port regs 0, USB1 silent). SMBus 1689 txns cycle
+the `0x4C` sensor (cmds 01/10/08/00, all NAK — thermal-poll loop, new
+observation with no baseline yet).
+
+**Read:** the dashboard runs its main loop with no content and no
+input — a waiting menu. The black degenerate draws are now confirmed
+as the menu's steady state, not a park artifact. Next gate is XID:
+the guest probes USB0 but our root hub has nothing to offer, so menu
+response needs a gamepad device behind the OHCI (ED/TD transfer path,
+currently unimplemented — SOF/HCCA only). Reference-first: xemu USB
+passthrough + Cxbx XID to scope it.
+
 
 
 
