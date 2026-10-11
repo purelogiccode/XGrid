@@ -244,11 +244,8 @@ internal static class Program
                     return 1;
                 }
 
-                if (machine.Usb0.Function is XidGamepad gamepad)
-                {
-                    gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
-                    Console.WriteLine($"Pad buttons=0x{pad.Buttons:X4} analog={BitConverter.ToString(pad.Analog)}");
-                }
+                machine.Gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
+                Console.WriteLine($"Pad buttons=0x{pad.Buttons:X4} analog={BitConverter.ToString(pad.Analog)}");
             }
 
             machine.Memory.WatchStart = machineWatchStart;

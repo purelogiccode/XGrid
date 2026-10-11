@@ -225,6 +225,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const int MaxTextureSlots = 4;
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
+    private const uint VertexArrayOffsetMask = 0x7FFFFFFFu;
+    private const uint TransformProgramStartMask = 0xFFu;
+    private const uint TransformExecutionModeMask = 3u;
+    private const uint TransformModeProgrammable = 2u;
     private const int MaxInlineElements = 65536;
     private const int MaxDrawArrayRanges = 1250;
     private const int VertexAttributeCount = 16;
@@ -531,6 +535,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
     public ulong SkippedDraws { get; private set; }
 
+    /// <summary>Gets the number of executed draws whose transform execution mode was not programmable. Diagnostics.</summary>
+    public ulong NonProgrammableModeDraws { get; private set; }
+
     /// <summary>Gets the current color surface offset in guest memory. Diagnostics.</summary>
     public uint PresentedColorOffset { get; private set; }
 
@@ -747,6 +754,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         BlendedPixels = 0;
         DepthTestedPixels = 0;
         SkippedDraws = 0;
+        NonProgrammableModeDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
         _methodStream.Clear();
@@ -1781,7 +1789,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
                 break;
             case MethodTransformExecutionMode:
-                _transformExecutionMode = parameter;
+                _transformExecutionMode = parameter & TransformExecutionModeMask;
                 break;
             case MethodTransformProgramCxtWriteEn:
                 _transformProgramCxtWriteEn = parameter;
@@ -1790,7 +1798,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 TransformProgramLoadDebug = parameter;
                 break;
             case MethodTransformProgramStart:
-                _transformProgramStart = parameter;
+                _transformProgramStart = parameter & TransformProgramStartMask;
                 break;
             case MethodTransformConstantLoad:
                 TransformConstantLoadDebug = parameter;
@@ -1808,7 +1816,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         if (method >= MethodVertexArrayOffsetBase && method <= MethodVertexArrayOffsetEnd &&
             ((method - MethodVertexArrayOffsetBase) & 3u) == 0)
         {
-            _vertexArrayOffset[(method - MethodVertexArrayOffsetBase) / 4] = parameter;
+            _vertexArrayOffset[(method - MethodVertexArrayOffsetBase) / 4] = parameter & VertexArrayOffsetMask;
         }
 
         if (method >= MethodTransformProgramBase && method <= MethodTransformProgramEnd &&
@@ -2096,6 +2104,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             TransformProgramLoadDebug++;
         }
+    }
+
+    private int ActiveTransformProgramStart()
+    {
+        return (int)Math.Min(_transformProgramStart, (uint)MaxTransformProgramLength);
+    }
+
+    private int ActiveTransformProgramLength(int start)
+    {
+        for (int i = start; i < MaxTransformProgramLength; i++)
+        {
+            if ((_transformProgram[i][3] & 1u) != 0)
+            {
+                return i - start + 1;
+            }
+        }
+
+        return MaxTransformProgramLength - start;
     }
 
     private void WriteTransformConstant(uint slot, uint value)
@@ -2651,6 +2677,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             return;
         }
 
+        int programStart = ActiveTransformProgramStart();
+        int programLength = ActiveTransformProgramLength(programStart);
+        if (programLength == 0)
+        {
+            SkippedDraws++;
+            return;
+        }
+
+        var program = new uint[programLength][];
+        Array.Copy(_transformProgram, programStart, program, 0, programLength);
+
         uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
         uint pitch = _surfacePitch & 0xFFFFu;
         uint clipX = _surfaceClipH & 0xFFFFu;
@@ -2691,6 +2728,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
         DrawsExecuted++;
+        if (_transformExecutionMode != TransformModeProgrammable)
+        {
+            NonProgrammableModeDraws++;
+        }
+
         bool colorWrite = (_colorMask & ColorMaskAll) != 0;
         if (!colorWrite && !_depthTestEnable && !_stencilTestEnable)
         {
@@ -2780,16 +2822,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 {
                     FetchVertexAttribute(slot, index, inputs[slot]);
                 }
-
-                Array.Clear(outputs[slot]);
             }
 
-            VshProgram.Execute(
-                _transformProgram,
-                (int)Math.Min(TransformProgramLoadDebug, (uint)VshProgram.MaxInstructions),
-                constants,
-                inputs,
-                outputs);
+            VshProgram.Execute(program, programLength, constants, inputs, outputs);
 
             (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) vertex = (
                 outputs[0][0], outputs[0][1], outputs[0][2],
@@ -2838,14 +2873,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         int type = (int)(format & 0xFu);
         int stride = (int)(format >> 8);
-        int size = type switch
+        uint address = _vertexArrayOffset[slot];
+        if (stride != 0)
         {
-            0 or 4 => 1,
-            1 or 5 => 2,
-            _ => 4,
-        };
-        int step = stride != 0 ? stride : size * count;
-        uint address = _vertexArrayOffset[slot] + (uint)(index * step);
+            address += (uint)(index * stride);
+        }
 
         switch (type)
         {

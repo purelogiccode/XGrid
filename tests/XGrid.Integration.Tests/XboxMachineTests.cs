@@ -1,5 +1,6 @@
 using System;
 using XGrid.Bus.Pci;
+using XGrid.Bus.Usb;
 using XGrid.Host;
 using XGrid.Memory;
 using Xunit;
@@ -144,6 +145,20 @@ public sealed class XboxMachineTests
         byte[] tooBig = new byte[XboxAddressMap.FlashSize + 1];
 
         Assert.Throws<ArgumentException>(() => machine.LoadBios(tooBig));
+    }
+
+    [Fact]
+    public void UsbTopology_MatchesXemuDaughterboardLayout()
+    {
+        var machine = new XboxMachine();
+
+        var daughterboard = Assert.IsType<UsbHub>(machine.Usb0.Function);
+        Assert.Equal(4, daughterboard.PortCount);
+
+        var controllerHub = Assert.IsType<UsbHub>(daughterboard.GetPortDevice(2));
+        Assert.Equal(3, controllerHub.PortCount);
+        Assert.Same(machine.Gamepad, controllerHub.GetPortDevice(0));
+        Assert.Null(machine.Usb1.Function);
     }
 
     private static XboxMachine CreateLoadedMachine()
