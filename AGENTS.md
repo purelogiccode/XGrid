@@ -152,19 +152,18 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: 725 tests green,
+  once; conflicts were purged 2026-10-09). Baseline: 727 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — file-save phase: what is it writing?
+## Next session — after the evox.ini save: why re-save, then longer runs?
 
-1. 3.2B-step run completes with no fault at **new EIP `0x67BFD`** (phys
-   `0xD4BFD`, another module mapping). GPU frozen (same 2670/10.1M/33/33);
-   new **`0xCA` WRITE DMAs**: repeated 1-sector write at LBA `0x885446`
-   (E: +1.6 GB) interleaved with ascending writes `0x897546`→`0xA07546` —
-   a **growing file with dirent updates**. EIP sits past a file-open wrapper
-   (`call [0x7D688]` thunk, custom statuses `0x8007274x`). The dashboard
-   moved from discovery to **saving** (§46). Boot prints progress every
-   250M steps now.
+1. 3.2B-step run completes with no fault at EIP `0x67BFD`; `--writedump`
+   proves the `0xCA` WRITE DMAs are the dashboard **re-saving `C:\evox.ini`
+   in place** (FAT chain truncated 263→264→265→END, 45781/79868 bytes,
+   byte-identical, dirent flushed per chunk). §46 LBAs were byte-reversed
+   taskfile bytes (`l885446` = true LBA `0x465488`, C: root-dir sector).
+   Open: re-save trigger with no input; single early write to disk LBA 8
+   (`55 AA`, `PCBX`). See research-notes §47.
 2. **M5** (transform-program interpreter, attribute fetch, element draws,
    §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
    swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
@@ -176,8 +175,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    `xgrid boot --frame out.bmp` saves the flip-captured 640×480 frame
    (surface `0x32A4000`) — currently opaque black, which clarifies the
    display story (flip chain presents the dashboard surface, not the `0x1000`
-   early-boot region). Next: capture what the file-save phase writes
-   (overlay introspection + full IDE logging), longer runs toward UI, XID
+   early-boot region). Next: re-save trigger, longer runs toward UI, XID
    input for the menu. Live program-draw rasterization is still unvalidated
    (pending non-degenerate program traffic). Remaining M5 gaps: inline
    `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.

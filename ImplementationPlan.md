@@ -939,6 +939,21 @@ XISO
 raw XDVDFS
 ```
 
+Test media on this machine (verified 2026-10-11; local paths, not in repo):
+
+```text
+H:\Tests\XBOXTest      37 Redump retail XISO .iso files (~263 GB: NTSC-U/Europe/Japan/Australia)
+E:\Microsoft Xbox      945 USA retail .chd files (~1.44 TB) + 1403 .dummy placeholders
+```
+
+Libraries needed to read them (both pure C#, zero native deps, target
+net8.0/net9.0/net10.0 — compatible with this repo's net9.0): NuGet
+`XISOSharp` (purelogiccode's C# extract-xiso implementation; same author
+org as the vendored `CSharp_XISOSharp` MIT reference in `References/`)
+for ISO/XISO, and NuGet `CHDSharp` 1.4.3 (pure C# MAME CHD V1–V5 reader,
+all codecs) for CHD. Neither is referenced yet — add when DVD-drive
+testing / XDVDFS validation needs real discs.
+
 ## Milestone
 
 ### M2 — Xbox filesystem access
@@ -2804,7 +2819,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 4 — x86 MMU | **Done** | 4 KB/4 MB paging, software TLB (large pages always walk), A/D bits, WP, `#PF` error codes, MOV CR/DR, INVLPG, CR0/CR3/CR4 TLB flushes, paging-aware GDT/IDT access |
 | 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI devices with xemu IDs — **OHCI USB0/USB1 implemented** (`OhciUsbController`, 0:2.0/0:3.0, `0xFED00000`/`0xFED08000`, IRQ1/IRQ9), nvnet/APU/ACI as config-space devices (APU has an MMIO model in `XGrid.Audio`, ACI in `XGrid.Bus/Aci`); bus-1 NV2A; IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A diagnostics; DMA helper pending |
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub, **MCPX ACI (AC'97) register model at 0xFEC00000, xemu `ac97.c`-faithful NAM/NABM (`McpxAciDevice`)**; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O pending |
-| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin/--fb/--frame/--pgraph`, 250M-step progress, `ulong` steps; `xgrid sector` raw LBA dump); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot runs the full intro animation, **executes the dashboard XBE**, renders through NV2A (M5–M8, §37–43), discovers content (§45) and saves files (§46) — `xgrid boot --steps 3200000000` completes with no fault at EIP `0x67BFD`. See M9 + research-notes §31-34 |
+| 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin/--fb/--frame/--pgraph`, 250M-step progress, `ulong` steps; `xgrid sector` raw LBA dump); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and loads the dashboard off the HDD** (Gate 1, 2026-10-09): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot runs the full intro animation, **executes the dashboard XBE**, renders through NV2A (M5–M8, §37–43), discovers content (§45) and re-saves `C:\evox.ini` (§47) — `xgrid boot --steps 3200000000` completes with no fault at EIP `0x67BFD`. See M9 + research-notes §31-34 |
 | 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); XDVDFS/DVD media pending |
 | 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; guest code long past the early `.text` decompressor — rendering, discovering and saving at 3.2B steps, EIP `0x67BFD`; see M9 Gap 1d) |
 | 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
@@ -2814,17 +2829,23 @@ earlier one except where explicitly parallel (Track B/C).
 | 14 — Networking | Not started | |
 | 15–23 | Not started | |
 
-Current test baseline: **725 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 25 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **727 tests passing** (36 Core, 398 Cpu, 49 Memory, 110 Bus, 11 Integration, 67 Nv2a, 8 Audio, 27 Storage, 11 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — file-save phase: what is it writing?** The animation wait
-(§32) through **M8** (§43), surface scoping (§44) and content discovery
-(§45) are solved. `xgrid boot --steps 3200000000` (3.2B steps) completes
-**with no fault at new EIP `0x67BFD`** (phys `0xD4BFD`, another module
-mapping): GPU frozen, **new `0xCA` WRITE DMAs** — repeated 1-sector write
-at LBA `0x885446` (E: +1.6 GB) plus ascending writes `0x897546`→`0xA07546`
-(a growing file with dirent updates); EIP past a file-open wrapper (`call
-[0x7D688]` thunk). The dashboard moved from discovery to **saving** (§46).
+**NEXT SESSION — after the evox.ini save: why re-save, then longer runs.**
+The animation wait (§32) through **M8** (§43), surface scoping (§44),
+content discovery (§45) and file-save identification (§47) are solved.
+`xgrid boot --steps 3200000000` (3.2B steps) completes **with no fault at
+EIP `0x67BFD`** (phys `0xD4BFD`, another module mapping): GPU frozen, and
+`--writedump` proves the `0xCA` WRITE DMAs are the dashboard **re-saving
+`C:\evox.ini` in place** — truncate (FAT 263→264→265→END, clusters
+266–267 freed) + streaming rewrite, 45781 of 79868 bytes so far,
+byte-identical to the on-disk file, dirent flushed per chunk
+(`465488x56`). Note the §46 LBAs were byte-reversed taskfile bytes
+(`LogCommand` prints lo/mid/hi concatenated): `l885446` = true LBA
+`0x465488` (C: root-dir sector), all file-save I/O C:-local. One open
+side item: a single early write to disk LBA 8 (MBR-signature-like sector,
+`55 AA`, `PCBX` marker — attribution unknown).
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
@@ -2837,14 +2858,18 @@ no-ops on xemu too), so `blended=0 depth=0` is correct and **live
 program-draw rasterization is still unvalidated**. The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
 presents the dashboard surface, not the `0x1000` early-boot region.
-The 2.5B content scan (§45) gave way to file saving at 3.2B (§46). Next:
-capture what it writes (overlay introspection + full IDE logging), then
-longer runs toward UI (XID input for the menu). Remaining M5 gaps: inline
-`SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Reference: xemu
+The 2.5B content scan (§45) gave way to the evox.ini re-save at 3.2B
+(§47). Next: find the re-save trigger (first-boot settings commit vs
+dirty-flag save — watch the ini buffer / size field), then longer runs
+toward UI (XID input for the menu). Remaining M5 gaps: inline
+`SET_VERTEX_DATA*` immediate path and `DRAW_ARRAYS` ranges. Test media
+for future DVD/XDVDFS work: `H:\Tests\XBOXTest` (37 Redump ISOs),
+`E:\Microsoft Xbox` (945 CHDs) — needs NuGet `XISOSharp` / `CHDSharp`
+(see §13.5). Reference: xemu
 `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
 `vsh-prog.c`), `nv2a_regs.h`. Tools: `--break-log <addr>`, `--pgraph`,
-`--ramdump`/`--ramin`, `--fb`/`--frame`, `sector`, objdump. Evidence
-trail: research-notes §30-46.
+`--ramdump`/`--ramin`, `--fb`/`--frame`, `--writedump`, `sector`, objdump. Evidence
+trail: research-notes §30-47.
 
 Phase 7 progress: the CPU gained far control transfers (JMP/CALL ptr16:16/32 and m16:16/32, RETF),
 segment loads/stores (MOV Sreg, PUSH/POP Sreg incl. FS/GS), and CS.D-driven default operand size
