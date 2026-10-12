@@ -1237,7 +1237,8 @@ SUPERSEDED). Fix validated live: pixels 10.4M→118.8M, blended
 0→45.3M, frame 0→57,087 nonzero px (first non-black menu frame,
 no fault).**
 Next: prove the newly visible scene is the RIGHT scene (xemu-pixel
-compare or known screen); ZCLIP bounds + float depth; first-real-frame
+compare or known screen); ZCLIP bounds + float depth (§90 DONE -
+unmerged wave); first-real-frame
 validation + TCP proxy. Order matters; do not work on later
 gaps before earlier gates pass.
 
@@ -1337,8 +1338,15 @@ frame black→57087 nonzero px, draws/skipped/frames unchanged
 bit order (bit0=w per xemu `mask_str`/Cxbx `MASK_*`) and aligned
 `WriteFogMasked` with both references' oFog.x rule. Remaining:
 fixed-function foggen, cubemap/reflection/project3d/clipplane/BRDF
-modes, HILO dot maps, ZCLIP bounds + `Z_FORMAT` float depth, and proof
-the newly visible scene is the RIGHT scene. **§82 verdict
+modes, HILO dot maps, and proof
+the newly visible scene is the RIGHT scene. **ZCLIP + float depth DONE
+(§90, wave/nv2a-zclip):** `SET_CLIP_MIN/MAX` (`0x394/0x398`) stored as
+device-unit float bounds and applied as the fragment-stage clamp xemu
+runs in psh (passthrough-until-programmed, so all goldens bit-identical);
+`SET_CONTROL0` Z_FORMAT (bit 12) selects the F16_MAX/F24_MAX
+(511.9375/1e30) device-depth range with custom-float zeta
+decode/encode; CULL-discard and the exact-1.0 fixed-encode overflow
+stay open as noted follow-ups. **§82 verdict
 superseded:** the submenu black was emulator-side depth saturation,
 not guest-accurate.
 
@@ -2985,7 +2993,7 @@ was correct XDK device-depth output — the gap was emulator-side
 non-black menu frame, no fault). §82's "guest-accurate" verdict
 SUPERSEDED (was emulator-side depth saturation). Next: prove the newly
 visible scene is the RIGHT scene (xemu-pixel compare or known screen);
-ZCLIP bounds + float depth open.
+ZCLIP bounds + float depth (§90 DONE - unmerged wave).
 DVD media branch PINNED (§86: neither candidate address is
 media-dependent — decision is downstream file-path; decrypt writer is
 the SAME site `0x8002EFE6`/key; PacketLog 16→256).

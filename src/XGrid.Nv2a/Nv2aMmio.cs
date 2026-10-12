@@ -275,6 +275,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint ZetaFormatZ24S8 = 2u;
     private const float ZetaDepthRangeZ16 = 65535f;
     private const float ZetaDepthRangeZ24S8 = 16777215f;
+    private const float ZetaDepthRangeF16 = 511.9375f;
+    private const float ZetaDepthRangeF24 = 1.0E30f;
+    private const uint MethodControl0 = 0x290u;
+    private const uint Control0ZFormat = 1u << 12;
+    private const uint MethodClipMin = 0x394u;
+    private const uint MethodClipMax = 0x398u;
+    private const uint ZetaF16Bias = 0x3C000000u;
+    private const uint ZetaF16Max = 0xFFF8u;
     private const uint CompareLess = 1u;
     private const uint CompareAlways = 7u;
     private const uint BlendZero = 0u;
@@ -411,6 +419,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private bool _depthTestEnable;
     private uint _depthFunc;
     private bool _depthMask;
+    private bool _zFormatFloat;
+    private float _zclipMin;
+    private float _zclipMax;
+    private bool _zclipActive;
     private uint _colorMask;
     private bool _stencilTestEnable;
     private uint _stencilWriteMask;
@@ -574,6 +586,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the number of fragments that ran the depth test. Diagnostics.</summary>
     public ulong DepthTestedPixels { get; private set; }
+
+    /// <summary>Gets the number of fragments whose device-unit depth was moved by the ZCLIP bounds. Diagnostics.</summary>
+    public ulong ZclipClampedPixels { get; private set; }
 
     /// <summary>Gets the number of presented frames (flip increment events). Diagnostics.</summary>
     public ulong FramesPresented { get; private set; }
@@ -772,6 +787,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _depthTestEnable = false;
         _depthFunc = CompareLess;
         _depthMask = true;
+        _zFormatFloat = false;
+        _zclipMin = 0f;
+        _zclipMax = float.PositiveInfinity;
+        _zclipActive = false;
         _colorMask = ColorMaskAll;
         _stencilTestEnable = false;
         _stencilWriteMask = StencilByteMask;
@@ -842,6 +861,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         TexturedPixels = 0;
         BlendedPixels = 0;
         DepthTestedPixels = 0;
+        ZclipClampedPixels = 0;
         SkippedDraws = 0;
         NonProgrammableModeDraws = 0;
         _methodCounts.Clear();
@@ -1803,6 +1823,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 break;
             case MethodDepthMask:
                 _depthMask = (parameter & 1u) != 0;
+                break;
+            case MethodControl0:
+                _zFormatFloat = (parameter & Control0ZFormat) != 0;
+                break;
+            case MethodClipMin:
+                _zclipMin = BitConverter.UInt32BitsToSingle(parameter);
+                _zclipActive = true;
+                break;
+            case MethodClipMax:
+                _zclipMax = BitConverter.UInt32BitsToSingle(parameter);
+                _zclipActive = true;
                 break;
             case MethodStencilWriteMask:
                 _stencilWriteMask = parameter & 0xFFu;
@@ -3179,9 +3210,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             // surface zeta maximum to recover the [0,1] range the fragment
             // depth clamp and compare below operate in. Matches xemu's
             // vertex epilogue (oPos.z / clipRange.y) and fragment store
-            // (zvalue / clipRange.y); fixed-depth only (the Z_FORMAT float
-            // variant is untracked, as in the rest of this rasterizer).
-            outputs[0][2] /= ZetaDepthRange((_surfaceFormat >> 4) & 0xFu);
+            // (zvalue / clipRange.y); with CONTROL0 Z_FORMAT the range is the
+            // float-depth maximum (F16_MAX/F24_MAX per xemu util.h).
+            outputs[0][2] /= ZetaDepthRange((_surfaceFormat >> 4) & 0xFu, _zFormatFloat);
 
             float fogFactor = _fogEnable
                 ? VshProgram.FogFactor(_fogMode, _fogParams[0], _fogParams[1], outputs[5][0])
@@ -3485,17 +3516,148 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>
     /// Device-depth normalization range for the post-program bake. Matches
     /// xemu's clipRange.y (zeta-format maximum): Z16 maps from 65535 units,
-    /// Z24S8 from 16777215 units. Unknown or absent zeta formats return 1, so
-    /// shader Z passes through exactly like the legacy direct clamp.
+    /// Z24S8 from 16777215 units; with CONTROL0 Z_FORMAT the float-depth
+    /// maxima apply instead (F16_MAX 511.9375, F24_MAX 1e30 per xemu
+    /// util.h, selected by the same SETUPRASTER Z_FORMAT bit the Kelvin
+    /// CONTROL0 Z_FORMAT feeds in xemu pgraph.c). Unknown or absent zeta
+    /// formats return 1, so shader Z passes through exactly like the legacy
+    /// direct clamp.
     /// </summary>
-    private static float ZetaDepthRange(uint zetaFormat)
+    private static float ZetaDepthRange(uint zetaFormat, bool floatDepth)
     {
+        if (floatDepth)
+        {
+            return zetaFormat switch
+            {
+                ZetaFormatZ16 => ZetaDepthRangeF16,
+                ZetaFormatZ24S8 => ZetaDepthRangeF24,
+                _ => 1f,
+            };
+        }
+
         return zetaFormat switch
         {
             ZetaFormatZ16 => ZetaDepthRangeZ16,
             ZetaFormatZ24S8 => ZetaDepthRangeZ24S8,
             _ => 1f,
         };
+    }
+
+    /// <summary>
+    /// Decodes a 16-bit custom-float zeta value to device units (xemu
+    /// util.h convert_f16_to_float: zero is exact zero, otherwise the field
+    /// is shifted into float32 mantissa position over a small bias).
+    /// </summary>
+    private static float ConvertF16ToFloat(uint f16)
+    {
+        if (f16 == 0)
+        {
+            return 0f;
+        }
+
+        return BitConverter.UInt32BitsToSingle((f16 << 11) + ZetaF16Bias);
+    }
+
+    /// <summary>
+    /// Decodes a 24-bit custom-float zeta value to device units (xemu
+    /// util.h convert_f24_to_float: zero is exact zero, otherwise the field
+    /// is shifted into float32 mantissa position).
+    /// </summary>
+    private static float ConvertF24ToFloat(uint f24)
+    {
+        f24 &= 0xFFFFFFu;
+        if (f24 == 0)
+        {
+            return 0f;
+        }
+
+        return BitConverter.UInt32BitsToSingle(f24 << 7);
+    }
+
+    /// <summary>
+    /// Encodes a normalized [0,1] depth into the 16-bit custom-float zeta
+    /// field (inverse of <see cref="ConvertF16ToFloat"/> over its sane
+    /// domain). The raw inverse can exceed the range xemu's decode maps back
+    /// to non-negative device values (it wraps to negative floats past
+    /// 0xFFF8), so the result saturates there; that bin decodes to
+    /// 511.5/511.9375 and the clamp preserves ordering.
+    /// </summary>
+    private static uint ConvertFloatToF16(float depth)
+    {
+        float scaled = Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeF16;
+        uint bits = BitConverter.SingleToUInt32Bits(scaled);
+        if (bits < ZetaF16Bias)
+        {
+            return 0u;
+        }
+
+        return Math.Min((bits - ZetaF16Bias) >> 11, ZetaF16Max);
+    }
+
+    /// <summary>
+    /// Encodes a normalized [0,1] depth into the 24-bit custom-float zeta
+    /// field (inverse of <see cref="ConvertF24ToFloat"/>). The float maximum
+    /// sits far below this encoding's wrap point, so no saturation is needed.
+    /// </summary>
+    private static uint ConvertFloatToF24(float depth)
+    {
+        float scaled = Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeF24;
+        return (BitConverter.SingleToUInt32Bits(scaled) >> 7) & 0xFFFFFFu;
+    }
+
+    /// <summary>
+    /// Encodes a normalized depth into a 24-bit zeta field (fixed-point, or
+    /// the custom float encoding when CONTROL0 Z_FORMAT is set).
+    /// </summary>
+    private uint EncodeDepth24(float depth)
+    {
+        return _zFormatFloat
+            ? ConvertFloatToF24(depth)
+            : (uint)(Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeZ24S8 + 0.5f);
+    }
+
+    /// <summary>
+    /// Encodes a normalized depth into a 16-bit zeta field (fixed-point, or
+    /// the custom float encoding when CONTROL0 Z_FORMAT is set).
+    /// </summary>
+    private uint EncodeDepth16(float depth)
+    {
+        return _zFormatFloat
+            ? ConvertFloatToF16(depth)
+            : (uint)(Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeZ16 + 0.5f);
+    }
+
+    /// <summary>
+    /// ZCLIP bounds for one fragment (xemu psh.c depth clipping, non-CULL
+    /// path): the interpolated depth is returned to device units and clamped
+    /// into [ZCLIPMIN, ZCLIPMAX] before the normalized compare/store below.
+    /// Only runs once the guest has programmed either bound; an unprogrammed
+    /// unit keeps the legacy [0,1] clamp exactly (xemu has no enable bit and
+    /// resets both regs to zero, but guests always program them before 3D,
+    /// so passthrough-until-written is observationally identical).
+    /// </summary>
+    private float ApplyZclip(float depth, uint zetaBytes)
+    {
+        uint zetaFormat = zetaBytes switch
+        {
+            2u => ZetaFormatZ16,
+            4u => ZetaFormatZ24S8,
+            _ => 0u,
+        };
+        float range = ZetaDepthRange(zetaFormat, _zFormatFloat);
+        float zvalue = depth * range;
+        float clamped = Math.Clamp(zvalue, _zclipMin, _zclipMax);
+        if (clamped != zvalue && !float.IsNaN(clamped))
+        {
+            ZclipClampedPixels++;
+            return clamped / range;
+        }
+
+        // In-bounds depths keep their normalized value bit-exact: the
+        // device-unit round-trip (d * range / range) can cost a ULP, which
+        // would perturb depth compares/stores for guests whose bounds
+        // contain the whole scene (e.g. the dashboard's [0, 16777215]).
+        return depth;
     }
 
     private uint ReadHalf(uint address)
@@ -3602,7 +3764,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             uint current = _memory.ReadPhysical(address);
             uint depthBits = writeDepth
-                ? (uint)(Math.Clamp(depth, 0f, 1f) * 16777215f + 0.5f)
+                ? EncodeDepth24(depth)
                 : (current >> 8) & 0xFFFFFFu;
             uint writeMask = _stencilWriteMask & StencilByteMask;
             uint newStencil = writeStencil
@@ -3616,7 +3778,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         int shift = (int)((address & 2u) * 8);
         uint currentWord = _memory.ReadPhysical(wordAddress);
         uint half = writeDepth
-            ? (uint)(Math.Clamp(depth, 0f, 1f) * 65535f + 0.5f)
+            ? EncodeDepth16(depth)
             : (currentWord >> shift) & 0xFFFFu;
         uint halfMask = 0xFFFFu << shift;
         _memory.WritePhysical(wordAddress, (currentWord & ~halfMask) | ((half << shift) & halfMask));
@@ -3695,12 +3857,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         {
             if (zetaBytes == 4)
             {
-                storedDepth = ((storedZeta >> 8) & 0xFFFFFFu) / 16777215f;
+                storedDepth = _zFormatFloat
+                    ? ConvertF24ToFloat((storedZeta >> 8) & 0xFFFFFFu) / ZetaDepthRangeF24
+                    : ((storedZeta >> 8) & 0xFFFFFFu) / 16777215f;
                 stencil = storedZeta & StencilByteMask;
             }
             else
             {
-                storedDepth = (storedZeta & 0xFFFFu) / 65535f;
+                storedDepth = _zFormatFloat
+                    ? ConvertF16ToFloat(storedZeta & 0xFFFFu) / ZetaDepthRangeF16
+                    : (storedZeta & 0xFFFFu) / 65535f;
             }
         }
 
@@ -3716,6 +3882,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
 
         float clampedDepth = Math.Clamp(depth, 0f, 1f);
+        if (_zclipActive && depthActive)
+        {
+            clampedDepth = ApplyZclip(depth, zetaBytes);
+        }
         bool depthPass = true;
         if (depthActive)
         {
