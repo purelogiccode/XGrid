@@ -1,12 +1,16 @@
 using System;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Memory;
 
 /// <summary>Flat physical RAM. All accesses are little-endian and bounds-checked.</summary>
-public sealed class PhysicalMemory
+public sealed class PhysicalMemory : ISnapshotable
 {
     /// <summary>Default retail Xbox RAM size (64 MB).</summary>
     public const uint DefaultSize = 64u * 1024 * 1024;
+
+    private const uint RamStateVersion = 1;
 
     private readonly byte[] _bytes;
 
@@ -89,6 +93,42 @@ public sealed class PhysicalMemory
     public void Clear()
     {
         Array.Clear(_bytes);
+    }
+
+    /// <summary>Saves the full RAM contents (V1 snapshot).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.Write(RamStateVersion);
+        writer.Write(Size);
+        writer.Write(_bytes);
+    }
+
+    /// <summary>Restores the full RAM contents (V1 snapshot).</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        uint version = reader.ReadUInt32();
+        if (version != RamStateVersion)
+        {
+            throw new InvalidDataException($"Unsupported RAM state version {version} (expected {RamStateVersion}).");
+        }
+
+        uint size = reader.ReadUInt32();
+        if (size != Size)
+        {
+            throw new InvalidDataException($"Snapshot RAM size {size} does not match machine RAM size {Size}.");
+        }
+
+        byte[] bytes = reader.ReadBytes((int)size);
+        if (bytes.Length != Size)
+        {
+            throw new InvalidDataException($"Snapshot RAM payload truncated ({bytes.Length} of {Size} bytes).");
+        }
+
+        Buffer.BlockCopy(bytes, 0, _bytes, 0, (int)Size);
     }
 
     private int CheckedIndex(uint address, int width)

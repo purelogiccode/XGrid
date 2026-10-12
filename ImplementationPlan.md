@@ -3660,6 +3660,12 @@ save/restore CPU+RAM+device state at an arbitrary step; a restore
 reproduces EIP/registers/flip counters exactly; a 007-gate probe runs in
 seconds, not minutes. Note: phases 19/22 cover product save states; V1
 is the internal forensic fast path — land V1 first, productize later.
+Status 2026-10-12 (wave/snapshot-core): core half landed — `ISnapshotable`
+contract, CPU (all fields) + RAM + machine-scalar save/load, `XboxMachine`
+tagged-container orchestration (`CPU`/`RAM`/…/`MACH`), CLI
+`--save-state [--save-at]` / `--load-state`, round-trip tests; device
+`SaveState` methods + dashboard-1B exactness gate pending the
+snapshot-devices wave (research-notes §99).
 
 **V2 — Minimal XBE test-ROM suite.** 10-second iterations per device.
 Acceptance: tiny XBEs (nxdk/OpenXDK or hand-assembled), each exercising

@@ -3985,3 +3985,133 @@ fault, and faking position/notifier state would violate the no-fake rule.
 (the code page holding `0x18440` was found at phys `0xC7440`; the XBE
 `.text` file offset is `VA - 0x10000`). Data pointers still need live
 page-table walks from CR3 (`0xAFE34`→`0x15EE34`, §92).
+
+## 99. V1 snapshot core: framework + CPU + RAM + orchestration + CLI (2026-10-12)
+
+Branch `wave/snapshot-core`. The devices branch implements `ISnapshotable`
+on every device and appends registrations at the `// V1-DEVICES-ANCHOR` in
+`XboxMachine`; the coordinator merges sequentially. This note covers the
+core half.
+
+**Contract.** `src/XGrid.Core/Snapshots/ISnapshotable.cs` (`SaveState` /
+`LoadState` over `BinaryWriter`/`BinaryReader`) is byte-identical to the
+wave spec. `XGrid.Core` is already referenced by every device assembly
+(Audio, Bus, Cpu, Debug, Graphics, Host, Input, Mcpx, Memory, Nv2a,
+Storage, Xbe, XboxFs — verified via all `XGrid.*.csproj`), so no
+relocation was needed.
+
+**File format** (written by `XboxMachine.SaveState`, read by `LoadState`):
+
+```text
+"XGS1"                       4 bytes ASCII magic
+uint32 formatVersion         1
+int32  sectionCount
+per section:
+  string tag                 BinaryWriter length-prefixed UTF-8
+  uint64 payloadLength
+  byte[payloadLength]        opaque section payload
+```
+
+Sections are written in registration order — `CPU`, `RAM`, then device
+sections (devices branch), then `MACH` — but loading is order-independent:
+the loader reads all sections into a tag→bytes map, then dispatches each
+registered section by tag. Unknown tags are skipped (so files written with
+more device sections still load on this branch); a missing registered tag,
+duplicate tag, bad magic, version mismatch, oversized section (>512 MB), or
+truncated payload throws `InvalidDataException`. Duplicate registration
+tags throw `ArgumentException` at `RegisterSnapshotSection` time. Each
+section payload starts with its own `uint32` section version (CPU=1,
+RAM=1, MACH=1) for independent evolution.
+
+**Complete captured-field list.**
+
+- CPU (`XboxCpu`, `src/XGrid.Cpu/XboxCpuSnapshots.cs`): 8 GPRs (Gpr 0–7);
+  EIP; EFLAGS (full 32 bits); 6 segments × (selector + base)
+  (Es/Cs/Ss/Ds/Fs/Gs); CodeSegment32; TR; LDTR; CR0/CR2/CR3/CR4; DR0–DR7;
+  GDTR base+limit; IDTR base+limit; Halted; TSC (u64); MXCSR; FPU control /
+  status (Top rides in status bits 11–13, no separate field) / tag words +
+  8 raw x87 registers in physical order (sign+exponent u16, significand
+  u64 — NaN payloads, unnormals, and MMX aliases all round-trip bit-exact);
+  8 XMM registers (32 u32, element order); SYSENTER_CS/ESP/EIP MSRs
+  (0x174–0x176; MSR 0x2A returns a constant and holds no state; MSR 0x10
+  is the TSC itself); InterruptCount; LastFaultVector/Eip/ErrorCode.
+  The interpreter holds NO other mutable state: verified by enumerating
+  all private fields of `XboxCpu` (`_sysenterCs/Esp/Eip` only) — there is
+  no RNG and no pending-IRQ latch (the PIC is polled inline each `Step`;
+  `InterruptCount` is the only counter). The software TLB is a derived
+  cache over guest page tables: it is NOT stored, `LoadState` calls
+  `Mmu.Flush()` instead (a stale entry would be a silent divergence).
+- RAM (`PhysicalMemory`): section version + size + full byte image.
+  Size mismatch on load throws (RAM size is construction-time; the CLI
+  must pass the same `--ram`). PRAMIN is NOT duplicated here: it lives in
+  `Nv2aMmio` and is snapshotted by the devices branch via
+  `Nv2aMmio.SaveState` (documented split).
+- MACH (`XboxMachine.MachineScalarsSnapshot`, tag `"MACH"`, core-owned
+  trailing section): NV2A PTIMER fractional accumulator
+  (`_nv2ARemainder` — lives on the machine, not the device, so it is core
+  state); 007 EOS quirk detector (`SevenEosQuirkEnabled/Checks/Fires`,
+  `_sevenEosQuirkParkActive/SinceTsc`). The saved `Enabled` value wins over
+  the CLI `--no-007-eos-quirk` flag on load (exactness first).
+
+**Deliberately excluded (caller responsibility / other branches).**
+Flash/BIOS bytes and the MCPX overlay enable flag (rebuilt by
+`LoadBios`+`Reset` — the restore recipe requires identical
+`--bios/--mcpx/--eeprom` inputs); HDD overlay dirty sectors and DVD image
+identity (require identical `--hdd/--dvd`; same-process save→restore keeps
+the overlay, cross-process restore loses it — storage-branch gap);
+diagnostic counters (unmapped-access buckets, method-stream logs,
+watch hits) — guest-invisible, intentionally not captured. Save/load must
+happen at an instruction boundary (between `Run` calls); mid-instruction
+state is not observable and is never captured.
+
+**CLI.** `boot --save-state <path> [--save-at N]` + 
+`boot --load-state <path> [--steps N]` (usage line updated). Semantics:
+`--save-at N` clamps the standard run loop so the save lands at exactly N
+steps, then saves and exits(0) before the post-run outputs; `--save-state`
+alone saves after the full `--steps` run and continues normally (composes
+with `--ramdump/--frame/--pgraph`); `--save-at` without `--save-state`
+is a usage error. `--load-state` restores after `Reset()` (same firmware/
+disk inputs required) and `--steps` counts post-restore steps; composes
+with `--pad-script/--dvd/etc.` (pad boundaries are evaluated against the
+post-restore step counter). `--save-at` applies exactly to the standard
+run loop; combined with `--trace/--break` debug phases the save still
+captures exact state but may land past N (documented, not silently
+rounded). Exit code 6 on snapshot I/O or format errors.
+
+**Validation (this branch).** New tests: `CpuSnapshotTests` (4 facts:
+full-field round-trip incl. FPU NaN/Top/condition bits, XMM, SYSENTER via
+RDMSR execution, segments, DRs, TSC, MXCSR; Halted+InterruptCount via a
+single-shot `IInterruptSource`; LastFault via UD with/without IDT; bad
+version throws), `PhysicalMemorySnapshotTests` (3 facts: full-image
+round-trip, size-mismatch and bad-version throws), `MachineSnapshotTests`
+(5 facts: save@1→restore→+1 is byte-identical to uninterrupted +2 —
+proves orchestration + container determinism; bad magic / missing section
+throw; unknown sections ignored; duplicate tag rejected). Live CLI smoke
+(real firmware+HDD, worktree build): save@2M (`EIP=0x0040349F`, 67 MB
+file), `--load-state` resumes at exactly `0x0040349F` and runs +500K
+fault-free; `--save-at 100000` stops at exactly step 100000 and exits.
+Dashboard 1B save/restore exactness is NOT claimed on this branch: with
+only CPU/RAM/MACH restored, device state (NV2A/PIC/PIT/IDE/USB/APU…)
+diverges immediately — that is precisely what the devices branch closes.
+Coordinator recipe for the merge gate:
+
+```text
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000" --steps 1000000000 --save-state sub1b.xgs --save-at 1000000000
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --load-state sub1b.xgs --steps <M> --frame resumed.bmp   (> resumed.log)
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --pad-script "…" --steps <1000000000+M> --frame direct.bmp (> direct.log)
+```
+
+Pass = EIP/all-regs/flip+NV2A counters identical in both logs and
+`resumed.bmp` SHA-equal to `direct.bmp`. Pre-wave reference counters for
+the save point: draws executed=33632 skipped=1402 pixels=285171381
+textured=278577344 frames=stalls=686, frame 640×480 fully nonzero.
+
+**Stretch (007 EOS-quirk snapshot) not attempted:** correctly scoped out —
+the quirk fires at ~1.8B steps on forced runs and the natural 3B park is
+pre-fire; meaningful snapshot validation there needs the APU VP/DSP
+streaming wave first (§98), plus the devices branch for exactness.
+
+**Status:** core builds, new tests green, `format --verify-no-changes`
+clean. V1 acceptance is met for CPU+RAM+orchestration; full V1
+(save/restore CPU+RAM+device at an arbitrary step with exact EIP/
+registers/flip counters) completes at the devices-merge.
