@@ -1208,11 +1208,18 @@ renders its menu through our NV2A path (OPEN — state-0 menu is
 black; visible UI still unproven), and controller input navigates it
 (DONE at the plumbing level — selection moves, activation fires;
 scripted `--pad-script` injection merged §74, control list decoded
-§76). Next: run the §76 probes (loader call via idx0/state 8,
-submenu redraw via idx2/state 100, DVD-presence flip of `[0x95BBC]`);
-007 needs its `0x20E40` limiter unblocked before any input re-test
-(§77 — never-reaches, not a device mismatch);
-nvnet packet engine. Order matters; do not work on later
+§76). Probes EXECUTED (§79): submenu state-100 is state-proven
+(`0x1E420`@972M, `FC0→0x5E4560`, no load) but pixel-negative
+(black-identical thru 1.6B) — next is the `--pgraph` method-stream
+diff (submenu vs neutral) to decide guest-side clip vs rasterizer
+gap; idx0 XBMC is D-pad-unreachable (clamps {1..5}); DVD auto-boots
+past the menu to the EA splash (mechanism TBD).
+007: limiter exited via temp `[AFE34]=2` (reverted); game parks in a
+SECOND wait (`0x26AE0` table scan) and never polls (§80 — GetState
+`0x602F7` 4× init-only, open never called; no device fix);
+nvnet packet-engine design done (§81 — P0–P3 build plan ready).
+Next: pgraph diff + DVD auto-launch trace + second-wait decode, then
+the nvnet build wave. Order matters; do not work on later
 gaps before earlier gates pass.
 
 Gap 1 — kernel→storage handoff [DONE 2026-10-09]. The kernel loads the
@@ -1299,7 +1306,10 @@ with dot-map/sign decode and bump matrix/scale/offset; unknown modes
 degrade to NONE with `TexModeFallbacks`. Remaining: fixed-function
 foggen, cubemap/reflection/project3d/clipplane/BRDF modes, HILO dot
 maps, oPos.z clipRange normalization, then a menu screen that
-actually draws.
+actually draws. **§79 probes:** the submenu lever (state 100) is
+state-proven but pixel-negative — next is the `--pgraph`
+method-stream diff (submenu vs neutral) to decide guest-side clip
+(§§57–58 pattern) vs rasterizer gap.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [DONE 2026-10-11]. The
 OHCI host controller (`OhciUsbController`, §36/§54) plus the
@@ -1313,9 +1323,13 @@ activation writer `0x1859D` (§70; A-press now differs from neutral by
 23,786 RAM bytes). Scripted `--pad-script` navigate+activate sequences
 merged (§74). **007 input verdict (§77): never-reaches, not mismatch**
 — no `XInputOpen`/`GetState`, no device fix; unblock its `0x20E40`
-limiter first. Remaining: nvnet packet engine (TX/RX rings +
-backend; link-up steady state only today) and memory-unit/storage
-class USB devices.
+limiter first. **007 second wait (§80):** temp `[AFE34]=2` forcing
+exited the limiter (reverted); the game advances (frames 49→99) then
+parks in a table-scan spin (`0x26AE0–0x26B5B`) with zero input
+polling by 5B — decode what the table scan waits for. **nvnet design
+(§81):** RAM descriptor rings, KICK/IRQ semantics, loopback-first
+backend, P0–P3 build plan — ready for a build wave. Remaining:
+memory-unit/storage class USB devices.
 
 Gap 6 — APU depth (Phase 12). The register model is implemented
 (`McpxApuDevice`, §33) and the front-end handshake/voice-off flow works; DSP,
@@ -2862,7 +2876,10 @@ earlier one except where explicitly parallel (Track B/C).
 | 8 — Storage | **Partial** | `XGrid.Storage`: `IDiskImage` + `RawDiskImage` + read-only `Qcow2DiskImage` (v2/v3, L1/L2, zero-flag clusters return zeros per QEMU `qcow2.h`) + `OverlayDiskImage` (in-memory copy-on-write; used by `AttachHdd` so guest WRITE DMA cannot modify the shared reference image); ATA/ATAPI `AtaDevice` (IDENTIFY, READ/WRITE SECTORS + DMA `0xC8`/`0xCA`, SET FEATURES, FLUSH, SECURITY UNLOCK, ATAPI PACKET + REQUEST SENSE, 8/16/32-bit data port), `IdeController` (nForce 10DE:01BC per xemu `#ifdef XBOX`, PCI 0:9.0, legacy ports 0x1F0/0x3F6, IRQ14 via LPC routing, dual-drive taskfile HDD master + ATAPI DVD slave, synchronous bus-master DMA: BAR4 window, PRDT walk through `IGuestMemory`, IRQ ack); `XGrid.XboxFs/FatxFileSystem` (read-only XATF) + `xgrid fatx ls/cat`; guest kernel loads the dashboard exclusively via READ DMA (research-notes §30–31) and the dashboard later issues WRITE DMA `0xCA` to LBA `0x80000` (§35); host-side XDVDFS reader done (`XGrid.XboxFs/XdvdfsFileSystem` over NuGet `XISOSharp` 1.4.2 + `xgrid xdvdfs ls/cat`, §64); guest DVD reads served (`IDvdImage`/`IsoDvdImage`, `boot --dvd`, TUR/capacity/READ10/12, §65, validated: kernel probes real sectors, no auth traffic); compressed CHDs (`ChdDvdImage` over CHDSharp 1.4.3, magic dispatch in `OpenDvdImage`, §66) |
 | 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; the guest runs the full dashboard lifetime — rendering, discovering, saving, menu-idle render loop at 5B steps, EIP `0x2D3B9`; see M9 Gap 1d, §§51–61) |
 | 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
-| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — steady-state program draws validated live in §§57–58). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46–48) done; menu-idle render loop at 5B (EIP `0x2D3B9`, double-buffer `0x3D00000↔0x3E2C000`, still black) with viewport-baked `C0.z` clip proven guest-side (§§57–61). **§71 fidelity wave:** inline `SET_VERTEX_DATA*` + `DRAW_ARRAYS` (M5 gap closed), all 11 XF-context constant writers (c56–c59, c64–95 — fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/program-start/output-defaults, MUL zero rule + GLSL min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings + oD0 NaN→1. Register combiner (psh) merged (§75: real methods 0x260/0x288/0xA60/0xA80/0xAA0/0xAC0/0x1E20/0x1E40/0x1E60/0x1E70/0x1E74/0x1E78 — the brief's 0x1940 range was inline vertex data, corrected; combiner-disabled draws pixel-identical). Remaining: dependent/bump/dot texture modes, fog, oPos.z clipRange normalization, Vulkan/OpenGL backends (16.6–16.7) |
+| 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — steady-state program draws validated live in §§57–58). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46–48) done; menu-idle render loop at 5B (EIP `0x2D3B9`, double-buffer `0x3D00000↔0x3E2C000`, still black) with viewport-baked `C0.z` clip proven guest-side (§§57–61). **§71 fidelity wave:** inline `SET_VERTEX_DATA*` + `DRAW_ARRAYS` (M5 gap closed), all 11 XF-context constant writers (c56–c59, c64–95 — fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/program-start/output-defaults, MUL zero rule + GLSL min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings + oD0 NaN→1. Register combiner (psh) merged (§75: real methods 0x260/0x288/0xA60/0xA80/0xAA0/0xAC0/0x1E20/0x1E40/0x1E60/0x1E70/0x1E74/0x1E78 — the brief's 0x1940 range was inline vertex data, corrected; combiner-disabled draws pixel-identical). Fog + dependent/bump/dot
+modes merged (§78). Remaining: fixed-function foggen, exotic modes,
+HILO dot maps, oPos.z clipRange normalization, Vulkan/OpenGL backends
+(16.6–16.7) |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO only) | nvnet MMIO + per-reg histograms (§52–53, §62: guest init-only, engine scoped-not-built) |
@@ -2891,7 +2908,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 8 Storage | 5 | 85% | writable host-side FATX; DVD media edge cases |
 | 9 XBE Loader | 3 | 90% | host-side relocation/launch paths |
 | 10 Kernel Interface | 2 | 5% | whole phase (HLE ordinals) — deferred, LLE-first |
-| 11 NV2A | 15 | 70% | visible menu render; dependent/bump/dot modes; fog; depth clipRange; Vulkan/OpenGL backends (16.6–16.7) |
+| 11 NV2A | 15 | 75% | visible menu render; fixed-function foggen; exotic modes; depth clipRange; Vulkan/OpenGL backends (16.6–16.7) |
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 30% | packet engine (TX/RX rings + backend) |
@@ -2905,10 +2922,10 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~59% complete overall** (weighted: 63.5 of 108 weight-points).
+**Result: ~59% complete overall** (weighted: 64.25 of 108 weight-points).
 By track:
 
-- **LLE core (phases 0–14): ~78%.** The real console chain — MCPX ROM ->
+- **LLE core (phases 0–14): ~79%.** The real console chain — MCPX ROM ->
   1BL -> 2BL -> kernel -> dashboard — boots, renders, discovers content,
   saves files, and now navigates with a real controller through the
   daughterboard hub topology (§§68–70).
@@ -2924,19 +2941,22 @@ Interpretation: the "does the console boot and respond" core is close;
 the long tail is JIT/optimization, NV2A completion (fog, backends)
 and productization (frontend, save states, release).
 
-**NEXT SESSION — visible menu.** Menu control list DECODED (§76):
-manager `0x47BC84`, nodes with `+0x0C` target states — idx0 XBMC/state 8
-(`0x1E54F`, only unconditional XBE load), idx2/5 Games/Admin/state 100
-(`0x1E420`, submenu page switch = cheapest visible-change test), idx3/4
-mode switch, idx1 DVD/state 14 proven no-op at `[0x95BBC]=3`. Scripted
-`--pad-script` injection merged (§74). Run the §76 probes: (1) loader
-call via idx0 + A-edge (`--break-log 0x1E54F/0x232A0`, expect `e:\`
-reads + frame delta); (2) submenu redraw via idx2 + A-edge
-(`--break-log 0x1E420`, expect `FC0→0x5E4380`, no load); (3) DVD-presence
-flip (`--dvd` + `--break-log 0x1E66A`, dump `0x95BBC`). 007 input
-verdict: never-reaches (§77 — unblock `0x20E40` limiter, then re-test
-`--pad`). NV2A combiner merged (§75); remaining: dependent/bump/dot
-modes, fog, backends. `F36A2`/LBA 8 CLOSED as no-bug (§73).
+**NEXT SESSION — visible menu.** §76 probes EXECUTED (§79): submenu
+state-100 is STATE-PROVEN (`0x1E420`@972M, `FC0→0x5E4560`, sel reset,
+no load) but PIXEL-NEGATIVE (black-identical thru 1.6B); idx0 XBMC
+UNREACHABLE (D-pad clamps {1..5}, loader never fired); DVD auto-boots
+past the menu to the EA splash (non-black frame, `0x890000`). Next:
+`--pgraph` method-stream diff submenu-vs-neutral (guest clip vs
+rasterizer gap) + trace the DVD auto-launch path (≤760M `--dvd` boot).
+Pad-timing rule: `+hold` ≥6M (1M momentary presses phase-miss).
+007: limiter exited via temp `[AFE34]=2` (reverted); game parks in a
+SECOND wait (`0x26AE0` table scan) and never polls (§80 — GetState
+`0x602F7` fires 4× init-only, open never called; no device fix).
+nvnet packet-engine design done (§81: RAM descriptor rings, KICK/IRQ
+semantics, P0–P3 build plan) — ready for a build wave.
+NV2A fog + dependent/bump/dot modes MERGED (§78); remaining:
+fixed-function foggen, exotic modes, HILO dot maps, clipRange,
+Vulkan/OpenGL backends (16.6–16.7). `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture

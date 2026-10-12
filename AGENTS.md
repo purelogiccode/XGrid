@@ -180,28 +180,33 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   c64-95; fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/
   program-start/output-defaults fetch fixes, MUL zero rule + GLSL
   min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings
-  + oD0 NaN->1. Register combiner (psh) merged (§75); fog + backends remain.
+  + oD0 NaN->1. Fog + dependent/bump/dot texture modes merged (§78);
+  remaining: fixed-function foggen, exotic modes, HILO, backends.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 923 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 940 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — visible menu.
 
-1. Menu control list DECODED (§76): manager `0x47BC84`, node `+0x0C`
-   target states — idx0 XBMC/state 8 (`0x1E54F`, only unconditional XBE
-   load), idx2/5 Games/Admin/state 100 (`0x1E420`, submenu page switch =
-   cheapest visible-change test), idx3/4 mode switch, idx1 DVD/state 14
-   proven no-op at `[0x95BBC]=3`. Scripted `--pad-script` injection merged
-   (§74: `down@950000000,a@960000000` reproduces the §70 HIT). Next: run
-   the §76 probes (loader call / submenu redraw / DVD-presence flip).
-   007 input verdict: never-reaches, not mismatch (§77 — no device fix;
-   unblock its `0x20E40` limiter first, then re-test `--pad`).
-   PIT frequency fixed (1,125,001) — game wait = guest pacing, not a gap.
-2. NV2A register combiner (psh) MERGED (§75: real methods
-   0x260/0x288/0xA60/0xA80/0xAA0/0xAC0/0x1E20/0x1E40/0x1E60/0x1E70/0x1E74/
-   0x1E78 — the brief's 0x1940 range was vertex data, corrected;
-   combiner-disabled draws pixel-identical). Remaining: dependent/bump/
-   dot modes, fog, Vulkan/OpenGL backends (16.6–16.7).
+1. §76 probes EXECUTED (§79): submenu state-100 is STATE-PROVEN
+   (`0x1E420`@972M, `FC0→0x5E4560`, sel reset, no load) but PIXEL-NEGATIVE
+   (black-identical thru 1.6B); idx0 XBMC UNREACHABLE (D-pad clamps
+   {1..5}, loader never fired); DVD auto-boots past the menu to the EA
+   splash (non-black frame, `0x890000`). Next: `--pgraph` method-stream
+   diff submenu-vs-neutral (guest clip vs rasterizer gap) + trace the DVD
+   auto-launch path (≤760M `--dvd` boot). Pad-timing rule: `+hold` ≥6M
+   (1M momentary presses phase-miss).
+   007: limiter exited via temp `[AFE34]=2` (reverted); game parks in a
+   SECOND wait (`0x26AE0` table scan) and never polls (§80 — GetState
+   `0x602F7` fires 4× init-only, open never called; no device fix).
+   nvnet packet-engine design done (§81: RAM descriptor rings, KICK/IRQ
+   semantics, P0–P3 build plan) — ready for a build wave.
+2. NV2A fog + dependent/bump/dot modes MERGED (§78: SET_FOG_COLOR/MODE/
+   PARAMS, oFog varying, LINEAR/EXP/EXP2 equations; DPNDNT_AR/GB,
+   DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]; disabled draws
+   pixel-identical). Remaining: fixed-function foggen, cubemap/reflection/
+   project3d/clipplane/BRDF, HILO dot maps, clipRange, Vulkan/OpenGL
+   backends (16.6–16.7).
 3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

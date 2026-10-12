@@ -2768,3 +2768,127 @@ Reference facts (`References/xemu-0.8.136`, `nv2a_regs.h` + `pgraph/`
 - **Remains**: fixed-function foggen distances (SPEC_ALPHA/RADIAL/
   PLANAR/ABS_PLANAR/FOG_X + FOG_COORD attr), cubemap/reflection/
   project3d/clipplane/BRDF modes, HILO dot maps, clipRange, backends.
+
+## 79. §76 probes executed: submenu state-proven/pixel-negative, idx0 unreachable, DVD auto-boots (2026-10-12)
+
+Prebuilt Release CLI as-is, firmware/HDD read-only (in-memory COW),
+logs/BMPs in `Temp\opencode\probes76\`; repo untouched. Baselines:
+neutral 1B (EIP `0x259BF`, draws 33811/skip 1394/px 10444800/clr 692/
+frames 682, black SHA `6f780a33…`, sel=1/state=0/`FC0=0x47BC84`/
+`[0x95BBC]=3`) and neutral 1.6B (148928 draws/3081 frames, identical
+black).
+
+**Input-timing model (new):** menu frames run every ~250k steps;
+D-pad auto-repeat ≈ initial + ~3M period. The 1M momentary press is
+phase-unreliable (misses polls — the §74 oracle script re-fired idx1
+3× with sel stuck at 1). Reliable recipe: D-pad `+hold` ≥6M, A
+`+hold` ≥6M.
+
+**Probe 2 (state 100) — STATE-PROVEN, PIXEL-NEGATIVE.**
+`down@950M+hold,none@962M,a@970M+hold,none@976M`: DOWN walks 1→2→3→4→5,
+`HIT 972246034 EIP=0001859D EAX=005E44F0` + `HIT 972349247
+EIP=0001E420 EAX=0x64` → `FC0 0x47BC84→0x5E4560` (Admin list), sel 5→0,
+state cleared, no XBE load; replicated bit-identically. Deltas:
+−188 draws/+3 frames at 1B; −4944 draws/+113 frames/+113 clears at
+1.6B — but pixels frozen at 10444800 and frames SHA-identical black
+in every menu run. Bonus: `HIT 960596785 EIP=0001E66A EAX=0x0E`
+observed directly — state-14 handler firing and no-op'ing.
+
+**Probe 1 (state 8 loader) — UNREACHABLE via D-pad.** UP held 12M
+(~48 frames) → sel stays 1 (replicated 2×); DOWN 40M → clamps at 5,
+re-press stays 5 (wrap excluded). Navigable set = {1..5}; idx0 never
+selected while input is live (sel reads 0 only during 836–844M, before
+XPP/menu input is live — A-held there gives zero HITs). `0x1E54F`/
+`0x232A0` never fired in 15 runs; zero IDE `e:\` reads.
+
+**Probe 3 (DVD flip) — SUPERSEDED: game auto-boots.** `--dvd` 007 CHD:
+no menu instantiates (zero state-machine HITs, menu VA holds non-menu
+data); draws 2672/frames 45, ATAPI READ(10) streaming (`0x96E34`+),
+EIP `0x138D3`, no fault — frame fully non-black (nonzero=307200):
+**the EA GAMES splash** (white bg, blue logo, letterbox bars, 5465
+colors, surface `0x890000`). Converged by ~760M; auto-launch precedes
+the menu (not via the `0x1E66A` DVD branch — `0x232A0` never fired;
+launch mechanism TBD). The literal `[0x95BBC]`-flip expectation is
+inapplicable (owning module not resident).
+
+**Next:** `--pgraph` method-stream diff (submenu vs neutral) to decide
+guest-side clip (cf. §§57–58) vs rasterizer gap — that determines
+whether pixel-negative is guest-accurate. In parallel: trace the DVD
+auto-launch path (kernel XBE-load/reboot APIs, ≤760M `--dvd` boot).
+
+## 80. 007 unblocked past the limiter — parks in a second wait, never-polls (2026-10-12)
+
+Work in `Temp\opencode\worktrees\007-unblock` (no commit — nothing to
+commit; temp patch fully reverted, worktree clean). Logs/scripts in
+`Temp\opencode\007-unblock\`.
+
+**XInput call-site map** (007 `default.xbe` facts confirmed): no
+`XInput*`/`XInitDevices` strings, zero `push 0x4200` (XID hits are
+float-table false positives). `0x602F7` (XPP section) = **XInputGetState**
+— prologue byte-identical to the dashboard GetState, returns `0x48F`
+(`ERROR_DEVICE_NOT_CONNECTED`) when absent. Break-log 2B run: **4 hits**
+(626M/729M/829M/833M, stable thread stack — init-time 4-port probes,
+not per-frame polling). `0x5E016`/`0x5E276` (XInputOpen-like) +
+`0x5E815`: zero hits in 2B — open never called. Device path proven:
+XID descriptor guest copy at phys `0x19FC94` (exact §69 address), USB
+`addr=1 cfg=True`.
+
+**Limiter exit (temporary `[AFE34]=2` forcing, reverted; Program.cs
+zero diff).** Non-invasive exit unavailable (no PIT/pump CLI flag;
+natural exit needs ~800 ticks / 6B+ steps). Decoded `0x20E40`:
+`delta()` vs `[AFE34]−2` with `0x26C60` spin; `0x207C0` = raw-elapsed
++ `[AFE30/38]` drift filter + float scale. Corrections to §77: live
+MMU mapping is **VA `0xAFE34` → phys `0x15EE34`** (not `+0xAAF000`);
+the game rewrites target=`3` every ~10–20M steps; 007's `XBEH` is
+never in RAM (sections-only mapping).
+
+**Post-limiter verdict — NEGATIVE (never-polls).** 2B patched: new
+regions (`0x1C/0x1E/0x21/0x222xx`), frames 49→99, limiter machinery
+gone. 5B patched: parks in a **second wait** (table-scan spin
+`0x26AE0–0x26B5B` + `0x20B50` exit-housekeeping + new `0x2A8xx`
+code; udiv burn gone), frames stall at 101, logo unchanged, DVD tail
+frozen (same 16 READs). USB `ctl` frozen at 94 (enumeration only),
+zero `0x602F7` samples in 500 EIPHIST, all three `--pad-script`
+windows (0.7/0.8/3/3.2/4/4.2B) with no effect. **No device fix
+indicated** — dashboard 999× GetState precedent stands; the game just
+never reaches steady-state polling by 5B. Next: decode the second
+wait (`0x26AE0` table — what is it scanning for?).
+
+## 81. nvnet packet-engine design (2026-10-12)
+
+Read-only survey; no code. Current device
+(`src/XGrid.Bus/Net/McpxNvNetDevice.cs`): MMIO `0xFEF00000`+
+`0x400`, IRQ/STATUS/MAC/MDIO/link-up only, header states no
+DMA/engine/interrupts; PCI 0:4.0 `10DE:01C3` (`XboxPciStubs`),
+IRQ path resolves to PIC IRQ4 via LPC routing but the device never
+raises. Guest is init-only (zero `0x100–0x138` ring, zero KICK).
+
+**xemu oracle** (`hw/xbox/mcpx/nvnet/nvnet.c` + `nvnet_regs.h`,
+facts only): rings live in **guest RAM as 8 B LE descriptor arrays**
+`{buf,len,flags}` pointed by BASE regs `0x100` (TX)/`0x104` (RX),
+SIZE `0x108` (count=mask+1), CURRENT/NEXT `0x11C/0x120/0x134/0x138`
+with wrap+clamp; doorbell = `0x144` KICK write (walk ≤TX-count descs
+to LASTPACKET); TX bytes=`len+1` coalesced, RX asserts `(len+1)>=size`;
+IRQ = `status&mask` assert (TX `0x10`/RX `0x2`/RX_NOBUF `0x4`/TX_ERR
+`0x8`/TIMER `0x20`/MIIEVENT `0x40`), W1C on `0x000/0x180`;
+`can_transmit = TX_START && !BIT2 && LINK_ST`; RX filter =
+broadcast-always + MYADDR/mcast-masked/ucast-MAC compare, oversize
+(`>MTU+128`) dropped; backend = QEMU `-nic` pluggable, default
+user-mode SLIRP. PHY init values match ours exactly
+(`BMCR 0x1100/BMSR 0x2C/AN 0x3E0`). Cxbx has zero nvnet register
+model — xemu is the oracle. Dashboard carries XNET + static IP
+(`192.168.0.2`) + FTP/telnet servers: static-IP servers, no DHCP
+evidence.
+
+**Build plan (phased, for a future wave):** P0 skeleton (ring-pointer
+latches, RESET wrap, IDLE/KICK plumbing, IRQ STATUS/MASK + W1C +
+`InterruptChanged→IRQ4`); P1 TX (walker + coalesce + VALID-clear
+writeback + TX IRQ + logger backend); P2 RX (filter + DMA-write +
+RX/RX_NOBUF IRQs + CLI `nvnet inject`); P3 backend
+(`INetworkBackend`, loopback/logger default, socket/SLIRP-equivalent
+behind flag, 250 ms autoneg via `Advance`). Walker reuses the IDE
+`IGuestMemory` pattern. CLI observability: named reg Rd/Wr, TX/RX
+pkt/byte/drop counters, `cant_tx/cant_rx` reasons, ring pointers,
+IRQ assert/deassert, link toggles. Open: BIT2 reliance, AN_COMP
+timing, SIZE counts, filter programming, first real frame type
+(needs a TX-logging run).
