@@ -1309,14 +1309,25 @@ PARAMS, oFog varying with fog_mask order, per-vertex LINEAR/EXP/EXP2
 (+ABS) factor into the FOG register (disabled stays `(0,0,0,1)`);
 DPNDNT_AR/GB, DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]
 with dot-map/sign decode and bump matrix/scale/offset; unknown modes
-degrade to NONE with `TexModeFallbacks`. Remaining: fixed-function
-foggen, cubemap/reflection/project3d/clipplane/BRDF modes, HILO dot
-maps, oPos.z clipRange normalization, then a menu screen that
-actually draws. **§82 verdict:** the submenu lever is guest-accurate
-black (real draws, all vertex-clipped on poisoned C0) — no rasterizer
-gap. Fault is upstream in the viewport bake: audit surface/zeta/caps
-responses at SetViewport-bake time (driver emits Z=16.7M from sane
-RAM MinZ=0/MaxZ=1).
+degrade to NONE with `TexModeFallbacks`. **Viewport bake CLOSED (§86,
+wave/viewport-bake):** `C0.z=16777215` reclassified as correct XDK
+device-depth output (driver threads the viewport Z scale
+`(MaxZ−MinZ)×0xFFFFFF` into its generated programs, exactly as xemu
+feeds XFCTX slots 58/59 for fixed-function) — not poison. The gap was
+emulator-side: the rasterizer never implemented xemu's `oPos.z /
+clipRange.y` (vertex epilogue + fragment store), so device-unit Z
+saturated to 1.0. `Nv2aMmio.Vertex` now divides by the surface zeta
+maximum (Z16→65535, Z24S8→16777215; fixed-depth only); same-tree 1B
+submenu validation: pixels 10444800→118798338, blended 0→45.3M,
+frame black→57087 nonzero px, draws/skipped/frames unchanged
+(deterministic guest stream). Same wave also fixed the `WriteMasked`
+bit order (bit0=w per xemu `mask_str`/Cxbx `MASK_*`) and aligned
+`WriteFogMasked` with both references' oFog.x rule. Remaining:
+fixed-function foggen, cubemap/reflection/project3d/clipplane/BRDF
+modes, HILO dot maps, ZCLIP bounds + `Z_FORMAT` float depth, and proof
+the newly visible scene is the RIGHT scene. **§82 verdict
+superseded:** the submenu black was emulator-side depth saturation,
+not guest-accurate.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [DONE 2026-10-11]. The
 OHCI host controller (`OhciUsbController`, §36/§54) plus the

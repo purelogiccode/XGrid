@@ -273,6 +273,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint SurfaceTypePitch = 1u;
     private const uint ZetaFormatZ16 = 1u;
     private const uint ZetaFormatZ24S8 = 2u;
+    private const float ZetaDepthRangeZ16 = 65535f;
+    private const float ZetaDepthRangeZ24S8 = 16777215f;
     private const uint CompareLess = 1u;
     private const uint CompareAlways = 7u;
     private const uint BlendZero = 0u;
@@ -3170,6 +3172,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             VshProgram.Execute(program, programLength, constants, inputs, outputs);
 
+            // Device-depth normalization (xemu clipRange.y): Xbox shaders emit
+            // screen-space Z in depth-buffer units (the driver bakes the
+            // zeta-format scale into the viewport scale and shader constants,
+            // e.g. C0.z = 16777215 for Z24S8), so divide by the current
+            // surface zeta maximum to recover the [0,1] range the fragment
+            // depth clamp and compare below operate in. Matches xemu's
+            // vertex epilogue (oPos.z / clipRange.y) and fragment store
+            // (zvalue / clipRange.y); fixed-depth only (the Z_FORMAT float
+            // variant is untracked, as in the rest of this rasterizer).
+            outputs[0][2] /= ZetaDepthRange((_surfaceFormat >> 4) & 0xFu);
+
             float fogFactor = _fogEnable
                 ? VshProgram.FogFactor(_fogMode, _fogParams[0], _fogParams[1], outputs[5][0])
                 : 1f;
@@ -3466,6 +3479,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             ZetaFormatZ16 => 2u,
             ZetaFormatZ24S8 => 4u,
             _ => 0u,
+        };
+    }
+
+    /// <summary>
+    /// Device-depth normalization range for the post-program bake. Matches
+    /// xemu's clipRange.y (zeta-format maximum): Z16 maps from 65535 units,
+    /// Z24S8 from 16777215 units. Unknown or absent zeta formats return 1, so
+    /// shader Z passes through exactly like the legacy direct clamp.
+    /// </summary>
+    private static float ZetaDepthRange(uint zetaFormat)
+    {
+        return zetaFormat switch
+        {
+            ZetaFormatZ16 => ZetaDepthRangeZ16,
+            ZetaFormatZ24S8 => ZetaDepthRangeZ24S8,
+            _ => 1f,
         };
     }
 

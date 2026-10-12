@@ -3033,3 +3033,92 @@ pkt/byte/drop counters, `cant_tx/cant_rx` reasons, ring pointers,
 IRQ assert/deassert, link toggles. Open: BIT2 reliance, AN_COMP
 timing, SIZE counts, filter programming, first real frame type
 (needs a TX-logging run).
+
+## 86. Viewport bake decoded: C0.z=16.7M is correct XDK output — the missing piece was emulator-side /clipRange.y (2026-10-12)
+
+**Verdict first.** There is no poisoned bake and no surface/zeta/caps
+response to fix: the guest driver emits textbook-correct XDK
+device-depth output (viewport-Z `0AF8=4B7FFFFF`, `C0=(1,1,16777215,1)`),
+and the black scene was our rasterizer saturating device-unit Z to 1.0
+because it never implemented xemu's `oPos.z / clipRange.y`
+normalization. Fix merged on `wave/viewport-bake`; the 1B submenu
+window goes from a black frame to a 57K-nonzero rendered scene
+(pixels 10.4M → 118.8M). C0.z and viewport-Z are UNCHANGED by the fix
+(still 16.7M — that is the correct value); sanity appears downstream
+of the divide.
+
+**Reference facts extracted (no code copied).** xemu
+`hw/xbox/nv2a/nv2a_regs.h`: `SET_SURFACE_FORMAT` (`0x208`) ZETA field
+is bits [4:7] with Z16=1/Z24S8=2; `SET_VIEWPORT_SCALE` = `0xAF0`,
+`SET_VIEWPORT_OFFSET` = `0xA20`, `SET_CLIP_MAX` = `0x398`,
+`SET_TRANSFORM_CONSTANT` = `0xB80`; XF `VPSCL`/`VPOFF` slots are
+`0x3A`/`0x3B` (58/59). `pgraph/pgraph.c`: viewport scale/offset
+methods only feed `vsh_constants[VPSCL/VPOFF]` (fixed-function
+shaders); guest-program constants are never derived from the viewport
+— the driver bakes them. `pgraph/glsl/vsh-prog.c`: `mask_str`
+(bit0=w, bit1=z, bit2=y, bit3=x) is used for every masked write
+including the paired temp path; the fog write expands to
+`oFog.<fogmask> = result.<fogmask>`, i.e. oFog.x always comes from
+result.x (only the set-bit COUNT selects y/z/w); the vertex epilogue
+does `oPos.z = oPos.z / clipRange.y`. `pgraph/glsl/common.c`:
+`clipRange.y` = zeta-format maximum (Z16: 0xFFFF, Z24S8: 0xFFFFFF;
+float-depth variant via `CONTROL0/Z_FORMAT`:
+`f16_max=511.9375`/`f24_max=1e30`). `pgraph/glsl/psh.c`: fragment
+`zvalue` is interpolated screen-space (device units), clamped to
+`[ZCLIPMIN,ZCLIPMAX]` (guest `0x398` → `ZCLIPMAX`), stored
+`floor(z)/65535` (D16) or `floor(z)/16777216` (D24). `pgraph/glsl/vsh.c`:
+fog distance is always `oFog.x`; `vsh_header` inits `oFog=(0,0,0,1)`.
+Cxbx `XbVertexShader.h` (`MASK_X=0x008, _Y=0x004, _Z=0x002, _W=0x001`)
+and `Direct3D9/VertexShader.cpp` (`DestMaskHlsl`: non-x oFog masks are
+redirected to x with a `LOG_TEST_CASE`, seen once in Lego Star Wars II)
+independently confirm both the bit order and the oFog.x rule.
+
+**Evidence chain (guest is correct).** RAM viewport `MinZ=0/MaxZ=1`
+(§61) with a Z24S8-default depth range gives device Z scale
+`(1−0)×0xFFFFFF = 16777215`: the pushbuffer's `0AF0/2/4/8 =
+(320,−240,16777215)` + `0398 CLIP_MAX = 16777215` is exactly that
+(scaleX/Y = 640/2, −480/2 as expected). The §58 shader
+(`oPos=V0·C0+C0`, `C0=(1,1,16777215,1)`) is the driver threading the
+viewport Z scale through its generated program — same thing xemu's
+fixed-function backend does via slots 58/59. §61's audit stands:
+surface/zeta state is guest-write passthrough with no GPU readback
+into driver math, so no emulator response could (or need) change what
+the driver emits.
+
+**Inherited-diff audit (uncommitted work from a vanished session).**
+Kept: `WriteMasked` bit-reversal (both references) + its
+`VshProgramTests` updates; device-depth divide in `Nv2aMmio.Vertex`
+(xemu epilogue/fragment sites above; fixed-depth only, matching the
+rest of our rasterizer — `Z_FORMAT` float is a noted gap) + the
+`DepthTest` device-unit updates + the Z24-saturation theory.
+Reworked: `WriteFogMasked` (inherited bit-position model matched
+neither reference's executable behavior — replaced with the
+count-based destination-prefix model both codegens implement; common
+`oFog.x` writes are identical under all models). Reverted/removed:
+`LastVertexProbe` (hot-path debug string), the `zeta16.txt`/`probe.txt`
+file-writing tests (absolute paths; one carried a guaranteed-fail
+`"reveal"` assert), the captured-shader color assert (single-array
+harness artifact — depth asserts kept). Repaired (previous session
+stopped mid-update): 6 mask tests whose w-lane expectations forgot the
+pre-existing epilogue `ClampAwayZeroInf` (±0 → ±2^-64); the swizzle
+texture test's oT0 mask `0x3→0xC` (same x,y intent under the corrected
+order). Full suite 961/961 (956 baseline + 5 new: Z16/Z24-saturation/
+passthrough-depth/minimal-diffuse).
+
+**Validation (worktree Release; firmware read-only from main-repo
+`data\xemu-0.8.136-windows-x86_64\`; logs in
+`Temp\opencode\viewport-bake2\`; recipe `--pad-script
+"down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"`,
+1B steps, no fault, EIP `0x1DF11`).** Same-tree before→after (stash
+run vs fixed run, guest stream bit-deterministic so draws/skipped/
+frames/clears are identical): draws 33632, skipped 1402, clears 695,
+frames 686 both; pixels 10444800 → 118798338, textured 10444800 →
+233381688, blended 0 → 45302409, depth-tested 0 → 136; frame
+nonzero 0 → 57087 (pre SHA
+`6F780A33…`, post `CC9D82DC…`). Post-run pgraph (18.1M methods):
+viewport-Z `0AF8` still only `4B7FFFFF` (9639×), `C0.z` (`0B88`)
+still dominantly `4B7FFFFF` — correctly so (device units).
+**Next:** the scene draws but nothing asserts it is the RIGHT scene
+(compare against xemu pixels if it ever passes the animation wait, or
+drive to a known screen); ZCLIP bounds + float-depth remain untracked;
+fixed-function foggen still open (§78).

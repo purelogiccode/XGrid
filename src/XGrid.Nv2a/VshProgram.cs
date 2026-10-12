@@ -416,9 +416,12 @@ public static class VshProgram
 
     private static void WriteMasked(float[] destination, float[] value, int mask)
     {
+        // Hardware mask order is bit-reversed against the component index:
+        // bit 3 writes x, bit 2 writes y, bit 1 writes z, bit 0 writes w
+        // (xemu mask_str table; Cxbx MASK_X=0x008..MASK_W=0x001).
         for (int i = 0; i < 4; i++)
         {
-            if ((mask & (1 << i)) != 0)
+            if ((mask & (1 << (3 - i))) != 0)
             {
                 destination[i] = value[i];
             }
@@ -426,20 +429,27 @@ public static class VshProgram
     }
 
     /// <summary>
-    /// Writes a fog-register (oFog) result. Masked components, taken in
-    /// x,y,z,w significance order, fill oFog.x,y,z,w in order, so the most
-    /// significant masked component lands in oFog.x (the only component the
-    /// fog-distance equation reads). Mirrors the reference fog_mask_str table.
+    /// Writes a fog-register (oFog) result. The reference always starts the
+    /// destination at oFog.x and fills the first N components from the
+    /// result's x-first components, where N is the number of set mask bits
+    /// (xemu fog_mask_str destination-prefix selection with the opcode-macro
+    /// source swizzle; Cxbx redirects non-x oFog masks to x the same way).
+    /// Only oFog.x feeds the fog-distance equation.
     /// </summary>
     private static void WriteFogMasked(float[] destination, float[] value, int mask)
     {
-        int target = 0;
-        for (int i = 0; i < 4 && target < 4; i++)
+        int count = 0;
+        for (int bit = 0; bit < 4; bit++)
         {
-            if ((mask & (1 << i)) != 0)
+            if ((mask & (1 << bit)) != 0)
             {
-                destination[target++] = value[i];
+                count++;
             }
+        }
+
+        for (int i = 0; i < count && i < 4; i++)
+        {
+            destination[i] = value[i];
         }
     }
 
