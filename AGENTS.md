@@ -162,43 +162,46 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    `0x32A4000` — opaque black (the flip chain presents the dashboard surface,
    not the `0x1000` region). Surface ops scoped in §44 (no missing blit op);
    inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges remain.
+- **USB hub topology + interactivity (2026-10-11, §§69–70):** the guest
+  expects the Xbox daughterboard hub chain (root port 1 -> 4-port hub ->
+  port 1.3 -> 3-port hub -> 1.3.1 -> XID); `UsbHub.cs` + OHCI RHSC/
+  done-head/UsbReset fixes made the dashboard's XPP stack go live — it
+  opens the pad and polls `GetState` every frame, D-pad levels move the
+  menu selection (`obj+0x270`), and a step-timed A edge (`--pad-step`)
+  fires the activation writer `0x1859D` (state 14 -> handler `0x1E66A`).
+  A-press is no longer byte-identical (23,786-byte RAM diff). 007 also
+  fetches the XID descriptor now.
+- **PIT frequency fixed (2026-10-11, §68):** 1,193,182 -> 1,125,001
+  (xemu PIT_FREQ); the game's 2 Hz tick pump is now exactly 10 guest-ms
+  (median 7,332,029 = 10 x 733,333 steps) — its wait is guest-side
+  pacing, not an emulation gap.
+- **NV2A fidelity wave (§71):** inline `SET_VERTEX_DATA*` + `DRAW_ARRAYS`
+  ranges (M5 gap closed), all 11 XF-context constant writers (c56-c59,
+  c64-95; fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/
+  program-start/output-defaults fetch fixes, MUL zero rule + GLSL
+  min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings
+  + oD0 NaN->1. Multi-texture needs the psh combiner (scoped, not built).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 804 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 885 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — beyond state 0.
+## Next session — interactive menu.
 
-1. §63 closed app-intent (menu state 0, no blocker); §§64–66:
-   game media via XISOSharp/CHDSharp, 007 USA boots off CHD
-   (SHA-identical XBE) into a timing wait. §67 decoded it:
-   frame-limiter (`delta < 26`) + KeDelay retry + udiv delta;
-   tick pump advances ~2 Hz (gate76: 720 writes/5.5B); gate77
-   pump-trace in flight (251+ hits, single invoker `0x379CA`).
-   Theory: TIME DILATION. Next: finish gate77, name invoker
-   thread, gap-vs-long-wait. `F36A2`/LBA 8 still open.
-2. **M5** (transform-program interpreter, attribute fetch, element draws,
-   §37–39, interpreter corrected §42) and **M6** (per-slot texture state,
-   swizzled/linear A8R8G8B8 + R5G6B5 sampling, §40) and **M7** (fragment
-   pipeline: alpha/stencil/depth/blend/mask, §41) are done and unit-tested.
-   Textures are CPU-uploaded assets, dark by nature (§44); only `0x3628000`
-   is a true render target (blocked on degenerate program draws, not blits
-   — the 2D engine is bound once but never issues a blit).
-3. **M8 present done (§43):** `frames=33 stalls=33` (exact oracle match);
-   `xgrid boot --frame out.bmp` saves the flip-captured 640×480 frame
-   (surface `0x32A4000`) — currently opaque black, which clarifies the
-   display story (flip chain presents the dashboard surface, not the `0x1000`
-   early-boot region). Program draws validated live (§§57–58: real
-   shaders execute, zero pixels proven guest-side clip). Remaining M5
-   gaps: inline `SET_VERTEX_DATA*` and `DRAW_ARRAYS` ranges.
-4. Controller input: neutral `XidGamepad` on USB0 port 0, enumerated
-   first try (§55); `--pad` injection latched across resets, but the
-   A-press run is byte-identical to neutral (§56 — title never polls).
-   LLE-first remains the rule; Phase 10 kernel-HLE only
-   if we choose HLE for dashboard ordinals.
-5. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
+1. Input path works end-to-end (§§68–70): hub topology unblocked XPP;
+   dashboard polls `GetState` 999x, D-pad moves the selection, A-edge
+   activation fires (`0x1859D` -> state 14 -> `0x1E66A`). Next: decode
+   the control list (`0x24E90([0x47BC84], idx)` `+0x0C` targets) to find
+   controls that change the screen; pad-sequence injection (navigate +
+   activate); watch `0x1E2F9` state machine; check 007's input layer.
+   PIT frequency fixed (1,125,001) — game wait = guest pacing, not a gap.
+2. NV2A fidelity wave merged (§71); multi-texture/psh combiner scoped
+   (COMBINECTL 0x1940 etc.) but not built; fog state unmodeled.
+3. `F36A2`/LBA 8 (`55 AA`, `PCBX`) still open; Track C JIT for
+   interactivity still the throughput bottleneck.
+4. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive
    rates still need JIT).
-6. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
    `vsh-prog.c`), `nv2a_regs.h`;
