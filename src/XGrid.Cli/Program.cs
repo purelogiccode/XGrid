@@ -76,6 +76,7 @@ internal static class Program
         string? padButtons = null;
         string? padAnalog = null;
         string? padSticks = null;
+        ulong padStep = 0;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -183,6 +184,9 @@ internal static class Program
                 case "--pad-sticks":
                     padSticks = NextValue(args, ref i);
                     break;
+                case "--pad-step":
+                    padStep = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -236,6 +240,7 @@ internal static class Program
             machine.Reset();
             machine.Nv2A.MethodStreamCap = pgraphMax;
 
+            PadInput? padInput = null;
             if (padButtons is not null || padAnalog is not null || padSticks is not null)
             {
                 if (!PadInput.TryParse(padButtons, padAnalog, padSticks, out PadInput pad))
@@ -244,8 +249,23 @@ internal static class Program
                     return 1;
                 }
 
-                machine.Gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
-                Console.WriteLine($"Pad buttons=0x{pad.Buttons:X4} analog={BitConverter.ToString(pad.Analog)}");
+                padInput = pad;
+                if (padStep == 0)
+                {
+                    machine.Gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
+                    Console.WriteLine($"Pad buttons=0x{pad.Buttons:X4} analog={BitConverter.ToString(pad.Analog)}");
+                }
+            }
+
+            bool padApplied = padInput is null || padStep == 0;
+            void ApplyPadIfDue(ulong at)
+            {
+                if (!padApplied && at >= padStep && padInput is { } due)
+                {
+                    machine.Gamepad.SetInput(due.Buttons, due.Analog, due.Sticks);
+                    Console.WriteLine($"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
+                    padApplied = true;
+                }
             }
 
             machine.Memory.WatchStart = machineWatchStart;
@@ -271,6 +291,7 @@ internal static class Program
                 int logAdvance = 0;
                 while (executed < steps && !machine.Cpu.Context.Halted)
                 {
+                    ApplyPadIfDue(executed);
                     if (breakLogAddresses.Contains(machine.Cpu.Context.Eip))
                     {
                         XboxContext logs = machine.Cpu.Context;
@@ -310,6 +331,7 @@ internal static class Program
                 int breakAdvance = 0;
                 while (executed < steps && !machine.Cpu.Context.Halted)
                 {
+                    ApplyPadIfDue(executed);
                     if (machine.Cpu.Context.Eip == breakEip)
                     {
                         break;
@@ -375,6 +397,11 @@ internal static class Program
                     target = Math.Min(target, eipHistInterval - sinceHist);
                 }
 
+                if (!padApplied && padStep > executed)
+                {
+                    target = Math.Min(target, padStep - executed);
+                }
+
                 ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
@@ -382,6 +409,7 @@ internal static class Program
                 }
 
                 executed += ran;
+                ApplyPadIfDue(executed);
                 if (eipHist is not null)
                 {
                     sinceHist += ran;
@@ -1364,7 +1392,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry>] [--eip-hist N]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N]] [--eip-hist N]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
