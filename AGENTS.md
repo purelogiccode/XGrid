@@ -33,6 +33,33 @@ Warnings are errors (`TreatWarningsAsErrors`); nullable enabled; implicit usings
 (add explicit `using` directives). Analyzer rules: CA1822 requires `Name`-style properties to
 touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
 
+## Velocity — how we go fast (required reading for wave agents)
+
+1. **Scope to the acceptance test.** Never build the general case when the
+   next gate needs a subset (GPU backend for the menu's method stream, not
+   full NV2A; idle-skip before full JIT). Every task states its acceptance
+   test up front; an agent that cannot meet it commits diagnosis, never a
+   fake fix.
+2. **Snapshots first for title work.** Probing a gate past ~1B steps must
+   start AT the gate (save/restore CPU+RAM+device state), not replay
+   billions of steps per probe. Until snapshot infra (plan V1) exists,
+   reuse `--ramdump` + break-world steps and record exact step counts.
+3. **Differential-first diagnosis.** When behavior diverges: (a) two-boot
+   diff (neutral vs perturbed, RGB and alpha separated); (b) compare
+   against xemu only where it is a valid oracle (it deadlocks at the
+   animation wait — useless past that point); (c) per-draw/per-register
+   instrumentation with counters before theorizing.
+4. **Waves: partition, don't parallelize one brain.** One device/area per
+   agent; read-only probe agents vs worktree build agents on `wave/*`
+   branches; coordinator merges sequentially (`--no-ff`) and renumbers
+   research notes. Never parallelize a single root-cause hunt or a
+   sequential gate chain — that multiplies cost without cutting latency.
+5. **Iteration budget.** 1B steps ≈ 70–90 s wall clock at ~14M insn/s.
+   Batch runs, keep them deterministic (fixed scripts/steps) so results
+   compare across runs, and prefer the cheapest run that reaches the
+   gate. More cores → more parallel validation runs; emulation speed is
+   the binding constraint, not agent count.
+
 ## Current state
 
 - Real MCPX ROM -> 1BL -> 2BL -> kernel executes (LLE). Kernel cold-boot init,
