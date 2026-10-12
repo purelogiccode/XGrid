@@ -59,6 +59,8 @@ public sealed class XboxMachine
             Apu);
 
         Net = new McpxNvNetDevice();
+        Net.InterruptChanged += OnNetInterrupt;
+        Net.DmaMemory = new PhysicalNvNetMemory(Memory);
         Memory.AddRegion(
             "MCPX NVNET",
             XboxAddressMap.NvNetBase,
@@ -329,6 +331,18 @@ public sealed class XboxMachine
         }
     }
 
+    private void OnNetInterrupt(bool asserted)
+    {
+        if (asserted)
+        {
+            Bus.NvNetPci.RaiseInterrupt();
+        }
+        else
+        {
+            Bus.NvNetPci.LowerInterrupt();
+        }
+    }
+
     private void OnUsb0Interrupt(bool asserted)
     {
         if (asserted)
@@ -373,6 +387,26 @@ public sealed class XboxMachine
         }
 
         public void Write8(uint address, byte value)
+        {
+            _memory.Write8(address, value);
+        }
+    }
+
+    private sealed class PhysicalNvNetMemory : INvNetMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public PhysicalNvNetMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public byte ReadPhysical(uint address)
+        {
+            return _memory.Read8(address);
+        }
+
+        public void WritePhysical(uint address, byte value)
         {
             _memory.Write8(address, value);
         }
