@@ -68,6 +68,46 @@ public sealed class BusMasterDmaTests
         }
     }
 
+    /// <summary>
+    /// HDD whose LBA 8 carries Xbox config-sector-style content (PCBX magic at
+    /// 0x1F4, 55 AA signature at 0x1FE), mirroring the xbox_hdd.qcow2 system area.
+    /// </summary>
+    private sealed class ConfigSectorDisk : IDiskImage
+    {
+        private readonly byte[] _data;
+
+        public ConfigSectorDisk(int sectors)
+        {
+            _data = new byte[sectors * AtaDevice.SectorSize];
+            Span<byte> config = _data.AsSpan(8 * AtaDevice.SectorSize, AtaDevice.SectorSize);
+            config[0] = 0x68;
+            config[4] = 0x01;
+            config[8] = 0x01;
+            config[0x1F4] = (byte)'P';
+            config[0x1F5] = (byte)'C';
+            config[0x1F6] = (byte)'B';
+            config[0x1F7] = (byte)'X';
+            config[0x1FE] = 0x55;
+            config[0x1FF] = 0xAA;
+        }
+
+        public uint SectorCount => (uint)(_data.Length / AtaDevice.SectorSize);
+
+        public void Dispose()
+        {
+        }
+
+        public void ReadSector(uint lba, Span<byte> destination)
+        {
+            _data.AsSpan((int)lba * AtaDevice.SectorSize, AtaDevice.SectorSize).CopyTo(destination);
+        }
+
+        public void WriteSector(uint lba, ReadOnlySpan<byte> source)
+        {
+            source.CopyTo(_data.AsSpan((int)lba * AtaDevice.SectorSize, AtaDevice.SectorSize));
+        }
+    }
+
     private sealed class SparseMemory : IGuestMemory
     {
         private readonly Dictionary<uint, byte> _cells = new();
@@ -320,5 +360,83 @@ public sealed class BusMasterDmaTests
         Assert.Equal(0x80u, ram.ReadPhysical(0x4000 + 13));
         Assert.Equal(0x50u, io.Read8(Taskfile + 7));
         Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+    }
+
+    [Fact]
+    public void ConfigSectorReadWriteDmaRoundTripPreservesSignatureBytes()
+    {
+        // Mirrors the guest's Xbox config-sector RMW (HDD LBA 8): READ DMA
+        // (0xC8), modify the DMA buffer, WRITE DMA (0xCA) back. The PCBX
+        // magic and 55 AA signature must survive the round trip unmodified.
+        IdeController ide = new();
+        ide.AttachPrimaryMaster(new ConfigSectorDisk(16));
+        IoSpace io = new();
+        ide.RegisterPorts(io);
+        SparseMemory ram = new();
+        ide.DmaMemory = ram;
+        ide.WriteConfig(0x20, 4, BmBase | 1u);
+
+        io.Write8(Taskfile + 6, 0xA0);
+        io.Write8(Taskfile + 2, 0x01);
+        io.Write8(Taskfile + 3, 0x08);
+        io.Write8(Taskfile + 4, 0x00);
+        io.Write8(Taskfile + 5, 0x00);
+        io.Write8(Taskfile + 7, 0xC8);
+        Assert.Equal("MC8/F00/n01l080000", ide.CommandLog[^1]);
+
+        ram.WritePrdt(0x1000, 0x2000, 512);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal((byte)'P', ram.ReadPhysical(0x2000u + 0x1F4));
+        Assert.Equal((byte)'C', ram.ReadPhysical(0x2000u + 0x1F5));
+        Assert.Equal((byte)'B', ram.ReadPhysical(0x2000u + 0x1F6));
+        Assert.Equal((byte)'X', ram.ReadPhysical(0x2000u + 0x1F7));
+        Assert.Equal(0x55u, ram.ReadPhysical(0x2000u + 0x1FE));
+        Assert.Equal(0xAAu, ram.ReadPhysical(0x2000u + 0x1FF));
+
+        // Stop the bus master like the guest driver does between transfers;
+        // a stale START bit would otherwise run the next command eagerly.
+        io.Write8((ushort)BmBase, 0x00);
+
+        // Guest modifies the digest field in the buffer and writes it back.
+        ram.WritePhysical(0x2000u + 0x0C, 0x69);
+        ram.WritePhysical(0x2000u + 0x0D, 0xFA);
+
+        io.Write8(Taskfile + 6, 0xA0);
+        io.Write8(Taskfile + 2, 0x01);
+        io.Write8(Taskfile + 3, 0x08);
+        io.Write8(Taskfile + 4, 0x00);
+        io.Write8(Taskfile + 5, 0x00);
+        io.Write8(Taskfile + 7, 0xCA);
+        Assert.Equal("MCA/F00/n01l080000", ide.CommandLog[^1]);
+
+        ram.WritePrdt(0x1000, 0x2000, 512);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x09);
+
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
+        Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
+        io.Write8((ushort)BmBase, 0x00);
+
+        // Re-read: the modification persisted, signatures still intact.
+        io.Write8(Taskfile + 6, 0xA0);
+        io.Write8(Taskfile + 2, 0x01);
+        io.Write8(Taskfile + 3, 0x08);
+        io.Write8(Taskfile + 4, 0x00);
+        io.Write8(Taskfile + 5, 0x00);
+        io.Write8(Taskfile + 7, 0xC8);
+
+        ram.WritePrdt(0x1000, 0x3000, 512);
+        io.Write32((ushort)(BmBase + 4), 0x1000);
+        io.Write8((ushort)BmBase, 0x01);
+
+        Assert.Equal(0x69u, ram.ReadPhysical(0x3000u + 0x0C));
+        Assert.Equal(0xFAu, ram.ReadPhysical(0x3000u + 0x0D));
+        Assert.Equal((byte)'X', ram.ReadPhysical(0x3000u + 0x1F7));
+        Assert.Equal(0x55u, ram.ReadPhysical(0x3000u + 0x1FE));
+        Assert.Equal(0xAAu, ram.ReadPhysical(0x3000u + 0x1FF));
+        Assert.Equal(0x50u, io.Read8(Taskfile + 7));
     }
 }

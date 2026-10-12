@@ -196,7 +196,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    PIT frequency fixed (1,125,001) — game wait = guest pacing, not a gap.
 2. NV2A fidelity wave merged (§71); multi-texture/psh combiner scoped
    (COMBINECTL 0x1940 etc.) but not built; fog state unmodeled.
-3. `F36A2`/LBA 8 (`55 AA`, `PCBX`) still open; Track C JIT for
+3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
+   sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
+   MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
+   READ/WRITE DMA, faithful serving, no fault); `F36A2` is the §49–51
+   WC-fill page artifact, unrelated to disk I/O. Track C JIT for
    interactivity still the throughput bottleneck.
 4. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive

@@ -2472,3 +2472,60 @@ targets and sequence injection (navigate then activate).
   `--watch` remains physical-only.
 - Test baseline **804 -> 885** (Nv2a 67->94, Bus 150->172, Integration
   15->16).
+
+## 73. F36A2/LBA 8 gap closed: config-sector RMW is guest-normal, no emulation bug (2026-10-11)
+
+**LBA 8 identity (reference-first).** XboxDevWiki "Hard Drive" gives a
+fixed partition layout with **Partition0 = Config Area** (byte `0x0`,
+size `0x80000`, "Fixed Structure") — LBA 8 sits inside it. The vendored
+wiki plus the live "Config Sector" page document network settings at
+Partition0+`0x1020`+ (= LBA 8 offset `0x20`+: static/DHCP/Xbox-Live
+IPs, masks, gateways, DNS). So `55 AA` at `0x1FE` and `PCBX` at `0x1F4`
+are the **config-sector format** (validity marker + magic), not MBR
+semantics — and the kernel's fixed layout means nothing ever parses
+LBA 8 as a partition table. `XGrid.XboxFs` takes explicit partition
+LBAs and never reads LBA 8 (verified by grep: no PCBX/55AA/LBA-8
+handling anywhere in `src/`).
+
+**Trace evidence (temp env-gated scan + single-step trap, both
+reverted; logs/ram in temp).** A 5M-step overlay poll finds the first
+LBA 8 write in `(640M,645M]`; an exact-step trap fires deterministically
+at **step 656658455, EIP `0x8002430E`** (kernel ATA miniport, state's
+`0x800240xx` machine with `0x8003adxx` dispatch; `out 0x1F7` FLUSH form
+nearby). IDE tail at the trap: dashboard content reads, 1-sector
+partition probes, `MEC` (IDENTIFY), then `MC8/F00/n01l080000` (READ DMA
+LBA 8) + `MCA/F00/n01l080000` (WRITE DMA LBA 8) — a kernel-driven
+**read-modify-write of the config sector during dashboard init**, the
+overlay's first two writes overall. Kernel-stack forensics (page-table
+walk from CR3 `0xF000`) shows a pure kernel chain (`0x800245E8`,
+`0x80024B9C`, `0x800243FD`, `0x80012348`, `0x8001598A`, `0x80026770`,
+`0x80012428`, …) with the request block at `ESI=0xD004C988`; the trap
+EIP/registers/IDE tail reproduce bit-identically across runs.
+
+**Serving fidelity (no read-path or taskfile/DMA bug).** Host-side
+`xgrid sector` dump of base LBA 8 is byte-identical to the guest-written
+sector in early runs; the RMW preserves every stable field (header,
+`2VBX`/`PCBX`, `55 AA`), which is only possible if our READ DMA served
+the stored bytes exactly. Later runs rewrite the digest/checksum fields
+(`0x0C–0x1F`, `0x1F8–0x1FB`) with run-varying values (image `D94D…`,
+53-family `69FA…`, trap run `C7F2…`; 53_5b == 60_5b at equal steps, so
+tick-derived, not wall-clock) — plain-SHA1-over-sector hypotheses all
+fail, so the field is guest-internal crypto (keyed/HMAC-style) with no
+behavioral consequence: boot continues with no fault in every run.
+
+**F36A2 decoded (unrelated to disk I/O).** `0x800F36A2` is unmapped in
+the guest page tables; dashboard VA `0xF36A2` holds BGRA texture pixels
+at trap time; HDD LBA `0xF36A2` reads all zeros; no `F36A2`-ish value
+appears anywhere on the writer's kernel stack. The §§49–51 `F36A2`
+skipped page is the WC-alias surface-upload artifact (resolved by the
+§50 alias), a separate observation sharing only a hex coincidence.
+
+**Verdict: NOT an emulation bug.** Guest-normal kernel config-sector
+RMW, served faithfully, zero behavioral consequence. No fix required.
+
+**Regression lock.** `BusMasterDmaTests.
+ConfigSectorReadWriteDmaRoundTripPreservesSignatureBytes` replays the
+exact guest sequence (0xC8/0xCA, n=1, taskfile `08 00 00`, incl. the
+`MC8/F00/n01l080000` log detail and the guest's BM-stop-between-
+transfers discipline) on PCBX/`55 AA`-seeded LBA 8: signatures survive a
+digest-field RMW round trip. Storage 46→47 tests.
