@@ -1392,8 +1392,15 @@ requested once (§66 correction); trace/break worlds diverge ~100M
 steps (use break-world steps). **EOS QUIRK MERGED (§§92, §94):**
 TitleId-gated STRM 2→0, fires once (opt-out flag); game exits
 `0x20B50` with no fault over 1B steps but parks in the `0x138xx`
-splash loop (`ESI/EDI=0`, no input, DVD frozen) — that wait is the
-next gate. Remaining: memory-unit/storage class USB devices +
+splash loop (`ESI/EDI=0`, no input, DVD frozen). **§95 DECODED:**
+the `0x138xx` EIP is the `0x11210` stream-clock divide helper; the
+park is PlayMPC's audio-drain loop (`0x20FC1`) waiting for stream
+channel `0x100` to complete. Completion needs advance events from
+the XDK audio driver, which need the APU voice-processor/DSP
+position feedback that `McpxApuDevice` does not emulate (PIO writes
+stored only; status page never updated) — emulator gap, no guest
+stall, no quirk warranted. Next: APU VP/DSP streaming wave. Remaining:
+memory-unit/storage class USB devices +
 first-real-frame validation + TCP proxy.
 
 Gap 6 — APU depth (Phase 12). The register model is implemented
@@ -2947,7 +2954,7 @@ merged. Remaining (§93): textured-RGB-zero (top — RGB=0 + structured
 alpha everywhere, one untextured blue column keeps color), exotics,
 HILO hemisphere 5–7, ZCLIP-CULL + exact-1.0 overflow, Vulkan/OpenGL
 backends (16.6–16.7) |
-| 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
+| 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending — **§95: 007's movie audio-drain park is this gap** (VP PIO config written 7.4K×, positions never advance) |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
@@ -3023,7 +3030,10 @@ Foggen + HILO MERGED (§91: GEN_MODE distances, FOG_COORD, HILO_1;
 disabled draws identical).
 007 EOS quirk MERGED (§§92, §94: TitleId-gated STRM 2→0, fires once,
 opt-out flag; game exits `0x20B50` with no fault over 1B steps but
-parks in the `0x138xx` splash loop — next gate). 1034 tests.
+parks in the `0x138xx` splash loop). §95 decoded the park: PlayMPC
+audio-drain loop (`0x20FC1`) blocked on stream-channel completion,
+root-caused to the missing APU VP/DSP position feedback (emulator
+gap; no quirk). 1034 tests.
 NV2A remaining: textured-RGB-zero (top), cubemap/reflection/
 project3d/clipplane/BRDF, HILO hemisphere 5–7, ZCLIP-CULL +
 exact-1.0 overflow, Vulkan/OpenGL backends (16.6–16.7).

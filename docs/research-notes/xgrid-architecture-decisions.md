@@ -3888,3 +3888,100 @@ depth-rejected or overpainted anyway — they were never visible.
 **Remains:** cubemap/reflection/project3d/clipplane/BRDF, HILO
 hemisphere 5-7, ZCLIP-CULL exact-1.0 corner done (this section),
 Vulkan/OpenGL backends.
+## 98. 007 `0x138xx` wait decoded: PlayMPC audio-drain loop, blocked by the missing APU voice-processor/DSP position feedback (2026-10-12)
+
+Work in `Temp\opencode\worktrees\007-splash-gate` (`wave/007-splash-gate`,
+analysis-only, clean — the temp `--force-afe34` limiter forcing and the APU
+write-offset histogram were fully reverted; logs + ramdumps in
+`Temp\opencode\007-splash\`).
+
+**The `0x138xx` EIP is a compiler helper, not the wait.** `0x13850` is a
+32×32→64 multiply and `0x138C0` a 64/32 divide (`ESI` = divisor); the park
+EIPs (`0x13894`, `0x138DB`, `0x138E5`, …) are always inside them. Both are
+called from `0x11210` (`0x112B6`/`0x112BD`), plaympc's stream-clock query.
+`0x11210` has exactly two callers: the streaming frame limiter `0x207C0`
+(`0x207F8`) and the **audio-drain loop** `0x20FC1` (`0x20FCC`). Pre-fire and
+post-fire EIPs therefore look alike; the helper is not the loop.
+
+**Loop decode (guest, `plaympc.c`).** Strings at `0x62580-0x62644`
+(`d:\Bond\ToolSrc\movXB\plaympc.c`, `PLAYMPC - no MPC chunks found`,
+`ASSETS\SOUND\VIDEO\{ATT,HILITE,MGM,EAG}.MPC`, `streambuff`, `audiobuff`).
+PlayMPC `0x20BD0`: streaming loop `0x20E40..0x20FA6` = frame limiter
+`0x207C0() >= [0xAFE34]-2` (`0x20E45..0x20E6E`, `0x26C60` sleep), chunk
+fetch `0x20B50` (`0x2A740` → tag `MPCh`; `0x2ABE0` release + refill
+`0x2A950`; EOS check `0x2A830`), demux/submit `0x20780`, timer pump
+`0x26AE0`, pad check `0x20A70`. On EOS (`0x2A740`→0 and `0x2A830`→1) the
+loop falls through `0x20FAC` (teardown `0x21F70`) into the **drain loop**
+`0x20FC1..0x20FF1`: `0x111D0` enter CS → `0x11210(handle,&state)` →
+`0x111F0` leave CS → `0x26AE0` pump → `0x20A70`; it exits only when
+`state[0]==3` (stream ended) or `[0xAFE2C]!=0` (input/menu), and the pad
+check is gated off by `[0xE1E48]==0`, so effectively it waits on `state==3`.
+
+**What state 3 needs.** `0x11210` looks up stream object
+`[0xF3D40+(arg&0xff)*4]` (= `0x80DA7CB0` for arg `0x100`), then channel
+node via `0x138F0` (walks `[obj+0x11C]`, matches `[node+0xC]==arg`) and
+returns 3 when `0x138F0`→0 (channel gone), 2 when the head matches, plus
+positions `[node+0x14]*1000/48000` etc. (`ESI=0xBB80`=48000). The node
+`0x80DA7DE8` (`[+0xC]=0x100`) is removed only by `0x11340`, called from the
+advance callback `0x11450` when `[node+0x14] >= [node+0x18]`. `0x11450` is
+registered at stream creation (`0x11A6F` → `0x13A10`, stored `[timer+0x38]`)
+and dispatched **only** by `0x14170` from event queue `[0xF4140]` (word0==0
+→ `[timer+0x38]` with the sample delta; else `[timer+0x34]` = release
+callback `0x11420`). Events are queued by the XDK audio driver's DSP/DMA
+processing (`0x182E1`, `0x1865D`), fed by the APU DSP (handler `0x18290`
+registered at `0x18440`; DMA callback `0x18610`).
+
+**Live evidence (forced runs; logs `Temp\opencode\007-splash\forced_23b.log`
+/ `forced_26b.log`; ramdumps kept).** `--force-afe34` (temp, reverted)
+reset `[AFE34]` to 2 every 50M steps so the game consumed the 1MB stream
+buffer quickly; the EOS quirk then fired at ~1.82B. Post-fire stacks are
+`0x20FD1` (drain loop, after `call 0x11210`) and `0x21128` (PlayMPC caller
+for `EAG.MPC`); EBP = `0x11210`'s out pointer, out[0]=2, EIP inside
+`0x138C0`. Sound-object watch (`0xDA7CB0..0xDA7E20`): node `+0x14`
+(phys `0xDA7DFC`) written exactly **once** (allocation = 0) — the advance
+callback never ran; `+0x1C` fed 30× by `0x11718`, `+0x24` 31× by `0x1172C`.
+`[0xF4140]` (event count) = 0; `[0xF4098]` (sound-thread wake counter) =
+`0xC30`/`0xFE6` (~312/407 10 ms iterations, `[0xF409D]=1`) — the thread
+runs but has nothing to dispatch. APU write histogram (temp, reverted):
+`0x202FC` VOICE_LOCK ×932, `0x202F8` SET_CURRENT_VOICE ×714, voice config
+`0x20300-0x2037C` ×245-509 each, `0x20124` VOICE_ON ×11, GP
+`0x20804/0x20808` ×17, `0x3FFFC` GPRST ×8 — yet the EventLog still shows
+only the 27 early-boot entries and `voiceOff=1`. The DSOUND voice-status
+page `[0x49424]=0x80568000` (phys `0x568000`), read by `0x445C2`/`0x45106`
+at entry `+0x58`, was memset once (`0x4288E`) and got voice IDs once
+(`0x45F8B`) but **positions were never updated**.
+
+**Verdict: (a) emulator fidelity gap — no guest-side stall.** The guest
+configured and enabled 11 VP voices and set up the status page, but
+`McpxApuDevice` only stores the PIO writes (its own doc: “The DSP and voice
+processor are not emulated yet”), so no positions/notifiers/DMA messages
+reach the XDK audio driver, no advance events reach the sound thread, the
+stream channel never completes, and the drain loop spins forever. The
+sound thread is alive and dispatching — the producer side is simply never
+fed. This also explains “no input polling” (drain loop pad check gated by
+`[0xE1E48]=0`) and “DVD frozen” (data was buffered; the wait is audio-side).
+
+**Correction to the premise.** The natural (unforced) run at 3B is *not*
+post-fire: it is still in PlayMPC's streaming limiter with `[AFE34]=12`,
+`remaining=0xB8980`, `state=2` (refill-pending), frames 53 — the read-ahead
+filled the 1MB ring (256× READ(10), §86 cap) and the game consumes it at
+the paced rate; the EOS quirk never fires there (`fires=0`). The forced
+runs simulate the natural end state (buffer drained → EOS quirk → drain
+loop).
+
+**Fix path (next wave).** APU voice-processor + DSP streaming emulation
+from `References/xemu-0.8.136/hw/xbox/mcpx/apu/`: `vp/vp.c` (`fe_method`
+PIO dispatch, voice lists, SSL segment processing `0x600+`, notifier
+statuses, position advance), `dsp/dsp.c` + `dsp/dsp_dma.c` + `dsp/gp_ep.c`
+(GP FIFOs, position DMA, FE interrupt), `apu.c` FEVINTSTS/FENINTSTS +
+`FE_TRAPPED` delivery (XGrid already models the trap channel for
+`SE2FE_IDLE_VOICE`). No compatibility quirk: the emulation layer is the
+fault, and faking position/notifier state would violate the no-fake rule.
+
+**Status:** docs-only change; no source edits. Suite 1034/1034, build +
+`format --verify-no-changes` clean.
+
+**Mapping fact verified:** 007 module code is `phys = VA + 0xAAF000`
+(the code page holding `0x18440` was found at phys `0xC7440`; the XBE
+`.text` file offset is `VA - 0x10000`). Data pointers still need live
+page-table walks from CR3 (`0xAFE34`→`0x15EE34`, §92).
