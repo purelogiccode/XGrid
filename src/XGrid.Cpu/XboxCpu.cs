@@ -5,7 +5,7 @@ using XGrid.Memory;
 namespace XGrid.Cpu;
 
 /// <summary>Interpreted Pentium III-class CPU (plan section 8).</summary>
-public sealed class XboxCpu
+public sealed partial class XboxCpu
 {
     private uint _sysenterCs;
     private uint _sysenterEsp;

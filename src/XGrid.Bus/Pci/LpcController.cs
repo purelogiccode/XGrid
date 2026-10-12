@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using XGrid.Bus.Io;
 
 namespace XGrid.Bus.Pci;
@@ -126,6 +127,37 @@ public sealed class LpcController : PciDevice, IIoPortDevice
         Pm1Enable = 0;
         PmTimerCounter = 0;
     }
+
+    /// <summary>Saves PCI config/BARs plus overlay, PM1, and PM-timer state (quiesce: any point).</summary>
+    public override void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        base.SaveState(writer);
+        writer.Write(LpcSnapshotVersion);
+        writer.Write(RomOverlayEnabled);
+        writer.Write(Pm1Status);
+        writer.Write(Pm1Enable);
+        writer.Write(PmTimerCounter);
+    }
+
+    /// <summary>Restores PCI config/BARs plus overlay, PM1, and PM-timer state.</summary>
+    public override void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        base.LoadState(reader);
+        int version = reader.ReadInt32();
+        if (version != LpcSnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported LPC snapshot version {version}.");
+        }
+
+        RomOverlayEnabled = reader.ReadBoolean();
+        Pm1Status = reader.ReadUInt16();
+        Pm1Enable = reader.ReadUInt16();
+        PmTimerCounter = reader.ReadUInt32();
+    }
+
+    private const int LpcSnapshotVersion = 1;
 
     /// <inheritdoc />
     public override void WriteConfig(int offset, int size, uint value)

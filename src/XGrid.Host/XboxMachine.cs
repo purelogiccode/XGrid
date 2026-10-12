@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using XGrid.Audio;
 using XGrid.Bus;
 using XGrid.Bus.Aci;
 using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
+using XGrid.Core;
 using XGrid.Cpu;
 using XGrid.Memory;
 using XGrid.Nv2a;
@@ -17,6 +21,15 @@ public sealed class XboxMachine
     /// <summary>Default retail RAM size (64 MB).</summary>
     public const uint DefaultRamSize = 64u * 1024 * 1024;
 
+    /// <summary>V1 snapshot file magic ("XGS1").</summary>
+    public const string SnapshotMagic = "XGS1";
+
+    /// <summary>V1 snapshot container format version.</summary>
+    public const uint SnapshotFormatVersion = 1;
+
+    private const int MaxSnapshotSectionCount = 1024;
+    private const ulong MaxSnapshotSectionBytes = 512u * 1024u * 1024u;
+
     /// <summary>Contiguous RAM alias used by the kernel physical map.</summary>
     public const uint ContiguousAliasBase = 0x80000000;
 
@@ -25,6 +38,7 @@ public sealed class XboxMachine
     private ulong _nv2ARemainder;
     private bool _sevenEosQuirkParkActive;
     private ulong _sevenEosQuirkParkSinceTsc;
+    private readonly List<(string Tag, ISnapshotable Target)> _snapshotSections = new();
 
     /// <summary>Creates the machine with RAM, bus, and CPU wired together.</summary>
     public XboxMachine(uint ramSize = DefaultRamSize)
@@ -105,6 +119,21 @@ public sealed class XboxMachine
             new RamAliasDevice(Ram, XboxAddressMap.WriteCombinedBase));
 
         Bus.Lpc.RomOverlayDisabled += OnRomOverlayDisabled;
+
+        RegisterSnapshotSection("CPU", Cpu);
+        RegisterSnapshotSection("RAM", Ram);
+        // V1 device sections (wave/snapshot-devices). Each entry cascades to
+        // its sub-devices: BUS → PIC/PIT/RTC/PCI/SMBus, IDE → drives+overlay,
+        // USB0/USB1 → hubs+gamepad, NET → loopback backend.
+        RegisterSnapshotSection("BUS", Bus);
+        RegisterSnapshotSection("IDE", Ide);
+        RegisterSnapshotSection("NV2A", Nv2A);
+        RegisterSnapshotSection("ACI", Aci);
+        RegisterSnapshotSection("APU", Apu);
+        RegisterSnapshotSection("NET", Net);
+        RegisterSnapshotSection("USB0", Usb0);
+        RegisterSnapshotSection("USB1", Usb1);
+        RegisterSnapshotSection("MACH", new MachineScalarsSnapshot(this));
     }
 
     /// <summary>Gets the IDE controller.</summary>
@@ -211,6 +240,7 @@ public sealed class XboxMachine
     {
         HddOverlay = new OverlayDiskImage(OpenDiskImage(path));
         Ide.AttachPrimaryMaster(HddOverlay);
+        Ide.HddPath = path;
     }
 
     /// <summary>Gets the HDD copy-on-write overlay, or null when no hard disk is attached.</summary>
@@ -221,6 +251,7 @@ public sealed class XboxMachine
     {
         Dvd = OpenDvdImage(path);
         Ide.AttachDvd(Dvd);
+        Ide.DvdPath = path;
     }
 
     /// <summary>Opens an ISO/XISO or CHD DVD image by magic number.</summary>
@@ -390,6 +421,122 @@ public sealed class XboxMachine
         return executed;
     }
 
+    /// <summary>Registers a tagged snapshot section (V1 snapshot).</summary>
+    /// <remarks>Tags must be unique; sections are written in registration order.</remarks>
+    public void RegisterSnapshotSection(string tag, ISnapshotable target)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(tag);
+        ArgumentNullException.ThrowIfNull(target);
+
+        foreach ((string existing, _) in _snapshotSections)
+        {
+            if (string.Equals(existing, tag, StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"Duplicate snapshot section tag '{tag}'.", nameof(tag));
+            }
+        }
+
+        _snapshotSections.Add((tag, target));
+    }
+
+    /// <summary>
+    /// Saves CPU, RAM, machine scalars, and every registered device section to a file.
+    /// Must be called at an instruction boundary (between <see cref="Run"/> calls):
+    /// mid-instruction guest state is not observable and is never captured.
+    /// </summary>
+    public void SaveState(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: false);
+        writer.Write(Encoding.ASCII.GetBytes(SnapshotMagic));
+        writer.Write(SnapshotFormatVersion);
+        writer.Write(_snapshotSections.Count);
+        foreach ((string tag, ISnapshotable target) in _snapshotSections)
+        {
+            using var payload = new MemoryStream();
+            using (var sectionWriter = new BinaryWriter(payload, Encoding.UTF8, leaveOpen: true))
+            {
+                target.SaveState(sectionWriter);
+            }
+
+            byte[] bytes = payload.ToArray();
+            writer.Write(tag);
+            writer.Write((ulong)bytes.Length);
+            writer.Write(bytes);
+        }
+    }
+
+    /// <summary>
+    /// Restores CPU, RAM, machine scalars, and every registered device section from a file.
+    /// The caller must first construct an identical machine (same RAM size, same BIOS/MCPX/
+    /// EEPROM/HDD/DVD inputs) and call <see cref="Reset"/>; only emulated state is restored,
+    /// host-side configuration (disk image paths, backends) is not. Unknown sections are
+    /// skipped so files written with more device sections still load. Must be called at an
+    /// instruction boundary (between <see cref="Run"/> calls).
+    /// </summary>
+    public void LoadState(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
+
+        byte[] magic = reader.ReadBytes(4);
+        if (magic.Length != 4 || !string.Equals(Encoding.ASCII.GetString(magic), SnapshotMagic, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Not an XGrid snapshot (bad magic).");
+        }
+
+        uint version = reader.ReadUInt32();
+        if (version != SnapshotFormatVersion)
+        {
+            throw new InvalidDataException(
+                $"Unsupported snapshot format version {version} (expected {SnapshotFormatVersion}).");
+        }
+
+        int count = reader.ReadInt32();
+        if (count < 0 || count > MaxSnapshotSectionCount)
+        {
+            throw new InvalidDataException($"Invalid snapshot section count {count}.");
+        }
+
+        var sections = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        for (int i = 0; i < count; i++)
+        {
+            string tag = reader.ReadString();
+            ulong length = reader.ReadUInt64();
+            if (length > MaxSnapshotSectionBytes)
+            {
+                throw new InvalidDataException($"Snapshot section '{tag}' exceeds size limit ({length} bytes).");
+            }
+
+            byte[] payload = reader.ReadBytes((int)length);
+            if ((ulong)payload.Length != length)
+            {
+                throw new InvalidDataException($"Snapshot section '{tag}' is truncated.");
+            }
+
+            if (!sections.TryAdd(tag, payload))
+            {
+                throw new InvalidDataException($"Snapshot has a duplicate section '{tag}'.");
+            }
+        }
+
+        foreach ((string tag, ISnapshotable target) in _snapshotSections)
+        {
+            if (!sections.TryGetValue(tag, out byte[]? payload))
+            {
+                throw new InvalidDataException($"Snapshot is missing required section '{tag}'.");
+            }
+
+            using var payloadStream = new MemoryStream(payload, writable: false);
+            using var sectionReader = new BinaryReader(payloadStream, Encoding.UTF8, leaveOpen: false);
+            target.LoadState(sectionReader);
+        }
+    }
+
     private void OnRomOverlayDisabled()
     {
         if (_overlay is not null)
@@ -455,6 +602,53 @@ public sealed class XboxMachine
         else
         {
             Bus.Usb1Pci.LowerInterrupt();
+        }
+    }
+
+    /// <summary>Core-owned machine scalars that live on <see cref="XboxMachine"/> itself
+    /// (not in a device): the NV2A PTIMER fractional-cycle accumulator and the 007
+    /// end-of-stream quirk detector state. Written as the trailing "MACH" section.</summary>
+    private sealed class MachineScalarsSnapshot : ISnapshotable
+    {
+        private const uint MachineStateVersion = 1;
+
+        private readonly XboxMachine _machine;
+
+        public MachineScalarsSnapshot(XboxMachine machine)
+        {
+            _machine = machine;
+        }
+
+        public void SaveState(BinaryWriter writer)
+        {
+            ArgumentNullException.ThrowIfNull(writer);
+
+            writer.Write(MachineStateVersion);
+            writer.Write(_machine._nv2ARemainder);
+            writer.Write(_machine.SevenEosQuirkEnabled);
+            writer.Write(_machine.SevenEosQuirkChecks);
+            writer.Write(_machine.SevenEosQuirkFires);
+            writer.Write(_machine._sevenEosQuirkParkActive);
+            writer.Write(_machine._sevenEosQuirkParkSinceTsc);
+        }
+
+        public void LoadState(BinaryReader reader)
+        {
+            ArgumentNullException.ThrowIfNull(reader);
+
+            uint version = reader.ReadUInt32();
+            if (version != MachineStateVersion)
+            {
+                throw new InvalidDataException(
+                    $"Unsupported MACH state version {version} (expected {MachineStateVersion}).");
+            }
+
+            _machine._nv2ARemainder = reader.ReadUInt64();
+            _machine.SevenEosQuirkEnabled = reader.ReadBoolean();
+            _machine.SevenEosQuirkChecks = reader.ReadUInt64();
+            _machine.SevenEosQuirkFires = reader.ReadUInt64();
+            _machine._sevenEosQuirkParkActive = reader.ReadBoolean();
+            _machine._sevenEosQuirkParkSinceTsc = reader.ReadUInt64();
         }
     }
 

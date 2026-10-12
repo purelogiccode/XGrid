@@ -73,6 +73,10 @@ internal static class Program
         ulong eipHistInterval = 0;
         string? ramDumpPath = null;
         string? raminPath = null;
+        string? saveStatePath = null;
+        ulong saveAt = 0;
+        bool hasSaveAt = false;
+        string? loadStatePath = null;
         string? writeDumpDir = null;
         string? padButtons = null;
         string? padAnalog = null;
@@ -178,6 +182,16 @@ internal static class Program
                 case "--ramin":
                     raminPath = NextValue(args, ref i);
                     break;
+                case "--save-state":
+                    saveStatePath = NextValue(args, ref i);
+                    break;
+                case "--save-at":
+                    saveAt = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    hasSaveAt = true;
+                    break;
+                case "--load-state":
+                    loadStatePath = NextValue(args, ref i);
+                    break;
                 case "--writedump":
                     writeDumpDir = NextValue(args, ref i);
                     break;
@@ -236,6 +250,12 @@ internal static class Program
             return 1;
         }
 
+        if (hasSaveAt && saveStatePath is null)
+        {
+            Console.Error.WriteLine("--save-at requires --save-state <path>");
+            return 1;
+        }
+
         XboxMachine? machine = null;
         try
         {
@@ -262,6 +282,27 @@ internal static class Program
             machine.Nv2A.MethodStreamCap = pgraphMax;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             Console.WriteLine($"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+
+            if (loadStatePath is not null)
+            {
+                try
+                {
+                    machine.LoadState(loadStatePath);
+                }
+                catch (InvalidDataException exception)
+                {
+                    Console.Error.WriteLine($"Cannot load snapshot: {exception.Message}");
+                    return 6;
+                }
+                catch (EndOfStreamException)
+                {
+                    Console.Error.WriteLine($"Cannot load snapshot: {loadStatePath} is truncated.");
+                    return 6;
+                }
+
+                Console.WriteLine(
+                    $"Loaded state {loadStatePath} EIP=0x{machine.Cpu.Context.Eip:X8}");
+            }
 
             if (netBackend is not null)
             {
@@ -465,7 +506,8 @@ internal static class Program
             ulong sinceHist = 0;
             ulong prevEosFires = machine.SevenEosQuirkFires;
             ApplyScriptIfDue(executed);
-            while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
+            while (!breakHit && executed < steps && !machine.Cpu.Context.Halted
+                && !(hasSaveAt && executed >= saveAt))
             {
                 ulong remaining = steps - executed;
                 ulong target = Math.Min(remaining, nextProgress - executed);
@@ -482,6 +524,11 @@ internal static class Program
                 if (padScript is { } splitter && splitter.TryGetNextBoundary(executed, out ulong scriptStep))
                 {
                     target = Math.Min(target, scriptStep - executed);
+                }
+
+                if (hasSaveAt && saveAt > executed)
+                {
+                    target = Math.Min(target, saveAt - executed);
                 }
 
                 ulong ran = RunBatch(machine, target);
@@ -515,6 +562,26 @@ internal static class Program
                     Console.WriteLine(
                         $"Progress {executed} instruction(s) EIP=0x{machine.Cpu.Context.Eip:X8}");
                     nextProgress += progressInterval;
+                }
+            }
+
+            if (saveStatePath is not null)
+            {
+                try
+                {
+                    machine.SaveState(saveStatePath);
+                }
+                catch (IOException exception)
+                {
+                    Console.Error.WriteLine($"Cannot save snapshot: {exception.Message}");
+                    return 6;
+                }
+
+                Console.WriteLine(
+                    $"Saved state {saveStatePath} at step {executed} EIP=0x{machine.Cpu.Context.Eip:X8}");
+                if (hasSaveAt)
+                {
+                    return 0;
                 }
             }
 
@@ -1573,7 +1640,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

@@ -1,9 +1,11 @@
 using System;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Bus.Smbus;
 
 /// <summary>24C02-compatible serial EEPROM on the SMBus (Xbox address 0x54).</summary>
-public sealed class Eeprom24C02 : SmbusDevice
+public sealed class Eeprom24C02 : SmbusDevice, ISnapshotable
 {
     /// <summary>Xbox EEPROM SMBus address.</summary>
     public const byte DeviceAddress = 0x54;
@@ -26,6 +28,37 @@ public sealed class Eeprom24C02 : SmbusDevice
 
     /// <summary>Gets the current internal address pointer.</summary>
     public int AddressPointer { get; private set; }
+
+    /// <summary>Saves the 256-byte image plus the address pointer (quiesce: no SMBus transaction in flight).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_data);
+        writer.Write(AddressPointer);
+    }
+
+    /// <summary>Restores the 256-byte image plus the address pointer.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported EEPROM snapshot version {version}.");
+        }
+
+        byte[] data = reader.ReadBytes(Size);
+        if (data.Length != Size)
+        {
+            throw new InvalidDataException("Truncated EEPROM snapshot.");
+        }
+
+        Array.Copy(data, _data, Size);
+        AddressPointer = reader.ReadInt32();
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public override bool TryReceiveByte(out byte value)

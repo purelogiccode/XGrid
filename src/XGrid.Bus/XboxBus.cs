@@ -1,15 +1,17 @@
 using System;
+using System.IO;
 using XGrid.Bus.Interrupts;
 using XGrid.Bus.Io;
 using XGrid.Bus.Pci;
 using XGrid.Bus.Smbus;
 using XGrid.Bus.Timers;
+using XGrid.Core;
 using XGrid.Core.Devices;
 
 namespace XGrid.Bus;
 
 /// <summary>Wires the Xbox bus: I/O space, PCI, LPC, PIC, and timers.</summary>
-public sealed class XboxBus : IXboxDevice
+public sealed class XboxBus : IXboxDevice, ISnapshotable
 {
     /// <summary>Pentium III core clock used to convert CPU cycles to device ticks.</summary>
     public const ulong CpuClockHz = 733333333;
@@ -124,6 +126,50 @@ public sealed class XboxBus : IXboxDevice
         _pmRemainder = 0;
         _rtcRemainder = 0;
     }
+
+    /// <summary>Saves timer remainders plus PIC/PIT/RTC/PCI/SMBus-slave state (quiesce: any point; SMBus idle).</summary>
+    /// <remarks>Pci cascades to every PCI device (LPC, SMBus controller, stubs). The
+    /// SMBus slaves (SMC/EEPROM/encoder) are saved explicitly. IoSpace port routing is
+    /// construction-time and is rebuilt via BAR restore; it is not serialized.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_pitRemainder);
+        writer.Write(_pmRemainder);
+        writer.Write(_rtcRemainder);
+        Pic.SaveState(writer);
+        Pit.SaveState(writer);
+        Rtc.SaveState(writer);
+        Pci.SaveState(writer);
+        Smc.SaveState(writer);
+        Eeprom.SaveState(writer);
+        Encoder.SaveState(writer);
+    }
+
+    /// <summary>Restores timer remainders plus PIC/PIT/RTC/PCI/SMBus-slave state.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported bus snapshot version {version}.");
+        }
+
+        _pitRemainder = reader.ReadUInt64();
+        _pmRemainder = reader.ReadUInt64();
+        _rtcRemainder = reader.ReadUInt64();
+        Pic.LoadState(reader);
+        Pit.LoadState(reader);
+        Rtc.LoadState(reader);
+        Pci.LoadState(reader);
+        Smc.LoadState(reader);
+        Eeprom.LoadState(reader);
+        Encoder.LoadState(reader);
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <summary>
     /// Advances bus timers by the given number of CPU cycles. Fractional ticks accumulate

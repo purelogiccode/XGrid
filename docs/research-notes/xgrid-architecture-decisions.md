@@ -3985,3 +3985,349 @@ fault, and faking position/notifier state would violate the no-fake rule.
 (the code page holding `0x18440` was found at phys `0xC7440`; the XBE
 `.text` file offset is `VA - 0x10000`). Data pointers still need live
 page-table walks from CR3 (`0xAFE34`→`0x15EE34`, §92).
+
+## 99. V1 snapshot core: framework + CPU + RAM + orchestration + CLI (2026-10-12)
+
+Branch `wave/snapshot-core`. The devices branch implements `ISnapshotable`
+on every device and appends registrations at the `// V1-DEVICES-ANCHOR` in
+`XboxMachine`; the coordinator merges sequentially. This note covers the
+core half.
+
+**Contract.** `src/XGrid.Core/Snapshots/ISnapshotable.cs` (`SaveState` /
+`LoadState` over `BinaryWriter`/`BinaryReader`) is byte-identical to the
+wave spec. `XGrid.Core` is already referenced by every device assembly
+(Audio, Bus, Cpu, Debug, Graphics, Host, Input, Mcpx, Memory, Nv2a,
+Storage, Xbe, XboxFs — verified via all `XGrid.*.csproj`), so no
+relocation was needed.
+
+**File format** (written by `XboxMachine.SaveState`, read by `LoadState`):
+
+```text
+"XGS1"                       4 bytes ASCII magic
+uint32 formatVersion         1
+int32  sectionCount
+per section:
+  string tag                 BinaryWriter length-prefixed UTF-8
+  uint64 payloadLength
+  byte[payloadLength]        opaque section payload
+```
+
+Sections are written in registration order — `CPU`, `RAM`, then device
+sections (devices branch), then `MACH` — but loading is order-independent:
+the loader reads all sections into a tag→bytes map, then dispatches each
+registered section by tag. Unknown tags are skipped (so files written with
+more device sections still load on this branch); a missing registered tag,
+duplicate tag, bad magic, version mismatch, oversized section (>512 MB), or
+truncated payload throws `InvalidDataException`. Duplicate registration
+tags throw `ArgumentException` at `RegisterSnapshotSection` time. Each
+section payload starts with its own `uint32` section version (CPU=1,
+RAM=1, MACH=1) for independent evolution.
+
+**Complete captured-field list.**
+
+- CPU (`XboxCpu`, `src/XGrid.Cpu/XboxCpuSnapshots.cs`): 8 GPRs (Gpr 0–7);
+  EIP; EFLAGS (full 32 bits); 6 segments × (selector + base)
+  (Es/Cs/Ss/Ds/Fs/Gs); CodeSegment32; TR; LDTR; CR0/CR2/CR3/CR4; DR0–DR7;
+  GDTR base+limit; IDTR base+limit; Halted; TSC (u64); MXCSR; FPU control /
+  status (Top rides in status bits 11–13, no separate field) / tag words +
+  8 raw x87 registers in physical order (sign+exponent u16, significand
+  u64 — NaN payloads, unnormals, and MMX aliases all round-trip bit-exact);
+  8 XMM registers (32 u32, element order); SYSENTER_CS/ESP/EIP MSRs
+  (0x174–0x176; MSR 0x2A returns a constant and holds no state; MSR 0x10
+  is the TSC itself); InterruptCount; LastFaultVector/Eip/ErrorCode.
+  The interpreter holds NO other mutable state: verified by enumerating
+  all private fields of `XboxCpu` (`_sysenterCs/Esp/Eip` only) — there is
+  no RNG and no pending-IRQ latch (the PIC is polled inline each `Step`;
+  `InterruptCount` is the only counter). The software TLB is a derived
+  cache over guest page tables: it is NOT stored, `LoadState` calls
+  `Mmu.Flush()` instead (a stale entry would be a silent divergence).
+- RAM (`PhysicalMemory`): section version + size + full byte image.
+  Size mismatch on load throws (RAM size is construction-time; the CLI
+  must pass the same `--ram`). PRAMIN is NOT duplicated here: it lives in
+  `Nv2aMmio` and is snapshotted by the devices branch via
+  `Nv2aMmio.SaveState` (documented split).
+- MACH (`XboxMachine.MachineScalarsSnapshot`, tag `"MACH"`, core-owned
+  trailing section): NV2A PTIMER fractional accumulator
+  (`_nv2ARemainder` — lives on the machine, not the device, so it is core
+  state); 007 EOS quirk detector (`SevenEosQuirkEnabled/Checks/Fires`,
+  `_sevenEosQuirkParkActive/SinceTsc`). The saved `Enabled` value wins over
+  the CLI `--no-007-eos-quirk` flag on load (exactness first).
+
+**Deliberately excluded (caller responsibility / other branches).**
+Flash/BIOS bytes and the MCPX overlay enable flag (rebuilt by
+`LoadBios`+`Reset` — the restore recipe requires identical
+`--bios/--mcpx/--eeprom` inputs); HDD overlay dirty sectors and DVD image
+identity (require identical `--hdd/--dvd`; same-process save→restore keeps
+the overlay, cross-process restore loses it — storage-branch gap);
+diagnostic counters (unmapped-access buckets, method-stream logs,
+watch hits) — guest-invisible, intentionally not captured. Save/load must
+happen at an instruction boundary (between `Run` calls); mid-instruction
+state is not observable and is never captured.
+
+**CLI.** `boot --save-state <path> [--save-at N]` + 
+`boot --load-state <path> [--steps N]` (usage line updated). Semantics:
+`--save-at N` clamps the standard run loop so the save lands at exactly N
+steps, then saves and exits(0) before the post-run outputs; `--save-state`
+alone saves after the full `--steps` run and continues normally (composes
+with `--ramdump/--frame/--pgraph`); `--save-at` without `--save-state`
+is a usage error. `--load-state` restores after `Reset()` (same firmware/
+disk inputs required) and `--steps` counts post-restore steps; composes
+with `--pad-script/--dvd/etc.` (pad boundaries are evaluated against the
+post-restore step counter). `--save-at` applies exactly to the standard
+run loop; combined with `--trace/--break` debug phases the save still
+captures exact state but may land past N (documented, not silently
+rounded). Exit code 6 on snapshot I/O or format errors.
+
+**Validation (this branch).** New tests: `CpuSnapshotTests` (4 facts:
+full-field round-trip incl. FPU NaN/Top/condition bits, XMM, SYSENTER via
+RDMSR execution, segments, DRs, TSC, MXCSR; Halted+InterruptCount via a
+single-shot `IInterruptSource`; LastFault via UD with/without IDT; bad
+version throws), `PhysicalMemorySnapshotTests` (3 facts: full-image
+round-trip, size-mismatch and bad-version throws), `MachineSnapshotTests`
+(5 facts: save@1→restore→+1 is byte-identical to uninterrupted +2 —
+proves orchestration + container determinism; bad magic / missing section
+throw; unknown sections ignored; duplicate tag rejected). Live CLI smoke
+(real firmware+HDD, worktree build): save@2M (`EIP=0x0040349F`, 67 MB
+file), `--load-state` resumes at exactly `0x0040349F` and runs +500K
+fault-free; `--save-at 100000` stops at exactly step 100000 and exits.
+Dashboard 1B save/restore exactness is NOT claimed on this branch: with
+only CPU/RAM/MACH restored, device state (NV2A/PIC/PIT/IDE/USB/APU…)
+diverges immediately — that is precisely what the devices branch closes.
+Coordinator recipe for the merge gate:
+
+```text
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000" --steps 1000000000 --save-state sub1b.xgs --save-at 1000000000
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --load-state sub1b.xgs --steps <M> --frame resumed.bmp   (> resumed.log)
+xgrid boot --bios … --mcpx … --eeprom … --hdd … --pad-script "…" --steps <1000000000+M> --frame direct.bmp (> direct.log)
+```
+
+Pass = EIP/all-regs/flip+NV2A counters identical in both logs and
+`resumed.bmp` SHA-equal to `direct.bmp`. Pre-wave reference counters for
+the save point: draws executed=33632 skipped=1402 pixels=285171381
+textured=278577344 frames=stalls=686, frame 640×480 fully nonzero.
+
+**Stretch (007 EOS-quirk snapshot) not attempted:** correctly scoped out —
+the quirk fires at ~1.8B steps on forced runs and the natural 3B park is
+pre-fire; meaningful snapshot validation there needs the APU VP/DSP
+streaming wave first (§98), plus the devices branch for exactness.
+
+**Status:** core builds, new tests green, `format --verify-no-changes`
+clean. V1 acceptance is met for CPU+RAM+orchestration; full V1
+(save/restore CPU+RAM+device at an arbitrary step with exact EIP/
+registers/flip counters) completes at the devices-merge.
+
+## 100. V1 device snapshots: ISnapshotable on every stateful device (2026-10-12)
+
+Branch `wave/snapshot-devices`. Contract file
+`src/XGrid.Core/Snapshots/ISnapshotable.cs` is byte-identical to the wave
+contract (`SaveState(BinaryWriter)` / `LoadState(BinaryReader)` in namespace
+`XGrid.Core`). Every versioned payload starts with an `int` snapshot version;
+loads throw `InvalidDataException` on version mismatch, truncation, count
+out-of-range, topology change, or media mismatch -- never silently.
+
+Per-device field lists (save order = load order):
+
+- `PciDevice` (base, virtual): 256 config bytes, `InterruptLine`, per-BAR
+  present flag + `Base` + `Probing`. Load re-fires `OnBarWritten` so IO
+  windows re-sync. BAR Size/IsIo/Prefetchable are construction constants.
+- `PciBus`: `ConfigAddress`, config-access histogram, all 256 slots
+  (present flag + device cascade), secondary-bus count + cascades. Load
+  resets slots whose device vanished and fails when the secondary count
+  differs (topology is caller-owned).
+- `LpcController`: base + `RomOverlayEnabled`, `Pm1Status`, `Pm1Enable`,
+  `PmTimerCounter`.
+- `Amd756Smbus`: base + `Status`, `Control`, address/data/command/block
+  regs, 32 block bytes, `TransactionCount`, last-transaction diag regs, and
+  the 192-entry transaction history.
+- `SmcDevice`: version cursor, command, scratch, error, IRQ status,
+  `TrayState`, `AvPack`, read/write histograms.
+- `Eeprom24C02`: full 256-byte image + address pointer (content IS state;
+  no path needed).
+- `ConexantCx25871`: 256 register bytes + pointer.
+- `XboxBus`: `_pitRemainder/_pmRemainder/_rtcRemainder`, then `Pic`, `Pit`,
+  `Rtc`, `Pci` (cascades to LPC/SMBus/stubs), `Smc`, `Eeprom`, `Encoder`.
+- `Pit8254`: control byte + 3 channels (counter, access, read/write phases,
+  write latch, running, latch flag/value, divisor, mode).
+- `Pic8259`: per-PIC mask, vector base, request + in-service latches, init
+  step, auto-EOI, read-select, poll-pending.
+- `Rtc146818`: 64 CMOS bytes, index, status A/B/C, subtick/second/period
+  accumulators, access count.
+- `McpxAciDevice`: 128 mixer bytes, 8 bus-master blocks
+  (BdbAr/Civ/Lvi/Sr/Picb/Piv/Cr), `GlobCnt/GlobSta`, CAS semaphore,
+  NAM/NABM access counters.
+- `McpxApuDevice`: full 512 KB register file, pending idle-voice queue,
+  frame remainder, read/write/voice-off counters, IRQ latch, 128-entry event
+  log. VP/DSP do not exist yet -- this snapshots what exists; the guest
+  memory adapter is host wiring.
+- `IdeController`: base + drive select, bus-master command/status/PRDT/
+  start count, both `AtaDevice` cascades, 32-entry command log, 64-entry
+  access log, optional `HddPath`/`DvdPath` re-attach params (adopted when
+  unset, validated when both set).
+- `AtaDevice`: ATAPI personality flag, IDENTIFY page, packet + DMA/staging
+  buffers, data/transfer/packet indices, remaining/LBA, phase enum,
+  packet-DMA + packet-error flags, all taskfile regs, status, access/last-
+  command counters, security lock, packet log + total packet bytes, media
+  presence + sector counts, HDD overlay cascade when snapshotable. Load fails
+  when DMA is in flight (save only when idle) and when media presence or
+  sector counts differ.
+- `OverlayDiskImage`: backing sector count (validation only), dirty-sector
+  map (LBA + 512 bytes each), full write log.
+- `OhciUsbController`: base-address check, all Hc regs, 4 root-port regs,
+  bus-running, frame remainder, done counter, access/transfer counters,
+  control/bulk heads, HCCA, IRQ latch, pending control-stage state
+  (setup flag, IN flag, function address, payload, offset, OUT buffer),
+  transfer log, reg histograms, attached-function cascade. The pending
+  function is re-resolved by address on load and fails when missing.
+- `UsbHub`: address/config, remote-wakeup, pending address/config, per-port
+  status/change, per-port device cascade, 128-entry request log. Port count
+  and per-port presence must match (topology caller-owned).
+- `XidGamepad`: address/config, held buttons/analog/sticks, input/output/
+  capability reports, pending address/config, 128-entry request log.
+- `McpxNvNetDevice`: 1 KB register file, 32 PHY regs, reg histograms, 1628 B
+  TX coalescing buffer + offset, pending RX frame, autoneg state, all IRQ
+  and packet/link counters, loopback-backend cascade.
+- `LoopbackNetworkBackend`: queued frames, sent log (16 cap), sent/byte/
+  drop counters.
+- `PshCombiner`: 8x RGB/alpha in/out words, 8x factor0/1, 2x spec-fog
+  factor, control, stage program, dot-RGB mapping, other-stage input, final
+  words.
+- `Nv2aMmio`: bound engines/instances, PFIFO/PVIDEO/PFB/PGRAPH arrays,
+  1 MB PRAMIN bytes, PRMCIO, retrace latch, read/write/user histograms, PMC
+  log + pending/enabled, PBUS command, PTIMER/PCRTC/PLL state, PFIFO
+  pending/enabled, vsync remainder, pusher/error/context counters, surface/
+  clear/semaphore/flip/presented descriptors, vertex formats/offsets,
+  136x4 transform program, 192x4 constants, load pointers, begin mode,
+  inline elements/words/vertices, draw-array ranges, 16x4 inline defaults,
+  4 texture slots, shader-clip mode, bump matrices/scales/offsets, fog
+  state, combiner cascade, alpha/blend/depth/stencil/zclip state, all draw/
+  pixel/sample/fallback counters, texture-state tables, semaphore/debug/
+  notification/PRAMIN/IRQ latches, method-stream cap + counts + params +
+  full method stream. Presented-frame pixels live in guest RAM and are
+  re-read; only at-flip descriptors are stored. `RamSize` validated on load.
+
+Re-attach strategies (handles never serialized): disk/DVD file handles stay
+with their image objects in-process; cross-process restore reopens the same
+HDD/DVD paths before load (`Ide.HddPath/DvdPath` record them; sector-count
+checks fail loudly). EEPROM/encoder/PRAMIN/overlay-dirty bytes are value
+state and ARE serialized. Guest-memory adapters (`IGuestMemory`,
+`IApuMemory`, `IUsbMemory`, `IGpuMemory`, `INvNetMemory`) and IO-window
+registrations are construction wiring rebuilt via BAR restore, not stored.
+`SocketNetworkBackend` (host sockets + UDP NAT mappings) is NOT restorable:
+nvnet save AND load both throw `InvalidDataException` unless the live backend
+is loopback -- gated, never silent.
+
+Quiesce contracts (where the CLI user may save): NV2A -- FIFO drained at a
+flip boundary (synchronous pusher idle); IDE/ATAPI -- no DMA in flight on
+either drive (load enforces); USB -- 1 ms frame boundary with no control
+transfer mid-status-stage; SMBus/EEPROM/encoder -- no transaction in flight;
+PCI -- BARs stable (post-enumeration); nvnet -- loopback backend only.
+PIT/PIC/RTC/LPC/ACI/APU taskfile state is valid at any point.
+
+Unrestorable exclusions (with reasons): host event delegates
+(`InterruptChanged`, PCI raise/lower, RTC `Interrupt`) -- wiring, not state;
+PIC latches are restored separately and already match, so load never fires
+events. `IoSpace`/`AddressSpace` routing tables -- rebuilt at construction.
+`DisplayFrame` bitmaps -- derived from guest RAM on next flip. Socket/NAT
+state -- OS handles, no stable serialization. `XboxMachine._nv2ARemainder`
+plus the SevenEosQuirk park state are core-owned (parallel branch) and must
+be snapshotted there for bit-exact continuation; all device remainders
+(PIT/PM/RTC accumulators, APU frame remainder, OHCI frame remainder, nvnet
+autoneg remainder, NV2A vsync remainder) are covered here.
+
+Registration: `XboxMachine.SnapshotDevices` (8 entries: Bus, Ide, Nv2A, Aci,
+Apu, Net, Usb0, Usb1) with cascading saves; `// V1-DEVICES-ANCHOR` marks the
+insertion point for the core branch merge. Open merge items for the
+coordinator: `AttachHdd`/`AttachDvd` should assign `Ide.HddPath`/`DvdPath`
+(one line each); end-to-end restore validation happens at merge.
+
+**Status:** 27 new round-trip tests (Bus 17 incl. socket-gate negatives,
+Storage 5 incl. sector-mismatch negative, Audio 1, Nv2a 2, Integration 2
+registration/contract tests); save-mutate-load asserts byte-identical
+re-saves. Suite 1080/1080, build + `format --verify-no-changes` clean.
+
+## 101. V1 merged + acceptance met: dashboard save/restore is bit-exact (2026-10-12)
+
+Coordinator merge of `wave/snapshot-core` (`6b2b73d`) +
+`wave/snapshot-devices` (`68a32fc`) into master. Both branches created
+`src/XGrid.Core/Snapshots/ISnapshotable.cs` byte-identical (clean
+auto-merge). Reconciliation by coordinator: kept the core tagged-section
+scheme (`CPU`/`RAM`/`BUS`/`IDE`/`NV2A`/`ACI`/`APU`/`NET`/`USB0`/`USB1`/
+`MACH`, order-independent load, skip-unknown, duplicate rejection) and
+translated the devices branch's 8-entry ordered list into tagged
+registrations at the anchor; deleted the redundant `SnapshotDevices`
+property and rewrote its test to assert section tags from a saved file;
+fixed two analyzer errors in the rewritten test (CA1861 static-readonly
+expected-tags array, MA0002 ordinal comparer) and one stale core test
+(`UnknownSection_IsIgnored` now round-trips all 11 sections + the
+unknown tag). Coordinator fix at merge: `AttachHdd`/`AttachDvd` now
+record `Ide.HddPath`/`DvdPath` (devices open issue #1, cross-process
+reopen params). Full suite **1092/1092** (1053 + 12 core + 27 devices).
+
+**Acceptance, live on merged master** (logs/framebuffer dumps in
+`Temp\opencode\v1-accept\`): submenu boot `--save-state S.xgs --save-at
+1000000000` (72,105,569 B at EIP `0x1E0F1`), then `--load-state S.xgs
+--steps 50000000` vs uninterrupted `--steps 1050000000` with the same
+pad-script — **EIP `0x3A004`, all GPRs, NV2A counters (`draws=42833`,
+`pixels=353422182`, `frames=895`, `zclipCull=21526`) identical; presented-
+frame SHA-256 match; full 64 MB RAM SHA-256 match.** V1 acceptance
+(save/restore CPU+RAM+device with exact EIP/registers/flip counters) is
+MET. Probe economics: the gate costs one 1B run (~6 min at current
+menu-workload speed); every probe after it costs only post-restore steps
+(50M ≈ 20 s). Carried exclusions: core-uncaptured diagnostic counters,
+host handles by re-attach (DVD/HDD paths), socket-backend gate
+(loopback-only snapshots), `--save-at` exactness only for the standard
+run loop, saved `SevenEosQuirkEnabled` overrides the CLI flag on load.
+
+## 102. V2 recon verdict: overlay-XBE replacement BLOCKED; build the flat-binary harness (2026-10-12)
+
+Read-only recon (no repo writes). Question: how can a minimal test
+program execute without 10-minute full-boot runs (plan V2)?
+
+**Signature enforcement (retail kernel, live + documented):** the kernel
+loads the HDD dashboard via 27 READ DMA, stages it at phys `0xBF000`,
+decrypts entry in place (`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`)
+and calls it (`0x800158DA`) — Gates 1/34, §§31/34/86. XBE format per
+Cxbx: 256-B RSA signature over the header + per-section SHA-1 digests +
+cert `AllowedMedia`; the retail kernel executes SHA-1/HMAC workers
+bit-exact in XGrid LLE (§22). XboxWiki: kernel runs signed XBEs only;
+bad signature → Fatal Error + halt. `NONSECURE_*` cert bits are honored
+by debug kernels, NOT a retail bypass; debug-signed XBEs need a debug
+BIOS/kernel (unavailable); the XISOSharp media-enable patch fixes a
+DVD check inside the XBE, not kernel verification. **Verdict: replacing
+`xboxdash.xbe` on an overlay image with an unsigned homebrew XBE cannot
+run on the retail path (no MS private key).** Ranked alternatives:
+(1) flat-binary harness, no kernel/XBE — RECOMMENDED, days;
+(2) unsigned XBE + in-RAM verify patch — fragile, 1–2 weeks;
+(3) debug BIOS/kernel — blocked on firmware;
+(4) retail-sign homebrew — impossible;
+(5) full nxdk bring-up — weeks, and still needs (2)/(3) to launch.
+
+**Recommended harness (spec):** new `xgrid testrom --bin <flatbin>`
+subcommand (do not overload `boot`): `new XboxMachine` with NO BIOS
+(proven pattern: `XboxMachineTests` boots a fake BIOS; `CpuHarness` sets
+flat GDT/stack/entry), copy `--bin` to phys base, ~100-line
+`TestRomRunner`, `OUT 0xE9` PUTC/PUTS console device (+ optional `0xEB`
+IRQ raiser later), `EAX=0+HLT`=pass / `EAX=N`=fail with `TESTROM
+PASS/FAIL` first log line + existing counters. Test programs do
+bare-metal pokes (NV2A MMIO, IDE PIO/BM-DMA, OHCI HCCA/ED/TD + 1 ms
+`Advance` frames, port I/O); no kernel services, no paging, IRQs later.
+**Toolchain on this machine:** NO nxdk/OpenXDK/xcc/MSVC in PATH or
+common locations; YES `C:\mingw64\bin\gcc` 16.1.0 (x86_64, `-m32` link
+unproven) and **NASM 3.01** at `C:\msys64\mingw64\bin\nasm.exe` (not in
+PATH — absolute path; Xermu precedent: ~50 NASM `.asm` → flat binaries
+with ASSERT macros). Python-emitted `.bin` is the fallback.
+
+**First three ROMs (each <100M steps, `mov eax,CODE; hlt` exit):**
+ROM-A `nv2a-textured-quad` (<2M): PGRAPH MMIO direct — surface/texture/
+flip regs, 64×64 checker, one triangle, `FLIP_INCREMENT_WRITE`; ASSERT
+`draws>=1 textured>0 frames>=1 nonzero>0` (+ `--frame`/`--pgraph`
+cross-check). ROM-B `ide-read-dma` (<5M): synthetic 8 MB HDD (Python-made,
+known pattern at LBA `0x100`), BAR4+PRDT, `READ DMA 0xC8` ×8 sectors,
+`memcmp` vs golden; ASSERT `mismatch=0`. ROM-C `pad-getstate-poll`
+(<10M): OHCI HCCA/ED/interrupt-IN TD in RAM, poll `DoneHead` across
+`Advance` frames with `--pad-buttons down`; ASSERT `idle=0x0
+pressed=0x2`. (APU voice-on/off is the 4th ROM.) Exact CLI shapes and
+the full evidence trail are in the recon report; key file refs:
+`XboxMachine.cs:16-108,261-391`, `CpuHarness.cs:10-42`,
+`CpuTestRunner.cs:18-49`, `XboxMachineTests.cs:58-70`,
+`Program.cs:911-1155` (counters), `XbeImage.cs:218-246` (XOR/type).

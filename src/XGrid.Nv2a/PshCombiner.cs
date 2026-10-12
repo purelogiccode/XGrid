@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Nv2a;
 
@@ -19,7 +21,7 @@ namespace XGrid.Nv2a;
 /// reference exists). Fixed-function fog-coordinate generation lives in
 /// <c>VshProgram.FogGenDistance</c>.
 /// </summary>
-public sealed class PshCombiner
+public sealed class PshCombiner : ISnapshotable
 {
     /// <summary>Maximum general combiner stages (8, per CONTROL low byte).</summary>
     public const int MaxStages = 8;
@@ -189,6 +191,69 @@ public sealed class PshCombiner
         OtherStageInput = 0;
         Final0 = 0;
         Final1 = 0;
+    }
+
+    /// <summary>Saves all combiner stage words, factors, and control state.</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        WriteUints(writer, RgbInputs);
+        WriteUints(writer, AlphaInputs);
+        WriteUints(writer, RgbOutputs);
+        WriteUints(writer, AlphaOutputs);
+        WriteUints(writer, Factor0);
+        WriteUints(writer, Factor1);
+        WriteUints(writer, SpecFogFactor);
+        writer.Write(Control);
+        writer.Write(StageProgram);
+        writer.Write(DotRgbMapping);
+        writer.Write(OtherStageInput);
+        writer.Write(Final0);
+        writer.Write(Final1);
+    }
+
+    /// <summary>Restores all combiner stage words, factors, and control state.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported combiner snapshot version {version}.");
+        }
+
+        ReadUints(reader, RgbInputs);
+        ReadUints(reader, AlphaInputs);
+        ReadUints(reader, RgbOutputs);
+        ReadUints(reader, AlphaOutputs);
+        ReadUints(reader, Factor0);
+        ReadUints(reader, Factor1);
+        ReadUints(reader, SpecFogFactor);
+        Control = reader.ReadUInt32();
+        StageProgram = reader.ReadUInt32();
+        DotRgbMapping = reader.ReadUInt32();
+        OtherStageInput = reader.ReadUInt32();
+        Final0 = reader.ReadUInt32();
+        Final1 = reader.ReadUInt32();
+    }
+
+    private const int SnapshotVersion = 1;
+
+    private static void WriteUints(BinaryWriter writer, uint[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            writer.Write(values[i]);
+        }
+    }
+
+    private static void ReadUints(BinaryReader reader, uint[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = reader.ReadUInt32();
+        }
     }
 
     /// <summary>Gets the active general-combiner stage count, clamped to 8.</summary>

@@ -2964,7 +2964,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **885 tests passing** (39 Core, 398 Cpu, 52 Memory, 172 Bus, 16 Integration, 94 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **1092 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 47 Integration, 201 Nv2a, 9 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3660,12 +3660,30 @@ save/restore CPU+RAM+device state at an arbitrary step; a restore
 reproduces EIP/registers/flip counters exactly; a 007-gate probe runs in
 seconds, not minutes. Note: phases 19/22 cover product save states; V1
 is the internal forensic fast path — land V1 first, productize later.
+Status DONE 2026-10-12 (waves snapshot-core + snapshot-devices,
+§§99–100): `ISnapshotable` contract; CPU (all fields incl. FPU/SSE/
+SYSENTER) + RAM + machine-scalar save/load; tagged-container
+orchestration (`CPU`/`RAM`/`BUS`/`IDE`/`NV2A`/`ACI`/`APU`/`NET`/`USB0`/
+`USB1`/`MACH`, order-independent, skip-unknown); per-device state on
+all peripherals (NV2A+PRAMIN, IDE+overlay dirty sectors, USB+hubs+pad,
+APU/ACI, PIT/PIC, SMBus/SMC/RTC/PCI, nvnet with socket-backend gate);
+CLI `--save-state [--save-at]` / `--load-state`; 39 new tests.
+**Acceptance met live (§101):** submenu save@1B → restore +50M ≡
+uninterrupted 1.05B — EIP/regs/NV2A counters identical, frame SHA +
+64 MB RAM SHA both match; probes now cost ~20 s instead of ~6 min.
+Exclusions: diagnostic counters (core), unrestorable host handles
+(re-attach by path), socket-backend snapshots gated to loopback.
 
-**V2 — Minimal XBE test-ROM suite.** 10-second iterations per device.
-Acceptance: tiny XBEs (nxdk/OpenXDK or hand-assembled), each exercising
-one device path with a self-checking ASSERT in the CLI log, each running
-<100M steps. Start with: NV2A textured quad, IDE READ DMA, pad GetState
-poll, APU voice-on/off.
+**V2 — Minimal test-ROM suite (recon verdict §102: flat-binary harness,
+not XBEs).** 10-second iterations per device. Overlay replacement with an
+unsigned XBE is BLOCKED (retail kernel RSA/SHA-1 verifies; no MS key;
+NONSECURE bits are debug-kernel-only; debug BIOS unavailable).
+Recommended: `xgrid testrom --bin` flat-binary harness (no kernel/BIOS,
+bare-metal device pokes, `OUT 0xE9` console, `EAX=0+HLT`=pass) + NASM
+ROMs (NASM 3.01 on disk at an absolute path; no nxdk; mingw gcc is
+64-bit-only so `-m32` link is unproven). Acceptance: ROM-A NV2A textured
+quad, ROM-B IDE READ DMA (8 MB synthetic HDD), ROM-C pad GetState poll —
+each <100M steps with TESTROM PASS/FAIL + existing counters.
 
 **V3 — Differential harness vs xemu.** Turn search into bisection.
 Acceptance: scripted early-boot state comparison at fixed steps (valid

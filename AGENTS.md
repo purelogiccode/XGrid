@@ -213,7 +213,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   fix (§95: LU texel-unit coords, SZ POT base size, A4R4G4B4 decode
   — menu renders in color: 7,389 RGB-diff px vs neutral, 32,789 colors).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1053 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1092 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — APU VP/DSP streaming (007 audio-drain gate).
@@ -239,7 +239,11 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    never update). Next: xemu `hw/xbox/mcpx/vp/vp.c` (fe_method/SSL/
    notifiers), `dsp/dsp.c` + `dsp_dma.c` + `gp_ep.c`, `apu.c`
    FEVINTSTS/FENINTSTS trap delivery. Acceptance test: the `0x20FC1`
-   audio-drain wait completes.
+   audio-drain wait completes. V1 snapshots are live (§§99–101:
+   `--save-state [--save-at]` / `--load-state`, dashboard save@1B→restore
+   bit-exact incl. frame + RAM SHAs) — probe the APU work from snapshots,
+   not replays. V2 verdict (§102): overlay-XBE replacement blocked by
+   retail signature checks; build the flat-binary `testrom` harness.
 3. NV2A remaining: mipmap LOD + DXT decode, PROJECT2D non-cube
    projective divide, DOT_STR_3D dim==3, border/mip/filtering,
    TEXADDRESS V bit offset, BRDF detail, Vulkan/OpenGL backends

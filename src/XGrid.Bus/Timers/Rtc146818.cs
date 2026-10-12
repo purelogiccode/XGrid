@@ -1,10 +1,12 @@
 using System;
+using System.IO;
 using XGrid.Bus.Io;
+using XGrid.Core;
 
 namespace XGrid.Bus.Timers;
 
 /// <summary>MC146818-compatible real-time clock (ports 0x70/0x71, IRQ8).</summary>
-public sealed class Rtc146818 : IIoPortDevice
+public sealed class Rtc146818 : IIoPortDevice, ISnapshotable
 {
     /// <summary>RTC crystal frequency.</summary>
     public const uint InputFrequency = 32768;
@@ -73,6 +75,51 @@ public sealed class Rtc146818 : IIoPortDevice
         _statusB = 0x02;
         _statusC = 0;
     }
+
+    /// <summary>Saves CMOS, index, status registers, time base, and access count (quiesce: any point).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_cmos);
+        writer.Write(_index);
+        writer.Write(_statusA);
+        writer.Write(_statusB);
+        writer.Write(_statusC);
+        writer.Write(_subTicks);
+        writer.Write(_seconds);
+        writer.Write(_periodAccum);
+        writer.Write(AccessCount);
+    }
+
+    /// <summary>Restores CMOS, index, status registers, time base, and access count.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported RTC snapshot version {version}.");
+        }
+
+        byte[] cmos = reader.ReadBytes(64);
+        if (cmos.Length != 64)
+        {
+            throw new InvalidDataException("Truncated RTC CMOS snapshot.");
+        }
+
+        Array.Copy(cmos, _cmos, 64);
+        _index = reader.ReadByte();
+        _statusA = reader.ReadByte();
+        _statusB = reader.ReadByte();
+        _statusC = reader.ReadByte();
+        _subTicks = reader.ReadUInt64();
+        _seconds = reader.ReadUInt64();
+        _periodAccum = reader.ReadUInt64();
+        AccessCount = reader.ReadInt32();
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public uint Read(ushort offset, int size)

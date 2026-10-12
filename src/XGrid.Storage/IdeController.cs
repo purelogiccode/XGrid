@@ -1,11 +1,13 @@
 using System;
+using System.IO;
 using XGrid.Bus.Io;
 using XGrid.Bus.Pci;
+using XGrid.Core;
 
 namespace XGrid.Storage;
 
 /// <summary>Xbox IDE controller (nForce 10DE:01BC at PCI 0:9.0, IRQ 14) with one primary channel.</summary>
-public sealed class IdeController : PciDevice
+public sealed class IdeController : PciDevice, ISnapshotable
 {
     private const int BusMasterBar = 4;
     private const uint BmStatusActive = 0x01;
@@ -121,6 +123,124 @@ public sealed class IdeController : PciDevice
         PrimarySlave.Reset();
         _busMaster.Reset();
     }
+
+    /// <summary>Saves PCI config/BARs, drive select, bus-master DMA, both drives, and logs.</summary>
+    /// <remarks>Quiesce: save only when no DMA is in flight on either drive. The guest-memory
+    /// adapter and IO windows are host wiring and are not serialized. Media paths are
+    /// caller-owned (XboxMachine re-attaches the same HDD/DVD paths before load); the drives
+    /// validate presence and sector counts and fail loudly on mismatch. Optional
+    /// <see cref="HddPath"/>/<see cref="DvdPath"/> record the re-attach parameters.</remarks>
+    public override void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        base.SaveState(writer);
+        writer.Write(IdeSnapshotVersion);
+        writer.Write(_selected);
+        writer.Write(_busMaster.Command);
+        writer.Write(_busMaster.Status);
+        writer.Write(_busMaster.PrdtAddress);
+        writer.Write(_busMaster.Starts);
+        PrimaryMaster.SaveState(writer);
+        PrimarySlave.SaveState(writer);
+        writer.Write(_commandLog.Count);
+        foreach (string entry in _commandLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_accessLog.Count);
+        foreach (string entry in _accessLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(HddPath is not null);
+        if (HddPath is not null)
+        {
+            writer.Write(HddPath);
+        }
+
+        writer.Write(DvdPath is not null);
+        if (DvdPath is not null)
+        {
+            writer.Write(DvdPath);
+        }
+    }
+
+    /// <summary>Restores PCI config/BARs, drive select, bus-master DMA, both drives, and logs.</summary>
+    public override void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        base.LoadState(reader);
+        int version = reader.ReadInt32();
+        if (version != IdeSnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported IDE snapshot version {version}.");
+        }
+
+        _selected = reader.ReadInt32();
+        _busMaster.Command = reader.ReadUInt32();
+        _busMaster.Status = reader.ReadUInt32();
+        _busMaster.PrdtAddress = reader.ReadUInt32();
+        _busMaster.Starts = reader.ReadInt32();
+        PrimaryMaster.LoadState(reader);
+        PrimarySlave.LoadState(reader);
+        int commands = reader.ReadInt32();
+        if (commands < 0 || commands > 32)
+        {
+            throw new InvalidDataException("Bad IDE command-log snapshot.");
+        }
+
+        _commandLog.Clear();
+        for (int i = 0; i < commands; i++)
+        {
+            _commandLog.Add(reader.ReadString());
+        }
+
+        int accesses = reader.ReadInt32();
+        if (accesses < 0 || accesses > 64)
+        {
+            throw new InvalidDataException("Bad IDE access-log snapshot.");
+        }
+
+        _accessLog.Clear();
+        for (int i = 0; i < accesses; i++)
+        {
+            _accessLog.Add(reader.ReadString());
+        }
+
+        if (reader.ReadBoolean())
+        {
+            string snapshotHdd = reader.ReadString();
+            if (HddPath is not null && !string.Equals(HddPath, snapshotHdd, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"IDE HDD path mismatch on snapshot load (snapshot='{snapshotHdd}', live='{HddPath}').");
+            }
+
+            HddPath ??= snapshotHdd;
+        }
+
+        if (reader.ReadBoolean())
+        {
+            string snapshotDvd = reader.ReadString();
+            if (DvdPath is not null && !string.Equals(DvdPath, snapshotDvd, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"IDE DVD path mismatch on snapshot load (snapshot='{snapshotDvd}', live='{DvdPath}').");
+            }
+
+            DvdPath ??= snapshotDvd;
+        }
+    }
+
+    private const int IdeSnapshotVersion = 1;
+
+    /// <summary>Gets or sets the HDD re-attach path (set by the machine on attach; validated on load).</summary>
+    public string? HddPath { get; set; }
+
+    /// <summary>Gets or sets the DVD re-attach path (set by the machine on attach; validated on load).</summary>
+    public string? DvdPath { get; set; }
 
     /// <inheritdoc />
     protected override void OnBarWritten(int index, uint baseAddress)

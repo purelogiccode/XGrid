@@ -1,11 +1,13 @@
 using System;
+using System.IO;
 using XGrid.Bus.Io;
+using XGrid.Core;
 using XGrid.Core.Devices;
 
 namespace XGrid.Bus.Interrupts;
 
 /// <summary>Dual 8259 programmable interrupt controller (master 0x20/0x21, slave 0xA0/0xA1).</summary>
-public sealed class Pic8259 : IXboxDevice, IInterruptSource
+public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
 {
     private readonly Pic _master = new();
     private readonly Pic _slave = new();
@@ -90,6 +92,31 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
         _slave.Reset(0x28);
     }
 
+    /// <summary>Saves masks, request/in-service latches, vector bases, and init state (quiesce: any point).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        _master.SaveState(writer);
+        _slave.SaveState(writer);
+    }
+
+    /// <summary>Restores masks, latches, vector bases, and init state.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported PIC snapshot version {version}.");
+        }
+
+        _master.LoadState(reader);
+        _slave.LoadState(reader);
+    }
+
+    private const int SnapshotVersion = 1;
+
     private sealed class PortWindow : IIoPortDevice
     {
         private readonly Pic _pic;
@@ -133,6 +160,30 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource
         public byte RequestRegister { get; private set; }
 
         public byte InServiceRegister { get; private set; }
+
+        public void SaveState(BinaryWriter writer)
+        {
+            writer.Write(Mask);
+            writer.Write(VectorBase);
+            writer.Write(RequestRegister);
+            writer.Write(InServiceRegister);
+            writer.Write(_initStep);
+            writer.Write(_autoEoi);
+            writer.Write(_readInService);
+            writer.Write(_pollPending);
+        }
+
+        public void LoadState(BinaryReader reader)
+        {
+            Mask = reader.ReadByte();
+            VectorBase = reader.ReadByte();
+            RequestRegister = reader.ReadByte();
+            InServiceRegister = reader.ReadByte();
+            _initStep = reader.ReadInt32();
+            _autoEoi = reader.ReadBoolean();
+            _readInService = reader.ReadBoolean();
+            _pollPending = reader.ReadBoolean();
+        }
 
         public void Reset(byte vectorBase)
         {
