@@ -3684,6 +3684,12 @@ ROMs (NASM 3.01 on disk at an absolute path; no nxdk; mingw gcc is
 64-bit-only so `-m32` link is unproven). Acceptance: ROM-A NV2A textured
 quad, ROM-B IDE READ DMA (8 MB synthetic HDD), ROM-C pad GetState poll —
 each <100M steps with TESTROM PASS/FAIL + existing counters.
+Status PARTIAL 2026-10-12 (wave/testrom-harness, §103): harness DONE +
+ROM-A DONE — `xgrid testrom --bin` (no kernel/BIOS, `OUT 0xE9` console,
+`EAX=0+HLT`=pass) + `TestRomRunner` + `tools/testroms/nv2a_quad.asm/.bin`
++ 4 tests (1096 green). ROM-A live: `TESTROM PASS nv2a_quad draws=1
+textured=2080 frames=1 nonzero=1056` in 68,491 steps. ROM-B (IDE READ
+DMA) and ROM-C (pad GetState poll) remain as specified §102 follow-ups.
 
 **V3 — Differential harness vs xemu.** Turn search into bisection.
 Acceptance: scripted early-boot state comparison at fixed steps (valid
