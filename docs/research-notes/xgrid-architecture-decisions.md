@@ -3033,3 +3033,58 @@ pkt/byte/drop counters, `cant_tx/cant_rx` reasons, ring pointers,
 IRQ assert/deassert, link toggles. Open: BIT2 reliance, AN_COMP
 timing, SIZE counts, filter programming, first real frame type
 (needs a TX-logging run).
+
+## 86. DVD-vs-HDD media branch pinned + title-page decrypt writer + PacketLog cap (2026-10-12)
+
+Work in worktree `wave/dvd-media-branch` (main checkout untouched;
+worktree-built Release CLI; logs in `Temp\opencode\dvd-media\`). Boot
+args replicate the §83 handoff bit-exactly (`--break 0x22E35` fires at
+step 537,926,130 in break world).
+
+**Media-branch verdict: neither `0x80021693` nor `0x80030980` is
+media-dependent.** Both fire at identical steps with identical state on
+DVD (007 CHD) and HDD (dashboard) boots:
+
+- `0x80030980` (first hit step 24,304,655, ESP=`0x800395E4`):
+  `CMP byte [0x8003A87C],0` (the §83 init flag, still 0) then
+  `TEST [0x8003B138],1` (also 0), then port I/O (`out dx,al` forms at
+  `0x80030995+`). Caller `0x80018B7A` (call at `0x80018B75`);
+  ESI=`0x0040008C` EDI=`0x80406000` EAX=`0x80036840` (zeros).
+  `--break-log` through 600M shows ~20 hits from many callers
+  (`0x80062828/43/4D/57/61/6D/77`, `0x8001573E`, `0x800309BE/E3/...`)
+  -> a shared port-I/O helper, not a branch.
+- `0x80021693` (single hit step 25,054,251, ESP=`0x800395BC`):
+  `OR dword [0x8003ABC4],0xFF` + 26-entry table init at `0x8003ABB0`.
+  Called from decision fn `0x80015724` (call at `0x80015750`, return
+  `0x80015756`: `test al,al` then `push 0x5E` vs `call 0x80061C92`);
+  decision caller is `0x8001C72E` (return `0x8001C733` on stack). Stack
+  args `0x80406000`/`0x0040008C` are unmapped here (no path strings).
+
+ESP-window dumps, flag bytes (`[0x8003A87C]=0`, `[0x8003B138]=0`) and
+caller code are byte-identical across media. The media-dependent
+decision is downstream and file-path based (`D:\default.xbe` vs `C:\`
+fallback), confirming §83: no single media branch at these sites.
+
+**Decrypt-writer verdict: SAME SITE `0x8002EFE6`, same key.** DVD:
+`--break 0x8002EFE6` fires step 25,955,482, EAX=`0xA8FC57AB`, VA
+`0x10128` = `0xA8FE799E` (encrypted); insn `31 05 28 01 01 00`
+(`xor [0x10128],eax`) yields `0x00022E35` (007 entry). HDD analog fires
+step 26,343,475 with same EIP/key, ciphertext `0xA8FD7DBC` ->
+`0x00012A17` (dashboard entry). Physical watch (`--watch
+0xBF128,0xBF130`; VA `0x10128` -> phys `0xBF128` via CR3=`0xF000` page
+walk, image base VA `0x10000` -> phys `0xBF000`):
+`W000BF128 n=3 first=8001FAF5:4=0 last=8002EFE6:4=22E35`
+(zero-fill, load, decrypt) — the writer is the decrypt site.
+
+**PacketLog cap 16 -> 256** (`AtaDevice.PacketLogCapacity`,
+`src/XGrid.Storage/AtaDevice.cs`; 2 tests in
+`tests/XGrid.Storage.Tests/AtapiTests.cs`: 30-packet full retention in
+order, 266-packet cap evicting oldest). Single-run re-capture to the
+handoff (27 packets): `00` TUR, `5A` MODE SENSE(10), `03` REQ SENSE,
+`25` READ CAPACITY, `28@0x20`, `28@0x4B8`, `AD`, `03` REQ SENSE
+(post-AD 5/0x20 sense fetch), then `28@0x4BA/4FA/51A/51C/52C/52E/546/
+548/54A/54C/558/55A/564/566/5A6/5E6/5F6/5F8/604` — confirms the §83
+order including the AD-failure sense fetch in one run (the old cap
+showed only the trailing 16 READs).
+
+Suite 958/958 (956 + 2 new); build + format clean.
