@@ -239,10 +239,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodShaderStageProgram = 0x1E70u;
     private const uint MethodDotRgbMapping = 0x1E74u;
     private const uint MethodShaderOtherStageInput = 0x1E78u;
+    private const uint MethodFogMode = 0x29Cu;
+    private const uint MethodFogGenMode = 0x2A0u;
+    private const uint MethodFogEnable = 0x2A4u;
+    private const uint MethodFogColor = 0x2A8u;
+    private const uint MethodFogParamsBase = 0x9C0u;
+    private const uint MethodFogParamsEnd = 0x9C8u;
     private const uint MethodTextureBase = 0x1B00u;
     private const uint MethodTextureEnd = 0x1BFCu;
     private const uint TextureSlotStride = 0x40u;
     private const uint TextureControl0Enable = 1u << 30;
+    private const uint TextureBumpMatBase = 0x28u;
+    private const uint TextureBumpMatEnd = 0x34u;
+    private const uint TextureBumpScale = 0x38u;
+    private const uint TextureBumpOffset = 0x3Cu;
     private const int MaxTextureSlots = 4;
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
@@ -378,6 +388,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
+    private readonly float[][] _bumpMatrices = new float[MaxTextureSlots - 1][];
+    private readonly float[] _bumpScales = new float[MaxTextureSlots - 1];
+    private readonly float[] _bumpOffsets = new float[MaxTextureSlots - 1];
+    private bool _fogEnable;
+    private int _fogMode;
+    private uint _fogGenMode;
+    private readonly float[] _fogColor = new float[4];
+    private readonly float[] _fogParams = new float[3];
     private readonly PshCombiner _combiner = new();
     private static readonly float[] CombinerFogConst = new float[] { 0f, 0f, 0f, 1f };
     private bool _alphaTestEnable;
@@ -427,6 +445,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         for (int i = 0; i < VertexAttributeCount; i++)
         {
             _inlineValues[i] = new float[VertexAttributeComponentCount];
+        }
+
+        for (int i = 0; i < _bumpMatrices.Length; i++)
+        {
+            _bumpMatrices[i] = new float[4];
         }
 
         Reset();
@@ -486,6 +509,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         $"final={_combiner.FinalEnabled} draws={CombinerDraws} " +
         $"texmodes={_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}" +
         $"{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}";
+
+    /// <summary>Gets the fog state summary (enable, mode, color, params). Diagnostics.</summary>
+    public string FogStateDebug =>
+        $"enable={_fogEnable} mode={_fogMode} gen={_fogGenMode:X} " +
+        $"color={_fogColor[0]:F3},{_fogColor[1]:F3},{_fogColor[2]:F3},{_fogColor[3]:F3} " +
+        $"params={_fogParams[0]:G},{_fogParams[1]:G},{_fogParams[2]:G}";
+
+    /// <summary>Gets the number of texels that fell back to NONE for an unimplemented mode or stage. Diagnostics.</summary>
+    public ulong TexModeFallbacks { get; private set; }
+
+    /// <summary>Gets the number of dot-map applications that fell back to identity (HILO family). Diagnostics.</summary>
+    public ulong UnsupportedDotMaps { get; private set; }
 
     /// <summary>Gets the number of semaphore release writes performed. Diagnostics.</summary>
     public int SemaphoreReleases { get; private set; }
@@ -754,6 +789,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Array.Clear(_textureControl1);
         Array.Clear(_textureFilter);
         Array.Clear(_textureImageRect);
+        foreach (float[] matrix in _bumpMatrices)
+        {
+            Array.Clear(matrix);
+        }
+
+        Array.Clear(_bumpScales);
+        Array.Clear(_bumpOffsets);
+        _fogEnable = false;
+        _fogMode = 0;
+        _fogGenMode = 0;
+        _fogColor[0] = 0f;
+        _fogColor[1] = 0f;
+        _fogColor[2] = 0f;
+        _fogColor[3] = 0f;
+        Array.Clear(_fogParams);
+        TexModeFallbacks = 0;
+        UnsupportedDotMaps = 0;
         _inlineWords.Clear();
         _inlineElements.Clear();
         _inlineVertices.Clear();
@@ -1771,6 +1823,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case MethodStencilOpZpass:
                 _stencilOpZpass = MapStencilOp(parameter, _stencilOpZpass);
                 break;
+            case MethodFogMode:
+                _fogMode = MapFogMode(parameter, _fogMode);
+                break;
+            case MethodFogGenMode:
+                _fogGenMode = parameter;
+                break;
+            case MethodFogEnable:
+                _fogEnable = (parameter & 1u) != 0;
+                break;
+            case MethodFogColor:
+                // Parameter channels are ABGR (red in bits 0-7); stored as RGBA floats.
+                _fogColor[0] = (parameter & 0xFFu) / 255f;
+                _fogColor[1] = ((parameter >> 8) & 0xFFu) / 255f;
+                _fogColor[2] = ((parameter >> 16) & 0xFFu) / 255f;
+                _fogColor[3] = ((parameter >> 24) & 0xFFu) / 255f;
+                break;
             case MethodFlipRead:
                 FlipReadDebug = parameter;
                 break;
@@ -1945,6 +2013,26 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     case 0x1Cu:
                         _textureImageRect[slot] = parameter;
                         break;
+                    case 0x28u:
+                    case 0x2Cu:
+                    case 0x30u:
+                    case 0x34u:
+                        WriteBumpMatrix(slot, register, parameter);
+                        break;
+                    case 0x38u:
+                        if (slot >= 1)
+                        {
+                            _bumpScales[slot - 1] = BitConverter.UInt32BitsToSingle(parameter);
+                        }
+
+                        break;
+                    case 0x3Cu:
+                        if (slot >= 1)
+                        {
+                            _bumpOffsets[slot - 1] = BitConverter.UInt32BitsToSingle(parameter);
+                        }
+
+                        break;
                     default:
                         break;
                 }
@@ -1989,6 +2077,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             ((method - MethodCombinerColorIcwBase) & 3u) == 0)
         {
             _combiner.RgbInputs[(method - MethodCombinerColorIcwBase) / 4] = parameter;
+        }
+
+        if (method >= MethodFogParamsBase && method <= MethodFogParamsEnd &&
+            ((method - MethodFogParamsBase) & 3u) == 0)
+        {
+            _fogParams[(method - MethodFogParamsBase) / 4] = BitConverter.UInt32BitsToSingle(parameter);
         }
 
         if (method >= MethodSpecularFogFactorBase && method <= MethodSpecularFogFactorEnd &&
@@ -2492,6 +2586,39 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         };
     }
 
+    private static int MapFogMode(uint parameter, int current)
+    {
+        return parameter switch
+        {
+            0x2601u => 0,
+            0x0800u => 1,
+            0x0801u => 3,
+            0x0802u => 5,
+            0x0803u => 7,
+            0x0804u => 4,
+            _ => current,
+        };
+    }
+
+    private void WriteBumpMatrix(int slot, uint register, uint parameter)
+    {
+        if (slot < 1)
+        {
+            return;
+        }
+
+        // Method order within a slot is 00,01,11,10 (the reference swizzle);
+        // stored canonically as m00,m01,m10,m11 for the mat2 multiply.
+        int entry = register switch
+        {
+            TextureBumpMatBase => 0,
+            0x2Cu => 1,
+            0x30u => 3,
+            _ => 2,
+        };
+        _bumpMatrices[slot - 1][entry] = BitConverter.UInt32BitsToSingle(parameter);
+    }
+
     private static bool CompareFunc(uint func, float x, float y)
     {
         return func switch
@@ -2784,7 +2911,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>
     /// Transformed vertex for the combiner path: screen-space position, diffuse
-    /// (oD0), specular (oD1), and four texture coordinate pairs (oT0-oT3).
+    /// (oD0), specular (oD1), four texture coordinate triples (oT0-oT3, with the
+    /// third component kept for the dot texture modes), and the per-vertex fog
+    /// factor computed from oFog.x through the fog-mode equation.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
     private readonly struct PshVertex
@@ -2793,7 +2922,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             float x, float y, float z, float w,
             float diffuseR, float diffuseG, float diffuseB, float diffuseA,
             float specR, float specG, float specB, float specA,
-            float u0, float v0, float u1, float v1, float u2, float v2, float u3, float v3)
+            float u0, float v0, float s0,
+            float u1, float v1, float s1,
+            float u2, float v2, float s2,
+            float u3, float v3, float s3,
+            float fog)
         {
             X = x;
             Y = y;
@@ -2809,12 +2942,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             SpecA = specA;
             U0 = u0;
             V0 = v0;
+            S0 = s0;
             U1 = u1;
             V1 = v1;
+            S1 = s1;
             U2 = u2;
             V2 = v2;
+            S2 = s2;
             U3 = u3;
             V3 = v3;
+            S3 = s3;
+            Fog = fog;
         }
 
         public float X { get; }
@@ -2845,17 +2983,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         public float V0 { get; }
 
+        public float S0 { get; }
+
         public float U1 { get; }
 
         public float V1 { get; }
+
+        public float S1 { get; }
 
         public float U2 { get; }
 
         public float V2 { get; }
 
+        public float S2 { get; }
+
         public float U3 { get; }
 
         public float V3 { get; }
+
+        public float S3 { get; }
+
+        public float Fog { get; }
     }
 
     private void FlushProgramDraw(VertexFetchMode mode)
@@ -3022,14 +3170,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             VshProgram.Execute(program, programLength, constants, inputs, outputs);
 
+            float fogFactor = _fogEnable
+                ? VshProgram.FogFactor(_fogMode, _fogParams[0], _fogParams[1], outputs[5][0])
+                : 1f;
             var vertex = new PshVertex(
                 outputs[0][0], outputs[0][1], outputs[0][2], outputs[0][3],
                 NaNToOne(outputs[3][0]), NaNToOne(outputs[3][1]), NaNToOne(outputs[3][2]), NaNToOne(outputs[3][3]),
                 NaNToOne(outputs[4][0]), NaNToOne(outputs[4][1]), NaNToOne(outputs[4][2]), NaNToOne(outputs[4][3]),
-                outputs[9][0], outputs[9][1],
-                outputs[10][0], outputs[10][1],
-                outputs[11][0], outputs[11][1],
-                outputs[12][0], outputs[12][1]);
+                outputs[9][0], outputs[9][1], outputs[9][2],
+                outputs[10][0], outputs[10][1], outputs[10][2],
+                outputs[11][0], outputs[11][1], outputs[11][2],
+                outputs[12][0], outputs[12][1], outputs[12][2],
+                fogFactor);
             transformed[index] = vertex;
             return vertex;
         }
@@ -3698,6 +3850,184 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
     }
 
+    /// <summary>
+    /// Resolves one combiner-stage texel for the current fragment, following the
+    /// reference per-mode equations. Returns true when a texture was sampled
+    /// (drives the TexturedPixels diagnostic). Modes the rasterizer cannot back
+    /// (cubemap/reflection/project3d/clipplane/BRDF, reserved values, or a valid
+    /// mode in an invalid stage) degrade to NONE and count a TexModeFallback.
+    /// </summary>
+    private bool ResolveTexel(int stage, int mode, float tu, float tv, float ts, float[][] texels, float[] stageDots)
+    {
+        float[] texel = texels[stage];
+        if (!PshCombiner.IsModeValidForStage(mode, stage))
+        {
+            SetTexelNone(texel);
+            TexModeFallbacks++;
+            return false;
+        }
+
+        switch (mode)
+        {
+            case PshCombiner.TexModeNone:
+                SetTexelNone(texel);
+                return false;
+            case PshCombiner.TexModeProject2D:
+                return SampleInto(stage, tu, tv, texel);
+            case PshCombiner.TexModePassthru:
+                texel[0] = tu;
+                texel[1] = tv;
+                texel[2] = 0f;
+                texel[3] = 1f;
+                return false;
+            case PshCombiner.TexModeBumpEnvMap:
+            case PshCombiner.TexModeBumpEnvMapLum:
+                return ResolveBump(stage, mode, tu, tv, texels, texel);
+            case PshCombiner.TexModeDpndntAr:
+            case PshCombiner.TexModeDpndntGb:
+                return ResolveDependent(stage, mode, texels, texel);
+            case PshCombiner.TexModeDotProduct:
+            case PshCombiner.TexModeDotZw:
+                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
+                {
+                    SetTexelNone(texel);
+                    TexModeFallbacks++;
+                    return false;
+                }
+
+                texel[0] = 0f;
+                texel[1] = 0f;
+                texel[2] = 0f;
+                texel[3] = 0f;
+                return false;
+            case PshCombiner.TexModeDotSt:
+                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out float dotSt))
+                {
+                    SetTexelNone(texel);
+                    TexModeFallbacks++;
+                    return false;
+                }
+
+                return SampleInto(stage, stageDots[stage - 1], dotSt, texel);
+            case PshCombiner.TexModeDotStr3D:
+                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
+                {
+                    SetTexelNone(texel);
+                    TexModeFallbacks++;
+                    return false;
+                }
+
+                return SampleInto(stage, stageDots[1], stageDots[2], texel);
+            default:
+                SetTexelNone(texel);
+                TexModeFallbacks++;
+                return false;
+        }
+    }
+
+    private static void SetTexelNone(float[] texel)
+    {
+        texel[0] = 0f;
+        texel[1] = 0f;
+        texel[2] = 0f;
+        texel[3] = 1f;
+    }
+
+    private bool SampleInto(int stage, float u, float v, float[] texel)
+    {
+        if (TrySampleTexture(stage, u, v, out float r, out float g, out float b, out float a))
+        {
+            texel[0] = r;
+            texel[1] = g;
+            texel[2] = b;
+            texel[3] = a;
+            return true;
+        }
+
+        SetTexelNone(texel);
+        return false;
+    }
+
+    private bool TryDependentInput(int stage, float[][] texels, out float[] previous)
+    {
+        int input = _combiner.DecodeInputTex(stage);
+        if (input is < 0 or >= PshCombiner.TextureSlots)
+        {
+            previous = texels[0];
+            return false;
+        }
+
+        previous = texels[input];
+        return true;
+    }
+
+    private bool ResolveDependent(int stage, int mode, float[][] texels, float[] texel)
+    {
+        if (!TryDependentInput(stage, texels, out float[] previous))
+        {
+            SetTexelNone(texel);
+            TexModeFallbacks++;
+            return false;
+        }
+
+        float u = mode == PshCombiner.TexModeDpndntAr ? previous[3] : previous[1];
+        float v = mode == PshCombiner.TexModeDpndntAr ? previous[0] : previous[2];
+        return SampleInto(stage, u, v, texel);
+    }
+
+    private bool ResolveBump(int stage, int mode, float tu, float tv, float[][] texels, float[] texel)
+    {
+        if (!TryDependentInput(stage, texels, out float[] previous))
+        {
+            SetTexelNone(texel);
+            TexModeFallbacks++;
+            return false;
+        }
+
+        // Unsigned textures take the sign3 path (no SNORM textures exist here).
+        float dx = PshCombiner.Sign3(previous[2]);
+        float dy = PshCombiner.Sign3(previous[1]);
+        float[] matrix = _bumpMatrices[stage - 1];
+        float ox = (matrix[0] * dx) + (matrix[2] * dy);
+        float oy = (matrix[1] * dx) + (matrix[3] * dy);
+        if (!SampleInto(stage, tu + ox, tv + oy, texel))
+        {
+            return false;
+        }
+
+        if (mode == PshCombiner.TexModeBumpEnvMapLum)
+        {
+            float luminance = previous[0];
+            float scale = (_bumpScales[stage - 1] * luminance) + _bumpOffsets[stage - 1];
+            texel[0] *= scale;
+            texel[1] *= scale;
+            texel[2] *= scale;
+            texel[3] *= scale;
+        }
+
+        return true;
+    }
+
+    private bool TryStageDot(int stage, float tu, float tv, float ts, float[][] texels, float[] stageDots, out float dot)
+    {
+        if (!TryDependentInput(stage, texels, out float[] previous))
+        {
+            dot = 0f;
+            return false;
+        }
+
+        int map = _combiner.DecodeDotMap(stage);
+        if (!PshCombiner.IsSupportedDotMap(map))
+        {
+            UnsupportedDotMaps++;
+        }
+
+        PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], out float mx, out float my, out float mz);
+        dot = (tu * mx) + (tv * my) + (ts * mz);
+        stageDots[stage] = dot;
+        return true;
+    }
+
     private void FillTrianglePsh(
         PshVertex a, PshVertex b, PshVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
@@ -3730,7 +4060,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         // Per-triangle scratch: interpolated inputs and resolved texels for Evaluate.
         var diffuse = new float[4];
         var specular = new float[4];
+        var fog = new float[4];
         var texels = new float[][] { new float[4], new float[4], new float[4], new float[4] };
+        var stageDots = new float[PshCombiner.TextureSlots];
+        foreach (float[] texel in texels)
+        {
+            SetTexelNone(texel);
+        }
+        fog[0] = _fogColor[0];
+        fog[1] = _fogColor[1];
+        fog[2] = _fogColor[2];
         int[] texModes =
         {
             _combiner.DecodeTexMode(0),
@@ -3783,47 +4122,46 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 specular[3] = (p1 * a.SpecA) + (p2 * b.SpecA) + (p0 * c.SpecA);
                 float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
                 float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
+                float ts0 = (p1 * a.S0) + (p2 * b.S0) + (p0 * c.S0);
                 float tu1 = (p1 * a.U1) + (p2 * b.U1) + (p0 * c.U1);
                 float tv1 = (p1 * a.V1) + (p2 * b.V1) + (p0 * c.V1);
+                float ts1 = (p1 * a.S1) + (p2 * b.S1) + (p0 * c.S1);
                 float tu2 = (p1 * a.U2) + (p2 * b.U2) + (p0 * c.U2);
                 float tv2 = (p1 * a.V2) + (p2 * b.V2) + (p0 * c.V2);
+                float ts2 = (p1 * a.S2) + (p2 * b.S2) + (p0 * c.S2);
                 float tu3 = (p1 * a.U3) + (p2 * b.U3) + (p0 * c.U3);
                 float tv3 = (p1 * a.V3) + (p2 * b.V3) + (p0 * c.V3);
+                float ts3 = (p1 * a.S3) + (p2 * b.S3) + (p0 * c.S3);
+                float fogFactor = (p1 * a.Fog) + (p2 * b.Fog) + (p0 * c.Fog);
                 float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
 
                 bool sampled = false;
+                Array.Clear(stageDots);
                 for (int i = 0; i < PshCombiner.TextureSlots; i++)
                 {
                     float tu = i == 0 ? tu0 : i == 1 ? tu1 : i == 2 ? tu2 : tu3;
                     float tv = i == 0 ? tv0 : i == 1 ? tv1 : i == 2 ? tv2 : tv3;
-                    if (texModes[i] == PshCombiner.TexModeProject2D &&
-                        TrySampleTexture(i, tu, tv, out float tr, out float tg, out float tb, out float ta))
+                    float ts = i == 0 ? ts0 : i == 1 ? ts1 : i == 2 ? ts2 : ts3;
+                    if (ResolveTexel(i, texModes[i], tu, tv, ts, texels, stageDots))
                     {
-                        texels[i][0] = tr;
-                        texels[i][1] = tg;
-                        texels[i][2] = tb;
-                        texels[i][3] = ta;
                         sampled = true;
-                    }
-                    else if (texModes[i] == PshCombiner.TexModePassthru)
-                    {
-                        texels[i][0] = tu;
-                        texels[i][1] = tv;
-                        texels[i][2] = 0f;
-                        texels[i][3] = 1f;
-                    }
-                    else
-                    {
-                        texels[i][0] = 0f;
-                        texels[i][1] = 0f;
-                        texels[i][2] = 0f;
-                        texels[i][3] = 1f;
                     }
                 }
 
-                _combiner.Evaluate(
-                    diffuse, specular, CombinerFogConst, texels, consts,
-                    out float fr, out float fg, out float fb, out float fa);
+                float fr;
+                float fg;
+                float fb;
+                float fa;
+                if (_fogEnable)
+                {
+                    fog[3] = Math.Clamp(fogFactor, 0f, 1f);
+                    _combiner.Evaluate(diffuse, specular, fog, texels, consts, out fr, out fg, out fb, out fa);
+                }
+                else
+                {
+                    _combiner.Evaluate(diffuse, specular, CombinerFogConst, texels, consts, out fr, out fg, out fb, out fa);
+                }
+
                 if (sampled)
                 {
                     TexturedPixels++;
