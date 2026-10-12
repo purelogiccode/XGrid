@@ -2355,3 +2355,120 @@ recompute dominates. Still open: what schedules the pump invoker
 wait expires with enough steps. Next session: finish gate77
 (`gate77_pump.log`), identify the invoker's thread context, then
 decide emulation-gap vs long-wait.
+
+## 68. Gate77 complete + Xbox PIT frequency fix (2026-10-11)
+
+**gate77 (pump break-log) finished: 718 hits, first 549,826,940, last
+5,496,305,058.** Median interval **6,913,994 steps = exactly 10 PIT
+pulses** (guest divisor 1125); payload identical on every hit
+(`ESI=D005CB30`, `caller=000379CA`, `arg=1`), plus 22 pairs 376 steps
+apart (same callback re-entered). The pump is a **10 ms periodic
+KTIMER** (slot `+0x3C = FFFE7960` = -100000 x 100 ns, `+0x31` periodic,
+`+0x28` callback `0x26B60`) registered by game code `0x26BA0`
+(`1000/100 -> 10`), serviced by the game-created worker thread (stable
+ESP/ESI - not a DPC). The `Watch:` tail (phys `0x35B00-0x35D00`) is
+2BL/kernel BSS, not game state.
+
+**Time-dilation verdict.** The guest's own `delta()` (`0x207C0`) scales
+the pump tick by `0.001 x 29.97` - it treats the registered 10 ms tick
+as 1 ms. That guest-side unit mismatch is the ~10.7x device-time
+dilation; wall-clock ~540x = ~50x interpreter x ~10.7x pacing. The
+KeDelay wrapper (`0x26C60 -> 0xD554D`, ord 99) builds a 0-timeout yield
+by design (arg 0). Not a deadlock, no lost wakeups.
+
+**Real defect found: `Pit8254.InputFrequency` was 1,193,182 (PC 8254).**
+Xbox is **1,125,001** (xemu `i8254.h:33-38` PIT_FREQ; guest divisor 1125
+-> 1000.0 Hz; KeTimeIncrement `0x2710` = 1 ms). Fixed. Validation
+(probe_pump2, 2B steps): 198 hits, **median interval 7,332,029** ~= 10 x
+733,333 = 7,333,330. Guest clock now tracks device time exactly.
+
+## 69. XID root cause: missing USB daughterboard hub (2026-10-11)
+
+**Pre-hub**: the guest enumerated the pad directly on USB0 root port 0
+(GET_DESC8 -> SET_ADDRESS 1 -> GET_CONFIG -> SET_CONFIG, frames 104-111),
+then issued zero USB traffic for 10B steps; the XPP device mask (VA
+`0x751B4`) stayed 0; no XID class requests; A-press was byte-identical
+(section 56).
+
+**Root cause**: the guest kernel reports `XboxHardwareInfo = 0x41` (bit0
+= internal USB daughterboard present) and expects a hub; xemu models
+root port 1 -> 4-port daughterboard hub -> port 1.3 -> 3-port controller
+hub -> port 1.3.1 -> XID (verified against the vendored xemu source and a
+live `-trace` capture of the oracle binary). XGrid had no hub.
+
+**Implemented** (`src/XGrid.Bus/Usb/UsbHub.cs` + `OhciUsbController`):
+class-9 hub (descriptors, port status/feature handling, downstream
+address routing, EP bitmap, NAK when clean) plus OHCI fixes: RHSC raised
+on attach; `HcDoneHead` returns the live done queue; HCCA `done`
+preserved when no writeback; `USB_RESET` stops the bus.
+
+**Validation**: 007 now fetches the XID descriptor (absent pre-hub;
+present at phys `0x19FC94` post-hub). The dashboard's XPP stack goes
+live: OHCI ISR `0x7BA19` 93 hits, XID interface open `0x79E99` @947.66M,
+XInputOpen `0x76A1F` @948.39M, GetCapabilities `0x76A81` @949.13M,
+**GetState `0x76C59` 999x from 950.59M to run end**; XPP mask now points
+at a device object (VA `0x751B4` = `a0633b00` x4); the hub interrupt EP
+is polled every 8 frames (NAK when clean).
+
+## 70. Interactivity: input reaches the menu; navigation + activation (2026-10-11)
+
+**A-press (post-hub)**: neutral vs A RAM diff 23,786 bytes (pre-hub:
+byte-identical). Classification: 98.3% mid-frame NV2A scratch; the rest
+is pad mirrors - kernel XPP buffers (VA `0x801A0854/74`), XPP pad objects
+(VA `0x591AB4/08/30`), menu input mirror (obj `+0xA8=00FF0000`,
+`+0xAA=FF`, `+0xD0=1`). Menu state stayed 0.
+
+**Activation needs the analog-A EDGE** (obj `+0xF4` = one-frame
+just-pressed from padmgr `+0x4C`); boot-latched A fired before the menu
+was live. The only writer of state `[+0x280]` is `0x1859D` (navigator
+activation, control = `0x24E90([0x47BC84], [+0x270])`).
+
+**D-pad levels are edge-free**: `--pad-buttons 0002` (DOWN) moved the
+selection obj `+0x270` 1 -> 5; navigator `0x1840A/0x184BA/0x1854B` hit
+1383x (844M-1.2B).
+
+**New CLI `--pad-step N`** (step-timed pad injection). A-edge at
+960,000,000 -> activation `0x1859D` fired once @960,493,586 (one frame
+later), storing control[1] `+0x0C = 14` into `[+0x280]`. State 14 maps
+(table `0x1EE98[14]=12` -> `jmp [0x1EE50+48]`) to handler **`0x1E66A`**,
+which ran and cleared the state (watch: 4 writes, 3 from `0x1E66A`).
+No visible frame change (draws 72139 vs 72152, frames/pixels equal) -
+control[1] targets a logical transition. Next: decode other controls'
+targets and sequence injection (navigate then activate).
+
+## 71. NV2A fidelity wave: inline arrays, XF constants, fetch, semantics (2026-10-11)
+
+- **Inline vertex data (M5 gap closed)**: `SET_VERTEX_DATA2F_M` 0x1880-0x18FC,
+  `2S` 0x1900-0x193C, `4UB` 0x1940-0x197C, `4S_M` 0x1980-0x19FC, `4F_M`
+  0x1A00-0x1AFC; inline-buffer draws now run through `VshProgram`;
+  `DRAW_ARRAYS` 0x1810 ranges (start bits 0-23, count bits 31-24 + 1)
+  with contiguity merge; ARRAY_ELEMENT range expansion (xemu `draw.c`/
+  `pgraph.c`).
+- **XF-context constant writers (all 11 xemu `vsh_constants` writers)**:
+  CMAT c0-3, PMAT c4-7, MMAT c8-39, IMMAT c12-39, TEXGEN planes c64-91,
+  T0MAT c68-95, FOG c57, EYE c56, VPOFF c59, VPSCL c58 (+ dynamic
+  0x0B80). This corrects section 42's wrong claim that c58/c59 are
+  no-ops on xemu.
+- **Vertex fetch**: stride 0 = constant attribute (element 0); array
+  offset bit31 masked (DMA context A only); program start + FINAL-
+  terminated length scan; output defaults (0,0,0,1); execution-mode
+  diagnostic counter.
+- **Interpreter semantics**: MUL zero rule (0 x Inf/NaN -> 0), GLSL
+  min/max/NaN/-0 forms, LIT, paired outMux=ILU last-writer order, oPos
+  trunc-to-1/16 + w clamp.
+- **Fragment**: perspective-correct varyings (w-weighted barycentrics,
+  equal-w fast path bit-exact), oD0 NaN->1. Multi-texture STOPPED - it
+  needs the psh register-combiner subsystem (COMBINECTL 0x1940 etc.);
+  full register list in the agent report.
+- Dashboard/007 counters unchanged or +1 fullscreen frame (pixels
+  10,137,600 -> 10,444,800); program draws still ~0 px while the menu
+  is black state 0.
+
+## 72. Repo hygiene (2026-10-11)
+
+- `src/XGrid.Xbe` was untracked (hidden by the `*.xbe` ignore rule);
+  negation added + project committed - a clean clone now restores.
+- CLI: `--break-log` repeatable (EIP in hit lines); `--pad-step`;
+  `--watch` remains physical-only.
+- Test baseline **804 -> 885** (Nv2a 67->94, Bus 150->172, Integration
+  15->16).

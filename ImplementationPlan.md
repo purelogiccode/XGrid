@@ -2862,42 +2862,36 @@ menu-idle at 5B steps with no fault (EIP `0x2D3B9`, §§51–61). See M9 + resea
 | 14 — Networking | Partial (MMIO only) | nvnet MMIO + per-reg histograms (§52–53, §62: guest init-only, engine scoped-not-built) |
 | 15–23 | Not started | |
 
-Current test baseline: **804 tests passing** (39 Core, 398 Cpu, 52 Memory, 150 Bus, 15 Integration, 67 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **885 tests passing** (39 Core, 398 Cpu, 52 Memory, 172 Bus, 16 Integration, 94 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
-**NEXT SESSION — beyond state 0.** §63 closed app-intent: XBApp init
-succeeds fully (gate70: D3D device + gamepads created @645M, ESI menu
-object `0xD003B500`), the live dispatcher is `.text 0x1E2FF` (first
-fire @817M, gate71; the D3D twin is dead - gate69 zero hits in 5B),
-and the menu sits in state 0 through 5B (sub-state 0). No emulation
-blocker remains on this path (created devices, unpolled pad, init-only
-NIC, present content, no executed failures) - black = correct state-0
-steady state + guest-baked clip. Next: what moves 0->N (submenu states
-200-299? titles that consume input?) + Track C JIT. Parallel: game media
-readable (§64 — `xdvdfs ls/cat` over NuGet XISOSharp, 007 validated
-DVD_X2) and now served to the guest (§65 — `boot --dvd`, kernel
-sector-probes live, no auth traffic), including compressed CHDs
-(§66 — `ChdDvdImage`, 007 USA boots its XBE off CHD and parks in a
-timing wait: 47% udiv, frozen DVD, slow flips). §67 decoded the wait:
-frame-limiter loop (`delta < [AFE34]-2`, target 26) around a
-KeDelayExecutionThread retry (ord 99) + udiv-heavy delta recompute;
-the tick pump (`0x26B60`, empty callback table) advances the tick at
-~2 Hz (gate76 watch: 720 writes/5.5B, kernel-init then pump-owned).
-gate77 (pump break-log, in flight) already shows 251+ invocations
-from 550M via a single object-callback invoker (`0x379CA`, under
-critical section). Leading theory: TIME DILATION, not deadlock.
-Next session: finish gate77 (`gate77_pump.log`), name the invoker's
-thread context, then decide emulation-gap vs long-wait. Static notes:
+**NEXT SESSION — interactive menu.** The full input path now works
+end-to-end (§§68–70): the Xbox USB daughterboard hub topology was the
+missing piece — the guest expects root port 1 -> 4-port hub -> port 1.3
+-> 3-port hub -> port 1.3.1 -> XID (§69, verified against a live xemu
+`-trace` oracle). The dashboard's XPP stack now opens the pad
+(`0x79E99`/`0x76A1F`/`0x76A81` @947–949M) and polls `GetState` (`0x76C59`)
+every frame; D-pad levels move the menu selection (`obj+0x270` 1 -> 5)
+and a step-timed A edge (`--pad-step`) fires the activation writer
+`0x1859D` (state 14 -> handler `0x1E66A`, @960.5M). Next: decode the
+control list targets (`0x24E90([0x47BC84], idx)` `+0x0C`) to find controls
+that change the screen, add pad-sequence injection (navigate + activate),
+and watch the state machine (`0x1E2F9`) drive real UI. Also open: the
+007 game now fetches the XID descriptor through the hub (phys `0x19FC94`)
+— check whether its input layer polls. Parallel: Xbox PIT frequency
+fixed to 1,125,001 (§68, pump interval now 7,332,029 = 10 x 733,333
+steps) — the game wait is confirmed guest-side pacing, not a gap; Track
+C JIT for interactivity. Static notes:
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
 state, swizzled/linear sampling), M7 (alpha/stencil/depth/blend/mask
 fragment pipeline) and M8 (flip present events with at-flip surface capture,
 `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame`) are implemented and
-unit-tested. **Pixel accounting (§42):** all 10.1M pixels come from 33 legacy
-fullscreen 640×480 inline draws; the ~2637 program draws are degenerate at
-this boot stage (their programs read never-loaded zero constants c58/c59 —
-no-ops on xemu too), so `blended=0 depth=0` is correct for this window.
+unit-tested. **Pixel accounting:** all pixels still come from the legacy
+fullscreen inline draws; program draws paint ~0 px in the black state-0 menu.
+The §42 c58/c59 "no-ops on xemu too" claim was wrong — xemu feeds c58/c59
+from the viewport methods; §71 implemented all 11 aliased constant writers.
 Steady-state program draws validated live in §§57–58 (real shaders, clip
 proven guest-side). The presented frame
 (§43) is 640×480 from surface `0x32A4000`, opaque black — the flip chain
