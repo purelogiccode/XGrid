@@ -2558,3 +2558,48 @@ via the new mechanism: `--pad-script down@950000000,a@960000000
 release @961M, and `HIT 960493586 EIP=0001859D ESI=D003B500` —
 byte-identical to the old-flag regression run (`--pad-analog
 FF00000000000000 --pad-step 960000000`), which still passes.
+## 75. NV2A register-combiner (psh) stage (2026-10-12)
+
+- **Register-map correction**: the task brief's "COMBINECTL 0x1940
+  through 0x1940-0x197C" conflates the PGRAPH engine offset
+  (`NV_PGRAPH_COMBINECTL` = 0x1940, xemu-internal) with channel method
+  offsets, and 0x1940-0x197C is actually `SET_VERTEX_DATA4UB_M`
+  (inline vertex data, section 71). The real combiner methods
+  (`nv2a_regs.h` NV097_SET_* + `pgraph.c` handlers) are: ALPHA_ICW
+  0x260 x8, SPECULAR_FOG_CW0/CW1 0x288/0x28C (final inputs),
+  FACTOR0/1 0xA60/0xA80 x8 (C0/C1, ARGB packed), ALPHA_OCW 0xAA0 x8,
+  COLOR_ICW 0xAC0 x8, SPECULAR_FOG_FACTOR 0x1E20 x2 (final consts),
+  COLOR_OCW 0x1E40 x8, CONTROL 0x1E60, SHADER_STAGE_PROGRAM 0x1E70,
+  DOT_RGBMAPPING 0x1E74, SHADER_OTHER_STAGE_INPUT 0x1E78. None collide
+  with existing ranges (nearest: viewport scale ends 0xAFC).
+- **Stage math** (`glsl/psh.c` facts, reimplemented scalar in
+  `src/XGrid.Nv2a/PshCombiner.cs`): ICW byte = reg[3:0] | chan bit4 |
+  mapping[7:5], word order A[31:24] B C D[7:0]; regs 0 ZERO/DISCARD,
+  1 C0, 2 C1, 3 FOG, 4/5 V0/V1, 8-11 T0-T3, 12/13 R0/R1, 14 V1R0_SUM,
+  15 EF_PROD (ZERO+mapping gives ONE etc.); RGB chan 0=.rgb/0x10=.aaa,
+  alpha chan 0=.b/0x10=.a; 8 input mappings (unsigned identity/invert,
+  expand normal/negate, halfbias normal/negate, signed identity/negate);
+  AB = A*B or dot (RGB only; scalar dot = multiply), CD likewise;
+  muxsum = AB+CD or MUX (MSB flag: r0.a>=0.5 -> CD; LSB: 8-bit
+  quantized r0.a odd -> CD); 6 output mappings; all outputs clamped
+  [-1,1]; blue-to-alpha flags; r0 init (0,0,0,t0.a or 1.0 when stage-0
+  mode is NONE); V0=oD0, V1=oD1, T=oT0-oT3; EF_PROD = E*F (final only,
+  zeros elsewhere); final `rgb = D + mix(C,B,A)`, `a = G`, with
+  clamp_sum/inv_v1/inv_r0 on V1R0_SUM; C0/C1 same-vs-unique via CONTROL
+  bits 0x10/0x100 (final always uses the SPECFOG pair, incl. E/F reads).
+- **Activation rule**: combiner path runs iff the final combiner is
+  programmed (CW0|CW1 != 0); otherwise the legacy slot-0/mul path runs
+  bit-identically (disabled/idle golden test). Stages without a final
+  fall back to legacy (xemu leaves fragColor undefined there).
+- **Textures**: sampler generalized slot-0 -> per-slot (offset/format/
+  address/control/filter/rect already per-slot); modes NONE (0,0,0,1),
+  PROJECT2D (sample), PASSTHRU (coords, w=1); all other modes
+  (dot/bump/dependent) sample as NONE - follow-up. Fog register reads
+  fixed (0,0,0,1): SET_FOG_COLOR + oFog varying are the follow-up.
+- **Validation**: 14 new tests (`PshCombinerTests`): 8 mappings, 6
+  output mappings, multiply, dot clamp (1.75->1) + exact dot, MUX
+  MSB/LSB, alpha modulate, shared-C0 across stages, final lerp,
+  EF_PROD, method-parse state string, disabled golden
+  (`0xFF445566`, CombinerDraws=0), two-texture modulate golden
+   (`0xFF202020` = (0x80*0x40)/255^2 at two pixels, CombinerDraws=1).
+   Full suite green (Nv2a 139); build/format clean.
