@@ -1226,7 +1226,9 @@ downstream file-path; decrypt writer is the SAME site `0x8002EFE6`
 007: APC-suspect REFUTED (§89 — single-threaded guest pipeline
 stall: final chunk memcpy'd but never linked, refill silent since
 1.6B; no device/CPU fix indicated; unblock = guest-behavior EOS
-decision, not correctness);
+decision, not correctness); EOS QUIRK DONE (§92: TitleId-gated
+STRM 2->0, exits 0x20B50 (EBP handle->2) to the 0x138xx next
+gate; 1015 tests);
 nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
 filter/DMA, link/autoneg, socket backend behind `--net-backend`,
 `--net-inject`/`--net-link`; 993 tests).

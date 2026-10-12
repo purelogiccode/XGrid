@@ -3445,3 +3445,73 @@ count) with an identity-map black control. Full suite 1004 green
 fog red `0xFFFF0000`, BUMP_LUM `0xFF808080`) bit-identical.
 **Remains:** cubemap/reflection/project3d/clipplane/BRDF modes,
 HILO hemisphere 5-7, ZCLIP + float depth, backends.
+
+## 92. 007 EOS compatibility quirk: STRM 2->0 exits 0x20B50 to the next gate (2026-10-12)
+
+**COMPATIBILITY QUIRK** (not a correctness fix; §89: no emulation
+layer at fault). Reference: §85 force-probe (state 2->0 at 2.2B
+exits permanently -> 800M new-phase steps, splash unchanged, DVD
+tail frozen).
+
+**Guest facts** (capstone over `Temp\opencode\007-wait2\text_*.bin`,
+reimplemented reading, never copied): `0x20B50` waiter =
+`0x2A740` (chunk or 0) -> `0x26AE0` pump -> 4 B tag build, `cmp
+0x6843504D` (`MPCh`), `je 0x20BB4` (exit (a): `inc [AFE34]`,
+return chunk), else `0x2ABE0` release + `0x2A830` check; empty
+chunk -> `0x2A830` check -> `je` loop else return 0 (exit (b)).
+`0x2A740` checks `STRM` magic + `[handle+8]` remaining + queue
+walk. `0x2A830` returns 1 iff magic `0x4D525453` AND
+`[STRM+0x44]==0` AND `[handle+8]==0` (EOS). `0x2ABE0` (`0x2AC20+`)
+is the only 2->1 clearer + refill `0x2A990`, reachable only on a
+found chunk (catch-22). `0x2AA65` is the refill starved-exit
+(`mov [esi+0x44],2`). `0x30820` is SSE `movntps` memcpy (writer
+`0x30903` lands the `MPCh` tag), not a DVD read.
+
+**Parked signature** (bit-identical across `runE_2b5`, `007-apc`
+`run1`, `runF_3b` + in-worktree `repro_23b` quirk-off 2.3B):
+TitleId `0x4541000D` (cert `0x10178+8` via MMU walk of `0x10118`;
+live-MMU lesson: walk from CR3, e.g. `0xAFE34->0x15EE34`, never
+`+0xAAF000`); STRM VA `0x80B6C800` magic `STRM`, handle VA
+`0x80B6CBE8->STRM`, `handle+8==0`, `STRM+0x44==2`,
+`STRM+0x60=0x80B6FD30` with `MPCh`, `handle+0xC=0x80B6CC48` with
+`0xFFFFFFFE` (tag present but unlinked). `repro_23b` (temp
+`[AFE34]=2` forcing, reverted): EIP `0x26B44` (`0x26AE0` spin),
+EBP=handle, frames 84 stall, STRM bytes above, `checks=0
+fires=0` — confirms §89 in-worktree.
+
+**Quirk design** (`src/XGrid.Host/SevenEosQuirk.cs`,
+`XboxMachine.cs`, `src/XGrid.Cli/Program.cs`;
+`tests/XGrid.Integration.Tests/SevenEosQuirkTests.cs`): gate =
+TitleId + exact signature above via live MMU (`sideEffects:false`
+reads, `sideEffects:true` write) + 10M-step stability (transient
+starves resolve in <1M; park persists 700M+). Effect (minimal) =
+single-dword `STRM+0x44` 2->0 (exactly the force-probe), letting
+the waiter exit through its own (b) path (`0x2A830->1`,
+`0x20B50` return 0); never touches EIP. Fires once (state breaks
+to 0), bounded. Observable = `SevenEosQuirkChecks/Fires` +
+`007 EOS quirk on/off` + `fired at step ...` + final
+`enabled/checks/fires` line. Flag = default-on with
+`--no-007-eos-quirk` opt-out (safe: exact gate + stability +
+once + 1B-step no-fault reference; dashboard/other titles never
+match TitleId; opt-out preserves A/B purity).
+
+**Live validation** (worktree Release, limiter forcing to reach
+the park quickly, reverted; logs `Temp\opencode\007-eos\`):
+quirk-on 3B fired at step 2B (`EIP=0x138E4`, `checks=45775`,
+`fires=1`), state 0 persisted to 3B with staged `MPCh` intact,
+EBP `handle->2` (waiter exited `0x20B50`), EIP `0x13894`
+(streaming, not waiter `0x26B44`), no fault over 1B post-fire
+steps. Frames 84->85 stall (not past 101), EIPHIST no `0x602F7`
+(no `GetState` polling), splash BMP full-white (307200 nonzero,
+unchanged), DVD tail frozen — matches the force-probe reference
+(exits to the next gate, splash/DVD frozen). A/B: quirk-off 2.3B
+stays parked (state 2, EBP handle) vs quirk-on 3B exits (state 0,
+EBP 2); no corruption, no spurious fire. Suite 1015/1015 (993 +
+22 new); build + format clean.
+
+**Next gate (precise):** after the (b) exit (return 0) the game
+leaves the STRM wait (EBP proof) but parks in the `0x138xx`
+splash/streaming loop (`EIP=0x13894`, `ESI/EDI=0`, `EBP=2`,
+frames stall, no input polling, DVD frozen). `0x602F7` never
+reached. Further unblock needs decoding the `0x138xx` wait, not
+STRM.
