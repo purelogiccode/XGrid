@@ -12,12 +12,13 @@ namespace XGrid.Bus.Net;
 /// (hw/xbox/mcpx/nvnet/nvnet.c + nvnet_regs.h): TX/RX idle, TX_RX_CONTROL
 /// IDLE preset, link-up steady state (as with xemu's default always-up
 /// link), write-1-to-clear IRQ/MII status, instant MDIO completion.
-/// Packet engine (P0 skeleton + P1 TX): guest-RAM descriptor rings
-/// (8-byte LE {buf, len, flags} arrays), KICK-driven TX walk with
-/// coalescing, VALID-clear writeback, TX completion IRQ, and a pluggable
-/// <see cref="INetworkBackend"/> (loopback/logger default). RX (P2) and the
-/// socket backend (P3) are future work: RX descriptors are latched but never
-/// consumed, and no receive IRQs are ever raised.
+/// Packet engine (P0 skeleton + P1 TX + P2 RX + P3 link/backend): guest-RAM
+/// descriptor rings (8-byte LE {buf, len, flags} arrays), KICK-driven TX walk
+/// with coalescing, VALID-clear writeback, TX completion IRQ, RX filter +
+/// DMA-write with RX/RX_NOBUF IRQs (polled from the backend via
+/// <see cref="PollReceive"/> on <see cref="Advance"/>), link toggle with
+/// 250 ms autoneg, and a pluggable <see cref="INetworkBackend"/>
+/// (loopback/logger default, socket user-mode backend behind a CLI flag).
 /// </summary>
 public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
 {
@@ -70,12 +71,18 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
     private const uint TxRxIdle = 1u << 3;
     private const uint TxRxReset = 1u << 4;
     private const uint TxStart = 1u << 0;
+    private const uint RxStart = 1u << 0;
+    private const uint PacketFilterMyAddr = 1u << 5;
     private const uint AdapterLinkUp = 1u << 2;
+    private const uint MiiLinkChange = 1u << 3;
     private const uint MdioWrite = 1u << 10;
     private const uint MdioInUse = 1u << 15;
     private const uint MdioPhyRegMask = 0x1Fu;
     private const uint SetupReg5Bit31 = 1u << 31;
     private const uint BmsrLinkStatus = 1u << 2;
+    private const uint BmsrAnComp = 1u << 5;
+    private const uint BmcrAutoEn = 1u << 12;
+    private const uint AnlparAck = 1u << 14;
 
     // TX descriptor flag bits (xemu nvnet_regs.h NV_TX_*).
     private const uint TxFlagLastPacket = 1u << 0;
@@ -93,6 +100,20 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
 
     /// <summary>TX coalesce buffer size: default MTU (1500) + 128 slack (xemu TX_ALLOC_BUFSIZE).</summary>
     public const int TxBufferSize = 1500 + 128;
+
+    /// <summary>RX frame size limit: default MTU (1500) + 128 slack (xemu RX_ALLOC_BUFSIZE).</summary>
+    public const int RxBufferSize = 1500 + 128;
+
+    /// <summary>Link autonegotiation delay in milliseconds (xemu AUTONEG_DURATION_MS).</summary>
+    public const ulong AutonegDelayMs = 250;
+
+    /// <summary>Maximum frames held in the device-side pending slot + inject path (matches loopback bound).</summary>
+    public const int MaxPendingFrames = 64;
+
+    // RX descriptor flag bits (xemu nvnet_regs.h NV_RX_*).
+    private const uint RxFlagDescriptorValid = 1u << 0;
+    private const uint RxFlagBit4 = 1u << 4;
+    private const uint RxFlagAvail = 1u << 15;
 
     // PHY registers (MII): xemu phy_reg_init, link-up steady state.
     private const int PhyBmcr = 0;
@@ -114,6 +135,10 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
     private readonly Dictionary<uint, int> _regWrites = new();
     private readonly byte[] _txBuffer = new byte[TxBufferSize];
     private uint _txOffset;
+    private byte[]? _pendingFrame;
+    private bool _autoNegPending;
+    private ulong _autoNegElapsedMs;
+    private ulong _autoNegRemainder;
 
     /// <summary>Creates the nvnet controller in its power-on state.</summary>
     public McpxNvNetDevice()
@@ -167,6 +192,33 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of KICKs dropped by the transmit gates, for diagnostics.</summary>
     public long CantTransmitCount { get; private set; }
 
+    /// <summary>Gets the number of received frames DMA-written to the guest, for diagnostics.</summary>
+    public long RxPackets { get; private set; }
+
+    /// <summary>Gets the total received frame bytes, for diagnostics.</summary>
+    public long RxBytes { get; private set; }
+
+    /// <summary>Gets the number of received frames dropped by the receive filter, for diagnostics.</summary>
+    public long RxDropFilter { get; private set; }
+
+    /// <summary>Gets the number of received frames dropped for lack of an AVAIL buffer, for diagnostics.</summary>
+    public long RxDropNoBuf { get; private set; }
+
+    /// <summary>Gets the number of received frames dropped as oversized, for diagnostics.</summary>
+    public long RxOversize { get; private set; }
+
+    /// <summary>Gets the number of injected frames blocked by the receive gates, for diagnostics.</summary>
+    public long CantReceiveCount { get; private set; }
+
+    /// <summary>Gets the number of link up/down transitions, for diagnostics.</summary>
+    public long LinkChanges { get; private set; }
+
+    /// <summary>Gets whether the PHY reports link up, for diagnostics.</summary>
+    public bool LinkUp => (_phy[PhyBmsr] & BmsrLinkStatus) != 0;
+
+    /// <summary>Gets whether a 250 ms autonegotiation is in flight, for diagnostics.</summary>
+    public bool AutoNegPending => _autoNegPending;
+
     /// <summary>Gets the TX ring base address, for diagnostics.</summary>
     public uint TxRingBaseAddress => _regs[TxRingBase >> 2];
 
@@ -199,10 +251,21 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
         _regReads.Clear();
         _regWrites.Clear();
         _txOffset = 0;
+        _pendingFrame = null;
+        _autoNegPending = false;
+        _autoNegElapsedMs = 0;
+        _autoNegRemainder = 0;
         TxPackets = 0;
         TxBytes = 0;
         TxKicks = 0;
         CantTransmitCount = 0;
+        RxPackets = 0;
+        RxBytes = 0;
+        RxDropFilter = 0;
+        RxDropNoBuf = 0;
+        RxOversize = 0;
+        CantReceiveCount = 0;
+        LinkChanges = 0;
         _regs[TxRxControl / 4] |= TxRxIdle;
         _regs[AdapterControl / 4] |= AdapterLinkUp;
         _regs[MacAddrA / 4] = MacDefaultA;
@@ -242,6 +305,275 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Reports whether a received frame can be DMA-written: RX started, DMA
+    /// enabled (BIT2 clear), PHY link up, and an AVAIL descriptor posted
+    /// (xemu nvnet_can_receive).
+    /// </summary>
+    public bool CanReceive()
+    {
+        return CanReceiveReason() is null;
+    }
+
+    /// <summary>Returns the receive-gate failure reason, or null when reception is allowed.</summary>
+    public string? CanReceiveReason()
+    {
+        string? gate = GateReason();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
+        if (DmaMemory is null)
+        {
+            return "no-buf";
+        }
+
+        LoadDescriptor(PeekCurrentRx(), out _, out _, out uint flags);
+        return (flags & RxFlagAvail) != 0 ? null : "no-buf";
+    }
+
+    /// <summary>
+    /// Receive gates without the buffer check (RX started, DMA enabled, link up).
+    /// The no-buf miss is detected at DMA time so a deliverable frame raises the
+    /// RX_NOBUF IRQ instead of vanishing.
+    /// </summary>
+    private string? GateReason()
+    {
+        if ((_regs[RxControl >> 2] & RxStart) == 0)
+        {
+            return "rx-start";
+        }
+
+        if ((_regs[TxRxControl >> 2] & TxRxBit2) != 0)
+        {
+            return "bit2";
+        }
+
+        if ((_phy[PhyBmsr] & BmsrLinkStatus) == 0)
+        {
+            return "link";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Receive filter (xemu receive_filter): broadcast always passes; when the
+    /// MYADDR packet-filter bit is clear everything passes; otherwise the
+    /// masked-multicast compare runs first, then the unicast MAC compare. The
+    /// multicast path is skipped only when the programmed address is broadcast,
+    /// so reset-zero address/mask registers match every frame (xemu-literal).
+    /// </summary>
+    public bool PassesFilter(ReadOnlySpan<byte> frame)
+    {
+        if (frame.Length < 6)
+        {
+            return false;
+        }
+
+        if (IsBroadcast(frame))
+        {
+            return true;
+        }
+
+        if ((_regs[PacketFilter >> 2] & PacketFilterMyAddr) == 0)
+        {
+            return true;
+        }
+
+        Span<byte> programmed = stackalloc byte[6];
+        ReadMacRegs(MulticastAddrA, MulticastAddrB, programmed);
+        if (!IsBroadcast(programmed))
+        {
+            Span<byte> mask = stackalloc byte[6];
+            ReadMacRegs(MulticastMaskA, MulticastMaskB, mask);
+            bool match = true;
+            for (int i = 0; i < 6; i++)
+            {
+                if ((byte)(frame[i] & mask[i]) != programmed[i])
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                return true;
+            }
+        }
+
+        Span<byte> mac = stackalloc byte[6];
+        ReadMacRegs(MacAddrA, MacAddrB, mac);
+        for (int i = 0; i < 6; i++)
+        {
+            if (frame[i] != mac[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// One-shot host injection running the wire pipeline (oversize drop, filter,
+    /// receive gates, RX DMA). Returns true when the frame reached guest memory.
+    /// A no-buf frame raises RX_NOBUF and is stashed for a later
+    /// <see cref="PollReceive"/>; gate-blocked frames are counted, never retried.
+    /// </summary>
+    public bool InjectFrame(ReadOnlySpan<byte> frame)
+    {
+        if (frame.Length > RxBufferSize)
+        {
+            RxOversize++;
+            return false;
+        }
+
+        if (!PassesFilter(frame))
+        {
+            RxDropFilter++;
+            return false;
+        }
+
+        if (GateReason() is not null || DmaMemory is null)
+        {
+            CantReceiveCount++;
+            return false;
+        }
+
+        if (!TryDmaFrameToGuest(frame))
+        {
+            RaiseNoBuf(frame);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Drains queued backend frames through the RX engine (oversize drop, filter,
+    /// RX DMA with RX/RX_NOBUF IRQs). A frame that meets no AVAIL buffer raises
+    /// RX_NOBUF and is held in the pending slot (QEMU hold-and-retry), delivered
+    /// on a later call once the guest posts buffers. Returns the frames delivered.
+    /// </summary>
+    public int PollReceive()
+    {
+        int delivered = 0;
+        if (_pendingFrame is not null)
+        {
+            if (GateReason() is not null)
+            {
+                return 0;
+            }
+
+            if (!TryDmaFrameToGuest(_pendingFrame))
+            {
+                return 0;
+            }
+
+            _pendingFrame = null;
+            delivered++;
+        }
+
+        while (GateReason() is null && DmaMemory is not null)
+        {
+            if (!Backend.TryReceive(out byte[]? frame) || frame is null)
+            {
+                break;
+            }
+
+            if (frame.Length > RxBufferSize)
+            {
+                RxOversize++;
+                continue;
+            }
+
+            if (!PassesFilter(frame))
+            {
+                RxDropFilter++;
+                continue;
+            }
+
+            if (!TryDmaFrameToGuest(frame))
+            {
+                RaiseNoBuf(frame);
+                break;
+            }
+
+            delivered++;
+        }
+
+        return delivered;
+    }
+
+    /// <summary>
+    /// Sets the link state. Down applies immediately; up completes immediately
+    /// unless autonegotiation is enabled and incomplete, in which case the link
+    /// comes up after 250 ms of <see cref="Advance"/> (xemu restart_autoneg).
+    /// Both transitions raise MII LINKCHANGE + the MIIEVENT IRQ.
+    /// </summary>
+    public void SetLinkUp(bool up)
+    {
+        if (up)
+        {
+            if (LinkUp)
+            {
+                _autoNegPending = false;
+                _autoNegElapsedMs = 0;
+                _autoNegRemainder = 0;
+                return;
+            }
+
+            if ((_phy[PhyBmcr] & BmcrAutoEn) != 0 && (_phy[PhyBmsr] & BmsrAnComp) == 0)
+            {
+                _autoNegPending = true;
+                _autoNegElapsedMs = 0;
+                _autoNegRemainder = 0;
+            }
+            else
+            {
+                CompleteLinkUp(negotiated: false);
+            }
+        }
+        else
+        {
+            _autoNegPending = false;
+            _autoNegElapsedMs = 0;
+            _autoNegRemainder = 0;
+            if (!LinkUp)
+            {
+                return;
+            }
+
+            ApplyLinkDown();
+        }
+    }
+
+    /// <summary>
+    /// Advances the 250 ms autonegotiation timer and drains queued backend
+    /// frames through the RX engine. Called from the machine advance path.
+    /// </summary>
+    public void Advance(ulong cycles)
+    {
+        if (_autoNegPending)
+        {
+            _autoNegRemainder += cycles * 1000;
+            ulong ms = _autoNegRemainder / XboxBus.CpuClockHz;
+            _autoNegRemainder %= XboxBus.CpuClockHz;
+            _autoNegElapsedMs += ms;
+            if (_autoNegElapsedMs >= AutonegDelayMs)
+            {
+                _autoNegElapsedMs = 0;
+                _autoNegRemainder = 0;
+                CompleteLinkUp(negotiated: true);
+            }
+        }
+
+        PollReceive();
     }
 
     /// <inheritdoc />
@@ -484,6 +816,147 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
         }
 
         _regs[TxRingNext >> 2] = next;
+    }
+
+    private uint PeekCurrentRx()
+    {
+        // Clamped NEXT read without latching CURRENT (side-effect-free probe
+        // for CanReceive; xemu's rx_buf_available latches instead).
+        uint baseAddr = _regs[RxRingBase >> 2];
+        ulong span = (ulong)RxRingCount * DescriptorSize;
+        uint next = _regs[RxRingNext >> 2];
+        if (next < baseAddr || (ulong)next + DescriptorSize > (ulong)baseAddr + span)
+        {
+            next = baseAddr;
+        }
+
+        return next;
+    }
+
+    private uint UpdateCurrentRx()
+    {
+        // xemu update_current_rx_ring_desc_addr: NEXT clamped into the ring.
+        uint current = PeekCurrentRx();
+        _regs[RxRingCurrent >> 2] = current;
+        return current;
+    }
+
+    private void AdvanceNextRx()
+    {
+        // xemu advance_next_rx_ring_desc_addr: CURRENT+8 with wrap to BASE.
+        uint baseAddr = _regs[RxRingBase >> 2];
+        ulong span = (ulong)RxRingCount * DescriptorSize;
+        uint next = _regs[RxRingCurrent >> 2] + DescriptorSize;
+        if ((ulong)next >= (ulong)baseAddr + span)
+        {
+            next = baseAddr;
+        }
+
+        _regs[RxRingNext >> 2] = next;
+    }
+
+    private void RaiseNoBuf(ReadOnlySpan<byte> frame)
+    {
+        // Deliberate deviation: xemu's dma_packet_to_guest returns -1 silently
+        // when no buffer is available (QEMU holds the packet). The forcedeth
+        // driver replenishes rings off the RX_NOBUF interrupt, so a silent drop
+        // would wedge it; raise the specified IRQ and hold the frame instead.
+        _regs[IrqStatus >> 2] |= IrqRxNoBuf;
+        UpdateIrq();
+        RxDropNoBuf++;
+        if (_pendingFrame is null)
+        {
+            _pendingFrame = frame.ToArray();
+        }
+    }
+
+    private bool TryDmaFrameToGuest(ReadOnlySpan<byte> frame)
+    {
+        // xemu dma_packet_to_guest: AVAIL consume, DMA-write into desc.buf,
+        // len=size writeback, flags=BIT4|DESCRIPTORVALID, RX IRQ, advance.
+        // The xemu (len+1)>=size assert becomes a no-buf miss here.
+        if (DmaMemory is null)
+        {
+            return false;
+        }
+
+        uint descAddr = UpdateCurrentRx();
+        LoadDescriptor(descAddr, out uint bufAddr, out uint capacity, out uint flags);
+        if ((flags & RxFlagAvail) == 0 || capacity < (uint)frame.Length)
+        {
+            return false;
+        }
+
+        INvNetMemory memory = DmaMemory;
+        for (int i = 0; i < frame.Length; i++)
+        {
+            memory.WritePhysical(bufAddr + (uint)i, frame[i]);
+        }
+
+        StoreDescriptor(descAddr, bufAddr, (ushort)frame.Length, RxFlagBit4 | RxFlagDescriptorValid);
+        AdvanceNextRx();
+        RxPackets++;
+        RxBytes += frame.Length;
+        _regs[IrqStatus >> 2] |= IrqRx;
+        UpdateIrq();
+        return true;
+    }
+
+    private void ApplyLinkDown()
+    {
+        // xemu update_regs_on_link_down + set_link_down.
+        _phy[PhyBmsr] = (ushort)(_phy[PhyBmsr] & ~(BmsrLinkStatus | BmsrAnComp));
+        _phy[PhyAnlpar] = (ushort)(_phy[PhyAnlpar] & ~AnlparAck);
+        _regs[AdapterControl >> 2] &= ~AdapterLinkUp;
+        _regs[MiiStatus >> 2] |= MiiLinkChange;
+        _regs[IrqStatus >> 2] |= IrqMiiEvent;
+        LinkChanges++;
+        UpdateIrq();
+    }
+
+    private void CompleteLinkUp(bool negotiated)
+    {
+        // xemu autoneg_done + update_regs_on_link_up + set_link_up.
+        if (negotiated)
+        {
+            _phy[PhyAnlpar] = (ushort)(_phy[PhyAnlpar] | AnlparAck);
+            _phy[PhyBmsr] = (ushort)(_phy[PhyBmsr] | BmsrAnComp);
+        }
+
+        _phy[PhyBmsr] = (ushort)(_phy[PhyBmsr] | BmsrLinkStatus);
+        _regs[AdapterControl >> 2] |= AdapterLinkUp;
+        _regs[MiiStatus >> 2] |= MiiLinkChange;
+        _regs[IrqStatus >> 2] |= IrqMiiEvent;
+        _autoNegPending = false;
+        LinkChanges++;
+        UpdateIrq();
+    }
+
+    private static bool IsBroadcast(ReadOnlySpan<byte> address)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            if (address[i] != 0xFF)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void ReadMacRegs(uint addrA, uint addrB, Span<byte> address)
+    {
+        // xemu compares the destination MAC against the LE register pair
+        // (first four bytes from A, last two from B) in memory order.
+        uint regA = _regs[addrA >> 2];
+        uint regB = _regs[addrB >> 2];
+        address[0] = (byte)regA;
+        address[1] = (byte)(regA >> 8);
+        address[2] = (byte)(regA >> 16);
+        address[3] = (byte)(regA >> 24);
+        address[4] = (byte)regB;
+        address[5] = (byte)(regB >> 8);
     }
 
     private void LoadDescriptor(uint descAddr, out uint bufAddr, out uint length, out uint flags)

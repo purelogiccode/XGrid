@@ -270,6 +270,7 @@ public sealed class XboxMachine
         Apu.Advance(cycles);
         Usb0.Advance(cycles);
         Usb1.Advance(cycles);
+        Net.Advance(cycles);
         _nv2ARemainder += cycles * Nv2AMmio.CoreClockHz;
         ulong ticks = _nv2ARemainder / XboxBus.CpuClockHz;
         _nv2ARemainder %= XboxBus.CpuClockHz;

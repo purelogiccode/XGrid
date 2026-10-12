@@ -3176,3 +3176,74 @@ still dominantly `4B7FFFFF` — correctly so (device units).
 (compare against xemu pixels if it ever passes the animation wait, or
 drive to a known screen); ZCLIP bounds + float-depth remain untracked;
 fixed-function foggen still open (§78).
+## 88. nvnet P2 RX + P3 backend merged: full packet engine (2026-10-12)
+
+`wave/nvnet-p2p3` on top of the §84 P0/P1 engine. Files:
+`src/XGrid.Bus/Net/McpxNvNetDevice.cs` (RX + link),
+`src/XGrid.Bus/Net/SocketNetworkBackend.cs` (new, user-mode IP),
+`src/XGrid.Bus/Net/INetworkBackend.cs` (`TryReceive` added to the
+seam), `src/XGrid.Host/XboxMachine.cs` (`Net.Advance` wired into the
+advance path), `src/XGrid.Cli/Program.cs` (`--net-backend`,
+`--net-inject`, `--net-link`, extended NVNET line).
+
+- **P2 RX** (xemu `dma_packet_to_guest` + `receive_filter` +
+  `nvnet_can_receive`, facts only): gates RX_START && !BIT2 &&
+  LINK_ST plus AVAIL (`CanReceive`/`CanReceiveReason` with
+  `rx-start/bit2/link/no-buf` reasons); filter = broadcast-always +
+  MYADDR-clear accept-all + masked-multicast compare + unicast MAC
+  compare (xemu-literal, including the reset-zero-regs match-all
+  quirk — the multicast path skips only on a programmed broadcast
+  address); oversize (`>1500+128`) drop; DMA-write into desc.buf with
+  `len=size` writeback and `BIT4|DESCRIPTORVALID` flags (AVAIL
+  consumed); RX (`0x2`) IRQ; ring clamp/wrap mirroring the TX
+  helpers; RX counts = high-16 mask + 1. Delivery enters via
+  `PollReceive` (backend drain, called from `Advance`) or the
+  one-shot `InjectFrame` (CLI `--net-inject <hex>`); a frame that
+  meets no AVAIL buffer is held in a pending slot (QEMU
+  hold-and-retry) for a later poll. Counters:
+  `rx_pkts/rx_bytes/rx_drop_filter/rx_drop_nobuf/rx_oversize/cant_rx`.
+- **Deliberate deviation (logged):** xemu never raises RX_NOBUF
+  (`dma_packet_to_guest` returns -1 silently; verified by grep — no
+  `NOBUF` raise exists in `nvnet.c`). XGrid raises the specified
+  `0x4` IRQ on the no-buf miss instead: the forcedeth driver
+  replenishes rings off that interrupt, so a silent drop would wedge
+  it. Everything else is xemu-parity.
+- **P3 backend:** `SocketNetworkBackend` (default stays
+  loopback/logger; `--net-backend socket` selects it): virtual
+  gateway `192.168.0.1` (locally administered MAC
+  `52:55:0A:00:02:01`), ARP responder for the gateway, ICMP echo
+  responder, UDP NAT relay via host sockets (unicast + broadcast,
+  per-4-tuple mappings, 60 s sweep, computed IP/UDP checksums),
+  guest IP/MAC learning from outbound frames; TCP and non-gateway
+  protocols dropped + counted. TAP/bridge out of scope; TCP proxy /
+  port-forward is the follow-up (dashboard FTP/telnet are inbound
+  servers). All socket polling is non-blocking (`TryReceive`).
+- **Link (P3):** `SetLinkUp` (`--net-link down|up`); down applies
+  immediately (LINK_ST+AN_COMP+ANLPAR-ACK cleared, ADAPTER LINKUP
+  cleared); up with AUTOEN && !AN_COMP pends a 250 ms autoneg timer
+  in `Advance` (xemu `AUTONEG_DURATION_MS`), else completes
+  instantly (LINK_ST only, no AN_COMP — xemu parity). Both
+  transitions raise MII LINKCHANGE + MIIEVENT (`0x40`); W1C clears
+  both status words. Reset restores instant link-up (AN_COMP set),
+  matching the established steady state.
+- **§81 open questions resolved:** BIT2 gates RX as well as TX with
+  reason-string + counter logging; AN_COMP stays instant at reset
+  (no driver wait ever observed — guest is init-only, zero
+  ring/KICK); SIZE counts are mask+1 on both rings; filter regs are
+  latched AND enforced (defaults accept-all, so init-only guests see
+  zero change); first real frame type is still open (no guest TX on
+  boot) — loopback round-trip proves the path with broadcast frames.
+- **Validation:** 30 new tests (14 RX: AVAIL consume + writeback,
+  2-desc wrap, filter match/mismatch matrix incl. masked multicast,
+  no-buf + short-desc NOBUF IRQ, oversize, gate reasons, pending
+  redelivery, Advance drain, loopback TX→RX round-trip; 8 link:
+  down-blocks-TX/RX + MIIEVENT + W1C, 250 ms autoneg partial/full,
+  instant-no-AUTOEN, idempotence, pending-cancel, reset, idle-Advance
+  side-effect-free; 7 socket:
+  ARP reply bytes, ARP miss, ICMP echo + checksums, UDP loopback
+  relay round-trip with re-encapsulation, runts, TCP drop, disposed;
+  1 machine: RX through guest RAM → PIC IRQ4 assert/W1C deassert).
+  All 28 pre-existing nvnet tests green unchanged; guest
+  init-only behavior unchanged (STATUS 0, IDLE-set, zero-KICK
+   steadiness; `Advance` with an empty backend is a no-op).
+   Full suite 986 green.
