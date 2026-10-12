@@ -226,7 +226,9 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
-        AssertPosition(outputs, 1.0f, 2.0f, 9.0f, 9.0f);
+        // Hardware mask order is bit-reversed (bit 0 = w): 0x3 writes z,w
+        // from v0 and 0xC writes x,y from c0.
+        AssertPosition(outputs, 9.0f, 9.0f, 3.0f, 4.0f);
     }
 
     [Fact]
@@ -384,7 +386,10 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
-        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, 1.0f);
+        // Mask 0x7 selects y, z, w under the hardware bit order. The w lane
+        // passes through the shader-epilogue clamp-away-from-zero (xemu),
+        // so 0.0 arrives as +2^-64, not +0.0.
+        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, BitConverter.UInt32BitsToSingle(0x1F800000u));
     }
 
     [Fact]
@@ -436,10 +441,11 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        Assert.True(float.IsNaN(outputs[0][0]));
+        // Mask 0x1 selects w and 0xE selects x, y, z under the hardware bit order.
+        Assert.Equal(1.0f, outputs[0][0]);
         Assert.Equal(1.0f, outputs[0][1]);
         Assert.Equal(1.0f, outputs[0][2]);
-        Assert.Equal(1.0f, outputs[0][3]);
+        Assert.True(float.IsNaN(outputs[0][3]));
     }
 
     [Fact]
@@ -460,10 +466,11 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        Assert.True(float.IsNaN(outputs[0][0]));
+        // Mask 0x1 selects w and 0xE selects x, y, z under the hardware bit order.
+        Assert.Equal(1.0f, outputs[0][0]);
         Assert.Equal(1.0f, outputs[0][1]);
         Assert.Equal(1.0f, outputs[0][2]);
-        Assert.Equal(1.0f, outputs[0][3]);
+        Assert.True(float.IsNaN(outputs[0][3]));
     }
 
     [Fact]
@@ -484,10 +491,12 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        Assert.Equal(0x80000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
+        // Mask 0x1 selects w and 0x6 selects y, z under the hardware bit order.
+        // The -0.0 in w passes through the epilogue clamp-away-from-zero as -2^-64.
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
         Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][1]));
         Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][2]));
-        Assert.Equal(1.0f, outputs[0][3]);
+        Assert.Equal(0x9F800000u, BitConverter.SingleToUInt32Bits(outputs[0][3]));
     }
 
     [Fact]
@@ -508,10 +517,12 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        Assert.Equal(0x80000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
+        // Mask 0x1 selects w and 0x6 selects y, z under the hardware bit order.
+        // The -0.0 in w passes through the epilogue clamp-away-from-zero as -2^-64.
+        Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][0]));
         Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][1]));
         Assert.Equal(0x00000000u, BitConverter.SingleToUInt32Bits(outputs[0][2]));
-        Assert.Equal(1.0f, outputs[0][3]);
+        Assert.Equal(0x9F800000u, BitConverter.SingleToUInt32Bits(outputs[0][3]));
     }
 
     [Fact]
@@ -534,7 +545,9 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 6, constants, inputs, outputs);
 
-        AssertPosition(outputs, 0.0f, 0.0f, 1.0f, 1.0f);
+        // Masks 0x1/0x2/0x4 select w, z, y under the hardware bit order.
+        // The 0.0 in w passes through the epilogue clamp-away-from-zero as +2^-64.
+        AssertPosition(outputs, 0.0f, 1.0f, 0.0f, BitConverter.UInt32BitsToSingle(0x1F800000u));
     }
 
     [Fact]
@@ -555,7 +568,9 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, 1.0f);
+        // Masks 0x1/0x2 select w, z under the hardware bit order.
+        // The 0.0 in w passes through the epilogue clamp-away-from-zero as +2^-64.
+        AssertPosition(outputs, 0.0f, 0.0f, 0.0f, BitConverter.UInt32BitsToSingle(0x1F800000u));
     }
 
     [Fact]
@@ -578,7 +593,9 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 6, constants, inputs, outputs);
 
-        AssertPosition(outputs, 0.0f, 0.0f, 1.0f, 1.0f);
+        // Masks 0x1/0x2/0x4 select w, z, y under the hardware bit order.
+        // The 0.0 in w passes through the epilogue clamp-away-from-zero as +2^-64.
+        AssertPosition(outputs, 0.0f, 1.0f, 0.0f, BitConverter.UInt32BitsToSingle(0x1F800000u));
     }
 
     [Fact]
@@ -599,7 +616,8 @@ public sealed class VshProgramTests
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
-        AssertPosition(outputs, 1.0f, 1.0f, 0.0f, 1.0f);
+        // Masks 0x1/0x2 select w, z under the hardware bit order.
+        AssertPosition(outputs, 0.0f, 0.0f, 1.0f, 1.0f);
     }
 
     [Fact]

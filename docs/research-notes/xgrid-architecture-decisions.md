@@ -3033,3 +3033,257 @@ pkt/byte/drop counters, `cant_tx/cant_rx` reasons, ring pointers,
 IRQ assert/deassert, link toggles. Open: BIT2 reliance, AN_COMP
 timing, SIZE counts, filter programming, first real frame type
 (needs a TX-logging run).
+
+## 86. DVD-vs-HDD media branch pinned + title-page decrypt writer + PacketLog cap (2026-10-12)
+
+Work in worktree `wave/dvd-media-branch` (main checkout untouched;
+worktree-built Release CLI; logs in `Temp\opencode\dvd-media\`). Boot
+args replicate the §83 handoff bit-exactly (`--break 0x22E35` fires at
+step 537,926,130 in break world).
+
+**Media-branch verdict: neither `0x80021693` nor `0x80030980` is
+media-dependent.** Both fire at identical steps with identical state on
+DVD (007 CHD) and HDD (dashboard) boots:
+
+- `0x80030980` (first hit step 24,304,655, ESP=`0x800395E4`):
+  `CMP byte [0x8003A87C],0` (the §83 init flag, still 0) then
+  `TEST [0x8003B138],1` (also 0), then port I/O (`out dx,al` forms at
+  `0x80030995+`). Caller `0x80018B7A` (call at `0x80018B75`);
+  ESI=`0x0040008C` EDI=`0x80406000` EAX=`0x80036840` (zeros).
+  `--break-log` through 600M shows ~20 hits from many callers
+  (`0x80062828/43/4D/57/61/6D/77`, `0x8001573E`, `0x800309BE/E3/...`)
+  -> a shared port-I/O helper, not a branch.
+- `0x80021693` (single hit step 25,054,251, ESP=`0x800395BC`):
+  `OR dword [0x8003ABC4],0xFF` + 26-entry table init at `0x8003ABB0`.
+  Called from decision fn `0x80015724` (call at `0x80015750`, return
+  `0x80015756`: `test al,al` then `push 0x5E` vs `call 0x80061C92`);
+  decision caller is `0x8001C72E` (return `0x8001C733` on stack). Stack
+  args `0x80406000`/`0x0040008C` are unmapped here (no path strings).
+
+ESP-window dumps, flag bytes (`[0x8003A87C]=0`, `[0x8003B138]=0`) and
+caller code are byte-identical across media. The media-dependent
+decision is downstream and file-path based (`D:\default.xbe` vs `C:\`
+fallback), confirming §83: no single media branch at these sites.
+
+**Decrypt-writer verdict: SAME SITE `0x8002EFE6`, same key.** DVD:
+`--break 0x8002EFE6` fires step 25,955,482, EAX=`0xA8FC57AB`, VA
+`0x10128` = `0xA8FE799E` (encrypted); insn `31 05 28 01 01 00`
+(`xor [0x10128],eax`) yields `0x00022E35` (007 entry). HDD analog fires
+step 26,343,475 with same EIP/key, ciphertext `0xA8FD7DBC` ->
+`0x00012A17` (dashboard entry). Physical watch (`--watch
+0xBF128,0xBF130`; VA `0x10128` -> phys `0xBF128` via CR3=`0xF000` page
+walk, image base VA `0x10000` -> phys `0xBF000`):
+`W000BF128 n=3 first=8001FAF5:4=0 last=8002EFE6:4=22E35`
+(zero-fill, load, decrypt) — the writer is the decrypt site.
+
+**PacketLog cap 16 -> 256** (`AtaDevice.PacketLogCapacity`,
+`src/XGrid.Storage/AtaDevice.cs`; 2 tests in
+`tests/XGrid.Storage.Tests/AtapiTests.cs`: 30-packet full retention in
+order, 266-packet cap evicting oldest). Single-run re-capture to the
+handoff (27 packets): `00` TUR, `5A` MODE SENSE(10), `03` REQ SENSE,
+`25` READ CAPACITY, `28@0x20`, `28@0x4B8`, `AD`, `03` REQ SENSE
+(post-AD 5/0x20 sense fetch), then `28@0x4BA/4FA/51A/51C/52C/52E/546/
+548/54A/54C/558/55A/564/566/5A6/5E6/5F6/5F8/604` — confirms the §83
+order including the AD-failure sense fetch in one run (the old cap
+showed only the trailing 16 READs).
+
+Suite 958/958 (956 + 2 new); build + format clean.
+## 87. Viewport bake decoded: C0.z=16.7M is correct XDK output — the missing piece was emulator-side /clipRange.y (2026-10-12)
+
+**Verdict first.** There is no poisoned bake and no surface/zeta/caps
+response to fix: the guest driver emits textbook-correct XDK
+device-depth output (viewport-Z `0AF8=4B7FFFFF`, `C0=(1,1,16777215,1)`),
+and the black scene was our rasterizer saturating device-unit Z to 1.0
+because it never implemented xemu's `oPos.z / clipRange.y`
+normalization. Fix merged on `wave/viewport-bake`; the 1B submenu
+window goes from a black frame to a 57K-nonzero rendered scene
+(pixels 10.4M → 118.8M). C0.z and viewport-Z are UNCHANGED by the fix
+(still 16.7M — that is the correct value); sanity appears downstream
+of the divide.
+
+**Reference facts extracted (no code copied).** xemu
+`hw/xbox/nv2a/nv2a_regs.h`: `SET_SURFACE_FORMAT` (`0x208`) ZETA field
+is bits [4:7] with Z16=1/Z24S8=2; `SET_VIEWPORT_SCALE` = `0xAF0`,
+`SET_VIEWPORT_OFFSET` = `0xA20`, `SET_CLIP_MAX` = `0x398`,
+`SET_TRANSFORM_CONSTANT` = `0xB80`; XF `VPSCL`/`VPOFF` slots are
+`0x3A`/`0x3B` (58/59). `pgraph/pgraph.c`: viewport scale/offset
+methods only feed `vsh_constants[VPSCL/VPOFF]` (fixed-function
+shaders); guest-program constants are never derived from the viewport
+— the driver bakes them. `pgraph/glsl/vsh-prog.c`: `mask_str`
+(bit0=w, bit1=z, bit2=y, bit3=x) is used for every masked write
+including the paired temp path; the fog write expands to
+`oFog.<fogmask> = result.<fogmask>`, i.e. oFog.x always comes from
+result.x (only the set-bit COUNT selects y/z/w); the vertex epilogue
+does `oPos.z = oPos.z / clipRange.y`. `pgraph/glsl/common.c`:
+`clipRange.y` = zeta-format maximum (Z16: 0xFFFF, Z24S8: 0xFFFFFF;
+float-depth variant via `CONTROL0/Z_FORMAT`:
+`f16_max=511.9375`/`f24_max=1e30`). `pgraph/glsl/psh.c`: fragment
+`zvalue` is interpolated screen-space (device units), clamped to
+`[ZCLIPMIN,ZCLIPMAX]` (guest `0x398` → `ZCLIPMAX`), stored
+`floor(z)/65535` (D16) or `floor(z)/16777216` (D24). `pgraph/glsl/vsh.c`:
+fog distance is always `oFog.x`; `vsh_header` inits `oFog=(0,0,0,1)`.
+Cxbx `XbVertexShader.h` (`MASK_X=0x008, _Y=0x004, _Z=0x002, _W=0x001`)
+and `Direct3D9/VertexShader.cpp` (`DestMaskHlsl`: non-x oFog masks are
+redirected to x with a `LOG_TEST_CASE`, seen once in Lego Star Wars II)
+independently confirm both the bit order and the oFog.x rule.
+
+**Evidence chain (guest is correct).** RAM viewport `MinZ=0/MaxZ=1`
+(§61) with a Z24S8-default depth range gives device Z scale
+`(1−0)×0xFFFFFF = 16777215`: the pushbuffer's `0AF0/2/4/8 =
+(320,−240,16777215)` + `0398 CLIP_MAX = 16777215` is exactly that
+(scaleX/Y = 640/2, −480/2 as expected). The §58 shader
+(`oPos=V0·C0+C0`, `C0=(1,1,16777215,1)`) is the driver threading the
+viewport Z scale through its generated program — same thing xemu's
+fixed-function backend does via slots 58/59. §61's audit stands:
+surface/zeta state is guest-write passthrough with no GPU readback
+into driver math, so no emulator response could (or need) change what
+the driver emits.
+
+**Inherited-diff audit (uncommitted work from a vanished session).**
+Kept: `WriteMasked` bit-reversal (both references) + its
+`VshProgramTests` updates; device-depth divide in `Nv2aMmio.Vertex`
+(xemu epilogue/fragment sites above; fixed-depth only, matching the
+rest of our rasterizer — `Z_FORMAT` float is a noted gap) + the
+`DepthTest` device-unit updates + the Z24-saturation theory.
+Reworked: `WriteFogMasked` (inherited bit-position model matched
+neither reference's executable behavior — replaced with the
+count-based destination-prefix model both codegens implement; common
+`oFog.x` writes are identical under all models). Reverted/removed:
+`LastVertexProbe` (hot-path debug string), the `zeta16.txt`/`probe.txt`
+file-writing tests (absolute paths; one carried a guaranteed-fail
+`"reveal"` assert), the captured-shader color assert (single-array
+harness artifact — depth asserts kept). Repaired (previous session
+stopped mid-update): 6 mask tests whose w-lane expectations forgot the
+pre-existing epilogue `ClampAwayZeroInf` (±0 → ±2^-64); the swizzle
+texture test's oT0 mask `0x3→0xC` (same x,y intent under the corrected
+order). Full suite 961/961 (956 baseline + 5 new: Z16/Z24-saturation/
+passthrough-depth/minimal-diffuse).
+
+**Validation (worktree Release; firmware read-only from main-repo
+`data\xemu-0.8.136-windows-x86_64\`; logs in
+`Temp\opencode\viewport-bake2\`; recipe `--pad-script
+"down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"`,
+1B steps, no fault, EIP `0x1DF11`).** Same-tree before→after (stash
+run vs fixed run, guest stream bit-deterministic so draws/skipped/
+frames/clears are identical): draws 33632, skipped 1402, clears 695,
+frames 686 both; pixels 10444800 → 118798338, textured 10444800 →
+233381688, blended 0 → 45302409, depth-tested 0 → 136; frame
+nonzero 0 → 57087 (pre SHA
+`6F780A33…`, post `CC9D82DC…`). Post-run pgraph (18.1M methods):
+viewport-Z `0AF8` still only `4B7FFFFF` (9639×), `C0.z` (`0B88`)
+still dominantly `4B7FFFFF` — correctly so (device units).
+**Next:** the scene draws but nothing asserts it is the RIGHT scene
+(compare against xemu pixels if it ever passes the animation wait, or
+drive to a known screen); ZCLIP bounds + float-depth remain untracked;
+fixed-function foggen still open (§78).
+## 88. nvnet P2 RX + P3 backend merged: full packet engine (2026-10-12)
+
+`wave/nvnet-p2p3` on top of the §84 P0/P1 engine. Files:
+`src/XGrid.Bus/Net/McpxNvNetDevice.cs` (RX + link),
+`src/XGrid.Bus/Net/SocketNetworkBackend.cs` (new, user-mode IP),
+`src/XGrid.Bus/Net/INetworkBackend.cs` (`TryReceive` added to the
+seam), `src/XGrid.Host/XboxMachine.cs` (`Net.Advance` wired into the
+advance path), `src/XGrid.Cli/Program.cs` (`--net-backend`,
+`--net-inject`, `--net-link`, extended NVNET line).
+
+- **P2 RX** (xemu `dma_packet_to_guest` + `receive_filter` +
+  `nvnet_can_receive`, facts only): gates RX_START && !BIT2 &&
+  LINK_ST plus AVAIL (`CanReceive`/`CanReceiveReason` with
+  `rx-start/bit2/link/no-buf` reasons); filter = broadcast-always +
+  MYADDR-clear accept-all + masked-multicast compare + unicast MAC
+  compare (xemu-literal, including the reset-zero-regs match-all
+  quirk — the multicast path skips only on a programmed broadcast
+  address); oversize (`>1500+128`) drop; DMA-write into desc.buf with
+  `len=size` writeback and `BIT4|DESCRIPTORVALID` flags (AVAIL
+  consumed); RX (`0x2`) IRQ; ring clamp/wrap mirroring the TX
+  helpers; RX counts = high-16 mask + 1. Delivery enters via
+  `PollReceive` (backend drain, called from `Advance`) or the
+  one-shot `InjectFrame` (CLI `--net-inject <hex>`); a frame that
+  meets no AVAIL buffer is held in a pending slot (QEMU
+  hold-and-retry) for a later poll. Counters:
+  `rx_pkts/rx_bytes/rx_drop_filter/rx_drop_nobuf/rx_oversize/cant_rx`.
+- **Deliberate deviation (logged):** xemu never raises RX_NOBUF
+  (`dma_packet_to_guest` returns -1 silently; verified by grep — no
+  `NOBUF` raise exists in `nvnet.c`). XGrid raises the specified
+  `0x4` IRQ on the no-buf miss instead: the forcedeth driver
+  replenishes rings off that interrupt, so a silent drop would wedge
+  it. Everything else is xemu-parity.
+- **P3 backend:** `SocketNetworkBackend` (default stays
+  loopback/logger; `--net-backend socket` selects it): virtual
+  gateway `192.168.0.1` (locally administered MAC
+  `52:55:0A:00:02:01`), ARP responder for the gateway, ICMP echo
+  responder, UDP NAT relay via host sockets (unicast + broadcast,
+  per-4-tuple mappings, 60 s sweep, computed IP/UDP checksums),
+  guest IP/MAC learning from outbound frames; TCP and non-gateway
+  protocols dropped + counted. TAP/bridge out of scope; TCP proxy /
+  port-forward is the follow-up (dashboard FTP/telnet are inbound
+  servers). All socket polling is non-blocking (`TryReceive`).
+- **Link (P3):** `SetLinkUp` (`--net-link down|up`); down applies
+  immediately (LINK_ST+AN_COMP+ANLPAR-ACK cleared, ADAPTER LINKUP
+  cleared); up with AUTOEN && !AN_COMP pends a 250 ms autoneg timer
+  in `Advance` (xemu `AUTONEG_DURATION_MS`), else completes
+  instantly (LINK_ST only, no AN_COMP — xemu parity). Both
+  transitions raise MII LINKCHANGE + MIIEVENT (`0x40`); W1C clears
+  both status words. Reset restores instant link-up (AN_COMP set),
+  matching the established steady state.
+- **§81 open questions resolved:** BIT2 gates RX as well as TX with
+  reason-string + counter logging; AN_COMP stays instant at reset
+  (no driver wait ever observed — guest is init-only, zero
+  ring/KICK); SIZE counts are mask+1 on both rings; filter regs are
+  latched AND enforced (defaults accept-all, so init-only guests see
+  zero change); first real frame type is still open (no guest TX on
+  boot) — loopback round-trip proves the path with broadcast frames.
+- **Validation:** 30 new tests (14 RX: AVAIL consume + writeback,
+  2-desc wrap, filter match/mismatch matrix incl. masked multicast,
+  no-buf + short-desc NOBUF IRQ, oversize, gate reasons, pending
+  redelivery, Advance drain, loopback TX→RX round-trip; 8 link:
+  down-blocks-TX/RX + MIIEVENT + W1C, 250 ms autoneg partial/full,
+  instant-no-AUTOEN, idempotence, pending-cancel, reset, idle-Advance
+  side-effect-free; 7 socket:
+  ARP reply bytes, ARP miss, ICMP echo + checksums, UDP loopback
+  relay round-trip with re-encapsulation, runts, TCP drop, disposed;
+  1 machine: RX through guest RAM → PIC IRQ4 assert/W1C deassert).
+  All 28 pre-existing nvnet tests green unchanged; guest
+  init-only behavior unchanged (STATUS 0, IDLE-set, zero-KICK
+   steadiness; `Advance` with an empty backend is a no-op).
+   Full suite 986 green.
+
+## 89. 007 APC-suspect refuted: single-threaded guest pipeline stall, not a delivery gap (2026-10-12)
+
+Work in `Temp\opencode\worktrees\007-apc` (analysis-only, clean —
+temp forcing/observability fully reverted; logs in
+`Temp\opencode\007-apc\`, incl. 3.3 GB full log + ramdump).
+
+**0x2AA65 capture** (break-world, forced `[AFE34]=2`, reverted):
+2.3B-step break-log on 0x2AA65/0x2ABE0/0x2A740/0x2A830 — 0x2A740 =
+4,402,438 hits, 0x2A830 = 4,402,334 hits (the wait poll, firing to
+step 2,299,999,893), but **0x2AA65 fired 76× (last 1,608,143,961)
+and 0x2ABE0 75× (last 1,608,143,784)** — the refill producer goes
+permanently silent 700M steps before end. Bit-exact repro (pump
+first-hit 562,606,460 = prior run to the step).
+
+**APC/thread findings — prime suspect REFUTED.** 8.8M samples: ONE
+thread (`0xD002F018`) owns waiter+refill end-to-end; alertable=0
+always; no producer thread, no pending async op, IDE idle, DVD tail
+frozen at 16 READs with zero errors — nothing for KiDeliverApc to
+deliver; the wait is not APC-shaped. Disasm: `0x20B50` drains
+chunks via 0x2A740, validates tag==`MPCh`, releases via 0x2ABE0
+(which 2→1-clears AND calls refill `0x2A950`); `0x2AA65` is the
+refill's starved-exit (`mov [esi+0x44],2`); `0x30820` is SSE memcpy
+(movntps correctly emulated — verified), not a DVD read; DVD data
+path byte-exact (RAM tag == file bytes). End-state catch-22: the
+final 0x2A00 B WERE memcpy'd (tag landed, watch-proven writer
+`0x30903`=MPCh) but never linked into the consumable queue
+(linking only in 0x2A950, reachable only via 0x2ABE0, which the
+waiter only calls on a found chunk); `[STRM+0x44]` stays 2. Both
+waiter exits unreachable — deterministic guest-side single-threaded
+pipeline stall, ~160/669 sectors of `EAG.MPC` unplayed. Consistent
+with §85's force-probe exiting permanently (simulates the EOS the
+guest never signals).
+
+**Verdict:** no emulation layer is implicated — no device fix, no
+CPU/APC fix indicated. Any unblock is a guest-behavior decision
+(EOS semantics), not a correctness fix; longer runs ruled out.
+Next (if ever): decide whether to emulate the missing EOS signal
+as a compatibility quirk, with the force-probe as the reference
+behavior.

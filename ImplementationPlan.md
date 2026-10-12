@@ -1219,13 +1219,26 @@ SECOND wait (parked STRM `remaining=0 state=2`, zero writes 1.8B→3B;
 exit needs `MPCh` magic or `0x2A830` — §85 suspects user-mode
 completion delivery, APC/producer wakeup);
 nvnet P0+P1 MERGED (§84: ring latches, IRQ4, TX walker + loopback).
-DVD auto-launch TRACED (§83): handoff step 537,926,130 via
-`call [0x10128]` (same gate as §34) → game entry `0x22E35`;
-file-path decision (`D:\default.xbe` vs `C:\` fallback).
-Next: viewport-bake audit (surface/zeta/caps at SetViewport time —
-§82 proves the submenu black is guest-accurate clip, not a rasterizer
-gap) + 0x2AA65 windowed break-log + thread/APC observability, then
-nvnet P2/P3. Order matters; do not work on later
+DVD auto-launch TRACED (§83) + media branch PINNED (§86: neither
+`0x80030980` nor `0x80021693` is media-dependent — decision is
+downstream file-path; decrypt writer is the SAME site `0x8002EFE6`
++ key `0xA8FC57AB`; PacketLog 16→256).
+007: APC-suspect REFUTED (§89 — single-threaded guest pipeline
+stall: final chunk memcpy'd but never linked, refill silent since
+1.6B; no device/CPU fix indicated; unblock = guest-behavior EOS
+decision, not correctness);
+nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
+filter/DMA, link/autoneg, socket backend behind `--net-backend`,
+`--net-inject`/`--net-link`; 993 tests).
+**VIEWPORT BAKE CLOSED (§87): `C0.z=16777215` was correct XDK
+device-depth output — the gap was emulator-side (missing
+`oPos.z/clipRange.y` divide; §82's "guest-accurate" verdict
+SUPERSEDED). Fix validated live: pixels 10.4M→118.8M, blended
+0→45.3M, frame 0→57,087 nonzero px (first non-black menu frame,
+no fault).**
+Next: prove the newly visible scene is the RIGHT scene (xemu-pixel
+compare or known screen); ZCLIP bounds + float depth; first-real-frame
+validation + TCP proxy. Order matters; do not work on later
 gaps before earlier gates pass.
 
 Gap 1 — kernel→storage handoff [DONE 2026-10-09]. The kernel loads the
@@ -1309,14 +1322,25 @@ PARAMS, oFog varying with fog_mask order, per-vertex LINEAR/EXP/EXP2
 (+ABS) factor into the FOG register (disabled stays `(0,0,0,1)`);
 DPNDNT_AR/GB, DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]
 with dot-map/sign decode and bump matrix/scale/offset; unknown modes
-degrade to NONE with `TexModeFallbacks`. Remaining: fixed-function
-foggen, cubemap/reflection/project3d/clipplane/BRDF modes, HILO dot
-maps, oPos.z clipRange normalization, then a menu screen that
-actually draws. **§82 verdict:** the submenu lever is guest-accurate
-black (real draws, all vertex-clipped on poisoned C0) — no rasterizer
-gap. Fault is upstream in the viewport bake: audit surface/zeta/caps
-responses at SetViewport-bake time (driver emits Z=16.7M from sane
-RAM MinZ=0/MaxZ=1).
+degrade to NONE with `TexModeFallbacks`. **Viewport bake CLOSED (§87,
+wave/viewport-bake):** `C0.z=16777215` reclassified as correct XDK
+device-depth output (driver threads the viewport Z scale
+`(MaxZ−MinZ)×0xFFFFFF` into its generated programs, exactly as xemu
+feeds XFCTX slots 58/59 for fixed-function) — not poison. The gap was
+emulator-side: the rasterizer never implemented xemu's `oPos.z /
+clipRange.y` (vertex epilogue + fragment store), so device-unit Z
+saturated to 1.0. `Nv2aMmio.Vertex` now divides by the surface zeta
+maximum (Z16→65535, Z24S8→16777215; fixed-depth only); same-tree 1B
+submenu validation: pixels 10444800→118798338, blended 0→45.3M,
+frame black→57087 nonzero px, draws/skipped/frames unchanged
+(deterministic guest stream). Same wave also fixed the `WriteMasked`
+bit order (bit0=w per xemu `mask_str`/Cxbx `MASK_*`) and aligned
+`WriteFogMasked` with both references' oFog.x rule. Remaining:
+fixed-function foggen, cubemap/reflection/project3d/clipplane/BRDF
+modes, HILO dot maps, ZCLIP bounds + `Z_FORMAT` float depth, and proof
+the newly visible scene is the RIGHT scene. **§82 verdict
+superseded:** the submenu black was emulator-side depth saturation,
+not guest-accurate.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [DONE 2026-10-11]. The
 OHCI host controller (`OhciUsbController`, §36/§54) plus the
@@ -1330,19 +1354,19 @@ activation writer `0x1859D` (§70; A-press now differs from neutral by
 23,786 RAM bytes). Scripted `--pad-script` navigate+activate sequences
 merged (§74). **007 input verdict (§77): never-reaches, not mismatch**
 — no `XInputOpen`/`GetState`, no device fix; unblock its `0x20E40`
-limiter first. **007 second wait (§85):** temp `[AFE34]=2` forcing exited the
-limiter (reverted); the game parks on a STRM (`remaining=0 state=2`,
-zero writes 1.8B→3B) whose async completion never arrives — suspect
-user-mode completion delivery (APC/producer wakeup), not DVD
-serving; next is thread/APC observability + windowed break-log on
-`0x2AA65`. **nvnet P0+P1 MERGED (§84):** ring latches, RESET wrap,
-IDLE/KICK, IRQ STATUS/MASK + W1C → IRQ4, TX walker + coalesce +
-VALID-clear writeback, loopback backend seam, CLI counters (956
-tests). **DVD auto-launch (§83):** `call [0x10128]` handoff at step
-537,926,130 → entry `0x22E35`; file-path decision; `0xAD` requested
-once (§66 correction); trace/break worlds diverge ~100M steps
-(chunk-sensitive Advance — use break-world steps). Remaining:
-memory-unit/storage class USB devices + nvnet P2 RX / P3 backend.
+limiter first. **007 second wait (§§85, §89):** APC-suspect REFUTED — single-threaded
+guest pipeline stall (final 0x2A00 B memcpy'd but never linked;
+catch-22 on empty stream; refill silent since 1.6B; force-probe exits
+permanently). No device/CPU fix indicated; unblock = guest-behavior
+EOS decision. **nvnet P0–P3 COMPLETE (§§84, §88):** TX walker, RX
+filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg +
+MIIEVENT, socket user-mode backend (ARP/ICMP/UDP) behind
+`--net-backend`, `--net-inject`/`--net-link`; 993 tests. **DVD
+auto-launch (§83) + media branch (§86):** `call [0x10128]` handoff
+at step 537,926,130 → entry `0x22E35`; file-path decision; `0xAD`
+requested once (§66 correction); trace/break worlds diverge ~100M
+steps (use break-world steps). Remaining: memory-unit/storage class
+USB devices + first-real-frame validation + TCP proxy.
 
 Gap 6 — APU depth (Phase 12). The register model is implemented
 (`McpxApuDevice`, §33) and the front-end handshake/voice-off flow works; DSP,
@@ -2895,7 +2919,7 @@ HILO dot maps, oPos.z clipRange normalization, Vulkan/OpenGL backends
 (16.6–16.7) |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
-| 14 — Networking | Partial (MMIO + TX) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters; guest init-only steady state preserved, 956 tests); P2 RX + P3 socket backend remain |
+| 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
 Current test baseline: **885 tests passing** (39 Core, 398 Cpu, 52 Memory, 172 Bus, 16 Integration, 94 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
@@ -2921,10 +2945,10 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 8 Storage | 5 | 85% | writable host-side FATX; DVD media edge cases |
 | 9 XBE Loader | 3 | 90% | host-side relocation/launch paths |
 | 10 Kernel Interface | 2 | 5% | whole phase (HLE ordinals) — deferred, LLE-first |
-| 11 NV2A | 15 | 75% | visible menu render; fixed-function foggen; exotic modes; depth clipRange; Vulkan/OpenGL backends (16.6–16.7) |
+| 11 NV2A | 15 | 85% | right-scene proof; fixed-function foggen; exotic modes; ZCLIP + float depth; Vulkan/OpenGL backends (16.6–16.7) |
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
-| 14 Networking | 4 | 45% | RX consume/filter (P2), socket backend (P3) |
+| 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
 | 15 CPU JIT | 11 | 5% | whole phase (IR, basic blocks, block cache, codegen) |
 | 16 CPU Optimization | 3 | 10% | benchmark-driven tuning |
 | 17 Memory Optimization | 2 | 10% | tuning |
@@ -2938,7 +2962,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 **Result: ~60% complete overall** (weighted: 64.85 of 108 weight-points).
 By track:
 
-- **LLE core (phases 0–14): ~80%.** The real console chain — MCPX ROM ->
+- **LLE core (phases 0–14): ~83%.** The real console chain — MCPX ROM ->
   1BL -> 2BL -> kernel -> dashboard — boots, renders, discovers content,
   saves files, and now navigates with a real controller through the
   daughterboard hub topology (§§68–70).
@@ -2954,21 +2978,28 @@ Interpretation: the "does the console boot and respond" core is close;
 the long tail is JIT/optimization, NV2A completion (fog, backends)
 and productization (frontend, save states, release).
 
-**NEXT SESSION — visible menu.** pgraph verdict GUEST-ACCURATE (§82):
-submenu adds real draws (+139 tris, +98K elements) but all die in
-vertex clip on byte-identical poisoned C0 — no rasterizer gap. Fault
-is upstream in the viewport bake: audit surface/zeta/caps responses
-at SetViewport-bake time. DVD auto-launch TRACED (§83): handoff step
-537,926,130 via `call [0x10128]` → entry `0x22E35`; file-path
-decision; `0xAD` requested once (§66 correction); trace/break worlds
-diverge ~100M steps — use break-world steps for exactness.
-007 second wait DECODED (§85): parked STRM, exit needs `MPCh` magic
-or `0x2A830` — suspect user-mode completion delivery; next is
-0x2AA65 windowed break-log (~1.9B) + thread/APC observability.
-nvnet P0+P1 MERGED (§84); P2 RX + P3 backend remain.
-NV2A fog + dependent/bump/dot modes MERGED (§78);
-remaining: fixed-function foggen, exotic modes, HILO dot maps,
-clipRange, Vulkan/OpenGL backends (16.6–16.7).
+**NEXT SESSION — visible menu.** VIEWPORT BAKE CLOSED (§87): C0.z=16.7M
+was correct XDK device-depth output — the gap was emulator-side
+(missing `oPos.z/clipRange.y` divide). Fix validated live: pixels
+10.4M→118.8M, blended 0→45.3M, frame 0→57,087 nonzero px (first
+non-black menu frame, no fault). §82's "guest-accurate" verdict
+SUPERSEDED (was emulator-side depth saturation). Next: prove the newly
+visible scene is the RIGHT scene (xemu-pixel compare or known screen);
+ZCLIP bounds + float depth open.
+DVD media branch PINNED (§86: neither candidate address is
+media-dependent — decision is downstream file-path; decrypt writer is
+the SAME site `0x8002EFE6`/key; PacketLog 16→256).
+007 APC-suspect REFUTED (§89): single-threaded guest pipeline stall
+(final chunk memcpy'd but never linked; refill silent since 1.6B) —
+no device/CPU fix indicated; unblock would be a guest-behavior (EOS)
+decision, not correctness.
+nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
+filter/DMA, link/autoneg, socket backend behind `--net-backend`,
+`--net-inject`/`--net-link`; 993 tests). Remaining: first-real-frame
+validation, TCP proxy.
+NV2A remaining: fixed-function foggen, cubemap/reflection/
+project3d/clipplane/BRDF, HILO dot maps, ZCLIP + float depth,
+Vulkan/OpenGL backends (16.6–16.7).
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
@@ -3487,7 +3518,14 @@ packet engine stays scoped-not-built per the trace-driven rule.
 Remaining (when a title drives it): descriptor/DMA packet engine
 (`RingDesc` `{u32 buf; u16 len; u16 flags}`, rings `0x100`–`0x138` per
 xemu `nvnet.c`), RX/TX interrupts, link-state/DHCP behavior, all behind
-`INetworkBackend`.
+`INetworkBackend`. P0/P1 packet engine MERGED (§84: ring latches, IRQ4,
+TX walker + loopback backend; guest init-only steady state preserved).
+P2 RX + P3 backend MERGED (§88: RX filter + DMA-write + RX/RX_NOBUF
+IRQs with pending-slot hold-and-retry, link toggle + 250 ms autoneg via
+`Advance` with MIIEVENT, socket user-mode backend — ARP/ICMP/UDP relay —
+behind `--net-backend`, loopback default; CLI `--net-inject`/
+`--net-link` + rx/link counters; 30 new tests, full suite 986 green;
+guest init-only behavior unchanged).
 
 ## Phase 15 — CPU JIT (detailed)
 

@@ -183,33 +183,32 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   + oD0 NaN->1. Fog + dependent/bump/dot texture modes merged (§78);
   remaining: fixed-function foggen, exotic modes, HILO, backends.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 956 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 993 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — visible menu.
 
-1. pgraph verdict GUEST-ACCURATE (§82): submenu adds real draws (+139
-   tris, +98K elements) but all die in vertex clip on byte-identical
-   poisoned C0 — no rasterizer gap. Fault is upstream in the viewport
-   bake (driver emits Z=16.7M from sane MinZ=0/MaxZ=1): audit
-   surface/zeta/caps responses at SetViewport-bake time. DVD auto-launch
-   TRACED (§83): handoff step 537,926,130 via `call [0x10128]` (same
-   gate as §34) → game entry `0x22E35`; decision is file-path based
-   (`D:\default.xbe` vs `C:\` fallback); `0xAD` IS requested once
-   (§66 correction). Trace/break worlds diverge ~100M steps
-   (chunk-sensitive Advance) — use break-world steps for exactness.
-   007 second wait DECODED (§85): parked STRM (`remaining=0 state=2`,
-   zero writes 1.8B→3B), exit needs `MPCh` magic or `0x2A830` — suspect
-   user-mode completion delivery (APC/producer wakeup). Next: 0x2AA65
-   windowed break-log (~1.9B) + thread/APC observability.
-   nvnet P0+P1 MERGED (§84: ring latches, IRQ4, TX walker + loopback;
-   956 tests). P2 RX + P3 backend remain.
-2. NV2A fog + dependent/bump/dot modes MERGED (§78: SET_FOG_COLOR/MODE/
-   PARAMS, oFog varying, LINEAR/EXP/EXP2 equations; DPNDNT_AR/GB,
-   DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]; disabled draws
-   pixel-identical). Remaining: fixed-function foggen, cubemap/reflection/
-   project3d/clipplane/BRDF, HILO dot maps, clipRange, Vulkan/OpenGL
-   backends (16.6–16.7).
+1. VIEWPORT BAKE CLOSED (§87): C0.z=16.7M was correct XDK device-depth
+   output — the gap was emulator-side (missing `oPos.z/clipRange.y`
+   divide). Fix validated live: pixels 10.4M→118.8M, blended 0→45.3M,
+   frame 0→57,087 nonzero px (first non-black menu frame, no fault).
+   §82's "guest-accurate" verdict SUPERSEDED (was emulator-side depth
+   saturation). Next: prove the newly visible scene is the RIGHT scene
+   (xemu-pixel compare or known screen); ZCLIP bounds + float depth open.
+   DVD media branch PINNED (§86: neither candidate address is
+   media-dependent — decision is downstream file-path; decrypt writer is
+   the SAME site `0x8002EFE6`/key; PacketLog 16→256).
+   007 APC-suspect REFUTED (§89): single-threaded guest pipeline stall
+   (final chunk memcpy'd but never linked; refill silent since 1.6B) —
+   no device/CPU fix indicated; unblock would be a guest-behavior (EOS)
+   decision, not correctness.
+   nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
+   filter/DMA, link/autoneg, socket backend behind `--net-backend`,
+   `--net-inject`/`--net-link`; 993 tests). Remaining: first-real-frame
+   validation, TCP proxy.
+2. NV2A remaining: fixed-function foggen, cubemap/reflection/
+   project3d/clipplane/BRDF, HILO dot maps, ZCLIP + float depth,
+   Vulkan/OpenGL backends (16.6–16.7).
 3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

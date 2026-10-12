@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
 using XGrid.Core.Diagnostics;
 using XGrid.Cpu;
@@ -78,6 +79,9 @@ internal static class Program
         string? padSticks = null;
         ulong padStep = 0;
         string? padScriptSpec = null;
+        string? netBackend = null;
+        string? netInjectHex = null;
+        string? netLink = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -191,6 +195,15 @@ internal static class Program
                 case "--pad-script":
                     padScriptSpec = NextValue(args, ref i);
                     break;
+                case "--net-backend":
+                    netBackend = NextValue(args, ref i);
+                    break;
+                case "--net-inject":
+                    netInjectHex = NextValue(args, ref i);
+                    break;
+                case "--net-link":
+                    netLink = NextValue(args, ref i);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -243,6 +256,34 @@ internal static class Program
 
             machine.Reset();
             machine.Nv2A.MethodStreamCap = pgraphMax;
+
+            if (netBackend is not null)
+            {
+                if (string.Equals(netBackend, "socket", StringComparison.Ordinal))
+                {
+                    machine.Net.Backend = new SocketNetworkBackend();
+                    Console.WriteLine("NVNET backend=socket (user-mode ARP/ICMP/UDP)");
+                }
+                else if (!string.Equals(netBackend, "loopback", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine($"Invalid --net-backend '{netBackend}' (expected loopback|socket)");
+                    return 1;
+                }
+            }
+
+            if (netLink is not null)
+            {
+                if (string.Equals(netLink, "down", StringComparison.Ordinal))
+                {
+                    machine.Net.SetLinkUp(false);
+                    Console.WriteLine("NVNET link=down");
+                }
+                else if (!string.Equals(netLink, "up", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine($"Invalid --net-link '{netLink}' (expected up|down)");
+                    return 1;
+                }
+            }
 
             PadInput? padInput = null;
             if (padButtons is not null || padAnalog is not null || padSticks is not null)
@@ -461,6 +502,28 @@ internal static class Program
                         $"Progress {executed} instruction(s) EIP=0x{machine.Cpu.Context.Eip:X8}");
                     nextProgress += progressInterval;
                 }
+            }
+
+            if (netInjectHex is not null)
+            {
+                byte[] frame;
+                try
+                {
+                    string hex = netInjectHex.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? netInjectHex[2..]
+                        : netInjectHex;
+                    frame = Convert.FromHexString(hex);
+                }
+                catch (FormatException)
+                {
+                    Console.Error.WriteLine("Invalid --net-inject hex (expected even-length hex bytes)");
+                    return 1;
+                }
+
+                bool delivered = machine.Net.InjectFrame(frame);
+                Console.WriteLine(
+                    $"NVNET inject len={frame.Length} delivered={delivered} " +
+                    $"rx_pkts={machine.Net.RxPackets} cant_rx={machine.Net.CantReceiveCount}");
             }
 
             PrintState(machine, executed, dumps);
@@ -956,6 +1019,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"regs:{TopOffsets(machine.Net.RegReadCounts)} wr:{TopOffsets(machine.Net.RegWriteCounts)}");
         Console.WriteLine(
             $"NVNET tx_pkts={machine.Net.TxPackets} tx_bytes={machine.Net.TxBytes} kicks={machine.Net.TxKicks} cant_tx={machine.Net.CantTransmitCount} " +
+            $"rx_pkts={machine.Net.RxPackets} rx_bytes={machine.Net.RxBytes} drop_filter={machine.Net.RxDropFilter} drop_nobuf={machine.Net.RxDropNoBuf} oversize={machine.Net.RxOversize} cant_rx={machine.Net.CantReceiveCount} " +
+            $"link={machine.Net.LinkUp} autoneg={machine.Net.AutoNegPending} backend={machine.Net.Backend.GetType().Name} " +
             $"tx base=0x{machine.Net.TxRingBaseAddress:X8} cur=0x{machine.Net.TxRingCurrentAddress:X8} next=0x{machine.Net.TxRingNextAddress:X8} " +
             $"rx base=0x{machine.Net.RxRingBaseAddress:X8} cur=0x{machine.Net.RxRingCurrentAddress:X8} next=0x{machine.Net.RxRingNextAddress:X8} " +
             $"irq={machine.Net.InterruptAsserted} asserts={machine.Net.IrqAsserts} deasserts={machine.Net.IrqDeasserts}");
@@ -1432,7 +1497,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

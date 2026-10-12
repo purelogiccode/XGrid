@@ -120,7 +120,7 @@ public sealed class Nv2aFogTexModesTests
     }
 
     [Fact]
-    public void FogOutput_MaskedWriteFillsSignificanceOrder()
+    public void FogOutput_MaskedWriteTakesResultXFirst()
     {
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
@@ -130,8 +130,10 @@ public sealed class Nv2aFogTexModesTests
         uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true) };
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
-        // Only z masked: the most significant masked component (z) lands in oFog.x.
-        Assert.Equal(3.0f, outputs[5][0]);
+        // Reference destination-prefix selection (xemu fog_mask_str; Cxbx
+        // oFog non-x redirect): any nonzero mask writes oFog.x from the
+        // result's x component, so mask 0x4 still lands 1.0 in oFog.x.
+        Assert.Equal(1.0f, outputs[5][0]);
     }
 
     [Fact]

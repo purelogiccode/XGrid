@@ -5,9 +5,8 @@ namespace XGrid.Bus.Net;
 
 /// <summary>
 /// Default loopback/logger backend: records transmitted frames, counts bytes, and queues
-/// a copy of each frame for loopback. The queue is the P2 RX seam (the RX engine will
-/// drain it through the receive filter); nothing drains it yet, so it is bounded and
-/// drops the oldest frames when full.
+/// a copy of each frame for loopback. The RX engine drains the queue through the receive
+/// filter on <c>Advance</c>; the queue is bounded and drops the oldest frames when full.
 /// </summary>
 public sealed class LoopbackNetworkBackend : INetworkBackend
 {
@@ -57,7 +56,7 @@ public sealed class LoopbackNetworkBackend : INetworkBackend
     }
 
     /// <summary>
-    /// Drains one queued loopback frame. P2 RX seam; currently only used by tests.
+    /// Drains one queued loopback frame for the RX engine.
     /// </summary>
     public bool TryReceive(out byte[]? frame)
     {
