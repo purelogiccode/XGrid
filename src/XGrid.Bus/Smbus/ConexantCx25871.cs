@@ -1,9 +1,11 @@
 using System;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Bus.Smbus;
 
 /// <summary>Conexant CX25871 video encoder stub (SMBus address 0x45) with a byte register file.</summary>
-public sealed class ConexantCx25871 : SmbusDevice
+public sealed class ConexantCx25871 : SmbusDevice, ISnapshotable
 {
     /// <summary>Conexant CX25871 SMBus address.</summary>
     public const byte DeviceAddress = 0x45;
@@ -19,6 +21,37 @@ public sealed class ConexantCx25871 : SmbusDevice
 
     /// <summary>Gets the register file (indexed by register number).</summary>
     public byte this[byte register] => _registers[register];
+
+    /// <summary>Saves the 256-byte register file plus the pointer (quiesce: no SMBus transaction in flight).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_registers);
+        writer.Write(_pointer);
+    }
+
+    /// <summary>Restores the 256-byte register file plus the pointer.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported encoder snapshot version {version}.");
+        }
+
+        byte[] registers = reader.ReadBytes(256);
+        if (registers.Length != 256)
+        {
+            throw new InvalidDataException("Truncated encoder snapshot.");
+        }
+
+        Array.Copy(registers, _registers, 256);
+        _pointer = reader.ReadByte();
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public override bool TryReceiveByte(out byte value)

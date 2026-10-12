@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -27,7 +29,7 @@ public interface IApuMemory
 /// VOICE_OFF completes immediately (voice inactive + notifier status + FEVINTSTS/FENINTSTS),
 /// matching xemu's synchronous voice-off path.
 /// </summary>
-public sealed class McpxApuDevice : IMmioDevice, IXboxDevice
+public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>APU MMIO window base (fixed by the MCPX, not BAR-programmed by the guest).</summary>
     public const uint BaseAddress = 0xFE800000;
@@ -122,6 +124,84 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice
         _frameRemainder = 0;
         SetAsserted(false);
     }
+
+    /// <summary>Saves the register file, pending idle-voice queue, frame remainder, and counters.</summary>
+    /// <remarks>The VP/DSP do not exist yet; this snapshots what exists. The guest-memory
+    /// adapter is host wiring and is not serialized. InterruptChanged is not fired on load;
+    /// the PIC latch is restored separately and already matches.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        for (int i = 0; i < _regs.Length; i++)
+        {
+            writer.Write(_regs[i]);
+        }
+
+        writer.Write(_pendingIdleVoices.Count);
+        foreach (ushort voice in _pendingIdleVoices)
+        {
+            writer.Write(voice);
+        }
+
+        writer.Write(_frameRemainder);
+        writer.Write(ReadCount);
+        writer.Write(WriteCount);
+        writer.Write(VoiceOffCompletions);
+        writer.Write(InterruptAsserted);
+        writer.Write(_eventLog.Count);
+        foreach (string entry in _eventLog)
+        {
+            writer.Write(entry);
+        }
+    }
+
+    /// <summary>Restores the register file, pending idle-voice queue, frame remainder, and counters.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported APU snapshot version {version}.");
+        }
+
+        for (int i = 0; i < _regs.Length; i++)
+        {
+            _regs[i] = reader.ReadUInt32();
+        }
+
+        int pending = reader.ReadInt32();
+        if (pending < 0)
+        {
+            throw new InvalidDataException("Negative APU pending-voice snapshot.");
+        }
+
+        _pendingIdleVoices.Clear();
+        for (int i = 0; i < pending; i++)
+        {
+            _pendingIdleVoices.Add(reader.ReadUInt16());
+        }
+
+        _frameRemainder = reader.ReadUInt64();
+        ReadCount = reader.ReadInt64();
+        WriteCount = reader.ReadInt64();
+        VoiceOffCompletions = reader.ReadInt64();
+        InterruptAsserted = reader.ReadBoolean();
+        int events = reader.ReadInt32();
+        if (events < 0 || events > 128)
+        {
+            throw new InvalidDataException("Bad APU event-log snapshot.");
+        }
+
+        _eventLog.Clear();
+        for (int i = 0; i < events; i++)
+        {
+            _eventLog.Add(reader.ReadString());
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <summary>
     /// Advances voice-processor frame timing. Voices turned off are reported to the front end

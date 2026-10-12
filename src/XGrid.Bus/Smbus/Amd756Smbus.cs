@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using XGrid.Bus.Io;
 using XGrid.Bus.Pci;
 
@@ -132,6 +133,87 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
         LastOk = false;
         Array.Clear(_blockData);
     }
+
+    /// <summary>Saves PCI config/BARs plus status, data/command/block state, and history (quiesce: no transaction in flight).</summary>
+    public override void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        base.SaveState(writer);
+        writer.Write(SmbusSnapshotVersion);
+        writer.Write(Status);
+        writer.Write(Control);
+        writer.Write(_address);
+        writer.Write(_data0);
+        writer.Write(_data1);
+        writer.Write(_command);
+        writer.Write(_blockIndex);
+        writer.Write(_blockData);
+        writer.Write(TransactionCount);
+        writer.Write(LastSlaveAddress);
+        writer.Write(LastProtocol);
+        writer.Write(LastCommand);
+        writer.Write(LastRead);
+        writer.Write(LastOk);
+        writer.Write(_recent.Count);
+        foreach (Transaction entry in _recent)
+        {
+            writer.Write(entry.SlaveAddress);
+            writer.Write(entry.Protocol);
+            writer.Write(entry.Command);
+            writer.Write(entry.Read);
+            writer.Write(entry.Ok);
+            writer.Write(entry.Data0);
+            writer.Write(entry.Data1);
+        }
+    }
+
+    /// <summary>Restores PCI config/BARs plus status, data/command/block state, and history.</summary>
+    public override void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        base.LoadState(reader);
+        int version = reader.ReadInt32();
+        if (version != SmbusSnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported SMBus snapshot version {version}.");
+        }
+
+        Status = reader.ReadByte();
+        Control = reader.ReadByte();
+        _address = reader.ReadByte();
+        _data0 = reader.ReadByte();
+        _data1 = reader.ReadByte();
+        _command = reader.ReadByte();
+        _blockIndex = reader.ReadInt32();
+        byte[] block = reader.ReadBytes(32);
+        if (block.Length != 32)
+        {
+            throw new InvalidDataException("Truncated SMBus block snapshot.");
+        }
+
+        Array.Copy(block, _blockData, 32);
+        TransactionCount = reader.ReadInt32();
+        LastSlaveAddress = reader.ReadByte();
+        LastProtocol = reader.ReadInt32();
+        LastCommand = reader.ReadByte();
+        LastRead = reader.ReadBoolean();
+        LastOk = reader.ReadBoolean();
+        int recent = reader.ReadInt32();
+        if (recent < 0 || recent > 192)
+        {
+            throw new InvalidDataException("Bad SMBus history snapshot.");
+        }
+
+        _recent.Clear();
+        for (int i = 0; i < recent; i++)
+        {
+            _recent.Add(new Transaction(
+                reader.ReadByte(), reader.ReadInt32(), reader.ReadByte(),
+                reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadByte(), reader.ReadByte()));
+        }
+    }
+
+    private const int SmbusSnapshotVersion = 1;
 
     /// <inheritdoc />
     protected override void OnBarWritten(int index, uint baseAddress)

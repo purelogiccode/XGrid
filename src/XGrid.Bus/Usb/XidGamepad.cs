@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
+using XGrid.Core;
 
 namespace XGrid.Bus.Usb;
 
@@ -88,7 +90,7 @@ public interface IUsbDeviceFunction
 /// dropped; the input report defaults to neutral (no buttons, centered
 /// sticks) and can be driven via <see cref="SetInput"/>.
 /// </summary>
-public sealed class XidGamepad : IUsbDeviceFunction
+public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
 {
     // ReSharper disable once UnusedMember.Local
     private const byte ControlEndpoint = 0;
@@ -174,6 +176,86 @@ public sealed class XidGamepad : IUsbDeviceFunction
         {
             _outputCapabilities[i] = 0xFF;
         }
+    }
+
+    /// <summary>Saves address/config, held input, reports, capabilities, pending setup, and the log.</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(Address);
+        writer.Write(Configured);
+        writer.Write(_heldButtons);
+        writer.Write(_heldAnalog);
+        for (int i = 0; i < _heldSticks.Length; i++)
+        {
+            writer.Write(_heldSticks[i]);
+        }
+
+        writer.Write(_inputReport);
+        writer.Write(_outputReport);
+        writer.Write(_inputCapabilities);
+        writer.Write(_outputCapabilities);
+        writer.Write(_pendingAddress);
+        writer.Write(_pendingConfig);
+        writer.Write(_hasPendingConfig);
+        writer.Write(_requestLog.Count);
+        foreach (string entry in _requestLog)
+        {
+            writer.Write(entry);
+        }
+    }
+
+    /// <summary>Restores address/config, held input, reports, capabilities, pending setup, and the log.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported gamepad snapshot version {version}.");
+        }
+
+        Address = reader.ReadByte();
+        Configured = reader.ReadBoolean();
+        _heldButtons = reader.ReadUInt16();
+        CopyBytes(reader, _heldAnalog, 8);
+        for (int i = 0; i < _heldSticks.Length; i++)
+        {
+            _heldSticks[i] = reader.ReadInt16();
+        }
+
+        CopyBytes(reader, _inputReport, InputReportSize);
+        CopyBytes(reader, _outputReport, OutputReportSize);
+        CopyBytes(reader, _inputCapabilities, InputReportSize);
+        CopyBytes(reader, _outputCapabilities, OutputReportSize);
+        _pendingAddress = reader.ReadByte();
+        _pendingConfig = reader.ReadByte();
+        _hasPendingConfig = reader.ReadBoolean();
+        int requests = reader.ReadInt32();
+        if (requests < 0 || requests > 128)
+        {
+            throw new InvalidDataException("Bad gamepad log snapshot.");
+        }
+
+        _requestLog.Clear();
+        for (int i = 0; i < requests; i++)
+        {
+            _requestLog.Add(reader.ReadString());
+        }
+    }
+
+    private const int SnapshotVersion = 1;
+
+    private static void CopyBytes(BinaryReader reader, byte[] target, int length)
+    {
+        byte[] data = reader.ReadBytes(length);
+        if (data.Length != length)
+        {
+            throw new InvalidDataException("Truncated gamepad snapshot.");
+        }
+
+        Array.Copy(data, target, length);
     }
 
     /// <summary>Drives the input report (buttons, 8 analog bytes, 4 sticks).</summary>

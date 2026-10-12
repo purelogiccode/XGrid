@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Storage;
 
@@ -80,7 +81,7 @@ public sealed class RawDiskImage : IDiskImage
 /// the backing image is never modified. Used for the HDD so guest filesystem
 /// writes cannot corrupt the shared reference image.
 /// </summary>
-public sealed class OverlayDiskImage : IDiskImage
+public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
 {
     private readonly IDiskImage _backing;
     private readonly Dictionary<uint, byte[]> _overlay = new();
@@ -147,4 +148,78 @@ public sealed class OverlayDiskImage : IDiskImage
     {
         _backing.Dispose();
     }
+
+    /// <summary>Saves overlay dirty sectors plus the write log (backing handle is host state, not serialized).</summary>
+    /// <remarks>Re-attach strategy: the backing image is reopened from its path on load
+    /// (caller-owned); this snapshot stores only the sector count for validation plus the
+    /// in-RAM overlay. Load fails loudly when the backing sector count differs.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(SectorCount);
+        writer.Write(_overlay.Count);
+        foreach (var entry in _overlay)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value, 0, 512);
+        }
+
+        writer.Write(_writeLog.Count);
+        foreach (uint lba in _writeLog)
+        {
+            writer.Write(lba);
+        }
+    }
+
+    /// <summary>Restores overlay dirty sectors plus the write log (backing must already be re-attached).</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported overlay snapshot version {version}.");
+        }
+
+        uint sectorCount = reader.ReadUInt32();
+        if (sectorCount != SectorCount)
+        {
+            throw new InvalidDataException(
+                $"HDD backing sector count mismatch on snapshot load (snapshot={sectorCount}, live={SectorCount}). Re-attach the same image.");
+        }
+
+        int dirty = reader.ReadInt32();
+        if (dirty < 0)
+        {
+            throw new InvalidDataException("Negative overlay dirty-sector snapshot.");
+        }
+
+        _overlay.Clear();
+        for (int i = 0; i < dirty; i++)
+        {
+            uint lba = reader.ReadUInt32();
+            byte[] sector = reader.ReadBytes(512);
+            if (sector.Length != 512)
+            {
+                throw new InvalidDataException("Truncated overlay sector snapshot.");
+            }
+
+            _overlay[lba] = sector;
+        }
+
+        int writes = reader.ReadInt32();
+        if (writes < 0)
+        {
+            throw new InvalidDataException("Negative overlay write-log snapshot.");
+        }
+
+        _writeLog.Clear();
+        for (int i = 0; i < writes; i++)
+        {
+            _writeLog.Add(reader.ReadUInt32());
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 }

@@ -1,11 +1,13 @@
 using System;
+using System.IO;
 using XGrid.Bus.Io;
+using XGrid.Core;
 using XGrid.Core.Devices;
 
 namespace XGrid.Bus.Timers;
 
 /// <summary>8254 programmable interval timer (ports 0x40-0x43).</summary>
-public sealed class Pit8254 : IXboxDevice, IIoPortDevice
+public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
 {
     /// <summary>PIT input clock (Xbox 1.125 MHz; matches xemu i8254.h PIT_FREQ).</summary>
     public const uint InputFrequency = 1125001;
@@ -78,6 +80,37 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
         }
     }
 
+    /// <summary>Saves PIT control plus all three channel states (quiesce: any point; counters are exact).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_control);
+        foreach (Channel channel in _channels)
+        {
+            channel.SaveState(writer);
+        }
+    }
+
+    /// <summary>Restores PIT control plus all three channel states.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported PIT snapshot version {version}.");
+        }
+
+        _control = reader.ReadByte();
+        foreach (Channel channel in _channels)
+        {
+            channel.LoadState(reader);
+        }
+    }
+
+    private const int SnapshotVersion = 1;
+
     private void Configure(byte value)
     {
         int channel = (value >> 6) & 3;
@@ -131,6 +164,34 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice
         public ushort Divisor { get; private set; }
 
         public int Mode { get; private set; }
+
+        public void SaveState(BinaryWriter writer)
+        {
+            writer.Write(_counter);
+            writer.Write(_access);
+            writer.Write(_writePhase);
+            writer.Write(_readPhase);
+            writer.Write(_writeLow);
+            writer.Write(_running);
+            writer.Write(_latched);
+            writer.Write(_latchedValue);
+            writer.Write(Divisor);
+            writer.Write(Mode);
+        }
+
+        public void LoadState(BinaryReader reader)
+        {
+            _counter = reader.ReadUInt16();
+            _access = reader.ReadInt32();
+            _writePhase = reader.ReadInt32();
+            _readPhase = reader.ReadInt32();
+            _writeLow = reader.ReadByte();
+            _running = reader.ReadBoolean();
+            _latched = reader.ReadBoolean();
+            _latchedValue = reader.ReadUInt16();
+            Divisor = reader.ReadUInt16();
+            Mode = reader.ReadInt32();
+        }
 
         public void WriteCounter(byte value)
         {

@@ -3985,3 +3985,132 @@ fault, and faking position/notifier state would violate the no-fake rule.
 (the code page holding `0x18440` was found at phys `0xC7440`; the XBE
 `.text` file offset is `VA - 0x10000`). Data pointers still need live
 page-table walks from CR3 (`0xAFE34`→`0x15EE34`, §92).
+
+## 99. V1 device snapshots: ISnapshotable on every stateful device (2026-10-12)
+
+Branch `wave/snapshot-devices`. Contract file
+`src/XGrid.Core/Snapshots/ISnapshotable.cs` is byte-identical to the wave
+contract (`SaveState(BinaryWriter)` / `LoadState(BinaryReader)` in namespace
+`XGrid.Core`). Every versioned payload starts with an `int` snapshot version;
+loads throw `InvalidDataException` on version mismatch, truncation, count
+out-of-range, topology change, or media mismatch -- never silently.
+
+Per-device field lists (save order = load order):
+
+- `PciDevice` (base, virtual): 256 config bytes, `InterruptLine`, per-BAR
+  present flag + `Base` + `Probing`. Load re-fires `OnBarWritten` so IO
+  windows re-sync. BAR Size/IsIo/Prefetchable are construction constants.
+- `PciBus`: `ConfigAddress`, config-access histogram, all 256 slots
+  (present flag + device cascade), secondary-bus count + cascades. Load
+  resets slots whose device vanished and fails when the secondary count
+  differs (topology is caller-owned).
+- `LpcController`: base + `RomOverlayEnabled`, `Pm1Status`, `Pm1Enable`,
+  `PmTimerCounter`.
+- `Amd756Smbus`: base + `Status`, `Control`, address/data/command/block
+  regs, 32 block bytes, `TransactionCount`, last-transaction diag regs, and
+  the 192-entry transaction history.
+- `SmcDevice`: version cursor, command, scratch, error, IRQ status,
+  `TrayState`, `AvPack`, read/write histograms.
+- `Eeprom24C02`: full 256-byte image + address pointer (content IS state;
+  no path needed).
+- `ConexantCx25871`: 256 register bytes + pointer.
+- `XboxBus`: `_pitRemainder/_pmRemainder/_rtcRemainder`, then `Pic`, `Pit`,
+  `Rtc`, `Pci` (cascades to LPC/SMBus/stubs), `Smc`, `Eeprom`, `Encoder`.
+- `Pit8254`: control byte + 3 channels (counter, access, read/write phases,
+  write latch, running, latch flag/value, divisor, mode).
+- `Pic8259`: per-PIC mask, vector base, request + in-service latches, init
+  step, auto-EOI, read-select, poll-pending.
+- `Rtc146818`: 64 CMOS bytes, index, status A/B/C, subtick/second/period
+  accumulators, access count.
+- `McpxAciDevice`: 128 mixer bytes, 8 bus-master blocks
+  (BdbAr/Civ/Lvi/Sr/Picb/Piv/Cr), `GlobCnt/GlobSta`, CAS semaphore,
+  NAM/NABM access counters.
+- `McpxApuDevice`: full 512 KB register file, pending idle-voice queue,
+  frame remainder, read/write/voice-off counters, IRQ latch, 128-entry event
+  log. VP/DSP do not exist yet -- this snapshots what exists; the guest
+  memory adapter is host wiring.
+- `IdeController`: base + drive select, bus-master command/status/PRDT/
+  start count, both `AtaDevice` cascades, 32-entry command log, 64-entry
+  access log, optional `HddPath`/`DvdPath` re-attach params (adopted when
+  unset, validated when both set).
+- `AtaDevice`: ATAPI personality flag, IDENTIFY page, packet + DMA/staging
+  buffers, data/transfer/packet indices, remaining/LBA, phase enum,
+  packet-DMA + packet-error flags, all taskfile regs, status, access/last-
+  command counters, security lock, packet log + total packet bytes, media
+  presence + sector counts, HDD overlay cascade when snapshotable. Load fails
+  when DMA is in flight (save only when idle) and when media presence or
+  sector counts differ.
+- `OverlayDiskImage`: backing sector count (validation only), dirty-sector
+  map (LBA + 512 bytes each), full write log.
+- `OhciUsbController`: base-address check, all Hc regs, 4 root-port regs,
+  bus-running, frame remainder, done counter, access/transfer counters,
+  control/bulk heads, HCCA, IRQ latch, pending control-stage state
+  (setup flag, IN flag, function address, payload, offset, OUT buffer),
+  transfer log, reg histograms, attached-function cascade. The pending
+  function is re-resolved by address on load and fails when missing.
+- `UsbHub`: address/config, remote-wakeup, pending address/config, per-port
+  status/change, per-port device cascade, 128-entry request log. Port count
+  and per-port presence must match (topology caller-owned).
+- `XidGamepad`: address/config, held buttons/analog/sticks, input/output/
+  capability reports, pending address/config, 128-entry request log.
+- `McpxNvNetDevice`: 1 KB register file, 32 PHY regs, reg histograms, 1628 B
+  TX coalescing buffer + offset, pending RX frame, autoneg state, all IRQ
+  and packet/link counters, loopback-backend cascade.
+- `LoopbackNetworkBackend`: queued frames, sent log (16 cap), sent/byte/
+  drop counters.
+- `PshCombiner`: 8x RGB/alpha in/out words, 8x factor0/1, 2x spec-fog
+  factor, control, stage program, dot-RGB mapping, other-stage input, final
+  words.
+- `Nv2aMmio`: bound engines/instances, PFIFO/PVIDEO/PFB/PGRAPH arrays,
+  1 MB PRAMIN bytes, PRMCIO, retrace latch, read/write/user histograms, PMC
+  log + pending/enabled, PBUS command, PTIMER/PCRTC/PLL state, PFIFO
+  pending/enabled, vsync remainder, pusher/error/context counters, surface/
+  clear/semaphore/flip/presented descriptors, vertex formats/offsets,
+  136x4 transform program, 192x4 constants, load pointers, begin mode,
+  inline elements/words/vertices, draw-array ranges, 16x4 inline defaults,
+  4 texture slots, shader-clip mode, bump matrices/scales/offsets, fog
+  state, combiner cascade, alpha/blend/depth/stencil/zclip state, all draw/
+  pixel/sample/fallback counters, texture-state tables, semaphore/debug/
+  notification/PRAMIN/IRQ latches, method-stream cap + counts + params +
+  full method stream. Presented-frame pixels live in guest RAM and are
+  re-read; only at-flip descriptors are stored. `RamSize` validated on load.
+
+Re-attach strategies (handles never serialized): disk/DVD file handles stay
+with their image objects in-process; cross-process restore reopens the same
+HDD/DVD paths before load (`Ide.HddPath/DvdPath` record them; sector-count
+checks fail loudly). EEPROM/encoder/PRAMIN/overlay-dirty bytes are value
+state and ARE serialized. Guest-memory adapters (`IGuestMemory`,
+`IApuMemory`, `IUsbMemory`, `IGpuMemory`, `INvNetMemory`) and IO-window
+registrations are construction wiring rebuilt via BAR restore, not stored.
+`SocketNetworkBackend` (host sockets + UDP NAT mappings) is NOT restorable:
+nvnet save AND load both throw `InvalidDataException` unless the live backend
+is loopback -- gated, never silent.
+
+Quiesce contracts (where the CLI user may save): NV2A -- FIFO drained at a
+flip boundary (synchronous pusher idle); IDE/ATAPI -- no DMA in flight on
+either drive (load enforces); USB -- 1 ms frame boundary with no control
+transfer mid-status-stage; SMBus/EEPROM/encoder -- no transaction in flight;
+PCI -- BARs stable (post-enumeration); nvnet -- loopback backend only.
+PIT/PIC/RTC/LPC/ACI/APU taskfile state is valid at any point.
+
+Unrestorable exclusions (with reasons): host event delegates
+(`InterruptChanged`, PCI raise/lower, RTC `Interrupt`) -- wiring, not state;
+PIC latches are restored separately and already match, so load never fires
+events. `IoSpace`/`AddressSpace` routing tables -- rebuilt at construction.
+`DisplayFrame` bitmaps -- derived from guest RAM on next flip. Socket/NAT
+state -- OS handles, no stable serialization. `XboxMachine._nv2ARemainder`
+plus the SevenEosQuirk park state are core-owned (parallel branch) and must
+be snapshotted there for bit-exact continuation; all device remainders
+(PIT/PM/RTC accumulators, APU frame remainder, OHCI frame remainder, nvnet
+autoneg remainder, NV2A vsync remainder) are covered here.
+
+Registration: `XboxMachine.SnapshotDevices` (8 entries: Bus, Ide, Nv2A, Aci,
+Apu, Net, Usb0, Usb1) with cascading saves; `// V1-DEVICES-ANCHOR` marks the
+insertion point for the core branch merge. Open merge items for the
+coordinator: `AttachHdd`/`AttachDvd` should assign `Ide.HddPath`/`DvdPath`
+(one line each); end-to-end restore validation happens at merge.
+
+**Status:** 27 new round-trip tests (Bus 17 incl. socket-gate negatives,
+Storage 5 incl. sector-mismatch negative, Audio 1, Nv2a 2, Integration 2
+registration/contract tests); save-mutate-load asserts byte-identical
+re-saves. Suite 1080/1080, build + `format --verify-no-changes` clean.

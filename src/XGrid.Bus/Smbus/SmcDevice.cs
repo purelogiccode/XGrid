@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Bus.Smbus;
 
 /// <summary>Xbox System Management Controller (PIC16LC) on the SMBus (address 0x10).</summary>
-public sealed class SmcDevice : SmbusDevice
+public sealed class SmcDevice : SmbusDevice, ISnapshotable
 {
     /// <summary>SMC SMBus address.</summary>
     public const byte DeviceAddress = 0x10;
@@ -40,6 +42,77 @@ public sealed class SmcDevice : SmbusDevice
 
     /// <summary>Gets or sets the AV pack register (default HDTV).</summary>
     public byte AvPack { get; set; } = 0x01;
+
+    /// <summary>Saves command/version cursor, scratch, error, IRQ status, tray/AV, and histograms.</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        System.ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_versionIndex);
+        writer.Write(_command);
+        writer.Write(_scratch);
+        writer.Write(_error);
+        writer.Write(_interruptStatus);
+        writer.Write(TrayState);
+        writer.Write(AvPack);
+        writer.Write(_readCounts.Count);
+        foreach (var entry in _readCounts)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_writeCounts.Count);
+        foreach (var entry in _writeCounts)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+    }
+
+    /// <summary>Restores command/version cursor, scratch, error, IRQ status, tray/AV, and histograms.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        System.ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported SMC snapshot version {version}.");
+        }
+
+        _versionIndex = reader.ReadInt32();
+        _command = reader.ReadByte();
+        _scratch = reader.ReadByte();
+        _error = reader.ReadByte();
+        _interruptStatus = reader.ReadByte();
+        TrayState = reader.ReadByte();
+        AvPack = reader.ReadByte();
+        int reads = reader.ReadInt32();
+        if (reads < 0)
+        {
+            throw new InvalidDataException("Negative SMC read histogram snapshot.");
+        }
+
+        _readCounts.Clear();
+        for (int i = 0; i < reads; i++)
+        {
+            _readCounts[reader.ReadByte()] = reader.ReadInt32();
+        }
+
+        int writes = reader.ReadInt32();
+        if (writes < 0)
+        {
+            throw new InvalidDataException("Negative SMC write histogram snapshot.");
+        }
+
+        _writeCounts.Clear();
+        for (int i = 0; i < writes; i++)
+        {
+            _writeCounts[reader.ReadByte()] = reader.ReadInt32();
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public override bool SendByte(byte value)

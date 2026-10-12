@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using XGrid.Audio;
 using XGrid.Bus;
 using XGrid.Bus.Aci;
 using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
+using XGrid.Core;
 using XGrid.Cpu;
 using XGrid.Memory;
 using XGrid.Nv2a;
@@ -105,7 +107,20 @@ public sealed class XboxMachine
             new RamAliasDevice(Ram, XboxAddressMap.WriteCombinedBase));
 
         Bus.Lpc.RomOverlayDisabled += OnRomOverlayDisabled;
+
+        // V1-DEVICES-ANCHOR
+        SnapshotDevices.Add(Bus);
+        SnapshotDevices.Add(Ide);
+        SnapshotDevices.Add(Nv2A);
+        SnapshotDevices.Add(Aci);
+        SnapshotDevices.Add(Apu);
+        SnapshotDevices.Add(Net);
+        SnapshotDevices.Add(Usb0);
+        SnapshotDevices.Add(Usb1);
     }
+
+    /// <summary>Gets the V1 snapshotable devices (Bus cascades to PIC/PIT/RTC/PCI/SMBus; Ide cascades to drives+overlay; USB cascades to hubs+gamepad; Net cascades to the loopback backend).</summary>
+    public List<ISnapshotable> SnapshotDevices { get; } = new();
 
     /// <summary>Gets the IDE controller.</summary>
     public IdeController Ide { get; }

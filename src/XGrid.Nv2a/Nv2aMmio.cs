@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -19,7 +21,7 @@ namespace XGrid.Nv2a;
 /// recording sink; rendering and interrupt assertion through the PIC are deferred:
 /// pending/enabled state is tracked but no IRQ is raised yet.
 /// </summary>
-public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
+public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>NV2A control window base (BAR0).</summary>
     public const uint BaseAddress = 0xFD000000u;
@@ -961,6 +963,674 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         _retrace = false;
         _pfifo[PfifoCache1Status / 4] = PfifoCache1StatusLowMark;
         _pfb[PfbCfg0 / 4] = PfbCfg0Reset;
+    }
+
+    /// <summary>Saves FIFO positions, PGRAPH/method state, surfaces, flip/semaphore/PRAMIN, texture/combiner/zclip/fog/exotic state, and all diagnostic counters.</summary>
+    /// <remarks>Quiesce: save with the FIFO drained at a flip boundary (no pusher in flight;
+    /// the synchronous pusher leaves no partial command when idle). The guest-memory adapter
+    /// is host wiring and is not serialized. Presented-frame pixels live in guest RAM and are
+    /// re-read from there; only the at-flip surface descriptors are stored.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(Nv2aSnapshotVersion);
+        writer.Write(RamSize);
+        WriteUints(writer, _boundEngine);
+        WriteUints(writer, _boundInstance);
+        WriteUints(writer, _pfifo);
+        WriteUints(writer, _pvideo);
+        WriteUints(writer, _pfb);
+        WriteUints(writer, _pgraph);
+        writer.Write(_ramin);
+        WriteUints(writer, _prmcio);
+        writer.Write(_retrace);
+        WriteCountMap(writer, _readCounts);
+        WriteCountMap(writer, _writeCounts);
+        WriteCountMap(writer, _userReadOffsets);
+        writer.Write(_pmcIntrEnLog.Count);
+        foreach (uint entry in _pmcIntrEnLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_pmcPending);
+        writer.Write(PmcEnabledDebug);
+        writer.Write(_pbusCommand);
+        writer.Write(_ptimerPending);
+        writer.Write(_ptimerEnabled);
+        writer.Write(_ptimerNumerator);
+        writer.Write(_ptimerDenominator);
+        writer.Write(_ptimerClock);
+        writer.Write(_pcrtcPending);
+        writer.Write(_pcrtcEnabled);
+        writer.Write(_pcrtcStart);
+        writer.Write(_pcrtcRaster);
+        writer.Write(_nvpllCoeff);
+        writer.Write(_mpllCoeff);
+        writer.Write(_vpllCoeff);
+        writer.Write(_generalControl);
+        writer.Write(_pfifoPending);
+        writer.Write(_pfifoEnabled);
+        writer.Write(_vsyncRemainder);
+        writer.Write(PusherWordsConsumed);
+        writer.Write(PusherCapped);
+        writer.Write(PusherError);
+        writer.Write(ContextSwitches);
+        writer.Write(ClearsExecuted);
+        writer.Write(_surfaceFormat);
+        writer.Write(_surfacePitch);
+        writer.Write(PresentedColorOffset);
+        writer.Write(_surfaceZetaOffset);
+        writer.Write(_surfaceClipH);
+        writer.Write(_surfaceClipV);
+        writer.Write(_zetaClearValue);
+        writer.Write(_colorClearValue);
+        writer.Write(_dmaSemaphore);
+        writer.Write(_semaphoreOffset);
+        writer.Write(_clearRectH);
+        writer.Write(_clearRectV);
+        writer.Write(FlipReadDebug);
+        writer.Write(FlipWriteDebug);
+        writer.Write(FlipModuloDebug);
+        writer.Write(_presentedOffset);
+        writer.Write(_presentedWidth);
+        writer.Write(_presentedHeight);
+        writer.Write(_presentedPitch);
+        writer.Write(_presentedBytes);
+        writer.Write(_presentedValid);
+        writer.Write(_presentedFrame);
+        writer.Write(FramesPresented);
+        writer.Write(FlipStalls);
+        WriteUints(writer, _vertexFormat);
+        WriteUints(writer, _vertexArrayOffset);
+        for (int i = 0; i < MaxTransformProgramLength; i++)
+        {
+            WriteUints(writer, _transformProgram[i]);
+        }
+
+        for (int i = 0; i < MaxVertexShaderConstants; i++)
+        {
+            WriteUints(writer, _transformConstants[i]);
+        }
+
+        writer.Write(_transformProgramStart);
+        writer.Write(_transformExecutionMode);
+        writer.Write(_transformProgramCxtWriteEn);
+        writer.Write(TransformProgramLoadDebug);
+        writer.Write(TransformConstantLoadDebug);
+        writer.Write(_beginMode);
+        writer.Write(_inlineElements.Count);
+        foreach (uint entry in _inlineElements)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_inlineWords.Count);
+        foreach (uint entry in _inlineWords)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_inlineVertices.Count);
+        foreach (float entry in _inlineVertices)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_drawArraysRanges.Count);
+        foreach (var range in _drawArraysRanges)
+        {
+            writer.Write(range.Start);
+            writer.Write(range.Count);
+        }
+
+        for (int i = 0; i < VertexAttributeCount; i++)
+        {
+            for (int j = 0; j < VertexAttributeComponentCount; j++)
+            {
+                writer.Write(_inlineValues[i][j]);
+            }
+        }
+
+        WriteUints(writer, _textureOffset);
+        WriteUints(writer, _textureFormat);
+        WriteUints(writer, _textureAddress);
+        WriteUints(writer, _textureControl0);
+        WriteUints(writer, _textureControl1);
+        WriteUints(writer, _textureFilter);
+        WriteUints(writer, _textureImageRect);
+        writer.Write(_shaderClipMode);
+        for (int i = 0; i < _bumpMatrices.Length; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                writer.Write(_bumpMatrices[i][j]);
+            }
+        }
+
+        for (int i = 0; i < _bumpScales.Length; i++)
+        {
+            writer.Write(_bumpScales[i]);
+        }
+
+        for (int i = 0; i < _bumpOffsets.Length; i++)
+        {
+            writer.Write(_bumpOffsets[i]);
+        }
+
+        writer.Write(_fogEnable);
+        writer.Write(_fogMode);
+        writer.Write(_fogGenMode);
+        for (int i = 0; i < 4; i++)
+        {
+            writer.Write(_fogColor[i]);
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            writer.Write(_fogParams[i]);
+        }
+
+        _combiner.SaveState(writer);
+        writer.Write(_alphaTestEnable);
+        writer.Write(_alphaFunc);
+        writer.Write(_alphaRef);
+        writer.Write(_blendEnable);
+        writer.Write(_blendSrcFactor);
+        writer.Write(_blendDstFactor);
+        writer.Write(_blendColor);
+        writer.Write(_blendEquation);
+        writer.Write(_depthTestEnable);
+        writer.Write(_depthFunc);
+        writer.Write(_depthMask);
+        writer.Write(_zFormatFloat);
+        writer.Write(_zclipMin);
+        writer.Write(_zclipMax);
+        writer.Write(_zclipActive);
+        writer.Write(_zclipCull);
+        writer.Write(_colorMask);
+        writer.Write(_stencilTestEnable);
+        writer.Write(_stencilWriteMask);
+        writer.Write(_stencilFunc);
+        writer.Write(_stencilRef);
+        writer.Write(_stencilReadMask);
+        writer.Write(_stencilOpFail);
+        writer.Write(_stencilOpZfail);
+        writer.Write(_stencilOpZpass);
+        writer.Write(_dmaZeta);
+        writer.Write(DrawsExecuted);
+        writer.Write(CombinerDraws);
+        writer.Write(TexModeFallbacks);
+        writer.Write(UnsupportedDotMaps);
+        writer.Write(TextureSampleSuccesses);
+        writer.Write(TextureSampleDisabled);
+        writer.Write(TextureSampleBadSize);
+        writer.Write(TextureSampleRgbZero);
+        WriteLongs(writer, _textureFormatAttempts);
+        WriteLongs(writer, _textureFormatMisses);
+        WriteLongs(writer, _texModeFallbackByMode);
+        writer.Write(_combinerRgbZeroFragments);
+        writer.Write(_combinerRgbZeroAlphaFragments);
+        writer.Write(_textureStateIndex.Count);
+        foreach (var entry in _textureStateIndex)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_textureStateKeys.Count);
+        foreach (string entry in _textureStateKeys)
+        {
+            writer.Write(entry);
+        }
+
+        WriteLongs(writer, _textureStateSamples);
+        WriteLongs(writer, _textureStateRgbZero);
+        WriteLongs(writer, _textureStateFallbacks);
+        WriteLongs(writer, _textureStateMisses);
+        WriteUints(writer, _textureStateFirstAddress);
+        WriteUints(writer, _textureStateFirstTexel);
+        WriteFloats(writer, _textureStateMinU);
+        WriteFloats(writer, _textureStateMaxU);
+        WriteFloats(writer, _textureStateMinV);
+        WriteFloats(writer, _textureStateMaxV);
+        writer.Write(_currentTextureState);
+        writer.Write(DrawnPixels);
+        writer.Write(TexturedPixels);
+        writer.Write(BlendedPixels);
+        writer.Write(DepthTestedPixels);
+        writer.Write(ZclipClampedPixels);
+        writer.Write(ZclipCulledPixels);
+        writer.Write(SkippedDraws);
+        writer.Write(NonProgrammableModeDraws);
+        writer.Write(SemaphoreReleases);
+        writer.Write(SemaphoreDebug);
+        writer.Write(PgraphEnabledDebug);
+        writer.Write(PgraphPendingDebug);
+        writer.Write(NotificationsRaised);
+        writer.Write(NotificationAsserted);
+        writer.Write(PraminWrites);
+        writer.Write(InterruptAsserted);
+        writer.Write(MethodStreamCap);
+        WriteCountMap(writer, _methodCounts);
+        writer.Write(_methodParams.Count);
+        foreach (var entry in _methodParams)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_methodStream.Count);
+        foreach (var entry in _methodStream)
+        {
+            writer.Write(entry.Subchannel);
+            writer.Write(entry.Method);
+            writer.Write(entry.Parameter);
+        }
+    }
+
+    /// <summary>Restores FIFO positions, PGRAPH/method state, surfaces, flip/semaphore/PRAMIN, texture/combiner/zclip/fog/exotic state, and all diagnostic counters.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != Nv2aSnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported NV2A snapshot version {version}.");
+        }
+
+        if (reader.ReadUInt32() != RamSize)
+        {
+            throw new InvalidDataException("NV2A RAM-size mismatch on snapshot load.");
+        }
+
+        ReadUints(reader, _boundEngine);
+        ReadUints(reader, _boundInstance);
+        ReadUints(reader, _pfifo);
+        ReadUints(reader, _pvideo);
+        ReadUints(reader, _pfb);
+        ReadUints(reader, _pgraph);
+        ReadBytesExact(reader, _ramin);
+        ReadUints(reader, _prmcio);
+        _retrace = reader.ReadBoolean();
+        ReadCountMap(reader, _readCounts);
+        ReadCountMap(reader, _writeCounts);
+        ReadCountMap(reader, _userReadOffsets);
+        _pmcIntrEnLog.Clear();
+        int pmcLog = reader.ReadInt32();
+        if (pmcLog < 0)
+        {
+            throw new InvalidDataException("Bad NV2A PMC log snapshot.");
+        }
+
+        for (int i = 0; i < pmcLog; i++)
+        {
+            _pmcIntrEnLog.Add(reader.ReadUInt32());
+        }
+
+        _pmcPending = reader.ReadUInt32();
+        PmcEnabledDebug = reader.ReadUInt32();
+        _pbusCommand = reader.ReadUInt32();
+        _ptimerPending = reader.ReadUInt32();
+        _ptimerEnabled = reader.ReadUInt32();
+        _ptimerNumerator = reader.ReadUInt32();
+        _ptimerDenominator = reader.ReadUInt32();
+        _ptimerClock = reader.ReadUInt64();
+        _pcrtcPending = reader.ReadUInt32();
+        _pcrtcEnabled = reader.ReadUInt32();
+        _pcrtcStart = reader.ReadUInt32();
+        _pcrtcRaster = reader.ReadUInt32();
+        _nvpllCoeff = reader.ReadUInt32();
+        _mpllCoeff = reader.ReadUInt32();
+        _vpllCoeff = reader.ReadUInt32();
+        _generalControl = reader.ReadUInt32();
+        _pfifoPending = reader.ReadUInt32();
+        _pfifoEnabled = reader.ReadUInt32();
+        _vsyncRemainder = reader.ReadUInt64();
+        PusherWordsConsumed = reader.ReadUInt64();
+        PusherCapped = reader.ReadBoolean();
+        PusherError = reader.ReadUInt32();
+        ContextSwitches = reader.ReadUInt32();
+        ClearsExecuted = reader.ReadUInt32();
+        _surfaceFormat = reader.ReadUInt32();
+        _surfacePitch = reader.ReadUInt32();
+        PresentedColorOffset = reader.ReadUInt32();
+        _surfaceZetaOffset = reader.ReadUInt32();
+        _surfaceClipH = reader.ReadUInt32();
+        _surfaceClipV = reader.ReadUInt32();
+        _zetaClearValue = reader.ReadUInt32();
+        _colorClearValue = reader.ReadUInt32();
+        _dmaSemaphore = reader.ReadUInt32();
+        _semaphoreOffset = reader.ReadUInt32();
+        _clearRectH = reader.ReadUInt32();
+        _clearRectV = reader.ReadUInt32();
+        FlipReadDebug = reader.ReadUInt32();
+        FlipWriteDebug = reader.ReadUInt32();
+        FlipModuloDebug = reader.ReadUInt32();
+        _presentedOffset = reader.ReadUInt32();
+        _presentedWidth = reader.ReadUInt32();
+        _presentedHeight = reader.ReadUInt32();
+        _presentedPitch = reader.ReadUInt32();
+        _presentedBytes = reader.ReadUInt32();
+        _presentedValid = reader.ReadBoolean();
+        _presentedFrame = reader.ReadUInt64();
+        FramesPresented = reader.ReadUInt64();
+        FlipStalls = reader.ReadUInt64();
+        ReadUints(reader, _vertexFormat);
+        ReadUints(reader, _vertexArrayOffset);
+        for (int i = 0; i < MaxTransformProgramLength; i++)
+        {
+            ReadUints(reader, _transformProgram[i]);
+        }
+
+        for (int i = 0; i < MaxVertexShaderConstants; i++)
+        {
+            ReadUints(reader, _transformConstants[i]);
+        }
+
+        _transformProgramStart = reader.ReadUInt32();
+        _transformExecutionMode = reader.ReadUInt32();
+        _transformProgramCxtWriteEn = reader.ReadUInt32();
+        TransformProgramLoadDebug = reader.ReadUInt32();
+        TransformConstantLoadDebug = reader.ReadUInt32();
+        _beginMode = reader.ReadUInt32();
+        _inlineElements.Clear();
+        int inlineElements = reader.ReadInt32();
+        if (inlineElements < 0 || inlineElements > MaxInlineElements)
+        {
+            throw new InvalidDataException("Bad NV2A inline-element snapshot.");
+        }
+
+        for (int i = 0; i < inlineElements; i++)
+        {
+            _inlineElements.Add(reader.ReadUInt32());
+        }
+
+        _inlineWords.Clear();
+        int inlineWords = reader.ReadInt32();
+        if (inlineWords < 0 || inlineWords > (int)MaxInlineWords)
+        {
+            throw new InvalidDataException("Bad NV2A inline-word snapshot.");
+        }
+
+        for (int i = 0; i < inlineWords; i++)
+        {
+            _inlineWords.Add(reader.ReadUInt32());
+        }
+
+        _inlineVertices.Clear();
+        int inlineVertices = reader.ReadInt32();
+        if (inlineVertices < 0 || inlineVertices > MaxInlineElements * InlineVertexWordCount)
+        {
+            throw new InvalidDataException("Bad NV2A inline-vertex snapshot.");
+        }
+
+        for (int i = 0; i < inlineVertices; i++)
+        {
+            _inlineVertices.Add(reader.ReadSingle());
+        }
+
+        _drawArraysRanges.Clear();
+        int ranges = reader.ReadInt32();
+        if (ranges < 0 || ranges > MaxDrawArrayRanges)
+        {
+            throw new InvalidDataException("Bad NV2A draw-array snapshot.");
+        }
+
+        for (int i = 0; i < ranges; i++)
+        {
+            _drawArraysRanges.Add((reader.ReadInt32(), reader.ReadInt32()));
+        }
+
+        for (int i = 0; i < VertexAttributeCount; i++)
+        {
+            for (int j = 0; j < VertexAttributeComponentCount; j++)
+            {
+                _inlineValues[i][j] = reader.ReadSingle();
+            }
+        }
+
+        ReadUints(reader, _textureOffset);
+        ReadUints(reader, _textureFormat);
+        ReadUints(reader, _textureAddress);
+        ReadUints(reader, _textureControl0);
+        ReadUints(reader, _textureControl1);
+        ReadUints(reader, _textureFilter);
+        ReadUints(reader, _textureImageRect);
+        _shaderClipMode = reader.ReadUInt32();
+        for (int i = 0; i < _bumpMatrices.Length; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                _bumpMatrices[i][j] = reader.ReadSingle();
+            }
+        }
+
+        for (int i = 0; i < _bumpScales.Length; i++)
+        {
+            _bumpScales[i] = reader.ReadSingle();
+        }
+
+        for (int i = 0; i < _bumpOffsets.Length; i++)
+        {
+            _bumpOffsets[i] = reader.ReadSingle();
+        }
+
+        _fogEnable = reader.ReadBoolean();
+        _fogMode = reader.ReadInt32();
+        _fogGenMode = reader.ReadUInt32();
+        for (int i = 0; i < 4; i++)
+        {
+            _fogColor[i] = reader.ReadSingle();
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            _fogParams[i] = reader.ReadSingle();
+        }
+
+        _combiner.LoadState(reader);
+        _alphaTestEnable = reader.ReadBoolean();
+        _alphaFunc = reader.ReadUInt32();
+        _alphaRef = reader.ReadUInt32();
+        _blendEnable = reader.ReadBoolean();
+        _blendSrcFactor = reader.ReadUInt32();
+        _blendDstFactor = reader.ReadUInt32();
+        _blendColor = reader.ReadUInt32();
+        _blendEquation = reader.ReadUInt32();
+        _depthTestEnable = reader.ReadBoolean();
+        _depthFunc = reader.ReadUInt32();
+        _depthMask = reader.ReadBoolean();
+        _zFormatFloat = reader.ReadBoolean();
+        _zclipMin = reader.ReadSingle();
+        _zclipMax = reader.ReadSingle();
+        _zclipActive = reader.ReadBoolean();
+        _zclipCull = reader.ReadBoolean();
+        _colorMask = reader.ReadUInt32();
+        _stencilTestEnable = reader.ReadBoolean();
+        _stencilWriteMask = reader.ReadUInt32();
+        _stencilFunc = reader.ReadUInt32();
+        _stencilRef = reader.ReadUInt32();
+        _stencilReadMask = reader.ReadUInt32();
+        _stencilOpFail = reader.ReadUInt32();
+        _stencilOpZfail = reader.ReadUInt32();
+        _stencilOpZpass = reader.ReadUInt32();
+        _dmaZeta = reader.ReadUInt32();
+        DrawsExecuted = reader.ReadUInt64();
+        CombinerDraws = reader.ReadUInt64();
+        TexModeFallbacks = reader.ReadUInt64();
+        UnsupportedDotMaps = reader.ReadUInt64();
+        TextureSampleSuccesses = reader.ReadUInt64();
+        TextureSampleDisabled = reader.ReadUInt64();
+        TextureSampleBadSize = reader.ReadUInt64();
+        TextureSampleRgbZero = reader.ReadUInt64();
+        ReadLongs(reader, _textureFormatAttempts);
+        ReadLongs(reader, _textureFormatMisses);
+        ReadLongs(reader, _texModeFallbackByMode);
+        _combinerRgbZeroFragments = reader.ReadInt64();
+        _combinerRgbZeroAlphaFragments = reader.ReadInt64();
+        int stateIndex = reader.ReadInt32();
+        if (stateIndex < 0 || stateIndex > TextureStateCap)
+        {
+            throw new InvalidDataException("Bad NV2A texture-state snapshot.");
+        }
+
+        _textureStateIndex.Clear();
+        for (int i = 0; i < stateIndex; i++)
+        {
+            _textureStateIndex[reader.ReadString()] = reader.ReadInt32();
+        }
+
+        int stateKeys = reader.ReadInt32();
+        if (stateKeys < 0 || stateKeys > TextureStateCap)
+        {
+            throw new InvalidDataException("Bad NV2A texture-key snapshot.");
+        }
+
+        _textureStateKeys.Clear();
+        for (int i = 0; i < stateKeys; i++)
+        {
+            _textureStateKeys.Add(reader.ReadString());
+        }
+
+        ReadLongs(reader, _textureStateSamples);
+        ReadLongs(reader, _textureStateRgbZero);
+        ReadLongs(reader, _textureStateFallbacks);
+        ReadLongs(reader, _textureStateMisses);
+        ReadUints(reader, _textureStateFirstAddress);
+        ReadUints(reader, _textureStateFirstTexel);
+        ReadFloats(reader, _textureStateMinU);
+        ReadFloats(reader, _textureStateMaxU);
+        ReadFloats(reader, _textureStateMinV);
+        ReadFloats(reader, _textureStateMaxV);
+        _currentTextureState = reader.ReadInt32();
+        DrawnPixels = reader.ReadUInt64();
+        TexturedPixels = reader.ReadUInt64();
+        BlendedPixels = reader.ReadUInt64();
+        DepthTestedPixels = reader.ReadUInt64();
+        ZclipClampedPixels = reader.ReadUInt64();
+        ZclipCulledPixels = reader.ReadUInt64();
+        SkippedDraws = reader.ReadUInt64();
+        NonProgrammableModeDraws = reader.ReadUInt64();
+        SemaphoreReleases = reader.ReadInt32();
+        SemaphoreDebug = reader.ReadString();
+        PgraphEnabledDebug = reader.ReadUInt32();
+        PgraphPendingDebug = reader.ReadUInt32();
+        NotificationsRaised = reader.ReadInt32();
+        NotificationAsserted = reader.ReadBoolean();
+        PraminWrites = reader.ReadInt32();
+        InterruptAsserted = reader.ReadBoolean();
+        MethodStreamCap = reader.ReadUInt64();
+        ReadCountMap(reader, _methodCounts);
+        int methodParams = reader.ReadInt32();
+        if (methodParams < 0)
+        {
+            throw new InvalidDataException("Bad NV2A method-param snapshot.");
+        }
+
+        _methodParams.Clear();
+        for (int i = 0; i < methodParams; i++)
+        {
+            _methodParams[reader.ReadUInt32()] = reader.ReadUInt32();
+        }
+
+        int stream = reader.ReadInt32();
+        if (stream < 0 || (ulong)stream > MethodStreamCap)
+        {
+            throw new InvalidDataException("Bad NV2A method-stream snapshot.");
+        }
+
+        _methodStream.Clear();
+        for (int i = 0; i < stream; i++)
+        {
+            _methodStream.Add((reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32()));
+        }
+    }
+
+    private const int Nv2aSnapshotVersion = 1;
+
+    private static void WriteUints(BinaryWriter writer, uint[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            writer.Write(values[i]);
+        }
+    }
+
+    private static void ReadUints(BinaryReader reader, uint[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = reader.ReadUInt32();
+        }
+    }
+
+    private static void WriteLongs(BinaryWriter writer, long[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            writer.Write(values[i]);
+        }
+    }
+
+    private static void ReadLongs(BinaryReader reader, long[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = reader.ReadInt64();
+        }
+    }
+
+    private static void WriteFloats(BinaryWriter writer, float[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            writer.Write(values[i]);
+        }
+    }
+
+    private static void ReadFloats(BinaryReader reader, float[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = reader.ReadSingle();
+        }
+    }
+
+    private static void WriteCountMap(BinaryWriter writer, Dictionary<uint, int> map)
+    {
+        writer.Write(map.Count);
+        foreach (var entry in map)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+    }
+
+    private static void ReadCountMap(BinaryReader reader, Dictionary<uint, int> map)
+    {
+        int count = reader.ReadInt32();
+        if (count < 0)
+        {
+            throw new InvalidDataException("Bad NV2A histogram snapshot.");
+        }
+
+        map.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            map[reader.ReadUInt32()] = reader.ReadInt32();
+        }
+    }
+
+    private static void ReadBytesExact(BinaryReader reader, byte[] target)
+    {
+        byte[] data = reader.ReadBytes(target.Length);
+        if (data.Length != target.Length)
+        {
+            throw new InvalidDataException("Truncated NV2A PRAMIN snapshot.");
+        }
+
+        Array.Copy(data, target, target.Length);
     }
 
     /// <inheritdoc />
