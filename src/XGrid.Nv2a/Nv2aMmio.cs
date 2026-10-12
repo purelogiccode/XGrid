@@ -2451,6 +2451,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
               (uint)(Math.Clamp(b, 0f, 1f) * 31f + 0.5f);
     }
 
+    private static float NaNToOne(float value)
+    {
+        return float.IsNaN(value) ? 1f : value;
+    }
+
     private void WritePixel(uint address, uint bytes, uint pixel)
     {
         if (_memory is null || address + bytes > RamSize)
@@ -2596,9 +2601,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float ca = colorCount >= 4 ? InlineColor(c, 3) : 1f;
 
                 FillTriangle(
-                    ax, ay, 0f, ar, ag, ab, aa, 0f, 0f,
-                    bx, by, 0f, br, bg, bb, ba, 0f, 0f,
-                    cx, cy, 0f, cr, cg, cb, ca, 0f, 0f,
+                    ax, ay, 0f, 1f, ar, ag, ab, aa, 0f, 0f,
+                    bx, by, 0f, 1f, br, bg, bb, ba, 0f, 0f,
+                    cx, cy, 0f, 1f, cr, cg, cb, ca, 0f, 0f,
                     clipX, clipY, clipW, clipH, bytes, pitch);
             }
 
@@ -2615,7 +2620,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     return component == 3 ? 1f : 0f;
                 }
 
-                return Math.Clamp(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component]), 0f, 1f);
+                return Math.Clamp(NaNToOne(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component])), 0f, 1f);
             }
         }
         finally
@@ -2724,7 +2729,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             outputs[i] = new float[4];
         }
 
-        var transformed = new Dictionary<int, (float X, float Y, float Z, float R, float G, float B, float A, float U, float V)>();
+        var transformed = new Dictionary<int, (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V)>();
 
         uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
         DrawsExecuted++;
@@ -2804,10 +2809,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             }
         }
 
-        (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) Vertex(uint element)
+        (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V) Vertex(uint element)
         {
             int index = (int)element;
-            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float) cached))
+            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float, float) cached))
             {
                 return cached;
             }
@@ -2826,9 +2831,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             VshProgram.Execute(program, programLength, constants, inputs, outputs);
 
-            (float X, float Y, float Z, float R, float G, float B, float A, float U, float V) vertex = (
-                outputs[0][0], outputs[0][1], outputs[0][2],
-                outputs[3][0], outputs[3][1], outputs[3][2], outputs[3][3],
+            (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V) vertex = (
+                outputs[0][0], outputs[0][1], outputs[0][2], outputs[0][3],
+                NaNToOne(outputs[3][0]), NaNToOne(outputs[3][1]), NaNToOne(outputs[3][2]), NaNToOne(outputs[3][3]),
                 outputs[9][0], outputs[9][1]);
             transformed[index] = vertex;
             return vertex;
@@ -2836,13 +2841,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         void Triangle(uint a, uint b, uint c)
         {
-            (float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
-            (float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
-            (float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
+            (float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
+            (float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
+            (float cx, float cy, float cz, float cw, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
             FillTriangle(
-                ax, ay, az, ar, ag, ab, aa, au, av,
-                bx, by, bz, br, bg, bb, ba, bu, bv,
-                cx, cy, cz, cr, cg, cb, ca, cu, cv,
+                ax, ay, az, aw, ar, ag, ab, aa, au, av,
+                bx, by, bz, bw, br, bg, bb, ba, bu, bv,
+                cx, cy, cz, cw, cr, cg, cb, ca, cu, cv,
                 clipX, clipY, clipW, clipH, bytes, pitch);
         }
     }
@@ -3404,9 +3409,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     }
 
     private void FillTriangle(
-        float ax, float ay, float az, float ar, float ag, float ab, float aa, float au, float av,
-        float bx, float by, float bz, float br, float bg, float bb, float ba, float bu, float bv,
-        float cx, float cy, float cz, float cr, float cg, float cb, float ca, float cu, float cv,
+        float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av,
+        float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv,
+        float cx, float cy, float cz, float cw, float cr, float cg, float cb, float ca, float cu, float cv,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch)
     {
         float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
@@ -3428,6 +3433,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
 
         float invArea = 1f / area;
+        float invAw = aw != 0f ? 1f / aw : 0f;
+        float invBw = bw != 0f ? 1f / bw : 0f;
+        float invCw = cw != 0f ? 1f / cw : 0f;
+        bool perspective = invAw != 0f && invBw != 0f && invCw != 0f && (aw != bw || bw != cw);
         for (uint y = y0; y <= y1; y++)
         {
             for (uint x = x0; x <= x1; x++)
@@ -3444,13 +3453,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     continue;
                 }
 
-                float r = (w1 * ar) + (w2 * br) + (w0 * cr);
-                float g = (w1 * ag) + (w2 * bg) + (w0 * cg);
-                float bl = (w1 * ab) + (w2 * bb) + (w0 * cb);
-                float al = (w1 * aa) + (w2 * ba) + (w0 * ca);
+                float p0 = w0;
+                float p1 = w1;
+                float p2 = w2;
+                if (perspective)
+                {
+                    float s0 = w0 * invCw;
+                    float s1 = w1 * invAw;
+                    float s2 = w2 * invBw;
+                    float sum = s0 + s1 + s2;
+                    if (float.IsFinite(sum) && sum != 0f)
+                    {
+                        float invSum = 1f / sum;
+                        p0 = s0 * invSum;
+                        p1 = s1 * invSum;
+                        p2 = s2 * invSum;
+                    }
+                }
+
+                float r = (p1 * ar) + (p2 * br) + (p0 * cr);
+                float g = (p1 * ag) + (p2 * bg) + (p0 * cg);
+                float bl = (p1 * ab) + (p2 * bb) + (p0 * cb);
+                float al = (p1 * aa) + (p2 * ba) + (p0 * ca);
                 float depth = (w1 * az) + (w2 * bz) + (w0 * cz);
-                float tu = (w1 * au) + (w2 * bu) + (w0 * cu);
-                float tv = (w1 * av) + (w2 * bv) + (w0 * cv);
+                float tu = (p1 * au) + (p2 * bu) + (p0 * cu);
+                float tv = (p1 * av) + (p2 * bv) + (p0 * cv);
                 if (TrySampleTexture0(tu, tv, out float tr, out float tg, out float tb, out float ta))
                 {
                     r *= tr;
