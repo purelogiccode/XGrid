@@ -2895,7 +2895,7 @@ HILO dot maps, oPos.z clipRange normalization, Vulkan/OpenGL backends
 (16.6–16.7) |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
-| 14 — Networking | Partial (MMIO + TX) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters; guest init-only steady state preserved, 956 tests); P2 RX + P3 socket backend remain |
+| 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§86: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
 Current test baseline: **885 tests passing** (39 Core, 398 Cpu, 52 Memory, 172 Bus, 16 Integration, 94 Nv2a, 8 Audio, 46 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
@@ -3487,7 +3487,14 @@ packet engine stays scoped-not-built per the trace-driven rule.
 Remaining (when a title drives it): descriptor/DMA packet engine
 (`RingDesc` `{u32 buf; u16 len; u16 flags}`, rings `0x100`–`0x138` per
 xemu `nvnet.c`), RX/TX interrupts, link-state/DHCP behavior, all behind
-`INetworkBackend`.
+`INetworkBackend`. P0/P1 packet engine MERGED (§84: ring latches, IRQ4,
+TX walker + loopback backend; guest init-only steady state preserved).
+P2 RX + P3 backend MERGED (§86: RX filter + DMA-write + RX/RX_NOBUF
+IRQs with pending-slot hold-and-retry, link toggle + 250 ms autoneg via
+`Advance` with MIIEVENT, socket user-mode backend — ARP/ICMP/UDP relay —
+behind `--net-backend`, loopback default; CLI `--net-inject`/
+`--net-link` + rx/link counters; 30 new tests, full suite 986 green;
+guest init-only behavior unchanged).
 
 ## Phase 15 — CPU JIT (detailed)
 
