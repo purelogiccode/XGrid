@@ -92,25 +92,30 @@ public sealed class MachineSnapshotTests
     public void LoadState_UnknownSection_IsIgnored()
     {
         string path = Path.GetTempFileName();
+        string baseline = Path.GetTempFileName();
         try
         {
             XboxMachine machine = CreateLoadedMachine();
             machine.Run(1);
+            machine.SaveState(baseline);
 
-            byte[] cpuPayload = CaptureSection(machine, "CPU");
-            byte[] ramPayload = CaptureSection(machine, "RAM");
-            byte[] machPayload = CaptureSection(machine, "MACH");
+            string[] tags =
+            {
+                "CPU", "RAM", "BUS", "IDE", "NV2A", "ACI", "APU", "NET", "USB0", "USB1", "MACH",
+            };
 
             using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
             using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: false))
             {
                 writer.Write(Encoding.ASCII.GetBytes(XboxMachine.SnapshotMagic));
                 writer.Write(XboxMachine.SnapshotFormatVersion);
-                writer.Write(4);
-                WriteSection(writer, "CPU", cpuPayload);
+                writer.Write(tags.Length + 1);
+                foreach (string tag in tags)
+                {
+                    WriteSection(writer, tag, ExtractSection(baseline, tag));
+                }
+
                 WriteSection(writer, "FUTURE-DEVICE", new byte[] { 1, 2, 3, 4 });
-                WriteSection(writer, "RAM", ramPayload);
-                WriteSection(writer, "MACH", machPayload);
             }
 
             XboxMachine restored = CreateLoadedMachine();
@@ -123,6 +128,7 @@ public sealed class MachineSnapshotTests
         finally
         {
             File.Delete(path);
+            File.Delete(baseline);
         }
     }
 

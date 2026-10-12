@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -9,6 +10,11 @@ namespace XGrid.Integration.Tests;
 
 public sealed class SnapshotRegistrationTests
 {
+    private static readonly string[] ExpectedSectionTags =
+    {
+        "CPU", "RAM", "BUS", "IDE", "NV2A", "ACI", "APU", "NET", "USB0", "USB1", "MACH",
+    };
+
     private static List<string> ReadSectionTags(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -36,9 +42,7 @@ public sealed class SnapshotRegistrationTests
         {
             machine.SaveState(path);
             List<string> tags = ReadSectionTags(path);
-            Assert.Equal(
-                new[] { "CPU", "RAM", "BUS", "IDE", "NV2A", "ACI", "APU", "NET", "USB0", "USB1", "MACH" },
-                tags);
+            Assert.Equal(ExpectedSectionTags, tags, StringComparer.Ordinal);
         }
         finally
         {

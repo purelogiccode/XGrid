@@ -4244,3 +4244,90 @@ coordinator: `AttachHdd`/`AttachDvd` should assign `Ide.HddPath`/`DvdPath`
 Storage 5 incl. sector-mismatch negative, Audio 1, Nv2a 2, Integration 2
 registration/contract tests); save-mutate-load asserts byte-identical
 re-saves. Suite 1080/1080, build + `format --verify-no-changes` clean.
+
+## 101. V1 merged + acceptance met: dashboard save/restore is bit-exact (2026-10-12)
+
+Coordinator merge of `wave/snapshot-core` (`6b2b73d`) +
+`wave/snapshot-devices` (`68a32fc`) into master. Both branches created
+`src/XGrid.Core/Snapshots/ISnapshotable.cs` byte-identical (clean
+auto-merge). Reconciliation by coordinator: kept the core tagged-section
+scheme (`CPU`/`RAM`/`BUS`/`IDE`/`NV2A`/`ACI`/`APU`/`NET`/`USB0`/`USB1`/
+`MACH`, order-independent load, skip-unknown, duplicate rejection) and
+translated the devices branch's 8-entry ordered list into tagged
+registrations at the anchor; deleted the redundant `SnapshotDevices`
+property and rewrote its test to assert section tags from a saved file;
+fixed two analyzer errors in the rewritten test (CA1861 static-readonly
+expected-tags array, MA0002 ordinal comparer) and one stale core test
+(`UnknownSection_IsIgnored` now round-trips all 11 sections + the
+unknown tag). Coordinator fix at merge: `AttachHdd`/`AttachDvd` now
+record `Ide.HddPath`/`DvdPath` (devices open issue #1, cross-process
+reopen params). Full suite **1092/1092** (1053 + 12 core + 27 devices).
+
+**Acceptance, live on merged master** (logs/framebuffer dumps in
+`Temp\opencode\v1-accept\`): submenu boot `--save-state S.xgs --save-at
+1000000000` (72,105,569 B at EIP `0x1E0F1`), then `--load-state S.xgs
+--steps 50000000` vs uninterrupted `--steps 1050000000` with the same
+pad-script — **EIP `0x3A004`, all GPRs, NV2A counters (`draws=42833`,
+`pixels=353422182`, `frames=895`, `zclipCull=21526`) identical; presented-
+frame SHA-256 match; full 64 MB RAM SHA-256 match.** V1 acceptance
+(save/restore CPU+RAM+device with exact EIP/registers/flip counters) is
+MET. Probe economics: the gate costs one 1B run (~6 min at current
+menu-workload speed); every probe after it costs only post-restore steps
+(50M ≈ 20 s). Carried exclusions: core-uncaptured diagnostic counters,
+host handles by re-attach (DVD/HDD paths), socket-backend gate
+(loopback-only snapshots), `--save-at` exactness only for the standard
+run loop, saved `SevenEosQuirkEnabled` overrides the CLI flag on load.
+
+## 102. V2 recon verdict: overlay-XBE replacement BLOCKED; build the flat-binary harness (2026-10-12)
+
+Read-only recon (no repo writes). Question: how can a minimal test
+program execute without 10-minute full-boot runs (plan V2)?
+
+**Signature enforcement (retail kernel, live + documented):** the kernel
+loads the HDD dashboard via 27 READ DMA, stages it at phys `0xBF000`,
+decrypts entry in place (`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`)
+and calls it (`0x800158DA`) — Gates 1/34, §§31/34/86. XBE format per
+Cxbx: 256-B RSA signature over the header + per-section SHA-1 digests +
+cert `AllowedMedia`; the retail kernel executes SHA-1/HMAC workers
+bit-exact in XGrid LLE (§22). XboxWiki: kernel runs signed XBEs only;
+bad signature → Fatal Error + halt. `NONSECURE_*` cert bits are honored
+by debug kernels, NOT a retail bypass; debug-signed XBEs need a debug
+BIOS/kernel (unavailable); the XISOSharp media-enable patch fixes a
+DVD check inside the XBE, not kernel verification. **Verdict: replacing
+`xboxdash.xbe` on an overlay image with an unsigned homebrew XBE cannot
+run on the retail path (no MS private key).** Ranked alternatives:
+(1) flat-binary harness, no kernel/XBE — RECOMMENDED, days;
+(2) unsigned XBE + in-RAM verify patch — fragile, 1–2 weeks;
+(3) debug BIOS/kernel — blocked on firmware;
+(4) retail-sign homebrew — impossible;
+(5) full nxdk bring-up — weeks, and still needs (2)/(3) to launch.
+
+**Recommended harness (spec):** new `xgrid testrom --bin <flatbin>`
+subcommand (do not overload `boot`): `new XboxMachine` with NO BIOS
+(proven pattern: `XboxMachineTests` boots a fake BIOS; `CpuHarness` sets
+flat GDT/stack/entry), copy `--bin` to phys base, ~100-line
+`TestRomRunner`, `OUT 0xE9` PUTC/PUTS console device (+ optional `0xEB`
+IRQ raiser later), `EAX=0+HLT`=pass / `EAX=N`=fail with `TESTROM
+PASS/FAIL` first log line + existing counters. Test programs do
+bare-metal pokes (NV2A MMIO, IDE PIO/BM-DMA, OHCI HCCA/ED/TD + 1 ms
+`Advance` frames, port I/O); no kernel services, no paging, IRQs later.
+**Toolchain on this machine:** NO nxdk/OpenXDK/xcc/MSVC in PATH or
+common locations; YES `C:\mingw64\bin\gcc` 16.1.0 (x86_64, `-m32` link
+unproven) and **NASM 3.01** at `C:\msys64\mingw64\bin\nasm.exe` (not in
+PATH — absolute path; Xermu precedent: ~50 NASM `.asm` → flat binaries
+with ASSERT macros). Python-emitted `.bin` is the fallback.
+
+**First three ROMs (each <100M steps, `mov eax,CODE; hlt` exit):**
+ROM-A `nv2a-textured-quad` (<2M): PGRAPH MMIO direct — surface/texture/
+flip regs, 64×64 checker, one triangle, `FLIP_INCREMENT_WRITE`; ASSERT
+`draws>=1 textured>0 frames>=1 nonzero>0` (+ `--frame`/`--pgraph`
+cross-check). ROM-B `ide-read-dma` (<5M): synthetic 8 MB HDD (Python-made,
+known pattern at LBA `0x100`), BAR4+PRDT, `READ DMA 0xC8` ×8 sectors,
+`memcmp` vs golden; ASSERT `mismatch=0`. ROM-C `pad-getstate-poll`
+(<10M): OHCI HCCA/ED/interrupt-IN TD in RAM, poll `DoneHead` across
+`Advance` frames with `--pad-buttons down`; ASSERT `idle=0x0
+pressed=0x2`. (APU voice-on/off is the 4th ROM.) Exact CLI shapes and
+the full evidence trail are in the recon report; key file refs:
+`XboxMachine.cs:16-108,261-391`, `CpuHarness.cs:10-42`,
+`CpuTestRunner.cs:18-49`, `XboxMachineTests.cs:58-70`,
+`Program.cs:911-1155` (counters), `XbeImage.cs:218-246` (XOR/type).
