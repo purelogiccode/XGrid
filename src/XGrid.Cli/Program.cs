@@ -77,6 +77,7 @@ internal static class Program
         string? padAnalog = null;
         string? padSticks = null;
         ulong padStep = 0;
+        string? padScriptSpec = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -187,6 +188,9 @@ internal static class Program
                 case "--pad-step":
                     padStep = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
+                case "--pad-script":
+                    padScriptSpec = NextValue(args, ref i);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -245,7 +249,7 @@ internal static class Program
             {
                 if (!PadInput.TryParse(padButtons, padAnalog, padSticks, out PadInput pad))
                 {
-                    Console.Error.WriteLine("Invalid --pad options (buttons: hex16; analog: 16 hex chars; sticks: lx,ly,rx,ry)");
+                    Console.Error.WriteLine("Invalid --pad options (buttons: hex16 or names like down/a+down; analog: 16 hex chars; sticks: lx,ly,rx,ry)");
                     return 1;
                 }
 
@@ -265,6 +269,28 @@ internal static class Program
                     machine.Gamepad.SetInput(due.Buttons, due.Analog, due.Sticks);
                     Console.WriteLine($"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
                     padApplied = true;
+                }
+            }
+
+            PadScript? padScript = null;
+            if (padScriptSpec is not null)
+            {
+                if (!PadScript.TryParse(padScriptSpec, out PadScript? parsed) || parsed is null)
+                {
+                    Console.Error.WriteLine("Invalid --pad-script spec (events: buttonset@step[+hold],... e.g. down@960000000,a@961000000)");
+                    return 1;
+                }
+
+                padScript = parsed;
+                Console.WriteLine($"Pad script events={padScript.Count}");
+            }
+
+            void ApplyScriptIfDue(ulong at)
+            {
+                if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
+                {
+                    machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
+                    Console.WriteLine($"Pad script buttons=0x{pressed.Buttons:X4} analog={BitConverter.ToString(pressed.Analog)} at step {at}");
                 }
             }
 
@@ -292,6 +318,7 @@ internal static class Program
                 while (executed < steps && !machine.Cpu.Context.Halted)
                 {
                     ApplyPadIfDue(executed);
+                    ApplyScriptIfDue(executed);
                     if (breakLogAddresses.Contains(machine.Cpu.Context.Eip))
                     {
                         XboxContext logs = machine.Cpu.Context;
@@ -332,6 +359,7 @@ internal static class Program
                 while (executed < steps && !machine.Cpu.Context.Halted)
                 {
                     ApplyPadIfDue(executed);
+                    ApplyScriptIfDue(executed);
                     if (machine.Cpu.Context.Eip == breakEip)
                     {
                         break;
@@ -388,6 +416,7 @@ internal static class Program
             ulong nextProgress = (executed / progressInterval + 1) * progressInterval;
             EipHistogram? eipHist = eipHistInterval > 0 ? new EipHistogram() : null;
             ulong sinceHist = 0;
+            ApplyScriptIfDue(executed);
             while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
             {
                 ulong remaining = steps - executed;
@@ -402,6 +431,11 @@ internal static class Program
                     target = Math.Min(target, padStep - executed);
                 }
 
+                if (padScript is { } splitter && splitter.TryGetNextBoundary(executed, out ulong scriptStep))
+                {
+                    target = Math.Min(target, scriptStep - executed);
+                }
+
                 ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
@@ -410,6 +444,7 @@ internal static class Program
 
                 executed += ran;
                 ApplyPadIfDue(executed);
+                ApplyScriptIfDue(executed);
                 if (eipHist is not null)
                 {
                     sinceHist += ran;
@@ -1392,7 +1427,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <hex> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N]] [--eip-hist N]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

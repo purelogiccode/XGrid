@@ -180,23 +180,33 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   c64-95; fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/
   program-start/output-defaults fetch fixes, MUL zero rule + GLSL
   min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings
-  + oD0 NaN->1. Multi-texture needs the psh combiner (scoped, not built).
+  + oD0 NaN->1. Register combiner (psh) merged (§75); fog + backends remain.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 885 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 923 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — interactive menu.
+## Next session — visible menu.
 
-1. Input path works end-to-end (§§68–70): hub topology unblocked XPP;
-   dashboard polls `GetState` 999x, D-pad moves the selection, A-edge
-   activation fires (`0x1859D` -> state 14 -> `0x1E66A`). Next: decode
-   the control list (`0x24E90([0x47BC84], idx)` `+0x0C` targets) to find
-   controls that change the screen; pad-sequence injection (navigate +
-   activate); watch `0x1E2F9` state machine; check 007's input layer.
+1. Menu control list DECODED (§76): manager `0x47BC84`, node `+0x0C`
+   target states — idx0 XBMC/state 8 (`0x1E54F`, only unconditional XBE
+   load), idx2/5 Games/Admin/state 100 (`0x1E420`, submenu page switch =
+   cheapest visible-change test), idx3/4 mode switch, idx1 DVD/state 14
+   proven no-op at `[0x95BBC]=3`. Scripted `--pad-script` injection merged
+   (§74: `down@950000000,a@960000000` reproduces the §70 HIT). Next: run
+   the §76 probes (loader call / submenu redraw / DVD-presence flip).
+   007 input verdict: never-reaches, not mismatch (§77 — no device fix;
+   unblock its `0x20E40` limiter first, then re-test `--pad`).
    PIT frequency fixed (1,125,001) — game wait = guest pacing, not a gap.
-2. NV2A fidelity wave merged (§71); multi-texture/psh combiner scoped
-   (COMBINECTL 0x1940 etc.) but not built; fog state unmodeled.
-3. `F36A2`/LBA 8 (`55 AA`, `PCBX`) still open; Track C JIT for
+2. NV2A register combiner (psh) MERGED (§75: real methods
+   0x260/0x288/0xA60/0xA80/0xAA0/0xAC0/0x1E20/0x1E40/0x1E60/0x1E70/0x1E74/
+   0x1E78 — the brief's 0x1940 range was vertex data, corrected;
+   combiner-disabled draws pixel-identical). Remaining: dependent/bump/
+   dot modes, fog, Vulkan/OpenGL backends (16.6–16.7).
+3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
+   sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
+   MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
+   READ/WRITE DMA, faithful serving, no fault); `F36A2` is the §49–51
+   WC-fill page artifact, unrelated to disk I/O. Track C JIT for
    interactivity still the throughput bottleneck.
 4. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive

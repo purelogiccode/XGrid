@@ -2472,3 +2472,236 @@ targets and sequence injection (navigate then activate).
   `--watch` remains physical-only.
 - Test baseline **804 -> 885** (Nv2a 67->94, Bus 150->172, Integration
   15->16).
+
+## 73. F36A2/LBA 8 gap closed: config-sector RMW is guest-normal, no emulation bug (2026-10-11)
+
+**LBA 8 identity (reference-first).** XboxDevWiki "Hard Drive" gives a
+fixed partition layout with **Partition0 = Config Area** (byte `0x0`,
+size `0x80000`, "Fixed Structure") — LBA 8 sits inside it. The vendored
+wiki plus the live "Config Sector" page document network settings at
+Partition0+`0x1020`+ (= LBA 8 offset `0x20`+: static/DHCP/Xbox-Live
+IPs, masks, gateways, DNS). So `55 AA` at `0x1FE` and `PCBX` at `0x1F4`
+are the **config-sector format** (validity marker + magic), not MBR
+semantics — and the kernel's fixed layout means nothing ever parses
+LBA 8 as a partition table. `XGrid.XboxFs` takes explicit partition
+LBAs and never reads LBA 8 (verified by grep: no PCBX/55AA/LBA-8
+handling anywhere in `src/`).
+
+**Trace evidence (temp env-gated scan + single-step trap, both
+reverted; logs/ram in temp).** A 5M-step overlay poll finds the first
+LBA 8 write in `(640M,645M]`; an exact-step trap fires deterministically
+at **step 656658455, EIP `0x8002430E`** (kernel ATA miniport, state's
+`0x800240xx` machine with `0x8003adxx` dispatch; `out 0x1F7` FLUSH form
+nearby). IDE tail at the trap: dashboard content reads, 1-sector
+partition probes, `MEC` (IDENTIFY), then `MC8/F00/n01l080000` (READ DMA
+LBA 8) + `MCA/F00/n01l080000` (WRITE DMA LBA 8) — a kernel-driven
+**read-modify-write of the config sector during dashboard init**, the
+overlay's first two writes overall. Kernel-stack forensics (page-table
+walk from CR3 `0xF000`) shows a pure kernel chain (`0x800245E8`,
+`0x80024B9C`, `0x800243FD`, `0x80012348`, `0x8001598A`, `0x80026770`,
+`0x80012428`, …) with the request block at `ESI=0xD004C988`; the trap
+EIP/registers/IDE tail reproduce bit-identically across runs.
+
+**Serving fidelity (no read-path or taskfile/DMA bug).** Host-side
+`xgrid sector` dump of base LBA 8 is byte-identical to the guest-written
+sector in early runs; the RMW preserves every stable field (header,
+`2VBX`/`PCBX`, `55 AA`), which is only possible if our READ DMA served
+the stored bytes exactly. Later runs rewrite the digest/checksum fields
+(`0x0C–0x1F`, `0x1F8–0x1FB`) with run-varying values (image `D94D…`,
+53-family `69FA…`, trap run `C7F2…`; 53_5b == 60_5b at equal steps, so
+tick-derived, not wall-clock) — plain-SHA1-over-sector hypotheses all
+fail, so the field is guest-internal crypto (keyed/HMAC-style) with no
+behavioral consequence: boot continues with no fault in every run.
+
+**F36A2 decoded (unrelated to disk I/O).** `0x800F36A2` is unmapped in
+the guest page tables; dashboard VA `0xF36A2` holds BGRA texture pixels
+at trap time; HDD LBA `0xF36A2` reads all zeros; no `F36A2`-ish value
+appears anywhere on the writer's kernel stack. The §§49–51 `F36A2`
+skipped page is the WC-alias surface-upload artifact (resolved by the
+§50 alias), a separate observation sharing only a hex coincidence.
+
+**Verdict: NOT an emulation bug.** Guest-normal kernel config-sector
+RMW, served faithfully, zero behavioral consequence. No fix required.
+
+**Regression lock.** `BusMasterDmaTests.
+ConfigSectorReadWriteDmaRoundTripPreservesSignatureBytes` replays the
+exact guest sequence (0xC8/0xCA, n=1, taskfile `08 00 00`, incl. the
+`MC8/F00/n01l080000` log detail and the guest's BM-stop-between-
+transfers discipline) on PCBX/`55 AA`-seeded LBA 8: signatures survive a
+digest-field RMW round trip. Storage 46→47 tests.
+## 74. Pad-sequence injection: `--pad-script` (2026-10-12)
+
+**Button facts (xemu `hw/xbox/xid.h`, read-only ref).** Analog indices
+A0 B1 X2 Y3 BLACK4 WHITE5 LT6 RT7; digital `BUTTON_MASK(b) = 1<<(b-8)`:
+UP 0x0001 DOWN 0x0002 LEFT 0x0004 RIGHT 0x0008 START 0x0010 BACK 0x0020
+LTHUMB 0x0040 RTHUMB 0x0080. Report = wButtons + 8 analog + 4 sticks,
+matching `XidGamepad` passthrough (no code copied).
+
+**Design.** No name parser existed (`--pad-buttons` was hex-only), so
+`PadInput.TryParseButtonSet` is new shared code: names (case-insensitive,
+`_`/`-`/space ignored, `+`/`|` join) take precedence over hex, so `a`
+means analog-A not mask 0x000A; analog names press 0xFF; `none`/`neutral`/
+`release`/`0` = neutral. `--pad-buttons` now accepts the same form
+(hex inputs parse identically). `PadScript` (`XGrid.Bus/Usb`) parses
+`buttonset@step[+hold],...` (stable by step, sticks neutral), applies at
+exact step boundaries in all three run loops with batch target-splitting
+(same pattern as `--pad-step`, which is untouched); momentary presses
+auto-release after 1M steps, `+hold` latches, later events supersede
+pending releases. 23 new tests (Bus 172->195); 908 green.
+
+**Validation (worktree build, main-checkout firmware read-only, logs in
+temp).** Smoke `--pad-script down@1000000,a@2000000` (3M steps): DOWN
+@1000000, A @2000000, neutral @3000000, no fault; `down@1000000+hold`
+latches with no release line; bogus spec exits 1. §70 oracle reproduced
+via the new mechanism: `--pad-script down@950000000,a@960000000
+--break-log 0x1859D` (965M) fires DOWN @950M, release @951M, A @960M,
+release @961M, and `HIT 960493586 EIP=0001859D ESI=D003B500` —
+byte-identical to the old-flag regression run (`--pad-analog
+FF00000000000000 --pad-step 960000000`), which still passes.
+## 75. NV2A register-combiner (psh) stage (2026-10-12)
+
+- **Register-map correction**: the task brief's "COMBINECTL 0x1940
+  through 0x1940-0x197C" conflates the PGRAPH engine offset
+  (`NV_PGRAPH_COMBINECTL` = 0x1940, xemu-internal) with channel method
+  offsets, and 0x1940-0x197C is actually `SET_VERTEX_DATA4UB_M`
+  (inline vertex data, section 71). The real combiner methods
+  (`nv2a_regs.h` NV097_SET_* + `pgraph.c` handlers) are: ALPHA_ICW
+  0x260 x8, SPECULAR_FOG_CW0/CW1 0x288/0x28C (final inputs),
+  FACTOR0/1 0xA60/0xA80 x8 (C0/C1, ARGB packed), ALPHA_OCW 0xAA0 x8,
+  COLOR_ICW 0xAC0 x8, SPECULAR_FOG_FACTOR 0x1E20 x2 (final consts),
+  COLOR_OCW 0x1E40 x8, CONTROL 0x1E60, SHADER_STAGE_PROGRAM 0x1E70,
+  DOT_RGBMAPPING 0x1E74, SHADER_OTHER_STAGE_INPUT 0x1E78. None collide
+  with existing ranges (nearest: viewport scale ends 0xAFC).
+- **Stage math** (`glsl/psh.c` facts, reimplemented scalar in
+  `src/XGrid.Nv2a/PshCombiner.cs`): ICW byte = reg[3:0] | chan bit4 |
+  mapping[7:5], word order A[31:24] B C D[7:0]; regs 0 ZERO/DISCARD,
+  1 C0, 2 C1, 3 FOG, 4/5 V0/V1, 8-11 T0-T3, 12/13 R0/R1, 14 V1R0_SUM,
+  15 EF_PROD (ZERO+mapping gives ONE etc.); RGB chan 0=.rgb/0x10=.aaa,
+  alpha chan 0=.b/0x10=.a; 8 input mappings (unsigned identity/invert,
+  expand normal/negate, halfbias normal/negate, signed identity/negate);
+  AB = A*B or dot (RGB only; scalar dot = multiply), CD likewise;
+  muxsum = AB+CD or MUX (MSB flag: r0.a>=0.5 -> CD; LSB: 8-bit
+  quantized r0.a odd -> CD); 6 output mappings; all outputs clamped
+  [-1,1]; blue-to-alpha flags; r0 init (0,0,0,t0.a or 1.0 when stage-0
+  mode is NONE); V0=oD0, V1=oD1, T=oT0-oT3; EF_PROD = E*F (final only,
+  zeros elsewhere); final `rgb = D + mix(C,B,A)`, `a = G`, with
+  clamp_sum/inv_v1/inv_r0 on V1R0_SUM; C0/C1 same-vs-unique via CONTROL
+  bits 0x10/0x100 (final always uses the SPECFOG pair, incl. E/F reads).
+- **Activation rule**: combiner path runs iff the final combiner is
+  programmed (CW0|CW1 != 0); otherwise the legacy slot-0/mul path runs
+  bit-identically (disabled/idle golden test). Stages without a final
+  fall back to legacy (xemu leaves fragColor undefined there).
+- **Textures**: sampler generalized slot-0 -> per-slot (offset/format/
+  address/control/filter/rect already per-slot); modes NONE (0,0,0,1),
+  PROJECT2D (sample), PASSTHRU (coords, w=1); all other modes
+  (dot/bump/dependent) sample as NONE - follow-up. Fog register reads
+  fixed (0,0,0,1): SET_FOG_COLOR + oFog varying are the follow-up.
+- **Validation**: 14 new tests (`PshCombinerTests`): 8 mappings, 6
+  output mappings, multiply, dot clamp (1.75->1) + exact dot, MUX
+  MSB/LSB, alpha modulate, shared-C0 across stages, final lerp,
+  EF_PROD, method-parse state string, disabled golden
+  (`0xFF445566`, CombinerDraws=0), two-texture modulate golden
+   (`0xFF202020` = (0x80*0x40)/255^2 at two pixels, CombinerDraws=1).
+   Full suite green (Nv2a 139); build/format clean.
+
+## 76. Dashboard menu control list decoded (2026-10-12)
+
+Decoded from `dash_act_ram.bin` (64 MB, `XBEH` at phys `0x13E000`).
+VA walk (`CR3=0xF000`, `PDE[0]=0x15D067`): header `0x10000->0x13E000`,
+`.text 0x11000` scattered (`0x1840A->0x16640A`, `0x1E2FF->0x14C2FF`,
+`0x24E90->0x172E90`), global `0x47BC84->0xAEAC84`, menu
+`0xD003B500->0x753500`. Disasm via `objdump -D -b binary -m i386
+-M intel --adjust-vma=0x11000` on the carved text. Artifacts in
+`Temp\opencode\menu_decode\` (outside repo).
+
+**Manager** = global `0x47BC84` (also `[ESI+0xFBC]`/`[ESI+0xFC0]`,
+`ESI=0xD003B500`): `+0x00` cached node VA, `+0x04` head VA, `+0x08`
+tail VA, `+0x0C` cached index, `+0x1C` selection index (mirrors
+`ESI+0x270`). `0x24E90` (thiscall, idx on stack) walks the cursor via
+`[node+0x18]` next / `[node+0x14]` prev against `[mgr+0x0C]`, returns
+the node VA (`0xCF208` fallback).
+
+**Control node** (`0x30B`, doubly-linked): `+0x00` type (2=XBMC idx0,
+1=idx1–5, sentinel `0x00FFFFFF`/1), `+0x04` flag byte tested by the
+navigator (0=idx0/sentinels, 1=idx1–5), `+0x08` title VA (UTF-16),
+`+0x0C` target state (`0xFFFFFFFF` = end-of-list, tested at `0x18454`),
+`+0x10` path VA (ascii, idx0 only), `+0x1C` submenu-list VA (idx2/5),
+`+0x20/+0x24/+0x28` display params.
+
+**Enumerated controls** (head `0x5E4210` forward): idx0 XBMC → state 8,
+path `e:\Shorcuts\XBMC Shortcut\xbmc.xbe`; idx1 Launch DVD → state 14;
+idx2 Games → state 100, list `0x5E4380`; idx3 Trainers → state 33;
+idx4 Skins → state 13; idx5 Xbox Admin → state 100, list `0x5E4560`;
+idx6–7 sentinels (`+0x0C=-1`). State map (`0x1EE98[state]` → jump
+`[0x1EE50+idx*4]`): 8→6→`0x1E54F`, 13→11→`0x1E460`, 14→12→`0x1E66A`,
+33→14→`0x1E479`, 100→16→`0x1E420`, 0→0→`0x1E77F`.
+
+**Ranked screen-changing candidates.** (1) idx0 XBMC / state 8
+(`0x1E54F`) — the only unconditional loader call (`call 0x232A0`
+with the `e:\…xbmc.xbe` path; `0x232A0` is drive-letter dispatch,
+`0x23420` stages the path at `0x58FB10/0x590E70`). (2) idx2/5
+Games/Admin / state 100 (`0x1E420`) — installs the submenu list as
+the new `[ESI+0xFC0]` base, so the next frames render a different
+list: cheapest visible-change test, no load. (3) idx3/idx4
+Trainers/Skins — single mode-fnptr store (`[ESI+0xFC0]=imm`),
+static page. (4) idx1 Launch DVD / state 14 (`0x1E66A`) — proven
+no-op at `[0x95BBC]=3`: three `call 0x232A0` sites are gated on
+`[0x95BBC]`==0/1/2-or-4 (`E:\APPS\DVDX2\default.xbe`,
+`c:\xboxdash.xbe`, `d:\default.xbe`); `=3` falls through — this
+explains the §70 identical draws/frames/pixels.
+
+**State machine** (`0x1E2F9` dispatch at `0x1E2FF` region): pre-hook
+`0x1E2C2` skips when `[ESI+0x280]==0`; dispatch reads
+`[ESI+0x280]`, bounds-checks `0x64` (else `0x1E72B` default),
+indexes `0x1EE98` → jumps `[0x1EE50+idx*4]`. Handlers set
+`[ESI+0x284]` sub-state + `[ESI+0xFC0]` mode, then common tail
+`0x1E779` clears `[ESI+0x280]` → `0x1E77F` housekeeping → sub-state
+dispatch via `0x1EF00/0x1EF44`. Only writer of `[+0x280]` is
+`0x1859D` (from `0x24E90(mgr,[ESI+0x270])+0x0C`). D-pad loops move
+`[+0x270]` (skip on `+0x04==0` or `+0x0C==-1`); A-edge
+(`[ESI+0xF4]` just-pressed) fires `0x1859D`. (`0x3E2F9` is a dead
+copy — zero hits.)
+
+**Next probes.** (1) `--break-log 0x1E54F --break-log 0x232A0` +
+UP to idx0 + `--pad-script` A-edge: expect loader call with the
+`e:\…` path, `0x47BC58/0x59647B` writes, IDE `e:\` reads, frame
+delta. (2) `--break-log 0x1E420` + idx2 Games + A-edge, dump
+`ESI+0xFC0`: expect base `0x47BC84→0x5E4380`, redrawn list, no
+load. (3) `--dvd <007.iso> --break-log 0x1E66A`, dump `0x95BBC`:
+expect 3→0/1/2/4 and `0x232A0(d:\default.xbe)` on activation.
+
+## 77. 007 input verdict: never-reaches, not mismatch (2026-10-12)
+
+`XInput*` are **not** kernel-thunk imports — they are statically
+linked XAPILIB/XPP inside the title image (kernel census §67: 96
+ordinals, no input). 007's XBE: 696320 B, base `0x10000`, TitleId
+`0x4541000D`, 9 sections, 5 libs, `VA+0xAAF000=phys` (§64). No
+`XInputOpen`/`GetState` hits in any 007 run; `USB intr=0`; XPP mask
+zero pre-hub; A-press byte-identical. Its sole post-hub USB traffic
+is the successful XID descriptor fetch (phys `0x19FC94`) — it has
+never issued `GET_REPORT`/`GET_CAPABILITIES`/periodic IN, so no
+device-side answer bug is observable.
+
+**No format gap either.** Wire (`XidGamepad` 20 B report) vs XAPI
+(`XINPUT_GAMEPAD` 18 B + `XINPUT_STATE` 22 B, `GetCapabilities`
+memset `FF`, rumble 6 B) matches what we serve, and the dashboard's
+999× `GetState` + D-pad/A-edge propagation proves the
+wire→XPP→title path bit-correct. Analog order variance (Cxbx
+`X,Y,A,B` comment vs xemu `A,B,X,Y` header) is absorbed by
+passthrough + proven mapping.
+
+**The game never gets there.** 007 sits in the `0x20E40` frame-limiter
+wait (tick pump `0x26B60`, invoker `0x379CA`, KTIMER periodic;
+§§67–68): PIT-exact 10 guest-ms ticks, but the guest treats 10 ms as
+1 ms (~10.7× dilation) and the snapshot shows tick≫target with the
+wait persisting — the expiry logic (float `delta`, `[AFE30/38]`) is
+still undecoded. Dashboard `GetState` runs per-frame; 007's per-frame
+phase is behind the limiter exit.
+
+**Unblock plan (no device change indicated):** static-scan 007's
+image for `XInitDevices`/`XInputOpen` prologues + `XID 0x4200`
+xrefs, `--break-log` the candidates on a post-hub `--dvd` run to
+prove zero-open vs the dashboard `0x76A1F` pattern; run past the
+limiter (scale pump/tick or patch `[AFE34]`/delta at `0x207C0`)
+and only then re-test `--pad` visibility. Do not build psh/nvnet
+scope for this.

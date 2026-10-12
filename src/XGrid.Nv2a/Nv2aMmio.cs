@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -218,6 +219,26 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const int XfConstantViewportOffset = 0x3B;
     private const int XfConstantTexGen = 0x40;
     private const int XfConstantTexture = 0x44;
+    private const uint MethodCombinerAlphaIcwBase = 0x260u;
+    private const uint MethodCombinerAlphaIcwEnd = 0x27Cu;
+    private const uint MethodCombinerSpecFog0 = 0x288u;
+    private const uint MethodCombinerSpecFog1 = 0x28Cu;
+    private const uint MethodCombinerFactor0Base = 0x0A60u;
+    private const uint MethodCombinerFactor0End = 0x0A7Cu;
+    private const uint MethodCombinerFactor1Base = 0x0A80u;
+    private const uint MethodCombinerFactor1End = 0x0A9Cu;
+    private const uint MethodCombinerAlphaOcwBase = 0x0AA0u;
+    private const uint MethodCombinerAlphaOcwEnd = 0x0ABCu;
+    private const uint MethodCombinerColorIcwBase = 0x0AC0u;
+    private const uint MethodCombinerColorIcwEnd = 0x0ADCu;
+    private const uint MethodSpecularFogFactorBase = 0x1E20u;
+    private const uint MethodSpecularFogFactorEnd = 0x1E24u;
+    private const uint MethodCombinerColorOcwBase = 0x1E40u;
+    private const uint MethodCombinerColorOcwEnd = 0x1E5Cu;
+    private const uint MethodCombinerControl = 0x1E60u;
+    private const uint MethodShaderStageProgram = 0x1E70u;
+    private const uint MethodDotRgbMapping = 0x1E74u;
+    private const uint MethodShaderOtherStageInput = 0x1E78u;
     private const uint MethodTextureBase = 0x1B00u;
     private const uint MethodTextureEnd = 0x1BFCu;
     private const uint TextureSlotStride = 0x40u;
@@ -357,6 +378,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
+    private readonly PshCombiner _combiner = new();
+    private static readonly float[] CombinerFogConst = new float[] { 0f, 0f, 0f, 1f };
     private bool _alphaTestEnable;
     private uint _alphaFunc;
     private uint _alphaRef;
@@ -453,6 +476,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>Gets the number of executed draws. Diagnostics.</summary>
     public ulong DrawsExecuted { get; private set; }
+
+    /// <summary>Gets the number of draws that ran the register-combiner stage. Diagnostics.</summary>
+    public ulong CombinerDraws { get; private set; }
+
+    /// <summary>Gets the register-combiner state summary. Diagnostics.</summary>
+    public string CombinerStateDebug =>
+        $"stages={_combiner.StageCount} control={_combiner.Control:X8} " +
+        $"final={_combiner.FinalEnabled} draws={CombinerDraws} " +
+        $"texmodes={_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}" +
+        $"{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}";
 
     /// <summary>Gets the number of semaphore release writes performed. Diagnostics.</summary>
     public int SemaphoreReleases { get; private set; }
@@ -749,6 +782,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         TransformConstantLoadDebug = 0;
         _beginMode = 0;
         DrawsExecuted = 0;
+        CombinerDraws = 0;
+        _combiner.Reset();
         DrawnPixels = 0;
         TexturedPixels = 0;
         BlendedPixels = 0;
@@ -1916,6 +1951,79 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             }
         }
 
+        if (method >= MethodCombinerAlphaIcwBase && method <= MethodCombinerAlphaIcwEnd &&
+            ((method - MethodCombinerAlphaIcwBase) & 3u) == 0)
+        {
+            _combiner.AlphaInputs[(method - MethodCombinerAlphaIcwBase) / 4] = parameter;
+        }
+
+        if (method == MethodCombinerSpecFog0)
+        {
+            _combiner.Final0 = parameter;
+        }
+
+        if (method == MethodCombinerSpecFog1)
+        {
+            _combiner.Final1 = parameter;
+        }
+
+        if (method >= MethodCombinerFactor0Base && method <= MethodCombinerFactor0End &&
+            ((method - MethodCombinerFactor0Base) & 3u) == 0)
+        {
+            _combiner.Factor0[(method - MethodCombinerFactor0Base) / 4] = parameter;
+        }
+
+        if (method >= MethodCombinerFactor1Base && method <= MethodCombinerFactor1End &&
+            ((method - MethodCombinerFactor1Base) & 3u) == 0)
+        {
+            _combiner.Factor1[(method - MethodCombinerFactor1Base) / 4] = parameter;
+        }
+
+        if (method >= MethodCombinerAlphaOcwBase && method <= MethodCombinerAlphaOcwEnd &&
+            ((method - MethodCombinerAlphaOcwBase) & 3u) == 0)
+        {
+            _combiner.AlphaOutputs[(method - MethodCombinerAlphaOcwBase) / 4] = parameter;
+        }
+
+        if (method >= MethodCombinerColorIcwBase && method <= MethodCombinerColorIcwEnd &&
+            ((method - MethodCombinerColorIcwBase) & 3u) == 0)
+        {
+            _combiner.RgbInputs[(method - MethodCombinerColorIcwBase) / 4] = parameter;
+        }
+
+        if (method >= MethodSpecularFogFactorBase && method <= MethodSpecularFogFactorEnd &&
+            ((method - MethodSpecularFogFactorBase) & 3u) == 0)
+        {
+            _combiner.SpecFogFactor[(method - MethodSpecularFogFactorBase) / 4] = parameter;
+        }
+
+        if (method >= MethodCombinerColorOcwBase && method <= MethodCombinerColorOcwEnd &&
+            ((method - MethodCombinerColorOcwBase) & 3u) == 0)
+        {
+            _combiner.RgbOutputs[(method - MethodCombinerColorOcwBase) / 4] = parameter;
+        }
+
+        if (method == MethodCombinerControl)
+        {
+            _combiner.Control = parameter;
+        }
+
+        if (method == MethodShaderStageProgram)
+        {
+            _combiner.StageProgram = parameter;
+        }
+
+        if (method == MethodDotRgbMapping)
+        {
+            _combiner.DotRgbMapping = parameter & 0xFFFu;
+        }
+
+        if (method == MethodShaderOtherStageInput)
+        {
+            _combiner.OtherStageInput =
+                (_combiner.OtherStageInput & ~0xFFFF000u) | (parameter & 0xFFFF000u);
+        }
+
         HandleVertexDataMethod(method, parameter);
     }
 
@@ -2674,6 +2782,82 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Inline,
     }
 
+    /// <summary>
+    /// Transformed vertex for the combiner path: screen-space position, diffuse
+    /// (oD0), specular (oD1), and four texture coordinate pairs (oT0-oT3).
+    /// </summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly struct PshVertex
+    {
+        public PshVertex(
+            float x, float y, float z, float w,
+            float diffuseR, float diffuseG, float diffuseB, float diffuseA,
+            float specR, float specG, float specB, float specA,
+            float u0, float v0, float u1, float v1, float u2, float v2, float u3, float v3)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            W = w;
+            DiffuseR = diffuseR;
+            DiffuseG = diffuseG;
+            DiffuseB = diffuseB;
+            DiffuseA = diffuseA;
+            SpecR = specR;
+            SpecG = specG;
+            SpecB = specB;
+            SpecA = specA;
+            U0 = u0;
+            V0 = v0;
+            U1 = u1;
+            V1 = v1;
+            U2 = u2;
+            V2 = v2;
+            U3 = u3;
+            V3 = v3;
+        }
+
+        public float X { get; }
+
+        public float Y { get; }
+
+        public float Z { get; }
+
+        public float W { get; }
+
+        public float DiffuseR { get; }
+
+        public float DiffuseG { get; }
+
+        public float DiffuseB { get; }
+
+        public float DiffuseA { get; }
+
+        public float SpecR { get; }
+
+        public float SpecG { get; }
+
+        public float SpecB { get; }
+
+        public float SpecA { get; }
+
+        public float U0 { get; }
+
+        public float V0 { get; }
+
+        public float U1 { get; }
+
+        public float V1 { get; }
+
+        public float U2 { get; }
+
+        public float V2 { get; }
+
+        public float U3 { get; }
+
+        public float V3 { get; }
+    }
+
     private void FlushProgramDraw(VertexFetchMode mode)
     {
         if (_memory is null || TransformProgramLoadDebug == 0)
@@ -2729,10 +2913,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             outputs[i] = new float[4];
         }
 
-        var transformed = new Dictionary<int, (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V)>();
+        var transformed = new Dictionary<int, PshVertex>();
 
         uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
         DrawsExecuted++;
+        bool combinerActive = _combiner.FinalEnabled;
+        float[][] combinerConsts =
+            combinerActive ? PshCombiner.BuildConsts(_combiner) : Array.Empty<float[]>();
+        if (combinerActive)
+        {
+            CombinerDraws++;
+        }
         if (_transformExecutionMode != TransformModeProgrammable)
         {
             NonProgrammableModeDraws++;
@@ -2809,10 +3000,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             }
         }
 
-        (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V) Vertex(uint element)
+        PshVertex Vertex(uint element)
         {
             int index = (int)element;
-            if (transformed.TryGetValue(index, out (float, float, float, float, float, float, float, float, float, float) cached))
+            if (transformed.TryGetValue(index, out PshVertex cached))
             {
                 return cached;
             }
@@ -2831,23 +3022,33 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
             VshProgram.Execute(program, programLength, constants, inputs, outputs);
 
-            (float X, float Y, float Z, float W, float R, float G, float B, float A, float U, float V) vertex = (
+            var vertex = new PshVertex(
                 outputs[0][0], outputs[0][1], outputs[0][2], outputs[0][3],
                 NaNToOne(outputs[3][0]), NaNToOne(outputs[3][1]), NaNToOne(outputs[3][2]), NaNToOne(outputs[3][3]),
-                outputs[9][0], outputs[9][1]);
+                NaNToOne(outputs[4][0]), NaNToOne(outputs[4][1]), NaNToOne(outputs[4][2]), NaNToOne(outputs[4][3]),
+                outputs[9][0], outputs[9][1],
+                outputs[10][0], outputs[10][1],
+                outputs[11][0], outputs[11][1],
+                outputs[12][0], outputs[12][1]);
             transformed[index] = vertex;
             return vertex;
         }
 
         void Triangle(uint a, uint b, uint c)
         {
-            (float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av) = Vertex(a);
-            (float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv) = Vertex(b);
-            (float cx, float cy, float cz, float cw, float cr, float cg, float cb, float ca, float cu, float cv) = Vertex(c);
+            PshVertex va = Vertex(a);
+            PshVertex vb = Vertex(b);
+            PshVertex vc = Vertex(c);
+            if (combinerActive)
+            {
+                FillTrianglePsh(va, vb, vc, clipX, clipY, clipW, clipH, bytes, pitch, combinerConsts);
+                return;
+            }
+
             FillTriangle(
-                ax, ay, az, aw, ar, ag, ab, aa, au, av,
-                bx, by, bz, bw, br, bg, bb, ba, bu, bv,
-                cx, cy, cz, cw, cr, cg, cb, ca, cu, cv,
+                va.X, va.Y, va.Z, va.W, va.DiffuseR, va.DiffuseG, va.DiffuseB, va.DiffuseA, va.U0, va.V0,
+                vb.X, vb.Y, vb.Z, vb.W, vb.DiffuseR, vb.DiffuseG, vb.DiffuseB, vb.DiffuseA, vb.U0, vb.V0,
+                vc.X, vc.Y, vc.Z, vc.W, vc.DiffuseR, vc.DiffuseG, vc.DiffuseB, vc.DiffuseA, vc.U0, vc.V0,
                 clipX, clipY, clipW, clipH, bytes, pitch);
         }
     }
@@ -2950,26 +3151,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     private bool TrySampleTexture0(float u, float v, out float r, out float g, out float b, out float a)
     {
+        return TrySampleTexture(0, u, v, out r, out g, out b, out a);
+    }
+
+    private bool TrySampleTexture(int slot, float u, float v, out float r, out float g, out float b, out float a)
+    {
         r = 1f;
         g = 1f;
         b = 1f;
         a = 1f;
-        if (_memory is null || (_textureControl0[0] & TextureControl0Enable) == 0)
+        if (_memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
         {
             return false;
         }
 
-        int width = (int)(_textureImageRect[0] >> 16);
-        int height = (int)(_textureImageRect[0] & 0xFFFFu);
+        int width = (int)(_textureImageRect[slot] >> 16);
+        int height = (int)(_textureImageRect[slot] & 0xFFFFu);
         if (width <= 0 || height <= 0)
         {
             return false;
         }
 
-        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(_textureAddress[0] & 0xFu));
-        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((_textureAddress[0] >> 4) & 0xFu));
-        uint color = (_textureFormat[0] >> 8) & 0xFFu;
-        uint address = _textureOffset[0];
+        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(_textureAddress[slot] & 0xFu));
+        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((_textureAddress[slot] >> 4) & 0xFu));
+        uint color = (_textureFormat[slot] >> 8) & 0xFFu;
+        uint address = _textureOffset[slot];
         uint texel;
         switch (color)
         {
@@ -2979,7 +3185,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 break;
             case 0x12u:
                 {
-                    int pitch = (int)(_textureControl1[0] >> 16);
+                    int pitch = (int)(_textureControl1[slot] >> 16);
                     if (pitch <= 0)
                     {
                         pitch = width * 4;
@@ -3488,6 +3694,142 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 }
 
                 ProcessFragment(x, y, bytes, pitch, r, g, bl, al, depth, zetaBytes, zetaPitch);
+            }
+        }
+    }
+
+    private void FillTrianglePsh(
+        PshVertex a, PshVertex b, PshVertex c,
+        uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
+        float[][] consts)
+    {
+        float area = ((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y));
+        if (area == 0f)
+        {
+            return;
+        }
+
+        uint zetaBytes = ZetaBytesPerPixel();
+        uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
+
+        uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.X, b.X), c.X));
+        uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(a.X, b.X), c.X));
+        uint y0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.Y, b.Y), c.Y));
+        uint y1 = (uint)Math.Min((float)clipY + clipH - 1, Math.Max(Math.Max(a.Y, b.Y), c.Y));
+        if (x1 < x0 || y1 < y0)
+        {
+            return;
+        }
+
+        float invArea = 1f / area;
+        float invAw = a.W != 0f ? 1f / a.W : 0f;
+        float invBw = b.W != 0f ? 1f / b.W : 0f;
+        float invCw = c.W != 0f ? 1f / c.W : 0f;
+        bool perspective = invAw != 0f && invBw != 0f && invCw != 0f && (a.W != b.W || b.W != c.W);
+
+        // Per-triangle scratch: interpolated inputs and resolved texels for Evaluate.
+        var diffuse = new float[4];
+        var specular = new float[4];
+        var texels = new float[][] { new float[4], new float[4], new float[4], new float[4] };
+        int[] texModes =
+        {
+            _combiner.DecodeTexMode(0),
+            _combiner.DecodeTexMode(1),
+            _combiner.DecodeTexMode(2),
+            _combiner.DecodeTexMode(3),
+        };
+
+        for (uint y = y0; y <= y1; y++)
+        {
+            for (uint x = x0; x <= x1; x++)
+            {
+                float px = x + 0.5f;
+                float py = y + 0.5f;
+                float w0 = (((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X))) * invArea;
+                float w1 = (((c.X - b.X) * (py - b.Y)) - ((c.Y - b.Y) * (px - b.X))) * invArea;
+                float w2 = 1f - w0 - w1;
+                bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
+                              (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                if (!inside)
+                {
+                    continue;
+                }
+
+                float p0 = w0;
+                float p1 = w1;
+                float p2 = w2;
+                if (perspective)
+                {
+                    float s0 = w0 * invCw;
+                    float s1 = w1 * invAw;
+                    float s2 = w2 * invBw;
+                    float sum = s0 + s1 + s2;
+                    if (float.IsFinite(sum) && sum != 0f)
+                    {
+                        float invSum = 1f / sum;
+                        p0 = s0 * invSum;
+                        p1 = s1 * invSum;
+                        p2 = s2 * invSum;
+                    }
+                }
+
+                diffuse[0] = (p1 * a.DiffuseR) + (p2 * b.DiffuseR) + (p0 * c.DiffuseR);
+                diffuse[1] = (p1 * a.DiffuseG) + (p2 * b.DiffuseG) + (p0 * c.DiffuseG);
+                diffuse[2] = (p1 * a.DiffuseB) + (p2 * b.DiffuseB) + (p0 * c.DiffuseB);
+                diffuse[3] = (p1 * a.DiffuseA) + (p2 * b.DiffuseA) + (p0 * c.DiffuseA);
+                specular[0] = (p1 * a.SpecR) + (p2 * b.SpecR) + (p0 * c.SpecR);
+                specular[1] = (p1 * a.SpecG) + (p2 * b.SpecG) + (p0 * c.SpecG);
+                specular[2] = (p1 * a.SpecB) + (p2 * b.SpecB) + (p0 * c.SpecB);
+                specular[3] = (p1 * a.SpecA) + (p2 * b.SpecA) + (p0 * c.SpecA);
+                float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
+                float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
+                float tu1 = (p1 * a.U1) + (p2 * b.U1) + (p0 * c.U1);
+                float tv1 = (p1 * a.V1) + (p2 * b.V1) + (p0 * c.V1);
+                float tu2 = (p1 * a.U2) + (p2 * b.U2) + (p0 * c.U2);
+                float tv2 = (p1 * a.V2) + (p2 * b.V2) + (p0 * c.V2);
+                float tu3 = (p1 * a.U3) + (p2 * b.U3) + (p0 * c.U3);
+                float tv3 = (p1 * a.V3) + (p2 * b.V3) + (p0 * c.V3);
+                float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
+
+                bool sampled = false;
+                for (int i = 0; i < PshCombiner.TextureSlots; i++)
+                {
+                    float tu = i == 0 ? tu0 : i == 1 ? tu1 : i == 2 ? tu2 : tu3;
+                    float tv = i == 0 ? tv0 : i == 1 ? tv1 : i == 2 ? tv2 : tv3;
+                    if (texModes[i] == PshCombiner.TexModeProject2D &&
+                        TrySampleTexture(i, tu, tv, out float tr, out float tg, out float tb, out float ta))
+                    {
+                        texels[i][0] = tr;
+                        texels[i][1] = tg;
+                        texels[i][2] = tb;
+                        texels[i][3] = ta;
+                        sampled = true;
+                    }
+                    else if (texModes[i] == PshCombiner.TexModePassthru)
+                    {
+                        texels[i][0] = tu;
+                        texels[i][1] = tv;
+                        texels[i][2] = 0f;
+                        texels[i][3] = 1f;
+                    }
+                    else
+                    {
+                        texels[i][0] = 0f;
+                        texels[i][1] = 0f;
+                        texels[i][2] = 0f;
+                        texels[i][3] = 1f;
+                    }
+                }
+
+                _combiner.Evaluate(
+                    diffuse, specular, CombinerFogConst, texels, consts,
+                    out float fr, out float fg, out float fb, out float fa);
+                if (sampled)
+                {
+                    TexturedPixels++;
+                }
+
+                ProcessFragment(x, y, bytes, pitch, fr, fg, fb, fa, depth, zetaBytes, zetaPitch);
             }
         }
     }
