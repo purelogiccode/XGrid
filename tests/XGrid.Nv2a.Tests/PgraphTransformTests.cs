@@ -1989,6 +1989,8 @@ public sealed class PgraphTransformTests
     {
         // Z24S8, vertex Z = 8388608 device units with ZCLIP [0, 16777215]:
         // no clamping engages, so the stored word matches the no-ZCLIP golden.
+        // No SET_ZMIN_MAX_CONTROL write: the reset mode is CULL, which keeps
+        // in-bounds fragments.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangleVertices(memory, 0x4B000000u);
 
@@ -2015,15 +2017,18 @@ public sealed class PgraphTransformTests
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
         Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.Equal(0uL, nv2A.ZclipCulledPixels);
         Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
     }
 
     [Fact]
     public void Zclip_AboveMaxClampsToMax()
     {
-        // Vertex Z = 16777215 device units with ZCLIP max = 8388608: the
-        // fragment depth clamps to the bound, so the stored word is 0x800000
-        // (legacy saturation would have stored 0xFFFFFF).
+        // Vertex Z = 16777215 device units with ZCLIP max = 8388608 and
+        // SET_ZMIN_MAX_CONTROL ZCLAMP_EN = CLAMP (0x10): the fragment depth
+        // clamps to the bound, so the stored word is 0x800000 (legacy
+        // saturation would have stored 0xFFFFFF). Without the explicit CLAMP
+        // write the reset mode is CULL and the fragment would be discarded.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangleVertices(memory, 0x4B7FFFFFu);
 
@@ -2044,6 +2049,7 @@ public sealed class PgraphTransformTests
             0x3F800000u,
             (0x030Cu, 1u),
             (0x0354u, 0x0203u),
+            (0x1D78u, 0x00000010u),
             (0x0394u, 0x00000000u),
             (0x0398u, 0x4B000000u));
 
@@ -2056,8 +2062,9 @@ public sealed class PgraphTransformTests
     [Fact]
     public void Zclip_BelowMinClampsToMin()
     {
-        // Vertex Z = 0 device units with ZCLIP min = 8388608: the fragment
-        // depth clamps up to the bound (legacy saturation would store 0).
+        // Vertex Z = 0 device units with ZCLIP min = 8388608 and
+        // SET_ZMIN_MAX_CONTROL ZCLAMP_EN = CLAMP: the fragment depth clamps
+        // up to the bound (legacy saturation would store 0).
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangleVertices(memory, 0x00000000u);
 
@@ -2078,6 +2085,7 @@ public sealed class PgraphTransformTests
             0x3F800000u,
             (0x030Cu, 1u),
             (0x0354u, 0x0203u),
+            (0x1D78u, 0x00000010u),
             (0x0394u, 0x4B000000u),
             (0x0398u, 0x4B7FFFFFu));
 
@@ -2090,8 +2098,9 @@ public sealed class PgraphTransformTests
     [Fact]
     public void Zclip_BoundaryMaxIsInclusive()
     {
-        // Vertex Z exactly equals ZCLIP max: the bound is inclusive, so the
-        // triangle draws at the bound depth with no clamp counted.
+        // Vertex Z exactly equals ZCLIP max: the bound is inclusive in both
+        // modes, so under the reset CULL mode the triangle draws at the
+        // bound depth with no clamp and no cull counted.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangleVertices(memory, 0x4B000000u);
 
@@ -2118,18 +2127,21 @@ public sealed class PgraphTransformTests
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
         Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.Equal(0uL, nv2A.ZclipCulledPixels);
         Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
     }
 
     [Fact]
-    public void Zclip_DisabledPassthroughPreservesSaturation()
+    public void Depth_ExactOneFixedEncodeStoresMaxWord()
     {
         // No ZCLIP methods written: shader Z at 2x the zeta maximum keeps the
-        // legacy [0,1] saturation (clamps to 1.0, LEQUAL against far passes,
-        // so the triangle draws). The stored word is 0 by the pre-existing
-        // exact-1.0 overflow in the fixed-depth encode
-        // ((uint)(1.0 * 16777215 + 0.5) = 0x1000000, shifted out by the << 8
-        // zeta pack; xemu stores 1.0 there) — pinned as-is, out of scope.
+        // legacy [0,1] saturation (clamps to normalized 1.0, LEQUAL against
+        // the far prefill passes, so the triangle draws). The fixed-point D24
+        // encode of 1.0 rounds 16777215 + 0.5 up to 16777216, which without
+        // the field cap shifts out of the zeta word and stores 0 (the
+        // pre-existing exact-1.0 overflow); the cap stores 0xFFFFFF — the
+        // xemu D24 value for device z = clipRange.w — which decodes back to
+        // normalized 1.0.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangleVertices(memory, 0x4BFFFFFFu);
 
@@ -2154,7 +2166,143 @@ public sealed class PgraphTransformTests
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
         Assert.Equal(0uL, nv2A.ZclipClampedPixels);
-        Assert.Equal(0u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+        Assert.Equal(0xFFFFFF00u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_CullModeDiscardsAboveMax()
+    {
+        // ZCLAMP_EN = CULL encoded exactly as the dashboard writes it
+        // (SET_ZMIN_MAX_CONTROL parameter 0x00000001 — the ZCLAMP_EN nibble
+        // 0xF0 selects CULL): vertex Z = 16777215 is above the ZCLIP max
+        // 8388608, so every fragment is discarded like xemu's shader
+        // `discard` — no color, no depth test, no zeta write.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B7FFFFFu);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x1D78u, 0x00000001u),
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B000000u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+        Assert.Equal(0uL, nv2A.DepthTestedPixels);
+        Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.True(nv2A.ZclipCulledPixels > 0);
+        Assert.Equal(0xFFFFFF00u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_CullModeDiscardsBelowMin()
+    {
+        // Mirror of the above-max case: vertex Z = 0 with ZCLIP min 8388608
+        // and the reset CULL mode discards every fragment.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x00000000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x0394u, 0x4B000000u),
+            (0x0398u, 0x4B7FFFFFu));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+        Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.True(nv2A.ZclipCulledPixels > 0);
+        Assert.Equal(0xFFFFFF00u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_CullDiscardAppliesWithoutDepthTest()
+    {
+        // The reference shader's clip/discard section runs even when the
+        // depth test is disabled: an out-of-bounds fragment is discarded
+        // before the color write, so the draw produces no pixels.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B7FFFFFu);
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B000000u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+        Assert.True(nv2A.ZclipCulledPixels > 0);
+    }
+
+    [Fact]
+    public void Zclip_ReservedZclampValueKeepsProgrammedMode()
+    {
+        // SET_ZMIN_MAX_CONTROL with a reserved ZCLAMP_EN nibble (0x20) is a
+        // reference no-op (debug assert): after programming CLAMP the draw
+        // still clamps rather than switching back to cull.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B7FFFFFu);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x1D78u, 0x00000010u),
+            (0x1D78u, 0x00000020u),
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B000000u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.True(nv2A.ZclipClampedPixels > 0);
+        Assert.Equal(0uL, nv2A.ZclipCulledPixels);
+        Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
     }
 
     [Fact]
