@@ -12,10 +12,11 @@ namespace XGrid.Nv2a;
 /// and <c>psh_regs.h</c> (PS_* enums). Facts only; no reference code is copied.
 /// The FOG register value itself is supplied per fragment by the caller
 /// (fog color + interpolated fog factor); see <c>Nv2aMmio</c> fog state.
-/// Out of scope (left as follow-ups): cubemap/reflection/project3d/clipplane/
-/// BRDF texture modes (sampled as NONE with a diagnostic count) and the
-/// HILO hemisphere dot maps 5-7 (reference FIXMEs: identity with a
-/// diagnostic count); fixed-function fog-coordinate generation lives in
+/// Hardware texture modes not backed by the software rasterizer degrade to
+/// NONE with a diagnostic count; the mode equations stay here with the rest
+/// of the fragment math. BRDF and DOT_RFLCT_SPEC_CONST are xemu-equivalent
+/// stubs (reference emits a zero texel plus UNIMPLEMENTED; no other reliable
+/// reference exists). Fixed-function fog-coordinate generation lives in
 /// <c>VshProgram.FogGenDistance</c>.
 /// </summary>
 public sealed class PshCombiner
@@ -80,8 +81,17 @@ public sealed class PshCombiner
     /// <summary>Texture mode: sample the bound texture with the interpolated coords.</summary>
     public const int TexModeProject2D = 0x01;
 
+    /// <summary>Texture mode: projective sample (u/w, v/w; 3D adds s/w).</summary>
+    public const int TexModeProject3D = 0x02;
+
+    /// <summary>Texture mode: cube-map sample of the interpolated xyz direction.</summary>
+    public const int TexModeCubemap = 0x03;
+
     /// <summary>Texture mode: pass the interpolated coords through as the texel.</summary>
     public const int TexModePassthru = 0x04;
+
+    /// <summary>Texture mode: per-component clip discard; texel is zero.</summary>
+    public const int TexModeClipPlane = 0x05;
 
     /// <summary>Texture mode: sample with the previous stage's texel as coords (AR).</summary>
     public const int TexModeDpndntAr = 0x0F;
@@ -104,13 +114,25 @@ public sealed class PshCombiner
     /// <summary>Texture mode: dot only; texel is zero (depth write in hardware).</summary>
     public const int TexModeDotZw = 0x0A;
 
+    /// <summary>Texture mode: stage-2 reflect-diffuse cube/2D sample of the dot chain.</summary>
+    public const int TexModeDotRflctDiff = 0x0B;
+
+    /// <summary>Texture mode: stage-3 reflect-specular cube/2D sample of the dot chain.</summary>
+    public const int TexModeDotRflctSpec = 0x0C;
+
     /// <summary>Texture mode: sample at (dot1, dot2) of the dot chain.</summary>
     public const int TexModeDotStr3D = 0x0D;
 
-    // Remaining modes (0x02 PROJECT3D, 0x03 CUBEMAP, 0x05 CLIPPLANE, 0x08 BRDF,
-    // 0x0B/0x0C/0x0E/0x12 reflection variants, 0x13-0x1F reserved) need
-    // cubemap/3D-clip machinery absent from the software rasterizer and
-    // degrade to NONE with a diagnostic count kept by the caller.
+    /// <summary>Texture mode: stage-3 cube/2D sample of the dot chain.</summary>
+    public const int TexModeDotStrCube = 0x0E;
+
+    /// <summary>Texture mode: xemu-equivalent zero-texel stub (reference UNIMPLEMENTED).</summary>
+    public const int TexModeBrdf = 0x08;
+
+    /// <summary>Texture mode: xemu-equivalent zero-texel stub (reference UNIMPLEMENTED).</summary>
+    public const int TexModeDotRflctSpecConst = 0x12;
+
+    // Reserved modes 0x13-0x1F degrade to NONE with a diagnostic count.
 
     /// <summary>Per-stage RGB input words (SET_COMBINER_COLOR_ICW).</summary>
     public uint[] RgbInputs { get; } = new uint[MaxStages];
@@ -214,21 +236,25 @@ public sealed class PshCombiner
     }
 
     /// <summary>
-    /// Gets whether the dot map is implemented (0-4). Maps 5-7 (HILO
-    /// hemisphere family) are reference FIXMEs resolved as identity; the
-    /// caller counts the fallback.
+    /// Gets whether the dot map is implemented (0-7). Maps 8-15 are not
+    /// defined by the reference; they resolve as identity and the caller
+    /// counts the fallback.
     /// </summary>
     public static bool IsSupportedDotMap(int map)
     {
-        return map is >= 0 and <= 4;
+        return map is >= 0 and <= 7;
     }
 
     /// <summary>
     /// Applies a dot-map to an unsigned [0,1] texel, producing the vec3 the
     /// dot modes dot against the interpolated coords. Maps 0-3 follow the
     /// reference sign functions; map 4 (HILO_1) packs the texel bytes as
-    /// hi = (a:r) / 65535, lo = (g:b) / 65535 with z = 1; maps 5-7 fall
-    /// back to identity (matching the reference hemisphere FIXMEs).
+    /// hi = (a:r) / 65535, lo = (g:b) / 65535 with z = 1; maps 5-7 (HILO
+    /// hemisphere D3D/GL/generic) decode the same hi/lo words as signed
+    /// H/L and return (H, L, sqrt(1-H*H-L*L)), the 16-bit extensions of the
+    /// 8-bit sign1/sign2/sign3 functions (xemu still resolves these as
+    /// identity FIXMEs; Cxbx/Xermu supply the piecewise signed decode).
+    /// Maps 8-15 fall back to identity.
     /// </summary>
     public static void ApplyDotMap(int map, float r, float g, float b, float a, out float x, out float y, out float z)
     {
@@ -250,11 +276,28 @@ public sealed class PshCombiner
                 z = Sign3(b);
                 break;
             case 4:
-                uint hi = ((uint)(a * 255f) << 8) | (uint)(r * 255f);
-                uint lo = ((uint)(g * 255f) << 8) | (uint)(b * 255f);
+                DecodeHilo(r, g, b, a, out float hi, out float lo);
                 x = hi / 65535f;
                 y = lo / 65535f;
                 z = 1f;
+                break;
+            case 5:
+                DecodeHilo(r, g, b, a, out hi, out lo);
+                x = DecodeHemisphereD3D(hi);
+                y = DecodeHemisphereD3D(lo);
+                z = HemisphereZ(x, y);
+                break;
+            case 6:
+                DecodeHilo(r, g, b, a, out hi, out lo);
+                x = DecodeHemisphereGl(hi);
+                y = DecodeHemisphereGl(lo);
+                z = HemisphereZ(x, y);
+                break;
+            case 7:
+                DecodeHilo(r, g, b, a, out hi, out lo);
+                x = DecodeHemisphere(hi);
+                y = DecodeHemisphere(lo);
+                z = HemisphereZ(x, y);
                 break;
             default:
                 x = r;
@@ -262,6 +305,41 @@ public sealed class PshCombiner
                 z = b;
                 break;
         }
+    }
+
+    /// <summary>
+    /// Packs an unsigned texel to the two 16-bit HILO words used by the
+    /// HILO dot maps: hi = (a &lt;&lt; 8) | r, lo = (g &lt;&lt; 8) | b, each from
+    /// the reference byte quantization <c>uint(component * 0xFF)</c>.
+    /// </summary>
+    public static void DecodeHilo(float r, float g, float b, float a, out float hi, out float lo)
+    {
+        hi = (float)(((uint)(a * 255f) << 8) | (uint)(r * 255f));
+        lo = (float)(((uint)(g * 255f) << 8) | (uint)(b * 255f));
+    }
+
+    /// <summary>D3D signed 16-bit decode (xemu sign1 extended): (h - 0x8000)/0x7FFF.</summary>
+    public static float DecodeHemisphereD3D(float h)
+    {
+        return (h - 32768f) / 32767f;
+    }
+
+    /// <summary>OpenGL signed 16-bit decode (xemu sign2 extended) with the +0.5 bias.</summary>
+    public static float DecodeHemisphereGl(float h)
+    {
+        return h >= 32768f ? (h - 65535.5f) / 32767.5f : (h + 0.5f) / 32767.5f;
+    }
+
+    /// <summary>Plain signed 16-bit decode (xemu sign3 extended), two's complement / 0x7FFF.</summary>
+    public static float DecodeHemisphere(float h)
+    {
+        return h >= 32768f ? (h - 65536f) / 32767f : h / 32767f;
+    }
+
+    /// <summary>Hemisphere z = sqrt(max(0, 1 - H*H - L*L)).</summary>
+    public static float HemisphereZ(float h, float l)
+    {
+        return MathF.Sqrt(Math.Max(0f, 1f - (h * h) - (l * l)));
     }
 
     /// <summary>D3D signed decode (xemu <c>sign1</c>): (x*255-128)/127.</summary>
@@ -291,6 +369,92 @@ public sealed class PshCombiner
     }
 
     /// <summary>
+    /// xemu <c>remapCubeTo2D</c>: maps a cube direction to 2D coordinates for
+    /// a cube map unfolded into a 2D texture. The branch order and tie
+    /// handling match the reference exactly (strict &gt; comparisons; the z
+    /// branch also catches zero along z).
+    /// </summary>
+    public static void CubeRemapTo2D(float x, float y, float z, out float u, out float v)
+    {
+        float ax = Math.Abs(x);
+        float ay = Math.Abs(y);
+        float az = Math.Abs(z);
+        if (ax > ay && ax > az)
+        {
+            u = x > 0f ? -z : z;
+            v = y;
+            u /= ax;
+            v /= ax;
+        }
+        else if (ay > ax && ay > az)
+        {
+            u = x;
+            v = y > 0f ? -z : z;
+            u /= ay;
+            v /= ay;
+        }
+        else
+        {
+            u = z > 0f ? x : -x;
+            v = y;
+            u /= az;
+            v /= az;
+        }
+    }
+
+    /// <summary>
+    /// Selects the GL/D3D cube face and per-face [0,1] texel coordinates for
+    /// a direction vector: face 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z. The
+    /// major axis is chosen by &gt;= comparisons (Mesa-style tie breaking).
+    /// The Xbox cube layout is uploaded in that same order, one face after
+    /// another (xemu <c>generate_texture</c>).
+    /// </summary>
+    public static int SelectCubeFace(float x, float y, float z, out float s, out float t)
+    {
+        float ax = Math.Abs(x);
+        float ay = Math.Abs(y);
+        float az = Math.Abs(z);
+        if (ax >= ay && ax >= az)
+        {
+            if (x > 0f)
+            {
+                s = ((-z / ax) + 1f) * 0.5f;
+                t = ((-y / ax) + 1f) * 0.5f;
+                return 0;
+            }
+
+            s = ((z / ax) + 1f) * 0.5f;
+            t = ((-y / ax) + 1f) * 0.5f;
+            return 1;
+        }
+
+        if (ay >= ax && ay >= az)
+        {
+            if (y > 0f)
+            {
+                s = ((x / ay) + 1f) * 0.5f;
+                t = ((z / ay) + 1f) * 0.5f;
+                return 2;
+            }
+
+            s = ((x / ay) + 1f) * 0.5f;
+            t = ((-z / ay) + 1f) * 0.5f;
+            return 3;
+        }
+
+        if (z > 0f)
+        {
+            s = ((x / az) + 1f) * 0.5f;
+            t = ((-y / az) + 1f) * 0.5f;
+            return 4;
+        }
+
+        s = ((-x / az) + 1f) * 0.5f;
+        t = ((-y / az) + 1f) * 0.5f;
+        return 5;
+    }
+
+    /// <summary>
     /// Gets whether a texture mode is valid in the given stage, per the
     /// stage column of the reference PS_TEXTUREMODES table. Invalid
     /// stage/mode pairs degrade to NONE with a diagnostic count.
@@ -301,15 +465,23 @@ public sealed class PshCombiner
         {
             TexModeNone => true,
             TexModeProject2D => true,
+            TexModeProject3D => true,
+            TexModeCubemap => true,
             TexModePassthru => true,
+            TexModeClipPlane => true,
             TexModeBumpEnvMap => stage is >= 1 and <= 3,
             TexModeBumpEnvMapLum => stage is >= 1 and <= 3,
+            TexModeBrdf => stage is 2 or 3,
             TexModeDotSt => stage is 2 or 3,
             TexModeDotZw => stage is 2 or 3,
+            TexModeDotRflctDiff => stage == 2,
+            TexModeDotRflctSpec => stage == 3,
+            TexModeDotStr3D => stage == 3,
+            TexModeDotStrCube => stage == 3,
             TexModeDpndntAr => stage is >= 1 and <= 3,
             TexModeDpndntGb => stage is >= 1 and <= 3,
             TexModeDotProduct => stage is 1 or 2,
-            TexModeDotStr3D => stage == 3,
+            TexModeDotRflctSpecConst => stage == 3,
             _ => false,
         };
     }

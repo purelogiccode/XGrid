@@ -197,7 +197,26 @@ public sealed class Nv2aFogTexModesTests
         Assert.Equal(0.4f, y);
         Assert.Equal(0.6f, z);
 
-        PshCombiner.ApplyDotMap(5, 0.2f, 0.4f, 0.6f, 0.8f, out x, out y, out z);
+        // Hemisphere maps decode hi=(a:r), lo=(g:b) with the 16-bit
+        // extensions of the sign1/sign2/sign3 functions. texel = (0,0,0,1):
+        // hi = (255<<8) = 65280, lo = 0.
+        PshCombiner.ApplyDotMap(5, 0f, 0f, 0f, 1f, out x, out y, out z);
+        Assert.Equal((65280f - 32768f) / 32767f, x, 5);
+        Assert.Equal((0f - 32768f) / 32767f, y, 5);
+        Assert.Equal(MathF.Sqrt(MathF.Max(0f, 1f - (x * x) - (y * y))), z, 5);
+
+        PshCombiner.ApplyDotMap(6, 0f, 0f, 0f, 1f, out x, out y, out z);
+        Assert.Equal((65280f - 65535.5f) / 32767.5f, x, 5);
+        Assert.Equal((0f + 0.5f) / 32767.5f, y, 5);
+        Assert.Equal(MathF.Sqrt(MathF.Max(0f, 1f - (x * x) - (y * y))), z, 5);
+
+        PshCombiner.ApplyDotMap(7, 0f, 0f, 0f, 1f, out x, out y, out z);
+        Assert.Equal((65280f - 65536f) / 32767f, x, 5);
+        Assert.Equal(0f / 32767f, y, 5);
+        Assert.Equal(MathF.Sqrt(MathF.Max(0f, 1f - (x * x) - (y * y))), z, 5);
+
+        // Identity for undefined maps 8-15.
+        PshCombiner.ApplyDotMap(8, 0.2f, 0.4f, 0.6f, 0.8f, out x, out y, out z);
         Assert.Equal(0.2f, x);
 
         // HILO_1 packs texel bytes hi=(a:r), lo=(g:b): all-exact byte lane check.
@@ -213,8 +232,10 @@ public sealed class Nv2aFogTexModesTests
         Assert.True(PshCombiner.IsSupportedDotMap(0));
         Assert.True(PshCombiner.IsSupportedDotMap(3));
         Assert.True(PshCombiner.IsSupportedDotMap(4));
-        Assert.False(PshCombiner.IsSupportedDotMap(5));
-        Assert.False(PshCombiner.IsSupportedDotMap(7));
+        Assert.True(PshCombiner.IsSupportedDotMap(5));
+        Assert.True(PshCombiner.IsSupportedDotMap(7));
+        Assert.False(PshCombiner.IsSupportedDotMap(8));
+        Assert.False(PshCombiner.IsSupportedDotMap(15));
     }
 
     [Fact]
@@ -234,7 +255,16 @@ public sealed class Nv2aFogTexModesTests
         Assert.False(PshCombiner.IsModeValidForStage(0x10, 0));
         Assert.True(PshCombiner.IsModeValidForStage(0x11, 2));
         Assert.False(PshCombiner.IsModeValidForStage(0x11, 3));
-        Assert.False(PshCombiner.IsModeValidForStage(0x02, 0));
+        Assert.True(PshCombiner.IsModeValidForStage(0x02, 0));
+        Assert.True(PshCombiner.IsModeValidForStage(0x03, 3));
+        Assert.True(PshCombiner.IsModeValidForStage(0x05, 0));
+        Assert.False(PshCombiner.IsModeValidForStage(0x08, 1));
+        Assert.True(PshCombiner.IsModeValidForStage(0x08, 2));
+        Assert.True(PshCombiner.IsModeValidForStage(0x0B, 2));
+        Assert.False(PshCombiner.IsModeValidForStage(0x0B, 3));
+        Assert.True(PshCombiner.IsModeValidForStage(0x0C, 3));
+        Assert.True(PshCombiner.IsModeValidForStage(0x0E, 3));
+        Assert.True(PshCombiner.IsModeValidForStage(0x12, 3));
         Assert.False(PshCombiner.IsModeValidForStage(0x13, 0));
     }
 
@@ -486,7 +516,7 @@ public sealed class Nv2aFogTexModesTests
         MethodPush(pushes, tex0, 0x0B10u);
         PushTextureSlot(pushes, 0, 0x4000u, 1, 1);
         pushes.Add((0x1E70u, 0x01u | (0x11u << 5)));
-        pushes.Add((0x1E74u, 0x00000005u));
+        pushes.Add((0x1E74u, 0x00000008u));
         pushes.Add((0x0AC4u, 0x09200000u));
         pushes.Add((0x1E44u, 0x000000C0u));
         pushes.Add((0x1E60u, 0x02u));

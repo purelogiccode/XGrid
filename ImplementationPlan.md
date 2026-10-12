@@ -1350,9 +1350,15 @@ decode/encode; CULL-discard and the exact-1.0 fixed-encode overflow
 stay open as noted follow-ups. **Fixed-function foggen + HILO DONE
 (§91, wave/nv2a-foggen-hilo):** GEN_MODE distances (SPEC_ALPHA/RADIAL/
 PLANAR/ABS_PLANAR/FOG_X from v5/v4.a/v0.xyz + c57, used when the program
-leaves oFog unwritten) and HILO_1 dot-map decode; cubemap/reflection/
-project3d/clipplane/BRDF modes and HILO hemisphere 5-7 remain. Remaining:
-exotics, ZCLIP-CULL, right-scene proof. **Scene-proof (§93): layout/content
+leaves oFog unwritten) and HILO_1 dot-map decode. **NV2A exotics DONE
+(§95, wave/nv2a-exotics):** cubemap sampling (CUBEMAPENABLE faces +
+remap2DToCube for flat textures), projective 3D volume sampling,
+CLIPPLANE per-component discard (SET_SHADER_CLIP_PLANE_MODE), the
+DOT_RFLCT_DIFF/SPEC and DOT_STR_CUBE reflection modes, HILO hemisphere
+dot maps 5-7 (Cxbx/Xermu 16-bit sign decode), and the xemu-equivalent
+BRDF/DOT_RFLCT_SPEC_CONST zero-texel stubs; BRDF math remains reference
+UNIMPLEMENTED. Remaining: ZCLIP-CULL, right-scene color proof.
+**Scene-proof (§93): layout/content
 proven RIGHT (diverging frames, different lists, glyph blocks) — color
 broken: textured-draw RGB-zero is the new top item (RGB=0 + structured
 alpha everywhere; one untextured blue column keeps color; suspect
