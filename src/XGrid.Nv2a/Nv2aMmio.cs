@@ -165,8 +165,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodVertexArrayOffsetEnd = 0x175Cu;
     private const uint MethodVertexFormatBase = 0x1760u;
     private const uint MethodVertexFormatEnd = 0x179Cu;
-    private const uint MethodBeginEnd = 0x17FCu;
-    private const uint MethodArrayElement16 = 0x1800u;
+    private const uint MethodBeginEnd = 0x17FCu; private const uint MethodArrayElement16 = 0x1800u;
     private const uint MethodArrayElement32 = 0x1808u;
     private const uint MethodDrawArrays = 0x1810u;
     private const uint MethodInlineArray = 0x1818u;
@@ -243,6 +242,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodFogGenMode = 0x2A0u;
     private const uint MethodFogEnable = 0x2A4u;
     private const uint MethodFogColor = 0x2A8u;
+    private const uint MethodFogCoord = 0x1698u;
+    private const int VertexAttributeFogCoord = 5;
     private const uint MethodFogParamsBase = 0x9C0u;
     private const uint MethodFogParamsEnd = 0x9C8u;
     private const uint MethodTextureBase = 0x1B00u;
@@ -1841,6 +1842,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 _fogColor[2] = ((parameter >> 16) & 0xFFu) / 255f;
                 _fogColor[3] = ((parameter >> 24) & 0xFFu) / 255f;
                 break;
+            case MethodFogCoord:
+                // SET_FOG_COORD writes the FOG vertex attribute (v5) inline
+                // value, replicated across all four components; it does not
+                // finish an inline vertex (reference pgraph SET_FOG_COORD).
+                float fogCoord = BitConverter.UInt32BitsToSingle(parameter);
+                _inlineValues[VertexAttributeFogCoord][0] = fogCoord;
+                _inlineValues[VertexAttributeFogCoord][1] = fogCoord;
+                _inlineValues[VertexAttributeFogCoord][2] = fogCoord;
+                _inlineValues[VertexAttributeFogCoord][3] = fogCoord;
+                break;
             case MethodFlipRead:
                 FlipReadDebug = parameter;
                 break;
@@ -2915,7 +2926,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// Transformed vertex for the combiner path: screen-space position, diffuse
     /// (oD0), specular (oD1), four texture coordinate triples (oT0-oT3, with the
     /// third component kept for the dot texture modes), and the per-vertex fog
-    /// factor computed from oFog.x through the fog-mode equation.
+    /// factor computed from oFog.x (or the fixed-function GEN_MODE distance
+    /// when the program leaves oFog unwritten) through the fog-mode equation.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
     private readonly struct PshVertex
@@ -3170,7 +3182,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 }
             }
 
-            VshProgram.Execute(program, programLength, constants, inputs, outputs);
+            VshProgram.Execute(program, programLength, constants, inputs, outputs, out bool fogWritten);
 
             // Device-depth normalization (xemu clipRange.y): Xbox shaders emit
             // screen-space Z in depth-buffer units (the driver bakes the
@@ -3183,8 +3195,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             // variant is untracked, as in the rest of this rasterizer).
             outputs[0][2] /= ZetaDepthRange((_surfaceFormat >> 4) & 0xFu);
 
+            // Fog distance: a program-written oFog.x wins (reference
+            // programmable path). When the program leaves oFog unwritten,
+            // fall back to the fixed-function GEN_MODE distance (reference
+            // vsh-ff path): FOG_X from the FOG_COORD attribute (v5.x),
+            // SPEC_ALPHA from the specular attribute alpha (v4.a, equal to
+            // the reference oD1.a in both lighting branches), RADIAL/PLANAR
+            // from the object-space position (v0.xyz; the reference
+            // eye-space product is unavailable without a fixed-function
+            // transform unit), PLANAR against constant c57 (XFCTX_FOG).
+            float fogDistance = outputs[5][0];
+            if (_fogEnable && !fogWritten)
+            {
+                fogDistance = VshProgram.FogGenDistance(
+                    (int)_fogGenMode,
+                    inputs[5][0],
+                    inputs[0][0],
+                    inputs[0][1],
+                    inputs[0][2],
+                    inputs[4][3],
+                    constants[XfConstantFogPlane]);
+            }
+
             float fogFactor = _fogEnable
-                ? VshProgram.FogFactor(_fogMode, _fogParams[0], _fogParams[1], outputs[5][0])
+                ? VshProgram.FogFactor(_fogMode, _fogParams[0], _fogParams[1], fogDistance)
                 : 1f;
             var vertex = new PshVertex(
                 outputs[0][0], outputs[0][1], outputs[0][2], outputs[0][3],
@@ -4051,7 +4085,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             UnsupportedDotMaps++;
         }
 
-        PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], out float mx, out float my, out float mz);
+        PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], previous[3], out float mx, out float my, out float mz);
         dot = (tu * mx) + (tv * my) + (ts * mz);
         stageDots[stage] = dot;
         return true;

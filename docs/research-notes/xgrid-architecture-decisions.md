@@ -3287,3 +3287,70 @@ CPU/APC fix indicated. Any unblock is a guest-behavior decision
 Next (if ever): decide whether to emulate the missing EOS signal
 as a compatibility quirk, with the force-probe as the reference
 behavior.
+
+## 90. NV2A fixed-function foggen + HILO dot maps (2026-10-12)
+
+Work in `Temp\opencode\worktrees\nv2a-foggen-hilo` (wave/nv2a-foggen-hilo).
+Closes the two §78 remainders. Reference facts (`References/xemu-0.8.136`,
+reimplemented scalar, never copied):
+
+- **Gen values** (`nv2a_regs.h:917-922` -> `pgraph.c:1131-1150` CSV0_D):
+  SPEC_ALPHA 0, RADIAL 1, PLANAR 2, ABS_PLANAR 3, FOG_X 6 (4/5/7+
+  assert on hardware).
+- **Distances** (`pgraph/glsl/vsh-ff.c:448-473`, from NV_fog_distance):
+  SPEC_ALPHA = `clamp(specular.a, 0, 1)`; RADIAL =
+  `length(tPosition.xyz)` with tPosition = position x modelView
+  (eye space, skinning-aware; `vsh-ff.c:171-173`); PLANAR =
+  `dot(fogPlane.xyz, tPosition.xyz) + fogPlane.w`; ABS_PLANAR =
+  `abs(...)`; FOG_X = `fogCoord` = `v5.x` (`vsh-ff.c:78`).
+- **fogPlane** = transform constant `NV_IGRAPH_XF_XFCTX_FOG` = `0x39`
+  = c57 (`nv2a_regs.h:1343`, `vsh.c:183`; fed by `0x09D0-0x09DC`,
+  `pgraph.c:1819`). **FOG attr** = vertex attribute 5
+  (`nv2a_regs.h:1474`); `SET_FOG_COORD 0x1698` replicates the scalar
+  inline value x4 without finishing a vertex (`pgraph.c:2155-2163`).
+- **Flow** (`vsh.c:301-327,334-403`): fixed-function -> gen distance;
+  programmable -> `oFog.x` unconditionally (with a FIXME noting
+  foggen is ignored there — the RollerCoaster case writes `oFog=v0.z`
+  itself); shared LINEAR/EXP/EXP2 (+ABS) equations; inf distance and
+  NaN factor both yield the mode's fallback; `vtxFog = oFog.x`; psh
+  feeds `(fogColor.rgb, clamp(factor, 0, 1))` as FOG (`psh.c:1074`).
+  Specular alpha: unlit `oD1 = specular` (v4), lit `oD1.a =
+  specular.a` (`vsh-ff.c:254-258,288`) — so SPEC_ALPHA == v4.a always.
+- **HILO** (`psh_regs.h:143-153`, `psh.c:851-910,1246-1265`): applied
+  as `dot(pT[i].xyz, dotmap(t[input_tex[i]]))`. Map 4 (`dotmap_hilo_1`)
+  is a real decode: hi = (a:r bytes)/65535, lo = (g:b bytes)/65535,
+  z = 1, with C-style truncation (`uint(x*255)`). Maps 5-7 are
+  identity FIXMEs. Any map > 3 logs `NV2A_UNIMPLEMENTED`
+  (`psh.c:1104-1106`).
+
+XGrid wiring (`src/XGrid.Nv2a/`): `VshProgram.FogGenDistance` (new;
+gen consts 0/1/2/3/6; unknown -> SPEC_ALPHA); `Execute` overload
+reporting `fogWritten` (set on any oFog masked write); vertex path
+uses `oFog.x` when written, else the gen distance from v5.x (FOG_X),
+v4.a (SPEC_ALPHA), v0.xyz (RADIAL/PLANAR) against c57; `SET_FOG_COORD
+0x1698` stages `_inlineValues[5]` x4; `PshCombiner.ApplyDotMap` takes
+the texel alpha and decodes map 4 (maps 5-7 stay identity +
+`UnsupportedDotMaps`, mirroring FIXME+UNIMPLEMENTED).
+
+**Deliberate deviations:** no fixed-function transform unit exists
+(the uploaded program always runs the transform), so RADIAL/PLANAR
+consume the object-space position, not eye-space tPosition; the
+gen fallback triggers on unwritten-oFog rather than on execution
+mode (a fog-enabled program that never writes oFog gets the gen
+distance instead of distance 0 — the reference FIXME admits this
+corner is uncertain); fog-disabled keeps the established fixed
+`(0,0,0,1)` input, not xemu's `vec4(1.0)` (§78 invariant kept).
+
+**Validation:** 11 new tests (`Nv2aFogTexModesTests`): unit goldens
+per gen mode (clamp/abs/unknown-fallback, RADIAL (3,4,0)->5,
+PLANAR 2.5, FOG_X passthrough) + `fogWritten` true/false; draw
+goldens via a factor-routing combiner (FOG alpha -> pixel, LINEAR
+(1,1)): FOG_X 0/1/2/-1, SPEC_ALPHA 0/1/2/-0.5, RADIAL saturated
+white at z=2, PLANAR 0/1/sloped-2z, ABS-vs-PLANAR pair on plane -1,
+oFog-wins precedence, disabled-white invariant under staged
+gen+coord; HILO DOT_ST chain (green second texel, zero fallback
+count) with an identity-map black control. Full suite 1004 green
+(993 + 11); all pre-existing goldens (`0xFF445566`, `0xFF202020`,
+fog red `0xFFFF0000`, BUMP_LUM `0xFF808080`) bit-identical.
+**Remains:** cubemap/reflection/project3d/clipplane/BRDF modes,
+HILO hemisphere 5-7, ZCLIP + float depth, backends.
