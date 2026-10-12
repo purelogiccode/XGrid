@@ -626,6 +626,197 @@ public sealed class PgraphTransformTests
     }
 
     [Fact]
+    public void ElementDraw_PerspectiveCorrectInterpolatesColor()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x2000u, 0x00000000u);
+        memory.WritePhysical(0x2004u, 0x00000000u);
+        memory.WritePhysical(0x2008u, 0x00000000u);
+        memory.WritePhysical(0x200Cu, 0x3F800000u);
+        memory.WritePhysical(0x2010u, 0x41000000u);
+        memory.WritePhysical(0x2014u, 0x00000000u);
+        memory.WritePhysical(0x2018u, 0x00000000u);
+        memory.WritePhysical(0x201Cu, 0x3F800000u);
+        memory.WritePhysical(0x2020u, 0x00000000u);
+        memory.WritePhysical(0x2024u, 0x41000000u);
+        memory.WritePhysical(0x2028u, 0x00000000u);
+        memory.WritePhysical(0x202Cu, 0x40000000u);
+
+        memory.WritePhysical(0x2100u, 0xFFFF0000u);
+        memory.WritePhysical(0x2110u, 0xFFFF0000u);
+        memory.WritePhysical(0x2120u, 0xFF0000FFu);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] color = Insn(mac: MacMov, aMux: MuxV, v: 3, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x172Cu, 0x00002100u),
+            (0x176Cu, 0x00001040u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, position[0]),
+            (0x0B04u, position[1]),
+            (0x0B08u, position[2]),
+            (0x0B0Cu, position[3]),
+            (0x0B10u, color[0]),
+            (0x0B14u, color[1]),
+            (0x0B18u, color[2]),
+            (0x0B1Cu, color[3]),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF9B0064u, memory.ReadPhysical(0x3000u + (4u * 0x40u) + (2u * 4u)));
+    }
+
+    [Fact]
+    public void ElementDraw_PerspectiveCorrectSamplesTexture()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x2000u, 0x00000000u);
+        memory.WritePhysical(0x2004u, 0x00000000u);
+        memory.WritePhysical(0x2008u, 0x00000000u);
+        memory.WritePhysical(0x200Cu, 0x3F800000u);
+        memory.WritePhysical(0x2010u, 0x41000000u);
+        memory.WritePhysical(0x2014u, 0x00000000u);
+        memory.WritePhysical(0x2018u, 0x00000000u);
+        memory.WritePhysical(0x201Cu, 0x3F800000u);
+        memory.WritePhysical(0x2020u, 0x00000000u);
+        memory.WritePhysical(0x2024u, 0x41000000u);
+        memory.WritePhysical(0x2028u, 0x00000000u);
+        memory.WritePhysical(0x202Cu, 0x40000000u);
+
+        memory.WritePhysical(0x2200u, 0x00000000u);
+        memory.WritePhysical(0x2204u, 0x00000000u);
+        memory.WritePhysical(0x2208u, 0x3F800000u);
+        memory.WritePhysical(0x220Cu, 0x00000000u);
+        memory.WritePhysical(0x2210u, 0x00000000u);
+        memory.WritePhysical(0x2214u, 0x00000000u);
+
+        memory.WritePhysical(0x2300u, 0xFFFFFFFFu);
+        memory.WritePhysical(0x2310u, 0xFFFFFFFFu);
+        memory.WritePhysical(0x2320u, 0xFFFFFFFFu);
+
+        memory.WritePhysical(0x4000u, 0xFF000000u);
+        memory.WritePhysical(0x4004u, 0xFF000000u);
+        memory.WritePhysical(0x4008u, 0xFF112233u);
+        memory.WritePhysical(0x400Cu, 0xFF445566u);
+        memory.WritePhysical(0x4010u, 0xFF000000u);
+        memory.WritePhysical(0x4014u, 0xFF000000u);
+        memory.WritePhysical(0x4018u, 0xFF000000u);
+        memory.WritePhysical(0x401Cu, 0xFF000000u);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] color = Insn(mac: MacMov, aMux: MuxV, v: 3, outMux: 0, outMask: 0xF, outAddress: 3);
+        uint[] texcoord = Insn(mac: MacMov, aMux: MuxV, v: 1, outMux: 0, outMask: 0xF, outAddress: 9, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1724u, 0x00002200u),
+            (0x1764u, 0x00000822u),
+            (0x172Cu, 0x00002300u),
+            (0x176Cu, 0x00001040u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, position[0]),
+            (0x0B04u, position[1]),
+            (0x0B08u, position[2]),
+            (0x0B0Cu, position[3]),
+            (0x0B10u, color[0]),
+            (0x0B14u, color[1]),
+            (0x0B18u, color[2]),
+            (0x0B1Cu, color[3]),
+            (0x0B20u, texcoord[0]),
+            (0x0B24u, texcoord[1]),
+            (0x0B28u, texcoord[2]),
+            (0x0B2Cu, texcoord[3]),
+            (0x1B00u, 0x00004000u),
+            (0x1B04u, 0x00001200u),
+            (0x1B08u, 0x00000000u),
+            (0x1B0Cu, 0x40000000u),
+            (0x1B10u, 0x00200000u),
+            (0x1B1Cu, 0x00080001u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF445566u, memory.ReadPhysical(0x3000u + (4u * 0x40u) + (2u * 4u)));
+    }
+
+    [Fact]
+    public void ElementDraw_NaNColorBecomesOne()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0u);
+
+        memory.WritePhysical(0x2100u, 0x7FC00000u);
+        memory.WritePhysical(0x2104u, 0x00000000u);
+        memory.WritePhysical(0x2108u, 0x00000000u);
+        memory.WritePhysical(0x210Cu, 0x3F800000u);
+        memory.WritePhysical(0x2110u, 0x7FC00000u);
+        memory.WritePhysical(0x2114u, 0x00000000u);
+        memory.WritePhysical(0x2118u, 0x00000000u);
+        memory.WritePhysical(0x211Cu, 0x3F800000u);
+        memory.WritePhysical(0x2120u, 0x7FC00000u);
+        memory.WritePhysical(0x2124u, 0x00000000u);
+        memory.WritePhysical(0x2128u, 0x00000000u);
+        memory.WritePhysical(0x212Cu, 0x3F800000u);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
+        uint[] color = Insn(mac: MacMov, aMux: MuxV, v: 3, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x172Cu, 0x00002100u),
+            (0x176Cu, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, position[0]),
+            (0x0B04u, position[1]),
+            (0x0B08u, position[2]),
+            (0x0B0Cu, position[3]),
+            (0x0B10u, color[0]),
+            (0x0B14u, color[1]),
+            (0x0B18u, color[2]),
+            (0x0B1Cu, color[3]),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
     public void DrawArrays_SeparateRangesDrawSeparatePrimitives()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
