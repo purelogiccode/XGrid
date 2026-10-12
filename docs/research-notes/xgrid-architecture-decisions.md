@@ -3666,3 +3666,8 @@ fault, and faking position/notifier state would violate the no-fake rule.
 
 **Status:** docs-only change; no source edits. Suite 1034/1034, build +
 `format --verify-no-changes` clean.
+
+**Mapping fact verified:** 007 module code is `phys = VA + 0xAAF000`
+(the code page holding `0x18440` was found at phys `0xC7440`; the XBE
+`.text` file offset is `VA - 0x10000`). Data pointers still need live
+page-table walks from CR3 (`0xAFE34`→`0x15EE34`, §92).
