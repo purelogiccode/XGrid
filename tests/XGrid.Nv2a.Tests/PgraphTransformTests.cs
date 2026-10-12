@@ -613,7 +613,7 @@ public sealed class PgraphTransformTests
             (0x0B88u, 0x3F800000u),
             (0x0B8Cu, 0x3F800000u),
             (0x1B00u, 0x00004000u),
-            (0x1B04u, 0x00000622u),
+            (0x1B04u, 0x01100622u),
             (0x1B0Cu, 0x40000000u),
             (0x1B1Cu, 0x00020002u),
             (0x17FCu, 5u),
@@ -625,6 +625,165 @@ public sealed class PgraphTransformTests
         Assert.Equal(0xFFFF0000u, memory.ReadPhysical(0x3000u));
         Assert.Equal(0xFF00FF00u, memory.ReadPhysical(0x3000u + 8u));
         Assert.Equal(0xFF0000FFu, memory.ReadPhysical(0x3000u + (2u * 0x10u)));
+    }
+
+    /// <summary>
+    /// Pushes a legacy (no register-combiner) texture draw: oPos from v0, a
+    /// white oD0 from constant c0, and oT0 from the v1 attribute array sampled
+    /// at a uniform coordinate. The texture state methods are appended by the
+    /// caller.
+    /// </summary>
+    private static void PushTexturedLegacyDraw(
+        Nv2AMmio nv2A, ArrayMemory memory, float u, float v,
+        params (uint Method, uint Parameter)[] textureState)
+    {
+        memory.WritePhysical(0x2000u, 0x00000000u);
+        memory.WritePhysical(0x2004u, 0x00000000u);
+        memory.WritePhysical(0x2008u, 0x00000000u);
+        memory.WritePhysical(0x200Cu, 0x3F800000u);
+        memory.WritePhysical(0x2010u, 0x40800000u);
+        memory.WritePhysical(0x2014u, 0x00000000u);
+        memory.WritePhysical(0x2018u, 0x00000000u);
+        memory.WritePhysical(0x201Cu, 0x3F800000u);
+        memory.WritePhysical(0x2020u, 0x00000000u);
+        memory.WritePhysical(0x2024u, 0x40800000u);
+        memory.WritePhysical(0x2028u, 0x00000000u);
+        memory.WritePhysical(0x202Cu, 0x3F800000u);
+
+        for (uint i = 0; i < 3; i++)
+        {
+            memory.WritePhysical(0x2100u + (i * 8u), BitConverter.SingleToUInt32Bits(u));
+            memory.WritePhysical(0x2104u + (i * 8u), BitConverter.SingleToUInt32Bits(v));
+        }
+
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000010u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00040000u),
+            (0x0204u, 0x00040000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1724u, 0x00002100u),
+            (0x1764u, 0x00000822u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F818u),
+            (0x0B20u, 0u),
+            (0x0B24u, 0x0020021Bu),
+            (0x0B28u, 0x0836006Cu),
+            (0x0B2Cu, 0x0000C849u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0x3F800000u),
+            (0x0B88u, 0x3F800000u),
+            (0x0B8Cu, 0x3F800000u),
+        };
+        methods.AddRange(textureState);
+        methods.Add((0x17FCu, 5u));
+        methods.Add((0x1800u, 0x00010000u));
+        methods.Add((0x1808u, 0x00000002u));
+        methods.Add((0x17FCu, 0u));
+        PushMethods(nv2A, memory, methods.ToArray());
+    }
+
+    [Fact]
+    public void ElementDraw_LinearTextureSamplesTexelUnits()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x4000u, 0xFF102030u);
+        memory.WritePhysical(0x4004u, 0xFF405060u);
+        memory.WritePhysical(0x4008u, 0xFF708090u);
+        memory.WritePhysical(0x400Cu, 0xFFA0B0C0u);
+
+        PushTexturedLegacyDraw(
+            nv2A,
+            memory,
+            2.5f,
+            0.5f,
+            (0x1B00u, 0x00004000u),
+            (0x1B04u, 0x00001200u),
+            (0x1B08u, 0x00000002u),
+            (0x1B0Cu, 0x40000000u),
+            (0x1B10u, 0x00100000u),
+            (0x1B1Cu, 0x00040001u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF708090u, memory.ReadPhysical(0x3018u));
+    }
+
+    [Fact]
+    public void ElementDraw_SwizzledTextureUsesBaseSizeNotImageRect()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x4000u, 0xFF000001u);
+        memory.WritePhysical(0x4004u, 0xFF000002u);
+        memory.WritePhysical(0x4008u, 0xFF000003u);
+        memory.WritePhysical(0x400Cu, 0xFF000004u);
+
+        PushTexturedLegacyDraw(
+            nv2A,
+            memory,
+            0.5f,
+            0.25f,
+            (0x1B00u, 0x00004000u),
+            (0x1B04u, 0x01100600u),
+            (0x1B0Cu, 0x40000000u),
+            (0x1B1Cu, 0x00040004u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF000002u, memory.ReadPhysical(0x3018u));
+    }
+
+    [Fact]
+    public void ElementDraw_SwizzledA4R4G4B4DecodesNibbles()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x4000u, 0x0000F8A5u);
+
+        PushTexturedLegacyDraw(
+            nv2A,
+            memory,
+            0.25f,
+            0.25f,
+            (0x1B00u, 0x00004000u),
+            (0x1B04u, 0x00100400u),
+            (0x1B0Cu, 0x40000000u),
+            (0x1B1Cu, 0x00020001u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF88AA55u, memory.ReadPhysical(0x3018u));
+    }
+
+    [Fact]
+    public void ElementDraw_SwizzledX8R8G8B8ForcesOpaqueAlpha()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        memory.WritePhysical(0x4000u, 0x00112233u);
+
+        PushTexturedLegacyDraw(
+            nv2A,
+            memory,
+            0.5f,
+            0.5f,
+            (0x1B00u, 0x00004000u),
+            (0x1B04u, 0x00000700u),
+            (0x1B0Cu, 0x40000000u),
+            (0x1B1Cu, 0x00010001u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0xFF112233u, memory.ReadPhysical(0x3018u));
     }
 
     [Fact]
@@ -702,7 +861,7 @@ public sealed class PgraphTransformTests
 
         memory.WritePhysical(0x2200u, 0x00000000u);
         memory.WritePhysical(0x2204u, 0x00000000u);
-        memory.WritePhysical(0x2208u, 0x3F800000u);
+        memory.WritePhysical(0x2208u, 0x41000000u);
         memory.WritePhysical(0x220Cu, 0x00000000u);
         memory.WritePhysical(0x2210u, 0x00000000u);
         memory.WritePhysical(0x2214u, 0x00000000u);

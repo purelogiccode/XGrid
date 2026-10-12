@@ -3573,3 +3573,212 @@ post-fire** — but frames 84→85 stall: the game parks in the
 DVD frozen, splash full-white). The STRM gate is behind us; the
 next gate is decoding the `0x138xx` wait. Full suite 1034/1034
 (993 + 8 ZCLIP + 11 foggen/HILO + 22 EOS).
+
+## 95. Textured-RGB-zero fixed: linear texel coords, POT size for swizzled, A4R4G4B4 (2026-10-12)
+
+Worktree `Temp\opencode\worktrees\nv2a-rgb-zero` (`wave/nv2a-rgb-zero`);
+firmware read-only; artifacts in `Temp\opencode\rgb-zero\`. Reference
+facts from `References/xemu-0.8.136/hw/xbox/nv2a/pgraph/` (`texture.c`
+`pgraph_get_texture_shape`, `glsl/psh.c` sample sites + `norm`,
+`gl/vk/constants.h` format tables). The §93 symptom (right layout,
+RGB=0, structured alpha, one untextured blue column) had THREE
+independent causes, all in the texture-sample stage; the combiner,
+blend and color-mask paths were correct.
+
+**Evidence (1B-step neutral boot, per-pixel instrumentation).**
+- Per-format sample attempts: `12=209,817,600/0  04=44,942,064/44,942,064
+  06=22,642,488/0` — every A4R4G4B4 (`0x04`) sample was a miss
+  (unsupported -> `SetTexelNone` (0,0,0,1) -> RGB 0, alpha 1: the exact
+  §93 signature), and 219.9M/232.2M successful samples decoded RGB zero.
+- Per-texture-state UV bounds showed the smoking gun: the dominant
+  state (`LU_IMAGE_A8R8G8B8`, offset `0x369C000`, rect 1024x512,
+  pitch 0x1000, stage mode 1/PROJECT2D, 199.4M samples) had
+  `u=[0.49995,639.50006] v=[0.49999,479.50003]` — **texel-unit**
+  coordinates, not normalized. The 1024x512 allocation at that offset
+  holds a 640x480 image in its top-left corner only (RAM scan: 307,200
+  nonzero of 524,288); XGrid's `floor(u*1024)` scrambled the samples
+  into the zeroed right/bottom region (first sample address `0x379CFFC`
+  = (1023,256), word 0), giving 199.06M rgb0.
+- A second state (`SZ_A4R4G4B4`, offset `0x3BC1000`) declared
+  BASE_SIZE_U/V = 128x256 (`format 0x08710429`) while the image rect
+  said 1024x512. Unswizzling with 1024x512 masks produced a garbled red
+  gradient (the red text blocks in the broken frames); unswizzling with
+  the 128x256 masks produced the clean font atlas (glyphs `!#$...`).
+  The image rect does not apply to swizzled formats.
+- Mode fallbacks `187.5M` (`0x03` CUBEMAP 125.1M + `0x02` PROJECT3D
+  62.4M) are real but decorative at this stage (parks in stages 1-3 of
+  `m0332`/`m1332` states); the readable-UI result does not need them.
+- Combiner fragments with zero RGB: 294.4M before, of which 95.3M had
+  nonzero alpha (the §93 image-in-alpha).
+
+**Reference semantics (facts).**
+- `pgraph_get_texture_shape`: for `f.linear` formats
+  (`LU_IMAGE_*`) `width = rect_width, height = rect_height` (method
+  `SET_TEXTURE_IMAGE_RECT 0x1B1C`, WIDTH bits 16-31 / HEIGHT bits 0-15)
+  and pitch from `SET_TEXTURE_CONTROL1 0x1B10` bits 16-31; for swizzled
+  (`SZ_*`) formats `width = 1 << BASE_SIZE_U`, `height = 1 <<
+  BASE_SIZE_V` (format word bits 20-23 / 24-27), rect and pitch ignored.
+- `glsl/psh.c` wraps every sample of a `rect_tex` (linear) texture in
+  `norm(coord) = coord / textureSize`, i.e. the guest supplies
+  **texel-unit** coordinates for LU formats; swizzled formats sample
+  normalized coordinates directly. (`textureProj` also divides by w;
+  not needed for the dashboard's oT0.)
+- Format bit layouts (`gl/vk/constants.h`): SZ_A8R8G8B8/LU_A8R8G8B8 =
+  B8G8R8A8 in memory; A4R4G4B4 = A bits 12-15, R 8-11, G 4-7, B 0-3;
+  A1R5G5B5 = A bit 15, R 10-14, G 5-9, B 0-4; R5G6B5 = R 11-15, G 5-10,
+  B 0-4; X8/X1 variants force alpha 1.
+
+**Fix (`Nv2aMmio.TrySampleTexture`).** (a) Linear formats take
+`x=floor(u)`, `y=floor(v)` (wrap/clamp in texel space) with
+offset+pitch addressing; swizzled formats keep `x=floor(u*width)` with
+Morton offsets. (b) `width`/`height` now come from the image rect for
+linear formats and from BASE_SIZE_U/V for swizzled ones. (c) Decode
+table extended to the SZ/LU pairs 02/10 (A1R5G5B5), 03/1C (X1R5G5B5),
+04/1D (A4R4G4B4), 05/11 (R5G6B5), 06/12 (A8R8G8B8), 07/1E (X8R8G8B8)
+with a shared per-texel decoder; the `0x04` font format was the
+44.9M-miss hole. Unsupported formats still fall back to NONE and count.
+
+**Instrumentation (kept in the CLI).** `NV2A tex ok/rgb0/disabled/
+badsize formats=<fmt=attempts/misses> fallbacks=<n> byMode=<mode=n>
+dotMaps=`, `NV2A combiner rgb0=/rgb0Alpha=`, and top-16
+`NV2A texstate` lines: per (combiner/program) state with texture
+enable/format/offset/rect/ctl1/address per slot, texture modes, stage
+count, final-enable, sample/rgb0/fallback/miss counts, first
+address/texel, and UV bounds. Tests updated for the corrected
+encoding: swizzled tests now set BASE_SIZE bits; linear-texture tests
+use texel-unit UVs; the fog/texmode helper uses swizzled A8R8G8B8
+(per the reference `!rect_tex` assert for dependent/bump modes) with
+the 4x4 data at its Morton offset.
+
+**Live validation (final build, 1B steps, both boots).** Recipe
+reproduced exactly: `HIT 972246034 EIP=0001859D` and
+`HIT 972349247 EIP=0001E420`, no fault either run. Counters neutral:
+draws 33811 skipped 1394 pixels 284,296,413 textured 277,402,152
+blended 210,800,484 depth 136 zclip 0 frames 682; submenu: draws 33623
+pixels 285,174,170 blended 211,678,241 frames 685 (all >= the §93
+pre-fix run; no regression). Texture stats: `04` misses now 0;
+rgb0 samples 44.2M (mostly genuinely black texels). Frames
+(`final_neutral.bmp` / `final_submenu.bmp`, SHAs `df0feb86...` /
+`4ef1fbf6...`): full-BGRA diff 7,390 px (2.41%), **RGB-change 7,389,
+alpha-only 1**, confined to y=320-459 (list area), header pixel-identical;
+306,817/307,200 nonzero-RGB pixels both (32.4K distinct colors).
+The §93 alpha-only structures are **superseded** (texture alpha now
+feeds the blend, so the layout oracle is the RGB diff in the same
+region); the steel-blue x=0 column is gone as a separate artefact
+because the untextured draw now sits inside a fully textured scene.
+Visually the frame is the readable EvoX main menu (time/BIOS/free-space
+header, XBMC/Launch DVD/Games/Trainers/Skins/Xbox Admin list, SELECT A /
+B BACK bar) and the submenu shows Applications/Dashboards/Switch
+Dashboards/System.
+
+**Tests.** 4 new: `ElementDraw_LinearTextureSamplesTexelUnits`,
+`ElementDraw_SwizzledTextureUsesBaseSizeNotImageRect`,
+`ElementDraw_SwizzledA4R4G4B4DecodesNibbles`,
+`ElementDraw_SwizzledX8R8G8B8ForcesOpaqueAlpha` (all fail pre-fix);
+9 existing texture tests updated for the reference semantics. Full
+suite **1038/1038** (was 1034), Nv2a 180 -> 184; `dotnet format
+--verify-no-changes` clean.
+
+**Remains.** PROJECT3D/CUBEMAP stage modes (parallel wave; 187.5M
+falls here but they are decoration), HILO dot maps 5-7, reserved
+formats, mipmap LOD selection (base level only), DXT decode.
+
+## 96. NV2A exotic texture modes + HILO hemispheres implemented (2026-10-12)
+
+Closes the §78/§91 remainder: cubemap, project3d, clipplane, the
+reflection dot-chain modes, and HILO hemisphere dot maps 5-7. Primary
+reference `References/xemu-0.8.136/hw/xbox/nv2a/pgraph/glsl/psh.c`
+(mode switch ~L1108-1369, sampler types L620-695, dotmap funcs
+L851-910, remap helpers L936-976), `pgraph/texture.c`
+(`pgraph_get_texture_length` L143-192, shape L194-326),
+`pgraph/gl/texture.c` (`generate_texture` L642-758: cube faces
+uploaded +X,-X,+Y,-Y,+Z,-Z, each face = full mip chain rounded to
+`NV2A_CUBEMAP_FACE_ALIGNMENT` = 128, `nv2a_regs.h:1518`; volume upload
+L564-635: per level `unswizzle_box`, level advance
+`w*h*depth*bpp`), `pgraph/swizzle.c` (`generate_swizzle_masks`
+L48-70: x/y/z mask bits woven in that order), `nv2a_regs.h`
+(TEXFMT CUBEMAPENABLE bit 2 / DIMENSIONALITY 0xC0 / MIPMAP_LEVELS
+0xF0000 / BASE_SIZE_P 0xF0000000, TEXADDRESS ADDRP 0x70000,
+SHADERCLIPMODE 0x1994), `pgraph.c:2934` (NV097
+SET_SHADER_CLIP_PLANE_MODE = `0x17F8` writes it).
+
+**Equations implemented** (`PshCombiner.cs` static math + `Nv2aMmio`
+ResolveTexel/samplers):
+- PROJECT2D: non-cube unchanged (bit-identical); with CUBEMAPENABLE:
+  `normalize(vec3(1, v/w, -u/w))` (`remap2DToCube`) then a cube sample.
+- PROJECT3D: `(u/w, v/w[, s/w])`; 2D sampler for dim 2, swizzled
+  volume sampler for dim 3 (`unswizzle_box` layout, level 0).
+- CUBEMAP: cube sample of `(u,v,s)` when CUBEMAPENABLE, else
+  `remapCubeTo2D` (`+/-X: (-z,y)/|x|`, `+/-Y: (x,-z)/|y|`,
+  `+/-Z: (x,-y)/|z|` with xemu's strict-`>` branch order) then a 2D
+  sample with the normal address modes.
+- Face select + s/t from the GL/D3D convention (`|ma|` division,
+  `(c/|ma|+1)/2`), Mesa-style `>=` tie break; face stride =
+  `ALIGN128(sum over clamped mip levels of w*h*bpp)`.
+- CLIPPLANE: for stage i component j, SHADERCLIPMODE bit `4i+j`
+  selects discard when `pT[j] >= 0`, else when `pT[j] < 0`; texel is
+  `(0,0,0,0)`; discard applied in the FillTrianglePsh pixel loop.
+- DOT_RFLCT_DIFF (stage 2): `n = (dot1, dot2, dot_i_n)` — dot1 from
+  stage 1, dot2 from stage 2, the third from stage 3's coords/dot
+  map/input (xemu `dot%d_n`); cube or remap sample.
+- DOT_RFLCT_SPEC (stage 3): `n = (dot1,dot2,dot3)`,
+  `e = (oT1.w, oT2.w, oT3.w)`,
+  `rv = 2*n*dot(n,e)/dot(n,n) - e`; cube or remap sample.
+- DOT_STR_CUBE (stage 3): `(dot1,dot2,dot3)` cube/remap sample.
+- Reflection dots are recomputed on demand (`TryComputeDot`, per-stage
+  dot map + SHADERCTL input stage), so the stage chain does not
+  require the earlier stage's texture mode to be a dot mode.
+- HILO hemisphere 5/6/7: `hi = (a<<8)|r`, `lo = (g<<8)|b` (same word
+  packing as HILO_1); decode each word with the 16-bit extension of
+  sign1/sign2/sign3 — D3D `(h-0x8000)/0x7FFF`, GL
+  `h>=0x8000 ? (h-65535.5)/32767.5 : (h+0.5)/32767.5`, generic
+  `h>=0x8000 ? (h-65536)/32767 : h/32767` — then
+  `(H, L, sqrt(max(0, 1-H*H-L*L)))`. `IsSupportedDotMap` now 0-7;
+  maps 8-15 stay identity + `UnsupportedDotMaps`.
+
+**Reference limits (not guessed):** xemu's `dotmap_hilo_hemisphere*`
+are FIXME identity (psh.c L902-910) even in current master; the
+16-bit decode comes from the Cxbx line (`XbPixelShader.h:127-130`
+comments are partially garbled — D3D anchor line contradicts its own
+"thus" formula — and the template's `hls()` applies the generic
+formula to all three) plus Xermu's `doc/reference/
+CxbxPixelShaderFunctions.hlsli` (`ln()`), which states the piecewise
+per-flavor decode and mirrors xemu's sign1/sign2/sign3. Documented as
+the best available secondary reference; the clamp at `1-H^2-L^2 < 0`
+is explicit. BRDF (0x08) and DOT_RFLCT_SPEC_CONST (0x12) have no
+implementation in xemu (`vec4(0.0)` + `NV2A_UNIMPLEMENTED`,
+psh.c L1240-1245, L1359-1364) and Cxbx's variants are marked untested
+(`CxbxPixelShaderTemplate.hlsl:391,402`, `Brdf()` "TODO: Complete 16
+bit phi/sigma retrieval"), so they now emit exactly the xemu
+observable zero texel `(0,0,0,0)` and count `TexModeFallbacks` — no
+speculative math.
+
+**Explicit non-goals kept:** non-cubemap PROJECT2D still ignores the
+projective w divide (pre-existing; changing it would alter draws not
+under this wave), DOT_STR_3D keeps its 2D sample for dim 3, and
+border/mip/filtered sampling remain absent. Pre-existing quirk noted:
+the 2D sampler reads TEXADDRESS V from bits 4-7 while `nv2a_regs.h`
+puts ADDRV at bits 8-10 (U/V follow file convention in new samplers;
+P uses bits 16-18); tests use explicit clamp modes.
+
+**Tests:** `tests/XGrid.Nv2a.Tests/Nv2aExoticTexModesTests.cs` (11):
+cube helper conventions (gl +X..-Z, remap, tie), cube face selection
+for +X and +Z (2x2 faces at 128-byte stride), cube-flag-off remap on a
+flat 4x2 texture, PROJECT3D volume texel selection, CLIPPLANE discard
+vs keep, DOT_RFLCT_DIFF remap golden, BRDF zero-alpha golden (routed
+through the alpha combiner), HILO map 7 vs map 5 texel selection.
+Updated `Nv2aFogTexModesTests`: hemisphere assertions (were
+identity/unsupported), mode-validity rows for 0x02/0x03/0x05/0x08/
+0x0B/0x0C/0x0E/0x12, and the unsupported-dot-map golden moved to map 8.
+Full suite 1045/1045 (1034 + 11); build + `format --verify-no-changes`
+clean.
+
+**Live validation:** worktree Release, standard firmware/HDD, dashboard
+`boot --steps 1000000000`: EIP `0x000259E0`, no fault, and the full
+CLI output is byte-identical to the pre-wave baseline (`Compare-Object`
+diff count 0) — `draws executed=33811 skipped=1394
+pixels=118927184 textured=232460088 clears=692 blended=45431255
+depth=136 zclip=0 frames=682 stalls=682 programLoad=12 constLoad=2
+inlineElements=0`, unmapped buckets unchanged. The dashboard exercises
+none of the newly enabled paths (they are opt-in via SHADERPROG /
+SHADERCLIPMODE / SHADERCTL), so the no-regression check is exact.

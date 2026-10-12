@@ -331,7 +331,7 @@ public sealed class PshCombinerTests
 
         memory.WritePhysical(0x2200u, 0x00000000u);
         memory.WritePhysical(0x2204u, 0x00000000u);
-        memory.WritePhysical(0x2208u, 0x3F800000u);
+        memory.WritePhysical(0x2208u, 0x41000000u);
         memory.WritePhysical(0x220Cu, 0x00000000u);
         memory.WritePhysical(0x2210u, 0x00000000u);
         memory.WritePhysical(0x2214u, 0x00000000u);
