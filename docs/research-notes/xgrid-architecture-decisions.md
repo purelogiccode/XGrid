@@ -2769,6 +2769,147 @@ Reference facts (`References/xemu-0.8.136`, `nv2a_regs.h` + `pgraph/`
   PLANAR/ABS_PLANAR/FOG_X + FOG_COORD attr), cubemap/reflection/
   project3d/clipplane/BRDF modes, HILO dot maps, clipRange, backends.
 
+## 82. pgraph diff verdict: submenu black is guest-accurate, no rasterizer gap (2026-10-12)
+
+Prebuilt Release CLI as-is; neutral vs submenu 1B runs (`--pgraph`,
+`--pgraph-max 120M`, same flags + §79 pad script); artifacts in
+`Temp\opencode\pgraph-diff\`; repo untouched. Both §79 HITs replicate
+byte-identically. Neutral-vs-repeat streams are SHA256-identical
+(18,094,707 methods each) → emulation bit-deterministic; neutral↔
+submenu heads byte-identical for 13,046,714 lines, first diff = a
+float-LSB in modelview `0x0488` — divergence is genuine post-950M
+input-driven behavior (late frames are method-dense: 5.1M methods
+over the last 50M steps).
+
+**Deltas** (post-divergence; neutral→submenu): BE TRIANGLES +139,
+BE QUADS −272, `0x1800` inline elements +98,628 (same arrays/formats;
+42 program-word pairs in both, zero unique to either; element-index
+vocabulary identical: 23,520 values, zero unique). Program/const
+uploads −548 (all slot 0); flips/clears +4. CLI: draws 33760→33623,
+skipped +8, pixels frozen 10444800 both, frames 681→685, frame SHA
+identical black both.
+
+**Clip point:** every const batch in the submenu region loads the
+identical poisoned **C0=(1.0, 1.0, 16777215.0, 1.0)**, viewport-Z
+`0AF8` is only `4B7FFFFF`, and all other kill-state is unchanged
+(surface pair, no zeta, combiner/fog/blend/alpha/depth same, no clip
+regs). Per the §58 proof (`oPos=V0·C0+C0`, |z/w|≈50M) every added
+triangle dies in vertex clip independent of inputs — the +8 skipped
+draws are degenerate, the rest execute and clip. **VERDICT:
+guest-accurate black; no rasterizer gap. Stop probing the
+submenu/rasterizer path — the fault is upstream in the viewport
+bake** (driver emits Z=16.7M from sane RAM viewport MinZ=0/MaxZ=1):
+next is auditing surface/zeta/caps responses at SetViewport-bake
+time (§61 open items). Fixing the bake should light up scene +
+submenu text in one move.
+
+## 83. DVD auto-launch traced to the same `call [0x10128]` gate (2026-10-12)
+
+`--dvd` 007-CHD runs (logs in `Temp\opencode\dvd-launch\`; repo
+untouched; prebuilt binary). 007 XBE: base `0x10000`, entry VA
+`0x22E35` (file-stored `0xA8FE799E`), 9 sections.
+
+**Phase map:** 0–24.3M ROM→kernel init (zero IDE); at **step
+24,312,685** kernel init calls boot-image decision fn `0x80015724`
+(from `0x8001C72E`; flag `[0x8003a87c]=0` → `call 0x8006281f`
+branch); ~30–40M HDD IDENTIFY/SET FEATURES + SECURITY UNLOCK
+(master) + slave PACKET IDENTIFY + 27-packet ATAPI burst; 33–60M
+DVD reads complete (tail fixed `0x604` by 60M), first NV2A frame
+≤60M, kernel idle `0x800422B9/B4` 200–500M. **Handoff (exact):
+step 537,926,130** — `0x800158DA: call dword ptr [0x10128]` →
+**first game EIP `0x22E35`**, via thread-startup trampoline
+`0x800218F4` → launch fn `0x800158xx` (XBE-prep calls) → `call
+[0x10128]` (entry never returns; `push ebx; call 0x80021b78;
+int3`). **Same gate the HDD boot uses for the dashboard (§34)** —
+only the loaded image differs; no menu involvement (no
+`0x232A0`/`0x1E66A`).
+
+**Decision point:** no single media branch — the 24M init decision
+runs pre-I/O on the init-zeroed flag, and the media-dependent part
+is the file path (TUR→XDVDFS mount→`D:\default.xbe` open vs `C:\`
+fallback). `[0x8003a87c]` is written exactly once in 560M (init
+zeroing) — NOT a DVD-presence flag. HDD sees only IDENTIFY/UNLOCK
+on DVD boot; all title I/O is DVD-side.
+
+**DVD read order:** `TUR` → `MODE SENSE(10)` [5/0x24] → `REQ SENSE`
+→ `READ CAPACITY` → `READ(10) 0x20` (XDVDFS magic) → `0x4B8` →
+**`0xAD` (READ DVD STRUCTURE) [fails 5/0x20, tolerated]** →
+`0x4BA→0x4FA→0x51A→0x51C-cluster…→0x604` (default.xbe extents) →
+launch → `0x96E34+` streaming. **Correction to §66: `0xAD` IS
+requested once** (not "never requested"); no `0xA3/0xA4/0xD5` auth
+anywhere; no ISO9660 probe (rebuilt XISO has no PVD).
+
+**Tooling caveat (load-bearing for future probes):** `--trace` runs
+(65536-insn `Advance` chunks) diverge ~100M+ steps from
+`--break`/`--break-log` runs (4096-chunk single-step) — same guest
+logic, different pacing (suspect chunk-sensitive `Advance`
+consumers: APU VP-frame delivery, PIT phasing). Rule:
+`--break`-world steps for exactness; `--trace` windows are only
+self-consistent with plain runs. Next: pin the media branch at
+`0x80021693`/`0x80030980` (`--break` + ESP-window dumpv), `--watch`
+the `0x10128` title-page frame for the XOR-decrypt writer (HDD
+analog `0x8002EFE6`), raise the 16-entry `PacketLog` cap.
+
+## 84. nvnet P0+P1 merged: ring latches, IRQ4, TX walker + loopback (2026-10-12)
+
+`wave/nvnet-engine` merged (commit `496ff3c`; +932/−9). P0: TX/RX
+BASE/SIZE/CURRENT/NEXT latches, CURRENT=NEXT=BASE on RESET,
+IDLE/KICK plumbing, IRQ STATUS/MASK + W1C + `InterruptChanged`
+→ `Bus.NvNetPci` raise/lower → PIC IRQ4 (existing slot-4
+routing). P1: TX walker (≤TX-count descs to LASTPACKET,
+`len+1` coalesce into 1628 B buffer, VALID+error-clear writeback
+preserving length/LASTPACKET, TX IRQ `0x10` on completed frames),
+`CanTransmit` gates (`TX_START && !BIT2 && LINK_ST` with reason
+tracking), `INetworkBackend` seam + loopback/logger default
+(bounded 64-frame queue, `TryReceive` P2 seam), CLI counters
+(`tx_pkts/tx_bytes/kicks/cant_tx`, ring pointers, irq
+asserts/deasserts). Oversize coalesce stops the walk (no xemu
+assert). New: `INvNetMemory` (local to `Bus` — sharing IDE's
+`IGuestMemory` would be a project cycle; mirrors
+`IApuMemory`/`IUsbMemory`), 15 bus + 1 machine tests (machine test
+drives a real guest-RAM descriptor → backend frame + PIC
+master-request bit 4 → W1C deassert). All 12 existing nvnet tests
+green unchanged; full suite 956/956. Guest is init-only (zero
+KICKs on boot) — steady state preserved. P2 RX + P3 socket
+backend remain (seams ready).
+
+## 85. 007 second wait decoded: parked STRM, completion never arrives (2026-10-12)
+
+Work in `Temp\opencode\worktrees\007-wait2` (analysis-only, clean —
+both temp `Program.cs` forcings reverted; logs in
+`Temp\opencode\007-wait2\`).
+
+**Timer table** (VA `0xEA308`, 16×16 B, phys `0x199308`): `+0`
+callback VA (0=empty), `+4` period, `+8` deadline, `+0xC` busy.
+Live: entry0 `{0x30DE0,1,deadline}` = pad poller (XPP object
+`0x5AEFC` — the game DID register input callbacks), entry1
+`{0x12350,1,deadline}` = input dispatch over `0xF3FD4` (registered
+by `0x12390` via `0x26970`); entries 2–15 empty. Pump `0x26B60`
+ticks exact 10 ms. `0x26AE0` fires callbacks (fn≠0, tick≥deadline,
+busy==0; `deadline=tick+period`) but `0x20B50` **discards the
+return** (EAX overwritten) — timer callbacks cannot advance the
+wait. Exit needs (a) `0x2A740` buffer magic `0x6843504D`
+("MPCh", then `inc [AFE34]`), or (b) `0x2A830`≠0 (needs
+`[handle+8]==0` AND `[STRM+0x44]==0`); `0x2ABE0` is the only 2→1
+clearer but gated on non-empty buffer — catch-22 on empty stream.
+
+**Parked STRM** (handle VA `0x80B6CBE8`→P `0xB6CBE8`, struct
+`0x80B6C800`, stable): `remaining=0`, `state=2` (refill-pending,
+set by `0x2AA65`); 153 lifetime writes, last writer `0x2AA65`,
+**zero writes 1.8B→3B**. No device I/O outstanding, no producer
+thread (EIPHIST: waiter + kernel idle + pump only). Longer steps:
+only deadlines move; pad windows: zero effect; force probe
+2→0 at 2.2B: exits permanently → 800M new-phase steps, no fault
+(splash unchanged, DVD tail still frozen — next gate).
+
+**Verdict:** waiting on the final chunk's async completion that
+never arrives — prime suspect user-mode completion delivery
+(APC/producer wakeup) for the refill read, not DVD serving.
+**Next:** thread/APC observability for the pending op on
+`0x80C6C800`; windowed break-log on `0x2AA65` (~1.9B) to capture
+the refill issue; implement the missing completion delivery.
+Longer runs ruled out (frozen 2→3B).
+
 ## 79. §76 probes executed: submenu state-proven/pixel-negative, idx0 unreachable, DVD auto-boots (2026-10-12)
 
 Prebuilt Release CLI as-is, firmware/HDD read-only (in-memory COW),

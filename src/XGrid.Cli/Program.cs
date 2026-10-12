@@ -955,6 +955,11 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes} " +
             $"regs:{TopOffsets(machine.Net.RegReadCounts)} wr:{TopOffsets(machine.Net.RegWriteCounts)}");
         Console.WriteLine(
+            $"NVNET tx_pkts={machine.Net.TxPackets} tx_bytes={machine.Net.TxBytes} kicks={machine.Net.TxKicks} cant_tx={machine.Net.CantTransmitCount} " +
+            $"tx base=0x{machine.Net.TxRingBaseAddress:X8} cur=0x{machine.Net.TxRingCurrentAddress:X8} next=0x{machine.Net.TxRingNextAddress:X8} " +
+            $"rx base=0x{machine.Net.RxRingBaseAddress:X8} cur=0x{machine.Net.RxRingCurrentAddress:X8} next=0x{machine.Net.RxRingNextAddress:X8} " +
+            $"irq={machine.Net.InterruptAsserted} asserts={machine.Net.IrqAsserts} deasserts={machine.Net.IrqDeasserts}");
+        Console.WriteLine(
             $"USB0 acc={machine.Usb0.RegisterAccesses} irq={machine.Usb0.InterruptAsserted} " +
             $"ctl={machine.Usb0.ControlTransfers} intr={machine.Usb0.InterruptTransfers} addr={machine.Usb0.DeviceAddress} " +
             $"cfg={machine.Usb0.Function?.Configured} chead=0x{machine.Usb0.ControlHead:X8} hcca=0x{machine.Usb0.Hcca:X8} " +

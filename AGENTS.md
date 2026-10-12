@@ -183,24 +183,27 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   + oD0 NaN->1. Fog + dependent/bump/dot texture modes merged (§78);
   remaining: fixed-function foggen, exotic modes, HILO, backends.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 940 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 956 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — visible menu.
 
-1. §76 probes EXECUTED (§79): submenu state-100 is STATE-PROVEN
-   (`0x1E420`@972M, `FC0→0x5E4560`, sel reset, no load) but PIXEL-NEGATIVE
-   (black-identical thru 1.6B); idx0 XBMC UNREACHABLE (D-pad clamps
-   {1..5}, loader never fired); DVD auto-boots past the menu to the EA
-   splash (non-black frame, `0x890000`). Next: `--pgraph` method-stream
-   diff submenu-vs-neutral (guest clip vs rasterizer gap) + trace the DVD
-   auto-launch path (≤760M `--dvd` boot). Pad-timing rule: `+hold` ≥6M
-   (1M momentary presses phase-miss).
-   007: limiter exited via temp `[AFE34]=2` (reverted); game parks in a
-   SECOND wait (`0x26AE0` table scan) and never polls (§80 — GetState
-   `0x602F7` fires 4× init-only, open never called; no device fix).
-   nvnet packet-engine design done (§81: RAM descriptor rings, KICK/IRQ
-   semantics, P0–P3 build plan) — ready for a build wave.
+1. pgraph verdict GUEST-ACCURATE (§82): submenu adds real draws (+139
+   tris, +98K elements) but all die in vertex clip on byte-identical
+   poisoned C0 — no rasterizer gap. Fault is upstream in the viewport
+   bake (driver emits Z=16.7M from sane MinZ=0/MaxZ=1): audit
+   surface/zeta/caps responses at SetViewport-bake time. DVD auto-launch
+   TRACED (§83): handoff step 537,926,130 via `call [0x10128]` (same
+   gate as §34) → game entry `0x22E35`; decision is file-path based
+   (`D:\default.xbe` vs `C:\` fallback); `0xAD` IS requested once
+   (§66 correction). Trace/break worlds diverge ~100M steps
+   (chunk-sensitive Advance) — use break-world steps for exactness.
+   007 second wait DECODED (§85): parked STRM (`remaining=0 state=2`,
+   zero writes 1.8B→3B), exit needs `MPCh` magic or `0x2A830` — suspect
+   user-mode completion delivery (APC/producer wakeup). Next: 0x2AA65
+   windowed break-log (~1.9B) + thread/APC observability.
+   nvnet P0+P1 MERGED (§84: ring latches, IRQ4, TX walker + loopback;
+   956 tests). P2 RX + P3 backend remain.
 2. NV2A fog + dependent/bump/dot modes MERGED (§78: SET_FOG_COLOR/MODE/
    PARAMS, oFog varying, LINEAR/EXP/EXP2 equations; DPNDNT_AR/GB,
    DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]; disabled draws
