@@ -310,8 +310,9 @@ public sealed class Nv2aExoticTexModesTests
         WriteTriangle(memory);
 
         // 4x2 linear A8R8G8B8 flat texture; direction (1, 0.5, 0) remaps to
-        // (u, v) = (0, 0.5) -> texel (0, 1) at pitch 16.
-        memory.WritePhysical(0x4000u + 16u, 0xFF0F0F0Fu);
+        // (u, v) = (0, 0.5) in texel units -> texel (0, 0) (LU_IMAGE formats
+        // take texel-unit coordinates; see research-notes §95).
+        memory.WritePhysical(0x4000u, 0xFF0F0F0Fu);
 
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
@@ -399,9 +400,10 @@ public sealed class Nv2aExoticTexModesTests
         // Stage 0 samples a white 1x1 texel (input for the dots), stage 2 is
         // DOT_RFLCT_DIFF on a 4x4 linear texture. dot1 = 0.5 (oT1 . white),
         // dot2 = 0.25, dot2_n = 0.25 (oT3 . white) -> n = (0.5, 0.25, 0.25)
-        // -> remap (u, v) = (-0.5, 0.5), pitch 16 -> texel (2, 2) at +40.
+        // -> remap (u, v) = (-0.5, 0.5); LU_IMAGE texel-unit coords wrap
+        // x = floor(-0.5) -> 3, y = floor(0.5) -> 0, pitch 16 -> texel (3, 0) at +12.
         memory.WritePhysical(0x4000u, 0xFFFFFFFFu);
-        memory.WritePhysical(0x4200u + 40u, 0xFF123456u);
+        memory.WritePhysical(0x4200u + 12u, 0xFF123456u);
 
         uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0);
         uint[] tex0 = Insn(mac: MacMov, aMux: MuxV, v: 1, outMask: 0xF, outAddress: 9);
@@ -472,8 +474,9 @@ public sealed class Nv2aExoticTexModesTests
     private static void PushHiloDotDraw(Nv2AMmio nv2A, ArrayMemory memory, uint dotMap)
     {
         // Stage 0 samples the 1x1 HILO source texel 0xFF000000 (a=255, rgb=0),
-        // stage 1 DOTPRODUCT dots (0,0,1) against the mapped texel, stage 2
-        // DOT_ST samples the 2-wide texture at (dot1, 0).
+        // stage 1 DOTPRODUCT dots (0,0,2) against the mapped texel (c1.z = 2 so
+        // the texel-unit dot reaches the second texel), stage 2 DOT_ST samples
+        // the 2-wide texture at (dot1, 0).
         WriteTriangle(memory);
         memory.WritePhysical(0x4000u, 0xFF000000u);
         memory.WritePhysical(0x4200u, 0xFF000000u);
@@ -507,7 +510,7 @@ public sealed class Nv2aExoticTexModesTests
         pushes.Add((0x0B8Cu, F(1f)));
         pushes.Add((0x0B90u, F(0f)));
         pushes.Add((0x0B94u, F(0f)));
-        pushes.Add((0x0B98u, F(1f)));
+        pushes.Add((0x0B98u, F(2f)));
         pushes.Add((0x0B9Cu, F(1f)));
         pushes.Add((0x0BA0u, F(0f)));
         pushes.Add((0x0BA4u, F(0f)));
@@ -535,7 +538,7 @@ public sealed class Nv2aExoticTexModesTests
     public void Draw_HiloHemisphereGenericSelectsSecondTexel()
     {
         // texel 0xFF000000: hi = 0xFF00 -> -0.0078, lo = 0 -> z ~= 1.
-        // dot((0,0,1), (-0.0078, 0, 1)) = 1 -> texel 1 (green). Map 5 (D3D)
+        // dot((0,0,2), (-0.0078, 0, 1)) ~= 2 -> texel 1 (green). Map 5 (D3D)
         // decodes hi to +0.992 with z = 0 instead, giving dot 0 -> texel 0.
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         PushHiloDotDraw(nv2A, memory, 0x07u);
