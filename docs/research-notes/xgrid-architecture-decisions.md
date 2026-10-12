@@ -2705,3 +2705,66 @@ prove zero-open vs the dashboard `0x76A1F` pattern; run past the
 limiter (scale pump/tick or patch `[AFE34]`/delta at `0x207C0`)
 and only then re-test `--pad` visibility. Do not build psh/nvnet
 scope for this.
+
+## 78. NV2A fog state + dependent/bump/dot texture modes (2026-10-12)
+
+Reference facts (`References/xemu-0.8.136`, `nv2a_regs.h` + `pgraph/`
+`pgraph.c` + `glsl/psh.c` + `glsl/vsh.c` + `glsl/vsh-prog.c` +
+`psh_regs.h`; reimplemented scalar, never copied):
+
+- **Fog methods**: `SET_FOG_MODE 0x29C` (values `0x2601/0x800/0x801/`
+  `0x802/0x803/0x804` -> LINEAR/EXP/EXP2/EXP_ABS/EXP2_ABS/LINEAR_ABS,
+  i.e. CONTROL_3 ids 0/1/3/5/7/4), `SET_FOG_GEN_MODE 0x2A0` (stored;
+  fixed-function distance is a follow-up), `SET_FOG_ENABLE 0x2A4`
+  (bit 0), `SET_FOG_COLOR 0x2A8` (ABGR-packed: R bits 0-7), and
+  `SET_FOG_PARAMS 0x9C0` x3 float words (first two = fogParam.x/y;
+  third stored).
+- **Fog equation** (`vsh.c`): distance = oFog.x (programmable path;
+  disabled -> factor path unused). LINEAR: `px + d*py - 1`;
+  EXP: `px + exp2(d*py*16) - 1.5`; EXP2: `px + exp2(-d*d*py*py*32)
+  - 1.5`; ABS variants take `|f|`; infinite distance -> 1, NaN
+  result -> 1. Per-vertex factor is interpolated, then the pixel
+  shader feeds `pFog = (fogColor.rgb, clamp(factor,0,1))` into the
+  FOG register (`psh.c:1074`). Fog-disabled draws keep the
+  established fixed `(0,0,0,1)` input (deliberate deviation from
+  xemu's `vec4(1.0)`, preserves the disabled-combiner invariant).
+- **oFog varying**: output register 5 (`OUTPUT_REG_FOG`,
+  `vsh-prog.c:212`). Masked components fill oFog.x,y,z,w in x,y,z,w
+  significance order (the `fog_mask_str` table); only .x is consumed
+  downstream (`vtxFog = oFog.x`).
+- **Texture modes** (`psh_regs.h` enum, `psh.c` texel block):
+  `0x0F DPNDNT_AR` (uv = prev.a,prev.r), `0x10 DPNDNT_GB` (uv =
+  prev.g,prev.b) with stage-1 fixed to texel 0 and stages 2-3 from
+  SHADERCTL bits 16-19/20-23; `0x11 DOTPRODUCT` / `0x0A DOT_ZW`
+  (texel zero, dot stored for the chain); `0x09 DOT_ST` (sample at
+  (prevDot, thisDot)); `0x0D DOT_STR_3D` stage 3 only (sample 2D at
+  (dot1, dot2)); `0x06 BUMPENVMAP` (`dsdt = (sign3(b), sign3(g))`,
+  offset by the 2x2 bump matrix, then sample); `0x07 BUMPENVMAP_LUM`
+  (additionally `t *= scale*lum + offset`, lum = prev.r).
+- **Dot maps** (`DOT_RGBMAPPING 0x1E74`, low 12 bits, 4 bits per
+  stage 1-3): 0 identity, 1 D3D `sign1` ((x*255-128)/127), 2 GL
+  `sign2`, 3 `sign3` ((x>=128 ? x-256 : x)/127 with x*255);
+  HILO 4-7 fall back to identity with a count. Bump always takes
+  the unsigned `sign3` path (no SNORM textures exist here).
+- **Bump registers**: texture-slot offsets `0x28/0x2C/0x30/0x34`
+  (matrix words in 00,01,11,10 method order per the reference
+  swizzle, stored canonically m00,m01,m10,m11), `0x38` scale,
+  `0x3C` offset; slot 0 writes discarded (matches the reference
+  `slot < 16 / slot == 0` guards).
+- **Degradation rule**: PROJECT3D/CUBEMAP/CLIPPLANE/BRDF/reflection
+  modes, reserved `0x13-0x1F`, and valid modes in invalid stages all
+  resolve to NONE `(0,0,0,1)` and count `TexModeFallbacks`
+  (diagnostic property alongside `FogStateDebug`).
+- **Validation**: 17 new tests (`Nv2aFogTexModesTests`): fog-mask
+  order, factor equations (linear/exp/exp2/abs/inf/NaN), SHADERCTL
+  decode, sign functions, stage-validity table, fog-disabled black
+  (`0xFF000000`, identical to the pre-change fixed input),
+  fog-enabled red (`0xFFFF0000`, LINEAR f = 1.25+0.25*0-1 = 0.25),
+  DPNDNT_AR black vs DPNDNT_GB white (order-discriminating pair),
+  DOTPRODUCT zero, HILO fallback count, DOT_ST green, DOT_STR_3D
+  blue, BUMPENVMAP red, BUMPENVMAP_LUM `0xFF808080`, reserved-mode
+  fallback count. Full suite 940 green (923 + 17); existing goldens
+  (`0xFF445566`, `0xFF202020`) bit-identical.
+- **Remains**: fixed-function foggen distances (SPEC_ALPHA/RADIAL/
+  PLANAR/ABS_PLANAR/FOG_X + FOG_COORD attr), cubemap/reflection/
+  project3d/clipplane/BRDF modes, HILO dot maps, clipRange, backends.

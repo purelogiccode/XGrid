@@ -1290,9 +1290,16 @@ rasterization is still unproven. **Register combiner (psh) merged
 `0x1E60`, SHADER_STAGE_PROGRAM `0x1E70`, DOT_RGBMAPPING `0x1E74`,
 OTHER_STAGE_INPUT `0x1E78` — correcting the brief's 0x1940 range,
 which is inline vertex data), stage/final evaluation with
-combiner-disabled draws pixel-identical. Remaining: dependent/bump/
-dot texture modes, fog state, oPos.z clipRange normalization, then
-a menu screen that actually draws.
+combiner-disabled draws pixel-identical. **Fog + dependent/bump/dot
+modes done (§78, wave/nv2a-fog-tex):** SET_FOG_COLOR/MODE/GEN/ENABLE/
+PARAMS, oFog varying with fog_mask order, per-vertex LINEAR/EXP/EXP2
+(+ABS) factor into the FOG register (disabled stays `(0,0,0,1)`);
+DPNDNT_AR/GB, DOTPRODUCT/DOT_ST/DOT_ZW/DOT_STR_3D, BUMPENVMAP[_LUM]
+with dot-map/sign decode and bump matrix/scale/offset; unknown modes
+degrade to NONE with `TexModeFallbacks`. Remaining: fixed-function
+foggen, cubemap/reflection/project3d/clipplane/BRDF modes, HILO dot
+maps, oPos.z clipRange normalization, then a menu screen that
+actually draws.
 
 Gap 5 — USB/OHCI + controller input (Phase 13) [DONE 2026-10-11]. The
 OHCI host controller (`OhciUsbController`, §36/§54) plus the

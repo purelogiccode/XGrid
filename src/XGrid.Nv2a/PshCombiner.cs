@@ -6,12 +6,15 @@ namespace XGrid.Nv2a;
 /// NV2A register-combiner (pixel shader) stage for the software rasterizer.
 /// Semantics follow xemu <c>hw/xbox/nv2a/pgraph/glsl/psh.c</c> (input/output
 /// word decode, input mappings, AB/CD multiply vs dot-product, MUX select on
-/// r0.a, output mappings, r0 init, V1R0_SUM / EF_PROD, final-combiner lerp)
+/// r0.a, output mappings, r0 init, V1R0_SUM / EF_PROD, final-combiner lerp,
+/// texture-mode texel resolution, dot-map decoding, bump/time/dependent math)
 /// with state layout from <c>nv2a_regs.h</c> (NV097_SET_COMBINER_* methods)
 /// and <c>psh_regs.h</c> (PS_* enums). Facts only; no reference code is copied.
-/// Out of scope (left as follow-ups): dependent/bump/dot texture modes
-/// (sampled as NONE), fog register (fixed input), specular fog factor beyond
-/// the final constant pair.
+/// The FOG register value itself is supplied per fragment by the caller
+/// (fog color + interpolated fog factor); see <c>Nv2aMmio</c> fog state.
+/// Out of scope (left as follow-ups): cubemap/reflection/project3d/clipplane/
+/// BRDF texture modes (sampled as NONE with a diagnostic count), HILO dot maps
+/// (fall back to identity), fixed-function fog-coordinate generation.
 /// </summary>
 public sealed class PshCombiner
 {
@@ -78,6 +81,35 @@ public sealed class PshCombiner
     /// <summary>Texture mode: pass the interpolated coords through as the texel.</summary>
     public const int TexModePassthru = 0x04;
 
+    /// <summary>Texture mode: sample with the previous stage's texel as coords (AR).</summary>
+    public const int TexModeDpndntAr = 0x0F;
+
+    /// <summary>Texture mode: sample with the previous stage's texel as coords (GB).</summary>
+    public const int TexModeDpndntGb = 0x10;
+
+    /// <summary>Texture mode: dot of coords and mapped texel; texel is zero.</summary>
+    public const int TexModeDotProduct = 0x11;
+
+    /// <summary>Texture mode: offset coords by the bump matrix, then sample.</summary>
+    public const int TexModeBumpEnvMap = 0x06;
+
+    /// <summary>Texture mode: bump-offset sample, then scale by luminance.</summary>
+    public const int TexModeBumpEnvMapLum = 0x07;
+
+    /// <summary>Texture mode: sample at (previous dot, this dot).</summary>
+    public const int TexModeDotSt = 0x09;
+
+    /// <summary>Texture mode: dot only; texel is zero (depth write in hardware).</summary>
+    public const int TexModeDotZw = 0x0A;
+
+    /// <summary>Texture mode: sample at (dot1, dot2) of the dot chain.</summary>
+    public const int TexModeDotStr3D = 0x0D;
+
+    // Remaining modes (0x02 PROJECT3D, 0x03 CUBEMAP, 0x05 CLIPPLANE, 0x08 BRDF,
+    // 0x0B/0x0C/0x0E/0x12 reflection variants, 0x13-0x1F reserved) need
+    // cubemap/3D-clip machinery absent from the software rasterizer and
+    // degrade to NONE with a diagnostic count kept by the caller.
+
     /// <summary>Per-stage RGB input words (SET_COMBINER_COLOR_ICW).</summary>
     public uint[] RgbInputs { get; } = new uint[MaxStages];
 
@@ -105,10 +137,10 @@ public sealed class PshCombiner
     /// <summary>Packed per-stage texture modes, 5 bits each (SET_SHADER_STAGE_PROGRAM).</summary>
     public uint StageProgram { get; set; }
 
-    /// <summary>Dot-map low 12 bits of SHADERCTL (SET_DOT_RGBMAPPING). Stored, unused.</summary>
+    /// <summary>Dot-map low 12 bits of SHADERCTL (SET_DOT_RGBMAPPING).</summary>
     public uint DotRgbMapping { get; set; }
 
-    /// <summary>Dependent-texture select bits 12-27 of SHADERCTL (SET_SHADER_OTHER_STAGE_INPUT). Stored, unused.</summary>
+    /// <summary>Dependent-texture select bits 12-27 of SHADERCTL (SET_SHADER_OTHER_STAGE_INPUT).</summary>
     public uint OtherStageInput { get; set; }
 
     /// <summary>Final-combiner RGB inputs A/B/C/D (SET_COMBINER_SPECULAR_FOG_CW0).</summary>
@@ -145,6 +177,129 @@ public sealed class PshCombiner
     public int DecodeTexMode(int stage)
     {
         return (int)((StageProgram >> (stage * 5)) & 0x1Fu);
+    }
+
+    /// <summary>
+    /// Decodes the dot-map for the given stage. Stage 0 is fixed to
+    /// ZERO_TO_ONE; stages 1-3 come from the low 12 bits of SHADERCTL
+    /// (4 bits each), matching xemu's <c>ps.dot_map</c> setup.
+    /// </summary>
+    public int DecodeDotMap(int stage)
+    {
+        return stage switch
+        {
+            1 => (int)(DotRgbMapping & 0xFu),
+            2 => (int)((DotRgbMapping >> 4) & 0xFu),
+            3 => (int)((DotRgbMapping >> 8) & 0xFu),
+            _ => 0,
+        };
+    }
+
+    /// <summary>
+    /// Decodes the dependent-texture input stage: stage 1 always reads
+    /// stage 0, stages 2-3 read SHADERCTL bits 16-19 / 20-23, matching
+    /// xemu's <c>ps.input_tex</c> setup. Stage 0 has no input (-1).
+    /// </summary>
+    public int DecodeInputTex(int stage)
+    {
+        return stage switch
+        {
+            1 => 0,
+            2 => (int)((OtherStageInput >> 16) & 0xFu),
+            3 => (int)((OtherStageInput >> 20) & 0xFu),
+            _ => -1,
+        };
+    }
+
+    /// <summary>
+    /// Gets whether the dot map is implemented (0-3). Maps 4-7 (HILO
+    /// family) fall back to identity; the caller counts the fallback.
+    /// </summary>
+    public static bool IsSupportedDotMap(int map)
+    {
+        return map is >= 0 and < 4;
+    }
+
+    /// <summary>
+    /// Applies a dot-map to an unsigned [0,1] texel, producing the vec3 the
+    /// dot modes dot against the interpolated coords. Maps 0-3 follow the
+    /// reference sign functions; maps 4-7 fall back to identity.
+    /// </summary>
+    public static void ApplyDotMap(int map, float r, float g, float b, out float x, out float y, out float z)
+    {
+        switch (map)
+        {
+            case 1:
+                x = Sign1(r);
+                y = Sign1(g);
+                z = Sign1(b);
+                break;
+            case 2:
+                x = Sign2(r);
+                y = Sign2(g);
+                z = Sign2(b);
+                break;
+            case 3:
+                x = Sign3(r);
+                y = Sign3(g);
+                z = Sign3(b);
+                break;
+            default:
+                x = r;
+                y = g;
+                z = b;
+                break;
+        }
+    }
+
+    /// <summary>D3D signed decode (xemu <c>sign1</c>): (x*255-128)/127.</summary>
+    public static float Sign1(float x)
+    {
+        return ((x * 255f) - 128f) / 127f;
+    }
+
+    /// <summary>OpenGL signed decode (xemu <c>sign2</c>).</summary>
+    public static float Sign2(float x)
+    {
+        float scaled = x * 255f;
+        return scaled >= 128f ? (scaled - 255.5f) / 127.5f : (scaled + 0.5f) / 127.5f;
+    }
+
+    /// <summary>Plain signed decode (xemu <c>sign3</c>), also used for bump offsets.</summary>
+    public static float Sign3(float x)
+    {
+        float scaled = x * 255f;
+        return scaled >= 128f ? (scaled - 256f) / 127f : scaled / 127f;
+    }
+
+    /// <summary>Luminance companion of <see cref="Sign3"/> (xemu <c>sign3_to_0_to_1</c>).</summary>
+    public static float Sign3To01(float x)
+    {
+        return x >= 0f ? x / 2f : 1f + (x / 2f);
+    }
+
+    /// <summary>
+    /// Gets whether a texture mode is valid in the given stage, per the
+    /// stage column of the reference PS_TEXTUREMODES table. Invalid
+    /// stage/mode pairs degrade to NONE with a diagnostic count.
+    /// </summary>
+    public static bool IsModeValidForStage(int mode, int stage)
+    {
+        return mode switch
+        {
+            TexModeNone => true,
+            TexModeProject2D => true,
+            TexModePassthru => true,
+            TexModeBumpEnvMap => stage is >= 1 and <= 3,
+            TexModeBumpEnvMapLum => stage is >= 1 and <= 3,
+            TexModeDotSt => stage is 2 or 3,
+            TexModeDotZw => stage is 2 or 3,
+            TexModeDpndntAr => stage is >= 1 and <= 3,
+            TexModeDpndntGb => stage is >= 1 and <= 3,
+            TexModeDotProduct => stage is 1 or 2,
+            TexModeDotStr3D => stage == 3,
+            _ => false,
+        };
     }
 
     /// <summary>
