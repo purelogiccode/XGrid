@@ -3515,3 +3515,61 @@ splash/streaming loop (`EIP=0x13894`, `ESI/EDI=0`, `EBP=2`,
 frames stall, no input polling, DVD frozen). `0x602F7` never
 reached. Further unblock needs decoding the `0x138xx` wait, not
 STRM.
+
+## 93. Scene-proof verdict: layout is the RIGHT scene, color is broken (textured-RGB-zero bug) (2026-10-12)
+
+Verdict mission in `Temp\opencode\worktrees\scene-proof`
+(`wave/scene-proof`, clean, no commit — analysis only). Worktree
+Release CLI, firmware read-only, HDD COW-verified read-only; logs/BMPs
+in `Temp\opencode\scene-proof\`. Recipe confirmed live post-everything
+(both HITs at the exact established steps; submenu SHA `CC9D82DC…`
+reproduced exactly).
+
+**Correction to §87:** `nonzero` counts any nonzero BGRA byte — 99%
+of the 57K nonzero pixels are **RGB=(0,0,0) with nonzero alpha**, so
+the frame is still visually black. "First non-black frame" meant
+first alpha-bearing frame.
+
+**Right-layout evidence:** neutral SHA `7db7b642…` vs submenu
+`cc9d82dc…` — DIVERGE now (were identical pre-fix). Full-BGRA diff:
+10,345 px (3.37%), ALL alpha-only (RGB-change = 0), confined to
+y=320–459 (list area); above y=320 pixel-identical (stable header).
+Alpha carries an antialiased image (65/39 distinct values, no
+NaN/garbage); row-ink profile proves different lists (neutral narrow
+strip y320–340 + block y364–404; submenu wide block y380–404);
+ASCII render shows identical header text (y20–210) + different
+centered panel/rows — glyph-like blocks, highlight-bar-scale rows,
+coherent rects, no triangle storms. RGB palette: 4 colors total
+(black + 1px steel-blue column at x=0, full height).
+
+**Precise bug pointer (unfixed):** textured-draw RGB is dropped while
+alpha/coverage survives — every UI quad (background, glyphs, panels)
+lands RGB=0 + structured alpha, while ONE untextured draw (the x=0
+blue column, RGB ~52,109,165) keeps full color. So the RGB write path
+works and the fault is draw-dependent. Prime suspect: texture-sample
+RGB returning 0 with alpha intact (M6 swizzle/decode or combiner
+diffuse×texture modulation) — not a global color-mask/blend-zero
+(those would kill the blue column too). Secondary: background
+alpha=0 over 250K px suggests the clear color itself may be
+(0,0,0,0). **Next:** fix textured-RGB-zero, re-run this exact two-boot
+recipe — success = BMPs differ in RGB with readable colored UI. The
+alpha channel is meanwhile a valid layout oracle: any RGB fix must
+preserve these alpha structures pixel-for-pixel.
+
+## 94. 007 EOS quirk merged; game reaches the 0x138xx next gate (2026-10-12)
+
+`wave/007-eos-quirk` merged (§92: `SevenEosQuirk.cs` pure predicate —
+TitleId `0x4541000D` + STRM magic + handle linkage + remaining 0 +
+state 2 + staged MPCh + unlinked current + 10M-step stability, fires
+once; effect = single dword `STRM+0x44` 2→0, exactly the §85
+force-probe; waiter exits via its own (b) path, never touches EIP;
+default-on with `--no-007-eos-quirk` opt-out; CLI counters/log;
+22 tests). Gate is dashboard-safe (TitleId can never match).
+Validated live: quirk-off repro confirms the park (EIP `0x26B44`,
+frames stall at 84); quirk-on fires at 2B (`checks=45775 fires=1`),
+state persists, EBP handle→2, EIP `0x13894`, **no fault over 1B
+post-fire** — but frames 84→85 stall: the game parks in the
+`0x138xx` splash/streaming loop (`ESI/EDI=0`, no input polling,
+DVD frozen, splash full-white). The STRM gate is behind us; the
+next gate is decoding the `0x138xx` wait. Full suite 1034/1034
+(993 + 8 ZCLIP + 11 foggen/HILO + 22 EOS).
