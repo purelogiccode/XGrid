@@ -3343,7 +3343,13 @@ but guests always program the bounds before 3D (dashboard writes
 identical and keeps every existing golden bit-exact by construction.
 (2) Only the clamp path is modeled; the CULL/discard variant needs
 `ZCOMPRESSOCCLUDE` state that no Kelvin method currently feeds —
-follow-up if a guest ever uses occlusion cull. (3) The F16 encoder
+follow-up if a guest ever uses occlusion cull. **[Corrected in §95:**
+the Kelvin method exists — `NV097_SET_ZMIN_MAX_CONTROL` = `0x1D78`
+feeds `ZCOMPRESSOCCLUDE.ZCLAMP_EN`, the dashboard programs it live
+(`0x1D78 = 1` → CULL), and xemu's behavior is a **per-fragment
+discard** (not primitive culling). §95 implements it; §90's live run
+was clamp-only and therefore painted 21,526 far-plane fragments that
+the CULL path now discards (final frame unchanged).**] (3) The F16 encoder
 saturates at `0xFFF8`: the raw inverse reaches `0xFFFF` at 1.0, which
 xemu's own decode maps back to a *negative* float (bit-add wraps past
 `0x80000000`); `0xFFF8` is the largest field decoding sane (511.5),
@@ -3573,3 +3579,103 @@ post-fire** — but frames 84→85 stall: the game parks in the
 DVD frozen, splash full-white). The STRM gate is behind us; the
 next gate is decoding the `0x138xx` wait. Full suite 1034/1034
 (993 + 8 ZCLIP + 11 foggen/HILO + 22 EOS).
+
+## 95. ZCLIP CULL (per-fragment discard) + exact-1.0 fixed zeta encode (2026-10-12)
+
+Work in `Temp\opencode\worktrees\nv2a-zclip-cull` (`wave/nv2a-zclip-cull`).
+Closes the two follow-ups left open by §90. **The §90 follow-up
+phrasing was wrong on two counts** (record corrected in §90 deviation
+(2)): (a) a Kelvin method *does* feed the CULL/CLAMP state —
+`NV097_SET_ZMIN_MAX_CONTROL` = `0x1D78`; (b) xemu has **no
+primitive-level ZCLIP culling at all** (no `clip_rect`, no draw.c
+use) — the "cull" is a per-fragment `discard` in the fragment shader.
+An exhaustive search of xemu for `zclip|clip_min|clip_max|CLIP_MIN|
+clip_rect|depth_clipping` confirms psh.c is the only consumer.
+
+**Reference facts extracted (no code copied).** `nv2a_regs.h:1270-1273`:
+`NV097_SET_ZMIN_MAX_CONTROL` = `0x1D78`, `ZCLAMP_EN` mask `0xF0`,
+CULL = 0, CLAMP = 1. `nv2a_regs.h:638-641`:
+`NV_PGRAPH_ZCOMPRESSOCCLUDE` = `0x1A84`, `ZCLAMP_EN` = bit 4, CULL 0 /
+CLAMP 1. `pgraph.c:2867-2885`: the method writes the masked field onto
+`ZCOMPRESSOCCLUDE`; reserved values hit a debug `assert(!"Invalid
+zclamp value")` (release: no-op). `nv2a.c:301` memsets all pgraph regs
+to zero, so the reset mode is **CULL**. `glsl/psh.c:89-92`:
+`depth_clipping = ZCLAMP_EN == CULL`; `psh.c:1058-1067`: CULL is
+`if (zvalue < clipRange.z || clipRange.w < zvalue) discard;` and CLAMP
+is `zvalue = clamp(zvalue, clipRange.z, clipRange.w);` — bounds are
+inclusive, and the section runs at the top of the shader, before alpha
+test and independent of depth-test enable (a discard kills color too).
+`psh.c:1491-1499` is the D24 store comment: `floor(zvalue)` device
+units are written via `uintBitsToFloat(floatBitsToUint(floor(z) /
+16777216.0) + 1u)` ("plus one bit" reproduces `/16777215` under GPU
+multiply rounding); at `z = clipRange.w` that stores 1.0 = field
+`0xFFFFFF`. The float-depth branch carries the only nearby TODO
+(`psh.c:1515`, already handled in §90).
+
+**XGrid mapping (`src/XGrid.Nv2a/Nv2aMmio.cs`).** New method `0x1D78`
+(`MethodZminMaxControl`): masked value 0 → `_zclipCull = true`,
+`0x10` → false, anything else leaves the mode untouched (reference
+debug-assert/release no-op). `_zclipCull` resets **true** (xemu's
+zeroed `ZCOMPRESSOCCLUDE`). `ApplyZclip` becomes
+`bool ApplyZclip(ref float depth, uint zetaBytes)`: out-of-bounds
+CULL mode counts `ZclipCulledPixels` and returns false (caller
+discards before any write); CLAMP mode is the §90 clamp path. It is
+now called at the **top of `ProcessFragment`**, before alpha test and
+regardless of depth-test enable, matching the shader's section order —
+so CULL discards color-only draws exactly like the reference. Bounds
+unprogrammed still means passthrough (§90 deviation (1) unchanged).
+
+**Exact-1.0 fixed-encode overflow (fixed).** XGrid's pre-existing
+fixed path rounds normalized depth: `(uint)(1.0 * 16777215 + 0.5)`;
+the `+0.5` rounds 16777215.5 up to 16777216 (round-half-even at
+ULP = 1), and the `<< 8` zeta pack shifts the overflow out, storing 0.
+`EncodeDepth24`/`EncodeDepth16` now cap at `0xFFFFFF`/`0xFFFF`
+(`ZetaFixedMax24/16`): 1.0 stores `0xFFFFFF00`, decodes back to
+normalized 1.0, and equals xemu's D24 store for `z = clipRange.w`.
+The D16 cap is a guard (65535.5 is exactly representable, so the D16
+overflow is unreachable). The pre-existing round-to-nearest encode is
+kept (not switched to xemu's floor) to preserve every golden; the fix
+only removes the wrap.
+
+**Deliberate deviations (logged).** (1) The mode stays CLAMP until
+`0x1D78` is first written, whereas xemu resets to CULL; the dashboard
+always writes it before drawing (`0x1D78 = 0x00000001`, ZCLAMP_EN
+nibble 0, i.e. CULL) so this only affects guests that program bounds
+but never the mode — same passthrough-until-programmed compromise as
+§90. (2) Clamp/discard still run on the normalized-space interpolated
+depth rather than xemu's device-space `vtxPos.z` (inherited ULP-level
+difference, §90). (3) A NaN depth is neither culled nor clamped
+(xemu's GLSL comparisons are also false for NaN).
+
+**Validation (in-worktree).** 5 `PgraphTransformTests` touched:
+`Zclip_AboveMaxClampsToMax`/`Zclip_BelowMinClampsToMin` now program
+CLAMP explicitly; `Zclip_DisabledPassthroughPreservesSaturation`
+renamed `Depth_ExactOneFixedEncodeStoresMaxWord` and now pins
+`0xFFFFFF00` (was pinning the bug's 0). 4 new:
+`Zclip_CullModeDiscardsAboveMax` (uses the dashboard's exact parameter
+`0x1D78 = 1`; no pixels, no depth test, zeta untouched, cull > 0),
+`Zclip_CullModeDiscardsBelowMin`, `Zclip_CullDiscardAppliesWithoutDepthTest`
+(color-only draw killed), `Zclip_ReservedZclampValueKeepsProgrammedMode`
+(reserved `0x20` is a no-op after CLAMP). Float-depth/Z16/Z24/ordering
+goldens unchanged. Nv2a suite 184/184; full suite **1038/1038**
+(1034 + 4); build + `dotnet format --verify-no-changes` clean.
+
+**Live boot (1B steps, §87 pad recipe + `--frame`/`--pgraph`, logs in
+`Temp\opencode\nv2a-zclip-cull-wave\`):** no fault, Halted=False,
+EIP `0x1E0F1` (bit-identical to §90's `boot2.log`), draws 33632,
+skipped 1402, textured 233381688, clears 695, blended 45302409,
+depth 136, frames/stalls 686, programLoad 12, constLoad 2 — all
+identical to §90. `zclip=0` (no clamps) as before; **`zclipCull=21526`**
+proves the new path live (pgraph shows `0 1D78 00000001` ×39 in the
+logged window, plus two `0394/0398 = 4B7FFFFF` degenerate
+[max, max] windows). pixels 118798338 → **118776812**, delta exactly
+−21526 = the newly discarded fragments §90's clamp-only model had
+painted. The presented frame is **byte-identical** to §90's:
+640×480, nonzero 57087, SHA256
+`CC9D82DCB9C5D4D2466ABA507AEF57CD4F2AB005300C39D1968C5C0978CFC441`.
+Frames/SHAs unchanged because the discarded far-plane fragments were
+depth-rejected or overpainted anyway — they were never visible.
+
+**Remains:** cubemap/reflection/project3d/clipplane/BRDF, HILO
+hemisphere 5-7, ZCLIP-CULL exact-1.0 corner done (this section),
+Vulkan/OpenGL backends.
