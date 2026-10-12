@@ -23,6 +23,7 @@ public static class VshProgram
     /// <summary>D3D scene constant correction (VSH_D3DSCM_CORRECTION).</summary>
     private const int D3DScmCorrection = 96;
     private const int AddressOutput = 15;
+    private const int FogOutput = 5;
 
     private enum Mac
     {
@@ -61,7 +62,7 @@ public static class VshProgram
     /// <param name="length">Number of valid instructions.</param>
     /// <param name="constants">Constant register file (192 entries of four floats).</param>
     /// <param name="inputs">Input registers v0..v15 (four floats each).</param>
-    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position, with xy truncated to 1/16 units and w clamped away from zero/infinity (shader epilogue).</param>
+    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position, with xy truncated to 1/16 units and w clamped away from zero/infinity (shader epilogue). o5 carries the fog distance (oFog.x significant; masked components fill x,y,z,w in significance order per the reference fog_mask_str table).</param>
     public static void Execute(
         uint[][] program,
         int length,
@@ -182,7 +183,15 @@ public static class VshProgram
             float[]? result = outMux == 0 ? macResult : iluResult;
             if (result is not null)
             {
-                WriteMasked(outputs[outAddress], result, outMask);
+                if (outAddress == FogOutput)
+                {
+                    WriteFogMasked(outputs[FogOutput], result, outMask);
+                }
+                else
+                {
+                    WriteMasked(outputs[outAddress], result, outMask);
+                }
+
                 if (outAddress == AddressOutput)
                 {
                     address = (int)outputs[outAddress][0];
@@ -414,6 +423,53 @@ public static class VshProgram
                 destination[i] = value[i];
             }
         }
+    }
+
+    /// <summary>
+    /// Writes a fog-register (oFog) result. Masked components, taken in
+    /// x,y,z,w significance order, fill oFog.x,y,z,w in order, so the most
+    /// significant masked component lands in oFog.x (the only component the
+    /// fog-distance equation reads). Mirrors the reference fog_mask_str table.
+    /// </summary>
+    private static void WriteFogMasked(float[] destination, float[] value, int mask)
+    {
+        int target = 0;
+        for (int i = 0; i < 4 && target < 4; i++)
+        {
+            if ((mask & (1 << i)) != 0)
+            {
+                destination[target++] = value[i];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Computes the per-vertex fog factor from the fog distance (oFog.x) and
+    /// the FOGPARAM pair, following the reference vertex-shader fog equations.
+    /// Mode ids match the CONTROL_3 encoding: 0 LINEAR, 1 EXP, 3 EXP2, 4
+    /// LINEAR_ABS, 5 EXP_ABS, 7 EXP2_ABS. Infinite distance yields 1, as does a
+    /// NaN result; unknown modes fall back to the linear equation.
+    /// </summary>
+    public static float FogFactor(int mode, float paramX, float paramY, float distance)
+    {
+        if (float.IsInfinity(distance))
+        {
+            return 1f;
+        }
+
+        float factor = mode switch
+        {
+            1 or 5 => paramX + (MathF.Pow(2f, distance * paramY * 16f) - 1.5f),
+            3 or 7 => paramX + (MathF.Pow(2f, -distance * distance * paramY * paramY * 32f) - 1.5f),
+            _ => paramX + (distance * paramY) - 1f,
+        };
+
+        if (mode is 4 or 5 or 7)
+        {
+            factor = MathF.Abs(factor);
+        }
+
+        return float.IsNaN(factor) ? 1f : factor;
     }
 
     private static void Multiply(float[] a, float[] b, float[] result)
