@@ -3647,3 +3647,38 @@ XGrid/
 |-- scripts/         (build/test/benchmark/format .ps1 and .sh)
 ```
 
+## Development velocity program (parallel track, unweighted)
+
+Tooling that pays for itself. These are NOT numbered phases (the 0–23
+weighting is untouched); each item ships when its acceptance test passes,
+on the same wave machinery as device work. Build them in order — each
+one multiplies every wave after it.
+
+**V1 — Execution snapshots & restore (highest ROI).** Start any probe AT
+a gate instead of replaying billions of steps to reach it. Acceptance:
+save/restore CPU+RAM+device state at an arbitrary step; a restore
+reproduces EIP/registers/flip counters exactly; a 007-gate probe runs in
+seconds, not minutes. Note: phases 19/22 cover product save states; V1
+is the internal forensic fast path — land V1 first, productize later.
+
+**V2 — Minimal XBE test-ROM suite.** 10-second iterations per device.
+Acceptance: tiny XBEs (nxdk/OpenXDK or hand-assembled), each exercising
+one device path with a self-checking ASSERT in the CLI log, each running
+<100M steps. Start with: NV2A textured quad, IDE READ DMA, pad GetState
+poll, APU voice-on/off.
+
+**V3 — Differential harness vs xemu.** Turn search into bisection.
+Acceptance: scripted early-boot state comparison at fixed steps (valid
+only pre-animation-wait, where xemu is a live oracle) + a checked-in
+frame-compare utility (RGB/alpha separation per `wave-visible/compare.py`).
+
+**Operating rules (mirrored in AGENTS.md, binding on wave agents):**
+scope every task to its acceptance test (subset beats general case);
+partition waves into independent streams (one device/area per agent);
+probe (read-only) vs build (worktree branch) agents; coordinator merges
+sequentially (`--no-ff`) and renumbers research notes; never parallelize
+a single root-cause hunt or a sequential gate chain; never fake a fix to
+meet a wave deadline. Compute note: emulation speed is the binding
+constraint — a faster machine / more cores beats more agents for
+validation latency.
+
