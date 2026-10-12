@@ -268,8 +268,11 @@ public sealed class Nv2aFogTexModesTests
     private static void PushTextureSlot(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes, int slot, uint offset, uint width, uint height)
     {
         uint slotBase = 0x1B00u + ((uint)slot * 0x40u);
+        uint format = 0x00000600u |
+                      ((uint)System.Numerics.BitOperations.Log2(width) << 20) |
+                      ((uint)System.Numerics.BitOperations.Log2(height) << 24);
         pushes.Add((slotBase, offset));
-        pushes.Add((slotBase + 0x04u, 0x00001200u));
+        pushes.Add((slotBase + 0x04u, format));
         pushes.Add((slotBase + 0x08u, 0x00000000u));
         pushes.Add((slotBase + 0x0Cu, 0x40000000u));
         pushes.Add((slotBase + 0x10u, width * 4u << 16));
@@ -611,7 +614,7 @@ public sealed class Nv2aFogTexModesTests
         WriteTriangle(memory, 0f);
         WriteUvs(memory, 0.5f, 0.5f);
         memory.WritePhysical(0x4000u, 0xFF0040BFu);
-        memory.WritePhysical(0x410Cu, 0xFFFF0000u);
+        memory.WritePhysical(0x4114u, 0xFFFF0000u);
 
         PushBumpDraw(nv2A, memory, luminance: false);
 
@@ -626,7 +629,7 @@ public sealed class Nv2aFogTexModesTests
         WriteTriangle(memory, 0f);
         WriteUvs(memory, 0.5f, 0.5f);
         memory.WritePhysical(0x4000u, 0xFF8040BFu);
-        memory.WritePhysical(0x410Cu, 0xFFFFFFFFu);
+        memory.WritePhysical(0x4114u, 0xFFFFFFFFu);
 
         PushBumpDraw(nv2A, memory, luminance: true);
 

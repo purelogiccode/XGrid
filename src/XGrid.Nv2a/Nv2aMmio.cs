@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using XGrid.Core.Devices;
@@ -438,6 +439,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly Dictionary<uint, int> _methodCounts = new();
     private readonly Dictionary<uint, uint> _methodParams = new();
     private readonly List<(uint Subchannel, uint Method, uint Parameter)> _methodStream = new();
+    private readonly long[] _textureFormatAttempts = new long[128];
+    private readonly long[] _textureFormatMisses = new long[128];
+    private readonly long[] _texModeFallbackByMode = new long[0x20];
+    private long _combinerRgbZeroFragments;
+    private long _combinerRgbZeroAlphaFragments;
+    private const int TextureStateCap = 512;
+    private readonly Dictionary<string, int> _textureStateIndex = new(StringComparer.Ordinal);
+    private readonly List<string> _textureStateKeys = new();
+    private readonly long[] _textureStateSamples = new long[TextureStateCap];
+    private readonly long[] _textureStateRgbZero = new long[TextureStateCap];
+    private readonly long[] _textureStateFallbacks = new long[TextureStateCap];
+    private readonly long[] _textureStateMisses = new long[TextureStateCap];
+    private readonly uint[] _textureStateFirstAddress = new uint[TextureStateCap];
+    private readonly uint[] _textureStateFirstTexel = new uint[TextureStateCap];
+    private readonly float[] _textureStateMinU = new float[TextureStateCap];
+    private readonly float[] _textureStateMaxU = new float[TextureStateCap];
+    private readonly float[] _textureStateMinV = new float[TextureStateCap];
+    private readonly float[] _textureStateMaxV = new float[TextureStateCap];
+    private int _currentTextureState;
 
     /// <summary>Creates the NV2A register window for the given RAM size in bytes.</summary>
     public Nv2AMmio(uint ramSize = 64u * 1024 * 1024, string name = "NV2A", IGpuMemory? memory = null)
@@ -534,8 +554,35 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     /// <summary>Gets the number of texels that fell back to NONE for an unimplemented mode or stage. Diagnostics.</summary>
     public ulong TexModeFallbacks { get; private set; }
 
+    /// <summary>Gets the number of texels that fell back to NONE per texture mode. Diagnostics.</summary>
+    public IReadOnlyDictionary<int, long> TexModeFallbacksByMode => SnapshotByIndex(_texModeFallbackByMode);
+
     /// <summary>Gets the number of dot-map applications that fell back to identity (HILO family). Diagnostics.</summary>
     public ulong UnsupportedDotMaps { get; private set; }
+
+    /// <summary>Gets the number of successful texture samples. Diagnostics.</summary>
+    public ulong TextureSampleSuccesses { get; private set; }
+
+    /// <summary>Gets the number of samples skipped because the texture stage was disabled. Diagnostics.</summary>
+    public ulong TextureSampleDisabled { get; private set; }
+
+    /// <summary>Gets the number of samples skipped because the texture size was zero. Diagnostics.</summary>
+    public ulong TextureSampleBadSize { get; private set; }
+
+    /// <summary>Gets the number of successful samples whose RGB decoded to zero. Diagnostics.</summary>
+    public ulong TextureSampleRgbZero { get; private set; }
+
+    /// <summary>Gets per-color-format texture sample attempts. Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, long> TextureFormatAttempts => Snapshot(_textureFormatAttempts);
+
+    /// <summary>Gets per-color-format texture sample misses (unsupported format). Diagnostics.</summary>
+    public IReadOnlyDictionary<uint, long> TextureFormatMisses => Snapshot(_textureFormatMisses);
+
+    /// <summary>Gets the number of combiner fragments whose output RGB was zero. Diagnostics.</summary>
+    public ulong CombinerRgbZeroFragments => (ulong)_combinerRgbZeroFragments;
+
+    /// <summary>Gets the number of combiner fragments whose output RGB was zero with nonzero alpha. Diagnostics.</summary>
+    public ulong CombinerRgbZeroAlphaPositiveFragments => (ulong)_combinerRgbZeroAlphaFragments;
 
     /// <summary>Gets the number of semaphore release writes performed. Diagnostics.</summary>
     public int SemaphoreReleases { get; private set; }
@@ -828,6 +875,28 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Array.Clear(_fogParams);
         TexModeFallbacks = 0;
         UnsupportedDotMaps = 0;
+        TextureSampleSuccesses = 0;
+        TextureSampleDisabled = 0;
+        TextureSampleBadSize = 0;
+        TextureSampleRgbZero = 0;
+        Array.Clear(_textureFormatAttempts);
+        Array.Clear(_textureFormatMisses);
+        Array.Clear(_texModeFallbackByMode);
+        _combinerRgbZeroFragments = 0;
+        _combinerRgbZeroAlphaFragments = 0;
+        _textureStateIndex.Clear();
+        _textureStateKeys.Clear();
+        Array.Clear(_textureStateSamples);
+        Array.Clear(_textureStateRgbZero);
+        Array.Clear(_textureStateFallbacks);
+        Array.Clear(_textureStateMisses);
+        Array.Clear(_textureStateFirstAddress);
+        Array.Clear(_textureStateFirstTexel);
+        Array.Clear(_textureStateMinU);
+        Array.Clear(_textureStateMaxU);
+        Array.Clear(_textureStateMinV);
+        Array.Clear(_textureStateMaxV);
+        _currentTextureState = 0;
         _inlineWords.Clear();
         _inlineElements.Clear();
         _inlineVertices.Clear();
@@ -2825,6 +2894,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             int vertexCount = _inlineWords.Count / (int)vertexWords;
             uint colorCount = (_vertexFormat[colorSlot] >> 4) & 0xFu;
             DrawsExecuted++;
+            EnterTextureState(false, -1, 0);
             switch (_beginMode)
             {
                 case BeginEndTriangles:
@@ -3111,6 +3181,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
         DrawsExecuted++;
         bool combinerActive = _combiner.FinalEnabled;
+        EnterTextureState(combinerActive, programStart, programLength);
         float[][] combinerConsts =
             combinerActive ? PshCombiner.BuildConsts(_combiner) : Array.Empty<float[]>();
         if (combinerActive)
@@ -3392,56 +3463,147 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         a = 1f;
         if (_memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
         {
+            TextureSampleDisabled++;
             return false;
         }
 
-        int width = (int)(_textureImageRect[slot] >> 16);
-        int height = (int)(_textureImageRect[slot] & 0xFFFFu);
+        uint color = (_textureFormat[slot] >> 8) & 0x7Fu;
+        _textureFormatAttempts[color]++;
+        bool linear = IsLinearTextureFormat(color);
+        int width;
+        int height;
+        if (linear)
+        {
+            // Linear formats are sized by the image rect (reference texture
+            // shape: rect_width/rect_height for kelvin linear formats).
+            width = (int)(_textureImageRect[slot] >> 16);
+            height = (int)(_textureImageRect[slot] & 0xFFFFu);
+        }
+        else
+        {
+            // Swizzled formats are sized by the power-of-two base size in the
+            // format word; the image rect does not apply to them (xemu
+            // pgraph_get_texture_shape uses 1 << BASE_SIZE_U/V when not linear).
+            width = 1 << (int)((_textureFormat[slot] >> 20) & 0xFu);
+            height = 1 << (int)((_textureFormat[slot] >> 24) & 0xFu);
+        }
+
         if (width <= 0 || height <= 0)
         {
+            TextureSampleBadSize++;
             return false;
         }
 
-        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(_textureAddress[slot] & 0xFu));
-        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((_textureAddress[slot] >> 4) & 0xFu));
-        uint color = (_textureFormat[slot] >> 8) & 0xFFu;
+        int uMode = (int)(_textureAddress[slot] & 0xFu);
+        int vMode = (int)((_textureAddress[slot] >> 4) & 0xFu);
+
+        // Linear (LU_IMAGE_*) formats address texels directly: the guest supplies
+        // texel-unit coordinates and the reference shader normalizes by the
+        // texture size (psh.c rect_tex norm). Swizzled (SZ_*) formats use
+        // normalized coordinates, as on the hardware.
+        int x = WrapCoordinate((int)MathF.Floor(linear ? u : u * width), width, uMode);
+        int y = WrapCoordinate((int)MathF.Floor(linear ? v : v * height), height, vMode);
+        TrackTextureCoords(x, y);
+
+        uint bytesPerTexel = TextureFormatBytesPerTexel(color);
+        if (bytesPerTexel == 0)
+        {
+            _textureFormatMisses[color]++;
+            _textureStateMisses[_currentTextureState]++;
+            return false;
+        }
+
         uint address = _textureOffset[slot];
         uint texel;
+        if (linear)
+        {
+            int pitch = (int)(_textureControl1[slot] >> 16);
+            if (pitch <= 0)
+            {
+                pitch = (int)(width * bytesPerTexel);
+            }
+
+            address += (uint)((y * pitch) + (x * (int)bytesPerTexel));
+        }
+        else
+        {
+            address += SwizzleOffset(x, y, width, height) * bytesPerTexel;
+        }
+
+        texel = bytesPerTexel == 2
+            ? _memory.ReadPhysical(address) & 0xFFFFu
+            : _memory.ReadPhysical(address);
+        DecodeTextureTexel(color, texel, out r, out g, out b, out a);
+        return CountSample(address, texel, r, g, b);
+    }
+
+    private static bool IsLinearTextureFormat(uint color)
+    {
+        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu;
+    }
+
+    private static uint TextureFormatBytesPerTexel(uint color)
+    {
+        return color switch
+        {
+            0x02u or 0x03u or 0x04u or 0x05u or 0x10u or 0x11u or 0x1Cu or 0x1Du => 2u,
+            0x06u or 0x07u or 0x12u or 0x1Eu => 4u,
+            _ => 0u,
+        };
+    }
+
+    /// <summary>
+    /// Decodes a raw texel for the supported color formats. Bit layouts follow
+    /// the Vulkan format mapping in xemu's renderer (A1R5G5B5, A4R4G4B4,
+    /// R5G6B5, A8R8G8B8 and the X8 alpha-ignored variants); SZ and LU variants
+    /// of a format share the layout.
+    /// </summary>
+    private static void DecodeTextureTexel(uint color, uint texel, out float r, out float g, out float b, out float a)
+    {
         switch (color)
         {
-            case 0x06u:
-                address += SwizzleOffset(x, y, width, height) * 4u;
-                texel = _memory.ReadPhysical(address);
+            case 0x02u:
+            case 0x10u:
+                r = ((texel >> 10) & 0x1Fu) / 31f;
+                g = ((texel >> 5) & 0x1Fu) / 31f;
+                b = (texel & 0x1Fu) / 31f;
+                a = (texel >> 15) & 1u;
                 break;
-            case 0x12u:
-                {
-                    int pitch = (int)(_textureControl1[slot] >> 16);
-                    if (pitch <= 0)
-                    {
-                        pitch = width * 4;
-                    }
-
-                    address += (uint)((y * pitch) + (x * 4));
-                    texel = _memory.ReadPhysical(address);
-                    break;
-                }
+            case 0x03u:
+            case 0x1Cu:
+                r = ((texel >> 10) & 0x1Fu) / 31f;
+                g = ((texel >> 5) & 0x1Fu) / 31f;
+                b = (texel & 0x1Fu) / 31f;
+                a = 1f;
+                break;
+            case 0x04u:
+            case 0x1Du:
+                r = ((texel >> 8) & 0xFu) / 15f;
+                g = ((texel >> 4) & 0xFu) / 15f;
+                b = (texel & 0xFu) / 15f;
+                a = ((texel >> 12) & 0xFu) / 15f;
+                break;
             case 0x05u:
-                address += SwizzleOffset(x, y, width, height) * 2u;
-                texel = _memory.ReadPhysical(address) & 0xFFFFu;
+            case 0x11u:
                 r = ((texel >> 11) & 0x1Fu) / 31f;
                 g = ((texel >> 5) & 0x3Fu) / 63f;
                 b = (texel & 0x1Fu) / 31f;
                 a = 1f;
-                return true;
+                break;
+            case 0x07u:
+            case 0x1Eu:
+                r = ((texel >> 16) & 0xFFu) / 255f;
+                g = ((texel >> 8) & 0xFFu) / 255f;
+                b = (texel & 0xFFu) / 255f;
+                a = 1f;
+                break;
             default:
-                return false;
+                a = ((texel >> 24) & 0xFFu) / 255f;
+                r = ((texel >> 16) & 0xFFu) / 255f;
+                g = ((texel >> 8) & 0xFFu) / 255f;
+                b = (texel & 0xFFu) / 255f;
+                break;
         }
-
-        a = ((texel >> 24) & 0xFFu) / 255f;
-        r = ((texel >> 16) & 0xFFu) / 255f;
-        g = ((texel >> 8) & 0xFFu) / 255f;
-        b = (texel & 0xFFu) / 255f;
-        return true;
     }
 
     private static int WrapCoordinate(int value, int size, int mode)
@@ -4096,7 +4258,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         if (!PshCombiner.IsModeValidForStage(mode, stage))
         {
             SetTexelNone(texel);
-            TexModeFallbacks++;
+            CountTexModeFallback(mode);
             return false;
         }
 
@@ -4124,7 +4286,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
                 {
                     SetTexelNone(texel);
-                    TexModeFallbacks++;
+                    CountTexModeFallback(mode);
                     return false;
                 }
 
@@ -4137,7 +4299,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out float dotSt))
                 {
                     SetTexelNone(texel);
-                    TexModeFallbacks++;
+                    CountTexModeFallback(mode);
                     return false;
                 }
 
@@ -4146,15 +4308,142 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
                 {
                     SetTexelNone(texel);
-                    TexModeFallbacks++;
+                    CountTexModeFallback(mode);
                     return false;
                 }
 
                 return SampleInto(stage, stageDots[1], stageDots[2], texel);
             default:
                 SetTexelNone(texel);
-                TexModeFallbacks++;
+                CountTexModeFallback(mode);
                 return false;
+        }
+    }
+
+    private void CountTexModeFallback(int mode)
+    {
+        TexModeFallbacks++;
+        _texModeFallbackByMode[mode & 0x1F]++;
+        _textureStateFallbacks[_currentTextureState]++;
+    }
+
+    private void EnterTextureState(bool combinerActive, int programStart, int programLength)
+    {
+        var key = new System.Text.StringBuilder(200);
+        key.Append(combinerActive ? 'c' : 'l');
+        key.Append(CultureInfo.InvariantCulture, $"|p{programStart}+{programLength}");
+        for (int slot = 0; slot < MaxTextureSlots; slot++)
+        {
+            bool enabled = (_textureControl0[slot] & TextureControl0Enable) != 0;
+            key.Append(CultureInfo.InvariantCulture, $"|{(enabled ? 1 : 0)}:{(_textureFormat[slot] >> 8) & 0x7Fu:X2}:{_textureOffset[slot]:X8}:{_textureImageRect[slot]:X8}:{_textureControl1[slot]:X8}:{_textureAddress[slot]:X8}");
+        }
+
+        key.Append(CultureInfo.InvariantCulture, $"|m{_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}");
+        key.Append(CultureInfo.InvariantCulture, $"|s{_combiner.StageCount}|f{(_combiner.FinalEnabled ? 1 : 0)}");
+        string text = key.ToString();
+        if (!_textureStateIndex.TryGetValue(text, out int index))
+        {
+            if (_textureStateKeys.Count < TextureStateCap - 1)
+            {
+                index = _textureStateKeys.Count;
+                _textureStateKeys.Add(text);
+            }
+            else
+            {
+                index = TextureStateCap - 1;
+                if (_textureStateKeys.Count == TextureStateCap - 1)
+                {
+                    _textureStateKeys.Add("(other)");
+                }
+            }
+
+            _textureStateIndex[text] = index;
+        }
+
+        _currentTextureState = index;
+    }
+
+    private void TrackTextureCoords(float u, float v)
+    {
+        int index = _currentTextureState;
+        if (_textureStateSamples[index] + _textureStateMisses[index] == 0)
+        {
+            _textureStateMinU[index] = u;
+            _textureStateMaxU[index] = u;
+            _textureStateMinV[index] = v;
+            _textureStateMaxV[index] = v;
+            return;
+        }
+
+        if (u < _textureStateMinU[index])
+        {
+            _textureStateMinU[index] = u;
+        }
+
+        if (u > _textureStateMaxU[index])
+        {
+            _textureStateMaxU[index] = u;
+        }
+
+        if (v < _textureStateMinV[index])
+        {
+            _textureStateMinV[index] = v;
+        }
+
+        if (v > _textureStateMaxV[index])
+        {
+            _textureStateMaxV[index] = v;
+        }
+    }
+
+    private bool CountSample(uint address, uint texel, float r, float g, float b)
+    {
+        TextureSampleSuccesses++;
+        bool rgbZero = r == 0f && g == 0f && b == 0f;
+        if (rgbZero)
+        {
+            TextureSampleRgbZero++;
+        }
+
+        int index = _currentTextureState;
+        if (_textureStateSamples[index] == 0)
+        {
+            _textureStateFirstAddress[index] = address;
+            _textureStateFirstTexel[index] = texel;
+        }
+
+        _textureStateSamples[index]++;
+        if (rgbZero)
+        {
+            _textureStateRgbZero[index]++;
+        }
+
+        return true;
+    }
+
+    /// <summary>Gets per-texture-state sample statistics for the last run. Diagnostics.</summary>
+    public List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)> TextureStateStats
+    {
+        get
+        {
+            var list = new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>();
+            for (int i = 0; i < _textureStateKeys.Count; i++)
+            {
+                list.Add((
+                    _textureStateKeys[i],
+                    _textureStateSamples[i],
+                    _textureStateRgbZero[i],
+                    _textureStateFallbacks[i],
+                    _textureStateMisses[i],
+                    _textureStateFirstAddress[i],
+                    _textureStateFirstTexel[i],
+                    _textureStateMinU[i],
+                    _textureStateMaxU[i],
+                    _textureStateMinV[i],
+                    _textureStateMaxV[i]));
+            }
+
+            return list;
         }
     }
 
@@ -4199,7 +4488,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         if (!TryDependentInput(stage, texels, out float[] previous))
         {
             SetTexelNone(texel);
-            TexModeFallbacks++;
+            CountTexModeFallback(mode);
             return false;
         }
 
@@ -4213,7 +4502,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         if (!TryDependentInput(stage, texels, out float[] previous))
         {
             SetTexelNone(texel);
-            TexModeFallbacks++;
+            CountTexModeFallback(mode);
             return false;
         }
 
@@ -4400,9 +4689,46 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                     TexturedPixels++;
                 }
 
+                if (fr == 0f && fg == 0f && fb == 0f)
+                {
+                    _combinerRgbZeroFragments++;
+                    if (fa > 0f)
+                    {
+                        _combinerRgbZeroAlphaFragments++;
+                    }
+                }
+
                 ProcessFragment(x, y, bytes, pitch, fr, fg, fb, fa, depth, zetaBytes, zetaPitch);
             }
         }
+    }
+
+    private static Dictionary<uint, long> Snapshot(long[] counters)
+    {
+        var result = new Dictionary<uint, long>();
+        for (int i = 0; i < counters.Length; i++)
+        {
+            if (counters[i] != 0)
+            {
+                result[(uint)i] = counters[i];
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, long> SnapshotByIndex(long[] counters)
+    {
+        var result = new Dictionary<int, long>();
+        for (int i = 0; i < counters.Length; i++)
+        {
+            if (counters[i] != 0)
+            {
+                result[i] = counters[i];
+            }
+        }
+
+        return result;
     }
 
     private void CountRead(uint block)

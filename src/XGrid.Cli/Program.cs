@@ -869,6 +869,45 @@ internal static class Program
         return log.ToString();
     }
 
+    private static string FormatTextureFormats(
+        IReadOnlyDictionary<uint, long> attempts,
+        IReadOnlyDictionary<uint, long> misses)
+    {
+        var sorted = new List<(uint Format, long Attempts, long Misses)>();
+        foreach (var entry in attempts)
+        {
+            misses.TryGetValue(entry.Key, out long missed);
+            sorted.Add((entry.Key, entry.Value, missed));
+        }
+
+        sorted.Sort((a, b) => b.Attempts.CompareTo(a.Attempts));
+        var log = new System.Text.StringBuilder();
+        for (int i = 0; i < sorted.Count && i < 12; i++)
+        {
+            log.Append(CultureInfo.InvariantCulture, $" {sorted[i].Format:X2}={sorted[i].Attempts}/{sorted[i].Misses}");
+        }
+
+        return log.ToString();
+    }
+
+    private static string FormatModeFallbacks(IReadOnlyDictionary<int, long> counts)
+    {
+        var sorted = new List<(int Mode, long Count)>();
+        foreach (var entry in counts)
+        {
+            sorted.Add((entry.Key, entry.Value));
+        }
+
+        sorted.Sort((a, b) => b.Count.CompareTo(a.Count));
+        var log = new System.Text.StringBuilder();
+        for (int i = 0; i < sorted.Count && i < 8; i++)
+        {
+            log.Append(CultureInfo.InvariantCulture, $" {sorted[i].Mode:X2}={sorted[i].Count}");
+        }
+
+        return log.ToString();
+    }
+
     private static void PrintState(XboxMachine machine, ulong executed,
         IReadOnlyList<(uint Address, int Length, bool Virtual)> dumps)
     {
@@ -1003,6 +1042,26 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount}");
+        Console.WriteLine(
+            $"NV2A tex ok={machine.Nv2A.TextureSampleSuccesses} rgb0={machine.Nv2A.TextureSampleRgbZero} " +
+            $"disabled={machine.Nv2A.TextureSampleDisabled} badsize={machine.Nv2A.TextureSampleBadSize} " +
+            $"formats={FormatTextureFormats(machine.Nv2A.TextureFormatAttempts, machine.Nv2A.TextureFormatMisses)} " +
+            $"fallbacks={machine.Nv2A.TexModeFallbacks} byMode={FormatModeFallbacks(machine.Nv2A.TexModeFallbacksByMode)} " +
+            $"dotMaps={machine.Nv2A.UnsupportedDotMaps}");
+        Console.WriteLine(
+            $"NV2A combiner rgb0={machine.Nv2A.CombinerRgbZeroFragments} rgb0Alpha={machine.Nv2A.CombinerRgbZeroAlphaPositiveFragments} " +
+            machine.Nv2A.CombinerStateDebug);
+        var texStates = new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>(machine.Nv2A.TextureStateStats);
+        texStates.Sort((a, b) => (b.Samples + b.Fallbacks + b.Misses).CompareTo(a.Samples + a.Fallbacks + a.Misses));
+        for (int i = 0; i < texStates.Count && i < 16; i++)
+        {
+            var state = texStates[i];
+            Console.WriteLine(
+                $"NV2A texstate n={state.Samples} rgb0={state.RgbZero} fb={state.Fallbacks} miss={state.Misses} " +
+                $"addr={state.FirstAddress:X8} texel={state.FirstTexel:X8} " +
+                $"u=[{state.MinU:G},{state.MaxU:G}] v=[{state.MinV:G},{state.MaxV:G}] {state.Key}");
+        }
+
         Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
         var pmcEnLogText = new System.Text.StringBuilder();
         foreach (uint entry in machine.Nv2A.PmcIntrEnLog)
