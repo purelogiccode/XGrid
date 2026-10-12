@@ -2529,3 +2529,32 @@ exact guest sequence (0xC8/0xCA, n=1, taskfile `08 00 00`, incl. the
 `MC8/F00/n01l080000` log detail and the guest's BM-stop-between-
 transfers discipline) on PCBX/`55 AA`-seeded LBA 8: signatures survive a
 digest-field RMW round trip. Storage 46→47 tests.
+## 74. Pad-sequence injection: `--pad-script` (2026-10-12)
+
+**Button facts (xemu `hw/xbox/xid.h`, read-only ref).** Analog indices
+A0 B1 X2 Y3 BLACK4 WHITE5 LT6 RT7; digital `BUTTON_MASK(b) = 1<<(b-8)`:
+UP 0x0001 DOWN 0x0002 LEFT 0x0004 RIGHT 0x0008 START 0x0010 BACK 0x0020
+LTHUMB 0x0040 RTHUMB 0x0080. Report = wButtons + 8 analog + 4 sticks,
+matching `XidGamepad` passthrough (no code copied).
+
+**Design.** No name parser existed (`--pad-buttons` was hex-only), so
+`PadInput.TryParseButtonSet` is new shared code: names (case-insensitive,
+`_`/`-`/space ignored, `+`/`|` join) take precedence over hex, so `a`
+means analog-A not mask 0x000A; analog names press 0xFF; `none`/`neutral`/
+`release`/`0` = neutral. `--pad-buttons` now accepts the same form
+(hex inputs parse identically). `PadScript` (`XGrid.Bus/Usb`) parses
+`buttonset@step[+hold],...` (stable by step, sticks neutral), applies at
+exact step boundaries in all three run loops with batch target-splitting
+(same pattern as `--pad-step`, which is untouched); momentary presses
+auto-release after 1M steps, `+hold` latches, later events supersede
+pending releases. 23 new tests (Bus 172->195); 908 green.
+
+**Validation (worktree build, main-checkout firmware read-only, logs in
+temp).** Smoke `--pad-script down@1000000,a@2000000` (3M steps): DOWN
+@1000000, A @2000000, neutral @3000000, no fault; `down@1000000+hold`
+latches with no release line; bogus spec exits 1. §70 oracle reproduced
+via the new mechanism: `--pad-script down@950000000,a@960000000
+--break-log 0x1859D` (965M) fires DOWN @950M, release @951M, A @960M,
+release @961M, and `HIT 960493586 EIP=0001859D ESI=D003B500` —
+byte-identical to the old-flag regression run (`--pad-analog
+FF00000000000000 --pad-step 960000000`), which still passes.
