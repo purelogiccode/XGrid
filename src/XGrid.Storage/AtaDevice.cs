@@ -140,6 +140,9 @@ public sealed class AtaDevice
         }
     }
 
+    /// <summary>Maximum ATAPI packet log entries retained (diagnostics).</summary>
+    public const int PacketLogCapacity = 256;
+
     /// <summary>Gets the log of received ATAPI packet opcodes (diagnostics).</summary>
     public System.Collections.Generic.IReadOnlyList<string> PacketLog => _packetLog;
 
@@ -682,7 +685,7 @@ public sealed class AtaDevice
         _dmaLarge = null;
         byte opcode = _packet[0];
         _packetLog.Add($"{opcode:X2}:{_packet[1]:X2}{_packet[2]:X2}{_packet[3]:X2}{_packet[4]:X2}{_packet[5]:X2}");
-        if (_packetLog.Count > 16)
+        if (_packetLog.Count > PacketLogCapacity)
         {
             _packetLog.RemoveAt(0);
         }
