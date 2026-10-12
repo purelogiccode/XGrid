@@ -23,6 +23,8 @@ public sealed class XboxMachine
     private RomOverlayDevice? _overlay;
     private byte[]? _bios;
     private ulong _nv2ARemainder;
+    private bool _sevenEosQuirkParkActive;
+    private ulong _sevenEosQuirkParkSinceTsc;
 
     /// <summary>Creates the machine with RAM, bus, and CPU wired together.</summary>
     public XboxMachine(uint ramSize = DefaultRamSize)
@@ -141,6 +143,15 @@ public sealed class XboxMachine
     /// <summary>Gets the CPU.</summary>
     public XboxCpu Cpu { get; }
 
+    /// <summary>Gets or sets whether the 007 end-of-stream compatibility quirk is enabled (default on).</summary>
+    public bool SevenEosQuirkEnabled { get; set; } = true;
+
+    /// <summary>Gets the number of guest-memory quirk checks performed.</summary>
+    public ulong SevenEosQuirkChecks { get; private set; }
+
+    /// <summary>Gets the number of times the 007 end-of-stream quirk fired.</summary>
+    public ulong SevenEosQuirkFires { get; private set; }
+
     /// <summary>Gets whether a BIOS image has been loaded.</summary>
     public bool BiosLoaded => _bios is not null;
 
@@ -257,6 +268,10 @@ public sealed class XboxMachine
         Apu.Reset();
         Net.Reset();
         _nv2ARemainder = 0;
+        SevenEosQuirkChecks = 0;
+        SevenEosQuirkFires = 0;
+        _sevenEosQuirkParkActive = false;
+        _sevenEosQuirkParkSinceTsc = 0;
         if (_overlay is not null)
         {
             _overlay.Enabled = true;
@@ -278,6 +293,81 @@ public sealed class XboxMachine
         {
             Nv2A.Advance(ticks);
         }
+
+        CheckSevenEosQuirk();
+    }
+
+    /// <summary>
+    /// Checks the 007 end-of-stream parked signature and synthesizes the missing
+    /// completion after a stability delay. Returns true when the quirk fired.
+    /// </summary>
+    public bool CheckSevenEosQuirk()
+    {
+        if (!SevenEosQuirkEnabled)
+        {
+            return false;
+        }
+
+        if (!Cpu.Mmu.IsEnabled)
+        {
+            _sevenEosQuirkParkActive = false;
+            return false;
+        }
+
+        SevenEosQuirkChecks++;
+
+        uint? ReadVa(uint virtualAddress)
+        {
+            uint physical = Cpu.Mmu.Translate(
+                virtualAddress, isWrite: false, isInstruction: false,
+                out bool faulted, out _, sideEffects: false);
+            if (faulted)
+            {
+                return null;
+            }
+
+            return Memory.Read32(physical);
+        }
+
+        if (!SevenEosQuirk.IsParkedLive(ReadVa))
+        {
+            _sevenEosQuirkParkActive = false;
+            return false;
+        }
+
+        ulong now = Cpu.Context.Tsc;
+        if (!_sevenEosQuirkParkActive)
+        {
+            _sevenEosQuirkParkActive = true;
+            _sevenEosQuirkParkSinceTsc = now;
+            return false;
+        }
+
+        if (now - _sevenEosQuirkParkSinceTsc < SevenEosQuirk.StabilityThresholdSteps)
+        {
+            return false;
+        }
+
+        void WriteVa(uint virtualAddress, uint value)
+        {
+            uint physical = Cpu.Mmu.Translate(
+                virtualAddress, isWrite: true, isInstruction: false,
+                out bool faulted, out _);
+            if (!faulted)
+            {
+                Memory.Write32(physical, value);
+            }
+        }
+
+        if (!SevenEosQuirk.TryApply(ReadVa, WriteVa))
+        {
+            _sevenEosQuirkParkActive = false;
+            return false;
+        }
+
+        SevenEosQuirkFires++;
+        _sevenEosQuirkParkActive = false;
+        return true;
     }
 
     /// <summary>Runs up to the given number of instructions, advancing bus timers.</summary>

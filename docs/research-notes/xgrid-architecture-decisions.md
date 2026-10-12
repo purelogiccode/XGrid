@@ -3287,3 +3287,289 @@ CPU/APC fix indicated. Any unblock is a guest-behavior decision
 Next (if ever): decide whether to emulate the missing EOS signal
 as a compatibility quirk, with the force-probe as the reference
 behavior.
+## 90. ZCLIP bounds + Z_FORMAT float depth modeled in the software rasterizer (2026-10-12)
+
+Work on `wave/nv2a-zclip`. Closes the two §87-listed remainders
+("ZCLIP bounds + float-depth remain untracked"); fixed-function
+foggen, exotic texture modes, and GL/Vulkan backends stay open.
+
+**Reference facts extracted (no code copied).** xemu
+`hw/xbox/nv2a/nv2a_regs.h`: Kelvin `SET_CLIP_MIN` = `0x394`,
+`SET_CLIP_MAX` = `0x398`, `SET_CONTROL0` = `0x290` with `Z_FORMAT`
+bit 12, `SETUPRASTER_Z_FORMAT` bit 29. `pgraph/pgraph.c`:
+`SET_CONTROL0` feeds its Z_FORMAT bit into `SETUPRASTER_Z_FORMAT`;
+`SET_CLIP_MIN/MAX` store the raw word into `NV_PGRAPH_ZCLIPMIN`
+(`0x1A90`) / `ZCLIPMAX` (`0x1ABC`); all pgraph regs reset to zero
+(`nv2a.c` memset). `pgraph/glsl/common.c`: the fragment uniform is
+`clipRange = [0, zmax, *(float*)ZCLIPMIN, *(float*)ZCLIPMAX]` with
+`zmax` = zeta-format maximum, or the float variant when
+`surface_shape.z_format` is set (Z16: `f16_max`, Z24S8: `f24_max`).
+`pgraph/util.h`: `f16_max = 511.9375`, `f24_max = 1e30`; the custom
+float decodes are zero-special-cased bit shuffles
+(F16: `(f16<<11)+0x3C000000` as float32; F24: `(f24&0xFFFFFF)<<7` as
+float32). `pgraph/glsl/psh.c` `set_psh_state`: Z16+Z_FORMAT = F16,
+Z24S8+Z_FORMAT = F24 (else D16/D24); per fragment, device-unit
+`zvalue` is discarded outside `[clipRange.z, clipRange.w]` iff
+`depth_clipping` (`ZCOMPRESSOCCLUDE.ZCLAMP_EN == CULL`), else clamped
+into it; depth store is `floor(z)/65535` (D16),
+`uintBitsToFloat(floatBitsToUint(floor(z)/16777216)+1)` (D24, the +1u
+bit-trick reproduces /16777215 under GPU multiply rounding), or
+`zvalue / clipRange.y` (float). `pgraph.c`
+`get_clear_depth_stencil_value`: clear words decode the same way
+(F16/F24 field + stencil byte for Z24S8), normalized by the float max.
+Vertex clip planes and the guard band have no explicit regs — in xemu
+they are GL-hardware clipping after the epilogue's
+`oPos.xyz *= oPos.w` re-projection (`vsh-prog.c`); only the ZCLIP
+fragment clamp/discard is conventional state.
+
+**XGrid mapping (`src/XGrid.Nv2a/Nv2aMmio.cs`).** New methods
+`0x290` (latches Z_FORMAT bit 12 into `_zFormatFloat`), `0x394/0x398`
+(reinterpreted as float into `_zclipMin/_zclipMax`, setting
+`_zclipActive`). `ZetaDepthRange` takes the float flag (F16/F24 maxima,
+unknown formats still fall back to 1). The vertex divide is unchanged
+in shape, now range-correct for float surfaces. The fragment stage —
+exactly where xemu applies ZCLIP — gains `ApplyZclip` (device-unit
+clamp + `ZclipClampedPixels` diagnostic) and float-aware zeta
+decode/encode (`ConvertF16/F24ToFloat` = the util.h formulas;
+`ConvertFloatToF16/F24` = their inverses for the normalized compare/
+store path). Clear stays raw passthrough (the driver supplies
+already-encoded clear words, as on hardware).
+
+**Deliberate deviations (logged).** (1) Unprogrammed ZCLIP is
+passthrough (`[0,+Inf]`, legacy `[0,1]` clamp bit-exact): xemu has no
+enable and resets both regs to 0.0 (= kill-everything until written),
+but guests always program the bounds before 3D (dashboard writes
+`0x398 = 16777215`), so passthrough-until-written is observationally
+identical and keeps every existing golden bit-exact by construction.
+(2) Only the clamp path is modeled; the CULL/discard variant needs
+`ZCOMPRESSOCCLUDE` state that no Kelvin method currently feeds —
+follow-up if a guest ever uses occlusion cull. (3) The F16 encoder
+saturates at `0xFFF8`: the raw inverse reaches `0xFFFF` at 1.0, which
+xemu's own decode maps back to a *negative* float (bit-add wraps past
+`0x80000000`); `0xFFF8` is the largest field decoding sane (511.5),
+monotonicity preserved. F24 needs no saturation (1e30 sits far below
+its encoding's wrap). (4) Pinned, not fixed: incoming normalized depth
+*exactly* 1.0 stores word 0 in the fixed path
+(`(uint)(1.0*16777215+0.5) = 0x1000000`, shifted out by the `<< 8`
+zeta pack; xemu stores 1.0) — pre-existing, out of scope, covered by
+`Zclip_DisabledPassthroughPreservesSaturation`.
+
+**Validation (in-worktree).** 8 new `PgraphTransformTests`: ZCLIP
+inside (no-clamp, golden-identical word), above-max clamp, below-min
+clamp, boundary-max inclusive with zero clamp count, disabled
+passthrough, F16 round-trip (exact `0xEFFF` halves), F24 round-trip
+(exact `0xE193E5` word, stencil preserved), float LESS ordering
+(0.25 passes writing exact `0xDFFF`, 0.75 killed, word untouched).
+Nv2a suite 169/169 (161 pre-existing unchanged, incl. the
+`0xFF445566`/`0xFF202020`/fog/texture goldens); full suite 1001/1001;
+`dotnet format --verify-no-changes` clean.
+**Live boot (1B steps, §87 recipe + `--frame`, logs in
+`Temp\opencode\nv2a-zclip\`):** no fault, and every rendering counter
+is bit-identical to the §87 post-fix run — draws 33632, skipped 1402,
+pixels 118798338, textured 233381688, blended 45302409, depth-tested
+136, clears 695, frames/stalls 686, frame 640×480 nonzero 57087, frame
+SHA `CC9D82DC…` identical. The `--pgraph` stream proves the new path
+was live: guest writes `0394 = 0.0` (398×) and `0398 = 16777215.0`
+(397×), so `_zclipActive` held through the 3D boot and every depth
+fragment ran `ApplyZclip` — `zclip=0` (nothing out of bounds, correct
+for containing bounds) via the bit-exact in-bounds fast path.
+`0290` arrives with Z_FORMAT set 153× early in the stream, but no
+float-mode draw exists in this window (pixel-identity with the fixed
+run proves the flag is clear during all 33K draws). End EIP
+`0x1E0F1` vs §87's `0x1DF11` is benign guest-side timing variance
+(RTC wall-clock reads); rendering is unaffected.
+
+## 91. NV2A fixed-function foggen + HILO dot maps (2026-10-12)
+
+Work in `Temp\opencode\worktrees\nv2a-foggen-hilo` (wave/nv2a-foggen-hilo).
+Closes the two §78 remainders. Reference facts (`References/xemu-0.8.136`,
+reimplemented scalar, never copied):
+
+- **Gen values** (`nv2a_regs.h:917-922` -> `pgraph.c:1131-1150` CSV0_D):
+  SPEC_ALPHA 0, RADIAL 1, PLANAR 2, ABS_PLANAR 3, FOG_X 6 (4/5/7+
+  assert on hardware).
+- **Distances** (`pgraph/glsl/vsh-ff.c:448-473`, from NV_fog_distance):
+  SPEC_ALPHA = `clamp(specular.a, 0, 1)`; RADIAL =
+  `length(tPosition.xyz)` with tPosition = position x modelView
+  (eye space, skinning-aware; `vsh-ff.c:171-173`); PLANAR =
+  `dot(fogPlane.xyz, tPosition.xyz) + fogPlane.w`; ABS_PLANAR =
+  `abs(...)`; FOG_X = `fogCoord` = `v5.x` (`vsh-ff.c:78`).
+- **fogPlane** = transform constant `NV_IGRAPH_XF_XFCTX_FOG` = `0x39`
+  = c57 (`nv2a_regs.h:1343`, `vsh.c:183`; fed by `0x09D0-0x09DC`,
+  `pgraph.c:1819`). **FOG attr** = vertex attribute 5
+  (`nv2a_regs.h:1474`); `SET_FOG_COORD 0x1698` replicates the scalar
+  inline value x4 without finishing a vertex (`pgraph.c:2155-2163`).
+- **Flow** (`vsh.c:301-327,334-403`): fixed-function -> gen distance;
+  programmable -> `oFog.x` unconditionally (with a FIXME noting
+  foggen is ignored there — the RollerCoaster case writes `oFog=v0.z`
+  itself); shared LINEAR/EXP/EXP2 (+ABS) equations; inf distance and
+  NaN factor both yield the mode's fallback; `vtxFog = oFog.x`; psh
+  feeds `(fogColor.rgb, clamp(factor, 0, 1))` as FOG (`psh.c:1074`).
+  Specular alpha: unlit `oD1 = specular` (v4), lit `oD1.a =
+  specular.a` (`vsh-ff.c:254-258,288`) — so SPEC_ALPHA == v4.a always.
+- **HILO** (`psh_regs.h:143-153`, `psh.c:851-910,1246-1265`): applied
+  as `dot(pT[i].xyz, dotmap(t[input_tex[i]]))`. Map 4 (`dotmap_hilo_1`)
+  is a real decode: hi = (a:r bytes)/65535, lo = (g:b bytes)/65535,
+  z = 1, with C-style truncation (`uint(x*255)`). Maps 5-7 are
+  identity FIXMEs. Any map > 3 logs `NV2A_UNIMPLEMENTED`
+  (`psh.c:1104-1106`).
+
+XGrid wiring (`src/XGrid.Nv2a/`): `VshProgram.FogGenDistance` (new;
+gen consts 0/1/2/3/6; unknown -> SPEC_ALPHA); `Execute` overload
+reporting `fogWritten` (set on any oFog masked write); vertex path
+uses `oFog.x` when written, else the gen distance from v5.x (FOG_X),
+v4.a (SPEC_ALPHA), v0.xyz (RADIAL/PLANAR) against c57; `SET_FOG_COORD
+0x1698` stages `_inlineValues[5]` x4; `PshCombiner.ApplyDotMap` takes
+the texel alpha and decodes map 4 (maps 5-7 stay identity +
+`UnsupportedDotMaps`, mirroring FIXME+UNIMPLEMENTED).
+
+**Deliberate deviations:** no fixed-function transform unit exists
+(the uploaded program always runs the transform), so RADIAL/PLANAR
+consume the object-space position, not eye-space tPosition; the
+gen fallback triggers on unwritten-oFog rather than on execution
+mode (a fog-enabled program that never writes oFog gets the gen
+distance instead of distance 0 — the reference FIXME admits this
+corner is uncertain); fog-disabled keeps the established fixed
+`(0,0,0,1)` input, not xemu's `vec4(1.0)` (§78 invariant kept).
+
+**Validation:** 11 new tests (`Nv2aFogTexModesTests`): unit goldens
+per gen mode (clamp/abs/unknown-fallback, RADIAL (3,4,0)->5,
+PLANAR 2.5, FOG_X passthrough) + `fogWritten` true/false; draw
+goldens via a factor-routing combiner (FOG alpha -> pixel, LINEAR
+(1,1)): FOG_X 0/1/2/-1, SPEC_ALPHA 0/1/2/-0.5, RADIAL saturated
+white at z=2, PLANAR 0/1/sloped-2z, ABS-vs-PLANAR pair on plane -1,
+oFog-wins precedence, disabled-white invariant under staged
+gen+coord; HILO DOT_ST chain (green second texel, zero fallback
+count) with an identity-map black control. Full suite 1004 green
+(993 + 11); all pre-existing goldens (`0xFF445566`, `0xFF202020`,
+fog red `0xFFFF0000`, BUMP_LUM `0xFF808080`) bit-identical.
+**Remains:** cubemap/reflection/project3d/clipplane/BRDF modes,
+HILO hemisphere 5-7, ZCLIP + float depth, backends.
+
+## 92. 007 EOS compatibility quirk: STRM 2->0 exits 0x20B50 to the next gate (2026-10-12)
+
+**COMPATIBILITY QUIRK** (not a correctness fix; §89: no emulation
+layer at fault). Reference: §85 force-probe (state 2->0 at 2.2B
+exits permanently -> 800M new-phase steps, splash unchanged, DVD
+tail frozen).
+
+**Guest facts** (capstone over `Temp\opencode\007-wait2\text_*.bin`,
+reimplemented reading, never copied): `0x20B50` waiter =
+`0x2A740` (chunk or 0) -> `0x26AE0` pump -> 4 B tag build, `cmp
+0x6843504D` (`MPCh`), `je 0x20BB4` (exit (a): `inc [AFE34]`,
+return chunk), else `0x2ABE0` release + `0x2A830` check; empty
+chunk -> `0x2A830` check -> `je` loop else return 0 (exit (b)).
+`0x2A740` checks `STRM` magic + `[handle+8]` remaining + queue
+walk. `0x2A830` returns 1 iff magic `0x4D525453` AND
+`[STRM+0x44]==0` AND `[handle+8]==0` (EOS). `0x2ABE0` (`0x2AC20+`)
+is the only 2->1 clearer + refill `0x2A990`, reachable only on a
+found chunk (catch-22). `0x2AA65` is the refill starved-exit
+(`mov [esi+0x44],2`). `0x30820` is SSE `movntps` memcpy (writer
+`0x30903` lands the `MPCh` tag), not a DVD read.
+
+**Parked signature** (bit-identical across `runE_2b5`, `007-apc`
+`run1`, `runF_3b` + in-worktree `repro_23b` quirk-off 2.3B):
+TitleId `0x4541000D` (cert `0x10178+8` via MMU walk of `0x10118`;
+live-MMU lesson: walk from CR3, e.g. `0xAFE34->0x15EE34`, never
+`+0xAAF000`); STRM VA `0x80B6C800` magic `STRM`, handle VA
+`0x80B6CBE8->STRM`, `handle+8==0`, `STRM+0x44==2`,
+`STRM+0x60=0x80B6FD30` with `MPCh`, `handle+0xC=0x80B6CC48` with
+`0xFFFFFFFE` (tag present but unlinked). `repro_23b` (temp
+`[AFE34]=2` forcing, reverted): EIP `0x26B44` (`0x26AE0` spin),
+EBP=handle, frames 84 stall, STRM bytes above, `checks=0
+fires=0` — confirms §89 in-worktree.
+
+**Quirk design** (`src/XGrid.Host/SevenEosQuirk.cs`,
+`XboxMachine.cs`, `src/XGrid.Cli/Program.cs`;
+`tests/XGrid.Integration.Tests/SevenEosQuirkTests.cs`): gate =
+TitleId + exact signature above via live MMU (`sideEffects:false`
+reads, `sideEffects:true` write) + 10M-step stability (transient
+starves resolve in <1M; park persists 700M+). Effect (minimal) =
+single-dword `STRM+0x44` 2->0 (exactly the force-probe), letting
+the waiter exit through its own (b) path (`0x2A830->1`,
+`0x20B50` return 0); never touches EIP. Fires once (state breaks
+to 0), bounded. Observable = `SevenEosQuirkChecks/Fires` +
+`007 EOS quirk on/off` + `fired at step ...` + final
+`enabled/checks/fires` line. Flag = default-on with
+`--no-007-eos-quirk` opt-out (safe: exact gate + stability +
+once + 1B-step no-fault reference; dashboard/other titles never
+match TitleId; opt-out preserves A/B purity).
+
+**Live validation** (worktree Release, limiter forcing to reach
+the park quickly, reverted; logs `Temp\opencode\007-eos\`):
+quirk-on 3B fired at step 2B (`EIP=0x138E4`, `checks=45775`,
+`fires=1`), state 0 persisted to 3B with staged `MPCh` intact,
+EBP `handle->2` (waiter exited `0x20B50`), EIP `0x13894`
+(streaming, not waiter `0x26B44`), no fault over 1B post-fire
+steps. Frames 84->85 stall (not past 101), EIPHIST no `0x602F7`
+(no `GetState` polling), splash BMP full-white (307200 nonzero,
+unchanged), DVD tail frozen — matches the force-probe reference
+(exits to the next gate, splash/DVD frozen). A/B: quirk-off 2.3B
+stays parked (state 2, EBP handle) vs quirk-on 3B exits (state 0,
+EBP 2); no corruption, no spurious fire. Suite 1015/1015 (993 +
+22 new); build + format clean.
+
+**Next gate (precise):** after the (b) exit (return 0) the game
+leaves the STRM wait (EBP proof) but parks in the `0x138xx`
+splash/streaming loop (`EIP=0x13894`, `ESI/EDI=0`, `EBP=2`,
+frames stall, no input polling, DVD frozen). `0x602F7` never
+reached. Further unblock needs decoding the `0x138xx` wait, not
+STRM.
+
+## 93. Scene-proof verdict: layout is the RIGHT scene, color is broken (textured-RGB-zero bug) (2026-10-12)
+
+Verdict mission in `Temp\opencode\worktrees\scene-proof`
+(`wave/scene-proof`, clean, no commit — analysis only). Worktree
+Release CLI, firmware read-only, HDD COW-verified read-only; logs/BMPs
+in `Temp\opencode\scene-proof\`. Recipe confirmed live post-everything
+(both HITs at the exact established steps; submenu SHA `CC9D82DC…`
+reproduced exactly).
+
+**Correction to §87:** `nonzero` counts any nonzero BGRA byte — 99%
+of the 57K nonzero pixels are **RGB=(0,0,0) with nonzero alpha**, so
+the frame is still visually black. "First non-black frame" meant
+first alpha-bearing frame.
+
+**Right-layout evidence:** neutral SHA `7db7b642…` vs submenu
+`cc9d82dc…` — DIVERGE now (were identical pre-fix). Full-BGRA diff:
+10,345 px (3.37%), ALL alpha-only (RGB-change = 0), confined to
+y=320–459 (list area); above y=320 pixel-identical (stable header).
+Alpha carries an antialiased image (65/39 distinct values, no
+NaN/garbage); row-ink profile proves different lists (neutral narrow
+strip y320–340 + block y364–404; submenu wide block y380–404);
+ASCII render shows identical header text (y20–210) + different
+centered panel/rows — glyph-like blocks, highlight-bar-scale rows,
+coherent rects, no triangle storms. RGB palette: 4 colors total
+(black + 1px steel-blue column at x=0, full height).
+
+**Precise bug pointer (unfixed):** textured-draw RGB is dropped while
+alpha/coverage survives — every UI quad (background, glyphs, panels)
+lands RGB=0 + structured alpha, while ONE untextured draw (the x=0
+blue column, RGB ~52,109,165) keeps full color. So the RGB write path
+works and the fault is draw-dependent. Prime suspect: texture-sample
+RGB returning 0 with alpha intact (M6 swizzle/decode or combiner
+diffuse×texture modulation) — not a global color-mask/blend-zero
+(those would kill the blue column too). Secondary: background
+alpha=0 over 250K px suggests the clear color itself may be
+(0,0,0,0). **Next:** fix textured-RGB-zero, re-run this exact two-boot
+recipe — success = BMPs differ in RGB with readable colored UI. The
+alpha channel is meanwhile a valid layout oracle: any RGB fix must
+preserve these alpha structures pixel-for-pixel.
+
+## 94. 007 EOS quirk merged; game reaches the 0x138xx next gate (2026-10-12)
+
+`wave/007-eos-quirk` merged (§92: `SevenEosQuirk.cs` pure predicate —
+TitleId `0x4541000D` + STRM magic + handle linkage + remaining 0 +
+state 2 + staged MPCh + unlinked current + 10M-step stability, fires
+once; effect = single dword `STRM+0x44` 2→0, exactly the §85
+force-probe; waiter exits via its own (b) path, never touches EIP;
+default-on with `--no-007-eos-quirk` opt-out; CLI counters/log;
+22 tests). Gate is dashboard-safe (TitleId can never match).
+Validated live: quirk-off repro confirms the park (EIP `0x26B44`,
+frames stall at 84); quirk-on fires at 2B (`checks=45775 fires=1`),
+state persists, EBP handle→2, EIP `0x13894`, **no fault over 1B
+post-fire** — but frames 84→85 stall: the game parks in the
+`0x138xx` splash/streaming loop (`ESI/EDI=0`, no input polling,
+DVD frozen, splash full-white). The STRM gate is behind us; the
+next gate is decoding the `0x138xx` wait. Full suite 1034/1034
+(993 + 8 ZCLIP + 11 foggen/HILO + 22 EOS).

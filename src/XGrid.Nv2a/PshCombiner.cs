@@ -13,8 +13,10 @@ namespace XGrid.Nv2a;
 /// The FOG register value itself is supplied per fragment by the caller
 /// (fog color + interpolated fog factor); see <c>Nv2aMmio</c> fog state.
 /// Out of scope (left as follow-ups): cubemap/reflection/project3d/clipplane/
-/// BRDF texture modes (sampled as NONE with a diagnostic count), HILO dot maps
-/// (fall back to identity), fixed-function fog-coordinate generation.
+/// BRDF texture modes (sampled as NONE with a diagnostic count) and the
+/// HILO hemisphere dot maps 5-7 (reference FIXMEs: identity with a
+/// diagnostic count); fixed-function fog-coordinate generation lives in
+/// <c>VshProgram.FogGenDistance</c>.
 /// </summary>
 public sealed class PshCombiner
 {
@@ -212,20 +214,23 @@ public sealed class PshCombiner
     }
 
     /// <summary>
-    /// Gets whether the dot map is implemented (0-3). Maps 4-7 (HILO
-    /// family) fall back to identity; the caller counts the fallback.
+    /// Gets whether the dot map is implemented (0-4). Maps 5-7 (HILO
+    /// hemisphere family) are reference FIXMEs resolved as identity; the
+    /// caller counts the fallback.
     /// </summary>
     public static bool IsSupportedDotMap(int map)
     {
-        return map is >= 0 and < 4;
+        return map is >= 0 and <= 4;
     }
 
     /// <summary>
     /// Applies a dot-map to an unsigned [0,1] texel, producing the vec3 the
     /// dot modes dot against the interpolated coords. Maps 0-3 follow the
-    /// reference sign functions; maps 4-7 fall back to identity.
+    /// reference sign functions; map 4 (HILO_1) packs the texel bytes as
+    /// hi = (a:r) / 65535, lo = (g:b) / 65535 with z = 1; maps 5-7 fall
+    /// back to identity (matching the reference hemisphere FIXMEs).
     /// </summary>
-    public static void ApplyDotMap(int map, float r, float g, float b, out float x, out float y, out float z)
+    public static void ApplyDotMap(int map, float r, float g, float b, float a, out float x, out float y, out float z)
     {
         switch (map)
         {
@@ -243,6 +248,13 @@ public sealed class PshCombiner
                 x = Sign3(r);
                 y = Sign3(g);
                 z = Sign3(b);
+                break;
+            case 4:
+                uint hi = ((uint)(a * 255f) << 8) | (uint)(r * 255f);
+                uint lo = ((uint)(g * 255f) << 8) | (uint)(b * 255f);
+                x = hi / 65535f;
+                y = lo / 65535f;
+                z = 1f;
                 break;
             default:
                 x = r;

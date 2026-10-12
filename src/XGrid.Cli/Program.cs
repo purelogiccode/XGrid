@@ -82,6 +82,7 @@ internal static class Program
         string? netBackend = null;
         string? netInjectHex = null;
         string? netLink = null;
+        bool noEosQuirk = false;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -204,6 +205,9 @@ internal static class Program
                 case "--net-link":
                     netLink = NextValue(args, ref i);
                     break;
+                case "--no-007-eos-quirk":
+                    noEosQuirk = true;
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -256,6 +260,8 @@ internal static class Program
 
             machine.Reset();
             machine.Nv2A.MethodStreamCap = pgraphMax;
+            machine.SevenEosQuirkEnabled = !noEosQuirk;
+            Console.WriteLine($"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
 
             if (netBackend is not null)
             {
@@ -457,6 +463,7 @@ internal static class Program
             ulong nextProgress = (executed / progressInterval + 1) * progressInterval;
             EipHistogram? eipHist = eipHistInterval > 0 ? new EipHistogram() : null;
             ulong sinceHist = 0;
+            ulong prevEosFires = machine.SevenEosQuirkFires;
             ApplyScriptIfDue(executed);
             while (!breakHit && executed < steps && !machine.Cpu.Context.Halted)
             {
@@ -486,6 +493,13 @@ internal static class Program
                 executed += ran;
                 ApplyPadIfDue(executed);
                 ApplyScriptIfDue(executed);
+                if (machine.SevenEosQuirkFires != prevEosFires)
+                {
+                    prevEosFires = machine.SevenEosQuirkFires;
+                    Console.WriteLine(
+                        $"007 EOS quirk fired at step {executed} EIP=0x{machine.Cpu.Context.Eip:X8} fires={prevEosFires}");
+                }
+
                 if (eipHist is not null)
                 {
                     sinceHist += ran;
@@ -985,6 +999,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             $"NV2A draws executed={machine.Nv2A.DrawsExecuted} skipped={machine.Nv2A.SkippedDraws} " +
             $"pixels={machine.Nv2A.DrawnPixels} textured={machine.Nv2A.TexturedPixels} clears={machine.Nv2A.ClearsExecuted} " +
             $"blended={machine.Nv2A.BlendedPixels} depth={machine.Nv2A.DepthTestedPixels} " +
+            $"zclip={machine.Nv2A.ZclipClampedPixels} " +
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount}");
@@ -1014,6 +1029,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
         Console.WriteLine(
             $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
+        Console.WriteLine(
+            $"007 EOS quirk enabled={machine.SevenEosQuirkEnabled} checks={machine.SevenEosQuirkChecks} fires={machine.SevenEosQuirkFires}");
         Console.WriteLine(
             $"NVNET reads={machine.Net.Reads} writes={machine.Net.Writes} " +
             $"regs:{TopOffsets(machine.Net.RegReadCounts)} wr:{TopOffsets(machine.Net.RegWriteCounts)}");
@@ -1497,7 +1514,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");

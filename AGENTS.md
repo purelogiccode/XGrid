@@ -183,32 +183,30 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   + oD0 NaN->1. Fog + dependent/bump/dot texture modes merged (§78);
   remaining: fixed-function foggen, exotic modes, HILO, backends.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 993 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1034 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — visible menu.
+## Next session — visible menu (color).
 
-1. VIEWPORT BAKE CLOSED (§87): C0.z=16.7M was correct XDK device-depth
-   output — the gap was emulator-side (missing `oPos.z/clipRange.y`
-   divide). Fix validated live: pixels 10.4M→118.8M, blended 0→45.3M,
-   frame 0→57,087 nonzero px (first non-black menu frame, no fault).
-   §82's "guest-accurate" verdict SUPERSEDED (was emulator-side depth
-   saturation). Next: prove the newly visible scene is the RIGHT scene
-   (xemu-pixel compare or known screen); ZCLIP bounds + float depth open.
-   DVD media branch PINNED (§86: neither candidate address is
-   media-dependent — decision is downstream file-path; decrypt writer is
-   the SAME site `0x8002EFE6`/key; PacketLog 16→256).
-   007 APC-suspect REFUTED (§89): single-threaded guest pipeline stall
-   (final chunk memcpy'd but never linked; refill silent since 1.6B) —
-   no device/CPU fix indicated; unblock would be a guest-behavior (EOS)
-   decision, not correctness.
-   nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
-   filter/DMA, link/autoneg, socket backend behind `--net-backend`,
-   `--net-inject`/`--net-link`; 993 tests). Remaining: first-real-frame
-   validation, TCP proxy.
-2. NV2A remaining: fixed-function foggen, cubemap/reflection/
-   project3d/clipplane/BRDF, HILO dot maps, ZCLIP + float depth,
-   Vulkan/OpenGL backends (16.6–16.7).
+1. Scene-proof verdict PARTIALLY RIGHT (§93): layout/content is the
+   RIGHT scene (frames diverge, different lists, glyph blocks,
+   highlight rows) — but RGB=0 everywhere; the image lives only in
+   alpha (still visually black; corrects §87's "non-black" reading).
+   Precise pointer: textured-draw RGB dropped while alpha survives
+   (one untextured blue column keeps color) — suspect texture-sample
+   RGB=0 (M6/combiner), not global mask. Next: fix textured-RGB-zero,
+   re-run the two-boot recipe; success = RGB-differing BMPs with
+   readable UI (alpha structures are the layout oracle).
+   ZCLIP + float depth MERGED (§90: `0x394/0x398` fragment clamp,
+   F16/F24 ranges; live counters identical, `zclip=0` correct).
+   Foggen + HILO MERGED (§91: GEN_MODE distances, FOG_COORD, HILO_1;
+   disabled draws identical).
+   007 EOS quirk MERGED (§§92, §94: TitleId-gated STRM 2→0, fires once,
+   opt-out flag; game exits `0x20B50` with no fault over 1B steps but
+   parks in the `0x138xx` splash loop — next gate). 1034 tests.
+2. NV2A remaining: textured-RGB-zero (top), cubemap/reflection/
+   project3d/clipplane/BRDF, HILO hemisphere 5–7, ZCLIP-CULL +
+   exact-1.0 overflow, Vulkan/OpenGL backends (16.6–16.7).
 3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

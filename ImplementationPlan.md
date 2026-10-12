@@ -1226,20 +1226,25 @@ downstream file-path; decrypt writer is the SAME site `0x8002EFE6`
 007: APC-suspect REFUTED (§89 — single-threaded guest pipeline
 stall: final chunk memcpy'd but never linked, refill silent since
 1.6B; no device/CPU fix indicated; unblock = guest-behavior EOS
-decision, not correctness);
+decision, not correctness); EOS QUIRK DONE (§92: TitleId-gated
+STRM 2->0, exits 0x20B50 (EBP handle->2) to the 0x138xx next
+gate; 1034 tests);
 nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
 filter/DMA, link/autoneg, socket backend behind `--net-backend`,
 `--net-inject`/`--net-link`; 993 tests).
-**VIEWPORT BAKE CLOSED (§87): `C0.z=16777215` was correct XDK
-device-depth output — the gap was emulator-side (missing
-`oPos.z/clipRange.y` divide; §82's "guest-accurate" verdict
-SUPERSEDED). Fix validated live: pixels 10.4M→118.8M, blended
-0→45.3M, frame 0→57,087 nonzero px (first non-black menu frame,
-no fault).**
-Next: prove the newly visible scene is the RIGHT scene (xemu-pixel
-compare or known screen); ZCLIP bounds + float depth; first-real-frame
-validation + TCP proxy. Order matters; do not work on later
-gaps before earlier gates pass.
+**VIEWPORT BAKE CLOSED (§87) + scene-proof (§93): `C0.z=16777215`
+was correct XDK device-depth output — the gap was emulator-side
+(missing `oPos.z/clipRange.y` divide; §82's "guest-accurate" verdict
+SUPERSEDED). Fix validated live: pixels 10.4M→118.8M, layout proven
+RIGHT (frames diverge, different lists, glyph blocks) — but RGB=0
+everywhere, image lives only in alpha (still visually black):
+textured-draw RGB-zero bug is the new top item (untextured blue
+column keeps color; suspect texture-sample RGB). ZCLIP + float depth
+(§90) and foggen + HILO (§91) merged with live-identical counters.**
+Next: fix textured-RGB-zero, re-run the two-boot recipe (success =
+RGB-differing BMPs, alpha structures preserved); ZCLIP-CULL; prove
+readable UI. Order matters; do not work on later gaps before earlier
+gates pass.
 
 Gap 1 — kernel→storage handoff [DONE 2026-10-09]. The kernel loads the
 dashboard: guest sequence matches the xemu oracle through HDD unlock
@@ -1335,10 +1340,23 @@ submenu validation: pixels 10444800→118798338, blended 0→45.3M,
 frame black→57087 nonzero px, draws/skipped/frames unchanged
 (deterministic guest stream). Same wave also fixed the `WriteMasked`
 bit order (bit0=w per xemu `mask_str`/Cxbx `MASK_*`) and aligned
-`WriteFogMasked` with both references' oFog.x rule. Remaining:
-fixed-function foggen, cubemap/reflection/project3d/clipplane/BRDF
-modes, HILO dot maps, ZCLIP bounds + `Z_FORMAT` float depth, and proof
-the newly visible scene is the RIGHT scene. **§82 verdict
+`WriteFogMasked` with both references' oFog.x rule. **ZCLIP + float depth DONE
+(§90, wave/nv2a-zclip):** `SET_CLIP_MIN/MAX` (`0x394/0x398`) stored as
+device-unit float bounds and applied as the fragment-stage clamp xemu
+runs in psh (passthrough-until-programmed, so all goldens bit-identical);
+`SET_CONTROL0` Z_FORMAT (bit 12) selects the F16_MAX/F24_MAX
+(511.9375/1e30) device-depth range with custom-float zeta
+decode/encode; CULL-discard and the exact-1.0 fixed-encode overflow
+stay open as noted follow-ups. **Fixed-function foggen + HILO DONE
+(§91, wave/nv2a-foggen-hilo):** GEN_MODE distances (SPEC_ALPHA/RADIAL/
+PLANAR/ABS_PLANAR/FOG_X from v5/v4.a/v0.xyz + c57, used when the program
+leaves oFog unwritten) and HILO_1 dot-map decode; cubemap/reflection/
+project3d/clipplane/BRDF modes and HILO hemisphere 5-7 remain. Remaining:
+exotics, ZCLIP-CULL, right-scene proof. **Scene-proof (§93): layout/content
+proven RIGHT (diverging frames, different lists, glyph blocks) — color
+broken: textured-draw RGB-zero is the new top item (RGB=0 + structured
+alpha everywhere; one untextured blue column keeps color; suspect
+texture-sample RGB, not global mask).** **§82 verdict
 superseded:** the submenu black was emulator-side depth saturation,
 not guest-accurate.
 
@@ -1365,8 +1383,12 @@ MIIEVENT, socket user-mode backend (ARP/ICMP/UDP) behind
 auto-launch (§83) + media branch (§86):** `call [0x10128]` handoff
 at step 537,926,130 → entry `0x22E35`; file-path decision; `0xAD`
 requested once (§66 correction); trace/break worlds diverge ~100M
-steps (use break-world steps). Remaining: memory-unit/storage class
-USB devices + first-real-frame validation + TCP proxy.
+steps (use break-world steps). **EOS QUIRK MERGED (§§92, §94):**
+TitleId-gated STRM 2→0, fires once (opt-out flag); game exits
+`0x20B50` with no fault over 1B steps but parks in the `0x138xx`
+splash loop (`ESI/EDI=0`, no input, DVD frozen) — that wait is the
+next gate. Remaining: memory-unit/storage class USB devices +
+first-real-frame validation + TCP proxy.
 
 Gap 6 — APU depth (Phase 12). The register model is implemented
 (`McpxApuDevice`, §33) and the front-end handshake/voice-off flow works; DSP,
@@ -2914,9 +2936,11 @@ earlier one except where explicitly parallel (Track B/C).
 | 9 — XBE Loader | **Partial** | `XGrid.Xbe/XbeImage` (host inspection parser: header/cert/sections/TLS/libraries from Cxbx offsets, per-type XOR decode, strict bounds validation) + `xgrid xbe info` (raw file or via FATX); verified against the real dashboard (`EvoX`, retail, entry `0x12A17`, 1 section); guest-side verify/relocate/section-map/entry-call pending (the XBE launch gate — the kernel maps the dashboard at base `0x10000`, image phys `0x5A000`, entry VA `0x22A17`; the guest runs the full dashboard lifetime — rendering, discovering, saving, menu-idle render loop at 5B steps, EIP `0x2D3B9`; see M9 Gap 1d, §§51–61) |
 | 10 — Kernel Interface | Not started | LLE-first: only needed if the dashboard's kernel-thunk imports require host-side ordinals; guest kernel is real and running |
 | 11 — NV2A | **Partial** | `XGrid.Nv2a/Nv2aMmio`: 16 MB BAR0 window at 0xFD000000 wired in `XboxMachine`; xemu-faithful blocks/defaults; PFIFO pusher (CACHE1 parse, DMA jump/call/return/inc, RAMHT, GET writeback, ERROR+suspend), PGRAPH recording sink + software rasterizer (Gouraud triangle renders through the full pushbuffer path, 307K px, M4 done); surface/clear/flip tracking, PRMCIO retrace, 60 Hz VBLANK; semaphore release via RAMHT DMA object (`0x1D70`) and `NV097_NO_OPERATION` PGRAPH notification (`0x100`) unblocked the boot-animation wait (§32); **M5 done (§37–39):** transform-program/constant storage, inline element semantics, `VshProgram` interpreter (MAC/ILU, muxes/swizzles/masks, paired ops, A0-relative constants), vertex attribute fetch (all formats) and the element draw path — ran on the dashboard without fault (2670 draws; §42: pixels all inline, program draws degenerate); **M6 done (§40):** per-slot texture state, swizzled (Morton) + linear A8R8G8B8/R5G6B5 sampling with wrap/mirror/clamp, modulate by `oD0`, texcoords from `oT0` (all 10.1M px sample; §44: CPU-uploaded assets, dark by nature). **M7 done (§41–42):** alpha/stencil/depth/blend/mask fragment pipeline; validation fixed two interpreter bugs (R/V/C mux rotation, ORB polarity) and proved exact pixel accounting (all 10.1M px from 33 legacy fullscreen inline draws; ~2637 program draws degenerate at this boot stage, 0 px — steady-state program draws validated live in §§57–58). **M8 done (§43):** flip present events with at-flip surface capture, BGRA snapshot, `XGrid.Graphics/DisplayFrame` BMP export, CLI `--frame` (`frames=33 stalls=33`, 640×480 `0x32A4000`, opaque black). Content discovery (§45) + file-save (§46–48) done; menu-idle render loop at 5B (EIP `0x2D3B9`, double-buffer `0x3D00000↔0x3E2C000`, still black) with viewport-baked `C0.z` clip proven guest-side (§§57–61). **§71 fidelity wave:** inline `SET_VERTEX_DATA*` + `DRAW_ARRAYS` (M5 gap closed), all 11 XF-context constant writers (c56–c59, c64–95 — fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/program-start/output-defaults, MUL zero rule + GLSL min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings + oD0 NaN→1. Register combiner (psh) merged (§75: real methods 0x260/0x288/0xA60/0xA80/0xAA0/0xAC0/0x1E20/0x1E40/0x1E60/0x1E70/0x1E74/0x1E78 — the brief's 0x1940 range was inline vertex data, corrected; combiner-disabled draws pixel-identical). Fog + dependent/bump/dot
-modes merged (§78). Remaining: fixed-function foggen, exotic modes,
-HILO dot maps, oPos.z clipRange normalization, Vulkan/OpenGL backends
-(16.6–16.7) |
+modes merged (§78). ZCLIP + float depth (§90) and foggen + HILO (§91)
+merged. Remaining (§93): textured-RGB-zero (top — RGB=0 + structured
+alpha everywhere, one untextured blue column keeps color), exotics,
+HILO hemisphere 5–7, ZCLIP-CULL + exact-1.0 overflow, Vulkan/OpenGL
+backends (16.6–16.7) |
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
@@ -2945,7 +2969,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 8 Storage | 5 | 85% | writable host-side FATX; DVD media edge cases |
 | 9 XBE Loader | 3 | 90% | host-side relocation/launch paths |
 | 10 Kernel Interface | 2 | 5% | whole phase (HLE ordinals) — deferred, LLE-first |
-| 11 NV2A | 15 | 85% | right-scene proof; fixed-function foggen; exotic modes; ZCLIP + float depth; Vulkan/OpenGL backends (16.6–16.7) |
+| 11 NV2A | 15 | 85% | textured-RGB-zero (top); right-scene color proof; exotics; HILO hemisphere; ZCLIP-CULL + exact-1.0; Vulkan/OpenGL backends (16.6–16.7) |
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
@@ -2978,28 +3002,25 @@ Interpretation: the "does the console boot and respond" core is close;
 the long tail is JIT/optimization, NV2A completion (fog, backends)
 and productization (frontend, save states, release).
 
-**NEXT SESSION — visible menu.** VIEWPORT BAKE CLOSED (§87): C0.z=16.7M
-was correct XDK device-depth output — the gap was emulator-side
-(missing `oPos.z/clipRange.y` divide). Fix validated live: pixels
-10.4M→118.8M, blended 0→45.3M, frame 0→57,087 nonzero px (first
-non-black menu frame, no fault). §82's "guest-accurate" verdict
-SUPERSEDED (was emulator-side depth saturation). Next: prove the newly
-visible scene is the RIGHT scene (xemu-pixel compare or known screen);
-ZCLIP bounds + float depth open.
-DVD media branch PINNED (§86: neither candidate address is
-media-dependent — decision is downstream file-path; decrypt writer is
-the SAME site `0x8002EFE6`/key; PacketLog 16→256).
-007 APC-suspect REFUTED (§89): single-threaded guest pipeline stall
-(final chunk memcpy'd but never linked; refill silent since 1.6B) —
-no device/CPU fix indicated; unblock would be a guest-behavior (EOS)
-decision, not correctness.
-nvnet P0–P3 COMPLETE (§§84, §88: rings, IRQ4, TX walker, RX
-filter/DMA, link/autoneg, socket backend behind `--net-backend`,
-`--net-inject`/`--net-link`; 993 tests). Remaining: first-real-frame
-validation, TCP proxy.
-NV2A remaining: fixed-function foggen, cubemap/reflection/
-project3d/clipplane/BRDF, HILO dot maps, ZCLIP + float depth,
-Vulkan/OpenGL backends (16.6–16.7).
+**NEXT SESSION — visible menu (color).** Scene-proof verdict PARTIALLY
+RIGHT (§93): layout/content is the RIGHT scene (frames diverge,
+different lists, glyph blocks, highlight rows) — but RGB=0 everywhere;
+the image lives only in alpha (still visually black; corrects §87's
+"non-black" reading). Precise pointer: textured-draw RGB dropped while
+alpha survives (one untextured blue column keeps color) — suspect
+texture-sample RGB=0 (M6/combiner), not global mask. Next: fix
+textured-RGB-zero, re-run the two-boot recipe; success = RGB-differing
+BMPs with readable UI (alpha structures are the layout oracle).
+ZCLIP + float depth MERGED (§90: `0x394/0x398` fragment clamp,
+F16/F24 ranges; live counters identical, `zclip=0` correct).
+Foggen + HILO MERGED (§91: GEN_MODE distances, FOG_COORD, HILO_1;
+disabled draws identical).
+007 EOS quirk MERGED (§§92, §94: TitleId-gated STRM 2→0, fires once,
+opt-out flag; game exits `0x20B50` with no fault over 1B steps but
+parks in the `0x138xx` splash loop — next gate). 1034 tests.
+NV2A remaining: textured-RGB-zero (top), cubemap/reflection/
+project3d/clipplane/BRDF, HILO hemisphere 5–7, ZCLIP-CULL +
+exact-1.0 overflow, Vulkan/OpenGL backends (16.6–16.7).
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
