@@ -2603,3 +2603,105 @@ FF00000000000000 --pad-step 960000000`), which still passes.
   (`0xFF445566`, CombinerDraws=0), two-texture modulate golden
    (`0xFF202020` = (0x80*0x40)/255^2 at two pixels, CombinerDraws=1).
    Full suite green (Nv2a 139); build/format clean.
+
+## 76. Dashboard menu control list decoded (2026-10-12)
+
+Decoded from `dash_act_ram.bin` (64 MB, `XBEH` at phys `0x13E000`).
+VA walk (`CR3=0xF000`, `PDE[0]=0x15D067`): header `0x10000->0x13E000`,
+`.text 0x11000` scattered (`0x1840A->0x16640A`, `0x1E2FF->0x14C2FF`,
+`0x24E90->0x172E90`), global `0x47BC84->0xAEAC84`, menu
+`0xD003B500->0x753500`. Disasm via `objdump -D -b binary -m i386
+-M intel --adjust-vma=0x11000` on the carved text. Artifacts in
+`Temp\opencode\menu_decode\` (outside repo).
+
+**Manager** = global `0x47BC84` (also `[ESI+0xFBC]`/`[ESI+0xFC0]`,
+`ESI=0xD003B500`): `+0x00` cached node VA, `+0x04` head VA, `+0x08`
+tail VA, `+0x0C` cached index, `+0x1C` selection index (mirrors
+`ESI+0x270`). `0x24E90` (thiscall, idx on stack) walks the cursor via
+`[node+0x18]` next / `[node+0x14]` prev against `[mgr+0x0C]`, returns
+the node VA (`0xCF208` fallback).
+
+**Control node** (`0x30B`, doubly-linked): `+0x00` type (2=XBMC idx0,
+1=idx1–5, sentinel `0x00FFFFFF`/1), `+0x04` flag byte tested by the
+navigator (0=idx0/sentinels, 1=idx1–5), `+0x08` title VA (UTF-16),
+`+0x0C` target state (`0xFFFFFFFF` = end-of-list, tested at `0x18454`),
+`+0x10` path VA (ascii, idx0 only), `+0x1C` submenu-list VA (idx2/5),
+`+0x20/+0x24/+0x28` display params.
+
+**Enumerated controls** (head `0x5E4210` forward): idx0 XBMC → state 8,
+path `e:\Shorcuts\XBMC Shortcut\xbmc.xbe`; idx1 Launch DVD → state 14;
+idx2 Games → state 100, list `0x5E4380`; idx3 Trainers → state 33;
+idx4 Skins → state 13; idx5 Xbox Admin → state 100, list `0x5E4560`;
+idx6–7 sentinels (`+0x0C=-1`). State map (`0x1EE98[state]` → jump
+`[0x1EE50+idx*4]`): 8→6→`0x1E54F`, 13→11→`0x1E460`, 14→12→`0x1E66A`,
+33→14→`0x1E479`, 100→16→`0x1E420`, 0→0→`0x1E77F`.
+
+**Ranked screen-changing candidates.** (1) idx0 XBMC / state 8
+(`0x1E54F`) — the only unconditional loader call (`call 0x232A0`
+with the `e:\…xbmc.xbe` path; `0x232A0` is drive-letter dispatch,
+`0x23420` stages the path at `0x58FB10/0x590E70`). (2) idx2/5
+Games/Admin / state 100 (`0x1E420`) — installs the submenu list as
+the new `[ESI+0xFC0]` base, so the next frames render a different
+list: cheapest visible-change test, no load. (3) idx3/idx4
+Trainers/Skins — single mode-fnptr store (`[ESI+0xFC0]=imm`),
+static page. (4) idx1 Launch DVD / state 14 (`0x1E66A`) — proven
+no-op at `[0x95BBC]=3`: three `call 0x232A0` sites are gated on
+`[0x95BBC]`==0/1/2-or-4 (`E:\APPS\DVDX2\default.xbe`,
+`c:\xboxdash.xbe`, `d:\default.xbe`); `=3` falls through — this
+explains the §70 identical draws/frames/pixels.
+
+**State machine** (`0x1E2F9` dispatch at `0x1E2FF` region): pre-hook
+`0x1E2C2` skips when `[ESI+0x280]==0`; dispatch reads
+`[ESI+0x280]`, bounds-checks `0x64` (else `0x1E72B` default),
+indexes `0x1EE98` → jumps `[0x1EE50+idx*4]`. Handlers set
+`[ESI+0x284]` sub-state + `[ESI+0xFC0]` mode, then common tail
+`0x1E779` clears `[ESI+0x280]` → `0x1E77F` housekeeping → sub-state
+dispatch via `0x1EF00/0x1EF44`. Only writer of `[+0x280]` is
+`0x1859D` (from `0x24E90(mgr,[ESI+0x270])+0x0C`). D-pad loops move
+`[+0x270]` (skip on `+0x04==0` or `+0x0C==-1`); A-edge
+(`[ESI+0xF4]` just-pressed) fires `0x1859D`. (`0x3E2F9` is a dead
+copy — zero hits.)
+
+**Next probes.** (1) `--break-log 0x1E54F --break-log 0x232A0` +
+UP to idx0 + `--pad-script` A-edge: expect loader call with the
+`e:\…` path, `0x47BC58/0x59647B` writes, IDE `e:\` reads, frame
+delta. (2) `--break-log 0x1E420` + idx2 Games + A-edge, dump
+`ESI+0xFC0`: expect base `0x47BC84→0x5E4380`, redrawn list, no
+load. (3) `--dvd <007.iso> --break-log 0x1E66A`, dump `0x95BBC`:
+expect 3→0/1/2/4 and `0x232A0(d:\default.xbe)` on activation.
+
+## 77. 007 input verdict: never-reaches, not mismatch (2026-10-12)
+
+`XInput*` are **not** kernel-thunk imports — they are statically
+linked XAPILIB/XPP inside the title image (kernel census §67: 96
+ordinals, no input). 007's XBE: 696320 B, base `0x10000`, TitleId
+`0x4541000D`, 9 sections, 5 libs, `VA+0xAAF000=phys` (§64). No
+`XInputOpen`/`GetState` hits in any 007 run; `USB intr=0`; XPP mask
+zero pre-hub; A-press byte-identical. Its sole post-hub USB traffic
+is the successful XID descriptor fetch (phys `0x19FC94`) — it has
+never issued `GET_REPORT`/`GET_CAPABILITIES`/periodic IN, so no
+device-side answer bug is observable.
+
+**No format gap either.** Wire (`XidGamepad` 20 B report) vs XAPI
+(`XINPUT_GAMEPAD` 18 B + `XINPUT_STATE` 22 B, `GetCapabilities`
+memset `FF`, rumble 6 B) matches what we serve, and the dashboard's
+999× `GetState` + D-pad/A-edge propagation proves the
+wire→XPP→title path bit-correct. Analog order variance (Cxbx
+`X,Y,A,B` comment vs xemu `A,B,X,Y` header) is absorbed by
+passthrough + proven mapping.
+
+**The game never gets there.** 007 sits in the `0x20E40` frame-limiter
+wait (tick pump `0x26B60`, invoker `0x379CA`, KTIMER periodic;
+§§67–68): PIT-exact 10 guest-ms ticks, but the guest treats 10 ms as
+1 ms (~10.7× dilation) and the snapshot shows tick≫target with the
+wait persisting — the expiry logic (float `delta`, `[AFE30/38]`) is
+still undecoded. Dashboard `GetState` runs per-frame; 007's per-frame
+phase is behind the limiter exit.
+
+**Unblock plan (no device change indicated):** static-scan 007's
+image for `XInitDevices`/`XInputOpen` prologues + `XID 0x4200`
+xrefs, `--break-log` the candidates on a post-hub `--dvd` run to
+prove zero-open vs the dashboard `0x76A1F` pattern; run past the
+limiter (scale pump/tick or patch `[AFE34]`/delta at `0x207C0`)
+and only then re-test `--pad` visibility. Do not build psh/nvnet
+scope for this.
