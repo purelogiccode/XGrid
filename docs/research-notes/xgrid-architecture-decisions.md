@@ -3247,3 +3247,43 @@ advance path), `src/XGrid.Cli/Program.cs` (`--net-backend`,
   init-only behavior unchanged (STATUS 0, IDLE-set, zero-KICK
    steadiness; `Advance` with an empty backend is a no-op).
    Full suite 986 green.
+
+## 89. 007 APC-suspect refuted: single-threaded guest pipeline stall, not a delivery gap (2026-10-12)
+
+Work in `Temp\opencode\worktrees\007-apc` (analysis-only, clean —
+temp forcing/observability fully reverted; logs in
+`Temp\opencode\007-apc\`, incl. 3.3 GB full log + ramdump).
+
+**0x2AA65 capture** (break-world, forced `[AFE34]=2`, reverted):
+2.3B-step break-log on 0x2AA65/0x2ABE0/0x2A740/0x2A830 — 0x2A740 =
+4,402,438 hits, 0x2A830 = 4,402,334 hits (the wait poll, firing to
+step 2,299,999,893), but **0x2AA65 fired 76× (last 1,608,143,961)
+and 0x2ABE0 75× (last 1,608,143,784)** — the refill producer goes
+permanently silent 700M steps before end. Bit-exact repro (pump
+first-hit 562,606,460 = prior run to the step).
+
+**APC/thread findings — prime suspect REFUTED.** 8.8M samples: ONE
+thread (`0xD002F018`) owns waiter+refill end-to-end; alertable=0
+always; no producer thread, no pending async op, IDE idle, DVD tail
+frozen at 16 READs with zero errors — nothing for KiDeliverApc to
+deliver; the wait is not APC-shaped. Disasm: `0x20B50` drains
+chunks via 0x2A740, validates tag==`MPCh`, releases via 0x2ABE0
+(which 2→1-clears AND calls refill `0x2A950`); `0x2AA65` is the
+refill's starved-exit (`mov [esi+0x44],2`); `0x30820` is SSE memcpy
+(movntps correctly emulated — verified), not a DVD read; DVD data
+path byte-exact (RAM tag == file bytes). End-state catch-22: the
+final 0x2A00 B WERE memcpy'd (tag landed, watch-proven writer
+`0x30903`=MPCh) but never linked into the consumable queue
+(linking only in 0x2A950, reachable only via 0x2ABE0, which the
+waiter only calls on a found chunk); `[STRM+0x44]` stays 2. Both
+waiter exits unreachable — deterministic guest-side single-threaded
+pipeline stall, ~160/669 sectors of `EAG.MPC` unplayed. Consistent
+with §85's force-probe exiting permanently (simulates the EOS the
+guest never signals).
+
+**Verdict:** no emulation layer is implicated — no device fix, no
+CPU/APC fix indicated. Any unblock is a guest-behavior decision
+(EOS semantics), not a correctness fix; longer runs ruled out.
+Next (if ever): decide whether to emulate the missing EOS signal
+as a compatibility quirk, with the force-probe as the reference
+behavior.
