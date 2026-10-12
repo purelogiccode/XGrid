@@ -3287,3 +3287,94 @@ CPU/APC fix indicated. Any unblock is a guest-behavior decision
 Next (if ever): decide whether to emulate the missing EOS signal
 as a compatibility quirk, with the force-probe as the reference
 behavior.
+## 90. ZCLIP bounds + Z_FORMAT float depth modeled in the software rasterizer (2026-10-12)
+
+Work on `wave/nv2a-zclip`. Closes the two §87-listed remainders
+("ZCLIP bounds + float-depth remain untracked"); fixed-function
+foggen, exotic texture modes, and GL/Vulkan backends stay open.
+
+**Reference facts extracted (no code copied).** xemu
+`hw/xbox/nv2a/nv2a_regs.h`: Kelvin `SET_CLIP_MIN` = `0x394`,
+`SET_CLIP_MAX` = `0x398`, `SET_CONTROL0` = `0x290` with `Z_FORMAT`
+bit 12, `SETUPRASTER_Z_FORMAT` bit 29. `pgraph/pgraph.c`:
+`SET_CONTROL0` feeds its Z_FORMAT bit into `SETUPRASTER_Z_FORMAT`;
+`SET_CLIP_MIN/MAX` store the raw word into `NV_PGRAPH_ZCLIPMIN`
+(`0x1A90`) / `ZCLIPMAX` (`0x1ABC`); all pgraph regs reset to zero
+(`nv2a.c` memset). `pgraph/glsl/common.c`: the fragment uniform is
+`clipRange = [0, zmax, *(float*)ZCLIPMIN, *(float*)ZCLIPMAX]` with
+`zmax` = zeta-format maximum, or the float variant when
+`surface_shape.z_format` is set (Z16: `f16_max`, Z24S8: `f24_max`).
+`pgraph/util.h`: `f16_max = 511.9375`, `f24_max = 1e30`; the custom
+float decodes are zero-special-cased bit shuffles
+(F16: `(f16<<11)+0x3C000000` as float32; F24: `(f24&0xFFFFFF)<<7` as
+float32). `pgraph/glsl/psh.c` `set_psh_state`: Z16+Z_FORMAT = F16,
+Z24S8+Z_FORMAT = F24 (else D16/D24); per fragment, device-unit
+`zvalue` is discarded outside `[clipRange.z, clipRange.w]` iff
+`depth_clipping` (`ZCOMPRESSOCCLUDE.ZCLAMP_EN == CULL`), else clamped
+into it; depth store is `floor(z)/65535` (D16),
+`uintBitsToFloat(floatBitsToUint(floor(z)/16777216)+1)` (D24, the +1u
+bit-trick reproduces /16777215 under GPU multiply rounding), or
+`zvalue / clipRange.y` (float). `pgraph.c`
+`get_clear_depth_stencil_value`: clear words decode the same way
+(F16/F24 field + stencil byte for Z24S8), normalized by the float max.
+Vertex clip planes and the guard band have no explicit regs — in xemu
+they are GL-hardware clipping after the epilogue's
+`oPos.xyz *= oPos.w` re-projection (`vsh-prog.c`); only the ZCLIP
+fragment clamp/discard is conventional state.
+
+**XGrid mapping (`src/XGrid.Nv2a/Nv2aMmio.cs`).** New methods
+`0x290` (latches Z_FORMAT bit 12 into `_zFormatFloat`), `0x394/0x398`
+(reinterpreted as float into `_zclipMin/_zclipMax`, setting
+`_zclipActive`). `ZetaDepthRange` takes the float flag (F16/F24 maxima,
+unknown formats still fall back to 1). The vertex divide is unchanged
+in shape, now range-correct for float surfaces. The fragment stage —
+exactly where xemu applies ZCLIP — gains `ApplyZclip` (device-unit
+clamp + `ZclipClampedPixels` diagnostic) and float-aware zeta
+decode/encode (`ConvertF16/F24ToFloat` = the util.h formulas;
+`ConvertFloatToF16/F24` = their inverses for the normalized compare/
+store path). Clear stays raw passthrough (the driver supplies
+already-encoded clear words, as on hardware).
+
+**Deliberate deviations (logged).** (1) Unprogrammed ZCLIP is
+passthrough (`[0,+Inf]`, legacy `[0,1]` clamp bit-exact): xemu has no
+enable and resets both regs to 0.0 (= kill-everything until written),
+but guests always program the bounds before 3D (dashboard writes
+`0x398 = 16777215`), so passthrough-until-written is observationally
+identical and keeps every existing golden bit-exact by construction.
+(2) Only the clamp path is modeled; the CULL/discard variant needs
+`ZCOMPRESSOCCLUDE` state that no Kelvin method currently feeds —
+follow-up if a guest ever uses occlusion cull. (3) The F16 encoder
+saturates at `0xFFF8`: the raw inverse reaches `0xFFFF` at 1.0, which
+xemu's own decode maps back to a *negative* float (bit-add wraps past
+`0x80000000`); `0xFFF8` is the largest field decoding sane (511.5),
+monotonicity preserved. F24 needs no saturation (1e30 sits far below
+its encoding's wrap). (4) Pinned, not fixed: incoming normalized depth
+*exactly* 1.0 stores word 0 in the fixed path
+(`(uint)(1.0*16777215+0.5) = 0x1000000`, shifted out by the `<< 8`
+zeta pack; xemu stores 1.0) — pre-existing, out of scope, covered by
+`Zclip_DisabledPassthroughPreservesSaturation`.
+
+**Validation (in-worktree).** 8 new `PgraphTransformTests`: ZCLIP
+inside (no-clamp, golden-identical word), above-max clamp, below-min
+clamp, boundary-max inclusive with zero clamp count, disabled
+passthrough, F16 round-trip (exact `0xEFFF` halves), F24 round-trip
+(exact `0xE193E5` word, stencil preserved), float LESS ordering
+(0.25 passes writing exact `0xDFFF`, 0.75 killed, word untouched).
+Nv2a suite 169/169 (161 pre-existing unchanged, incl. the
+`0xFF445566`/`0xFF202020`/fog/texture goldens); full suite 1001/1001;
+`dotnet format --verify-no-changes` clean.
+**Live boot (1B steps, §87 recipe + `--frame`, logs in
+`Temp\opencode\nv2a-zclip\`):** no fault, and every rendering counter
+is bit-identical to the §87 post-fix run — draws 33632, skipped 1402,
+pixels 118798338, textured 233381688, blended 45302409, depth-tested
+136, clears 695, frames/stalls 686, frame 640×480 nonzero 57087, frame
+SHA `CC9D82DC…` identical. The `--pgraph` stream proves the new path
+was live: guest writes `0394 = 0.0` (398×) and `0398 = 16777215.0`
+(397×), so `_zclipActive` held through the 3D boot and every depth
+fragment ran `ApplyZclip` — `zclip=0` (nothing out of bounds, correct
+for containing bounds) via the bit-exact in-bounds fast path.
+`0290` arrives with Z_FORMAT set 153× early in the stream, but no
+float-mode draw exists in this window (pixel-identity with the fixed
+run proves the flag is clear during all 33K draws). End EIP
+`0x1E0F1` vs §87's `0x1DF11` is benign guest-side timing variance
+(RTC wall-clock reads); rendering is unaffected.

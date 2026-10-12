@@ -1824,4 +1824,344 @@ public sealed class PgraphTransformTests
         Assert.Equal(1uL, nv2A.NonProgrammableModeDraws);
         Assert.True(nv2A.DrawnPixels > 0);
     }
+
+    [Fact]
+    public void Zclip_InsideBoundsDrawsWithExactDepth()
+    {
+        // Z24S8, vertex Z = 8388608 device units with ZCLIP [0, 16777215]:
+        // no clamping engages, so the stored word matches the no-ZCLIP golden.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B000000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B7FFFFFu));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_AboveMaxClampsToMax()
+    {
+        // Vertex Z = 16777215 device units with ZCLIP max = 8388608: the
+        // fragment depth clamps to the bound, so the stored word is 0x800000
+        // (legacy saturation would have stored 0xFFFFFF).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B7FFFFFu);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B000000u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.True(nv2A.ZclipClampedPixels > 0);
+        Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_BelowMinClampsToMin()
+    {
+        // Vertex Z = 0 device units with ZCLIP min = 8388608: the fragment
+        // depth clamps up to the bound (legacy saturation would store 0).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x00000000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x0394u, 0x4B000000u),
+            (0x0398u, 0x4B7FFFFFu));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.True(nv2A.ZclipClampedPixels > 0);
+        Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_BoundaryMaxIsInclusive()
+    {
+        // Vertex Z exactly equals ZCLIP max: the bound is inclusive, so the
+        // triangle draws at the bound depth with no clamp counted.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4B000000u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x0394u, 0x00000000u),
+            (0x0398u, 0x4B000000u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.Equal(0x80000000u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void Zclip_DisabledPassthroughPreservesSaturation()
+    {
+        // No ZCLIP methods written: shader Z at 2x the zeta maximum keeps the
+        // legacy [0,1] saturation (clamps to 1.0, LEQUAL against far passes,
+        // so the triangle draws). The stored word is 0 by the pre-existing
+        // exact-1.0 overflow in the fixed-depth encode
+        // ((uint)(1.0 * 16777215 + 0.5) = 0x1000000, shifted out by the << 8
+        // zeta pack; xemu stores 1.0 there) — pinned as-is, out of scope.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x4BFFFFFFu);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.Equal(0uL, nv2A.ZclipClampedPixels);
+        Assert.Equal(0u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void FloatDepth_Z16RoundTrip()
+    {
+        // Z16 surface with CONTROL0 Z_FORMAT: vertex Z = 255.96875 device
+        // units (0.5 of F16_MAX 511.9375) LEQUAL-passes against a 1.0
+        // prefill and stores the exact F16 encoding 0xEFFF per pixel pair.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x437FF800u);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                uint address = 0x5000u + (y * 0x40u) + (x * 2u);
+                uint wordAddress = address & ~3u;
+                int shift = (int)((address & 2u) * 8);
+                uint current = memory.ReadPhysical(wordAddress);
+                uint halfMask = 0xFFFFu << shift;
+                memory.WritePhysical(wordAddress, (current & ~halfMask) | (0xFFF8u << shift));
+            }
+        }
+
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000114u),
+            (0x020Cu, 0x00400040u),
+            (0x0210u, 0x00003000u),
+            (0x0214u, 0x00005000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0u),
+            (0x0B88u, 0u),
+            (0x0B8Cu, 0x3F800000u),
+            (0x0290u, 0x00001000u),
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u),
+        };
+        PushMethods(nv2A, memory, methods.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.True(nv2A.DepthTestedPixels > 0);
+        Assert.Equal(0xEFFFEFFFu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + 8u));
+        Assert.Equal(0xEFFFEFFFu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + 12u));
+    }
+
+    [Fact]
+    public void FloatDepth_Z24RoundTrip()
+    {
+        // Z24S8 surface with CONTROL0 Z_FORMAT: vertex Z = 5e29 device units
+        // (0.5 of F24_MAX 1e30) LEQUAL-passes against a 1.0 prefill and
+        // stores the exact F24 encoding 0xE193E5 (stencil byte preserved).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangleVertices(memory, 0x70C9F2CAu);
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xE293E500u);
+            }
+        }
+
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x0290u, 0x00001000u),
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.DrawnPixels > 0);
+        Assert.True(nv2A.DepthTestedPixels > 0);
+        Assert.Equal(0xE193E500u, memory.ReadPhysical(0x5000u + (5u * 0x40u) + (5u * 4u)));
+    }
+
+    [Fact]
+    public void FloatDepth_OrderingMatchesFixed()
+    {
+        // Float-depth LESS ordering mirrors fixed depth: with a 0.5 prefill,
+        // a 0.25 draw passes and writes its exact F16 encoding, and a later
+        // 0.75 draw is killed, leaving the stored word untouched.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                uint address = 0x5000u + (y * 0x40u) + (x * 2u);
+                uint wordAddress = address & ~3u;
+                int shift = (int)((address & 2u) * 8);
+                uint current = memory.ReadPhysical(wordAddress);
+                uint halfMask = 0xFFFFu << shift;
+                memory.WritePhysical(wordAddress, (current & ~halfMask) | (0xEFFFu << shift));
+            }
+        }
+
+        WriteTriangleVertices(memory, 0x42FFF800u);
+        PushFloatDepthDraw(nv2A, memory);
+        Assert.Equal(0xDFFFDFFFu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + 8u));
+        ulong drawnAfterNear = nv2A.DrawnPixels;
+        Assert.True(drawnAfterNear > 0);
+
+        WriteTriangleVertices(memory, 0x43BFFA00u);
+        PushFloatDepthDraw(nv2A, memory);
+        Assert.Equal(0xDFFFDFFFu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + 8u));
+        Assert.Equal(drawnAfterNear, nv2A.DrawnPixels);
+    }
+
+    private static void PushFloatDepthDraw(Nv2AMmio nv2A, ArrayMemory memory)
+    {
+        var methods = new List<(uint Method, uint Parameter)>
+        {
+            (0x0208u, 0x00000114u),
+            (0x020Cu, 0x00400040u),
+            (0x0210u, 0x00003000u),
+            (0x0214u, 0x00005000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0u),
+            (0x0B88u, 0u),
+            (0x0B8Cu, 0x3F800000u),
+            (0x0290u, 0x00001000u),
+            (0x030Cu, 1u),
+            (0x0354u, 0x0201u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u),
+        };
+        PushMethods(nv2A, memory, methods.ToArray());
+    }
 }
