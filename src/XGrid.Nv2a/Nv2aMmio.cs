@@ -251,6 +251,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private const uint MethodTextureEnd = 0x1BFCu;
     private const uint TextureSlotStride = 0x40u;
     private const uint TextureControl0Enable = 1u << 30;
+    private const uint TextureFormatCubemapEnable = 1u << 2;
+    private const uint TextureFormatDimensionality = 0xC0u;
+    private const uint TextureFormatMipmapLevels = 0x000F0000u;
+    private const uint TextureFormatBaseSizeP = 0xF0000000u;
+    private const uint MethodShaderClipPlaneMode = 0x17F8u;
     private const uint TextureBumpMatBase = 0x28u;
     private const uint TextureBumpMatEnd = 0x34u;
     private const uint TextureBumpScale = 0x38u;
@@ -400,6 +405,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
     private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
+    private uint _shaderClipMode;
     private readonly float[][] _bumpMatrices = new float[MaxTextureSlots - 1][];
     private readonly float[] _bumpScales = new float[MaxTextureSlots - 1];
     private readonly float[] _bumpOffsets = new float[MaxTextureSlots - 1];
@@ -858,6 +864,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         Array.Clear(_textureControl1);
         Array.Clear(_textureFilter);
         Array.Clear(_textureImageRect);
+        _shaderClipMode = 0;
         foreach (float[] matrix in _bumpMatrices)
         {
             Array.Clear(matrix);
@@ -2231,6 +2238,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 (_combiner.OtherStageInput & ~0xFFFF000u) | (parameter & 0xFFFF000u);
         }
 
+        if (method == MethodShaderClipPlaneMode)
+        {
+            _shaderClipMode = parameter;
+        }
+
         HandleVertexDataMethod(method, parameter);
     }
 
@@ -3025,8 +3037,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>
     /// Transformed vertex for the combiner path: screen-space position, diffuse
-    /// (oD0), specular (oD1), four texture coordinate triples (oT0-oT3, with the
-    /// third component kept for the dot texture modes), and the per-vertex fog
+    /// (oD0), specular (oD1), four texture coordinate quads (oT0-oT3; xyz kept
+    /// for the dot/projective/reflection texture modes, w kept for projective
+    /// division and the reflection-spec eye vector), and the per-vertex fog
     /// factor computed from oFog.x (or the fixed-function GEN_MODE distance
     /// when the program leaves oFog unwritten) through the fog-mode equation.
     /// </summary>
@@ -3041,6 +3054,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             float u1, float v1, float s1,
             float u2, float v2, float s2,
             float u3, float v3, float s3,
+            float t0w, float t1w, float t2w, float t3w,
             float fog)
         {
             X = x;
@@ -3067,6 +3081,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             U3 = u3;
             V3 = v3;
             S3 = s3;
+            T0W = t0w;
+            T1W = t1w;
+            T2W = t2w;
+            T3W = t3w;
             Fog = fog;
         }
 
@@ -3117,6 +3135,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         public float V3 { get; }
 
         public float S3 { get; }
+
+        public float T0W { get; }
+
+        public float T1W { get; }
+
+        public float T2W { get; }
+
+        public float T3W { get; }
 
         public float Fog { get; }
     }
@@ -3330,6 +3356,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 outputs[10][0], outputs[10][1], outputs[10][2],
                 outputs[11][0], outputs[11][1], outputs[11][2],
                 outputs[12][0], outputs[12][1], outputs[12][2],
+                outputs[9][3], outputs[10][3], outputs[11][3], outputs[12][3],
                 fogFactor);
             transformed[index] = vertex;
             return vertex;
@@ -3606,6 +3633,163 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
     }
 
+    /// <summary>
+    /// Samples a stage's cube map (TEXFMT CUBEMAPENABLE) for a direction
+    /// vector. Faces are stored contiguously in the guest's +X,-X,+Y,-Y,+Z,-Z
+    /// order (xemu <c>generate_texture</c>), each face occupying the full mip
+    /// chain rounded up to the 128-byte alignment. Level 0 is sampled; the
+    /// per-face swizzle matches the 2D sampler. Faces always clamp at the
+    /// edges (GL cube sampling has no wrap across faces).
+    /// </summary>
+    private bool TrySampleTextureCube(int slot, float x, float y, float z, out float r, out float g, out float b, out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        IGpuMemory? memory = _memory;
+        if (memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
+        {
+            return false;
+        }
+
+        int width = (int)(_textureImageRect[slot] >> 16);
+        int height = (int)(_textureImageRect[slot] & 0xFFFFu);
+        if (width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        uint color = (_textureFormat[slot] >> 8) & 0xFFu;
+        uint bytes = color switch
+        {
+            0x06u => 4u,
+            0x05u => 2u,
+            _ => 0u,
+        };
+        if (bytes == 0)
+        {
+            return false;
+        }
+
+        int face = PshCombiner.SelectCubeFace(x, y, z, out float s, out float t);
+        int tx = Math.Clamp((int)MathF.Floor(s * width), 0, width - 1);
+        int ty = Math.Clamp((int)MathF.Floor(t * height), 0, height - 1);
+        uint address = _textureOffset[slot] +
+                       (CubeFaceStride(slot, width, height, bytes) * (uint)face) +
+                       (SwizzleOffset(tx, ty, width, height) * bytes);
+        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+    }
+
+    /// <summary>
+    /// Samples a stage's swizzled volume texture (xemu <c>unswizzle_box</c>
+    /// layout) at normalized xyz coordinates. The volume depth comes from
+    /// TEXFMT BASE_SIZE_P; the P address mode from TEXADDRESS bits 16-18.
+    /// </summary>
+    private bool TrySampleTexture3D(int slot, float u, float v, float w, out float r, out float g, out float b, out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        IGpuMemory? memory = _memory;
+        if (memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
+        {
+            return false;
+        }
+
+        int width = (int)(_textureImageRect[slot] >> 16);
+        int height = (int)(_textureImageRect[slot] & 0xFFFFu);
+        int depth = 1 << (int)((_textureFormat[slot] & TextureFormatBaseSizeP) >> 28);
+        if (width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        uint color = (_textureFormat[slot] >> 8) & 0xFFu;
+        uint bytes = color switch
+        {
+            0x06u => 4u,
+            0x05u => 2u,
+            _ => 0u,
+        };
+        if (bytes == 0)
+        {
+            return false;
+        }
+
+        uint address = _textureAddress[slot];
+        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(address & 0xFu));
+        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((address >> 4) & 0xFu));
+        int z = WrapCoordinate((int)MathF.Floor(w * depth), depth, (int)((address >> 16) & 0x7u));
+        address = _textureOffset[slot] + (SwizzleOffset3D(x, y, z, width, height, depth) * bytes);
+        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+    }
+
+    /// <summary>
+    /// Byte length of one cube face: all mip levels of the level-0 extent
+    /// (TEXFMT MIPMAP_LEVELS clamped by TEXCTL0 MAX_LOD_CLAMP and the base
+    /// size), rounded up to the 128-byte face alignment. Matches xemu's
+    /// <c>pgraph_get_texture_length</c> cubemap path.
+    /// </summary>
+    private uint CubeFaceStride(int slot, int width, int height, uint bytes)
+    {
+        int levels = (int)((_textureFormat[slot] & TextureFormatMipmapLevels) >> 16);
+        int maxLevel = (int)((_textureControl0[slot] >> 6) & 0x3FFu);
+        int logMax = 0;
+        int maxDim = Math.Max(width, height);
+        while ((1 << logMax) < maxDim)
+        {
+            logMax++;
+        }
+
+        levels = Math.Min(Math.Max(levels, 1), Math.Min(maxLevel + 1, logMax + 1));
+        uint total = 0u;
+        int w = width;
+        int h = height;
+        for (int level = 0; level < levels; level++)
+        {
+            w = Math.Max(w, 1);
+            h = Math.Max(h, 1);
+            total += (uint)(w * h) * bytes;
+            w /= 2;
+            h /= 2;
+        }
+
+        return (total + 127u) & ~127u;
+    }
+
+    /// <summary>Decodes a swizzled A8R8G8B8 (0x06) or R5G6B5 (0x05) texel.</summary>
+    private static bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, out float r, out float g, out float b, out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        switch (color)
+        {
+            case 0x06u:
+                {
+                    uint texel = memory.ReadPhysical(address);
+                    a = ((texel >> 24) & 0xFFu) / 255f;
+                    r = ((texel >> 16) & 0xFFu) / 255f;
+                    g = ((texel >> 8) & 0xFFu) / 255f;
+                    b = (texel & 0xFFu) / 255f;
+                    return true;
+                }
+            case 0x05u:
+                {
+                    uint texel = memory.ReadPhysical(address) & 0xFFFFu;
+                    r = ((texel >> 11) & 0x1Fu) / 31f;
+                    g = ((texel >> 5) & 0x3Fu) / 63f;
+                    b = (texel & 0x1Fu) / 31f;
+                    return true;
+                }
+            default:
+                return false;
+        }
+    }
+
     private static int WrapCoordinate(int value, int size, int mode)
     {
         switch (mode)
@@ -3658,6 +3842,50 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         while (!done);
 
         return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY);
+    }
+
+    /// <summary>
+    /// Volume (3D) swizzle offset: the same interleaved-mask construction as
+    /// the 2D swizzle with the z bits woven in after x and y (xemu
+    /// <c>generate_swizzle_masks</c> / <c>unswizzle_box</c>).
+    /// </summary>
+    private static uint SwizzleOffset3D(int x, int y, int z, int width, int height, int depth)
+    {
+        uint maskX = 0u;
+        uint maskY = 0u;
+        uint maskZ = 0u;
+        uint bit = 1u;
+        uint maskBit = 1u;
+        bool done;
+        do
+        {
+            done = true;
+            if (bit < (uint)width)
+            {
+                maskX |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            if (bit < (uint)height)
+            {
+                maskY |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            if (bit < (uint)depth)
+            {
+                maskZ |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            bit <<= 1;
+        }
+        while (!done);
+
+        return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY) | InterleaveBits((uint)z, maskZ);
     }
 
     private static uint InterleaveBits(uint value, uint mask)
@@ -4247,14 +4475,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
     /// <summary>
     /// Resolves one combiner-stage texel for the current fragment, following the
-    /// reference per-mode equations. Returns true when a texture was sampled
-    /// (drives the TexturedPixels diagnostic). Modes the rasterizer cannot back
-    /// (cubemap/reflection/project3d/clipplane/BRDF, reserved values, or a valid
-    /// mode in an invalid stage) degrade to NONE and count a TexModeFallback.
+    /// reference per-mode equations. <paramref name="coords"/> holds the four
+    /// interpolated texture-coordinate quads (x, y, z, w) for this fragment.
+    /// Returns true when a texture was sampled (drives the TexturedPixels
+    /// diagnostic). Modes the rasterizer cannot back (reserved values, a valid
+    /// mode in an invalid stage, or an unsupported texture format for
+    /// cube/volume sampling) degrade to NONE and count a TexModeFallback.
+    /// BRDF and DOT_RFLCT_SPEC_CONST mirror xemu's observable stub (zero texel
+    /// plus UNIMPLEMENTED); no reliable reference implements their math.
     /// </summary>
-    private bool ResolveTexel(int stage, int mode, float tu, float tv, float ts, float[][] texels, float[] stageDots)
+    private bool ResolveTexel(int stage, int mode, float[][] coords, float[][] texels, float[] stageDots)
     {
         float[] texel = texels[stage];
+        float[] coord = coords[stage];
+        float tu = coord[0];
+        float tv = coord[1];
+        float ts = coord[2];
         if (!PshCombiner.IsModeValidForStage(mode, stage))
         {
             SetTexelNone(texel);
@@ -4268,12 +4504,49 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 SetTexelNone(texel);
                 return false;
             case PshCombiner.TexModeProject2D:
+                if (IsTextureCubemap(stage))
+                {
+                    // xemu: texture(texSamp, remap2DToCube(pT.xyw)), i.e.
+                    // normalize(vec3(1, y/w, -x/w)).
+                    return TrySampleCubeDirection(stage, 1f, tv / coord[3], -tu / coord[3], texel);
+                }
+
                 return SampleInto(stage, tu, tv, texel);
+            case PshCombiner.TexModeProject3D:
+                {
+                    // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
+                    // samplers, (x/w, y/w, z/w) for volume textures.
+                    float invW = 1f / coord[3];
+                    if (TextureDimensionality(stage) == 3)
+                    {
+                        return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
+                    }
+
+                    return SampleInto(stage, tu * invW, tv * invW, texel);
+                }
+
+            case PshCombiner.TexModeCubemap:
+                if (IsTextureCubemap(stage))
+                {
+                    return TrySampleCubeDirection(stage, tu, tv, ts, texel);
+                }
+
+                PshCombiner.CubeRemapTo2D(tu, tv, ts, out float cu, out float cv);
+                return SampleInto(stage, cu, cv, texel);
             case PshCombiner.TexModePassthru:
                 texel[0] = tu;
                 texel[1] = tv;
                 texel[2] = 0f;
                 texel[3] = 1f;
+                return false;
+            case PshCombiner.TexModeClipPlane:
+                // The fragment discard is applied by the caller before the
+                // resolve loop (xemu emits it in the stage preamble); the
+                // hardware texel value stays zero.
+                texel[0] = 0f;
+                texel[1] = 0f;
+                texel[2] = 0f;
+                texel[3] = 0f;
                 return false;
             case PshCombiner.TexModeBumpEnvMap:
             case PshCombiner.TexModeBumpEnvMapLum:
@@ -4281,9 +4554,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
             case PshCombiner.TexModeDpndntAr:
             case PshCombiner.TexModeDpndntGb:
                 return ResolveDependent(stage, mode, texels, texel);
+            case PshCombiner.TexModeBrdf:
+            case PshCombiner.TexModeDotRflctSpecConst:
+                // xemu emits vec4(0.0) plus NV2A_UNIMPLEMENTED for these two
+                // (the Cxbx variants are explicitly untested HLE guesses).
+                SetTexelZero(texel);
+                TexModeFallbacks++;
+                return false;
             case PshCombiner.TexModeDotProduct:
             case PshCombiner.TexModeDotZw:
-                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
+                if (!TryStageDot(stage, coords, texels, stageDots, out _))
                 {
                     SetTexelNone(texel);
                     CountTexModeFallback(mode);
@@ -4296,7 +4576,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 texel[3] = 0f;
                 return false;
             case PshCombiner.TexModeDotSt:
-                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out float dotSt))
+                if (!TryStageDot(stage, coords, texels, stageDots, out float dotSt))
                 {
                     SetTexelNone(texel);
                     CountTexModeFallback(mode);
@@ -4304,8 +4584,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 }
 
                 return SampleInto(stage, stageDots[stage - 1], dotSt, texel);
+            case PshCombiner.TexModeDotRflctDiff:
+                return ResolveDotReflection(stage, coords, texels, texel, specular: false);
+            case PshCombiner.TexModeDotRflctSpec:
+                return ResolveDotReflection(stage, coords, texels, texel, specular: true);
+            case PshCombiner.TexModeDotStrCube:
+                return ResolveDotStrCube(stage, coords, texels, texel);
             case PshCombiner.TexModeDotStr3D:
-                if (!TryStageDot(stage, tu, tv, ts, texels, stageDots, out _))
+                if (!TryStageDot(stage, coords, texels, stageDots, out _))
                 {
                     SetTexelNone(texel);
                     CountTexModeFallback(mode);
@@ -4447,6 +4733,155 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
     }
 
+    /// <summary>
+    /// xemu DOT_RFLCT_DIFF (stage 2) / DOT_RFLCT_SPEC (stage 3): builds a
+    /// direction from the dot chain and cube/2D-samples it. Diffuse uses
+    /// n = (dot1, dot2, dot3') where dot3' dots stage 3's coords against
+    /// stage 3's input; specular forms n = (dot1, dot2, dot3) and reflects
+    /// the eye vector e = (oT1.w, oT2.w, oT3.w):
+    /// rv = 2*n*dot(n,e)/dot(n,n) - e.
+    /// </summary>
+    private bool ResolveDotReflection(int stage, float[][] coords, float[][] texels, float[] texel, bool specular)
+    {
+        float nx;
+        float ny;
+        float nz;
+        if (!specular)
+        {
+            // Diffuse (stage 2): n = (dot1, dot2, dot_i_n) where the third
+            // component is computed against stage 3's coords/dot map/input
+            // (xemu's dot%d_n). Requires input texels from earlier stages.
+            if (!TryComputeDot(stage - 1, coords, texels, out nx) ||
+                !TryComputeDot(stage, coords, texels, out ny) ||
+                !TryComputeDot(stage + 1, coords, texels, out nz))
+            {
+                SetTexelNone(texel);
+                TexModeFallbacks++;
+                return false;
+            }
+
+            return SampleCubeOrRemap(stage, nx, ny, nz, texel);
+        }
+
+        // Specular (stage 3): n = (dot1, dot2, dot3), eye vector is the w
+        // component of texture coords 1-3.
+        if (!TryComputeDot(stage - 2, coords, texels, out nx) ||
+            !TryComputeDot(stage - 1, coords, texels, out ny) ||
+            !TryComputeDot(stage, coords, texels, out nz))
+        {
+            SetTexelNone(texel);
+            TexModeFallbacks++;
+            return false;
+        }
+
+        float ex = coords[1][3];
+        float ey = coords[2][3];
+        float ez = coords[3][3];
+        float nDotN = (nx * nx) + (ny * ny) + (nz * nz);
+        float scale = (2f * ((nx * ex) + (ny * ey) + (nz * ez))) / nDotN;
+        return SampleCubeOrRemap(stage, (scale * nx) - ex, (scale * ny) - ey, (scale * nz) - ez, texel);
+    }
+
+    /// <summary>
+    /// xemu DOT_STR_CUBE (stage 3): direction = (dot1, dot2, dot3), cube/2D-sampled.
+    /// </summary>
+    private bool ResolveDotStrCube(int stage, float[][] coords, float[][] texels, float[] texel)
+    {
+        if (!TryComputeDot(stage - 2, coords, texels, out float nx) ||
+            !TryComputeDot(stage - 1, coords, texels, out float ny) ||
+            !TryComputeDot(stage, coords, texels, out float nz))
+        {
+            SetTexelNone(texel);
+            TexModeFallbacks++;
+            return false;
+        }
+
+        return SampleCubeOrRemap(stage, nx, ny, nz, texel);
+    }
+
+    private bool SampleCubeOrRemap(int stage, float x, float y, float z, float[] texel)
+    {
+        if (IsTextureCubemap(stage))
+        {
+            return TrySampleCubeDirection(stage, x, y, z, texel);
+        }
+
+        PshCombiner.CubeRemapTo2D(x, y, z, out float u, out float v);
+        return SampleInto(stage, u, v, texel);
+    }
+
+    private bool TrySampleCubeDirection(int stage, float x, float y, float z, float[] texel)
+    {
+        if (!IsSupportedSwizzledFormat(stage))
+        {
+            // Linear cube maps are invalid in the reference (assert), and no
+            // other cube format is backed by the software sampler. A disabled
+            // or empty texture is not a mode failure.
+            if (IsTextureSamplingConfigured(stage))
+            {
+                TexModeFallbacks++;
+            }
+
+            SetTexelNone(texel);
+            return false;
+        }
+
+        if (TrySampleTextureCube(stage, x, y, z, out float r, out float g, out float b, out float a))
+        {
+            texel[0] = r;
+            texel[1] = g;
+            texel[2] = b;
+            texel[3] = a;
+            return true;
+        }
+
+        SetTexelNone(texel);
+        return false;
+    }
+
+    private bool IsTextureCubemap(int stage)
+    {
+        return (_textureFormat[stage] & TextureFormatCubemapEnable) != 0;
+    }
+
+    private int TextureDimensionality(int stage)
+    {
+        return (int)((_textureFormat[stage] & TextureFormatDimensionality) >> 6);
+    }
+
+    private bool IsSupportedSwizzledFormat(int stage)
+    {
+        uint color = (_textureFormat[stage] >> 8) & 0xFFu;
+        return color is 0x05u or 0x06u;
+    }
+
+    private static void SetTexelZero(float[] texel)
+    {
+        texel[0] = 0f;
+        texel[1] = 0f;
+        texel[2] = 0f;
+        texel[3] = 0f;
+    }
+
+    /// <summary>
+    /// xemu CLIPPLANE: for stage i, component j, the compare-mode bit
+    /// (SHADERCLIPMODE bit 4*i+j) selects discard when pT[j] &gt;= 0, else
+    /// when pT[j] &lt; 0. Any of the four components can kill the fragment.
+    /// </summary>
+    private bool ClipPlaneDiscards(int stage, float[] coord)
+    {
+        for (int j = 0; j < 4; j++)
+        {
+            bool discardOnNonNegative = ((_shaderClipMode >> ((4 * stage) + j)) & 1u) != 0;
+            if (discardOnNonNegative ? coord[j] >= 0f : coord[j] < 0f)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static void SetTexelNone(float[] texel)
     {
         texel[0] = 0f;
@@ -4468,6 +4903,49 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
 
         SetTexelNone(texel);
         return false;
+    }
+
+    /// <summary>
+    /// Samples a stage's swizzled volume texture at the given normalized
+    /// coordinates (xemu <c>unswizzle_box</c> layout, level 0). Linear and
+    /// compressed volume formats are not backed; when one is bound the texel
+    /// degrades to (0,0,0,1). A disabled or empty texture is not a mode
+    /// failure and does not count a fallback.
+    /// </summary>
+    private bool SampleInto3D(int stage, float u, float v, float w, float[] texel)
+    {
+        if (!IsSupportedSwizzledFormat(stage))
+        {
+            if (IsTextureSamplingConfigured(stage))
+            {
+                SetTexelNone(texel);
+                TexModeFallbacks++;
+                return false;
+            }
+
+            SetTexelNone(texel);
+            return false;
+        }
+
+        if (TrySampleTexture3D(stage, u, v, w, out float r, out float g, out float b, out float a))
+        {
+            texel[0] = r;
+            texel[1] = g;
+            texel[2] = b;
+            texel[3] = a;
+            return true;
+        }
+
+        SetTexelNone(texel);
+        return false;
+    }
+
+    private bool IsTextureSamplingConfigured(int stage)
+    {
+        return _memory is not null &&
+               (_textureControl0[stage] & TextureControl0Enable) != 0 &&
+               (_textureImageRect[stage] >> 16) != 0 &&
+               (_textureImageRect[stage] & 0xFFFFu) != 0;
     }
 
     private bool TryDependentInput(int stage, float[][] texels, out float[] previous)
@@ -4530,7 +5008,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         return true;
     }
 
-    private bool TryStageDot(int stage, float tu, float tv, float ts, float[][] texels, float[] stageDots, out float dot)
+    private bool TryStageDot(int stage, float[][] coords, float[][] texels, float[] stageDots, out float dot)
+    {
+        if (!TryComputeDot(stage, coords, texels, out dot))
+        {
+            return false;
+        }
+
+        stageDots[stage] = dot;
+        return true;
+    }
+
+    /// <summary>
+    /// Computes xemu's per-stage dot value: dot(pT.xyz, dotmap(t[input_tex])),
+    /// without storing the stageDots chain. Used by the dot texture modes and
+    /// by the reflection modes, which need earlier/next stage dots.
+    /// </summary>
+    private bool TryComputeDot(int stage, float[][] coords, float[][] texels, out float dot)
     {
         if (!TryDependentInput(stage, texels, out float[] previous))
         {
@@ -4545,8 +5039,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         }
 
         PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], previous[3], out float mx, out float my, out float mz);
-        dot = (tu * mx) + (tv * my) + (ts * mz);
-        stageDots[stage] = dot;
+        float[] coord = coords[stage];
+        dot = (coord[0] * mx) + (coord[1] * my) + (coord[2] * mz);
         return true;
     }
 
@@ -4584,6 +5078,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
         var specular = new float[4];
         var fog = new float[4];
         var texels = new float[][] { new float[4], new float[4], new float[4], new float[4] };
+        var coords = new float[][] { new float[4], new float[4], new float[4], new float[4] };
         var stageDots = new float[PshCombiner.TextureSlots];
         foreach (float[] texel in texels)
         {
@@ -4645,26 +5140,58 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice
                 float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
                 float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
                 float ts0 = (p1 * a.S0) + (p2 * b.S0) + (p0 * c.S0);
+                float tw0 = (p1 * a.T0W) + (p2 * b.T0W) + (p0 * c.T0W);
                 float tu1 = (p1 * a.U1) + (p2 * b.U1) + (p0 * c.U1);
                 float tv1 = (p1 * a.V1) + (p2 * b.V1) + (p0 * c.V1);
                 float ts1 = (p1 * a.S1) + (p2 * b.S1) + (p0 * c.S1);
+                float tw1 = (p1 * a.T1W) + (p2 * b.T1W) + (p0 * c.T1W);
                 float tu2 = (p1 * a.U2) + (p2 * b.U2) + (p0 * c.U2);
                 float tv2 = (p1 * a.V2) + (p2 * b.V2) + (p0 * c.V2);
                 float ts2 = (p1 * a.S2) + (p2 * b.S2) + (p0 * c.S2);
+                float tw2 = (p1 * a.T2W) + (p2 * b.T2W) + (p0 * c.T2W);
                 float tu3 = (p1 * a.U3) + (p2 * b.U3) + (p0 * c.U3);
                 float tv3 = (p1 * a.V3) + (p2 * b.V3) + (p0 * c.V3);
                 float ts3 = (p1 * a.S3) + (p2 * b.S3) + (p0 * c.S3);
+                float tw3 = (p1 * a.T3W) + (p2 * b.T3W) + (p0 * c.T3W);
+                coords[0][0] = tu0;
+                coords[0][1] = tv0;
+                coords[0][2] = ts0;
+                coords[0][3] = tw0;
+                coords[1][0] = tu1;
+                coords[1][1] = tv1;
+                coords[1][2] = ts1;
+                coords[1][3] = tw1;
+                coords[2][0] = tu2;
+                coords[2][1] = tv2;
+                coords[2][2] = ts2;
+                coords[2][3] = tw2;
+                coords[3][0] = tu3;
+                coords[3][1] = tv3;
+                coords[3][2] = ts3;
+                coords[3][3] = tw3;
                 float fogFactor = (p1 * a.Fog) + (p2 * b.Fog) + (p0 * c.Fog);
                 float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
+
+                bool clipped = false;
+                for (int i = 0; i < PshCombiner.TextureSlots; i++)
+                {
+                    if (texModes[i] == PshCombiner.TexModeClipPlane && ClipPlaneDiscards(i, coords[i]))
+                    {
+                        clipped = true;
+                        break;
+                    }
+                }
+
+                if (clipped)
+                {
+                    continue;
+                }
 
                 bool sampled = false;
                 Array.Clear(stageDots);
                 for (int i = 0; i < PshCombiner.TextureSlots; i++)
                 {
-                    float tu = i == 0 ? tu0 : i == 1 ? tu1 : i == 2 ? tu2 : tu3;
-                    float tv = i == 0 ? tv0 : i == 1 ? tv1 : i == 2 ? tv2 : tv3;
-                    float ts = i == 0 ? ts0 : i == 1 ? ts1 : i == 2 ? ts2 : ts3;
-                    if (ResolveTexel(i, texModes[i], tu, tv, ts, texels, stageDots))
+                    if (ResolveTexel(i, texModes[i], coords, texels, stageDots))
                     {
                         sampled = true;
                     }

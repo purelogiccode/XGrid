@@ -3682,3 +3682,103 @@ suite **1038/1038** (was 1034), Nv2a 180 -> 184; `dotnet format
 **Remains.** PROJECT3D/CUBEMAP stage modes (parallel wave; 187.5M
 falls here but they are decoration), HILO dot maps 5-7, reserved
 formats, mipmap LOD selection (base level only), DXT decode.
+
+## 96. NV2A exotic texture modes + HILO hemispheres implemented (2026-10-12)
+
+Closes the §78/§91 remainder: cubemap, project3d, clipplane, the
+reflection dot-chain modes, and HILO hemisphere dot maps 5-7. Primary
+reference `References/xemu-0.8.136/hw/xbox/nv2a/pgraph/glsl/psh.c`
+(mode switch ~L1108-1369, sampler types L620-695, dotmap funcs
+L851-910, remap helpers L936-976), `pgraph/texture.c`
+(`pgraph_get_texture_length` L143-192, shape L194-326),
+`pgraph/gl/texture.c` (`generate_texture` L642-758: cube faces
+uploaded +X,-X,+Y,-Y,+Z,-Z, each face = full mip chain rounded to
+`NV2A_CUBEMAP_FACE_ALIGNMENT` = 128, `nv2a_regs.h:1518`; volume upload
+L564-635: per level `unswizzle_box`, level advance
+`w*h*depth*bpp`), `pgraph/swizzle.c` (`generate_swizzle_masks`
+L48-70: x/y/z mask bits woven in that order), `nv2a_regs.h`
+(TEXFMT CUBEMAPENABLE bit 2 / DIMENSIONALITY 0xC0 / MIPMAP_LEVELS
+0xF0000 / BASE_SIZE_P 0xF0000000, TEXADDRESS ADDRP 0x70000,
+SHADERCLIPMODE 0x1994), `pgraph.c:2934` (NV097
+SET_SHADER_CLIP_PLANE_MODE = `0x17F8` writes it).
+
+**Equations implemented** (`PshCombiner.cs` static math + `Nv2aMmio`
+ResolveTexel/samplers):
+- PROJECT2D: non-cube unchanged (bit-identical); with CUBEMAPENABLE:
+  `normalize(vec3(1, v/w, -u/w))` (`remap2DToCube`) then a cube sample.
+- PROJECT3D: `(u/w, v/w[, s/w])`; 2D sampler for dim 2, swizzled
+  volume sampler for dim 3 (`unswizzle_box` layout, level 0).
+- CUBEMAP: cube sample of `(u,v,s)` when CUBEMAPENABLE, else
+  `remapCubeTo2D` (`+/-X: (-z,y)/|x|`, `+/-Y: (x,-z)/|y|`,
+  `+/-Z: (x,-y)/|z|` with xemu's strict-`>` branch order) then a 2D
+  sample with the normal address modes.
+- Face select + s/t from the GL/D3D convention (`|ma|` division,
+  `(c/|ma|+1)/2`), Mesa-style `>=` tie break; face stride =
+  `ALIGN128(sum over clamped mip levels of w*h*bpp)`.
+- CLIPPLANE: for stage i component j, SHADERCLIPMODE bit `4i+j`
+  selects discard when `pT[j] >= 0`, else when `pT[j] < 0`; texel is
+  `(0,0,0,0)`; discard applied in the FillTrianglePsh pixel loop.
+- DOT_RFLCT_DIFF (stage 2): `n = (dot1, dot2, dot_i_n)` — dot1 from
+  stage 1, dot2 from stage 2, the third from stage 3's coords/dot
+  map/input (xemu `dot%d_n`); cube or remap sample.
+- DOT_RFLCT_SPEC (stage 3): `n = (dot1,dot2,dot3)`,
+  `e = (oT1.w, oT2.w, oT3.w)`,
+  `rv = 2*n*dot(n,e)/dot(n,n) - e`; cube or remap sample.
+- DOT_STR_CUBE (stage 3): `(dot1,dot2,dot3)` cube/remap sample.
+- Reflection dots are recomputed on demand (`TryComputeDot`, per-stage
+  dot map + SHADERCTL input stage), so the stage chain does not
+  require the earlier stage's texture mode to be a dot mode.
+- HILO hemisphere 5/6/7: `hi = (a<<8)|r`, `lo = (g<<8)|b` (same word
+  packing as HILO_1); decode each word with the 16-bit extension of
+  sign1/sign2/sign3 — D3D `(h-0x8000)/0x7FFF`, GL
+  `h>=0x8000 ? (h-65535.5)/32767.5 : (h+0.5)/32767.5`, generic
+  `h>=0x8000 ? (h-65536)/32767 : h/32767` — then
+  `(H, L, sqrt(max(0, 1-H*H-L*L)))`. `IsSupportedDotMap` now 0-7;
+  maps 8-15 stay identity + `UnsupportedDotMaps`.
+
+**Reference limits (not guessed):** xemu's `dotmap_hilo_hemisphere*`
+are FIXME identity (psh.c L902-910) even in current master; the
+16-bit decode comes from the Cxbx line (`XbPixelShader.h:127-130`
+comments are partially garbled — D3D anchor line contradicts its own
+"thus" formula — and the template's `hls()` applies the generic
+formula to all three) plus Xermu's `doc/reference/
+CxbxPixelShaderFunctions.hlsli` (`ln()`), which states the piecewise
+per-flavor decode and mirrors xemu's sign1/sign2/sign3. Documented as
+the best available secondary reference; the clamp at `1-H^2-L^2 < 0`
+is explicit. BRDF (0x08) and DOT_RFLCT_SPEC_CONST (0x12) have no
+implementation in xemu (`vec4(0.0)` + `NV2A_UNIMPLEMENTED`,
+psh.c L1240-1245, L1359-1364) and Cxbx's variants are marked untested
+(`CxbxPixelShaderTemplate.hlsl:391,402`, `Brdf()` "TODO: Complete 16
+bit phi/sigma retrieval"), so they now emit exactly the xemu
+observable zero texel `(0,0,0,0)` and count `TexModeFallbacks` — no
+speculative math.
+
+**Explicit non-goals kept:** non-cubemap PROJECT2D still ignores the
+projective w divide (pre-existing; changing it would alter draws not
+under this wave), DOT_STR_3D keeps its 2D sample for dim 3, and
+border/mip/filtered sampling remain absent. Pre-existing quirk noted:
+the 2D sampler reads TEXADDRESS V from bits 4-7 while `nv2a_regs.h`
+puts ADDRV at bits 8-10 (U/V follow file convention in new samplers;
+P uses bits 16-18); tests use explicit clamp modes.
+
+**Tests:** `tests/XGrid.Nv2a.Tests/Nv2aExoticTexModesTests.cs` (11):
+cube helper conventions (gl +X..-Z, remap, tie), cube face selection
+for +X and +Z (2x2 faces at 128-byte stride), cube-flag-off remap on a
+flat 4x2 texture, PROJECT3D volume texel selection, CLIPPLANE discard
+vs keep, DOT_RFLCT_DIFF remap golden, BRDF zero-alpha golden (routed
+through the alpha combiner), HILO map 7 vs map 5 texel selection.
+Updated `Nv2aFogTexModesTests`: hemisphere assertions (were
+identity/unsupported), mode-validity rows for 0x02/0x03/0x05/0x08/
+0x0B/0x0C/0x0E/0x12, and the unsupported-dot-map golden moved to map 8.
+Full suite 1045/1045 (1034 + 11); build + `format --verify-no-changes`
+clean.
+
+**Live validation:** worktree Release, standard firmware/HDD, dashboard
+`boot --steps 1000000000`: EIP `0x000259E0`, no fault, and the full
+CLI output is byte-identical to the pre-wave baseline (`Compare-Object`
+diff count 0) — `draws executed=33811 skipped=1394
+pixels=118927184 textured=232460088 clears=692 blended=45431255
+depth=136 zclip=0 frames=682 stalls=682 programLoad=12 constLoad=2
+inlineElements=0`, unmapped buckets unchanged. The dashboard exercises
+none of the newly enabled paths (they are opt-in via SHADERPROG /
+SHADERCLIPMODE / SHADERCTL), so the no-regression check is exact.
