@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -20,7 +22,7 @@ namespace XGrid.Bus.Net;
 /// 250 ms autoneg, and a pluggable <see cref="INetworkBackend"/>
 /// (loopback/logger default, socket user-mode backend behind a CLI flag).
 /// </summary>
-public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
+public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>NVNET MMIO window base (fixed by the MCPX, not BAR-programmed by the guest).</summary>
     public const uint BaseAddress = 0xFEF00000;
@@ -276,6 +278,176 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice
         _phy[PhyAnlpar] = PhyAnInit;
         UpdateIrq();
     }
+
+    /// <summary>Saves registers, PHY, rings, TX coalescing, autoneg, counters, and the backend.</summary>
+    /// <remarks>Snapshot is valid only with the loopback backend: socket state (host sockets,
+    /// NAT mappings) is not restorable. Save throws when the backend is not loopback, and load
+    /// throws when the live backend is not loopback. The guest-memory adapter is host wiring.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        if (Backend is not LoopbackNetworkBackend loopback)
+        {
+            throw new InvalidDataException(
+                $"nvnet snapshot requires the loopback backend (live={Backend?.GetType().Name ?? "null"}). Sockets are not restorable.");
+        }
+
+        writer.Write(SnapshotVersion);
+        for (int i = 0; i < _regs.Length; i++)
+        {
+            writer.Write(_regs[i]);
+        }
+
+        for (int i = 0; i < _phy.Length; i++)
+        {
+            writer.Write(_phy[i]);
+        }
+
+        writer.Write(_regReads.Count);
+        foreach (var entry in _regReads)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_regWrites.Count);
+        foreach (var entry in _regWrites)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_txBuffer, 0, _txBuffer.Length);
+        writer.Write(_txOffset);
+        writer.Write(_pendingFrame is not null);
+        if (_pendingFrame is not null)
+        {
+            writer.Write(_pendingFrame.Length);
+            writer.Write(_pendingFrame);
+        }
+
+        writer.Write(_autoNegPending);
+        writer.Write(_autoNegElapsedMs);
+        writer.Write(_autoNegRemainder);
+        writer.Write(Reads);
+        writer.Write(Writes);
+        writer.Write(InterruptAsserted);
+        writer.Write(IrqAsserts);
+        writer.Write(IrqDeasserts);
+        writer.Write(TxPackets);
+        writer.Write(TxBytes);
+        writer.Write(TxKicks);
+        writer.Write(CantTransmitCount);
+        writer.Write(RxPackets);
+        writer.Write(RxBytes);
+        writer.Write(RxDropFilter);
+        writer.Write(RxDropNoBuf);
+        writer.Write(RxOversize);
+        writer.Write(CantReceiveCount);
+        writer.Write(LinkChanges);
+        loopback.SaveState(writer);
+    }
+
+    /// <summary>Restores registers, PHY, rings, TX coalescing, autoneg, counters, and the backend.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        if (Backend is not LoopbackNetworkBackend loopback)
+        {
+            throw new InvalidDataException(
+                $"nvnet snapshot load requires the loopback backend (live={Backend?.GetType().Name ?? "null"}). Sockets are not restorable.");
+        }
+
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported nvnet snapshot version {version}.");
+        }
+
+        for (int i = 0; i < _regs.Length; i++)
+        {
+            _regs[i] = reader.ReadUInt32();
+        }
+
+        for (int i = 0; i < _phy.Length; i++)
+        {
+            _phy[i] = reader.ReadUInt16();
+        }
+
+        int reads = reader.ReadInt32();
+        if (reads < 0)
+        {
+            throw new InvalidDataException("Negative nvnet read histogram snapshot.");
+        }
+
+        _regReads.Clear();
+        for (int i = 0; i < reads; i++)
+        {
+            _regReads[reader.ReadUInt32()] = reader.ReadInt32();
+        }
+
+        int writes = reader.ReadInt32();
+        if (writes < 0)
+        {
+            throw new InvalidDataException("Negative nvnet write histogram snapshot.");
+        }
+
+        _regWrites.Clear();
+        for (int i = 0; i < writes; i++)
+        {
+            _regWrites[reader.ReadUInt32()] = reader.ReadInt32();
+        }
+
+        byte[] tx = reader.ReadBytes(_txBuffer.Length);
+        if (tx.Length != _txBuffer.Length)
+        {
+            throw new InvalidDataException("Truncated nvnet TX buffer snapshot.");
+        }
+
+        Array.Copy(tx, _txBuffer, _txBuffer.Length);
+        _txOffset = reader.ReadUInt32();
+        if (reader.ReadBoolean())
+        {
+            int pending = reader.ReadInt32();
+            if (pending < 0 || pending > RxBufferSize)
+            {
+                throw new InvalidDataException("Bad nvnet pending-frame snapshot.");
+            }
+
+            _pendingFrame = reader.ReadBytes(pending);
+            if (_pendingFrame.Length != pending)
+            {
+                throw new InvalidDataException("Truncated nvnet pending-frame snapshot.");
+            }
+        }
+        else
+        {
+            _pendingFrame = null;
+        }
+
+        _autoNegPending = reader.ReadBoolean();
+        _autoNegElapsedMs = reader.ReadUInt64();
+        _autoNegRemainder = reader.ReadUInt64();
+        Reads = reader.ReadInt64();
+        Writes = reader.ReadInt64();
+        InterruptAsserted = reader.ReadBoolean();
+        IrqAsserts = reader.ReadInt64();
+        IrqDeasserts = reader.ReadInt64();
+        TxPackets = reader.ReadInt64();
+        TxBytes = reader.ReadInt64();
+        TxKicks = reader.ReadInt64();
+        CantTransmitCount = reader.ReadInt64();
+        RxPackets = reader.ReadInt64();
+        RxBytes = reader.ReadInt64();
+        RxDropFilter = reader.ReadInt64();
+        RxDropNoBuf = reader.ReadInt64();
+        RxOversize = reader.ReadInt64();
+        CantReceiveCount = reader.ReadInt64();
+        LinkChanges = reader.ReadInt64();
+        loopback.LoadState(reader);
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <summary>
     /// Reports whether a KICK would transmit: TX started, DMA enabled (BIT2 clear),

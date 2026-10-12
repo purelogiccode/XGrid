@@ -1,10 +1,12 @@
 using System;
+using System.IO;
+using XGrid.Core;
 using XGrid.Core.Devices;
 
 namespace XGrid.Bus.Pci;
 
 /// <summary>A PCI device with a standard 256-byte configuration header and up to six BARs.</summary>
-public class PciDevice : IXboxDevice
+public class PciDevice : IXboxDevice, ISnapshotable
 {
     /// <summary>All-ones value used by firmware to size a BAR.</summary>
     public const uint BarProbeValue = 0xFFFFFFFFu;
@@ -122,6 +124,66 @@ public class PciDevice : IXboxDevice
             }
         }
     }
+
+    /// <summary>Saves config space, BAR bases/probe flags, and the interrupt line (quiesce: BARs stable).</summary>
+    public virtual void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_config);
+        writer.Write(InterruptLine);
+        for (int i = 0; i < _bars.Length; i++)
+        {
+            PciBar? bar = _bars[i];
+            writer.Write(bar is not null);
+            if (bar is not null)
+            {
+                writer.Write(bar.Base);
+                writer.Write(bar.Probing);
+            }
+        }
+    }
+
+    /// <summary>Restores config space, BAR bases/probe flags, and the interrupt line.</summary>
+    public virtual void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported PCI device snapshot version {version}.");
+        }
+
+        byte[] config = reader.ReadBytes(256);
+        if (config.Length != 256)
+        {
+            throw new InvalidDataException("Truncated PCI config snapshot.");
+        }
+
+        Array.Copy(config, _config, 256);
+        InterruptLine = reader.ReadByte();
+        for (int i = 0; i < _bars.Length; i++)
+        {
+            bool present = reader.ReadBoolean();
+            if (!present)
+            {
+                continue;
+            }
+
+            uint restBase = reader.ReadUInt32();
+            bool restProbing = reader.ReadBoolean();
+            if (_bars[i] is not null)
+            {
+                _bars[i]!.Base = restBase;
+                _bars[i]!.Probing = restProbing;
+                OnBarWritten(i, restBase);
+            }
+        }
+
+        _headerType = _config[0x0E];
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <summary>Reads configuration space (1, 2, or 4 bytes, little-endian).</summary>
     public virtual uint ReadConfig(int offset, int size)

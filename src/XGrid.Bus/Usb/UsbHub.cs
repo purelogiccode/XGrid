@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Bus.Usb;
 
@@ -19,7 +21,7 @@ public interface IUsbDeviceHub : IUsbDeviceFunction
 /// downstream port 1. Address assignment is deferred to the control status
 /// stage, as on real hardware.
 /// </summary>
-public sealed class UsbHub : IUsbDeviceHub
+public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 {
     /// <summary>Maximum downstream port count (QEMU MAX_PORTS).</summary>
     public const int MaxPorts = 8;
@@ -165,6 +167,96 @@ public sealed class UsbHub : IUsbDeviceHub
             PortUpdate(i);
         }
     }
+
+    /// <summary>Saves address/config, per-port status/change, pending setup, and cascaded devices.</summary>
+    /// <remarks>Topology is caller-owned (same hub/port wiring on load); each downstream
+    /// device is cascaded when snapshotable. Quiesce: save at a frame boundary with no
+    /// control transfer mid-status-stage.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(Address);
+        writer.Write(Configured);
+        writer.Write(_remoteWakeup);
+        writer.Write(_pendingAddress);
+        writer.Write(_pendingConfig);
+        writer.Write(_hasPendingConfig);
+        writer.Write(_ports.Length);
+        for (int i = 0; i < _ports.Length; i++)
+        {
+            writer.Write(_ports[i].Status);
+            writer.Write(_ports[i].Change);
+            writer.Write(_ports[i].Device is not null);
+            if (_ports[i].Device is ISnapshotable snapshotable)
+            {
+                snapshotable.SaveState(writer);
+            }
+            else if (_ports[i].Device is not null)
+            {
+                throw new InvalidDataException($"USB hub port {i} device is not snapshotable.");
+            }
+        }
+
+        writer.Write(_requestLog.Count);
+        foreach (string entry in _requestLog)
+        {
+            writer.Write(entry);
+        }
+    }
+
+    /// <summary>Restores address/config, per-port status/change, pending setup, and cascaded devices.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported USB hub snapshot version {version}.");
+        }
+
+        Address = reader.ReadByte();
+        Configured = reader.ReadBoolean();
+        _remoteWakeup = reader.ReadBoolean();
+        _pendingAddress = reader.ReadByte();
+        _pendingConfig = reader.ReadByte();
+        _hasPendingConfig = reader.ReadBoolean();
+        int ports = reader.ReadInt32();
+        if (ports != _ports.Length)
+        {
+            throw new InvalidDataException("USB hub port-count mismatch on snapshot load.");
+        }
+
+        for (int i = 0; i < _ports.Length; i++)
+        {
+            _ports[i].Status = reader.ReadUInt16();
+            _ports[i].Change = reader.ReadUInt16();
+            bool present = reader.ReadBoolean();
+            if (present != (_ports[i].Device is not null))
+            {
+                throw new InvalidDataException($"USB hub port {i} topology mismatch on snapshot load.");
+            }
+
+            if (_ports[i].Device is ISnapshotable snapshotable)
+            {
+                snapshotable.LoadState(reader);
+            }
+        }
+
+        int requests = reader.ReadInt32();
+        if (requests < 0 || requests > 128)
+        {
+            throw new InvalidDataException("Bad USB hub log snapshot.");
+        }
+
+        _requestLog.Clear();
+        for (int i = 0; i < requests; i++)
+        {
+            _requestLog.Add(reader.ReadString());
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public IUsbDeviceFunction? FindDevice(byte address)

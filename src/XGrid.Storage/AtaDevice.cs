@@ -1,9 +1,11 @@
 using System;
+using System.IO;
+using XGrid.Core;
 
 namespace XGrid.Storage;
 
 /// <summary>ATA-1 PIO taskfile state for a single drive (HDD or ATAPI DVD).</summary>
-public sealed class AtaDevice
+public sealed class AtaDevice : ISnapshotable
 {
     /// <summary>Sector size in bytes.</summary>
     public const int SectorSize = 512;
@@ -210,6 +212,208 @@ public sealed class AtaDevice
 
     /// <summary>Gets whether the ATA security set is locked (IDENTIFY word 128).</summary>
     public bool SecurityLocked { get; private set; } = true;
+
+    /// <summary>Saves taskfile, phase, buffers, sense, and media validation (quiesce: no DMA in flight).</summary>
+    /// <remarks>Media handles are host resources and are never serialized. The HDD overlay
+    /// (guest writes) is cascaded when it is snapshotable; the DVD reader needs no state
+    /// when no DMA is in flight. Load fails loudly when media presence or sector counts differ.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(IsAtapi);
+        writer.Write(_identify);
+        writer.Write(_packet);
+        writer.Write(DmaBuffer);
+        writer.Write(_dmaLarge is not null);
+        if (_dmaLarge is not null)
+        {
+            writer.Write(_dmaLarge.Length);
+            writer.Write(_dmaLarge);
+        }
+
+        writer.Write(_dataIndex);
+        writer.Write(_transferLength);
+        writer.Write(_packetIndex);
+        writer.Write(_remaining);
+        writer.Write(_lba);
+        writer.Write((int)_phase);
+        writer.Write(_packetDma);
+        writer.Write(_packetError);
+        writer.Write(Error);
+        writer.Write(Features);
+        writer.Write(SenseKey);
+        writer.Write(SenseAsc);
+        writer.Write(SectorCount);
+        writer.Write(LbaLow);
+        writer.Write(LbaMid);
+        writer.Write(LbaHigh);
+        writer.Write(DriveHead);
+        writer.Write(Status);
+        writer.Write(AccessCount);
+        writer.Write(LastCommand);
+        writer.Write(SecurityLocked);
+        writer.Write(TotalPacketBytes);
+        writer.Write(_packetLog.Count);
+        foreach (string entry in _packetLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_disk is not null);
+        if (_disk is not null)
+        {
+            writer.Write(_disk.SectorCount);
+        }
+
+        writer.Write(_disk is ISnapshotable);
+        if (_disk is ISnapshotable snapshotable)
+        {
+            snapshotable.SaveState(writer);
+        }
+
+        writer.Write(_dvd is not null);
+        if (_dvd is not null)
+        {
+            writer.Write(_dvd.SectorCount);
+        }
+    }
+
+    /// <summary>Restores taskfile, phase, buffers, sense, and media validation.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported ATA snapshot version {version}.");
+        }
+
+        if (reader.ReadBoolean() != IsAtapi)
+        {
+            throw new InvalidDataException("ATA ATAPI personality mismatch on snapshot load.");
+        }
+
+        CopyBytes(reader, _identify, SectorSize);
+        CopyBytes(reader, _packet, PacketSize);
+        CopyBytes(reader, DmaBuffer, SectorSize);
+        if (reader.ReadBoolean())
+        {
+            int large = reader.ReadInt32();
+            if (large < 0 || large > MaxDvdTransferSectors * DvdSectorSize)
+            {
+                throw new InvalidDataException("Bad ATA staged-transfer snapshot.");
+            }
+
+            _dmaLarge = reader.ReadBytes(large);
+            if (_dmaLarge.Length != large)
+            {
+                throw new InvalidDataException("Truncated ATA staged-transfer snapshot.");
+            }
+        }
+        else
+        {
+            _dmaLarge = null;
+        }
+
+        _dataIndex = reader.ReadInt32();
+        _transferLength = reader.ReadInt32();
+        _packetIndex = reader.ReadInt32();
+        _remaining = reader.ReadUInt32();
+        _lba = reader.ReadUInt32();
+        _phase = (Phase)reader.ReadInt32();
+        _packetDma = reader.ReadBoolean();
+        _packetError = reader.ReadBoolean();
+        Error = reader.ReadByte();
+        Features = reader.ReadByte();
+        SenseKey = reader.ReadByte();
+        SenseAsc = reader.ReadByte();
+        SectorCount = reader.ReadByte();
+        LbaLow = reader.ReadByte();
+        LbaMid = reader.ReadByte();
+        LbaHigh = reader.ReadByte();
+        DriveHead = reader.ReadByte();
+        Status = reader.ReadByte();
+        AccessCount = reader.ReadInt32();
+        LastCommand = reader.ReadByte();
+        SecurityLocked = reader.ReadBoolean();
+        TotalPacketBytes = reader.ReadInt32();
+        int packets = reader.ReadInt32();
+        if (packets < 0 || packets > PacketLogCapacity)
+        {
+            throw new InvalidDataException("Bad ATA packet-log snapshot.");
+        }
+
+        _packetLog.Clear();
+        for (int i = 0; i < packets; i++)
+        {
+            _packetLog.Add(reader.ReadString());
+        }
+
+        bool hadDisk = reader.ReadBoolean();
+        uint diskSectors = 0;
+        if (hadDisk)
+        {
+            diskSectors = reader.ReadUInt32();
+        }
+
+        if (hadDisk != (_disk is not null))
+        {
+            throw new InvalidDataException("ATA HDD media presence mismatch on snapshot load.");
+        }
+
+        if (hadDisk && _disk!.SectorCount != diskSectors)
+        {
+            throw new InvalidDataException(
+                $"ATA HDD sector count mismatch on snapshot load (snapshot={diskSectors}, live={_disk.SectorCount}).");
+        }
+
+        if (reader.ReadBoolean())
+        {
+            if (_disk is not ISnapshotable snapshotable)
+            {
+                throw new InvalidDataException("ATA HDD overlay snapshot has no live overlay.");
+            }
+
+            snapshotable.LoadState(reader);
+        }
+
+        bool hadDvd = reader.ReadBoolean();
+        uint dvdSectors = 0;
+        if (hadDvd)
+        {
+            dvdSectors = reader.ReadUInt32();
+        }
+
+        if (hadDvd != (_dvd is not null))
+        {
+            throw new InvalidDataException("ATA DVD media presence mismatch on snapshot load.");
+        }
+
+        if (hadDvd && _dvd!.SectorCount != dvdSectors)
+        {
+            throw new InvalidDataException(
+                $"ATA DVD sector count mismatch on snapshot load (snapshot={dvdSectors}, live={_dvd.SectorCount}).");
+        }
+
+        if (DmaPending)
+        {
+            throw new InvalidDataException("ATA snapshot loaded with DMA in flight; save only when idle.");
+        }
+    }
+
+    private const int SnapshotVersion = 1;
+
+    private static void CopyBytes(BinaryReader reader, byte[] target, int length)
+    {
+        byte[] data = reader.ReadBytes(length);
+        if (data.Length != length)
+        {
+            throw new InvalidDataException("Truncated ATA snapshot.");
+        }
+
+        Array.Copy(data, target, length);
+    }
 
     /// <summary>Attaches media and rebuilds the IDENTIFY page.</summary>
     public void Attach(IDiskImage disk)

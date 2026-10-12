@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -11,7 +13,7 @@ namespace XGrid.Bus.Aci;
 /// file at 0x000-0x0FF and the NABM bus-master block at 0x100-0x17F.
 /// Audio voices and DMA playback are not modeled yet; the register interface is.
 /// </summary>
-public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
+public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>ACI MMIO window base (fixed by the MCPX, not BAR-programmed by the guest).</summary>
     public const uint BaseAddress = 0xFEC00000;
@@ -106,6 +108,65 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice
         ResetBlock(_bm[2]);
         MixerReset();
     }
+
+    /// <summary>Saves mixer, bus-master blocks, global regs, semaphore, and access counters.</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(_mixer);
+        writer.Write(_globCnt);
+        writer.Write(_globSta);
+        writer.Write(_cas);
+        writer.Write(NamAccesses);
+        writer.Write(NabmAccesses);
+        foreach (BmBlock block in _bm)
+        {
+            writer.Write(block.BdbAr);
+            writer.Write(block.Civ);
+            writer.Write(block.Lvi);
+            writer.Write(block.Sr);
+            writer.Write(block.Picb);
+            writer.Write(block.Piv);
+            writer.Write(block.Cr);
+        }
+    }
+
+    /// <summary>Restores mixer, bus-master blocks, global regs, semaphore, and access counters.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported ACI snapshot version {version}.");
+        }
+
+        byte[] mixer = reader.ReadBytes(0x80);
+        if (mixer.Length != 0x80)
+        {
+            throw new InvalidDataException("Truncated ACI mixer snapshot.");
+        }
+
+        Array.Copy(mixer, _mixer, 0x80);
+        _globCnt = reader.ReadUInt32();
+        _globSta = reader.ReadUInt32();
+        _cas = reader.ReadBoolean();
+        NamAccesses = reader.ReadInt64();
+        NabmAccesses = reader.ReadInt64();
+        foreach (BmBlock block in _bm)
+        {
+            block.BdbAr = reader.ReadUInt32();
+            block.Civ = reader.ReadByte();
+            block.Lvi = reader.ReadByte();
+            block.Sr = reader.ReadByte();
+            block.Picb = reader.ReadUInt16();
+            block.Piv = reader.ReadByte();
+            block.Cr = reader.ReadByte();
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public uint Read(uint address, int size)

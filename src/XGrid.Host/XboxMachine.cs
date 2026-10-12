@@ -122,9 +122,17 @@ public sealed class XboxMachine
 
         RegisterSnapshotSection("CPU", Cpu);
         RegisterSnapshotSection("RAM", Ram);
-        // V1-DEVICES-ANCHOR: the snapshot-devices wave appends per-device
-        // (tag, ISnapshotable) registrations here at merge. Core owns
-        // everything else in this file.
+        // V1 device sections (wave/snapshot-devices). Each entry cascades to
+        // its sub-devices: BUS → PIC/PIT/RTC/PCI/SMBus, IDE → drives+overlay,
+        // USB0/USB1 → hubs+gamepad, NET → loopback backend.
+        RegisterSnapshotSection("BUS", Bus);
+        RegisterSnapshotSection("IDE", Ide);
+        RegisterSnapshotSection("NV2A", Nv2A);
+        RegisterSnapshotSection("ACI", Aci);
+        RegisterSnapshotSection("APU", Apu);
+        RegisterSnapshotSection("NET", Net);
+        RegisterSnapshotSection("USB0", Usb0);
+        RegisterSnapshotSection("USB1", Usb1);
         RegisterSnapshotSection("MACH", new MachineScalarsSnapshot(this));
     }
 
@@ -232,6 +240,7 @@ public sealed class XboxMachine
     {
         HddOverlay = new OverlayDiskImage(OpenDiskImage(path));
         Ide.AttachPrimaryMaster(HddOverlay);
+        Ide.HddPath = path;
     }
 
     /// <summary>Gets the HDD copy-on-write overlay, or null when no hard disk is attached.</summary>
@@ -242,6 +251,7 @@ public sealed class XboxMachine
     {
         Dvd = OpenDvdImage(path);
         Ide.AttachDvd(Dvd);
+        Ide.DvdPath = path;
     }
 
     /// <summary>Opens an ISO/XISO or CHD DVD image by magic number.</summary>

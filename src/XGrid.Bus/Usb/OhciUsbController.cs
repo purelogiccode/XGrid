@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
 
@@ -41,7 +43,7 @@ public interface IUsbMemory
 /// (NoError/STALL/DataUnderrun completion codes, done-queue writeback with the
 /// WDH interrupt). Isochronous transfers are not serviced.
 /// </summary>
-public sealed class OhciUsbController : IMmioDevice, IXboxDevice
+public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>Register window size (xemu registers a 256-byte OHCI region).</summary>
     public const uint WindowSize = 0x100;
@@ -234,6 +236,239 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice
         _ctl = 0;
         RootHubReset();
     }
+
+    /// <summary>Saves registers, ports, frame/done state, pending stages, counters, and the hub tree.</summary>
+    /// <remarks>Quiesce: save at a 1 ms frame boundary with no transfer mid-stage
+    /// (guest idle or between frames). The guest-memory adapter is host wiring and is not
+    /// serialized. Topology is caller-owned; the attached function is cascaded when snapshotable.</remarks>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(BaseAddress);
+        writer.Write(_ctl);
+        writer.Write(_status);
+        writer.Write(_intrStatus);
+        writer.Write(_intr);
+        writer.Write(_perCur);
+        writer.Write(_ctrlCur);
+        writer.Write(_bulkHead);
+        writer.Write(_bulkCur);
+        writer.Write(_done);
+        writer.Write(_fi);
+        writer.Write(_fsmps);
+        writer.Write(_fit);
+        writer.Write(_frt);
+        writer.Write(_frameNumber);
+        writer.Write(_pstart);
+        writer.Write(_lst);
+        writer.Write(_rhdescA);
+        writer.Write(_rhdescB);
+        writer.Write(_rhstatus);
+        for (int i = 0; i < PortCount; i++)
+        {
+            writer.Write(_ports[i]);
+        }
+
+        writer.Write(_busRunning);
+        writer.Write(_frameRemainder);
+        writer.Write(_doneCount);
+        writer.Write(RegisterAccesses);
+        writer.Write(ControlTransfers);
+        writer.Write(InterruptTransfers);
+        writer.Write(ControlHead);
+        writer.Write(Hcca);
+        writer.Write(InterruptAsserted);
+        writer.Write(_pendingSetup);
+        writer.Write(_pendingIn);
+        writer.Write(_pendingFunction is not null);
+        if (_pendingFunction is not null)
+        {
+            writer.Write(_pendingFunctionAddress);
+        }
+
+        writer.Write(_pendingPayload.Length);
+        writer.Write(_pendingPayload);
+        writer.Write(_pendingOffset);
+        writer.Write(_pendingOut.Length);
+        writer.Write(_pendingOut);
+        writer.Write(_transferLog.Count);
+        foreach (string entry in _transferLog)
+        {
+            writer.Write(entry);
+        }
+
+        writer.Write(_regReads.Count);
+        foreach (var entry in _regReads)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_regWrites.Count);
+        foreach (var entry in _regWrites)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        writer.Write(_function is not null);
+        if (_function is ISnapshotable snapshotable)
+        {
+            snapshotable.SaveState(writer);
+        }
+        else if (_function is not null)
+        {
+            throw new InvalidDataException("OHCI attached function is not snapshotable.");
+        }
+    }
+
+    /// <summary>Restores registers, ports, frame/done state, pending stages, counters, and the hub tree.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported OHCI snapshot version {version}.");
+        }
+
+        if (reader.ReadUInt32() != BaseAddress)
+        {
+            throw new InvalidDataException("OHCI base-address mismatch on snapshot load.");
+        }
+
+        _ctl = reader.ReadUInt32();
+        _status = reader.ReadUInt32();
+        _intrStatus = reader.ReadUInt32();
+        _intr = reader.ReadUInt32();
+        _perCur = reader.ReadUInt32();
+        _ctrlCur = reader.ReadUInt32();
+        _bulkHead = reader.ReadUInt32();
+        _bulkCur = reader.ReadUInt32();
+        _done = reader.ReadUInt32();
+        _fi = reader.ReadUInt32();
+        _fsmps = reader.ReadUInt32();
+        _fit = reader.ReadUInt32();
+        _frt = reader.ReadUInt32();
+        _frameNumber = reader.ReadUInt32();
+        _pstart = reader.ReadUInt32();
+        _lst = reader.ReadUInt32();
+        _rhdescA = reader.ReadUInt32();
+        _rhdescB = reader.ReadUInt32();
+        _rhstatus = reader.ReadUInt32();
+        for (int i = 0; i < PortCount; i++)
+        {
+            _ports[i] = reader.ReadUInt32();
+        }
+
+        _busRunning = reader.ReadBoolean();
+        _frameRemainder = reader.ReadUInt64();
+        _doneCount = reader.ReadUInt32();
+        RegisterAccesses = reader.ReadInt64();
+        ControlTransfers = reader.ReadInt64();
+        InterruptTransfers = reader.ReadInt64();
+        ControlHead = reader.ReadUInt32();
+        Hcca = reader.ReadUInt32();
+        InterruptAsserted = reader.ReadBoolean();
+        _pendingSetup = reader.ReadBoolean();
+        _pendingIn = reader.ReadBoolean();
+        bool hasPendingFunction = reader.ReadBoolean();
+        byte pendingAddress = 0;
+        if (hasPendingFunction)
+        {
+            pendingAddress = reader.ReadByte();
+        }
+
+        int payloadLength = reader.ReadInt32();
+        if (payloadLength < 0)
+        {
+            throw new InvalidDataException("Negative OHCI payload snapshot.");
+        }
+
+        _pendingPayload = reader.ReadBytes(payloadLength);
+        if (_pendingPayload.Length != payloadLength)
+        {
+            throw new InvalidDataException("Truncated OHCI payload snapshot.");
+        }
+
+        _pendingOffset = reader.ReadInt32();
+        int outLength = reader.ReadInt32();
+        if (outLength < 0)
+        {
+            throw new InvalidDataException("Negative OHCI out-buffer snapshot.");
+        }
+
+        _pendingOut = reader.ReadBytes(outLength);
+        if (_pendingOut.Length != outLength)
+        {
+            throw new InvalidDataException("Truncated OHCI out-buffer snapshot.");
+        }
+
+        int transfers = reader.ReadInt32();
+        if (transfers < 0 || transfers > 128)
+        {
+            throw new InvalidDataException("Bad OHCI transfer-log snapshot.");
+        }
+
+        _transferLog.Clear();
+        for (int i = 0; i < transfers; i++)
+        {
+            _transferLog.Add(reader.ReadString());
+        }
+
+        int reads = reader.ReadInt32();
+        if (reads < 0)
+        {
+            throw new InvalidDataException("Negative OHCI read histogram snapshot.");
+        }
+
+        _regReads.Clear();
+        for (int i = 0; i < reads; i++)
+        {
+            _regReads[reader.ReadUInt32()] = reader.ReadInt32();
+        }
+
+        int writes = reader.ReadInt32();
+        if (writes < 0)
+        {
+            throw new InvalidDataException("Negative OHCI write histogram snapshot.");
+        }
+
+        _regWrites.Clear();
+        for (int i = 0; i < writes; i++)
+        {
+            _regWrites[reader.ReadUInt32()] = reader.ReadInt32();
+        }
+
+        bool hasFunction = reader.ReadBoolean();
+        if (hasFunction != (_function is not null))
+        {
+            throw new InvalidDataException("OHCI topology mismatch on snapshot load.");
+        }
+
+        if (_function is ISnapshotable snapshotable)
+        {
+            snapshotable.LoadState(reader);
+        }
+
+        if (hasPendingFunction)
+        {
+            _pendingFunctionAddress = pendingAddress;
+            _pendingFunction = ResolveFunction(pendingAddress);
+            if (_pendingSetup && _pendingFunction is null)
+            {
+                throw new InvalidDataException("OHCI pending transfer target missing on snapshot load.");
+            }
+        }
+        else
+        {
+            _pendingFunction = null;
+            _pendingFunctionAddress = 0;
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <inheritdoc />
     public uint Read(uint address, int size)

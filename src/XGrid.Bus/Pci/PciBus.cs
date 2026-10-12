@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using XGrid.Bus.Io;
+using XGrid.Core;
 using XGrid.Core.Devices;
 
 namespace XGrid.Bus.Pci;
@@ -10,7 +12,7 @@ namespace XGrid.Bus.Pci;
 /// created behind a bridge answer only when a configuration address names the bridge's secondary bus
 /// number (register 0x19), so a probe of an unpopulated bus never aliases onto bus-0 devices.
 /// </summary>
-public sealed class PciBus : IXboxDevice, IIoPortDevice
+public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
 {
     /// <summary>Configuration address port.</summary>
     public const ushort ConfigAddressPort = 0xCF8;
@@ -151,6 +153,90 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice
             secondary.Reset();
         }
     }
+
+    /// <summary>Saves the config address, access histograms, and every attached device (quiesce: BARs stable).</summary>
+    public void SaveState(BinaryWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Write(SnapshotVersion);
+        writer.Write(ConfigAddress);
+        writer.Write(_configAccesses.Count);
+        foreach (var entry in _configAccesses)
+        {
+            writer.Write(entry.Key);
+            writer.Write(entry.Value);
+        }
+
+        for (int i = 0; i < _devices.Length; i++)
+        {
+            writer.Write(_devices[i] is not null);
+            _devices[i]?.SaveState(writer);
+        }
+
+        writer.Write(_secondaries.Count);
+        foreach (var (_, secondary) in _secondaries)
+        {
+            secondary.SaveState(writer);
+        }
+    }
+
+    /// <summary>Restores the config address, histograms, and every attached device.</summary>
+    public void LoadState(BinaryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        int version = reader.ReadInt32();
+        if (version != SnapshotVersion)
+        {
+            throw new InvalidDataException($"Unsupported PCI bus snapshot version {version}.");
+        }
+
+        ConfigAddress = reader.ReadUInt32();
+        int accessCount = reader.ReadInt32();
+        if (accessCount < 0)
+        {
+            throw new InvalidDataException("Negative PCI access histogram snapshot.");
+        }
+
+        _configAccesses.Clear();
+        for (int i = 0; i < accessCount; i++)
+        {
+            ushort key = reader.ReadUInt16();
+            int value = reader.ReadInt32();
+            _configAccesses[key] = value;
+        }
+
+        for (int i = 0; i < _devices.Length; i++)
+        {
+            bool present = reader.ReadBoolean();
+            PciDevice? device = _devices[i];
+            if (present)
+            {
+                if (device is null)
+                {
+                    throw new InvalidDataException($"PCI device snapshot has no live slot {i}.");
+                }
+
+                device.LoadState(reader);
+            }
+            else if (device is not null)
+            {
+                device.Reset();
+            }
+        }
+
+        int secondaries = reader.ReadInt32();
+        if (secondaries != _secondaries.Count)
+        {
+            throw new InvalidDataException("PCI secondary bus count mismatch on snapshot load.");
+        }
+
+        foreach (var (_, secondary) in _secondaries)
+        {
+            secondary.LoadState(reader);
+        }
+    }
+
+    private const int SnapshotVersion = 1;
 
     /// <summary>Notifies listeners that a device asserted its interrupt line.</summary>
     public void RaiseInterrupt(PciDevice device)
