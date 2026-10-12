@@ -192,17 +192,28 @@ public sealed class Nv2aFogTexModesTests
         Assert.Equal(1.0f, PshCombiner.Sign1(1f), 5);
         Assert.Equal((255f - 255.5f) / 127.5f, PshCombiner.Sign2(1f), 5);
 
-        PshCombiner.ApplyDotMap(0, 0.2f, 0.4f, 0.6f, out float x, out float y, out float z);
+        PshCombiner.ApplyDotMap(0, 0.2f, 0.4f, 0.6f, 0.8f, out float x, out float y, out float z);
         Assert.Equal(0.2f, x);
         Assert.Equal(0.4f, y);
         Assert.Equal(0.6f, z);
 
-        PshCombiner.ApplyDotMap(5, 0.2f, 0.4f, 0.6f, out x, out y, out z);
+        PshCombiner.ApplyDotMap(5, 0.2f, 0.4f, 0.6f, 0.8f, out x, out y, out z);
         Assert.Equal(0.2f, x);
+
+        // HILO_1 packs texel bytes hi=(a:r), lo=(g:b): all-exact byte lane check.
+        PshCombiner.ApplyDotMap(4, 0f, 0f, 0f, 1f, out x, out y, out z);
+        Assert.Equal(65280f / 65535f, x, 5);
+        Assert.Equal(0f, y, 5);
+        Assert.Equal(1f, z, 5);
+        PshCombiner.ApplyDotMap(4, 1f, 1f, 1f, 0f, out x, out y, out z);
+        Assert.Equal(255f / 65535f, x, 5);
+        Assert.Equal(1f, y, 5);
+        Assert.Equal(1f, z, 5);
 
         Assert.True(PshCombiner.IsSupportedDotMap(0));
         Assert.True(PshCombiner.IsSupportedDotMap(3));
-        Assert.False(PshCombiner.IsSupportedDotMap(4));
+        Assert.True(PshCombiner.IsSupportedDotMap(4));
+        Assert.False(PshCombiner.IsSupportedDotMap(5));
         Assert.False(PshCombiner.IsSupportedDotMap(7));
     }
 
@@ -661,6 +672,344 @@ public sealed class Nv2aFogTexModesTests
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.True(nv2A.TexturedPixels > 0);
+    }
+
+    [Fact]
+    public void FogGenDistance_MatchesReferenceMetrics()
+    {
+        float[] plane = { 0f, 0f, 2f, 0.5f };
+
+        // SPEC_ALPHA clamps the specular alpha (reference FIXME kept: clamp).
+        Assert.Equal(0f, VshProgram.FogGenDistance(0, 99f, 9f, 9f, 9f, -0.5f, plane));
+        Assert.Equal(0.3f, VshProgram.FogGenDistance(0, 99f, 9f, 9f, 9f, 0.3f, plane), 5);
+        Assert.Equal(1f, VshProgram.FogGenDistance(0, 99f, 9f, 9f, 9f, 1.5f, plane));
+
+        // RADIAL is the position length: (3,4,0) -> 5.
+        Assert.Equal(5f, VshProgram.FogGenDistance(1, 99f, 3f, 4f, 0f, 0f, plane), 4);
+
+        // PLANAR dots the plane plus w: 2*1 + 0.5 = 2.5; ABS_PLANAR mirrors it.
+        Assert.Equal(2.5f, VshProgram.FogGenDistance(2, 99f, 0f, 0f, 1f, 0f, plane), 4);
+        float[] negPlane = { 0f, 0f, 2f, -2.5f };
+        Assert.Equal(-1.5f, VshProgram.FogGenDistance(2, 99f, 0f, 0f, 0.5f, 0f, negPlane), 4);
+        Assert.Equal(1.5f, VshProgram.FogGenDistance(3, 99f, 0f, 0f, 0.5f, 0f, negPlane), 4);
+
+        // FOG_X passes the fog coordinate through, ignoring position/plane/alpha.
+        Assert.Equal(1.25f, VshProgram.FogGenDistance(6, 1.25f, 9f, 9f, 9f, 0.3f, plane), 5);
+
+        // Unknown modes fall back to SPEC_ALPHA (hardware asserts).
+        Assert.Equal(0.3f, VshProgram.FogGenDistance(4, 99f, 9f, 9f, 9f, 0.3f, plane), 5);
+        Assert.Equal(0.3f, VshProgram.FogGenDistance(7, 99f, 9f, 9f, 9f, 0.3f, plane), 5);
+    }
+
+    [Fact]
+    public void Execute_ReportsFogWritten()
+    {
+        float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
+        float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
+        float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
+        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+
+        uint[][] withoutFog = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0, final: true) };
+        VshProgram.Execute(withoutFog, 1, constants, inputs, outputs, out bool fogWritten);
+        Assert.False(fogWritten);
+        Assert.Equal(0f, outputs[5][0]);
+
+        uint[][] withFog = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true) };
+        VshProgram.Execute(withFog, 1, constants, inputs, outputs, out fogWritten);
+        Assert.True(fogWritten);
+        Assert.Equal(1.0f, outputs[5][0]);
+    }
+
+    /// <summary>
+    /// Draws the standard triangle with a combiner that routes the fog
+    /// FACTOR (FOG alpha) to the pixel: stage 0 multiplies FOG(alpha) by
+    /// one, the final combiner passes R0 through. With LINEAR params
+    /// (1, 1) the pixel gray level equals the clamped fog distance, so each
+    /// GEN_MODE golden below discriminates its distance metric exactly.
+    /// Extra pushes (fog coord, specular alpha, fog plane) slot in before
+    /// the draw. The program writes position only, so the fixed-function
+    /// distance path is exercised.
+    /// </summary>
+    private static void PushFactorDraw(
+        Nv2AMmio nv2A,
+        ArrayMemory memory,
+        float triangleZ,
+        int genMode,
+        params (uint Method, uint Parameter)[] extra)
+    {
+        WriteTriangle(memory, triangleZ);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0, final: true);
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, position, 0x0B00u);
+        pushes.Add((0x1E60u, 0x01u));
+        pushes.Add((0x0AC0u, 0x13200000u));
+        pushes.Add((0x1E40u, 0x00000C00u));
+        PushPassR0(pushes);
+        pushes.Add((0x029Cu, 0x2601u));
+        pushes.Add((0x02A0u, (uint)genMode));
+        pushes.Add((0x02A4u, 1u));
+        pushes.Add((0x09C0u, F(1f)));
+        pushes.Add((0x09C4u, F(1f)));
+        foreach ((uint method, uint parameter) in extra)
+        {
+            pushes.Add((method, parameter));
+        }
+
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(1uL, nv2A.CombinerDraws);
+        Assert.Equal(0uL, nv2A.TexModeFallbacks);
+    }
+
+    [Fact]
+    public void Draw_FogGenFogXTracksFogCoord()
+    {
+        // FOG_X distance = fog coordinate; LINEAR (1,1) maps it to the pixel.
+        // Triangle depth (7.0) is ignored by this mode.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 7f, VshProgram.FogGenFogX, (0x1698u, F(0f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 7f, VshProgram.FogGenFogX, (0x1698u, F(1f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+
+        // Saturation and clamping at the extremes.
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.5f, VshProgram.FogGenFogX, (0x1698u, F(2f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.5f, VshProgram.FogGenFogX, (0x1698u, F(-1f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+    }
+
+    [Fact]
+    public void Draw_FogGenSpecAlphaTracksSpecularAlpha()
+    {
+        // SPEC_ALPHA distance = clamp(specular.a); the staged specular
+        // alpha is the only varying input here.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.25f, VshProgram.FogGenSpecAlpha, (0x1A4Cu, F(0f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.25f, VshProgram.FogGenSpecAlpha, (0x1A4Cu, F(1f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.25f, VshProgram.FogGenSpecAlpha, (0x1A4Cu, F(2f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 0.25f, VshProgram.FogGenSpecAlpha, (0x1A4Cu, F(-0.5f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+    }
+
+    [Fact]
+    public void Draw_FogGenRadialUsesPositionLength()
+    {
+        // All three triangle vertices sit at distance >= 2 from the origin,
+        // so every interpolated distance saturates the LINEAR factor to 1.
+        // (Old behavior: unwritten oFog.x = 0 -> black.)
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushFactorDraw(nv2A, memory, 2f, VshProgram.FogGenRadial);
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 1, 1));
+    }
+
+    [Fact]
+    public void Draw_FogGenPlanarUsesFogPlane()
+    {
+        // Constant plane (0,0,0,0): distance 0 everywhere -> black.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushFactorDraw(
+            nv2A, memory, 0.25f, VshProgram.FogGenPlanar,
+            (0x09D0u, F(0f)), (0x09D4u, F(0f)), (0x09D8u, F(0f)), (0x09DCu, F(0f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+
+        // Constant plane (0,0,0,1): distance 1 everywhere -> white.
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(
+            nv2A, memory, 0.25f, VshProgram.FogGenPlanar,
+            (0x09D0u, F(0f)), (0x09D4u, F(0f)), (0x09D8u, F(0f)), (0x09DCu, F(1f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+
+        // Sloped plane 2z: triangle z = 0.5 -> distance 1 -> white.
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(
+            nv2A, memory, 0.5f, VshProgram.FogGenPlanar,
+            (0x09D0u, F(0f)), (0x09D4u, F(0f)), (0x09D8u, F(2f)), (0x09DCu, F(0f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+    }
+
+    [Fact]
+    public void Draw_FogGenAbsPlanarMirrorsNegativeDistance()
+    {
+        // Plane (0,0,0,-1): PLANAR distance -1 clamps to black...
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushFactorDraw(
+            nv2A, memory, 0.25f, VshProgram.FogGenPlanar,
+            (0x09D0u, F(0f)), (0x09D4u, F(0f)), (0x09D8u, F(0f)), (0x09DCu, F(-1f)));
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+
+        // ...while ABS_PLANAR mirrors it to white on identical state.
+        (nv2A, memory) = CreateChannel();
+        PushFactorDraw(
+            nv2A, memory, 0.25f, VshProgram.FogGenAbsPlanar,
+            (0x09D0u, F(0f)), (0x09D4u, F(0f)), (0x09D8u, F(0f)), (0x09DCu, F(-1f)));
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+    }
+
+    [Fact]
+    public void Draw_FogDisabledIgnoresGenModeAndCoord()
+    {
+        // Disabled fog keeps the fixed (0,0,0,1) combiner input even with a
+        // gen mode and fog coordinate staged: FOG alpha is 1 -> white.
+        foreach (int genMode in new[] { VshProgram.FogGenSpecAlpha, VshProgram.FogGenFogX })
+        {
+            (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+            WriteTriangle(memory, 0.25f);
+
+            uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0, final: true);
+
+            var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+            PushSurface(pushes);
+            pushes.Add((0x1E9Cu, 0u));
+            MethodPush(pushes, position, 0x0B00u);
+            pushes.Add((0x1E60u, 0x01u));
+            pushes.Add((0x0AC0u, 0x13200000u));
+            pushes.Add((0x1E40u, 0x00000C00u));
+            PushPassR0(pushes);
+            pushes.Add((0x029Cu, 0x2601u));
+            pushes.Add((0x02A0u, (uint)genMode));
+            pushes.Add((0x02A4u, 0u));
+            pushes.Add((0x1698u, F(99f)));
+            pushes.Add((0x1A4Cu, F(0f)));
+            PushDraw(pushes);
+            PushMethods(nv2A, memory, pushes.ToArray());
+
+            Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+            Assert.Contains("enable=False", nv2A.FogStateDebug);
+        }
+    }
+
+    [Fact]
+    public void Draw_ProgramFogBeatsGenMode()
+    {
+        // A program-written oFog.x (2.0) wins over SPEC_ALPHA with staged
+        // specular alpha 0 (which alone would give black).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangle(memory, 0.25f);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0);
+        uint[] fogOut = Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMask: 0xF, outAddress: 5, final: true);
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, position, 0x0B00u);
+        MethodPush(pushes, fogOut, 0x0B10u);
+        pushes.Add((0x0B80u, F(2f)));
+        pushes.Add((0x0B84u, F(0f)));
+        pushes.Add((0x0B88u, F(0f)));
+        pushes.Add((0x0B8Cu, F(1f)));
+        pushes.Add((0x1E60u, 0x01u));
+        pushes.Add((0x0AC0u, 0x13200000u));
+        pushes.Add((0x1E40u, 0x00000C00u));
+        PushPassR0(pushes);
+        pushes.Add((0x029Cu, 0x2601u));
+        pushes.Add((0x02A0u, (uint)VshProgram.FogGenSpecAlpha));
+        pushes.Add((0x02A4u, 1u));
+        pushes.Add((0x09C0u, F(1f)));
+        pushes.Add((0x09C4u, F(1f)));
+        pushes.Add((0x1A4Cu, F(0f)));
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
+    }
+
+    private static void PushHiloDotDraw(Nv2AMmio nv2A, ArrayMemory memory, uint dotMap)
+    {
+        // Stage 0 samples the 1x1 HILO source texel 0xFF000000 (a=255, rgb=0).
+        // Stage 1 (DOTPRODUCT) dots coords (1,0,0) against the dot-mapped
+        // texel; stage 2 (DOT_ST) samples the 2-wide texture at
+        // (dot1, dot2 = 0). HILO_1 decodes (0.996, 0, 1) -> dot1 = 0.996 ->
+        // second texel (green); identity decodes (0,0,0) -> dot1 = 0 ->
+        // first texel (black).
+        WriteTriangle(memory, 0f);
+        memory.WritePhysical(0x4000u, 0xFF000000u);
+        memory.WritePhysical(0x4200u, 0xFF000000u);
+        memory.WritePhysical(0x4204u, 0xFF00FF00u);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0);
+        uint[] tex0 = Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMask: 0xF, outAddress: 9);
+        uint[] tex1 = Insn(mac: MacMov, aMux: MuxC, constIndex: 1, outMask: 0xF, outAddress: 10);
+        uint[] tex2 = Insn(mac: MacMov, aMux: MuxC, constIndex: 2, outMask: 0xF, outAddress: 11, final: true);
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, position, 0x0B00u);
+        MethodPush(pushes, tex0, 0x0B10u);
+        MethodPush(pushes, tex1, 0x0B20u);
+        MethodPush(pushes, tex2, 0x0B30u);
+        pushes.Add((0x0B80u, F(0f)));
+        pushes.Add((0x0B84u, F(0f)));
+        pushes.Add((0x0B88u, F(0f)));
+        pushes.Add((0x0B8Cu, F(1f)));
+        pushes.Add((0x0B90u, F(1f)));
+        pushes.Add((0x0B94u, F(0f)));
+        pushes.Add((0x0B98u, F(0f)));
+        pushes.Add((0x0B9Cu, F(1f)));
+        pushes.Add((0x0BA0u, F(0f)));
+        pushes.Add((0x0BA4u, F(0f)));
+        pushes.Add((0x0BA8u, F(0f)));
+        pushes.Add((0x0BACu, F(1f)));
+        PushTextureSlot(pushes, 0, 0x4000u, 1, 1);
+        PushTextureSlot(pushes, 2, 0x4200u, 2, 1);
+        pushes.Add((0x1E70u, 0x01u | (0x11u << 5) | (0x09u << 10)));
+        pushes.Add((0x1E74u, dotMap));
+        pushes.Add((0x0AC8u, 0x0A200000u));
+        pushes.Add((0x1E48u, 0x000000C0u));
+        pushes.Add((0x1E60u, 0x03u));
+        PushPassR0(pushes);
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(1uL, nv2A.CombinerDraws);
+        Assert.Equal(0uL, nv2A.TexModeFallbacks);
+        Assert.True(nv2A.TexturedPixels > 0);
+    }
+
+    [Fact]
+    public void Draw_HiloDotMapSelectsSecondTexel()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushHiloDotDraw(nv2A, memory, 0x04u);
+
+        Assert.Equal(0xFF00FF00u, ReadPixel(memory, 2, 2));
+        Assert.Equal(0uL, nv2A.UnsupportedDotMaps);
+    }
+
+    [Fact]
+    public void Draw_IdentityDotMapSelectsFirstTexel()
+    {
+        // Control for the HILO golden: same plumbing with map 0 dots
+        // (1,0,0) against (0,0,0) -> u = 0 -> first texel.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        PushHiloDotDraw(nv2A, memory, 0x00u);
+
+        Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
+        Assert.Equal(0uL, nv2A.UnsupportedDotMaps);
     }
 
     [Fact]

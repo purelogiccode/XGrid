@@ -25,6 +25,21 @@ public static class VshProgram
     private const int AddressOutput = 15;
     private const int FogOutput = 5;
 
+    /// <summary>Fixed-function fog distance: clamped specular alpha (SET_FOG_GEN_MODE 0).</summary>
+    public const int FogGenSpecAlpha = 0;
+
+    /// <summary>Fixed-function fog distance: eye-space radial length (SET_FOG_GEN_MODE 1).</summary>
+    public const int FogGenRadial = 1;
+
+    /// <summary>Fixed-function fog distance: plane distance (SET_FOG_GEN_MODE 2).</summary>
+    public const int FogGenPlanar = 2;
+
+    /// <summary>Fixed-function fog distance: absolute plane distance (SET_FOG_GEN_MODE 3).</summary>
+    public const int FogGenAbsPlanar = 3;
+
+    /// <summary>Fixed-function fog distance: fog-coordinate attribute (SET_FOG_GEN_MODE 6).</summary>
+    public const int FogGenFogX = 6;
+
     private enum Mac
     {
         // ReSharper disable once UnusedMember.Local
@@ -70,6 +85,24 @@ public static class VshProgram
         float[][] inputs,
         float[][] outputs)
     {
+        Execute(program, length, constants, inputs, outputs, out _);
+    }
+
+    /// <summary>Runs the program for one vertex, also reporting whether the oFog register was written.</summary>
+    /// <param name="program">Program tokens (four dwords per instruction).</param>
+    /// <param name="length">Number of valid instructions.</param>
+    /// <param name="constants">Constant register file (192 entries of four floats).</param>
+    /// <param name="inputs">Input registers v0..v15 (four floats each).</param>
+    /// <param name="outputs">Output registers o0..o15 (four floats each), initialized to (0,0,0,1) before execution; o0 receives the screen-space position, with xy truncated to 1/16 units and w clamped away from zero/infinity (shader epilogue). o5 carries the fog distance (oFog.x significant; masked components fill x,y,z,w in significance order per the reference fog_mask_str table).</param>
+    /// <param name="fogWritten">True when at least one instruction wrote the oFog register.</param>
+    public static void Execute(
+        uint[][] program,
+        int length,
+        float[][] constants,
+        float[][] inputs,
+        float[][] outputs,
+        out bool fogWritten)
+    {
         ArgumentNullException.ThrowIfNull(program);
         ArgumentNullException.ThrowIfNull(constants);
         ArgumentNullException.ThrowIfNull(inputs);
@@ -86,6 +119,7 @@ public static class VshProgram
         }
 
         int address = 0;
+        fogWritten = false;
         int count = Math.Min(length, MaxInstructions);
         for (int slot = 0; slot < count; slot++)
         {
@@ -95,7 +129,7 @@ public static class VshProgram
             int ilu = Field(token, 1, 25, 3);
             if (mac != 0 || ilu != 0)
             {
-                ExecuteToken(token, mac, ilu, constants, inputs, outputs, registers, ref address);
+                ExecuteToken(token, mac, ilu, constants, inputs, outputs, registers, ref address, ref fogWritten);
             }
 
             if (final)
@@ -116,7 +150,8 @@ public static class VshProgram
         float[][] inputs,
         float[][] outputs,
         float[][] registers,
-        ref int address)
+        ref int address,
+        ref bool fogWritten)
     {
         int outR = Field(token, 3, 20, 4);
         int outMux = Field(token, 3, 2, 1);
@@ -186,6 +221,7 @@ public static class VshProgram
                 if (outAddress == FogOutput)
                 {
                     WriteFogMasked(outputs[FogOutput], result, outMask);
+                    fogWritten = true;
                 }
                 else
                 {
@@ -451,6 +487,39 @@ public static class VshProgram
         {
             destination[i] = value[i];
         }
+    }
+
+    /// <summary>
+    /// Computes the fixed-function fog distance for the given SET_FOG_GEN_MODE
+    /// value, following the reference fixed-function vertex path (xemu
+    /// <c>vsh-ff.c</c>, from the NV_fog_distance spec): SPEC_ALPHA clamps the
+    /// specular alpha to [0,1]; RADIAL takes the position length; PLANAR dots
+    /// the fog plane (xyz) with the position plus the plane w; ABS_PLANAR
+    /// takes the absolute value; FOG_X passes the fog-coordinate attribute
+    /// through. The reference consumes the eye-space position (position times
+    /// the model-view matrix); this rasterizer has no fixed-function
+    /// transform unit, so the object-space position attribute (v0.xyz) is
+    /// fed instead. Unknown modes fall back to SPEC_ALPHA (hardware asserts).
+    /// </summary>
+    public static float FogGenDistance(
+        int genMode,
+        float fogCoord,
+        float posX,
+        float posY,
+        float posZ,
+        float specAlpha,
+        float[] fogPlane)
+    {
+        ArgumentNullException.ThrowIfNull(fogPlane);
+
+        return genMode switch
+        {
+            FogGenRadial => MathF.Sqrt((posX * posX) + (posY * posY) + (posZ * posZ)),
+            FogGenPlanar => ((fogPlane[0] * posX) + (fogPlane[1] * posY) + (fogPlane[2] * posZ)) + fogPlane[3],
+            FogGenAbsPlanar => MathF.Abs(((fogPlane[0] * posX) + (fogPlane[1] * posY) + (fogPlane[2] * posZ)) + fogPlane[3]),
+            FogGenFogX => fogCoord,
+            _ => Math.Clamp(specAlpha, 0f, 1f),
+        };
     }
 
     /// <summary>
