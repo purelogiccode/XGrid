@@ -180,46 +180,58 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   c64-95; fixes §42's wrong "no-ops on xemu" claim), stride-0/bit31/
   program-start/output-defaults fetch fixes, MUL zero rule + GLSL
   min/max/LIT + paired-ILU + oPos epilogue, perspective-correct varyings
-  + oD0 NaN->1. Fog + dependent/bump/dot texture modes merged (§78);
-  remaining: fixed-function foggen, exotic modes, HILO, backends.
+  + oD0 NaN->1. Fog + dependent/bump/dot modes (§78), fixed-function
+  foggen + HILO_1 (§91), ZCLIP + float depth (§90), ZCLIP CULL +
+  exact-1.0 (§97), exotic modes + HILO 5-7 (§96), textured-RGB-zero
+  fix (§95: LU texel-unit coords, SZ POT base size, A4R4G4B4 decode
+  — menu renders in color: 7,389 RGB-diff px vs neutral, 32,789 colors).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1034 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1053 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — visible menu (color).
+## Next session — APU VP/DSP streaming (007 audio-drain gate).
 
-1. Scene-proof verdict PARTIALLY RIGHT (§93): layout/content is the
-   RIGHT scene (frames diverge, different lists, glyph blocks,
-   highlight rows) — but RGB=0 everywhere; the image lives only in
-   alpha (still visually black; corrects §87's "non-black" reading).
-   Precise pointer: textured-draw RGB dropped while alpha survives
-   (one untextured blue column keeps color) — suspect texture-sample
-   RGB=0 (M6/combiner), not global mask. Next: fix textured-RGB-zero,
-   re-run the two-boot recipe; success = RGB-differing BMPs with
-   readable UI (alpha structures are the layout oracle).
-   ZCLIP + float depth MERGED (§90: `0x394/0x398` fragment clamp,
-   F16/F24 ranges; live counters identical, `zclip=0` correct).
-   Foggen + HILO MERGED (§91: GEN_MODE distances, FOG_COORD, HILO_1;
-   disabled draws identical).
-   007 EOS quirk MERGED (§§92, §94: TitleId-gated STRM 2→0, fires once,
-   opt-out flag; game exits `0x20B50` with no fault over 1B steps but
-   parks in the `0x138xx` splash loop — next gate). 1034 tests.
-2. NV2A remaining: textured-RGB-zero (top), cubemap/reflection/
-   project3d/clipplane/BRDF, HILO hemisphere 5–7, ZCLIP-CULL +
-   exact-1.0 overflow, Vulkan/OpenGL backends (16.6–16.7).
-3. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
+1. **MENU COLOR DONE (§95).** Textured-RGB-zero fixed — three coupled
+   texture-sample bugs: LU_IMAGE formats take texel-unit coords (not
+   normalized), SZ_* are sized by POT `BASE_SIZE_U/V` (not the image
+   rect), `SZ_A4R4G4B4` was unsupported. Live two-boot (1B steps,
+   `--pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"`):
+   7,389 RGB-differing px, alpha-only 1, 32,789 unique colors, no
+   fault, readable EvoX menu. Exotics merged (§96: cubemap, swizzled
+   3D, PROJECT3D, CLIPPLANE discard, reflection dot-chains, HILO 5–7;
+   dashboard byte-identical). ZCLIP CULL + exact-1.0 merged (§97:
+   `0x1D78` CULL/CLAMP per-fragment discard, `zclipCull=21526` correct,
+   frame unchanged; §90's "primitive cull" record corrected — xemu has
+   no primitive-level zclip).
+2. **007 next gate (§98): implement the APU voice-processor + DSP.**
+   The `0x138xx`/`0x20FC1` park is NOT a guest stall: PlayMPC exits on
+   EOS, then spins waiting for stream channel `0x100` status==3, which
+   needs node removal via the advance callback dispatched from the XDK
+   audio driver event queue — driven by APU DSP/DMA position feedback.
+   XGrid's APU stores PIO writes without a VP/DSP (voice positions
+   never update). Next: xemu `hw/xbox/mcpx/vp/vp.c` (fe_method/SSL/
+   notifiers), `dsp/dsp.c` + `dsp_dma.c` + `gp_ep.c`, `apu.c`
+   FEVINTSTS/FENINTSTS trap delivery. Acceptance test: the `0x20FC1`
+   audio-drain wait completes.
+3. NV2A remaining: mipmap LOD + DXT decode, PROJECT2D non-cube
+   projective divide, DOT_STR_3D dim==3, border/mip/filtering,
+   TEXADDRESS V bit offset, BRDF detail, Vulkan/OpenGL backends
+   (16.6–16.7).
+4. nvnet: first-real-frame validation + TCP proxy.
+5. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
    READ/WRITE DMA, faithful serving, no fault); `F36A2` is the §49–51
    WC-fill page artifact, unrelated to disk I/O. Track C JIT for
    interactivity still the throughput bottleneck.
-4. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
+6. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive
    rates still need JIT).
-5. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+7. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
-   `vsh-prog.c`), `nv2a_regs.h`;
+   `vsh-prog.c`), `nv2a_regs.h`; for the APU gate xemu `hw/xbox/mcpx/`
+   (`vp/`, `dsp/`, `apu.c`);
    `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
    KTHREAD/KWAIT offsets if needed.
 
