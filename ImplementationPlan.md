@@ -2984,12 +2984,12 @@ RGB-diff px vs neutral, 32,789 colors)**. Remaining: mipmap LOD + DXT
 decode, PROJECT2D non-cube divide, DOT_STR_3D dim==3, border/mip/
 filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 (16.6–16.7) |
-| 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; DSP/mixing/voice processing pending — **§95: 007's movie audio-drain park is this gap** (VP PIO config written 7.4K×, positions never advance) |
+| 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; VP voice processor DONE (§107: PIO methods, guest-RAM voice state, SSL advance, notifiers + idle voice; 007's PlayMPC streams complete through the real advance callback — the `0x20FC1` drain gate PASSED). Remaining: DSP cores (register-only; not yet needed), mixing/resampling, host output |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1096 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 51 Integration, 201 Nv2a, 9 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **1113 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 55 Integration, 203 Nv2a, 20 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3047,36 +3047,26 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — sample XBE bring-up (triangle) + APU VP/DSP.**
-**SAMPLES LANDED (§104):** `data/test-samples/` (local, gitignored) holds
-`triangle.xbe` (nxdk sample — first GPU bring-up target),
-`kernel-test-suite-default.xbe` (kernel API coverage) and nxdk sources.
-A minimal XISO (`XISOSharp -y -m -c`) + `boot --dvd` reaches the XBE
-launch call `0x800158DA` at 525.7M steps, then dies in an unhandled
-fault-delivery path (`TryTransferToInterrupt`) — the custom BIOS permits
-unsigned code; diagnose in `wave/xbe-bringup` (snapshot at 525.6M).
-**MENU COLOR DONE (§95):** textured-RGB-zero fixed — three coupled
-texture-sample bugs (LU_IMAGE texel-unit coords, SZ POT `BASE_SIZE_U/V`
-instead of the image rect, `SZ_A4R4G4B4` unsupported). Live two-boot
-(1B steps): 7,389 RGB-differing px (alpha-only 1), 32,789 unique
-colors, no fault, readable EvoX menu; counters no regression.
-Exotics merged (§96: cubemap, swizzled 3D, PROJECT3D, CLIPPLANE
-discard, reflection dot-chains, HILO 5–7; dashboard byte-identical).
-ZCLIP CULL + exact-1.0 merged (§97: `0x1D78` CULL/CLAMP per-fragment
-discard, `zclipCull=21526` correct; §90's "primitive cull" record
-corrected — xemu has no primitive-level zclip).
-**007 next gate (§98):** the `0x138xx` park is NOT a guest stall —
-it is the PlayMPC audio-drain loop (`0x20FC1`) waiting for stream
-channel `0x100` status==3, which needs the XDK audio driver's advance
-callback fed by APU DSP/DMA position feedback. XGrid's APU stores PIO
-writes without a VP/DSP. Next: implement the APU voice-processor +
-DSP (xemu `hw/xbox/mcpx/vp/vp.c`, `dsp/dsp.c`+`dsp_dma.c`+`gp_ep.c`,
-`apu.c` FEVINTSTS/FENINTSTS trap delivery); acceptance = the `0x20FC1`
-wait completes. 1096 tests.
-NV2A remaining: mipmap LOD; DXT decode (deprioritized — the dashboard
-uses none, §105); `0x30` depth-format semantics; PROJECT2D non-cube
-projective divide, DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS
-V bit offset, BRDF detail, Vulkan/OpenGL backends (16.6–16.7).
+**NEXT SESSION — 007 post-drain + performance track.**
+**WAVE DONE (§§106–108).** `triangle.xbe` renders through the real kernel
+(fresh 1B boot: no fault, `frames=68`, colored Gouraud frame at
+`Temp\opencode\triangle-iso\merged_triangle.png`). §104's crash was three
+NV2A gaps (NO_OPERATION pusher stall until PGRAPH_INTR ack, 0x1D8C/0x1D90
+aliases, surface offsets = DMA-context base + offset; a pbkit depth clear
+had been wiping physical 0..0x12C000). Known follow-up: a diagonal hatch
+artifact inside the triangle (the demo draws 3 overlapping triangles at
+equal z — equal-z depth/stencil interaction, not a crash).
+Kernel-test-suite sample boots clean. APU voice processor (§107): real
+position advance + notifiers — the `0x20FC1` drain gate is PASSED
+(advance callback → node removal → channel status 3); the game continues
+past it with no fault. V2 ROM-B/C green (§108). 1113 tests; snapshot
+format v2 (old `.xgs` invalid); pusher timing now faithful → NV2A counter
+baselines shifted (re-record).
+NV2A remaining: triangle equal-z hatch artifact; mipmap LOD; DXT decode
+(deprioritized — the dashboard uses none, §105); `0x30` depth-format
+semantics; PROJECT2D non-cube projective divide, DOT_STR_3D dim==3,
+border/mip/filtering, TEXADDRESS V bit offset, BRDF detail,
+Vulkan/OpenGL backends (16.6–16.7).
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
@@ -3731,7 +3721,7 @@ ROM-A DONE — `xgrid testrom --bin` (no kernel/BIOS, `OUT 0xE9` console,
 + 4 tests (1096 green). ROM-A live: `TESTROM PASS nv2a_quad draws=1
 textured=2080 frames=1 nonzero=1056` in 68,491 steps. ROM-B (IDE READ
 DMA) and ROM-C (pad GetState poll) remain as specified §102 follow-ups.
-Status UPDATE 2026-10-12 (wave/testrom-roms, §106): **ROM-B + ROM-C DONE,
+Status UPDATE 2026-10-12 (wave/testrom-roms, §108): **ROM-B + ROM-C DONE,
 V2 suite complete.** `tools/testroms/ide_dma.asm/.bin` — test-generated
 deterministic 8 MB pattern HDD (not the dashboard qcow2), PCI BAR4
 (register 0x20) + PRDT + READ DMA 0xC8 LBA 0x100 x8, BM-status poll,
