@@ -4703,3 +4703,22 @@ wall-clock dependence).
 
 **Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
 §104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
+
+## §110 — GPU backend design
+
+Design document for XGrid's first host-GPU backend slice:
+`docs/research-notes/gpu-backend-design.md` (wave `wave/gpu-backend-scope`,
+2026-10-13). Contents: method/state subset inventory (dashboard figures from the
+M5-era notes + a fresh 1B-step triangle-ISO `--pgraph` capture: 223,956 methods,
+471 unique pairs, ~98.9% handled by `RecordMethod`, named inert rows; 007 histogram
+open), the `RecordMethod`→`FlushDraw`→`FillTriangle`→`DisplayFrame` seam map,
+first-slice scope (menu subset; textures 02–07/10–12/1E only, no DXT per §105;
+combiner observed `stages=1`), translation options with recommendation **(a)
+translate XGrid's own `PshCombiner`/`VshProgram` semantics to GLSL** (CPU vertex
+path kept in slice 1), Playtest-v2 applicability matrix (uniform dirty-sections +
+probe-gated GL first; seeds after ship; writeback at eviction; cost model likely
+never), DisplayFrame-parity present path preserving §43/§106 flip-stall semantics,
+three slices each with a golden-frame acceptance gate (software path always
+retained behind a flag), risks (stream growth + re-inventory procedure, GL/VK,
+async-pusher/§106 stall, tolerance policy, threading), and a verbatim next-wave
+work order. No `src/`/`tests/` changes in this wave.
