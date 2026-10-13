@@ -45,4 +45,5 @@ data/
 
 # Wave scratch (private media copies, ramdumps, probe logs)
 wt-data/
+runs/
 

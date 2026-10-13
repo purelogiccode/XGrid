@@ -5546,3 +5546,131 @@ no 0x3F8 model) or rely on the FATX log file + `--writedump`; (c) suite
 totals unknown (0 of 378 executed). Baseline: **1126 tests green, build
 + `format --verify-no-changes` clean; zero src changes, zero
 expectation changes.**
+
+## §119 — Idle-skip V2: MMIO/PIO parks measured negligible; deadline-model skip implemented and unit-tested, not wired to devices (2026-10-13)
+
+Branch `wave/idle-skip-v2` (worktree `Temp\opencode\worktrees\idle-skip-v2`).
+Closes §111's recorded open risk ("MMIO/PIO parks rejected by design - V2
+needs per-device read-effect modeling") by the velocity rule: MEASURE FIRST,
+then scope to evidence. Scope: `src/XGrid.Cpu/` (IdleSkip*), CPU tests, one
+CLI counter-print hunk, `scripts/idle-skip-v2.ps1` harness. No device was
+touched (see verdict below).
+
+**Measurement method (flag-off-neutral).** The detector gained exclusive-time
+step attribution, active whenever it exists (probe/skip; flag-off detector is
+null -> zero behavior change): every backward branch opens a span on its loop
+head; the inter-TSC delta is credited to the open head MINUS steps already
+attributed to other tracked heads since its last visit (single-open-span
+stack discipline), so nested/sequential loops do not double count (untracked
+code between visits stays with the open head - documented approximation).
+Heads are classified on their first verdict: MmioRead / Pio (with port) /
+MemWrite / WatchOverflow / StaticRule / Structural (128-head cap,
+`headsUntracked` counts overflow). Armable = heads that reached a trigger.
+Cross-validation: probe `armable` (dashboard 131.9M, triangle 455.6M) tracks
+V1 flag-on `skippedSteps` (129.4M / 447.8M, §111) within re-measure overhead -
+the attribution is honest.
+
+**Measurement table (`--idle-skip-probe`, 1B steps, fresh private media):**
+
+| class | dashboard | triangle |
+|---|---|---|
+| armable parks (V1-skippable) | 131,930,736 (13.19%) | 455,608,763 (45.56%) |
+| rejected: mem-write | 43,902,293 (4.39%) | 27,230,237 (2.72%) |
+| rejected: structural | 10,675,717 (1.07%) | 1,293,423 (0.13%) |
+| rejected: static-rule | 2,440,506 (0.24%) | 817,180 (0.08%) |
+| rejected: MMIO-read | 353,818 (0.035%) | 353,818 (0.035%) |
+| rejected: PIO | 24,189 (0.002%) | 19,211 (0.002%) |
+| rejected: watch-overflow | 0 | 0 |
+
+Named device heads (dashboard; triangle shares the boot prefix): the whole
+MMIO bucket is **BIOS-ROM fetch loops**, not register polls - heads
+`0xFFFFFF5A` (344,055 steps) / `0xFFFFFE0F` / `0xFFFFFF12` / `0xFFFFFEEE`
+(reset-vector region `0xFFFxxxxx`; V1 rejects non-RAM instruction fetches).
+PIO is the kernel's `out 0xA0` loop at `0x800143BC` (PIC EOI path, 24,107
+steps) plus one DX-form head (42 steps). **The §111-hypothesized FLIP_STALL
+/ vblank / PIT-counter CPU polls never appear**: flip-stall is a FIFO-side
+park (§43, the CPU never spins on it), the 007 waits are udiv/RAM parks
+(§§74/92/114), PIT timing rides the IRQ0 path already modeled in V1.
+MMIO+PIO = **0.038% of 1B steps** - three orders below the 2% reassessment
+bar. The remaining rejected mass is mem-write busy loops (dashboard XBE at
+`0x0040xxxx` + kernel at `0x8003158A`) = real work, correctly unskippable.
+
+**Verdict (Velocity rule).** No device deadline hooks are wired: the park
+class §111 named is negligible in the measured workloads, so touching
+NV2A/PIT/APU for ~0.04% would add risk for no measurable gain. `XboxMachine`
+does NOT implement `IIdleSkipReadModel`; flag-on behavior is bit-identical
+to V1 (proven: skippedSteps/triggers/stopIrq reproduce §111 exactly, see
+below). The generic machinery IS implemented and unit-tested so a future
+title with a hot device poll needs only a `TryGetReadEffect` on the device
+plus one property assignment.
+
+**Design shipped (scaffolding, §111 theorem extended).** `IIdleSkipReadModel`
++ `IdleSkipReadEffect` (Stable | ChangeIn(steps)): a device may classify a
+physical-address read as side-effect free with a value that changes only as
+device time advances. Classified reads stay in the candidate body
+(`_validatedMmio`); the skip loop clamps every 4096-cycle chunk to the min of
+the watched registers' fresh deadlines, so the skip lands EXACTLY at (never
+past) the value transition; Stable spans whole skips. Any unclassified
+non-RAM read keeps the V1 rejection (conservative default); model loss
+mid-skip stops immediately (`stopModelLost`); MMIO/PIO WRITES remain V1 hard
+stops (a device write is now attributed MemWrite with its address); IRQ
+pending+enabled remains the first hard stop; instruction-fetch from non-RAM
+(incl. BIOS ROM) still rejects. New counters (flag-on print only):
+`stopReadDeadline stopModelLost invocations triggerDrops hostNull`, step
+buckets `armable/mmio/pio/memWrite/watchOverflow/staticRule/structural`,
+per-head table + `device head` lines naming MMIO/PIO heads.
+
+**Bug found & fixed on the way (kept as diagnostics).** A flag-on dashboard
+run showed `skippedSteps=0` with `triggers>0` and zero stop counters: the
+CLI's `--break-log` path drives `Cpu.Step()` directly, bypassing
+`XboxCpu.Execute`'s trigger check, so idle-skip can never engage under
+break-log. This is exactly §111's "absolute-step recipes are flag-off-only"
+rule, now enforced in the harness (break-log only in off mode) and
+diagnosable via the new `invocations/triggerDrops/hostNull` counters.
+
+**Acceptance evidence.**
+- (1) Flag-off byte-identity: pre-change baseline (dashboard 1B, pad-script
+  + break-log 1859D/1E420, fresh wt-data) frame SHA
+  `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`,
+  HIT 972246032/972349245, draws=33623 frames=685 stalls=685
+  Interrupts=3152 LastFault=0 EIP=0x0002EA06 - final build log byte-identical
+  (Frame path + wall excluded); suite **1215 green** (1205 baseline + 10 new
+  `IdleSkipMmioTests`, zero existing expectations touched);
+  `format --verify-no-changes` exit 0.
+- (2) Unit tests (`IdleSkipMmioTests`): scheduled-change poll lands EXACTLY
+  on its deadline (`Advanced==1000`, `stopReadDeadline=1`, zero overshoot);
+  Stable register spans chunks until the RAM poll stops the skip; unknown
+  register rejected conservatively; model loss mid-skip stops at the last
+  completed chunk; MMIO write in body is a hard stop even when the register
+  is classified; IRQ boundary preserved (IRQ stop wins the check);
+  attribution records MMIO head/addr, PIO port 0x40, static-rule split, and
+  armable steps in probe mode; flag-off identity re-asserted.
+- (3) Flag-on milestone parity, 1B, fresh media: **dashboard** no fault,
+  frame SHA identical to flag-off (`4EF1FBF6...`), pad-script events at their
+  exact steps, `triggers=2203 skippedSteps=129,424,394 stopIrq=203` -
+  byte-identical counters to §111's flag-on (V2 changes did not alter skip
+  behavior); two independent flag-on boots fully deterministic. **triangle**
+  no fault, frame SHA identical to flag-off (`A1740DE0...`), draws/pixels/
+  frames/stalls identical, `triggers=7561 skippedSteps=447,784,409` = §111
+  exactly.
+- (4) Speedup (back-to-back pairs, same load window; machine heavily shared
+  with sibling agents so absolutes drift ±40% between windows - ratios are
+  the same-window pairs): dashboard 478.3s off -> 435.5s on = **1.10x**
+  (12.9% skipped; matches interpreter-cost arithmetic); triangle 310.0s off
+  -> 186.4s on = **1.66x** (44.8% skipped). V1's larger dashboard/triangle
+  ratios were contention-inflated; today's lighter load shrinks the ratio
+  with the same absolute skip share.
+
+**Open risks / follow-ups.**
+- The BIOS-ROM fetch loops (344K steps, 0.034%) would become skippable if
+  ROM/stable-ROM-fetch classification were modeled; negligible, not done.
+- Attribution approximation: untracked code executed between two visits of a
+  tracked head is credited to that head (park spans absorb untracked
+  dispatcher excursions); buckets are for scope decisions, not billing.
+- `--break-log` + `--idle-skip` silently disables skipping (CLI Step path);
+  banner documents flag-off-only recipes, counters now make it visible.
+- A title with a real hot device poll (e.g. vblank-status spin) still gets
+  V1 rejection until its device implements `IIdleSkipReadModel`; the unit
+  tests define the expected semantics (exact landing, conservative defaults).
+- Snapshot format untouched; detector transient state resets on load (V1
+  behavior). Baseline: **1215 tests, build + format clean.**
