@@ -5047,3 +5047,502 @@ only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
 13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
 cycle` log lines are benign empty-list probes (3 lists x repeated, no state
 damage observed).
+
+## §113 - GPU-backend slice 1: IPgraphBackend seam + Silk.NET OpenGL backend, golden gate PASSED (2026-10-13)
+
+Work in `Temp\opencode\worktrees\gpu-slice1` (`wave/gpu-slice1`, branch from
+master @459f742). Implements `gpu-backend-design.md` §8 steps 1-7 verbatim
+with the operator checkpoint resolved to **Silk.NET.OpenGL 2.23.0** (pinned
+in `Directory.Packages.props`; no other new dependency). Acceptance met on
+all three clauses (evidence below). Test baseline at wave start **1126**;
+after the wave **1200/1200 green** (+74 new tests) with
+`dotnet format --verify-no-changes` clean.
+
+### What was built
+
+- **Seam (`src/XGrid.Nv2a/`, minimal additive):** `IPgraphBackend` +
+  `PgraphVertex`/`PgraphFragmentState`/`PgraphTextureSlot`/`PgraphDrawInfo`/
+  `PgraphClearInfo`/`PgraphSurfaceRecord` (new file `IPgraphBackend.cs`);
+  `Nv2AMmio.Backend { get; set; }`; `Backend?.Method` at the top of
+  `RecordMethod` (after the side-tap); `Backend?.Draw` at the post-bbox
+  flush sites of `FillTriangle` (legacy/non-combiner) and `FillTrianglePsh`
+  (combiner) with state packed by `BuildDrawInfo`/`BuildLegacyDrawInfo`
+  (resolved clip/fragment/texture/fog/zclip/surface + live `PshCombiner`);
+  `Backend?.Clear` once per `ExecuteClear` with only the fills the software
+  path actually performed; `Backend?.Flip` in the `0x12C` case after
+  `CapturePresentedFrame`; `TryCopyPresentedFrame` serves the backend
+  exclusively when `Backend != null` (no software/GPU pixel mixing, ever);
+  `Reset()`/`LoadState` call `Backend?.ResetState()` (snapshot format v2
+  unchanged — backend is host-side only). Seven `private` texture/depth
+  helpers widened to `public` for upload/parity reuse (`DecodeTextureTexel`,
+  `SwizzleOffset`, `IsLinearTextureFormat`, `TextureFormatBytesPerTexel`,
+  `WrapCoordinate`, `ZetaDepthRange`, `EncodeDepth16/24`, float-zeta
+  converts); `PshCombiner` protocol constants (Reg*/Map*/Out*/Flag*/Control*/
+  Final*) made `public` so the GLSL generator reads the same single source.
+- **`src/XGrid.GpuGl/` (new project, referenced by `XGrid.Cli` only):**
+  `GlPgraphBackend : IPgraphBackend` (FBO surface model, shader/texture
+  caches, fixed-function state, flip readback), `PshGlslGenerator` (GLSL
+  330 fragment generator written from `PshCombiner.Evaluate` +
+  `Nv2AMmio.ResolveTexel` semantics — facts/structure only, zero xemu/Cxbx
+  code), `GlStateMapper` (blend/depth/stencil/mask/alpha/clear mappings,
+  pure), `WglContext` (hidden STATIC window + WGL context via user32/gdi32/
+  opengl32 P/Invoke — no windowing package), `GlProbe` (probe.c pattern:
+  tiny program compile, FBO complete, known-texel draw ±2), and
+  `GlBackendFactory.TryCreate` (probe-gated; failure prints why and the CLI
+  falls back to `sw` for the session).
+- **CLI:** `boot --gpu sw|gl` (default `sw`); `--gpu gl` constructs the
+  backend after `machine.Reset()`, prints `GPU backend=gl probe ok;
+  GL_VERSION=...` or the probe-failure fallback line; end-of-run summary
+  prints `GPU backend=gl draws= clears= flips= methods= programs= uploads=
+  unsupported= unsup[colorBytes= zformat= modes= cubeVol= fbo= flip= fatal=]
+  BackendUnsupported=<n>`.
+- **`src/XGrid.Graphics/`:** `FrameDiff` (§3.4 policy comparator: reference
+  edge map, ±1 px Moore band, per-channel ≤2, flat-exact requirement) used
+  by the golden harness and 6 new unit tests.
+- **Harness:** `scripts/gpu-slice1-golden.ps1` runs the §95 neutral 1B boot
+  twice (`--gpu sw` / `--gpu gl`, verbatim pad-script
+  `down@950000000+hold,none@962000000,a@970000000+hold,none@976000000`) and
+  applies the policy + structural checks.
+- **Tests (+74, zero changes to existing expectations):** 64 headless
+  `XGrid.GpuGl.Tests` (GlStateMapper enums/behaviors, GLSL string goldens
+  `Goldens/legacy.glsl` + `Goldens/menu-1s.glsl`, key stability, mux
+  MSB/LSB, CLIPPLANE discard, invalid-stage none-texel, passthru), 6
+  `FrameDiffTests`, 4 `PgraphBackendSeamTests` (recording backend; software
+  RAM result byte-identical with backend attached; Method/Draw/Clear/Flip
+  observation; ResetState on machine reset).
+
+### Acceptance evidence (design §8 step 6, exact commands + outputs)
+
+Media: private `wt-data\` copies (Complex_4627.bin, mcpx_1.0.bin,
+eeprom.bin, xbox_hdd.qcow2); triangle ISO untouched read-only. Host:
+Windows desktop, NVIDIA GL **4.6.0 driver 610.88** — probe
+`probe ok` (real context; no honesty-gap needed).
+
+Runs (worktree root, Release build):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --steps 1000000000 --pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000" --gpu sw --frame golden-sw.bmp
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot ... --gpu gl --frame golden-gl.bmp
+```
+
+1. **Both runs `LastFault vec=0`** (exit 0).
+2. **Structural counters identical sw↔gl** (sw counters are pusher/
+   dispatch-level and run unconditionally, so equality is exact):
+   `NV2A draws executed=33632 skipped=1402 pixels=285171381
+   textured=278577344 clears=695 blended=211696978 depth=136 zclip=0
+   zclipCull=21526 frames=686 stalls=686 ...` — byte-identical lines in
+   both logs; `Frame ... 640x480 nonzero=307200 ... surface=3E2C000
+   pitch=2560 valid=True frame=686`.
+3. **`BackendUnsupported == 0`** with named sub-counters all zero:
+   `GPU backend=gl draws=2760841 clears=695 flips=686 methods=18125062
+   programs=11 uploads=13 unsupported=0 unsup[colorBytes=0 zformat=0
+   modes=0 cubeVol=0 fbo=0 flip=0 fatal=0] BackendUnsupported=0`.
+4. **BMP diff (§3.4 policy): `violations=0`, `maxDelta=1`,
+   `outsideBand=0`** — 2602 differing pixels (0.85% of 307,200), every one
+   inside the ±1 px edge band with per-channel delta ≤ 1; flat regions
+   byte-exact. SHAs: sw `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+   (= the §95/§109 recorded dashboard submenu frame — the sw leg reproduces
+   the canonical oracle), gl
+   `B1B6CDAE...`→ final `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+   (gl SHA changes across backend revisions; the sw SHA is the stable one).
+5. **Default path unchanged:** full suite 1200/1200 green (1126 baseline +
+   74 new; zero existing expectations touched) and
+   `dotnet format XGrid.sln --no-restore --verify-no-changes` exit 0.
+
+### Fidelity findings (the gate taught these; recorded as facts)
+
+Three mechanisms were required to reach violations=0 — each diagnosed from
+quantified diffs, never guessed:
+
+1. **Integer texelFetch sampling.** Normalized `texture()` with a
+   `u*(1/size)` scale round-trips through FP and flips `floor` at
+   texel-boundary UVs (glyph columns landed on the wrong atlas texel: a
+   2px vertical bar of ±116-delta pixels at x=468-469 in the first pair).
+   The GLSL sampler now computes `WrapI(floor(coord), size, mode)` in
+   shader integers — the exact `Nv2AMmio.WrapCoordinate` arithmetic (GLSL
+   int division truncates toward zero like C#) — and fetches with
+   `texelFetch`. Upload path reuses the software `DecodeTextureTexel` /
+   `SwizzleOffset` tables (widened to public).
+2. **Software-exact barycentric in the fragment shader.** GL's own
+   varying interpolation evaluates the perspective-weight expression in a
+   different FP order than `FillTrianglePsh` (ULP drift flips boundary
+   texels again: 128 → 77 residual violations after (1)). The three
+   transformed vertices now travel as per-draw uniforms (`uPx`, `uColorV`,
+   `uSpecV`, `uT0V..uT3V`, `uVtx`, perspective/invs/clip) and the shader
+   re-runs the software formulas verbatim (`area/invArea/w0/w1/w2`,
+   inclusive any-sign inside-test, `s0/s1/s2/sum/invSum` perspective
+   weights, `p1*a+p2*b+p0*c` attributes, `w1*aZ+w2*bZ+w0*cZ` depth) from
+   `gl_FragCoord` — the design's "screen-space vertex buffer at FlushDraw"
+   (§8 step 4). A `UseProgram`-before-uniforms ordering bug found on the
+   way (per-draw uniforms were binding to no program) explains part of the
+   first pair's diff as well.
+3. **Coverage-superset inflation + shader inside-test.** The residual 77
+   violations were software's *inclusive* edge test double-covering
+   shared-quad-diagonal pixels (two triangles each accept a center lying
+   exactly on their shared edge → the blend runs twice in software; GL's
+   top-left rule runs it once). Fix: `gl_Position` triangles are inflated
+   2% about their centroid so GL rasterizes a strict superset, and the
+   shader's software-exact inside-discard trims it back to exactly
+   software's per-triangle pixel set — tie pixels now execute the fragment
+   (and the blend) twice, byte-matching the software double-blend.
+   Result: 77 → 0 violations, maxDelta 128→1.
+
+Other decisions: FBO is a **grow-only surface** (software keeps surface
+pixels across clip-window changes; clip-shrink flips read the same window —
+this turned the first pair's 34 `flip` unsupported counts into 0); flips
+read back the `record.Width×record.Height` window when the FBO is ≥ it;
+`Method()` is an observation counter only (the seam transfers all
+slice-1-relevant state through Draw/Clear/Flip, so `BackendUnsupported` is
+driven by draw/clear/flip-time checks with named sub-counters); texture
+change detection is a cheap head/tail/strided fingerprint per draw
+(documented risk — full-buffer CRC was measured too slow per draw).
+
+### Open risks / slice-2 pointers
+
+- **Exotic modes are counted, not implemented** in the GLSL emitter:
+  valid-stage DOT family + BUMP (`unsup[modes]`), cubemap-flagged 05/06 +
+  volume 05/06 success paths (`unsup[cubeVol]`), `Z_FORMAT` float depth
+  with depth test (`unsup[zformat]`), non-4-byte color surfaces
+  (`unsup[colorBytes]`), FBO grow/zeta reallocation (`unsup[fbo]`), flip
+  window larger than the FBO (`unsup[flip]`), any GL exception
+  (`unsup[fatal]`, backend then stops issuing GL calls). The menu trips
+  none (all zero above); a title that does fails the gate loudly.
+- Clip-origin assumption: readback treats the presented window as surface
+  rows `0..clipH-1` (matches `CapturePresentedFrame`); draw y is
+  translated by `clipY` and `px/py` reconstructed as
+  `gl_FragCoord.x` / `gl_FragCoord.y + uClipY` — exact for the menu
+  (`clipY=0`); a clipY>0 title should be re-validated by the golden pair.
+- Texture fingerprint = 16 sampled texel words/draw (head/tail/strided);
+  an interior-only re-upload between draws could be missed — the golden
+  pair is the tripwire.
+- GLSL `float` FMA contraction is driver-defined; this driver's output is
+  bit-stable for the recorded frame (violations=0), but goldens are per-
+  driver until a sw-vs-sw noise floor (design §7 risk 4) says otherwise.
+- Swapchain/windowed present, Vulkan backend, shader disk cache, async
+  submission: out of slice 1 (design §3/§5/§7 unchanged).
+- Build note: `AllowUnsafeBlocks` enabled only in `XGrid.GpuGl` (pointer
+  overloads for Silk tex uploads/readback); no other project changed its
+  build flags.
+
+## §114 — 007 stream end
+
+Branch `wave/007-streamend` (worktree `Temp\opencode\worktrees\007-streamend`).
+PROBE-ONLY wave: no `src/` or `tests/` changes. Master @459f742 Release CLI,
+restore + build clean. Goal: run §112's verbatim follow-up (pd181 → 52.6B with
+the four `--break-log` addresses), catch the stream-end event, characterize it.
+EOS quirk left default-ON per §92/§94 — `fires=0` for the entire wave
+(checks 505,966 at 18.1B → 9,905,390 at 56.6B). Media: private copies in
+`wt-data\` (BIOS/MCPX/EEPROM/qcow2), shared CHD on `E:` read-only; `pd181.xgs`
+copied from the `007-postdrain` worktree (read-only source). `--idle-skip` NOT
+used (flag-off authoritative steps).
+
+**CLI facts learned this wave (affect any rerun):** (1) `--break-log` runs the
+WHOLE `--steps` budget in the single-step loop (`Program.cs:423-463`) — no
+`Progress` lines, and a HIT only prints; it does **not** exit early (only
+faults/`Halted` exit). (2) `--save-at` with `--break-log` never triggers
+mid-run (the check lives in the batch loop only) and — worse — `--save-at` set
+at all makes the post-loop save `return 0` **before** `PrintState`/`--frame`
+(`Program.cs:602-605`), so it was deliberately omitted from every run here.
+(3) `Advance` quantum differs by mode: every 4096 steps under `--break-log`
+vs 65536 in `machine.Run` batch mode — `SevenEosQuirkChecks` counts
+`Advance` calls, so its rate is ~244/M (break-log) vs ~15.4/M (batch); the
+coarse guest state converges but near-deadline interleavings can diverge
+(observed below). (4) Progress from a `--load-state` run is steps-since-load;
+absolute = 18.1B + progress for the main chain.
+
+**Method — chunked verbatim (per §112's own "chunk if wall-clock risk is
+high").** §112's acceptance command run as 10 × 3.45B batches, each with the
+four break-logs (`0x20FC1`/`0x11340`/`0x20BD0`/`0x602F7`), `--watch
+0xDA7CB0,0xDA7DE8`, `--dump 0xDA7CB0,0x160`, per-batch frame + v2 snapshot
+chain `pd181 → pd2155 → pd2500 → pd2845 → pd3190 → pd3535 → pd3880 → pd4225 →
+pd4570 → pd4915 → pd526` (names = absolute 0.01B steps). 699-806 s per batch
+(~4.3-4.9M insn/s, contended host). Template (only `--load-state`/
+`--save-state`/`--frame` vary):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd4915.xgs --steps 3450000000 --save-state pd526.xgs --break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7 --frame pd526.bmp --watch 0xDA7CB0,0xDA7DE8 --dump 0xDA7CB0,0x160
+```
+
+**Phase timeline (18.1B → 56.8B; every row = watch/counter/frame/log evidence;
+logs in worktree `logs\`).**
+
+| Step window (absolute) | EIP / event | Identified activity | Evidence |
+|---|---|---|---|
+| 18.1 – 52.495B | PlayMPC `0x1Exxx`-`0x22xxx`, clock `0x138xx` | Steady channel-0x300 intro FMV, unchanged from §112 — DVD READ(10) stream, ~22 fps CPU-blit presents, no device waits | 10 batches all EXIT=0, `LastFault vec=0`, **0 HIT lines** (batches 1-9), zero watch writes in `0xDA7CB0..0xDE8`; node `[+0x14]` position linear 708,640 → 919,840 → 1,130,656 → 1,343,232 → 1,555,200 → 1,767,040 → 1,978,112 → 2,188,288 → 2,401,632 (61.1-61.7k/B); frames 691→1,881→2,010 (+129-133/3.45B); draws frozen 2,672; BM starts +~352/batch (linear video DMA); EOS `fires=0` |
+| **52,495,059,473** | **HIT `0x11340`** (batch-10 offset 3,345,059,473) | **Stream end**: node removal via the real advance-callback path — ch 0x300 played to completion | `HIT 3345059473 EIP=00011340 ESI=00000000 EDI=00000001 EAX=80DA7DE8 caller=00011496 arg=0` (EAX = node VA, caller = §107's `0x11496`); watch teardown by the removal routine: `0xDA7DCC` (list head `+0x11C`)→0 @`0x11397`, `0xDA7DD4` (active count `+0x124`)→0 @`0x113C7`, free-list pointers →`0x80DA7DE8` @`0x113EB/F7`; end dump: head=0, count=0, node on free list, node `[+0x14]==[+0x18]==0x27C92F` (2,607,407 = pos==total, natural EOS, no quirk involvement) |
+| 52.495 – 52.6B | end `0x8001984F` (kernel) | Post-removal tail; endpoint of the acceptance run | pd526: `Saved state pd526.xgs at step 3450000000 EIP=0x8001984F`, `LastFault vec=0`, frames=2010, EOS `checks=8928826 fires=0`, channel list already empty |
+| 52.6 – 53.0B | `0x8002xxxx`/`0x8001Cxxx`/`0x00026xxx`/`0x00011xxx` (diverse) | Post-FMV transition: DVD frozen first, execution live | probe A (batch +400M, `logs\pd526p400.log`): EIPHIST 200 samples spread over kernel+module EIPs (top `0x800231D9` n=5 — no plateau); ATAPI tail still `0x9B296`, BM starts 5485 (frozen); frames +2 only; end EIP `0x8001C51B` |
+| ~53.0 – 53.6B | `0x309FE`/`0x29998-0x29A66` (create), `0x20FC1` | **New STRM object created; DVD reads resume in a new LBA region; 10 voice-offs (menu/transition SFX)**; drain loop entered once | watch: `0xDA7CB0`→`0x80B6C020` (new STRM VA) @`0x309FE`, object body re-init by create EIPs `0x29998/9A/9D/9A0`+; BM starts 5485→5879; tail leaves `0x9AFxx`/`0x9B296` (frozen at 53.0) for new region (`28:00000004B4` at 53.6B end); `voiceOff` 1→11 (voices 46-50,64-67 off); ACI nam/nabm 6/93→9/149 (AC'97 traffic starts); **HIT `0x20FC1` once**: `HIT 559655459 EIP=00020FC1 ESI=00000100 ...` → abs **53,159,655,459** (break-log chain; drain for ch 0x100, single pass, not a re-park) |
+| ~53.6 – 54.6B | transient `0x16AExx` (string scan) → `0x13Axxx` clock → kernel `0x8001B0xx`/`0x800153xx` → **park `{0x1C3028,0x1C302C}`** | Screen transition completes (1 fullscreen draw +5 clears onto new surface `0x3BD8000`), then the guest **parks** | batch chain: pd536 (53.6B) still transient at `0x16AE37`, draws 2672/frames 2016/BM 5879; pd546b Progress @+250M (53.85B) already `0x1C302C` → onset ∈ (53.6, 53.85]B; pd546 (break-log, 54.6B) also `0x1C3028`. pd546 EIPHIST (1B window): 189/200 samples in `{0x1C3028,0x1C302C}`, brief kernel `0x8001B030-43` before it. Draw/flip counters land identical across both quanta (draws 2,673, clears 66, frames 2,017, BM 5,885, voiceOff 11) |
+| 54.6 – 56.8B (park) | `cmp dword [EAX+0x10],0; jnz` spin | **Stable gate**: main thread spins waiting for pending-count → 0; nothing clears it | pd546 → pd566 (+2B) → pd566p200 (+200M): EIP stays `{0x1C3028,0x1C302C}` (EIPHIST 100/100 both), `Halted=False`, `LastFault vec=0`; ALL main-thread devices frozen byte-for-byte (draws/frames/BM/pktbytes/APU r/w/voiceOff/USB acc/channel dump identical; `USB0 acc=54332` never moves — no pad polling either); interrupts **keep firing** (`Interrupts delivered` 92,704@52.6 → 96,127@54.6 → 99,017@56.6 → 99,307@56.8; PIC `0020=290` accesses/200M) so the park is a guest wait, not a halted IRQ path; EOS checks keep ticking host-side only (`fires=0`); held frame byte-identical across BOTH chains and all endpoint probes (SHA256 `18C7CC83CEA392DE…`) — RGB=(0,0,0) uniform alpha (no hidden layout), i.e. a black screen, vs pd526's FMV fade-out frame (`2B3397F9…`, meanLuma 0.5) |
+
+**Park decode (from `pd546b.xgs`, verbatim):** loop at module `0x1C3028`:
+`83 78 10 00` = `cmp dword [EAX+0x10], 0` ; `0x1C302C`: `75 FA` = `jnz 0x1C3028`.
+Registers: `EAX=0x83924800 EBX=0x118 ECX=0xD00190A8 EDX=0x210 ESI=0x1B18
+EDI=0xD001C070 EBP=0xD0031CE4 ESP=0xD0031CB4 EFLAGS=0x206`. Wait object at
+`0x83924800`: `+0x04=0x4BC +0x08=0x1B08 +0x0C=0x60A +0x10=3` — the counter is
+**3** and never drains over +2.2B observed steps. Candidate: an async
+completion/refcount (3 pending ops) whose completion source is not firing.
+
+**NEXT GATE (exact repro — the post-stream-end park):**
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd546.xgs --steps 1000000 --dumpv 1C3000,80 --dumpv 83924800,60
+```
+
+Fault text: none — `LastFault vec=0`, `Halted=False`; plateau EIP
+`0x001C302C` (partner `0x001C3028`), `EAX=0x83924800`, `[EAX+0x10]=0x00000003`.
+(Park onset per batch chain: load `pd536.xgs`, +250M already at `0x1C302C`.)
+Two gates were hit this wave: (G1) the §112-predicted stream end itself —
+node-removal HIT at **52,495,059,473** (repro: `--load-state pd4915.xgs
+--steps 3450000000` + the four break-logs, HIT line quoted above) — fully
+characterized, not a bug; (G2) the residual park above, which is the next
+decode target.
+
+**Verbatim recommended next command for the follow-on wave** (decode the park;
+from the parked snapshot, re-arm watch on the wait word and see if ANYTHING
+touches it, then identify `0x1C3000`'s caller/module and what should clear
+`[0x83924800+0x10]=3`):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd546.xgs --steps 2000000000 --watch 3924800,3924814 --break-log 0x1C302E --dumpv 1C2F80,100 --dumpv 83924800,60 --frame park2b.bmp
+```
+
+(`--watch 3924800,3924814` = physical of VA `0x83924810`; `--break-log
+0x1C302E` = first instruction after a successful exit from the spin, so a HIT
+there means the gate opened; absent that, the park persists — then bisect the
+3 pending ops via the module's other code or APU/DVD state at `pd546.xgs`.)
+
+**Artifacts (worktree, NOT committed — paths only):** snapshots (all v2, 72 MB
+each) `pd181.xgs` (copied origin), chain `pd2155/pd2500/pd2845/pd3190/
+pd3535/pd3880/pd4225/pd4570/pd4915/pd526.xgs` (21.55…52.6B), `pd536.xgs` /
+`pd546b.xgs` (batch chain 53.6/54.6B), `pd546.xgs` (break-log chain 54.6B),
+`pd566.xgs` (56.6B); frames `pd2155..pd566.bmp` + `pd526p400/pd536/
+pd546b/pd566p200.bmp` (held-frame SHA above); logs `logs\pd2155..pd566.log`,
+`logs\pd526p400.log`, `logs\pd566p200.log`, `logs\parkdump.log`,
+`logs\parkobj.log`, `logs\sanity1m.log` (`*.log` is git-ignored; snapshots/
+BMPs are NOT ignored — keep them untracked); `wt-data\` (private firmware/HDD
+copies, `eeprom.bin` pattern-ignored).
+
+**Infra:** §112's two host process kills did **not** recur — every boot this
+wave exited 0 (19 runs incl. probes) except one `EXIT=4` caused by this agent
+omitting `--save-state` on a probe (instant CLI error, no emulation ran).
+Determinism: batch mode self-consistent (pd536 rerun byte-identical Progress
+EIPs); both quanta converge to identical coarse end-state (draws/frames/BM/
+voiceOff/frame SHA) by 54.6B despite near-deadline interleaving differences.
+
+**Open questions:** (a) semantics of `[0x83924800+0x10]=3` (3 pending what?)
+and which device/IRQ should clear it — park may be a real emulation gap or a
+guest-side wait needing input/a stimulus; (b) why DVD reads stopped forever at
+54.6B with no outstanding IDE command (BM status 0) while the park persists;
+(c) next menu/input entry (`0x602F7`) and next PlayMPC channel (`0x20BD0`)
+were never hit anywhere in 18.1→56.8B — after the park opens, re-arm both;
+(d) post-FMV LBA region (`0x4B4`/`0x4AA62` vs FMV `0x9AFxx`) — which disc
+files the new STRM object (`0x80B6C020`) streams, via `xgrid sector` if
+needed; (e) `0x16AExx` string-scan spends 250M+ steps — benign bulk compare or
+a pathological loop, revisit only if the park decode references it.
+
+## §115 — nvnet first real frame (2026-10-13)
+
+Work in `Temp\opencode\worktrees\nvnet-frame` (`wave/nvnet-frame`, base
+459f742). Goal: first-real-frame validation of the §84/§88 nvnet packet
+engine against live dashboard traffic, plus the smallest real TCP-proxy
+path. Files: `tests/XGrid.Bus.Tests/NvNetFirstFrameTests.cs` (new),
+`src/XGrid.Bus/Net/TcpProxy.cs` (new), `tests/XGrid.Bus.Tests/TcpProxyTests.cs`
+(new). **No `src/` files modified, no CLI/SLN/package changes** — the engine
+and backends already existed; this wave captures evidence and adds gates.
+
+**First real frame: the dashboard DOES transmit — a 342-byte DHCP DISCOVER
+(boot-time, deterministic).** §88 left "first real frame type open (no guest
+TX on boot)"; that was measured before the engine's IRQ/filter wiring matured.
+Recipe run (private `wt-data/` media copies, 1B steps, pad-script
+down@950M/a@970M) prints:
+
+```
+NVNET tx_pkts=1 tx_bytes=342 kicks=2 cant_tx=0 rx_pkts=1 rx_bytes=342
+  drop_filter=0 drop_nobuf=0 oversize=0 cant_rx=0 link=True autoneg=False
+  backend=LoopbackNetworkBackend
+  tx base=0x03FDB000 cur=0x03FDB000 next=0x03FDB008
+  rx base=0x03FDB800 cur=0x03FDB800 next=0x03FDB808
+  irq=False asserts=2 deasserts=2
+NVNET reads=52 writes=325 regs: 190=22 194=10 180=6 00=6 98=2 88=2 188=2 144=1
+  wr: 190=12 04=7 144=7 00=5 180=5 110=4 94=3 84=3
+```
+
+- **Differential (neutral vs pad-script, both 1B):** NVNET counter/ring lines
+  are byte-identical — the frame is boot-time traffic, not input-driven; ring
+  addresses and counters are run-stable. The captured frame below is from the
+  pad-recipe run (xid/ident were not diffed across runs).
+- **Descriptor state (`--dump 03FDB000,4000`):** TX desc0 =
+  buf `46 60 33 00` (phys `0x00336046`), len `55 01` (341 → xemu's
+  `desc.length + 1` = 342, `nvnet.c:510`), flags `01 00` — post-TX writeback:
+  VALID + error bits cleared, LASTPACKET retained, length/buffer preserved
+  (xemu `nvnet.c:536-539`). TX desc1 is zeroed: the second KICK walked to
+  !VALID and stopped without a frame (`kicks=2`, `tx_pkts=1`, xemu
+  `nvnet.c:518-520`). RX desc0 at `0x03FDB800` shows the post-replenish
+  state (buf `0x03FDC002`, len `0x7FD` = 2045 → 2046 B capacity, flags
+  `0x8000` AVAIL) — the driver re-armed the ring after consuming the loopback
+  copy. `asserts=2 deasserts=2` = TX `0x10` + RX `0x02` IRQs, each W1C'd
+  (xemu `set_intr_status`, `nvnet.c:552`/`430`).
+
+**Frame capture:** `--dump 00336046,156` at 1B steps (same recipe) reads the
+TX buffer — a well-formed DHCP DISCOVER, embedded byte-exact in
+`NvNetFirstFrameTests` as `GoldenDhcpDiscoverHex` (684 hex chars):
+
+| Field | Value | xemu / protocol fact |
+| --- | --- | --- |
+| Length | 342 B = `tx_bytes` | coalesce = sum of `len+1` |
+| Eth dst/src | `FF:FF:FF:FF:FF:FF` / `00:50:F2:A4:F5:A8` | broadcast; Microsoft-OUI guest MAC |
+| EtherType | `0x0800` | IPv4 |
+| IP | v4 ihl5, totlen 328 (=342-14), TTL 64, proto 17, `0.0.0.0`→`255.255.255.255`, checksum folds to 0 | client has no lease yet |
+| UDP | 68→67, len 308, checksum folds to 0 over pseudo-header | DHCP client→server |
+| BOOTP | op1 htype1 hlen6 xid `F5EAFE08`, chaddr = src MAC | RFC 2131 |
+| Magic | `63:82:53:63` | DHCP |
+| Options | 53=1 DISCOVER, 61 client-id (1+MAC), 60 `"XBOX 1.0"`, 55 param-list {1,3,6}, 255 END | Xbox kernel stack |
+
+Loopback backend returns it through the receive filter (broadcast passes,
+§88) → `rx_pkts=1 rx_bytes=342`, RX IRQ, driver replenish — the full
+TX→backend→RX path exercised by real guest traffic. Nothing else at 1B:
+no ARP, no UDP beyond this, no TCP (zero titles speak TCP yet).
+
+**Synthetic gate (2 tests, green):** `GoldenFrame_TxKickToRxPoll_RoundTrips
+ThroughDeviceModel` drives the captured frame through the device model
+directly (2-entry rings SIZE=`0x00010001`, TX desc VALID|LASTPACKET, RX desc
+AVAIL cap `0x7FD` mirroring the live ring): KICK → backend SentLog[0] byte-
+equal → TX writeback {buf/len preserved, flags LASTPACKET-only} → CURRENT/NEXT
++8 → TX IRQ asserted; `PollReceive` → RX buffer byte-equal, RX writeback
+{len=342 raw size, flags BIT4|VALID} → `0x10|0x02` status → W1C deassert.
+`GoldenFrame_MatchesCapturedLiveDhcpDiscoverFields` re-parses every field
+above (both checksums recomputed, options walked) — the executable field
+table.
+
+**TCP proxy (Goal B) — host side landed, guest side honestly scoped out.**
+Recon: `--net-backend loopback|socket`; `SocketNetworkBackend` already does
+ARP/ICMP/UDP-NAT and drops+counts TCP (`TcpFrame_DroppedAndCounted`); the
+live dashboard emits only the DHCP DISCOVER — no guest title speaks TCP at
+1B. Per the gate ("proxy host side verified by loopback test + documented
+integration point"): `TcpProxy` (`src/XGrid.Bus/Net/TcpProxy.cs`) binds a
+host loopback listener and relays bytes bidirectionally to a target
+host:port with `Connections`/`FailedConnections`/`RelayedBytes` counters,
+thread-per-session pumps, `Start`/`Stop`/`Dispose`. 3 tests green: 4 KB
+loopback echo end-to-end (payload byte-equal, `RelayedBytes` >= 8192),
+unreachable target (`FailedConnections=1`, client EOF, proxy survives),
+dispose (listener refused, `Start` throws). **Guest integration point
+(documented, NOT built):** a future title's TCP segments would be terminated
+by a TCP state machine inside/behind `SocketNetworkBackend` (the §88
+follow-up), whose byte streams attach to `TcpProxy` sessions — building that
+state machine before any title needs it would violate scope-to-the-gate.
+
+**Acceptance:** 1131 tests green (1126 baseline untouched, +5 new: 2 golden-
+frame + 3 proxy), zero existing-expectation changes, `dotnet format
+--verify-no-changes` clean. No boot-path files modified (only new files added
+— `git diff` empty), so default-flag boot behavior is unchanged by
+construction; the pre-change recipe runs above stand as the baseline.
+Open risks: the golden frame's xid/ident are boot-run-specific (deterministic
+here; if the guest ever randomizes them the synthetic test still only uses
+the frame as inert input); `TcpProxy` is unwired (by design — no CLI flag,
+no backend hook) until a TCP-speaking title arrives; loopback TX→RX means the
+guest currently receives its own DISCOVER (broadcast filter pass) — a future
+`socket`-backend DHCP path would need a UDP/67 sink instead.
+
+## §116 — kernel-test-suite bring-up: reporting mechanism found, full failure chain diagnosed (2026-10-13)
+
+Worktree `wave/ktest-suite` (private media under `Temp\opencode\worktrees\
+ktest-suite\wt-data\`; recon scripts kept in `tools/ktest-recon/`).
+Time-box honesty: the suite still does NOT run its tests on XGrid - every
+output path was empirically closed by *guest-kernel* semantics (statuses
+below), not by an XGrid gap. Acceptance met under clause 4 (recon +
+diagnosis; zero src changes; baseline 1126 green).
+
+**Reporting mechanism (suite sources, facts only - GPL project, no code
+copied; release da80f1f = current master):** `main()` in `src/main.cpp`
+1) reads `D:\name.txt`, 2) **`open_output_file("D:\kernel_tests.log")` via
+CreateFile(CREATE_ALWAYS) and `return`s from main if it fails**, 3) reads
+`D:\config.txt` (missing -> defaults), 4) with `output_video` (default
+true) runs `XVideoSetMode`+`pb_init`+`pb_show_debug_screen`, 5) every
+`print()` = `DbgPrint` + optional pbkit `debugPrint` + `WriteFile` to the
+log, 6) `run_tests()` iterates the 378-entry `kernel_api_tests` table
+(`%03u - <Api>: Tests Starting/All tests PASSED/...` footers), 7) ends
+with `close_output_file()` + `Sleep(10000)` + `pb_kill()`. Consequence:
+**when the log open fails there are ZERO prints, ZERO video, ZERO tests** -
+exactly the observed "boots clean for 900M, produces nothing" (§104/§106).
+
+**Launch facts (XGrid LLE, Complex_4627 custom BIOS):** suite entry is
+absolute VA `0x4DF80`; kernel `call [0x10128]` launch fires at step
+**525,703,665** (DVD boot) / **525,704,363** (FATX boot) - same DVD path
+cost as triangle (§106). After main's early return the kernel relaunches
+the XBE forever: next entry every **9.44M steps** (DVD: kernel re-probes
+disc + reloads XBE; ATAPI `5A/03/25/28/AD` cycle in the command tail) or
+**~9.8M** (FATX). EIP-histogram of a cycle: dominated by kernel IDE/FS
+code `0x800315xx`; suite code alive only ~33K steps per cycle.
+
+**Kernel thunk table (NOT the problem - decoded from the XBE):** slots
+hold `0x80000000 | ordinal` (unordered, terminator-0 at index 165; 165
+imports, e.g. idx 67 -> ordinal 67 `IoCreateSymbolicLink` at slot
+`0x57F1C`, `NtCreateFile` slot `0x57FB4` = `0x8001694D`, `DbgPrint` slot
+`0x57ECC`). The kernel resolves every slot at launch (RAM dump at entry
+shows kernel addresses throughout). All static `FF 15 <slot>` call sites
+in the binary map to these slots. XGrid-side thunk/export handling needs
+no fix: LLE kernel resolves them itself.
+
+**Failure chain - four log-path shapes, each probed with `--break-log`
+on `0x39E27` (NtCreateFile return, EAX=NTSTATUS), `0x2EE7B` (open return),
+`0x4E03A` (main return):**
+
+| path (patched into private media) | NTSTATUS | meaning |
+|---|---|---|
+| `D:\kernel_tests.log` (stock) | `C0000022` INVALID_ACCESS | letter `D:` resolves (kernel-created `\??\D:`); kernel XDVDFS rejects the write - **correct read-only-DVD behavior, not an XGrid gap** |
+| `C:\...` / `E:\...` | `C000003A` PATH_NOT_FOUND | **no `\??\C:`/`\??\E:` exists** - DOS letter map lookup fails inside the kernel path converter (trace `0x80020A49`..; Cxbx `EmuKrnlOb.cpp:703` documents the `ObpDosDevicesDriveLetterMap` fast path) |
+| `\Device\Harddisk0\Partition2\kernel_tests.log` | `C0000033` NAME_COLLISION | this kernel's converter **hard-rejects backslash-rooted paths**: `cmp byte[eax],'\'` falls into `mov esi,0xC0000033` (trace `0x80020A49-0x80020A52`) |
+| `kernel_tests.log` (relative) | `C0000034` NAME_NOT_FOUND | CWD is the object root, not a volume |
+
+**Drive-letter discovery (the root blocker):** ramdump diffs show the
+kernel creates only `\??\D:` (string at kernel phys `0x127BC`, plus
+`\??\CdRom0:`/`\??\A:` templates). The full set `\??\C:`..`\??\G:` exists
+ONLY in a dashboard boot (dump @600M: runtime array at phys
+`0x1e3d58`+ built from a `\??\%c:` format string living in the *dash*
+data, `xboxdash2.xbe` file region holds `\??\D:\`/`\Device\
+Harddisk0\Partition7\` path tables) - i.e. **the dash/app runtime creates
+the letters, not the kernel**, and the suite (first title launched) never
+gets them. Supporting evidence: DVD boot issues ZERO master HDD reads
+(command tail ends `M91` setup, all later cmds ATAPI); dash boot reads
+FATX `MC8` at `0x4654xx` (§47); even booting the suite ITSELF from FATX
+(see injector below) still lacks letters at main time.
+
+**Experiments (all on private media, original qcow2 backed up as
+`xbox_hdd.orig.qcow2`):** (1) log path letter patches - table above;
+(2) **FATX injector** (`tools/ktest-recon/inject_dash.py`: in-place
+qcow2 read/write mirroring `Qcow2DiskImage`, FATX facts from §47 +
+XboxDevWiki: LE header @byte `0x8CA80000` (sector `0x465400`), 8-sector
+header, 128-sector u16-LE FAT, 32-sector clusters, root=cluster 1;
+dirent = `[u16 namelen][name][FF pad to 42][u32 cluster LE][u32 size LE]`)
+- replaced `C:\xboxdash.xbe` with the suite (chain 268+, size patched
+319488, kernel loads it: entry hit at 525,704,363, XBEH verified);
+letters STILL absent after a FATX-native launch; (3) device-path string
+relocation (rdata rawSize 0x9160->0xA000 + lea fixup at VA `0x2EDF8`)
+-> COLLISION; (4) relative path -> NOT_FOUND; (5) **guest shellcode in
+the ignored `load_name_file` donor (VA `0x2E620`, 164 bytes: builds two
+UNICODE_STRINGs `\??\C:` / `\Device\Harddisk0\Partition2` and `call
+[0x57F1C]` IoCreateSymbolicLink)** -> kernel reaches the API but
+**KeBugCheck** (CLI/HLT at `0x800151ED`; saved params include
+`0xC0000005`) at identical step 33137 with both argument orders; first
+iteration also exposed an `loop rel8` off-by-one (fixed) - cause of the
+AV is OPEN (possible Complex_4627 ordinal-67 semantic difference vs
+retail, or call-context requirement); EvoX's own letter creation
+demonstrates the API works in dash context, so the kernel side is
+capable.
+
+**XGrid verdict:** no gap found in the assigned area - thunks resolve,
+FATX create/write works (§47), NtCreateFile statuses above are faithful
+kernel outputs. The missing piece (DOS letter links / writable D:) lives
+inside the guest kernel/dash runtime, i.e. out of scope for a clean-room
+emulator fix. xemu cannot arbitrate (deadlocks pre-launch, §32).
+
+**Open / next:** (a) diagnose the shellcode AV (dump CR2/exception
+record at bugcheck; compare EvoX's exact IoCreateSymbolicLink call
+context; verify ordinal 67 semantics on Complex_4627); (b) once any
+`print()` runs, capture DbgPrint (retail likely UART-gated - XGrid has
+no 0x3F8 model) or rely on the FATX log file + `--writedump`; (c) suite
+totals unknown (0 of 378 executed). Baseline: **1126 tests green, build
++ `format --verify-no-changes` clean; zero src changes, zero
+expectation changes.**

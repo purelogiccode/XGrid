@@ -429,8 +429,8 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
    simpler readback; wide driver coverage), behind an `IRenderer` seam so `vk/`
    can follow. Host driver variance → goldens recorded per driver (§3.4); the
    ±2 tolerance comes from xemu's own probe, not from guesswork. **C# binding
-   library for GL/Vulkan is un-chosen** — no package may be assumed available
-   (repo rule); operator must bless one (open question).
+   library for GL/Vulkan** - RESOLVED: Silk.NET.OpenGL (operator 2026-10-13),
+   pinned centrally in Directory.Packages.props; no other new dependency.
 3. **Synchronous pusher + §106 NO_OPERATION stall vs async backend.** The pusher
    runs synchronously on the emulation thread; `0x100` stalls until the guest writes
    `PGRAPH_INTR`, and resume is deferred one tick via `_pusherKickPending`
@@ -506,10 +506,23 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 > 6. **Acceptance (slice-1 gate):** `LastFault vec=0` on both runs; `frames=`,
 >    `stalls=`, `draws` identical; `BackendUnsupported == 0`; BMP diff within
 >    policy (flat exact, edges ≤2/channel in ±1px band); default path unchanged —
->    full suite green (1113 baseline) + `dotnet format --verify-no-changes`.
+>    full suite green (1126 baseline at this wave's start; 1200 after the
+>    wave's new tests) + `dotnet format --verify-no-changes`.
 > 7. **Docs:** append the outcome + any new method-inventory deltas as §111-style
 >    research-note section (coordinator renumbers), update this file's open
 >    questions (007 histogram still open).
+>
+> **GATE OUTCOME (2026-10-13, wave/gpu-slice1 → §113): PASS.** All six
+> acceptance points met on this host (NVIDIA GL 4.6.0, probe ok): both runs
+> `LastFault vec=0`; `draws=33632 frames=686 stalls=686` identical sw↔gl;
+> `BackendUnsupported=0` (named sub-counters all 0); BMP diff `violations=0`
+> (`maxDelta=1`, all 2602 differing pixels inside the ±1px edge band, flat
+> regions byte-exact, sw SHA `4EF1FBF6…` = the recorded §95/§109 dashboard
+> frame); suite 1200/1200 green (1126 baseline unchanged) + format clean.
+> Harness: `scripts/gpu-slice1-golden.ps1`. Three fidelity mechanisms the
+> gate taught us are recorded in §113 (integer texelFetch sampling,
+> software-exact barycentric in the fragment shader, coverage-superset
+> inflation + shader inside-test for software's inclusive-edge double-blend).
 
 ## Evidence sources
 
@@ -539,6 +552,11 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 4. `0x1D80`/`0x1D84` names (UNK in both xemu-0.8.136 and envytools) — resolve via
    Playtest `methods.h.inc` or hardware trace if a title depends on them.
 5. Whether the menu's gradient needs fog inside slice 1 or slice 2 (§95 frame pair
-   is the deciding measurement).
+   is the deciding measurement) — **CLOSED for slice 1** (gate passed with fog
+   carried as a uniform; the frame pair needed no fog-only fallback).
 6. pbkit present hook (`NV_PGRAPH_INCREMENT 0x71C`) — slice-3 optional follow-up
    per §106.
+7. **Slice-1 gate** — CLOSED 2026-10-13: PASS, see §8 GATE OUTCOME + §113.
+   Slice-2 open items recorded there (swapchain out of scope, Vulkan later,
+   exotic dot/bump/cube-success modes counted-but-unimplemented in the GLSL
+   emitter with `BackendUnsupported` tripwires).
