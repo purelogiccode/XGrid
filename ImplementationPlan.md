@@ -3072,8 +3072,8 @@ DisplayFrame-parity present; golden-frame sw-vs-gl acceptance gate per
 slice; software path always retained behind `--gpu sw`; Playtest-v2 perf
 applicability matrix (uniform dirty-sections + probe-gated GL early, shader
 seeds after ship, writeback at eviction, cost model never); verbatim next
-work order in design §8 — **operator picks the GL binding first** (OpenTK /
-Veldridu / Silk.NET).
+work order in design §8 — operator picked **Silk.NET** (2026-10-13,
+`sources.md`).
 **Opt-in `--idle-skip` landed (§111):** guests execute 0 HLTs in 1B boots —
 parks are spin loops (kernel idle thread `0x8001B02E`); the detector
 fast-forwards verified spin-park bodies with IRQ/MMIO/PIO hard stops;

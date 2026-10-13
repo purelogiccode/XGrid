@@ -470,9 +470,8 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 > Prerequisite: merge the sibling `XGrid.Nv2a` changes first (this design assumes the
 > post-merge file; coordinate the hook so both waves touch `Nv2AMmio` once).
 >
-> 1. **Operator checkpoint (before any package add):** choose a GL binding for
->    net9.0 (candidates: Silk.NET.OpenGL, OpenTK — do not assume either is
->    restorable; record the choice in `sources.md`). No other new dependency.
+> 1. **Operator checkpoint: RESOLVED 2026-10-13 — `Silk.NET.OpenGL`** (operator
+>    choice; recorded in `sources.md`). No other new dependency.
 > 2. **New project `src/XGrid.GpuGl/`** (referenced by `XGrid.Cli` only; do **not**
 >    put renderer code in `XGrid.Nv2a` or `XGrid.Graphics` beyond the seam):
 >    - `IPgraphBackend` (lives in `XGrid.Nv2a`): `void Method(uint sub, uint method,
@@ -533,7 +532,8 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 ## Open questions
 
 1. 007 method histogram (CHD path + multi-billion-step reachability) — open (§1.2).
-2. GL binding library choice — operator decision (repo: never assume packages).
+2. ~~GL binding library choice~~ — RESOLVED 2026-10-13: **Silk.NET.OpenGL**
+   (operator; recorded in `sources.md`).
 3. Absolute counter baselines to re-record post-§106 (§43/§95/§101 numbers noted
    as shifted) — coordinator/triage, not a backend blocker (acceptance is sw-vs-gl).
 4. `0x1D80`/`0x1D84` names (UNK in both xemu-0.8.136 and envytools) — resolve via
