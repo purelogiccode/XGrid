@@ -5546,3 +5546,135 @@ no 0x3F8 model) or rely on the FATX log file + `--writedump`; (c) suite
 totals unknown (0 of 378 executed). Baseline: **1126 tests green, build
 + `format --verify-no-changes` clean; zero src changes, zero
 expectation changes.**
+
+## §117 — GPU-backend slice 2: triangle golden gate PASSED, FBO-grow blit landed, all §113 tripwires evidence-disposed (2026-10-13)
+
+Wave `wave/gpu-slice2` (worktree `Temp\opencode\worktrees\gpu-slice2`,
+branch from master @1f0d918). Scope per wave assignment: `src/XGrid.GpuGl/**`,
+`tests/XGrid.GpuGl.Tests/**`, `scripts/`, the two research docs. The
+triangle gate and the dashboard re-verify both **PASS** on this branch;
+suite baseline **1205/1205** green (zero existing-expectation changes),
+`dotnet format --verify-no-changes` clean. Host: NVIDIA GL 4.6.0 driver
+610.88, probe ok (real context). Media: private `wt-data\` copies
+(BIOS/MCPX/EEPROM/qcow2), triangle ISO read-only at
+`%TEMP%\opencode\triangle-iso\triangle.iso`.
+
+### Triangle golden gate (the slice-2 acceptance)
+
+Harness: `scripts/gpu-slice2-triangle-golden.ps1` (twin of the slice-1
+script + `--dvd`, anchor pins for the recorded counters
+`draws=2706 frames=68 stalls=34` and the recorded software frame SHA;
+§3.4 BMP policy identical). Run:
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd ...\triangle.iso --steps 1000000000 --gpu sw|gl --frame ...
+```
+
+Result: **GOLDEN: PASS** on both the unmodified slice-1 backend (first
+pair, proving the triangle stream trips **zero** §113 `unsup[...]` rows)
+and again on the final instrumented build. Evidence:
+
+1. Both runs `LastFault vec=0` (exit 0).
+2. Structural counters identical sw<->gl **and** == recorded anchors:
+   `NV2A draws executed=2706 skipped=0 pixels=89142121 textured=48754488
+   clears=6455 blended=518 depth=15667336 zclip=0 zclipCull=21526
+   frames=68 stalls=34` (byte-identical lines in both logs).
+3. `GPU backend=gl probe ok` then
+   `draws=54492 clears=6455 flips=68 methods=223956 programs=10 uploads=10
+   unsupported=0 unsup[colorBytes=0 zformat=0 modes=0 cubeVol=0 fbo=0
+   flip=0 fatal=0] diag[fboReallocs=14 fboZetaDrops=7 clipXY=0]
+   BackendUnsupported=0`.
+4. BMP diff (§3.4 policy): **violations=0, outsideBand=0, maxDelta=1** —
+   27,849 differing pixels (9.1% of 307,200; the Gouraud triangle is edge-
+   heavy), every one inside the ±1 px edge band, flat regions byte-exact.
+5. Software frame SHA verified (not trusted):
+   `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`
+   = the recorded §109 hatch-free triangle oracle; gl frame
+   `7A860ED7378A86E8E63403573D92D0D5B248EA93E66D7A34716947535F34FC2D`
+   (bit-identical before/after this wave's FBO change — deterministic
+   driver, the change is frame-neutral on this title).
+
+Notes: the §110 §1.2 histogram's `pixels=88,944,649` predates the §109
+depth-compare fix; current master counts `89,142,121` (draws/frames/
+stalls unchanged — those are pusher-level). The triangle's combiner is
+`stages=1 control=00000001 final=True draws=2672` — the same single-stage
+shape as the menu, so the multi-stage-combiner worry in the wave brief
+did **not** materialize. The pbkit depth-texture stage (`0x30`
+LU_IMAGE_DEPTH_Y16_FIXED, 62,444,852 samples, all software misses via
+`bytesPerTexel==0` -> none-texel) has GL parity **by construction**
+(`ApplyTextures` marks `uTexOk=0` for `bytes==0`; `SampleSlot` returns
+the same none-texel) — proven by violations=0, not tripwired.
+
+### Dashboard menu golden re-verified
+
+`scripts/gpu-slice1-golden.ps1` on this branch: **PASS** — sw SHA
+`4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+and gl SHA `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+are **bit-identical to the §113 records**; counters
+`draws=33632 frames=686 stalls=686` identical; diff=2602 violations=0
+maxDelta=1; `BackendUnsupported=0` with the same
+`diag[fboReallocs=14 fboZetaDrops=7 clipXY=0]` (the reallocs are the
+shared boot-prefix video-mode setup — 14 per boot on both titles).
+
+### What changed in `src/XGrid.GpuGl` (all additive; no seam/test changes)
+
+- **Evidence diagnostics** (`DebugSummary` suffix, informational, never
+  `BackendUnsupported`): `diag[fboReallocs= fboZetaDrops= clipXY=]` —
+  FBO reallocations with prior content, zeta-format-change depth drops,
+  draws/clears with a clip-window origin != (0,0). These convert two
+  §113 open risks from assumption into per-run measurements.
+- **Content-preserving FBO realloc** (the §113 "FBO-grow window realloc"
+  gap — the one silent fidelity hole behind a green counter): on grow or
+  zeta change the backend now creates the new FBO first and
+  `glBlitFramebuffer`s the old content in (color always; depth/stencil
+  only when the zeta format is unchanged — different depth formats are
+  not blit-compatible, and the drop is counted in `fboZetaDrops`). A
+  failed FBO creation now **keeps the previous FBO alive** (slice 1
+  destroyed it, silently disabling all later draws). Gate validation:
+  the path fires 14x per boot (7 with zeta change) on both titles and
+  both golden frames are **bit-identical** before/after — on menu+
+  triangle the realloc-dropped content was always fully redrawn or
+  cleared before present, so the fix is observably neutral here and
+  content-correct for future mid-frame-grow titles.
+- `scripts/gpu-slice2-triangle-golden.ps1` — the triangle gate harness
+  with anchor pins (counters + sw SHA), reusable per driver/host.
+
+### §113 tripwire disposition (every `unsup[...]` row + open risk)
+
+| §113 row / risk | Disposition | Evidence (this wave) |
+|---|---|---|
+| `unsup[modes]` exotic DOT/BUMP tex modes | stays counted; GLSL emitter emits deterministic none-texel for invalid stages (software parity, §96), counts + continues for valid-stage use so the gate fails loudly | menu=0, triangle=0 (both golden gl logs) |
+| `unsup[cubeVol]` cube/volume success paths | stays counted; implementing samplerCube/face-selection without a guest that uses it would be untestable speculation (Velocity rule 1) | menu=0, triangle=0 |
+| `unsup[zformat]` float-zeta + depth test | stays counted; GL float-depth path (Depth32F + range compare) deferred until a title histogram proves usage | menu=0, triangle=0 |
+| `unsup[colorBytes]` non-4-byte color | stays counted; software 2-byte present path exists but no menu/triangle surface uses it | menu=0, triangle=0 |
+| `unsup[fbo]` EnsureFbo failure | stays counted; failure path now preserves the previous FBO (previously destroyed it) | menu=0, triangle=0 |
+| `unsup[flip]` oversized flip window | stays counted; faking a larger readback would silently present wrong pixels | menu=0, triangle=0 |
+| `unsup[fatal]` GL exception | stays counted (fail-loud mechanism is its own disposition) | menu=0, triangle=0 |
+| FBO-grow content loss (silent behind the counter) | **IMPLEMENTED**: blit-preserving realloc + `diag[fboReallocs/fboZetaDrops]` (GL glue, gate-validated live 14x/boot; not headless-unit-testable — documented honestly) | both gates bit-identical before/after |
+| clipY!=0 readback origin assumption | stays open; `diag[clipXY]` counter added as detector | clipXY=0 draws+clears on menu+triangle |
+| 16-word texture fingerprint miss | stays open; the golden pair is the tripwire; full-buffer CRC remains too slow per draw (§113 measurement) | both gates violations=0; uploads=10 triangle / 13 menu |
+| multi-stage combiner (wave-brief worry) | no work needed: triangle combiner is stages=1, same as menu; emitter is generic-8-stage with unit-tested shape | `stages=1 control=00000001` in the sw gl logs |
+
+Design-doc slice-2 items beyond the wave brief, for the record: the
+"full dashboard surface" milestone items are covered by the §113
+pad-script gate (menu+submenu navigation) re-verified here; the §95
+texture decode table (02-07/10-12/1C-1E) is one shared software table
+(`DecodeTextureTexel`, widened public in §113) used by the GL upload
+path — unexercised rows stay guest-unproven; `0x3628000`
+render-to-texture is GPU-correct **by construction while the software
+path stays unconditional**: texture uploads read guest RAM that the
+software rasterizer keeps coherent, so aliasing a color surface as a
+texture samples software-rendered content (the menu does exactly this
+— 10,137,600 samples of offset `0x3628000` per boot, gate green). A
+GPU-only software-bypass slice would need real surface tracking; that
+is explicitly later scope.
+
+**Acceptance:** (1) triangle sw<->gl golden passes policy (BMP
+violations=0 maxDelta=1, counters exact 2706/68/34, BackendUnsupported=0)
++ dashboard re-verified green bit-identical to §113; (2) every §113
+unsup row implemented+gate-validated (FBO-grow) or evidence-justified
+(table above); (3) suite 1205/1205 green, zero existing-expectation
+changes, format clean. Open risks for the next wave: clipY!=0 readback
+(detector armed), fingerprint interior-miss (gate-armed), zeta-drop
+depth content on format change (counted), Vulkan/swapchain/async (design
+§3/§5/§7 unchanged), 007 G2 decode (§114, sibling track).
