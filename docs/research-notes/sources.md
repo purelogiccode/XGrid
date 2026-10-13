@@ -1,6 +1,6 @@
 # Reference Sources and Licensing Inventory
 
-Date reviewed: 2026-10-08
+Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace added)
 Policy: XGrid is a clean-room reimplementation. These notes record factual hardware/format
 knowledge (addresses, register maps, struct layouts, protocol constants, algorithms). No source
 code from any reference project is copied into XGrid unless its license explicitly permits it and
@@ -14,6 +14,10 @@ the reuse is recorded below.
 | Xermu | main snapshot | local copy (no upstream URL recorded) | **None — all rights reserved** | No — facts only |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | No — facts only |
 | xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
+| XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | none declared | No — facts only |
+| Copetti — Xbox Architecture | local snapshot | https://www.copetti.org/writings/consoles/xbox/ (text: github.com/flipacholas/Architecture-of-consoles) | **CC BY 4.0** (attribution required) | No — facts only |
+| envytools | master snapshot | https://github.com/envytools/envytools | **MIT** | No — facts only |
+| nv2a-trace | master snapshot | https://github.com/XboxDev/nv2a-trace | **MIT** | No — facts only |
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
 
 ## Restoring the vendored set (References/)
@@ -24,9 +28,23 @@ root folder names):
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
 - Xermu — no upstream URL recorded (local snapshot only); ask the operator.
-- XboxWiki — 99 `.mhtml` pages saved manually from xboxdevwiki.net (no bulk
-  source; the `xboxdev/xboxdevwiki` repo holds only the wiki host, not content).
-  Fetch pages online if a task needs them.
+- Copetti "Xbox Architecture" — `References/CopettiDocumentation/` (article:
+  https://www.copetti.org/writings/consoles/xbox/ ; article source text:
+  https://github.com/flipacholas/Architecture-of-consoles ). Files:
+  `xbox-architecture.md` + `.html` + `images/`.
+- envytools — https://github.com/envytools/envytools/archive/refs/heads/master.zip
+  (extracts to `envytools-master/`; note the vendored `README.rst` carries a
+  prepended one-line note that NV20/Kelvin register/method data is the target).
+- nv2a-trace — https://github.com/XboxDev/nv2a-trace/archive/refs/heads/master.zip
+  (extracts to `nv2a-trace-master/`).
+- XboxDevWiki — full offline dump in `References/XboxDevWiki/` (captured
+  2026-10-12 via the MediaWiki API): all 160 ns-0 articles as standalone HTML
+  (`html/`) + raw wikitext (`pages/`), all 117 images (`images/`),
+  `manifest.json` + `index.html`; re-dump via `scripts/dump-xboxdevwiki.ps1`.
+  Old numeric `.mhtml` citations (`16` NV2A, `22` Memory, `41` USB, `51` Boot
+  Process, `53` FATX, ...) map to title-based files — see
+  `References/XboxDevWiki/README.md`. No explicit license declared on the wiki
+  (footer lists only privacy/about/disclaimer); facts-only per project policy.
 
 ## Per-project license detail
 
@@ -61,6 +79,41 @@ root folder names):
   `nv2a_shaders.c/h`, `nv2a_int.h`, `acpi_xbox.c`, `xid.c`, `adpcm*.h` are LGPL-2.1-or-later;
   `nv2a_vsh.c/h`, `nv2a_psh.c`, `dsp/` are GPL-2+; `smbus_xbox_smc.c`, `amd_smbus.c/h` MIT.
 - Verdict: read for facts only.
+
+### Copetti — Xbox Architecture (local snapshot)
+- `References/CopettiDocumentation/xbox-architecture.md` (+ `.html`, `images/`).
+- **CC BY 4.0** — the article's own "Copyright and permissions" section requires
+  attribution (link to the article + license, per its guidelines); commercial use
+  permitted. If any text/figure is reused in XGrid docs, cite
+  "Rodrigo Copetti, Xbox Architecture: A Practical Analysis" + the CC BY 4.0 link.
+- Verdict: prose/architecture reference (onboarding, big-picture validation,
+  README/background material). Not a register-level oracle — for addresses and
+  register semantics use xemu / XboxDevWiki / envytools.
+
+### envytools (master snapshot)
+- `References/envytools-master/`. Root `COPYING` is the **MIT/Expat** license
+  (Copyright 2013 the envytools authors) — unlike the other GPU references, this
+  one is copy-permissive.
+- Contains: `rnndb/` (rules-ng-ng XML register/class/method/enum database),
+  `docs/` (GPU architecture docs: FIFO DMA pusher/puller, PGRAPH, XF, PMC/PTIMER,
+  memory/swizzle), `rnn/` (XML query/decode helpers incl. `rnndec.py`),
+  `demmt/` (MMIO trace decoder), `envydis/` (GPU ISA disassembler).
+- Verdict: primary cross-check for NV2A method offsets/semantics and FIFO/pusher
+  behavior (see `docs/research-notes/envytools.md`). MIT means programmatic reuse
+  of the XML data is permissible if ever wanted — record it here first (rule 3).
+- **Naming caveat:** envytools' own "NV2A" (see `docs/glossary.txt`) is the NVIDIA
+  nForce IGP, *not* the Xbox GPU. The Xbox 3D object class `0x0097` is what
+  envytools calls `NV20_3D` (Kelvin family).
+
+### nv2a-trace (master snapshot)
+- `References/nv2a-trace-master/`. **MIT**, Copyright (c) 2018-2022 XboxDev maintainers.
+- apitrace-style tracer for a *real* Xbox GPU: pauses the DMA pusher, inspects each
+  method before execution, dumps intermediate surfaces/textures (PNG in `out/`,
+  plus `debug.html`). Requires real hardware + `xboxpy`; README warns it is
+  unstable and may temporarily corrupt console state; no replayable trace format yet.
+- Verdict: (a) hardware ground truth for PGRAPH validation if a box is available;
+  (b) facts-only (MIT): method-hook constants, pushbuffer parsing and the texture
+  channel/bpp table are usable — see `docs/research-notes/nv2a-trace.md`.
 
 ### XISOSharp (MIT)
 - MIT License, Copyright (c) PureLogicCode.com; lead developer Peterson Fernandes.
@@ -110,6 +163,11 @@ root folder names):
 | XDVDFS | XISOSharp (MIT, reusable) | Cxbx `xdvdfs-tools` (GPL-2) | Format facts documented |
 | FATX | **No implementation in workspace** | xemu superblock creator only | Must implement clean-room |
 | CPU test strategy | Xermu NASM harness (concept) | — | Re-write tests ourselves |
+| NV2A method offsets/names (cross-check) | **envytools `rnndb/graph/nv20_3d.xml`** (class `0x0097`) | Cxbx `nv2a_regs.h`, xemu `methods.h.inc` | Offsets verified identical (0x17FC, 0x1800/0x1810/0x1818, 0x0B00/0x0B80) |
+| FIFO pusher / puller semantics | **envytools `docs/hw/fifo/dma-pusher.rst`, `puller.rst`, `nv1-pfifo.rst`** | xemu `nv2a/pfifo/` | GET/PUT, jump/call/return, CACHE→puller |
+| Vertex program / XF unit semantics | **envytools `docs/hw/graph/xf/`** (`intro`, `isa`, `mode`, `ctx`) | xemu `vsh-prog.c`, Cxbx `nv2a_vsh.cpp` | XF VLIW ISA, IBUF/XFCTX reads, texgen/lighting/fog |
+| GPU method-stream debugging / intermediate dumps | **nv2a-trace** (`Trace.py` method hooks, `Texture.py` table) | XGrid `--pgraph` instrumentation | Hardware oracle if a real Xbox is available |
+| Console architecture background (docs/onboarding) | **Copetti `xbox-architecture.md`** (CC BY 4.0, attribute) | XboxDevWiki | High-level only; not register-level |
 
 ## Rule going forward
 1. Extract facts into notes like this one before implementing.

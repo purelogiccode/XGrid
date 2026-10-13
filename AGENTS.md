@@ -15,11 +15,28 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `CSharp_XISOSharp` — MIT XDVDFS library: sibling repo (`C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp`,
   docs + source used for API/on-disk facts) + NuGet `XISOSharp` 1.4.2 referenced by `XGrid.XboxFs`
   (`XdvdfsFileSystem` adapter + `xgrid xdvdfs ls/cat`, §64). `CSharp_CHDSharp` sibling covers CHD later.
-- `References/XboxWiki` — XboxDevWiki vendored locally (99 `.mhtml` pages, numeric file names;
-  identify by `<title>`). Key pages: `51` Boot Process, `50` BIOS, `49` Kernel, `24` MCPX,
-  `30` PCI, `41` USB, `16` NV2A, `33` SMC, `48` MCPX ROM, `90` Hidden Boot Code, `22` Memory.
-  (Not yet restored after the 2026-10-12 References wipe — the wiki has no bulk source; fetch
-  pages online from xboxdevwiki.net if needed.)
+- `References/XboxDevWiki` — XboxDevWiki vendored locally (full offline dump
+  captured 2026-10-12: `html/<Title>.html` rendered pages with offline
+  links/images, `pages/<Title>.wiki` raw wikitext, `images/`, `manifest.json`,
+  `index.html`; identify pages by `<title>`). Key pages: Boot Process, BIOS,
+  Kernel, MCPX, PCI, USB, NV2A, SMC, MCPX ROM, Hidden Boot Code, Memory.
+  Old numeric citations (`51` Boot Process, `53` FATX, ...) translate per
+  `References/XboxDevWiki/README.md`.
+- `References/envytools-master` — **MIT** NVIDIA register/method database + GPU docs
+  (notes: `docs/research-notes/envytools.md`). First cross-check for NV2A method
+  offsets/enums: `rnndb/graph/nv20_3d.xml` (+ `nv10_3d.xml`) = Xbox class `0x0097`
+  (`0x17FC` begin/end, `0x1800/0x1810/0x1818` elements/arrays/inline, `0x0B00/0x0B80`
+  VP upload); pusher/puller semantics in `docs/hw/fifo/dma-pusher.rst` + `puller.rst`;
+  vertex-program/XF semantics in `docs/hw/graph/xf/` (`isa.rst`, `mode.rst`). Caveat:
+  envytools' own "NV2A" is the nForce IGP, not the Xbox GPU.
+- `References/nv2a-trace-master` — **MIT** apitrace-for-real-hardware tracer
+  (notes: `docs/research-notes/nv2a-trace.md`). Hardware ground truth for PGRAPH if a box
+  + `xboxpy` are available (per-method pre/post state, surface/texture PNGs, `debug.html`);
+  without hardware its `XboxHelper.parse_command` pushbuffer decoder, NV2A/CACHE1 register
+  constants and `Texture.py` format table are usable facts.
+- `References/CopettiDocumentation` — CC BY 4.0 (attribution required if reused) high-level
+  console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
+  onboarding / design cross-check only — never a register-level oracle.
 
 **Never delete, move, or rewrite anything under `References/`.** It is the vendored
 oracle set every wave depends on — it was emptied once (2026-10-12) and blocked a wave.
