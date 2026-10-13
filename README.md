@@ -1,7 +1,7 @@
 # XGrid
 
 XGrid is a cross-platform original Xbox emulator written in C#/.NET, built as a clean-room
-reimplementation of documented Xbox hardware behavior. It is not a port of xemu, Xermu,
+reimplementation of documented Xbox hardware behavior. It is not a port of xemu,
 Cxbx-Reloaded, or xqemu.
 
 ## Status

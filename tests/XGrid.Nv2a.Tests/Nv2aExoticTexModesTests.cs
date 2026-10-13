@@ -9,7 +9,7 @@ namespace XGrid.Nv2a.Tests;
 /// remap2DToCube path), projective 3D volume sampling, CLIPPLANE discard,
 /// the reflection dot-chain modes, and the xemu-equivalent BRDF stub.
 /// Mode equations follow xemu hw/xbox/nv2a/pgraph/glsl/psh.c; the hemisphere
-/// dot decode follows the Cxbx/Xermu 16-bit sign1/sign2/sign3 extensions.
+/// dot decode follows the Cxbx 16-bit sign1/sign2/sign3 extensions.
 /// </summary>
 public sealed class Nv2aExoticTexModesTests
 {

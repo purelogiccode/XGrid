@@ -3,7 +3,7 @@
 ## Before you start
 
 Read `ImplementationPlan.md` (especially Part II) and the relevant notes in `docs/research-notes/`.
-XGrid is a clean-room reimplementation: do not copy source code from xemu, Xermu,
+XGrid is a clean-room reimplementation: do not copy source code from xemu,
 Cxbx-Reloaded, or xqemu. Extract facts, then implement independently.
 
 ## Licensing

@@ -11,7 +11,6 @@ the reuse is recorded below.
 | Project | Version/Snapshot | Upstream | License | Code copied? |
 |---|---|---|---|---|
 | xemu | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
-| Xermu | main snapshot | local copy (no upstream URL recorded) | **None — all rights reserved** | No — facts only |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | No — facts only |
 | xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | none declared | No — facts only |
@@ -27,7 +26,6 @@ root folder names):
 - xemu 0.8.136 — https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
-- Xermu — no upstream URL recorded (local snapshot only); ask the operator.
 - Copetti "Xbox Architecture" — `References/CopettiDocumentation/` (article:
   https://www.copetti.org/writings/consoles/xbox/ ; article source text:
   https://github.com/flipacholas/Architecture-of-consoles ). Files:
@@ -61,12 +59,14 @@ root folder names):
 - The QEMU base itself is GPL-2.0. XGrid must not depend on QEMU.
 - Verdict: read for facts only. Do not copy code/tables/comments.
 
-### Xermu (main)
-- **No LICENSE, COPYING, or NOTICE anywhere. No SPDX headers.** Default copyright applies
-  (all rights reserved).
-- `doc/reference/` contains Cxbx-Reloaded HLSL shaders (GPL-2.0) — licensing hazard.
-- `doc/NBOXKRNL_INTEGRATION.md` itself discusses GPL risk (nboxkrnl GPL-2.0, nxbx GPL-3.0).
-- Verdict: design reference only. Do not copy source, including the NASM test files.
+### Xermu - WITHDRAWN (never a real reference)
+- Older drafts of this inventory listed a "Xermu" standalone C# Xbox emulator
+  (`References/Xermu-main`). No such project exists in the workspace and the operator
+  confirmed on 2026-10-13 that the correct (and only) primary LLE reference is
+  `References/xemu-0.8.136`.
+- `docs/research-notes/xermu.md` was deleted. Historical citations to it (early plan text,
+  `xgrid-architecture-decisions.md`) are unverified - do not use them as facts. Use xemu,
+  xqemu, Cxbx, XboxDevWiki or envytools instead.
 
 ### Cxbx-Reloaded (master)
 - Root `COPYING` = GPLv2; most headers GPL-2.0-or-later; a few GPL-2.0-only.
@@ -147,22 +147,22 @@ root folder names):
 
 | XGrid subsystem | Primary reference | Secondary | Notes |
 |---|---|---|---|
-| Boot flow / reset vector | xemu `hw/xbox/xbox.c` | xqemu `xbox.c`, Xermu `bootstrap.hpp` | MCPX ROM overlay at top of BIOS |
-| Physical memory map | xemu `xbox.c`, Xermu `address_map.hpp` | xqemu `xbox.c` | See constants appendix |
+| Boot flow / reset vector | xemu `hw/xbox/xbox.c` | xqemu `xbox.c` | MCPX ROM overlay at top of BIOS |
+| Physical memory map | xemu `xbox.c` | xqemu `xbox.c` | See constants appendix |
 | Pentium III model/CPUID/MSR | xemu `target/i386` XBOX patches | — | Model 8/10, CPUID leaf quirks |
-| PCI IDs/IRQ routing | xemu `xbox_pci.c` | xqemu `xbox_pci.c`, Xermu `pci.hpp` | Routing regs 0x64/0x68/0x6C |
-| SMBus/SMC/EEPROM | xemu `amd_smbus.c`, `smbus_xbox_smc.c`, `eeprom_generation.c` | xqemu same, Xermu `smbus.hpp` | EEPROM layout/crypto |
-| Flash | Xermu `flash.hpp` (CFI command set) | xemu (ROM only) | AMD/SST command model |
+| PCI IDs/IRQ routing | xemu `xbox_pci.c` | xqemu `xbox_pci.c` | Routing regs 0x64/0x68/0x6C |
+| SMBus/SMC/EEPROM | xemu `amd_smbus.c`, `smbus_xbox_smc.c`, `eeprom_generation.c` | xqemu same | EEPROM layout/crypto |
+| Flash | xemu `xbox.c` (ROM window/alias only) | - | AMD/SST CFI command set still pending; implement clean-room (Phase 6) |
 | APU | xemu `mcpx/apu/**` | xqemu `mcpx_apu.c` (single file) | DSP56300 semantics |
 | NV2A registers/PFIFO/PGRAPH | xemu `hw/xbox/nv2a/**` | Cxbx `nv2a_regs.h`, xqemu | NV097 method map |
 | Shaders (VSH/PSH) | Cxbx `nv2a_vsh/psh.cpp` | xemu `pgraph/glsl/**` (GPL) | Behavior only |
 | Texture swizzle | Cxbx `swizzle.cpp` (LGPL-2) | xemu `pgraph/swizzle.c` | Algorithm facts |
 | USB OHCI + XID | xemu `xid.c`, Cxbx `OHCI.cpp` | xqemu `xid.c` | Report formats |
 | XBE format | Cxbx `Xbe.h` | xemu `xemu-xbe.h`, XISOSharp `XbeInfo` | Full struct offsets |
-| Kernel exports | Cxbx `KernelThunk.cpp` | Xermu `hle_kernel.hpp` | 379 ordinals, semantics |
+| Kernel exports | Cxbx `KernelThunk.cpp` | - | 379 ordinals, semantics |
 | XDVDFS | XISOSharp (MIT, reusable) | Cxbx `xdvdfs-tools` (GPL-2) | Format facts documented |
 | FATX | **No implementation in workspace** | xemu superblock creator only | Must implement clean-room |
-| CPU test strategy | Xermu NASM harness (concept) | — | Re-write tests ourselves |
+| CPU test strategy | - | - | Write own NASM golden tests (harness.inc convention) |
 | NV2A method offsets/names (cross-check) | **envytools `rnndb/graph/nv20_3d.xml`** (class `0x0097`) | Cxbx `nv2a_regs.h`, xemu `methods.h.inc` | Offsets verified identical (0x17FC, 0x1800/0x1810/0x1818, 0x0B00/0x0B80) |
 | FIFO pusher / puller semantics | **envytools `docs/hw/fifo/dma-pusher.rst`, `puller.rst`, `nv1-pfifo.rst`** | xemu `nv2a/pfifo/` | GET/PUT, jump/call/return, CACHE→puller |
 | Vertex program / XF unit semantics | **envytools `docs/hw/graph/xf/`** (`intro`, `isa`, `mode`, `ctx`) | xemu `vsh-prog.c`, Cxbx `nv2a_vsh.cpp` | XF VLIW ISA, IBUF/XFCTX reads, texgen/lighting/fog |

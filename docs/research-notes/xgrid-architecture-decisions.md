@@ -1,8 +1,14 @@
 # XGrid — Architecture Decisions from Reference Study
 
 Project: XGrid (name replacing the plan's working name "XemuSharp").
-Sources: `docs/research-notes/{xemu,xermu,cxbx,xqemu,xisosharp,sources}.md`.
+Sources: `docs/research-notes/{xemu,cxbx,xqemu,xisosharp,sources}.md`.
 This document converts the reference study into concrete decisions for the plan's phases.
+
+**Note — "Xermu" citations below are unverified.** An earlier draft listed a standalone C#
+emulator "Xermu" (`References/Xermu-main`). It never existed in the workspace; the operator
+confirmed 2026-10-13 the primary reference is `References/xemu-0.8.136`. Mentions of Xermu
+in this file are historical artifacts of that draft — do not treat them as facts or as a
+pointer to any project. See `sources.md` "Xermu - WITHDRAWN".
 
 ---
 
@@ -172,7 +178,7 @@ timers. Facts:
 - Register block map and defaults (xemu.md §5.2, cxbx.md §4.1) are consistent across references:
   PMC 0x000000, PBUS 0x001000, PFIFO 0x002000, PVIDEO 0x008000, PTIMER 0x009000, PFB 0x100000,
   PGRAPH 0x400000, PCRTC 0x600000, PRAMDAC 0x680000, PRAMIN 0x700000, USER 0x800000.
-  PMC BOOT_0 = 0x02A000A3 (xemu) / 0x02A000A1 (Xermu); PFB CFG0 = 0x03070103.
+  PMC BOOT_0 = 0x02A000A3 (xemu); PFB CFG0 = 0x03070103.
 - PFIFO: channels, pushbuffer encoding, DMA objects, RAMHT, method dispatch (xemu.md §5.4,
   cxbx.md §4.2). Keep GPU command generation logically synchronized with the CPU (plan §41).
 - PGRAPH: state shadow (`regs[0x2000]` + dirty tracking), classes (0x44/0x62/0x97/0x9F), NV097

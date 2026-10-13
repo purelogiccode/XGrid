@@ -11,7 +11,13 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `References/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
 - `References/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
   `src/core/kernel/common/types.h` (KTHREAD/KWAIT_BLOCK/KAPC offsets, e.g. KTHREAD+0x2C = State).
-- `References/Xermu-main` — HLE, C# (kernel-facing behavior; not an LLE device model).
+  Cxbx is also the shader reference (`nv2a_psh.cpp` / `nv2a_vsh.cpp`) — `xemu` `glsl/psh.c` +
+  `glsl/vsh-prog.c` are GPL-2+ and are the more complete oracle for the fragment/vertex stages.
+- ~~`References/Xermu-main`~~ — **WITHDRAWN.** An earlier draft listed a standalone C#
+  emulator that was never in the workspace. Operator confirmed 2026-10-13 the primary LLE
+  reference is `References/xemu-0.8.136`. `docs/research-notes/xermu.md` was deleted; historical
+  citations to it (early plan text, `xgrid-architecture-decisions.md`) are unverified — do not
+  use them as facts (see `sources.md` "Xermu - WITHDRAWN").
 - `CSharp_XISOSharp` — MIT XDVDFS library: sibling repo (`C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp`,
   docs + source used for API/on-disk facts) + NuGet `XISOSharp` 1.4.2 referenced by `XGrid.XboxFs`
   (`XdvdfsFileSystem` adapter + `xgrid xdvdfs ls/cat`, §64). `CSharp_CHDSharp` sibling covers CHD later.

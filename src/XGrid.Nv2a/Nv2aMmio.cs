@@ -16,7 +16,7 @@ namespace XGrid.Nv2a;
 /// <c>nv2a.c</c>, per-block read/write in <c>pmc.c</c>/<c>pbus.c</c>/<c>pfb.c</c>/
 /// <c>pcrtc.c</c>/<c>pramdac.c</c>/<c>ptimer.c</c>/<c>user.c</c>, pushbuffer parsing in
 /// <c>pfifo.c</c>, DMA object layout in <c>nv2a.c</c>); PFB CFG0 reset default 0x03070103
-/// is the 64 MB hardware value recorded in the Xermu notes. The PFIFO pusher runs
+/// is the 64 MB hardware value recorded in the XboxDevWiki/xemu notes. The PFIFO pusher runs
 /// synchronously on submission (no thread) and dispatches PGRAPH methods to a
 /// recording sink; rendering and interrupt assertion through the PIC are deferred:
 /// pending/enabled state is tracked but no IRQ is raised yet.
