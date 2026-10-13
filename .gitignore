@@ -42,3 +42,7 @@ mcpx.bin
 
 # Local emulator runtime data (disk images, shader caches, configs) - never committed
 data/
+
+# Wave scratch (private media copies, ramdumps, probe logs)
+wt-data/
+
