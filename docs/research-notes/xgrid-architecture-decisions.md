@@ -5047,3 +5047,107 @@ only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
 13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
 cycle` log lines are benign empty-list probes (3 lists x repeated, no state
 damage observed).
+
+
+## §115 — nvnet first real frame (2026-10-13)
+
+Work in `Temp\opencode\worktrees\nvnet-frame` (`wave/nvnet-frame`, base
+459f742). Goal: first-real-frame validation of the §84/§88 nvnet packet
+engine against live dashboard traffic, plus the smallest real TCP-proxy
+path. Files: `tests/XGrid.Bus.Tests/NvNetFirstFrameTests.cs` (new),
+`src/XGrid.Bus/Net/TcpProxy.cs` (new), `tests/XGrid.Bus.Tests/TcpProxyTests.cs`
+(new). **No `src/` files modified, no CLI/SLN/package changes** — the engine
+and backends already existed; this wave captures evidence and adds gates.
+
+**First real frame: the dashboard DOES transmit — a 342-byte DHCP DISCOVER
+(boot-time, deterministic).** §88 left "first real frame type open (no guest
+TX on boot)"; that was measured before the engine's IRQ/filter wiring matured.
+Recipe run (private `wt-data/` media copies, 1B steps, pad-script
+down@950M/a@970M) prints:
+
+```
+NVNET tx_pkts=1 tx_bytes=342 kicks=2 cant_tx=0 rx_pkts=1 rx_bytes=342
+  drop_filter=0 drop_nobuf=0 oversize=0 cant_rx=0 link=True autoneg=False
+  backend=LoopbackNetworkBackend
+  tx base=0x03FDB000 cur=0x03FDB000 next=0x03FDB008
+  rx base=0x03FDB800 cur=0x03FDB800 next=0x03FDB808
+  irq=False asserts=2 deasserts=2
+NVNET reads=52 writes=325 regs: 190=22 194=10 180=6 00=6 98=2 88=2 188=2 144=1
+  wr: 190=12 04=7 144=7 00=5 180=5 110=4 94=3 84=3
+```
+
+- **Differential (neutral vs pad-script, both 1B):** NVNET counter/ring lines
+  are byte-identical — the frame is boot-time traffic, not input-driven; ring
+  addresses and counters are run-stable. The captured frame below is from the
+  pad-recipe run (xid/ident were not diffed across runs).
+- **Descriptor state (`--dump 03FDB000,4000`):** TX desc0 =
+  buf `46 60 33 00` (phys `0x00336046`), len `55 01` (341 → xemu's
+  `desc.length + 1` = 342, `nvnet.c:510`), flags `01 00` — post-TX writeback:
+  VALID + error bits cleared, LASTPACKET retained, length/buffer preserved
+  (xemu `nvnet.c:536-539`). TX desc1 is zeroed: the second KICK walked to
+  !VALID and stopped without a frame (`kicks=2`, `tx_pkts=1`, xemu
+  `nvnet.c:518-520`). RX desc0 at `0x03FDB800` shows the post-replenish
+  state (buf `0x03FDC002`, len `0x7FD` = 2045 → 2046 B capacity, flags
+  `0x8000` AVAIL) — the driver re-armed the ring after consuming the loopback
+  copy. `asserts=2 deasserts=2` = TX `0x10` + RX `0x02` IRQs, each W1C'd
+  (xemu `set_intr_status`, `nvnet.c:552`/`430`).
+
+**Frame capture:** `--dump 00336046,156` at 1B steps (same recipe) reads the
+TX buffer — a well-formed DHCP DISCOVER, embedded byte-exact in
+`NvNetFirstFrameTests` as `GoldenDhcpDiscoverHex` (684 hex chars):
+
+| Field | Value | xemu / protocol fact |
+| --- | --- | --- |
+| Length | 342 B = `tx_bytes` | coalesce = sum of `len+1` |
+| Eth dst/src | `FF:FF:FF:FF:FF:FF` / `00:50:F2:A4:F5:A8` | broadcast; Microsoft-OUI guest MAC |
+| EtherType | `0x0800` | IPv4 |
+| IP | v4 ihl5, totlen 328 (=342-14), TTL 64, proto 17, `0.0.0.0`→`255.255.255.255`, checksum folds to 0 | client has no lease yet |
+| UDP | 68→67, len 308, checksum folds to 0 over pseudo-header | DHCP client→server |
+| BOOTP | op1 htype1 hlen6 xid `F5EAFE08`, chaddr = src MAC | RFC 2131 |
+| Magic | `63:82:53:63` | DHCP |
+| Options | 53=1 DISCOVER, 61 client-id (1+MAC), 60 `"XBOX 1.0"`, 55 param-list {1,3,6}, 255 END | Xbox kernel stack |
+
+Loopback backend returns it through the receive filter (broadcast passes,
+§88) → `rx_pkts=1 rx_bytes=342`, RX IRQ, driver replenish — the full
+TX→backend→RX path exercised by real guest traffic. Nothing else at 1B:
+no ARP, no UDP beyond this, no TCP (zero titles speak TCP yet).
+
+**Synthetic gate (2 tests, green):** `GoldenFrame_TxKickToRxPoll_RoundTrips
+ThroughDeviceModel` drives the captured frame through the device model
+directly (2-entry rings SIZE=`0x00010001`, TX desc VALID|LASTPACKET, RX desc
+AVAIL cap `0x7FD` mirroring the live ring): KICK → backend SentLog[0] byte-
+equal → TX writeback {buf/len preserved, flags LASTPACKET-only} → CURRENT/NEXT
++8 → TX IRQ asserted; `PollReceive` → RX buffer byte-equal, RX writeback
+{len=342 raw size, flags BIT4|VALID} → `0x10|0x02` status → W1C deassert.
+`GoldenFrame_MatchesCapturedLiveDhcpDiscoverFields` re-parses every field
+above (both checksums recomputed, options walked) — the executable field
+table.
+
+**TCP proxy (Goal B) — host side landed, guest side honestly scoped out.**
+Recon: `--net-backend loopback|socket`; `SocketNetworkBackend` already does
+ARP/ICMP/UDP-NAT and drops+counts TCP (`TcpFrame_DroppedAndCounted`); the
+live dashboard emits only the DHCP DISCOVER — no guest title speaks TCP at
+1B. Per the gate ("proxy host side verified by loopback test + documented
+integration point"): `TcpProxy` (`src/XGrid.Bus/Net/TcpProxy.cs`) binds a
+host loopback listener and relays bytes bidirectionally to a target
+host:port with `Connections`/`FailedConnections`/`RelayedBytes` counters,
+thread-per-session pumps, `Start`/`Stop`/`Dispose`. 3 tests green: 4 KB
+loopback echo end-to-end (payload byte-equal, `RelayedBytes` >= 8192),
+unreachable target (`FailedConnections=1`, client EOF, proxy survives),
+dispose (listener refused, `Start` throws). **Guest integration point
+(documented, NOT built):** a future title's TCP segments would be terminated
+by a TCP state machine inside/behind `SocketNetworkBackend` (the §88
+follow-up), whose byte streams attach to `TcpProxy` sessions — building that
+state machine before any title needs it would violate scope-to-the-gate.
+
+**Acceptance:** 1131 tests green (1126 baseline untouched, +5 new: 2 golden-
+frame + 3 proxy), zero existing-expectation changes, `dotnet format
+--verify-no-changes` clean. No boot-path files modified (only new files added
+— `git diff` empty), so default-flag boot behavior is unchanged by
+construction; the pre-change recipe runs above stand as the baseline.
+Open risks: the golden frame's xid/ident are boot-run-specific (deterministic
+here; if the guest ever randomizes them the synthetic test still only uses
+the frame as inert input); `TcpProxy` is unwired (by design — no CLI flag,
+no backend hook) until a TCP-speaking title arrives; loopback TX→RX means the
+guest currently receives its own DISCOVER (broadcast filter pass) — a future
+`socket`-backend DHCP path would need a UDP/67 sink instead.
