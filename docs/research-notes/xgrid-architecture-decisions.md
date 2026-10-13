@@ -4703,3 +4703,106 @@ wall-clock dependence).
 
 **Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
 §104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
+
+## §112 — 007 post-drain
+
+Branch `wave/007-postdrain` (worktree `Temp\opencode\worktrees\007-postdrain`).
+PROBE-ONLY wave: no `src/` or `tests/` changes. Goal: map 007's phase after the
+§107 PlayMPC drain gate and find the next gate. EOS quirk left default-ON per
+§92/§94 (it never fired: `fires=0` through 18.1B). Private media copies in
+`wt-data\` (BIOS/MCPX/EEPROM/qcow2); shared CHD on `E:` read-only.
+
+**Probe origin (fresh v2 snapshot, cold run).** Master @692653c Release CLI:
+`boot ... --steps 13100000000 --save-state postdrain.xgs --eip-hist 10000000
+--watch 0xDA7CB0,0xDA7DE8 --frame pd13.bmp --dump 0xDA7CB0,0x150 --ramdump
+pd13.bin` — EXIT=0, wall 4347.7 s (contended host, ~3.0M insn/s; sibling agents
+running in parallel), saved at step 13,100,000,000 EIP `0x00021308`,
+`LastFault vec=0`. Restore verified: `--load-state postdrain.xgs --steps
+1000000` loads at EIP `0x21308`, continues to `0x213B1`, no fault, counters
+continuous (EOS checks 200425->200441). Determinism cross-check: node position
+at 13.1B = 189,344 — byte-identical to §107's recorded value.
+
+**Phase timeline (every row = watch/counter/frame/log evidence from this
+wave's runs; logs in worktree `logs\`).**
+
+| Step window | EIP range | Identified activity | Evidence |
+|---|---|---|---|
+| 0 – 0.5B | `0x800422B9/B0` (kernel) | Kernel boot + XBE load + PlayMPC setup | run13 Progress @250M/500M (`logs\run13.utf8.log`) |
+| 0.5 – 0.75B | `0x800422B0` -> `0x138D1` | Transition into PlayMPC streaming (stream-clock helper live by 750M) | Progress @750M; EIPHIST 0x138xx helpers 162/1310 samples over the run |
+| 0.75 – 2.52B | `0x138xx`/`0x1Exxx`-`0x21xxx` | Splash MPC sequence: channel 0x100, then 0x200; drain completes naturally at ~2.516B (§107 node removal +115,757,484 from 2.4B) — no forced write, quirk `fires=0` | run13 watch: exactly 11 mutations of channel-list fields (`0xDA7DCC/DD0/DD4`), first-writer EIP `0x2999A`-`0x299B0` (create), last-writers `0x11C72/0x11C7F/0x11C85/0x114DE` (unlink/free); EOS `checks=200425 fires=0` |
+| 2.52 – 13.1B | PlayMPC `0x1Exxx`-`0x22xxx`, kernel excursions `0x80019855`/`0x800231E1` | Channel 0x200 (8 s) completes, channel 0x300 (54.3 s) plays to position 189,344; intro FMV running: DVD READ(10) `0x28` stream, ~22 fps present flips, CPU-blit frames | run13 Progress every 250M; PrintState `frames=500 stalls=500 draws=2672` (draws frozen — video is written to the surface outside PGRAPH and presented by flip; surfaces alternate `9BC000`/`890000`); ATAPI packet ring strictly sequential LBAs (`0x9719E`+4 steps); node dump: ch `0x300` at `[+0x8]`, `[+0x14]=189344`, `[+0x18]=2607407` (54.32 s); watch final state head=`0x80DA7DE8`, active count=1; `pd13.bmp` = real FMV frame (mean luma 45.6, 65.75% lit, letterbox y73-407, 2634 sampled colors — NOT the §92 full-white pre-drain splash) |
+| 13.1 – 15.1B | `0x1Exxx`-`0x21xxx` | Steady 0x300 playback continues, no phase change | 4 x 500M batches (`logs\pd136/pd141/pd146/pd151.log`): EXIT=0 each, `LastFault vec=0`; frames 500->519->538->557->576 (+19/500M = 22 fps); draws frozen 2672; node pos 189,344->220,544->251,136->281,312->312,640 (61-62k samples/B); BM starts +50/500M (video DMA); ZERO Watch writes (no channel churn); EOS `fires=0`; `voiceOff=1` unchanged (no voice restarts) |
+| 15.1 – 17.1B | `0x1Exxx`-`0x22xxx` (end `0x222CA`) | Same steady playback; measured throughput 4.53M insn/s | 2B batch `logs\pd171.log`: EXIT=0 in 7:25.6, frames->653, node pos->434,720, EOS checks->261825 fires=0, no Watch writes; EIPHIST (200 samples @10M) shows only PlayMPC/clock EIPs, no `0x20FCx`/`0x602F7` |
+| 17.1 – 18.1B | end `0x218BF` (PlayMPC) | Event-hunt window: NO drain re-entry, NO stream end, NO menu polling | 1B batch with `--break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7` (`logs\pd181.utf8.log`): **0 HIT lines**, EXIT=0 in 3:49.1 (4.37M/s — break-log costs ~3% vs main loop); frames->691; save `pd181.xgs` verified (load +1M, EIP `0x218BF`->`0x1E133`, no fault) |
+
+Frame progression proof: `pd13.bmp` vs `pd171.bmp` differ in 273,055/307,200
+RGB pixels — the FMV image advances across batches (present path = CPU-written
+surface + flip; NV2A draw/texture counters stay frozen at 2672/33,087,288
+throughout 13.1-18.1B, so no per-frame GPU work). By 13.1B the pre/early-stream
+rendering had already accumulated **62,444,852 format-`0x30` texture-sample
+misses out of 62,444,852 attempts** (all missed; formats `06`/`12` account for
+all 33.09M OK samples) — the §105 open item is real and heavy on this title's
+menu/splash rendering, though the video phase itself does no texture sampling.
+
+**NEXT GATE: none found — gate-free progress 0 -> 18.1B steps.** The post-drain
+ground is 5.0B steps beyond §107's 13.1B frontier: no fault (`LastFault vec=0`
+every batch), no new EIP plateau (all EIPs stay inside the already-running
+PlayMPC call: `0x1Exxx`-`0x22xxx` + `0x138xx` clock helpers), no device waits
+video keeps flipping / DVD keeps streaming / APU keeps advancing / pad
+interrupts keep NAK-ing, no channel churn (watch silent), and the drain loop,
+node-removal, PlayMPC-entry and kernel-GetState addresses were never hit in a
+dedicated 1B break-log window. **Honest statement:** the stream's natural end
+remains the next candidate gate. Measured pace (61,344 samples/B over
+13.1-17.1B; channel 0x300 total 2,607,407 samples; position ~495,760
+extrapolated at 18.1B) puts channel 0x300's completion at **~52.5B total
+steps** (consistent with §107's "~40B more" from 13.1B; the briefing's "~40B
+total" is a lower bound). What happens at that end — drain-loop re-entry
+(`0x20FC1`), next MPC file (`ASSETS\SOUND\VIDEO\{ATT,HILITE,MGM,EAG}.MPC` per
+§98 strings), or a jump to menu/input polling (`0x602F7`) — is unverified past
+18.1B. Reaching it costs ~34.5B steps (~2.2 h at the contended 4.4M/s; ~41 min
+at the 14M/s idle-host rate).
+
+**Recommended follow-up acceptance test (verbatim, next wave):**
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd181.xgs --steps 34500000000 --save-state pd526.xgs --break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7 --frame pd526.bmp
+```
+
+Acceptance: a `HIT` line (drain-loop entry / node removal / PlayMPC re-entry /
+kernel GetState) with its step number, OR a fault line, OR a new EIP plateau in
+the final state — each identifies the next gate exactly; re-snapshot (v2)
+immediately at the HIT step for the decode wave. Chunk the 34.5B via
+intermediate `--save-state` if wall-clock risk is high (500M-2B batches cost
+2-8 min each here).
+
+**Artifacts (worktree, NOT committed — paths only):** snapshots
+`postdrain.xgs` (13.1B), `pd136/pd141/pd146/pd151/pd171/pd181.xgs` chain
+(13.6/14.1/14.6/15.1/17.1/18.1B), `pd14.xgs` (orphan duplicate of the 14.1B
+state from a duplicated launch, superseded by `pd141.xgs`); frames
+`pd13/pd136/pd141/pd146/pd151/pd171/pd181.bmp`; 64 MB RAM dump `pd13.bin`;
+batch logs `logs\pd136..pd171.log`; key logs `logs\run13.utf8.log` (full
+13.1B run: Progress timeline + PrintState + watch + EIPHIST) and
+`logs\pd181.utf8.log` (zero-HIT break-log window) — `logs/` is repo-ignored,
+so these stay worktree-only with their decisive lines quoted above; helper
+scripts `run13.ps1`, `run_pd14.ps1`.
+
+**Infra incidents (open, not emulator bugs):** two process deaths were
+observed and NOT reproduced — (1) a foreground 13.1B attempt exited code -1
+right after its `Progress 4250000000` line with no stderr (the identical rerun
+completed 13.1B clean through the same EIP sequence); (2) a detached
+`--load-state` 1B attempt's wrapper died without its exit marker and its
+`*>`-redirected log ended up 0 bytes (one completed copy of that same command
+still produced `pd14.xgs`). No Windows application event-log entries were
+found; all subsequent foreground 500M/1B/2B batches and both restore verifications
+completed EXIT=0. Suspect external process interference on the shared host
+(sibling wave agents run their own `dotnet` boots concurrently), not a runtime
+crash — next long run should keep the foreground+`Tee` pattern or re-check
+process liveness.
+
+**Open questions:** (a) phase after channel 0x300 ends (~52.5B) — drain vs next
+MPC vs menu, per the acceptance command above; (b) the present path for FMV —
+CPU blit vs PVIDEO overlay (draws/textures frozen while pixels change; decode
+only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
+13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
+cycle` log lines are benign empty-list probes (3 lists x repeated, no state
+damage observed).
