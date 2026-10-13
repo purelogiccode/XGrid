@@ -5047,3 +5047,105 @@ only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
 13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
 cycle` log lines are benign empty-list probes (3 lists x repeated, no state
 damage observed).
+
+## 116. kernel-test-suite bring-up: reporting mechanism found, full failure chain diagnosed (2026-10-13)
+
+Worktree `wave/ktest-suite` (private media under `Temp\opencode\worktrees\
+ktest-suite\wt-data\`; recon scripts kept in `tools/ktest-recon/`).
+Time-box honesty: the suite still does NOT run its tests on XGrid - every
+output path was empirically closed by *guest-kernel* semantics (statuses
+below), not by an XGrid gap. Acceptance met under clause 4 (recon +
+diagnosis; zero src changes; baseline 1126 green).
+
+**Reporting mechanism (suite sources, facts only - GPL project, no code
+copied; release da80f1f = current master):** `main()` in `src/main.cpp`
+1) reads `D:\name.txt`, 2) **`open_output_file("D:\kernel_tests.log")` via
+CreateFile(CREATE_ALWAYS) and `return`s from main if it fails**, 3) reads
+`D:\config.txt` (missing -> defaults), 4) with `output_video` (default
+true) runs `XVideoSetMode`+`pb_init`+`pb_show_debug_screen`, 5) every
+`print()` = `DbgPrint` + optional pbkit `debugPrint` + `WriteFile` to the
+log, 6) `run_tests()` iterates the 378-entry `kernel_api_tests` table
+(`%03u - <Api>: Tests Starting/All tests PASSED/...` footers), 7) ends
+with `close_output_file()` + `Sleep(10000)` + `pb_kill()`. Consequence:
+**when the log open fails there are ZERO prints, ZERO video, ZERO tests** -
+exactly the observed "boots clean for 900M, produces nothing" (§104/§106).
+
+**Launch facts (XGrid LLE, Complex_4627 custom BIOS):** suite entry is
+absolute VA `0x4DF80`; kernel `call [0x10128]` launch fires at step
+**525,703,665** (DVD boot) / **525,704,363** (FATX boot) - same DVD path
+cost as triangle (§106). After main's early return the kernel relaunches
+the XBE forever: next entry every **9.44M steps** (DVD: kernel re-probes
+disc + reloads XBE; ATAPI `5A/03/25/28/AD` cycle in the command tail) or
+**~9.8M** (FATX). EIP-histogram of a cycle: dominated by kernel IDE/FS
+code `0x800315xx`; suite code alive only ~33K steps per cycle.
+
+**Kernel thunk table (NOT the problem - decoded from the XBE):** slots
+hold `0x80000000 | ordinal` (unordered, terminator-0 at index 165; 165
+imports, e.g. idx 67 -> ordinal 67 `IoCreateSymbolicLink` at slot
+`0x57F1C`, `NtCreateFile` slot `0x57FB4` = `0x8001694D`, `DbgPrint` slot
+`0x57ECC`). The kernel resolves every slot at launch (RAM dump at entry
+shows kernel addresses throughout). All static `FF 15 <slot>` call sites
+in the binary map to these slots. XGrid-side thunk/export handling needs
+no fix: LLE kernel resolves them itself.
+
+**Failure chain - four log-path shapes, each probed with `--break-log`
+on `0x39E27` (NtCreateFile return, EAX=NTSTATUS), `0x2EE7B` (open return),
+`0x4E03A` (main return):**
+
+| path (patched into private media) | NTSTATUS | meaning |
+|---|---|---|
+| `D:\kernel_tests.log` (stock) | `C0000022` INVALID_ACCESS | letter `D:` resolves (kernel-created `\??\D:`); kernel XDVDFS rejects the write - **correct read-only-DVD behavior, not an XGrid gap** |
+| `C:\...` / `E:\...` | `C000003A` PATH_NOT_FOUND | **no `\??\C:`/`\??\E:` exists** - DOS letter map lookup fails inside the kernel path converter (trace `0x80020A49`..; Cxbx `EmuKrnlOb.cpp:703` documents the `ObpDosDevicesDriveLetterMap` fast path) |
+| `\Device\Harddisk0\Partition2\kernel_tests.log` | `C0000033` NAME_COLLISION | this kernel's converter **hard-rejects backslash-rooted paths**: `cmp byte[eax],'\'` falls into `mov esi,0xC0000033` (trace `0x80020A49-0x80020A52`) |
+| `kernel_tests.log` (relative) | `C0000034` NAME_NOT_FOUND | CWD is the object root, not a volume |
+
+**Drive-letter discovery (the root blocker):** ramdump diffs show the
+kernel creates only `\??\D:` (string at kernel phys `0x127BC`, plus
+`\??\CdRom0:`/`\??\A:` templates). The full set `\??\C:`..`\??\G:` exists
+ONLY in a dashboard boot (dump @600M: runtime array at phys
+`0x1e3d58`+ built from a `\??\%c:` format string living in the *dash*
+data, `xboxdash2.xbe` file region holds `\??\D:\`/`\Device\
+Harddisk0\Partition7\` path tables) - i.e. **the dash/app runtime creates
+the letters, not the kernel**, and the suite (first title launched) never
+gets them. Supporting evidence: DVD boot issues ZERO master HDD reads
+(command tail ends `M91` setup, all later cmds ATAPI); dash boot reads
+FATX `MC8` at `0x4654xx` (§47); even booting the suite ITSELF from FATX
+(see injector below) still lacks letters at main time.
+
+**Experiments (all on private media, original qcow2 backed up as
+`xbox_hdd.orig.qcow2`):** (1) log path letter patches - table above;
+(2) **FATX injector** (`tools/ktest-recon/inject_dash.py`: in-place
+qcow2 read/write mirroring `Qcow2DiskImage`, FATX facts from §47 +
+XboxDevWiki: LE header @byte `0x8CA80000` (sector `0x465400`), 8-sector
+header, 128-sector u16-LE FAT, 32-sector clusters, root=cluster 1;
+dirent = `[u16 namelen][name][FF pad to 42][u32 cluster LE][u32 size LE]`)
+- replaced `C:\xboxdash.xbe` with the suite (chain 268+, size patched
+319488, kernel loads it: entry hit at 525,704,363, XBEH verified);
+letters STILL absent after a FATX-native launch; (3) device-path string
+relocation (rdata rawSize 0x9160->0xA000 + lea fixup at VA `0x2EDF8`)
+-> COLLISION; (4) relative path -> NOT_FOUND; (5) **guest shellcode in
+the ignored `load_name_file` donor (VA `0x2E620`, 164 bytes: builds two
+UNICODE_STRINGs `\??\C:` / `\Device\Harddisk0\Partition2` and `call
+[0x57F1C]` IoCreateSymbolicLink)** -> kernel reaches the API but
+**KeBugCheck** (CLI/HLT at `0x800151ED`; saved params include
+`0xC0000005`) at identical step 33137 with both argument orders; first
+iteration also exposed an `loop rel8` off-by-one (fixed) - cause of the
+AV is OPEN (possible Complex_4627 ordinal-67 semantic difference vs
+retail, or call-context requirement); EvoX's own letter creation
+demonstrates the API works in dash context, so the kernel side is
+capable.
+
+**XGrid verdict:** no gap found in the assigned area - thunks resolve,
+FATX create/write works (§47), NtCreateFile statuses above are faithful
+kernel outputs. The missing piece (DOS letter links / writable D:) lives
+inside the guest kernel/dash runtime, i.e. out of scope for a clean-room
+emulator fix. xemu cannot arbitrate (deadlocks pre-launch, §32).
+
+**Open / next:** (a) diagnose the shellcode AV (dump CR2/exception
+record at bugcheck; compare EvoX's exact IoCreateSymbolicLink call
+context; verify ordinal 67 semantics on Complex_4627); (b) once any
+`print()` runs, capture DbgPrint (retail likely UART-gated - XGrid has
+no 0x3F8 model) or rely on the FATX log file + `--writedump`; (c) suite
+totals unknown (0 of 378 executed). Baseline: **1126 tests green, build
++ `format --verify-no-changes` clean; zero src changes, zero
+expectation changes.**
