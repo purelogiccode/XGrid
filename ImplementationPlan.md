@@ -3702,6 +3702,18 @@ ROM-A DONE — `xgrid testrom --bin` (no kernel/BIOS, `OUT 0xE9` console,
 + 4 tests (1096 green). ROM-A live: `TESTROM PASS nv2a_quad draws=1
 textured=2080 frames=1 nonzero=1056` in 68,491 steps. ROM-B (IDE READ
 DMA) and ROM-C (pad GetState poll) remain as specified §102 follow-ups.
+Status UPDATE 2026-10-12 (wave/testrom-roms, §106): **ROM-B + ROM-C DONE,
+V2 suite complete.** `tools/testroms/ide_dma.asm/.bin` — test-generated
+deterministic 8 MB pattern HDD (not the dashboard qcow2), PCI BAR4
+(register 0x20) + PRDT + READ DMA 0xC8 LBA 0x100 x8, BM-status poll,
+guest pattern memcmp; live `TESTROM PASS ide-dma lba=0x100 sectors=8
+mismatch=0` in 53,836 steps (`BMIBA=0xC000 status=0x04 starts=1`),
+zero-image control fails data-mismatch. `tools/testroms/pad_poll.asm/.bin`
+— OHCI HCCA + chained 5-ED hub-chain enumeration + periodic ED/TD XID EP
+0x82, DoneHead/data-toggle poll across 1 ms frames; live `TESTROM PASS
+pad-poll idle=0x0 pressed=0x2` in 2,949,419 steps, neutral-pad control
+fails bad-report. +4 tests (1100 green). Remaining V2 item: triangle XBE
+through the kernel (`wave/xbe-bringup`, §104).
 
 **V3 — Differential harness vs xemu.** Turn search into bisection.
 Acceptance: scripted early-boot state comparison at fixed steps (valid

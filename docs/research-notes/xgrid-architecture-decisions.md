@@ -4438,3 +4438,70 @@ MIN/MAG filter modes) for whenever a DXT/mipmap workload appears (e.g.
 nxdk-mesh once built). Priority: **DXT decode deprioritized; `0x30`
 depth-format semantics open** (needs per-draw combiner tracing to
 decide shadow-map vs dead stage).
+
+## 106. V2 test-ROM suite complete: ROM-B ide-read-dma + ROM-C pad-getstate-poll (2026-10-12)
+
+Completed the §102/§103 flat-binary suite on the merged harness
+(`xgrid testrom --bin`): ROM-B `ide_dma` and ROM-C `pad_poll` both PASS
+live with the guest as the pass/fail authority. **No emulator (`src/`)
+changes were needed** — the IDE bus-master engine and the OHCI schedule
+engine already satisfy their ROMs; this wave only adds ROMs, tests, and
+docs.
+
+**Files:** `tools/testroms/ide_dma.asm` + `.bin` (480 B),
+`tools/testroms/pad_poll.asm` + `.bin` (1013 B) — both assembled once with
+`C:\msys64\mingw64\bin\nasm.exe -f bin` (absolute path, not in PATH);
+`tests/XGrid.Integration.Tests/TestRomTests.cs` (+4 tests: pass + fail for
+each ROM; bytes embedded, tests never shell out to NASM; temp HDD
+generated/disposed by the test).
+
+**ROM-B `ide-read-dma` (<5M budget).** Host test generates a deterministic
+8 MB raw HDD into a temp file (NOT the dashboard qcow2): the byte at linear
+offset n = LBA*512 + i is `((n * 0x21) ^ 0x5A) & 0xFF`. Guest: PCI config
+dev 9 fn 0 (IDE 10DE:01BC) — **BAR4 lives at config register 0x20, not
+0x10** (BAR0 is 0x10; the first live run failed `bm-error-bit` with
+`starts=0` because the BAR write landed on BAR0 — documented so later ROMs
+do not repeat it), BAR4=0xC000, command 0x07 (IO+bus master); one-entry
+PRDT at 0x30000 -> 4096 B at 0x40000 (end bit); taskfile 0x1F6=0xE0,
+0x1F2=8, LBA 0x100, command 0xC8; BM command start; poll BM status bit 2
+(INTERRUPT) with ERROR clear; guest recomputes the pattern and memcmps the
+4096-byte buffer (mismatch counter), printing the exact assert line.
+Evidence: `TESTROM PASS ide_dma` + `TESTROM LOG: TESTROM PASS ide-dma
+lba=0x100 sectors=8 mismatch=0` in **53,836 steps**; `IDE BMIBA=0xC000
+status=0x04 prdt=0x00030000 starts=1`; IDE trace
+`BW0:0:8 BW2:6:8 BW4:30000:32 TMW7:C8:8 BW0:1:8 BR2:4`. Negative control
+(all-zero 8 MB image) exits EAX=2 with `data-mismatch`, proving the guest
+memcmp is the authority.
+
+**ROM-C `pad-getstate-poll` (<10M budget).** Guest: USB0 OHCI at
+0xFED00000 soft reset -> operational+CLE, HCCA 0x30000; enumerates the
+daughterboard topology (root port 1 -> 4-port hub port 3 -> 3-port hub
+port 1 -> XID pad, §69) with **one chained control ED list of five EDs**
+(0x31000, each a setup TD + zero-length IN status TD) and a single CLF
+doorbell: SET_ADDRESS(1), SET_FEATURE(PORT_RESET) port 3, SET_ADDRESS(2),
+SET_FEATURE(PORT_RESET) port 1, SET_ADDRESS(3). OHCI clears CLF only one
+frame *after* the list drains (`ServiceEdList` returns active while TDs
+retire), so ringing per transfer costs 2 frames each; the chained list is
+serviced wholly in frame 0 and clears CLF at frame 1 — this cut the ROM
+from 9.57M steps (95% of budget, first working version) to **2,949,419
+steps**. Then: clear WDH, cross a frame (done-queue writeback), assert
+`HcDoneHead == 0` (the `idle=0x0` observation — with `--pad-buttons down`
+the report itself is always 0x2); build the periodic ED (address 3,
+endpoint 2 IN, 32-byte packets) + 20-byte TD at 0x32010 -> report 0x33000;
+fill all 32 HCCA interrupt-table entries; clear WDH; enable PLE; poll
+`HcDoneHead`/`HCCA+0x84` across 1 ms `Advance` frames until the TD
+address appears; check TD condition == NoError and the data toggle
+advanced (flags 0x03000000). Report bytes [0]=0, [1]=20, [2..3]=0x0002
+(DOWN) -> `TESTROM PASS pad-poll idle=0x0 pressed=0x2`, EAX=0. Evidence:
+CLI verdict `TESTROM PASS pad_poll`, USB0 log `setup 00/05 addr=1`,
+`setup 23/03 idx=3`, xfer log shows all five control setup/status pairs at
+`f=0`, `Gamepad.Address=3`, `InterruptTransfers>=1`. Negative control
+(neutral pad) exits EAX=3 with `bad-report`, proving the guest check.
+
+**Test accounting:** 4 new tests (IdeDma pass + zero-image fail, PadPoll
+down pass + neutral fail); suite 1096 -> 1100 green. Both ROMs stay far
+inside their step budgets with deterministic, fixed scripts (no
+wall-clock dependence).
+
+**Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
+§104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
