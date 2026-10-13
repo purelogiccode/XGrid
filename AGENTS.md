@@ -213,12 +213,21 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   fix (§95: LU texel-unit coords, SZ POT base size, A4R4G4B4 decode
   — menu renders in color: 7,389 RGB-diff px vs neutral, 32,789 colors).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1092 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1096 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — APU VP/DSP streaming (007 audio-drain gate).
+## Next session — sample XBE bring-up (triangle) + APU VP/DSP.
 
-1. **MENU COLOR DONE (§95).** Textured-RGB-zero fixed — three coupled
+1. **SAMPLES (§104).** `data/test-samples/` (local, gitignored):
+   `triangle.xbe` (nxdk), `kernel-test-suite-default.xbe`, nxdk sources.
+   Minimal XISO (`XISOSharp -y -m -c <dir> <out.iso>`, sibling
+   CSharp_XISOSharp repo) + `boot --dvd` reaches the XBE launch call
+   `0x800158DA` @525.7M steps, then an unhandled fault-delivery crash
+   (`TryTransferToInterrupt`). The BIOS is a custom build permitting
+   unsigned code. `wave/xbe-bringup` owns the diagnosis (snapshot at
+   525.6M → probes in seconds); acceptance = triangle renders. This is
+   ONE root-cause hunt — never parallelize it.
+2. **MENU COLOR DONE (§95).** Textured-RGB-zero fixed — three coupled
    texture-sample bugs: LU_IMAGE formats take texel-unit coords (not
    normalized), SZ_* are sized by POT `BASE_SIZE_U/V` (not the image
    rect), `SZ_A4R4G4B4` was unsupported. Live two-boot (1B steps,
@@ -230,7 +239,7 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    `0x1D78` CULL/CLAMP per-fragment discard, `zclipCull=21526` correct,
    frame unchanged; §90's "primitive cull" record corrected — xemu has
    no primitive-level zclip).
-2. **007 next gate (§98): implement the APU voice-processor + DSP.**
+3. **007 next gate (§98): implement the APU voice-processor + DSP.**
    The `0x138xx`/`0x20FC1` park is NOT a guest stall: PlayMPC exits on
    EOS, then spins waiting for stream channel `0x100` status==3, which
    needs node removal via the advance callback dispatched from the XDK
@@ -242,23 +251,26 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    audio-drain wait completes. V1 snapshots are live (§§99–101:
    `--save-state [--save-at]` / `--load-state`, dashboard save@1B→restore
    bit-exact incl. frame + RAM SHAs) — probe the APU work from snapshots,
-   not replays. V2 verdict (§102): overlay-XBE replacement blocked by
-   retail signature checks; build the flat-binary `testrom` harness.
-3. NV2A remaining: mipmap LOD + DXT decode, PROJECT2D non-cube
-   projective divide, DOT_STR_3D dim==3, border/mip/filtering,
+   not replays. V2 (§§102–104): flat-binary `testrom` harness DONE (§103,
+   ROM-A green); unsigned-XBE path OPEN — the custom BIOS permits
+   unsigned code; triangle reaches the launch call @525.7M then a
+   fault-delivery crash (§104, `wave/xbe-bringup`).
+4. NV2A remaining: mipmap LOD; DXT decode (deprioritized — the
+   dashboard uses none, §105); `0x30` depth semantics; PROJECT2D
+   non-cube projective divide, DOT_STR_3D dim==3, border/mip/filtering,
    TEXADDRESS V bit offset, BRDF detail, Vulkan/OpenGL backends
    (16.6–16.7).
-4. nvnet: first-real-frame validation + TCP proxy.
-5. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
+5. nvnet: first-real-frame validation + TCP proxy.
+6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
    READ/WRITE DMA, faithful serving, no fault); `F36A2` is the §49–51
    WC-fill page artifact, unrelated to disk I/O. Track C JIT for
    interactivity still the throughput bottleneck.
-6. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
+7. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive
    rates still need JIT).
-7. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+8. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
    `vsh-prog.c`), `nv2a_regs.h`; for the APU gate xemu `hw/xbox/mcpx/`

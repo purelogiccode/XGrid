@@ -4386,3 +4386,55 @@ across `Advance` frames, `idle=0x0 pressed=0x2`) per §102. Both ride the
 same harness/CLI with no further infra work. The checked-in `.bin` lets
 other machines run the CLI evidence without NASM; if the `.asm` changes,
 re-assemble with the absolute-path NASM and re-embed the bytes.
+
+## 104. Test samples (data/test-samples) + first unsigned-XBE launch attempt (2026-10-12)
+
+**Samples added (local only, gitignored under `data/`; provenance in the
+folder README):** `triangle.xbe` (160 KB, nxdk `samples/triangle` build
+from ghidra-xbe test files; `Type=Retail`, base `0x10000`, entry VA
+`0x36720` stored `0xA8FF308B`, 7 sections incl. `.tls`, lib `CXBE0`,
+signature field all-zero = unsigned). `kernel-test-suite-default.xbe`
+(312 KB, Cxbx-Reloaded `xbox_kernel_test_suite` release; `Type=Retail`,
+entry VA `0x4DF80` stored `0xA8F8882B`, 6 sections incl. TLS +
+`sectest_`). `nxdk-{hello,led,mesh,triangle}/` sources (mesh needs
+upstream `texture.h`/`verts.h`). Per the operator the boot BIOS
+(`Complex_4627.bin`) is a **custom build that permits unsigned code** —
+consistent with the unsigned EvoX dashboard running from the HDD; this
+supersedes §102's stock-kernel "blocked" verdict for unsigned XBEs.
+
+**Minimal XISO recipe (works):** sibling repo `CSharp_XISOSharp` CLI
+(MIT): `XISOSharp.exe -y -m -c <dir> <out.iso>` where `<dir>` holds
+`default.xbe` = triangle.xbe (`-m` disables the automatic XBE
+media-enable patch; the kernel's DVD probe accepts the image normally).
+
+**First boot (`--dvd triangle.iso --steps 700M`):** the kernel runs its
+DVD path and the XBE launch call site `0x800158DA` HITs at step
+**525,703,663** (`EAX=0 ESI=0x80000000 EDI=0`; 007's handoff was
+537,926,130). Immediately after, the run dies with an **unhandled
+`XboxCpu.PageFaultSignal` thrown from `TryTransferToInterrupt` →
+`TranslateLinear`** — an interrupt/exception delivery whose IDT
+translation faults (double-fault-class) is not handled by the CPU core.
+Open: whether `[0x10128]` was decrypted (`xor 0xA8FC57AB` at
+`0x8002EFE6`) and executed, and whether the first fault is an emulator
+fault-delivery gap or a guest error path (e.g. a verification-failure
+branch). Diagnosis continues in `wave/xbe-bringup` (snapshot at 525.6M
+so probes run in seconds).
+
+## 105. DXT recon: unused by the dashboard; the one real texture miss is 0x30 (2026-10-12)
+
+Read-only probe on the prebuilt CLI (1B-step submenu boot; logs in
+`Temp\opencode\dxt-recon\`). **DXT (0x0C/0x0E/0x0F) has ZERO usage in
+the dashboard workload** — implementing DXT decode would change 0
+pixels there; do not land it expecting a dashboard diff. The only
+texture-format miss is **`0x30` LU_IMAGE_DEPTH_Y16_FIXED
+(62,444,852 attempts / 62,444,852 misses, ~18%)**, all in decorative
+multi-stage states (stage-3 PROJECT3D, 512x512 depth textures) that
+currently degrade to `SetTexelNone`. Used formats: `12`=210.7M/0,
+`04`=45.2M/0, `06`=22.6M/0; fallbacks 0. The probe also spec'd the
+full DXT decode (s3tc bit math with integer truncation, block-linear
+addressing without Morton, hand-computed test vectors) and the mipmap
+LOD rule (TEXCTL0 min/max clamp, TEXFILTER 13-bit signed LOD bias,
+MIN/MAG filter modes) for whenever a DXT/mipmap workload appears (e.g.
+nxdk-mesh once built). Priority: **DXT decode deprioritized; `0x30`
+depth-format semantics open** (needs per-draw combiner tracing to
+decide shadow-map vs dead stage).
