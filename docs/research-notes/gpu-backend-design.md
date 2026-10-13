@@ -392,21 +392,25 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
   (flat regions exact, edges ≤2/channel inside ±1px band); backend fallback counter
   = 0 (every draw in the subset was GPU-executed); existing suite green unchanged
   with `--gpu sw` default.
-- **Slice 2 — full dashboard surface.**
-  Acceptance: menu + submenu navigation (`--pad-script`, §74/§79) + animation-phase
-  frames: golden-frame pairs for neutral and submenu; texture formats 02–07/10–12/1C–
-  1E all served with 0 misses; blend/alpha/fog state exercised (counters > 0 on both
-  paths); `0x3628000` render-to-texture (§44) either GPU-correct or explicitly
-  counted-and-deferred with a named gap. §95's published frame SHAs are *pre-§106* —
-  re-record software anchors in this slice (§106 re-baseline note).
-- **Slice 3 — triangle + 007 streams.**
-  Acceptance (triangle): fresh `--dvd triangle.iso --steps 1000000000` with
-  `--gpu gl` vs `--gpu sw`: Gouraud ramp frame (§106 shape: red→blue bottom row,
-  green vertex) within golden tolerance; DMA-context surface offsets (§106) resolved
-  identically on both paths; `NO_OPERATION` stall behavior byte-identical (same step
-  count to EIP `0x8001B032`). Acceptance (007): first-render frame golden pair once
-  the 007 histogram (§1.2 open) is captured; 007's stream is slice-3 scope only after
-  its method inventory exists.
+- **Slice 2 — triangle golden gate + tripwire closure (wave `wave/gpu-slice2`,
+  §117).** DONE 2026-10-13: triangle 1B boot sw<->gl golden PASSES the §3.4
+  policy (BMP violations=0 maxDelta=1, counters exact 2706/68/34, sw SHA
+  `A1740DE0…` verified, `BackendUnsupported=0` — the triangle stream trips
+  zero §113 unsup rows); dashboard menu golden re-verified bit-identical to
+  §113; every §113 `unsup[...]` row either implemented+gate-validated
+  (FBO-grow content-preserving blit, fires 14×/boot, frames bit-identical
+  before/after) or evidence-justified with per-run counters (§117 table);
+  risk-exposure diagnostics `diag[fboReallocs/fboZetaDrops/clipXY]` armed.
+  The original "full dashboard surface" sub-items (menu+submenu navigation
+  golden, texture-format table, blend/alpha/fog exercised, `0x3628000`
+  render-to-texture) are covered by the §113 pad-script gate re-verified
+  here plus the §117 by-construction note (software path stays
+  unconditional, so texture uploads read software-coherent guest RAM).
+- **Slice 3 — 007 streams** (triangle half landed early as the slice-2
+  gate above). Remaining acceptance: 007 first-render frame golden pair
+  once the 007 histogram (§1.2 open) is captured and its G2 park (§114)
+  is decoded; DMA-context surface-offset / pbkit present hook follow-ups
+  per §106 as the titles demand.
 - **Never-gate:** full NV2A parity is *not* a milestone; unmapped needs are added to
   slices only when a title's inventory proves them (§7).
 
@@ -523,6 +527,24 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 > gate taught us are recorded in §113 (integer texelFetch sampling,
 > software-exact barycentric in the fragment shader, coverage-superset
 > inflation + shader inside-test for software's inclusive-edge double-blend).
+>
+> **SLICE-2 GATE OUTCOME (2026-10-13, wave/gpu-slice2 → §117): PASS.**
+> Triangle golden (`scripts/gpu-slice2-triangle-golden.ps1`, anchor-pinned):
+> both runs `LastFault vec=0`; `draws=2706 frames=68 stalls=34` identical
+> sw↔gl and == recorded anchors; sw frame SHA `A1740DE0…` verified;
+> BMP `violations=0 maxDelta=1` (27,849 edge-band pixels); gl frame
+> `7A860ED7…` bit-identical before/after the wave's FBO change;
+> `BackendUnsupported=0` (all seven `unsup[...]` rows zero on both titles).
+> Dashboard menu golden re-verified **bit-identical to §113** (sw
+> `4EF1FBF6…`, gl `B6116DAE…`, diff=2602 violations=0). Code delta:
+> `diag[fboReallocs/fboZetaDrops/clipXY]` evidence counters + the
+> content-preserving FBO realloc (glBlitFramebuffer color always,
+> depth/stencil on unchanged zeta; failed creation keeps the prior FBO)
+> — the §113 "FBO-grow window realloc" silent gap, now gate-validated
+> live at 14 firings/boot with frame-neutral results on menu+triangle.
+> Every other §113 tripwire row is evidence-justified (menu+triangle
+> never exercise it; per-run counter output in the §117 disposition
+> table). Suite 1205/1205 green (baseline unchanged), format clean.
 
 ## Evidence sources
 
@@ -560,3 +582,15 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
    Slice-2 open items recorded there (swapchain out of scope, Vulkan later,
    exotic dot/bump/cube-success modes counted-but-unimplemented in the GLSL
    emitter with `BackendUnsupported` tripwires).
+8. **Slice-2 gate** — CLOSED 2026-10-13: PASS, see §8 SLICE-2 GATE OUTCOME
+   + §117. FBO-grow content loss: **fixed** (blit-preserving realloc,
+   gate-validated, `diag[fboReallocs]` exposure 14×/boot on menu+triangle;
+   zeta-format-change depth drops remain counted in `diag[fboZetaDrops]`).
+   Exotic modes / cubeVol / zformat / colorBytes / oversized flips:
+   evidence-justified out (zero exposure on both acceptance titles, §117
+   table) — implement only when a title histogram proves usage (risk 1).
+   clipY≠0 readback: exposure measured **zero** on menu+triangle
+   (`diag[clipXY]=0`); detector armed for future titles. 16-word texture
+   fingerprint: both golden pairs pass (the tripwire); interior-miss
+   residual risk stays documented. Multi-stage combiner worry: closed —
+   the triangle stream is single-stage like the menu.
