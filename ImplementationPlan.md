@@ -33,11 +33,6 @@ algorithms) rather than performing a mechanical source translation. Full extract
    - Xbox machine/memory map, PCI IDs and IRQ routing, PIII CPUID/MSR quirks, MCPX
      (SMBus/SMC/EEPROM/flash/ACPI/ACI), NV2A (PFIFO/PGRAPH/renderer), APU, USB/XID, nvnet.
 
-2. **Xermu** — `References/Xermu-main` — **unlicensed (all rights reserved)**
-   - Primary reference for standalone Xbox emulation architecture.
-   - Pentium III interpreter/JIT organization, 4 GB fastmem, device register maps, four boot
-     modes (nboxkrnl, LLE kernel, LLE BIOS, HLE), NASM golden-test harness concept.
-
 3. **Cxbx-Reloaded** — `References/Cxbx-Reloaded-master` — GPL-2.0
    - Reference for XBE format (exact struct offsets), kernel ordinal semantics, NV2A/NV097
      register and method maps, texture swizzle, OHCI/XID, XDVDFS layout.
@@ -70,8 +65,14 @@ algorithms) rather than performing a mechanical source translation. Full extract
      only; attribution required if any text or figure is reused. Never a register-level
      oracle. See `docs/research-notes/copetti.md`.
 
-**Licensing rule:** no source code is copied from xemu, Xermu, Cxbx, or xqemu (GPL/LGPL or
-unlicensed). Only facts are extracted. XISOSharp (MIT) may be referenced as a dependency; preserve
+**Withdrawn reference.** Earlier drafts listed a standalone C# emulator "Xermu"
+(`References/Xermu-main`). No such project exists in the workspace; the operator confirmed
+2026-10-13 that the correct primary LLE reference is `References/xemu-0.8.136`. Do not add
+Xermu to any list, and do not treat historical citations to it (including
+`xgrid-architecture-decisions.md`) as facts.
+
+**Licensing rule:** no source code is copied from xemu, Cxbx, or xqemu (GPL/LGPL).
+Only facts are extracted. XISOSharp (MIT) may be referenced as a dependency; preserve
 its notices and the extract-xiso advertising clause if any code is adapted. envytools and
 nv2a-trace are MIT and Copetti is CC BY 4.0 — still facts-only by default: record any reuse
 in `sources.md` (and attribute Copetti) before using it. Never commit copyrighted firmware,
@@ -85,7 +86,6 @@ The first project activity was a completed reference study. Its outputs are comm
 ```text
 docs/research-notes/sources.md                      licensing/provenance inventory (plan section 46)
 docs/research-notes/xemu.md                         xemu hardware facts
-docs/research-notes/xermu.md                        Xermu architecture and boot strategy
 docs/research-notes/cxbx.md                         XBE, kernel ordinals, NV2A, USB, XDVDFS
 docs/research-notes/xqemu.md                        xqemu unique artifacts
 docs/research-notes/xisosharp.md                    reusable MIT library + XDVDFS format facts
@@ -99,7 +99,7 @@ docs/research-notes/xgrid-architecture-decisions.md synthesis, constants appendi
 
 ### Guiding principle
 
-Do not attempt to translate xemu or Xermu line-by-line.
+Do not attempt to translate xemu line-by-line.
 
 Instead:
 
@@ -1382,7 +1382,7 @@ leaves oFog unwritten) and HILO_1 dot-map decode. **NV2A exotics DONE
 remap2DToCube for flat textures), projective 3D volume sampling,
 CLIPPLANE per-component discard (SET_SHADER_CLIP_PLANE_MODE), the
 DOT_RFLCT_DIFF/SPEC and DOT_STR_CUBE reflection modes, HILO hemisphere
-dot maps 5-7 (Cxbx/Xermu 16-bit sign decode), and the xemu-equivalent
+dot maps 5-7 (Cxbx 16-bit sign decode), and the xemu-equivalent
 BRDF/DOT_RFLCT_SPEC_CONST zero-texel stubs; BRDF math remains reference
 UNIMPLEMENTED. Remaining: ZCLIP-CULL, right-scene color proof.
 **Scene-proof (§93): layout/content
@@ -1783,7 +1783,7 @@ Test input
    |
    +---- xemu
    |
-   +---- Xermu
+   +---- xqemu
    |
    +---- XGrid
 ```
@@ -2745,9 +2745,9 @@ xemu
     ↓
 Xbox hardware knowledge
 
-Xermu
+xqemu
     ↓
-standalone CPU/JIT architecture
+standalone CPU/JIT + simpler device models
 
 Cxbx
     ↓
@@ -2903,7 +2903,7 @@ The project name should be reviewed for trademark/confusion concerns before publ
 
 XGrid should not be treated as a direct port of xemu.
 
-It should be a clean, modular C# implementation of the original Xbox hardware model, informed by xemu, Xermu, Cxbx, public technical documentation, reverse-engineering research, and controlled differential testing.
+It should be a clean, modular C# implementation of the original Xbox hardware model, informed by xemu, Cxbx, public technical documentation, reverse-engineering research, and controlled differential testing.
 
 The most important architectural decision is to keep:
 
@@ -3343,7 +3343,7 @@ addresses deterministic.
 5. Exceptions (plan 8.6) through a guest IDT model: #DE, #UD, #GP, #PF, #BP, #DB; host exceptions
    never leak.
 6. CPU test framework (plan 8.7): JSON instruction tests + an assembly-based golden harness
-   (write our own NASM files using the `harness.inc` convention; do not copy Xermu's tests).
+   (write our own NASM files using the `harness.inc` convention).
 7. `XGrid.CpuTestRunner` tool.
 
 **Facts**: PIII CPUID/MSR quirks in `docs/research-notes/xemu.md` section 2.
@@ -3367,13 +3367,14 @@ Synthetic page-table tests and TLB invalidation tests; CPU executes code through
 ### PCI device topology (verified against xemu `hw/xbox/xbox.c`)
 
 Process directive: **consult the reference projects first** (`References/xemu-0.8.136`,
-`References/xqemu-master`, `References/Cxbx-Reloaded-master`, `References/Xermu-main`,
+`References/xqemu-master`, `References/Cxbx-Reloaded-master`,
 `References/envytools-master` for NV2A method/register/XF facts, `References/nv2a-trace-master`
 for pushbuffer/PGRAPH tracing facts, `References/XboxDevWiki`, `References/CopettiDocumentation`
 for high-level architecture) to
 confirm hardware layout, IDs, and behavior before implementing or debugging a device. Xemu is
-the LLE reference; Cxbx/Xermu are HLE (kernel reimplementation, no NV2A emulation) and only
-help for kernel-facing behavior.
+the LLE reference; Cxbx is HLE (kernel reimplementation, no NV2A emulation) and only
+help for kernel-facing behavior. (Xermu was once listed here too — it never existed;
+see the "Withdrawn reference" note in section 0.)
 
 | Slot | Device (vendor:device, revision) | xemu source | XGrid status |
 | --- | --- | --- | --- |
@@ -3459,7 +3460,8 @@ writes guest RAM through `AddressSpace`.
 **Order**: SMBus (AMD756) → EEPROM → Flash → SMC → USB integration → interrupts → timers.
 
 **Tasks/facts**: SMBus register map (`xemu.md` 4.1); EEPROM layout + SHA1/RC4 security section and
-generation (`xemu.md` 4.3); flash AMD/SST command set (`xemu.md` 4.7, `xermu.md` 4); SMC register
+generation (`xemu.md` 4.3); flash AMD/SST command set (open gap — xemu has no command model
+and no other in-repo reference covers CFI; implement clean-room from datasheets); SMC register
 and challenge/response map (`xemu.md` 4.2); ACPI PM/GPE/GPIO (`xemu.md` 4.5); Super I/O programming
 model (`xemu.md` 4.6); ACI AC'97 (`xemu.md` 4.9).
 
@@ -3604,7 +3606,7 @@ guest init-only behavior unchanged).
 
 **Tasks**: decoder → basic block → IR (plan 20.2) → optimizer → host emitter → code cache;
 block keying and invalidation; evaluate managed options in plan 20.6 order; benchmark-driven.
-Adopt proven concepts from `xermu.md` 7: trace cache keyed on guest VA, forward-only linking,
+Adopt proven JIT design concepts (trace cache keyed on guest VA, forward-only linking,
 page-protection SMC, per-block invalidation.
 
 ## Phase 16–18 — Optimization (detailed)

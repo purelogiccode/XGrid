@@ -156,7 +156,9 @@ framework plumbing not needed by XGrid.
 
 ### 4.7 Flash
 - Treated as flat read-only ROM + writable MCPX overlay; **no flash command set** in xemu.
-- **[HW]** real Xbox flash is AMD/SST command-set; Xermu documents the CFI model (see xermu.md).
+- **[HW]** real Xbox flash is AMD/SST command-set (CFI); still an open implementation gap
+  (Phase 6). Model it clean-room from the AMD/SST datasheets — no in-repo reference covers
+  the CFI command model (an older note pointed at a non-existent "Xermu" project).
 
 ### 4.8 RTC
 - Standard MC146818 at I/O 0x70/0x71, IRQ 8, base year 2000.

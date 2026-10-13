@@ -318,7 +318,7 @@ public sealed class PshCombiner : ISnapshotable
     /// hemisphere D3D/GL/generic) decode the same hi/lo words as signed
     /// H/L and return (H, L, sqrt(1-H*H-L*L)), the 16-bit extensions of the
     /// 8-bit sign1/sign2/sign3 functions (xemu still resolves these as
-    /// identity FIXMEs; Cxbx/Xermu supply the piecewise signed decode).
+    /// identity FIXMEs; Cxbx supplies the piecewise signed decode).
     /// Maps 8-15 fall back to identity.
     /// </summary>
     public static void ApplyDotMap(int map, float r, float g, float b, float a, out float x, out float y, out float z)
