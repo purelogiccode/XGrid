@@ -4438,3 +4438,262 @@ MIN/MAG filter modes) for whenever a DXT/mipmap workload appears (e.g.
 nxdk-mesh once built). Priority: **DXT decode deprioritized; `0x30`
 depth-format semantics open** (needs per-draw combiner tracing to
 decide shadow-map vs dead stage).
+
+## 106. Unsigned-XBE bring-up: triangle.xbe renders — NO_OPERATION stall + surface DMA-context bases (2026-10-13)
+
+Worktree `wave/xbe-bringup` (main checkout untouched; logs/frames in
+`Temp\opencode\xbe-bringup\`). Acceptance MET: `triangle.xbe` executes
+through the real kernel and renders; `--frame` BMP shows the pbkit
+triangle (red/green/blue Gouraud foreground, dark-blue background pair,
+black clear), 35,519 unique colors, no fault.
+
+**§104 crash root cause (three coupled emulator gaps, not a guest
+error and not a signature check).** The fault was NOT fault-delivery:
+a pbkit `pb_erase_depth_stencil_buffer` clear (pushbuffer at phys
+`0x3F5B0xx`) wrote `0xFFFFFF00` over physical `0..0x12C000` — wiping
+the IDT, page directory (PDEs all `0xFFFFFF00`), kernel and XBE — then
+the next fetch hit a `FF FF` fill byte (#UD at VA `0x1F16A`), the #UD
+gate was already trashed (offset `0xFFFFFF00`, selector `0xFFFF`), the
+handler fetch faulted, and the #PF frame push walked off the stack into
+the unmapped page below `0xD003F000` → the unhandled double-fault-class
+`PageFaultSignal`. RAM dump at the storm: fill runs `0x0..0x121A10` +
+`0x121A1C..0x12C000` (+ two 2.4–4 MB pbkit buffer fills), `XBEH` gone.
+The clear was legitimate: pbkit sets `SET_SURFACE_ZETA_OFFSET=0` and
+`SET_SURFACE_COLOR_OFFSET=0` because its color/zeta surfaces are the
+DMA-context bases, and it updates the RAMIN DMA objects (frame =
+back-buffer/depth-buffer physical address) through its `PB_SETOUTER`
+subprogram (`0x0100` fire-interrupt + `PARAMETER_A/B`). XGrid executed
+all of that wrong:
+
+1. **`NV097_NO_OPERATION` (0x100) must stall the pusher.** xemu sets
+   `waiting_for_nop` and `pfifo_pusher_should_stall` returns until the
+   guest writes `NV_PGRAPH_INTR` (which clears it and `pfifo_kick`s).
+   XGrid raised the notification but processed the rest of the
+   pushbuffer synchronously, so the clear ran before the guest DPC
+   updated the DMA objects. Implemented `_waitingForNop` in
+   `RunPusher` (early return + loop break after the data word) and the
+   ack in `WritePgraph(0x100)`.
+2. **Resume must be deferred one tick.** pbkit acks the notification
+   *before* reading `PARAMETER_A/B` (`pb_gr_handler`:
+   `VIDEOREG(NV_PGRAPH_INTR)=ERROR_RESET;` then `pb_subprog(...)`).
+   Resuming the pusher synchronously inside the ack write would clobber
+   the parameters with the *next* pair and drop the frame/base write.
+   Implemented `_pusherKickPending`, consumed at the top of
+   `Nv2aMmio.Advance` — the guest's handler always completes first
+   (model of GPU-engine latency).
+3. **`0x1D8C`/`0x1D90` are PARAMETER_A/B aliases.** pbkit reads the
+   outer registers `NV_PGRAPH_ZSTENCILCLEARVALUE` (`0x1A88`) and
+   `NV_PGRAPH_COLORCLEARVALUE` (`0x186C`) in `pb_subprog`; xemu mirrors
+   `SET_ZSTENCIL_CLEAR_VALUE`/`SET_COLOR_CLEAR_VALUE` into them. XGrid
+   only kept private fields, so the subprogram read zeros and wrote
+   `0` to PMC. Both methods now also write `_pgraph[0x1A88/4]` and
+   `_pgraph[0x186C/4]`.
+4. **Surface address = DMA-context base + surface offset.** xemu
+   `populate_surface_binding_entry_sized`: `vram_addr = dma.address +
+   surface->offset` where the DMA object is loaded from the context
+   handle. Added `MethodContextDmaColor` (`0x194`) + `_dmaColor`,
+   `TryResolveDmaContext` (RAMHT handle → instance → flags/limit/frame,
+   adjust shifted like xemu `GET_MASK`), `SurfaceBase` and
+   `SurfaceFitsContext` (xemu's limit assert; unresolved handles fall
+   back to base 0 so raw-offset titles like the dashboard are
+   unchanged). Applied to `ExecuteClear` (color+zeta, with limit
+   guard), the fragment color/zeta writes (bases resolved once per
+   triangle in `FillTriangle`/`FillTrianglePsh`), and
+   `CapturePresentedFrame` (`_presentedOffset = base + offset`).
+   Evidence at 1.5256B: RAMIN handle 9 frame `0x3BD4003` limit
+   `0x12BFFF` (back buffer), handle 0xA frame `0x3AA8003` (depth
+   buffer) — the guest subprograms now land. Reference:
+   `xemu hw/xbox/nv2a/pgraph/gl/surface.c:1042-1060`,
+   `pgraph.c:823-857` (NO_OPERATION), `pfifo.c:490-509` (RAMHT hash),
+   `nv2a.c:56-71` (`nv_dma_load`).
+
+**Live evidence.** Snapshot `prelaunch.xgs` at 525.6M (plain-run world;
+EIP `0x8001E361`; the old §104 525,703,663 launch figure was
+break-log-world pacing). Probes:
+`--load-state prelaunch.xgs --steps 1000000000 --frame f.bmp` completes
+**1B steps, `LastFault vec=0`**, `draws=2749 pixels=108.5M clears=15477
+frames=111`, presented surface `0x3E2C000` 640x480 pitch 2560; BMP
+bottom row `(255,0,0)→(0,0,255)` red-to-blue Gouraud ramp, green vertex
+at (320,100), dark-blue background pair. Fresh `boot --dvd triangle.iso
+--steps 1000000000` (no snapshot): **no fault**, `draws=2706
+pixels=88.9M frames=68`, same triangle frame. **Dashboard regression
+check** (HDD boot, `--steps 1700000000`): **no fault**,
+`zclipCull=21526` unchanged, frame is the blue EvoX menu (8,390 sampled
+colors, ASCII downsample shows text rows). Note: the stall now paces
+the pusher faithfully, so dashboard counters move (3480 flips vs the
+§43 33-flip baseline) — the menu runs continuously instead of the
+synchronous-pusher park; §43/§101 counter baselines need re-recording.
+
+**Files:** `src/XGrid.Nv2a/Nv2aMmio.cs` (stall/kick/pending, parameter
+mirrors, DMA context fields + helpers, clear/draw/present addressing,
+`Nv2aSnapshotVersion 1→2`); `tests/XGrid.Nv2a.Tests/PfifoPusherTests.cs`
+(`NoOperationWithParameter_StallsPusherUntilPgraphIntrAck`,
+`ClearSurface_AppliesColorDmaContextBase`; the old
+`IncreasingMethod_DispatchesToSink` now uses a zero parameter since
+non-zero is a stall). Suite 1098/1098 (was 1096); build + format clean.
+
+**Open:** the snapshot version bump invalidates pre-fix `.xgs` files
+(regenerate); `pbkit` presents via `NV_PGRAPH_INCREMENT` (`0x71C`)
++ `PCRTC_START` rather than method `0x12C`, so the captured frame comes
+from the dashboard-style flip path — a dedicated pbkit present hook is
+optional follow-up; kernel-test-suite sample not yet tried.
+## 107. APU voice processor: real position advance unblocks 007's PlayMPC streams (2026-10-13)
+
+Branch `wave/apu-vp-dsp` (worktree `Temp\opencode\worktrees\apu-vp-dsp`). Fixes the
+§98 verdict: the `0x138xx`/`0x20FC1` park was the PlayMPC audio-drain loop waiting
+for stream channel `0x100` status 3, and status 3 needed the APU voice processor's
+position/notifier feedback, which XGrid stored but never advanced.
+
+**xemu facts extracted** (`References/xemu-0.8.136/hw/xbox/mcpx/apu/`):
+- Voice state lives in *guest RAM* at `VPVADDR + voice*0x80`; every VP PIO method
+  reads/writes it via `voice_get_mask`/`voice_set_mask` (`vp/vp.c:100-116`).
+  Registers: `VPVADDR 0x202C`, `VPSGEADDR 0x2030`, `VPSSLADDR 0x2034`,
+  `FENADDR 0x115C` (`apu_regs.h:58-60,45`); voice offsets CFG_FMT `0x04`,
+  CUR_PSL_START `0x20`, CUR_PSH_SAMPLE `0x24`, PAR_STATE `0x54`, PAR_OFFSET
+  (CBO) `0x58`, PAR_NEXT (EBO) `0x5C`, TAR_PITCH_LINK `0x7C`.
+- `fe_method` (`vp.c:164-576`): VOICE_ON links the voice to the top of the
+  selected 2D/3D/MP list (`TVL2D 0x2054`/`TVL3D 0x2060`/`TVLMP 0x206C`) or after
+  an antecedent, resets CBO/SSL index/segment and envelope counts, sets
+  ACTIVE_VOICE (bit 21); CFG/TAR/SSL/SGE/segment methods store into the voice
+  page; `SET_CURRENT_SSL` selects the SSL table page and methods `0x600..0x7FF`
+  write 8-byte `{offset,length}` entries into `VPSSLADDR + page*8`.
+- Frame loop `mcpx_apu_vp_frame` (`vp.c:1809-1858`): walks the 3 lists via
+  `TAR_PITCH_LINK.NEXT_VOICE_HANDLE`; voices that are not active get
+  `fe_method(SE2FE_IDLE_VOICE, v)` (gated by `FETFORCE1` bit 15, `vp.c:559-569`),
+  active voices are processed.
+- `voice_get_samples` (`vp.c:837-1121`): a streaming voice (`CFG_FMT` bit 24)
+  takes its segment length from `VPSSLADDR` (low 16 bits = samples), advances
+  CBO one sample per played sample, and on segment end advances `ssl_seg`; when
+  the SSL's segment count is exhausted it flips `ssl_index` and writes notifier
+  `SSLA_DONE + old_index` (`vp.c:1093-1106`). `count == 0` means stream end:
+  CBO=0, `ssl_seg=0`; without PERSIST the SSL index resets and `voice_off` runs
+  (`vp.c:941-955`). Buffer voices wrap to LBO when LOOP is set, else
+  `voice_off` (`vp.c:1107-1115`).
+- `set_notify_status` (`vp.c:33-52`): status byte `DONE_SUCCESS=1` at
+  `FENADDR + 16*(2 + v*4 + notifier) + 15`, a `1` at `-1`, and
+  `ISTS |= FEVINTSTS|FENINTSTS`. `voice_off` uses `SSLA_DONE + ssl_index` for
+  stream voices (`vp.c:118-132`). FE trap delivery is `FEDECMETH/FEDECPARAM` +
+  `FECTL` trapped/requested, as XGrid already modeled for idle voices.
+- xemu runs 32 samples/frame (8 VP frames per 256-sample EP frame,
+  `apu_regs.h:333-334,363`); the DSP (M56001) cores are *not* needed for this
+  gate: the XDK driver's own DMA callback processes audio buffers and enqueues
+  advance events (below), the VP notifiers are the producer.
+
+**Design** (`src/XGrid.Audio/McpxApuDevice.cs`): the VP front-end now dispatches
+every PIO method xemu implements (voice lock/current/on/off/release/pause, all
+CFG/TAR/SSL/SGE/segment writers) against the guest-RAM voice page; `Advance`
+runs one VP frame per existing 256-sample/48 kHz XGrid frame quantum, walking the
+2D/3D/MP lists (cycle-guarded), advancing CBO through buffer/SSL data, writing
+notifier statuses and raising `FEVINTSTS|FENINTSTS` on segment completion, and
+sending `SE2FE_IDLE_VOICE` for inactive linked voices and on natural stream end.
+Snapshot version bumped to 2 (SSL bases/counts/index/segment, voice locks, SGE
+handles); v1 snapshots are rejected.
+
+**Live evidence (007 USA CHD, firmware read-only, quirk default-on, no pad).**
+Snapshot-driven: `snap007b.xgs` at 2.4B (EIP `0x21308`); every probe below is a
+restore + continue (seconds), never a 2.4B replay.
+- Pre-fix state at 2.4B: node `0x80DA7DE8` (`[+0xC]=0x100`) position `[+0x14]`=0,
+  EOS quirk `fires=0`, game parked in the streaming limiter.
+- Post-fix restore +1.05M: driver DMA callback `0x18610` (caller `0x1788B`),
+  event dispatcher `0x14170` +1.064M, then **advance callback `0x11450`**
+  (caller `0x141AD`) +1.064M — the real path is alive.
+- Node `[+0x14]` advances at ~48 kHz real time: 109,536 (save) → 140,480
+  (+400M) → 144,145 = `[+0x18]` (+~530M).
+- Single-step break-log window (snapF, 450M after snap007b): **`0x11340` node
+  removal hit once at +115,757,484, 10 steps after an `0x11450` event**, and the
+  post-window RAM shows the acceptance state: stream object `0x80DA7CB0`
+  `[+0x11C]` channel list empty, `[+0x124]` active count 0, node on the free
+  list (`[+0x128]`), node `[+0x14]==[+0x18]==0x23311`. `0x138F0` walking that
+  list now finds no `0x100` node, i.e. `0x11210` returns **status 3** — the exact
+  condition `0x20FC1` waits for, reached with no forced write.
+- The game then plays through the splash MPC sequence instead of parking:
+  channel `0x100` (3 s) removed, `0x200` (8 s, position 17,952→384,384, removed),
+  `0x300` (54 s) at 189,344 by 13.1B total; EIPs stay in PlayMPC
+  (`0x1Exxx`/`0x2xxxx`, limiter helper `0x138xx`), DVD reads continue, **no fault
+  through 13.1B steps** (`LastFault vec=0`).
+- The `0x20FC1` drain loop itself was **never entered** in the natural run (two
+  break-log windows, 0-800M after snap007b): with the channel now completing
+  through the real path, the EOS path no longer leaves the drain with a pending
+  channel, so PlayMPC advances straight to the next stream. The EOS quirk also
+  stays `fires=0` (the read-ahead no longer starves); no quirk or forced write is
+  involved.
+- Dashboard regression: 1B boot with HDD only — all steps executed, no fault,
+  NV2A draws=33811 pixels=284,274,887 frames=682, IDE/NV2A/APU counters sane
+  (APU `ist=0x10 ien=0xAFA`).
+
+**Next gate observed:** the game is inside the 007 splash MPC playback loop
+(PlayMPC at EIP `0x1E32D`/`0x1FC92` at 13.1B), cycling streams; the next visible
+gate is the end of the `0x300` (54 s) stream / subsequent MPCs, which at the
+real-time pace needs ~40B more steps. Open: DSP cores remain register-only
+(no GP/EP execution); voice pitch/resampling is not modeled (CBO advances by the
+frame quantum; 007's stream voices have pitch 0 = 48 kHz, so 1:1); xemu's
+32-sample VP frame vs XGrid's 256-sample frame only changes notifier granularity.
+
+**Status:** suite **1107/1107** (1096 + 11 new `ApuVoiceProcessorTests`); build +
+`dotnet format --verify-no-changes` clean.
+## 108. V2 test-ROM suite complete: ROM-B ide-read-dma + ROM-C pad-getstate-poll (2026-10-12)
+
+Completed the §102/§103 flat-binary suite on the merged harness
+(`xgrid testrom --bin`): ROM-B `ide_dma` and ROM-C `pad_poll` both PASS
+live with the guest as the pass/fail authority. **No emulator (`src/`)
+changes were needed** — the IDE bus-master engine and the OHCI schedule
+engine already satisfy their ROMs; this wave only adds ROMs, tests, and
+docs.
+
+**Files:** `tools/testroms/ide_dma.asm` + `.bin` (480 B),
+`tools/testroms/pad_poll.asm` + `.bin` (1013 B) — both assembled once with
+`C:\msys64\mingw64\bin\nasm.exe -f bin` (absolute path, not in PATH);
+`tests/XGrid.Integration.Tests/TestRomTests.cs` (+4 tests: pass + fail for
+each ROM; bytes embedded, tests never shell out to NASM; temp HDD
+generated/disposed by the test).
+
+**ROM-B `ide-read-dma` (<5M budget).** Host test generates a deterministic
+8 MB raw HDD into a temp file (NOT the dashboard qcow2): the byte at linear
+offset n = LBA*512 + i is `((n * 0x21) ^ 0x5A) & 0xFF`. Guest: PCI config
+dev 9 fn 0 (IDE 10DE:01BC) — **BAR4 lives at config register 0x20, not
+0x10** (BAR0 is 0x10; the first live run failed `bm-error-bit` with
+`starts=0` because the BAR write landed on BAR0 — documented so later ROMs
+do not repeat it), BAR4=0xC000, command 0x07 (IO+bus master); one-entry
+PRDT at 0x30000 -> 4096 B at 0x40000 (end bit); taskfile 0x1F6=0xE0,
+0x1F2=8, LBA 0x100, command 0xC8; BM command start; poll BM status bit 2
+(INTERRUPT) with ERROR clear; guest recomputes the pattern and memcmps the
+4096-byte buffer (mismatch counter), printing the exact assert line.
+Evidence: `TESTROM PASS ide_dma` + `TESTROM LOG: TESTROM PASS ide-dma
+lba=0x100 sectors=8 mismatch=0` in **53,836 steps**; `IDE BMIBA=0xC000
+status=0x04 prdt=0x00030000 starts=1`; IDE trace
+`BW0:0:8 BW2:6:8 BW4:30000:32 TMW7:C8:8 BW0:1:8 BR2:4`. Negative control
+(all-zero 8 MB image) exits EAX=2 with `data-mismatch`, proving the guest
+memcmp is the authority.
+
+**ROM-C `pad-getstate-poll` (<10M budget).** Guest: USB0 OHCI at
+0xFED00000 soft reset -> operational+CLE, HCCA 0x30000; enumerates the
+daughterboard topology (root port 1 -> 4-port hub port 3 -> 3-port hub
+port 1 -> XID pad, §69) with **one chained control ED list of five EDs**
+(0x31000, each a setup TD + zero-length IN status TD) and a single CLF
+doorbell: SET_ADDRESS(1), SET_FEATURE(PORT_RESET) port 3, SET_ADDRESS(2),
+SET_FEATURE(PORT_RESET) port 1, SET_ADDRESS(3). OHCI clears CLF only one
+frame *after* the list drains (`ServiceEdList` returns active while TDs
+retire), so ringing per transfer costs 2 frames each; the chained list is
+serviced wholly in frame 0 and clears CLF at frame 1 — this cut the ROM
+from 9.57M steps (95% of budget, first working version) to **2,949,419
+steps**. Then: clear WDH, cross a frame (done-queue writeback), assert
+`HcDoneHead == 0` (the `idle=0x0` observation — with `--pad-buttons down`
+the report itself is always 0x2); build the periodic ED (address 3,
+endpoint 2 IN, 32-byte packets) + 20-byte TD at 0x32010 -> report 0x33000;
+fill all 32 HCCA interrupt-table entries; clear WDH; enable PLE; poll
+`HcDoneHead`/`HCCA+0x84` across 1 ms `Advance` frames until the TD
+address appears; check TD condition == NoError and the data toggle
+advanced (flags 0x03000000). Report bytes [0]=0, [1]=20, [2..3]=0x0002
+(DOWN) -> `TESTROM PASS pad-poll idle=0x0 pressed=0x2`, EAX=0. Evidence:
+CLI verdict `TESTROM PASS pad_poll`, USB0 log `setup 00/05 addr=1`,
+`setup 23/03 idx=3`, xfer log shows all five control setup/status pairs at
+`f=0`, `Gamepad.Address=3`, `InterruptTransfers>=1`. Negative control
+(neutral pad) exits EAX=3 with `bad-report`, proving the guest check.
+
+**Test accounting:** 4 new tests (IdeDma pass + zero-image fail, PadPoll
+down pass + neutral fail); suite 1096 -> 1100 green. Both ROMs stay far
+inside their step budgets with deterministic, fixed scripts (no
+wall-clock dependence).
+
+**Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
+§104) and APU voice-on/off as the 4th ROM (§98) are separate waves.

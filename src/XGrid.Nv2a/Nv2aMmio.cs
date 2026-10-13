@@ -140,10 +140,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint PgraphNsourceNotification = 1u;
     private const uint MethodZetaClearValue = 0x1D8Cu;
     private const uint MethodColorClearValue = 0x1D90u;
+    private const uint PgraphColorClearValue = 0x186Cu;
+    private const uint PgraphZStencilClearValue = 0x1A88u;
     private const uint MethodClearSurface = 0x1D94u;
     private const uint MethodClearRectH = 0x1D98u;
     private const uint MethodClearRectV = 0x1D9Cu;
     private const uint MethodContextDmaZeta = 0x198u;
+    private const uint MethodContextDmaColor = 0x194u;
     private const uint MethodAlphaTestEnable = 0x300u;
     private const uint MethodBlendEnable = 0x304u;
     private const uint MethodDepthTestEnable = 0x30Cu;
@@ -449,6 +452,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _stencilOpZfail;
     private uint _stencilOpZpass;
     private uint _dmaZeta;
+    private uint _dmaColor;
+    private bool _waitingForNop;
+    private bool _pusherKickPending;
+    private uint _surfaceChannel;
+    private uint _colorSurfaceBase;
+    private uint _zetaSurfaceBase;
     private uint _beginMode;
     private readonly Dictionary<uint, int> _methodCounts = new();
     private readonly Dictionary<uint, uint> _methodParams = new();
@@ -751,6 +760,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Advances the PTIMER free-running counter by the given core-clock ticks.</summary>
     public void Advance(ulong coreTicks)
     {
+        if (_pusherKickPending)
+        {
+            _pusherKickPending = false;
+            RunPusher();
+        }
+
         _ptimerClock += coreTicks;
         _vsyncRemainder += coreTicks;
         while (_vsyncRemainder >= VsyncTicksPerFrame)
@@ -867,6 +882,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _stencilOpZfail = StencilOpKeep;
         _stencilOpZpass = StencilOpKeep;
         _dmaZeta = 0;
+        _dmaColor = 0;
+        _waitingForNop = false;
+        _pusherKickPending = false;
+        _surfaceChannel = 0;
+        _colorSurfaceBase = 0;
+        _zetaSurfaceBase = 0;
         Array.Clear(_vertexFormat);
         Array.Clear(_vertexArrayOffset);
         Array.Clear(_textureOffset);
@@ -1158,6 +1179,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_stencilOpZfail);
         writer.Write(_stencilOpZpass);
         writer.Write(_dmaZeta);
+        writer.Write(_dmaColor);
+        writer.Write(_waitingForNop);
+        writer.Write(_pusherKickPending);
         writer.Write(DrawsExecuted);
         writer.Write(CombinerDraws);
         writer.Write(TexModeFallbacks);
@@ -1456,6 +1480,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _stencilOpZfail = reader.ReadUInt32();
         _stencilOpZpass = reader.ReadUInt32();
         _dmaZeta = reader.ReadUInt32();
+        _dmaColor = reader.ReadUInt32();
+        _waitingForNop = reader.ReadBoolean();
+        _pusherKickPending = reader.ReadBoolean();
         DrawsExecuted = reader.ReadUInt64();
         CombinerDraws = reader.ReadUInt64();
         TexModeFallbacks = reader.ReadUInt64();
@@ -1547,7 +1574,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private const int Nv2aSnapshotVersion = 1;
+    private const int Nv2aSnapshotVersion = 2;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -2001,6 +2028,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             case 0x100u:
                 PgraphPendingDebug &= ~value;
+                if ((PgraphPendingDebug & PgraphIntrError) == 0)
+                {
+                    if (_waitingForNop)
+                    {
+                        // The guest acknowledges the notification before it reads the
+                        // subprogram parameter registers. Model the GPU engine latency
+                        // by resuming on the next tick, after the handler has consumed
+                        // the parameters it was notified for.
+                        _waitingForNop = false;
+                        _pusherKickPending = true;
+                    }
+                    else
+                    {
+                        RunPusher();
+                    }
+                }
+
                 break;
             case 0x140u:
                 PgraphEnabledDebug = value;
@@ -2217,9 +2261,46 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return true;
     }
 
+    private bool TryResolveDmaContext(uint handle, uint channel, out uint baseAddress, out uint limit)
+    {
+        baseAddress = 0;
+        limit = 0;
+        if (handle == 0 || !TryRamhtLookup(handle, channel, out uint instance, out _) ||
+            instance + 12 > PraminSize)
+        {
+            return false;
+        }
+
+        uint flags = RaminWord(instance);
+        uint frame = RaminWord(instance + 8);
+        baseAddress = ((frame & DmaAddressMask) | ((flags & DmaAdjustMask) >> 20)) & GpuAddressMask;
+        limit = RaminWord(instance + 4);
+        return true;
+    }
+
+    private uint SurfaceBase(uint handle)
+    {
+        return TryResolveDmaContext(handle, _surfaceChannel, out uint baseAddress, out _) ? baseAddress : 0u;
+    }
+
+    private bool SurfaceFitsContext(uint handle, uint offset, uint pitch, uint height)
+    {
+        if (!TryResolveDmaContext(handle, _surfaceChannel, out _, out uint limit))
+        {
+            return true;
+        }
+
+        return (ulong)offset + ((ulong)pitch * height) <= (ulong)limit + 1;
+    }
+
     private void RunPusher()
     {
         if (_memory is null)
+        {
+            return;
+        }
+
+        if (_waitingForNop)
         {
             return;
         }
@@ -2269,6 +2350,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint words = 0;
         while (true)
         {
+            if (_waitingForNop)
+            {
+                break;
+            }
+
             if ((_pgraph[PgraphFifo / 4] & PgraphFifoAccess) == 0)
             {
                 break;
@@ -2479,6 +2565,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void RecordMethod(uint channel, uint subchannel, uint method, uint parameter)
     {
+        _surfaceChannel = channel;
         uint key = (subchannel << 16) | method;
         _methodCounts.TryGetValue(key, out int count);
         _methodCounts[key] = count + 1;
@@ -2494,6 +2581,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 if (parameter != 0)
                 {
                     RaiseNotification(channel, subchannel, parameter);
+                    _waitingForNop = true;
                 }
 
                 break;
@@ -2517,6 +2605,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case MethodZetaClearValue:
                 _zetaClearValue = parameter;
+                _pgraph[PgraphZStencilClearValue / 4] = parameter;
                 break;
             case MethodSetContextDmaSemaphore:
                 _dmaSemaphore = parameter;
@@ -2529,6 +2618,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case MethodColorClearValue:
                 _colorClearValue = parameter;
+                _pgraph[PgraphColorClearValue / 4] = parameter;
                 break;
             case MethodClearRectH:
                 _clearRectH = parameter;
@@ -2538,6 +2628,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case MethodContextDmaZeta:
                 _dmaZeta = parameter;
+                break;
+            case MethodContextDmaColor:
+                _dmaColor = parameter;
                 break;
             case MethodAlphaTestEnable:
                 _alphaTestEnable = (parameter & 1u) != 0;
@@ -3277,13 +3370,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (bytes != 0)
             {
                 uint pitch = _surfacePitch & 0xFFFFu;
-                uint pixel = _colorClearValue & (bytes switch
+                if (pitch != 0 && SurfaceFitsContext(_dmaColor, PresentedColorOffset, pitch, y1 - ymin + 1))
                 {
-                    4 => 0xFFFFFFFFu,
-                    2 => 0xFFFFu,
-                    _ => 0xFFu
-                });
-                FillSurface(PresentedColorOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+                    uint pixel = _colorClearValue & (bytes switch
+                    {
+                        4 => 0xFFFFFFFFu,
+                        2 => 0xFFFFu,
+                        _ => 0xFFu
+                    });
+                    FillSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1, y1,
+                        pixel);
+                }
             }
         }
 
@@ -3299,8 +3396,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (bytes != 0)
             {
                 uint pitch = (_surfacePitch >> 16) & 0xFFFFu;
-                uint pixel = _zetaClearValue & (bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu);
-                FillSurface(_surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+                if (pitch != 0 && SurfaceFitsContext(_dmaZeta, _surfaceZetaOffset, pitch, y1 - ymin + 1))
+                {
+                    uint pixel = _zetaClearValue & (bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu);
+                    FillSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+                }
             }
         }
     }
@@ -4826,7 +4926,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             pitch != 0 && pitchType && _memory is not null;
         if (_presentedValid)
         {
-            _presentedOffset = PresentedColorOffset;
+            _presentedOffset = SurfaceBase(_dmaColor) + PresentedColorOffset;
             _presentedWidth = width;
             _presentedHeight = height;
             _presentedPitch = pitch;
@@ -4994,7 +5094,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         bool haveZeta = false;
         if ((stencilActive || depthActive) && zetaBytes != 0)
         {
-            zetaAddress = _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
+            zetaAddress = _zetaSurfaceBase + _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
             if (zetaAddress + zetaBytes <= RamSize)
             {
                 storedZeta = zetaBytes == 4 ? _memory.ReadPhysical(zetaAddress) : ReadHalf(zetaAddress);
@@ -5063,7 +5163,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (colorWrite)
         {
-            uint address = PresentedColorOffset + (y * pitch) + (x * bytes);
+            uint address = _colorSurfaceBase + PresentedColorOffset + (y * pitch) + (x * bytes);
             (float R, float G, float B, float A) src = (r, g, b, a);
             (float R, float G, float B, float A) result = src;
             bool needDst = _blendEnable || (_colorMask & ColorMaskAll) != ColorMaskAll;
@@ -5129,6 +5229,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
+        _colorSurfaceBase = SurfaceBase(_dmaColor);
+        _zetaSurfaceBase = SurfaceBase(_dmaZeta);
 
         uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
         uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
@@ -5783,6 +5885,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         uint zetaBytes = ZetaBytesPerPixel();
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
+        _colorSurfaceBase = SurfaceBase(_dmaColor);
+        _zetaSurfaceBase = SurfaceBase(_dmaZeta);
 
         uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.X, b.X), c.X));
         uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(a.X, b.X), c.X));

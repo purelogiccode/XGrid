@@ -65,14 +65,82 @@ public sealed class PfifoPusherTests
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         memory.WritePhysical(0x0000u, 0x00040100u);
-        memory.WritePhysical(0x0004u, 0xDEADBEEFu);
+        memory.WritePhysical(0x0004u, 0x00000000u);
         memory.WritePhysical(0x0008u, 0x00001001u);
 
         nv2A.Write(Base + 0x800040u, 4, 0x00001000u);
 
         Assert.Equal(0x00001000u, nv2A.Read(Base + 0x800044u, 4));
         Assert.True(nv2A.MethodCounts.TryGetValue(0x100u, out int count) && count == 1);
-        Assert.True(nv2A.MethodParams.TryGetValue(0x100u, out uint param) && param == 0xDEADBEEFu);
+        Assert.True(nv2A.MethodParams.TryGetValue(0x100u, out uint param) && param == 0u);
+    }
+
+    [Fact]
+    public void NoOperationWithParameter_StallsPusherUntilPgraphIntrAck()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        nv2A.Write(Base + 0x400140u, 4, 0x00100000u);
+        nv2A.Write(Base + 0x0140u, 4, 0x00000001u);
+        memory.WritePhysical(0x0000u, 0x00040100u);
+        memory.WritePhysical(0x0004u, 0x0000031Cu);
+        memory.WritePhysical(0x0008u, 0x00001001u);
+
+        nv2A.Write(Base + 0x800040u, 4, 0x00001000u);
+
+        // The NO_OPERATION word is consumed, then the pusher waits for the
+        // guest to acknowledge the PGRAPH notification (xemu waiting_for_nop).
+        Assert.Equal(0x00000008u, nv2A.Read(Base + 0x800044u, 4));
+        Assert.Equal(0x00100000u, nv2A.Read(Base + 0x400100u, 4));
+
+        nv2A.Write(Base + 0x400100u, 4, 0x00100000u);
+
+        // The engine resumes on the next tick (guest acked before reading the
+        // subprogram parameters), then the jump-to-put word advances GET to PUT.
+        nv2A.Advance(1);
+
+        Assert.Equal(0x00001000u, nv2A.Read(Base + 0x800044u, 4));
+    }
+
+    [Fact]
+    public void ClearSurface_AppliesColorDmaContextBase()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        // RAMHT at RAMIN 0x10000; color context handle 9 -> instance 0x11150
+        // with base 0x8000 and limit 0xFFFF.
+        nv2A.Write(Base + 0x2210u, 4, 0x00000100u);
+        nv2A.Write(Base + 0x711150u, 4, 0x0000003Du);
+        nv2A.Write(Base + 0x711154u, 4, 0x0000FFFFu);
+        nv2A.Write(Base + 0x711158u, 4, 0x00008003u);
+        nv2A.Write(Base + 0x710000u + 9u * 8u, 4, 0x00000009u);
+        nv2A.Write(Base + 0x710000u + 9u * 8u + 4u, 4, 0x80001115u);
+
+        uint[] words =
+        {
+            0x00040194u, 0x00000009u,
+            0x000C020Cu, 0x01000100u, 0x00000000u, 0x00000000u,
+            0x00080200u, 0x00400040u, 0x00400040u,
+            0x00040208u, 0x00000128u,
+            0x00081D98u, 0x003F0000u, 0x003F0000u,
+            0x000C1D8Cu, 0x00000000u, 0x11223344u, 0x000000F0u,
+        };
+        for (int i = 0; i < words.Length; i++)
+        {
+            memory.WritePhysical((uint)(i * 4), words[i]);
+        }
+
+        nv2A.Write(Base + 0x800040u, 4, (uint)(words.Length * 4));
+
+        Assert.Equal(0u, nv2A.PusherError);
+        Assert.Equal(1u, nv2A.ClearsExecuted);
+        Assert.Equal(0x11223344u, memory.ReadPhysical(0x8000u));
+        Assert.Equal(0x11223344u, memory.ReadPhysical(0x8000u + 63u * 0x100u + 63u * 4u));
+        Assert.Equal(0u, memory.ReadPhysical(0xC000u));
+
+        // The clear-value methods alias the outer PGRAPH registers that the
+        // guest's PB_SETOUTER subprogram reads back (PARAMETER_A/B).
+        Assert.Equal(0x00000000u, nv2A.Read(Base + 0x400000u + 0x1A88u, 4));
+        Assert.Equal(0x11223344u, nv2A.Read(Base + 0x400000u + 0x186Cu, 4));
     }
 
     [Fact]

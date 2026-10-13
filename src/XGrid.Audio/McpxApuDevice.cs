@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using XGrid.Core;
 using XGrid.Core.Devices;
 using XGrid.Memory;
@@ -23,11 +24,16 @@ public interface IApuMemory
 /// <summary>
 /// MCPX APU (audio processing unit) register window at 0xFE800000 (PCI 0:5.0 BAR0, 512 KB;
 /// XboxDevWiki "Memory"). Register layout and semantics follow xemu's MCPX APU
-/// (hw/xbox/mcpx/apu/apu.c and apu/vp/vp.c): global registers below 0x20000 (ISTS/IEN,
-/// FE control, memory port) and the voice-processor front-end PIO region at 0x20000+.
-/// The DSP and voice processor are not emulated yet: FE commands are stored, and
-/// VOICE_OFF completes immediately (voice inactive + notifier status + FEVINTSTS/FENINTSTS),
-/// matching xemu's synchronous voice-off path.
+/// (hw/xbox/mcpx/apu/apu.c, apu/vp/vp.c): global registers below 0x20000 (ISTS/IEN,
+/// FE control, memory port), the voice-processor front-end PIO region at 0x20000+ and the
+/// GP/EP DSP register windows at 0x30000+/0x50000+.
+/// The voice processor keeps per-voice state in guest RAM at VPVADDR + voice*0x80 (xemu
+/// voice_get_mask/voice_set_mask) and advances it one 48 kHz frame (256 samples, the
+/// existing XGrid APU frame quantum) at a time: the current buffer offset walks the voice's
+/// SSL segment list, segment completion flips the SSL index and writes a notifier status,
+/// and voices that finish (or are turned off) report SE2FE_IDLE_VOICE through the FE trap
+/// registers on the next frame. The DSP cores are not executed; their register windows are
+/// stored.
 /// </summary>
 public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 {
@@ -47,6 +53,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint FemMemData = 0x1334;
     private const uint FetForce1 = 0x1504;
     private const uint VpVaddr = 0x202C;
+    private const uint VpSgeAddr = 0x2030;
+    private const uint VpSslAddr = 0x2034;
     private const uint VpPioFree = 0x20010;
     private const uint VpVoiceOn = 0x20124;
     private const uint VpVoiceOff = 0x20128;
@@ -63,18 +71,106 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint FetForce1Se2FeIdleVoice = 1u << 15;
     private const uint Se2FeIdleVoice = 0x00008000;
 
-    private const uint VoiceActiveVoice = 1u << 21;
     private const uint VoiceStateOffset = 0x54;
     private const uint VoiceSize = 0x80;
     private const uint PioFreeCount = 0x80;
+    private const uint MaxVoices = 256;
     private const byte NotificationDoneSuccess = 0x01;
+
+    // Voice state offsets (xemu apu_regs.h NV_PAVS_VOICE_*).
+    private const uint VoiceCfgFmt = 0x04;
+    private const uint VoiceCfgEnva = 0x0C;
+    private const uint VoiceCfgEnvf = 0x14;
+    private const uint VoiceCurPslStart = 0x20;
+    private const uint VoiceCurPshSample = 0x24;
+    private const uint VoiceParState = 0x54;
+    private const uint VoiceParOffset = 0x58;
+    private const uint VoiceParNext = 0x5C;
+    private const uint VoiceTarPitchLink = 0x7C;
+
+    private const uint VoiceStatePaused = 1u << 18;
+    private const uint VoiceStateNewVoice = 1u << 20;
+    private const uint VoiceStateActiveVoice = 1u << 21;
+
+    private const uint VoiceFmtPersist = 1u << 23;
+    private const uint VoiceFmtDataType = 1u << 24;
+    private const uint VoiceFmtLoop = 1u << 25;
+
+    private const uint VoiceEnvelopeMask = 0xF;
+    private const uint VoiceEnvelopeDelay = 1;
+    private const uint VoiceEnvelopeAttack = 2;
+    private const uint VoiceEnvelopeHold = 3;
+
+    private const uint OffsetMask24 = 0x00FFFFFF;
+    private const uint HandleMask16 = 0x0000FFFF;
+
+    // VP PIO method offsets (xemu apu_regs.h NV1BA0_PIO_*).
+    private const uint PioFree = 0x10;
+    private const uint PioSetAntecedentVoice = 0x120;
+    private const uint PioVoiceOn = 0x124;
+    private const uint PioVoiceOff = 0x128;
+    private const uint PioVoiceRelease = 0x12C;
+    private const uint PioVoicePause = 0x140;
+    private const uint PioSetCurrentSsl = 0x190;
+    private const uint PioSetCurrentVoice = 0x2F8;
+    private const uint PioVoiceLock = 0x2FC;
+    private const uint PioSetVoiceCfgVbin = 0x300;
+    private const uint PioSetVoiceCfgFmt = 0x304;
+    private const uint PioSetVoiceCfgEnv0 = 0x308;
+    private const uint PioSetVoiceCfgEnva = 0x30C;
+    private const uint PioSetVoiceCfgEnv1 = 0x310;
+    private const uint PioSetVoiceCfgEnvf = 0x314;
+    private const uint PioSetVoiceCfgMisc = 0x318;
+    private const uint PioSetVoiceTarHrtf = 0x31C;
+    private const uint PioSetVoiceSslA = 0x320;
+    private const uint PioSetVoiceSslB = 0x35C;
+    private const uint PioSetVoiceTarVola = 0x360;
+    private const uint PioSetVoiceTarVolb = 0x364;
+    private const uint PioSetVoiceTarVolc = 0x368;
+    private const uint PioSetVoiceLfoEnv = 0x36C;
+    private const uint PioSetVoiceTarFca = 0x374;
+    private const uint PioSetVoiceTarFcb = 0x378;
+    private const uint PioSetVoiceTarPitch = 0x37C;
+    private const uint PioSetVoiceCfgBufBase = 0x3A0;
+    private const uint PioSetVoiceCfgBufLbo = 0x3A4;
+    private const uint PioSetVoiceBufCbo = 0x3D8;
+    private const uint PioSetVoiceCfgBufEbo = 0x3DC;
+    private const uint PioSetSslSegmentOffset = 0x600;
+    private const uint PioSetSslSegmentEnd = 0x7FF;
+    private const uint PioSetCurrentInbufSge = 0x804;
+    private const uint PioSetCurrentInbufSgeOffset = 0x808;
+    private const uint PioSetOutbufBa = 0x1000;
+    private const uint PioSetOutbufLen = 0x1004;
+    private const uint PioSetCurrentOutbufSge = 0x1800;
+    private const uint PioSetCurrentOutbufSgeOffset = 0x1808;
+
+    private const int NotifierSslaDone = 0;
+    private const uint NotifierBaseOffset = 2;
+    private const uint NotifierCountPerVoice = 4;
+
+    // Voice list registers: top/current/next for 2D, 3D and MP (xemu voice_list_regs).
+    private static readonly uint[] VoiceListTop = { 0x2054, 0x2060, 0x206C };
+    private static readonly uint[] VoiceListCurrent = { 0x2058, 0x2064, 0x2070 };
+    private static readonly uint[] VoiceListNext = { 0x205C, 0x2068, 0x2074 };
 
     /// <summary>Voice-processor frame period (xemu EP_FRAME_US): 256 samples at 48 kHz.</summary>
     private const ulong FrameCycles = (733333333ul * 256ul) / 48000ul;
 
+    /// <summary>Samples consumed per APU frame (the existing XGrid frame quantum).</summary>
+    private const uint FrameSamples = 256;
+
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly IApuMemory _memory;
     private readonly List<ushort> _pendingIdleVoices = new();
+    private readonly ulong[] _voiceLocked = new ulong[MaxVoices / 64];
+    private readonly uint[] _sslBase = new uint[MaxVoices * 2];
+    private readonly byte[] _sslCount = new byte[MaxVoices * 2];
+    private readonly int[] _sslIndex = new int[MaxVoices];
+    private readonly int[] _sslSeg = new int[MaxVoices];
+    private readonly ulong[] _frameVisited = new ulong[MaxVoices / 64];
+    private uint _sslBasePage;
+    private uint _inbufSgeHandle;
+    private uint _outbufSgeHandle;
     private ulong _frameRemainder;
 
     /// <summary>Creates the APU in its power-on state.</summary>
@@ -99,6 +195,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of voice-off completions raised, for diagnostics.</summary>
     public long VoiceOffCompletions { get; private set; }
 
+    /// <summary>Gets the number of SSL segment completions raised, for diagnostics.</summary>
+    public long SegmentCompletions { get; private set; }
+
+    /// <summary>Gets the number of notifier statuses written, for diagnostics.</summary>
+    public long NotifierWrites { get; private set; }
+
     /// <summary>Gets the interrupt status register, for diagnostics.</summary>
     public uint InterruptStatus => _regs[IsTs >> 2];
 
@@ -107,6 +209,9 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the front-end control register, for diagnostics.</summary>
     public uint FrontEndControl => _regs[Fectl >> 2];
+
+    /// <summary>Gets the voice-state page physical address, for diagnostics.</summary>
+    public uint VoicePageAddress => _regs[VpVaddr >> 2];
 
     /// <summary>Gets whether the APU interrupt line is asserted, for diagnostics.</summary>
     public bool InterruptAsserted { get; private set; }
@@ -121,14 +226,22 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     {
         Array.Clear(_regs);
         _pendingIdleVoices.Clear();
+        Array.Clear(_voiceLocked);
+        Array.Clear(_sslBase);
+        Array.Clear(_sslCount);
+        Array.Clear(_sslIndex);
+        Array.Clear(_sslSeg);
+        _sslBasePage = 0;
+        _inbufSgeHandle = 0;
+        _outbufSgeHandle = 0;
         _frameRemainder = 0;
         SetAsserted(false);
     }
 
-    /// <summary>Saves the register file, pending idle-voice queue, frame remainder, and counters.</summary>
-    /// <remarks>The VP/DSP do not exist yet; this snapshots what exists. The guest-memory
-    /// adapter is host wiring and is not serialized. InterruptChanged is not fired on load;
-    /// the PIC latch is restored separately and already matches.</remarks>
+    /// <summary>Saves the register file, voice-processor SSL/lock state, and counters.</summary>
+    /// <remarks>The guest-memory voice-state page is part of the RAM snapshot and is not
+    /// serialized here. The guest-memory adapter is host wiring and is not serialized.
+    /// InterruptChanged is not fired on load; the PIC latch is restored separately.</remarks>
     public void SaveState(BinaryWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -144,10 +257,32 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             writer.Write(voice);
         }
 
+        for (int i = 0; i < _voiceLocked.Length; i++)
+        {
+            writer.Write(_voiceLocked[i]);
+        }
+
+        for (int i = 0; i < _sslBase.Length; i++)
+        {
+            writer.Write(_sslBase[i]);
+            writer.Write(_sslCount[i]);
+        }
+
+        for (int i = 0; i < _sslIndex.Length; i++)
+        {
+            writer.Write(_sslIndex[i]);
+            writer.Write(_sslSeg[i]);
+        }
+
+        writer.Write(_sslBasePage);
+        writer.Write(_inbufSgeHandle);
+        writer.Write(_outbufSgeHandle);
         writer.Write(_frameRemainder);
         writer.Write(ReadCount);
         writer.Write(WriteCount);
         writer.Write(VoiceOffCompletions);
+        writer.Write(SegmentCompletions);
+        writer.Write(NotifierWrites);
         writer.Write(InterruptAsserted);
         writer.Write(_eventLog.Count);
         foreach (string entry in _eventLog)
@@ -156,7 +291,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    /// <summary>Restores the register file, pending idle-voice queue, frame remainder, and counters.</summary>
+    /// <summary>Restores the register file, voice-processor state, and counters.</summary>
     public void LoadState(BinaryReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -172,9 +307,9 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         int pending = reader.ReadInt32();
-        if (pending < 0)
+        if (pending < 0 || pending > MaxVoices)
         {
-            throw new InvalidDataException("Negative APU pending-voice snapshot.");
+            throw new InvalidDataException("Bad APU pending-voice snapshot.");
         }
 
         _pendingIdleVoices.Clear();
@@ -183,10 +318,32 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             _pendingIdleVoices.Add(reader.ReadUInt16());
         }
 
+        for (int i = 0; i < _voiceLocked.Length; i++)
+        {
+            _voiceLocked[i] = reader.ReadUInt64();
+        }
+
+        for (int i = 0; i < _sslBase.Length; i++)
+        {
+            _sslBase[i] = reader.ReadUInt32();
+            _sslCount[i] = reader.ReadByte();
+        }
+
+        for (int i = 0; i < _sslIndex.Length; i++)
+        {
+            _sslIndex[i] = reader.ReadInt32();
+            _sslSeg[i] = reader.ReadInt32();
+        }
+
+        _sslBasePage = reader.ReadUInt32();
+        _inbufSgeHandle = reader.ReadUInt32();
+        _outbufSgeHandle = reader.ReadUInt32();
         _frameRemainder = reader.ReadUInt64();
         ReadCount = reader.ReadInt64();
         WriteCount = reader.ReadInt64();
         VoiceOffCompletions = reader.ReadInt64();
+        SegmentCompletions = reader.ReadInt64();
+        NotifierWrites = reader.ReadInt64();
         InterruptAsserted = reader.ReadBoolean();
         int events = reader.ReadInt32();
         if (events < 0 || events > 128)
@@ -201,11 +358,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private const int SnapshotVersion = 1;
+    private const int SnapshotVersion = 2;
 
     /// <summary>
-    /// Advances voice-processor frame timing. Voices turned off are reported to the front end
-    /// through the SE2FE_IDLE_VOICE message at frame boundaries (xemu vp.c frame processing).
+    /// Advances voice-processor frame timing. Each frame walks the voice lists, advances
+    /// active voices through their buffer/SSL data, reports notifiers on segment completion
+    /// and sends SE2FE_IDLE_VOICE for inactive voices (xemu mcpx_apu_vp_frame).
     /// </summary>
     public void Advance(ulong cycles)
     {
@@ -213,15 +371,178 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         while (_frameRemainder >= FrameCycles)
         {
             _frameRemainder -= FrameCycles;
-            if (_pendingIdleVoices.Count == 0)
-            {
-                continue;
-            }
+            ProcessFrame();
+        }
+    }
 
+    private void ProcessFrame()
+    {
+        Array.Clear(_frameVisited);
+        for (int list = 0; list < VoiceListTop.Length; list++)
+        {
+            uint currentReg = VoiceListCurrent[list] >> 2;
+            uint nextReg = VoiceListNext[list] >> 2;
+            _regs[currentReg] = _regs[VoiceListTop[list] >> 2];
+            for (uint i = 0; _regs[currentReg] != HandleMask16; i++)
+            {
+                if (i >= MaxVoices)
+                {
+                    Log($"voice list overflow list={list} top={_regs[VoiceListTop[list] >> 2]:X} v={_regs[currentReg]:X}");
+                    break;
+                }
+
+                uint voice = _regs[currentReg];
+                if (IsFrameVisited(voice))
+                {
+                    Log($"voice list cycle list={list} v={voice:X}");
+                    break;
+                }
+
+                MarkFrameVisited(voice);
+                _regs[nextReg] = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
+                if ((GetVoiceMask(voice, VoiceParState, uint.MaxValue) & VoiceStateActiveVoice) == 0)
+                {
+                    DeliverIdleVoice((ushort)voice);
+                }
+                else
+                {
+                    AdvanceVoice(voice);
+                }
+
+                _regs[currentReg] = _regs[nextReg];
+            }
+        }
+
+        if (_pendingIdleVoices.Count > 0)
+        {
             ushort voice = _pendingIdleVoices[0];
             _pendingIdleVoices.RemoveAt(0);
             DeliverIdleVoice(voice);
         }
+    }
+
+    private bool IsFrameVisited(uint voice)
+    {
+        return (_frameVisited[voice / 64] & (1UL << (int)(voice % 64))) != 0;
+    }
+
+    private void MarkFrameVisited(uint voice)
+    {
+        _frameVisited[voice / 64] |= 1UL << (int)(voice % 64);
+    }
+
+    private void AdvanceVoice(uint voice)
+    {
+        uint state = GetVoiceMask(voice, VoiceParState, uint.MaxValue);
+        if ((state & VoiceStatePaused) != 0)
+        {
+            return;
+        }
+
+        // Cleared when the first sample is played (xemu voice_get_samples).
+        SetVoiceMask(voice, VoiceParState, VoiceStateNewVoice, 0);
+
+        uint fmt = GetVoiceMask(voice, VoiceCfgFmt, uint.MaxValue);
+        bool stream = (fmt & VoiceFmtDataType) != 0;
+        uint cbo = GetVoiceMask(voice, VoiceParOffset, OffsetMask24);
+        if (stream)
+        {
+            AdvanceStreamVoice(voice, fmt, cbo);
+        }
+        else
+        {
+            AdvanceBufferVoice(voice, fmt, cbo);
+        }
+    }
+
+    private void AdvanceStreamVoice(uint voice, uint fmt, uint cbo)
+    {
+        int index = _sslIndex[voice];
+        int segment = _sslSeg[voice];
+        int count = _sslCount[(voice * 2) + index];
+        if (count == 0)
+        {
+            // The stream has ended (xemu voice_get_samples count == 0 path).
+            SetVoiceMask(voice, VoiceParOffset, OffsetMask24, 0);
+            _sslSeg[voice] = 0;
+            if ((fmt & VoiceFmtPersist) == 0)
+            {
+                _sslIndex[voice] = 0;
+                CompleteVoiceOff(voice, queueIdle: false);
+            }
+            else
+            {
+                WriteNotifierStatus(voice, NotifierSslaDone + index);
+            }
+
+            return;
+        }
+
+        uint page = _sslBase[(voice * 2) + index] + (uint)segment;
+        uint segmentLength = _memory.Read32(_regs[VpSslAddr >> 2] + (page * 8) + 4);
+        uint segmentSamples = segmentLength & HandleMask16;
+        uint ebo = segmentSamples > 0 ? segmentSamples - 1 : 0;
+        cbo += FrameSamples;
+        if (cbo >= ebo)
+        {
+            _sslSeg[voice] = segment + 1;
+            cbo = 0;
+            if (_sslSeg[voice] < count)
+            {
+                // The next segment in this SSL continues on the next frame.
+            }
+            else
+            {
+                _sslIndex[voice] = index ^ 1;
+                _sslSeg[voice] = 0;
+                WriteNotifierStatus(voice, NotifierSslaDone + index);
+                SegmentCompletions++;
+            }
+        }
+
+        SetVoiceMask(voice, VoiceParOffset, OffsetMask24, cbo);
+    }
+
+    private void AdvanceBufferVoice(uint voice, uint fmt, uint cbo)
+    {
+        uint ebo = GetVoiceMask(voice, VoiceParNext, OffsetMask24);
+        cbo += FrameSamples;
+        if (cbo >= ebo)
+        {
+            if ((fmt & VoiceFmtLoop) != 0)
+            {
+                cbo = GetVoiceMask(voice, VoiceCurPshSample, OffsetMask24);
+            }
+            else
+            {
+                cbo = ebo;
+                CompleteVoiceOff(voice, queueIdle: false);
+            }
+        }
+
+        SetVoiceMask(voice, VoiceParOffset, OffsetMask24, cbo);
+    }
+
+    private void CompleteVoiceOff(uint voice, bool queueIdle)
+    {
+        SetVoiceMask(voice, VoiceParState, VoiceStateActiveVoice, 0);
+        bool stream = (GetVoiceMask(voice, VoiceCfgFmt, VoiceFmtDataType) != 0);
+        int notifier = NotifierSslaDone;
+        if (stream)
+        {
+            notifier += _sslIndex[voice];
+        }
+
+        WriteNotifierStatus(voice, notifier);
+        if (queueIdle)
+        {
+            // The voice processor reports the idle voice on its next frame, not
+            // synchronously: delivering it now would race the front end's in-flight
+            // operation counter.
+            _pendingIdleVoices.Add((ushort)voice);
+        }
+
+        VoiceOffCompletions++;
     }
 
     /// <inheritdoc />
@@ -286,44 +607,311 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
                 _memory.Write32(_regs[FemMemAddr >> 2], value);
                 _regs[offset >> 2] = value;
                 break;
-            case VpPioFree:
-                break;
-            case VpVoiceOn:
-                SetVoiceActive(value & 0xFFFF, true);
-                _regs[offset >> 2] = value;
-                break;
-            case VpVoiceOff:
-                VoiceOff(value & 0xFFFF);
-                _regs[offset >> 2] = value;
-                break;
             default:
+                if (offset >= 0x20000 && WriteVoiceProcessor(offset - 0x20000, value))
+                {
+                    break;
+                }
+
                 _regs[offset >> 2] = value;
                 break;
         }
     }
 
+    /// <summary>Dispatches a VP front-end PIO method. Returns true when the method is handled.</summary>
+    private bool WriteVoiceProcessor(uint method, uint value)
+    {
+        switch (method)
+        {
+            case PioFree:
+                return true;
+            case PioSetAntecedentVoice:
+                _regs[0x1118 >> 2] = value;
+                return true;
+            case PioVoiceOn:
+                VoiceOn(value);
+                _regs[VpVoiceOn >> 2] = value;
+                return true;
+            case PioVoiceOff:
+                VoiceOff(value & HandleMask16);
+                _regs[VpVoiceOff >> 2] = value;
+                return true;
+            case PioVoiceRelease:
+                VoiceRelease(value & HandleMask16);
+                return true;
+            case PioVoicePause:
+                SetVoiceMask(value & HandleMask16, VoiceParState, VoiceStatePaused,
+                    (value & (1u << 18)) != 0 ? 1u : 0u);
+                return true;
+            case PioSetCurrentVoice:
+                _regs[0x1110 >> 2] = value;
+                return true;
+            case PioVoiceLock:
+                VoiceLock(_regs[0x1110 >> 2], (value & 1) != 0);
+                return true;
+            case PioSetVoiceCfgVbin:
+                return WriteCurrentVoice(0x00, value);
+            case PioSetVoiceCfgFmt:
+                return WriteCurrentVoice(VoiceCfgFmt, value);
+            case PioSetVoiceCfgEnv0:
+                return WriteCurrentVoice(0x08, value);
+            case PioSetVoiceCfgEnva:
+                return WriteCurrentVoice(VoiceCfgEnva, value);
+            case PioSetVoiceCfgEnv1:
+                return WriteCurrentVoice(0x10, value);
+            case PioSetVoiceCfgEnvf:
+                return WriteCurrentVoice(VoiceCfgEnvf, value);
+            case PioSetVoiceCfgMisc:
+                return WriteCurrentVoice(0x18, value);
+            case PioSetVoiceTarHrtf:
+                SetVoiceMask(_regs[0x1110 >> 2], 0x1C, HandleMask16, value);
+                return true;
+            case PioSetVoiceSslA:
+                SetSsl(_regs[0x1110 >> 2], 0, value);
+                return true;
+            case PioSetVoiceSslB:
+                SetSsl(_regs[0x1110 >> 2], 1, value);
+                return true;
+            case PioSetVoiceTarVola:
+                return WriteCurrentVoice(0x60, value);
+            case PioSetVoiceTarVolb:
+                return WriteCurrentVoice(0x64, value);
+            case PioSetVoiceTarVolc:
+                return WriteCurrentVoice(0x68, value);
+            case PioSetVoiceLfoEnv:
+                return WriteCurrentVoice(0x6C, value);
+            case PioSetVoiceTarFca:
+                return WriteCurrentVoice(0x74, value);
+            case PioSetVoiceTarFcb:
+                return WriteCurrentVoice(0x78, value);
+            case PioSetVoiceTarPitch:
+                {
+                    // The low half of TAR_PITCH_LINK keeps the linked next-voice handle.
+                    uint voice = _regs[0x1110 >> 2];
+                    uint link = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
+                    SetVoiceMask(voice, VoiceTarPitchLink, uint.MaxValue, (value & 0xFFFF0000u) | link);
+                    return true;
+                }
+
+            case PioSetVoiceCfgBufBase:
+                return WriteCurrentVoice(VoiceCurPslStart, value & OffsetMask24);
+            case PioSetVoiceCfgBufLbo:
+                return WriteCurrentVoice(VoiceCurPshSample, value & OffsetMask24);
+            case PioSetVoiceBufCbo:
+                return WriteCurrentVoice(VoiceParOffset, value & OffsetMask24);
+            case PioSetVoiceCfgBufEbo:
+                return WriteCurrentVoice(VoiceParNext, value & OffsetMask24);
+            case PioSetCurrentSsl:
+                _sslBasePage = value;
+                return true;
+            case PioSetCurrentInbufSge:
+                _inbufSgeHandle = value;
+                return true;
+            case PioSetCurrentInbufSgeOffset:
+                WriteSgeEntry(_inbufSgeHandle, value & 0xFFFFF000u);
+                return true;
+            case PioSetCurrentOutbufSge:
+                _outbufSgeHandle = value;
+                return true;
+            case PioSetCurrentOutbufSgeOffset:
+                WriteSgeEntry(_outbufSgeHandle, value & 0xFFFFF000u);
+                return true;
+            default:
+                if (method >= PioSetSslSegmentOffset && method <= PioSetSslSegmentEnd)
+                {
+                    uint address = _regs[VpSslAddr >> 2] + (_sslBasePage * 8) + (method - PioSetSslSegmentOffset);
+                    _memory.Write32(address, value);
+                    return true;
+                }
+
+                if ((method >= PioSetOutbufBa && method < PioSetOutbufBa + 0x40) ||
+                    (method >= PioSetOutbufLen && method < PioSetOutbufLen + 0x40))
+                {
+                    // xemu ignores the outbuf base/length methods.
+                    return true;
+                }
+
+                return false;
+        }
+    }
+
+    private bool WriteCurrentVoice(uint voiceOffset, uint value)
+    {
+        uint voice = _regs[0x1110 >> 2];
+        if (voice >= MaxVoices)
+        {
+            return true;
+        }
+
+        SetVoiceMask(voice, voiceOffset, uint.MaxValue, value);
+        return true;
+    }
+
+    private void SetSsl(uint voice, int ssl, uint value)
+    {
+        if (voice >= MaxVoices)
+        {
+            return;
+        }
+
+        _sslBase[(voice * 2) + ssl] = value >> 8;
+        _sslCount[(voice * 2) + ssl] = (byte)(value & 0xFF);
+    }
+
+    private void WriteSgeEntry(uint handle, uint value)
+    {
+        _memory.Write32(_regs[VpSgeAddr >> 2] + (handle * 8), value);
+    }
+
+    private void VoiceOn(uint value)
+    {
+        uint voice = value & HandleMask16;
+        if (voice >= MaxVoices)
+        {
+            return;
+        }
+
+        bool locked = IsVoiceLocked(voice);
+        if (!locked)
+        {
+            VoiceLock(voice, true);
+        }
+
+        uint feav = _regs[0x1118 >> 2];
+        uint list = (feav >> 16) & 3;
+        if (list != 0)
+        {
+            // Voice is added to the top of the selected list.
+            uint topReg = VoiceListTop[list - 1] >> 2;
+            SetVoiceMask(voice, VoiceTarPitchLink, HandleMask16, _regs[topReg]);
+            _regs[topReg] = voice;
+        }
+        else
+        {
+            // Voice is added after the antecedent voice.
+            uint antecedent = feav & HandleMask16;
+            if (antecedent < MaxVoices)
+            {
+                uint next = GetVoiceMask(antecedent, VoiceTarPitchLink, HandleMask16);
+                SetVoiceMask(voice, VoiceTarPitchLink, HandleMask16, next);
+                SetVoiceMask(antecedent, VoiceTarPitchLink, HandleMask16, voice);
+            }
+        }
+
+        SetVoiceMask(voice, VoiceParOffset, OffsetMask24, 0);
+        _sslIndex[voice] = 0;
+        _sslSeg[voice] = 0;
+
+        // Initial envelope state (xemu NV1BA0_PIO_VOICE_ON_ENVA/ENVF).
+        uint envf = (value >> 24) & VoiceEnvelopeMask;
+        uint enva = (value >> 28) & VoiceEnvelopeMask;
+        SetEnvelopeCount(voice, enva, 0x08, VoiceCfgEnva, 0x0000FFFF);
+        SetEnvelopeCount(voice, envf, 0x10, VoiceCfgEnvf, 0xFFFF0000);
+
+        SetVoiceMask(voice, VoiceParState, VoiceStateActiveVoice, 1);
+
+        if (!locked)
+        {
+            VoiceLock(voice, false);
+        }
+    }
+
+    private void SetEnvelopeCount(uint voice, uint envelope, uint delayOffset, uint holdOffset, uint countMask)
+    {
+        uint count;
+        switch (envelope)
+        {
+            case VoiceEnvelopeDelay:
+                count = GetVoiceMask(voice, delayOffset, 0xFFF << 12) >> 12;
+                count *= 16;
+                break;
+            case VoiceEnvelopeAttack:
+                count = 0;
+                break;
+            case VoiceEnvelopeHold:
+                count = GetVoiceMask(voice, holdOffset, 0xFFF << 12) >> 12;
+                count *= 16;
+                break;
+            default:
+                return;
+        }
+
+        SetVoiceMask(voice, 0x34, countMask, count);
+    }
+
+    private void VoiceRelease(uint voice)
+    {
+        if (voice >= MaxVoices)
+        {
+            return;
+        }
+
+        uint rr = GetVoiceMask(voice, 0x6C, 0xFFF);
+        SetVoiceMask(voice, 0x34, 0x0000FFFF, rr * 16);
+        SetVoiceMask(voice, VoiceParState, 0xF0000000u, 6u << 28);
+
+        rr = GetVoiceMask(voice, 0x18, 0xFFF);
+        SetVoiceMask(voice, 0x34, 0xFFFF0000, rr * 16);
+        SetVoiceMask(voice, VoiceParState, 0x0F000000u, 6u << 24);
+    }
+
     private void VoiceOff(uint voice)
     {
-        Log($"voice-off {voice}");
-        SetVoiceActive(voice, false);
-        WriteNotifierStatus(voice, 0, NotificationDoneSuccess);
-        _regs[IsTs >> 2] |= IsTsFevintsts | IsTsFenintsts;
+        if (voice >= MaxVoices)
+        {
+            return;
+        }
 
-        // The voice processor reports the idle voice on its next frame, not synchronously:
-        // delivering it now would race the front end's in-flight operation counter.
-        _pendingIdleVoices.Add((ushort)voice);
-        VoiceOffCompletions++;
-        UpdateIrq();
+        Log($"voice-off {voice}");
+        CompleteVoiceOff(voice, queueIdle: true);
+    }
+
+    private void VoiceLock(uint voice, bool locked)
+    {
+        if (voice >= MaxVoices)
+        {
+            return;
+        }
+
+        ulong mask = 1UL << (int)(voice % 64);
+        if (locked)
+        {
+            _voiceLocked[voice / 64] |= mask;
+        }
+        else
+        {
+            _voiceLocked[voice / 64] &= ~mask;
+        }
+    }
+
+    private bool IsVoiceLocked(uint voice)
+    {
+        ulong mask = 1UL << (int)(voice % 64);
+        return (_voiceLocked[voice / 64] & mask) != 0;
+    }
+
+    private uint GetVoiceMask(uint voice, uint offset, uint mask)
+    {
+        uint stateAddress = _regs[VpVaddr >> 2] + (voice * VoiceSize) + offset;
+        return (_memory.Read32(stateAddress) & mask) >> BitOperations.TrailingZeroCount(mask);
+    }
+
+    private void SetVoiceMask(uint voice, uint offset, uint mask, uint value)
+    {
+        uint stateAddress = _regs[VpVaddr >> 2] + (voice * VoiceSize) + offset;
+        uint current = _memory.Read32(stateAddress);
+        int shift = BitOperations.TrailingZeroCount(mask);
+        _memory.Write32(stateAddress, (current & ~mask) | ((value << shift) & mask));
     }
 
     private void DeliverIdleVoice(ushort voice)
     {
-        Log($"idle-voice {voice}");
         if ((_regs[FetForce1 >> 2] & FetForce1Se2FeIdleVoice) == 0)
         {
             return;
         }
 
+        Log($"idle-voice {voice}");
         _regs[FedecMeth >> 2] = Se2FeIdleVoice;
         _regs[FedecParam >> 2] = voice;
         _regs[Fectl >> 2] = (_regs[Fectl >> 2] & ~(FectlFemethmode | FectlFetrapreason))
@@ -331,20 +919,16 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         UpdateIrq();
     }
 
-    private void SetVoiceActive(uint voice, bool active)
-    {
-        uint stateAddress = _regs[VpVaddr >> 2] + (voice * VoiceSize) + VoiceStateOffset;
-        uint state = _memory.Read32(stateAddress);
-        state = active ? state | VoiceActiveVoice : state & ~VoiceActiveVoice;
-        _memory.Write32(stateAddress, state);
-    }
-
-    private void WriteNotifierStatus(uint voice, int notifier, byte status)
+    private void WriteNotifierStatus(uint voice, int notifier)
     {
         // FENADDR + 16 * (2 + voice * 4 + notifier), status in the last byte (xemu set_notify_status).
-        uint notifyOffset = _regs[FenAddr >> 2] + (16u * (2 + (voice * 4) + (uint)notifier));
-        _memory.Write8(notifyOffset + 15, status);
+        uint notifyOffset = _regs[FenAddr >> 2]
+            + (16u * (NotifierBaseOffset + (voice * NotifierCountPerVoice) + (uint)notifier));
+        _memory.Write8(notifyOffset + 15, NotificationDoneSuccess);
         _memory.Write8(notifyOffset - 1, 1);
+        _regs[IsTs >> 2] |= IsTsFevintsts | IsTsFenintsts;
+        NotifierWrites++;
+        UpdateIrq();
     }
 
     private void UpdateIrq()
