@@ -4438,3 +4438,102 @@ MIN/MAG filter modes) for whenever a DXT/mipmap workload appears (e.g.
 nxdk-mesh once built). Priority: **DXT decode deprioritized; `0x30`
 depth-format semantics open** (needs per-draw combiner tracing to
 decide shadow-map vs dead stage).
+
+## 106. Unsigned-XBE bring-up: triangle.xbe renders — NO_OPERATION stall + surface DMA-context bases (2026-10-13)
+
+Worktree `wave/xbe-bringup` (main checkout untouched; logs/frames in
+`Temp\opencode\xbe-bringup\`). Acceptance MET: `triangle.xbe` executes
+through the real kernel and renders; `--frame` BMP shows the pbkit
+triangle (red/green/blue Gouraud foreground, dark-blue background pair,
+black clear), 35,519 unique colors, no fault.
+
+**§104 crash root cause (three coupled emulator gaps, not a guest
+error and not a signature check).** The fault was NOT fault-delivery:
+a pbkit `pb_erase_depth_stencil_buffer` clear (pushbuffer at phys
+`0x3F5B0xx`) wrote `0xFFFFFF00` over physical `0..0x12C000` — wiping
+the IDT, page directory (PDEs all `0xFFFFFF00`), kernel and XBE — then
+the next fetch hit a `FF FF` fill byte (#UD at VA `0x1F16A`), the #UD
+gate was already trashed (offset `0xFFFFFF00`, selector `0xFFFF`), the
+handler fetch faulted, and the #PF frame push walked off the stack into
+the unmapped page below `0xD003F000` → the unhandled double-fault-class
+`PageFaultSignal`. RAM dump at the storm: fill runs `0x0..0x121A10` +
+`0x121A1C..0x12C000` (+ two 2.4–4 MB pbkit buffer fills), `XBEH` gone.
+The clear was legitimate: pbkit sets `SET_SURFACE_ZETA_OFFSET=0` and
+`SET_SURFACE_COLOR_OFFSET=0` because its color/zeta surfaces are the
+DMA-context bases, and it updates the RAMIN DMA objects (frame =
+back-buffer/depth-buffer physical address) through its `PB_SETOUTER`
+subprogram (`0x0100` fire-interrupt + `PARAMETER_A/B`). XGrid executed
+all of that wrong:
+
+1. **`NV097_NO_OPERATION` (0x100) must stall the pusher.** xemu sets
+   `waiting_for_nop` and `pfifo_pusher_should_stall` returns until the
+   guest writes `NV_PGRAPH_INTR` (which clears it and `pfifo_kick`s).
+   XGrid raised the notification but processed the rest of the
+   pushbuffer synchronously, so the clear ran before the guest DPC
+   updated the DMA objects. Implemented `_waitingForNop` in
+   `RunPusher` (early return + loop break after the data word) and the
+   ack in `WritePgraph(0x100)`.
+2. **Resume must be deferred one tick.** pbkit acks the notification
+   *before* reading `PARAMETER_A/B` (`pb_gr_handler`:
+   `VIDEOREG(NV_PGRAPH_INTR)=ERROR_RESET;` then `pb_subprog(...)`).
+   Resuming the pusher synchronously inside the ack write would clobber
+   the parameters with the *next* pair and drop the frame/base write.
+   Implemented `_pusherKickPending`, consumed at the top of
+   `Nv2aMmio.Advance` — the guest's handler always completes first
+   (model of GPU-engine latency).
+3. **`0x1D8C`/`0x1D90` are PARAMETER_A/B aliases.** pbkit reads the
+   outer registers `NV_PGRAPH_ZSTENCILCLEARVALUE` (`0x1A88`) and
+   `NV_PGRAPH_COLORCLEARVALUE` (`0x186C`) in `pb_subprog`; xemu mirrors
+   `SET_ZSTENCIL_CLEAR_VALUE`/`SET_COLOR_CLEAR_VALUE` into them. XGrid
+   only kept private fields, so the subprogram read zeros and wrote
+   `0` to PMC. Both methods now also write `_pgraph[0x1A88/4]` and
+   `_pgraph[0x186C/4]`.
+4. **Surface address = DMA-context base + surface offset.** xemu
+   `populate_surface_binding_entry_sized`: `vram_addr = dma.address +
+   surface->offset` where the DMA object is loaded from the context
+   handle. Added `MethodContextDmaColor` (`0x194`) + `_dmaColor`,
+   `TryResolveDmaContext` (RAMHT handle → instance → flags/limit/frame,
+   adjust shifted like xemu `GET_MASK`), `SurfaceBase` and
+   `SurfaceFitsContext` (xemu's limit assert; unresolved handles fall
+   back to base 0 so raw-offset titles like the dashboard are
+   unchanged). Applied to `ExecuteClear` (color+zeta, with limit
+   guard), the fragment color/zeta writes (bases resolved once per
+   triangle in `FillTriangle`/`FillTrianglePsh`), and
+   `CapturePresentedFrame` (`_presentedOffset = base + offset`).
+   Evidence at 1.5256B: RAMIN handle 9 frame `0x3BD4003` limit
+   `0x12BFFF` (back buffer), handle 0xA frame `0x3AA8003` (depth
+   buffer) — the guest subprograms now land. Reference:
+   `xemu hw/xbox/nv2a/pgraph/gl/surface.c:1042-1060`,
+   `pgraph.c:823-857` (NO_OPERATION), `pfifo.c:490-509` (RAMHT hash),
+   `nv2a.c:56-71` (`nv_dma_load`).
+
+**Live evidence.** Snapshot `prelaunch.xgs` at 525.6M (plain-run world;
+EIP `0x8001E361`; the old §104 525,703,663 launch figure was
+break-log-world pacing). Probes:
+`--load-state prelaunch.xgs --steps 1000000000 --frame f.bmp` completes
+**1B steps, `LastFault vec=0`**, `draws=2749 pixels=108.5M clears=15477
+frames=111`, presented surface `0x3E2C000` 640x480 pitch 2560; BMP
+bottom row `(255,0,0)→(0,0,255)` red-to-blue Gouraud ramp, green vertex
+at (320,100), dark-blue background pair. Fresh `boot --dvd triangle.iso
+--steps 1000000000` (no snapshot): **no fault**, `draws=2706
+pixels=88.9M frames=68`, same triangle frame. **Dashboard regression
+check** (HDD boot, `--steps 1700000000`): **no fault**,
+`zclipCull=21526` unchanged, frame is the blue EvoX menu (8,390 sampled
+colors, ASCII downsample shows text rows). Note: the stall now paces
+the pusher faithfully, so dashboard counters move (3480 flips vs the
+§43 33-flip baseline) — the menu runs continuously instead of the
+synchronous-pusher park; §43/§101 counter baselines need re-recording.
+
+**Files:** `src/XGrid.Nv2a/Nv2aMmio.cs` (stall/kick/pending, parameter
+mirrors, DMA context fields + helpers, clear/draw/present addressing,
+`Nv2aSnapshotVersion 1→2`); `tests/XGrid.Nv2a.Tests/PfifoPusherTests.cs`
+(`NoOperationWithParameter_StallsPusherUntilPgraphIntrAck`,
+`ClearSurface_AppliesColorDmaContextBase`; the old
+`IncreasingMethod_DispatchesToSink` now uses a zero parameter since
+non-zero is a stall). Suite 1098/1098 (was 1096); build + format clean.
+
+**Open:** the snapshot version bump invalidates pre-fix `.xgs` files
+(regenerate); `pbkit` presents via `NV_PGRAPH_INCREMENT` (`0x71C`)
++ `PCRTC_START` rather than method `0x12C`, so the captured frame comes
+from the dashboard-style flip path — a dedicated pbkit present hook is
+optional follow-up; kernel-test-suite sample not yet tried.
