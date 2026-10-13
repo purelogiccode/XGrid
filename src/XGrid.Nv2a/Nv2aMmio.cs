@@ -552,6 +552,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets or sets the method stream cap (0 uncaps). Diagnostics.</summary>
     public ulong MethodStreamCap { get; set; } = 262144;
 
+    /// <summary>
+    /// Optional GPU-backend seam (slice 1). When null (the default and the
+    /// <c>--gpu sw</c> path) behavior is byte-identical to the un-seamed
+    /// software path; when attached the software path still executes
+    /// unconditionally and the backend observes the same resolved state
+    /// synchronously at the flush sites.
+    /// </summary>
+    public IPgraphBackend? Backend { get; set; }
+
     /// <summary>Gets the number of executed surface clears. Diagnostics.</summary>
     public uint ClearsExecuted { get; private set; }
 
@@ -984,6 +993,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _retrace = false;
         _pfifo[PfifoCache1Status / 4] = PfifoCache1StatusLowMark;
         _pfb[PfbCfg0 / 4] = PfbCfg0Reset;
+        Backend?.ResetState();
     }
 
     /// <summary>Saves FIFO positions, PGRAPH/method state, surfaces, flip/semaphore/PRAMIN, texture/combiner/zclip/fog/exotic state, and all diagnostic counters.</summary>
@@ -1572,6 +1582,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _methodStream.Add((reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32()));
         }
+
+        // Backend state is host-side only and not part of the snapshot
+        // format (v2 stays software-reproducible): drop it and let the
+        // backend rebuild from guest state as methods flow again.
+        Backend?.ResetState();
     }
 
     private const int Nv2aSnapshotVersion = 2;
@@ -2575,6 +2590,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _methodStream.Add((subchannel, method, parameter));
         }
 
+        Backend?.Method(subchannel, method, parameter);
+
         switch (method)
         {
             case MethodNoOperation:
@@ -2761,6 +2778,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
                     FramesPresented++;
                     CapturePresentedFrame();
+                    Backend?.Flip(new PgraphSurfaceRecord(
+                        _surfaceClipH >> 16, _surfaceClipV >> 16,
+                        ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented));
                     break;
                 }
             case MethodFlipStall:
@@ -3329,6 +3349,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        bool backendClearColor = false;
+        bool backendClearZeta = false;
+
         if ((_surfaceFormat & 0xF00u) >> 8 != SurfaceTypePitch)
         {
             return;
@@ -3380,6 +3403,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     });
                     FillSurface(SurfaceBase(_dmaColor) + PresentedColorOffset, pitch, bytes, xmin, ymin, x1, y1,
                         pixel);
+                    backendClearColor = true;
                 }
             }
         }
@@ -3400,8 +3424,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 {
                     uint pixel = _zetaClearValue & (bytes == 4 ? 0xFFFFFFFFu : 0xFFFFu);
                     FillSurface(SurfaceBase(_dmaZeta) + _surfaceZetaOffset, pitch, bytes, xmin, ymin, x1, y1, pixel);
+                    backendClearZeta = true;
                 }
             }
+        }
+
+        if (Backend is not null && (backendClearColor || backendClearZeta))
+        {
+            uint zetaBytesBackend = ((_surfaceFormat >> 4) & 0xFu) switch
+            {
+                ZetaFormatZ16 => 2u,
+                ZetaFormatZ24S8 => 4u,
+                _ => 0u,
+            };
+            Backend.Clear(new PgraphClearInfo(
+                backendClearColor, backendClearZeta,
+                xmin, ymin, x1, y1,
+                _surfaceClipH & 0xFFFFu, _surfaceClipV & 0xFFFFu,
+                _surfaceClipH >> 16, _surfaceClipV >> 16,
+                _colorClearValue, _zetaClearValue,
+                ColorBytesPerPixel(_surfaceFormat & 0xFu), zetaBytesBackend,
+                _zFormatFloat));
         }
     }
 
@@ -4358,12 +4401,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return CountSample(address, texel, r, g, b);
     }
 
-    private static bool IsLinearTextureFormat(uint color)
+    public static bool IsLinearTextureFormat(uint color)
     {
         return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu;
     }
 
-    private static uint TextureFormatBytesPerTexel(uint color)
+    public static uint TextureFormatBytesPerTexel(uint color)
     {
         return color switch
         {
@@ -4379,7 +4422,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// R5G6B5, A8R8G8B8 and the X8 alpha-ignored variants); SZ and LU variants
     /// of a format share the layout.
     /// </summary>
-    private static void DecodeTextureTexel(uint color, uint texel, out float r, out float g, out float b, out float a)
+    public static void DecodeTextureTexel(uint color, uint texel, out float r, out float g, out float b, out float a)
     {
         switch (color)
         {
@@ -4584,7 +4627,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private static int WrapCoordinate(int value, int size, int mode)
+    public static int WrapCoordinate(int value, int size, int mode)
     {
         switch (mode)
         {
@@ -4607,7 +4650,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private static uint SwizzleOffset(int x, int y, int width, int height)
+    public static uint SwizzleOffset(int x, int y, int width, int height)
     {
         uint maskX = 0u;
         uint maskY = 0u;
@@ -4741,7 +4784,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// formats return 1, so shader Z passes through exactly like the legacy
     /// direct clamp.
     /// </summary>
-    private static float ZetaDepthRange(uint zetaFormat, bool floatDepth)
+    public static float ZetaDepthRange(uint zetaFormat, bool floatDepth)
     {
         if (floatDepth)
         {
@@ -4766,7 +4809,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// util.h convert_f16_to_float: zero is exact zero, otherwise the field
     /// is shifted into float32 mantissa position over a small bias).
     /// </summary>
-    private static float ConvertF16ToFloat(uint f16)
+    public static float ConvertF16ToFloat(uint f16)
     {
         if (f16 == 0)
         {
@@ -4781,7 +4824,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// util.h convert_f24_to_float: zero is exact zero, otherwise the field
     /// is shifted into float32 mantissa position).
     /// </summary>
-    private static float ConvertF24ToFloat(uint f24)
+    public static float ConvertF24ToFloat(uint f24)
     {
         f24 &= 0xFFFFFFu;
         if (f24 == 0)
@@ -4800,7 +4843,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// 0xFFF8), so the result saturates there; that bin decodes to
     /// 511.5/511.9375 and the clamp preserves ordering.
     /// </summary>
-    private static uint ConvertFloatToF16(float depth)
+    public static uint ConvertFloatToF16(float depth)
     {
         float scaled = Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeF16;
         uint bits = BitConverter.SingleToUInt32Bits(scaled);
@@ -4817,7 +4860,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// field (inverse of <see cref="ConvertF24ToFloat"/>). The float maximum
     /// sits far below this encoding's wrap point, so no saturation is needed.
     /// </summary>
-    private static uint ConvertFloatToF24(float depth)
+    public static uint ConvertFloatToF24(float depth)
     {
         float scaled = Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeF24;
         return (BitConverter.SingleToUInt32Bits(scaled) >> 7) & 0xFFFFFFu;
@@ -4833,7 +4876,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// overflow). Capping stores 0xFFFFFF, which decodes back to exactly 1.0
     /// and is the value xemu's D24 path stores for device z = clipRange.w.
     /// </summary>
-    private uint EncodeDepth24(float depth)
+    public uint EncodeDepth24(float depth)
     {
         if (_zFormatFloat)
         {
@@ -4851,7 +4894,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <see cref="EncodeDepth24"/> (unreachable with the current float
     /// arithmetic, kept as a guard).
     /// </summary>
-    private uint EncodeDepth16(float depth)
+    public uint EncodeDepth16(float depth)
     {
         if (_zFormatFloat)
         {
@@ -4941,6 +4984,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         width = 0;
         height = 0;
         bgra = Array.Empty<byte>();
+        if (Backend is not null)
+        {
+            // Backend attached: the presented frame is exclusively the
+            // backend's readback — never a mix of software and GPU pixels.
+            return Backend.ReadbackPresented(out width, out height, out bgra);
+        }
+
         if (!_presentedValid || _memory is null)
         {
             return false;
@@ -5243,6 +5293,80 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
+    private PgraphFragmentState BuildFragmentState()
+    {
+        return new PgraphFragmentState(
+            _alphaTestEnable, _alphaFunc, _alphaRef,
+            _blendEnable, _blendSrcFactor, _blendDstFactor, _blendColor, _blendEquation,
+            _depthTestEnable, _depthFunc, _depthMask,
+            _colorMask,
+            _stencilTestEnable, _stencilWriteMask, _stencilFunc, _stencilRef,
+            _stencilReadMask, _stencilOpFail, _stencilOpZfail, _stencilOpZpass,
+            _zclipActive, _zclipMin, _zclipMax, _zclipCull);
+    }
+
+    private PgraphTextureSlot BuildTextureSlot(int slot)
+    {
+        return new PgraphTextureSlot(
+            _textureOffset[slot], _textureFormat[slot], _textureAddress[slot],
+            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot]);
+    }
+
+    private PgraphDrawInfo BuildDrawInfo(
+        in PshVertex a, in PshVertex b, in PshVertex c,
+        uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint zetaBytes, bool combinerActive)
+    {
+        return new PgraphDrawInfo(
+            ToBackendVertex(a), ToBackendVertex(b), ToBackendVertex(c),
+            clipX, clipY, clipW, clipH,
+            bytes, zetaBytes, combinerActive,
+            BuildFragmentState(),
+            BuildTextureSlot(0), BuildTextureSlot(1), BuildTextureSlot(2), BuildTextureSlot(3),
+            _combiner,
+            _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
+            _shaderClipMode,
+            _zFormatFloat);
+    }
+
+    private PgraphDrawInfo BuildLegacyDrawInfo(
+        float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av,
+        float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv,
+        float cx, float cy, float cz, float cw, float cr, float cg, float cb, float ca, float cu, float cv,
+        uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint zetaBytes)
+    {
+        // The non-combiner fill path (legacy inline draws and program draws
+        // with the final combiner disabled) only consumes position, diffuse
+        // and the oT0 texcoord pair; fog/spec are unused and the fog factor
+        // is irrelevant because the combiner never reads it here.
+        var a = new PgraphVertex(ax, ay, az, aw, ar, ag, ab, aa, 0f, 0f, 0f, 0f, au, av, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        var b = new PgraphVertex(bx, by, bz, bw, br, bg, bb, ba, 0f, 0f, 0f, 0f, bu, bv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        var c = new PgraphVertex(cx, cy, cz, cw, cr, cg, cb, ca, 0f, 0f, 0f, 0f, cu, cv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        return new PgraphDrawInfo(
+            a, b, c,
+            clipX, clipY, clipW, clipH,
+            bytes, zetaBytes, combinerActive: false,
+            BuildFragmentState(),
+            BuildTextureSlot(0), BuildTextureSlot(1), BuildTextureSlot(2), BuildTextureSlot(3),
+            _combiner,
+            _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
+            _shaderClipMode,
+            _zFormatFloat);
+    }
+
+    private static PgraphVertex ToBackendVertex(in PshVertex v)
+    {
+        return new PgraphVertex(
+            v.X, v.Y, v.Z, v.W,
+            v.DiffuseR, v.DiffuseG, v.DiffuseB, v.DiffuseA,
+            v.SpecR, v.SpecG, v.SpecB, v.SpecA,
+            v.U0, v.V0, v.S0,
+            v.U1, v.V1, v.S1,
+            v.U2, v.V2, v.S2,
+            v.U3, v.V3, v.S3,
+            v.T0W, v.T1W, v.T2W, v.T3W,
+            v.Fog);
+    }
+
     private void FillTriangle(
         float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av,
         float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv,
@@ -5268,6 +5392,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             return;
         }
+
+        Backend?.Draw(BuildLegacyDrawInfo(
+            ax, ay, az, aw, ar, ag, ab, aa, au, av,
+            bx, by, bz, bw, br, bg, bb, ba, bu, bv,
+            cx, cy, cz, cw, cr, cg, cb, ca, cu, cv,
+            clipX, clipY, clipW, clipH, bytes, zetaBytes));
 
         float invArea = 1f / area;
         float invAw = aw != 0f ? 1f / aw : 0f;
@@ -5924,6 +6054,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             return;
         }
+
+        Backend?.Draw(BuildDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true));
 
         float invArea = 1f / area;
         float invAw = a.W != 0f ? 1f / a.W : 0f;

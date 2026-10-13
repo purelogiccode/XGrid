@@ -91,6 +91,7 @@ internal static class Program
         bool noEosQuirk = false;
         bool idleSkip = false;
         bool idleSkipProbe = false;
+        string gpuBackend = "sw";
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -232,6 +233,9 @@ internal static class Program
                 case "--idle-skip-probe":
                     idleSkipProbe = true;
                     break;
+                case "--gpu":
+                    gpuBackend = NextValue(args, ref i);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -292,6 +296,28 @@ internal static class Program
             machine.Nv2A.MethodStreamCap = pgraphMax;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             Console.WriteLine($"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+
+            if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) && !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine($"Invalid --gpu '{gpuBackend}' (expected sw|gl)");
+                return 1;
+            }
+
+            if (string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
+            {
+                // Slice-1 GPU backend: probe-gated; on failure fall back to
+                // software for the session (Backend stays null).
+                var gpuMemory = new MachineGpuMemory(machine.Memory);
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out XGrid.Nv2a.IPgraphBackend? gpuBackendInstance, out string gpuWhy))
+                {
+                    machine.Nv2A.Backend = gpuBackendInstance;
+                    Console.WriteLine($"GPU backend=gl {gpuWhy}");
+                }
+                else
+                {
+                    Console.WriteLine($"GPU backend=sw (gl probe failed: {gpuWhy})");
+                }
+            }
 
             if (idleSkip || idleSkipProbe)
             {
@@ -1475,6 +1501,10 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         }
 
         Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
+        if (machine.Nv2A.Backend is not null)
+        {
+            Console.WriteLine($"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported}");
+        }
         var pmcEnLogText = new System.Text.StringBuilder();
         foreach (uint entry in machine.Nv2A.PmcIntrEnLog)
         {
@@ -1977,6 +2007,27 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         return args[++index];
     }
 
+    /// <summary>IGpuMemory adapter over the machine's physical address space (backend texture reads).</summary>
+    private sealed class MachineGpuMemory : XGrid.Nv2a.IGpuMemory
+    {
+        private readonly AddressSpace _memory;
+
+        public MachineGpuMemory(AddressSpace memory)
+        {
+            _memory = memory;
+        }
+
+        public uint ReadPhysical(uint address)
+        {
+            return _memory.Read32(address);
+        }
+
+        public void WritePhysical(uint address, uint value)
+        {
+            _memory.Write32(address, value);
+        }
+    }
+
     private static void PrintUsage()
     {
         Console.WriteLine("XGrid - original Xbox emulator");
@@ -1985,7 +2036,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
