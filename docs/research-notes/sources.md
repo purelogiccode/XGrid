@@ -1,6 +1,6 @@
 # Reference Sources and Licensing Inventory
 
-Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace added)
+Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace, xemu-Playtest-v2 added)
 Policy: XGrid is a clean-room reimplementation. These notes record factual hardware/format
 knowledge (addresses, register maps, struct layouts, protocol constants, algorithms). No source
 code from any reference project is copied into XGrid unless its license explicitly permits it and
@@ -11,6 +11,7 @@ the reuse is recorded below.
 | Project | Version/Snapshot | Upstream | License | Code copied? |
 |---|---|---|---|---|
 | xemu | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
+| xemu-Playtest-v2 | local snapshot 2026-09 (QEMU 10.2.0 base) | xemu in-development fork (Sega Chihiro arcade bring-up); no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | No — facts only |
 | xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | none declared | No — facts only |
@@ -24,6 +25,7 @@ the reuse is recorded below.
 Downloaded 2026-10-12 (extract into `References/`; GitHub zips carry these
 root folder names):
 - xemu 0.8.136 — https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip
+- xemu-Playtest-v2 — no upstream URL recorded (operator-supplied local snapshot); ask the operator.
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
 - Copetti "Xbox Architecture" — `References/CopettiDocumentation/` (article:
@@ -58,6 +60,17 @@ root folder names):
     `nv2a/pgraph/glsl/vsh-prog.c/h`, `nv2a/pgraph/vsh_regs.h`.
 - The QEMU base itself is GPL-2.0. XGrid must not depend on QEMU.
 - Verdict: read for facts only. Do not copy code/tables/comments.
+
+### xemu-Playtest-v2 (in-development Chihiro fork)
+- Operator-supplied local snapshot; **QEMU 10.2.0** base (`QEMU_VERSION`), xemu UI/settings
+  present; new files copyright 2026 Réda Chérif-Touil. No upstream URL recorded.
+- Purpose per operator: in-development fork to bring up the **Sega Chihiro** (arcade) board.
+- vs 0.8.136: full `hw/xbox/chihiro/` subsystem; NV2A performance work (the "tuned GPU":
+  `pgraph/cost.c`, `seed.c`, `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the
+  un-tuned baseline vendored as `hw/xbox/nv2a-stock/` (`diff -ru` isolates the perf delta);
+  `xid-light-gun.c`; SMBus `adm1032`/`cx25871`/`fs454`/`xcalibur`; 5 newer NV097 methods.
+- License: xemu-family (GPL-2.0 overall; per-file LGPL-2+/MIT/GPL-2+). Verdict: facts only.
+- See `docs/research-notes/xemu-playtest-v2.md`.
 
 ### Xermu - WITHDRAWN (never a real reference)
 - Older drafts of this inventory listed a "Xermu" standalone C# Xbox emulator
@@ -154,7 +167,8 @@ root folder names):
 | SMBus/SMC/EEPROM | xemu `amd_smbus.c`, `smbus_xbox_smc.c`, `eeprom_generation.c` | xqemu same | EEPROM layout/crypto |
 | Flash | xemu `xbox.c` (ROM window/alias only) | - | AMD/SST CFI command set still pending; implement clean-room (Phase 6) |
 | APU | xemu `mcpx/apu/**` | xqemu `mcpx_apu.c` (single file) | DSP56300 semantics |
-| NV2A registers/PFIFO/PGRAPH | xemu `hw/xbox/nv2a/**` | Cxbx `nv2a_regs.h`, xqemu | NV097 method map |
+| NV2A registers/PFIFO/PGRAPH | xemu `hw/xbox/nv2a/**` | Cxbx `nv2a_regs.h`, xqemu, xemu-Playtest-v2 | NV097 method map (+5 newer methods in Playtest-v2) |
+| GPU backend performance design | **xemu-Playtest-v2 `nv2a` vs `nv2a-stock` diff** (cost model, shader seeds, uniform cache, writeback, driver probe) | xemu 0.8.136 `pgraph/` | Facts for the future host-GPU backend; `diff -ru` isolates the perf delta |
 | Shaders (VSH/PSH) | Cxbx `nv2a_vsh/psh.cpp` | xemu `pgraph/glsl/**` (GPL) | Behavior only |
 | Texture swizzle | Cxbx `swizzle.cpp` (LGPL-2) | xemu `pgraph/swizzle.c` | Algorithm facts |
 | USB OHCI + XID | xemu `xid.c`, Cxbx `OHCI.cpp` | xqemu `xid.c` | Report formats |

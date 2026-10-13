@@ -32,6 +32,11 @@ algorithms) rather than performing a mechanical source translation. Full extract
    - Primary reference for Xbox hardware behavior and mature compatibility.
    - Xbox machine/memory map, PCI IDs and IRQ routing, PIII CPUID/MSR quirks, MCPX
      (SMBus/SMC/EEPROM/flash/ACPI/ACI), NV2A (PFIFO/PGRAPH/renderer), APU, USB/XID, nvnet.
+   - Newer in-development fork: `References/xemu-Playtest-v2` (QEMU 10.2 base, Sega Chihiro
+     arcade bring-up). Its NV2A carries host-GPU performance work (cost model, shader seeds,
+     uniform cache, writeback heuristics, driver probe) with an un-tuned `nv2a-stock/`
+     baseline to diff against — fact source for the GPU-backend performance track. See
+     `docs/research-notes/xemu-playtest-v2.md`.
 
 3. **Cxbx-Reloaded** — `References/Cxbx-Reloaded-master` — GPL-2.0
    - Reference for XBE format (exact struct offsets), kernel ordinal semantics, NV2A/NV097
@@ -3367,7 +3372,8 @@ Synthetic page-table tests and TLB invalidation tests; CPU executes code through
 ### PCI device topology (verified against xemu `hw/xbox/xbox.c`)
 
 Process directive: **consult the reference projects first** (`References/xemu-0.8.136`,
-`References/xqemu-master`, `References/Cxbx-Reloaded-master`,
+`References/xemu-Playtest-v2` (newer NV2A/perf cross-check), `References/xqemu-master`,
+`References/Cxbx-Reloaded-master`,
 `References/envytools-master` for NV2A method/register/XF facts, `References/nv2a-trace-master`
 for pushbuffer/PGRAPH tracing facts, `References/XboxDevWiki`, `References/CopettiDocumentation`
 for high-level architecture) to
