@@ -4703,3 +4703,119 @@ wall-clock dependence).
 
 **Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
 §104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
+
+## §109 — Triangle diagonal hatch fixed: depth compare quantized to zeta precision (2026-10-13)
+
+Work in `Temp\opencode\worktrees\triangle-hatch` (`wave/triangle-hatch`).
+Closes the §106 follow-up "diagonal hatch artifact inside the triangle".
+Acceptance met on all four points (evidence below).
+
+**What the hatch was (evidence chain, differential-first).** Baseline
+unmodified `triangle.xbe` boot (1B steps, private media copies, `--frame`
+SHA256 `72F880C75F18D8E8EABA867C47DA415E27DD654A2344DED8DFADB3F6A73248DF`)
+shows diagonal stripes inside the rendered triangle. The stripes are **RGB,
+not alpha** (frame pixels A=`FF` on both sides of every stripe): scanline
+y=200 alternates between the foreground Gouraud ramp (`R=6A G=94 B=00`
+progressing) and the background triangle's constant gradient color
+(`0B0B40`) — i.e. foreground fragments randomly failing the depth test and
+letting the already-drawn background show through. The demo
+(`data/test-samples/nxdk-triangle/main.c`) draws **three triangles at the
+same Z** in one `TRIANGLES` draw; `vs.vs.cg` computes
+`position.xyz /= position.w` in-shader with w=1, so every vertex leaves the
+program at device z = 65536 (viewport bake `1.0 * (zmax - zmin)`). The
+pusher stream shows depth enable `030C=1`, depth func `0354=00000203`
+(LEQUAL), depth mask on, stencil test off, `Z_FORMAT` **clear** (`0290`
+values are `0x00100001`/`0x00110001` — bits 16/20, never bit 12), ZCLIP
+`[0, 16777215]`, `1D78=CULL`, and the pbkit clear `1D8C=FFFFFF00`
+(depth field 1.0).
+
+**Root cause (XGrid diverged from hardware).** Reference fact, xemu
+`pgraph/glsl/psh.c:1491-1516`: *"With integer depth buffers Xbox hardware
+floors values"* — the reference fragment shader writes an already-quantized
+`gl_FragDepth` (`floor(zvalue)` in device units for D16/D24), and the GL /
+Vulkan / D3D pipelines all convert FragDepth to the attachment's precision
+**before** the fixed-function depth test. XGrid instead compared the raw
+float interpolated depth (`w1*az + w2*bz + w0*cz`, ULP noise because the
+barycentric weights only sum to 1 approximately) against the stored depth
+decoded from the quantized zeta field. All three coplanar triangles encode
+to the same field (device 65536 -> field `0x10000`), but the unquantized
+fragment floats straddle the stored decode by ~1 ULP: LEQUAL passes where
+the interpolation rounds down and fails where it rounds up -> per-pixel
+interleaving of pass/fail = the diagonal hatch (weights vary smoothly along
+diagonals, so the rounding pattern does too). Exact single-precision
+replication of `FillTriangle`'s formulas confirmed the mechanism: geometry
+A = 12/64, geometry B = 7/64 sampled pixels with `interp > stored` (the
+isolated unit test failed with exactly 12/64 undrawn pre-fix).
+
+**Fix (`src/XGrid.Nv2a/Nv2aMmio.cs`, `ProcessFragment`).** When the depth
+test runs, the fragment depth is encoded through the same conversion the
+store uses (`EncodeDepth24`/`EncodeDepth16` -> fixed D24/D16 integer or
+F24/F16 custom-float field) and the compare happens in **zeta field space**
+against the raw stored field (monotonic with the stored value). NaN keeps
+the old IEEE float-compare path (ordered relations false, as before). The
+store path, ZCLIP order (cull/clamp first), stencil ops, and all counters
+are unchanged.
+
+**Test-harness bug found while building the repro (also fixed).**
+`PgraphTransformTests.PushMethods` kicked with `PUT = address + 4`,
+*including* the trailing `0x00001001` word. That word is an NV **jump to
+0x1000** control word (`(word & 3) == 1`); PUT (~0xE4) != 0x1000, so the
+pusher ran past the stream into scratch memory, misparsed vertex floats
+(e.g. `0x3F800000` parses as jump-to-`0x1F800000`), and suspended with
+`DmaErrorProtection` (err=6) after **every** single-draw test. A second
+`PushMethods` kick in the same test was therefore always dead — notably
+`FloatDepth_OrderingMatchesFixed`'s second draw never actually ran (its
+assertions hold vacuously; unchanged expectations, now non-vacuous if
+relied upon). `PushMethods` now sets `PUT = data-end` (the pusher stops
+cleanly at `get == put` before the barrier) and a new
+`PushMethodsContinue` appends a second stream at the current GET, the way
+guests push contiguously. All 203 pre-existing Nv2a tests pass unchanged
+with the new kick semantics.
+
+**New tests (2, `tests/XGrid.Nv2a.Tests/PgraphTransformTests.cs`):**
+- `DepthTest_CoplanarLEQUALOverlapDrawsSolidTopTriangle` — two overlapping
+  coplanar triangles at device z 65536 (the demo's exact Z), pbkit clear
+  `0xFFFFFF00`, depth LEQUAL: every interior pixel of the top triangle must
+  be the top color. **Fails pre-fix** (bottom red `FFFF0000` bleeding
+  through where blue `FF0000FF` must be = the hatch in miniature), passes
+  post-fix.
+- `DepthTest_QuantizedComparePassesSubQuantumLequal` — stored field
+  `0x10000`, fragment device z 65536: LEQUAL must pass for all 64 sampled
+  interior pixels. **Fails pre-fix with 12/64 undrawn** (matches the exact
+  float simulation), passes post-fix.
+
+**Acceptance evidence.**
+- (i) Fresh `triangle.xbe` boot, 1B steps, private `wt-data` media: no
+  fault (`LastFault vec=0`), and the hatch is **gone** — frame SHA256
+  `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`,
+  zero neighbor-jump anomaly rows below the text region (baseline: 286
+  rows), smooth scanlines; triangle counters draws=2706/depth=15667336/
+  zclipCull=21526/frames=68/stalls=34 unchanged, **pixels
+  88,944,649 -> 89,142,121 (+197,472 healed fragments** over 68 frames),
+  PGRAPH stream byte-identical in length (223956 methods).
+- (ii) Dashboard neutral pad-recipe boot, 1B steps: frame SHA256
+  `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+  **identical to the pre-change baseline**, and draws=33632 skipped=1402
+  pixels=285171381 textured=278577344 clears=695 blended=211696978
+  depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686 all identical.
+- (iii) `dotnet test -c Release`: **1115/1115** green (1113 baseline + 2
+  new), zero changes to existing expectations.
+- (iv) `dotnet format --verify-no-changes` clean.
+
+**Deliberate deltas / risks.** (1) Compare quantization uses XGrid's
+round-to-nearest encode (the §97-kept convention), not xemu's documented
+hardware `floor`; self-consistent with XGrid's store, spec-shaped
+(D3D/GL convert-to-attachment-precision), and the floor-vs-round store
+deviation stays exactly as §97 logged it — switching either to floor would
+flip existing goldens (`DepthTest_PassesNearerAndWrites` pins `0x80000000`,
+which floor(z=8388608±) would not reproduce). (2) Dashboard `depth=136`
+tested pixels happen to sit far from quantization boundaries, so the frame
+is bit-identical; a future guest fighting depth at exact half-ULP
+boundaries could see a different winner than pre-fix (that behavior was
+the bug). (3) The `--fb` raw dump for this boot reads `addr=0x00000000`
+(unresolved surface offset -> kernel-memory noise); the flip-captured
+`--frame` is the real surface — pre-existing, out of scope.
+
+**Files:** `src/XGrid.Nv2a/Nv2aMmio.cs` (field-space depth compare),
+`tests/XGrid.Nv2a.Tests/PgraphTransformTests.cs` (PUT/barrier kick fix,
+`PushMethodsContinue`, 2 new tests).
