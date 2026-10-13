@@ -30,52 +30,52 @@ public sealed class PshCombiner : ISnapshotable
     public const int TextureSlots = 4;
 
     // Register ids (psh_regs.h PS_REGISTER).
-    private const int RegZero = 0x0;
-    private const int RegC0 = 0x1;
-    private const int RegC1 = 0x2;
-    private const int RegFog = 0x3;
-    private const int RegV0 = 0x4;
-    private const int RegV1 = 0x5;
-    private const int RegT0 = 0x8;
-    private const int RegR0 = 0xC;
-    private const int RegR1 = 0xD;
-    private const int RegV1R0Sum = 0xE;
-    private const int RegEfProd = 0xF;
+    public const int RegZero = 0x0;
+    public const int RegC0 = 0x1;
+    public const int RegC1 = 0x2;
+    public const int RegFog = 0x3;
+    public const int RegV0 = 0x4;
+    public const int RegV1 = 0x5;
+    public const int RegT0 = 0x8;
+    public const int RegR0 = 0xC;
+    public const int RegR1 = 0xD;
+    public const int RegV1R0Sum = 0xE;
+    public const int RegEfProd = 0xF;
 
     // Input mappings (psh_regs.h PS_INPUTMAPPING).
-    private const int MapUnsignedIdentity = 0x00;
-    private const int MapUnsignedInvert = 0x20;
-    private const int MapExpandNormal = 0x40;
-    private const int MapExpandNegate = 0x60;
-    private const int MapHalfbiasNormal = 0x80;
-    private const int MapHalfbiasNegate = 0xA0;
-    private const int MapSignedIdentity = 0xC0;
-    private const int MapSignedNegate = 0xE0;
+    public const int MapUnsignedIdentity = 0x00;
+    public const int MapUnsignedInvert = 0x20;
+    public const int MapExpandNormal = 0x40;
+    public const int MapExpandNegate = 0x60;
+    public const int MapHalfbiasNormal = 0x80;
+    public const int MapHalfbiasNegate = 0xA0;
+    public const int MapSignedIdentity = 0xC0;
+    public const int MapSignedNegate = 0xE0;
 
     // Output mappings (psh_regs.h PS_COMBINEROUTPUT).
-    private const int OutIdentity = 0x00;
-    private const int OutBias = 0x08;
-    private const int OutShiftLeft1 = 0x10;
-    private const int OutShiftLeft1Bias = 0x18;
-    private const int OutShiftLeft2 = 0x20;
-    private const int OutShiftRight1 = 0x30;
+    public const int OutIdentity = 0x00;
+    public const int OutBias = 0x08;
+    public const int OutShiftLeft1 = 0x10;
+    public const int OutShiftLeft1Bias = 0x18;
+    public const int OutShiftLeft2 = 0x20;
+    public const int OutShiftRight1 = 0x30;
 
     // Output flag bits within an OCW word.
-    private const uint FlagCdDot = 1u;
-    private const uint FlagAbDot = 2u;
-    private const uint FlagMux = 4u;
-    private const uint FlagCdBlueToAlpha = 0x40u;
-    private const uint FlagAbBlueToAlpha = 0x80u;
+    public const uint FlagCdDot = 1u;
+    public const uint FlagAbDot = 2u;
+    public const uint FlagMux = 4u;
+    public const uint FlagCdBlueToAlpha = 0x40u;
+    public const uint FlagAbBlueToAlpha = 0x80u;
 
     // CONTROL flag bits (psh_regs.h PS_COMBINERCOUNTFLAGS), above the low stage-count byte.
-    private const uint ControlMuxMsb = 0x1u;
-    private const uint ControlUniqueC0 = 0x10u;
-    private const uint ControlUniqueC1 = 0x100u;
+    public const uint ControlMuxMsb = 0x1u;
+    public const uint ControlUniqueC0 = 0x10u;
+    public const uint ControlUniqueC1 = 0x100u;
 
     // Final-combiner setting bits (low byte of final CW1).
-    private const uint FinalClampSum = 0x80u;
-    private const uint FinalComplementV1 = 0x40u;
-    private const uint FinalComplementR0 = 0x20u;
+    public const uint FinalClampSum = 0x80u;
+    public const uint FinalComplementV1 = 0x40u;
+    public const uint FinalComplementR0 = 0x20u;
 
     /// <summary>Texture mode: stage produces (0,0,0,1).</summary>
     public const int TexModeNone = 0x00;

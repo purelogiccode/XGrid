@@ -5047,3 +5047,179 @@ only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
 13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
 cycle` log lines are benign empty-list probes (3 lists x repeated, no state
 damage observed).
+
+## §113 - GPU-backend slice 1: IPgraphBackend seam + Silk.NET OpenGL backend, golden gate PASSED (2026-10-13)
+
+Work in `Temp\opencode\worktrees\gpu-slice1` (`wave/gpu-slice1`, branch from
+master @459f742). Implements `gpu-backend-design.md` §8 steps 1-7 verbatim
+with the operator checkpoint resolved to **Silk.NET.OpenGL 2.23.0** (pinned
+in `Directory.Packages.props`; no other new dependency). Acceptance met on
+all three clauses (evidence below). Test baseline at wave start **1126**;
+after the wave **1200/1200 green** (+74 new tests) with
+`dotnet format --verify-no-changes` clean.
+
+### What was built
+
+- **Seam (`src/XGrid.Nv2a/`, minimal additive):** `IPgraphBackend` +
+  `PgraphVertex`/`PgraphFragmentState`/`PgraphTextureSlot`/`PgraphDrawInfo`/
+  `PgraphClearInfo`/`PgraphSurfaceRecord` (new file `IPgraphBackend.cs`);
+  `Nv2AMmio.Backend { get; set; }`; `Backend?.Method` at the top of
+  `RecordMethod` (after the side-tap); `Backend?.Draw` at the post-bbox
+  flush sites of `FillTriangle` (legacy/non-combiner) and `FillTrianglePsh`
+  (combiner) with state packed by `BuildDrawInfo`/`BuildLegacyDrawInfo`
+  (resolved clip/fragment/texture/fog/zclip/surface + live `PshCombiner`);
+  `Backend?.Clear` once per `ExecuteClear` with only the fills the software
+  path actually performed; `Backend?.Flip` in the `0x12C` case after
+  `CapturePresentedFrame`; `TryCopyPresentedFrame` serves the backend
+  exclusively when `Backend != null` (no software/GPU pixel mixing, ever);
+  `Reset()`/`LoadState` call `Backend?.ResetState()` (snapshot format v2
+  unchanged — backend is host-side only). Seven `private` texture/depth
+  helpers widened to `public` for upload/parity reuse (`DecodeTextureTexel`,
+  `SwizzleOffset`, `IsLinearTextureFormat`, `TextureFormatBytesPerTexel`,
+  `WrapCoordinate`, `ZetaDepthRange`, `EncodeDepth16/24`, float-zeta
+  converts); `PshCombiner` protocol constants (Reg*/Map*/Out*/Flag*/Control*/
+  Final*) made `public` so the GLSL generator reads the same single source.
+- **`src/XGrid.GpuGl/` (new project, referenced by `XGrid.Cli` only):**
+  `GlPgraphBackend : IPgraphBackend` (FBO surface model, shader/texture
+  caches, fixed-function state, flip readback), `PshGlslGenerator` (GLSL
+  330 fragment generator written from `PshCombiner.Evaluate` +
+  `Nv2AMmio.ResolveTexel` semantics — facts/structure only, zero xemu/Cxbx
+  code), `GlStateMapper` (blend/depth/stencil/mask/alpha/clear mappings,
+  pure), `WglContext` (hidden STATIC window + WGL context via user32/gdi32/
+  opengl32 P/Invoke — no windowing package), `GlProbe` (probe.c pattern:
+  tiny program compile, FBO complete, known-texel draw ±2), and
+  `GlBackendFactory.TryCreate` (probe-gated; failure prints why and the CLI
+  falls back to `sw` for the session).
+- **CLI:** `boot --gpu sw|gl` (default `sw`); `--gpu gl` constructs the
+  backend after `machine.Reset()`, prints `GPU backend=gl probe ok;
+  GL_VERSION=...` or the probe-failure fallback line; end-of-run summary
+  prints `GPU backend=gl draws= clears= flips= methods= programs= uploads=
+  unsupported= unsup[colorBytes= zformat= modes= cubeVol= fbo= flip= fatal=]
+  BackendUnsupported=<n>`.
+- **`src/XGrid.Graphics/`:** `FrameDiff` (§3.4 policy comparator: reference
+  edge map, ±1 px Moore band, per-channel ≤2, flat-exact requirement) used
+  by the golden harness and 6 new unit tests.
+- **Harness:** `scripts/gpu-slice1-golden.ps1` runs the §95 neutral 1B boot
+  twice (`--gpu sw` / `--gpu gl`, verbatim pad-script
+  `down@950000000+hold,none@962000000,a@970000000+hold,none@976000000`) and
+  applies the policy + structural checks.
+- **Tests (+74, zero changes to existing expectations):** 64 headless
+  `XGrid.GpuGl.Tests` (GlStateMapper enums/behaviors, GLSL string goldens
+  `Goldens/legacy.glsl` + `Goldens/menu-1s.glsl`, key stability, mux
+  MSB/LSB, CLIPPLANE discard, invalid-stage none-texel, passthru), 6
+  `FrameDiffTests`, 4 `PgraphBackendSeamTests` (recording backend; software
+  RAM result byte-identical with backend attached; Method/Draw/Clear/Flip
+  observation; ResetState on machine reset).
+
+### Acceptance evidence (design §8 step 6, exact commands + outputs)
+
+Media: private `wt-data\` copies (Complex_4627.bin, mcpx_1.0.bin,
+eeprom.bin, xbox_hdd.qcow2); triangle ISO untouched read-only. Host:
+Windows desktop, NVIDIA GL **4.6.0 driver 610.88** — probe
+`probe ok` (real context; no honesty-gap needed).
+
+Runs (worktree root, Release build):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --steps 1000000000 --pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000" --gpu sw --frame golden-sw.bmp
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot ... --gpu gl --frame golden-gl.bmp
+```
+
+1. **Both runs `LastFault vec=0`** (exit 0).
+2. **Structural counters identical sw↔gl** (sw counters are pusher/
+   dispatch-level and run unconditionally, so equality is exact):
+   `NV2A draws executed=33632 skipped=1402 pixels=285171381
+   textured=278577344 clears=695 blended=211696978 depth=136 zclip=0
+   zclipCull=21526 frames=686 stalls=686 ...` — byte-identical lines in
+   both logs; `Frame ... 640x480 nonzero=307200 ... surface=3E2C000
+   pitch=2560 valid=True frame=686`.
+3. **`BackendUnsupported == 0`** with named sub-counters all zero:
+   `GPU backend=gl draws=2760841 clears=695 flips=686 methods=18125062
+   programs=11 uploads=13 unsupported=0 unsup[colorBytes=0 zformat=0
+   modes=0 cubeVol=0 fbo=0 flip=0 fatal=0] BackendUnsupported=0`.
+4. **BMP diff (§3.4 policy): `violations=0`, `maxDelta=1`,
+   `outsideBand=0`** — 2602 differing pixels (0.85% of 307,200), every one
+   inside the ±1 px edge band with per-channel delta ≤ 1; flat regions
+   byte-exact. SHAs: sw `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+   (= the §95/§109 recorded dashboard submenu frame — the sw leg reproduces
+   the canonical oracle), gl
+   `B1B6CDAE...`→ final `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+   (gl SHA changes across backend revisions; the sw SHA is the stable one).
+5. **Default path unchanged:** full suite 1200/1200 green (1126 baseline +
+   74 new; zero existing expectations touched) and
+   `dotnet format XGrid.sln --no-restore --verify-no-changes` exit 0.
+
+### Fidelity findings (the gate taught these; recorded as facts)
+
+Three mechanisms were required to reach violations=0 — each diagnosed from
+quantified diffs, never guessed:
+
+1. **Integer texelFetch sampling.** Normalized `texture()` with a
+   `u*(1/size)` scale round-trips through FP and flips `floor` at
+   texel-boundary UVs (glyph columns landed on the wrong atlas texel: a
+   2px vertical bar of ±116-delta pixels at x=468-469 in the first pair).
+   The GLSL sampler now computes `WrapI(floor(coord), size, mode)` in
+   shader integers — the exact `Nv2AMmio.WrapCoordinate` arithmetic (GLSL
+   int division truncates toward zero like C#) — and fetches with
+   `texelFetch`. Upload path reuses the software `DecodeTextureTexel` /
+   `SwizzleOffset` tables (widened to public).
+2. **Software-exact barycentric in the fragment shader.** GL's own
+   varying interpolation evaluates the perspective-weight expression in a
+   different FP order than `FillTrianglePsh` (ULP drift flips boundary
+   texels again: 128 → 77 residual violations after (1)). The three
+   transformed vertices now travel as per-draw uniforms (`uPx`, `uColorV`,
+   `uSpecV`, `uT0V..uT3V`, `uVtx`, perspective/invs/clip) and the shader
+   re-runs the software formulas verbatim (`area/invArea/w0/w1/w2`,
+   inclusive any-sign inside-test, `s0/s1/s2/sum/invSum` perspective
+   weights, `p1*a+p2*b+p0*c` attributes, `w1*aZ+w2*bZ+w0*cZ` depth) from
+   `gl_FragCoord` — the design's "screen-space vertex buffer at FlushDraw"
+   (§8 step 4). A `UseProgram`-before-uniforms ordering bug found on the
+   way (per-draw uniforms were binding to no program) explains part of the
+   first pair's diff as well.
+3. **Coverage-superset inflation + shader inside-test.** The residual 77
+   violations were software's *inclusive* edge test double-covering
+   shared-quad-diagonal pixels (two triangles each accept a center lying
+   exactly on their shared edge → the blend runs twice in software; GL's
+   top-left rule runs it once). Fix: `gl_Position` triangles are inflated
+   2% about their centroid so GL rasterizes a strict superset, and the
+   shader's software-exact inside-discard trims it back to exactly
+   software's per-triangle pixel set — tie pixels now execute the fragment
+   (and the blend) twice, byte-matching the software double-blend.
+   Result: 77 → 0 violations, maxDelta 128→1.
+
+Other decisions: FBO is a **grow-only surface** (software keeps surface
+pixels across clip-window changes; clip-shrink flips read the same window —
+this turned the first pair's 34 `flip` unsupported counts into 0); flips
+read back the `record.Width×record.Height` window when the FBO is ≥ it;
+`Method()` is an observation counter only (the seam transfers all
+slice-1-relevant state through Draw/Clear/Flip, so `BackendUnsupported` is
+driven by draw/clear/flip-time checks with named sub-counters); texture
+change detection is a cheap head/tail/strided fingerprint per draw
+(documented risk — full-buffer CRC was measured too slow per draw).
+
+### Open risks / slice-2 pointers
+
+- **Exotic modes are counted, not implemented** in the GLSL emitter:
+  valid-stage DOT family + BUMP (`unsup[modes]`), cubemap-flagged 05/06 +
+  volume 05/06 success paths (`unsup[cubeVol]`), `Z_FORMAT` float depth
+  with depth test (`unsup[zformat]`), non-4-byte color surfaces
+  (`unsup[colorBytes]`), FBO grow/zeta reallocation (`unsup[fbo]`), flip
+  window larger than the FBO (`unsup[flip]`), any GL exception
+  (`unsup[fatal]`, backend then stops issuing GL calls). The menu trips
+  none (all zero above); a title that does fails the gate loudly.
+- Clip-origin assumption: readback treats the presented window as surface
+  rows `0..clipH-1` (matches `CapturePresentedFrame`); draw y is
+  translated by `clipY` and `px/py` reconstructed as
+  `gl_FragCoord.x` / `gl_FragCoord.y + uClipY` — exact for the menu
+  (`clipY=0`); a clipY>0 title should be re-validated by the golden pair.
+- Texture fingerprint = 16 sampled texel words/draw (head/tail/strided);
+  an interior-only re-upload between draws could be missed — the golden
+  pair is the tripwire.
+- GLSL `float` FMA contraction is driver-defined; this driver's output is
+  bit-stable for the recorded frame (violations=0), but goldens are per-
+  driver until a sw-vs-sw noise floor (design §7 risk 4) says otherwise.
+- Swapchain/windowed present, Vulkan backend, shader disk cache, async
+  submission: out of slice 1 (design §3/§5/§7 unchanged).
+- Build note: `AllowUnsafeBlocks` enabled only in `XGrid.GpuGl` (pointer
+  overloads for Silk tex uploads/readback); no other project changed its
+  build flags.
