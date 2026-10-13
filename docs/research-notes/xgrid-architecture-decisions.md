@@ -5047,3 +5047,121 @@ only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
 13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
 cycle` log lines are benign empty-list probes (3 lists x repeated, no state
 damage observed).
+
+## §114 — 007 stream end
+
+Branch `wave/007-streamend` (worktree `Temp\opencode\worktrees\007-streamend`).
+PROBE-ONLY wave: no `src/` or `tests/` changes. Master @459f742 Release CLI,
+restore + build clean. Goal: run §112's verbatim follow-up (pd181 → 52.6B with
+the four `--break-log` addresses), catch the stream-end event, characterize it.
+EOS quirk left default-ON per §92/§94 — `fires=0` for the entire wave
+(checks 505,966 at 18.1B → 9,905,390 at 56.6B). Media: private copies in
+`wt-data\` (BIOS/MCPX/EEPROM/qcow2), shared CHD on `E:` read-only; `pd181.xgs`
+copied from the `007-postdrain` worktree (read-only source). `--idle-skip` NOT
+used (flag-off authoritative steps).
+
+**CLI facts learned this wave (affect any rerun):** (1) `--break-log` runs the
+WHOLE `--steps` budget in the single-step loop (`Program.cs:423-463`) — no
+`Progress` lines, and a HIT only prints; it does **not** exit early (only
+faults/`Halted` exit). (2) `--save-at` with `--break-log` never triggers
+mid-run (the check lives in the batch loop only) and — worse — `--save-at` set
+at all makes the post-loop save `return 0` **before** `PrintState`/`--frame`
+(`Program.cs:602-605`), so it was deliberately omitted from every run here.
+(3) `Advance` quantum differs by mode: every 4096 steps under `--break-log`
+vs 65536 in `machine.Run` batch mode — `SevenEosQuirkChecks` counts
+`Advance` calls, so its rate is ~244/M (break-log) vs ~15.4/M (batch); the
+coarse guest state converges but near-deadline interleavings can diverge
+(observed below). (4) Progress from a `--load-state` run is steps-since-load;
+absolute = 18.1B + progress for the main chain.
+
+**Method — chunked verbatim (per §112's own "chunk if wall-clock risk is
+high").** §112's acceptance command run as 10 × 3.45B batches, each with the
+four break-logs (`0x20FC1`/`0x11340`/`0x20BD0`/`0x602F7`), `--watch
+0xDA7CB0,0xDA7DE8`, `--dump 0xDA7CB0,0x160`, per-batch frame + v2 snapshot
+chain `pd181 → pd2155 → pd2500 → pd2845 → pd3190 → pd3535 → pd3880 → pd4225 →
+pd4570 → pd4915 → pd526` (names = absolute 0.01B steps). 699-806 s per batch
+(~4.3-4.9M insn/s, contended host). Template (only `--load-state`/
+`--save-state`/`--frame` vary):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd4915.xgs --steps 3450000000 --save-state pd526.xgs --break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7 --frame pd526.bmp --watch 0xDA7CB0,0xDA7DE8 --dump 0xDA7CB0,0x160
+```
+
+**Phase timeline (18.1B → 56.8B; every row = watch/counter/frame/log evidence;
+logs in worktree `logs\`).**
+
+| Step window (absolute) | EIP / event | Identified activity | Evidence |
+|---|---|---|---|
+| 18.1 – 52.495B | PlayMPC `0x1Exxx`-`0x22xxx`, clock `0x138xx` | Steady channel-0x300 intro FMV, unchanged from §112 — DVD READ(10) stream, ~22 fps CPU-blit presents, no device waits | 10 batches all EXIT=0, `LastFault vec=0`, **0 HIT lines** (batches 1-9), zero watch writes in `0xDA7CB0..0xDE8`; node `[+0x14]` position linear 708,640 → 919,840 → 1,130,656 → 1,343,232 → 1,555,200 → 1,767,040 → 1,978,112 → 2,188,288 → 2,401,632 (61.1-61.7k/B); frames 691→1,881→2,010 (+129-133/3.45B); draws frozen 2,672; BM starts +~352/batch (linear video DMA); EOS `fires=0` |
+| **52,495,059,473** | **HIT `0x11340`** (batch-10 offset 3,345,059,473) | **Stream end**: node removal via the real advance-callback path — ch 0x300 played to completion | `HIT 3345059473 EIP=00011340 ESI=00000000 EDI=00000001 EAX=80DA7DE8 caller=00011496 arg=0` (EAX = node VA, caller = §107's `0x11496`); watch teardown by the removal routine: `0xDA7DCC` (list head `+0x11C`)→0 @`0x11397`, `0xDA7DD4` (active count `+0x124`)→0 @`0x113C7`, free-list pointers →`0x80DA7DE8` @`0x113EB/F7`; end dump: head=0, count=0, node on free list, node `[+0x14]==[+0x18]==0x27C92F` (2,607,407 = pos==total, natural EOS, no quirk involvement) |
+| 52.495 – 52.6B | end `0x8001984F` (kernel) | Post-removal tail; endpoint of the acceptance run | pd526: `Saved state pd526.xgs at step 3450000000 EIP=0x8001984F`, `LastFault vec=0`, frames=2010, EOS `checks=8928826 fires=0`, channel list already empty |
+| 52.6 – 53.0B | `0x8002xxxx`/`0x8001Cxxx`/`0x00026xxx`/`0x00011xxx` (diverse) | Post-FMV transition: DVD frozen first, execution live | probe A (batch +400M, `logs\pd526p400.log`): EIPHIST 200 samples spread over kernel+module EIPs (top `0x800231D9` n=5 — no plateau); ATAPI tail still `0x9B296`, BM starts 5485 (frozen); frames +2 only; end EIP `0x8001C51B` |
+| ~53.0 – 53.6B | `0x309FE`/`0x29998-0x29A66` (create), `0x20FC1` | **New STRM object created; DVD reads resume in a new LBA region; 10 voice-offs (menu/transition SFX)**; drain loop entered once | watch: `0xDA7CB0`→`0x80B6C020` (new STRM VA) @`0x309FE`, object body re-init by create EIPs `0x29998/9A/9D/9A0`+; BM starts 5485→5879; tail leaves `0x9AFxx`/`0x9B296` (frozen at 53.0) for new region (`28:00000004B4` at 53.6B end); `voiceOff` 1→11 (voices 46-50,64-67 off); ACI nam/nabm 6/93→9/149 (AC'97 traffic starts); **HIT `0x20FC1` once**: `HIT 559655459 EIP=00020FC1 ESI=00000100 ...` → abs **53,159,655,459** (break-log chain; drain for ch 0x100, single pass, not a re-park) |
+| ~53.6 – 54.6B | transient `0x16AExx` (string scan) → `0x13Axxx` clock → kernel `0x8001B0xx`/`0x800153xx` → **park `{0x1C3028,0x1C302C}`** | Screen transition completes (1 fullscreen draw +5 clears onto new surface `0x3BD8000`), then the guest **parks** | batch chain: pd536 (53.6B) still transient at `0x16AE37`, draws 2672/frames 2016/BM 5879; pd546b Progress @+250M (53.85B) already `0x1C302C` → onset ∈ (53.6, 53.85]B; pd546 (break-log, 54.6B) also `0x1C3028`. pd546 EIPHIST (1B window): 189/200 samples in `{0x1C3028,0x1C302C}`, brief kernel `0x8001B030-43` before it. Draw/flip counters land identical across both quanta (draws 2,673, clears 66, frames 2,017, BM 5,885, voiceOff 11) |
+| 54.6 – 56.8B (park) | `cmp dword [EAX+0x10],0; jnz` spin | **Stable gate**: main thread spins waiting for pending-count → 0; nothing clears it | pd546 → pd566 (+2B) → pd566p200 (+200M): EIP stays `{0x1C3028,0x1C302C}` (EIPHIST 100/100 both), `Halted=False`, `LastFault vec=0`; ALL main-thread devices frozen byte-for-byte (draws/frames/BM/pktbytes/APU r/w/voiceOff/USB acc/channel dump identical; `USB0 acc=54332` never moves — no pad polling either); interrupts **keep firing** (`Interrupts delivered` 92,704@52.6 → 96,127@54.6 → 99,017@56.6 → 99,307@56.8; PIC `0020=290` accesses/200M) so the park is a guest wait, not a halted IRQ path; EOS checks keep ticking host-side only (`fires=0`); held frame byte-identical across BOTH chains and all endpoint probes (SHA256 `18C7CC83CEA392DE…`) — RGB=(0,0,0) uniform alpha (no hidden layout), i.e. a black screen, vs pd526's FMV fade-out frame (`2B3397F9…`, meanLuma 0.5) |
+
+**Park decode (from `pd546b.xgs`, verbatim):** loop at module `0x1C3028`:
+`83 78 10 00` = `cmp dword [EAX+0x10], 0` ; `0x1C302C`: `75 FA` = `jnz 0x1C3028`.
+Registers: `EAX=0x83924800 EBX=0x118 ECX=0xD00190A8 EDX=0x210 ESI=0x1B18
+EDI=0xD001C070 EBP=0xD0031CE4 ESP=0xD0031CB4 EFLAGS=0x206`. Wait object at
+`0x83924800`: `+0x04=0x4BC +0x08=0x1B08 +0x0C=0x60A +0x10=3` — the counter is
+**3** and never drains over +2.2B observed steps. Candidate: an async
+completion/refcount (3 pending ops) whose completion source is not firing.
+
+**NEXT GATE (exact repro — the post-stream-end park):**
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd546.xgs --steps 1000000 --dumpv 1C3000,80 --dumpv 83924800,60
+```
+
+Fault text: none — `LastFault vec=0`, `Halted=False`; plateau EIP
+`0x001C302C` (partner `0x001C3028`), `EAX=0x83924800`, `[EAX+0x10]=0x00000003`.
+(Park onset per batch chain: load `pd536.xgs`, +250M already at `0x1C302C`.)
+Two gates were hit this wave: (G1) the §112-predicted stream end itself —
+node-removal HIT at **52,495,059,473** (repro: `--load-state pd4915.xgs
+--steps 3450000000` + the four break-logs, HIT line quoted above) — fully
+characterized, not a bug; (G2) the residual park above, which is the next
+decode target.
+
+**Verbatim recommended next command for the follow-on wave** (decode the park;
+from the parked snapshot, re-arm watch on the wait word and see if ANYTHING
+touches it, then identify `0x1C3000`'s caller/module and what should clear
+`[0x83924800+0x10]=3`):
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd546.xgs --steps 2000000000 --watch 3924800,3924814 --break-log 0x1C302E --dumpv 1C2F80,100 --dumpv 83924800,60 --frame park2b.bmp
+```
+
+(`--watch 3924800,3924814` = physical of VA `0x83924810`; `--break-log
+0x1C302E` = first instruction after a successful exit from the spin, so a HIT
+there means the gate opened; absent that, the park persists — then bisect the
+3 pending ops via the module's other code or APU/DVD state at `pd546.xgs`.)
+
+**Artifacts (worktree, NOT committed — paths only):** snapshots (all v2, 72 MB
+each) `pd181.xgs` (copied origin), chain `pd2155/pd2500/pd2845/pd3190/
+pd3535/pd3880/pd4225/pd4570/pd4915/pd526.xgs` (21.55…52.6B), `pd536.xgs` /
+`pd546b.xgs` (batch chain 53.6/54.6B), `pd546.xgs` (break-log chain 54.6B),
+`pd566.xgs` (56.6B); frames `pd2155..pd566.bmp` + `pd526p400/pd536/
+pd546b/pd566p200.bmp` (held-frame SHA above); logs `logs\pd2155..pd566.log`,
+`logs\pd526p400.log`, `logs\pd566p200.log`, `logs\parkdump.log`,
+`logs\parkobj.log`, `logs\sanity1m.log` (`*.log` is git-ignored; snapshots/
+BMPs are NOT ignored — keep them untracked); `wt-data\` (private firmware/HDD
+copies, `eeprom.bin` pattern-ignored).
+
+**Infra:** §112's two host process kills did **not** recur — every boot this
+wave exited 0 (19 runs incl. probes) except one `EXIT=4` caused by this agent
+omitting `--save-state` on a probe (instant CLI error, no emulation ran).
+Determinism: batch mode self-consistent (pd536 rerun byte-identical Progress
+EIPs); both quanta converge to identical coarse end-state (draws/frames/BM/
+voiceOff/frame SHA) by 54.6B despite near-deadline interleaving differences.
+
+**Open questions:** (a) semantics of `[0x83924800+0x10]=3` (3 pending what?)
+and which device/IRQ should clear it — park may be a real emulation gap or a
+guest-side wait needing input/a stimulus; (b) why DVD reads stopped forever at
+54.6B with no outstanding IDE command (BM status 0) while the park persists;
+(c) next menu/input entry (`0x602F7`) and next PlayMPC channel (`0x20BD0`)
+were never hit anywhere in 18.1→56.8B — after the park opens, re-arm both;
+(d) post-FMV LBA region (`0x4B4`/`0x4AA62` vs FMV `0x9AFxx`) — which disc
+files the new STRM object (`0x80B6C020`) streams, via `xgrid sector` if
+needed; (e) `0x16AExx` string-scan spends 250M+ steps — benign bulk compare or
+a pathological loop, revisit only if the park decode references it.
