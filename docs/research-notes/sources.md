@@ -16,6 +16,18 @@ the reuse is recorded below.
 | xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
 
+## Restoring the vendored set (References/)
+
+Downloaded 2026-10-12 (extract into `References/`; GitHub zips carry these
+root folder names):
+- xemu 0.8.136 — https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip
+- Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
+- xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
+- Xermu — no upstream URL recorded (local snapshot only); ask the operator.
+- XboxWiki — 99 `.mhtml` pages saved manually from xboxdevwiki.net (no bulk
+  source; the `xboxdev/xboxdevwiki` repo holds only the wiki host, not content).
+  Fetch pages online if a task needs them.
+
 ## Per-project license detail
 
 ### xemu 0.8.136
