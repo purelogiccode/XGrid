@@ -8,6 +8,13 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `References/xemu-0.8.136` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A). Primary source.
   Key paths: `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
   `hw/xbox/smbus_xbox_smc.c` (SMC protocol), `hw/xbox/xbox_pci.c` (PCI topology/IDs).
+- `References/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
+  on a QEMU 10.2.0 base. Its NV2A is the *tuned GPU* (`pgraph/cost.c`, `seed.c`,
+  `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the un-tuned baseline at
+  `hw/xbox/nv2a-stock/` — `diff -ru` isolates the whole perf delta (GPU-backend
+  performance-track facts). Full `chihiro/` subsystem, `xid-light-gun.c`, new SMBus
+  devices, 5 newer NV097 methods. Cross-check only; 0.8.136 stays the primary
+  (see `docs/research-notes/xemu-playtest-v2.md`).
 - `References/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
 - `References/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
   `src/core/kernel/common/types.h` (KTHREAD/KWAIT_BLOCK/KAPC offsets, e.g. KTHREAD+0x2C = State).
