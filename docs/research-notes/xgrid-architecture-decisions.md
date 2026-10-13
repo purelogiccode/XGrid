@@ -4331,3 +4331,58 @@ the full evidence trail are in the recon report; key file refs:
 `XboxMachine.cs:16-108,261-391`, `CpuHarness.cs:10-42`,
 `CpuTestRunner.cs:18-49`, `XboxMachineTests.cs:58-70`,
 `Program.cs:911-1155` (counters), `XbeImage.cs:218-246` (XOR/type).
+
+## 103. V2 flat-binary test harness + ROM-A nv2a-textured-quad DONE (2026-10-12)
+
+Built the §102 spec as specified (wave/testrom-harness): `xgrid testrom
+--bin <flatbin>` subcommand (separate from `boot`, no BIOS/HDD required),
+~100-line `TestRomRunner` reusing `XboxMachine` as-is, 1-byte `0xE9`
+console device (`0x0A` flushes `TESTROM LOG:` lines), `EAX=0+HLT`=pass.
+
+**Files:** `src/XGrid.Bus/Io/TestRomConsole.cs` (new, `IIoPortDevice`,
+line-buffered, `Flush()` for partial lines at HLT);
+`src/XGrid.Host/TestRomRunner.cs` (new, `LoadImage` copies `--bin` to
+phys base + flat GDT at 0x7000/selectors 0x08/0x10/`Esp`/`Eip` per
+`CpuHarness`, `Run(ulong)` chunks through `machine.Run`,
+`Passed` = halted && EAX==0, `IDisposable` for the port registration);
+`src/XGrid.Cli/Program.cs` (`testrom` + `--base/--entry/--stack`
+default 0x1000/0x1000/0x80000, `--steps` default 10M, `--ram`,
+`--hdd/--dvd/--pad-buttons/--pad-script/--frame/--pgraph/--pgraph-max/
+--dump/--break`; ASSERT verdict is the first stdout line, then deferred
+`Break:`, `TESTROM LOG:` lines, existing `PrintState` counters;
+exit 0/1 = pass/fail; crash paths also print the verdict before
+`PrintState`); `tools/testroms/nv2a_quad.asm` (human-readable source) +
+`nv2a_quad.bin` (1188 B, assembled once with
+`C:\msys64\mingw64\bin\nasm.exe -f bin`, absolute path, not in PATH);
+`tests/XGrid.Integration.Tests/TestRomTests.cs` (bytes embedded, no NASM
+shell-out: ROM-A live test + pass/fail-convention + E9-console tests).
+
+**ROM-A design (direct PGRAPH MMIO via PFIFO pusher, mirrors
+`PgraphTransformTests.PushTexturedLegacyDraw` linear path + the
+`CreateChannel` setup):** guest fills a 64x64 8x8-cell checker
+(transparent-black 0x00000000 / white 0xFFFFFFFF) at 0x10000, screen-space
+verts (0,0)/(64,0)/(0,64) at 0x8000, texel-unit texcoords at 0x8100, a
+39-method pushbuffer at 0x9000 (surface 64x64 A8R8G8B8 at 0x20000/pitch
+256, arrays 0x1720/0x1760 + 0x1724/0x1764, 3-insn program with
+c0=(1,1,1,1), linear-texture state 0x1B00-0x1B1C with image rect
+0x00400040, begin/element/end, `FLIP_INCREMENT_WRITE`), the 10-word
+channel setup + explicit GET (`0x800044`, so the buffer need not sit at
+physical 0), then PUT. Guest ASSERT reads two interior surface pixels
+((16,8)==white cell (2,1), (16,16)==exact-zero cell (2,2)) — proving
+draw + texture sample, not just "something rendered".
+
+**Live evidence (first run, no iteration needed):**
+`TESTROM PASS nv2a_quad draws=1 textured=2080 frames=1 nonzero=1056`
+in 68,491 steps (<2M budget with 29x margin); `textured=2080` is exactly
+the triangle pixel count (64*65/2); frame BMP is 64x64 with 1056 white +
+3040 zero pixels (byte histogram); `--pgraph` holds all 39 methods.
+Guest log lines (`fill+push`, `pushed, checking`, `surface matches`) and
+`Port 00E9=76` accesses confirm the console path.
+
+**Follow-ups left as specified (not half-built):** ROM-B `ide-read-dma`
+(synthetic 8 MB HDD, BAR4+PRDT, `READ DMA 0xC8` x8, `mismatch=0`) and
+ROM-C `pad-getstate-poll` (OHCI HCCA/ED/interrupt-IN TD, `DoneHead`
+across `Advance` frames, `idle=0x0 pressed=0x2`) per §102. Both ride the
+same harness/CLI with no further infra work. The checked-in `.bin` lets
+other machines run the CLI evidence without NASM; if the `.asm` changes,
+re-assemble with the absolute-path NASM and re-embed the bytes.

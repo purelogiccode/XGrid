@@ -36,6 +36,8 @@ internal static class Program
                 return 0;
             case "boot":
                 return Boot(args);
+            case "testrom":
+                return TestRom(args);
             case "fatx":
                 return Fatx(args);
             case "xdvdfs":
@@ -705,6 +707,319 @@ internal static class Program
             Console.Error.WriteLine($"Cannot read firmware: {exception.Message}");
             return 4;
         }
+    }
+
+    private static int TestRom(string[] args)
+    {
+        string? binPath = null;
+        uint baseAddress = 0x1000;
+        uint entryAddress = 0x1000;
+        uint stackAddress = 0x80000;
+        ulong steps = 10_000_000;
+        uint ramMb = 64;
+        string? hddPath = null;
+        string? dvdPath = null;
+        string? padButtons = null;
+        string? padScriptSpec = null;
+        string? framePath = null;
+        string? pgraphPath = null;
+        ulong pgraphMax = 262144;
+        uint? breakAddress = null;
+        List<(uint Address, int Length, bool Virtual)> dumps = new();
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--bin":
+                    binPath = NextValue(args, ref i);
+                    break;
+                case "--base":
+                    baseAddress = ParseTestRomAddress(NextValue(args, ref i));
+                    break;
+                case "--entry":
+                    entryAddress = ParseTestRomAddress(NextValue(args, ref i));
+                    break;
+                case "--stack":
+                    stackAddress = ParseTestRomAddress(NextValue(args, ref i));
+                    break;
+                case "--steps":
+                    steps = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--ram":
+                    ramMb = uint.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--hdd":
+                    hddPath = NextValue(args, ref i);
+                    break;
+                case "--dvd":
+                    dvdPath = NextValue(args, ref i);
+                    break;
+                case "--pad-buttons":
+                    padButtons = NextValue(args, ref i);
+                    break;
+                case "--pad-script":
+                    padScriptSpec = NextValue(args, ref i);
+                    break;
+                case "--frame":
+                    framePath = NextValue(args, ref i);
+                    break;
+                case "--pgraph":
+                    pgraphPath = NextValue(args, ref i);
+                    break;
+                case "--pgraph-max":
+                    pgraphMax = ulong.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--break":
+                    breakAddress = ParseTestRomAddress(NextValue(args, ref i));
+                    break;
+                case "--dump":
+                    {
+                        string[] parts = NextValue(args, ref i).Split(',');
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        uint address = Convert.ToUInt32(addressText, 16);
+                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                        dumps.Add((address, length, false));
+                        break;
+                    }
+
+                default:
+                    Console.Error.WriteLine($"Unknown testrom option: {args[i]}");
+                    return 1;
+            }
+        }
+
+        if (binPath is null)
+        {
+            Console.Error.WriteLine("testrom requires --bin <path>");
+            return 1;
+        }
+
+        byte[] image;
+        try
+        {
+            image = File.ReadAllBytes(binPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Cannot read test ROM: {exception.Message}");
+            return 4;
+        }
+
+        string name = Path.GetFileNameWithoutExtension(binPath);
+        if (string.IsNullOrEmpty(name))
+        {
+            name = "rom";
+        }
+
+        XboxMachine machine;
+        try
+        {
+            machine = new XboxMachine(ramMb * 1024 * 1024);
+            if (hddPath is not null)
+            {
+                machine.AttachHdd(hddPath);
+            }
+
+            if (dvdPath is not null)
+            {
+                machine.AttachDvd(dvdPath);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Cannot attach media: {exception.Message}");
+            return 4;
+        }
+
+        using var runner = new TestRomRunner(machine, name);
+        try
+        {
+            runner.LoadImage(image, baseAddress, entryAddress, stackAddress);
+        }
+        catch (ArgumentException exception)
+        {
+            Console.Error.WriteLine($"Cannot load test ROM: {exception.Message}");
+            return 1;
+        }
+
+        machine.Nv2A.MethodStreamCap = pgraphMax;
+
+        if (padButtons is not null)
+        {
+            if (!PadInput.TryParse(padButtons, null, null, out PadInput pad))
+            {
+                Console.Error.WriteLine("Invalid --pad-buttons (hex16 or names like down/a+down)");
+                return 1;
+            }
+
+            machine.Gamepad.SetInput(pad.Buttons, pad.Analog, pad.Sticks);
+        }
+
+        PadScript? padScript = null;
+        if (padScriptSpec is not null)
+        {
+            if (!PadScript.TryParse(padScriptSpec, out PadScript? parsed) || parsed is null)
+            {
+                Console.Error.WriteLine("Invalid --pad-script spec (events: buttonset@step[+hold],...)");
+                return 1;
+            }
+
+            padScript = parsed;
+        }
+
+        void ApplyScriptIfDue(ulong at)
+        {
+            if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
+            {
+                machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
+            }
+        }
+
+        ulong executed = 0;
+        bool breakHit = false;
+        try
+        {
+            if (breakAddress is { } stop)
+            {
+                int breakAdvance = 0;
+                while (executed < steps && !machine.Cpu.Context.Halted)
+                {
+                    ApplyScriptIfDue(executed);
+                    if (machine.Cpu.Context.Eip == stop)
+                    {
+                        break;
+                    }
+
+                    machine.Cpu.Step();
+                    executed++;
+
+                    if (++breakAdvance >= 4096)
+                    {
+                        machine.Advance((ulong)breakAdvance);
+                        breakAdvance = 0;
+                    }
+                }
+
+                if (breakAdvance > 0)
+                {
+                    machine.Advance((ulong)breakAdvance);
+                }
+
+                breakHit = machine.Cpu.Context.Eip == stop;
+            }
+            else
+            {
+                ApplyScriptIfDue(executed);
+                while (executed < steps && !machine.Cpu.Context.Halted)
+                {
+                    ulong target = steps - executed;
+                    if (padScript is { } splitter &&
+                        splitter.TryGetNextBoundary(executed, out ulong scriptStep))
+                    {
+                        target = Math.Min(target, scriptStep - executed);
+                    }
+
+                    ulong ran = RunBatch(machine, target);
+                    if (ran == 0)
+                    {
+                        break;
+                    }
+
+                    executed += ran;
+                    ApplyScriptIfDue(executed);
+                }
+            }
+        }
+        catch (UnsupportedInstructionException exception)
+        {
+            Console.Error.WriteLine($"Unsupported instruction: {exception.Message}");
+            Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
+            PrintState(machine, executed, dumps);
+            return 2;
+        }
+        catch (MemoryAccessException exception)
+        {
+            Console.Error.WriteLine($"Memory error: {exception.Message}");
+            Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
+            PrintState(machine, executed, dumps);
+            return 3;
+        }
+        catch (UnhandledGuestException exception)
+        {
+            Console.Error.WriteLine($"Unhandled guest exception: {exception.Message}");
+            Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
+            PrintState(machine, executed, dumps);
+            return 5;
+        }
+
+        runner.Console.Flush();
+        Console.WriteLine(TestRomVerdict(runner, CountPresentedNonZero(machine)));
+        if (breakHit)
+        {
+            Console.WriteLine($"Break: EIP=0x{machine.Cpu.Context.Eip:X8} after {executed} instruction(s)");
+        }
+
+        foreach (string line in runner.Console.Lines)
+        {
+            Console.WriteLine($"TESTROM LOG: {line}");
+        }
+
+        PrintState(machine, executed, dumps);
+
+        if (framePath is not null)
+        {
+            SavePresentedFrame(machine, framePath);
+        }
+
+        if (pgraphPath is not null)
+        {
+            using var pgraphOut = new StreamWriter(pgraphPath);
+            foreach ((uint subchannel, uint method, uint parameter) in machine.Nv2A.MethodStream)
+            {
+                pgraphOut.Write(subchannel);
+                pgraphOut.Write(' ');
+                pgraphOut.Write(method.ToString("X4"));
+                pgraphOut.Write(' ');
+                pgraphOut.WriteLine(parameter.ToString("X8"));
+            }
+
+            Console.WriteLine($"PGRAPH {pgraphPath} methods={machine.Nv2A.MethodStream.Count}");
+        }
+
+        return runner.Passed ? 0 : 1;
+    }
+
+    private static uint ParseTestRomAddress(string text)
+    {
+        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+        return Convert.ToUInt32(hex, 16);
+    }
+
+    private static string TestRomVerdict(TestRomRunner runner, uint nonzero)
+    {
+        XboxMachine machine = runner.Machine;
+        string counters =
+            $"draws={machine.Nv2A.DrawsExecuted} textured={machine.Nv2A.TexturedPixels} " +
+            $"frames={machine.Nv2A.FramesPresented} nonzero={nonzero}";
+        return runner.Passed
+            ? $"TESTROM PASS {runner.Name} {counters}"
+            : $"TESTROM FAIL {runner.Name} eax={machine.Cpu.Context.Eax} " +
+              $"eip=0x{machine.Cpu.Context.Eip:X8} {counters}";
+    }
+
+    private static uint CountPresentedNonZero(XboxMachine machine)
+    {
+        if (!machine.Nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra))
+        {
+            return 0;
+        }
+
+        var frame = new DisplayFrame();
+        frame.Show(width, height, bgra);
+        return frame.CountNonZeroPixels();
     }
 
     private static void DumpFramebuffer(XboxMachine machine, string path)
@@ -1642,6 +1957,9 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
+        Console.WriteLine(
+            "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
+        Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");
         Console.WriteLine(
             "  fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
         Console.WriteLine("                   List or extract files from a FATX partition");
