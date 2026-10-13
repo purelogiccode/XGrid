@@ -4537,3 +4537,97 @@ non-zero is a stall). Suite 1098/1098 (was 1096); build + format clean.
 + `PCRTC_START` rather than method `0x12C`, so the captured frame comes
 from the dashboard-style flip path — a dedicated pbkit present hook is
 optional follow-up; kernel-test-suite sample not yet tried.
+## 107. APU voice processor: real position advance unblocks 007's PlayMPC streams (2026-10-13)
+
+Branch `wave/apu-vp-dsp` (worktree `Temp\opencode\worktrees\apu-vp-dsp`). Fixes the
+§98 verdict: the `0x138xx`/`0x20FC1` park was the PlayMPC audio-drain loop waiting
+for stream channel `0x100` status 3, and status 3 needed the APU voice processor's
+position/notifier feedback, which XGrid stored but never advanced.
+
+**xemu facts extracted** (`References/xemu-0.8.136/hw/xbox/mcpx/apu/`):
+- Voice state lives in *guest RAM* at `VPVADDR + voice*0x80`; every VP PIO method
+  reads/writes it via `voice_get_mask`/`voice_set_mask` (`vp/vp.c:100-116`).
+  Registers: `VPVADDR 0x202C`, `VPSGEADDR 0x2030`, `VPSSLADDR 0x2034`,
+  `FENADDR 0x115C` (`apu_regs.h:58-60,45`); voice offsets CFG_FMT `0x04`,
+  CUR_PSL_START `0x20`, CUR_PSH_SAMPLE `0x24`, PAR_STATE `0x54`, PAR_OFFSET
+  (CBO) `0x58`, PAR_NEXT (EBO) `0x5C`, TAR_PITCH_LINK `0x7C`.
+- `fe_method` (`vp.c:164-576`): VOICE_ON links the voice to the top of the
+  selected 2D/3D/MP list (`TVL2D 0x2054`/`TVL3D 0x2060`/`TVLMP 0x206C`) or after
+  an antecedent, resets CBO/SSL index/segment and envelope counts, sets
+  ACTIVE_VOICE (bit 21); CFG/TAR/SSL/SGE/segment methods store into the voice
+  page; `SET_CURRENT_SSL` selects the SSL table page and methods `0x600..0x7FF`
+  write 8-byte `{offset,length}` entries into `VPSSLADDR + page*8`.
+- Frame loop `mcpx_apu_vp_frame` (`vp.c:1809-1858`): walks the 3 lists via
+  `TAR_PITCH_LINK.NEXT_VOICE_HANDLE`; voices that are not active get
+  `fe_method(SE2FE_IDLE_VOICE, v)` (gated by `FETFORCE1` bit 15, `vp.c:559-569`),
+  active voices are processed.
+- `voice_get_samples` (`vp.c:837-1121`): a streaming voice (`CFG_FMT` bit 24)
+  takes its segment length from `VPSSLADDR` (low 16 bits = samples), advances
+  CBO one sample per played sample, and on segment end advances `ssl_seg`; when
+  the SSL's segment count is exhausted it flips `ssl_index` and writes notifier
+  `SSLA_DONE + old_index` (`vp.c:1093-1106`). `count == 0` means stream end:
+  CBO=0, `ssl_seg=0`; without PERSIST the SSL index resets and `voice_off` runs
+  (`vp.c:941-955`). Buffer voices wrap to LBO when LOOP is set, else
+  `voice_off` (`vp.c:1107-1115`).
+- `set_notify_status` (`vp.c:33-52`): status byte `DONE_SUCCESS=1` at
+  `FENADDR + 16*(2 + v*4 + notifier) + 15`, a `1` at `-1`, and
+  `ISTS |= FEVINTSTS|FENINTSTS`. `voice_off` uses `SSLA_DONE + ssl_index` for
+  stream voices (`vp.c:118-132`). FE trap delivery is `FEDECMETH/FEDECPARAM` +
+  `FECTL` trapped/requested, as XGrid already modeled for idle voices.
+- xemu runs 32 samples/frame (8 VP frames per 256-sample EP frame,
+  `apu_regs.h:333-334,363`); the DSP (M56001) cores are *not* needed for this
+  gate: the XDK driver's own DMA callback processes audio buffers and enqueues
+  advance events (below), the VP notifiers are the producer.
+
+**Design** (`src/XGrid.Audio/McpxApuDevice.cs`): the VP front-end now dispatches
+every PIO method xemu implements (voice lock/current/on/off/release/pause, all
+CFG/TAR/SSL/SGE/segment writers) against the guest-RAM voice page; `Advance`
+runs one VP frame per existing 256-sample/48 kHz XGrid frame quantum, walking the
+2D/3D/MP lists (cycle-guarded), advancing CBO through buffer/SSL data, writing
+notifier statuses and raising `FEVINTSTS|FENINTSTS` on segment completion, and
+sending `SE2FE_IDLE_VOICE` for inactive linked voices and on natural stream end.
+Snapshot version bumped to 2 (SSL bases/counts/index/segment, voice locks, SGE
+handles); v1 snapshots are rejected.
+
+**Live evidence (007 USA CHD, firmware read-only, quirk default-on, no pad).**
+Snapshot-driven: `snap007b.xgs` at 2.4B (EIP `0x21308`); every probe below is a
+restore + continue (seconds), never a 2.4B replay.
+- Pre-fix state at 2.4B: node `0x80DA7DE8` (`[+0xC]=0x100`) position `[+0x14]`=0,
+  EOS quirk `fires=0`, game parked in the streaming limiter.
+- Post-fix restore +1.05M: driver DMA callback `0x18610` (caller `0x1788B`),
+  event dispatcher `0x14170` +1.064M, then **advance callback `0x11450`**
+  (caller `0x141AD`) +1.064M — the real path is alive.
+- Node `[+0x14]` advances at ~48 kHz real time: 109,536 (save) → 140,480
+  (+400M) → 144,145 = `[+0x18]` (+~530M).
+- Single-step break-log window (snapF, 450M after snap007b): **`0x11340` node
+  removal hit once at +115,757,484, 10 steps after an `0x11450` event**, and the
+  post-window RAM shows the acceptance state: stream object `0x80DA7CB0`
+  `[+0x11C]` channel list empty, `[+0x124]` active count 0, node on the free
+  list (`[+0x128]`), node `[+0x14]==[+0x18]==0x23311`. `0x138F0` walking that
+  list now finds no `0x100` node, i.e. `0x11210` returns **status 3** — the exact
+  condition `0x20FC1` waits for, reached with no forced write.
+- The game then plays through the splash MPC sequence instead of parking:
+  channel `0x100` (3 s) removed, `0x200` (8 s, position 17,952→384,384, removed),
+  `0x300` (54 s) at 189,344 by 13.1B total; EIPs stay in PlayMPC
+  (`0x1Exxx`/`0x2xxxx`, limiter helper `0x138xx`), DVD reads continue, **no fault
+  through 13.1B steps** (`LastFault vec=0`).
+- The `0x20FC1` drain loop itself was **never entered** in the natural run (two
+  break-log windows, 0-800M after snap007b): with the channel now completing
+  through the real path, the EOS path no longer leaves the drain with a pending
+  channel, so PlayMPC advances straight to the next stream. The EOS quirk also
+  stays `fires=0` (the read-ahead no longer starves); no quirk or forced write is
+  involved.
+- Dashboard regression: 1B boot with HDD only — all steps executed, no fault,
+  NV2A draws=33811 pixels=284,274,887 frames=682, IDE/NV2A/APU counters sane
+  (APU `ist=0x10 ien=0xAFA`).
+
+**Next gate observed:** the game is inside the 007 splash MPC playback loop
+(PlayMPC at EIP `0x1E32D`/`0x1FC92` at 13.1B), cycling streams; the next visible
+gate is the end of the `0x300` (54 s) stream / subsequent MPCs, which at the
+real-time pace needs ~40B more steps. Open: DSP cores remain register-only
+(no GP/EP execution); voice pitch/resampling is not modeled (CBO advances by the
+frame quantum; 007's stream voices have pitch 0 = 48 kHz, so 1:1); xemu's
+32-sample VP frame vs XGrid's 256-sample frame only changes notifier granularity.
+
+**Status:** suite **1107/1107** (1096 + 11 new `ApuVoiceProcessorTests`); build +
+`dotnet format --verify-no-changes` clean.

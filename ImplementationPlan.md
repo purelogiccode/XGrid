@@ -3377,7 +3377,10 @@ Synthetic page-table tests and TLB invalidation tests; CPU executes code through
 ### PCI device topology (verified against xemu `hw/xbox/xbox.c`)
 
 Process directive: **consult the reference projects first** (`References/xemu-0.8.136`,
-`References/xqemu-master`, `References/Cxbx-Reloaded-master`, `References/Xermu-main`) to
+`References/xqemu-master`, `References/Cxbx-Reloaded-master`, `References/Xermu-main`,
+`References/envytools-master` for NV2A method/register/XF facts, `References/nv2a-trace-master`
+for pushbuffer/PGRAPH tracing facts, `References/XboxDevWiki`, `References/CopettiDocumentation`
+for high-level architecture) to
 confirm hardware layout, IDs, and behavior before implementing or debugging a device. Xemu is
 the LLE reference; Cxbx/Xermu are HLE (kernel reimplementation, no NV2A emulation) and only
 help for kernel-facing behavior.
@@ -3545,7 +3548,6 @@ precompiled interpreter ubershaders.
 **Facts (XboxWiki)**: `References/XboxDevWiki/html/NV2A.html` (NV2A MMIO/pipeline) plus
 `NV2A_Vertex attributes`/`NV2A_Fixed Function Pipeline`/`NV2A_Vertex Shader`/
 `NV2A_Pixel Combiner`/`NV2A_Surface Formats` (all under `References/XboxDevWiki/html/`).
-(vertex attributes, fixed-function pipeline, vertex shader, pixel combiner, surface formats).
 Guest page tables map the 16 MB control window cache-disabled (Boot Process `51`); BAR0 base
 observed 0xFD000000 during real boot.
 
