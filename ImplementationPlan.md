@@ -2964,7 +2964,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1092 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 47 Integration, 201 Nv2a, 9 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **1096 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 51 Integration, 201 Nv2a, 9 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3022,7 +3022,14 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — APU VP/DSP streaming (007 audio-drain gate).**
+**NEXT SESSION — sample XBE bring-up (triangle) + APU VP/DSP.**
+**SAMPLES LANDED (§104):** `data/test-samples/` (local, gitignored) holds
+`triangle.xbe` (nxdk sample — first GPU bring-up target),
+`kernel-test-suite-default.xbe` (kernel API coverage) and nxdk sources.
+A minimal XISO (`XISOSharp -y -m -c`) + `boot --dvd` reaches the XBE
+launch call `0x800158DA` at 525.7M steps, then dies in an unhandled
+fault-delivery path (`TryTransferToInterrupt`) — the custom BIOS permits
+unsigned code; diagnose in `wave/xbe-bringup` (snapshot at 525.6M).
 **MENU COLOR DONE (§95):** textured-RGB-zero fixed — three coupled
 texture-sample bugs (LU_IMAGE texel-unit coords, SZ POT `BASE_SIZE_U/V`
 instead of the image rect, `SZ_A4R4G4B4` unsupported). Live two-boot
@@ -3040,10 +3047,11 @@ callback fed by APU DSP/DMA position feedback. XGrid's APU stores PIO
 writes without a VP/DSP. Next: implement the APU voice-processor +
 DSP (xemu `hw/xbox/mcpx/vp/vp.c`, `dsp/dsp.c`+`dsp_dma.c`+`gp_ep.c`,
 `apu.c` FEVINTSTS/FENINTSTS trap delivery); acceptance = the `0x20FC1`
-wait completes. 1053 tests.
-NV2A remaining: mipmap LOD + DXT decode, PROJECT2D non-cube projective
-divide, DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS V bit
-offset, BRDF detail, Vulkan/OpenGL backends (16.6–16.7).
+wait completes. 1096 tests.
+NV2A remaining: mipmap LOD; DXT decode (deprioritized — the dashboard
+uses none, §105); `0x30` depth-format semantics; PROJECT2D non-cube
+projective divide, DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS
+V bit offset, BRDF detail, Vulkan/OpenGL backends (16.6–16.7).
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
@@ -3674,16 +3682,26 @@ uninterrupted 1.05B — EIP/regs/NV2A counters identical, frame SHA +
 Exclusions: diagnostic counters (core), unrestorable host handles
 (re-attach by path), socket-backend snapshots gated to loopback.
 
-**V2 — Minimal test-ROM suite (recon verdict §102: flat-binary harness,
-not XBEs).** 10-second iterations per device. Overlay replacement with an
-unsigned XBE is BLOCKED (retail kernel RSA/SHA-1 verifies; no MS key;
-NONSECURE bits are debug-kernel-only; debug BIOS unavailable).
-Recommended: `xgrid testrom --bin` flat-binary harness (no kernel/BIOS,
-bare-metal device pokes, `OUT 0xE9` console, `EAX=0+HLT`=pass) + NASM
-ROMs (NASM 3.01 on disk at an absolute path; no nxdk; mingw gcc is
-64-bit-only so `-m32` link is unproven). Acceptance: ROM-A NV2A textured
-quad, ROM-B IDE READ DMA (8 MB synthetic HDD), ROM-C pad GetState poll —
-each <100M steps with TESTROM PASS/FAIL + existing counters.
+**V2 — Minimal test-ROM suite + sample XBEs.** 10-second iterations per
+device. §102's "overlay-XBE blocked" verdict assumed a stock retail
+kernel — **superseded:** the operator's BIOS is a custom build that
+permits unsigned code (the unsigned EvoX dashboard runs), so unsigned
+XBEs go through the real kernel path (§104; `wave/xbe-bringup`).
+Harness: `xgrid testrom --bin` flat-binary (no kernel/BIOS, `OUT 0xE9`
+console, `EAX=0+HLT`=pass) + NASM ROMs. **Samples (local,
+`data/test-samples/`, gitignored):** `triangle.xbe` (nxdk sample — first
+GPU bring-up target; minimal XISO via `XISOSharp -y -m -c` + `boot
+--dvd`), `kernel-test-suite-default.xbe` (kernel API coverage), nxdk
+`hello`/`led`/`mesh`/`triangle` sources (see folder README). Acceptance:
+ROM-A NV2A textured quad (DONE), ROM-B IDE READ DMA, ROM-C pad GetState
+poll — each <100M steps with TESTROM PASS/FAIL + existing counters;
+triangle renders through the kernel.
+Status PARTIAL 2026-10-12 (wave/testrom-harness, §103): harness DONE +
+ROM-A DONE — `xgrid testrom --bin` (no kernel/BIOS, `OUT 0xE9` console,
+`EAX=0+HLT`=pass) + `TestRomRunner` + `tools/testroms/nv2a_quad.asm/.bin`
++ 4 tests (1096 green). ROM-A live: `TESTROM PASS nv2a_quad draws=1
+textured=2080 frames=1 nonzero=1056` in 68,491 steps. ROM-B (IDE READ
+DMA) and ROM-C (pad GetState poll) remain as specified §102 follow-ups.
 
 **V3 — Differential harness vs xemu.** Turn search into bisection.
 Acceptance: scripted early-boot state comparison at fixed steps (valid
