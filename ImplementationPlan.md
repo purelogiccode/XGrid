@@ -2994,7 +2994,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1113 tests passing** (39 Core, 402 Cpu, 55 Memory, 256 Bus, 55 Integration, 203 Nv2a, 20 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **1126 tests passing** (39 Core, 413 Cpu, 55 Memory, 256 Bus, 55 Integration, 205 Nv2a, 20 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3052,27 +3052,43 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — 007 post-drain + performance track.**
-**WAVE DONE (§§106–108).** `triangle.xbe` renders through the real kernel
-(fresh 1B boot: no fault, `frames=68`, colored Gouraud frame at
-`Temp\opencode\triangle-iso\merged_triangle.png`). §104's crash was three
-NV2A gaps (NO_OPERATION pusher stall until PGRAPH_INTR ack, 0x1D8C/0x1D90
-aliases, surface offsets = DMA-context base + offset; a pbkit depth clear
-had been wiping physical 0..0x12C000). Known follow-up: a diagonal hatch
-artifact inside the triangle (the demo draws 3 overlapping triangles at
-equal z — equal-z depth/stencil interaction, not a crash).
-Kernel-test-suite sample boots clean. APU voice processor (§107): real
-position advance + notifiers — the `0x20FC1` drain gate is PASSED
-(advance callback → node removal → channel status 3); the game continues
-past it with no fault. V2 ROM-B/C green (§108). 1113 tests; snapshot
-format v2 (old `.xgs` invalid); pusher timing now faithful → NV2A counter
-baselines shifted (re-record).
-NV2A remaining: triangle equal-z hatch artifact; mipmap LOD; DXT decode
-(deprioritized — the dashboard uses none, §105); `0x30` depth-format
-semantics; PROJECT2D non-cube projective divide, DOT_STR_3D dim==3,
-border/mip/filtering, TEXADDRESS V bit offset, BRDF detail,
-Vulkan/OpenGL backends (16.6–16.7).
-`F36A2`/LBA 8 CLOSED as no-bug (§73).
+**NEXT SESSION — GPU-backend slice 1 + 007 stream end.**
+**WAVE DONE (§§109–112).** Triangle hatch FIXED (§109): the depth test
+compared raw interpolated floats against the quantized stored decode — the
+demo's 3 coplanar triangles (device z 65536 → field 0x10000) straddled the
+decode ±1 ULP so LEQUAL interleaved pass/fail per pixel = diagonal hatch;
+xemu `psh.c:1491-1516` floors depth before the test. Fix: encode the
+fragment through `EncodeDepth24/16` and compare in zeta field space; frame
+`A1740DE0...` hatch-free, dashboard frame `4EF1FBF6...` byte-identical;
++2 tests (both fail pre-fix); test-harness PUT/barrier kick bug fixed
+(`PushMethods` included the 0x00001001 barrier as a jump — every second
+draw in a test was silently dead).
+**GPU-backend design landed (§110 → `docs/research-notes/gpu-backend-design.md`):**
+first slice = the dashboard menu method subset (triangle stream: 223,956
+methods / 471 unique pairs, ~98.9% RecordMethod-covered); recommend GLSL
+generated from XGrid's own `PshCombiner`/`VshProgram` semantics (option a);
+CPU vertex path kept in slice 1 (fragment fill-rate is the bottleneck);
+DisplayFrame-parity present; golden-frame sw-vs-gl acceptance gate per
+slice; software path always retained behind `--gpu sw`; Playtest-v2 perf
+applicability matrix (uniform dirty-sections + probe-gated GL early, shader
+seeds after ship, writeback at eviction, cost model never); verbatim next
+work order in design §8 — **operator picks the GL binding first** (OpenTK /
+Veldridu / Silk.NET).
+**Opt-in `--idle-skip` landed (§111):** guests execute 0 HLTs in 1B boots —
+parks are spin loops (kernel idle thread `0x8001B02E`); the detector
+fast-forwards verified spin-park bodies with IRQ/MMIO/PIO hard stops;
+flag-off byte-identical (frame SHA + full log), flag-on 1.63× dashboard /
+1.90× triangle wall clock; absolute-step recipes are flag-off-only; +11
+tests.
+**007 post-drain probe (§112):** gate-free to 18.1B (5.0B past §107); intro
+FMV live (~22 fps flips, CPU-blitted, DVD READ(10) stream); stream end
+~52.5B total is the next candidate; probe origin snapshot `pd181.xgs` +
+verbatim 34.5B follow-up command in §112. 1126 tests.
+NV2A remaining: mipmap LOD; DXT decode (deprioritized — the dashboard uses
+none, §105); `0x30` depth semantics; PROJECT2D non-cube projective divide,
+DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS V bit offset, BRDF
+detail, Vulkan/OpenGL backends (16.6–16.7). idle-skip V2 (MMIO/PIO parks)
+open. `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture

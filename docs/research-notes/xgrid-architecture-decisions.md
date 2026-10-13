@@ -4703,3 +4703,347 @@ wall-clock dependence).
 
 **Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
 §104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
+
+## §109 — Triangle diagonal hatch fixed: depth compare quantized to zeta precision (2026-10-13)
+
+Work in `Temp\opencode\worktrees\triangle-hatch` (`wave/triangle-hatch`).
+Closes the §106 follow-up "diagonal hatch artifact inside the triangle".
+Acceptance met on all four points (evidence below).
+
+**What the hatch was (evidence chain, differential-first).** Baseline
+unmodified `triangle.xbe` boot (1B steps, private media copies, `--frame`
+SHA256 `72F880C75F18D8E8EABA867C47DA415E27DD654A2344DED8DFADB3F6A73248DF`)
+shows diagonal stripes inside the rendered triangle. The stripes are **RGB,
+not alpha** (frame pixels A=`FF` on both sides of every stripe): scanline
+y=200 alternates between the foreground Gouraud ramp (`R=6A G=94 B=00`
+progressing) and the background triangle's constant gradient color
+(`0B0B40`) — i.e. foreground fragments randomly failing the depth test and
+letting the already-drawn background show through. The demo
+(`data/test-samples/nxdk-triangle/main.c`) draws **three triangles at the
+same Z** in one `TRIANGLES` draw; `vs.vs.cg` computes
+`position.xyz /= position.w` in-shader with w=1, so every vertex leaves the
+program at device z = 65536 (viewport bake `1.0 * (zmax - zmin)`). The
+pusher stream shows depth enable `030C=1`, depth func `0354=00000203`
+(LEQUAL), depth mask on, stencil test off, `Z_FORMAT` **clear** (`0290`
+values are `0x00100001`/`0x00110001` — bits 16/20, never bit 12), ZCLIP
+`[0, 16777215]`, `1D78=CULL`, and the pbkit clear `1D8C=FFFFFF00`
+(depth field 1.0).
+
+**Root cause (XGrid diverged from hardware).** Reference fact, xemu
+`pgraph/glsl/psh.c:1491-1516`: *"With integer depth buffers Xbox hardware
+floors values"* — the reference fragment shader writes an already-quantized
+`gl_FragDepth` (`floor(zvalue)` in device units for D16/D24), and the GL /
+Vulkan / D3D pipelines all convert FragDepth to the attachment's precision
+**before** the fixed-function depth test. XGrid instead compared the raw
+float interpolated depth (`w1*az + w2*bz + w0*cz`, ULP noise because the
+barycentric weights only sum to 1 approximately) against the stored depth
+decoded from the quantized zeta field. All three coplanar triangles encode
+to the same field (device 65536 -> field `0x10000`), but the unquantized
+fragment floats straddle the stored decode by ~1 ULP: LEQUAL passes where
+the interpolation rounds down and fails where it rounds up -> per-pixel
+interleaving of pass/fail = the diagonal hatch (weights vary smoothly along
+diagonals, so the rounding pattern does too). Exact single-precision
+replication of `FillTriangle`'s formulas confirmed the mechanism: geometry
+A = 12/64, geometry B = 7/64 sampled pixels with `interp > stored` (the
+isolated unit test failed with exactly 12/64 undrawn pre-fix).
+
+**Fix (`src/XGrid.Nv2a/Nv2aMmio.cs`, `ProcessFragment`).** When the depth
+test runs, the fragment depth is encoded through the same conversion the
+store uses (`EncodeDepth24`/`EncodeDepth16` -> fixed D24/D16 integer or
+F24/F16 custom-float field) and the compare happens in **zeta field space**
+against the raw stored field (monotonic with the stored value). NaN keeps
+the old IEEE float-compare path (ordered relations false, as before). The
+store path, ZCLIP order (cull/clamp first), stencil ops, and all counters
+are unchanged.
+
+**Test-harness bug found while building the repro (also fixed).**
+`PgraphTransformTests.PushMethods` kicked with `PUT = address + 4`,
+*including* the trailing `0x00001001` word. That word is an NV **jump to
+0x1000** control word (`(word & 3) == 1`); PUT (~0xE4) != 0x1000, so the
+pusher ran past the stream into scratch memory, misparsed vertex floats
+(e.g. `0x3F800000` parses as jump-to-`0x1F800000`), and suspended with
+`DmaErrorProtection` (err=6) after **every** single-draw test. A second
+`PushMethods` kick in the same test was therefore always dead — notably
+`FloatDepth_OrderingMatchesFixed`'s second draw never actually ran (its
+assertions hold vacuously; unchanged expectations, now non-vacuous if
+relied upon). `PushMethods` now sets `PUT = data-end` (the pusher stops
+cleanly at `get == put` before the barrier) and a new
+`PushMethodsContinue` appends a second stream at the current GET, the way
+guests push contiguously. All 203 pre-existing Nv2a tests pass unchanged
+with the new kick semantics.
+
+**New tests (2, `tests/XGrid.Nv2a.Tests/PgraphTransformTests.cs`):**
+- `DepthTest_CoplanarLEQUALOverlapDrawsSolidTopTriangle` — two overlapping
+  coplanar triangles at device z 65536 (the demo's exact Z), pbkit clear
+  `0xFFFFFF00`, depth LEQUAL: every interior pixel of the top triangle must
+  be the top color. **Fails pre-fix** (bottom red `FFFF0000` bleeding
+  through where blue `FF0000FF` must be = the hatch in miniature), passes
+  post-fix.
+- `DepthTest_QuantizedComparePassesSubQuantumLequal` — stored field
+  `0x10000`, fragment device z 65536: LEQUAL must pass for all 64 sampled
+  interior pixels. **Fails pre-fix with 12/64 undrawn** (matches the exact
+  float simulation), passes post-fix.
+
+**Acceptance evidence.**
+- (i) Fresh `triangle.xbe` boot, 1B steps, private `wt-data` media: no
+  fault (`LastFault vec=0`), and the hatch is **gone** — frame SHA256
+  `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`,
+  zero neighbor-jump anomaly rows below the text region (baseline: 286
+  rows), smooth scanlines; triangle counters draws=2706/depth=15667336/
+  zclipCull=21526/frames=68/stalls=34 unchanged, **pixels
+  88,944,649 -> 89,142,121 (+197,472 healed fragments** over 68 frames),
+  PGRAPH stream byte-identical in length (223956 methods).
+- (ii) Dashboard neutral pad-recipe boot, 1B steps: frame SHA256
+  `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+  **identical to the pre-change baseline**, and draws=33632 skipped=1402
+  pixels=285171381 textured=278577344 clears=695 blended=211696978
+  depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686 all identical.
+- (iii) `dotnet test -c Release`: **1115/1115** green (1113 baseline + 2
+  new), zero changes to existing expectations.
+- (iv) `dotnet format --verify-no-changes` clean.
+
+**Deliberate deltas / risks.** (1) Compare quantization uses XGrid's
+round-to-nearest encode (the §97-kept convention), not xemu's documented
+hardware `floor`; self-consistent with XGrid's store, spec-shaped
+(D3D/GL convert-to-attachment-precision), and the floor-vs-round store
+deviation stays exactly as §97 logged it — switching either to floor would
+flip existing goldens (`DepthTest_PassesNearerAndWrites` pins `0x80000000`,
+which floor(z=8388608±) would not reproduce). (2) Dashboard `depth=136`
+tested pixels happen to sit far from quantization boundaries, so the frame
+is bit-identical; a future guest fighting depth at exact half-ULP
+boundaries could see a different winner than pre-fix (that behavior was
+the bug). (3) The `--fb` raw dump for this boot reads `addr=0x00000000`
+(unresolved surface offset -> kernel-memory noise); the flip-captured
+`--frame` is the real surface — pre-existing, out of scope.
+
+**Files:** `src/XGrid.Nv2a/Nv2aMmio.cs` (field-space depth compare),
+`tests/XGrid.Nv2a.Tests/PgraphTransformTests.cs` (PUT/barrier kick fix,
+`PushMethodsContinue`, 2 new tests).
+
+## §110 — GPU backend design
+
+Design document for XGrid's first host-GPU backend slice:
+`docs/research-notes/gpu-backend-design.md` (wave `wave/gpu-backend-scope`,
+2026-10-13). Contents: method/state subset inventory (dashboard figures from the
+M5-era notes + a fresh 1B-step triangle-ISO `--pgraph` capture: 223,956 methods,
+471 unique pairs, ~98.9% handled by `RecordMethod`, named inert rows; 007 histogram
+open), the `RecordMethod`→`FlushDraw`→`FillTriangle`→`DisplayFrame` seam map,
+first-slice scope (menu subset; textures 02–07/10–12/1E only, no DXT per §105;
+combiner observed `stages=1`), translation options with recommendation **(a)
+translate XGrid's own `PshCombiner`/`VshProgram` semantics to GLSL** (CPU vertex
+path kept in slice 1), Playtest-v2 applicability matrix (uniform dirty-sections +
+probe-gated GL first; seeds after ship; writeback at eviction; cost model likely
+never), DisplayFrame-parity present path preserving §43/§106 flip-stall semantics,
+three slices each with a golden-frame acceptance gate (software path always
+retained behind a flag), risks (stream growth + re-inventory procedure, GL/VK,
+async-pusher/§106 stall, tolerance policy, threading), and a verbatim next-wave
+work order. No `src/`/`tests/` changes in this wave.
+
+## §111 — Idle-skip V1: opt-in fast-forward of verified spin-park loops (2026-10-13)
+
+Branch `wave/idle-skip` (worktree `Temp\opencode\worktrees\idle-skip`). First
+SAFE, opt-in CPU fast-forward increment per the velocity program ("idle-skip
+before full JIT"). Scope: `src/XGrid.Cpu/` + `src/XGrid.Host/` + CLI flag +
+`tests/XGrid.Cpu.Tests/`. Default OFF: with no flag the interpreter path is
+byte-identical to master (proven below).
+
+**Measured facts first (the park question).**
+- Guests **never execute HLT** in 1B-step boots: `hlt=0` (probe counter) in
+  both dashboard and triangle runs. Parks are SPIN LOOPS, confirming §§32/107.
+- The dominant park in both boots is the **kernel idle thread at
+  `0x8001B02E`** (from `--ramdump` + `objdump`):
+  `sti; nop; nop; cli; cmp 0(%ebp),%ebp; je 0x8001B043; cmpl $0,0x2c(%ebx);
+  je 0x8001B02E` — IRQ-wait spin over dispatcher state (`[ebp]` ready-queue
+  at VA `0x80035C2C`, interrupt/DPC flag at `0x80035C08`), with a forward
+  conditional sub-path that skips the dispatcher-call path when idle. In the
+  triangle boot it consumes >=250M of 1B steps (progress EIPs
+  `0x8001B031/0x8001B047` from 750M..1000M, flag-off).
+
+**Design (candidate V1, chosen safest that meets acceptance).**
+Runtime state machine (`IdleSkipDetector`) observes every executed instruction
+(flag-off: detector is null, zero behavior change): candidate anchored on any
+taken backward branch; body validated per iteration as straight-line with
+(single) backward exit plus forward-conditional sub-paths, executed instruction
+stream recorded (forward jumps make linear re-decode unsound), allow-listed
+mnemonics only (no memory writes, no IO, no indirect control), runtime access
+notes through `TranslateLinear` (all fetches + MMU-on data) reject any
+non-RAM physical or write immediately, ESP stable across the iteration head.
+Safety theorem: the body must be a **fixed point** of (register file, unchanged
+memory, IF) — first-definition-from-memory/invariant rules reject register
+countdowns (`dec ecx; jnz`) and pointer chases, so the exit decision cannot
+change without an external write; therefore skipping until an external event
+is exact. Events: (1) pending+enabled PIC request (hard stop each chunk; for
+bodies containing `STI` the check ignores head-time IF — an IRQ is deliverable
+mid-body, unit-tested); (2) watched-RAM dword change (union of the body's
+data reads, baseline snapshotted at trigger); (3) host deadline
+(`IIdleSkipHost.StepsUntilNextDeadline`) clamps the chunk so a fake device's
+scheduled event lands EXACTLY on its cycle; (4) instruction budget. Advance in
+chunks of 4096 cycles (`Tsc += chunk`, `host.AdvanceIdle(chunk)` — machine
+`Advance`, all devices are remainder-linear per XboxBus.Advance docs), counting
+skipped steps toward `--steps`; `XboxMachine.Run` subtracts
+`Cpu.TakeIdleAdvanced()` so devices are never advanced twice. Threshold 128
+validated iterations. MMIO/PIO/write inside a measured body poisons that head
+(per-loop disable, counted). The real machine has no device-deadline API
+without touching sibling-owned device projects, so it relies on the IRQ/watch
+stops with chunk <=4096 (finer than the baseline's own 65536-step batch
+quantization). `--idle-skip-probe` measures without skipping; the CLI prints
+the counter line only when the flag is on.
+
+**Acceptance evidence.**
+- (1) Flag-off: `dotnet test` **1124/1124** green (1113 baseline + 11 new
+  `IdleSkipTests`; zero existing expectations touched);
+  `dotnet format --verify-no-changes` clean. Dashboard neutral recipe
+  (pad-script + `--break-log 1859D/1E420`, 1B, fresh `wt-data` copies),
+  pre-change baseline vs final build: frame SHA256 identical
+  (`4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`),
+  full logs byte-identical (only the `Frame <path>` output name differs):
+  HIT `972246032 EIP=0001859D`, HIT `972349245 EIP=0001E420`,
+  draws=33623 skipped=1400 pixels=285152644 frames=685 stalls=685,
+  Interrupts=3152, EOS checks=244055 fires=0, LastFault=0, EIP=0x0002EA06.
+- (2) Flag-on unit tests (synthetic loops + fake host with one scheduled
+  event): exact deadline landing (`Advanced == 1000` for deadline 1000);
+  bounded poll-exit overshoot (poll at 5000, chunk 4096 -> stop in
+  (5000, 5000+4096], exact when deadline known); pending+enabled IRQ never
+  skipped (0 advance when pending at trigger; exact-deadline stop when the
+  event raises the IRQ); MMIO-classified body and PIO body disable skip
+  (0 triggers, accessAborts>=1); register countdown and memory-write bodies
+  rejected; STI-body IRQ wake with IF clear at head; measure-only probe;
+  flag-off byte-identity (Tsc==steps, no host calls).
+- (3) Flag-on integration, 1B steps each, sequential vs flag-off, machine
+  shared with sibling agents: **triangle**: no fault, frames=68, draws/pixels
+  counters and final frame SHA **identical to flag-off**
+  (`72F880C7...`); `skippedSteps=447,784,409` (44.8% of budget),
+  triggers=7561, lastTrigger=0x8001B02E; wall **230.7s vs 437.1s = 1.90x**.
+  **dashboard**: no fault, frames=686, frame SHA identical to flag-off plain
+  (`4EF1FBF6...`), pad-script events fired at their exact steps;
+  `skippedSteps=129,424,394` (12.9%), triggers=2203, stopIrq=203;
+  wall **317.3s vs 516.7s = 1.63x**. Effective rate during parks: skipped
+  chunks cost ~ns/cycle (device remainder math only) vs ~70ns/instruction
+  interpreted.
+- (4) format verify exit 0.
+
+**Recipe semantics (documented in the CLI banner).** Absolute-step recipes
+(`@950000000`, `--break-log` HIT step numbers, `--save-at`, `--eip-hist`)
+apply to **flag-off runs**: flag-on IRQ/watch delivery is chunk-quantized, so
+step-numbered events may shift (dashboard flag-on drew 33638 vs 33632 — a few
+vblank-timed draws differ; final frames matched). Pad-script/boundaries are
+still honored under flag-on (batches clamp to event steps). Semantic
+milestones that must hold flag-on: no fault at 1B, frames present, pad events
+fire, dashboard/triangle counters within noise.
+
+**Open risks / follow-ups.**
+- MMIO/PIO parks (e.g. NV2A flip-stall register polls, PIT/RTC port waits)
+  are rejected by design; capturing them needs per-device read-effect modeling
+  (V2), not covered here.
+- Per-head poisoning means self-modifying loop code is not re-detected.
+- `stopWatch=0` in live runs: watched idle-loop RAM only changes via the ISR
+  path, so the IRQ stop always fires first (watch remains the unit-tested
+  correctness net for DMA-written polls).
+- Wall-clocks were taken under 3-way agent contention; ratios are back-to-back
+  but absolute insn/s varies. HLT remains "stops the run" (existing behavior,
+  guests never hit it).
+- Tests: 1124/1124; snapshot format untouched; V1 snapshot resets the
+  transient detector on load.
+
+## §112 — 007 post-drain
+
+Branch `wave/007-postdrain` (worktree `Temp\opencode\worktrees\007-postdrain`).
+PROBE-ONLY wave: no `src/` or `tests/` changes. Goal: map 007's phase after the
+§107 PlayMPC drain gate and find the next gate. EOS quirk left default-ON per
+§92/§94 (it never fired: `fires=0` through 18.1B). Private media copies in
+`wt-data\` (BIOS/MCPX/EEPROM/qcow2); shared CHD on `E:` read-only.
+
+**Probe origin (fresh v2 snapshot, cold run).** Master @692653c Release CLI:
+`boot ... --steps 13100000000 --save-state postdrain.xgs --eip-hist 10000000
+--watch 0xDA7CB0,0xDA7DE8 --frame pd13.bmp --dump 0xDA7CB0,0x150 --ramdump
+pd13.bin` — EXIT=0, wall 4347.7 s (contended host, ~3.0M insn/s; sibling agents
+running in parallel), saved at step 13,100,000,000 EIP `0x00021308`,
+`LastFault vec=0`. Restore verified: `--load-state postdrain.xgs --steps
+1000000` loads at EIP `0x21308`, continues to `0x213B1`, no fault, counters
+continuous (EOS checks 200425->200441). Determinism cross-check: node position
+at 13.1B = 189,344 — byte-identical to §107's recorded value.
+
+**Phase timeline (every row = watch/counter/frame/log evidence from this
+wave's runs; logs in worktree `logs\`).**
+
+| Step window | EIP range | Identified activity | Evidence |
+|---|---|---|---|
+| 0 – 0.5B | `0x800422B9/B0` (kernel) | Kernel boot + XBE load + PlayMPC setup | run13 Progress @250M/500M (`logs\run13.utf8.log`) |
+| 0.5 – 0.75B | `0x800422B0` -> `0x138D1` | Transition into PlayMPC streaming (stream-clock helper live by 750M) | Progress @750M; EIPHIST 0x138xx helpers 162/1310 samples over the run |
+| 0.75 – 2.52B | `0x138xx`/`0x1Exxx`-`0x21xxx` | Splash MPC sequence: channel 0x100, then 0x200; drain completes naturally at ~2.516B (§107 node removal +115,757,484 from 2.4B) — no forced write, quirk `fires=0` | run13 watch: exactly 11 mutations of channel-list fields (`0xDA7DCC/DD0/DD4`), first-writer EIP `0x2999A`-`0x299B0` (create), last-writers `0x11C72/0x11C7F/0x11C85/0x114DE` (unlink/free); EOS `checks=200425 fires=0` |
+| 2.52 – 13.1B | PlayMPC `0x1Exxx`-`0x22xxx`, kernel excursions `0x80019855`/`0x800231E1` | Channel 0x200 (8 s) completes, channel 0x300 (54.3 s) plays to position 189,344; intro FMV running: DVD READ(10) `0x28` stream, ~22 fps present flips, CPU-blit frames | run13 Progress every 250M; PrintState `frames=500 stalls=500 draws=2672` (draws frozen — video is written to the surface outside PGRAPH and presented by flip; surfaces alternate `9BC000`/`890000`); ATAPI packet ring strictly sequential LBAs (`0x9719E`+4 steps); node dump: ch `0x300` at `[+0x8]`, `[+0x14]=189344`, `[+0x18]=2607407` (54.32 s); watch final state head=`0x80DA7DE8`, active count=1; `pd13.bmp` = real FMV frame (mean luma 45.6, 65.75% lit, letterbox y73-407, 2634 sampled colors — NOT the §92 full-white pre-drain splash) |
+| 13.1 – 15.1B | `0x1Exxx`-`0x21xxx` | Steady 0x300 playback continues, no phase change | 4 x 500M batches (`logs\pd136/pd141/pd146/pd151.log`): EXIT=0 each, `LastFault vec=0`; frames 500->519->538->557->576 (+19/500M = 22 fps); draws frozen 2672; node pos 189,344->220,544->251,136->281,312->312,640 (61-62k samples/B); BM starts +50/500M (video DMA); ZERO Watch writes (no channel churn); EOS `fires=0`; `voiceOff=1` unchanged (no voice restarts) |
+| 15.1 – 17.1B | `0x1Exxx`-`0x22xxx` (end `0x222CA`) | Same steady playback; measured throughput 4.53M insn/s | 2B batch `logs\pd171.log`: EXIT=0 in 7:25.6, frames->653, node pos->434,720, EOS checks->261825 fires=0, no Watch writes; EIPHIST (200 samples @10M) shows only PlayMPC/clock EIPs, no `0x20FCx`/`0x602F7` |
+| 17.1 – 18.1B | end `0x218BF` (PlayMPC) | Event-hunt window: NO drain re-entry, NO stream end, NO menu polling | 1B batch with `--break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7` (`logs\pd181.utf8.log`): **0 HIT lines**, EXIT=0 in 3:49.1 (4.37M/s — break-log costs ~3% vs main loop); frames->691; save `pd181.xgs` verified (load +1M, EIP `0x218BF`->`0x1E133`, no fault) |
+
+Frame progression proof: `pd13.bmp` vs `pd171.bmp` differ in 273,055/307,200
+RGB pixels — the FMV image advances across batches (present path = CPU-written
+surface + flip; NV2A draw/texture counters stay frozen at 2672/33,087,288
+throughout 13.1-18.1B, so no per-frame GPU work). By 13.1B the pre/early-stream
+rendering had already accumulated **62,444,852 format-`0x30` texture-sample
+misses out of 62,444,852 attempts** (all missed; formats `06`/`12` account for
+all 33.09M OK samples) — the §105 open item is real and heavy on this title's
+menu/splash rendering, though the video phase itself does no texture sampling.
+
+**NEXT GATE: none found — gate-free progress 0 -> 18.1B steps.** The post-drain
+ground is 5.0B steps beyond §107's 13.1B frontier: no fault (`LastFault vec=0`
+every batch), no new EIP plateau (all EIPs stay inside the already-running
+PlayMPC call: `0x1Exxx`-`0x22xxx` + `0x138xx` clock helpers), no device waits
+video keeps flipping / DVD keeps streaming / APU keeps advancing / pad
+interrupts keep NAK-ing, no channel churn (watch silent), and the drain loop,
+node-removal, PlayMPC-entry and kernel-GetState addresses were never hit in a
+dedicated 1B break-log window. **Honest statement:** the stream's natural end
+remains the next candidate gate. Measured pace (61,344 samples/B over
+13.1-17.1B; channel 0x300 total 2,607,407 samples; position ~495,760
+extrapolated at 18.1B) puts channel 0x300's completion at **~52.5B total
+steps** (consistent with §107's "~40B more" from 13.1B; the briefing's "~40B
+total" is a lower bound). What happens at that end — drain-loop re-entry
+(`0x20FC1`), next MPC file (`ASSETS\SOUND\VIDEO\{ATT,HILITE,MGM,EAG}.MPC` per
+§98 strings), or a jump to menu/input polling (`0x602F7`) — is unverified past
+18.1B. Reaching it costs ~34.5B steps (~2.2 h at the contended 4.4M/s; ~41 min
+at the 14M/s idle-host rate).
+
+**Recommended follow-up acceptance test (verbatim, next wave):**
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd181.xgs --steps 34500000000 --save-state pd526.xgs --break-log 0x20FC1 --break-log 0x11340 --break-log 0x20BD0 --break-log 0x602F7 --frame pd526.bmp
+```
+
+Acceptance: a `HIT` line (drain-loop entry / node removal / PlayMPC re-entry /
+kernel GetState) with its step number, OR a fault line, OR a new EIP plateau in
+the final state — each identifies the next gate exactly; re-snapshot (v2)
+immediately at the HIT step for the decode wave. Chunk the 34.5B via
+intermediate `--save-state` if wall-clock risk is high (500M-2B batches cost
+2-8 min each here).
+
+**Artifacts (worktree, NOT committed — paths only):** snapshots
+`postdrain.xgs` (13.1B), `pd136/pd141/pd146/pd151/pd171/pd181.xgs` chain
+(13.6/14.1/14.6/15.1/17.1/18.1B), `pd14.xgs` (orphan duplicate of the 14.1B
+state from a duplicated launch, superseded by `pd141.xgs`); frames
+`pd13/pd136/pd141/pd146/pd151/pd171/pd181.bmp`; 64 MB RAM dump `pd13.bin`;
+batch logs `logs\pd136..pd171.log`; key logs `logs\run13.utf8.log` (full
+13.1B run: Progress timeline + PrintState + watch + EIPHIST) and
+`logs\pd181.utf8.log` (zero-HIT break-log window) — `logs/` is repo-ignored,
+so these stay worktree-only with their decisive lines quoted above; helper
+scripts `run13.ps1`, `run_pd14.ps1`.
+
+**Infra incidents (open, not emulator bugs):** two process deaths were
+observed and NOT reproduced — (1) a foreground 13.1B attempt exited code -1
+right after its `Progress 4250000000` line with no stderr (the identical rerun
+completed 13.1B clean through the same EIP sequence); (2) a detached
+`--load-state` 1B attempt's wrapper died without its exit marker and its
+`*>`-redirected log ended up 0 bytes (one completed copy of that same command
+still produced `pd14.xgs`). No Windows application event-log entries were
+found; all subsequent foreground 500M/1B/2B batches and both restore verifications
+completed EXIT=0. Suspect external process interference on the shared host
+(sibling wave agents run their own `dotnet` boots concurrently), not a runtime
+crash — next long run should keep the foreground+`Tee` pattern or re-check
+process liveness.
+
+**Open questions:** (a) phase after channel 0x300 ends (~52.5B) — drain vs next
+MPC vs menu, per the acceptance command above; (b) the present path for FMV —
+CPU blit vs PVIDEO overlay (draws/textures frozen while pixels change; decode
+only if a visual bug appears); (c) format-`0x30` texture miss (62.4M hits by
+13.1B, §105) — impact on menu/splash visuals unassessed; (d) APU `voice list
+cycle` log lines are benign empty-list probes (3 lists x repeated, no state
+damage observed).

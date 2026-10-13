@@ -260,33 +260,55 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   gate PASSED). V2 ROM-B/C green (§108). 1113 tests. Snapshot format v2
   (old `.xgs` invalid); pusher timing is now faithful so NV2A counter
   baselines shifted (re-record).
+- **Wave 5b (2026-10-13, §§109–112):** triangle hatch FIXED (§109 — depth
+  compare in zeta field space: the 3 coplanar demo triangles encode to the
+  same field `0x10000` but raw interpolated floats straddled the stored
+  decode ±1 ULP → LEQUAL pass/fail interleave; xemu `psh.c:1491-1516` floors
+  depth before the test; frame `A1740DE0…` hatch-free, dashboard frame
+  `4EF1FBF6…` unchanged; +2 tests fail pre-fix; test-harness PUT/barrier
+  kick bug fixed). GPU-backend design + method inventory (§110 →
+  `docs/research-notes/gpu-backend-design.md`: menu-subset slice 1, GLSL
+  from own `PshCombiner`/`VshProgram`, golden-frame gates, `--gpu sw`
+  retained; triangle stream 223,956 methods / 471 unique pairs). Opt-in
+  `--idle-skip` (§111): spin-park fast-forward (0 HLTs in 1B boots; kernel
+  idle thread `0x8001B02E`), flag-off byte-identical, flag-on 1.63×/1.90×
+  wall clock, +11 tests. 007 post-drain probe (§112): gate-free to 18.1B
+  (5.0B past §107), intro FMV live ~22 fps, stream end ~52.5B total next;
+  probe origin `pd181.xgs`. Baseline **1126 tests**.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1113 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1126 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — 007 post-drain + performance track.
+## Next session — GPU-backend slice 1 + 007 stream end.
 
-1. **WAVE DONE (§§106–108).** `triangle.xbe` renders through the real
-   kernel (fresh 1B boot: no fault, `frames=68`, colored Gouraud frame
-   at `Temp\opencode\triangle-iso\merged_triangle.png`). Known follow-up:
-   a diagonal hatch artifact inside the triangle — the demo draws 3
-   overlapping triangles at equal z (`data/test-samples/nxdk-triangle/
-   main.c`), so it is an equal-z depth/stencil interaction in the
-   rasterizer, not a crash. Kernel-test-suite sample boots clean (no
-   rendering — it is a test suite). APU VP (§107): the `0x20FC1` drain
-   gate is PASSED (real advance callback → node removal → channel
-   status 3); the game continues past it, no fault; DSP cores remain
-   register-only (not needed so far). V2 ROM-B/C green (§108). 1113
-   tests; snapshot format v2 (old `.xgs` invalid).
-2. **007 post-drain:** run past the drain (snapshot-driven) to find the
-   next phase/gate; the stream's natural end is ~40B steps away (§107).
-3. **Performance track:** GPU backend (menu method subset) + Track C JIT
-   — the pillars for interactive rates (see the plan's velocity program).
-4. NV2A remaining: triangle equal-z depth/stencil hatch artifact;
-   mipmap LOD; DXT decode (deprioritized — the dashboard uses none,
-   §105); `0x30` depth semantics; PROJECT2D non-cube projective divide,
-   DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS V bit offset,
-   BRDF detail, Vulkan/OpenGL backends (16.6–16.7).
+1. **WAVE DONE (§§109–112).** Triangle hatch FIXED (§109: depth compare in
+   zeta field space — the 3 coplanar demo triangles straddled the quantized
+   stored decode ±1 ULP so LEQUAL interleaved per pixel; dashboard frame
+   byte-identical; +2 tests; test-harness PUT/barrier kick bug fixed).
+   GPU-backend design landed (§110 → `docs/research-notes/
+   gpu-backend-design.md`: first slice = menu method subset, GLSL generated
+   from our own `PshCombiner`/`VshProgram`, golden-frame sw-vs-gl gates,
+   software path retained behind `--gpu sw`). Opt-in `--idle-skip` (§111):
+   guests execute 0 HLTs — parks are spin loops (kernel idle thread
+   `0x8001B02E`); flag-off byte-identical, flag-on 1.63× dashboard / 1.90×
+   triangle wall clock; absolute-step recipes are flag-off-only. 007 probe
+   (§112): gate-free to 18.1B (intro FMV live ~22 fps, CPU-blitted).
+   **1126 tests.**
+2. **GPU-backend slice 1:** work order is verbatim in
+   `gpu-backend-design.md` §8 — operator first picks the GL binding
+   (OpenTK / Veldridu / Silk.NET), then ONE agent builds `XGrid.GpuGl` +
+   the `IPgraphBackend` seam + probe-gated init + golden harness. Never
+   parallelize a single engine build.
+3. **007 stream end:** probe origin `pd181.xgs` (path in §112); next
+   candidate gate = stream end ~52.5B total — run §112's verbatim command
+   (34.5B forward, 4 `--break-log` addresses, save `pd526.xgs`).
+   Snapshot-driven, probe-only.
+4. idle-skip V2 (MMIO/PIO parks — flip-stall register polls need
+   per-device read-effect modeling). NV2A remaining: mipmap LOD; DXT
+   decode (deprioritized — the dashboard uses none, §105); `0x30` depth
+   semantics; PROJECT2D non-cube projective divide, DOT_STR_3D dim==3,
+   border/mip/filtering, TEXADDRESS V bit offset, BRDF detail,
+   Vulkan/OpenGL backends (16.6–16.7).
 5. nvnet: first-real-frame validation + TCP proxy.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not

@@ -16,7 +16,7 @@ using XGrid.Storage;
 namespace XGrid.Host;
 
 /// <summary>The assembled Xbox machine: RAM, address map, bus, and CPU.</summary>
-public sealed class XboxMachine
+public sealed class XboxMachine : IIdleSkipHost
 {
     /// <summary>Default retail RAM size (64 MB).</summary>
     public const uint DefaultRamSize = 64u * 1024 * 1024;
@@ -47,6 +47,7 @@ public sealed class XboxMachine
         Memory = new AddressSpace(Ram, UnmappedAccessPolicy.Sentinel);
         Bus = new XboxBus();
         Cpu = new XboxCpu(Memory, Bus.Io) { InterruptSource = Bus.Pic };
+        Cpu.IdleSkipHost = this;
         Ide = new IdeController();
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
@@ -329,6 +330,62 @@ public sealed class XboxMachine
     }
 
     /// <summary>
+    /// PIC request/mask peek for idle-skip: true when any unmasked master request
+    /// is latched (slave lines surface through the master cascade bit 2). Over-approximates
+    /// delivery (ignores the in-service register), which only makes skip boundaries more
+    /// conservative. Side-effect free; never acknowledges the PIC.
+    /// </summary>
+    bool IIdleSkipHost.IrqPendingAndEnabled
+    {
+        get
+        {
+            byte pending = (byte)(Bus.Pic.MasterRequest & ~Bus.Pic.MasterMask);
+            return pending != 0;
+        }
+    }
+
+    /// <summary>
+    /// No device-deadline API exists without touching device projects (owned by sibling
+    /// areas), so the real machine skips in fixed chunks bounded by IRQ and RAM-watch
+    /// checks; the deadline hook is exercised by unit-test hosts.
+    /// </summary>
+    long? IIdleSkipHost.StepsUntilNextDeadline => null;
+
+    /// <summary>
+    /// Classifies a physical address as RAM-backed for idle-skip: main RAM plus the
+    /// tiled/contiguous aliases, minus the flash windows that keep precedence over the
+    /// write-combined mirror's first megabyte.
+    /// </summary>
+    bool IIdleSkipHost.IsRam(uint physicalAddress)
+    {
+        uint ramSize = (uint)Ram.Size;
+        if (physicalAddress < ramSize)
+        {
+            return true;
+        }
+
+        if (physicalAddress >= XboxAddressMap.RamMirrorBase
+            && physicalAddress - XboxAddressMap.RamMirrorBase < XboxAddressMap.RamMirrorSize)
+        {
+            return true;
+        }
+
+        if (physicalAddress >= ContiguousAliasBase && physicalAddress - ContiguousAliasBase < ramSize)
+        {
+            return true;
+        }
+
+        uint writeCombined = XboxAddressMap.WriteCombinedBase;
+        return physicalAddress >= writeCombined + XboxAddressMap.FlashSize
+            && physicalAddress - writeCombined < XboxAddressMap.WriteCombinedSize;
+    }
+
+    void IIdleSkipHost.AdvanceIdle(ulong steps)
+    {
+        Advance(steps);
+    }
+
+    /// <summary>
     /// Checks the 007 end-of-stream parked signature and synthesizes the missing
     /// completion after a stability delay. Returns true when the quirk fired.
     /// </summary>
@@ -402,6 +459,11 @@ public sealed class XboxMachine
     }
 
     /// <summary>Runs up to the given number of instructions, advancing bus timers.</summary>
+    /// <remarks>
+    /// With idle-skip enabled, <see cref="XboxCpu.Execute"/> may bulk-advance
+    /// devices itself (via <see cref="AdvanceIdle"/>) for skipped steps; those
+    /// cycles are subtracted here so devices are never advanced twice.
+    /// </remarks>
     public int Run(int maxInstructions)
     {
         const int batchSize = 65536;
@@ -410,8 +472,9 @@ public sealed class XboxMachine
         {
             int batch = Math.Min(maxInstructions - executed, batchSize);
             int done = Cpu.Execute(batch);
+            int hostAdvanced = Cpu.TakeIdleAdvanced();
             executed += done;
-            Advance((ulong)done);
+            Advance((ulong)(done - hostAdvanced));
             if (done < batch)
             {
                 break;

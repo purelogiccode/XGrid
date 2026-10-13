@@ -5140,7 +5140,35 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (depthActive)
         {
             DepthTestedPixels++;
-            depthPass = CompareFunc(_depthFunc, clampedDepth, storedDepth);
+            if (float.IsNaN(clampedDepth))
+            {
+                // NaN keeps IEEE ordered-compare semantics (all of <, <=, >,
+                // >=, == are false), matching the pre-quantization behavior.
+                depthPass = CompareFunc(_depthFunc, clampedDepth, storedDepth);
+            }
+            else
+            {
+                // The fragment depth converts to the zeta buffer's internal
+                // precision before the depth compare (xemu psh.c: "With
+                // integer depth buffers Xbox hardware floors values" — the
+                // reference shader emits the already-quantized gl_FragDepth,
+                // and GL/Vulkan/D3D all convert FragDepth to the attachment
+                // format prior to the fixed-function test). Comparing the raw
+                // interpolated float against the quantized stored depth lets
+                // ULP-level barycentric rounding fail coplanar equal-z fights:
+                // overlapping triangles then interleave pass/fail pixels (the
+                // nxdk triangle demo's diagonal hatch). Encode the fragment
+                // through the same conversion the store uses and compare in
+                // zeta field space, which is monotonic with the stored value.
+                uint storedField = zetaBytes == 4
+                    ? (storedZeta >> 8) & 0xFFFFFFu
+                    : storedZeta & 0xFFFFu;
+                uint fragmentField = zetaBytes == 4
+                    ? EncodeDepth24(clampedDepth)
+                    : EncodeDepth16(clampedDepth);
+                depthPass = CompareFunc(_depthFunc, fragmentField, storedField);
+            }
+
             if (!depthPass)
             {
                 if (stencilActive)

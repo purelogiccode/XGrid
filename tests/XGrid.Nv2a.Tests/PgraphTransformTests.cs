@@ -51,7 +51,38 @@ public sealed class PgraphTransformTests
 
     private static void PushMethods(Nv2AMmio nv2A, ArrayMemory memory, params (uint Method, uint Parameter)[] methods)
     {
-        uint address = 0;
+        uint address = WriteMethodStream(memory, 0u, methods);
+        KickPusher(nv2A, address);
+    }
+
+    /// <summary>
+    /// Appends a method stream at the pusher's current GET and kicks. The
+    /// normal <see cref="PushMethods"/> always starts at offset 0, which
+    /// cannot push a second stream: GET already sits at end-of-stream-1, so
+    /// advancing PUT only re-reads the tail region. Guests push contiguously;
+    /// this mirrors that.
+    /// </summary>
+    private static void PushMethodsContinue(Nv2AMmio nv2A, ArrayMemory memory, params (uint Method, uint Parameter)[] methods)
+    {
+        uint start = nv2A.Read(Base + 0x800044u, 4);
+        uint address = WriteMethodStream(memory, start, methods);
+        KickPusher(nv2A, address);
+    }
+
+    /// <summary>
+    /// Writes the method stream plus a trailing 0x00001001 word at
+    /// <paramref name="start"/> and returns the PUT value. PUT deliberately
+    /// excludes the trailing word: PUT = data-end makes the pusher stop at
+    /// get == put after the last parameter, leaving it runnable for the next
+    /// stream. Including it (the old PUT = address + 4) lets the pusher parse
+    /// the 0x00001001 word, which is an NV jump-to-0x1000 control word; GET
+    /// then runs past PUT into scratch memory and the pusher eventually
+    /// suspends with DmaErrorProtection - which silently killed every
+    /// follow-up PushMethods kick in the same test.
+    /// </summary>
+    private static uint WriteMethodStream(ArrayMemory memory, uint start, (uint Method, uint Parameter)[] methods)
+    {
+        uint address = start;
         foreach ((uint method, uint parameter) in methods)
         {
             memory.WritePhysical(address, (1u << 18) | method);
@@ -60,7 +91,12 @@ public sealed class PgraphTransformTests
         }
 
         memory.WritePhysical(address, 0x00001001u);
-        nv2A.Write(Base + 0x800040u, 4, address + 4);
+        return address;
+    }
+
+    private static void KickPusher(Nv2AMmio nv2A, uint put)
+    {
+        nv2A.Write(Base + 0x800040u, 4, put);
     }
 
     private const int MacMov = 1;
@@ -195,6 +231,16 @@ public sealed class PgraphTransformTests
     private static void PushProgramDraw(Nv2AMmio nv2A, ArrayMemory memory,
         uint c0X, uint c0Y, uint c0Z, uint c0W,
         params (uint Method, uint Parameter)[] state)
+        => PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: false, state);
+
+    private static void PushProgramDrawContinue(Nv2AMmio nv2A, ArrayMemory memory,
+        uint c0X, uint c0Y, uint c0Z, uint c0W,
+        params (uint Method, uint Parameter)[] state)
+        => PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: true, state);
+
+    private static void PushProgramDrawCore(Nv2AMmio nv2A, ArrayMemory memory,
+        uint c0X, uint c0Y, uint c0Z, uint c0W, bool continuePush,
+        (uint Method, uint Parameter)[] state)
     {
         var methods = new List<(uint Method, uint Parameter)>
         {
@@ -226,7 +272,14 @@ public sealed class PgraphTransformTests
         methods.Add((0x1800u, 0x00010000u));
         methods.Add((0x1808u, 0x00000002u));
         methods.Add((0x17FCu, 0u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        if (continuePush)
+        {
+            PushMethodsContinue(nv2A, memory, methods.ToArray());
+        }
+        else
+        {
+            PushMethods(nv2A, memory, methods.ToArray());
+        }
     }
 
     private static List<(uint Method, uint Parameter)> ProgramSurfaceState(bool vertexColor)
@@ -2433,6 +2486,149 @@ public sealed class PgraphTransformTests
         PushFloatDepthDraw(nv2A, memory);
         Assert.Equal(0xDFFFDFFFu, memory.ReadPhysical(0x5000u + (5u * 0x40u) + 8u));
         Assert.Equal(drawnAfterNear, nv2A.DrawnPixels);
+    }
+
+    private static void WriteOverlapTriangle(ArrayMemory memory,
+        float ax, float ay, float bx, float by, float cx, float cy, uint zBits)
+    {
+        uint[] bits =
+        {
+            BitConverter.SingleToUInt32Bits(ax), BitConverter.SingleToUInt32Bits(ay), zBits, 0x3F800000u,
+            BitConverter.SingleToUInt32Bits(bx), BitConverter.SingleToUInt32Bits(by), zBits, 0x3F800000u,
+            BitConverter.SingleToUInt32Bits(cx), BitConverter.SingleToUInt32Bits(cy), zBits, 0x3F800000u,
+        };
+        for (int i = 0; i < bits.Length; i++)
+        {
+            memory.WritePhysical(0x2000u + ((uint)i * 4u), bits[i]);
+        }
+    }
+
+    [Fact]
+    public void DepthTest_CoplanarLEQUALOverlapDrawsSolidTopTriangle()
+    {
+        // nxdk triangle demo repro: three overlapping triangles at the same
+        // device Z (65536 = 1.0 * (zmax - zmin) viewport bake), drawn with
+        // depth LEQUAL. Hardware converts the fragment depth to the zeta
+        // buffer's precision before the depth compare (xemu psh.c: "With
+        // integer depth buffers Xbox hardware floors values" + gl_FragDepth
+        // emission), so coplanar fragments always compare equal and the top
+        // triangle must cover the bottom one solidly. Comparing the raw
+        // interpolated float against the quantized stored depth instead lets
+        // ULP-level barycentric rounding fail random pixels -> diagonal
+        // hatch (bottom triangle color bleeding through).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        // pbkit depth clear: SET_ZSTENCIL_CLEAR_VALUE = 0xFFFFFF00 (depth 1.0).
+        for (uint y = 0; y < 64; y++)
+        {
+            for (uint x = 0; x < 64; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0xFFFFFF00u);
+            }
+        }
+
+        // Bottom triangle (red): legs at 1, hypotenuse on x + y = 22.
+        WriteOverlapTriangle(memory, 1f, 1f, 21f, 1f, 1f, 21f, 0x47800000u);
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+        Assert.True(nv2A.DrawnPixels > 0);
+
+        // Top triangle (blue): legs at 2, same hypotenuse -> strictly inside
+        // the bottom one on the legs, identical coverage on the hypotenuse,
+        // same Z. Every pixel it covers must end up blue.
+        WriteOverlapTriangle(memory, 2f, 2f, 20f, 2f, 2f, 20f, 0x47800000u);
+        ulong drawnBeforeTop = nv2A.DrawnPixels;
+        uint getBefore = nv2A.Read(Base + 0x800044u, 4);
+        uint putBefore = nv2A.Read(Base + 0x800040u, 4);
+        Assert.True(getBefore < 0x1000u, $"get={getBefore:X} put={putBefore:X} err={nv2A.PusherError:X} capped={nv2A.PusherCapped} words={nv2A.PusherWordsConsumed}");
+        PushProgramDrawContinue(
+            nv2A,
+            memory,
+            0u,
+            0u,
+            0x3F800000u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+        Assert.True(nv2A.DrawnPixels > drawnBeforeTop, $"draws={nv2A.DrawsExecuted} get={nv2A.Read(Base + 0x800044u, 4):X} put={nv2A.Read(Base + 0x800040u, 4):X} depthTested={nv2A.DepthTestedPixels} zeta(5,5)={memory.ReadPhysical(0x5000u + (5u * 0x40u) + 20u):X8} color(5,5)={memory.ReadPhysical(0x3000u + (5u * 0x40u) + 20u):X8} w0={memory.ReadPhysical(0u):X8} w1={memory.ReadPhysical(4u):X8}");
+
+        // Sample the interior rect [3..10] x [3..10] (pixel centers strictly
+        // inside both triangles): every pixel must be the top blue
+        // (0xFF0000FF); any red (0xFFFF0000) is a depth-fight hatch pixel.
+        int hatchPixels = 0;
+        int sampled = 0;
+        for (uint y = 3; y <= 10; y++)
+        {
+            for (uint x = 3; x <= 10; x++)
+            {
+                uint pixel = memory.ReadPhysical(0x3000u + (y * 0x40u) + (x * 4u));
+                sampled++;
+                if (pixel != 0xFF0000FFu)
+                {
+                    hatchPixels++;
+                }
+            }
+        }
+
+        Assert.Equal(64, sampled);
+        Assert.Equal(0, hatchPixels);
+    }
+
+    [Fact]
+    public void DepthTest_QuantizedComparePassesSubQuantumLequal()
+    {
+        // The fragment depth converts to zeta field precision before the
+        // compare: a fragment that rounds to the stored field passes LEQUAL
+        // even when its raw interpolated float is a few ULPs above the
+        // stored decode (the coplanar-fight condition).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        // Store depth field 65536 (zeta word = field << 8): the exact value
+        // device Z 65536 encodes to on a Z24S8 surface.
+        for (uint y = 0; y < 16; y++)
+        {
+            for (uint x = 0; x < 16; x++)
+            {
+                memory.WritePhysical(0x5000u + (y * 0x40u) + (x * 4u), 0x01000000u);
+            }
+        }
+
+        // Device Z = 65536: interpolates to 65536 +/- ULP at pixel centers,
+        // but always encodes to field 65536.
+        WriteOverlapTriangle(memory, 1f, 1f, 21f, 1f, 1f, 21f, 0x47800000u);
+        PushProgramDraw(
+            nv2A,
+            memory,
+            0x3F800000u,
+            0u,
+            0u,
+            0x3F800000u,
+            (0x030Cu, 1u),
+            (0x0354u, 0x0203u));
+
+        // LEQUAL against the exact same quantized depth must pass everywhere
+        // the triangle covers: sampled interior pixels are drawn (red).
+        uint expected = 0xFFFF0000u;
+        int notDrawn = 0;
+        for (uint y = 3; y <= 10; y++)
+        {
+            for (uint x = 3; x <= 10; x++)
+            {
+                if (memory.ReadPhysical(0x3000u + (y * 0x40u) + (x * 4u)) != expected)
+                {
+                    notDrawn++;
+                }
+            }
+        }
+
+        Assert.Equal(0, notDrawn);
     }
 
     private static void PushFloatDepthDraw(Nv2AMmio nv2A, ArrayMemory memory)
