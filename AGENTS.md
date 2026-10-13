@@ -18,6 +18,13 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `References/XboxWiki` — XboxDevWiki vendored locally (99 `.mhtml` pages, numeric file names;
   identify by `<title>`). Key pages: `51` Boot Process, `50` BIOS, `49` Kernel, `24` MCPX,
   `30` PCI, `41` USB, `16` NV2A, `33` SMC, `48` MCPX ROM, `90` Hidden Boot Code, `22` Memory.
+  (Not yet restored after the 2026-10-12 References wipe — the wiki has no bulk source; fetch
+  pages online from xboxdevwiki.net if needed.)
+
+**Never delete, move, or rewrite anything under `References/`.** It is the vendored
+oracle set every wave depends on — it was emptied once (2026-10-12) and blocked a wave.
+If a reference is missing, restore it from the upstream URLs in
+`docs/research-notes/sources.md` before proceeding; never work around a missing reference.
 
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
