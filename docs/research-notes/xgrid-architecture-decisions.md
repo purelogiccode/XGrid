@@ -4703,3 +4703,109 @@ wall-clock dependence).
 
 **Follow-ups unchanged:** triangle XBE bring-up (`wave/xbe-bringup`,
 §104) and APU voice-on/off as the 4th ROM (§98) are separate waves.
+
+## §111 — Idle-skip V1: opt-in fast-forward of verified spin-park loops (2026-10-13)
+
+Branch `wave/idle-skip` (worktree `Temp\opencode\worktrees\idle-skip`). First
+SAFE, opt-in CPU fast-forward increment per the velocity program ("idle-skip
+before full JIT"). Scope: `src/XGrid.Cpu/` + `src/XGrid.Host/` + CLI flag +
+`tests/XGrid.Cpu.Tests/`. Default OFF: with no flag the interpreter path is
+byte-identical to master (proven below).
+
+**Measured facts first (the park question).**
+- Guests **never execute HLT** in 1B-step boots: `hlt=0` (probe counter) in
+  both dashboard and triangle runs. Parks are SPIN LOOPS, confirming §§32/107.
+- The dominant park in both boots is the **kernel idle thread at
+  `0x8001B02E`** (from `--ramdump` + `objdump`):
+  `sti; nop; nop; cli; cmp 0(%ebp),%ebp; je 0x8001B043; cmpl $0,0x2c(%ebx);
+  je 0x8001B02E` — IRQ-wait spin over dispatcher state (`[ebp]` ready-queue
+  at VA `0x80035C2C`, interrupt/DPC flag at `0x80035C08`), with a forward
+  conditional sub-path that skips the dispatcher-call path when idle. In the
+  triangle boot it consumes >=250M of 1B steps (progress EIPs
+  `0x8001B031/0x8001B047` from 750M..1000M, flag-off).
+
+**Design (candidate V1, chosen safest that meets acceptance).**
+Runtime state machine (`IdleSkipDetector`) observes every executed instruction
+(flag-off: detector is null, zero behavior change): candidate anchored on any
+taken backward branch; body validated per iteration as straight-line with
+(single) backward exit plus forward-conditional sub-paths, executed instruction
+stream recorded (forward jumps make linear re-decode unsound), allow-listed
+mnemonics only (no memory writes, no IO, no indirect control), runtime access
+notes through `TranslateLinear` (all fetches + MMU-on data) reject any
+non-RAM physical or write immediately, ESP stable across the iteration head.
+Safety theorem: the body must be a **fixed point** of (register file, unchanged
+memory, IF) — first-definition-from-memory/invariant rules reject register
+countdowns (`dec ecx; jnz`) and pointer chases, so the exit decision cannot
+change without an external write; therefore skipping until an external event
+is exact. Events: (1) pending+enabled PIC request (hard stop each chunk; for
+bodies containing `STI` the check ignores head-time IF — an IRQ is deliverable
+mid-body, unit-tested); (2) watched-RAM dword change (union of the body's
+data reads, baseline snapshotted at trigger); (3) host deadline
+(`IIdleSkipHost.StepsUntilNextDeadline`) clamps the chunk so a fake device's
+scheduled event lands EXACTLY on its cycle; (4) instruction budget. Advance in
+chunks of 4096 cycles (`Tsc += chunk`, `host.AdvanceIdle(chunk)` — machine
+`Advance`, all devices are remainder-linear per XboxBus.Advance docs), counting
+skipped steps toward `--steps`; `XboxMachine.Run` subtracts
+`Cpu.TakeIdleAdvanced()` so devices are never advanced twice. Threshold 128
+validated iterations. MMIO/PIO/write inside a measured body poisons that head
+(per-loop disable, counted). The real machine has no device-deadline API
+without touching sibling-owned device projects, so it relies on the IRQ/watch
+stops with chunk <=4096 (finer than the baseline's own 65536-step batch
+quantization). `--idle-skip-probe` measures without skipping; the CLI prints
+the counter line only when the flag is on.
+
+**Acceptance evidence.**
+- (1) Flag-off: `dotnet test` **1124/1124** green (1113 baseline + 11 new
+  `IdleSkipTests`; zero existing expectations touched);
+  `dotnet format --verify-no-changes` clean. Dashboard neutral recipe
+  (pad-script + `--break-log 1859D/1E420`, 1B, fresh `wt-data` copies),
+  pre-change baseline vs final build: frame SHA256 identical
+  (`4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`),
+  full logs byte-identical (only the `Frame <path>` output name differs):
+  HIT `972246032 EIP=0001859D`, HIT `972349245 EIP=0001E420`,
+  draws=33623 skipped=1400 pixels=285152644 frames=685 stalls=685,
+  Interrupts=3152, EOS checks=244055 fires=0, LastFault=0, EIP=0x0002EA06.
+- (2) Flag-on unit tests (synthetic loops + fake host with one scheduled
+  event): exact deadline landing (`Advanced == 1000` for deadline 1000);
+  bounded poll-exit overshoot (poll at 5000, chunk 4096 -> stop in
+  (5000, 5000+4096], exact when deadline known); pending+enabled IRQ never
+  skipped (0 advance when pending at trigger; exact-deadline stop when the
+  event raises the IRQ); MMIO-classified body and PIO body disable skip
+  (0 triggers, accessAborts>=1); register countdown and memory-write bodies
+  rejected; STI-body IRQ wake with IF clear at head; measure-only probe;
+  flag-off byte-identity (Tsc==steps, no host calls).
+- (3) Flag-on integration, 1B steps each, sequential vs flag-off, machine
+  shared with sibling agents: **triangle**: no fault, frames=68, draws/pixels
+  counters and final frame SHA **identical to flag-off**
+  (`72F880C7...`); `skippedSteps=447,784,409` (44.8% of budget),
+  triggers=7561, lastTrigger=0x8001B02E; wall **230.7s vs 437.1s = 1.90x**.
+  **dashboard**: no fault, frames=686, frame SHA identical to flag-off plain
+  (`4EF1FBF6...`), pad-script events fired at their exact steps;
+  `skippedSteps=129,424,394` (12.9%), triggers=2203, stopIrq=203;
+  wall **317.3s vs 516.7s = 1.63x**. Effective rate during parks: skipped
+  chunks cost ~ns/cycle (device remainder math only) vs ~70ns/instruction
+  interpreted.
+- (4) format verify exit 0.
+
+**Recipe semantics (documented in the CLI banner).** Absolute-step recipes
+(`@950000000`, `--break-log` HIT step numbers, `--save-at`, `--eip-hist`)
+apply to **flag-off runs**: flag-on IRQ/watch delivery is chunk-quantized, so
+step-numbered events may shift (dashboard flag-on drew 33638 vs 33632 — a few
+vblank-timed draws differ; final frames matched). Pad-script/boundaries are
+still honored under flag-on (batches clamp to event steps). Semantic
+milestones that must hold flag-on: no fault at 1B, frames present, pad events
+fire, dashboard/triangle counters within noise.
+
+**Open risks / follow-ups.**
+- MMIO/PIO parks (e.g. NV2A flip-stall register polls, PIT/RTC port waits)
+  are rejected by design; capturing them needs per-device read-effect modeling
+  (V2), not covered here.
+- Per-head poisoning means self-modifying loop code is not re-detected.
+- `stopWatch=0` in live runs: watched idle-loop RAM only changes via the ISR
+  path, so the IRQ stop always fires first (watch remains the unit-tested
+  correctness net for DMA-written polls).
+- Wall-clocks were taken under 3-way agent contention; ratios are back-to-back
+  but absolute insn/s varies. HLT remains "stops the run" (existing behavior,
+  guests never hit it).
+- Tests: 1124/1124; snapshot format untouched; V1 snapshot resets the
+  transient detector on load.

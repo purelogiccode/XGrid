@@ -169,5 +169,10 @@ public sealed partial class XboxCpu : ISnapshotable
         // are restored via RAM, so drop any cached translations instead of
         // snapshotting them (a stale entry would be a silent divergence).
         Mmu.Flush();
+
+        // Idle-skip measurement state is transient instrumentation tied to the
+        // pre-load instruction stream; restart it from a clean slate.
+        _idle?.HardReset();
+        _idleAdvanced = 0;
     }
 }

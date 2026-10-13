@@ -55,6 +55,8 @@ public sealed partial class XboxCpu
         LastFaultVector = 0;
         LastFaultEip = 0;
         LastFaultErrorCode = 0;
+        _idle?.HardReset();
+        _idleAdvanced = 0;
     }
 
     /// <summary>Fetches, decodes, and executes one instruction.</summary>
@@ -99,7 +101,9 @@ public sealed partial class XboxCpu
                 return;
             }
 
+            uint eipBefore = Context.Eip;
             ExecuteInstruction(instruction);
+            _idle?.Observe(instruction, eipBefore, Context.Eip);
         }
         catch (PageFaultSignal fault)
         {
@@ -115,12 +119,36 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>Executes instructions until the limit is reached or the CPU halts.</summary>
-    /// <returns>The number of instructions executed.</returns>
+    /// <returns>The number of instructions executed (including any idle-skipped steps).</returns>
     public int Execute(int maxInstructions)
     {
         int executed = 0;
+        _idleAdvanced = 0;
         while (executed < maxInstructions && !Context.Halted)
         {
+            if (_idle is { TriggerPending: true })
+            {
+                if (Context.Eip != _idle.Head)
+                {
+                    // Control left the loop before the batch boundary consumed the
+                    // trigger (e.g. an interrupt was delivered): drop it.
+                    _idle.ClearTrigger();
+                }
+                else
+                {
+                    int skipped = RunIdleSkip(maxInstructions - executed);
+                    if (_idle.TriggerPending)
+                    {
+                        // Budget exhausted before any skip could run; keep the
+                        // trigger for the next Execute call.
+                        break;
+                    }
+
+                    executed += skipped;
+                    continue;
+                }
+            }
+
             Step();
             executed++;
         }
@@ -908,6 +936,7 @@ public sealed partial class XboxCpu
             throw new PageFaultSignal(linearAddress, errorCode);
         }
 
+        _idle?.NoteAccess(physical, isWrite, isInstruction);
         return physical;
     }
 

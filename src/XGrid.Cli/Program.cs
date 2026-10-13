@@ -89,6 +89,8 @@ internal static class Program
         string? netInjectHex = null;
         string? netLink = null;
         bool noEosQuirk = false;
+        bool idleSkip = false;
+        bool idleSkipProbe = false;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -224,6 +226,12 @@ internal static class Program
                 case "--no-007-eos-quirk":
                     noEosQuirk = true;
                     break;
+                case "--idle-skip":
+                    idleSkip = true;
+                    break;
+                case "--idle-skip-probe":
+                    idleSkipProbe = true;
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -284,6 +292,16 @@ internal static class Program
             machine.Nv2A.MethodStreamCap = pgraphMax;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             Console.WriteLine($"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+
+            if (idleSkip || idleSkipProbe)
+            {
+                machine.Cpu.IdleSkipEnabled = true;
+                machine.Cpu.IdleSkipMeasureOnly = idleSkipProbe && !idleSkip;
+                Console.WriteLine(
+                    $"Idle-skip={(machine.Cpu.IdleSkipMeasureOnly ? "probe" : "on")} " +
+                    $"minIterations={machine.Cpu.IdleSkipMinIterations} chunk={machine.Cpu.IdleSkipChunkSteps} " +
+                    "(absolute-step recipes: use flag-off runs)");
+            }
 
             if (loadStatePath is not null)
             {
@@ -1306,6 +1324,18 @@ internal static class Program
         Console.WriteLine(
             $"CR3=0x{context.Cr3:X8} IDT=0x{context.Idtr.Base:X8}/{context.Idtr.Limit:X4} GDT=0x{context.Gdtr.Base:X8}/{context.Gdtr.Limit:X4}");
         Console.WriteLine($"OverlayEnabled={machine.Bus.RomOverlayEnabled}");
+        if (machine.Cpu.IdleSkipEnabled)
+        {
+            Console.WriteLine(
+                $"Idle-skip measureOnly={machine.Cpu.IdleSkipMeasureOnly} " +
+                $"triggers={machine.Cpu.IdleSkipTriggers} skippedSteps={machine.Cpu.IdleSkipSkippedSteps} " +
+                $"iters={machine.Cpu.IdleSkipIterations} staticRejects={machine.Cpu.IdleSkipStaticRejects} " +
+                $"accessAborts={machine.Cpu.IdleSkipAccessAborts} structuralAborts={machine.Cpu.IdleSkipStructuralAborts} " +
+                $"stopIrq={machine.Cpu.IdleSkipStopIrq} stopWatch={machine.Cpu.IdleSkipStopWatch} " +
+                $"stopDeadline={machine.Cpu.IdleSkipStopDeadline} stopBudget={machine.Cpu.IdleSkipStopBudget} " +
+                $"hlt={machine.Cpu.IdleSkipHltExecuted} lastTriggerEip=0x{machine.Cpu.IdleSkipLastTriggerEip:X8}");
+        }
+
         Console.WriteLine(
             $"PIC master base=0x{machine.Bus.Pic.MasterBase:X2} mask=0x{machine.Bus.Pic.MasterMask:X2} " +
             $"slaveMask=0x{machine.Bus.Pic.SlaveMask:X2} " +
@@ -1955,7 +1985,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
