@@ -275,41 +275,54 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   wall clock, +11 tests. 007 post-drain probe (§112): gate-free to 18.1B
   (5.0B past §107), intro FMV live ~22 fps, stream end ~52.5B total next;
   probe origin `pd181.xgs`. Baseline **1126 tests**.
+- **Wave 6 (2026-10-13, §§113–116):** **GPU-backend slice 1 LANDED (§113):**
+  `IPgraphBackend` seam + `XGrid.GpuGl` (Silk.NET.OpenGL 2.23.0) + `--gpu sw|gl`
+  (default `sw`); live golden gate PASSED on NVIDIA GL 4.6 — sw frame
+  `4EF1FBF6…` (= recorded baseline), gl within policy (BMP `violations=0
+  maxDelta=1`), `BackendUnsupported=0`, probe self-test gates init with sw
+  fallback (`scripts/gpu-slice1-golden.ps1`). **007 stream END + new gate
+  (§114):** G1 natural EOS node-removal @52,495,059,473 (§112 estimate
+  spot-on), then new STRM + one drain, then **G2 park `{0x1C3028,0x1C302C}`
+  (`[0x83924800+0x10]==3` never drains)** stable to 56.8B — snapshots
+  `pd4915.xgs`/`pd546.xgs` (repros in §114). **nvnet first real frame (§115):**
+  dashboard sends a real 342-byte DHCP DISCOVER (field-validated vs xemu); host
+  `TcpProxy` + 5 tests (unwired by design). **ktest recon (§116):** suite is
+  gated behind `D:\kernel_tests.log` CreateFile which fails every launch —
+  0/378 tests ever ran (thunks fine; `tools/ktest-recon/` injector; symlink
+  shellcode KeBugCheck open). **1205 tests** (1126 + 74 + 5).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1126 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1205 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — GPU-backend slice 1 + 007 stream end.
+## Next session — GPU slice 2 + 007 G2 decode + suite unblock.
 
-1. **WAVE DONE (§§109–112).** Triangle hatch FIXED (§109: depth compare in
-   zeta field space — the 3 coplanar demo triangles straddled the quantized
-   stored decode ±1 ULP so LEQUAL interleaved per pixel; dashboard frame
-   byte-identical; +2 tests; test-harness PUT/barrier kick bug fixed).
-   GPU-backend design landed (§110 → `docs/research-notes/
-   gpu-backend-design.md`: first slice = menu method subset, GLSL generated
-   from our own `PshCombiner`/`VshProgram`, golden-frame sw-vs-gl gates,
-   software path retained behind `--gpu sw`). Opt-in `--idle-skip` (§111):
-   guests execute 0 HLTs — parks are spin loops (kernel idle thread
-   `0x8001B02E`); flag-off byte-identical, flag-on 1.63× dashboard / 1.90×
-   triangle wall clock; absolute-step recipes are flag-off-only. 007 probe
-   (§112): gate-free to 18.1B (intro FMV live ~22 fps, CPU-blitted).
-   **1126 tests.**
-2. **GPU-backend slice 1:** work order is verbatim in
-   `gpu-backend-design.md` §8 — operator picked **Silk.NET** (2026-10-13);
-   ONE agent builds `XGrid.GpuGl` +
-   the `IPgraphBackend` seam + probe-gated init + golden harness. Never
-   parallelize a single engine build.
-3. **007 stream end:** probe origin `pd181.xgs` (path in §112); next
-   candidate gate = stream end ~52.5B total — run §112's verbatim command
-   (34.5B forward, 4 `--break-log` addresses, save `pd526.xgs`).
-   Snapshot-driven, probe-only.
-4. idle-skip V2 (MMIO/PIO parks — flip-stall register polls need
-   per-device read-effect modeling). NV2A remaining: mipmap LOD; DXT
-   decode (deprioritized — the dashboard uses none, §105); `0x30` depth
+1. **WAVE DONE (§§113–116).** GPU slice 1 LANDED (§113 — `XGrid.GpuGl` +
+   Silk.NET, golden gate PASSED, `BackendUnsupported=0`, sw frame unchanged);
+   007 stream END found (§114 — G1 EOS @52,495,059,473, then **G2 park
+   `{0x1C3028,0x1C302C}`, `[0x83924800+0x10]==3` never drains**, stable to
+   56.8B, snapshots `pd4915.xgs`/`pd546.xgs`); nvnet first real frame (§115 —
+   342-byte DHCP DISCOVER validated vs xemu + `TcpProxy`); ktest recon (§116 —
+   suite gated behind `D:\kernel_tests.log` CreateFile, 0/378 ever ran,
+   thunks fine). **1205 tests.**
+2. **GPU slice 2 (ONE agent):** full-dashboard golden gate per
+   `gpu-backend-design.md` §6 — exotics/blend/fog rows; the §113 `unsup[...]`
+   tripwires are the gate (menu trips none; slice-2 titles might). Same
+   sw-vs-gl acceptance; no Vulkan/swapchain yet.
+3. **007 G2 decode:** snapshot `pd546.xgs` (§114 verbatim) — find what sets/
+   clears `[0x83924800+0x10]` (3), why main-thread devices freeze (missing
+   stimulus vs XGrid gap); identify the new-STRM disc files (`0x4B4`/`0x4AA62`)
+   via `xgrid sector` if needed.
+4. **Suite unblock (§116):** KeBugCheck @33137 both arg orders — exception
+   record/CR2 at bugcheck, EvoX's exact `IoCreateSymbolicLink` call context,
+   Complex_4627 ordinal 67 semantics; then land DbgPrint/FATX-log capture so
+   the 378 tests report.
+5. idle-skip V2 (MMIO/PIO parks — flip-stall register polls need
+   per-device read-effect modeling). nvnet: UDP/67 sink for socket-backend
+   DHCP + wire `TcpProxy` when a TCP title exists. NV2A remaining: mipmap LOD;
+   DXT decode (deprioritized — the dashboard uses none, §105); `0x30` depth
    semantics; PROJECT2D non-cube projective divide, DOT_STR_3D dim==3,
-   border/mip/filtering, TEXADDRESS V bit offset, BRDF detail,
-   Vulkan/OpenGL backends (16.6–16.7).
-5. nvnet: first-real-frame validation + TCP proxy.
+   border/mip/filtering, TEXADDRESS V bit offset, BRDF detail, Vulkan backend
+   (design §7).
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

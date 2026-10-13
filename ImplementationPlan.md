@@ -2994,7 +2994,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1126 tests passing** (39 Core, 413 Cpu, 55 Memory, 256 Bus, 55 Integration, 205 Nv2a, 20 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 4 Graphics);
+Current test baseline: **1205 tests passing** (39 Core, 413 Cpu, 55 Memory, 261 Bus, 55 Integration, 209 Nv2a, 20 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 64 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3052,43 +3052,45 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — GPU-backend slice 1 + 007 stream end.**
-**WAVE DONE (§§109–112).** Triangle hatch FIXED (§109): the depth test
-compared raw interpolated floats against the quantized stored decode — the
-demo's 3 coplanar triangles (device z 65536 → field 0x10000) straddled the
-decode ±1 ULP so LEQUAL interleaved pass/fail per pixel = diagonal hatch;
-xemu `psh.c:1491-1516` floors depth before the test. Fix: encode the
-fragment through `EncodeDepth24/16` and compare in zeta field space; frame
-`A1740DE0...` hatch-free, dashboard frame `4EF1FBF6...` byte-identical;
-+2 tests (both fail pre-fix); test-harness PUT/barrier kick bug fixed
-(`PushMethods` included the 0x00001001 barrier as a jump — every second
-draw in a test was silently dead).
-**GPU-backend design landed (§110 → `docs/research-notes/gpu-backend-design.md`):**
-first slice = the dashboard menu method subset (triangle stream: 223,956
-methods / 471 unique pairs, ~98.9% RecordMethod-covered); recommend GLSL
-generated from XGrid's own `PshCombiner`/`VshProgram` semantics (option a);
-CPU vertex path kept in slice 1 (fragment fill-rate is the bottleneck);
-DisplayFrame-parity present; golden-frame sw-vs-gl acceptance gate per
-slice; software path always retained behind `--gpu sw`; Playtest-v2 perf
-applicability matrix (uniform dirty-sections + probe-gated GL early, shader
-seeds after ship, writeback at eviction, cost model never); verbatim next
-work order in design §8 — operator picked **Silk.NET** (2026-10-13,
-`sources.md`).
-**Opt-in `--idle-skip` landed (§111):** guests execute 0 HLTs in 1B boots —
-parks are spin loops (kernel idle thread `0x8001B02E`); the detector
-fast-forwards verified spin-park bodies with IRQ/MMIO/PIO hard stops;
-flag-off byte-identical (frame SHA + full log), flag-on 1.63× dashboard /
-1.90× triangle wall clock; absolute-step recipes are flag-off-only; +11
-tests.
-**007 post-drain probe (§112):** gate-free to 18.1B (5.0B past §107); intro
-FMV live (~22 fps flips, CPU-blitted, DVD READ(10) stream); stream end
-~52.5B total is the next candidate; probe origin snapshot `pd181.xgs` +
-verbatim 34.5B follow-up command in §112. 1126 tests.
+**NEXT SESSION — GPU slice 2 + 007 G2 decode + suite unblock.**
+**WAVE DONE (§§113–116).** GPU-backend slice 1 LANDED (§113): `IPgraphBackend`
+seam (side-tap in `RecordMethod`/`FlushDraw`/flip; `Backend == null` =
+byte-identical software path) + new `XGrid.GpuGl` (Silk.NET.OpenGL 2.23.0
+pinned; WGL context, `GlProbe` self-test with sw fallback, `GlStateMapper`,
+`PshGlslGenerator` written from our own `PshCombiner`, menu-subset executor) +
+CLI `--gpu sw|gl` (default `sw`) + `FrameDiff` golden harness +
+`scripts/gpu-slice1-golden.ps1`. Live golden gate PASSED on NVIDIA GL 4.6:
+both runs `LastFault vec=0`, draws/frames/stalls identical, `BackendUnsupported=0`
+(7 named tripwires), BMP `violations=0 maxDelta=1` (flat byte-exact), sw frame
+SHA `4EF1FBF6...` = recorded baseline; 74 new tests (GpuGl 64 + Graphics 6 +
+Nv2a seam 4). Exotic/cube/float-zeta/non-4B surfaces are counted-not-implemented
+(tripwires; the menu trips none) — that IS the slice-2 gate.
+**007 stream END + new gate (§114):** G1 = natural EOS node-removal @
+52,495,059,473 (§112's ~52.5B estimate spot-on); transition = DVD region
+change, new STRM `0x80B6C020`, one drain @53,159,655,459; **G2 park
+`{0x1C3028,0x1C302C}` (`cmp dword [EAX+0x10],0; jnz`, EAX `0x83924800`, value 3
+never drains)** — main-thread devices byte-frozen, IRQs live, stable to 56.8B;
+snapshots `pd4915.xgs`/`pd546.xgs` (paths + verbatim repros in §114).
+**nvnet first real frame (§115):** dashboard transmits a real 342-byte DHCP
+DISCOVER at boot (TX desc len 341+1 per xemu `nvnet.c:510`, flags
+LASTPACKET-only; full field table vs xemu + protocol, checksums 0);
+synthetic TX→loopback→RX gate 2/2 green; host `TcpProxy` + 3 tests (unwired by
+design — no TCP-speaking title yet); loopback echoes the guest's own DISCOVER
+(a socket-backend DHCP path needs a UDP/67 sink).
+**ktest recon (§116):** the suite opens `D:\kernel_tests.log` (CREATE_ALWAYS)
+in `main()` BEFORE any test/print/video — the open fails every launch
+(C0000022 read-only DVD; no `\??\C:` letters exist (the dashboard creates them
+at runtime); backslash-rooted device paths rejected by this kernel's converter
+at `0x80020A49`), so **0 of 378 tests ever ran** and the "900M clean boot" is a
+relaunch loop (entry every ~9.44M). Thunk table (165 unordered imports)
+decodes and resolves fine — no XGrid thunk fix needed. FATX qcow2 injector +
+path-patch tools in `tools/ktest-recon/`; guest `IoCreateSymbolicLink`
+shellcode KeBugChecks at step 33137 (both arg orders) — open. **1205 tests.**
 NV2A remaining: mipmap LOD; DXT decode (deprioritized — the dashboard uses
 none, §105); `0x30` depth semantics; PROJECT2D non-cube projective divide,
-DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS V bit offset, BRDF
-detail, Vulkan/OpenGL backends (16.6–16.7). idle-skip V2 (MMIO/PIO parks)
-open. `F36A2`/LBA 8 CLOSED as no-bug (§73).
+DOT_STR_3D dim==3, border/mip/filtering, TEXADDRESS V bit offset, BRDF detail;
+Vulkan backend (design §7). idle-skip V2 (MMIO/PIO parks) open.
+`F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
 transform constants, attribute fetch, element draws), M6 (per-slot texture
