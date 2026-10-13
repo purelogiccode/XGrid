@@ -19,6 +19,7 @@ the reuse is recorded below.
 | envytools | master snapshot | https://github.com/envytools/envytools | **MIT** | No — facts only |
 | nv2a-trace | master snapshot | https://github.com/XboxDev/nv2a-trace | **MIT** | No — facts only |
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
+| Silk.NET | pinned when first added (GPU slice 1) | https://github.com/dotnet/Silk.NET | **MIT** | Approved for direct dependency (operator 2026-10-13; see below) |
 
 ## Restoring the vendored set (References/)
 
@@ -147,6 +148,13 @@ root folder names):
   1.4.0 confirmed in restore graph). No source copied - consumption is via
   the public `XisoExplorer` API behind `XGrid.XboxFs/XdvdfsFileSystem`.
 
+### Silk.NET (MIT) — approved 2026-10-13
+- Operator decision (2026-10-13) for GPU-backend slice 1
+  (`gpu-backend-design.md` §8): **`Silk.NET.OpenGL`** as the net9.0 GL binding.
+  **MIT** (https://github.com/dotnet/Silk.NET). Pin package + version centrally
+  in `Directory.Packages.props` when first added; no other new dependency is
+  allowed for slice 1. Chosen over OpenTK and Veldridu.
+
 ### CHDSharp (MIT)
 - MIT License, Copyright (c) 2026 Peterson Fernandes and Gordon Jefferyes
   (sibling repo `C:/Users/HomePC/Dropbox/source/repos/CSharp_CHDSharp`,
@@ -186,5 +194,5 @@ root folder names):
 ## Rule going forward
 1. Extract facts into notes like this one before implementing.
 2. Never copy code from GPL/LGPL/unlicensed references.
-3. XISOSharp is the only approved direct dependency; record any version change here.
+3. XISOSharp and Silk.NET are the only approved direct dependencies; record any version change here.
 4. Maintain this file when a new reference is studied (plan §46).

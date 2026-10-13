@@ -295,8 +295,8 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    (§112): gate-free to 18.1B (intro FMV live ~22 fps, CPU-blitted).
    **1126 tests.**
 2. **GPU-backend slice 1:** work order is verbatim in
-   `gpu-backend-design.md` §8 — operator first picks the GL binding
-   (OpenTK / Veldridu / Silk.NET), then ONE agent builds `XGrid.GpuGl` +
+   `gpu-backend-design.md` §8 — operator picked **Silk.NET** (2026-10-13);
+   ONE agent builds `XGrid.GpuGl` +
    the `IPgraphBackend` seam + probe-gated init + golden harness. Never
    parallelize a single engine build.
 3. **007 stream end:** probe origin `pd181.xgs` (path in §112); next
