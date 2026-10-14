@@ -6769,3 +6769,86 @@ upstream automation gaps worth one issue if the team leans on scripted xemu;
 (c) the subset pins 7 tests — extend only by editing the script's `-Subset`
 default + `ktest_diff.py` expectations together (they are intentionally
 duplicated, not shared, so the diff stays an independent oracle).
+
+## §125 - present-upload plumbing: PgraphSurfaceRecord carries the surface guest address (2026-10-14)
+
+Wave-9 T3 build task (branch `wave/present-upload`, commit `5311181`,
+merged `--no-ff` as `aabf85a`): the §122 Nv2a-seam follow-up. Plumbing
+only — zero behavior change (no new GL calls, no upload,
+`DebugSummary` untouched). 4 files, +91/-7:
+`IPgraphBackend.cs` (`PgraphSurfaceRecord` gains `uint SurfaceAddress`
+as 5th ctor param — the resolved guest-physical byte address of the
+presented surface; named per CA1720); `Nv2aMmio.cs` flip site
+(`MethodFlipIncrementWrite`) populates it with
+`SurfaceBase(_dmaColor) + PresentedColorOffset`, the exact expression
+`CapturePresentedFrame` already computes — reference check xemu
+`gl/surface.c:1060` (`vram_addr = dma.address + surface->offset`),
+facts only; `GlPgraphBackend.cs` `FlipCore` stores it into observable
+`LastFlipSurfaceAddress` (zeroed in `ResetState`) BEFORE every early
+return, so the `_fbo == 0` CPU-blitted path the future upload serves
+carries it too, never acted on. Tests: `Flip_CarriesResolvedSurfaceAddress`
+(DMA handle 9 → base `0x8000` + offset `0x1000` ⇒ `0x9000`) and
+`Flip_SurfaceAddressTracksOffsetAcrossFlips` (`0x3000`/`0x3040` per-flip
+recompute); plus a 2-line fix to the file-local `PushMethods` helper,
+whose terminator jumped to hardcoded `0x1001` while the stream lives at
+`0x8000` (minimal streams re-executed ~559× to the 4M cap; old tests
+survived only via accidental suspension — probe-verified err 4/err 6).
+Suite 1250/1250 green post-merge, format clean. Menu golden on branch
+(`gpu-slice1-golden.ps1`, 1B): sw SHA `4EF1FBF6…CB0DE81` exact,
+counters identical, gl `unsupported=0`/`flipEmpty=0`/BMP exact.
+Deferred: the actual upload slice hooks at `GlPgraphBackend.FlipCore`
+(`GlPgraphBackend.cs:569`) — on `_fbo == 0` (later: surface-generation
+change) read guest RAM at the address via `IGpuMemory` (same walk as
+`TryCopyPresentedFrame`), full-frame replace, never mix. Still open:
+staleness detection for the non-empty-FBO case (needs guest-visible
+surface-access tracking, design §7 risk 6).
+
+## §126 - Track C JIT scoping: lever quantification, hotspot-profile proposal, candidate first slice (2026-10-14)
+
+Read-only wave (no `src/`/`tests/` changes). Question from §122: GL submission+readback is 0–2.9% of wall, so emulation is 97–100% of every run — scope the CPU lever. All throughput figures below are measured values from the notes; anything unmeasured is labeled ESTIMATE.
+
+### 1. Lever quantification (measured)
+
+**Interpreter rate, quiet host.** AGENTS.md Velocity-5: 1B steps ≈ 70–90 s at ~14M insn/s. ImplementationPlan Gap 3: 5B-step batch ≈ 6 min at ~14M insn/s Release. §111: interpreted cost ≈ 70 ns/instruction vs skipped chunks at ~ns/cycle (device remainder math only).
+
+**Same runs, contended host (shared with sibling agents — ratios valid, absolutes drift ±40%, §119).** §122 fps table, 1B-step segments: menu sw 352.6 s (2.84 Msteps/s) / gl 342.3 s (2.92); triangle sw 298.4 s (3.35) / gl 360.6 s (2.77); 007 fmv sw 249.5 s (4.01) / gl 202.4 s (4.94); 007 transition sw 227.0 s (4.41) / gl 198.8 s (5.03). GL `timed[` totals: menu 9.8 s / 342 s = 2.9%; triangle 0.2%; both 007 segments ~0%. §122 verdict: emulation (CPU + devices) is 97–100% of every run.
+
+**Long-probe rates.** §112: 13.1B cold run 4347.7 s (~3.0M insn/s contended). §114: 3.45B batches 699–806 s (~4.3–4.9M insn/s contended). §120: ktest full run 12.26B insn ≈ 58 min (~3.5M insn/s), of which ~9.5B is the final `Sleep(10000)` — idle-skip V2 would compress it to ~10 min (§120 open item c). §123: 792.8M steps in 04:19 ≈ 3M insn/s loaded; quiet-host arithmetic predicts ~2:10.
+
+**How much is parks vs real work (§§111/119, `--idle-skip-probe`, 1B steps).** Armable (V1-skippable) parks: dashboard 131.9M (13.2%), triangle 455.6M (45.6%) — cross-validated against flag-on `skippedSteps` (129.4M/447.8M). Rejected mass: mem-write busy loops 43.9M/27.2M (real work — dashboard XBE `0x0040xxxx`, kernel `0x8003158A`), structural 10.7M/1.3M, static-rule 2.4M/0.8M. **MMIO-read + PIO parks = 0.038% both titles** (MMIO bucket is BIOS-ROM fetch loops `0xFFFxxxxx`, PIO is kernel `out 0xA0` PIC-EOI path) — the flip-stall/vblank/PIT CPU polls hypothesized in §111 never appear. Flag-on speedups (same-window pairs): dashboard 1.10× (12.9% skipped), triangle 1.66× (44.8% skipped); V1's 1.63×/1.90× were contention-inflated (§119).
+
+**Interpreter-vs-device split: NOT measured — open.** No run separates `Cpu.Step()` from `XboxMachine.Advance` (bus + APU + USB0/1 + NET + NV2A PTIMER remainder, `XboxMachine.cs:314-330`). Per-instruction device cost is amortized over 65536-step `Run` batches (`XboxMachine.cs:467-485`) vs 4096-step quanta under `--break-log` (§114). ESTIMATE only: with idle-skip proving skipped chunks cost ~ns/cycle, the ~70 ns/insn is dominated by fetch+decode+dispatch+translate, not devices — but the first profiling act must confirm this (proposal below).
+
+**Per-instruction cost centers (code facts, sizes measured, shares ESTIMATE).** `XboxCpu.Step()` (`XboxCpu.cs:63-107`): IRQ check → `Fetch` → `Decoder.Decode` → 354-case `switch` dispatch (`XboxCpu.cs:170ff`, 354 `case Mnemonic.` sites counted) → `_idle?.Observe`. `Fetch` (`XboxCpu.cs:160-168`) reads all 15 bytes individually, each through `TranslateLinear` → `Mmu.Translate` (256-entry direct-mapped 4 KB SoftTLB, `SoftTlb.cs`; 4 KB + 4 MB pages, A/D bits, WP faults, `Mmu.cs:37-100`) → `IMemoryBus.Read8`. Cross-page operands fall to byte-by-byte translate loops (`XboxCpu.cs:865-903`). `Decoder.Decode` is a 2812-line table-driven decoder (`Decoder.cs`); `Mnemonic.cs` is 428 lines. Plan Phase-16 order (decode → memory → branch → flags → block cache → regalloc → indirect → MMIO → TLB → sync) already ranks decode and memory first.
+
+### 2. Hot-spot profile proposal (deterministic, flag-off comparable)
+
+**Run substrate (all exists).** Restore a v3 snapshot (§§121/124 — old `.xgs` must be regenerated: Nv2a v2→v3 breaks loads, Audio v3 keeps a v2 fallback) and run a fixed `--steps` window: snapshot save/restore is bit-exact (EIP/GPRs/NV2A counters/frame SHA/RAM SHA identical, §101), so every profile run is reproducible; 50M post-restore steps ≈ 20 s (§101). Use the golden anchors as the determinism check on every profiled run: menu frame SHA `4EF1FBF6…`, triangle `A1740DE0…` (§§113/117/122).
+
+**Hook point.** `XboxCpu.Step()` line 106 already calls `_idle?.Observe(instruction, eipBefore, eipAfter)` after every instruction. Add an analogous nullable `IHotspotObserver` (`null` = zero behavior change, same pattern as §111's "flag-off: detector is null"). Cost ceiling is measured: the `--break-log` single-step loop (a `Contains` check + `Step()` + 4096-quantum advance, `Program.cs:449-489`) costs ~3% vs the main loop (§112) — a few counter increments per instruction will cost less; verify by A/B wall on the triangle 1B pair.
+
+**Counters (bounded, following §119 precedent: 128-head cap, `headsUntracked` overflow count).**
+- Per-`Mnemonic` execution counts (array indexed by mnemonic — decode-stream mix: which of the 354 cases are hot).
+- Per-PC execution counts for code heads (taken-branch targets / block entries), capped with overflow accounting; attribute loop spans exactly like §119's exclusive-time attribution (single-open-span discipline, untracked code credited to the open head — documented approximation, good enough for scoping).
+- Fetch/translate counters: TLB hit/miss (`SoftTlb.TryLookup` outcomes), cross-page split frequency, MMIO-region vs RAM data accesses. These decide fetch-fast-path vs decode-cache priority with numbers instead of estimates.
+- Coarse sampler already exists: `EipHistogram` (`XGrid.Core/Diagnostics/EipHistogram.cs`, caller-driven cadence, `Program.cs:551`) — use for plateau checks, not for billing.
+
+**Outputs.** Ranked mnemonic table + ranked PC table + TLB/split/MMIO rates for (a) dashboard 1B menu boot, (b) triangle 1B boot, (c) one post-restore window on a later-stage snapshot once the sample-driven chain reaches one. Keep the profiler OFF for all acceptance comparisons (flag-off byte-identity rule, §§111/119); profile runs and acceptance runs are separate invocations.
+
+### 3. Candidate next slice: decode cache + fetch fast path (no codegen)
+
+**Recommendation: block cache without codegen** — cache `DecodedInstruction` streams keyed by (guest VA, CPU mode, operand/address-size defaults, segment-base generation, CPL-equivalent state) per Plan §20.4, plus a single-translate fetch fast path when all instruction bytes lie in one RAM page. This is Plan Phase-16 items 1+2+5, the smallest increment that removes the two largest per-instruction costs (re-decode + 15 translates/fetch) while executing the identical interpreter bodies. Threaded dispatch has no C# computed-goto equivalent (nearest is delegate-table dispatch — ESTIMATE, measure against the 354-switch baseline first); tier-1 IL/`DynamicMethod` compile (Plan §20.6 options 1–3) is a later slice behind the same gates.
+
+**Prerequisites.** Write-path invalidation hooks: `WriteMemory`/`RawWrite` (`XboxCpu.cs:881-903`), DMA/BM-DMA guest writes (`IdeController` PRDT walk through `IGuestMemory`), device RAM writes (APU DSP scratch DMA §121, NV2A blits/clears into guest RAM), kernel in-place code mutation (§34), and snapshot load (flush cache). Cache key must include everything decode/execution depends on: CR0.PE/PG, `DefaultOperandSize`/`DefaultAddressSize`, CS base (real vs protected mode), CR3 generation, and INVLPG/page-fault paths (`Mmu.Flush/FlushPage`). Determinism harness: §101 bit-exact restore + the two frame SHAs + suite green.
+
+**Risks (all with note citations).** Self-modifying code is REAL on this guest: kernel decrypts the XBE entry in place (`xor [0x10128],0xA8FC57AB` at `0x8002EFE6`, §34); the dashboard decompressor (`0x5C4A0`, 16 KB ring, §§34–35) writes its output to `0x7FA00000`; the EOS quirk mutates guest RAM host-side (`XboxMachine.cs:392-459`). Invalidation must be conservative-first: any untracked write path flushes. IRQ-precise points: `Step()` polls interrupts before every fetch (`XboxCpu.cs:69-81`); cached blocks must still check interrupts at every original instruction boundary — no boundary elision in this slice. Fault precision: `#UD`/page-fault paths must reproduce the exact faulting EIP and vector (CMC precedent §120; `fcomp` fidelity class §34). Single-step observability: `--break-log`/`--break`/`--trace` drive `Cpu.Step()` directly (so the cache must be transparent to step granularity; absolute-step recipes stay flag-off-only). Composes with, not replaces, idle-skip (`XboxCpuIdleSkip.cs:162-237`).
+
+**Concrete acceptance gate (same-host ratios, per §119).** Triangle 1B boot (`--gpu sw`, flag-off vs slice build, back-to-back same load window): Msteps/s improves (report ratio); `draws=2706 frames=68 stalls=34`, sw frame SHA `A1740DE0…` unchanged; menu 1B pair: frame SHA `4EF1FBF6…`, counters identical sw↔build. Full suite green + format clean; flag-off (cache disabled) byte-identical logs per §§111/119 precedent. Profiler re-run shows decode + translate shares moved by the predicted amount.
+
+### 4. Explicit non-goals for the slice
+
+Any host codegen (Plan §20.6); async/threaded submission (no-mixing/no-async rules, design §7 risks 3–5); swapchain/windowing (latency feature, §122); Vulkan (GL-first stands); device deadline hooks (MMIO/PIO parks 0.038%, §119 closed it); NV2A/DSP/device fidelity changes; snapshot format changes; default-on (opt-in flag like `--idle-skip`, flag-off byte-identical); texture census / DXT / mipmap-LOD work (§124 reserve rows); absolute-step recipe compatibility under the flag (§111 semantics stand).
+
+## §127 - wave 9 BOSS record: re-verify green, present-upload merged, JIT scoped, 007 probe CLOSED (2026-10-14)
+
+Five tasks fanned out; four green, one closed by operator rule. **T1 dashboard golden PASS:** 1B-step menu recipe ×2 runs, vec=0, frame SHA `4EF1FBF6…CB0DE81` bit-exact both runs, EIP `0x1E0EB`, full counter table run-identical (`draws=33632 skipped=1402 pixels=285171381 … frames=686 stalls=686`, `zclipCull=21526`, unmapped only `045=4 065=8`, NVNET 342B loopback intact). Note: absolute counters differ from the §42 `draws=2670…frames=33` baseline — different configuration (1B pad-driven menu on merged master vs 1.7B neutral pre-wave-8 build; pusher-timing baseline shift per AGENTS.md) — the binding golden for this recipe is the SHA, which matches, and §121 item (3) already pins this recipe SHA-identical on pristine master. Wall 345 s/1B contended (~2.9M/s vs 70–90 s quiet rule-of-thumb — host contention, ratios only). **T2 ktest smoke PASS 7/7** in 04:36 (XGrid 4/7, xemu 2/7, suite steps bit-reproducible 792,800,535, xemu park signature identical) — zero deviations from §123. **T3 merged** (§125). **T4 filed** (§126). **T5 (007 fresh-v3-chain long probe) CLOSED-unrun:** the task spanned ~57.8B steps with no intermediate deliverable — still running past every review point (stuck by the poll rule: no checkpoint return inside any 10-min window) — and the operator then closed the whole line of work with a standing scope rule: **no real Xbox games at this stage of development; all title work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/mesh/triangle/`, `kernel-test-suite-default.xbe`); 007/real-game probes deferred to a later stage. Consequences recorded: the §121 DSP-bridge live verification stands on its pre-merge evidence only (dashboard-neutral byte-identity re-proven post-merge by T1); Nv2a v3 snapshot regeneration for any long chain is still open; the old `.xgs` chain (`007-streamend/pd*.xgs`, `apu-dsp/pdE1-*.xgs`) remains unloadable. **Poll-discipline lesson (now in the BOSS protocol):** no task may span work without a checkpoint return inside ~10-min windows — long probes must be scoped as checkpointed legs (save snapshot + return evidence per leg) so BOSS can poll, restart, or close them.

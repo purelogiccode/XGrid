@@ -2994,7 +2994,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1248 tests passing** (39 Core, 424 Cpu, 55 Memory, 261 Bus, 55 Integration, 222 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 70 GpuGl);
+Current test baseline: **1250 tests passing** (39 Core, 424 Cpu, 55 Memory, 261 Bus, 55 Integration, 224 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 70 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3052,43 +3052,20 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — 007 onward probe + swapchain decision + JIT scoping.**
-**WAVE DONE (§§121–124; one frozen agent relaunched per the liveness rule).**
-APU GP/EP DSP bridge (§121): run-state from GPRST/EPRST with xemu
-`proc_rst_write` semantics + a per-frame GP engine absorbing pending mixer
-blocks (state 2/3→0) through the guest's GPSADDR SGE mapping (mailbox = DSP
-scratch 0x810); ISTS bit3 raised on a debounced wake (≤1/240 frames — FB's
-unconditional ~10 ms stall makes faster restarts unserviceable). Evidence:
-`dsp-absorb 3->0/2->0`, exactly one bit3 raise + one FB in 200M, ISTS back to
-0; **G2 park drains, 007 proceeds past 56.8B no fault** (first-ever `0x20BD0`
-HITs = new PlayMPC channel, frames 2017→2125, worker countdown 8→0 over the
-`0x15BExx` buffer-drain ladder, DVD streams a new 3 MB region
-LBA 0x33182–0x33772); dashboard neutral byte-identical (frame SHA + counters;
-only 2 added APU EventLog lines); +13 DspBridgeTests; Audio snapshot v3 with
-v2 fallback. The §118 writer scan is corrected retrospectively (FB's
-`mov [edi+0x10],ebp` is register-form). The wave survived a host power loss:
-all 4 branches intact, partial work inventoried, agents relaunched to green.
-GPU slice 3 (§122): 007 transition (`pd536`+1B) + FMV (`pd181`+1B) goldens
-PASS (sw SHAs reproduce §114; gl byte-identical / correctly absent per the
-no-mixing rule), zero `unsup` rows on 007, menu+triangle re-verified green;
-**fps table: GL submission+readback = 0–2.9% of wall** (menu 9.8s/342s) →
-swapchain is a latency feature, NOT the throughput lever — Track C JIT stays
-the lever; +6 timing tests; `diag[flipEmpty]` tripwire; follow-up: present-
-upload needs `PgraphSurfaceRecord` to carry the surface address (Nv2a-seam
-work, not started).
-NV2A remaining (§124): measured-exercised rows only — `0x30` NEVER/ALWAYS
-compare (menu 1626 writes), PROJECT2D divide (8222 menu / 81 tri), TEXADDRESS
-V-decode + BORDER_COLOR (~9.6k words); post-menu/post-tri byte-identical
-(RGB and alpha 0); +13 tests with fail-pre-fix proven via stash; DXT / BRDF /
-DOT_STR_3D / dim≠2D all ZERO on menu+tri (documented, left); mipmap LEVELS=8
-writes exist but every FILTER MIN is LOD0 (level 0 always — left); **Nv2a
-snapshot v2→v3 (new `_textureBorderColor[4]` + `_shadowDepthFunc`) — old
-`.xgs` (pd181/pd4915/pd546) no longer load, regenerate**; reserved addr modes
-6–7 clamp is a safe choice, not reference.
-ktest smoke (§123): **PASS 7/7 rows green ×2 cycles** (XGrid 4/7 pass — 051/
-282 + 224/231 ahead; xemu 2/7; 071/319/344 faithful-fail both identically),
-~5 min end-to-end, step count bit-reproducible (792,800,535); zero product
-changes; `scripts/ktest-smoke.ps1` + README Smoke section. **1248 tests.**
+**NEXT SESSION — test-samples track: JIT slice 1 + present upload + sample coverage.**
+**WAVE DONE (§§125–127; five tasks, four green, one closed).**
+T1 dashboard golden PASS (1B menu ×2 runs, vec=0, SHA `4EF1FBF6…`
+bit-exact, counters run-identical); T2 ktest smoke PASS 7/7 in 04:36
+(steps bit-reproducible 792,800,535, zero deviations). T3
+present-upload plumbing MERGED (§125: `PgraphSurfaceRecord` carries the
+guest-physical surface address, plumbing only, +2 tests, menu golden
+unchanged). T4 JIT scoping FILED (§126: decode cache + fetch fast path
+as the next slice, no codegen). T5 007 long probe CLOSED-unrun — stuck
+past every review point with no checkpoint return, then closed by
+**standing operator rule: no real Xbox games at this stage; all title
+work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/
+mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
+**1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,

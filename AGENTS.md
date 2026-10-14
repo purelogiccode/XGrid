@@ -129,6 +129,11 @@ green with zero work lost).
    format, update `AGENTS.md` (current state + next session) and
    `ImplementationPlan.md`, commit + push, report. Closed-task diagnoses
    go into the notes as known-no-bug / deferred items for the next wave.
+5. **Poll discipline (2026-10-14, from wave-9 T5).** No task may span work
+   without a checkpoint return inside ~10-min windows: scope long probes
+   as checkpointed legs (save snapshot + return evidence per leg) so BOSS
+   can poll, restart, or close them. A task with no checkpoint return past
+   every review point is stuck — close it, record the diagnosis.
 
 ## Current state
 
@@ -358,27 +363,50 @@ green with zero work lost).
   ktest smoke (§123): **PASS 7/7 rows green ×2 cycles, ~5 min**, zero product
   changes. **1248 tests.** Recovery worked exactly per the liveness rule:
   branches intact, partial work inventoried (keep-vs-revert), all four agents
-  relaunched to green.
+   relaunched to green.
+- **Wave 9 (2026-10-14, §§125–127; five tasks, four green, one closed).**
+  T1 dashboard golden PASS (1B menu ×2 runs, vec=0, SHA `4EF1FBF6…`
+  bit-exact, counters run-identical); T2 ktest smoke PASS 7/7 in 04:36
+  (steps bit-reproducible 792,800,535, zero deviations). T3
+  present-upload plumbing MERGED (§125: `PgraphSurfaceRecord` carries the
+  guest-physical surface address, plumbing only, +2 tests, menu golden
+  unchanged). T4 JIT scoping FILED (§126: decode cache + fetch fast path
+  as the next slice, no codegen). T5 007 long probe CLOSED-unrun — stuck
+  past every review point with no checkpoint return, then closed by
+  **standing operator rule: no real Xbox games at this stage; all title
+  work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/
+  mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
+  **1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1216 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1250 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — 007 onward probe + swapchain decision + JIT scoping.
+## Next session — test-samples track: JIT slice 1 + present upload + sample coverage.
 
-1. **WAVE DONE (§§121–124).** APU DSP bridge drains G2 (§121, past 56.8B);
-   GPU slice 3 goldens + fps table (§122 — GL 0–2.9% of wall; JIT is the
-   lever); NV2A measured rows (§124, post-menu/tri identical); ktest smoke
-   PASS ×2 (§123). **1248 tests.** Snapshot format v3: Nv2a v2→v3 drops old
-   saves (Audio has v2 fallback) — **regenerate the 007 probe chain**.
-2. **007 onward:** verify the merged DSP fix live (dashboard golden + 007 via
-   a fresh snapshot to ~57.8B), save a new post-G2 probe origin, continue up
-   the buffer-drain ladder / next content.
-3. **Swapchain/windowing decision (operator)** for the present path;
-   present-upload follow-up needs `PgraphSurfaceRecord` to carry the surface
-   address (Nv2a-seam follow-up, per §122).
-4. Track C JIT scoping (the lever); 007 texture census (DXT/mipmaps/shadows)
-   when a later-stage probe can reach them; ktest smoke stays the standing
-   gate; NV2A reserve rows (6–7 clamp is a safe choice, not reference).
+1. **WAVE DONE (§§125–127).** Dashboard golden + ktest smoke re-verified
+   green on merged master (T1/T2); present-upload plumbing merged (§125,
+   +2 tests); JIT scoped to decode-cache + fetch-fast-path (§126, no
+   codegen); 007 long probe CLOSED (stuck + deferred). **1250 tests.**
+2. **Standing operator rule (2026-10-14): NO real Xbox games at this
+   stage.** All title work uses `data/test-samples/` (`triangle.xbe`,
+   `nxdk-hello/`, `nxdk-led/`, `nxdk-mesh/`, `nxdk-triangle/`,
+   `kernel-test-suite-default.xbe`). 007/real-game probes deferred to a
+   later stage; the §121 DSP-bridge live evidence stands pre-merge only.
+3. **Track C JIT slice 1 (§126):** `IHotspotObserver` profiler first
+   (nullable hook at `Step()` line 106, mnemonic/PC/TLB counters, golden
+   anchors as determinism check), then decode cache + fetch fast path
+   with conservative invalidation (XBE decrypt §34, decompressor output,
+   EOS-quirk host writes, DMA/device RAM writes, snapshot-load flush);
+   acceptance = Msteps/s ratio up, both frame SHAs + suite green,
+   flag-off byte-identical.
+4. **Present upload slice (§125 hook):** `GlPgraphBackend.FlipCore`
+   `GlPgraphBackend.cs:569`, `_fbo == 0` branch first, full-frame replace
+   via `IGpuMemory`, never mix; open design point = staleness detection
+   for the non-empty-FBO case. **Swapchain/windowing decision (operator)**
+   still pending — latency feature, not the lever.
+5. Sample coverage on the test-samples set (nxdk-mesh/hello/led beyond
+   triangle); ktest smoke stays the standing gate; NV2A reserve rows
+   (6–7 clamp is a safe choice, not reference).
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
