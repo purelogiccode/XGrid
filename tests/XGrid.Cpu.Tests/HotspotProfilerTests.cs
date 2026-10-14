@@ -159,6 +159,124 @@ public sealed class HotspotProfilerTests
     }
 
     [Fact]
+    public void TlbBatchTallies_Accumulate_AndRejectNegative()
+    {
+        var profiler = new HotspotProfiler();
+        profiler.NoteTlbHits(14);
+        profiler.NoteTlbHits(0);
+        profiler.NoteTlbMisses(1);
+        profiler.NoteTlbMisses(0);
+
+        Assert.Equal(14UL, profiler.TlbHits);
+        Assert.Equal(1UL, profiler.TlbMisses);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => profiler.NoteTlbHits(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => profiler.NoteTlbMisses(-1));
+    }
+
+    [Fact]
+    public void TranslateUncounted_MatchesTranslate_Outcomes()
+    {
+        var ram = new PhysicalMemory(0x10000);
+        var bus = new AddressSpace(ram, UnmappedAccessPolicy.Throw);
+        var context = new XboxContext
+        {
+            Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging,
+            Cr3 = 0x1000,
+        };
+        var mmu = new Mmu(context, bus);
+        bus.Write32(0x1000, 0x2000u | 3u);
+        bus.Write32(0x2000 + 0x10u * 4u, 0x8000u | 3u);
+        var profiler = new HotspotProfiler();
+        mmu.Observer = profiler;
+
+        // First lookup misses (walk), second hits: outcomes returned, nothing reported.
+        uint first = mmu.TranslateUncounted(0x00010ABC, false, false, out bool faulted, out _, out bool hit, out bool counted);
+        Assert.False(faulted);
+        Assert.False(hit);
+        Assert.True(counted);
+        Assert.Equal(0UL, profiler.TlbMisses);
+        Assert.Equal(0UL, profiler.TlbHits);
+
+        uint second = mmu.TranslateUncounted(0x00010ABC, false, false, out faulted, out _, out hit, out counted);
+        Assert.False(faulted);
+        Assert.True(hit);
+        Assert.True(counted);
+        Assert.Equal(first, second);
+        Assert.Equal(0UL, profiler.TlbMisses);
+        Assert.Equal(0UL, profiler.TlbHits);
+
+        // Probe translates and paging-off translates are uncounted.
+        mmu.TranslateUncounted(0x00010ABC, false, false, out _, out _, out _, out counted, sideEffects: false);
+        Assert.False(counted);
+        context.Cr0 = ControlRegisterBits.Cr0ProtectedMode;
+        mmu.TranslateUncounted(0x00010ABC, false, false, out _, out _, out _, out counted);
+        Assert.False(counted);
+
+        // The counted path translates identically to Translate.
+        context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
+        uint viaTranslate = mmu.Translate(0x00010ABC, false, false, out _, out _);
+        Assert.Equal(second, viaTranslate);
+        Assert.Equal(1UL, profiler.TlbHits);
+    }
+
+    [Fact]
+    public void Heads_WindowEviction_RetainsHot_DropsCold()
+    {
+        var profiler = new HotspotProfiler();
+        var jmp = new DecodedInstruction { Mnemonic = Mnemonic.Jmp, Length = 2 };
+        var nop = new DecodedInstruction { Mnemonic = Mnemonic.Nop, Length = 1 };
+
+        // Phase 1: 128 distinct one-shot BIOS-style heads fill the table.
+        for (uint i = 0; i < HotspotProfiler.MaxTrackedHeads; i++)
+        {
+            profiler.Observe(jmp, 0x1000 + (i * 0x10), 0x10000 + (i * 0x10));
+        }
+
+        Assert.Equal(HotspotProfiler.MaxTrackedHeads, profiler.TrackedHeadCount);
+
+        // Fill the window with fall-throughs (no new heads); the boundary
+        // evicts the cold bottom half.
+        int fill = HotspotProfiler.HeadWindowInstructions - HotspotProfiler.MaxTrackedHeads;
+        for (int i = 0; i < fill; i++)
+        {
+            profiler.Observe(nop, 0x2000, 0x2001);
+        }
+
+        Assert.Equal(1UL, profiler.HeadWindows);
+        Assert.Equal(HotspotProfiler.HeadWindowRetained, profiler.TrackedHeadCount);
+        Assert.Equal((ulong)(HotspotProfiler.MaxTrackedHeads - HotspotProfiler.HeadWindowRetained), profiler.HeadEvictions);
+
+        // Phase 2: a steady-state hot head accumulates visits post-eviction.
+        const uint hot = 0x50000;
+        const int hotVisits = 100000;
+        for (int i = 0; i < hotVisits; i++)
+        {
+            profiler.Observe(jmp, 0x4000, hot);
+        }
+
+        Assert.Equal((hot, (ulong)hotVisits), profiler.TopHeads(1)[0]);
+
+        // Phase 3: cross the next window; the hot head survives, one cold
+        // singleton churns out (65 tracked > 64 retained).
+        int fill2 = HotspotProfiler.HeadWindowInstructions - hotVisits;
+        for (int i = 0; i < fill2; i++)
+        {
+            profiler.Observe(nop, 0x2000, 0x2001);
+        }
+
+        Assert.Equal(2UL, profiler.HeadWindows);
+        Assert.Equal(HotspotProfiler.HeadWindowRetained, profiler.TrackedHeadCount);
+        Assert.Contains(profiler.TopHeads(HotspotProfiler.MaxTrackedHeads), h => h.Eip == hot);
+
+        using var writer = new StringWriter();
+        profiler.WriteReport(writer, 5);
+        string report = writer.ToString();
+        Assert.Contains("summary,headWindows,2,", report);
+        Assert.Contains("summary,headEvictions,65,", report);
+    }
+
+    [Fact]
     public void WriteReport_RanksDescending_AndSummarizes()
     {
         var profiler = new HotspotProfiler();

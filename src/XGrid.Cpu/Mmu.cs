@@ -52,8 +52,48 @@ public sealed class Mmu
         out uint errorCode,
         bool sideEffects = true)
     {
+        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects, notify: true, out _, out _);
+    }
+
+    /// <summary>
+    /// Translates a linear address exactly like <see cref="Translate"/> but
+    /// reports nothing to the hotspot observer; instead the TLB outcome is
+    /// returned so the caller can accumulate batch tallies (fetch fast path,
+    /// §131 leg (a)). Page-table side effects (A/D bits, TLB insert) are
+    /// identical to <see cref="Translate"/>.
+    /// </summary>
+    /// <param name="tlbHit">True when the lookup hit the SoftTLB.</param>
+    /// <param name="tlbCounted">False when paging is disabled or
+    /// <paramref name="sideEffects"/> is off (nothing would be reported).</param>
+    /// <returns>The physical address, or zero when <paramref name="faulted"/> is true.</returns>
+    public uint TranslateUncounted(
+        uint linearAddress,
+        bool isWrite,
+        bool isInstruction,
+        out bool faulted,
+        out uint errorCode,
+        out bool tlbHit,
+        out bool tlbCounted,
+        bool sideEffects = true)
+    {
+        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects, notify: false, out tlbHit, out tlbCounted);
+    }
+
+    private uint TranslateCore(
+        uint linearAddress,
+        bool isWrite,
+        bool isInstruction,
+        out bool faulted,
+        out uint errorCode,
+        bool sideEffects,
+        bool notify,
+        out bool tlbHit,
+        out bool tlbCounted)
+    {
         faulted = false;
         errorCode = 0;
+        tlbHit = false;
+        tlbCounted = false;
 
         if (!IsEnabled)
         {
@@ -63,7 +103,13 @@ public sealed class Mmu
         uint virtualPageNumber = linearAddress >> 12;
         if (sideEffects && _tlb.TryLookup(virtualPageNumber, out uint cachedPage, out bool cachedWritable))
         {
-            Observer?.NoteTlbHit();
+            tlbHit = true;
+            tlbCounted = true;
+            if (notify)
+            {
+                Observer?.NoteTlbHit();
+            }
+
             if (isWrite && !cachedWritable && (_context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0)
             {
                 faulted = true;
@@ -76,7 +122,11 @@ public sealed class Mmu
 
         if (sideEffects)
         {
-            Observer?.NoteTlbMiss();
+            tlbCounted = true;
+            if (notify)
+            {
+                Observer?.NoteTlbMiss();
+            }
         }
 
         uint pageDirectoryEntryAddress = (_context.Cr3 & 0xFFFFF000u) + ((linearAddress >> 22) & 0x3FFu) * 4u;

@@ -31,6 +31,20 @@ public interface IHotspotObserver
     void NoteTlbMiss();
 
     /// <summary>
+    /// Records a batch of <c>SoftTlb.TryLookup</c> hits (batch tallies, §131:
+    /// the 15-byte fetch loop accumulates per-byte outcomes and reports once,
+    /// so profile runs pay one interface dispatch instead of fifteen; the
+    /// reported total is identical to fifteen <c>NoteTlbHit</c> calls).
+    /// </summary>
+    void NoteTlbHits(int count);
+
+    /// <summary>
+    /// Records a batch of <c>SoftTlb.TryLookup</c> misses (batch tallies, §131:
+    /// same batching contract as <see cref="NoteTlbHits"/>).
+    /// </summary>
+    void NoteTlbMisses(int count);
+
+    /// <summary>
     /// Records one translated data access through <c>ReadMemory</c>/
     /// <c>WriteMemory</c> (operand and stack traffic, paging on or off;
     /// instruction fetches and direct descriptor/gate reads excluded).
@@ -43,4 +57,12 @@ public interface IHotspotObserver
 
     /// <summary>Records one multi-byte data access that crossed a 4 KB page (byte-by-byte path).</summary>
     void NoteSplitAccess();
+
+    /// <summary>
+    /// Records one fetch window served by the slow per-byte path while the
+    /// fetch fast path was enabled (page-crossing fallback, §131 leg (c)).
+    /// Fast-path windows report nothing here, so fast coverage is
+    /// fetches-minus-fallbacks (see <c>HotspotProfiler.FetchSlowFallbacks</c>).
+    /// </summary>
+    void NoteFetchSlow();
 }
