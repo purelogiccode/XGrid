@@ -19,6 +19,14 @@ public sealed class Mmu
         _memory = memory ?? throw new System.ArgumentNullException(nameof(memory));
     }
 
+    /// <summary>
+    /// Gets or sets the optional hotspot observer (§126). Null (default) means
+    /// no accounting; when set, every attempted <c>SoftTlb</c> lookup reports
+    /// exactly one hit or miss (probe translates with <c>sideEffects</c> off
+    /// and paging-disabled translates report nothing).
+    /// </summary>
+    public IHotspotObserver? Observer { get; set; }
+
     /// <summary>Gets whether paging is active (CR0.PE and CR0.PG).</summary>
     public bool IsEnabled => (_context.Cr0 & ControlRegisterBits.Cr0Paging) != 0 && _context.IsProtectedMode;
 
@@ -55,6 +63,7 @@ public sealed class Mmu
         uint virtualPageNumber = linearAddress >> 12;
         if (sideEffects && _tlb.TryLookup(virtualPageNumber, out uint cachedPage, out bool cachedWritable))
         {
+            Observer?.NoteTlbHit();
             if (isWrite && !cachedWritable && (_context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0)
             {
                 faulted = true;
@@ -63,6 +72,11 @@ public sealed class Mmu
             }
 
             return cachedPage + (linearAddress & 0xFFFu);
+        }
+
+        if (sideEffects)
+        {
+            Observer?.NoteTlbMiss();
         }
 
         uint pageDirectoryEntryAddress = (_context.Cr3 & 0xFFFFF000u) + ((linearAddress >> 22) & 0x3FFu) * 4u;
