@@ -75,8 +75,10 @@ public sealed class PresentUploadLiveTests
             Assert.Contains("presentUploads=1", backend.DebugSummary, StringComparison.Ordinal);
 
             // Second flip at a different surface with the FBO now non-empty:
-            // the upload path must not touch it (staleness detection stays
-            // open — the first frame is served again, provably stale).
+            // without a present-dirty watch wired (bare IGpuMemory seam fake)
+            // the pre-§135 contract holds — the upload path must not touch
+            // the FBO, so the first frame is served again. The watch-wired
+            // stale-upload path is covered in PresentDirtyWatchLiveTests.
             const uint second = 0x2000u;
             for (uint i = 0; i < 6; i++)
             {

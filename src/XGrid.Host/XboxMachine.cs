@@ -837,9 +837,10 @@ public sealed class XboxMachine : IIdleSkipHost
     /// hot one: every rasterized pixel goes through it; §131 leg (d)
     /// invalidation inventory). Page-drops the decode cache; framebuffer
     /// pages hold no cached code, so the drop is a bounds check and a clear
-    /// bit in the common case.
+    /// bit in the common case. Doubles as the present-upload dirty watch
+    /// handle for a backend attached to this machine (§132 (a*), §135).
     /// </summary>
-    private sealed class PhysicalGpuMemory : IGpuMemory
+    private sealed class PhysicalGpuMemory : IGpuMemory, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
         private readonly XboxCpu _cpu;
@@ -850,6 +851,8 @@ public sealed class XboxMachine : IIdleSkipHost
             _cpu = cpu;
         }
 
+        public bool PresentDirty => _memory.Ram.PresentDirty;
+
         public uint ReadPhysical(uint address)
         {
             return _memory.Read32(address);
@@ -857,8 +860,40 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public void WritePhysical(uint address, uint value)
         {
-            _memory.Write32(address, value);
+            // Writer identity (§132 finding i): the software twin's own
+            // surface writes must not trip the present-upload dirty bit;
+            // only real guest (CPU/device DMA) writers count.
+            _memory.Ram.BeginGpuWriteSuppression();
+            try
+            {
+                _memory.Write32(address, value);
+            }
+            finally
+            {
+                _memory.Ram.EndGpuWriteSuppression();
+            }
+
             _cpu.InvalidateDecodeCachePage(address);
+        }
+
+        public void ArmPresentWatch(uint address, uint length)
+        {
+            _memory.Ram.ArmPresentWatch(address, length);
+        }
+
+        public void DisarmPresentWatch()
+        {
+            _memory.Ram.DisarmPresentWatch();
+        }
+
+        public void MarkPresentDirty()
+        {
+            _memory.Ram.MarkPresentDirty();
+        }
+
+        public void ClearPresentDirty()
+        {
+            _memory.Ram.ClearPresentDirty();
         }
     }
 
