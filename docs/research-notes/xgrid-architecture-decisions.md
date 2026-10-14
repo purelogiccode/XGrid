@@ -7229,3 +7229,94 @@ deviations). **T4 merged-master goldens PASS both legs** (menu SHA +
 §127 counters exact @`0x1E0EB`; triangle SHA + 2706/68/34 @`0x8001B032`) —
 the wave-10 post-merge gap is closed. **Baseline 1277/1277** (1268 + 9),
 format clean.
+
+## 135 - GL dirty-bit (a*) LANDED: present-upload staleness closed at the RAM write choke (2026-10-14)
+
+Wave-12 T2 implements §132 recommendation (a*) exactly: an external dirty
+bit at the `PhysicalMemory.Write8/16/32/64` choke — the single writer path
+that also covers the `0x80000000` alias, the RAM mirror, and the
+`0xF0000000` write-combined view (`RamAliasDevice` maps to the same flat
+offsets; an `AddressSpace`-level watch misses all three — §132 finding ii,
+now regression-tested) — with a GPU-writer-identity suppression counter
+around the two `IGpuMemory.WritePhysical` adapter bodies
+(`XboxMachine.PhysicalGpuMemory`, `Program.MachineGpuMemory`) so the NV2A
+software twin's own surface writes never false-dirty (§132 finding i).
+`GlPgraphBackend` arms the watch at flip end with the resolved record span
+(`SurfaceAddress`, `pitch × height`; up to 4 round-robin slots so a
+double-buffered app's surfaces all stay watched), reads the bit in
+`FlipCore`, and the Flip rule is fail-closed: dirty → the FBO is dropped
+into the existing `_fbo == 0` upload path (`presentUploads++`,
+`flipStaleUploads++`); clean → serve the FBO; upload guard failure → the
+existing `flipEmpty` abstain path. `ResetState`/snapshot load mark the bit
+dirty (host-side only — no `.xgs` change, §101 holds; `PhysicalMemory.
+LoadState`/`Clear` mark only while armed, so pre-arm loads cannot poison a
+later session). The bit is cleared ONLY by a successful upload. sw default
+pays one predicted branch (`_presentWatchCount == 0`); no user flag — the
+watch exists only when a backend adapter is wired.
+
+**Deviations from the §132 prose (all deliberate, documented):** (i) span
+slots instead of a single span (alternating present surfaces — the §60
+menu-idle `0x3D00000↔0x3E2C000` pair — would otherwise under-watch);
+(ii) no "span-mismatch → upload" rule — it would force uploads on the
+menu's alternating flips and break the required `presentUploads=0`;
+instead the pre-first-flip interval (no span armed yet) serves, matching
+today's titles and the `flipServed` acceptance; (iii) arm happens at flip
+end only (draw/clear never touch the bit — `Backend.Draw` fires BEFORE
+the twin, `Backend.Clear` AFTER; nothing may clear-dirty inside them);
+(iv) a backend wired to a bare `IGpuMemory` seam fake (no watch) keeps the
+pre-§135 serve-whenever-FBO-non-empty contract — the real CLI wiring
+always carries the watch.
+
+**Known corners (fail-closed or unreachable, deferred):** (a) >4 presented
+surfaces in flight evicts the oldest span round-robin (a CPU writer to an
+evaded span can under-watch; menu+tri use ≤3); (b) a CPU write to a
+surface NEVER presented before the very first flip of a session with a
+live FBO serves stale (pre-first-flip interval has no span; FMV-before-any-
+flip is the `_fbo == 0` upload path, which handles it); (c) double-buffered
+CPU-blit FMV where flip N presents a surface first seen at flip N — same
+pre-arm corner; all unreachable without real titles (operator rule) and
+none reachable by menu/triangle.
+
+**Tests (+25 → 1302 green):** 19 unit (`PresentDirtyWatchTests`: all four
+write widths dirty inside the span; boundary-straddle; suppression incl.
+nesting; arm idempotence + no-launder; disarm-doesn't-clear; multi-span;
+round-robin eviction; LoadState-armed marks / LoadState-disarmed doesn't;
+Clear-armed marks; `RamAliasDevice` flat-coverage) + 6 live GL
+(`PresentDirtyWatchLiveTests`, early-return non-GL pattern): (a) GL-render
+→ flip serves GL bytes (≠ guest bytes; `presentUploads=0
+flipStaleUploads=0`); (b) GL-render → flip → guest CPU blit → flip uploads
+guest bytes (`presentUploads=1 flipStaleUploads=1`), repeat flip serves
+again (no double upload); (c) same blit via the `0x80000000` alias →
+uploads (choke regression); (d) save/load mid-sequence → first flip uploads
+the LOADED bytes; ResetState → next flip uploads rather than serving
+leftovers; (e) twin identity over the full pusher path: one stream,
+clear+flip+clear+flip — the second twin fill writes the watched surface
+through the suppression-scoped adapter and the flip still serves
+(`presentUploads=0 flipStaleUploads=0`). The pre-existing
+`PresentUploadLiveTests` (bare `ArrayMemory`, no watch) passes unchanged —
+the no-watch contract is now explicit.
+
+**Acceptance (all met).** Suite **1302/1302 green** (1277 baseline + 19
+unit + 6 live; `dotnet test -c Release` clean) and
+`dotnet format XGrid.sln --no-restore` clean with
+`--verify-no-changes` clean (0 warnings — TreatWarningsAsErrors, no new
+NuGet, no SkippableFact). **Menu 1B golden** (`scripts/gpu-slice1-golden.ps1`):
+sw SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+== recorded anchor; gl↔sw diff `violations=0 outsideBand=0 maxDelta=1`
+(diff=1852 px); counters identical `draws=33632 frames=686 stalls=686`;
+`BackendUnsupported=0`; **`presentUploads=0 flipStaleUploads=0 flipEmpty=0`**
+(the watch never trips on the title — arm/dirty logic has no false
+positives), and the sw log carries no `presentUploads` line at all (correct
+absence — the diag only exists with a backend); walls sw 692.9 s / gl
+690.6 s. **Triangle 1B golden** (`gpu-slice2-triangle-golden.ps1 -Dvd
+D:\wave-worktrees\triangle.iso`): sw SHA
+`A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C` == anchor,
+anchors `2706/68/34` match, sw==gl, `violations=0 outsideBand=0 maxDelta=1`,
+`BackendUnsupported=0`, **`presentUploads=0 flipStaleUploads=0`**, sw log
+absence correct; walls sw 516.5 s / gl 529.4 s. **A/B hook cost (menu 1B
+gl, back-to-back pairs):** baseline (master build) **718.1 s + 713.1 s
+(mean 715.6 s)** vs post-change **674.2 s + 684.1 s (mean 679.2 s)** —
+ratio 0.949, i.e. the choke is not measurable above the host's contention
+noise (bar was "within noise of the +5.5% precedent"; the shared 16-core
+host ran the after-pair under lighter load, so the delta reads negative).
+Both pairs' runs: counters identical to each other, `presentUploads=0`.
