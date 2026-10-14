@@ -4699,30 +4699,48 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// Decodes the U address mode from a NV097_SET_TEXTURE_ADDRESS word
     /// (PGRAPH_TEXADDRESS ADDRU, bits 0-2). Values follow
     /// <c>nv2a_regs.h</c>: 1 = wrap, 2 = mirror, 3 = clamp-to-edge,
-    /// 4 = border, 5 = OpenGL clamp; 0 (reset) and reserved values resolve
-    /// as wrap and clamp respectively through <see cref="ToWrapMode"/>.
+    /// 4 = border, 5 = OpenGL clamp; 0 is the reset value (wraps via
+    /// <see cref="ToWrapMode"/>). Reserved modes 6-7 resolve to
+    /// clamp-to-edge here so no downstream consumer ever sees a reserved
+    /// mode (the reference has no behavior for them: its address-mode map
+    /// only covers 0-5 and it asserts on anything larger).
     /// </summary>
     public static int DecodeTextureAddressU(int address)
     {
-        return address & (int)TextureAddressU;
+        return NormalizeTextureAddressMode(address & (int)TextureAddressU);
     }
 
     /// <summary>
     /// Decodes the V address mode from a NV097_SET_TEXTURE_ADDRESS word
     /// (PGRAPH_TEXADDRESS ADDRV, bits 8-10). This is the §96-noted V-bit
-    /// fix: the 2D sampler previously read bits 4-7.
+    /// fix: the 2D sampler previously read bits 4-7. Reserved modes 6-7
+    /// resolve to clamp-to-edge, as in <see cref="DecodeTextureAddressU"/>.
     /// </summary>
     public static int DecodeTextureAddressV(int address)
     {
-        return (address & (int)TextureAddressV) >> 8;
+        return NormalizeTextureAddressMode((address & (int)TextureAddressV) >> 8);
     }
 
     /// <summary>
     /// Decodes the P (volume-depth) address mode (ADDRP, bits 16-18).
+    /// Reserved modes 6-7 resolve to clamp-to-edge, as in
+    /// <see cref="DecodeTextureAddressU"/>.
     /// </summary>
     public static int DecodeTextureAddressP(int address)
     {
-        return (address & (int)TextureAddressP) >> 16;
+        return NormalizeTextureAddressMode((address & (int)TextureAddressP) >> 16);
+    }
+
+    /// <summary>
+    /// Maps a raw 3-bit texture address mode to the decoded mode: reserved
+    /// values 6-7 become clamp-to-edge (the standing safe choice; the
+    /// reference defines no behavior for them). All other values pass
+    /// through unchanged (mode 0 keeps its reset-means-wrap handling in
+    /// <see cref="ToWrapMode"/>).
+    /// </summary>
+    private static int NormalizeTextureAddressMode(int mode)
+    {
+        return mode >= 6 ? (int)TextureAddressClampToEdge : mode;
     }
 
     /// <summary>
