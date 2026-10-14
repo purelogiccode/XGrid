@@ -415,30 +415,64 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   handoff in §131 (est. 1.5–2× the (a–c) budget — next wave's lead).
   T2 staleness design FILED (§132: recommendation (a*) dirty-bit in
   `PhysicalMemory` + synthetic-harness gate). T3 smoke PASS 7/7 in
-  03:51. T4 merged-master goldens PASS both legs (post-wave-10 gap
-  closed). **1277 tests.**
+   03:51. T4 merged-master goldens PASS both legs (post-wave-10 gap
+   closed). **1277 tests.**
+- **Wave 12 (2026-10-14, §§134–135 + swapchain brief; four tasks, all
+  green, two merges + docs).** T1 decode cache MERGED (§134: `DecodeCache`
+  linear-key / physical-reverse-map block cache, conservative invalidation
+  at the §131 inventory sites (five `XboxMachine` shims page-drop — no
+  device changes), `--decode-cache` implies fetch-fast, `--decode-verify`
+  memcmp tripwire; **menu 2.12–2.20× / triangle 2.97–3.07×** vs flag-off,
+  hit share 99.53%/99.80%, decode 0.47/0.20 per insn, verifyFailures=0
+  @1B; flag-off byte-identical, both SHAs + counters exact on both flags;
+  +14 tests). T2 dirty-bit (a*) MERGED (§135: `IPresentDirtyWatch` choke
+  in `PhysicalMemory.Write8/16/32/64` + suppression on the two
+  `IGpuMemory` adapters, FlipCore dirty→upload / clean→serve / guard→
+  flipEmpty, 4-slot round-robin span watch for the menu double-buffered
+  presents; menu/tri goldens unchanged with `presentUploads=0
+  flipStaleUploads=0`, A/B hook cost 0.949 within noise; +25 tests). BOSS
+  merge conflicts: `PhysicalGpuMemory` combined both ways (suppression +
+  page-drop) + one stray brace caught by the post-merge build; notes
+  §-union 134/135. T3 base gates PASS (smoke 7/7 known deltas; menu/tri
+  SHAs + counters exact). T4 swapchain brief FILED
+  (`docs/research-notes/gpu-swapchain-brief.md`: O2 pure-interop
+  `--window` recommended, O1 headless stays default, vsync off, O3 needs
+  a single-dependency override; xemu's Vulkan renderer also presents via
+  SDL GL). Also landed: `tools/wave` automation (parallel session, 26
+  tests, committed separately per operator). **1316 tests; post-merge
+  gates green: smoke 7/7, menu SW SHA anchor + GL SHA bit-identical to
+  base, triangle PASS, `presentUploads=0` both, format clean; CI green
+  on all three OSes (first green since §127 — WGL guard + test de-flake
+  landed pre-wave).** Wave worktrees on `D:\wave-worktrees\` (C: has
+  only ~5 GB free — keep media copies on D:, never on C:).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1277 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1316 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — JIT decode cache + (a*) dirty-bit + operator items.
+## Next session — swapchain operator decision + next JIT step + operator items.
 
-1. **WAVE DONE (§§131–133).** Slice-2 speedup merged (1.30–1.35×,
-   translates/insn 15.5→1.4); staleness design filed; smoke + both
-   merged-master goldens green. **1277 tests.**
+1. **WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two
+   merges).** Decode cache merged (menu 2.12–2.20× / triangle 2.97–3.07×,
+   verifyFailures=0 @1B, hit 99.5–99.8%), dirty-bit (a*) merged (goldens
+   `presentUploads=0`, hook cost within noise), post-merge gates all
+   green (smoke 7/7, both SHAs exact, format clean), CI green on all
+   three OSes. **1316 tests.**
 2. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
-3. **JIT leg (d) — decode cache (§131 handoff):** `DecodedInstruction`
-   block cache, conservative invalidation (device adapters need no
-   changes — private shims; watch A/D over-flush, linear-key/physical
-   reverse-map, #UD marker, table cap, IRQ/step transparency,
-   debug-verify mode); acceptance = ratio UP again, both SHAs + suite
-   green, flag-off byte-identical, decode-avoided counter proves it.
-4. **GL leg — (a*) dirty-bit (§132):** bit in `PhysicalMemory`,
-   suppress-scope on the two `IGpuMemory` adapters, synthetic-harness
-   gate (serve / upload / alias-blit / save-load legs) + menu/tri
-   goldens unchanged. **Swapchain/windowing decision (operator)** still
-   pending. **nxdk toolchain (operator/host)** still the mesh blocker.
+3. **Operator decision: swapchain/windowing** — brief filed at
+   `docs/research-notes/gpu-swapchain-brief.md` (O2 = opt-in `--window`,
+   pure user32/gdi32 interop on the existing WGL context, vsync off,
+   ~400–600 LOC; O1 headless stays the default and gate currency; O3
+   needs an operator override of the single-dependency rule; triggers
+   listed in the brief). Both blocking prerequisites — dirty-bit and
+   decode cache — landed this wave, so O2 is unblocked whenever decided.
+4. **Next JIT step:** `--decode-cache` remains opt-in — consider
+   default-on only after a soak wave (byte-identical flag-off proven, but
+   default flips deserve their own gate). The remaining Phase-15 prize is
+   codegen (basic blocks/IR); §134's deferred bits (INVLPG linear drop
+   index — counters say unneeded; idle-skip+cache at 1B title scale —
+   unit-proven) are recorded there. NXDK toolchain (operator/host) still
+   the mesh blocker.
 5. ktest smoke stays the standing gate.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
