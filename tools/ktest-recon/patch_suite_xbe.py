@@ -15,6 +15,10 @@ Variants:
   --log C|D          patch the log path letter (default D = stock)
   --target <dev>     inject shellcode creating '\\??\\C:' -> <dev>
                      (omit = no shellcode, stock binary)
+  --park <VA-hex>    overwrite 2 bytes at VA with EB FE (jmp $) so the suite
+                     parks at main's return site instead of returning to the
+                     kernel (which would relaunch the XBE and truncate the
+                     log via CREATE_ALWAYS). §123 smoke uses --park 4E03A.
   --out <file.xbe>   output (default: alongside input, -patched suffix)
 
 Usage:
@@ -31,6 +35,7 @@ DONOR_VA = 0x2E620
 DONOR_FILE = DONOR_VA - 0x10000
 LOGPATH_FILE = 0x43599
 THUNK_SLOT_IoCreateSymbolicLink = 0x57F1C
+IMAGE_BASE = 0x10000
 
 
 def build_shellcode(base: int, target: bytes) -> bytes:
@@ -96,9 +101,22 @@ def main():
     ap.add_argument("--log", choices=["C", "D"], default="D")
     ap.add_argument("--target", default=None,
                     help="device path for the \\??\\C: symlink (shellcode)")
+    ap.add_argument("--park", default=None,
+                    help="VA (hex, e.g. 4E03A) to overwrite with EB FE (jmp $) "
+                         "so the suite parks instead of returning; lets a "
+                         "monitor poll for completion without a relaunch race "
+                         "that would truncate the log (CREATE_ALWAYS). "
+                         "§123 smoke: --park 4E03A (main's return site).")
     args = ap.parse_args()
 
     data = bytearray(Path(args.inp).read_bytes())
+
+    if args.park:
+        va = int(args.park, 16)
+        off = va - IMAGE_BASE
+        assert 0 <= off + 2 <= len(data), (args.park, hex(len(data)))
+        data[off:off + 2] = b"\xEB\xFE"
+        print("parked VA 0x%X (file 0x%X) with EB FE" % (va, off))
 
     if args.log == "C":
         old = data[LOGPATH_FILE:LOGPATH_FILE + 20]
