@@ -6666,3 +6666,106 @@ seam structs — extend when a GL slice needs them.
 tri only) — its later stages may exercise DXT/mipmaps/compare-shadows;
 (b) v2 snapshot invalidation (see above); (c) reserved address modes 6-7
 clamp fallback is a safe choice, not a reference behavior (xemu asserts).
+
+## §123 — ktest smoke scripted: 7-test subset green on both emulators in 4:40 (2026-10-14)
+
+Worktree `wave/ktest-smoke` (branch from master @da76d91). Turns the §120
+one-off into `scripts/ktest-smoke.ps1`: subset ISO -> XGrid leg -> xemu leg
+-> `ktest_diff.py` verdict vs the §120 known deltas. **Acceptance run on
+this machine: `KTEST-SMOKE: PASS`, 7/7 rows green, total wall 04:40**
+(XGrid 04:19, xemu 00:14, setup/diff the rest). **Second full cycle
+re-run by the follow-up session: `KTEST-SMOKE: PASS`, 7/7 green, total
+wall 05:02** (XGrid 04:41, xemu 00:14) with a bit-identical XGrid leg —
+`Break: EIP=0x0004E03A after 792800535 instruction(s)`, log 40797 B at
+dirent cluster 315; xemu `reason=parked samples=14 saw_suite=3`, log
+43213 B at cluster 315. Step count + log sizes reproduce exactly; wall
+varies ±20 s with host load (sibling agents). Zero product-source changes
+(tools + script + docs only); suite baseline 1216 green, format clean.
+
+**Subset (the full known-delta table in 7 tests):**
+`tests=51,71,224,231,282,319,344` with `disable-video=1` (CRLF `config.txt`,
+50 B) — 051 silent-stub pass, 071/319/344 faithful fails, 224/231
+XGrid-ahead pair, 282 the former CMC-`#UD` site (§120 fix verification).
+`disable-video=1` skips the 10 s `Sleep(10000)`, so XGrid stops at main's
+return instead of emulating 9.5B sleep steps (the §120 58-min cost).
+
+**Completion-park mechanism (new `--park` flag on `patch_suite_xbe.py`).**
+The parked XBE (sha256
+`A76DEC38E9E483F29FB3BC60F36B5AC43938E61B05F3C932394E1BDF8A3E2E09`
+vs §120's unparked `76E2C52A...`) overwrites 2 bytes at VA `0x4E03A` (main's
+return site) with `EB FE` (jmp $). The suite spins there AFTER
+`close_output_file`, so the kernel never relaunches the XBE and the FATX
+log is never truncated via CREATE_ALWAYS — completion is detectable on both
+emulators without a relaunch race (quantified on xemu: relaunch would follow
+within ~9.44M guest steps, far below any safe poll-then-quit window).
+XGrid keeps `--break 4E03A` (fires identically on the loop); xemu polls
+`info registers` for EIP==`0x4E03A` x settle=3 (one kernel-IRQ sample at
+`0x80014F2D` mid-park proved the settle counter necessary and sufficient).
+
+**xemu-0.8.136 automation quirks diagnosed (both new, both worked around in
+`run_xemu_ktest_smoke.py`):** (1) xemu.toml `flashrom_path` is NOT bridged
+into the QEMU launch (params omit `-bios` -> `Failed to load BIOS '(null)'`,
+guest frozen at reset vector `0xFFF0` indefinitely; xbox.c reads BIOS from
+`ms->firmware`, i.e. QEMU `-bios`) — the runner passes `-bios` explicitly;
+the toml row is kept for fixed builds. A stale `flashrom_path` in
+`%APPDATA%\xemu\xemu\xemu.toml` (D:\-era paths) was found and left
+untouched. (2) xemu starts `paused (prelaunch)` under `-monitor` automation
+(`info status` proves it; `info registers` reads `FFF0` forever) — the
+runner sends `cont` after connecting. (3) Process hygiene: killing xemu
+loses cached qcow2 L2 metadata -> torn FATX tail (`OK(l` + NULs, log ends
+mid-231); the runner quits gracefully via monitor `quit`, then the log is
+read back with `read_fatx_qcow2.py`.
+
+**Acceptance evidence (verbatim):**
+
+```
+pwsh -File scripts/ktest-smoke.ps1 -FirmwareDir "C:\Users\HomePC\Dropbox\source\repos\CSharp_XboxEmulator\data\xemu-0.8.136-windows-x86_64" -SuiteXbe "C:\Users\HomePC\Dropbox\source\repos\CSharp_XboxEmulator\data\test-samples\kernel-test-suite-default.xbe"
+```
+
+- XGrid: `Break: EIP=0x0004E03A after 792800535 instruction(s)`,
+  `Halted=False LastFault vec=0`; log 40797 B (dirent cluster 315) with
+  `End of Tests`.
+- xemu: `reason=parked samples=14 saw_suite=3` (park at t=11.1 s, one IRQ
+  excursion at 12.1 s absorbed by settle); log 43213 B (cluster 315) with
+  `End of Tests`.
+- Verdict table (`ktest_diff.py`, requires `End of Tests` + exact §120
+  ERROR substrings on faithful rows + `line 110` on xemu 224/231):
+
+| test | XGrid | xemu | expect | verdict |
+|---|---|---|---|---|
+| 051 InterlockedCompareExchange | PASS | PASS | PASS/PASS | green |
+| 071 IoFileObjectType | FAIL (`file_handle = 0x1, Got = 0x0`) | FAIL (identical) | FAIL/FAIL | green |
+| 224 NtResumeThread | PASS (All tests PASSED) | FAIL (`line 110`, out-param `0x800205BA`) | PASS/FAIL | green |
+| 231 NtSuspendThread | PASS | FAIL (`line 110`, same quirk) | PASS/FAIL | green |
+| 282 RtlExtendedLargeIntegerDivide | PASS | PASS | PASS/PASS | green |
+| 319 RtlWalkFrameChain | FAIL (`total = 0x8, Got = 0xA`) | FAIL (identical) | FAIL/FAIL | green |
+| 344 XcVerifyPKCS1Signature | FAIL (`return = 0x1, Got = 0x0`) | FAIL (identical) | FAIL/FAIL | green |
+
+Pass counts XGrid 4/7, xemu 2/7 — exactly the §120 deltas, no unexpected
+failures. xemu 224's garbage values vary per run (`0x800205BA` here vs
+`0xD00409E0`-family in §120); the diff keys on `line 110` + FAIL, robust to
+that churn.
+
+**Runtime note.** 04:40 total on a machine shared with sibling agents (XGrid
+792.8M steps in 04:19 ≈ 3M insn/s under load; quiet-machine arithmetic from
+§119's 14M insn/s predicts ~2:10 total). The step count to the park
+(792,800,535) is deterministic; wall varies with host load. Runtime
+dominated by the XGrid boot + the two 1.3–1.5 s-guest thread tests
+(224/231); the xemu leg is ~15 s + a 1.5 GB HDD refresh.
+
+**Landed:** `scripts/ktest-smoke.ps1`; `tools/ktest-recon/`
+`run_xemu_ktest_smoke.py` + `ktest_diff.py` + `--park` on
+`patch_suite_xbe.py`; README Smoke section; this note. Media layout
+(gitignored): `wt-data/ktest-smoke/{xgrid,xemu}/` — private firmware/HDD
+copies (XGrid's HDD stays pristine: `Qcow2DiskImage` opens `FileAccess.Read`
++ `HddOverlay` journal; xemu's copy is refreshed from the template every
+run), subset ISO, `xemu.toml` (bare filenames, colocated `xemu.exe`).
+
+**Open risks:** (a) reproducibility across hosts: two full cycles on this
+machine now agree exactly (step count + log sizes bit-identical, verdict
+PASS both); cross-host confirmation still open but cheap (~5 min) for any
+reviewer with the firmware + suite XBE; (b) xemu's unbridged `flashrom_path` + prelaunch-pause look like
+upstream automation gaps worth one issue if the team leans on scripted xemu;
+(c) the subset pins 7 tests — extend only by editing the script's `-Subset`
+default + `ktest_diff.py` expectations together (they are intentionally
+duplicated, not shared, so the diff stays an independent oracle).
