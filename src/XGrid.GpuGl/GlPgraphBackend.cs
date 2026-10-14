@@ -217,6 +217,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// <summary>Gets the number of flips read back from the FBO.</summary>
     public long Flips { get; private set; }
 
+    /// <summary>Gets the guest-physical surface address of the last flip. Observation only (hook for the present-upload path); never changes GL behavior.</summary>
+    public uint LastFlipSurfaceAddress { get; private set; }
+
     /// <summary>Gets the number of texture uploads performed.</summary>
     public long TextureUploads { get; private set; }
 
@@ -352,6 +355,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         Draws = 0;
         Clears = 0;
         Flips = 0;
+        LastFlipSurfaceAddress = 0;
         TextureUploads = 0;
         BackendUnsupported = 0;
         _unsupportedColorBytes = 0;
@@ -565,6 +569,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private void FlipCore(in PgraphSurfaceRecord record)
     {
         Flips++;
+        // Carry the resolved guest-physical surface address for the
+        // present-upload path (no upload yet: stored, never acted on).
+        // Recorded before every early return so the empty-FBO path — the
+        // CPU-blitted case the upload will serve — carries it too.
+        LastFlipSurfaceAddress = record.SurfaceAddress;
         if (record.ColorBytes != 4)
         {
             BackendUnsupported++;

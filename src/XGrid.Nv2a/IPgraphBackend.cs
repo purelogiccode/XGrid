@@ -336,20 +336,27 @@ public readonly struct PgraphClearInfo
     public bool ZFormatFloat { get; }
 }
 
-/// <summary>Resolved at-flip surface record (same fields CapturePresentedFrame records).</summary>
+/// <summary>
+/// Resolved at-flip surface record (same fields CapturePresentedFrame records,
+/// plus the resolved guest-physical surface address for the present-upload path).
+/// </summary>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphSurfaceRecord
 {
-    public PgraphSurfaceRecord(uint width, uint height, uint colorBytes, ulong frame)
+    public PgraphSurfaceRecord(uint width, uint height, uint colorBytes, ulong frame, uint surfaceAddress)
     {
         Width = width;
         Height = height;
         ColorBytes = colorBytes;
         Frame = frame;
+        SurfaceAddress = surfaceAddress;
     }
 
     public uint Width { get; }
     public uint Height { get; }
     public uint ColorBytes { get; }
     public ulong Frame { get; }
+
+    /// <summary>Gets the resolved guest-physical byte address of the presented surface (DMA color-context base + color offset). Carried for the present-upload path; consumers must not change behavior on it yet.</summary>
+    public uint SurfaceAddress { get; }
 }

@@ -2799,7 +2799,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     CapturePresentedFrame();
                     Backend?.Flip(new PgraphSurfaceRecord(
                         _surfaceClipH >> 16, _surfaceClipV >> 16,
-                        ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented));
+                        ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented,
+                        SurfaceBase(_dmaColor) + PresentedColorOffset));
                     break;
                 }
             case MethodFlipStall:
