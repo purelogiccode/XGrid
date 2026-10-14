@@ -2994,7 +2994,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1250 tests passing** (39 Core, 424 Cpu, 55 Memory, 261 Bus, 55 Integration, 224 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 70 GpuGl);
+Current test baseline: **1268 tests passing** (39 Core, 429 Cpu, 55 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 71 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3052,20 +3052,23 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — test-samples track: JIT slice 1 + present upload + sample coverage.**
-**WAVE DONE (§§125–127; five tasks, four green, one closed).**
-T1 dashboard golden PASS (1B menu ×2 runs, vec=0, SHA `4EF1FBF6…`
-bit-exact, counters run-identical); T2 ktest smoke PASS 7/7 in 04:36
-(steps bit-reproducible 792,800,535, zero deviations). T3
-present-upload plumbing MERGED (§125: `PgraphSurfaceRecord` carries the
-guest-physical surface address, plumbing only, +2 tests, menu golden
-unchanged). T4 JIT scoping FILED (§126: decode cache + fetch fast path
-as the next slice, no codegen). T5 007 long probe CLOSED-unrun — stuck
-past every review point with no checkpoint return, then closed by
-**standing operator rule: no real Xbox games at this stage; all title
-work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/
-mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
-**1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
+**NEXT SESSION — JIT slice 2 + non-empty-FBO staleness design + nxdk toolchain.**
+**WAVE DONE (§§128–130; five tasks, all green, three merges).**
+T1 JIT profiler MERGED (§128: nullable `IHotspotObserver` at `Step()`
+line 106, mnemonic/PC/TLB counters, `--hotspot` switch; flag-off AND
+flag-on byte-identical on menu+triangle; hook cost +5.5% — the §126
+"under 3%" estimate disproven, batching noted for slice 2; +5 tests).
+T2 present-upload MERGED (§129: `_fbo == 0` branch builds the FBO from
+guest RAM via `IGpuMemory`, full-frame replace, never mix; goldens
+unchanged; `presentUploads=0` on menu/tri is correct — the live shape
+needs 007, forbidden; +12 tests). BOSS fixes at merge: §128/§129
+§-union, and T2's new `Xunit.SkippableFact` dependency REJECTED per
+the sources.md rule (plain `[Fact]` + WGL-guard return instead). T3
+sample matrix set (triangle SHA exact, smoke PASS; **nxdk sources
+BLOCKED — no toolchain on host**, the binding missing piece for mesh).
+T4 smoke PASS 7/7 in 03:54. T5 clamp-6/7 MERGED (safe choice, zero
+head movement, +1 test). BOSS reclaimed 84.5 GB scratch qcow2s (C:
+4.8 → 89.3 GB free). **1268 tests.**
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
