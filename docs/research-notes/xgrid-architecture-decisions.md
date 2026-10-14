@@ -6852,3 +6852,68 @@ Any host codegen (Plan §20.6); async/threaded submission (no-mixing/no-async ru
 ## §127 - wave 9 BOSS record: re-verify green, present-upload merged, JIT scoped, 007 probe CLOSED (2026-10-14)
 
 Five tasks fanned out; four green, one closed by operator rule. **T1 dashboard golden PASS:** 1B-step menu recipe ×2 runs, vec=0, frame SHA `4EF1FBF6…CB0DE81` bit-exact both runs, EIP `0x1E0EB`, full counter table run-identical (`draws=33632 skipped=1402 pixels=285171381 … frames=686 stalls=686`, `zclipCull=21526`, unmapped only `045=4 065=8`, NVNET 342B loopback intact). Note: absolute counters differ from the §42 `draws=2670…frames=33` baseline — different configuration (1B pad-driven menu on merged master vs 1.7B neutral pre-wave-8 build; pusher-timing baseline shift per AGENTS.md) — the binding golden for this recipe is the SHA, which matches, and §121 item (3) already pins this recipe SHA-identical on pristine master. Wall 345 s/1B contended (~2.9M/s vs 70–90 s quiet rule-of-thumb — host contention, ratios only). **T2 ktest smoke PASS 7/7** in 04:36 (XGrid 4/7, xemu 2/7, suite steps bit-reproducible 792,800,535, xemu park signature identical) — zero deviations from §123. **T3 merged** (§125). **T4 filed** (§126). **T5 (007 fresh-v3-chain long probe) CLOSED-unrun:** the task spanned ~57.8B steps with no intermediate deliverable — still running past every review point (stuck by the poll rule: no checkpoint return inside any 10-min window) — and the operator then closed the whole line of work with a standing scope rule: **no real Xbox games at this stage of development; all title work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/mesh/triangle/`, `kernel-test-suite-default.xbe`); 007/real-game probes deferred to a later stage. Consequences recorded: the §121 DSP-bridge live verification stands on its pre-merge evidence only (dashboard-neutral byte-identity re-proven post-merge by T1); Nv2a v3 snapshot regeneration for any long chain is still open; the old `.xgs` chain (`007-streamend/pd*.xgs`, `apu-dsp/pdE1-*.xgs`) remains unloadable. **Poll-discipline lesson (now in the BOSS protocol):** no task may span work without a checkpoint return inside ~10-min windows — long probes must be scoped as checkpointed legs (save snapshot + return evidence per leg) so BOSS can poll, restart, or close them.
+
+## §128 - present-upload slice: empty-FBO flip serves the guest-RAM surface (2026-10-14)
+
+Wave-10 T2 build task (branch `wave/gl-present-upload`): the §125 deferred
+follow-up, first half. Hooks at `GlPgraphBackend.FlipCore`
+(`GlPgraphBackend.cs:569`), `_fbo == 0` branch ONLY.
+
+What landed (5 modified + 3 new files): `IPgraphBackend.cs`
+(`PgraphSurfaceRecord` gains `uint Pitch`, 6th ctor param — the low 16 bits
+of the surface-pitch register, i.e. the guest-row stride; the record's
+documented purpose is already "same fields CapturePresentedFrame records",
+so pitch belongs there); `Nv2aMmio.cs` flip site populates it from
+`_surfacePitch & 0xFFFFu` (the exact value `CapturePresentedFrame` records
+into `_presentedPitch`); new `XGrid.Nv2a/PresentUpload.cs`
+(`TryBuildUploadPixels`: pure, no GL — pitch/offset walk mirroring
+`TryCopyPresentedFrame`, A8R8G8B8 `0xAARRGGBB` → RGBA, guest row order,
+xemu `gl/surface.c pgraph_gl_upload_surface_data` pitch-repack rule for
+`pitch > width * bytes`, facts only; guards mirror the software copy —
+4-byte-only, dims 1..4096, pitch != 0, `pitch >= width * bytes`, 32-bit span
+no-wrap; no RAM-size check by design — production `IGpuMemory` reads are
+total functions, so OOB can only serve benign unmapped values, never throw);
+`GlPgraphBackend.cs` uploads on `_fbo == 0` (build pixels → `EnsureFbo(w,h,0)`
+→ `UploadFullFrame` throwaway-texture + NEAREST blit, then falls through to
+the existing readback; any failure `DeleteFbo()`s back to `_fbo == 0` so the
+session keeps the pre-upload honest gap) with counter
+`diag[presentUploads]` (reset in `ResetState`); non-empty FBO deliberately
+untouched. Tests: 11 in `XGrid.Nv2a.Tests/PresentUploadTests.cs`
+(address→RGBA exact bytes, padded-pitch byte-parity vs a real
+`TryCopyPresentedFrame` run, 7 guard cases + span-wrap + null-memory) and 1
+live GL test in `XGrid.GpuGl.Tests/PresentUploadLiveTests.cs`
+(`[SkippableFact]` via new `Xunit.SkippableFact 1.5.85` pin — skips, never
+fails, where no WGL context exists; on this host it RUNS: empty-FBO flip
+serves the exact guest pattern, second flip at a different address serves
+the first frame again, `presentUploads=1`, `BackendUnsupported=0`).
+Suite 1262/1262 green (1250 + 12), format clean. Goldens 1B pairs on this
+branch: menu sw SHA `4EF1FBF6…CB0DE81` exact, counters identical
+(`draws=33632 frames=686 stalls=686`), gl `unsupported=0`, BMP
+`violations=0 maxDelta=1`; triangle sw SHA `A1740DE0…`, anchors
+`draws=2706 frames=68 stalls=34`, gl `unsupported=0`, `violations=0
+maxDelta=1`.
+
+Acceptance discrepancy (diagnosis, not a fix — the `_fbo == 0`-only scope
+stands): `presentUploads=0` AND `flipEmpty=0` on BOTH titles, so the
+"counter > 0 on menu flips" sub-criterion cannot fire as scoped — draws and
+clears always create the FBO before the first flip on menu/triangle, a fact
+already measured on master (§125: menu `flipEmpty=0`) and re-confirmed on
+this branch. The branch's live shape is the FMV one (`flipEmpty == flips`,
+§122: 39/39) — reachable only via 007, which the standing no-real-games
+rule forbids; the SkippableFact live test covers exactly that shape instead
+(empty-FBO flip + guest-RAM surface → uploaded frame served). If BOSS wants
+a live-run counter > 0, the next slice must be the non-empty-FBO case, not
+more empty-FBO work.
+
+Precise open point — non-empty-FBO staleness design: when `_fbo != 0` at
+flip, the backend cannot tell a GL-rendered present (FBO is current — serve
+it) from a CPU-blitted present (FBO is stale — must upload or abstain).
+Solving it needs guest-visible surface-access tracking (options, unsolved:
+(a) dirty-watch the presented span via the bus watch/fault path and upload
+on dirty, full-frame replace; (b) reuse the texture fingerprint sampler as a
+staleness probe with a policy for hash cost vs false-negative rate; (c) an
+xemu-style surface cache keyed by (vram_addr, pitch, format) with
+upload_pending/download_pending state — the heaviest, most faithful).
+Constraint survivors for any option: never mix (full-frame replace or no
+frame), no async (emulation-thread only), headless FBO only (no
+windowing/swapchain until the operator decides).
