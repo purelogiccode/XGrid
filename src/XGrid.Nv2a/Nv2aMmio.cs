@@ -261,6 +261,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TextureFormatMipmapLevels = 0x000F0000u;
     private const uint TextureFormatBaseSizeP = 0xF0000000u;
     private const uint MethodShaderClipPlaneMode = 0x17F8u;
+    private const uint MethodShadowDepthFunc = 0x1E6Cu;
+    private const uint ShadowDepthFuncNever = 0u;
+    private const uint ShadowDepthFuncAlways = 7u;
+    private const uint TextureAddressU = 0x7u;
+    private const uint TextureAddressV = 0x700u;
+    private const uint TextureAddressP = 0x70000u;
+    private const uint TextureAddressWrap = 1u;
+    private const uint TextureAddressMirror = 2u;
+    private const uint TextureAddressClampToEdge = 3u;
+    private const uint TextureAddressBorder = 4u;
+    private const uint TextureAddressClampOgl = 5u;
     private const uint TextureBumpMatBase = 0x28u;
     private const uint TextureBumpMatEnd = 0x34u;
     private const uint TextureBumpScale = 0x38u;
@@ -415,7 +426,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly uint[] _textureControl1 = new uint[MaxTextureSlots];
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
+    private readonly uint[] _textureBorderColor = new uint[MaxTextureSlots];
     private uint _shaderClipMode;
+    private uint _shadowDepthFunc;
     private readonly float[][] _bumpMatrices = new float[MaxTextureSlots - 1][];
     private readonly float[] _bumpScales = new float[MaxTextureSlots - 1];
     private readonly float[] _bumpOffsets = new float[MaxTextureSlots - 1];
@@ -906,7 +919,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Array.Clear(_textureControl1);
         Array.Clear(_textureFilter);
         Array.Clear(_textureImageRect);
+        Array.Clear(_textureBorderColor);
         _shaderClipMode = 0;
+        _shadowDepthFunc = ShadowDepthFuncNever;
         foreach (float[] matrix in _bumpMatrices)
         {
             Array.Clear(matrix);
@@ -1130,7 +1145,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         WriteUints(writer, _textureControl1);
         WriteUints(writer, _textureFilter);
         WriteUints(writer, _textureImageRect);
+        WriteUints(writer, _textureBorderColor);
         writer.Write(_shaderClipMode);
+        writer.Write(_shadowDepthFunc);
         for (int i = 0; i < _bumpMatrices.Length; i++)
         {
             for (int j = 0; j < 4; j++)
@@ -1431,7 +1448,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ReadUints(reader, _textureControl1);
         ReadUints(reader, _textureFilter);
         ReadUints(reader, _textureImageRect);
+        ReadUints(reader, _textureBorderColor);
         _shaderClipMode = reader.ReadUInt32();
+        _shadowDepthFunc = reader.ReadUInt32();
         for (int i = 0; i < _bumpMatrices.Length; i++)
         {
             for (int j = 0; j < 4; j++)
@@ -1589,7 +1608,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2aSnapshotVersion = 2;
+    private const int Nv2aSnapshotVersion = 3;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -2940,6 +2959,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     case 0x1Cu:
                         _textureImageRect[slot] = parameter;
                         break;
+                    case 0x24u:
+                        _textureBorderColor[slot] = parameter;
+                        break;
                     case 0x28u:
                     case 0x2Cu:
                     case 0x30u:
@@ -3048,6 +3070,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (method == MethodShaderClipPlaneMode)
         {
             _shaderClipMode = parameter;
+        }
+
+        if (method == MethodShadowDepthFunc)
+        {
+            _shadowDepthFunc = parameter & 0x7u;
         }
 
         HandleVertexDataMethod(method, parameter);
@@ -4358,15 +4385,32 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
-        int uMode = (int)(_textureAddress[slot] & 0xFu);
-        int vMode = (int)((_textureAddress[slot] >> 4) & 0xFu);
+        int addressWord = (int)_textureAddress[slot];
+        int uAddr = DecodeTextureAddressU(addressWord);
+        int vAddr = DecodeTextureAddressV(addressWord);
 
         // Linear (LU_IMAGE_*) formats address texels directly: the guest supplies
         // texel-unit coordinates and the reference shader normalizes by the
         // texture size (psh.c rect_tex norm). Swizzled (SZ_*) formats use
         // normalized coordinates, as on the hardware.
-        int x = WrapCoordinate((int)MathF.Floor(linear ? u : u * width), width, uMode);
-        int y = WrapCoordinate((int)MathF.Floor(linear ? v : v * height), height, vMode);
+        int rawX = (int)MathF.Floor(linear ? u : u * width);
+        int rawY = (int)MathF.Floor(linear ? v : v * height);
+        if (uAddr == (int)TextureAddressBorder || vAddr == (int)TextureAddressBorder)
+        {
+            // A coordinate outside [0,size) on a BORDER axis returns the
+            // NV097_SET_TEXTURE_BORDER_COLOR texel (xemu GL_CLAMP_TO_BORDER).
+            bool outU = uAddr == (int)TextureAddressBorder && (rawX < 0 || rawX >= width);
+            bool outV = vAddr == (int)TextureAddressBorder && (rawY < 0 || rawY >= height);
+            if (outU || outV)
+            {
+                DecodeBorderColor(_textureBorderColor[slot], out r, out g, out b, out a);
+                TrackTextureCoords(rawX, rawY);
+                return CountSample(_textureOffset[slot], _textureBorderColor[slot], r, g, b);
+            }
+        }
+
+        int x = WrapCoordinate(rawX, width, ToWrapMode(uAddr));
+        int y = WrapCoordinate(rawY, height, ToWrapMode(vAddr));
         TrackTextureCoords(x, y);
 
         uint bytesPerTexel = TextureFormatBytesPerTexel(color);
@@ -4556,9 +4600,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         uint address = _textureAddress[slot];
-        int x = WrapCoordinate((int)MathF.Floor(u * width), width, (int)(address & 0xFu));
-        int y = WrapCoordinate((int)MathF.Floor(v * height), height, (int)((address >> 4) & 0xFu));
-        int z = WrapCoordinate((int)MathF.Floor(w * depth), depth, (int)((address >> 16) & 0x7u));
+        int x = WrapCoordinate((int)MathF.Floor(u * width), width, ToWrapMode(DecodeTextureAddressU((int)address)));
+        int y = WrapCoordinate((int)MathF.Floor(v * height), height, ToWrapMode(DecodeTextureAddressV((int)address)));
+        int z = WrapCoordinate((int)MathF.Floor(w * depth), depth, ToWrapMode(DecodeTextureAddressP((int)address)));
         address = _textureOffset[slot] + (SwizzleOffset3D(x, y, z, width, height, depth) * bytes);
         return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
     }
@@ -4648,6 +4692,76 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             default:
                 return Math.Clamp(value, 0, size - 1);
         }
+    }
+
+    /// <summary>
+    /// Decodes the U address mode from a NV097_SET_TEXTURE_ADDRESS word
+    /// (PGRAPH_TEXADDRESS ADDRU, bits 0-2). Values follow
+    /// <c>nv2a_regs.h</c>: 1 = wrap, 2 = mirror, 3 = clamp-to-edge,
+    /// 4 = border, 5 = OpenGL clamp; 0 (reset) and reserved values resolve
+    /// as wrap and clamp respectively through <see cref="ToWrapMode"/>.
+    /// </summary>
+    public static int DecodeTextureAddressU(int address)
+    {
+        return address & (int)TextureAddressU;
+    }
+
+    /// <summary>
+    /// Decodes the V address mode from a NV097_SET_TEXTURE_ADDRESS word
+    /// (PGRAPH_TEXADDRESS ADDRV, bits 8-10). This is the §96-noted V-bit
+    /// fix: the 2D sampler previously read bits 4-7.
+    /// </summary>
+    public static int DecodeTextureAddressV(int address)
+    {
+        return (address & (int)TextureAddressV) >> 8;
+    }
+
+    /// <summary>
+    /// Decodes the P (volume-depth) address mode (ADDRP, bits 16-18).
+    /// </summary>
+    public static int DecodeTextureAddressP(int address)
+    {
+        return (address & (int)TextureAddressP) >> 16;
+    }
+
+    /// <summary>
+    /// Maps a reference address mode to a <see cref="WrapCoordinate"/> mode
+    /// (0 = wrap, 1 = mirror, 2 = clamp). Mode 0 (reset) wraps, preserving
+    /// the long-standing sampler behavior; modes 3-5 clamp and reserved
+    /// values fall through to clamp. Border resolves as clamp here;
+    /// out-of-range border axes are returned before wrapping by the caller.
+    /// </summary>
+    public static int ToWrapMode(int addressMode)
+    {
+        return addressMode switch
+        {
+            (int)TextureAddressMirror => 1,
+            0 => 0,
+            (int)TextureAddressWrap => 0,
+            _ => 2,
+        };
+    }
+
+    /// <summary>
+    /// Decodes an ARGB-packed NV097_SET_TEXTURE_BORDER_COLOR word to RGBA
+    /// floats (xemu <c>pgraph_argb_pack32_to_rgba_float</c>).
+    /// </summary>
+    public static void DecodeBorderColor(uint argb, out float r, out float g, out float b, out float a)
+    {
+        a = ((argb >> 24) & 0xFFu) / 255f;
+        r = ((argb >> 16) & 0xFFu) / 255f;
+        g = ((argb >> 8) & 0xFFu) / 255f;
+        b = (argb & 0xFFu) / 255f;
+    }
+
+    /// <summary>
+    /// Gets whether a texture color format is a depth (shadow-map) format.
+    /// Depths sample through the shadow path (xemu <c>psh_append_shadowmap</c>,
+    /// selected by <c>f.depth</c> in <c>texture.c</c>), not the color decoder.
+    /// </summary>
+    public static bool IsDepthTextureFormat(uint color)
+    {
+        return color is 0x2Cu or 0x2Eu or 0x2Fu or 0x30u or 0x31u;
     }
 
     public static uint SwizzleOffset(int x, int y, int width, int height)
@@ -5460,6 +5574,51 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Resolves a depth (shadow-map) texture for the PROJECT2D/PROJECT3D
+    /// stages. Depth formats sample through xemu
+    /// <c>psh_append_shadowmap</c>, not the color decoder: NEVER yields
+    /// <c>vec4(0.0)</c>, ALWAYS yields <c>vec4(1.0)</c>. Other depth
+    /// functions need the depth-compare path (open) and keep the
+    /// format-miss accounting. Returns true when the texel was resolved
+    /// here (the caller produces no texture sample). Disabled textures
+    /// fall through to the normal disabled path.
+    /// </summary>
+    private bool TryResolveShadow(int stage, float[] texel)
+    {
+        if (_memory is null || (_textureControl0[stage] & TextureControl0Enable) == 0)
+        {
+            return false;
+        }
+
+        uint color = (_textureFormat[stage] >> 8) & 0x7Fu;
+        if (!IsDepthTextureFormat(color))
+        {
+            return false;
+        }
+
+        if (_shadowDepthFunc == ShadowDepthFuncNever)
+        {
+            SetTexelZero(texel);
+            return true;
+        }
+
+        if (_shadowDepthFunc == ShadowDepthFuncAlways)
+        {
+            texel[0] = 1f;
+            texel[1] = 1f;
+            texel[2] = 1f;
+            texel[3] = 1f;
+            return true;
+        }
+
+        _textureFormatAttempts[color]++;
+        _textureFormatMisses[color]++;
+        _textureStateMisses[_currentTextureState]++;
+        SetTexelNone(texel);
+        return true;
+    }
+
+    /// <summary>
     /// Resolves one combiner-stage texel for the current fragment, following the
     /// reference per-mode equations. <paramref name="coords"/> holds the four
     /// interpolated texture-coordinate quads (x, y, z, w) for this fragment.
@@ -5497,9 +5656,28 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     return TrySampleCubeDirection(stage, 1f, tv / coord[3], -tu / coord[3], texel);
                 }
 
+                if (TryResolveShadow(stage, texel))
+                {
+                    return false;
+                }
+
+                // xemu: textureProj(texSamp, norm(pT.xyw)) — the 2D coords
+                // divide by w even without a cube map. A zero w keeps the
+                // undivided coords (GLSL textureProj with w = 0 is undefined;
+                // no stream programs it).
+                if (coord[3] != 0f)
+                {
+                    return SampleInto(stage, tu / coord[3], tv / coord[3], texel);
+                }
+
                 return SampleInto(stage, tu, tv, texel);
             case PshCombiner.TexModeProject3D:
                 {
+                    if (TryResolveShadow(stage, texel))
+                    {
+                        return false;
+                    }
+
                     // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
                     // samplers, (x/w, y/w, z/w) for volume textures.
                     float invW = 1f / coord[3];
