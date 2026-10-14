@@ -7229,3 +7229,249 @@ deviations). **T4 merged-master goldens PASS both legs** (menu SHA +
 §127 counters exact @`0x1E0EB`; triangle SHA + 2706/68/34 @`0x8001B032`) —
 the wave-10 post-merge gap is closed. **Baseline 1277/1277** (1268 + 9),
 format clean.
+
+## 134 - JIT slice 3: decode cache LANDED (leg d) - 2.1-3.1x, hit share 99.5-99.8%, goldens exact both flags (2026-10-14)
+
+Wave-12 build task on branch `wave/jit-decode` (from master 2b78a2d, 1277
+green): the §131 leg-(d) handoff implemented in full - DecodedInstruction
+block cache, conservative invalidation, `--decode-cache`/`--decode-verify`,
+decode-avoided counters, 14 unit tests. ALL acceptance gates green: suite
+1291/1291 (+14), format clean, menu+triangle 1B SHAs + full counters exact
+on BOTH flag-off and flag-on (repeat-confirmed), ratio UP 2.12-3.07x, decode
+share gone (0.20-0.47% of flag-off), debug-verify tripwire ZERO failures
+through 1B real-title steps. No codegen, no boundary elision, no snapshot
+format change, no new NuGet packages.
+
+### Design (as landed)
+
+`DecodeCache` (`src/XGrid.Cpu/DecodeCache.cs`): `Dictionary<uint linear,
+Entry>` keyed by LINEAR fetch address (kernel aliases of one physical page
+are distinct keys, gotcha v) + physical-page reverse map
+`Dictionary<uint page, List<uint>>` + a 16 KB active-page bitset that makes
+the common store-drop a bounds check + one bit. Entry (~200 B): the
+`DecodedInstruction` (invalid #UD markers cached too, gotcha vi), the
+physical base of the 15-byte fetch window (idle-skip replay + reverse map),
+the fill-time operand/address-size defaults (hit-validation belt), and the
+source window packed into 15 bytes (verify mode). Cap 128 K entries
+(`MaxEntries`); reaching it full-flushes (gotcha vii - bounded memory,
+`peak` counters prove the cap on menu/tri runs are never approached: peaks
+12,644 / 8,100).
+
+CPU integration (`XboxCpu.Step` + new partial `XboxCpuDecodeCache.cs`):
+flag off = byte-identical legacy path (plus a `_decodeCache is null` check
+per Step and per store, a verbatim `FetchLegacy` extraction, and the
+host-only `DecodeCount++`). Flag on: single-page windows look up the cache
+by `CsBase+Eip`; a HIT replays the 15 per-byte `_idle.NoteAccess` calls
+from the entry physicals (gotcha iii - idle-skip verdicts unit-proven
+byte-exact vs flag-off), reports `NoteFetch(false)`, and returns the cached
+decode - no bus traffic, no translate, no decode; a MISS takes the §131c
+single-translate path (cross-page windows the legacy path) and fills when
+the physical is RAM. Misses include cross-page/non-RAM skips, so
+hits+misses == steps. `DecodeCacheEnabled=true` implies
+`FetchFastPathEnabled` and starts MMU page-table tracking (with a cold TLB
+so every back-table page is re-observed); Reset/snapshot leave the flag and
+counters alone (host-side state, §126/§131 discipline).
+
+### Invalidation discipline (all conservative; verify=0 proves exhaustiveness)
+
+- CPU stores (`WriteMemory`/`RawWrite`/`WriteMemory64`/
+  `WriteMemoryBytes`, post-translate physical): page-granular drop of the
+  store's page(s); a store to an OBSERVED page-table page full-flushes
+  instead (remap may change other pages - gotcha i over-flush). The MMU's
+  own A/D-bit writes never reach these hooks (they are Mmu-internal
+  `Memory.Write32`s, not CPU stores), so A/D false-triggers are impossible
+  by construction - no `IMemoryBus` change needed, deferred suppression is
+  moot at this hook level.
+- The five `XboxMachine` device-adapter shims (IDE BM-DMA, NV2A surface/
+  zeta/semaphore, APU, nvnet, USB HCCA/ED) now carry the CPU and call
+  `InvalidateDecodeCachePage` after every physical write. DEVIATION from
+  the §131/brief wording ("full flush on the shims"): page-granular drop
+  instead - the NV2A software rasterizer funnels ~89 M pixel writes per 1B
+  steps through `PhysicalGpuMemory.WritePhysical`, so full flushes there
+  would keep the table permanently cold; page drop is equally sound
+  (cached windows never cross a page) and costs a bitset test per write.
+- Mapping changes: every Mmu.Flush/FlushPage site (CR0.PG/CR3/CR4.PSE
+  writes, INVD/WBINVD, INVLPG, Reset, snapshot load - the §131 inventory's
+  choke point) invokes CPU hooks wired in the XboxCpu constructor:
+  full flush both. INVLPG full-flushes (v1 carries no linear-page index).
+- CS reload: full flush ONLY when base or D/B actually changed
+  (DEVIATION from "flush on LoadSegment": same-base reloads happen on
+  every interrupt/iret and would flush the hot table thousands of times;
+  same-base cannot change any cached decode since keys are linears and
+  sizes are validated per hit - exact-#UD EIP preserved). CR0.PE is
+  covered by the CR-write flush.
+- Host writes: EOS quirk (`XboxMachine.CheckSevenEosQuirk` WriteVa) calls
+  `InvalidateDecodeCachePage`; snapshot load rides the Mmu.Flush hook
+  (LoadState already flushes - comment updated); TestRomRunner image loads
+  ride `Machine.Reset -> Cpu.Reset -> Mmu.Flush`.
+- Non-RAM fetches are never cached (flash/BIOS/MMIO: physical bound
+  `MaxTrackedPhysical=512 MB` excludes every MMIO + RAM-alias window on the
+  Xbox map; `IIdleSkipHost.IsRam` is the second gate) - gotcha iii's other
+  half.
+- `--decode-verify` (flag-gated, off by default, gotcha ix): on every hit
+  the 15 source bytes are re-read from the entry physicals and memcmp'd; a
+  mismatch counts `verifyFailures` and re-decodes (self-healing).
+  **verifyFailures==0 on menu AND triangle 1B runs** - the invalidation
+  discipline is exhaustively proven on real titles at 1B steps.
+
+### Acceptance (exact numbers; 16-core host shared with other wave agents -
+walls contended, SHAs/counters step-exact and immune)
+
+Unit: 14 new tests (`DecodeCacheTests.cs`): off-by-default + imply
+fetch-fast, fill/hit identity + profiler shares + report lines, xor-write
+page drop (§34 decrypt pattern), PT-write full flush, CR3+INVLPG flush,
+CS same-base warm / changed-base flush, snapshot-load flush, cross-page +
+non-RAM skips, vector-14 fault precision, cached #UD marker with exact
+EIP, idle-skip verdict exactness, verify tripwire (incl. the 15-byte
+window-overlap semantics), entry cap (peak==131072, one flush), host flush
+APIs. Suite **1291/1291** (1277+14), `dotnet format --verify-no-changes`
+clean, zero warnings.
+
+Goldens (off then on, back-to-back, repeated; profiler off):
+- Menu 1B sw: SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`,
+  draws=33632 skipped=1402 frames=686 stalls=686 (+ all sub-counters) on
+  off1/off2/on1/on2 - EXACT everywhere.
+- Triangle 1B sw: SHA `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`,
+  draws=2706 frames=68 stalls=34 on off1/off2/on1/on2 - EXACT everywhere.
+  NOTE for future agents: the triangle golden REQUIRES `--hdd` AND `--dvd`
+  together (the recorded anchors came from `gpu-slice2-triangle-golden.ps1`
+  which attaches both); a DVD-only boot diverges at 1B (frames=35).
+- Flag-off log diffs (off1 vs off2, menu+tri): only the frame-filename
+  line -> off runs bit-reproducible; off-vs-on: ONLY the `Decode cache=on`
+  announcement, the gated decode-stats line, and the frame path - the
+  flag-off codepath carries null checks + host-side counters only, and the
+  off SHAs matching the §131 master-recorded anchors is the strongest
+  byte-identity proof (master baseline re-run skipped, justified).
+
+Walls (1B steps, seconds; pair order off->on; host contended - §131's
+uncontended off-walls were 372 menu / 292 tri):
+- Menu: off 700.4 / 662.8, fetch-fast-only 549.8, decode-cache 318.8 /
+  312.5 -> **off->on 2.20x / 2.12x**; off->ff 1.27x; ff->on **1.72x**
+  (leg-(d) contribution alone).
+- Triangle: off 530.3 / 528.6, fetch-fast-only 391.4, decode-cache 178.3 /
+  172.2 -> **off->on 2.97x / 3.07x**; off->ff 1.35x (matches §131);
+  ff->on **2.19x / 2.27x**.
+- Msteps/s: menu off ~1.43-1.51 -> on 3.14-3.20; tri off ~1.89 -> on
+  5.61-5.81.
+
+Decode-avoided counter (acceptance 6): menu on decodes=4,679,841 =
+**0.468 per-insn** (flag-off = 1.0 by construction; unit-proven) with
+hits=995,317,006 (**99.53%**); triangle decodes=1,995,661 = **0.200
+per-insn**, hits=998,002,456 (**99.80%**). Repeat runs bit-identical on
+every counter (menu on1==on2, tri on1==on2). Profiler report gained
+`summary,decodeCacheHits/Misses` lines emitted only when nonzero (flag-off
+reports byte-identical to §126/§131 baselines).
+
+Other counters (tri on1): fills=880,681 entries=4,156 peak=8,100
+pageDrops=352 fullFlushes=31,781 crossPageSkips=761,045 (0.076% of steps)
+nonRamSkips=353,935 (BIOS/flash - correctly uncached); menu on1:
+fills=3,103,139 entries=10,192 peak=12,644 pageDrops=4,069
+fullFlushes=83,265 crossPageSkips=1,222,767 (0.122%). The fullFlush counts
+are INVLPG/CR/PT-write churn of the kernel; even so the steady-state hit
+share stays >=99.5% (flushes mostly hit cold boot-phase code).
+
+### Deferred / notes for the next wave
+
+- INVLPG -> full flush (no linear-page index). Counters show 32-83 K
+  flushes/1B with no golden impact; a linear-page drop index is a cheap d2
+  optimization IF a title ever needs it.
+- A/D-suppression for PT-page stores (the §131 gotcha-i d2) is MOOT at the
+  current hook level: A/D writes never traverse CPU store sites; only a
+  future bus-level writer hook (§132 dirty-bit track) would need it.
+- `Program.MachineGpuMemory` (GL backend texture reads) needs no flush
+  wiring: the GL backend never writes guest RAM (source-verified).
+- idle-skip + decode-cache at 1B title scale: unit-proven exact; not run
+  at 1B (not in the acceptance set).
+- ktest smoke not run by this task (standing merge gate for BOSS).
+- Snapshot format unchanged; old `.xgs` remain valid.
+
+## 135 - GL dirty-bit (a*) LANDED: present-upload staleness closed at the RAM write choke (2026-10-14)
+
+Wave-12 T2 implements §132 recommendation (a*) exactly: an external dirty
+bit at the `PhysicalMemory.Write8/16/32/64` choke — the single writer path
+that also covers the `0x80000000` alias, the RAM mirror, and the
+`0xF0000000` write-combined view (`RamAliasDevice` maps to the same flat
+offsets; an `AddressSpace`-level watch misses all three — §132 finding ii,
+now regression-tested) — with a GPU-writer-identity suppression counter
+around the two `IGpuMemory.WritePhysical` adapter bodies
+(`XboxMachine.PhysicalGpuMemory`, `Program.MachineGpuMemory`) so the NV2A
+software twin's own surface writes never false-dirty (§132 finding i).
+`GlPgraphBackend` arms the watch at flip end with the resolved record span
+(`SurfaceAddress`, `pitch × height`; up to 4 round-robin slots so a
+double-buffered app's surfaces all stay watched), reads the bit in
+`FlipCore`, and the Flip rule is fail-closed: dirty → the FBO is dropped
+into the existing `_fbo == 0` upload path (`presentUploads++`,
+`flipStaleUploads++`); clean → serve the FBO; upload guard failure → the
+existing `flipEmpty` abstain path. `ResetState`/snapshot load mark the bit
+dirty (host-side only — no `.xgs` change, §101 holds; `PhysicalMemory.
+LoadState`/`Clear` mark only while armed, so pre-arm loads cannot poison a
+later session). The bit is cleared ONLY by a successful upload. sw default
+pays one predicted branch (`_presentWatchCount == 0`); no user flag — the
+watch exists only when a backend adapter is wired.
+
+**Deviations from the §132 prose (all deliberate, documented):** (i) span
+slots instead of a single span (alternating present surfaces — the §60
+menu-idle `0x3D00000↔0x3E2C000` pair — would otherwise under-watch);
+(ii) no "span-mismatch → upload" rule — it would force uploads on the
+menu's alternating flips and break the required `presentUploads=0`;
+instead the pre-first-flip interval (no span armed yet) serves, matching
+today's titles and the `flipServed` acceptance; (iii) arm happens at flip
+end only (draw/clear never touch the bit — `Backend.Draw` fires BEFORE
+the twin, `Backend.Clear` AFTER; nothing may clear-dirty inside them);
+(iv) a backend wired to a bare `IGpuMemory` seam fake (no watch) keeps the
+pre-§135 serve-whenever-FBO-non-empty contract — the real CLI wiring
+always carries the watch.
+
+**Known corners (fail-closed or unreachable, deferred):** (a) >4 presented
+surfaces in flight evicts the oldest span round-robin (a CPU writer to an
+evaded span can under-watch; menu+tri use ≤3); (b) a CPU write to a
+surface NEVER presented before the very first flip of a session with a
+live FBO serves stale (pre-first-flip interval has no span; FMV-before-any-
+flip is the `_fbo == 0` upload path, which handles it); (c) double-buffered
+CPU-blit FMV where flip N presents a surface first seen at flip N — same
+pre-arm corner; all unreachable without real titles (operator rule) and
+none reachable by menu/triangle.
+
+**Tests (+25 → 1302 green):** 19 unit (`PresentDirtyWatchTests`: all four
+write widths dirty inside the span; boundary-straddle; suppression incl.
+nesting; arm idempotence + no-launder; disarm-doesn't-clear; multi-span;
+round-robin eviction; LoadState-armed marks / LoadState-disarmed doesn't;
+Clear-armed marks; `RamAliasDevice` flat-coverage) + 6 live GL
+(`PresentDirtyWatchLiveTests`, early-return non-GL pattern): (a) GL-render
+→ flip serves GL bytes (≠ guest bytes; `presentUploads=0
+flipStaleUploads=0`); (b) GL-render → flip → guest CPU blit → flip uploads
+guest bytes (`presentUploads=1 flipStaleUploads=1`), repeat flip serves
+again (no double upload); (c) same blit via the `0x80000000` alias →
+uploads (choke regression); (d) save/load mid-sequence → first flip uploads
+the LOADED bytes; ResetState → next flip uploads rather than serving
+leftovers; (e) twin identity over the full pusher path: one stream,
+clear+flip+clear+flip — the second twin fill writes the watched surface
+through the suppression-scoped adapter and the flip still serves
+(`presentUploads=0 flipStaleUploads=0`). The pre-existing
+`PresentUploadLiveTests` (bare `ArrayMemory`, no watch) passes unchanged —
+the no-watch contract is now explicit.
+
+**Acceptance (all met).** Suite **1302/1302 green** (1277 baseline + 19
+unit + 6 live; `dotnet test -c Release` clean) and
+`dotnet format XGrid.sln --no-restore` clean with
+`--verify-no-changes` clean (0 warnings — TreatWarningsAsErrors, no new
+NuGet, no SkippableFact). **Menu 1B golden** (`scripts/gpu-slice1-golden.ps1`):
+sw SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+== recorded anchor; gl↔sw diff `violations=0 outsideBand=0 maxDelta=1`
+(diff=1852 px); counters identical `draws=33632 frames=686 stalls=686`;
+`BackendUnsupported=0`; **`presentUploads=0 flipStaleUploads=0 flipEmpty=0`**
+(the watch never trips on the title — arm/dirty logic has no false
+positives), and the sw log carries no `presentUploads` line at all (correct
+absence — the diag only exists with a backend); walls sw 692.9 s / gl
+690.6 s. **Triangle 1B golden** (`gpu-slice2-triangle-golden.ps1 -Dvd
+D:\wave-worktrees\triangle.iso`): sw SHA
+`A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C` == anchor,
+anchors `2706/68/34` match, sw==gl, `violations=0 outsideBand=0 maxDelta=1`,
+`BackendUnsupported=0`, **`presentUploads=0 flipStaleUploads=0`**, sw log
+absence correct; walls sw 516.5 s / gl 529.4 s. **A/B hook cost (menu 1B
+gl, back-to-back pairs):** baseline (master build) **718.1 s + 713.1 s
+(mean 715.6 s)** vs post-change **674.2 s + 684.1 s (mean 679.2 s)** —
+ratio 0.949, i.e. the choke is not measurable above the host's contention
+noise (bar was "within noise of the +5.5% precedent"; the shared 16-core
+host ran the after-pair under lighter load, so the delta reads negative).
+Both pairs' runs: counters identical to each other, `presentUploads=0`.

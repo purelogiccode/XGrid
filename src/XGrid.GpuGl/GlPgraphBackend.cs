@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Silk.NET.Core.Contexts;
 using Silk.NET.OpenGL;
+using XGrid.Memory;
 using XGrid.Nv2a;
 
 namespace XGrid.GpuGl;
@@ -71,6 +72,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly GL _gl;
     private readonly IGpuMemory _memory;
 
+    // Present-upload staleness watch (§132 (a*)): non-null when the
+    // injected IGpuMemory is one of the machine adapters that expose the
+    // PhysicalMemory dirty bit (the real CLI wiring); null for seam fakes,
+    // which keep the pre-§135 serve-whenever-FBO-non-empty contract.
+    private readonly IPresentDirtyWatch? _dirtyWatch;
+
     private readonly uint _vertexShader;
     private readonly uint _vao;
     private readonly uint _vbo;
@@ -123,13 +130,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // counts flips with no backend-rendered content yet (no draw/clear has
     // created the FBO — e.g. CPU-blitted FMV presents, which the backend
     // must not mix software pixels into, so no frame is served);
-    // _presentUploads counts flips where the empty FBO was filled by the
-    // present-upload path (guest-RAM surface full-frame replace).
+    // _presentUploads counts flips where the FBO was filled by the
+    // present-upload path (guest-RAM surface full-frame replace — either
+    // the empty-FBO case or, since §135 (a*), a dirty non-empty FBO);
+    // _flipStaleUploads counts the latter (dirty live-FBO uploads), the
+    // §135 fail-closed stale-present diagnostic.
     private long _fboReallocs;
     private long _fboZetaDrops;
     private long _clipXYNonZero;
     private long _flipEmpty;
     private long _presentUploads;
+    private long _flipStaleUploads;
     private GlBackendTimings _timings;
     private int _perspective;
     private float _invAw;
@@ -183,6 +194,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _glContext = glContext;
         _gl = gl;
         _memory = memory;
+        _dirtyWatch = memory as IPresentDirtyWatch;
 
         _vertexShader = CompileVertexShader();
         _gl.GenVertexArrays(1, out _vao);
@@ -240,7 +252,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads}]");
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads}]");
             _timings.AppendTo(sb);
             if (_fatalError is not null)
             {
@@ -373,7 +385,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _clipXYNonZero = 0;
         _flipEmpty = 0;
         _presentUploads = 0;
+        _flipStaleUploads = 0;
         _timings.Reset();
+
+        // Fail-closed (§132 (a*)): reset/load replaced guest state under a
+        // backend whose FBO (just deleted above) may have been the presented
+        // content — the next flip must upload, never serve leftovers. The
+        // dirty bit survives the disarm; only a successful upload clears it.
+        _dirtyWatch?.MarkPresentDirty();
+        _dirtyWatch?.DisarmPresentWatch();
     }
 
     /// <inheritdoc />
@@ -423,6 +443,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             // Disposal is best-effort at process teardown.
         }
 
+        _dirtyWatch?.DisarmPresentWatch();
         _glContext.Dispose();
         _context.Dispose();
     }
@@ -588,16 +609,28 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
+        // Present-upload staleness (§132 (a*)): a non-suppressed guest
+        // write touched a watched presented-surface span since this FBO was
+        // last made authoritative — drop the FBO and fall through to the
+        // existing upload path below (which rebuilds it at record size from
+        // guest RAM). Wrong-serve is the high-severity error, so on any
+        // uncertainty the flip uploads; a guard failure below takes the
+        // flipEmpty abstain path and keeps the honest gap.
+        bool droppedStaleFbo = false;
+        if (_fbo != 0 && _dirtyWatch is not null && _dirtyWatch.PresentDirty)
+        {
+            DeleteFbo();
+            droppedStaleFbo = true;
+        }
+
         if (_fbo == 0)
         {
-            // Present-upload slice: no draw/clear has created the FBO, so
-            // the presented frame (if any) is a CPU-blitted guest-RAM
-            // surface. Upload it wholesale into a fresh FBO (full-frame
-            // replace — never mixed with software pixels) and fall through
-            // to the readback below. A non-empty FBO is deliberately
-            // untouched here: staleness detection for that case is still
-            // open (the upload would need guest-visible surface-access
-            // tracking). Any failure below restores _fbo == 0 so the
+            // Present-upload slice: either no draw/clear has created the
+            // FBO (the presented frame, if any, is a CPU-blitted guest-RAM
+            // surface) or the dirty watch just dropped a stale one. Upload
+            // the surface wholesale into a fresh FBO (full-frame replace —
+            // never mixed with software pixels) and fall through to the
+            // readback below. Any failure below restores _fbo == 0 so the
             // session keeps the pre-upload honest gap (no frame served).
             if (PresentUpload.TryBuildUploadPixels(
                     _memory, LastFlipSurfaceAddress, record.Width, record.Height,
@@ -607,6 +640,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 UploadFullFrame(upload, record.Width, record.Height))
             {
                 _presentUploads++;
+                if (droppedStaleFbo)
+                {
+                    _flipStaleUploads++;
+                }
+
+                // The upload made the FBO authoritative from guest RAM at
+                // this instant: clean until a new guest write trips the bit.
+                _dirtyWatch?.ClearPresentDirty();
             }
             else
             {
@@ -658,6 +699,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _readback = bgra;
         _readbackWidth = width;
         _readbackHeight = height;
+
+        // Arm the present-upload dirty watch over the presented surface
+        // (§132 (a*)): a live FBO is the arm condition; the span is the
+        // resolved record's pitch × height. The NEXT flip decides serve vs
+        // upload off non-suppressed writes into the watched spans (span
+        // slots accumulate so a double-buffered app's surfaces stay
+        // watched; a pre-first-flip CPU blit is the empty-FBO upload path).
+        if (_fbo != 0 && _dirtyWatch is not null)
+        {
+            ulong span = (ulong)record.Pitch * (ulong)record.Height;
+            _dirtyWatch.ArmPresentWatch(
+                record.SurfaceAddress,
+                span > uint.MaxValue ? uint.MaxValue : (uint)span);
+        }
     }
 
     /// <summary>

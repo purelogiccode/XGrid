@@ -51,8 +51,8 @@ public sealed class XboxMachine : IIdleSkipHost
         Ide = new IdeController();
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
-        Ide.DmaMemory = new AddressSpaceGuestMemory(Memory);
-        Nv2A = new Nv2AMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory));
+        Ide.DmaMemory = new AddressSpaceGuestMemory(Memory, Cpu);
+        Nv2A = new Nv2AMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory, Cpu));
         Nv2A.InterruptChanged += OnNv2aInterrupt;
         Memory.AddRegion(
             "NV2A",
@@ -67,7 +67,7 @@ public sealed class XboxMachine : IIdleSkipHost
             XboxAddressMap.AciSize,
             Aci);
 
-        Apu = new McpxApuDevice(new PhysicalApuMemory(Memory));
+        Apu = new McpxApuDevice(new PhysicalApuMemory(Memory, Cpu));
         Apu.InterruptChanged += OnApuInterrupt;
         Memory.AddRegion(
             "MCPX APU",
@@ -77,14 +77,14 @@ public sealed class XboxMachine : IIdleSkipHost
 
         Net = new McpxNvNetDevice();
         Net.InterruptChanged += OnNetInterrupt;
-        Net.DmaMemory = new PhysicalNvNetMemory(Memory);
+        Net.DmaMemory = new PhysicalNvNetMemory(Memory, Cpu);
         Memory.AddRegion(
             "MCPX NVNET",
             XboxAddressMap.NvNetBase,
             XboxAddressMap.NvNetSize,
             Net);
 
-        Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory));
+        Usb0 = new OhciUsbController(XboxAddressMap.Usb0Base, new PhysicalUsbMemory(Memory, Cpu));
         Usb0.InterruptChanged += OnUsb0Interrupt;
         Gamepad = new XidGamepad();
         var controllerHub = new UsbHub(3);
@@ -94,7 +94,7 @@ public sealed class XboxMachine : IIdleSkipHost
         Usb0.Function = daughterboard;
         Memory.AddRegion("USB0", XboxAddressMap.Usb0Base, XboxAddressMap.UsbSize, Usb0);
 
-        Usb1 = new OhciUsbController(XboxAddressMap.Usb1Base, new PhysicalUsbMemory(Memory));
+        Usb1 = new OhciUsbController(XboxAddressMap.Usb1Base, new PhysicalUsbMemory(Memory, Cpu));
         Usb1.InterruptChanged += OnUsb1Interrupt;
         Memory.AddRegion("USB1", XboxAddressMap.Usb1Base, XboxAddressMap.UsbSize, Usb1);
 
@@ -444,6 +444,10 @@ public sealed class XboxMachine : IIdleSkipHost
             if (!faulted)
             {
                 Memory.Write32(physical, value);
+
+                // Host write outside the CPU store sites: drop the decode
+                // cache page (§131 leg (d) invalidation inventory).
+                Cpu.InvalidateDecodeCachePage(physical);
             }
         }
 
@@ -715,13 +719,21 @@ public sealed class XboxMachine : IIdleSkipHost
         }
     }
 
+    /// <summary>
+    /// <c>IApuMemory</c> adapter over the machine's physical address space
+    /// (DSP state + VP notifier writes). Forwards to the decode cache's
+    /// page-drop invalidation so cached code over DMA-written RAM can never
+    /// go stale (§131 leg (d) invalidation inventory).
+    /// </summary>
     private sealed class PhysicalApuMemory : IApuMemory
     {
         private readonly AddressSpace _memory;
+        private readonly XboxCpu _cpu;
 
-        public PhysicalApuMemory(AddressSpace memory)
+        public PhysicalApuMemory(AddressSpace memory, XboxCpu cpu)
         {
             _memory = memory;
+            _cpu = cpu;
         }
 
         public uint Read32(uint address)
@@ -732,21 +744,30 @@ public sealed class XboxMachine : IIdleSkipHost
         public void Write32(uint address, uint value)
         {
             _memory.Write32(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write8(uint address, byte value)
         {
             _memory.Write8(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
     }
 
+    /// <summary>
+    /// <c>INvNetMemory</c> adapter (RX frames + descriptors; §131 leg (d)
+    /// invalidation inventory). Page-drops the decode cache like the other
+    /// device shims.
+    /// </summary>
     private sealed class PhysicalNvNetMemory : INvNetMemory
     {
         private readonly AddressSpace _memory;
+        private readonly XboxCpu _cpu;
 
-        public PhysicalNvNetMemory(AddressSpace memory)
+        public PhysicalNvNetMemory(AddressSpace memory, XboxCpu cpu)
         {
             _memory = memory;
+            _cpu = cpu;
         }
 
         public byte ReadPhysical(uint address)
@@ -757,16 +778,24 @@ public sealed class XboxMachine : IIdleSkipHost
         public void WritePhysical(uint address, byte value)
         {
             _memory.Write8(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
     }
 
+    /// <summary>
+    /// <c>IUsbMemory</c> adapter (HCCA/done/ED writes; §131 leg (d)
+    /// invalidation inventory). Page-drops the decode cache like the other
+    /// device shims.
+    /// </summary>
     private sealed class PhysicalUsbMemory : IUsbMemory
     {
         private readonly AddressSpace _memory;
+        private readonly XboxCpu _cpu;
 
-        public PhysicalUsbMemory(AddressSpace memory)
+        public PhysicalUsbMemory(AddressSpace memory, XboxCpu cpu)
         {
             _memory = memory;
+            _cpu = cpu;
         }
 
         public byte Read8(uint address)
@@ -787,27 +816,42 @@ public sealed class XboxMachine : IIdleSkipHost
         public void Write8(uint address, byte value)
         {
             _memory.Write8(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write16(uint address, ushort value)
         {
             _memory.Write16(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write32(uint address, uint value)
         {
             _memory.Write32(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
     }
 
-    private sealed class PhysicalGpuMemory : IGpuMemory
+    /// <summary>
+    /// <c>IGpuMemory</c> adapter (NV2A semaphore + surface/zeta writes — the
+    /// hot one: every rasterized pixel goes through it; §131 leg (d)
+    /// invalidation inventory). Page-drops the decode cache; framebuffer
+    /// pages hold no cached code, so the drop is a bounds check and a clear
+    /// bit in the common case. Doubles as the present-upload dirty watch
+    /// handle for a backend attached to this machine (§132 (a*), §135).
+    /// </summary>
+    private sealed class PhysicalGpuMemory : IGpuMemory, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
+        private readonly XboxCpu _cpu;
 
-        public PhysicalGpuMemory(AddressSpace memory)
+        public PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu)
         {
             _memory = memory;
+            _cpu = cpu;
         }
+
+        public bool PresentDirty => _memory.Ram.PresentDirty;
 
         public uint ReadPhysical(uint address)
         {
@@ -816,17 +860,57 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public void WritePhysical(uint address, uint value)
         {
-            _memory.Write32(address, value);
+            // Writer identity (§132 finding i): the software twin's own
+            // surface writes must not trip the present-upload dirty bit;
+            // only real guest (CPU/device DMA) writers count.
+            _memory.Ram.BeginGpuWriteSuppression();
+            try
+            {
+                _memory.Write32(address, value);
+            }
+            finally
+            {
+                _memory.Ram.EndGpuWriteSuppression();
+            }
+
+            _cpu.InvalidateDecodeCachePage(address);
+        }
+
+        public void ArmPresentWatch(uint address, uint length)
+        {
+            _memory.Ram.ArmPresentWatch(address, length);
+        }
+
+        public void DisarmPresentWatch()
+        {
+            _memory.Ram.DisarmPresentWatch();
+        }
+
+        public void MarkPresentDirty()
+        {
+            _memory.Ram.MarkPresentDirty();
+        }
+
+        public void ClearPresentDirty()
+        {
+            _memory.Ram.ClearPresentDirty();
         }
     }
 
+    /// <summary>
+    /// <c>IGuestMemory</c> adapter (IDE BM-DMA PRDT data; §131 leg (d)
+    /// invalidation inventory). Page-drops the decode cache like the other
+    /// device shims.
+    /// </summary>
     private sealed class AddressSpaceGuestMemory : IGuestMemory
     {
         private readonly AddressSpace _memory;
+        private readonly XboxCpu _cpu;
 
-        public AddressSpaceGuestMemory(AddressSpace memory)
+        public AddressSpaceGuestMemory(AddressSpace memory, XboxCpu cpu)
         {
             _memory = memory;
+            _cpu = cpu;
         }
 
         public byte ReadPhysical(uint address)
@@ -837,6 +921,7 @@ public sealed class XboxMachine : IIdleSkipHost
         public void WritePhysical(uint address, byte value)
         {
             _memory.Write8(address, value);
+            _cpu.InvalidateDecodeCachePage(address);
         }
     }
 
