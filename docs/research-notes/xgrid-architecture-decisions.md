@@ -6170,3 +6170,91 @@ differentials; (c) idle-skip V2 (timer-park fast-forward) would compress
 the 9.5B-step `Sleep(10000)` and shrink this acceptance run from ~58 min
 to ~10 min; (d) the suite is now a standing cross-emulator regression
 asset — a `tests=` subset ISO gives a ~2-min xemu/XGrid smoke run.
+
+## §121 — APU GP/EP DSP bridge: G2 park drained, 007 proceeds past 56.8B (2026-10-14)
+
+Branch `wave/apu-dsp` (worktree `Temp\opencode\worktrees\apu-dsp`, master
+@da76d91). Closes the §107 open item per the §118 verdict: the GP/EP DSP
+cores are now executed as frame-driven engines, ISTS bit3 raises under a
+modeled condition, and 007's G2 park drains. Scope: `src/XGrid.Audio/` +
+`tests/XGrid.Audio.Tests/` only. **1229 tests green** (1216 baseline + 13
+new), zero existing-expectation changes, `dotnet format
+--verify-no-changes` clean.
+
+**Reference facts extracted (no code copied; xemu/QEMU are GPL):**
+- xemu `apu_regs.h`: ISTS bits {0 GINTSTS, 4 FET, 5 FEN, 6 FEV}; IEN-gated
+  IRQ (`apu.c` update_irq); GPRST/EPRST run bits {0 GPRST, 1 GPDSPRST}.
+- xemu `dsp/gp_ep.c` proc_rst_write: clearing either run bit resets the DSP,
+  the rising edge of both bootstraps it (scratch DMA of 0x800 words into
+  PRAM); `mcpx_apu_dsp_frame` runs GP every EP frame and EP every 8th when
+  the run bits are set; EPRST write resets the frame divider. DSP scratch
+  and FIFO access go through the GPSADDR/GPFADDR/EPSADDR/EPFADDR SGE tables
+  (DSP page n -> host page SGE[n]); xemu never raises ISTS bit3 anywhere,
+  so neither emulator is the oracle for bit3 (Playtest-v2 identical).
+- Guest-side facts (007 module, decoded live): submitter 0x1C2FFA spins on
+  `[block+0x10]` (0 = free); writers are F0-config (3, 0x1C3226), FB-restart
+  (0 then 3, 0x1C37FD/0x1C381D — the 0-write is register-form `mov
+  [edi+0x10],ebp`, missed by §118's imm-store scan), alloc-zero; ISR
+  0x1C3E13 queues worker descA on ISTS 0x40|0x08; worker 0x1C3B9F calls FB
+  on accumulated bit3; FB clears bit3 from 0x6E4/0x6EC at its end and stalls
+  ~10 ms unconditionally — hence bit3 must be rare (per-block raises would
+  mean a 10 ms restart per ~1.5 ms mixer block, unserviceable).
+
+**Decisive probe (this wave):** at the park, GP scratch SGE[0..] maps host
+pages 0x3924000+ — the phys alias of the shared block VA 0x83924000 — so
+the GP DSP's scratch window covers the state word (DSP scratch addr 0x810
+= phys 0x3924810). The DSP microcode is the off-CPU writer (§118 candidate
+#2, now structurally confirmed): it absorbs posted blocks via scratch DMA.
+GPOF rings are all zero (no FIFO I/O); only EPOF1 is programmed
+([0x2000,0x6000) cur 0x3800, undrained — no S/PDIF sink modeled, EP frame
+processing left open).
+
+**Design (`McpxApuDevice`, all in-area, no CLI/seam changes):**
+- GPRST/EPRST run-state with proc_rst_write semantics; EPRST write resets
+  the EP frame divider. Fresh bootstrap is service-eligible.
+- Per-frame GP engine: absorb one pending block (state 2/3 -> 0) through
+  the scratch mapping, gated on the GPSADDR SGE table actually covering the
+  mailbox page (first 16 entries); raise ISTS bit3 as the DSP subunit
+  service request on a submission wake, debounced to at most one raise per
+  240 frames (~1.28 s) so continuous submissions flow silently. 3-absorbs
+  never wake (no FB self-trigger loop). EP engine only advances its divider.
+- Snapshot v3 (run-state, divider, wake gap, both counters); v2 loads
+  derive run-state from stored GPRST/EPRST so pd546.xgs-class snapshots
+  resume a running engine. New counters `DspAbsorbs`/`DspBit3Raises` +
+  `GpRunning`/`EpRunning`; key events in the existing APU EventLog (the
+  CLI already prints it — no CLI change needed).
+
+**Acceptance evidence (final build, private `wt-data\`, shared CHD):**
+- (1) bit3 raises under the real condition: pd546 +200M (§118 command +
+  breaks on 0x1C3E13/0x1C3B9F/0x1C37C5): `dsp-absorb 3->0 n=1`, `2->0 n=2`,
+  `dsp bit3 raise n=1`, then HIT 1C3E13 (caller 0x1C3E65) -> HIT 1C3B9F
+  (stack D0020FE0) -> HIT 1C37C5 (FB), FB's GP/EP stop->start, `dsp-absorb
+  3->0 n=3` — exactly one raise and one FB in 200M (no storm), ist back to
+  0 (guest acked). (`gate121.log`, worktree.)
+- (2) G2 drains, game proceeds: HIT 1C302E +3,022,850 (park exit), HIT
+  1C3048 (state=2 posted), HIT 0x20BD0 +3,835,029 (previously-unseen next
+  PlayMPC channel), EIP leaves {0x1C3028,0x1C302C}; +2.2B run to 56.8B and
+  +1B more to ~57.8B with `LastFault vec=0`: DVD streams a new 3 MB region
+  (LBA 0x33182-0x33772, BM 5885->8993), frames 2017->2125, game advances
+  through its 0x15BExx buffer-drain ladder (worker countdown 8->0 observed
+  live, flag [0x35743C] moving). The ladder is guest-paced content
+  consumption (~29M steps/tick), not a stuck gate; no fault anywhere.
+- (3) dashboard neutral boot unchanged: recipe
+  `--pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"`,
+  1B steps — frame SHA `4EF1FBF6...` (== acceptance oracle) on both final
+  and pristine-master builds; full log diff is only 2 added APU EventLog
+  lines (`GP DSP start/stop` — the dash starts the DSP, SGE gate stays
+  closed, zero absorbs) plus the frame filename. All numeric counters
+  byte-identical.
+- (4) suite 1229/1229 (13 new `DspBridgeTests`: run-bit edges, absorb/silent
+  paths, SGE gating both ways, wake + debounce + re-eligibility, guest ack,
+  v3 round-trip, hand-built-v2 derive-and-resume), format clean.
+
+**Open risks:** EP frame processing/FIFO drain needs an S/PDIF sink (EPOF1
+sits mid-ring); the 0x810 mailbox offset is an observed XDK-protocol fact,
+not a spec register — if a title remaps scratch so no SGE entry covers the
+mailbox, absorbs stop (diagnosable: park + `DspAbsorbs` frozen); wake
+debounce (240) may over-suppress if a title needs back-to-back restarts
+(FB rate is the observable); post-57.8B 007 content beyond the drain
+ladder is unprobed (snapshots `pdE1-fwd.xgs` kept untracked in the
+worktree as the forward origin).

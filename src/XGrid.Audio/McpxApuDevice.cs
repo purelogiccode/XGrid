@@ -32,8 +32,16 @@ public interface IApuMemory
 /// existing XGrid APU frame quantum) at a time: the current buffer offset walks the voice's
 /// SSL segment list, segment completion flips the SSL index and writes a notifier status,
 /// and voices that finish (or are turned off) report SE2FE_IDLE_VOICE through the FE trap
-/// registers on the next frame. The DSP cores are not executed; their register windows are
-/// stored.
+/// registers on the next frame.
+/// The GP/EP DSP cores are modeled as frame-driven engines, not executed microcode
+/// (xemu's M56001 core in dsp/ is GPL and too large to port faithfully for this gate):
+/// GPRST/EPRST writes track run-state with xemu's proc_rst_write semantics (gp_ep.c),
+/// and each frame a running GP engine performs the DSP-side completion writeback the
+/// XDK DSOUND microcode performs through its scratch window — absorbing a pending mixer
+/// block (state 2/3 to 0) at the scratch-mapped mailbox — and raises ISTS bit3 as the
+/// DSP subunit service request (serviced by the guest's own IRQ5 ISR/worker/FB restart
+/// chain). Scratch access is gated on the guest's GPSADDR SGE table actually mapping the
+/// mailbox page, so unprogrammed titles can never be touched.
 /// </summary>
 public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 {
@@ -55,11 +63,17 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint VpVaddr = 0x202C;
     private const uint VpSgeAddr = 0x2030;
     private const uint VpSslAddr = 0x2034;
+    private const uint GpsAddr = 0x2040;
     private const uint VpPioFree = 0x20010;
     private const uint VpVoiceOn = 0x20124;
     private const uint VpVoiceOff = 0x20128;
 
+    private const uint GpRst = 0x3FFFC;
+    private const uint EpRst = 0x5FFFC;
+    private const uint DspRunBits = 0x3u;
+
     private const uint IsTsGintsts = 1u << 0;
+    private const uint IsTsDspService = 1u << 3;
     private const uint IsTsFeTintsts = 1u << 4;
     private const uint IsTsFenintsts = 1u << 5;
     private const uint IsTsFevintsts = 1u << 6;
@@ -100,6 +114,25 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint VoiceEnvelopeDelay = 1;
     private const uint VoiceEnvelopeAttack = 2;
     private const uint VoiceEnvelopeHold = 3;
+
+    // DSP mixer-block mailbox (observed XDK DSOUND protocol fact): the GP DSP's
+    // scratch window (GPSADDR SGE table) maps the shared mixer block, and the state
+    // word is DSP scratch address 0x810 (phys 0x3924810, VA 0x83924810). State 2 is a
+    // posted mixer submission, state 3 is loaded parameters; the DSP absorbs either
+    // (writes 0) when it consumes the block.
+    private const uint DspStateWordPhys = 0x03924810u;
+    private const uint DspStateSubmitPosted = 2u;
+    private const uint DspStateParamsLoaded = 3u;
+    private const uint PageMask = ~0xFFFu;
+
+    // Wake debounce: at most one DSP service raise per this many frames (~1.28 s).
+    // Continuous mixer submissions flow silently (hardware steady state needs no
+    // restart); only batch boundaries raise. FB's unconditional ~10 ms stall makes
+    // sub-second restart rates unserviceable.
+    private const uint MinWakeGapFrames = 240u;
+
+    // SGE entries scanned for the mailbox page (MCPX_HW_MAX_PRD_ENTRIES_PER_SSL).
+    private const int DspSgeScanEntries = 16;
 
     private const uint OffsetMask24 = 0x00FFFFFF;
     private const uint HandleMask16 = 0x0000FFFF;
@@ -172,6 +205,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _inbufSgeHandle;
     private uint _outbufSgeHandle;
     private ulong _frameRemainder;
+    private bool _gpRunning;
+    private bool _epRunning;
+    private uint _epFrameDiv;
+    private uint _framesSinceWake;
 
     /// <summary>Creates the APU in its power-on state.</summary>
     public McpxApuDevice(IApuMemory memory)
@@ -200,6 +237,18 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the number of notifier statuses written, for diagnostics.</summary>
     public long NotifierWrites { get; private set; }
+
+    /// <summary>Gets the number of DSP mixer blocks absorbed, for diagnostics.</summary>
+    public long DspAbsorbs { get; private set; }
+
+    /// <summary>Gets the number of DSP subunit service (ISTS bit3) raises, for diagnostics.</summary>
+    public long DspBit3Raises { get; private set; }
+
+    /// <summary>Gets whether the GP DSP engine is running (GPRST run bits set).</summary>
+    public bool GpRunning => _gpRunning;
+
+    /// <summary>Gets whether the EP DSP engine is running (EPRST run bits set).</summary>
+    public bool EpRunning => _epRunning;
 
     /// <summary>Gets the interrupt status register, for diagnostics.</summary>
     public uint InterruptStatus => _regs[IsTs >> 2];
@@ -235,6 +284,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _inbufSgeHandle = 0;
         _outbufSgeHandle = 0;
         _frameRemainder = 0;
+        _gpRunning = false;
+        _epRunning = false;
+        _epFrameDiv = 0;
+        _framesSinceWake = MinWakeGapFrames;
         SetAsserted(false);
     }
 
@@ -278,6 +331,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_inbufSgeHandle);
         writer.Write(_outbufSgeHandle);
         writer.Write(_frameRemainder);
+        writer.Write(_gpRunning);
+        writer.Write(_epRunning);
+        writer.Write(_epFrameDiv);
+        writer.Write(_framesSinceWake);
+        writer.Write(DspAbsorbs);
+        writer.Write(DspBit3Raises);
         writer.Write(ReadCount);
         writer.Write(WriteCount);
         writer.Write(VoiceOffCompletions);
@@ -292,11 +351,14 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>Restores the register file, voice-processor state, and counters.</summary>
+    /// <remarks>V2 snapshots (which predate DSP run-state) load with run-state
+    /// derived from the stored GPRST/EPRST registers, so restores such as the 007
+    /// park snapshot resume a running engine.</remarks>
     public void LoadState(BinaryReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != SnapshotVersion)
+        if (version != SnapshotVersion && version != SnapshotVersionV2)
         {
             throw new InvalidDataException($"Unsupported APU snapshot version {version}.");
         }
@@ -339,6 +401,25 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _inbufSgeHandle = reader.ReadUInt32();
         _outbufSgeHandle = reader.ReadUInt32();
         _frameRemainder = reader.ReadUInt64();
+        if (version == SnapshotVersionV2)
+        {
+            _gpRunning = (_regs[GpRst >> 2] & DspRunBits) == DspRunBits;
+            _epRunning = (_regs[EpRst >> 2] & DspRunBits) == DspRunBits;
+            _epFrameDiv = 0;
+            _framesSinceWake = MinWakeGapFrames;
+            DspAbsorbs = 0;
+            DspBit3Raises = 0;
+        }
+        else
+        {
+            _gpRunning = reader.ReadBoolean();
+            _epRunning = reader.ReadBoolean();
+            _epFrameDiv = reader.ReadUInt32();
+            _framesSinceWake = reader.ReadUInt32();
+            DspAbsorbs = reader.ReadInt64();
+            DspBit3Raises = reader.ReadInt64();
+        }
+
         ReadCount = reader.ReadInt64();
         WriteCount = reader.ReadInt64();
         VoiceOffCompletions = reader.ReadInt64();
@@ -358,7 +439,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private const int SnapshotVersion = 2;
+    private const int SnapshotVersion = 3;
+    private const int SnapshotVersionV2 = 2;
 
     /// <summary>
     /// Advances voice-processor frame timing. Each frame walks the voice lists, advances
@@ -372,7 +454,76 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _frameRemainder -= FrameCycles;
             ProcessFrame();
+            ProcessDspFrame();
         }
+    }
+
+    /// <summary>
+    /// Advances the GP/EP DSP engines one frame. A running GP engine absorbs a
+    /// pending mixer block through its scratch mapping and raises the DSP subunit
+    /// service request (ISTS bit3) on a debounced submission wake; the EP engine
+    /// only advances its frame divider here (its FIFO drain needs an S/PDIF sink).
+    /// </summary>
+    private void ProcessDspFrame()
+    {
+        _epFrameDiv++;
+        if (_framesSinceWake < MinWakeGapFrames)
+        {
+            _framesSinceWake++;
+        }
+
+        if (!_gpRunning || !IsStateWordMapped())
+        {
+            return;
+        }
+
+        uint state = _memory.Read32(DspStateWordPhys);
+        if (state != DspStateSubmitPosted && state != DspStateParamsLoaded)
+        {
+            return;
+        }
+
+        _memory.Write32(DspStateWordPhys, 0u);
+        DspAbsorbs++;
+        Log($"dsp-absorb {state}->0 n={DspAbsorbs}");
+        if (state == DspStateSubmitPosted && _framesSinceWake >= MinWakeGapFrames)
+        {
+            _framesSinceWake = 0;
+            RaiseDspService();
+        }
+    }
+
+    /// <summary>
+    /// Reports whether the DSP mixer-block mailbox page is covered by the guest's
+    /// GP scratch (SGE) mapping. The DSP can only touch guest RAM through this
+    /// mapping (xemu gp_scratch_rw), so an unprogrammed title never absorbs.
+    /// </summary>
+    private bool IsStateWordMapped()
+    {
+        uint table = _regs[GpsAddr >> 2];
+        if (table == 0)
+        {
+            return false;
+        }
+
+        uint wantPage = DspStateWordPhys & PageMask;
+        for (int i = 0; i < DspSgeScanEntries; i++)
+        {
+            if ((_memory.Read32(table + (uint)(i * 8)) & PageMask) == wantPage)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void RaiseDspService()
+    {
+        _regs[IsTs >> 2] |= IsTsDspService;
+        DspBit3Raises++;
+        Log($"dsp bit3 raise n={DspBit3Raises}");
+        UpdateIrq();
     }
 
     private void ProcessFrame()
@@ -606,6 +757,15 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
                 // Magic write: store the value into guest memory at FEMEMADDR (xemu apu.c).
                 _memory.Write32(_regs[FemMemAddr >> 2], value);
                 _regs[offset >> 2] = value;
+                break;
+            case GpRst:
+                DspResetWrite(isGp: true, _regs[offset >> 2], value);
+                _regs[offset >> 2] = value;
+                break;
+            case EpRst:
+                DspResetWrite(isGp: false, _regs[offset >> 2], value);
+                _regs[offset >> 2] = value;
+                _epFrameDiv = 0;
                 break;
             default:
                 if (offset >= 0x20000 && WriteVoiceProcessor(offset - 0x20000, value))
@@ -864,6 +1024,52 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
         Log($"voice-off {voice}");
         CompleteVoiceOff(voice, queueIdle: true);
+    }
+
+    /// <summary>
+    /// Tracks GP/EP DSP run-state with xemu's proc_rst_write semantics
+    /// (gp_ep.c): clearing either run bit resets the engine; the rising edge of
+    /// both bootstraps it (program load). A fresh bootstrap is service-eligible.
+    /// </summary>
+    private void DspResetWrite(bool isGp, uint oldValue, uint value)
+    {
+        bool wasRunning = (oldValue & DspRunBits) == DspRunBits;
+        bool running = (value & DspRunBits) == DspRunBits;
+        if (!running)
+        {
+            if (isGp)
+            {
+                _gpRunning = false;
+            }
+            else
+            {
+                _epRunning = false;
+            }
+
+            if (wasRunning)
+            {
+                Log(isGp ? "GP DSP stop" : "EP DSP stop");
+            }
+
+            return;
+        }
+
+        if (wasRunning)
+        {
+            return;
+        }
+
+        if (isGp)
+        {
+            _gpRunning = true;
+        }
+        else
+        {
+            _epRunning = true;
+        }
+
+        _framesSinceWake = MinWakeGapFrames;
+        Log(isGp ? "GP DSP start" : "EP DSP start");
     }
 
     private void VoiceLock(uint voice, bool locked)
