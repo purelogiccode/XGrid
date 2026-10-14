@@ -1,0 +1,45 @@
+{
+  "wave": "example",
+  "baseBranch": "master",
+  "maxParallel": 3,
+  "dataLink": "copy",
+  "serverPort": 4123,
+  "autoAggregate": true,
+  "finalGate": [],
+  "defaults": {
+    "budgetMs": 5400000,
+    "retries": 1
+  },
+  "tasks": [
+    {
+      "id": "alpha",
+      "title": "Independent task A",
+      "prompt": "Describe the work in full detail here. This text is the task body handed to the worker agent.",
+      "acceptance": "Focused proof that the work is done (a test, a counter, a golden comparison).",
+      "dependsOn": []
+    },
+    {
+      "id": "beta",
+      "title": "Independent task B",
+      "prompt": "Second task body. Runs in parallel with alpha when maxParallel >= 2.",
+      "acceptance": "Acceptance evidence for beta.",
+      "dependsOn": []
+    },
+    {
+      "id": "gamma",
+      "title": "Task that needs alpha first",
+      "prompt": "Task body that depends on alpha's result.",
+      "acceptance": "Acceptance evidence for gamma.",
+      "dependsOn": ["alpha"],
+      "merge": true
+    },
+    {
+      "id": "root-cause",
+      "title": "Serial hunt (never parallelized)",
+      "prompt": "A root-cause investigation that must run alone.",
+      "acceptance": "Diagnosis recorded with evidence.",
+      "serial": true,
+      "dependsOn": []
+    }
+  ]
+}

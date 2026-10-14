@@ -135,6 +135,20 @@ green with zero work lost).
    can poll, restart, or close them. A task with no checkpoint return past
    every review point is stuck — close it, record the diagnosis.
 
+**Automation — `tools/wave` (2026-10-14).** The loop above is now also a
+program (Node 24 + opencode SDK; no tmux/WSL): a pull-scheduled worker pool
+keeps N slots busy — an idle slot takes the next ready task *the moment* one
+settles (deps satisfied, `serial` tasks run alone), so fast tasks do not
+wait for slow ones. Each task gets a worktree + `wave/*` branch; the worker
+contract is `wt-data/wave/<id>.result.json` (status/branch/headCommit/
+tests/notes), verified against real git state; budget watchdog + retries
+continue in-session from a continuation inventory. The aggregator merges in
+topo order (`--no-ff`), optionally spawns a resolver session for conflicts,
+runs `finalGate`, and writes `runs/<wave>/report.md`. Usage:
+`npm --prefix tools/wave run wave -- run <plan.json> [--resume]`;
+see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
+(end-to-end smoke-tested: worktree → real session → verified commit → clean).
+
 ## Current state
 
 - Real MCPX ROM -> 1BL -> 2BL -> kernel executes (LLE). Kernel cold-boot init,
