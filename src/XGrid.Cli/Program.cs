@@ -2072,8 +2072,12 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         return args[++index];
     }
 
-    /// <summary>IGpuMemory adapter over the machine's physical address space (backend texture reads).</summary>
-    private sealed class MachineGpuMemory : XGrid.Nv2a.IGpuMemory
+    /// <summary>
+    /// IGpuMemory adapter over the machine's physical address space (backend
+    /// texture reads). Doubles as the present-upload dirty watch handle for
+    /// the GL backend (§132 (a*)).
+    /// </summary>
+    private sealed class MachineGpuMemory : XGrid.Nv2a.IGpuMemory, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
 
@@ -2082,6 +2086,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             _memory = memory;
         }
 
+        public bool PresentDirty => _memory.Ram.PresentDirty;
+
         public uint ReadPhysical(uint address)
         {
             return _memory.Read32(address);
@@ -2089,7 +2095,37 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
 
         public void WritePhysical(uint address, uint value)
         {
-            _memory.Write32(address, value);
+            // Writer identity (§132 finding i): never dirty the presented
+            // frame from this adapter; only real guest writers count.
+            _memory.Ram.BeginGpuWriteSuppression();
+            try
+            {
+                _memory.Write32(address, value);
+            }
+            finally
+            {
+                _memory.Ram.EndGpuWriteSuppression();
+            }
+        }
+
+        public void ArmPresentWatch(uint address, uint length)
+        {
+            _memory.Ram.ArmPresentWatch(address, length);
+        }
+
+        public void DisarmPresentWatch()
+        {
+            _memory.Ram.DisarmPresentWatch();
+        }
+
+        public void MarkPresentDirty()
+        {
+            _memory.Ram.MarkPresentDirty();
+        }
+
+        public void ClearPresentDirty()
+        {
+            _memory.Ram.ClearPresentDirty();
         }
     }
 

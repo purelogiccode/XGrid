@@ -800,7 +800,12 @@ public sealed class XboxMachine : IIdleSkipHost
         }
     }
 
-    private sealed class PhysicalGpuMemory : IGpuMemory
+    /// <summary>
+    /// IGpuMemory adapter over the machine's physical address space (NV2A
+    /// software-twin surface writes). Doubles as the present-upload dirty
+    /// watch handle for a backend attached to this machine (§132 (a*)).
+    /// </summary>
+    private sealed class PhysicalGpuMemory : IGpuMemory, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
 
@@ -809,6 +814,8 @@ public sealed class XboxMachine : IIdleSkipHost
             _memory = memory;
         }
 
+        public bool PresentDirty => _memory.Ram.PresentDirty;
+
         public uint ReadPhysical(uint address)
         {
             return _memory.Read32(address);
@@ -816,7 +823,38 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public void WritePhysical(uint address, uint value)
         {
-            _memory.Write32(address, value);
+            // Writer identity (§132 finding i): the software twin's own
+            // surface writes must not trip the present-upload dirty bit;
+            // only real guest (CPU/device DMA) writers count.
+            _memory.Ram.BeginGpuWriteSuppression();
+            try
+            {
+                _memory.Write32(address, value);
+            }
+            finally
+            {
+                _memory.Ram.EndGpuWriteSuppression();
+            }
+        }
+
+        public void ArmPresentWatch(uint address, uint length)
+        {
+            _memory.Ram.ArmPresentWatch(address, length);
+        }
+
+        public void DisarmPresentWatch()
+        {
+            _memory.Ram.DisarmPresentWatch();
+        }
+
+        public void MarkPresentDirty()
+        {
+            _memory.Ram.MarkPresentDirty();
+        }
+
+        public void ClearPresentDirty()
+        {
+            _memory.Ram.ClearPresentDirty();
         }
     }
 
