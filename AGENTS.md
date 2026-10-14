@@ -393,34 +393,39 @@ green with zero work lost).
   T4 smoke PASS 7/7 in 03:54. T5 clamp-6/7 MERGED (safe choice, zero
   head movement, +1 test). BOSS reclaimed 84.5 GB scratch qcow2s (C:
   4.8 → 89.3 GB free). **1268 tests.**
+- **Wave 11 (2026-10-14, §§131–133; four tasks, all green, one merge).**
+  T1 JIT slice 2 MERGED (§131: batched TLB tallies, windowed top-64
+  heads — overflow 23%→0.3%, `--fetch-fast` default-off; **triangle
+  1.35× / menu 1.30× Msteps/s**, both SHAs + counters exact, flag-off
+  byte-identical; +9 tests). Leg (d) decode cache DEFERRED with full
+  handoff in §131 (est. 1.5–2× the (a–c) budget — next wave's lead).
+  T2 staleness design FILED (§132: recommendation (a*) dirty-bit in
+  `PhysicalMemory` + synthetic-harness gate). T3 smoke PASS 7/7 in
+  03:51. T4 merged-master goldens PASS both legs (post-wave-10 gap
+  closed). **1277 tests.**
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1268 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1277 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — JIT slice 2 + non-empty-FBO staleness design + nxdk toolchain.
+## Next session — JIT decode cache + (a*) dirty-bit + operator items.
 
-1. **WAVE DONE (§§128–130).** Profiler + present-upload + clamp-6/7
-   merged (BOSS §-union + dependency rejection at merge); sample matrix
-   set with standing recipes; smoke green; 84.5 GB reclaimed.
-   **1268 tests.**
+1. **WAVE DONE (§§131–133).** Slice-2 speedup merged (1.30–1.35×,
+   translates/insn 15.5→1.4); staleness design filed; smoke + both
+   merged-master goldens green. **1277 tests.**
 2. **Standing operator rule: NO real Xbox games.** All title work uses
-   `data/test-samples/`. 007/real-game probes deferred; §121 live
-   evidence stands pre-merge only.
-3. **JIT slice 2 (§128 findings):** (a) windowed/top-N head tracking
-   (first-wins saturates — 128 BIOS heads vs 17–23% overflow); (b) batch
-   tallies (`NoteTlbHits(int)` — ~18 dispatches/insn cost +5.5%);
-   (c) fetch fast path treating 4 MB large-page residency as whole-page
-   win; (d) then decode cache + conservative invalidation (§126 §3).
-   Acceptance = Msteps/s ratio up, both SHAs + suite green, flag-off
-   byte-identical.
-4. **Present-upload staleness design (§129 open point):** `_fbo != 0`
-   can't distinguish GL-rendered (serve) from CPU-blitted (stale)
-   presents — options: dirty-watch via bus, fingerprint probe, xemu-style
-   surface cache; survivors: never mix, no async, headless only.
-   **Swapchain/windowing decision (operator)** still pending.
-5. **nxdk toolchain provisioning (operator/host):** mesh (vertex buffers
-   + textures) is the next GPU step but sources are unbuildable here;
-   needs nxdk SDK + mesh `texture.h`/`verts.h` from upstream.
+   `data/test-samples/`. 007/real-game probes deferred.
+3. **JIT leg (d) — decode cache (§131 handoff):** `DecodedInstruction`
+   block cache, conservative invalidation (device adapters need no
+   changes — private shims; watch A/D over-flush, linear-key/physical
+   reverse-map, #UD marker, table cap, IRQ/step transparency,
+   debug-verify mode); acceptance = ratio UP again, both SHAs + suite
+   green, flag-off byte-identical, decode-avoided counter proves it.
+4. **GL leg — (a*) dirty-bit (§132):** bit in `PhysicalMemory`,
+   suppress-scope on the two `IGpuMemory` adapters, synthetic-harness
+   gate (serve / upload / alias-blit / save-load legs) + menu/tri
+   goldens unchanged. **Swapchain/windowing decision (operator)** still
+   pending. **nxdk toolchain (operator/host)** still the mesh blocker.
+5. ktest smoke stays the standing gate.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

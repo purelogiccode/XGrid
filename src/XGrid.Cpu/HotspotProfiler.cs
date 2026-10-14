@@ -13,7 +13,13 @@ namespace XGrid.Cpu;
 ///
 /// Bounded following the §119 precedent: code heads are capped at
 /// <see cref="MaxTrackedHeads"/> entries with <see cref="HeadsOverflow"/>
-/// counting visits to heads beyond the cap. The profiler is host-side
+/// counting visits to heads beyond the cap. The cap alone saturates on a
+/// full boot (first-seen BIOS/2BL heads fill it while steady-state hot
+/// blocks overflow, §128 finding 3), so the table is windowed (§131):
+/// every <see cref="HeadWindowInstructions"/> observed instructions the
+/// bottom half by count is evicted, letting steady-state hot blocks displace
+/// one-shot early-boot heads. Windows are instruction-count based, hence
+/// deterministic for a fixed run. The profiler is host-side
 /// measurement state: it is not part of the guest and is untouched by
 /// <c>XboxCpu.Reset</c> and snapshot save/load.
 /// </summary>
@@ -22,8 +28,18 @@ public sealed class HotspotProfiler : IHotspotObserver
     /// <summary>Maximum distinct code heads tracked (128, §119 precedent).</summary>
     public const int MaxTrackedHeads = 128;
 
+    /// <summary>
+    /// Observed instructions per head-tracking window (§131). At each window
+    /// boundary the table is truncated to <see cref="HeadWindowRetained"/>.
+    /// </summary>
+    public const int HeadWindowInstructions = 1000000;
+
+    /// <summary>Heads retained at each window boundary (top half by count).</summary>
+    public const int HeadWindowRetained = MaxTrackedHeads / 2;
+
     private readonly ulong[] _mnemonicCounts = new ulong[MaxMnemonicIndex() + 1];
     private readonly Dictionary<uint, ulong> _heads = new();
+    private int _windowFill;
 
     /// <summary>Gets the total number of executed instructions observed.</summary>
     public ulong TotalInstructions { get; private set; }
@@ -37,11 +53,24 @@ public sealed class HotspotProfiler : IHotspotObserver
     /// <summary>Gets the number of distinct code heads currently tracked.</summary>
     public int TrackedHeadCount => _heads.Count;
 
+    /// <summary>Gets the number of elapsed head-tracking windows.</summary>
+    public ulong HeadWindows { get; private set; }
+
+    /// <summary>Gets the total number of head entries evicted at window boundaries.</summary>
+    public ulong HeadEvictions { get; private set; }
+
     /// <summary>Gets the total number of instruction-fetch windows observed.</summary>
     public ulong Fetches { get; private set; }
 
     /// <summary>Gets the number of fetch windows spanning a 4 KB page boundary.</summary>
     public ulong FetchCrossPage { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fetch windows served by the slow per-byte path
+    /// while the fetch fast path was enabled (§131 leg (c)). Fast-path
+    /// coverage is <see cref="Fetches"/> minus this count.
+    /// </summary>
+    public ulong FetchSlowFallbacks { get; private set; }
 
     /// <summary>Gets the number of SoftTLB lookup hits.</summary>
     public ulong TlbHits { get; private set; }
@@ -71,6 +100,12 @@ public sealed class HotspotProfiler : IHotspotObserver
     public void Observe(in DecodedInstruction instruction, uint eipBefore, uint eipAfter)
     {
         TotalInstructions++;
+        if (++_windowFill >= HeadWindowInstructions)
+        {
+            _windowFill = 0;
+            EvictColdHeads();
+        }
+
         int index = (int)instruction.Mnemonic;
         if ((uint)index < (uint)_mnemonicCounts.Length)
         {
@@ -96,6 +131,44 @@ public sealed class HotspotProfiler : IHotspotObserver
         }
     }
 
+    /// <summary>
+    /// Truncates the head table to the top <see cref="HeadWindowRetained"/>
+    /// entries by count (§131 leg (b)). Survivors keep their cumulative
+    /// counts; dropped heads re-enter at 1 on their next visit, so a head
+    /// that is hot in steady state always displaces one-shot early heads
+    /// within a few windows.
+    /// </summary>
+    private void EvictColdHeads()
+    {
+        HeadWindows++;
+        if (_heads.Count <= HeadWindowRetained)
+        {
+            return;
+        }
+
+        var keep = new HashSet<uint>();
+        foreach ((uint eip, ulong _) in TopHeads(HeadWindowRetained))
+        {
+            keep.Add(eip);
+        }
+
+        var drop = new List<uint>();
+        foreach (uint eip in _heads.Keys)
+        {
+            if (!keep.Contains(eip))
+            {
+                drop.Add(eip);
+            }
+        }
+
+        foreach (uint eip in drop)
+        {
+            _heads.Remove(eip);
+        }
+
+        HeadEvictions += (ulong)drop.Count;
+    }
+
     /// <inheritdoc />
     public void NoteFetch(bool crossesPage)
     {
@@ -116,6 +189,22 @@ public sealed class HotspotProfiler : IHotspotObserver
     public void NoteTlbMiss()
     {
         TlbMisses++;
+    }
+
+    /// <inheritdoc />
+    public void NoteTlbHits(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        TlbHits += (ulong)count;
+    }
+
+    /// <inheritdoc />
+    public void NoteTlbMisses(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        TlbMisses += (ulong)count;
     }
 
     /// <inheritdoc />
@@ -149,6 +238,12 @@ public sealed class HotspotProfiler : IHotspotObserver
     public void NoteSplitAccess()
     {
         SplitAccesses++;
+    }
+
+    /// <inheritdoc />
+    public void NoteFetchSlow()
+    {
+        FetchSlowFallbacks++;
     }
 
     /// <summary>Returns the execution count for one mnemonic (0 when out of range).</summary>
@@ -208,14 +303,18 @@ public sealed class HotspotProfiler : IHotspotObserver
         double total = TotalInstructions == 0 ? 1.0 : TotalInstructions;
         double translates = (TlbHits + TlbMisses) == 0 ? 1.0 : TlbHits + TlbMisses;
         double accesses = TotalDataAccesses == 0 ? 1.0 : TotalDataAccesses;
+        double heads = TotalHeadVisits == 0 ? 1.0 : TotalHeadVisits;
 
         writer.WriteLine(FormattableString.Invariant($"# hotspot top={topRows} total={TotalInstructions}"));
         writer.WriteLine(FormattableString.Invariant($"summary,totalInstructions,{TotalInstructions},1.000000"));
         writer.WriteLine(FormattableString.Invariant($"summary,headVisits,{TotalHeadVisits},{TotalHeadVisits / total:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,trackedHeads,{TrackedHeadCount},{TrackedHeadCount / (double)MaxTrackedHeads:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,headOverflowVisits,{HeadsOverflow},{HeadsOverflow / total:F6}"));
+        writer.WriteLine(FormattableString.Invariant($"summary,headWindows,{HeadWindows},{(double)HeadWindows * HeadWindowInstructions / total:F6}"));
+        writer.WriteLine(FormattableString.Invariant($"summary,headEvictions,{HeadEvictions},{HeadEvictions / heads:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,fetches,{Fetches},{Fetches / total:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,fetchCrossPage,{FetchCrossPage},{FetchCrossPage / (Fetches == 0 ? 1.0 : Fetches):F6}"));
+        writer.WriteLine(FormattableString.Invariant($"summary,fetchSlowFallbacks,{FetchSlowFallbacks},{FetchSlowFallbacks / (Fetches == 0 ? 1.0 : Fetches):F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,tlbHits,{TlbHits},{TlbHits / translates:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,tlbMisses,{TlbMisses},{TlbMisses / translates:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,dataReadsRam,{DataReadsRam},{DataReadsRam / accesses:F6}"));

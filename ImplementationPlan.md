@@ -2994,7 +2994,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Not started | |
 
-Current test baseline: **1268 tests passing** (39 Core, 429 Cpu, 55 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 71 GpuGl);
+Current test baseline: **1277 tests passing** (39 Core, 438 Cpu, 55 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 71 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
 
 ## Project completion assessment (2026-10-12)
@@ -3052,23 +3052,17 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — JIT slice 2 + non-empty-FBO staleness design + nxdk toolchain.**
-**WAVE DONE (§§128–130; five tasks, all green, three merges).**
-T1 JIT profiler MERGED (§128: nullable `IHotspotObserver` at `Step()`
-line 106, mnemonic/PC/TLB counters, `--hotspot` switch; flag-off AND
-flag-on byte-identical on menu+triangle; hook cost +5.5% — the §126
-"under 3%" estimate disproven, batching noted for slice 2; +5 tests).
-T2 present-upload MERGED (§129: `_fbo == 0` branch builds the FBO from
-guest RAM via `IGpuMemory`, full-frame replace, never mix; goldens
-unchanged; `presentUploads=0` on menu/tri is correct — the live shape
-needs 007, forbidden; +12 tests). BOSS fixes at merge: §128/§129
-§-union, and T2's new `Xunit.SkippableFact` dependency REJECTED per
-the sources.md rule (plain `[Fact]` + WGL-guard return instead). T3
-sample matrix set (triangle SHA exact, smoke PASS; **nxdk sources
-BLOCKED — no toolchain on host**, the binding missing piece for mesh).
-T4 smoke PASS 7/7 in 03:54. T5 clamp-6/7 MERGED (safe choice, zero
-head movement, +1 test). BOSS reclaimed 84.5 GB scratch qcow2s (C:
-4.8 → 89.3 GB free). **1268 tests.**
+**NEXT SESSION — JIT decode cache + (a*) dirty-bit + operator items.**
+**WAVE DONE (§§131–133; four tasks, all green, one merge).**
+T1 JIT slice 2 MERGED (§131: batched TLB tallies, windowed top-64
+heads — overflow 23%→0.3%, `--fetch-fast` default-off; **triangle
+1.35× / menu 1.30× Msteps/s**, both SHAs + counters exact, flag-off
+byte-identical; +9 tests). Leg (d) decode cache DEFERRED with full
+handoff in §131 (est. 1.5–2× the (a–c) budget — next wave's lead).
+T2 staleness design FILED (§132: recommendation (a*) dirty-bit in
+`PhysicalMemory` + synthetic-harness gate). T3 smoke PASS 7/7 in
+03:51. T4 merged-master goldens PASS both legs (post-wave-10 gap
+closed). **1277 tests.**
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
