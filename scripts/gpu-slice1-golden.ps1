@@ -32,12 +32,13 @@ $baseArgs = @(
 )
 
 Write-Host "== sw run =="
-& dotnet $cli @baseArgs --gpu sw --frame $swBmp 2>&1 | Tee-Object -FilePath $swLog | Out-Null
+$swWall = Measure-Command { & dotnet $cli @baseArgs --gpu sw --frame $swBmp 2>&1 | Tee-Object -FilePath $swLog | Out-Null }
 if ($LASTEXITCODE -ne 0) { Write-Error "sw run failed exit=$LASTEXITCODE"; exit 1 }
 
 Write-Host "== gl run =="
-& dotnet $cli @baseArgs --gpu gl --frame $glBmp 2>&1 | Tee-Object -FilePath $glLog | Out-Null
+$glWall = Measure-Command { & dotnet $cli @baseArgs --gpu gl --frame $glBmp 2>&1 | Tee-Object -FilePath $glLog | Out-Null }
 if ($LASTEXITCODE -ne 0) { Write-Error "gl run failed exit=$LASTEXITCODE"; exit 1 }
+Write-Host ("WALL: sw {0:F1}s gl {1:F1}s" -f $swWall.TotalSeconds, $glWall.TotalSeconds)
 
 function Get-LogLine([string]$path, [string]$pattern) {
     Select-String -Path $path -Pattern $pattern | Select-Object -First 1 -ExpandProperty Line
