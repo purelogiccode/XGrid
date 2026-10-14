@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -49,6 +50,10 @@ public sealed class PgraphBackendSeamTests
 
         public uint LastClipW { get; private set; }
 
+        public uint LastFlipSurfaceAddress { get; private set; }
+
+        public List<uint> FlipSurfaceAddresses { get; } = new();
+
         public void Method(uint subchannel, uint method, uint parameter)
         {
             _ = subchannel;
@@ -71,7 +76,8 @@ public sealed class PgraphBackendSeamTests
 
         public void Flip(in PgraphSurfaceRecord record)
         {
-            _ = record;
+            LastFlipSurfaceAddress = record.SurfaceAddress;
+            FlipSurfaceAddresses.Add(record.SurfaceAddress);
             Flips++;
         }
 
@@ -114,7 +120,14 @@ public sealed class PgraphBackendSeamTests
     /// <summary>
     /// Writes the method stream at 0x8000 (clear rects in these tests fill
     /// physical 0..0x27FF, which would wipe a stream parked at 0) and kicks
-    /// the pusher with GET at the same base.
+    /// the pusher with GET at the same base. The stream ends with a
+    /// jump-to-PUT word so the stream itself executes exactly once (a jump
+    /// elsewhere would walk whatever bytes lie past the stream and
+    /// re-execute it until the word cap). Residual artifact, documented not
+    /// fixed: the GET kick runs while PUT is still zero, so after the jump
+    /// the pusher walks to the DMA limit and suspends with Protection (the
+    /// PUT kick is then a no-op) — per-stream counts are exact, but
+    /// PusherError is nonzero and must not be asserted here.
     /// </summary>
     private static void PushMethods(Nv2AMmio nv2A, ArrayMemory memory, params (uint Method, uint Parameter)[] methods)
     {
@@ -127,9 +140,9 @@ public sealed class PgraphBackendSeamTests
             address += 8;
         }
 
-        memory.WritePhysical(address, 0x00001001u);
+        memory.WritePhysical(address, (address + 4u) | 1u);
         nv2A.Write(Base + 0x800044u, 4, streamBase);
-        nv2A.Write(Base + 0x800040u, 4, address);
+        nv2A.Write(Base + 0x800040u, 4, address + 4u);
     }
 
     /// <summary>The ElementDraw_RunsVertexProgramAndRasterizes stream (existing golden).</summary>
@@ -239,6 +252,60 @@ public sealed class PgraphBackendSeamTests
         Assert.True(backend.Methods >= 9);
         Assert.Equal(1uL, nv2A.ClearsExecuted);
         Assert.Equal(1uL, nv2A.FramesPresented);
+    }
+
+    [Fact]
+    public void Flip_CarriesResolvedSurfaceAddress()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new RecordingBackend();
+        nv2A.Backend = backend;
+
+        // RAMHT at RAMIN 0x10000; color context handle 9 -> instance 0x11150
+        // with base 0x8000 (same recipe as the pusher DMA-context test).
+        nv2A.Write(Base + 0x2210u, 4, 0x00000100u);
+        nv2A.Write(Base + 0x711150u, 4, 0x0000003Du);
+        nv2A.Write(Base + 0x711154u, 4, 0x0000FFFFu);
+        nv2A.Write(Base + 0x711158u, 4, 0x00008003u);
+        nv2A.Write(Base + 0x710000u + 9u * 8u, 4, 0x00000009u);
+        nv2A.Write(Base + 0x710000u + 9u * 8u + 4u, 4, 0x80001115u);
+
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0194u, 0x00000009u), // color context -> DMA base 0x8000
+            (0x0210u, 0x00001000u), // color offset
+            (0x012Cu, 0u));         // flip increment write
+
+        Assert.Equal(1, backend.Flips);
+        Assert.Equal(0x9000u, backend.LastFlipSurfaceAddress);
+        Assert.Equal(1uL, nv2A.FramesPresented);
+        Assert.False(nv2A.PusherCapped);
+    }
+
+    [Fact]
+    public void Flip_SurfaceAddressTracksOffsetAcrossFlips()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new RecordingBackend();
+        nv2A.Backend = backend;
+
+        // No DMA context (base resolves to 0): the record carries the live
+        // color offset at each flip.
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0210u, 0x00003000u),
+            (0x012Cu, 0u),
+            (0x0210u, 0x00003040u),
+            (0x012Cu, 0u));
+
+        Assert.Equal(2, backend.Flips);
+        Assert.Equal(2, backend.FlipSurfaceAddresses.Count);
+        Assert.Equal(0x3000u, backend.FlipSurfaceAddresses[0]);
+        Assert.Equal(0x3040u, backend.FlipSurfaceAddresses[1]);
+        Assert.Equal(2uL, nv2A.FramesPresented);
+        Assert.False(nv2A.PusherCapped);
     }
 
     [Fact]
