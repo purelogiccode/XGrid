@@ -93,6 +93,18 @@ public sealed class HotspotProfiler : IHotspotObserver
     /// <summary>Gets the number of cross-page split data accesses.</summary>
     public ulong SplitAccesses { get; private set; }
 
+    /// <summary>
+    /// Gets the number of instructions served by the decode cache (§131 leg
+    /// (d)); zero for every flag-off run, so reports stay byte-identical.
+    /// </summary>
+    public ulong DecodeCacheHits { get; private set; }
+
+    /// <summary>
+    /// Gets the number of instructions that missed the decode cache and were
+    /// decoded (§131 leg (d)); zero for every flag-off run.
+    /// </summary>
+    public ulong DecodeCacheMisses { get; private set; }
+
     /// <summary>Gets the total number of translated data accesses (RAM + MMIO, reads + writes).</summary>
     public ulong TotalDataAccesses => DataReadsRam + DataWritesRam + DataReadsMmio + DataWritesMmio;
 
@@ -246,6 +258,18 @@ public sealed class HotspotProfiler : IHotspotObserver
         FetchSlowFallbacks++;
     }
 
+    /// <inheritdoc />
+    public void NoteDecodeCacheHit()
+    {
+        DecodeCacheHits++;
+    }
+
+    /// <inheritdoc />
+    public void NoteDecodeCacheMiss()
+    {
+        DecodeCacheMisses++;
+    }
+
     /// <summary>Returns the execution count for one mnemonic (0 when out of range).</summary>
     public ulong CountFor(Mnemonic mnemonic)
     {
@@ -322,6 +346,15 @@ public sealed class HotspotProfiler : IHotspotObserver
         writer.WriteLine(FormattableString.Invariant($"summary,dataReadsMmio,{DataReadsMmio},{DataReadsMmio / accesses:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,dataWritesMmio,{DataWritesMmio},{DataWritesMmio / accesses:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,splitAccesses,{SplitAccesses},{SplitAccesses / accesses:F6}"));
+
+        // §131 leg (d): emitted only when the decode cache ran, so flag-off
+        // reports remain byte-identical to the §126/§131 baselines.
+        if (DecodeCacheHits != 0 || DecodeCacheMisses != 0)
+        {
+            double decodes = DecodeCacheHits + DecodeCacheMisses;
+            writer.WriteLine(FormattableString.Invariant($"summary,decodeCacheHits,{DecodeCacheHits},{DecodeCacheHits / decodes:F6}"));
+            writer.WriteLine(FormattableString.Invariant($"summary,decodeCacheMisses,{DecodeCacheMisses},{DecodeCacheMisses / decodes:F6}"));
+        }
 
         foreach ((Mnemonic mnemonic, ulong hits) in TopMnemonics(topRows))
         {

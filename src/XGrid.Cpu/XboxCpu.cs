@@ -19,6 +19,12 @@ public sealed partial class XboxCpu
         Io = ioBus ?? NullIoBus.Instance;
         Context = new XboxContext();
         Mmu = new Mmu(Context, memory);
+
+        // Every mapping-change site funnels through Mmu.Flush/FlushPage (CR
+        // writes, INVD/WBINVD, INVLPG, Reset, snapshot load); the decode-cache
+        // full flush rides the same choke point (null-check no-op when off).
+        Mmu.OnFlush = OnMmuFlush;
+        Mmu.OnFlushPage = OnMmuFlushPage;
     }
 
     /// <summary>Gets the architectural state.</summary>
@@ -110,12 +116,21 @@ public sealed partial class XboxCpu
             }
 
             Span<byte> buffer = stackalloc byte[Decoder.MaxInstructionLength];
-            Fetch(buffer);
-
-            DecodedInstruction instruction = Decoder.Decode(
-                buffer,
-                Context.DefaultOperandSize,
-                Context.DefaultAddressSize);
+            DecodedInstruction instruction;
+            if (_decodeCache is null)
+            {
+                // Flag off (default): byte-identical legacy path.
+                Fetch(buffer);
+                instruction = Decoder.Decode(
+                    buffer,
+                    Context.DefaultOperandSize,
+                    Context.DefaultAddressSize);
+                _decodeCount++;
+            }
+            else
+            {
+                instruction = FetchDecodeCached(_decodeCache, buffer);
+            }
 
             if (!instruction.IsValid)
             {
@@ -201,12 +216,7 @@ public sealed partial class XboxCpu
         IHotspotObserver? observer = _hotspot;
         if (observer is null)
         {
-            for (int i = 0; i < buffer.Length; i++)
-            {
-                uint linear = segmentBase + Context.Eip + (uint)i;
-                buffer[i] = Memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
-            }
-
+            FetchLegacy(segmentBase, buffer);
             return;
         }
 
@@ -216,6 +226,19 @@ public sealed partial class XboxCpu
         }
 
         FetchCounted(observer, segmentBase, buffer, crossesPage);
+    }
+
+    /// <summary>
+    /// Flag-off fetch loop (byte-identical legacy per-byte translate + read;
+    /// extracted verbatim so the decode-cache miss path shares it).
+    /// </summary>
+    private void FetchLegacy(uint segmentBase, Span<byte> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            uint linear = segmentBase + Context.Eip + (uint)i;
+            buffer[i] = Memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
+        }
     }
 
     /// <summary>
@@ -230,7 +253,8 @@ public sealed partial class XboxCpu
     /// path always faults on byte 0 with no prior access notes — exactly
     /// what the single translate reports.
     /// </summary>
-    private void FetchFast(uint fetchLinear, Span<byte> buffer)
+    /// <returns>The physical address of fetch-window byte 0 (decode cache fill, §131 leg (d)).</returns>
+    private uint FetchFast(uint fetchLinear, Span<byte> buffer)
     {
         _hotspot?.NoteFetch(false);
         uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted, out uint errorCode);
@@ -245,6 +269,8 @@ public sealed partial class XboxCpu
             _idle?.NoteAccess(physical, isWrite: false, isInstruction: true);
             buffer[i] = Memory.Read8(physical);
         }
+
+        return basePhysical;
     }
 
     /// <summary>
@@ -1055,6 +1081,7 @@ public sealed partial class XboxCpu
                 uint physical = TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false);
                 _hotspot?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(physical));
                 Memory.Write8(physical, (byte)(value >> (8 * i)));
+                NoteStorePhysical(physical, 8);
             }
 
             return;
@@ -1077,6 +1104,7 @@ public sealed partial class XboxCpu
 
     private void RawWrite(uint address, int size, uint value)
     {
+        NoteStorePhysical(address, size);
         switch (size)
         {
             case 8:
@@ -1247,10 +1275,25 @@ public sealed partial class XboxCpu
             baseAddress = (uint)selector << 4;
         }
 
+        // Decode-cache invalidation (§131 leg (d)): the cache is keyed by
+        // linear fetch address (Cs base + Eip) and validated against the
+        // operand/address-size defaults derived from CS.D/B, so a reload that
+        // keeps base and D/B identical cannot change any cached decode —
+        // including the exact Eip of a cached #UD marker. Only a changed base
+        // or D/B flushes (CR0.PE is covered by the CR-write flush;
+        // SYSENTER/IRET/interrupt paths all funnel through here).
+        bool csChanged = segment == SegmentRegister.Cs
+            && (Context.GetSegmentBase(SegmentRegister.Cs) != baseAddress
+                || Context.CodeSegment32 != code32);
+
         Context.SetSegment(segment, selector, baseAddress);
         if (segment == SegmentRegister.Cs)
         {
             Context.CodeSegment32 = code32;
+            if (csChanged)
+            {
+                _decodeCache?.Flush();
+            }
         }
     }
 
@@ -2192,6 +2235,7 @@ public sealed partial class XboxCpu
     {
         if (!Mmu.IsEnabled)
         {
+            NoteStorePhysical(address, 64);
             Memory.Write32(address, (uint)value);
             Memory.Write32(address + 4, (uint)(value >> 32));
             return;
@@ -2200,6 +2244,7 @@ public sealed partial class XboxCpu
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
+            NoteStorePhysical(physical, 64);
             Memory.Write32(physical, (uint)value);
             Memory.Write32(physical + 4, (uint)(value >> 32));
             return;
@@ -2207,8 +2252,9 @@ public sealed partial class XboxCpu
 
         for (int i = 0; i < 8; i++)
         {
-            Memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false),
-                (byte)(value >> (8 * i)));
+            uint physical = TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false);
+            Memory.Write8(physical, (byte)(value >> (8 * i)));
+            NoteStorePhysical(physical, 8);
         }
     }
 
@@ -2241,10 +2287,13 @@ public sealed partial class XboxCpu
         {
             if (Mmu.IsEnabled)
             {
-                Memory.Write8(TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false), source[i]);
+                uint physical = TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false);
+                Memory.Write8(physical, source[i]);
+                NoteStorePhysical(physical, 8);
             }
             else
             {
+                NoteStorePhysical(address + (uint)i, 8);
                 Memory.Write8(address + (uint)i, source[i]);
             }
         }

@@ -1,3 +1,4 @@
+using System;
 using XGrid.Memory;
 
 namespace XGrid.Cpu;
@@ -8,9 +9,19 @@ namespace XGrid.Cpu;
 /// </summary>
 public sealed class Mmu
 {
+    /// <summary>
+    /// Physical pages eligible for page-table tracking: every base-RAM page
+    /// in every real configuration (same bound as <c>DecodeCache</c>; page
+    /// tables above it are not tracked — they do not occur in practice).
+    /// </summary>
+    private const int TrackedPages = 0x20000000 >> 12;
+
+    private const int TrackedPageWords = TrackedPages / 64;
+
     private readonly XboxContext _context;
     private readonly IMemoryBus _memory;
     private readonly SoftTlb _tlb = new();
+    private ulong[]? _pageTablePages;
 
     /// <summary>Creates an MMU over the given context and physical bus.</summary>
     public Mmu(XboxContext context, IMemoryBus memory)
@@ -27,6 +38,45 @@ public sealed class Mmu
     /// </summary>
     public IHotspotObserver? Observer { get; set; }
 
+    /// <summary>
+    /// Gets or sets a hook invoked after the whole TLB is flushed (every
+    /// mapping-change site funnels through <see cref="Flush"/>: CR0/CR3/CR4
+    /// writes, INVD/WBINVD, Reset, snapshot load). The decode cache (§131 leg
+    /// (d)) uses it for its full flush; null (default) means no hook.
+    /// </summary>
+    public Action? OnFlush { get; set; }
+
+    /// <summary>
+    /// Gets or sets a hook invoked after one TLB page is flushed (INVLPG).
+    /// The decode cache conservatively full-flushes on it; null (default)
+    /// means no hook.
+    /// </summary>
+    public Action<uint>? OnFlushPage { get; set; }
+
+    /// <summary>
+    /// Gets or sets page-table-page tracking (§131 leg (d)): when enabled,
+    /// every page-table walk records the physical pages of the PDE (and PTE)
+    /// it reads so the decode cache can full-flush when the guest writes one.
+    /// Off (default): no recording, zero behavior change. Cleared by
+    /// <see cref="Flush"/> together with the TLB (a new epoch re-records on
+    /// the next walks).
+    /// </summary>
+    public bool PageTableTrackingEnabled
+    {
+        get => _pageTablePages is not null;
+        set
+        {
+            if (value)
+            {
+                _pageTablePages ??= new ulong[TrackedPageWords];
+            }
+            else
+            {
+                _pageTablePages = null;
+            }
+        }
+    }
+
     /// <summary>Gets whether paging is active (CR0.PE and CR0.PG).</summary>
     public bool IsEnabled => (_context.Cr0 & ControlRegisterBits.Cr0Paging) != 0 && _context.IsProtectedMode;
 
@@ -34,13 +84,45 @@ public sealed class Mmu
     public void Flush()
     {
         _tlb.Flush();
+        if (_pageTablePages is not null)
+        {
+            Array.Clear(_pageTablePages);
+        }
+
+        OnFlush?.Invoke();
     }
 
     /// <summary>Invalidates the TLB entry for one virtual address.</summary>
     public void FlushPage(uint virtualAddress)
     {
         _tlb.FlushPage(virtualAddress >> 12);
+        OnFlushPage?.Invoke(virtualAddress);
     }
+
+    /// <summary>
+    /// Returns whether the given physical page (address >> 12) was observed as
+    /// a page-table page in the current flush epoch. Guest stores to such a
+    /// page may remap other cached pages, so the decode cache full-flushes on
+    /// them (over-flush is sound; §131 gotcha i — the MMU's own A/D-bit writes
+    /// never reach the CPU store hooks, so they cannot false-trigger this).
+    /// </summary>
+    public bool IsPageTablePage(uint physicalPage)
+    {
+        ulong[]? pages = _pageTablePages;
+        return pages is not null
+            && physicalPage < TrackedPages
+            && (pages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
+    }
+
+    private void TrackPageTablePage(uint physicalPage)
+    {
+        ulong[]? pages = _pageTablePages;
+        if (pages is not null && physicalPage < TrackedPages)
+        {
+            pages[physicalPage >> 6] |= 1UL << (int)(physicalPage & 63);
+        }
+    }
+
 
     /// <summary>Translates a linear address to a physical address.</summary>
     /// <returns>The physical address, or zero when <paramref name="faulted"/> is true.</returns>
@@ -130,6 +212,7 @@ public sealed class Mmu
         }
 
         uint pageDirectoryEntryAddress = (_context.Cr3 & 0xFFFFF000u) + ((linearAddress >> 22) & 0x3FFu) * 4u;
+        TrackPageTablePage(pageDirectoryEntryAddress >> 12);
         uint pageDirectoryEntry = _memory.Read32(pageDirectoryEntryAddress);
         if ((pageDirectoryEntry & 1u) == 0)
         {
@@ -158,6 +241,7 @@ public sealed class Mmu
         }
 
         uint pageTableEntryAddress = (pageDirectoryEntry & 0xFFFFF000u) + ((linearAddress >> 12) & 0x3FFu) * 4u;
+        TrackPageTablePage(pageTableEntryAddress >> 12);
         uint pageTableEntry = _memory.Read32(pageTableEntryAddress);
         if ((pageTableEntry & 1u) == 0)
         {
