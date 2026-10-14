@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Silk.NET.Core.Contexts;
@@ -118,10 +119,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // reallocations with prior content (grow / zeta change — content is
     // preserved by blit except depth on a zeta format change, counted in
     // _fboZetaDrops); _clipXYNonZero counts draws/clears whose clip window
-    // origin is not (0,0) (the readback origin assumption).
+    // origin is not (0,0) (the readback origin assumption); _flipEmpty
+    // counts flips with no backend-rendered content yet (no draw/clear has
+    // created the FBO — e.g. CPU-blitted FMV presents, which the backend
+    // must not mix software pixels into, so no frame is served).
     private long _fboReallocs;
     private long _fboZetaDrops;
     private long _clipXYNonZero;
+    private long _flipEmpty;
+    private GlBackendTimings _timings;
     private int _perspective;
     private float _invAw;
     private float _invBw;
@@ -228,7 +234,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero}]");
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty}]");
+            _timings.AppendTo(sb);
             if (_fatalError is not null)
             {
                 sb.Append(CultureInfo.InvariantCulture, $" fatal=\"{_fatalError}\"");
@@ -257,7 +264,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         try
         {
+            long start = Stopwatch.GetTimestamp();
             DrawCore(info);
+            _timings.AddDraw(Stopwatch.GetElapsedTime(start));
         }
         catch (Exception exception)
         {
@@ -278,7 +287,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         try
         {
+            long start = Stopwatch.GetTimestamp();
             ClearCore(info);
+            _timings.AddClear(Stopwatch.GetElapsedTime(start));
         }
         catch (Exception exception)
         {
@@ -353,6 +364,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _fboReallocs = 0;
         _fboZetaDrops = 0;
         _clipXYNonZero = 0;
+        _flipEmpty = 0;
+        _timings.Reset();
     }
 
     /// <inheritdoc />
@@ -565,7 +578,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         if (_fbo == 0)
         {
             // Nothing rendered yet — no backend frame (honest gap, never
-            // mixed with software pixels).
+            // mixed with software pixels). Counted so CPU-blitted segments
+            // (007 FMV) show their signature in diag[flipEmpty].
+            _flipEmpty++;
             _readback = null;
             _readbackWidth = 0;
             _readbackHeight = 0;
@@ -586,6 +601,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         uint height = record.Height;
         byte[] rgba = new byte[width * height * 4];
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        long readbackStart = Stopwatch.GetTimestamp();
         unsafe
         {
             fixed (byte* pRgba = rgba)
@@ -593,6 +609,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 _gl.ReadPixels(0, 0, width, height, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
             }
         }
+
+        _timings.AddReadback(Stopwatch.GetElapsedTime(readbackStart));
 
         // GL rows come back bottom-up = guest top-down (our y-flip puts
         // guest y=0 at the FBO bottom), so only R/B swap is needed.

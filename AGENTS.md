@@ -313,36 +313,47 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   (V1 ratios were contention-inflated). **kernel-test-suite UNBLOCKED (§120):
   378/378 tests execute, 53.7 MB log captured** — root causes: guest shellcode
   was ANSI-vs-UNICODE (its bug) + a real XGrid `f5 cmc` #UD gap in the kernel
-  64-bit math chain (fixed, +1 test); xemu differential: XGrid AHEAD on
-  NtResume/NtSuspendThread, 3 faithful failures. **1216 tests.**
+   64-bit math chain (fixed, +1 test); xemu differential: XGrid AHEAD on
+   NtResume/NtSuspendThread, 3 faithful failures. **1216 tests.**
+- **Wave 8 (2026-10-14, §§121–124; survived a host power-loss mid-run).**
+  APU GP/EP DSP bridge (§121): bit3 raises on the real wake (debounced
+  ≤1/240 frames), **G2 park drains, 007 proceeds past 56.8B no fault**
+  (new PlayMPC channel via first-ever `0x20BD0` HITs, frames 2017→2125,
+  worker countdown 8→0, DVD streams a new 3 MB region); dashboard neutral
+  byte-identical; +13 tests; Audio snapshot v3 with v2 fallback. GPU slice 3
+  (§122): 007 transition + FMV goldens PASS (sw SHAs reproduce §114; gl
+  byte-identical / correctly absent per the no-mixing rule), zero `unsup`
+  rows; **fps table: GL submission+readback = 0–2.9% of wall** → swapchain is
+  latency, not throughput; Track C JIT stays the lever; +6 tests. NV2A
+  remaining (§124): measured-exercised rows only — 0x30 compare, PROJECT2D
+  divide, TEXADDRESS V-decode + border; post-menu/tri byte-identical; +13
+  tests (fail-pre-fix proven via stash); DXT/BRDF/DOT_STR_3D/mipmaps
+  documented unused by menu+tri; **Nv2a snapshot v2→v3 — old `.xgs` must be
+  regenerated** (new `_textureBorderColor[4]` + `_shadowDepthFunc`).
+  ktest smoke (§123): **PASS 7/7 rows green ×2 cycles, ~5 min**, zero product
+  changes. **1248 tests.** Recovery worked exactly per the liveness rule:
+  branches intact, partial work inventoried (keep-vs-revert), all four agents
+  relaunched to green.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
    once; conflicts were purged 2026-10-09). Baseline: 1216 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — 007 GP/EP DSP unblock + GPU slice 3.
+## Next session — 007 onward probe + swapchain decision + JIT scoping.
 
-1. **WAVE DONE (§§117–120).** Slice-2 triangle golden PASSED on the unmodified
-   backend (§117 — zero unsup rows; FBO-grow blit 14×/boot frames
-   bit-identical; all §113 tripwires evidence-disposed). **007 G2 decoded
-   (§118):** DirectSound mixer submit spins on `[0x83924800+0x10]`; re-opener =
-   GP/EP DSP restart handshake via **APU ISTS bit3**, never raised because the
-   GP/EP DSPs are started-but-never-executed (§107 open item); park onset
-   @53,657,687,344; force-raise proved the IRQ5 chain. idle-skip V2 (§119):
-   MMIO/PIO parks 0.038% (negligible); read-model +10 tests; corrected speedups
-   1.10×/1.66×. **ktest suite UNBLOCKED (§120): 378/378 tests run, 53.7 MB
-   log** (guest shellcode ANSI bug + XGrid `cmc` #UD fix; XGrid ahead of xemu
-   on 224/231). **1216 tests.**
-2. **007 unblock: implement APU GP/EP DSP execution** (ONE agent, APU area) —
-   §118's verdict: xemu `hw/xbox/mcpx/dsp/` + `gp_ep.c` facts; acceptance =
-   ISTS bit3 raises, G2 park drains, game proceeds past 56.8B (probe origin
-   `pd546.xgs`, worktree `007-streamend`).
-3. **GPU slice 3 / present path** (design §6): title streams (triangle + 007)
-   via `--gpu gl`; swapchain present = the actual fps win — operator decision
-   on windowing approach first; no Vulkan yet.
-4. Standing gates: ktest subset ISO as a scripted ~2-min cross-emulator smoke
-   (§120); idle-skip read-model stays unwired until a real hot poll appears;
-   NV2A remaining list unchanged (mipmap LOD, `0x30`, PROJECT2D, DOT_STR_3D,
-   TEXADDRESS V bit, BRDF, Vulkan backend).
+1. **WAVE DONE (§§121–124).** APU DSP bridge drains G2 (§121, past 56.8B);
+   GPU slice 3 goldens + fps table (§122 — GL 0–2.9% of wall; JIT is the
+   lever); NV2A measured rows (§124, post-menu/tri identical); ktest smoke
+   PASS ×2 (§123). **1248 tests.** Snapshot format v3: Nv2a v2→v3 drops old
+   saves (Audio has v2 fallback) — **regenerate the 007 probe chain**.
+2. **007 onward:** verify the merged DSP fix live (dashboard golden + 007 via
+   a fresh snapshot to ~57.8B), save a new post-G2 probe origin, continue up
+   the buffer-drain ladder / next content.
+3. **Swapchain/windowing decision (operator)** for the present path;
+   present-upload follow-up needs `PgraphSurfaceRecord` to carry the surface
+   address (Nv2a-seam follow-up, per §122).
+4. Track C JIT scoping (the lever); 007 texture census (DXT/mipmaps/shadows)
+   when a later-stage probe can reach them; ktest smoke stays the standing
+   gate; NV2A reserve rows (6–7 clamp is a safe choice, not reference).
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

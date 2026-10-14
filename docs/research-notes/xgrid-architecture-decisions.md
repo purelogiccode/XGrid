@@ -6170,3 +6170,602 @@ differentials; (c) idle-skip V2 (timer-park fast-forward) would compress
 the 9.5B-step `Sleep(10000)` and shrink this acceptance run from ~58 min
 to ~10 min; (d) the suite is now a standing cross-emulator regression
 asset — a `tests=` subset ISO gives a ~2-min xemu/XGrid smoke run.
+
+## §121 — APU GP/EP DSP bridge: G2 park drained, 007 proceeds past 56.8B (2026-10-14)
+
+Branch `wave/apu-dsp` (worktree `Temp\opencode\worktrees\apu-dsp`, master
+@da76d91). Closes the §107 open item per the §118 verdict: the GP/EP DSP
+cores are now executed as frame-driven engines, ISTS bit3 raises under a
+modeled condition, and 007's G2 park drains. Scope: `src/XGrid.Audio/` +
+`tests/XGrid.Audio.Tests/` only. **1229 tests green** (1216 baseline + 13
+new), zero existing-expectation changes, `dotnet format
+--verify-no-changes` clean.
+
+**Reference facts extracted (no code copied; xemu/QEMU are GPL):**
+- xemu `apu_regs.h`: ISTS bits {0 GINTSTS, 4 FET, 5 FEN, 6 FEV}; IEN-gated
+  IRQ (`apu.c` update_irq); GPRST/EPRST run bits {0 GPRST, 1 GPDSPRST}.
+- xemu `dsp/gp_ep.c` proc_rst_write: clearing either run bit resets the DSP,
+  the rising edge of both bootstraps it (scratch DMA of 0x800 words into
+  PRAM); `mcpx_apu_dsp_frame` runs GP every EP frame and EP every 8th when
+  the run bits are set; EPRST write resets the frame divider. DSP scratch
+  and FIFO access go through the GPSADDR/GPFADDR/EPSADDR/EPFADDR SGE tables
+  (DSP page n -> host page SGE[n]); xemu never raises ISTS bit3 anywhere,
+  so neither emulator is the oracle for bit3 (Playtest-v2 identical).
+- Guest-side facts (007 module, decoded live): submitter 0x1C2FFA spins on
+  `[block+0x10]` (0 = free); writers are F0-config (3, 0x1C3226), FB-restart
+  (0 then 3, 0x1C37FD/0x1C381D — the 0-write is register-form `mov
+  [edi+0x10],ebp`, missed by §118's imm-store scan), alloc-zero; ISR
+  0x1C3E13 queues worker descA on ISTS 0x40|0x08; worker 0x1C3B9F calls FB
+  on accumulated bit3; FB clears bit3 from 0x6E4/0x6EC at its end and stalls
+  ~10 ms unconditionally — hence bit3 must be rare (per-block raises would
+  mean a 10 ms restart per ~1.5 ms mixer block, unserviceable).
+
+**Decisive probe (this wave):** at the park, GP scratch SGE[0..] maps host
+pages 0x3924000+ — the phys alias of the shared block VA 0x83924000 — so
+the GP DSP's scratch window covers the state word (DSP scratch addr 0x810
+= phys 0x3924810). The DSP microcode is the off-CPU writer (§118 candidate
+#2, now structurally confirmed): it absorbs posted blocks via scratch DMA.
+GPOF rings are all zero (no FIFO I/O); only EPOF1 is programmed
+([0x2000,0x6000) cur 0x3800, undrained — no S/PDIF sink modeled, EP frame
+processing left open).
+
+**Design (`McpxApuDevice`, all in-area, no CLI/seam changes):**
+- GPRST/EPRST run-state with proc_rst_write semantics; EPRST write resets
+  the EP frame divider. Fresh bootstrap is service-eligible.
+- Per-frame GP engine: absorb one pending block (state 2/3 -> 0) through
+  the scratch mapping, gated on the GPSADDR SGE table actually covering the
+  mailbox page (first 16 entries); raise ISTS bit3 as the DSP subunit
+  service request on a submission wake, debounced to at most one raise per
+  240 frames (~1.28 s) so continuous submissions flow silently. 3-absorbs
+  never wake (no FB self-trigger loop). EP engine only advances its divider.
+- Snapshot v3 (run-state, divider, wake gap, both counters); v2 loads
+  derive run-state from stored GPRST/EPRST so pd546.xgs-class snapshots
+  resume a running engine. New counters `DspAbsorbs`/`DspBit3Raises` +
+  `GpRunning`/`EpRunning`; key events in the existing APU EventLog (the
+  CLI already prints it — no CLI change needed).
+
+**Acceptance evidence (final build, private `wt-data\`, shared CHD):**
+- (1) bit3 raises under the real condition: pd546 +200M (§118 command +
+  breaks on 0x1C3E13/0x1C3B9F/0x1C37C5): `dsp-absorb 3->0 n=1`, `2->0 n=2`,
+  `dsp bit3 raise n=1`, then HIT 1C3E13 (caller 0x1C3E65) -> HIT 1C3B9F
+  (stack D0020FE0) -> HIT 1C37C5 (FB), FB's GP/EP stop->start, `dsp-absorb
+  3->0 n=3` — exactly one raise and one FB in 200M (no storm), ist back to
+  0 (guest acked). (`gate121.log`, worktree.)
+- (2) G2 drains, game proceeds: HIT 1C302E +3,022,850 (park exit), HIT
+  1C3048 (state=2 posted), HIT 0x20BD0 +3,835,029 (previously-unseen next
+  PlayMPC channel), EIP leaves {0x1C3028,0x1C302C}; +2.2B run to 56.8B and
+  +1B more to ~57.8B with `LastFault vec=0`: DVD streams a new 3 MB region
+  (LBA 0x33182-0x33772, BM 5885->8993), frames 2017->2125, game advances
+  through its 0x15BExx buffer-drain ladder (worker countdown 8->0 observed
+  live, flag [0x35743C] moving). The ladder is guest-paced content
+  consumption (~29M steps/tick), not a stuck gate; no fault anywhere.
+- (3) dashboard neutral boot unchanged: recipe
+  `--pad-script "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"`,
+  1B steps — frame SHA `4EF1FBF6...` (== acceptance oracle) on both final
+  and pristine-master builds; full log diff is only 2 added APU EventLog
+  lines (`GP DSP start/stop` — the dash starts the DSP, SGE gate stays
+  closed, zero absorbs) plus the frame filename. All numeric counters
+  byte-identical.
+- (4) suite 1229/1229 (13 new `DspBridgeTests`: run-bit edges, absorb/silent
+  paths, SGE gating both ways, wake + debounce + re-eligibility, guest ack,
+  v3 round-trip, hand-built-v2 derive-and-resume), format clean.
+
+**Open risks:** EP frame processing/FIFO drain needs an S/PDIF sink (EPOF1
+sits mid-ring); the 0x810 mailbox offset is an observed XDK-protocol fact,
+not a spec register — if a title remaps scratch so no SGE entry covers the
+mailbox, absorbs stop (diagnosable: park + `DspAbsorbs` frozen); wake
+debounce (240) may over-suppress if a title needs back-to-back restarts
+(FB rate is the observable); post-57.8B 007 content beyond the drain
+ladder is unprobed (snapshots `pdE1-fwd.xgs` kept untracked in the
+worktree as the forward origin).
+
+## §122 — GPU-backend slice 3: 007 FMV + transition goldens, headless fps table, flipEmpty tripwire (2026-10-14)
+
+Wave `wave/gpu-slice3` (worktree `Temp\opencode\worktrees\gpu-slice3`,
+branch from master @da76d91). Scope per wave assignment:
+`src/XGrid.GpuGl/**`, `tests/XGrid.GpuGl.Tests/**`,
+`scripts/gpu-*.ps1`, GPU-backend docs (`gpu-backend-design.md` §6/§8
+status). `src/XGrid.Nv2a/` read-only (seam host); no Nv2a edit was
+needed — one seam follow-up is REPORTED, not implemented. Host: NVIDIA
+GL 4.6.0 driver 610.88, probe ok (real context, same driver as
+§113/§117). Media: private `wt-data\` copies (BIOS/MCPX/EEPROM/qcow2),
+triangle ISO read-only at `%TEMP%\opencode\triangle-iso\triangle.iso`,
+007 CHD read-only on `E:` (`E:\Microsoft Xbox\007 - Agent Under Fire
+(USA).chd`); firmware copied to the worktree's own `wt-data\`, never
+booted against shared files. Suite baseline **1222 green** (1216 master
++ 6 `GlBackendTimingsTests` from the prior session on this worktree).
+
+### Prior-session handoff (host power loss, state verified intact)
+
+A prior agent session on this worktree was killed before reporting. Its
+partial state was audited, not redone: kept (after diff review) the
+`GlBackendTimings` struct + tests, the `WALL:` timing lines in
+`gpu-slice1/2-golden.ps1`, the timings wiring in `GlPgraphBackend.cs`,
+the new `scripts/gpu-slice3-007.ps1` harness, and the copied snapshots
+`pd181/pd526/pd536/pd546.xgs`. Audit findings that shaped this wave:
+(1) the pre-loss 007 logs (`s3-007*.log`) predate the timings change
+(no `timed[` fragment) and their script stdout (WALL/FPS) is lost, so
+all four 007 runs were re-run on the final build; (2) the triangle gl
+run never completed (`tri-slice3/` held only a 250M partial sw log), so
+the full triangle pair was re-run; (3) the menu pair had completed but
+without captured stdout, so it was re-run with stdout capture; (4)
+`run-slice3-reverify.ps1` (detached driver) never completed (no
+`driver.log` artifacts) and does not capture script stdout — the
+campaign ran the three harnesses directly with `Tee-Object` stdout
+capture instead; that file is left untracked, superseded. Nothing from
+the prior session had been committed.
+
+### Snapshot verification (all four LOAD on this build, short runs)
+
+`--load-state <snap> --steps 5000000`, all `LastFault vec=0`,
+`Halted=False`:
+
+| snap | load EIP | end EIP (+5M) | matches |
+|---|---|---|---|
+| `pd181.xgs` (72195794 B) | `0x000218BF` | `0x000138E5` (FMV clock code, live) | §114 chain origin |
+| `pd526.xgs` | `0x8001984F` | `0x8002312F` (kernel, live) | §114 endpoint EIP exact |
+| `pd536.xgs` | `0x0016AE37` | `0x0016AE47` (transient, live) | §114 transient exact |
+| `pd546.xgs` (72208646 B) | `0x001C3028` | `0x001C3028` (still parked) | §114/§118 G2 park exact |
+
+(Caveat learned: `--hdd` must use the same `wt-data\...` backslash
+spelling recorded in the snapshot — forward slashes fail load with an
+`IDE HDD path mismatch` error. The harnesses already use backslashes.)
+
+### What changed in `src/XGrid.GpuGl` (additive only; no seam changes)
+
+- **`diag[flipEmpty=]` counter** (`GlPgraphBackend.cs`: field +
+  increment on the `_fbo == 0` flip path + `DebugSummary` suffix +
+  `ResetState` zeroing). This was the one silent flip path: with no
+  backend-rendered content yet the backend serves no frame (the
+  no-mixing rule — `TryCopyPresentedFrame` returns exclusively
+  `Backend.ReadbackPresented` when a backend is attached,
+  `Nv2aMmio.cs:4987-4992`), and previously nothing distinguished "39
+  empty flips" from "no flips". Now the 007 FMV gap has a counter
+  signature (`flipEmpty == flips`, gate-asserted) instead of a missing
+  file. Menu/triangle/transition all read `flipEmpty=0`, proving their
+  flips served rendered content.
+- **Kept as-is** (prior session, reviewed): `GlBackendTimings.cs`
+  (draw/clear/readback wall-clock accumulators + `timed[...]` summary
+  fragment + 6 unit tests) and its wiring into `Draw`/`Clear`/`FlipCore`.
+- **Harnesses:** `WALL:` wall-clock lines in `gpu-slice1/2-golden.ps1`
+  (kept); `scripts/gpu-slice3-007.ps1` (new this worktree): fmv +
+  transition segments, each sw-vs-gl with structural +
+  `BackendUnsupported=0` + probe checks; fmv asserts the
+  coherence-gap signature (sw frame only, `flipEmpty == flips`),
+  transition asserts the recorded SHA + gl byte-identity +
+  `flipEmpty=0`. This wave added those two `flipEmpty` assertions.
+
+### Menu golden re-verified (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice1-golden.ps1 -OutDir menu-slice3`
+(stdout `menu-slice3/campaign-stdout.log`):
+
+- Both `LastFault vec=0`; `NV2A draws executed=33632 skipped=1402
+  pixels=285171381 textured=278577344 clears=695 blended=211696978
+  depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686
+  programLoad=12 constLoad=2` — byte-identical lines sw<->gl.
+- `GPU backend=gl draws=2760841 clears=695 flips=686
+  methods=18125062 programs=11 uploads=13 unsupported=0
+  unsup[colorBytes=0 zformat=0 modes=0 cubeVol=0 fbo=0 flip=0 fatal=0]
+  diag[fboReallocs=14 fboZetaDrops=7 clipXY=0 flipEmpty=0]
+  timed[drawMs=8623.1 clearMs=12.2 readbackMs=1130.8 readbacks=686]
+  BackendUnsupported=0`. (`draws=` counts submitted GL triangles, not
+  draw calls — same convention as §117.)
+- BMP policy: `diff=2602 violations=0 outsideBand=0 maxDelta=1`;
+  sw SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+  = §113 oracle; gl SHA
+  `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+  = §113/§117 record.
+- WALL: sw 352.6 s, gl 342.3 s.
+
+### Triangle golden re-verified (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice2-triangle-golden.ps1 -OutDir tri-slice3`
+(stdout `tri-slice3/campaign-stdout.log`):
+
+- Both `LastFault vec=0`; `draws=2706 skipped=0 pixels=89142121
+  textured=48754488 clears=6455 blended=518 depth=15667336 zclip=0
+  zclipCull=21526 frames=68 stalls=34` == recorded anchors
+  (`pixels=89142121` = the post-§109 value, §117).
+- `GPU backend=gl draws=54492 clears=6455 flips=68 methods=223956
+  programs=10 uploads=10 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=14 fboZetaDrops=7 clipXY=0 flipEmpty=0]
+  timed[drawMs=722.8 clearMs=10.9 readbackMs=103.5 readbacks=68]`.
+- BMP: `diff=27849 violations=0 outsideBand=0 maxDelta=1`; sw SHA
+  `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`
+  = oracle; gl SHA
+  `7A860ED7378A86E8E63403573D92D0D5B248EA93E66D7A34716947535F34FC2D`
+  bit-identical to the §117 record (driver determinism re-confirmed
+  across waves).
+- WALL: sw 298.4 s, gl 360.6 s.
+
+### 007 slice-3 goldens (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice3-007.ps1 -Segment both -OutDir 007-slice3`
+(stdout `007-slice3/campaign-stdout.log`). Absolute-step note (§114):
+Progress from `--load-state` is steps-since-load; absolute =
+snapshot-base + progress.
+
+**fmv (`pd181.xgs` + 1B = 19.1B absolute, steady intro FMV):**
+
+- Both `LastFault vec=0`, end EIP `0x0002139C` both; `NV2A draws
+  executed=2672 skipped=0 pixels=73474921 textured=33087288 clears=61
+  blended=518 depth=136 zclip=0 zclipCull=21526 frames=730 stalls=730`
+  — byte-identical lines sw<->gl. (`draws=2672`/`frames=730` include the
+  snapshot history — pd181 saved at draws=2672/frames=691 per §114; see
+  the counter-semantics finding below.)
+- `GPU backend=gl draws=0 clears=0 flips=39 methods=3471 programs=0
+  uploads=0 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=0 fboZetaDrops=0 clipXY=0 flipEmpty=39]
+  timed[drawMs=0.0 clearMs=0.0 readbackMs=0.0 readbacks=0]
+  BackendUnsupported=0`.
+- Gap signature holds, now counter-precise: sw saved
+  `007-fmv-sw.bmp` (SHA
+  `458356268B09CDD290D2C591D9DBDF2EEAD7C2048D81DADB19EFC750E383BABD`
+  — **byte-identical to the pre-power-loss run's `s3-007-sw.bmp`**,
+  i.e. the FMV software frame reproduces exactly across builds);
+  the gl run reports `Frame unavailable (...)` and saves nothing;
+  `flipEmpty=39 == flips=39` — every post-restore present was a
+  CPU-blitted surface with zero PGRAPH draws/clears behind it
+  (surface `0x9BC000`, nonzero=307200, real video imagery).
+- WALL: sw 249.5 s, gl 202.4 s.
+
+**transition (`pd536.xgs` + 1B = 54.6B absolute, stream-end screen
+transition into the G2 park):**
+
+- Both `LastFault vec=0`, end EIP `0x001C302C` both (the §118 park —
+  the segment runs *into* the gate); `NV2A draws executed=2673
+  skipped=0 pixels=73782121 textured=33394488 clears=66 blended=518
+  depth=136 zclip=0 zclipCull=21526 frames=2017 stalls=2017
+  programLoad=12 constLoad=2` — byte-identical lines sw<->gl.
+- `GPU backend=gl draws=1 clears=3 flips=1 methods=854 programs=1
+  uploads=1 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=0 fboZetaDrops=0 clipXY=0 flipEmpty=0]
+  timed[drawMs=16.2 clearMs=3.9 readbackMs=2.4 readbacks=1]
+  BackendUnsupported=0`. The guest's whole transition is 1 fullscreen
+  draw + clears onto the new surface `0x3BD8000` (§114) — the backend
+  renders it and serves the flip.
+- sw SHA == recorded oracle `18C7CC83CEA392DEA278E6449F2827
+  66158616FE8AE0D62337056DDC5308F0` (the §114 black held frame);
+  **gl frame byte-identical to sw** (stronger than the §3.4 policy);
+  `flipEmpty=0`.
+- WALL: sw 227.0 s, gl 198.8 s.
+
+### Counter-semantics finding (resolves the flips=39-vs-730 question)
+
+A reader of the fmv gl line will ask why `flips=39` when
+`frames=730`. Answer, verified in `Nv2aMmio.cs`: `Backend.ResetState`
+fires on snapshot load (line 1589) and zeroes the backend counters,
+while the software counters (`FramesPresented`, draws, stalls) are
+*restored from the snapshot* and keep their history. So backend
+counters = post-restore only (39 flips / 0 draws since pd181),
+software counters = cumulative (730 frames incl. the 691 at save).
+Same for transition: `flips=1` post-restore vs `frames=2017`
+cumulative (2016 at save). The harness compares sw<->gl *within* the
+same segment, so both sides share the same snapshot history —
+structural equality is still exact. This also explains why the
+transition's single post-restore draw (2673-2672=1) is the §114
+screen-transition draw. No action needed; recorded here so the next
+wave does not re-diagnose it.
+
+### Tripwire disposition: 007 trips zero `unsup[` rows
+
+| §113 row / risk | fmv (pd181+1B) | transition (pd536+1B) |
+|---|---|---|
+| `unsup[colorBytes/zformat/modes/cubeVol/fbo/flip/fatal]` | 0/0/0/0/0/0/0 | 0/0/0/0/0/0/0 |
+| `diag[fboReallocs/fboZetaDrops/clipXY]` | 0/0/0 | 0/0/0 |
+| `diag[flipEmpty]` (new) | **39 (== flips: all CPU-blitted)** | 0 (flip served GL content) |
+| methods observed | 3471 (zero draw-triggering) | 854 (1 draw + 3 clears) |
+
+The 007 segments add no new tripwire exposure: the FMV path is pure
+CPU blits (no PGRAPH methods that draw), the transition is one
+fullscreen draw + clears. The only backend gap on this title is the
+present-upload gap below — deliberately NOT counted in
+`BackendUnsupported` (the backend serves nothing rather than wrong
+pixels), now measured by `flipEmpty`.
+
+### fps table, headless (milestone 2 — real numbers)
+
+WALL = whole-run wall per harness (`dotnet` CLI startup included,
+≈ seconds). Msteps/s = 1B steps / WALL. GL share = `timed[` total /
+gl WALL. Post-restore flips = backend `flips=` (the presents actually
+served during the segment; software `frames=` includes snapshot
+history — see above). Host was shared with sibling waves, so absolutes
+carry contention noise (§119 documents ±40% windows); the `timed[`
+counters bound the backend's own contribution.
+
+| segment | sw WALL | gl WALL | Msteps/s sw/gl | post-restore flips | timed draw/clear/readback (gl) | GL share of gl WALL |
+|---|---|---|---|---|---|---|
+| menu 1B | 352.6 s | 342.3 s | 2.84 / 2.92 | 686 | 8623 / 12 / 1131 ms | 2.9% |
+| triangle 1B | 298.4 s | 360.6 s | 3.35 / 2.77 | 68 | 723 / 11 / 104 ms | 0.2% |
+| 007 fmv 1B | 249.5 s | 202.4 s | 4.01 / 4.94 | 39 | 0 / 0 / 0 ms | 0% |
+| 007 transition 1B | 227.0 s | 198.8 s | 4.41 / 5.03 | 1 | 16 / 4 / 2 ms | ~0% |
+
+(gl-faster-than-sw on the 007 segments is contention noise, not a
+backend speedup: `timed[` proves the backend adds ≤ seconds while the
+sw/gl deltas are tens of seconds, and the direction flips between
+titles.)
+
+**What this decides for the swapchain wave:** the GL submission +
+readback path costs 0–2.9% of headless wall on all four workloads —
+**emulation (CPU interpretation + devices) is 97–100% of every run**.
+A swapchain present path therefore buys ~nothing for throughput; it is
+a latency/interactivity feature, not a speed feature. The priorities it
+sets: (1) Track C JIT remains the throughput lever (this host measured
+2.8–5.0 Msteps/s vs the 14 Msteps/s Release figure — contended, but
+the ratio is all emulation); (2) for parity on CPU-blitted titles the
+need is a *present-upload* path (below), not a faster present; (3)
+async GL submission only makes sense after (1), per Amdahl —
+serializing at `0x100`/`0x12C`/`0x1D70` (§7 risk 3) for a ≤3% path
+would add risk for no measurable gain.
+
+(Definition honesty: "flips/s" as printed by the harness =
+cumulative `frames=` / WALL, which mixes snapshot history with segment
+time — e.g. transition prints ~10/s while only 1 flip happened
+post-restore. The table above uses post-restore flips instead. The
+§114 "~22 fps" figure is guest-side video cadence; host-wall presents
+during FMV measured ≈ 39 flips / ~200 s ≈ 0.2/s — the guest is
+flip-paced by emulation throughput, not running at video rate in wall
+time. No contradiction once the definitions are separated.)
+
+### Reported follow-up (needs an Nv2a seam change — NOT done here)
+
+**Present-upload at flip for CPU-blitted surfaces.** The FMV gap has a
+structural cause, not a tuning cause: `PgraphSurfaceRecord` carries
+only (width, height, colorBytes, frame) — no surface DMA base/offset —
+so `FlipCore` cannot upload a CPU-written present surface into the FBO
+when the FBO is empty (or stale after CPU writes over GPU-rendered
+content). The scoped follow-up: extend the seam record with the
+resolved surface address the software path already computes
+(`CapturePresentedFrame`: `SurfaceBase(_dmaColor) +
+PresentedColorOffset`, `Nv2aMmio.cs:4972`), and in `FlipCore`, when
+`_fbo == 0` (or on a surface-generation change), upload the guest-RAM
+surface via `IGpuMemory` and serve it — a full-frame replace, still
+never a mix, so the no-mixing rule survives. Staleness detection for
+the non-empty-FBO case needs guest-visible surface-access tracking
+(design §7 risk 6) and stays later scope; the empty-FBO upload alone
+closes the FMV golden (gl frame would become byte-exact, since it is a
+copy of the same guest RAM the sw path reads). This is Nv2a-seam work
+for a follow-up wave in the assigned area split — recorded, not
+started.
+
+### Acceptance
+
+(1) 007-segment goldens: transition passes the full §3.4 golden
+(byte-identical, SHA == §114 oracle, `BackendUnsupported=0`,
+`flipEmpty=0`); fmv meets the documented-gap clause (structural
+equality, `BackendUnsupported=0`, `flipEmpty == flips` with the sw
+frame reproduced exactly across builds) — each remaining row justified
+with counter evidence (table above). Menu + triangle re-verified green
+on the final build, SHAs bit-identical to §113/§117 records.
+(2) fps table above with real numbers + swapchain-wave priorities.
+(3) Suite **1222/1222 green** (1216 baseline + 6 prior-session timing
+tests; zero existing-expectation changes) + `dotnet format
+--verify-no-changes` clean. Commit on `wave/gpu-slice3`.
+
+Open risks (unchanged unless noted): clipY!=0 (`clipXY=0` on all four
+workloads this wave), fingerprint interior-miss (gate-armed; FMV sw
+frame determinism across builds raises confidence in the software
+side), zeta-drop depth (0 exposure), Vulkan/swapchain/async (design
+§3/§5/§7 unchanged — fps table reframes swapchain as
+latency-not-throughput), 007 G2 decode (§118, sibling track — the
+transition segment now ends parked at `0x1C302C`, consistent).
+
+## §124 — NV2A remaining texture modes: measured, implemented, closed (2026-10-14)
+
+Worktree `Temp\opencode\worktrees\nv2a-remaining` (`wave/nv2a-remaining`;
+this agent resumed a session killed by host power loss — its partial state
+was verified intact: the `Nv2aMmio.cs` + `Nv2aExoticTexModesTests.cs`
+diffs were reviewed line-by-line against the references below (not
+redone), `Nv2aRemainingModesTests.cs` (13 tests) kept, and the
+`meas-*`/`post-*` artifacts re-validated rather than re-run). Scope was
+strictly `src/XGrid.Nv2a/` + `tests/XGrid.Nv2a.Tests/`; the GpuGl seam was
+not touched (see below).
+
+**Measurement (mode x stream counts — the table that motivates every
+change).** Histograms over the captured method streams
+(`meas-menu.pgraph`, 18,125,062 methods, 1B-step dashboard boot with the
+§87 pad recipe; `meas-tri.pgraph`, 223,956 methods, triangle ISO boot):
+
+| item | menu | tri | verdict |
+|---|---|---|---|
+| texture formats written | s0: 04 x8140, 05 x652, 06 x82, 12 x686; s1/s2: 07 x36; s3: **30 x1626** | s0: 06 x82, 12 x34; s1/s2: 07 x36; s3: **30 x1626** | 0x30 done; DXT (0C/0E/0F) x0 both -> left |
+| depth formats 2C/2E/2F/31 | x0 | x0 | left (set completed for reference-completeness) |
+| combiner stage modes (0x1E70) | s0: 01 x8222; s1/s2: 03 x104; s3: 02 x36; rest 00 | s0: 01 x81; s1/s2: 03 x104; s3: 02 x36; rest 00 | PROJECT2D/3D + cubemap only |
+| DOT_STR_3D (0x0D) / BRDF (0x08) / all other dot modes | x0 | x0 | left |
+| texture dimensionality != 2D | x0 (all dim field 0) | x0 | DOT_STR_3D-dim3 doubly unexercised -> left |
+| TEXADDRESS ADDR words | s0: 010303 x9477 (U/V clamp); s1-3: 010101 x8793 (wrap); BORDER words 030303 x81, 030404 x80, 010404 x35 | same words, smaller counts | V-decode + BORDER done |
+| BORDER_COLOR (0x1B24+) writes | FF000000 x34 (s0), FFFFFFFF x6 (s3), zeros | same | done |
+| SHADOW_DEPTH_FUNC (0x1E6C) | {0: 2} (reset default only) | {0: 2} | NEVER/ALWAYS done; compare funcs 1-6 never programmed -> left as miss accounting |
+| TEXFILTER MIN/MAG | only 01012000 (BOX_LOD0/NEAREST) and 02022000 (TENT_LOD0/LINEAR) | same pair | **mipmap LOD provably unexercised -> left** |
+| TEXFMT MIPMAP_LEVELS = 8 | s0 color 05 (SZ_R5G6B5) x652 | x0 | still samples level 0 (LOD0-only filters) -> left |
+| TEXADDRESS WRAP_U/V/P/Q bits (4/12/20/24) | x0 of 36,471 ADDR writes | x0 | ignored, matching xemu (see below) |
+| dot-map (0x1E74) values | {0: 37} | {0: 37} | nothing to do |
+
+**Implemented (all exercised above; reference citations are facts,
+no code copied).**
+- PROJECT2D non-cube projective divide (`ResolveTexel`): `SampleInto(u/w,
+  v/w)` — xemu `psh.c:1129-1132` `textureProj(texSamp, norm(pT.xyw))`
+  (rect-tex `norm` = /size is already inside the linear texel-unit path,
+  so the extra divide composes exactly). Zero-w keeps undivided coords.
+- TEXADDRESS V decode moved to bits 8-10 (ADDRV `0x700`) with U 0-2 / P
+  16-18 (`nv2a_regs.h:528-539`; values 1 wrap / 2 mirror / 3 edge /
+  4 border / 5 ~= edge). Mode map verified against the GL backend table
+  (`gl/constants.h:48-55`: 1 REPEAT, 2 MIRRORED, 3 EDGE, 4 BORDER,
+  5 ~= EDGE); mode 0 (reset) wraps (= GL default REPEAT), reserved 6-7
+  clamp (xemu would index its 6-entry map out of bounds — safe choice).
+  WRAP_U/V/P bits are unconsumed by xemu's GL path (`gl/texture.c:124-126`
+  uses only ADDRU/V/P masks) and absent from both streams. This closes the
+  §96-noted V-bit quirk in both the 2D and volume samplers.
+- BORDER: out-of-range coord on a BORDER axis returns
+  `NV097_SET_TEXTURE_BORDER_COLOR` (`0x1B24` + slot stride `0x40`;
+  `nv2a_regs.h:1264`, `pgraph.c:2614`), ARGB-packed per
+  `pgraph_argb_pack32_to_rgba_float` (`pgraph.h:409-415`), per-axis
+  independence matching xemu's `needs_border_color` (`gl/texture.c:166-183`).
+- 0x30 depth semantics (`TryResolveShadow`, PROJECT2D/PROJECT3D stages,
+  shadow checked before sampling exactly as `psh.c:1113-1116,1146-1148`):
+  NEVER -> `vec4(0.0)`, ALWAYS -> `vec4(1.0)` (`psh.c:706-716`); funcs 1-6
+  keep the format-miss accounting (open). Depth-format set
+  {2C,2E,2F,30,31} verified (`nv2a_regs.h:1222-1226`,
+  `texture.c:62-69` f.depth table). Method `0x1E6C` verified
+  (`nv2a_regs.h:1293`); reset NEVER matches xemu's zeroed SHADOWCTL
+  (`pgraph.c:2956-2958`, `nv2a.c:301` memset).
+- Snapshot v2 -> v3 (new `_textureBorderColor[4]` + `_shadowDepthFunc`;
+  both draw-affecting, so loud version rejection beats silent resume
+  corruption; §106 precedent). Cost: pre-existing v2 `.xgs` files
+  (pd181/pd4915/pd546) no longer load — regenerate.
+
+**Explicitly left with counter evidence (closing the measurement is the
+outcome).** Mipmap LOD: MIN is always BOX_LOD0 (-> GL_NEAREST) or
+TENT_LOD0 (-> GL_LINEAR) (`gl/constants.h:29-38`), so the 652
+levels=8 programs still sample level 0; XGrid's base-level-only sampler is
+exact here. DOT_STR_3D dim==3: mode 0x0D x0 AND dim 3 x0 (keeps the §96
+2D-sample non-goal). BRDF 0x08: x0 (xemu-faithful zero stub already in
+place, §96). DXT 0C/0E/0F: x0 both streams — stays deprioritized per §105.
+Shadow compare funcs 1-6: zero `0x1E6C` writes beyond reset.
+
+**Live validation (post-fix `post-*` runs, artifacts in worktree root,
+NOT committed — 600 MB+ of pgraph).** `post-menu.bmp` SHA
+`4EF1FBF6...` (= §113 golden) and `post-tri.bmp` SHA `A1740DE0...`
+(= slice-2 golden) — byte-identical files, so RGB and alpha diffs are both
+exactly 0. All non-texture counters identical (menu: draws 33632,
+blended 211696978, depth 136, frames/stalls 686; tri: draws 2706,
+pixels 89142121, frames/stalls 68). Deltas confined to diagnostics:
+`formats= 30=62444852/62444852` -> gone (NEVER/ALWAYS resolve without miss
+accounting), per-state `miss=` -> 0. The 62.4M-sample `(0,0,0,1)` ->
+`(0,0,0,0)` alpha change is pixel-invisible because the stage-3 0x30
+texels feed decorative PROJECT3D stages whose alpha is not consumed
+downstream (blend/depth/clear counters all identical).
+
+**Tests: 1229 green (1216 + 13 new), zero existing-expectation changes,
+format clean.** New `Nv2aRemainingModesTests.cs` (13): address bit-layout
+helpers, ARGB border decode, depth-format set, PROJECT2D w-divide (+ w=1
+guard), U-wrap / V-clamp reference-bit draws, border in/out-of-bounds,
+shadow NEVER/ALWAYS/compare + snapshot round-trip. Fail-pre-fix proven by
+stashing the `Nv2aMmio.cs` fix and running the 9 compilable behavior tests
+on baseline: exactly the 6 predicted tests fail
+(Project2DDivides, AddressUWrap, AddressVClamp, BorderAxisReturns,
+ShadowNever, ShadowAlways); the 3 guard/characterization tests pass both
+(build fails for the 3 helper-only tests without the new APIs, as
+expected). One existing-test setup touch: `Nv2aExoticTexModesTests`
+`Draw_Project3DSamplesVolumeTexel` input word `0x00030033` -> `0x00030303`
+— assertions unchanged; the old word only clamped under the buggy bits-4-7
+V decode, the new word is the reference ADDRU/V/P layout. Full suite
+`dotnet test XGrid.sln -c Release` 1229/1229; `dotnet format
+--verify-no-changes` clean; warnings-as-errors held.
+
+**Seam note for the GpuGl sibling:** `PgraphTextureSlot` was deliberately
+NOT extended (brief: feed through existing visible state). Raw
+format/address words already cross the seam; the new public static decoders
+(`DecodeTextureAddressU/V/P`, `ToWrapMode`, `DecodeBorderColor`,
+`IsDepthTextureFormat`) are available for the GL backend to interpret
+them. Border-color values, filter words and shadow func are not yet in the
+seam structs — extend when a GL slice needs them.
+
+**Open risks:** (a) 007's texture census is unmeasured (50B+ steps; menu +
+tri only) — its later stages may exercise DXT/mipmaps/compare-shadows;
+(b) v2 snapshot invalidation (see above); (c) reserved address modes 6-7
+clamp fallback is a safe choice, not a reference behavior (xemu asserts).
+
+## §123 — ktest smoke scripted: 7-test subset green on both emulators in 4:40 (2026-10-14)
+
+Worktree `wave/ktest-smoke` (branch from master @da76d91). Turns the §120
+one-off into `scripts/ktest-smoke.ps1`: subset ISO -> XGrid leg -> xemu leg
+-> `ktest_diff.py` verdict vs the §120 known deltas. **Acceptance run on
+this machine: `KTEST-SMOKE: PASS`, 7/7 rows green, total wall 04:40**
+(XGrid 04:19, xemu 00:14, setup/diff the rest). **Second full cycle
+re-run by the follow-up session: `KTEST-SMOKE: PASS`, 7/7 green, total
+wall 05:02** (XGrid 04:41, xemu 00:14) with a bit-identical XGrid leg —
+`Break: EIP=0x0004E03A after 792800535 instruction(s)`, log 40797 B at
+dirent cluster 315; xemu `reason=parked samples=14 saw_suite=3`, log
+43213 B at cluster 315. Step count + log sizes reproduce exactly; wall
+varies ±20 s with host load (sibling agents). Zero product-source changes
+(tools + script + docs only); suite baseline 1216 green, format clean.
+
+**Subset (the full known-delta table in 7 tests):**
+`tests=51,71,224,231,282,319,344` with `disable-video=1` (CRLF `config.txt`,
+50 B) — 051 silent-stub pass, 071/319/344 faithful fails, 224/231
+XGrid-ahead pair, 282 the former CMC-`#UD` site (§120 fix verification).
+`disable-video=1` skips the 10 s `Sleep(10000)`, so XGrid stops at main's
+return instead of emulating 9.5B sleep steps (the §120 58-min cost).
+
+**Completion-park mechanism (new `--park` flag on `patch_suite_xbe.py`).**
+The parked XBE (sha256
+`A76DEC38E9E483F29FB3BC60F36B5AC43938E61B05F3C932394E1BDF8A3E2E09`
+vs §120's unparked `76E2C52A...`) overwrites 2 bytes at VA `0x4E03A` (main's
+return site) with `EB FE` (jmp $). The suite spins there AFTER
+`close_output_file`, so the kernel never relaunches the XBE and the FATX
+log is never truncated via CREATE_ALWAYS — completion is detectable on both
+emulators without a relaunch race (quantified on xemu: relaunch would follow
+within ~9.44M guest steps, far below any safe poll-then-quit window).
+XGrid keeps `--break 4E03A` (fires identically on the loop); xemu polls
+`info registers` for EIP==`0x4E03A` x settle=3 (one kernel-IRQ sample at
+`0x80014F2D` mid-park proved the settle counter necessary and sufficient).
+
+**xemu-0.8.136 automation quirks diagnosed (both new, both worked around in
+`run_xemu_ktest_smoke.py`):** (1) xemu.toml `flashrom_path` is NOT bridged
+into the QEMU launch (params omit `-bios` -> `Failed to load BIOS '(null)'`,
+guest frozen at reset vector `0xFFF0` indefinitely; xbox.c reads BIOS from
+`ms->firmware`, i.e. QEMU `-bios`) — the runner passes `-bios` explicitly;
+the toml row is kept for fixed builds. A stale `flashrom_path` in
+`%APPDATA%\xemu\xemu\xemu.toml` (D:\-era paths) was found and left
+untouched. (2) xemu starts `paused (prelaunch)` under `-monitor` automation
+(`info status` proves it; `info registers` reads `FFF0` forever) — the
+runner sends `cont` after connecting. (3) Process hygiene: killing xemu
+loses cached qcow2 L2 metadata -> torn FATX tail (`OK(l` + NULs, log ends
+mid-231); the runner quits gracefully via monitor `quit`, then the log is
+read back with `read_fatx_qcow2.py`.
+
+**Acceptance evidence (verbatim):**
+
+```
+pwsh -File scripts/ktest-smoke.ps1 -FirmwareDir "C:\Users\HomePC\Dropbox\source\repos\CSharp_XboxEmulator\data\xemu-0.8.136-windows-x86_64" -SuiteXbe "C:\Users\HomePC\Dropbox\source\repos\CSharp_XboxEmulator\data\test-samples\kernel-test-suite-default.xbe"
+```
+
+- XGrid: `Break: EIP=0x0004E03A after 792800535 instruction(s)`,
+  `Halted=False LastFault vec=0`; log 40797 B (dirent cluster 315) with
+  `End of Tests`.
+- xemu: `reason=parked samples=14 saw_suite=3` (park at t=11.1 s, one IRQ
+  excursion at 12.1 s absorbed by settle); log 43213 B (cluster 315) with
+  `End of Tests`.
+- Verdict table (`ktest_diff.py`, requires `End of Tests` + exact §120
+  ERROR substrings on faithful rows + `line 110` on xemu 224/231):
+
+| test | XGrid | xemu | expect | verdict |
+|---|---|---|---|---|
+| 051 InterlockedCompareExchange | PASS | PASS | PASS/PASS | green |
+| 071 IoFileObjectType | FAIL (`file_handle = 0x1, Got = 0x0`) | FAIL (identical) | FAIL/FAIL | green |
+| 224 NtResumeThread | PASS (All tests PASSED) | FAIL (`line 110`, out-param `0x800205BA`) | PASS/FAIL | green |
+| 231 NtSuspendThread | PASS | FAIL (`line 110`, same quirk) | PASS/FAIL | green |
+| 282 RtlExtendedLargeIntegerDivide | PASS | PASS | PASS/PASS | green |
+| 319 RtlWalkFrameChain | FAIL (`total = 0x8, Got = 0xA`) | FAIL (identical) | FAIL/FAIL | green |
+| 344 XcVerifyPKCS1Signature | FAIL (`return = 0x1, Got = 0x0`) | FAIL (identical) | FAIL/FAIL | green |
+
+Pass counts XGrid 4/7, xemu 2/7 — exactly the §120 deltas, no unexpected
+failures. xemu 224's garbage values vary per run (`0x800205BA` here vs
+`0xD00409E0`-family in §120); the diff keys on `line 110` + FAIL, robust to
+that churn.
+
+**Runtime note.** 04:40 total on a machine shared with sibling agents (XGrid
+792.8M steps in 04:19 ≈ 3M insn/s under load; quiet-machine arithmetic from
+§119's 14M insn/s predicts ~2:10 total). The step count to the park
+(792,800,535) is deterministic; wall varies with host load. Runtime
+dominated by the XGrid boot + the two 1.3–1.5 s-guest thread tests
+(224/231); the xemu leg is ~15 s + a 1.5 GB HDD refresh.
+
+**Landed:** `scripts/ktest-smoke.ps1`; `tools/ktest-recon/`
+`run_xemu_ktest_smoke.py` + `ktest_diff.py` + `--park` on
+`patch_suite_xbe.py`; README Smoke section; this note. Media layout
+(gitignored): `wt-data/ktest-smoke/{xgrid,xemu}/` — private firmware/HDD
+copies (XGrid's HDD stays pristine: `Qcow2DiskImage` opens `FileAccess.Read`
++ `HddOverlay` journal; xemu's copy is refreshed from the template every
+run), subset ISO, `xemu.toml` (bare filenames, colocated `xemu.exe`).
+
+**Open risks:** (a) reproducibility across hosts: two full cycles on this
+machine now agree exactly (step count + log sizes bit-identical, verdict
+PASS both); cross-host confirmation still open but cheap (~5 min) for any
+reviewer with the firmware + suite XBE; (b) xemu's unbridged `flashrom_path` + prelaunch-pause look like
+upstream automation gaps worth one issue if the team leans on scripted xemu;
+(c) the subset pins 7 tests — extend only by editing the script's `-Subset`
+default + `ktest_diff.py` expectations together (they are intentionally
+duplicated, not shared, so the diff stays an independent oracle).
