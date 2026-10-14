@@ -3021,7 +3021,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 5% | whole phase (IR, basic blocks, block cache, codegen) |
+| 15 CPU JIT | 11 | 15% | IR, basic blocks, codegen; decode/TLB fetch caches landed (§§131,134) |
 | 16 CPU Optimization | 3 | 10% | benchmark-driven tuning |
 | 17 Memory Optimization | 2 | 10% | tuning |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
@@ -3031,7 +3031,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~61% complete overall** (weighted: 65.7 of 108 weight-points).
+**Result: ~62% complete overall** (weighted: 66.8 of 108 weight-points).
 By track:
 
 - **LLE core (phases 0–14): ~84%.** The real console chain — MCPX ROM ->
@@ -3039,9 +3039,11 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15–23): ~17%.** Dominated by the CPU
-  JIT (5%) and optimization phases; this is the throughput gap between
-  forensic runs (~14M insn/s) and interactive rates.
+- **Performance/finish track (phases 15–23): ~21%.** Dominated by the CPU
+  JIT (15% — interpreter with decode/TLB fetch caches, no codegen yet) and
+  optimization phases; this is the throughput gap between forensic runs
+  (~14M insn/s Release baseline; decode cache adds 2.1–3.1× on titles)
+  and interactive rates.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
   polling -> menu navigation -> activation) all work; a readable colored
@@ -3052,17 +3054,27 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
-**NEXT SESSION — JIT decode cache + (a*) dirty-bit + operator items.**
-**WAVE DONE (§§131–133; four tasks, all green, one merge).**
-T1 JIT slice 2 MERGED (§131: batched TLB tallies, windowed top-64
-heads — overflow 23%→0.3%, `--fetch-fast` default-off; **triangle
-1.35× / menu 1.30× Msteps/s**, both SHAs + counters exact, flag-off
-byte-identical; +9 tests). Leg (d) decode cache DEFERRED with full
-handoff in §131 (est. 1.5–2× the (a–c) budget — next wave's lead).
-T2 staleness design FILED (§132: recommendation (a*) dirty-bit in
-`PhysicalMemory` + synthetic-harness gate). T3 smoke PASS 7/7 in
-03:51. T4 merged-master goldens PASS both legs (post-wave-10 gap
-closed). **1277 tests.**
+**NEXT SESSION — swapchain operator decision + next JIT step + nxdk toolchain.**
+**WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two merges).**
+T1 decode cache MERGED (§134: `DecodeCache` linear-key/physical-reverse-map,
+conservative invalidation at the §131 inventory sites, `--decode-cache`
+implies fetch-fast, `--decode-verify`; **menu 2.12–2.20× / triangle 2.97–
+3.07×**, hit share 99.5–99.8%, decode 0.20–0.47/insn, verifyFailures=0 @1B;
+flag-off byte-identical, both SHAs + counters exact both flags; +14 tests).
+T2 dirty-bit (a*) MERGED (§135: `IPresentDirtyWatch` choke in
+`PhysicalMemory.Write8/16/32/64`, suppression on the two `IGpuMemory`
+adapters, FlipCore dirty→upload / clean→serve / guard→flipEmpty; menu/tri
+goldens unchanged with `presentUploads=0`, A/B hook cost within noise;
++25 tests). BOSS merge conflict: both sides of `PhysicalGpuMemory`
+combined (suppression + page-drop) plus one stray-brace fix caught by the
+post-merge build; §-union notes 134/135. T3 gates on base PASS (smoke
+7/7 known deltas; menu/tri SHAs + counters exact). T4 swapchain brief
+FILED (`gpu-swapchain-brief.md`: O2 window recommended, O1 stays default,
+vsync off, O3 violates single-dependency rule). **1316 tests; post-merge
+gates green: ktest smoke PASS 7/7, menu golden (SW SHA anchor + GL SHA
+bit-identical to base, `presentUploads=0`), triangle golden PASS,
+format clean; CI green on all three OSes.** Baseline for next wave:
+green master.
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
