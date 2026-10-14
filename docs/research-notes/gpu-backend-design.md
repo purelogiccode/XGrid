@@ -407,10 +407,25 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
   here plus the §117 by-construction note (software path stays
   unconditional, so texture uploads read software-coherent guest RAM).
 - **Slice 3 — 007 streams** (triangle half landed early as the slice-2
-  gate above). Remaining acceptance: 007 first-render frame golden pair
-  once the 007 histogram (§1.2 open) is captured and its G2 park (§114)
-  is decoded; DMA-context surface-offset / pbkit present hook follow-ups
-  per §106 as the titles demand.
+  gate above). **DONE 2026-10-14 (research notes §122):** two bounded
+  007 segments, each sw-vs-gl from a v2 snapshot
+  (`scripts/gpu-slice3-007.ps1`): fmv (`pd181.xgs` + 1B, steady
+  intro FMV) and transition (`pd536.xgs` + 1B, stream-end screen
+  transition into the §118 G2 park). Transition = full §3.4 golden
+  (structural equality, `BackendUnsupported=0`, sw SHA `18C7CC83…` =
+  the §114 held-frame oracle, gl frame byte-identical, new
+  `diag[flipEmpty]=0`). FMV = documented-gap golden: 39 post-restore
+  flips with zero PGRAPH draws/clears (pure CPU blits), `flipEmpty=39
+  == flips`, sw frame reproduced exactly across builds
+  (`45835626…`), gl serves nothing (no-mixing rule) —
+  `BackendUnsupported=0` on both. 007 trips zero `unsup[` rows in
+  either segment. Headless fps table (§122): GL submission+readback =
+  0–2.9% of wall on all four workloads — emulation is 97–100%, so the
+  swapchain wave is a latency feature, not a throughput fix (Track C
+  JIT stays the lever). Follow-up REPORTED (needs an Nv2a seam
+  change, not done here): present-upload at flip for CPU-blitted
+  surfaces (extend `PgraphSurfaceRecord` with the resolved surface
+  address `CapturePresentedFrame` already computes).
 - **Never-gate:** full NV2A parity is *not* a milestone; unmapped needs are added to
   slices only when a title's inventory proves them (§7).
 
@@ -566,7 +581,7 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
 
 ## Open questions
 
-1. 007 method histogram (CHD path + multi-billion-step reachability) — open (§1.2).
+1. 007 method histogram (CHD path + multi-billion-step reachability) — PARTIALLY CLOSED 2026-10-14 (§122): two bounded segment inventories captured from v2 snapshots (fmv `pd181.xgs`+1B: 3471 methods, zero draw-triggering; transition `pd536.xgs`+1B: 854 methods, 1 draw + 3 clears). A full offset-level histogram (the §1.2 procedure) is still open for the G2-parked title path, but no longer blocks any slice: both segments trip zero `unsup[` rows.
 2. ~~GL binding library choice~~ — RESOLVED 2026-10-13: **Silk.NET.OpenGL**
    (operator; recorded in `sources.md`).
 3. Absolute counter baselines to re-record post-§106 (§43/§95/§101 numbers noted
@@ -594,3 +609,22 @@ always retained behind a flag** (default) for differential diagnosis (Velocity r
    fingerprint: both golden pairs pass (the tripwire); interior-miss
    residual risk stays documented. Multi-stage combiner worry: closed —
    the triangle stream is single-stage like the menu.
+
+> **SLICE-3 GATE OUTCOME (2026-10-14, wave/gpu-slice3 → §122): PASS.**
+> 007 harness (`scripts/gpu-slice3-007.ps1`, fmv + transition segments):
+> fmv `draws=2672 frames=730 stalls=730` identical sw↔gl, end EIP
+> `0x2139C` both, backend `draws=0 clears=0 flips=39 methods=3471
+> flipEmpty=39==flips timed=0 BackendUnsupported=0`, sw frame SHA
+> `45835626…` reproduced exactly across builds, gl frame correctly
+> absent; transition `draws=2673 frames=2017 stalls=2017` identical,
+> end EIP `0x1C302C` (the §118 G2 park) both, backend `draws=1
+> clears=3 flips=1 methods=854 flipEmpty=0`, sw SHA `18C7CC83…` ==
+> §114 oracle, gl byte-identical. Menu + triangle re-verified green
+> on the final build (SHAs bit-identical to §113/§117; triangle gl
+> `7A860ED7…` re-confirms driver determinism). Code delta:
+> `diag[flipEmpty]` empty-FBO-flip counter (the one silent flip path,
+> gate-asserted on both 007 segments) + `GlBackendTimings`
+> draw/clear/readback accumulators (prior session, reviewed) feeding
+> the §122 headless fps table (GL path 0–2.9% of wall → swapchain is
+> latency, not throughput; present-upload seam follow-up reported).
+> Suite 1222/1222 green (1216 baseline + 6 timing tests), format clean.

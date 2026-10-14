@@ -6258,3 +6258,295 @@ debounce (240) may over-suppress if a title needs back-to-back restarts
 (FB rate is the observable); post-57.8B 007 content beyond the drain
 ladder is unprobed (snapshots `pdE1-fwd.xgs` kept untracked in the
 worktree as the forward origin).
+
+## §122 — GPU-backend slice 3: 007 FMV + transition goldens, headless fps table, flipEmpty tripwire (2026-10-14)
+
+Wave `wave/gpu-slice3` (worktree `Temp\opencode\worktrees\gpu-slice3`,
+branch from master @da76d91). Scope per wave assignment:
+`src/XGrid.GpuGl/**`, `tests/XGrid.GpuGl.Tests/**`,
+`scripts/gpu-*.ps1`, GPU-backend docs (`gpu-backend-design.md` §6/§8
+status). `src/XGrid.Nv2a/` read-only (seam host); no Nv2a edit was
+needed — one seam follow-up is REPORTED, not implemented. Host: NVIDIA
+GL 4.6.0 driver 610.88, probe ok (real context, same driver as
+§113/§117). Media: private `wt-data\` copies (BIOS/MCPX/EEPROM/qcow2),
+triangle ISO read-only at `%TEMP%\opencode\triangle-iso\triangle.iso`,
+007 CHD read-only on `E:` (`E:\Microsoft Xbox\007 - Agent Under Fire
+(USA).chd`); firmware copied to the worktree's own `wt-data\`, never
+booted against shared files. Suite baseline **1222 green** (1216 master
++ 6 `GlBackendTimingsTests` from the prior session on this worktree).
+
+### Prior-session handoff (host power loss, state verified intact)
+
+A prior agent session on this worktree was killed before reporting. Its
+partial state was audited, not redone: kept (after diff review) the
+`GlBackendTimings` struct + tests, the `WALL:` timing lines in
+`gpu-slice1/2-golden.ps1`, the timings wiring in `GlPgraphBackend.cs`,
+the new `scripts/gpu-slice3-007.ps1` harness, and the copied snapshots
+`pd181/pd526/pd536/pd546.xgs`. Audit findings that shaped this wave:
+(1) the pre-loss 007 logs (`s3-007*.log`) predate the timings change
+(no `timed[` fragment) and their script stdout (WALL/FPS) is lost, so
+all four 007 runs were re-run on the final build; (2) the triangle gl
+run never completed (`tri-slice3/` held only a 250M partial sw log), so
+the full triangle pair was re-run; (3) the menu pair had completed but
+without captured stdout, so it was re-run with stdout capture; (4)
+`run-slice3-reverify.ps1` (detached driver) never completed (no
+`driver.log` artifacts) and does not capture script stdout — the
+campaign ran the three harnesses directly with `Tee-Object` stdout
+capture instead; that file is left untracked, superseded. Nothing from
+the prior session had been committed.
+
+### Snapshot verification (all four LOAD on this build, short runs)
+
+`--load-state <snap> --steps 5000000`, all `LastFault vec=0`,
+`Halted=False`:
+
+| snap | load EIP | end EIP (+5M) | matches |
+|---|---|---|---|
+| `pd181.xgs` (72195794 B) | `0x000218BF` | `0x000138E5` (FMV clock code, live) | §114 chain origin |
+| `pd526.xgs` | `0x8001984F` | `0x8002312F` (kernel, live) | §114 endpoint EIP exact |
+| `pd536.xgs` | `0x0016AE37` | `0x0016AE47` (transient, live) | §114 transient exact |
+| `pd546.xgs` (72208646 B) | `0x001C3028` | `0x001C3028` (still parked) | §114/§118 G2 park exact |
+
+(Caveat learned: `--hdd` must use the same `wt-data\...` backslash
+spelling recorded in the snapshot — forward slashes fail load with an
+`IDE HDD path mismatch` error. The harnesses already use backslashes.)
+
+### What changed in `src/XGrid.GpuGl` (additive only; no seam changes)
+
+- **`diag[flipEmpty=]` counter** (`GlPgraphBackend.cs`: field +
+  increment on the `_fbo == 0` flip path + `DebugSummary` suffix +
+  `ResetState` zeroing). This was the one silent flip path: with no
+  backend-rendered content yet the backend serves no frame (the
+  no-mixing rule — `TryCopyPresentedFrame` returns exclusively
+  `Backend.ReadbackPresented` when a backend is attached,
+  `Nv2aMmio.cs:4987-4992`), and previously nothing distinguished "39
+  empty flips" from "no flips". Now the 007 FMV gap has a counter
+  signature (`flipEmpty == flips`, gate-asserted) instead of a missing
+  file. Menu/triangle/transition all read `flipEmpty=0`, proving their
+  flips served rendered content.
+- **Kept as-is** (prior session, reviewed): `GlBackendTimings.cs`
+  (draw/clear/readback wall-clock accumulators + `timed[...]` summary
+  fragment + 6 unit tests) and its wiring into `Draw`/`Clear`/`FlipCore`.
+- **Harnesses:** `WALL:` wall-clock lines in `gpu-slice1/2-golden.ps1`
+  (kept); `scripts/gpu-slice3-007.ps1` (new this worktree): fmv +
+  transition segments, each sw-vs-gl with structural +
+  `BackendUnsupported=0` + probe checks; fmv asserts the
+  coherence-gap signature (sw frame only, `flipEmpty == flips`),
+  transition asserts the recorded SHA + gl byte-identity +
+  `flipEmpty=0`. This wave added those two `flipEmpty` assertions.
+
+### Menu golden re-verified (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice1-golden.ps1 -OutDir menu-slice3`
+(stdout `menu-slice3/campaign-stdout.log`):
+
+- Both `LastFault vec=0`; `NV2A draws executed=33632 skipped=1402
+  pixels=285171381 textured=278577344 clears=695 blended=211696978
+  depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686
+  programLoad=12 constLoad=2` — byte-identical lines sw<->gl.
+- `GPU backend=gl draws=2760841 clears=695 flips=686
+  methods=18125062 programs=11 uploads=13 unsupported=0
+  unsup[colorBytes=0 zformat=0 modes=0 cubeVol=0 fbo=0 flip=0 fatal=0]
+  diag[fboReallocs=14 fboZetaDrops=7 clipXY=0 flipEmpty=0]
+  timed[drawMs=8623.1 clearMs=12.2 readbackMs=1130.8 readbacks=686]
+  BackendUnsupported=0`. (`draws=` counts submitted GL triangles, not
+  draw calls — same convention as §117.)
+- BMP policy: `diff=2602 violations=0 outsideBand=0 maxDelta=1`;
+  sw SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+  = §113 oracle; gl SHA
+  `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+  = §113/§117 record.
+- WALL: sw 352.6 s, gl 342.3 s.
+
+### Triangle golden re-verified (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice2-triangle-golden.ps1 -OutDir tri-slice3`
+(stdout `tri-slice3/campaign-stdout.log`):
+
+- Both `LastFault vec=0`; `draws=2706 skipped=0 pixels=89142121
+  textured=48754488 clears=6455 blended=518 depth=15667336 zclip=0
+  zclipCull=21526 frames=68 stalls=34` == recorded anchors
+  (`pixels=89142121` = the post-§109 value, §117).
+- `GPU backend=gl draws=54492 clears=6455 flips=68 methods=223956
+  programs=10 uploads=10 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=14 fboZetaDrops=7 clipXY=0 flipEmpty=0]
+  timed[drawMs=722.8 clearMs=10.9 readbackMs=103.5 readbacks=68]`.
+- BMP: `diff=27849 violations=0 outsideBand=0 maxDelta=1`; sw SHA
+  `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`
+  = oracle; gl SHA
+  `7A860ED7378A86E8E63403573D92D0D5B248EA93E66D7A34716947535F34FC2D`
+  bit-identical to the §117 record (driver determinism re-confirmed
+  across waves).
+- WALL: sw 298.4 s, gl 360.6 s.
+
+### 007 slice-3 goldens (final build, `GOLDEN: PASS`)
+
+`pwsh scripts/gpu-slice3-007.ps1 -Segment both -OutDir 007-slice3`
+(stdout `007-slice3/campaign-stdout.log`). Absolute-step note (§114):
+Progress from `--load-state` is steps-since-load; absolute =
+snapshot-base + progress.
+
+**fmv (`pd181.xgs` + 1B = 19.1B absolute, steady intro FMV):**
+
+- Both `LastFault vec=0`, end EIP `0x0002139C` both; `NV2A draws
+  executed=2672 skipped=0 pixels=73474921 textured=33087288 clears=61
+  blended=518 depth=136 zclip=0 zclipCull=21526 frames=730 stalls=730`
+  — byte-identical lines sw<->gl. (`draws=2672`/`frames=730` include the
+  snapshot history — pd181 saved at draws=2672/frames=691 per §114; see
+  the counter-semantics finding below.)
+- `GPU backend=gl draws=0 clears=0 flips=39 methods=3471 programs=0
+  uploads=0 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=0 fboZetaDrops=0 clipXY=0 flipEmpty=39]
+  timed[drawMs=0.0 clearMs=0.0 readbackMs=0.0 readbacks=0]
+  BackendUnsupported=0`.
+- Gap signature holds, now counter-precise: sw saved
+  `007-fmv-sw.bmp` (SHA
+  `458356268B09CDD290D2C591D9DBDF2EEAD7C2048D81DADB19EFC750E383BABD`
+  — **byte-identical to the pre-power-loss run's `s3-007-sw.bmp`**,
+  i.e. the FMV software frame reproduces exactly across builds);
+  the gl run reports `Frame unavailable (...)` and saves nothing;
+  `flipEmpty=39 == flips=39` — every post-restore present was a
+  CPU-blitted surface with zero PGRAPH draws/clears behind it
+  (surface `0x9BC000`, nonzero=307200, real video imagery).
+- WALL: sw 249.5 s, gl 202.4 s.
+
+**transition (`pd536.xgs` + 1B = 54.6B absolute, stream-end screen
+transition into the G2 park):**
+
+- Both `LastFault vec=0`, end EIP `0x001C302C` both (the §118 park —
+  the segment runs *into* the gate); `NV2A draws executed=2673
+  skipped=0 pixels=73782121 textured=33394488 clears=66 blended=518
+  depth=136 zclip=0 zclipCull=21526 frames=2017 stalls=2017
+  programLoad=12 constLoad=2` — byte-identical lines sw<->gl.
+- `GPU backend=gl draws=1 clears=3 flips=1 methods=854 programs=1
+  uploads=1 unsupported=0` + all-zero `unsup[` +
+  `diag[fboReallocs=0 fboZetaDrops=0 clipXY=0 flipEmpty=0]
+  timed[drawMs=16.2 clearMs=3.9 readbackMs=2.4 readbacks=1]
+  BackendUnsupported=0`. The guest's whole transition is 1 fullscreen
+  draw + clears onto the new surface `0x3BD8000` (§114) — the backend
+  renders it and serves the flip.
+- sw SHA == recorded oracle `18C7CC83CEA392DEA278E6449F2827
+  66158616FE8AE0D62337056DDC5308F0` (the §114 black held frame);
+  **gl frame byte-identical to sw** (stronger than the §3.4 policy);
+  `flipEmpty=0`.
+- WALL: sw 227.0 s, gl 198.8 s.
+
+### Counter-semantics finding (resolves the flips=39-vs-730 question)
+
+A reader of the fmv gl line will ask why `flips=39` when
+`frames=730`. Answer, verified in `Nv2aMmio.cs`: `Backend.ResetState`
+fires on snapshot load (line 1589) and zeroes the backend counters,
+while the software counters (`FramesPresented`, draws, stalls) are
+*restored from the snapshot* and keep their history. So backend
+counters = post-restore only (39 flips / 0 draws since pd181),
+software counters = cumulative (730 frames incl. the 691 at save).
+Same for transition: `flips=1` post-restore vs `frames=2017`
+cumulative (2016 at save). The harness compares sw<->gl *within* the
+same segment, so both sides share the same snapshot history —
+structural equality is still exact. This also explains why the
+transition's single post-restore draw (2673-2672=1) is the §114
+screen-transition draw. No action needed; recorded here so the next
+wave does not re-diagnose it.
+
+### Tripwire disposition: 007 trips zero `unsup[` rows
+
+| §113 row / risk | fmv (pd181+1B) | transition (pd536+1B) |
+|---|---|---|
+| `unsup[colorBytes/zformat/modes/cubeVol/fbo/flip/fatal]` | 0/0/0/0/0/0/0 | 0/0/0/0/0/0/0 |
+| `diag[fboReallocs/fboZetaDrops/clipXY]` | 0/0/0 | 0/0/0 |
+| `diag[flipEmpty]` (new) | **39 (== flips: all CPU-blitted)** | 0 (flip served GL content) |
+| methods observed | 3471 (zero draw-triggering) | 854 (1 draw + 3 clears) |
+
+The 007 segments add no new tripwire exposure: the FMV path is pure
+CPU blits (no PGRAPH methods that draw), the transition is one
+fullscreen draw + clears. The only backend gap on this title is the
+present-upload gap below — deliberately NOT counted in
+`BackendUnsupported` (the backend serves nothing rather than wrong
+pixels), now measured by `flipEmpty`.
+
+### fps table, headless (milestone 2 — real numbers)
+
+WALL = whole-run wall per harness (`dotnet` CLI startup included,
+≈ seconds). Msteps/s = 1B steps / WALL. GL share = `timed[` total /
+gl WALL. Post-restore flips = backend `flips=` (the presents actually
+served during the segment; software `frames=` includes snapshot
+history — see above). Host was shared with sibling waves, so absolutes
+carry contention noise (§119 documents ±40% windows); the `timed[`
+counters bound the backend's own contribution.
+
+| segment | sw WALL | gl WALL | Msteps/s sw/gl | post-restore flips | timed draw/clear/readback (gl) | GL share of gl WALL |
+|---|---|---|---|---|---|---|
+| menu 1B | 352.6 s | 342.3 s | 2.84 / 2.92 | 686 | 8623 / 12 / 1131 ms | 2.9% |
+| triangle 1B | 298.4 s | 360.6 s | 3.35 / 2.77 | 68 | 723 / 11 / 104 ms | 0.2% |
+| 007 fmv 1B | 249.5 s | 202.4 s | 4.01 / 4.94 | 39 | 0 / 0 / 0 ms | 0% |
+| 007 transition 1B | 227.0 s | 198.8 s | 4.41 / 5.03 | 1 | 16 / 4 / 2 ms | ~0% |
+
+(gl-faster-than-sw on the 007 segments is contention noise, not a
+backend speedup: `timed[` proves the backend adds ≤ seconds while the
+sw/gl deltas are tens of seconds, and the direction flips between
+titles.)
+
+**What this decides for the swapchain wave:** the GL submission +
+readback path costs 0–2.9% of headless wall on all four workloads —
+**emulation (CPU interpretation + devices) is 97–100% of every run**.
+A swapchain present path therefore buys ~nothing for throughput; it is
+a latency/interactivity feature, not a speed feature. The priorities it
+sets: (1) Track C JIT remains the throughput lever (this host measured
+2.8–5.0 Msteps/s vs the 14 Msteps/s Release figure — contended, but
+the ratio is all emulation); (2) for parity on CPU-blitted titles the
+need is a *present-upload* path (below), not a faster present; (3)
+async GL submission only makes sense after (1), per Amdahl —
+serializing at `0x100`/`0x12C`/`0x1D70` (§7 risk 3) for a ≤3% path
+would add risk for no measurable gain.
+
+(Definition honesty: "flips/s" as printed by the harness =
+cumulative `frames=` / WALL, which mixes snapshot history with segment
+time — e.g. transition prints ~10/s while only 1 flip happened
+post-restore. The table above uses post-restore flips instead. The
+§114 "~22 fps" figure is guest-side video cadence; host-wall presents
+during FMV measured ≈ 39 flips / ~200 s ≈ 0.2/s — the guest is
+flip-paced by emulation throughput, not running at video rate in wall
+time. No contradiction once the definitions are separated.)
+
+### Reported follow-up (needs an Nv2a seam change — NOT done here)
+
+**Present-upload at flip for CPU-blitted surfaces.** The FMV gap has a
+structural cause, not a tuning cause: `PgraphSurfaceRecord` carries
+only (width, height, colorBytes, frame) — no surface DMA base/offset —
+so `FlipCore` cannot upload a CPU-written present surface into the FBO
+when the FBO is empty (or stale after CPU writes over GPU-rendered
+content). The scoped follow-up: extend the seam record with the
+resolved surface address the software path already computes
+(`CapturePresentedFrame`: `SurfaceBase(_dmaColor) +
+PresentedColorOffset`, `Nv2aMmio.cs:4972`), and in `FlipCore`, when
+`_fbo == 0` (or on a surface-generation change), upload the guest-RAM
+surface via `IGpuMemory` and serve it — a full-frame replace, still
+never a mix, so the no-mixing rule survives. Staleness detection for
+the non-empty-FBO case needs guest-visible surface-access tracking
+(design §7 risk 6) and stays later scope; the empty-FBO upload alone
+closes the FMV golden (gl frame would become byte-exact, since it is a
+copy of the same guest RAM the sw path reads). This is Nv2a-seam work
+for a follow-up wave in the assigned area split — recorded, not
+started.
+
+### Acceptance
+
+(1) 007-segment goldens: transition passes the full §3.4 golden
+(byte-identical, SHA == §114 oracle, `BackendUnsupported=0`,
+`flipEmpty=0`); fmv meets the documented-gap clause (structural
+equality, `BackendUnsupported=0`, `flipEmpty == flips` with the sw
+frame reproduced exactly across builds) — each remaining row justified
+with counter evidence (table above). Menu + triangle re-verified green
+on the final build, SHAs bit-identical to §113/§117 records.
+(2) fps table above with real numbers + swapchain-wave priorities.
+(3) Suite **1222/1222 green** (1216 baseline + 6 prior-session timing
+tests; zero existing-expectation changes) + `dotnet format
+--verify-no-changes` clean. Commit on `wave/gpu-slice3`.
+
+Open risks (unchanged unless noted): clipY!=0 (`clipXY=0` on all four
+workloads this wave), fingerprint interior-miss (gate-armed; FMV sw
+frame determinism across builds raises confidence in the software
+side), zeta-drop depth (0 exposure), Vulkan/swapchain/async (design
+§3/§5/§7 unchanged — fps table reframes swapchain as
+latency-not-throughput), 007 G2 decode (§118, sibling track — the
+transition segment now ends parked at `0x1C302C`, consistent).
