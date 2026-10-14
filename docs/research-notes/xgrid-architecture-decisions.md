@@ -7132,3 +7132,100 @@ skip, fault precision. Gates: suite green + format; tri/menu 1B SHAs +
 counters; flag-off byte-identical; ratio UP again; profile shows decode
 share gone (add a decode-avoided counter to prove it). Estimated 1.5-2x the
 (a-c) slice; do NOT combine with codegen or boundary elision.
+
+## §132 - present-upload staleness design: dirty-bit (a*) now, surface cache deferred (2026-10-14)
+
+Wave-11 T2 read-only design task (no code). Problem: `GlPgraphBackend.FlipCore`
+serves the FBO whenever `_fbo != 0`, but after §§125/129 it cannot tell a
+GL-rendered present (serve) from a CPU-blitted present (stale — upload or
+abstain). Survivors still binding: never mix, no async, headless only. Menu/
+triangle always create the FBO pre-flip (`flipEmpty=0`, `presentUploads=0`
+both) — the live non-empty-stale shape is FMV-like and unreachable without
+007 (forbidden), so the implementing gate needs a synthetic harness, not a
+title (testrom §102 vehicle).
+
+**Options vs our code.** (a) Dirty-watch: arm watched span = presented
+surface (`SurfaceAddress`, `pitch × height`) at `DrawCore`/`ClearCore`/
+`FlipCore` ends; any guest write inside sets the bit; `FlipCore` dirty →
+upload, clean → serve. State: one `{base,len,epoch,dirty}` + `diag[
+flipStaleUploads]` in `GlPgraphBackend.cs`; precedent `AddressSpace.
+WatchStart/WatchEnd/WatchHit` + `CheckWatch` in `Write8/16/32`. (b)
+Fingerprint probe (reuse `FingerprintTexture` 16-texel FNV): hash at draw/
+clear end, compare at flip, upload on mismatch — no write hook, but UNSOUND
+alone (see below). (c) xemu-style surface cache (facts only: `SurfaceBinding`
+`vram_addr/size` + `draw_dirty/download_pending/upload_pending`, per-surface
+CPU range callbacks + `mem_dirty` bitmap + pitch-repack upload): keyed FBO
+cache on `(SurfaceAddress,pitch,format,size)` replacing the grow-only FBO.
+
+**Two soundness findings (source-verified).** (i) Twin-write ordering: the
+software path runs unconditionally beside the backend, and `Backend?.Draw`
+fires BEFORE the software twin (`Nv2aMmio.cs:5530` → fragment loop `5591`)
+while `Backend.Clear` fires AFTER the fill (`3433/3455` → `3460`) — so the
+backend must NOT clear-dirty inside `DrawCore`; writer identity comes free:
+all NV2A surface writers go through exactly two `IGpuMemory` adapters
+(`XboxMachine.PhysicalGpuMemory`, `Program.MachineGpuMemory`) into
+`AddressSpace.Write32`, so a suppress-scope around those two `WritePhysical`
+bodies (single-threaded — plain counter) exempts twins. (ii) Watch placement:
+`Write64` RAM fast path skips `CheckWatch`, and `RamAliasDevice` writes
+`PhysicalMemory` directly — guest writes via the `0x80000000` alias, RAM
+mirror, and `0xF0000000` WC view evade an `AddressSpace`-level watch
+(`GetSpan` bypasses are load-time/CLI-only, never runtime guest writers).
+Fix: bit lives in `PhysicalMemory.Write8/16/32/64` (single choke covering
+aliases) with the adapter suppress flag. Deeper kill for (b): a RAM-hash
+reference stored in `DrawCore` never includes the post-`Backend.Draw` twin →
+100% false-dirty (every flip uploads; correct pixels, wasted work); storing
+it later re-admits CPU dirt — (b) works only as a pre-filter inside (a)/(c).
+(c) is unjustified today: our surfaces are never GPU-resident-only (software
+path touches guest RAM every draw — no `download_pending` consumer) and the
+working set is one surface per flip, not a render-to-texture graph.
+
+**Failure rule:** wrong SERVE = frozen/torn frame (high severity); wrong
+UPLOAD = software-twin pixels = the golden oracle itself (perf cost only);
+guard-failed abstain = existing `flipEmpty` path (honest, counted). So: **on
+any uncertainty, upload; abstain only when `TryBuildUploadPixels` guards
+fail.** (a) degrades to upload-everything (perf); (b) to wrong-serve on small
+rects (disqualifying as primary); (c) to (a) on key miss.
+
+**RECOMMENDATION (a*):** external-dirty bit in `PhysicalMemory`, suppress-
+scoped around the two `IGpuMemory.WritePhysical` adapters, armed only when
+the backend is attached with live FBO (sw default pays zero — flag-off
+identity preserved), fail-closed (dirty on `ResetState`/snapshot load → no
+`.xgs` bump, backend already excluded from snapshots, §101 holds). Flip rule
+in `FlipCore`: dirty → existing upload path (`presentUploads++`), clean →
+serve, guard failure → `flipEmpty` abstain. No record change (address+pitch
+already carried). **Acceptance gate:** synthetic harness — GL-draw→flip serves
+(`flipServed` > 0, GL pattern); GL-draw→CPU-blit→flip uploads
+(`presentUploads=1`, guest bytes); blit via the `0x80000000` alias → uploads
+(alias-gap regression); save/load mid-sequence → first flip uploads; menu +
+triangle 1B goldens unchanged (`violations=0`, `presentUploads=0` both —
+titles still never trip it); A/B wall within noise of the +5.5% precedent;
+suite + format green. Non-goals: swapchain/windowing (operator-pending),
+async, partial-region upload, download/eviction path, snapshot change,
+Vulkan, default-on, title validation beyond menu/tri.
+
+## §133 - wave-11 BOSS record: slice-2 speedup merged, staleness designed, goldens + smoke green (2026-10-14)
+
+Four tasks, all green, one merge (`6f2e79b` jit-slice2). **T1 MERGED (§131
+on branch):** (a) `NoteTlbHits/Misses(int)` batching + `TranslateUncounted`
++ profiler-on `FetchCounted` (15 outcomes → 1–2 dispatches; data paths left
+alone — 0.5 notes/insn buys nothing); fail-pre-fix catch en route (faulting
+byte's miss lost — `finally` never flushes unreturned iterations — fixed by
+accumulate-before-throw, proven by fault-precision test); hook cost +5.5% →
++4.3% (inside host noise; residual is `Observe`-body work). (b) 1M-insn
+windowed top-64 heads: overflow tri 23.1%→0.28%, menu 17.8%→1.43%; top heads
+now real (`0x800422B0` spin 9.3%, idle `0x8001B02E`/`43`). (c) `--fetch-fast`
+(default off): one `Mmu.Translate` per single-page window (4 KB check
+subsumes 4 MB), cross-page → legacy + `NoteFetchSlow`, vector-14 precision
+unit-proven. **Acceptance: triangle 3.43→4.63 Msteps/s (1.35×), menu 2.69→
+3.50 (1.30×); both SHAs + full counters exact; off-vs-on logs byte-identical
+bar flag/paths; translates/insn 15.5→1.4–1.5; 1277/1277 green.** (d) decode
+cache DEFERRED with a complete handoff in §131 (invalidation inventory —
+all five device adapters are private `XboxMachine.cs` shims needing no
+device changes; 9 gotchas incl. A/D over-flush, linear-key/physical-reverse-
+map, #UD marker, table cap; unit→golden recipe; est. 1.5–2× the (a–c)
+budget). **T2 filed** (§132, recommendation (a*) + synthetic-harness gate).
+**T3 smoke PASS 7/7** in 03:51 (steps bit-reproducible 792,800,535, zero
+deviations). **T4 merged-master goldens PASS both legs** (menu SHA +
+§127 counters exact @`0x1E0EB`; triangle SHA + 2706/68/34 @`0x8001B032`) —
+the wave-10 post-merge gap is closed. **Baseline 1277/1277** (1268 + 9),
+format clean.
