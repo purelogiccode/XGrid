@@ -16,12 +16,27 @@ internal sealed class IdleSkipDetector
     internal const int MaxBodyInstructions = 32;
     internal const int MaxBodyBytes = 128;
     internal const int MaxWatchAddresses = 32;
+    internal const int MaxAccountedHeads = 128;
+
+    /// <summary>Sentinel stored as a head's offending address when a PIO port is not an immediate.</summary>
+    internal const uint UnknownPortAddress = 0xFFFFFFFFu;
 
     private readonly XboxCpu _cpu;
     private readonly List<uint> _iterationWatch = new();
     private readonly List<uint> _validatedWatch = new();
     private readonly List<uint> _watchBaseline = new();
     private readonly List<DecodedInstruction> _iterationStream = new();
+    private readonly List<uint> _iterationMmio = new();
+    private readonly List<uint> _validatedMmio = new();
+    private readonly Dictionary<uint, HeadTrack> _rejectedHeads = new();
+    private readonly HashSet<uint> _armableHeads = new();
+    private readonly ulong[] _rejectSteps = new ulong[7];
+
+    private bool _spanOpen;
+    private uint _spanHead;
+    private ulong _spanLastVisitTsc;
+    private ulong _spanTotalAtStart;
+    private ulong _totalAttributed;
 
     private bool _measuring;
     private bool _poisoned;
@@ -33,6 +48,9 @@ internal sealed class IdleSkipDetector
     private int _hitCount;
     private bool _sawWrite;
     private bool _sawNonRam;
+    private bool _sawPio;
+    private uint _pioPort;
+    private uint? _firstNonRamAddress;
     private bool _watchOverflow;
     private bool _validatedRaisesIf;
 
@@ -76,7 +94,61 @@ internal sealed class IdleSkipDetector
 
     public ulong StopBudget { get; set; }
 
+    public ulong StopReadDeadline { get; set; }
+
+    public ulong StopModelLost { get; set; }
+
     public ulong HltExecuted { get; set; }
+
+    /// <summary>Steps attributed to heads that reached a skip trigger (V1-skippable parks).</summary>
+    public ulong ArmableSteps { get; private set; }
+
+    /// <summary>Rejected heads seen after the accounting capacity was exhausted.</summary>
+    public ulong HeadsUntracked { get; set; }
+
+    /// <summary>Triggers dropped because control left the loop before the skip ran.</summary>
+    public ulong TriggerDrops { get; set; }
+
+    /// <summary>RunIdleSkip invocations that reached the skip loop (probe excluded).</summary>
+    public ulong SkipInvocations { get; set; }
+
+    /// <summary>Skip attempts that bailed because no idle-skip host was wired.</summary>
+    public ulong SkipHostNull { get; set; }
+
+    /// <summary>Steps attributed to rejected heads, indexed by <see cref="IdleSkipRejectReason"/>.</summary>
+    public ulong RejectedSteps(IdleSkipRejectReason reason)
+    {
+        return _rejectSteps[(int)reason];
+    }
+
+    /// <summary>Returns the top rejected heads by attributed steps (measurement table).</summary>
+    public List<IdleSkipHeadStat> TopRejectedHeads(int maxCount)
+    {
+        var stats = new List<IdleSkipHeadStat>(_rejectedHeads.Count);
+        foreach ((uint head, HeadTrack track) in _rejectedHeads)
+        {
+            if (track.Steps == 0)
+            {
+                continue;
+            }
+
+            stats.Add(new IdleSkipHeadStat
+            {
+                Head = head,
+                Steps = track.Steps,
+                Reason = track.Reason,
+                Address = track.Address,
+            });
+        }
+
+        stats.Sort((a, b) => b.Steps.CompareTo(a.Steps));
+        if (stats.Count > maxCount)
+        {
+            stats.RemoveRange(maxCount, stats.Count - maxCount);
+        }
+
+        return stats;
+    }
 
     /// <summary>Records one executed instruction for the candidate-loop state machine.</summary>
     public void Observe(in DecodedInstruction instruction, uint eipBefore, uint eipAfter)
@@ -88,6 +160,11 @@ internal sealed class IdleSkipDetector
 
         bool isBranch = instruction.Mnemonic is Mnemonic.Jmp or Mnemonic.Jcc;
         uint fallThrough = eipBefore + (uint)instruction.Length;
+
+        if (isBranch && eipAfter < eipBefore)
+        {
+            AccountVisit(eipAfter);
+        }
 
         if (!_measuring)
         {
@@ -154,12 +231,18 @@ internal sealed class IdleSkipDetector
         if (instruction.Mnemonic is Mnemonic.In or Mnemonic.Out or Mnemonic.Ins or Mnemonic.Outs)
         {
             AccessAborts++;
+            _sawPio = true;
+            _pioPort = instruction.Operand1.Kind == OperandKind.Immediate
+                ? instruction.Operand1.Immediate
+                : UnknownPortAddress;
+            RegisterRejectedHead(IdleSkipRejectReason.Pio, _pioPort);
             PoisonAndAbort();
             return;
         }
 
         if (!IdleSkipBodyRules.IsAllowed(instruction.Mnemonic))
         {
+            RegisterRejectedHead(IdleSkipRejectReason.Structural);
             Abort(structural: true);
             return;
         }
@@ -167,6 +250,7 @@ internal sealed class IdleSkipDetector
         if (_sawWrite || _sawNonRam || _watchOverflow)
         {
             AccessAborts++;
+            RegisterAccessVerdictHead();
             PoisonAndAbort();
             return;
         }
@@ -193,7 +277,11 @@ internal sealed class IdleSkipDetector
         {
             if (!host.IsRam(physicalAddress))
             {
+                // A device write is still a write-body hard stop (V1 rule); flag
+                // both so the §119 attribution labels it MemWrite, not MmioRead.
                 _sawNonRam = true;
+                _sawWrite = true;
+                _firstNonRamAddress ??= physicalAddress;
             }
             else
             {
@@ -205,7 +293,29 @@ internal sealed class IdleSkipDetector
 
         if (!host.IsRam(physicalAddress))
         {
+            // V2 (§119): a data read of a device register the read-effect model
+            // classifies (side-effect free, value changes only with device time)
+            // may stay in the body; the skip loop clamps chunks to its deadline.
+            if (!isInstruction
+                && _cpu.IdleSkipReadModel is IIdleSkipReadModel model
+                && model.TryGetReadEffect(physicalAddress, out _))
+            {
+                if (!_iterationMmio.Contains(physicalAddress))
+                {
+                    if (_iterationMmio.Count >= MaxWatchAddresses)
+                    {
+                        _watchOverflow = true;
+                        return;
+                    }
+
+                    _iterationMmio.Add(physicalAddress);
+                }
+
+                return;
+            }
+
             _sawNonRam = true;
+            _firstNonRamAddress ??= physicalAddress;
             return;
         }
 
@@ -241,6 +351,18 @@ internal sealed class IdleSkipDetector
         TriggerPending = false;
     }
 
+    /// <summary>Records a trigger that was dropped before the skip could run.</summary>
+    public void NoteTriggerDropped()
+    {
+        TriggerDrops++;
+    }
+
+    /// <summary>Records that the skip loop was entered.</summary>
+    public void NoteSkipInvocation()
+    {
+        SkipInvocations++;
+    }
+
     /// <summary>Snapshots the watched dwords so later changes are detectable.</summary>
     public void CaptureWatchBaseline()
     {
@@ -274,10 +396,14 @@ internal sealed class IdleSkipDetector
         _bodyInstructions = 0;
         _sawWrite = false;
         _sawNonRam = false;
+        _sawPio = false;
+        _pioPort = 0;
+        _firstNonRamAddress = null;
         _watchOverflow = false;
         _validatedRaisesIf = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
+        _iterationMmio.Clear();
     }
 
     /// <summary>Fully resets measurement state, poisoning and counters (CPU reset / snapshot load).</summary>
@@ -291,6 +417,24 @@ internal sealed class IdleSkipDetector
         _espAtHead = 0;
         _validatedWatch.Clear();
         _watchBaseline.Clear();
+        _validatedMmio.Clear();
+        _rejectedHeads.Clear();
+        _armableHeads.Clear();
+        for (int i = 0; i < _rejectSteps.Length; i++)
+        {
+            _rejectSteps[i] = 0;
+        }
+
+        _spanOpen = false;
+        _spanHead = 0;
+        _spanLastVisitTsc = 0;
+        _spanTotalAtStart = 0;
+        _totalAttributed = 0;
+        ArmableSteps = 0;
+        HeadsUntracked = 0;
+        TriggerDrops = 0;
+        SkipInvocations = 0;
+        SkipHostNull = 0;
         IterationsCompleted = 0;
         StaticRejects = 0;
         AccessAborts = 0;
@@ -301,6 +445,8 @@ internal sealed class IdleSkipDetector
         StopWatch = 0;
         StopDeadline = 0;
         StopBudget = 0;
+        StopReadDeadline = 0;
+        StopModelLost = 0;
         HltExecuted = 0;
         LastTriggerEip = 0;
     }
@@ -325,9 +471,13 @@ internal sealed class IdleSkipDetector
         _espAtHead = _cpu.Context.Esp;
         _sawWrite = false;
         _sawNonRam = false;
+        _sawPio = false;
+        _pioPort = 0;
+        _firstNonRamAddress = null;
         _watchOverflow = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
+        _iterationMmio.Clear();
         TriggerPending = false;
     }
 
@@ -335,6 +485,7 @@ internal sealed class IdleSkipDetector
     {
         if (_bodyInstructions >= MaxBodyInstructions)
         {
+            RegisterRejectedHead(IdleSkipRejectReason.Structural);
             Abort(structural: true);
             return false;
         }
@@ -347,15 +498,17 @@ internal sealed class IdleSkipDetector
 
     private void CompleteIteration()
     {
-        if (_sawWrite || _sawNonRam || _watchOverflow)
+        if (_sawWrite || _sawNonRam || _sawPio || _watchOverflow)
         {
             AccessAborts++;
+            RegisterAccessVerdictHead();
             PoisonAndAbort();
             return;
         }
 
         if (_cpu.Context.Esp != _espAtHead)
         {
+            RegisterRejectedHead(IdleSkipRejectReason.Structural);
             Abort(structural: true);
             return;
         }
@@ -364,12 +517,15 @@ internal sealed class IdleSkipDetector
         if (reject is not null)
         {
             StaticRejects++;
+            RegisterRejectedHead(IdleSkipRejectReason.StaticRule);
             PoisonAndAbort();
             return;
         }
 
         _validatedWatch.Clear();
         _validatedWatch.AddRange(_iterationWatch);
+        _validatedMmio.Clear();
+        _validatedMmio.AddRange(_iterationMmio);
         _validatedRaisesIf = raisesIf;
         IterationsCompleted++;
         _hitCount++;
@@ -378,9 +534,13 @@ internal sealed class IdleSkipDetector
         _bodyInstructions = 0;
         _sawWrite = false;
         _sawNonRam = false;
+        _sawPio = false;
+        _pioPort = 0;
+        _firstNonRamAddress = null;
         _watchOverflow = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
+        _iterationMmio.Clear();
         _nextEip = _head;
 
         if (_hitCount >= MinIterations && !TriggerPending)
@@ -388,6 +548,8 @@ internal sealed class IdleSkipDetector
             TriggerPending = true;
             Triggers++;
             LastTriggerEip = _head;
+            _rejectedHeads.Remove(_head);
+            _armableHeads.Add(_head);
         }
     }
 
@@ -411,10 +573,156 @@ internal sealed class IdleSkipDetector
         _hitCount = 0;
         _sawWrite = false;
         _sawNonRam = false;
+        _sawPio = false;
+        _pioPort = 0;
+        _firstNonRamAddress = null;
         _watchOverflow = false;
         _validatedRaisesIf = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
+        _iterationMmio.Clear();
+    }
+
+    /// <summary>
+    /// Exclusive-time attribution for the §119 measurement: the inter-visit
+    /// delta of a backward branch is credited to the currently open loop head,
+    /// minus any steps already attributed to other tracked heads (inner or
+    /// sibling loops) since that head's previous visit. This keeps nested and
+    /// sequential loops from double-counting spans; time spent in untracked
+    /// code between visits stays with the open head (documented approximation).
+    /// </summary>
+    private void AccountVisit(uint head)
+    {
+        ulong tsc = _cpu.Context.Tsc;
+        if (_spanOpen)
+        {
+            ulong delta = tsc - _spanLastVisitTsc;
+            if (delta > 0)
+            {
+                ulong other = _totalAttributed - _spanTotalAtStart;
+                ulong net = delta > other ? delta - other : 0;
+                if (net > 0)
+                {
+                    _totalAttributed += net;
+                    if (_rejectedHeads.TryGetValue(_spanHead, out HeadTrack? track))
+                    {
+                        track.Steps += net;
+                        _rejectSteps[(int)track.Reason] += net;
+                    }
+                    else if (_armableHeads.Contains(_spanHead))
+                    {
+                        ArmableSteps += net;
+                    }
+                }
+            }
+        }
+
+        _spanOpen = true;
+        _spanHead = head;
+        _spanLastVisitTsc = tsc;
+        _spanTotalAtStart = _totalAttributed;
+    }
+
+    /// <summary>Records the access-verdict reason (PIO / write / MMIO / watch overflow) for the current head.</summary>
+    private void RegisterAccessVerdictHead()
+    {
+        if (_sawPio)
+        {
+            RegisterRejectedHead(IdleSkipRejectReason.Pio, _pioPort);
+        }
+        else if (_sawWrite)
+        {
+            RegisterRejectedHead(IdleSkipRejectReason.MemWrite);
+        }
+        else if (_sawNonRam)
+        {
+            RegisterRejectedHead(IdleSkipRejectReason.MmioRead, _firstNonRamAddress ?? 0);
+        }
+        else
+        {
+            RegisterRejectedHead(IdleSkipRejectReason.WatchOverflow);
+        }
+    }
+
+    private void RegisterRejectedHead(IdleSkipRejectReason reason, uint address = 0)
+    {
+        if (_armableHeads.Contains(_head))
+        {
+            return;
+        }
+
+        if (!_rejectedHeads.TryGetValue(_head, out HeadTrack? track))
+        {
+            if (_rejectedHeads.Count >= MaxAccountedHeads)
+            {
+                HeadsUntracked++;
+                return;
+            }
+
+            track = new HeadTrack();
+            _rejectedHeads[_head] = track;
+        }
+
+        if (track.Reason == IdleSkipRejectReason.None)
+        {
+            track.Reason = reason;
+            track.Address = address;
+        }
+    }
+
+    /// <summary>
+    /// Clamps the next skip chunk by every watched device register's change
+    /// deadline. Returns false when the skip must stop now: a deadline reached
+    /// (the register changes at this step — the interpreter must observe it)
+    /// or the model can no longer classify a watched register (conservative).
+    /// </summary>
+    internal bool TryClampChunkByReadModel(ref int chunk)
+    {
+        if (_validatedMmio.Count == 0)
+        {
+            return true;
+        }
+
+        IIdleSkipReadModel? model = _cpu.IdleSkipReadModel;
+        if (model is null)
+        {
+            StopModelLost++;
+            return false;
+        }
+
+        for (int i = 0; i < _validatedMmio.Count; i++)
+        {
+            if (!model.TryGetReadEffect(_validatedMmio[i], out IdleSkipReadEffect effect))
+            {
+                StopModelLost++;
+                return false;
+            }
+
+            if (effect.IsStable)
+            {
+                continue;
+            }
+
+            if (effect.StepsUntilChange <= 0)
+            {
+                StopReadDeadline++;
+                return false;
+            }
+
+            if (effect.StepsUntilChange < chunk)
+            {
+                chunk = (int)effect.StepsUntilChange;
+            }
+        }
+
+        return true;
+    }
+
+    private sealed class HeadTrack
+    {
+        public IdleSkipRejectReason Reason;
+        public uint Address;
+        public ulong Steps;
     }
 
     private uint ReadWatchDword(uint physicalAddress)
