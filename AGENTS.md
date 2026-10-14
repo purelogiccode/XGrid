@@ -96,14 +96,39 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    compare across runs, and prefer the cheapest run that reaches the
    gate. More cores → more parallel validation runs; emulation speed is
    the binding constraint, not agent count.
-6. **Wave-agent liveness (2026-10-13):** poll each running agent's task
-   state periodically (~10 min cadence while a wave is out); a
-   cancelled/frozen agent gets relaunched IMMEDIATELY with an inventory
-   of its partial worktree state (untracked scripts, uncommitted diffs —
-   classify keep-vs-revert in the relaunch prompt) rather than waiting or
-   restarting cold. The first such relaunch (ktest-logsink, after a
-   frozen session) closed two gates the frozen run had left open and
-   turned scaffolding into the actual CMC fix.
+6. **Wave-agent liveness:** BOSS polls every running task ~10 min; stuck/
+   failed tasks are restarted immediately (or closed if needed) — see
+   Wave operations — BOSS protocol below.
+
+## Wave operations — BOSS protocol (2026-10-14)
+
+The coordinator acts as BOSS for every wave (proven in waves 7–8: a frozen
+session relaunched per this rule closed two gates and turned scaffolding
+into the CMC fix; four agents relaunched after a host power loss all went
+green with zero work lost).
+
+1. **Fan-out (max 8 simultaneous tasks).** One device/area per task; never
+   parallelize a single root-cause hunt or a sequential gate chain. Each
+   task is handled by one agent, which may spawn sub-agents for
+   parallelizable sub-work. One todo per task; build tasks get a `wave/*`
+   branch + worktree (with `References` junction + private media copy),
+   probe tasks stay read-only. Every task prompt states its acceptance
+   test and starting state up front.
+2. **Poll every ~10 min** while a wave is out: check each running task's
+   state (progress output, tool activity, elapsed wall clock vs iteration
+   budget). Classify: on-track / stuck (frozen session, no progress, same
+   failure repeating) / failed / done.
+3. **Stuck/failed → restart; close if needed.** Relaunch IMMEDIATELY with
+   an inventory of the task's partial state (untracked scripts,
+   uncommitted diffs — keep-vs-revert in the relaunch prompt), never cold.
+   Close (cancel) a task only if it is blocked on a dependency, its
+   hypothesis was invalidated, or it was superseded — and record the
+   diagnosis in the notes, never a fake fix.
+4. **Aggregate when all tasks finish.** Merge sequentially (`--no-ff`),
+   renumber research notes (§-union on conflict), run the full suite +
+   format, update `AGENTS.md` (current state + next session) and
+   `ImplementationPlan.md`, commit + push, report. Closed-task diagnoses
+   go into the notes as known-no-bug / deferred items for the next wave.
 
 ## Current state
 
