@@ -101,7 +101,9 @@ public sealed class TcpProxyTests
             Assert.Equal(payload, received);
             Assert.Equal(1, proxy.Connections);
             Assert.Equal(0, proxy.FailedConnections);
-            Assert.True(proxy.RelayedBytes >= payload.Length * 2);
+            Assert.True(
+                SpinWait.SpinUntil(() => proxy.RelayedBytes >= payload.Length * 2, TimeSpan.FromSeconds(5)),
+                $"relayed {proxy.RelayedBytes} of {payload.Length * 2} bytes after echo");
         }
         finally
         {
