@@ -111,6 +111,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _unsupportedFbo;
     private long _unsupportedFlip;
     private long _fatalCount;
+
+    // Slice-2 evidence diagnostics (informational, never BackendUnsupported):
+    // measure exposure of the §113 open risks so their disposition is backed
+    // by run counters instead of assumption. _fboReallocs counts FBO
+    // reallocations with prior content (grow / zeta change — content is
+    // preserved by blit except depth on a zeta format change, counted in
+    // _fboZetaDrops); _clipXYNonZero counts draws/clears whose clip window
+    // origin is not (0,0) (the readback origin assumption).
+    private long _fboReallocs;
+    private long _fboZetaDrops;
+    private long _clipXYNonZero;
     private int _perspective;
     private float _invAw;
     private float _invBw;
@@ -211,12 +222,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     {
         get
         {
-            var sb = new StringBuilder(320);
+            var sb = new StringBuilder(384);
             sb.Append(CultureInfo.InvariantCulture,
                 $"backend=gl draws={Draws} clears={Clears} flips={Flips} methods={MethodsObserved} " +
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
-                $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]");
+                $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero}]");
             if (_fatalError is not null)
             {
                 sb.Append(CultureInfo.InvariantCulture, $" fatal=\"{_fatalError}\"");
@@ -338,6 +350,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _unsupportedFbo = 0;
         _unsupportedFlip = 0;
         _fatalCount = 0;
+        _fboReallocs = 0;
+        _fboZetaDrops = 0;
+        _clipXYNonZero = 0;
     }
 
     /// <inheritdoc />
@@ -394,6 +409,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private void DrawCore(in PgraphDrawInfo info)
     {
         Draws++;
+        if (info.ClipX != 0 || info.ClipY != 0)
+        {
+            _clipXYNonZero++;
+        }
+
         if (info.ColorBytes != 4)
         {
             BackendUnsupported++;
@@ -468,6 +488,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private void ClearCore(in PgraphClearInfo info)
     {
         Clears++;
+        if (info.ClipX != 0 || info.ClipY != 0)
+        {
+            _clipXYNonZero++;
+        }
+
         if (info.ClearColor && info.ColorBytes != 4)
         {
             BackendUnsupported++;
@@ -665,13 +690,31 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // SURFACE (software keeps surface pixels across clip-window
         // changes), so a clip shrink or a flip at an older clip size reads
         // the same window software reads. Only a larger extent or a zeta
-        // format change reallocates.
+        // format change reallocates; the realloc PRESERVES prior content by
+        // blitting color (always) and depth/stencil (same zeta format)
+        // from the old FBO — software's surfaces live in guest RAM and are
+        // never dropped, so losing them here was a fidelity gap (§113
+        // FBO-grow risk; exposure measured in diag[fboReallocs /
+        // fboZetaDrops], which the golden gates re-validate on every run).
         if (_fbo != 0 && _fboWidth >= width && _fboHeight >= height && _fboZetaBytes == zetaBytes)
         {
             return true;
         }
 
-        DeleteFbo();
+        uint oldFbo = _fbo;
+        uint oldColor = _colorRenderbuffer;
+        uint oldDepth = _depthRenderbuffer;
+        int oldWidth = _fboWidth;
+        int oldHeight = _fboHeight;
+        uint oldZeta = _fboZetaBytes;
+
+        _fbo = 0;
+        _colorRenderbuffer = 0;
+        _depthRenderbuffer = 0;
+        _fboWidth = 0;
+        _fboHeight = 0;
+        _fboZetaBytes = 0;
+
         _gl.GenFramebuffers(1, out _fbo);
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
         _gl.GenRenderbuffers(1, out _colorRenderbuffer);
@@ -706,8 +749,63 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         GLEnum status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
         if (status != GLEnum.FramebufferComplete)
         {
+            // Keep the previous FBO alive on failure: the caller counts the
+            // draw unsupported, but later draws at the old size still work.
             DeleteFbo();
+            _fbo = oldFbo;
+            _colorRenderbuffer = oldColor;
+            _depthRenderbuffer = oldDepth;
+            _fboWidth = oldWidth;
+            _fboHeight = oldHeight;
+            _fboZetaBytes = oldZeta;
             return false;
+        }
+
+        if (oldFbo != 0)
+        {
+            _fboReallocs++;
+            if (oldZeta != 0 && oldZeta != zetaBytes)
+            {
+                _fboZetaDrops++;
+            }
+
+            // Content-preserving blit: same-origin rect (both FBOs share the
+            // guest-row-0-at-bottom convention), NEAREST, no filtering. Depth
+            // only when the zeta format is unchanged (different depth formats
+            // are not blit-compatible); a zeta format change drops depth
+            // content and is counted so the gap stays visible.
+            _gl.Disable(EnableCap.ScissorTest);
+            _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, oldFbo);
+            _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
+            _gl.BlitFramebuffer(
+                0, 0, oldWidth, oldHeight,
+                0, 0, oldWidth, oldHeight,
+                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+            if (oldDepth != 0 && oldZeta == zetaBytes)
+            {
+                ClearBufferMask mask = zetaBytes == 4
+                    ? ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit
+                    : ClearBufferMask.DepthBufferBit;
+                _gl.BlitFramebuffer(
+                    0, 0, oldWidth, oldHeight,
+                    0, 0, oldWidth, oldHeight,
+                    mask, BlitFramebufferFilter.Nearest);
+            }
+
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            uint delFbo = oldFbo;
+            _gl.DeleteFramebuffers(1, ref delFbo);
+            if (oldColor != 0)
+            {
+                uint del = oldColor;
+                _gl.DeleteRenderbuffers(1, ref del);
+            }
+
+            if (oldDepth != 0)
+            {
+                uint del = oldDepth;
+                _gl.DeleteRenderbuffers(1, ref del);
+            }
         }
 
         _fboWidth = width;

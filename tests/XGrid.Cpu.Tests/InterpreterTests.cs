@@ -216,6 +216,19 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void Cmc_ComplementsCarryFlag()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xF5, 0xF5);
+        cpu.Context.Eflags &= ~FlagBits.Cf;
+
+        cpu.Step();
+        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+
+        cpu.Step();
+        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
+    }
+
+    [Fact]
     public void Add_Overflow_SetsOverflowFlag()
     {
         XboxCpu cpu = CpuHarness.Create(0x01, 0xD8);

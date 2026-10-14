@@ -5546,3 +5546,627 @@ no 0x3F8 model) or rely on the FATX log file + `--writedump`; (c) suite
 totals unknown (0 of 378 executed). Baseline: **1126 tests green, build
 + `format --verify-no-changes` clean; zero src changes, zero
 expectation changes.**
+
+## §117 — GPU-backend slice 2: triangle golden gate PASSED, FBO-grow blit landed, all §113 tripwires evidence-disposed (2026-10-13)
+
+Wave `wave/gpu-slice2` (worktree `Temp\opencode\worktrees\gpu-slice2`,
+branch from master @1f0d918). Scope per wave assignment: `src/XGrid.GpuGl/**`,
+`tests/XGrid.GpuGl.Tests/**`, `scripts/`, the two research docs. The
+triangle gate and the dashboard re-verify both **PASS** on this branch;
+suite baseline **1205/1205** green (zero existing-expectation changes),
+`dotnet format --verify-no-changes` clean. Host: NVIDIA GL 4.6.0 driver
+610.88, probe ok (real context). Media: private `wt-data\` copies
+(BIOS/MCPX/EEPROM/qcow2), triangle ISO read-only at
+`%TEMP%\opencode\triangle-iso\triangle.iso`.
+
+### Triangle golden gate (the slice-2 acceptance)
+
+Harness: `scripts/gpu-slice2-triangle-golden.ps1` (twin of the slice-1
+script + `--dvd`, anchor pins for the recorded counters
+`draws=2706 frames=68 stalls=34` and the recorded software frame SHA;
+§3.4 BMP policy identical). Run:
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd ...\triangle.iso --steps 1000000000 --gpu sw|gl --frame ...
+```
+
+Result: **GOLDEN: PASS** on both the unmodified slice-1 backend (first
+pair, proving the triangle stream trips **zero** §113 `unsup[...]` rows)
+and again on the final instrumented build. Evidence:
+
+1. Both runs `LastFault vec=0` (exit 0).
+2. Structural counters identical sw<->gl **and** == recorded anchors:
+   `NV2A draws executed=2706 skipped=0 pixels=89142121 textured=48754488
+   clears=6455 blended=518 depth=15667336 zclip=0 zclipCull=21526
+   frames=68 stalls=34` (byte-identical lines in both logs).
+3. `GPU backend=gl probe ok` then
+   `draws=54492 clears=6455 flips=68 methods=223956 programs=10 uploads=10
+   unsupported=0 unsup[colorBytes=0 zformat=0 modes=0 cubeVol=0 fbo=0
+   flip=0 fatal=0] diag[fboReallocs=14 fboZetaDrops=7 clipXY=0]
+   BackendUnsupported=0`.
+4. BMP diff (§3.4 policy): **violations=0, outsideBand=0, maxDelta=1** —
+   27,849 differing pixels (9.1% of 307,200; the Gouraud triangle is edge-
+   heavy), every one inside the ±1 px edge band, flat regions byte-exact.
+5. Software frame SHA verified (not trusted):
+   `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`
+   = the recorded §109 hatch-free triangle oracle; gl frame
+   `7A860ED7378A86E8E63403573D92D0D5B248EA93E66D7A34716947535F34FC2D`
+   (bit-identical before/after this wave's FBO change — deterministic
+   driver, the change is frame-neutral on this title).
+
+Notes: the §110 §1.2 histogram's `pixels=88,944,649` predates the §109
+depth-compare fix; current master counts `89,142,121` (draws/frames/
+stalls unchanged — those are pusher-level). The triangle's combiner is
+`stages=1 control=00000001 final=True draws=2672` — the same single-stage
+shape as the menu, so the multi-stage-combiner worry in the wave brief
+did **not** materialize. The pbkit depth-texture stage (`0x30`
+LU_IMAGE_DEPTH_Y16_FIXED, 62,444,852 samples, all software misses via
+`bytesPerTexel==0` -> none-texel) has GL parity **by construction**
+(`ApplyTextures` marks `uTexOk=0` for `bytes==0`; `SampleSlot` returns
+the same none-texel) — proven by violations=0, not tripwired.
+
+### Dashboard menu golden re-verified
+
+`scripts/gpu-slice1-golden.ps1` on this branch: **PASS** — sw SHA
+`4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`
+and gl SHA `B6116DAE805822BF0D7C984516B9EC18E8D4AA56A148045BB32F0FCC7CFCF33D`
+are **bit-identical to the §113 records**; counters
+`draws=33632 frames=686 stalls=686` identical; diff=2602 violations=0
+maxDelta=1; `BackendUnsupported=0` with the same
+`diag[fboReallocs=14 fboZetaDrops=7 clipXY=0]` (the reallocs are the
+shared boot-prefix video-mode setup — 14 per boot on both titles).
+
+### What changed in `src/XGrid.GpuGl` (all additive; no seam/test changes)
+
+- **Evidence diagnostics** (`DebugSummary` suffix, informational, never
+  `BackendUnsupported`): `diag[fboReallocs= fboZetaDrops= clipXY=]` —
+  FBO reallocations with prior content, zeta-format-change depth drops,
+  draws/clears with a clip-window origin != (0,0). These convert two
+  §113 open risks from assumption into per-run measurements.
+- **Content-preserving FBO realloc** (the §113 "FBO-grow window realloc"
+  gap — the one silent fidelity hole behind a green counter): on grow or
+  zeta change the backend now creates the new FBO first and
+  `glBlitFramebuffer`s the old content in (color always; depth/stencil
+  only when the zeta format is unchanged — different depth formats are
+  not blit-compatible, and the drop is counted in `fboZetaDrops`). A
+  failed FBO creation now **keeps the previous FBO alive** (slice 1
+  destroyed it, silently disabling all later draws). Gate validation:
+  the path fires 14x per boot (7 with zeta change) on both titles and
+  both golden frames are **bit-identical** before/after — on menu+
+  triangle the realloc-dropped content was always fully redrawn or
+  cleared before present, so the fix is observably neutral here and
+  content-correct for future mid-frame-grow titles.
+- `scripts/gpu-slice2-triangle-golden.ps1` — the triangle gate harness
+  with anchor pins (counters + sw SHA), reusable per driver/host.
+
+### §113 tripwire disposition (every `unsup[...]` row + open risk)
+
+| §113 row / risk | Disposition | Evidence (this wave) |
+|---|---|---|
+| `unsup[modes]` exotic DOT/BUMP tex modes | stays counted; GLSL emitter emits deterministic none-texel for invalid stages (software parity, §96), counts + continues for valid-stage use so the gate fails loudly | menu=0, triangle=0 (both golden gl logs) |
+| `unsup[cubeVol]` cube/volume success paths | stays counted; implementing samplerCube/face-selection without a guest that uses it would be untestable speculation (Velocity rule 1) | menu=0, triangle=0 |
+| `unsup[zformat]` float-zeta + depth test | stays counted; GL float-depth path (Depth32F + range compare) deferred until a title histogram proves usage | menu=0, triangle=0 |
+| `unsup[colorBytes]` non-4-byte color | stays counted; software 2-byte present path exists but no menu/triangle surface uses it | menu=0, triangle=0 |
+| `unsup[fbo]` EnsureFbo failure | stays counted; failure path now preserves the previous FBO (previously destroyed it) | menu=0, triangle=0 |
+| `unsup[flip]` oversized flip window | stays counted; faking a larger readback would silently present wrong pixels | menu=0, triangle=0 |
+| `unsup[fatal]` GL exception | stays counted (fail-loud mechanism is its own disposition) | menu=0, triangle=0 |
+| FBO-grow content loss (silent behind the counter) | **IMPLEMENTED**: blit-preserving realloc + `diag[fboReallocs/fboZetaDrops]` (GL glue, gate-validated live 14x/boot; not headless-unit-testable — documented honestly) | both gates bit-identical before/after |
+| clipY!=0 readback origin assumption | stays open; `diag[clipXY]` counter added as detector | clipXY=0 draws+clears on menu+triangle |
+| 16-word texture fingerprint miss | stays open; the golden pair is the tripwire; full-buffer CRC remains too slow per draw (§113 measurement) | both gates violations=0; uploads=10 triangle / 13 menu |
+| multi-stage combiner (wave-brief worry) | no work needed: triangle combiner is stages=1, same as menu; emitter is generic-8-stage with unit-tested shape | `stages=1 control=00000001` in the sw gl logs |
+
+Design-doc slice-2 items beyond the wave brief, for the record: the
+"full dashboard surface" milestone items are covered by the §113
+pad-script gate (menu+submenu navigation) re-verified here; the §95
+texture decode table (02-07/10-12/1C-1E) is one shared software table
+(`DecodeTextureTexel`, widened public in §113) used by the GL upload
+path — unexercised rows stay guest-unproven; `0x3628000`
+render-to-texture is GPU-correct **by construction while the software
+path stays unconditional**: texture uploads read guest RAM that the
+software rasterizer keeps coherent, so aliasing a color surface as a
+texture samples software-rendered content (the menu does exactly this
+— 10,137,600 samples of offset `0x3628000` per boot, gate green). A
+GPU-only software-bypass slice would need real surface tracking; that
+is explicitly later scope.
+
+**Acceptance:** (1) triangle sw<->gl golden passes policy (BMP
+violations=0 maxDelta=1, counters exact 2706/68/34, BackendUnsupported=0)
++ dashboard re-verified green bit-identical to §113; (2) every §113
+unsup row implemented+gate-validated (FBO-grow) or evidence-justified
+(table above); (3) suite 1205/1205 green, zero existing-expectation
+changes, format clean. Open risks for the next wave: clipY!=0 readback
+(detector armed), fingerprint interior-miss (gate-armed), zeta-drop
+depth content on format change (counted), Vulkan/swapchain/async (design
+§3/§5/§7 unchanged), 007 G2 decode (§114, sibling track).
+
+## §118 — 007 G2 park decode
+
+Branch `wave/007-g2park` (worktree `Temp\opencode\worktrees\007-g2park`, master
+@1f0d918). PROBE-ONLY wave: no `src/`/`tests/` changes in the commit — two
+temporary instrumentations were added during diagnosis (an APU raise counter;
+a forced ISTS bit3 raise) and both were fully reverted (`git diff` empty,
+build + `format --verify-no-changes` clean, suite **1205**). Snapshots copied
+read-only from the `007-streamend` worktree (`pd4915/pd536/pd546/pd546b.xgs`);
+firmware private in `wt-data\`; shared CHD on `E:`; no `--idle-skip`.
+Answers §114 open-q (a): `[0x83924800+0x10]=3` is **not** a pending-op
+count — it is a 3-valued state enum of the DirectSound shared parameter
+block (below). Park onset is now exact: **53,657,687,344** (pd536 +
+57,687,344), tightening §114's (53.6, 53.85]B.
+
+### Object identification
+
+The gate is module `.text` function **0x1C2FFA** ("submit buffered block").
+Module code uses per-page paging, so §98's `phys = VA + 0xAAF000` rule does
+not apply here: VA `0x1C3000` → phys `0x1ED000` (+0x2A000; verified by
+finding the gate bytes at phys `0x1ED028` and by the page-table walker
+`scripts/dumpva.py`, CR3 `0xF000`). Park-site disassembly (from
+`--dumpv 1C3000`, probe1):
+
+```
+1C2FFA: mov edx,[esp+8]         ; arg2 (flush hint; 0 = use accumulators)
+1C3000: push esi
+1C3001: jnz 1C3017              ; arg!=0 path (not taken at park)
+1C3003: mov esi,[ecx+0x18]      ; accumulated bytes; this = ECX = 0xD00190A8
+1C3006: cmp esi,0x8000          ; 0x8000 = "nothing pending"
+1C300C: mov edx,[ecx+0x1C]
+1C300F: je 1C305B               ; ret 8 when idle
+1C3011: test edx,edx / je 1C305B ; jmp 1C301B
+1C301B: mov eax,[ecx+0x8]       ; sub-object
+1C301E: mov eax,[eax+0x10]
+1C3021: mov eax,[eax]           ; shared-block base 0x83924000
+1C3023: add eax,0x800           ; -> state block 0x83924800
+1C3028: cmp dword [eax+0x10],0  ; <-- GATE (park; jnz -6 spins here)
+1C302E: push ebx
+1C302F: mov ebx,esi / shr ebx,2 / sub ebx,[eax+4] / shr edx,2 / sub ebx,0x206
+1C3040: mov [eax],ebx           ; count (dwords)
+1C3042: mov [eax+8],esi         ; size
+1C3045: mov [eax+0xC],edx
+1C3048: mov dword [eax+0x10],2  ; STATE = 2 (data ready)
+1C304F: and dword [ecx+0x1C],0 / mov dword [ecx+0x18],0x8000 / ret 8
+```
+
+Shared block: global `[0x1C99B0] = 0x83924000` (phys alias `[0x1C99B4] =
+0x3924000`, extent `[0x1C99B8] = 0xC000`; VA `0x83xxxxxx` is identity-mapped
+to phys). Layout: 0x20-byte ring entries from +0x08 (index*0x20, builder
+0x1C2FD3), **state block at +0x800** (`+0x00` count/idx, `+0x04` ring-base
+idx, `+0x08` size, `+0x0C`, **`+0x10` state**, `+0x14`), ring payloads from
++0x818 whose entries carry guest-RAM buffer addresses (0x65F400, 0x44F400,
+0x380200/0x390200, …) — i.e. the block is consumed by DMA from a device
+(the GP/EP DSP), not by another CPU loop. Park-state fields
+`+0x04=0x4BC +0x08=0x1B08 +0x0C=0x60A` are F0's parameter copy (0x1C334F),
+not A's data; A never got to write.
+
+**State machine — every writer** (exhaustive scan of module text VA
+0x10000-0x1D0000 with `scripts/scanstate.py`: all `add reg,0x800` idioms +
+`mov dword [reg+0x10],imm`; cross-checked against `--watch 3924800,3924818`
+live):
+
+| value | writer(s) | meaning |
+|---|---|---|
+| 0 | 0x1C2DAE (heap zero, alloc helper 0x1C2D71); 0x1C3370 (`rep stos` in 0x1C334F = F0 start); **0x1C37FD (FB start)** | block free / open window |
+| 2 | **0x1C3048** (the gate exit above) | mixer submission posted |
+| 3 | **0x1C3226** (tail of 0x1C30CD, EAX=3; reached via F0: 0x139C0→0x1C1F68→0x1C1977→0x1C1892→0x1C18A4→0x1C334F); **0x1C381D (FB end)** | parameters loaded / DSP restart complete |
+| transient | param copies 0x1C2FB1 (in FB) and 0x1C334F set `state=[param+0x38]`, immediately overwritten by 3 | — |
+
+No other CPU writer exists in the module (scan covers the XBE's `.text`;
+VA > 0x1D0000 is data — small residual risk, noted in open-q (b)).
+
+**Parked call chain** (stack walk of pd546: ret-addr chain
+0x1C3927→0x1C21AC→0x1C260D→0x1C2833→0x14981→0x1168C→0x22917→0x251B4C):
+game movie/audio function 0x22880 → `call 0x115f0` → sound dispatcher
+0x148A0 (index word [0x3AF3EC] → code 7 → 48-byte table entry 0x24BA80
+from [0x3AF4A4]) → 0x1C2816 → 0x1C25A2 → 0x1C2173 → **0x1C388F** (mixer
+tick: 0x118-byte buffer copy via 0x1C32DE, 0x10/0x108 parameter blocks via
+0x1C3235) → 0x1C2FFA (park). Main thread, stack D0031xxx.
+
+**Who must advance the state — full chain decoded** (the §107 pattern:
+"waiting for device feedback"):
+
+- **FB = 0x1C37B9**, called only from worker loop 0x1C3B9F when
+  `[this+0x6EC] & 8`. FB body: `state=0` (0x1C37FD, this=0xD001C008,
+  EDI=0x83924800) → GPRST `0xFE83FFFC`=0, EPRST `0xFE85FFFC`=0 → 0x1C3430 =
+  **0x1C6565 (GP DSP program+start**: SGE/GPFADDR setup, GPOF ring regs
+  0xFE803024.., spin on VpPioFree `0xFE820010`, GPRST 1..3) + **0x1C6689
+  (EP DSP program+start)** + **kernel busy-stall 0x800153A0(0x2710)** =
+  cpuid+countdown ≈10.0 ms guest (7,341,175 measured steps; IF=1, does not
+  block) → parameter copy 0x1C2FB1 → `state=3` (0x1C381D).
+- FB is reached through: `IRQ5 → IDT[0x35]`. The library **patches the IDT
+  directly**: descriptor 0x1C98A8 `{handler=0x1C3E5C, ctx=0xD001C008,
+  irq=5, 0x15, …, trampoline at +0x18 (mov edi,0x1C98A8; jmp 0x8001AE8D)}`
+  built by `[0x1D12A0]=0x800195F0` (copy of template 0x8001AEB6 with
+  relocation) and installed by `[0x1D129C]=0x8001965D` (validates the
+  default stub `0x8001B0E0 + irq*10`, patches the IDT word-pair — IDTR base
+  `0x80035E60`, vector 0x35 at `0x80036008` = `C0 98 08 00 00 8E 1C 00` →
+  target 0x001C98C0, present in RAM at park; registered-flag `desc+0x10=1`
+  written by 0x800196C7 — all verified by watch: pd536+56,176,666).
+- Dispatch: trampoline → kernel 0x8001AE8D → 0x1C3E5C wrapper → **0x1C3E13**
+  (reads ISTS `0xFE801000`, acks by write-back, `or [this+0x6E4],ists`;
+  bit0x10 → 0x1C3D85; **bits 0x40|0x08 → `[0x1D12B0]=0x8001A3C3` queues
+  descA** `{start=0x1C3C69}` — descA's only queue site) → kernel work item →
+  worker **0x1C3C69 → 0x1C3B9F** (wait `[0x1D12EC]=0x8001AE30`; drain
+  callback 0x1C378D: 0x6E4→0x6EC) → `0x6EC & 8` (**ISTS bit3**) → FB.
+- Guest masks: `IEN=0xAFB` enables bits {0,1,3,4,5,6,7,9,11} — **bit3 is
+  enabled but never raised**.
+
+**DSP start proven** (logs\p16.log, pd536+60M): `HIT 48776238
+EIP=001C6FBA → HIT 48776242 EIP=001C6565 → HIT 48777480 EIP=001C6689` — the
+GP and EP DSPs are programmed and started on the main thread during the
+DSOUND init at 53,648,776,238; XGrid stores their registers only ("The DSP
+cores are not executed" — `McpxApuDevice` class doc, §107 open item).
+
+### Transition timeline (absolute steps; breaks in logs\p4.log/p16.log)
+
+| absolute step | event |
+|---|---|
+| 53,648,649,202 | `0x12C8D → 0x139C0` sound-config entry (main thread) |
+| 53,648,650,786 | 0x1C3E68 DSOUND init: descA/descB `{start 0x1C3C69/0x1C3AD3}`, IRQ5+IRQ6 registrations, ack-all ISTS |
+| 53,648,776,238 | **GP+EP DSP start** (0x1C6565/0x1C6689) — registers stored, cores not executed |
+| 53,656,176,666 | IDT[0x35] patched to trampoline 0x1C98C0 (0x8001965D hit, desc+0x10→1) |
+| 53,656,195,410 | **F0 config**: 0x139C0 → 0x1C1F68 → 0x1C1977 → 0x1C1892 → 0x1C18A4 → 0x1C334F |
+| 53,656,195,433 | state=0 (rep stos, transient) |
+| 53,656,533,280 | state=3 (0x1C3226, EAX=3) — parameters loaded |
+| 53,657,497,263..53,657,528,860 | game sound-manager objects 0x1C2AAA ×6 (0x13445 loop) |
+| 53,657,663,267 | 0x22912 `call 0x115f0` (movie/sound start) |
+| **53,657,687,344** | **0x1C3922 reached → park** (A submit; stacks: A on D0031xxx) |
+
+Watch `3924800,3924814` over pd536+400M: only three writers ever touch the
+state word (0x1C2DAE, 0x1C3370, 0x1C3226); after park onset: **zero
+writes**.
+
+### Stimulus analysis
+
+| # | candidate | evidence for | evidence against / status |
+|---|---|---|---|
+| 1 | **APU ISTS bit3 (DSP-originated interrupt) missing → ISR/worker/FB never run** | FB is the only CPU path that re-opens state; FB gated strictly on ISTS bit3 (`test [0x6EC],8` ← raw ISTS via ISR 0x1C3E13); xemu defines ISTS only {0 GINTSTS,4 FET,5 FEN,6 FEV} (`apu_regs.h:27-31`) and never raises bit3 anywhere (grep of `hw/xbox/mcpx/apu/`); XGrid same (consts IsTsGintsts/FeT/Fen/FeV only). **Temp raise counter (reverted): pd536+120M `raises=0`, pd546+60M `raises=0`** — no APU interrupt source fires at all after 53.6B; APU `reads=8611 writes=35118` frozen through the park. descA never queued (prev/next=0), 0x1C3E13/0x1C3E5C/0x1C98C0/0x1C3B9F/FB = 0 hits in every baseline run | proven as the missing **service-path stimulus**; force-raise (below) proves the whole downstream chain works — but it does **not** open the gate (see #2) |
+| 2 | **CPU-side state=0 windows are structurally unobservable; the awaited 0 must come from a non-CPU writer (the GP/EP DSP)** | Exhaustive writer scan (table above): the only post-F0 writers of 0 are FB-start/F0-start, and 0 exists only while that thread owns the CPU (FB's 10 ms is the kernel busy-stall 0x800153A0, does not block). **P15b direct proof**: save-state taken *inside* an FB window (win2.xgs, EIP=0x800153D3 stall) + restore +8M: `state=0` held for ~7.3M steps while A executed **nothing** (0 hits of 0x1C302E/0x1C3048); A resumes only after state=3. Force-raise run: 8 full windows, A entered submit at +65,540,197 and never exited (KTHREAD.Quantum at 0x80035A90 = 70, no mid-window rotation observed). Additional closure of the "unidentified CPU writer" alternative: watch `3924800,3924818` recorded exactly 3 writers over pd536+400M (0x1C2DAE, 0x1C3370, 0x1C3226) and **zero** over pd546+200M; A's non-exit over §114's 2.2B + this wave's probes (now >4B total) means no CPU writer ran for billions of steps | strongest remaining explanation: on hardware the block is freed by DSP-side DMA/writeback (entries in +0x818 point at RAM buffers; DSP started at init) — consistent with "DSP cores are not executed". Alternative (weak): a CPU writer that only runs after a stimulus XGrid also lacks (i.e. inside the missing chain itself), or retail scheduler rotates mid-window (kernel code is identical, so this would have to be a timing/quantum-accounting difference — not observed) |
+| 3 | DVD tail / disc read pending (§114 open-q b/d) | LBA region 0x4B4/0x4AA62 read during transition | **ruled out**: IDE BM status=0, `lastCmd=0xA0` with no outstanding packet, all device counters frozen with the park; gate code does no I/O. (Disc files still unidentified — `xgrid xdvdfs` cannot open a CHD directly; deferred, not gate-relevant.) |
+| 4 | NV2A flip/vblank notify | — | **ruled out**: frames/stalls frozen at 2017, draws 2673; interrupts keep firing yet the park never exits; gate code touches no NV2A state |
+| 5 | AC'97 codec word / IRQ6 | IRQ6 was also client-patched (IDT[0x36]=0x1C9828, registered +48,740,442) and AC'97 traffic starts in the transition | ACI counters freeze with the park; the IRQ6 instance's worker never touches this state block (its code has no add-0x800 sites); not required by the gate decode |
+| 6 | XInput/pad stimulus | — | ruled out: no pad polling (USB acc frozen) but the gate is a state-flag spin, not an input wait; no code path from pad to this state |
+| 7 | Guest wall-clock/timer pacing | PIT ticks live (Interrupts delivered 96,128→99,307 over 2B in §114) | ruled out: a timed wait would eventually fire; observed stable >3.0B steps across this wave's probes with `LastFault vec=0` |
+| 8 | Kernel thread/queue starved by an XGrid gap | descA (the only trigger of FB) is queued **only** by the APU ISR; baseline: never queued. EIPHIST/§114: only parked main + idle runnable | downstream of #1, not an independent gap — scheduler itself switches threads correctly (worker↔main observed in force-raise runs) |
+| 9 | SMC/event | — | no SMC stimulus expected post-boot; IRQs live; ruled out for this gate |
+
+### Force-raise experiment (temporary instrumentation, reverted)
+
+Raising ISTS bit3 whenever the guest IEN enables it (first every Advance,
+then once per audio frame) produced, from pd536:
+
+- **Chain reversal works**: `HIT +56,180,774 EIP=001C3E13` (caller 0x1C3E65
+  ← kernel 0x8001AEAC = trampoline dispatch), `HIT +56,180,951 EIP=001C3B9F`
+  (worker, stack D0020FE0), `HIT +56,181,017 EIP=001C37B9` (FB) — i.e.
+  IRQ5 → IDT[0x35] → ISR → queue → worker → FB → GP/EP re-program →
+  state toggles 0↔3 (watch: 0x1C37FD/0x1C381D alternating, windows
+  7,341,175 steps ≈ 10 ms every ≈11.7M steps). `logs\p9-p13.log`.
+- **But the gate never opened**: `0x1C3048`=0 hits, `0x1C302E`=0 hits,
+  final EIP 0x1C302C, over 8 windows (P12/P13) — and P15b (restore inside
+  an open window) shows A executes nothing while state=0. ⇒ necessary but
+  not sufficient: the missing bit3 is the service-path stimulus; the
+  state=0 that A actually waits for must be produced off-CPU (candidate #2).
+
+### VERDICT
+
+**Best-evidenced partial conclusion — two-part gap, probe-only, no fix
+landed:**
+
+1. **Primary missing stimulus (proven): no APU interrupt source fires after
+   the transition.** 007's XDK DirectSound mixer submit (0x1C2FFA) spins on
+   the shared parameter block at `0x83924800+0x10`; the only CPU path that
+   re-opens the state (FB, 0x1C37B9 — a GP/EP DSP restart handshake) is
+   driven by ISTS **bit3** via the client IRQ5 ISR, and XGrid (like xemu)
+   never raises ISTS bit3 — measured `raises=0` over pd536+120M and
+   pd546+60M, all counterpart breaks zero, descA never queued, APU
+   read/write counters frozen. Root cause sits on top of the §107 open
+   item: **the GP/EP DSP cores are started at init (0x1C6565/0x1C6689 at
+   53,648,776,238) but never executed**, so neither their frame/interrupt
+   side (ISTS bit3) nor their buffer-consumption side can occur.
+2. **Secondary structural finding (proven, refines the fix):** every
+   CPU-side state=0 window (FB start, F0 start) exists only while its own
+   thread owns the CPU (FB's 10 ms is busy-stall kernel 0x800153A0, does
+   not block; no mid-window rotation observed — P15b holds state=0 open
+   7.3M steps with A executing nothing; 8/8 windows missed in force-raise
+   runs). Therefore A's awaited 0 cannot come from the CPU-side writers —
+   **the gate is opened by an off-CPU writer, most consistently the GP/EP
+   DSP's DMA/writeback into the block** (the +0x818 ring entries carry
+   guest-RAM buffer addresses; the DSPs were started before F0). The exact
+   hardware writer was not directly observed (nothing writes the word in
+   XGrid), so this leg is strongly-evidenced, not proven.
+
+**Recommended minimal fix for a build wave (decision-first):** before
+coding, settle which mechanism frees the block on hardware: (i) decode the
+ring/DSP SGE targets (0x1C6565 tables, globals [0x1C9924]/[0x1C998C]
+=0x396B000/0x83938000 vs the block at 0x83924000+0x800) to confirm a DSP
+writeback; (ii) if instead a CPU writer exists in unscanned space, find it.
+Likely fix scope = execute (or faithfully bridge) enough of the GP/EP DSP —
+xemu 0.8.136 provides the reference (`hw/xbox/mcpx/apu/dsp/`,
+`mcpx_apu_dsp_frame` in apu.c) — plus raising ISTS bit3 from the DSP frame
+path (note: xemu itself never raises bit3 either, so neither emulator is an
+oracle here; ground truth = hardware or the NVIDIA nForce MCP APU technical
+brief / JayFoxRox xbox-tools APU scripts referenced by DevWiki). A
+short-term gate-only shortcut that does not fake state: **none known** —
+writing the state word from the emulator would violate the no-fake rule
+unless tied to a modeled DSP event.
+
+**Acceptance test for the future fix wave (verbatim, baseline artifacts):**
+
+```
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd536.xgs --steps 200000000 --watch 3924800,3924818 --break-log 0x1C3048 --break-log 0x1C302E --break-log 0x602F7 --break-log 0x20BD0 --frame gate118.bmp
+```
+
+PASS = `HIT ... EIP=001C3048` (state=2 written) and `HIT ... EIP=001C302E`
+(park exited), EIP leaves `{0x1C3028,0x1C302C}`, and (per §114 open-q c)
+the previously-unseen menu entry `0x602F7` and next PlayMPC channel
+`0x20BD0` become reachable. Expected secondary effects: APU raise activity
+resumes, worker descA queued, USB pad polls return. Also re-run the
+force-raise-free baseline: state word must open **without** any emulator
+shortcut.
+
+**Decisive next probes (verbatim):**
+
+```
+rem (1) ring/DSP target decode vs block — dump block + SGE globals pre-gate:
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd546.xgs --steps 1000000 --dumpv 83924000,100 --dumpv 83924800,80 --dumpv 83934000,40
+rem (2) catch ANY writer of the state word between F0 (53,656.5M) and park (53,657.7M) in case an unidentified writer exists:
+dotnet src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll boot --bios wt-data\Complex_4627.bin --mcpx wt-data\mcpx_1.0.bin --eeprom wt-data\eeprom.bin --hdd wt-data\xbox_hdd.qcow2 --dvd "E:\Microsoft Xbox\007 - Agent Under Fire (USA).chd" --load-state pd536.xgs --steps 60000000 --watch 3924800,3924818 --break-log 0x1C3226 --break-log 0x1C3922 --dumpv 83924800,40
+```
+
+If probe (2) shows no 4th writer (expected), close the CPU-writer
+hypothesis and take the DSP path.
+
+**Open questions:** (a) exact hardware semantics of ISTS bit3 (undocumented
+in xemu/apu_regs.h; candidates: GP/EP frame, DSP host event, back-end) —
+needs hardware/nForce-brief ground truth; (b) the exact off-CPU writer of
+state=0 (DSP DMA writeback vs an unidentified CPU site in VA>0x1D0000);
+(c) §114(c) menu/input and PlayMPC re-entry remain unobserved (gate never
+opened); (d) DVD LBAs 0x4B4/0x4AA62 disc files still unidentified (`xdvdfs`
+CLI cannot open CHD directly; gate is not I/O-bound so deferred); (e) who
+acked pre-pd536 ISTS raises (no absolute-immediate ISTS access exists
+outside the 0x1C library — a base+offset kernel path cannot be excluded).
+
+**Artifacts (worktree paths, not committed):** snapshots `pd4915/pd536/
+pd546/pd546b.xgs` (copied read-only from `007-streamend`), `win2.xgs`
+(force-raise window-open snapshot, requires the reverted instrumentation to
+be meaningful), `probe1.ram` (64 MB post-park RAM), logs `logs\probe1.log`,
+`logs\p1..p16.log`, `logs\tests.log` (`*.log` ignored; snapshots/BMPs kept
+untracked), firmware copies `wt-data\`. **Committed:** this note plus
+`scripts/dumpva.py` (VA→phys page-table extractor for --ramdump) and
+`scripts/scanstate.py` (state-writer scanner for a module .text).
+Status: docs + scripts only; suite **1205**, build + format clean.
+
+## §119 — Idle-skip V2: MMIO/PIO parks measured negligible; deadline-model skip implemented and unit-tested, not wired to devices (2026-10-13)
+
+Branch `wave/idle-skip-v2` (worktree `Temp\opencode\worktrees\idle-skip-v2`).
+Closes §111's recorded open risk ("MMIO/PIO parks rejected by design - V2
+needs per-device read-effect modeling") by the velocity rule: MEASURE FIRST,
+then scope to evidence. Scope: `src/XGrid.Cpu/` (IdleSkip*), CPU tests, one
+CLI counter-print hunk, `scripts/idle-skip-v2.ps1` harness. No device was
+touched (see verdict below).
+
+**Measurement method (flag-off-neutral).** The detector gained exclusive-time
+step attribution, active whenever it exists (probe/skip; flag-off detector is
+null -> zero behavior change): every backward branch opens a span on its loop
+head; the inter-TSC delta is credited to the open head MINUS steps already
+attributed to other tracked heads since its last visit (single-open-span
+stack discipline), so nested/sequential loops do not double count (untracked
+code between visits stays with the open head - documented approximation).
+Heads are classified on their first verdict: MmioRead / Pio (with port) /
+MemWrite / WatchOverflow / StaticRule / Structural (128-head cap,
+`headsUntracked` counts overflow). Armable = heads that reached a trigger.
+Cross-validation: probe `armable` (dashboard 131.9M, triangle 455.6M) tracks
+V1 flag-on `skippedSteps` (129.4M / 447.8M, §111) within re-measure overhead -
+the attribution is honest.
+
+**Measurement table (`--idle-skip-probe`, 1B steps, fresh private media):**
+
+| class | dashboard | triangle |
+|---|---|---|
+| armable parks (V1-skippable) | 131,930,736 (13.19%) | 455,608,763 (45.56%) |
+| rejected: mem-write | 43,902,293 (4.39%) | 27,230,237 (2.72%) |
+| rejected: structural | 10,675,717 (1.07%) | 1,293,423 (0.13%) |
+| rejected: static-rule | 2,440,506 (0.24%) | 817,180 (0.08%) |
+| rejected: MMIO-read | 353,818 (0.035%) | 353,818 (0.035%) |
+| rejected: PIO | 24,189 (0.002%) | 19,211 (0.002%) |
+| rejected: watch-overflow | 0 | 0 |
+
+Named device heads (dashboard; triangle shares the boot prefix): the whole
+MMIO bucket is **BIOS-ROM fetch loops**, not register polls - heads
+`0xFFFFFF5A` (344,055 steps) / `0xFFFFFE0F` / `0xFFFFFF12` / `0xFFFFFEEE`
+(reset-vector region `0xFFFxxxxx`; V1 rejects non-RAM instruction fetches).
+PIO is the kernel's `out 0xA0` loop at `0x800143BC` (PIC EOI path, 24,107
+steps) plus one DX-form head (42 steps). **The §111-hypothesized FLIP_STALL
+/ vblank / PIT-counter CPU polls never appear**: flip-stall is a FIFO-side
+park (§43, the CPU never spins on it), the 007 waits are udiv/RAM parks
+(§§74/92/114), PIT timing rides the IRQ0 path already modeled in V1.
+MMIO+PIO = **0.038% of 1B steps** - three orders below the 2% reassessment
+bar. The remaining rejected mass is mem-write busy loops (dashboard XBE at
+`0x0040xxxx` + kernel at `0x8003158A`) = real work, correctly unskippable.
+
+**Verdict (Velocity rule).** No device deadline hooks are wired: the park
+class §111 named is negligible in the measured workloads, so touching
+NV2A/PIT/APU for ~0.04% would add risk for no measurable gain. `XboxMachine`
+does NOT implement `IIdleSkipReadModel`; flag-on behavior is bit-identical
+to V1 (proven: skippedSteps/triggers/stopIrq reproduce §111 exactly, see
+below). The generic machinery IS implemented and unit-tested so a future
+title with a hot device poll needs only a `TryGetReadEffect` on the device
+plus one property assignment.
+
+**Design shipped (scaffolding, §111 theorem extended).** `IIdleSkipReadModel`
++ `IdleSkipReadEffect` (Stable | ChangeIn(steps)): a device may classify a
+physical-address read as side-effect free with a value that changes only as
+device time advances. Classified reads stay in the candidate body
+(`_validatedMmio`); the skip loop clamps every 4096-cycle chunk to the min of
+the watched registers' fresh deadlines, so the skip lands EXACTLY at (never
+past) the value transition; Stable spans whole skips. Any unclassified
+non-RAM read keeps the V1 rejection (conservative default); model loss
+mid-skip stops immediately (`stopModelLost`); MMIO/PIO WRITES remain V1 hard
+stops (a device write is now attributed MemWrite with its address); IRQ
+pending+enabled remains the first hard stop; instruction-fetch from non-RAM
+(incl. BIOS ROM) still rejects. New counters (flag-on print only):
+`stopReadDeadline stopModelLost invocations triggerDrops hostNull`, step
+buckets `armable/mmio/pio/memWrite/watchOverflow/staticRule/structural`,
+per-head table + `device head` lines naming MMIO/PIO heads.
+
+**Bug found & fixed on the way (kept as diagnostics).** A flag-on dashboard
+run showed `skippedSteps=0` with `triggers>0` and zero stop counters: the
+CLI's `--break-log` path drives `Cpu.Step()` directly, bypassing
+`XboxCpu.Execute`'s trigger check, so idle-skip can never engage under
+break-log. This is exactly §111's "absolute-step recipes are flag-off-only"
+rule, now enforced in the harness (break-log only in off mode) and
+diagnosable via the new `invocations/triggerDrops/hostNull` counters.
+
+**Acceptance evidence.**
+- (1) Flag-off byte-identity: pre-change baseline (dashboard 1B, pad-script
+  + break-log 1859D/1E420, fresh wt-data) frame SHA
+  `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`,
+  HIT 972246032/972349245, draws=33623 frames=685 stalls=685
+  Interrupts=3152 LastFault=0 EIP=0x0002EA06 - final build log byte-identical
+  (Frame path + wall excluded); suite **1215 green** (1205 baseline + 10 new
+  `IdleSkipMmioTests`, zero existing expectations touched);
+  `format --verify-no-changes` exit 0.
+- (2) Unit tests (`IdleSkipMmioTests`): scheduled-change poll lands EXACTLY
+  on its deadline (`Advanced==1000`, `stopReadDeadline=1`, zero overshoot);
+  Stable register spans chunks until the RAM poll stops the skip; unknown
+  register rejected conservatively; model loss mid-skip stops at the last
+  completed chunk; MMIO write in body is a hard stop even when the register
+  is classified; IRQ boundary preserved (IRQ stop wins the check);
+  attribution records MMIO head/addr, PIO port 0x40, static-rule split, and
+  armable steps in probe mode; flag-off identity re-asserted.
+- (3) Flag-on milestone parity, 1B, fresh media: **dashboard** no fault,
+  frame SHA identical to flag-off (`4EF1FBF6...`), pad-script events at their
+  exact steps, `triggers=2203 skippedSteps=129,424,394 stopIrq=203` -
+  byte-identical counters to §111's flag-on (V2 changes did not alter skip
+  behavior); two independent flag-on boots fully deterministic. **triangle**
+  no fault, frame SHA identical to flag-off (`A1740DE0...`), draws/pixels/
+  frames/stalls identical, `triggers=7561 skippedSteps=447,784,409` = §111
+  exactly.
+- (4) Speedup (back-to-back pairs, same load window; machine heavily shared
+  with sibling agents so absolutes drift ±40% between windows - ratios are
+  the same-window pairs): dashboard 478.3s off -> 435.5s on = **1.10x**
+  (12.9% skipped; matches interpreter-cost arithmetic); triangle 310.0s off
+  -> 186.4s on = **1.66x** (44.8% skipped). V1's larger dashboard/triangle
+  ratios were contention-inflated; today's lighter load shrinks the ratio
+  with the same absolute skip share.
+
+**Open risks / follow-ups.**
+- The BIOS-ROM fetch loops (344K steps, 0.034%) would become skippable if
+  ROM/stable-ROM-fetch classification were modeled; negligible, not done.
+- Attribution approximation: untracked code executed between two visits of a
+  tracked head is credited to that head (park spans absorb untracked
+  dispatcher excursions); buckets are for scope decisions, not billing.
+- `--break-log` + `--idle-skip` silently disables skipping (CLI Step path);
+  banner documents flag-off-only recipes, counters now make it visible.
+- A title with a real hot device poll (e.g. vblank-status spin) still gets
+  V1 rejection until its device implements `IIdleSkipReadModel`; the unit
+  tests define the expected semantics (exact landing, conservative defaults).
+- Snapshot format untouched; detector transient state resets on load (V1
+  behavior). Baseline: **1215 tests, build + format clean.**
+
+## §120 — kernel-test-suite unblocked: full 378-test run captured, CMC decoder gap fixed, xemu differential closed (2026-10-13)
+
+Worktree `wave/ktest-logsink` (private media under `wt-data\`; tooling in
+`tools/ktest-recon/`). Resumes the cancelled `wave/ktest-logsink` session:
+its uncommitted artifacts (working shellcode XBE, partial run logs, CMC
+decoder diff) were inspected, verified against the kernel image, and either
+landed or reproduced. **PRIMARY ACCEPTANCE MET: the suite executes all 378
+tests on XGrid and emits a verifiable `kernel_tests.log` — 53,700,164 bytes,
+659,843 lines, 378 `Test completed` entries, `------------------------
+End of Tests -----------------------` footer.**
+
+**Root-cause chain (§116's open items, all closed):**
+
+1. **Letter gate — H3 solved; guest-shellcode bug, not an XGrid gap.**
+   §116's `IoCreateSymbolicLink` shellcode KeBugChecked at step 33137
+   (`0xC0000005`, both arg orders) because it passed UNICODE_STRINGs where
+   the Xbox kernel takes OBJECT_STRING = STRING (ANSI) — Cxbx
+   `kernel/common/types.h:273` (`typedef STRING OBJECT_STRING`); the
+   kernel's path parser/hash/compare (0x80021709 / 0x80020912 /
+   0x80022678) walk BYTES, and the wide layout puts `Buffer` at the wrong
+   offset -> the kernel dereferences garbage -> AV. The fixed shellcode
+   (`tools/ktest-recon/patch_suite_xbe.py build_shellcode`) builds
+   ANSI_STRINGs (Length/MaximumLength/Buffer), honors stdcall (kernel
+   export IoCreateSymbolicLink is `ret 8` at 0x80015E68), and lives in the
+   suite's ignored `load_name_file` donor (VA 0x2E620, called by `main`
+   at 0x2EDF1 BEFORE `open_output_file`; thunk slot 0x57F1C = ordinal 67).
+   It creates `\??\C:` -> `\Device\Harddisk0\Partition2`, so the
+   media-patched log path `C:\kernel_tests.log` (in-place `D:`->`C:` at
+   file 0x43599 / VA 0x53599) resolves to the writable FATX C: volume.
+   EvoX creates the same letter set at runtime (§116); the kernel side was
+   always capable.
+2. **Second gate — CMC decoder gap (genuine product fix, landed).** The
+   first full-suite run (cancelled session, pre-fix, `wt-data\vfull.*`)
+   reached test 282 then KeBugChecked: `LastFault vec=6 (#UD)
+   EIP=0x80023276` -> `KeBugCheck` cli/hlt at 0x800151ED at step
+   1,104,771,679 with tests 1-281 already in the log. Objdump of the
+   kernel image (phys 0x10000 + 0x13276) shows
+   `80023276: f5  cmc` inside the 64-bit math chain
+   (`rcl esi,1 / sbb edi,edi / cmp esi,ebx / cmc / sbb ebp,ebp / ...`)
+   used by RtlExtendedLargeIntegerDivide / Xc big-number code. XGrid's
+   decoder did not implement opcode 0xF5 -> UnsupportedInstructionException
+   -> #UD -> kernel bugcheck. Fix landed: `Mnemonic.Cmc` decode +
+   `EFLAGS ^= CF` executor + unit test `Cmc_ComplementsCarryFlag` (the
+   cancelled session's `src/XGrid.Cpu` diff — kept and justified, not
+   scaffolding). Post-fix test 282 reports `All tests PASSED`.
+3. **Full run (acceptance evidence).** Boot command: `XGrid.Cli.dll boot
+   --bios Complex_4627.bin --mcpx mcpx_1.0.bin --eeprom eeprom.bin
+   --hdd ktest-hdd.qcow2 --dvd ktest-full.iso --steps 20000000000
+   --break 4E03A --writedump ktestfull --ramdump ktestfull-ram.bin`.
+   0x4E03A is `main`'s return site (instruction after `call 0x2ede0` in
+   the CRT wrapper at 0x4E010; `main` = 0x2ede0 runs shellcode 0x2EDF1 ->
+   open 0x2EE76 -> tests -> close -> `Sleep(10000)` -> ret). The run stops
+   there after **12,264,291,047 instructions, Halted=False, LastFault
+   vec=0** (~58 min at ~3.5M insn/s; ~9.5B of that is the final
+   `Sleep(10000)` at guest time — `--break` does not use idle-skip).
+   The log is recovered from the HddOverlay sector journal with
+   `read_writedump_fatx.py` (root LBA 0x465488, FAT 0x465409+, dirent
+   cluster 315 / size 53,700,164): 84 verbose-PASS, 3 verbose-FAIL, 291
+   silent stubs, 378 `Test completed`, `End of Tests` footer.
+
+**Failure results + xemu 0.8.136 differential (same media recipe, private
+profile `wt-data/xemu2`, log read back from xemu's qcow2 with
+`read_fatx_qcow2.py`):**
+
+| test | XGrid | xemu | verdict |
+|---|---|---|---|
+| 071 IoFileObjectType | FAIL `ERROR(line 72): Expected file_handle = 0x1, Got = 0x0` | FAIL, byte-identical ERROR | **faithful**: test does `CreateFileA("D:\IoFileObjectType", CREATE_ALWAYS)` — D: is the read-only XDVDFS DVD on any boot that lacks a dashboard-remapped D: |
+| 224 NtResumeThread | PASS (1.354 s) | FAIL: `return_threadCounter` out-params garbage (`0xD00409E0`, `0x20303030`, `0xC000004A`) at `ERROR(line 110)` | **XGrid ahead**: xemu leaves the out-param unwritten / returns STATUS_THREAD_IS_TERMINATING |
+| 231 NtSuspendThread | PASS (1.518 s) | FAIL, same line-110 errors | XGrid ahead (same xemu quirk) |
+| 319 RtlWalkFrameChain | FAIL `ERROR(line 132): Expected total = 0x8, Got = 0xA` | FAIL, identical ERROR | **faithful**: frame-chain walk yields 10 vs the suite's expected 8 frames on both emulators |
+| 344 XcVerifyPKCS1Signature | FAIL `ERROR(line 250): Expected XcVerifyPKCS1Signature return = 0x1, Got = 0x0` | FAIL, identical (subset `config.txt` run) | **faithful**: Complex_4627's XcVerifyPKCS1Signature returns 0 for the suite's habibi-key PKCS1 vector on both |
+
+Differential method notes: (a) xemu boots the patched suite fine — the §32
+animation-wait deadlock does NOT affect this bare title — but per-print
+`WriteFile` traffic keeps sampled EIPs in kernel space, so detect runs via
+the FATX log, not EIP ranges; (b) after `Sleep(10000)` the kernel relaunches
+the XBE forever and each relaunch truncates the log (`CREATE_ALWAYS`) —
+XGrid stops deterministically with `--break 4E03A`, xemu via monitor quit
+during the sleep window; (c) the suite's config parser needs CRLF — an
+LF-only `config.txt` is silently ignored ("No specific tests were
+requested"); (d) xemu commits guest FATX writes straight into its qcow2,
+so the log is readable offline once xemu exits.
+
+**Media recipe (reproducible):** `patch_suite_xbe.py --in
+kernel-test-suite-default.xbe --out default.xbe --log C --target
+'\Device\Harddisk0\Partition2'` (XBE sha256
+`76E2C52AE6C28F2154CA94C7579166F7373BFAD1C3FEE492AEBAB547B1EB1A1C`,
+byte-identical to the cancelled session's proven v6 XBE) + optional
+`config.txt` (`disable-video=1`, CRLF; `tests=<subset>` for fast xemu
+iterations) -> `XISOSharp -y -m -c <dir> out.iso` -> boot with
+`--writedump` (+ `--break 4E03A`). Suite sources were cloned read-only
+into `wt-data/src/xbox_kernel_test_suite` (GPL-2; facts only, no code
+copied).
+
+**Landed changes:** `src/XGrid.Cpu/{Decoder,Mnemonic,XboxCpu}.cs` CMC
+(opcode 0xF5) + `tests/XGrid.Cpu.Tests/InterpreterTests.cs` unit test;
+`tools/ktest-recon/`: ANSI rewrite of `patch_suite_xbe.py`, new
+`read_fatx_qcow2.py`, new `run_xemu_ktest_full.py`, README refresh.
+Baseline **1206 tests green** (1205 + `Cmc_ComplementsCarryFlag`), zero
+existing-expectation changes, `dotnet format --verify-no-changes` clean.
+
+**Open / next:** (a) the 3 faithful failures need no XGrid action (071
+requires a writable D: — a dashboard-era letter set or FATX-boot layout;
+319/344 look like suite expectation gaps against Complex_4627); (b) xemu's
+224/231 out-param bugs are oracle caveats for future thread-test
+differentials; (c) idle-skip V2 (timer-park fast-forward) would compress
+the 9.5B-step `Sleep(10000)` and shrink this acceptance run from ~58 min
+to ~10 min; (d) the suite is now a standing cross-emulator regression
+asset — a `tests=` subset ISO gives a ~2-min xemu/XGrid smoke run.

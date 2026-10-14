@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace XGrid.Cpu;
 
@@ -20,6 +21,14 @@ public sealed partial class XboxCpu
 
     /// <summary>Gets or sets the host that supplies bulk device advance and stop conditions.</summary>
     public IIdleSkipHost? IdleSkipHost { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional device read-effect model consulted for non-RAM
+    /// reads in candidate bodies (§119): registers it classifies may stay in a
+    /// skippable body, clamped to their change deadlines. Null = V1 semantics
+    /// (any non-RAM read rejects the body).
+    /// </summary>
+    public IIdleSkipReadModel? IdleSkipReadModel { get; set; }
 
     /// <summary>Gets or sets whether idle-loop detection and skipping are enabled (default off).</summary>
     public bool IdleSkipEnabled
@@ -88,6 +97,51 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of skips stopped by the instruction budget.</summary>
     public ulong IdleSkipStopBudget => _idle?.StopBudget ?? 0;
 
+    /// <summary>Gets the number of skips stopped exactly on a watched device register's change deadline.</summary>
+    public ulong IdleSkipStopReadDeadline => _idle?.StopReadDeadline ?? 0;
+
+    /// <summary>Gets the number of skips stopped because a watched device register could no longer be classified.</summary>
+    public ulong IdleSkipStopModelLost => _idle?.StopModelLost ?? 0;
+
+    /// <summary>Gets the steps attributed to heads that reached a skip trigger (V1-skippable parks).</summary>
+    public ulong IdleSkipArmableSteps => _idle?.ArmableSteps ?? 0;
+
+    /// <summary>Gets the number of rejected heads seen after the accounting capacity was exhausted.</summary>
+    public ulong IdleSkipHeadsUntracked => _idle?.HeadsUntracked ?? 0;
+
+    /// <summary>Gets the number of triggers dropped because control left the loop before the skip ran.</summary>
+    public ulong IdleSkipTriggerDrops => _idle?.TriggerDrops ?? 0;
+
+    /// <summary>Gets the number of skip-loop invocations (probe mode excluded).</summary>
+    public ulong IdleSkipInvocations => _idle?.SkipInvocations ?? 0;
+
+    /// <summary>Gets the number of skip attempts that bailed because no idle-skip host was wired.</summary>
+    public ulong IdleSkipHostNull => _idle?.SkipHostNull ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected for a non-RAM (device-register) body read.</summary>
+    public ulong IdleSkipRejectedStepsMmioRead => _idle?.RejectedSteps(IdleSkipRejectReason.MmioRead) ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected for PIO in the body.</summary>
+    public ulong IdleSkipRejectedStepsPio => _idle?.RejectedSteps(IdleSkipRejectReason.Pio) ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected for a memory write in the body.</summary>
+    public ulong IdleSkipRejectedStepsMemWrite => _idle?.RejectedSteps(IdleSkipRejectReason.MemWrite) ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected for watch-list overflow.</summary>
+    public ulong IdleSkipRejectedStepsWatchOverflow => _idle?.RejectedSteps(IdleSkipRejectReason.WatchOverflow) ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected by the fixed-point data-flow rules.</summary>
+    public ulong IdleSkipRejectedStepsStaticRule => _idle?.RejectedSteps(IdleSkipRejectReason.StaticRule) ?? 0;
+
+    /// <summary>Gets the steps attributed to heads rejected for structure/mnemonic violations.</summary>
+    public ulong IdleSkipRejectedStepsStructural => _idle?.RejectedSteps(IdleSkipRejectReason.Structural) ?? 0;
+
+    /// <summary>Gets the top rejected loop heads by attributed steps (measurement table).</summary>
+    public List<IdleSkipHeadStat> IdleSkipTopRejectedHeads(int maxCount)
+    {
+        return _idle is null ? new List<IdleSkipHeadStat>() : _idle.TopRejectedHeads(maxCount);
+    }
+
     /// <summary>Gets the number of HLT instructions executed (probe diagnostic; guests are spin-park machines).</summary>
     public ulong IdleSkipHltExecuted => _idle?.HltExecuted ?? 0;
 
@@ -113,9 +167,15 @@ public sealed partial class XboxCpu
             return 0;
         }
 
+        detector.NoteSkipInvocation();
         detector.ClearTrigger();
         if (IdleSkipMeasureOnly || IdleSkipHost is null)
         {
+            if (IdleSkipHost is null)
+            {
+                detector.SkipHostNull++;
+            }
+
             detector.ResetAfterSkip();
             return 0;
         }
@@ -156,6 +216,13 @@ public sealed partial class XboxCpu
                 }
 
                 chunk = (int)Math.Min(chunk, deadline);
+            }
+
+            // §119: clamp by the watched device registers' change deadlines so a
+            // classified MMIO poll exits exactly at its value transition.
+            if (!detector.TryClampChunkByReadModel(ref chunk))
+            {
+                break;
             }
 
             Context.Tsc += (ulong)chunk;

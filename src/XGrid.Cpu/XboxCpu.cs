@@ -132,6 +132,7 @@ public sealed partial class XboxCpu
                 {
                     // Control left the loop before the batch boundary consumed the
                     // trigger (e.g. an interrupt was delivered): drop it.
+                    _idle.NoteTriggerDropped();
                     _idle.ClearTrigger();
                 }
                 else
@@ -377,6 +378,10 @@ public sealed partial class XboxCpu
 
             case Mnemonic.Stc:
                 Context.Eflags |= FlagBits.Cf;
+                break;
+
+            case Mnemonic.Cmc:
+                Context.Eflags ^= FlagBits.Cf;
                 break;
 
             case Mnemonic.Cld:

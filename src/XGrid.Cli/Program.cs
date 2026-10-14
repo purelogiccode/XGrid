@@ -1359,7 +1359,43 @@ internal static class Program
                 $"accessAborts={machine.Cpu.IdleSkipAccessAborts} structuralAborts={machine.Cpu.IdleSkipStructuralAborts} " +
                 $"stopIrq={machine.Cpu.IdleSkipStopIrq} stopWatch={machine.Cpu.IdleSkipStopWatch} " +
                 $"stopDeadline={machine.Cpu.IdleSkipStopDeadline} stopBudget={machine.Cpu.IdleSkipStopBudget} " +
+                $"stopReadDeadline={machine.Cpu.IdleSkipStopReadDeadline} stopModelLost={machine.Cpu.IdleSkipStopModelLost} " +
+                $"invocations={machine.Cpu.IdleSkipInvocations} triggerDrops={machine.Cpu.IdleSkipTriggerDrops} " +
+                $"hostNull={machine.Cpu.IdleSkipHostNull} " +
                 $"hlt={machine.Cpu.IdleSkipHltExecuted} lastTriggerEip=0x{machine.Cpu.IdleSkipLastTriggerEip:X8}");
+            Console.WriteLine(
+                $"Idle-skip steps: armable={machine.Cpu.IdleSkipArmableSteps} " +
+                $"mmio={machine.Cpu.IdleSkipRejectedStepsMmioRead} pio={machine.Cpu.IdleSkipRejectedStepsPio} " +
+                $"memWrite={machine.Cpu.IdleSkipRejectedStepsMemWrite} " +
+                $"watchOverflow={machine.Cpu.IdleSkipRejectedStepsWatchOverflow} " +
+                $"staticRule={machine.Cpu.IdleSkipRejectedStepsStaticRule} " +
+                $"structural={machine.Cpu.IdleSkipRejectedStepsStructural} " +
+                $"headsUntracked={machine.Cpu.IdleSkipHeadsUntracked}");
+            foreach (IdleSkipHeadStat headStat in machine.Cpu.IdleSkipTopRejectedHeads(8))
+            {
+                Console.WriteLine(
+                    $"Idle-skip head 0x{headStat.Head:X8} {headStat.Reason} " +
+                    $"steps={headStat.Steps} addr=0x{headStat.Address:X8}");
+            }
+
+            // §119: name the device-address heads even when small (the MMIO/PIO
+            // buckets are the wave's measurement target).
+            int deviceHeads = 0;
+            foreach (IdleSkipHeadStat headStat in machine.Cpu.IdleSkipTopRejectedHeads(256))
+            {
+                if (headStat.Reason is not (IdleSkipRejectReason.MmioRead or IdleSkipRejectReason.Pio))
+                {
+                    continue;
+                }
+
+                Console.WriteLine(
+                    $"Idle-skip device head 0x{headStat.Head:X8} {headStat.Reason} " +
+                    $"steps={headStat.Steps} addr=0x{headStat.Address:X8}");
+                if (++deviceHeads >= 6)
+                {
+                    break;
+                }
+            }
         }
 
         Console.WriteLine(

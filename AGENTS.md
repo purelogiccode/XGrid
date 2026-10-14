@@ -96,6 +96,14 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
    compare across runs, and prefer the cheapest run that reaches the
    gate. More cores → more parallel validation runs; emulation speed is
    the binding constraint, not agent count.
+6. **Wave-agent liveness (2026-10-13):** poll each running agent's task
+   state periodically (~10 min cadence while a wave is out); a
+   cancelled/frozen agent gets relaunched IMMEDIATELY with an inventory
+   of its partial worktree state (untracked scripts, uncommitted diffs —
+   classify keep-vs-revert in the relaunch prompt) rather than waiting or
+   restarting cold. The first such relaunch (ktest-logsink, after a
+   frozen session) closed two gates the frozen run had left open and
+   turned scaffolding into the actual CMC fix.
 
 ## Current state
 
@@ -290,39 +298,51 @@ touch instance state (use a backing field), CA1720 forbids names like `Pointer`.
   gated behind `D:\kernel_tests.log` CreateFile which fails every launch —
   0/378 tests ever ran (thunks fine; `tools/ktest-recon/` injector; symlink
   shellcode KeBugCheck open). **1205 tests** (1126 + 74 + 5).
+- **Wave 7 (2026-10-13, §§117–120):** GPU slice-2 triangle golden PASSED on the
+  **unmodified** slice-1 backend (§117 — zero `unsup` rows trip; FBO-grow
+  content-preserving blit lands, fires 14×/boot with bit-identical frames; all
+  §113 tripwires evidence-disposed via per-run counters). **007 G2 decoded
+  (§118):** the park is 007's XDK DirectSound mixer submit spinning on the
+  shared `[0x83924800+0x10]` state enum; the only re-opener is the **GP/EP DSP
+  restart handshake delivered via APU ISTS bit3** — XGrid never raises it
+  because the GP/EP DSPs started at init (+48.8M) are never executed (the §107
+  open item); park onset pinned @53,657,687,344; force-raise proved the whole
+  IRQ5→trampoline→ISR→worker chain. idle-skip V2 (§119): MMIO/PIO parks
+  measured **0.038%** (negligible — §111 hypothesis disproven); read-model +
+  deadline skip landed (+10 tests); corrected flag-on speedups 1.10×/1.66×
+  (V1 ratios were contention-inflated). **kernel-test-suite UNBLOCKED (§120):
+  378/378 tests execute, 53.7 MB log captured** — root causes: guest shellcode
+  was ANSI-vs-UNICODE (its bug) + a real XGrid `f5 cmc` #UD gap in the kernel
+  64-bit math chain (fixed, +1 test); xemu differential: XGrid AHEAD on
+  NtResume/NtSuspendThread, 3 faithful failures. **1216 tests.**
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1205 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1216 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — GPU slice 2 + 007 G2 decode + suite unblock.
+## Next session — 007 GP/EP DSP unblock + GPU slice 3.
 
-1. **WAVE DONE (§§113–116).** GPU slice 1 LANDED (§113 — `XGrid.GpuGl` +
-   Silk.NET, golden gate PASSED, `BackendUnsupported=0`, sw frame unchanged);
-   007 stream END found (§114 — G1 EOS @52,495,059,473, then **G2 park
-   `{0x1C3028,0x1C302C}`, `[0x83924800+0x10]==3` never drains**, stable to
-   56.8B, snapshots `pd4915.xgs`/`pd546.xgs`); nvnet first real frame (§115 —
-   342-byte DHCP DISCOVER validated vs xemu + `TcpProxy`); ktest recon (§116 —
-   suite gated behind `D:\kernel_tests.log` CreateFile, 0/378 ever ran,
-   thunks fine). **1205 tests.**
-2. **GPU slice 2 (ONE agent):** full-dashboard golden gate per
-   `gpu-backend-design.md` §6 — exotics/blend/fog rows; the §113 `unsup[...]`
-   tripwires are the gate (menu trips none; slice-2 titles might). Same
-   sw-vs-gl acceptance; no Vulkan/swapchain yet.
-3. **007 G2 decode:** snapshot `pd546.xgs` (§114 verbatim) — find what sets/
-   clears `[0x83924800+0x10]` (3), why main-thread devices freeze (missing
-   stimulus vs XGrid gap); identify the new-STRM disc files (`0x4B4`/`0x4AA62`)
-   via `xgrid sector` if needed.
-4. **Suite unblock (§116):** KeBugCheck @33137 both arg orders — exception
-   record/CR2 at bugcheck, EvoX's exact `IoCreateSymbolicLink` call context,
-   Complex_4627 ordinal 67 semantics; then land DbgPrint/FATX-log capture so
-   the 378 tests report.
-5. idle-skip V2 (MMIO/PIO parks — flip-stall register polls need
-   per-device read-effect modeling). nvnet: UDP/67 sink for socket-backend
-   DHCP + wire `TcpProxy` when a TCP title exists. NV2A remaining: mipmap LOD;
-   DXT decode (deprioritized — the dashboard uses none, §105); `0x30` depth
-   semantics; PROJECT2D non-cube projective divide, DOT_STR_3D dim==3,
-   border/mip/filtering, TEXADDRESS V bit offset, BRDF detail, Vulkan backend
-   (design §7).
+1. **WAVE DONE (§§117–120).** Slice-2 triangle golden PASSED on the unmodified
+   backend (§117 — zero unsup rows; FBO-grow blit 14×/boot frames
+   bit-identical; all §113 tripwires evidence-disposed). **007 G2 decoded
+   (§118):** DirectSound mixer submit spins on `[0x83924800+0x10]`; re-opener =
+   GP/EP DSP restart handshake via **APU ISTS bit3**, never raised because the
+   GP/EP DSPs are started-but-never-executed (§107 open item); park onset
+   @53,657,687,344; force-raise proved the IRQ5 chain. idle-skip V2 (§119):
+   MMIO/PIO parks 0.038% (negligible); read-model +10 tests; corrected speedups
+   1.10×/1.66×. **ktest suite UNBLOCKED (§120): 378/378 tests run, 53.7 MB
+   log** (guest shellcode ANSI bug + XGrid `cmc` #UD fix; XGrid ahead of xemu
+   on 224/231). **1216 tests.**
+2. **007 unblock: implement APU GP/EP DSP execution** (ONE agent, APU area) —
+   §118's verdict: xemu `hw/xbox/mcpx/dsp/` + `gp_ep.c` facts; acceptance =
+   ISTS bit3 raises, G2 park drains, game proceeds past 56.8B (probe origin
+   `pd546.xgs`, worktree `007-streamend`).
+3. **GPU slice 3 / present path** (design §6): title streams (triangle + 007)
+   via `--gpu gl`; swapchain present = the actual fps win — operator decision
+   on windowing approach first; no Vulkan yet.
+4. Standing gates: ktest subset ISO as a scripted ~2-min cross-emulator smoke
+   (§120); idle-skip read-model stays unwired until a real hot poll appears;
+   NV2A remaining list unchanged (mipmap LOD, `0x30`, PROJECT2D, DOT_STR_3D,
+   TEXADDRESS V bit, BRDF, Vulkan backend).
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
