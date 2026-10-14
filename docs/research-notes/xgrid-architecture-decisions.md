@@ -6060,3 +6060,113 @@ diagnosable via the new `invocations/triggerDrops/hostNull` counters.
   tests define the expected semantics (exact landing, conservative defaults).
 - Snapshot format untouched; detector transient state resets on load (V1
   behavior). Baseline: **1215 tests, build + format clean.**
+
+## §120 — kernel-test-suite unblocked: full 378-test run captured, CMC decoder gap fixed, xemu differential closed (2026-10-13)
+
+Worktree `wave/ktest-logsink` (private media under `wt-data\`; tooling in
+`tools/ktest-recon/`). Resumes the cancelled `wave/ktest-logsink` session:
+its uncommitted artifacts (working shellcode XBE, partial run logs, CMC
+decoder diff) were inspected, verified against the kernel image, and either
+landed or reproduced. **PRIMARY ACCEPTANCE MET: the suite executes all 378
+tests on XGrid and emits a verifiable `kernel_tests.log` — 53,700,164 bytes,
+659,843 lines, 378 `Test completed` entries, `------------------------
+End of Tests -----------------------` footer.**
+
+**Root-cause chain (§116's open items, all closed):**
+
+1. **Letter gate — H3 solved; guest-shellcode bug, not an XGrid gap.**
+   §116's `IoCreateSymbolicLink` shellcode KeBugChecked at step 33137
+   (`0xC0000005`, both arg orders) because it passed UNICODE_STRINGs where
+   the Xbox kernel takes OBJECT_STRING = STRING (ANSI) — Cxbx
+   `kernel/common/types.h:273` (`typedef STRING OBJECT_STRING`); the
+   kernel's path parser/hash/compare (0x80021709 / 0x80020912 /
+   0x80022678) walk BYTES, and the wide layout puts `Buffer` at the wrong
+   offset -> the kernel dereferences garbage -> AV. The fixed shellcode
+   (`tools/ktest-recon/patch_suite_xbe.py build_shellcode`) builds
+   ANSI_STRINGs (Length/MaximumLength/Buffer), honors stdcall (kernel
+   export IoCreateSymbolicLink is `ret 8` at 0x80015E68), and lives in the
+   suite's ignored `load_name_file` donor (VA 0x2E620, called by `main`
+   at 0x2EDF1 BEFORE `open_output_file`; thunk slot 0x57F1C = ordinal 67).
+   It creates `\??\C:` -> `\Device\Harddisk0\Partition2`, so the
+   media-patched log path `C:\kernel_tests.log` (in-place `D:`->`C:` at
+   file 0x43599 / VA 0x53599) resolves to the writable FATX C: volume.
+   EvoX creates the same letter set at runtime (§116); the kernel side was
+   always capable.
+2. **Second gate — CMC decoder gap (genuine product fix, landed).** The
+   first full-suite run (cancelled session, pre-fix, `wt-data\vfull.*`)
+   reached test 282 then KeBugChecked: `LastFault vec=6 (#UD)
+   EIP=0x80023276` -> `KeBugCheck` cli/hlt at 0x800151ED at step
+   1,104,771,679 with tests 1-281 already in the log. Objdump of the
+   kernel image (phys 0x10000 + 0x13276) shows
+   `80023276: f5  cmc` inside the 64-bit math chain
+   (`rcl esi,1 / sbb edi,edi / cmp esi,ebx / cmc / sbb ebp,ebp / ...`)
+   used by RtlExtendedLargeIntegerDivide / Xc big-number code. XGrid's
+   decoder did not implement opcode 0xF5 -> UnsupportedInstructionException
+   -> #UD -> kernel bugcheck. Fix landed: `Mnemonic.Cmc` decode +
+   `EFLAGS ^= CF` executor + unit test `Cmc_ComplementsCarryFlag` (the
+   cancelled session's `src/XGrid.Cpu` diff — kept and justified, not
+   scaffolding). Post-fix test 282 reports `All tests PASSED`.
+3. **Full run (acceptance evidence).** Boot command: `XGrid.Cli.dll boot
+   --bios Complex_4627.bin --mcpx mcpx_1.0.bin --eeprom eeprom.bin
+   --hdd ktest-hdd.qcow2 --dvd ktest-full.iso --steps 20000000000
+   --break 4E03A --writedump ktestfull --ramdump ktestfull-ram.bin`.
+   0x4E03A is `main`'s return site (instruction after `call 0x2ede0` in
+   the CRT wrapper at 0x4E010; `main` = 0x2ede0 runs shellcode 0x2EDF1 ->
+   open 0x2EE76 -> tests -> close -> `Sleep(10000)` -> ret). The run stops
+   there after **12,264,291,047 instructions, Halted=False, LastFault
+   vec=0** (~58 min at ~3.5M insn/s; ~9.5B of that is the final
+   `Sleep(10000)` at guest time — `--break` does not use idle-skip).
+   The log is recovered from the HddOverlay sector journal with
+   `read_writedump_fatx.py` (root LBA 0x465488, FAT 0x465409+, dirent
+   cluster 315 / size 53,700,164): 84 verbose-PASS, 3 verbose-FAIL, 291
+   silent stubs, 378 `Test completed`, `End of Tests` footer.
+
+**Failure results + xemu 0.8.136 differential (same media recipe, private
+profile `wt-data/xemu2`, log read back from xemu's qcow2 with
+`read_fatx_qcow2.py`):**
+
+| test | XGrid | xemu | verdict |
+|---|---|---|---|
+| 071 IoFileObjectType | FAIL `ERROR(line 72): Expected file_handle = 0x1, Got = 0x0` | FAIL, byte-identical ERROR | **faithful**: test does `CreateFileA("D:\IoFileObjectType", CREATE_ALWAYS)` — D: is the read-only XDVDFS DVD on any boot that lacks a dashboard-remapped D: |
+| 224 NtResumeThread | PASS (1.354 s) | FAIL: `return_threadCounter` out-params garbage (`0xD00409E0`, `0x20303030`, `0xC000004A`) at `ERROR(line 110)` | **XGrid ahead**: xemu leaves the out-param unwritten / returns STATUS_THREAD_IS_TERMINATING |
+| 231 NtSuspendThread | PASS (1.518 s) | FAIL, same line-110 errors | XGrid ahead (same xemu quirk) |
+| 319 RtlWalkFrameChain | FAIL `ERROR(line 132): Expected total = 0x8, Got = 0xA` | FAIL, identical ERROR | **faithful**: frame-chain walk yields 10 vs the suite's expected 8 frames on both emulators |
+| 344 XcVerifyPKCS1Signature | FAIL `ERROR(line 250): Expected XcVerifyPKCS1Signature return = 0x1, Got = 0x0` | FAIL, identical (subset `config.txt` run) | **faithful**: Complex_4627's XcVerifyPKCS1Signature returns 0 for the suite's habibi-key PKCS1 vector on both |
+
+Differential method notes: (a) xemu boots the patched suite fine — the §32
+animation-wait deadlock does NOT affect this bare title — but per-print
+`WriteFile` traffic keeps sampled EIPs in kernel space, so detect runs via
+the FATX log, not EIP ranges; (b) after `Sleep(10000)` the kernel relaunches
+the XBE forever and each relaunch truncates the log (`CREATE_ALWAYS`) —
+XGrid stops deterministically with `--break 4E03A`, xemu via monitor quit
+during the sleep window; (c) the suite's config parser needs CRLF — an
+LF-only `config.txt` is silently ignored ("No specific tests were
+requested"); (d) xemu commits guest FATX writes straight into its qcow2,
+so the log is readable offline once xemu exits.
+
+**Media recipe (reproducible):** `patch_suite_xbe.py --in
+kernel-test-suite-default.xbe --out default.xbe --log C --target
+'\Device\Harddisk0\Partition2'` (XBE sha256
+`76E2C52AE6C28F2154CA94C7579166F7373BFAD1C3FEE492AEBAB547B1EB1A1C`,
+byte-identical to the cancelled session's proven v6 XBE) + optional
+`config.txt` (`disable-video=1`, CRLF; `tests=<subset>` for fast xemu
+iterations) -> `XISOSharp -y -m -c <dir> out.iso` -> boot with
+`--writedump` (+ `--break 4E03A`). Suite sources were cloned read-only
+into `wt-data/src/xbox_kernel_test_suite` (GPL-2; facts only, no code
+copied).
+
+**Landed changes:** `src/XGrid.Cpu/{Decoder,Mnemonic,XboxCpu}.cs` CMC
+(opcode 0xF5) + `tests/XGrid.Cpu.Tests/InterpreterTests.cs` unit test;
+`tools/ktest-recon/`: ANSI rewrite of `patch_suite_xbe.py`, new
+`read_fatx_qcow2.py`, new `run_xemu_ktest_full.py`, README refresh.
+Baseline **1206 tests green** (1205 + `Cmc_ComplementsCarryFlag`), zero
+existing-expectation changes, `dotnet format --verify-no-changes` clean.
+
+**Open / next:** (a) the 3 faithful failures need no XGrid action (071
+requires a writable D: — a dashboard-era letter set or FATX-boot layout;
+319/344 look like suite expectation gaps against Complex_4627); (b) xemu's
+224/231 out-param bugs are oracle caveats for future thread-test
+differentials; (c) idle-skip V2 (timer-park fast-forward) would compress
+the 9.5B-step `Sleep(10000)` and shrink this acceptance run from ~58 min
+to ~10 min; (d) the suite is now a standing cross-emulator regression
+asset — a `tests=` subset ISO gives a ~2-min xemu/XGrid smoke run.
