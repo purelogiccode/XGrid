@@ -47,3 +47,6 @@ data/
 wt-data/
 runs/
 
+# Wave tooling
+node_modules/
+
