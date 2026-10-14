@@ -65,4 +65,20 @@ public interface IHotspotObserver
     /// fetches-minus-fallbacks (see <c>HotspotProfiler.FetchSlowFallbacks</c>).
     /// </summary>
     void NoteFetchSlow();
+
+    /// <summary>
+    /// Records one instruction served by the decode cache (§131 leg (d)):
+    /// no fetch window, no translate, and no <c>Decoder.Decode</c> call —
+    /// the decode was avoided. Reported only while the cache is enabled, so
+    /// flag-off reports stay byte-identical to §126/§131 ones.
+    /// </summary>
+    void NoteDecodeCacheHit();
+
+    /// <summary>
+    /// Records one instruction that missed the decode cache and was decoded
+    /// (§131 leg (d)): the fetch took the fast path (or the legacy cross-page
+    /// path) and <c>Decoder.Decode</c> ran. Reported only while the cache is
+    /// enabled; hits+misses equals executed steps.
+    /// </summary>
+    void NoteDecodeCacheMiss();
 }

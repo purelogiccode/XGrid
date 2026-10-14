@@ -92,6 +92,8 @@ internal static class Program
         bool idleSkip = false;
         bool idleSkipProbe = false;
         bool fetchFast = false;
+        bool decodeCache = false;
+        bool decodeVerify = false;
         string gpuBackend = "sw";
         string? hotspotPath = null;
         List<string> scans = new();
@@ -238,6 +240,12 @@ internal static class Program
                 case "--fetch-fast":
                     fetchFast = true;
                     break;
+                case "--decode-cache":
+                    decodeCache = true;
+                    break;
+                case "--decode-verify":
+                    decodeVerify = true;
+                    break;
                 case "--gpu":
                     gpuBackend = NextValue(args, ref i);
                     break;
@@ -349,6 +357,19 @@ internal static class Program
             {
                 machine.Cpu.FetchFastPathEnabled = true;
                 Console.WriteLine("Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
+            }
+
+            if (decodeCache || decodeVerify)
+            {
+                machine.Cpu.DecodeCacheEnabled = true;
+                Console.WriteLine(
+                    $"Decode cache=on (entryCap={DecodeCache.MaxEntries}; implies fetch-fast; " +
+                    "absolute-step recipes: use flag-off runs)");
+                if (decodeVerify)
+                {
+                    machine.Cpu.DecodeCacheVerify = true;
+                    Console.WriteLine("Decode cache verify=on (re-reads source bytes on every hit)");
+                }
             }
 
             if (loadStatePath is not null)
@@ -1434,6 +1455,25 @@ internal static class Program
         Console.WriteLine(
             $"PIT ch0 divisor={machine.Bus.Pit.Channel0Divisor} mode={machine.Bus.Pit.Channel0Mode}");
         Console.WriteLine($"Interrupts delivered={machine.Cpu.InterruptCount}");
+
+        // §131 leg (d): printed only while the decode cache is enabled so
+        // flag-off logs stay byte-identical to the master baselines.
+        if (machine.Cpu.DecodeCacheEnabled)
+        {
+            ulong decodeCacheHits = machine.Cpu.DecodeCacheHits;
+            ulong decodeCacheMisses = machine.Cpu.DecodeCacheMisses;
+            double decodeCacheTotal = decodeCacheHits + decodeCacheMisses;
+            double hitShare = decodeCacheTotal == 0 ? 0 : decodeCacheHits / decodeCacheTotal;
+            Console.WriteLine(
+                $"Decode cache hits={decodeCacheHits} misses={decodeCacheMisses} " +
+                FormattableString.Invariant($"hitShare={hitShare:F4} ") +
+                $"decodes={machine.Cpu.DecodeCount} fills={machine.Cpu.DecodeCacheFills} " +
+                $"entries={machine.Cpu.DecodeCacheEntries} peak={machine.Cpu.DecodeCachePeakEntries} " +
+                $"pageDrops={machine.Cpu.DecodeCachePageDrops} fullFlushes={machine.Cpu.DecodeCacheFullFlushes} " +
+                $"crossPageSkips={machine.Cpu.DecodeCacheSkippedCrossPage} " +
+                $"nonRamSkips={machine.Cpu.DecodeCacheSkippedNonRam} " +
+                $"verifyFailures={machine.Cpu.DecodeCacheVerifyFailures}");
+        }
         Console.WriteLine(
             $"IDE accesses={machine.Ide.AccessCount} " +
             $"lastCmd=0x{machine.Ide.LastCommand:X2} " +
@@ -2101,7 +2141,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache] [--decode-verify] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");

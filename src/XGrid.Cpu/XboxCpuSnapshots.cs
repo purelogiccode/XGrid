@@ -167,7 +167,8 @@ public sealed partial class XboxCpu : ISnapshotable
 
         // The TLB caches page-table walks over guest RAM; the tables themselves
         // are restored via RAM, so drop any cached translations instead of
-        // snapshotting them (a stale entry would be a silent divergence).
+        // snapshotting them (a stale entry would be a silent divergence). The
+        // decode cache (§131 leg (d)) rides the same flush via Mmu.OnFlush.
         Mmu.Flush();
 
         // Idle-skip measurement state is transient instrumentation tied to the
