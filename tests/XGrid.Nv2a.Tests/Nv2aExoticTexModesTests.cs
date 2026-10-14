@@ -342,7 +342,9 @@ public sealed class Nv2aExoticTexModesTests
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 2f, 2f, 2f, 2f);
         const uint project3DFormat = (1u << 28) | (1u << 16) | (3u << 6) | (0x06u << 8);
-        PushFormatTextureSlot(pushes, 0, 0x4000u, project3DFormat, 0x00030033u, 2u, 2u);
+        // Clamp on U/V/P in reference TEXADDRESS bits (ADDRU 0-2, ADDRV 8-10,
+        // ADDRP 16-18); the out-of-bounds (2,2,2) coord must clamp to (1,1,1).
+        PushFormatTextureSlot(pushes, 0, 0x4000u, project3DFormat, 0x00030303u, 2u, 2u);
         PushStagePassTexel(pushes, 0, 0x02u);
         PushDraw(pushes);
         PushMethods(nv2A, memory, pushes.ToArray());

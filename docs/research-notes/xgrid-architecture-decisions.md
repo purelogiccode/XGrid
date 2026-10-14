@@ -6550,3 +6550,119 @@ side), zeta-drop depth (0 exposure), Vulkan/swapchain/async (design
 §3/§5/§7 unchanged — fps table reframes swapchain as
 latency-not-throughput), 007 G2 decode (§118, sibling track — the
 transition segment now ends parked at `0x1C302C`, consistent).
+
+## §124 — NV2A remaining texture modes: measured, implemented, closed (2026-10-14)
+
+Worktree `Temp\opencode\worktrees\nv2a-remaining` (`wave/nv2a-remaining`;
+this agent resumed a session killed by host power loss — its partial state
+was verified intact: the `Nv2aMmio.cs` + `Nv2aExoticTexModesTests.cs`
+diffs were reviewed line-by-line against the references below (not
+redone), `Nv2aRemainingModesTests.cs` (13 tests) kept, and the
+`meas-*`/`post-*` artifacts re-validated rather than re-run). Scope was
+strictly `src/XGrid.Nv2a/` + `tests/XGrid.Nv2a.Tests/`; the GpuGl seam was
+not touched (see below).
+
+**Measurement (mode x stream counts — the table that motivates every
+change).** Histograms over the captured method streams
+(`meas-menu.pgraph`, 18,125,062 methods, 1B-step dashboard boot with the
+§87 pad recipe; `meas-tri.pgraph`, 223,956 methods, triangle ISO boot):
+
+| item | menu | tri | verdict |
+|---|---|---|---|
+| texture formats written | s0: 04 x8140, 05 x652, 06 x82, 12 x686; s1/s2: 07 x36; s3: **30 x1626** | s0: 06 x82, 12 x34; s1/s2: 07 x36; s3: **30 x1626** | 0x30 done; DXT (0C/0E/0F) x0 both -> left |
+| depth formats 2C/2E/2F/31 | x0 | x0 | left (set completed for reference-completeness) |
+| combiner stage modes (0x1E70) | s0: 01 x8222; s1/s2: 03 x104; s3: 02 x36; rest 00 | s0: 01 x81; s1/s2: 03 x104; s3: 02 x36; rest 00 | PROJECT2D/3D + cubemap only |
+| DOT_STR_3D (0x0D) / BRDF (0x08) / all other dot modes | x0 | x0 | left |
+| texture dimensionality != 2D | x0 (all dim field 0) | x0 | DOT_STR_3D-dim3 doubly unexercised -> left |
+| TEXADDRESS ADDR words | s0: 010303 x9477 (U/V clamp); s1-3: 010101 x8793 (wrap); BORDER words 030303 x81, 030404 x80, 010404 x35 | same words, smaller counts | V-decode + BORDER done |
+| BORDER_COLOR (0x1B24+) writes | FF000000 x34 (s0), FFFFFFFF x6 (s3), zeros | same | done |
+| SHADOW_DEPTH_FUNC (0x1E6C) | {0: 2} (reset default only) | {0: 2} | NEVER/ALWAYS done; compare funcs 1-6 never programmed -> left as miss accounting |
+| TEXFILTER MIN/MAG | only 01012000 (BOX_LOD0/NEAREST) and 02022000 (TENT_LOD0/LINEAR) | same pair | **mipmap LOD provably unexercised -> left** |
+| TEXFMT MIPMAP_LEVELS = 8 | s0 color 05 (SZ_R5G6B5) x652 | x0 | still samples level 0 (LOD0-only filters) -> left |
+| TEXADDRESS WRAP_U/V/P/Q bits (4/12/20/24) | x0 of 36,471 ADDR writes | x0 | ignored, matching xemu (see below) |
+| dot-map (0x1E74) values | {0: 37} | {0: 37} | nothing to do |
+
+**Implemented (all exercised above; reference citations are facts,
+no code copied).**
+- PROJECT2D non-cube projective divide (`ResolveTexel`): `SampleInto(u/w,
+  v/w)` — xemu `psh.c:1129-1132` `textureProj(texSamp, norm(pT.xyw))`
+  (rect-tex `norm` = /size is already inside the linear texel-unit path,
+  so the extra divide composes exactly). Zero-w keeps undivided coords.
+- TEXADDRESS V decode moved to bits 8-10 (ADDRV `0x700`) with U 0-2 / P
+  16-18 (`nv2a_regs.h:528-539`; values 1 wrap / 2 mirror / 3 edge /
+  4 border / 5 ~= edge). Mode map verified against the GL backend table
+  (`gl/constants.h:48-55`: 1 REPEAT, 2 MIRRORED, 3 EDGE, 4 BORDER,
+  5 ~= EDGE); mode 0 (reset) wraps (= GL default REPEAT), reserved 6-7
+  clamp (xemu would index its 6-entry map out of bounds — safe choice).
+  WRAP_U/V/P bits are unconsumed by xemu's GL path (`gl/texture.c:124-126`
+  uses only ADDRU/V/P masks) and absent from both streams. This closes the
+  §96-noted V-bit quirk in both the 2D and volume samplers.
+- BORDER: out-of-range coord on a BORDER axis returns
+  `NV097_SET_TEXTURE_BORDER_COLOR` (`0x1B24` + slot stride `0x40`;
+  `nv2a_regs.h:1264`, `pgraph.c:2614`), ARGB-packed per
+  `pgraph_argb_pack32_to_rgba_float` (`pgraph.h:409-415`), per-axis
+  independence matching xemu's `needs_border_color` (`gl/texture.c:166-183`).
+- 0x30 depth semantics (`TryResolveShadow`, PROJECT2D/PROJECT3D stages,
+  shadow checked before sampling exactly as `psh.c:1113-1116,1146-1148`):
+  NEVER -> `vec4(0.0)`, ALWAYS -> `vec4(1.0)` (`psh.c:706-716`); funcs 1-6
+  keep the format-miss accounting (open). Depth-format set
+  {2C,2E,2F,30,31} verified (`nv2a_regs.h:1222-1226`,
+  `texture.c:62-69` f.depth table). Method `0x1E6C` verified
+  (`nv2a_regs.h:1293`); reset NEVER matches xemu's zeroed SHADOWCTL
+  (`pgraph.c:2956-2958`, `nv2a.c:301` memset).
+- Snapshot v2 -> v3 (new `_textureBorderColor[4]` + `_shadowDepthFunc`;
+  both draw-affecting, so loud version rejection beats silent resume
+  corruption; §106 precedent). Cost: pre-existing v2 `.xgs` files
+  (pd181/pd4915/pd546) no longer load — regenerate.
+
+**Explicitly left with counter evidence (closing the measurement is the
+outcome).** Mipmap LOD: MIN is always BOX_LOD0 (-> GL_NEAREST) or
+TENT_LOD0 (-> GL_LINEAR) (`gl/constants.h:29-38`), so the 652
+levels=8 programs still sample level 0; XGrid's base-level-only sampler is
+exact here. DOT_STR_3D dim==3: mode 0x0D x0 AND dim 3 x0 (keeps the §96
+2D-sample non-goal). BRDF 0x08: x0 (xemu-faithful zero stub already in
+place, §96). DXT 0C/0E/0F: x0 both streams — stays deprioritized per §105.
+Shadow compare funcs 1-6: zero `0x1E6C` writes beyond reset.
+
+**Live validation (post-fix `post-*` runs, artifacts in worktree root,
+NOT committed — 600 MB+ of pgraph).** `post-menu.bmp` SHA
+`4EF1FBF6...` (= §113 golden) and `post-tri.bmp` SHA `A1740DE0...`
+(= slice-2 golden) — byte-identical files, so RGB and alpha diffs are both
+exactly 0. All non-texture counters identical (menu: draws 33632,
+blended 211696978, depth 136, frames/stalls 686; tri: draws 2706,
+pixels 89142121, frames/stalls 68). Deltas confined to diagnostics:
+`formats= 30=62444852/62444852` -> gone (NEVER/ALWAYS resolve without miss
+accounting), per-state `miss=` -> 0. The 62.4M-sample `(0,0,0,1)` ->
+`(0,0,0,0)` alpha change is pixel-invisible because the stage-3 0x30
+texels feed decorative PROJECT3D stages whose alpha is not consumed
+downstream (blend/depth/clear counters all identical).
+
+**Tests: 1229 green (1216 + 13 new), zero existing-expectation changes,
+format clean.** New `Nv2aRemainingModesTests.cs` (13): address bit-layout
+helpers, ARGB border decode, depth-format set, PROJECT2D w-divide (+ w=1
+guard), U-wrap / V-clamp reference-bit draws, border in/out-of-bounds,
+shadow NEVER/ALWAYS/compare + snapshot round-trip. Fail-pre-fix proven by
+stashing the `Nv2aMmio.cs` fix and running the 9 compilable behavior tests
+on baseline: exactly the 6 predicted tests fail
+(Project2DDivides, AddressUWrap, AddressVClamp, BorderAxisReturns,
+ShadowNever, ShadowAlways); the 3 guard/characterization tests pass both
+(build fails for the 3 helper-only tests without the new APIs, as
+expected). One existing-test setup touch: `Nv2aExoticTexModesTests`
+`Draw_Project3DSamplesVolumeTexel` input word `0x00030033` -> `0x00030303`
+— assertions unchanged; the old word only clamped under the buggy bits-4-7
+V decode, the new word is the reference ADDRU/V/P layout. Full suite
+`dotnet test XGrid.sln -c Release` 1229/1229; `dotnet format
+--verify-no-changes` clean; warnings-as-errors held.
+
+**Seam note for the GpuGl sibling:** `PgraphTextureSlot` was deliberately
+NOT extended (brief: feed through existing visible state). Raw
+format/address words already cross the seam; the new public static decoders
+(`DecodeTextureAddressU/V/P`, `ToWrapMode`, `DecodeBorderColor`,
+`IsDepthTextureFormat`) are available for the GL backend to interpret
+them. Border-color values, filter words and shadow func are not yet in the
+seam structs — extend when a GL slice needs them.
+
+**Open risks:** (a) 007's texture census is unmeasured (50B+ steps; menu +
+tri only) — its later stages may exercise DXT/mipmaps/compare-shadows;
+(b) v2 snapshot invalidation (see above); (c) reserved address modes 6-7
+clamp fallback is a safe choice, not a reference behavior (xemu asserts).
