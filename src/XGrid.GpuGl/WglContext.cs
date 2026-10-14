@@ -38,6 +38,12 @@ internal sealed class WglContext : IDisposable
     {
         context = null;
         why = "ok";
+        if (!OperatingSystem.IsWindows())
+        {
+            why = "WGL context requires Windows";
+            return false;
+        }
+
         IntPtr instance = GetModuleHandleW(null);
         IntPtr hwnd = CreateWindowExW(
             0, "STATIC", "XGridGpuGl", WsOverlapped, 0, 0, 1, 1,

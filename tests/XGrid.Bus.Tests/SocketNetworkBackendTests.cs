@@ -242,7 +242,12 @@ public sealed class SocketNetworkBackendTests
         byte[] answer = new byte[] { 0x6F, 0x6B };
         listener.Send(answer, answer.Length, remote);
 
-        Assert.True(backend.TryReceive(out byte[]? inbound));
+        byte[]? inbound = null;
+        Assert.True(
+            System.Threading.SpinWait.SpinUntil(
+                () => backend.TryReceive(out inbound),
+                TimeSpan.FromSeconds(5)),
+            "udp reply was not delivered back to the backend");
         Assert.NotNull(inbound);
         // Re-encapsulated: gateway MAC -> guest MAC, sender -> guest.
         Assert.Equal(GuestMac, inbound![0..6]);
