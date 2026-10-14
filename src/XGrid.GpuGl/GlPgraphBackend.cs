@@ -122,11 +122,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // origin is not (0,0) (the readback origin assumption); _flipEmpty
     // counts flips with no backend-rendered content yet (no draw/clear has
     // created the FBO — e.g. CPU-blitted FMV presents, which the backend
-    // must not mix software pixels into, so no frame is served).
+    // must not mix software pixels into, so no frame is served);
+    // _presentUploads counts flips where the empty FBO was filled by the
+    // present-upload path (guest-RAM surface full-frame replace).
     private long _fboReallocs;
     private long _fboZetaDrops;
     private long _clipXYNonZero;
     private long _flipEmpty;
+    private long _presentUploads;
     private GlBackendTimings _timings;
     private int _perspective;
     private float _invAw;
@@ -237,7 +240,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty}]");
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads}]");
             _timings.AppendTo(sb);
             if (_fatalError is not null)
             {
@@ -369,6 +372,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _fboZetaDrops = 0;
         _clipXYNonZero = 0;
         _flipEmpty = 0;
+        _presentUploads = 0;
         _timings.Reset();
     }
 
@@ -586,14 +590,33 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         if (_fbo == 0)
         {
-            // Nothing rendered yet — no backend frame (honest gap, never
-            // mixed with software pixels). Counted so CPU-blitted segments
-            // (007 FMV) show their signature in diag[flipEmpty].
-            _flipEmpty++;
-            _readback = null;
-            _readbackWidth = 0;
-            _readbackHeight = 0;
-            return;
+            // Present-upload slice: no draw/clear has created the FBO, so
+            // the presented frame (if any) is a CPU-blitted guest-RAM
+            // surface. Upload it wholesale into a fresh FBO (full-frame
+            // replace — never mixed with software pixels) and fall through
+            // to the readback below. A non-empty FBO is deliberately
+            // untouched here: staleness detection for that case is still
+            // open (the upload would need guest-visible surface-access
+            // tracking). Any failure below restores _fbo == 0 so the
+            // session keeps the pre-upload honest gap (no frame served).
+            if (PresentUpload.TryBuildUploadPixels(
+                    _memory, LastFlipSurfaceAddress, record.Width, record.Height,
+                    record.Pitch, record.ColorBytes, out byte[]? upload) &&
+                upload is not null &&
+                EnsureFbo((int)record.Width, (int)record.Height, 0) &&
+                UploadFullFrame(upload, record.Width, record.Height))
+            {
+                _presentUploads++;
+            }
+            else
+            {
+                DeleteFbo();
+                _flipEmpty++;
+                _readback = null;
+                _readbackWidth = 0;
+                _readbackHeight = 0;
+                return;
+            }
         }
 
         if (_fboWidth < record.Width || _fboHeight < record.Height)
@@ -635,6 +658,58 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _readback = bgra;
         _readbackWidth = width;
         _readbackHeight = height;
+    }
+
+    /// <summary>
+    /// Full-frame replace of the (fresh, empty) FBO from guest-order RGBA
+    /// bytes: a throwaway texture carries the pixels and a NEAREST blit
+    /// lands them 1:1 (same-size FBO, same-origin rect — the convention the
+    /// content-preserving grow blit already uses). Synchronous, headless;
+    /// no partial updates, no async. Returns false when the throwaway
+    /// source FBO is incomplete (the caller restores _fbo == 0).
+    /// </summary>
+    private bool UploadFullFrame(byte[] rgba, uint width, uint height)
+    {
+        _gl.GenTextures(1, out uint texture);
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        unsafe
+        {
+            fixed (byte* pRgba = rgba)
+            {
+                _gl.TexImage2D(
+                    TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
+                    width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
+            }
+        }
+
+        _gl.GenFramebuffers(1, out uint srcFbo);
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, srcFbo);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.ReadFramebuffer, FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D, texture, 0);
+        bool complete = _gl.CheckFramebufferStatus(FramebufferTarget.ReadFramebuffer) ==
+            GLEnum.FramebufferComplete;
+        if (complete)
+        {
+            _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
+            _gl.Disable(EnableCap.ScissorTest);
+            _gl.BlitFramebuffer(
+                0, 0, (int)width, (int)height,
+                0, 0, (int)width, (int)height,
+                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        uint delFbo = srcFbo;
+        _gl.DeleteFramebuffers(1, ref delFbo);
+        uint delTexture = texture;
+        _gl.DeleteTextures(1, ref delTexture);
+        return complete;
     }
 
     /// <summary>Returns true when a valid-stage slice-1-unsupported texture mode is in use.</summary>

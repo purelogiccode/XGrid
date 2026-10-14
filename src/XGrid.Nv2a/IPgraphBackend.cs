@@ -343,13 +343,14 @@ public readonly struct PgraphClearInfo
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphSurfaceRecord
 {
-    public PgraphSurfaceRecord(uint width, uint height, uint colorBytes, ulong frame, uint surfaceAddress)
+    public PgraphSurfaceRecord(uint width, uint height, uint colorBytes, ulong frame, uint surfaceAddress, uint pitch)
     {
         Width = width;
         Height = height;
         ColorBytes = colorBytes;
         Frame = frame;
         SurfaceAddress = surfaceAddress;
+        Pitch = pitch;
     }
 
     public uint Width { get; }
@@ -359,4 +360,7 @@ public readonly struct PgraphSurfaceRecord
 
     /// <summary>Gets the resolved guest-physical byte address of the presented surface (DMA color-context base + color offset). Carried for the present-upload path; consumers must not change behavior on it yet.</summary>
     public uint SurfaceAddress { get; }
+
+    /// <summary>Gets the color-surface pitch in bytes (the low 16 bits of the surface-pitch register), i.e. the guest-row stride the present-upload walk uses.</summary>
+    public uint Pitch { get; }
 }

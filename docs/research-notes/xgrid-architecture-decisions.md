@@ -6862,3 +6862,68 @@ Wave-10 build task (§126 §2, profiler half only — NO decode cache). `IHotspo
 **First profiles (flag-on 1B, sw).** Menu (999,996,847 obs; 3,153 IRQs bypass Observe): Mov 33.8%, Jcc 17.6%, Dec 10.3%, Cmp 5.9%, Nop 3.5% (top-5 = 71%); translates 15.5B (15.1 fetch + 0.5 data per insn) at TLB 97.5% hit / 2.5% miss (386M walks); data 502M (RAM 99.9%, MMIO 0.10%); splits 274 (~0); fetch-cross-page 0.12%. Triangle (999,998,117 obs): Mov 25.8%, Jcc 22.3%, Cmp 12.2%, Nop 11.3% (top-5 = 72%, Cli/Sti 5.7% each — kernel idle); TLB 97.5%/2.5% (385M); MMIO 0.05%; splits 272; xpage 0.08%.
 
 **Three findings for slice 2.** (1) Zero TLB hits in a 10M-step paging-off smoke, then steady 97.5% hit with 2.5% irreducible misses, is consistent with the kernel mapping RAM with 4 MB large pages (never cached in the 256-entry SoftTLB): the fetch fast path must treat a large-page residency as a whole-page single-translate win, not a TLB problem. (2) Hook cost driver is ~18 interface dispatches/insn (15.5 TLB notes dominate); batch per-step/per-access tallies (e.g. `NoteTlbHits(int)`) are the fix if profile runs need to be cheaper — the flag-off path keeps only null checks. (3) Head-table saturation: 128 slots fill with first-seen BIOS/2BL heads (top head 105K = 0.01%) while 177.8M/230.6M head visits (17.8%/23.1% of all insn) overflow — first-wins capping cannot locate steady-state hot blocks over a full boot; slice-2 profiling needs windowed or top-N head tracking. Profiler total vs steps differs by the IRQ count (interrupt entries return before Observe) — determinism anchor stays the frame SHA, not the total.
+## §129 - present-upload slice: empty-FBO flip serves the guest-RAM surface (2026-10-14)
+
+Wave-10 T2 build task (branch `wave/gl-present-upload`): the §125 deferred
+follow-up, first half. Hooks at `GlPgraphBackend.FlipCore`
+(`GlPgraphBackend.cs:569`), `_fbo == 0` branch ONLY.
+
+What landed (5 modified + 3 new files): `IPgraphBackend.cs`
+(`PgraphSurfaceRecord` gains `uint Pitch`, 6th ctor param — the low 16 bits
+of the surface-pitch register, i.e. the guest-row stride; the record's
+documented purpose is already "same fields CapturePresentedFrame records",
+so pitch belongs there); `Nv2aMmio.cs` flip site populates it from
+`_surfacePitch & 0xFFFFu` (the exact value `CapturePresentedFrame` records
+into `_presentedPitch`); new `XGrid.Nv2a/PresentUpload.cs`
+(`TryBuildUploadPixels`: pure, no GL — pitch/offset walk mirroring
+`TryCopyPresentedFrame`, A8R8G8B8 `0xAARRGGBB` → RGBA, guest row order,
+xemu `gl/surface.c pgraph_gl_upload_surface_data` pitch-repack rule for
+`pitch > width * bytes`, facts only; guards mirror the software copy —
+4-byte-only, dims 1..4096, pitch != 0, `pitch >= width * bytes`, 32-bit span
+no-wrap; no RAM-size check by design — production `IGpuMemory` reads are
+total functions, so OOB can only serve benign unmapped values, never throw);
+`GlPgraphBackend.cs` uploads on `_fbo == 0` (build pixels → `EnsureFbo(w,h,0)`
+→ `UploadFullFrame` throwaway-texture + NEAREST blit, then falls through to
+the existing readback; any failure `DeleteFbo()`s back to `_fbo == 0` so the
+session keeps the pre-upload honest gap) with counter
+`diag[presentUploads]` (reset in `ResetState`); non-empty FBO deliberately
+untouched. Tests: 11 in `XGrid.Nv2a.Tests/PresentUploadTests.cs`
+(address→RGBA exact bytes, padded-pitch byte-parity vs a real
+`TryCopyPresentedFrame` run, 7 guard cases + span-wrap + null-memory) and 1
+live GL test in `XGrid.GpuGl.Tests/PresentUploadLiveTests.cs`
+(plain `[Fact]` with a WGL-guard early return — passes unexercised where
+no GL context exists, no new test dependency per the sources.md rule;
+on this host it RUNS: empty-FBO flip
+serves the exact guest pattern, second flip at a different address serves
+the first frame again, `presentUploads=1`, `BackendUnsupported=0`).
+Suite 1262/1262 green (1250 + 12), format clean. Goldens 1B pairs on this
+branch: menu sw SHA `4EF1FBF6…CB0DE81` exact, counters identical
+(`draws=33632 frames=686 stalls=686`), gl `unsupported=0`, BMP
+`violations=0 maxDelta=1`; triangle sw SHA `A1740DE0…`, anchors
+`draws=2706 frames=68 stalls=34`, gl `unsupported=0`, `violations=0
+maxDelta=1`.
+
+Acceptance discrepancy (diagnosis, not a fix — the `_fbo == 0`-only scope
+stands): `presentUploads=0` AND `flipEmpty=0` on BOTH titles, so the
+"counter > 0 on menu flips" sub-criterion cannot fire as scoped — draws and
+clears always create the FBO before the first flip on menu/triangle, a fact
+already measured on master (§125: menu `flipEmpty=0`) and re-confirmed on
+this branch. The branch's live shape is the FMV one (`flipEmpty == flips`,
+§122: 39/39) — reachable only via 007, which the standing no-real-games
+rule forbids; the WGL-guarded live test covers exactly that shape instead
+(empty-FBO flip + guest-RAM surface → uploaded frame served). If BOSS wants
+a live-run counter > 0, the next slice must be the non-empty-FBO case, not
+more empty-FBO work.
+
+Precise open point — non-empty-FBO staleness design: when `_fbo != 0` at
+flip, the backend cannot tell a GL-rendered present (FBO is current — serve
+it) from a CPU-blitted present (FBO is stale — must upload or abstain).
+Solving it needs guest-visible surface-access tracking (options, unsolved:
+(a) dirty-watch the presented span via the bus watch/fault path and upload
+on dirty, full-frame replace; (b) reuse the texture fingerprint sampler as a
+staleness probe with a policy for hash cost vs false-negative rate; (c) an
+xemu-style surface cache keyed by (vram_addr, pitch, format) with
+upload_pending/download_pending state — the heaviest, most faithful).
+Constraint survivors for any option: never mix (full-frame replace or no
+frame), no async (emulation-thread only), headless FBO only (no
+windowing/swapchain until the operator decides).
