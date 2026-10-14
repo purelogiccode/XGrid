@@ -7229,3 +7229,158 @@ deviations). **T4 merged-master goldens PASS both legs** (menu SHA +
 §127 counters exact @`0x1E0EB`; triangle SHA + 2706/68/34 @`0x8001B032`) —
 the wave-10 post-merge gap is closed. **Baseline 1277/1277** (1268 + 9),
 format clean.
+
+## 134 - JIT slice 3: decode cache LANDED (leg d) - 2.1-3.1x, hit share 99.5-99.8%, goldens exact both flags (2026-10-14)
+
+Wave-12 build task on branch `wave/jit-decode` (from master 2b78a2d, 1277
+green): the §131 leg-(d) handoff implemented in full - DecodedInstruction
+block cache, conservative invalidation, `--decode-cache`/`--decode-verify`,
+decode-avoided counters, 14 unit tests. ALL acceptance gates green: suite
+1291/1291 (+14), format clean, menu+triangle 1B SHAs + full counters exact
+on BOTH flag-off and flag-on (repeat-confirmed), ratio UP 2.12-3.07x, decode
+share gone (0.20-0.47% of flag-off), debug-verify tripwire ZERO failures
+through 1B real-title steps. No codegen, no boundary elision, no snapshot
+format change, no new NuGet packages.
+
+### Design (as landed)
+
+`DecodeCache` (`src/XGrid.Cpu/DecodeCache.cs`): `Dictionary<uint linear,
+Entry>` keyed by LINEAR fetch address (kernel aliases of one physical page
+are distinct keys, gotcha v) + physical-page reverse map
+`Dictionary<uint page, List<uint>>` + a 16 KB active-page bitset that makes
+the common store-drop a bounds check + one bit. Entry (~200 B): the
+`DecodedInstruction` (invalid #UD markers cached too, gotcha vi), the
+physical base of the 15-byte fetch window (idle-skip replay + reverse map),
+the fill-time operand/address-size defaults (hit-validation belt), and the
+source window packed into 15 bytes (verify mode). Cap 128 K entries
+(`MaxEntries`); reaching it full-flushes (gotcha vii - bounded memory,
+`peak` counters prove the cap on menu/tri runs are never approached: peaks
+12,644 / 8,100).
+
+CPU integration (`XboxCpu.Step` + new partial `XboxCpuDecodeCache.cs`):
+flag off = byte-identical legacy path (plus a `_decodeCache is null` check
+per Step and per store, a verbatim `FetchLegacy` extraction, and the
+host-only `DecodeCount++`). Flag on: single-page windows look up the cache
+by `CsBase+Eip`; a HIT replays the 15 per-byte `_idle.NoteAccess` calls
+from the entry physicals (gotcha iii - idle-skip verdicts unit-proven
+byte-exact vs flag-off), reports `NoteFetch(false)`, and returns the cached
+decode - no bus traffic, no translate, no decode; a MISS takes the §131c
+single-translate path (cross-page windows the legacy path) and fills when
+the physical is RAM. Misses include cross-page/non-RAM skips, so
+hits+misses == steps. `DecodeCacheEnabled=true` implies
+`FetchFastPathEnabled` and starts MMU page-table tracking (with a cold TLB
+so every back-table page is re-observed); Reset/snapshot leave the flag and
+counters alone (host-side state, §126/§131 discipline).
+
+### Invalidation discipline (all conservative; verify=0 proves exhaustiveness)
+
+- CPU stores (`WriteMemory`/`RawWrite`/`WriteMemory64`/
+  `WriteMemoryBytes`, post-translate physical): page-granular drop of the
+  store's page(s); a store to an OBSERVED page-table page full-flushes
+  instead (remap may change other pages - gotcha i over-flush). The MMU's
+  own A/D-bit writes never reach these hooks (they are Mmu-internal
+  `Memory.Write32`s, not CPU stores), so A/D false-triggers are impossible
+  by construction - no `IMemoryBus` change needed, deferred suppression is
+  moot at this hook level.
+- The five `XboxMachine` device-adapter shims (IDE BM-DMA, NV2A surface/
+  zeta/semaphore, APU, nvnet, USB HCCA/ED) now carry the CPU and call
+  `InvalidateDecodeCachePage` after every physical write. DEVIATION from
+  the §131/brief wording ("full flush on the shims"): page-granular drop
+  instead - the NV2A software rasterizer funnels ~89 M pixel writes per 1B
+  steps through `PhysicalGpuMemory.WritePhysical`, so full flushes there
+  would keep the table permanently cold; page drop is equally sound
+  (cached windows never cross a page) and costs a bitset test per write.
+- Mapping changes: every Mmu.Flush/FlushPage site (CR0.PG/CR3/CR4.PSE
+  writes, INVD/WBINVD, INVLPG, Reset, snapshot load - the §131 inventory's
+  choke point) invokes CPU hooks wired in the XboxCpu constructor:
+  full flush both. INVLPG full-flushes (v1 carries no linear-page index).
+- CS reload: full flush ONLY when base or D/B actually changed
+  (DEVIATION from "flush on LoadSegment": same-base reloads happen on
+  every interrupt/iret and would flush the hot table thousands of times;
+  same-base cannot change any cached decode since keys are linears and
+  sizes are validated per hit - exact-#UD EIP preserved). CR0.PE is
+  covered by the CR-write flush.
+- Host writes: EOS quirk (`XboxMachine.CheckSevenEosQuirk` WriteVa) calls
+  `InvalidateDecodeCachePage`; snapshot load rides the Mmu.Flush hook
+  (LoadState already flushes - comment updated); TestRomRunner image loads
+  ride `Machine.Reset -> Cpu.Reset -> Mmu.Flush`.
+- Non-RAM fetches are never cached (flash/BIOS/MMIO: physical bound
+  `MaxTrackedPhysical=512 MB` excludes every MMIO + RAM-alias window on the
+  Xbox map; `IIdleSkipHost.IsRam` is the second gate) - gotcha iii's other
+  half.
+- `--decode-verify` (flag-gated, off by default, gotcha ix): on every hit
+  the 15 source bytes are re-read from the entry physicals and memcmp'd; a
+  mismatch counts `verifyFailures` and re-decodes (self-healing).
+  **verifyFailures==0 on menu AND triangle 1B runs** - the invalidation
+  discipline is exhaustively proven on real titles at 1B steps.
+
+### Acceptance (exact numbers; 16-core host shared with other wave agents -
+walls contended, SHAs/counters step-exact and immune)
+
+Unit: 14 new tests (`DecodeCacheTests.cs`): off-by-default + imply
+fetch-fast, fill/hit identity + profiler shares + report lines, xor-write
+page drop (§34 decrypt pattern), PT-write full flush, CR3+INVLPG flush,
+CS same-base warm / changed-base flush, snapshot-load flush, cross-page +
+non-RAM skips, vector-14 fault precision, cached #UD marker with exact
+EIP, idle-skip verdict exactness, verify tripwire (incl. the 15-byte
+window-overlap semantics), entry cap (peak==131072, one flush), host flush
+APIs. Suite **1291/1291** (1277+14), `dotnet format --verify-no-changes`
+clean, zero warnings.
+
+Goldens (off then on, back-to-back, repeated; profiler off):
+- Menu 1B sw: SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`,
+  draws=33632 skipped=1402 frames=686 stalls=686 (+ all sub-counters) on
+  off1/off2/on1/on2 - EXACT everywhere.
+- Triangle 1B sw: SHA `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`,
+  draws=2706 frames=68 stalls=34 on off1/off2/on1/on2 - EXACT everywhere.
+  NOTE for future agents: the triangle golden REQUIRES `--hdd` AND `--dvd`
+  together (the recorded anchors came from `gpu-slice2-triangle-golden.ps1`
+  which attaches both); a DVD-only boot diverges at 1B (frames=35).
+- Flag-off log diffs (off1 vs off2, menu+tri): only the frame-filename
+  line -> off runs bit-reproducible; off-vs-on: ONLY the `Decode cache=on`
+  announcement, the gated decode-stats line, and the frame path - the
+  flag-off codepath carries null checks + host-side counters only, and the
+  off SHAs matching the §131 master-recorded anchors is the strongest
+  byte-identity proof (master baseline re-run skipped, justified).
+
+Walls (1B steps, seconds; pair order off->on; host contended - §131's
+uncontended off-walls were 372 menu / 292 tri):
+- Menu: off 700.4 / 662.8, fetch-fast-only 549.8, decode-cache 318.8 /
+  312.5 -> **off->on 2.20x / 2.12x**; off->ff 1.27x; ff->on **1.72x**
+  (leg-(d) contribution alone).
+- Triangle: off 530.3 / 528.6, fetch-fast-only 391.4, decode-cache 178.3 /
+  172.2 -> **off->on 2.97x / 3.07x**; off->ff 1.35x (matches §131);
+  ff->on **2.19x / 2.27x**.
+- Msteps/s: menu off ~1.43-1.51 -> on 3.14-3.20; tri off ~1.89 -> on
+  5.61-5.81.
+
+Decode-avoided counter (acceptance 6): menu on decodes=4,679,841 =
+**0.468 per-insn** (flag-off = 1.0 by construction; unit-proven) with
+hits=995,317,006 (**99.53%**); triangle decodes=1,995,661 = **0.200
+per-insn**, hits=998,002,456 (**99.80%**). Repeat runs bit-identical on
+every counter (menu on1==on2, tri on1==on2). Profiler report gained
+`summary,decodeCacheHits/Misses` lines emitted only when nonzero (flag-off
+reports byte-identical to §126/§131 baselines).
+
+Other counters (tri on1): fills=880,681 entries=4,156 peak=8,100
+pageDrops=352 fullFlushes=31,781 crossPageSkips=761,045 (0.076% of steps)
+nonRamSkips=353,935 (BIOS/flash - correctly uncached); menu on1:
+fills=3,103,139 entries=10,192 peak=12,644 pageDrops=4,069
+fullFlushes=83,265 crossPageSkips=1,222,767 (0.122%). The fullFlush counts
+are INVLPG/CR/PT-write churn of the kernel; even so the steady-state hit
+share stays >=99.5% (flushes mostly hit cold boot-phase code).
+
+### Deferred / notes for the next wave
+
+- INVLPG -> full flush (no linear-page index). Counters show 32-83 K
+  flushes/1B with no golden impact; a linear-page drop index is a cheap d2
+  optimization IF a title ever needs it.
+- A/D-suppression for PT-page stores (the §131 gotcha-i d2) is MOOT at the
+  current hook level: A/D writes never traverse CPU store sites; only a
+  future bus-level writer hook (§132 dirty-bit track) would need it.
+- `Program.MachineGpuMemory` (GL backend texture reads) needs no flush
+  wiring: the GL backend never writes guest RAM (source-verified).
+- idle-skip + decode-cache at 1B title scale: unit-proven exact; not run
+  at 1B (not in the acceptance set).
+- ktest smoke not run by this task (standing merge gate for BOSS).
+- Snapshot format unchanged; old `.xgs` remain valid.
