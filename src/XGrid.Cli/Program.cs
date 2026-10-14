@@ -92,6 +92,7 @@ internal static class Program
         bool idleSkip = false;
         bool idleSkipProbe = false;
         string gpuBackend = "sw";
+        string? hotspotPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
@@ -236,6 +237,9 @@ internal static class Program
                 case "--gpu":
                     gpuBackend = NextValue(args, ref i);
                     break;
+                case "--hotspot":
+                    hotspotPath = NextValue(args, ref i);
+                    break;
                 case "--scan":
                     scans.Add(NextValue(args, ref i));
                     break;
@@ -327,6 +331,14 @@ internal static class Program
                     $"Idle-skip={(machine.Cpu.IdleSkipMeasureOnly ? "probe" : "on")} " +
                     $"minIterations={machine.Cpu.IdleSkipMinIterations} chunk={machine.Cpu.IdleSkipChunkSteps} " +
                     "(absolute-step recipes: use flag-off runs)");
+            }
+
+            HotspotProfiler? hotspot = null;
+            if (hotspotPath is not null)
+            {
+                hotspot = new HotspotProfiler();
+                machine.Cpu.HotspotObserver = hotspot;
+                Console.WriteLine($"Hotspot profiler on (report: {hotspotPath})");
             }
 
             if (loadStatePath is not null)
@@ -654,6 +666,13 @@ internal static class Program
             }
 
             PrintState(machine, executed, dumps);
+            if (hotspot is not null && hotspotPath is not null)
+            {
+                hotspot.WriteReport(Console.Out, 15);
+                hotspot.SaveReport(hotspotPath, 25);
+                Console.WriteLine($"Hotspot report {hotspotPath} total={hotspot.TotalInstructions}");
+            }
+
             if (ramDumpPath is not null)
             {
                 File.WriteAllBytes(ramDumpPath, machine.Ram.GetSpan(0, (int)machine.Ram.Size).ToArray());
@@ -2072,7 +2091,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");

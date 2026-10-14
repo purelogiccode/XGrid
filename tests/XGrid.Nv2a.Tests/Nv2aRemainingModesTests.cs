@@ -251,6 +251,33 @@ public sealed class Nv2aRemainingModesTests
     }
 
     [Fact]
+    public void ReservedAddressModes_DecodeToClampOnBothAxes()
+    {
+        // Modes 6-7 are reserved (nv2a_regs.h names only 1-5; xemu's
+        // address-mode map covers 0-5 and asserts on anything larger, so
+        // the reference defines no behavior for them). The standing safe
+        // choice is CLAMP (3 = clamp-to-edge) at decode time, so no
+        // downstream consumer ever sees a reserved mode.
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressU(0x00010606));
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressV(0x00010606));
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressU(0x00010707));
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressV(0x00010707));
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressP(0x00060606));
+        Assert.Equal(3, Nv2AMmio.DecodeTextureAddressP(0x00070707));
+
+        // Decoded reserved modes wrap as clamp downstream.
+        Assert.Equal(2, Nv2AMmio.ToWrapMode(Nv2AMmio.DecodeTextureAddressU(0x00010606)));
+        Assert.Equal(2, Nv2AMmio.ToWrapMode(Nv2AMmio.DecodeTextureAddressV(0x00010707)));
+
+        // Defined modes still pass through unchanged on both axes.
+        Assert.Equal(1, Nv2AMmio.DecodeTextureAddressU(0x00010101));
+        Assert.Equal(2, Nv2AMmio.DecodeTextureAddressV(0x00020202));
+        Assert.Equal(4, Nv2AMmio.DecodeTextureAddressU(0x00010404));
+        Assert.Equal(5, Nv2AMmio.DecodeTextureAddressV(0x00050505));
+        Assert.Equal(0, Nv2AMmio.DecodeTextureAddressU(0x00000000));
+    }
+
+    [Fact]
     public void BorderColor_DecodesArgbPacking()
     {
         Nv2AMmio.DecodeBorderColor(0xFFFF0000u, out float r, out float g, out float b, out float a);

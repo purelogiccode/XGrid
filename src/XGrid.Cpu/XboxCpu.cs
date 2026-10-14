@@ -10,6 +10,7 @@ public sealed partial class XboxCpu
     private uint _sysenterCs;
     private uint _sysenterEsp;
     private uint _sysenterEip;
+    private IHotspotObserver? _hotspot;
 
     /// <summary>Creates a CPU over the given memory and I/O buses.</summary>
     public XboxCpu(IMemoryBus memory, IIoBus? ioBus = null)
@@ -37,6 +38,23 @@ public sealed partial class XboxCpu
 
     /// <summary>Gets the paging unit.</summary>
     public Mmu Mmu { get; }
+
+    /// <summary>
+    /// Gets or sets the optional hotspot profiler (§126). Null (default) leaves
+    /// the interpreter path byte-identical; when set, the CPU reports every
+    /// executed instruction, fetch window, SoftTLB outcome, and translated
+    /// data access. Host-side measurement state: untouched by
+    /// <see cref="Reset"/> and snapshot save/load.
+    /// </summary>
+    public IHotspotObserver? HotspotObserver
+    {
+        get => _hotspot;
+        set
+        {
+            _hotspot = value;
+            Mmu.Observer = value;
+        }
+    }
 
     /// <summary>Gets the vector of the most recent guest fault delivered to the IDT (0 if none).</summary>
     public int LastFaultVector { get; private set; }
@@ -104,6 +122,7 @@ public sealed partial class XboxCpu
             uint eipBefore = Context.Eip;
             ExecuteInstruction(instruction);
             _idle?.Observe(instruction, eipBefore, Context.Eip);
+            _hotspot?.Observe(instruction, eipBefore, Context.Eip);
         }
         catch (PageFaultSignal fault)
         {
@@ -160,6 +179,12 @@ public sealed partial class XboxCpu
     private void Fetch(Span<byte> buffer)
     {
         uint segmentBase = Context.GetSegmentBase(SegmentRegister.Cs);
+        if (_hotspot is not null)
+        {
+            uint fetchLinear = segmentBase + Context.Eip;
+            _hotspot.NoteFetch((fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u);
+        }
+
         for (int i = 0; i < buffer.Length; i++)
         {
             uint linear = segmentBase + Context.Eip + (uint)i;
@@ -859,23 +884,39 @@ public sealed partial class XboxCpu
     {
         if (!Mmu.IsEnabled)
         {
-            return RawRead(address, size);
+            uint direct = RawRead(address, size);
+            if (_hotspot is not null)
+            {
+                if (CrossesPage(address, size))
+                {
+                    _hotspot.NoteSplitAccess();
+                }
+
+                _hotspot.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(address));
+            }
+
+            return direct;
         }
 
         if (CrossesPage(address, size))
         {
+            _hotspot?.NoteSplitAccess();
             int bytes = size / 8;
             uint value = 0;
             for (int i = 0; i < bytes; i++)
             {
-                value |= (uint)Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false)) <<
-                         (8 * i);
+                uint physical = TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false);
+                _hotspot?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(physical));
+                value |= (uint)Memory.Read8(physical) << (8 * i);
             }
 
             return value;
         }
 
-        return RawRead(TranslateLinear(address, isWrite: false, isInstruction: false), size);
+        uint translated = TranslateLinear(address, isWrite: false, isInstruction: false);
+        uint result = RawRead(translated, size);
+        _hotspot?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(translated));
+        return result;
     }
 
     private void WriteMemory(uint address, int size, uint value)
@@ -883,23 +924,36 @@ public sealed partial class XboxCpu
         if (!Mmu.IsEnabled)
         {
             RawWrite(address, size, value);
-            return;
-        }
-
-        if (CrossesPage(address, size))
-        {
-            int bytes = size / 8;
-            for (int i = 0; i < bytes; i++)
+            if (_hotspot is not null)
             {
-                Memory.Write8(
-                    TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false),
-                    (byte)(value >> (8 * i)));
+                if (CrossesPage(address, size))
+                {
+                    _hotspot.NoteSplitAccess();
+                }
+
+                _hotspot.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(address));
             }
 
             return;
         }
 
-        RawWrite(TranslateLinear(address, isWrite: true, isInstruction: false), size, value);
+        if (CrossesPage(address, size))
+        {
+            _hotspot?.NoteSplitAccess();
+            int bytes = size / 8;
+            for (int i = 0; i < bytes; i++)
+            {
+                uint physical = TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false);
+                _hotspot?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(physical));
+                Memory.Write8(physical, (byte)(value >> (8 * i)));
+            }
+
+            return;
+        }
+
+        uint translated = TranslateLinear(address, isWrite: true, isInstruction: false);
+        RawWrite(translated, size, value);
+        _hotspot?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(translated));
     }
 
     private uint RawRead(uint address, int size)
@@ -943,6 +997,15 @@ public sealed partial class XboxCpu
 
         _idle?.NoteAccess(physical, isWrite, isInstruction);
         return physical;
+    }
+
+    /// <summary>
+    /// Classifies a translated data address as RAM-backed for the hotspot
+    /// profiler. No idle-skip host (unit-test harness) means flat test RAM.
+    /// </summary>
+    private bool ClassifyHotspot(uint physicalAddress)
+    {
+        return IdleSkipHost is null || IdleSkipHost.IsRam(physicalAddress);
     }
 
     private sealed class PageFaultSignal : Exception

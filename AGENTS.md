@@ -377,36 +377,50 @@ green with zero work lost).
   work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/
   mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
   **1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
+- **Wave 10 (2026-10-14, §§128–130; five tasks, all green, three merges).**
+  T1 JIT profiler MERGED (§128: nullable `IHotspotObserver` at `Step()`
+  line 106, mnemonic/PC/TLB counters, `--hotspot` switch; flag-off AND
+  flag-on byte-identical on menu+triangle; hook cost +5.5% — the §126
+  "under 3%" estimate disproven, batching noted for slice 2; +5 tests).
+  T2 present-upload MERGED (§129: `_fbo == 0` branch builds the FBO from
+  guest RAM via `IGpuMemory`, full-frame replace, never mix; goldens
+  unchanged; `presentUploads=0` on menu/tri is correct — the live shape
+  needs 007, forbidden; +12 tests). BOSS fixes at merge: §128/§129
+  §-union, and T2's new `Xunit.SkippableFact` dependency REJECTED per
+  the sources.md rule (plain `[Fact]` + WGL-guard return instead). T3
+  sample matrix set (triangle SHA exact, smoke PASS; **nxdk sources
+  BLOCKED — no toolchain on host**, the binding missing piece for mesh).
+  T4 smoke PASS 7/7 in 03:54. T5 clamp-6/7 MERGED (safe choice, zero
+  head movement, +1 test). BOSS reclaimed 84.5 GB scratch qcow2s (C:
+  4.8 → 89.3 GB free). **1268 tests.**
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1250 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1268 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — test-samples track: JIT slice 1 + present upload + sample coverage.
+## Next session — JIT slice 2 + non-empty-FBO staleness design + nxdk toolchain.
 
-1. **WAVE DONE (§§125–127).** Dashboard golden + ktest smoke re-verified
-   green on merged master (T1/T2); present-upload plumbing merged (§125,
-   +2 tests); JIT scoped to decode-cache + fetch-fast-path (§126, no
-   codegen); 007 long probe CLOSED (stuck + deferred). **1250 tests.**
-2. **Standing operator rule (2026-10-14): NO real Xbox games at this
-   stage.** All title work uses `data/test-samples/` (`triangle.xbe`,
-   `nxdk-hello/`, `nxdk-led/`, `nxdk-mesh/`, `nxdk-triangle/`,
-   `kernel-test-suite-default.xbe`). 007/real-game probes deferred to a
-   later stage; the §121 DSP-bridge live evidence stands pre-merge only.
-3. **Track C JIT slice 1 (§126):** `IHotspotObserver` profiler first
-   (nullable hook at `Step()` line 106, mnemonic/PC/TLB counters, golden
-   anchors as determinism check), then decode cache + fetch fast path
-   with conservative invalidation (XBE decrypt §34, decompressor output,
-   EOS-quirk host writes, DMA/device RAM writes, snapshot-load flush);
-   acceptance = Msteps/s ratio up, both frame SHAs + suite green,
-   flag-off byte-identical.
-4. **Present upload slice (§125 hook):** `GlPgraphBackend.FlipCore`
-   `GlPgraphBackend.cs:569`, `_fbo == 0` branch first, full-frame replace
-   via `IGpuMemory`, never mix; open design point = staleness detection
-   for the non-empty-FBO case. **Swapchain/windowing decision (operator)**
-   still pending — latency feature, not the lever.
-5. Sample coverage on the test-samples set (nxdk-mesh/hello/led beyond
-   triangle); ktest smoke stays the standing gate; NV2A reserve rows
-   (6–7 clamp is a safe choice, not reference).
+1. **WAVE DONE (§§128–130).** Profiler + present-upload + clamp-6/7
+   merged (BOSS §-union + dependency rejection at merge); sample matrix
+   set with standing recipes; smoke green; 84.5 GB reclaimed.
+   **1268 tests.**
+2. **Standing operator rule: NO real Xbox games.** All title work uses
+   `data/test-samples/`. 007/real-game probes deferred; §121 live
+   evidence stands pre-merge only.
+3. **JIT slice 2 (§128 findings):** (a) windowed/top-N head tracking
+   (first-wins saturates — 128 BIOS heads vs 17–23% overflow); (b) batch
+   tallies (`NoteTlbHits(int)` — ~18 dispatches/insn cost +5.5%);
+   (c) fetch fast path treating 4 MB large-page residency as whole-page
+   win; (d) then decode cache + conservative invalidation (§126 §3).
+   Acceptance = Msteps/s ratio up, both SHAs + suite green, flag-off
+   byte-identical.
+4. **Present-upload staleness design (§129 open point):** `_fbo != 0`
+   can't distinguish GL-rendered (serve) from CPU-blitted (stale)
+   presents — options: dirty-watch via bus, fingerprint probe, xemu-style
+   surface cache; survivors: never mix, no async, headless only.
+   **Swapchain/windowing decision (operator)** still pending.
+5. **nxdk toolchain provisioning (operator/host):** mesh (vertex buffers
+   + textures) is the next GPU step but sources are unbuildable here;
+   needs nxdk SDK + mesh `texture.h`/`verts.h` from upstream.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
