@@ -56,6 +56,17 @@ public sealed partial class XboxCpu
         }
     }
 
+    /// <summary>
+    /// Gets or sets whether the single-translate fetch fast path is enabled
+    /// (§131 leg (c)). Default off: the interpreter path is byte-identical
+    /// to the legacy core. When on, a fetch window lying within one 4 KB
+    /// page is translated once instead of per byte; page-crossing windows
+    /// take the legacy per-byte path. Host-side configuration: untouched by
+    /// <see cref="Reset"/> and snapshot save/load (like
+    /// <see cref="HotspotObserver"/>).
+    /// </summary>
+    public bool FetchFastPathEnabled { get; set; }
+
     /// <summary>Gets the vector of the most recent guest fault delivered to the IDT (0 if none).</summary>
     public int LastFaultVector { get; private set; }
 
@@ -179,16 +190,114 @@ public sealed partial class XboxCpu
     private void Fetch(Span<byte> buffer)
     {
         uint segmentBase = Context.GetSegmentBase(SegmentRegister.Cs);
-        if (_hotspot is not null)
+        uint fetchLinear = segmentBase + Context.Eip;
+        bool crossesPage = (fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u;
+        if (FetchFastPathEnabled && !crossesPage)
         {
-            uint fetchLinear = segmentBase + Context.Eip;
-            _hotspot.NoteFetch((fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u);
+            FetchFast(fetchLinear, buffer);
+            return;
+        }
+
+        IHotspotObserver? observer = _hotspot;
+        if (observer is null)
+        {
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                uint linear = segmentBase + Context.Eip + (uint)i;
+                buffer[i] = Memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
+            }
+
+            return;
+        }
+
+        if (FetchFastPathEnabled)
+        {
+            observer.NoteFetchSlow();
+        }
+
+        FetchCounted(observer, segmentBase, buffer, crossesPage);
+    }
+
+    /// <summary>
+    /// Single-translate fetch (§131 leg (c)). The caller guarantees the
+    /// window lies within one 4 KB page, hence within one 4 MB region, so a
+    /// single lookup resolves every byte: a SoftTLB hit for 4 KB pages, one
+    /// directory walk for 4 MB large pages (large-page residency is the
+    /// whole-page win — large pages never sit in the TLB, reported as one
+    /// miss per the observer contract). Faults, A/D side effects, TLB
+    /// inserts, per-byte idle-skip access notes and bus reads are identical
+    /// to the slow path: every byte shares one page mapping, so the slow
+    /// path always faults on byte 0 with no prior access notes — exactly
+    /// what the single translate reports.
+    /// </summary>
+    private void FetchFast(uint fetchLinear, Span<byte> buffer)
+    {
+        _hotspot?.NoteFetch(false);
+        uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted, out uint errorCode);
+        if (faulted)
+        {
+            throw new PageFaultSignal(fetchLinear, errorCode);
         }
 
         for (int i = 0; i < buffer.Length; i++)
         {
-            uint linear = segmentBase + Context.Eip + (uint)i;
-            buffer[i] = Memory.Read8(TranslateLinear(linear, isWrite: false, isInstruction: true));
+            uint physical = basePhysical + (uint)i;
+            _idle?.NoteAccess(physical, isWrite: false, isInstruction: true);
+            buffer[i] = Memory.Read8(physical);
+        }
+    }
+
+    /// <summary>
+    /// Profiler-on fetch: byte-identical translates with batched TLB tallies
+    /// (§131 leg (a)). The reported totals equal the fifteen per-byte
+    /// outcomes. Each iteration accumulates its outcome before any fault is
+    /// raised (a throwing call never returns its outs to the faulting frame,
+    /// so the batch cannot rely on try/finally alone); the finally only
+    /// covers iterations that already returned.
+    /// </summary>
+    private void FetchCounted(IHotspotObserver observer, uint segmentBase, Span<byte> buffer, bool crossesPage)
+    {
+        observer.NoteFetch(crossesPage);
+        int tlbHits = 0;
+        int tlbMisses = 0;
+        try
+        {
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                uint linear = segmentBase + Context.Eip + (uint)i;
+                uint physical = TranslateLinearCounted(linear, out bool tlbHit, out bool tlbCounted, out bool faulted, out uint errorCode);
+                if (tlbCounted)
+                {
+                    if (tlbHit)
+                    {
+                        tlbHits++;
+                    }
+                    else
+                    {
+                        tlbMisses++;
+                    }
+                }
+
+                if (faulted)
+                {
+                    throw new PageFaultSignal(linear, errorCode);
+                }
+
+                _idle?.NoteAccess(physical, isWrite: false, isInstruction: true);
+                buffer[i] = Memory.Read8(physical);
+            }
+        }
+        finally
+        {
+            if (tlbHits != 0)
+            {
+                observer.NoteTlbHits(tlbHits);
+            }
+
+            if (tlbMisses != 0)
+            {
+                observer.NoteTlbMisses(tlbMisses);
+            }
         }
     }
 
@@ -997,6 +1106,19 @@ public sealed partial class XboxCpu
 
         _idle?.NoteAccess(physical, isWrite, isInstruction);
         return physical;
+    }
+
+    /// <summary>
+    /// Translates for the profiler-on fetch path (§131 leg (a)): like
+    /// <see cref="TranslateLinear"/> but returns the TLB outcome and any
+    /// fault instead of notifying or throwing, so the caller accumulates the
+    /// batch before raising the fault. Idle-skip access notes stay with the
+    /// caller (after the fault check), preserving the legacy order of
+    /// guest-visible effects (fault → no access note).
+    /// </summary>
+    private uint TranslateLinearCounted(uint linearAddress, out bool tlbHit, out bool tlbCounted, out bool faulted, out uint errorCode)
+    {
+        return Mmu.TranslateUncounted(linearAddress, isWrite: false, isInstruction: true, out faulted, out errorCode, out tlbHit, out tlbCounted);
     }
 
     /// <summary>

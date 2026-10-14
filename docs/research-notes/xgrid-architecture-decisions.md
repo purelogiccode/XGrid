@@ -6931,3 +6931,204 @@ windowing/swapchain until the operator decides).
 ## §130 - wave-10 BOSS record: clamp merged, profiler + upload merged, sample matrix set, smoke green (2026-10-14)
 
 Five tasks, all green, three merges (`94997e1` clamp67, `f1a55d4` jit-profiler, `59bf909` gl-present-upload). **T5 clamp MERGED:** modes 6–7 → CLAMP_TO_EDGE in `DecodeTextureAddressU/V/P` (`NormalizeTextureAddressMode`); reference fact xemu `pgraph/gl/constants.h:48-55` + asserts at `texture.c:160,169,178` (no behavior exists for 6–7 — clamp is ours); fail-pre-fix proven via stash; menu+tri byte-identical (zero head movement, as §124 predicted); +1 test. **Merge conflict (T1/T2):** both appended §128 — resolved §-union (profiler keeps §128, upload → §129), plus an `Nv2aMmio.cs` auto-merge (flip-site pitch vs normalize — disjoint hunks, verified by suite). **BOSS dependency fix:** T2's live test used new NuGet `Xunit.SkippableFact`, which violates the sources.md rule (only XISOSharp + Silk.NET approved) — replaced with a plain `[Fact]` + WGL-guard early return (same operational behavior: runs on GL hosts, passes unexercised headless), pin + project ref removed, §129 text updated; suite still 1268. **T3 sample matrix (master, flag-off):** triangle 1B `vec=0 @0x8001B032`, `2706/89142121px/68/34`, SHA `A1740DE0…` exact (89142121 is the post-§109 anchor); ktest smoke `PASS` (792,800,535 steps, 4/7 vs 2/7); **nxdk-hello/led/mesh/triangle sources BLOCKED — no nxdk toolchain on this host** (`NXDK_DIR` unset, no checkout; only mingw/cmake/nasm) — binding missing piece for mesh (vertex buffers + textures = next GPU step), plus mesh lacks upstream `texture.h`/`verts.h`. Standing recipes recorded in the T3 return (triangle-iso + smoke script). **T4 smoke PASS 7/7** in 03:54, steps bit-reproducible, zero deviations. **Disk:** C: had 4.8 GB free (61 scratch 1.5 GB qcow2s = 84.5 GB under `Temp\opencode`); BOSS deleted all `*.qcow2` there (regenerable private copies; template lives in `data\`; `.xgs`/ISOs/logs kept) → 89.3 GB free. Finding for hygiene: probes should copy qcow2 to D: when C: is tight (T3/T5 precedent), and `Qcow2DiskImage` is read-only so sharing one private copy across runs is safe. **Baseline 1268/1268** (1250 + 5 profiler + 12 upload + 1 clamp), format clean.
+
+## 131 - JIT slice 2 LANDED (legs a+b+c): batched tallies, windowed heads, fetch fast path +35% (2026-10-14)
+
+Wave-11 build task on branch `wave/jit-slice2` (from master 65d40a3): the three
+§128 findings worked as one sequential chain a->d, each leg gated by unit tests
+before the next. Legs (a)(b)(c) LANDED, all acceptance gates green. Leg (d)
+(decode cache) DEFERRED with a precise next-task scoping at the end of this
+note (what blocked, exact site inventory, next-task recipe) — a clean
+checkpoint per the task brief. No codegen anywhere; no new NuGet dependencies;
+TreatWarningsAsErrors/nullable/format clean throughout.
+
+### Leg (a): batch tallies — 18 dispatches/insn down to ~5, hook cost +4.3%
+
+§128 finding 2: ~18 observer dispatches/insn, 15.5 of them TLB notes from the
+15-byte fetch loop. Fix, all in `XGrid.Cpu`:
+
+- `IHotspotObserver.cs`: +`NoteTlbHits(int)`/`NoteTlbMisses(int)` (batch
+  contract documented: totals identical to N singular calls).
+- `HotspotProfiler.cs`: implements with `+= (ulong)count`,
+  `ThrowIfNegative` guard (CA1512).
+- `Mmu.cs`: `Translate` body extracted verbatim into private
+  `TranslateCore(..., bool notify, out bool tlbHit, out bool tlbCounted)`;
+  public `Translate` forwards with notify:true (behavior identical for all
+  existing callers: descriptor/gate reads in `XboxCpu.cs:1111,1528,1759`,
+  EOS-quirk probes in `XboxMachine.cs:409,441`, CLI debug paths in
+  `Program.cs:473,1227,1639`); new `TranslateUncounted` forwards with
+  notify:false and returns the outcome (identical page walks, A/D bits, TLB
+  inserts — only the notification is suppressed).
+- `XboxCpu.cs`: `Fetch` split into flag-off-verbatim loop (observer null)
+  and profiler-on `FetchCounted` (one `NoteFetch`, accumulate 15 outcomes,
+  one `NoteTlbHits`/`NoteTlbMisses` flush). Data paths untouched (0.5
+  notes/insn average — batching buys nothing there; stated explicitly so the
+  next reader does not re-derive it).
+
+**Fail-pre-fix bug the new tests caught (real logic error, not a test bug).**
+First version accumulated in the loop with try/finally flush. The
+`FetchFast_FaultPrecision` test failed: off-run reported 2 misses, on-run 3
+(eventually bisected to fetch-only misses=0 vs 1 with a temporary debug
+test, since deleted). Root cause: a faulting iteration never returns, so its
+outcome is never accumulated — `finally` only flushes iterations that
+returned. Fix: `TranslateLinearCounted` returns outcome+fault WITHOUT
+throwing (`Mmu.TranslateUncounted` outcome outs passed straight through);
+`FetchCounted` accumulates first, then throws `PageFaultSignal`, then does
+`_idle?.NoteAccess` + bus read — guest-visible effect order identical to
+legacy (fault implies no access note). Lesson for (d): never read inline
+out-vars in a `finally` after a throwing call — accumulate before throwing.
+
+**Hook-cost measurement (100M triangle ABBA, same method as §128).**
+OFF 28.1/28.2/27.8 (avg 28.03), ON 29.4/29.0/29.3 (avg 29.23): **+4.3% +-
+~0.6pp** (pairs +4.6/+2.8/+5.4) vs §128 +5.5%. Under, but inside host noise —
+reported honestly: the dispatch count fell 18->~5 and the residual is
+`Observe`-body counting work (mnemonic array + branch dict), irreducible
+without sampling (out of scope). Batch-equivalence is proven by the profile
+totals below matching §128 exactly.
+
+### Leg (b): windowed head tracking — overflow 23.1% -> 0.28%, idle loop located
+
+§128 finding 3: 128 first-wins slots fill with BIOS/2BL heads (top head 105K
+= 0.01%), 177.8M/230.6M visits (17.8%/23.1%) overflow. Fix in
+`HotspotProfiler.cs`: every `HeadWindowInstructions` (1M, const) observed
+insns, truncate to top `HeadWindowRetained` (64) by count
+(`EvictColdHeads`; survivors keep cumulative counts; evicted heads re-enter
+at 1 — self-healing; windows are instruction-count based hence deterministic).
+New counters `HeadWindows`/`HeadEvictions` + two additive report lines
+(existing report asserts unaffected). Unit test drives 2M `Observe` calls:
+128 one-shot heads -> window keeps 64/evicts 64 -> 100K-visit hot head tops
+the table -> next window retains it (plus report-line asserts).
+
+**1B profile evidence (profiler-on runs, `wt-data` CSVs kept out-of-repo).**
+Triangle: overflow 230.6M (23.1%) -> **2,828,373 (0.28%)**, 999 windows,
+16,082 evictions, final table 71 heads. Menu: 177.8M (17.8%) ->
+**14,277,354 (1.43%)**, 999 windows, 33,760 evictions, table full at 128.
+Top heads are now real steady-state blocks, cross-title consistent: kernel
+spin `0x800422B0` 92.5M tri / 92.8M menu (9.3% — vs 0.01% before, ~880x),
+**kernel idle `0x8001B02E`/`0x8001B043`** 56.5M+56.5M tri (the §111 idle
+thread; triangle's 45.6% parks visible) / 16.1M+16.1M menu, then
+`0x80042161`/`0x80042168`/`0x80045AF0` ~3.4M each both titles. The JIT slicing
+question "where are the hot blocks" is answered: kernel spin + kernel idle +
+a handful of kernel helpers. Mnemonic mix unchanged (menu Mov 33.8 / Jcc 17.6
+/ Dec 10.3 / Cmp 5.9 / Nop 3.5 — exact §128 match), totals bit-exact with
+§128 (999,998,117 tri / 999,996,847 menu; tri TLB misses 385,216,807 exact).
+
+### Leg (c): fetch fast path — single translate, +35% Msteps/s, goldens exact
+
+§128 finding 1: steady 97.5% hit / 2.5% irreducible miss = kernel 4 MB large
+pages (never in the SoftTLB). Design (`XboxCpu.cs` `Fetch`/`FetchFast`, `Mmu`
+unchanged — the single translate IS `Mmu.Translate` called once): when the
+15-byte window lies in one 4 KB page it lies in one 4 MB region (4 KB pages
+cannot straddle 4 MB boundaries — no separate large-region check needed), so
+one lookup resolves every byte: TLB hit for 4 KB, one directory walk (one
+miss per contract) for large pages. Equivalence argument (unit-proven):
+single-page window implies identical mapping/fault for all bytes, so the slow
+path always faults on byte 0 with no prior access notes — exactly what the
+single translate reports; A/D/TLB-insert side effects, per-byte
+`_idle?.NoteAccess`, per-byte bus reads, and `NoteFetch(crossesPage)` value
+are all preserved. Cross-page windows (~0.1%) take the legacy path and count
+`NoteFetchSlow` (new observer method + `FetchSlowFallbacks` counter; fast
+coverage = fetches - fallbacks). Opt-in `XboxCpu.FetchFastPathEnabled`
+(default off) + CLI `--fetch-fast` (usage line + `Fetch fast path=on`
+announcement); host config untouched by Reset/snapshot like the profiler.
+
+**Acceptance (1) — Msteps/s ratio UP (back-to-back, same host window).**
+Triangle 1B: off 291.5/293.6 s (3.43/3.41 Msteps/s), on 216.1/217.3 s
+(4.63/4.60) = **1.349 / 1.351 (repeat confirms)**. Menu 1B: off 372.2 s
+(2.69), on 286.1 s (3.50) = **1.301**. Far above the "any UP counts" bar:
+14 fetch translates/insn were ~26% of runtime.
+
+**Acceptance (2) — goldens exact.** Triangle 1B SHA
+`A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C` +
+draws=2706/frames=68/stalls=34 (+pixels=89142121 and all sub-counters) on
+off/off2/on/on2. Menu 1B SHA
+`4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81` +
+draws=33632/skipped=1402/frames=686/stalls=686 (+all sub-counters) on
+off/on. **(3) flag-off byte-identical:** full-log diffs off-vs-on on both
+titles show ONLY the flag announcement + frame-path lines (invocation
+filenames); profiler OFF for all acceptance comparisons.
+
+**Acceptance (5) — shares moved by the predicted amount.**
+Translates/insn: triangle 15.386 (15,000,398,142H+385,216,807M) -> **1.401**
+(1,360,682,752H+40,592,639M, 97.10% hit); menu 15.5 -> **1.537**. Fast
+coverage 99.92%/99.88% (fallbacks == crossPage exactly: 761,045 tri /
+1,222,767 menu). All non-TLB counters identical base-vs-fast (guest-identity
+proof). Decode share has no counter (profiler measures translates, not
+decode) — that unmeasured remainder IS the (d) prize (see scoping).
+
+**Tests:** 9 new (2 batch tallies + Mmu parity, 1 window eviction, 6
+fetch-fast: default-off, straight-line identity+shares, cross-page fallback
+equality, large-page one-miss-per-fetch, fault precision vs vector-14
+delivery, paging-off silence). **Suite 1277/1277** (1268 + 9), format clean.
+
+### Leg (d) DEFERRED — precise next-task scoping (diagnosis, not an attempt)
+
+(d) needs the decode cache (Plan Phase-16 items 1+2+5, §126 §3): cache
+`DecodedInstruction` streams, conservative invalidation, key on
+CR0.PE/PG + operand/address-size defaults + CS base/D/B + CR3, INVLPG paths,
+no codegen, no boundary elision, exact fault EIP/vector. The enumeration
+below is verified against the tree (this branch); it is the handoff.
+
+**Why it did not fit this task.** (a)-(c) + validation consumed the budget:
+7 title runs (~35 min wall: tri off/on/off2/on2, menu off/on) + 3 profile
+runs (~15 min) + ABBA (~3 min) on a contended host. (d) is 1.5-2x that whole
+slice (see recipe) with a much larger blast radius; rushing it risked the
+green (a-c). No (d) code was written; nothing half-built is left behind.
+
+**What the next task inherits (all measured/proven above).** Per-insn cost
+after (c): 1 fetch translate + 15 bus reads + `Decoder.Decode` (2812-line
+table switch) + 354-case dispatch + execute. (d) removes the decode (and the
+fetch bytes entirely on hit); the +35% from 14 translates bounds the prize
+(decode share unmeasured — first act below should size it). Hot blocks are
+known (b): kernel spin/idle/helpers — a small table wins big. No device
+fidelity involved; no snapshot format change; opt-in flag
+(`--decode-cache`, implies fast-path behavior), flag-off byte-identical.
+
+**Invalidation site inventory (verified file:line, this branch).**
+CPU stores: `XboxCpu.WriteMemory`/`RawWrite` (guest VA, physical known post-
+translate — page-granular drop point #1; covers stack, §34 XBE decrypt
+`xor [0x10128]`, decompressor output to `0x7FA00000`). Device/DMA RAM writes
+ALL funnel through five private adapter shims in `XboxMachine.cs` (no device
+changes needed): `AddressSpaceGuestMemory.WritePhysical` (:837, IDE BM-DMA
+`IdeController.cs:413` PRDT data), `PhysicalGpuMemory.WritePhysical` (:817,
+NV2A semaphore `Nv2aMmio.cs:3368` + surface/zeta writes `:3501,3694,5203,
+5209,5214`), `PhysicalApuMemory.Write32/8` (:732/:737, DSP state + VP
+notifiers `McpxApuDevice.cs:486,758,883,923,1110,1133`), `PhysicalNvNetMemory`
+(:757, RX frames + descriptors `McpxNvNetDevice.cs:1065,1154`), `PhysicalUsbMemory`
+(:787/:792/:797, HCCA/done/ED `OhciUsbController.cs:895,899,964`). Host
+writes: EOS quirk `XboxMachine.cs:446` (direct `Memory.Write32` call site);
+snapshot load (`XboxCpuSnapshots.cs:171` already `Mmu.Flush()`s — add cache
+flush on the same line); `TestRomRunner.cs:71` image loads (test-only, needs
+the flush API). Mapping changes (full flush — all rare): CR3/CR0.PG/CR4.PSE
+writes (`XboxCpu.cs:1752,1763,1781` already `Mmu.Flush()`), CS base/D/B
+(`LoadSegment`, `XboxCpu.cs:1104` — note SYSENTER/SYSCALL paths set CS too),
+INVLPG/INVD/WBINVD (`XboxCpu.cs:654,659`). Page-table writes (remaps): track
+observed PDE/PTE pages in `TranslateCore` (2 set-adds per walk only, ~2.5%
+of translates) + full flush on write to a tracked page.
+
+**Gotchas the next task must honor (all learned above).** (i) A/D-bit writes
+(`Mmu.TranslateCore` `_memory.Write32`) are translation-neutral and happen
+on every walk — with a bus-level hook they false-trigger; slice-d1 should
+OVER-flush on PT-page writes (sound; boot-phase churn only) and defer A/D
+suppression (needs an `IMemoryBus` change: interface + `AddressSpace`,
+`PhysicalMemory`, fakes, `MachineGpuMemory` wrappers) to d2. (ii) Faulting
+iterations never return their outs — accumulate before throwing (§131a
+lesson). (iii) Replay per-byte `_idle?.NoteAccess` on hit (physicals known
+from the entry) or skip caching non-RAM fetches — else idle-skip verdicts
+drift. (iv) Skip caching cross-page windows (0.1%, 2 tags otherwise).
+(v) Same physical page at two linears (kernel aliases): key entries by
+linear, reverse-map by physical page. (vi) Cache the invalid marker too
+(#UD with exact EIP). (vii) Entry ≈ 200 B (`Operand` ~48 B ×3 + header +
+≤15 source bytes); cap the table (64-128K entries + flush discipline),
+unbounded growth over a boot is the failure mode. (viii) IRQs already poll
+per `Step` (`XboxCpu.cs:87`) and `--break-log` drives `Step` directly — keep
+lookup inside `Step` after the poll: no boundary elision, step transparency
+free. (ix) Debug-verify mode (memcmp source bytes on hit, flag-gated) until
+the 1B goldens prove the invalidation exhaustive.
+
+**Next-task recipe.** Unit: fill/hit, page-invalidate (incl. XBE-decrypt
+pattern), PT-write flush, CR3/CS/INVLPG/snapshot flushes, cross-page + MMIO
+skip, fault precision. Gates: suite green + format; tri/menu 1B SHAs +
+counters; flag-off byte-identical; ratio UP again; profile shows decode
+share gone (add a decode-avoided counter to prove it). Estimated 1.5-2x the
+(a-c) slice; do NOT combine with codegen or boundary elision.
