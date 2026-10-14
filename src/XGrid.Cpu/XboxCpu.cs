@@ -379,6 +379,10 @@ public sealed partial class XboxCpu
                 Context.Eflags |= FlagBits.Cf;
                 break;
 
+            case Mnemonic.Cmc:
+                Context.Eflags ^= FlagBits.Cf;
+                break;
+
             case Mnemonic.Cld:
                 Context.Eflags &= ~FlagBits.Df;
                 break;

@@ -422,4 +422,7 @@ public enum Mnemonic
 
     /// <summary>Compare and exchange 8 bytes.</summary>
     Cmpxchg8B = 315,
+
+    /// <summary>Complement carry flag.</summary>
+    Cmc = 316,
 }

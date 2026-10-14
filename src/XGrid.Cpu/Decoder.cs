@@ -597,6 +597,9 @@ public static class Decoder
             case 0xF4:
                 return Make(Mnemonic.Hlt, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
 
+            case 0xF5:
+                return Make(Mnemonic.Cmc, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
+
             case >= 0xD8 and <= 0xDF:
                 return DecodeFpu(code, ref position, opcode, operandSize, addressSize, segmentOverride);
 
