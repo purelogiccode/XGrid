@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json;
 
-namespace XGrid.Cpu.Testing;
+namespace XGrid.Cpu.Tests;
 
 /// <summary>Loads and saves CPU tests as JSON (AOT-safe).</summary>
 public static class CpuTestLoader

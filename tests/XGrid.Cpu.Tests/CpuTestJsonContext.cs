@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace XGrid.Cpu.Testing;
+namespace XGrid.Cpu.Tests;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(CpuTest))]

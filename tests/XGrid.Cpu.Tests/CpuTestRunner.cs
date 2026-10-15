@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using XGrid.Memory;
 
-namespace XGrid.Cpu.Testing;
+namespace XGrid.Cpu.Tests;
 
 /// <summary>Runs declarative CPU tests in a fresh 64 KB memory space.</summary>
 public static class CpuTestRunner
