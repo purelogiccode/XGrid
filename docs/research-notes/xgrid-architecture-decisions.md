@@ -7636,3 +7636,52 @@ harness had omitted the recorded `gpu-slice1-golden.ps1` timed pad recipe.
 Restoring `down@950000000+hold,none@962000000,a@970000000+hold,none@976000000`
 produced the exact anchor, without retuning tolerances or product behavior.
 Triangle uses both HDD and test-sample DVD as required by §134.
+
+## 138. Wave-13 JIT first-codegen scope: measured emitter pick + boundary-safe block recipe (2026-10-15)
+
+Wave-13 probe task (`wave/jit-codegen-scope`, 4 commits, suite 1316 green, zero
+`src/`/`tests/` diff; branch unmerged by design, `merge:false`). Full study:
+`docs/research-notes/jit-codegen-scope.md`. Key results:
+
+- **Remaining cost after §134 (measured, 1B pairs, profiler OFF):** menu
+  flag-off 524.78 s vs `--decode-cache` 245.74 s (2.14×), triangle 355.09 vs
+  107.47 s (3.30×); hit shares 99.532%/99.800%, verifyFailures=0 — the §134
+  numbers reproduce on this host. Scratch-instrumented sampled breakdown
+  (upper bounds; probe inflation documented): fixed per-step overhead
+  (boundary+fetch+dispatch+tail) ≈105 ns instrumented, nearly identical on
+  both titles; the workload-dependent part is execute bodies, dominated by
+  data-path helpers (76% menu / 29% triangle of execute time).
+  **The 354-case switch dispatch is not the dominant remaining cost** — the
+  executed bodies, especially memory/data helpers, are.
+- **§20.6 options 1–3 benchmarked in order** (Ryzen 9 7900; tiering-off primary
+  + default-runtime cross-check): Expression 14.737 / DynamicMethod 14.263 /
+  TypeBuilder 14.188 ns/insn (tied within noise) vs cache-on `Step` 32.7 ns and
+  a plain C# decoded-helper loop 14.285 ns. **Negative result: no managed
+  emitter beats the helper loop** — IL codegen over unspecialized bodies buys
+  nothing; a future emitter must win via semantic specialization. DynamicMethod
+  chosen provisionally (124.6 µs / 6 KB construction+first-call vs Expression
+  205.6/29 840, TypeBuilder 319.3/8 136; compare build+first-call sums, not
+  build alone). Correctness hashes matched for all variants; 13-instruction
+  budget exits matched 13 real Steps.
+- **Corrections to the scoping premise:** `XboxCpuDecodeCache.cs:137–177` hits
+  do zero MMU translations and zero bus reads (verify mode excepted — the
+  1-translate + 15-read cost is a miss path); `HotspotProfiler` counts events,
+  not elapsed time (mnemonic shares are not wall shares); the IRQ boundary is
+  `XboxCpu.cs:102–116` (TSC increments before polling; a delivered IRQ consumes
+  the budget unit without executing the original instruction).
+- **Block design (no boundary elision) — implemented as §136:** form blocks
+  only from valid DecodeCache entries (no speculative reads/translation/faults),
+  15-byte window within one 4 KiB page mapping one physical page, RAM only,
+  32-instruction initial cap; terminate at branch/call/return/indirect/#UD/
+  traps/HLT/page-window/missing entry plus conservative mode/system/REP/I/O
+  terminators; key = head EIP + CS base/mode/sizes + mapping generation (never
+  live GPR/flags/segments); `Step()` stays one original boundary, `Execute()`
+  may reuse the cursor within the caller's budget; IRQ poll at every boundary,
+  exact fault EIP/vector/error-code/CR2, 15-entry idle NoteAccess replay;
+  invalidation rides the §134 sites (extend the cache's drop/flush machinery,
+  no new hooks); `--block-exec`/`--block-verify` default-off; host state only,
+  no snapshot change, no new packages.
+- **Reference facts consulted:** xemu 0.8.136 `target/i386/tcg/translate.c`
+  `4235–4278` (CS base/mode capture), `4300–4310` (per-instruction PCs),
+  `4353–4370` (single-step/IRQ-inhibit/page termination); no implementation
+  copied; XGrid keeps every original boundary (stronger than QEMU chaining).
