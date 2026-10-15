@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { loadPlan, validatePlan } from "./plan.ts";
+import { loadPlan, validatePlan, WAVE_DEFAULT_MODEL } from "./plan.ts";
 import type { ResolvedPlan } from "./types.ts";
 
 function basePlan(): Record<string, unknown> {
@@ -134,4 +134,40 @@ test("default worktree root stays outside the repo", async () => {
   const plan = await loadPlan(planPath, root);
   assert.equal(plan.worktreeRoot, path.join(os.tmpdir(), "xgrid-wave", "worktrees"));
   assert.ok(!plan.worktreeRoot.startsWith(root));
+});
+
+test("rejects non-opencode-go models in tasks and defaults", () => {
+  const badTask = basePlan();
+  (badTask["tasks"] as Record<string, unknown>[])[0]!["model"] = {
+    providerID: "openrouter",
+    modelID: "unbiased/pareto-26.9",
+  };
+  assert.ok(
+    validatePlan(badTask).some((e) => e.includes("opencode-go")),
+    "a task model on another provider must be rejected",
+  );
+  const badDefaults = basePlan();
+  badDefaults["defaults"] = {
+    model: { providerID: "openrouter", modelID: "unbiased/pareto-26.9" },
+  };
+  assert.ok(
+    validatePlan(badDefaults).some((e) => e.includes("opencode-go")),
+    "a defaults model on another provider must be rejected",
+  );
+  const okPlan = basePlan();
+  okPlan["defaults"] = { model: { ...WAVE_DEFAULT_MODEL } };
+  assert.deepEqual(validatePlan(okPlan), []);
+});
+
+test("every task defaults to the opencode-go model when the plan names none", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wave-plan-"));
+  const planPath = path.join(root, "wave.plan.json");
+  fs.writeFileSync(
+    planPath,
+    JSON.stringify({ wave: "w", tasks: [{ id: "a", title: "A", prompt: "p", acceptance: "x" }] }),
+    "utf8",
+  );
+  const plan = await loadPlan(planPath, root);
+  assert.deepEqual(plan.defaults.model, WAVE_DEFAULT_MODEL);
+  assert.deepEqual(plan.tasks[0]!.model, WAVE_DEFAULT_MODEL);
 });
