@@ -92,7 +92,7 @@ internal static class Program
         bool idleSkip = false;
         bool idleSkipProbe = false;
         bool fetchFast = false;
-        bool decodeCache = false;
+        bool decodeCache = true;
         bool decodeVerify = false;
         bool blockExec = false;
         bool blockVerify = false;
@@ -250,6 +250,9 @@ internal static class Program
                     break;
                 case "--decode-cache":
                     decodeCache = true;
+                    break;
+                case "--no-decode-cache":
+                    decodeCache = false;
                     break;
                 case "--decode-verify":
                     decodeVerify = true;
@@ -2202,8 +2205,10 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
+        Console.WriteLine("                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
+        Console.WriteLine("                   --fetch-fast and --decode-verify default off; verify implies cache even with opt-out.");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
         Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");

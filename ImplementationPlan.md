@@ -3054,6 +3054,13 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
+**Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
+uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
+Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;
+verifyFailures=0 both, log-diff discipline passes, 1316 tests green.
+Default/off speedups 2.56x menu / 3.04x triangle (shared-host walls).
+CPU defaults, snapshots, and block-executor code unchanged.
+
 **NEXT SESSION — swapchain operator decision + next JIT step + nxdk toolchain.**
 **WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two merges).**
 T1 decode cache MERGED (§134: `DecodeCache` linear-key/physical-reverse-map,
