@@ -23,6 +23,7 @@ npm install
 npm run wave -- run examples/wave.plan.json --dry-run    # validate + show the pull schedule
 npm run wave -- run my-wave.plan.json                    # dispatch (spawns `opencode serve`)
 npm run wave -- status my-wave.plan.json                 # task table (--json for machines)
+npm run wave -- dashboard my-wave.plan.json              # live task/log view at http://127.0.0.1:4181
 npm run wave -- aggregate my-wave.plan.json              # merge leg only
 npm run wave -- clean my-wave.plan.json                  # remove worktrees of settled tasks
 ```
@@ -31,6 +32,13 @@ Requires Node 24+ (native TypeScript execution) and `opencode` v2 on PATH. The r
 `runs/<wave>/` (gitignored): `state.json` (crash-safe, `--resume` continues it), `logs/<task>.log`,
 `results/<task>.result.json`, `report.md`. Spawned servers keep their state registration under
 `runs/<wave>/opencode-service/` (via `XDG_STATE_HOME`), so concurrent waves never share one server.
+
+## Dashboard
+
+`wave dashboard <plan.json> [--port N]` serves a live page (default `http://127.0.0.1:4181/`,
+loopback-only) with task states, attempts, branch heads, result/gate verdicts, error text and
+per-task log tails, refreshed every 3 seconds. It reads `runs/<wave>/state.json` + `logs/` and
+works while a run is active or stopped; Ctrl-C stops it.
 
 ## How workers are driven
 
