@@ -1,0 +1,38 @@
+{
+  "wave": "wave-15",
+  "baseBranch": "master",
+  "maxParallel": 4,
+  "worktreeRoot": "D:/wave-worktrees",
+  "dataLink": "copy",
+  "serverPort": 4172,
+  "autoAggregate": true,
+  "finalGate": [
+    "dotnet format XGrid.sln --no-restore --verify-no-changes",
+    "dotnet build XGrid.sln -c Release --nologo",
+    "dotnet test XGrid.sln -c Release --nologo --no-build"
+  ],
+  "defaults": {
+    "model": { "providerID": "opencode-go", "modelID": "muse-spark-1.3-contributor" },
+    "budgetMs": 5400000,
+    "retries": 1,
+    "autoApprove": true
+  },
+  "tasks": [
+    {
+      "id": "jit-semspec-spike",
+      "title": "JIT next slice spike: semantic-specialization benchmarks vs helper-loop baseline, winning design + recipe",
+      "merge": false,
+      "prompt": "READ-ONLY task: no src/ or tests/ changes (scratch prototypes under wt-data/wave/ only, never committed). Context: decode cache (§134) and block executor (§136, opt-in --block-exec) landed; first-codegen scope filed as §138 with the honest negative result: switch dispatch is NOT dominant, no managed emitter beats the plain C# helper loop yet, and semantic specialization is required before any codegen slice. The number to beat is the §138 helper-loop baseline of 14.285 ns/insn on this host. Base gates were re-verified green on master in wave-14 (C# suite 1324/1324, wave-tool suite 42/42, menu+triangle 1B SHAs exact, ktest smoke 7/7 at 792800535 steps). (1) Reproduce the §138 baseline on THIS host first (same harness, back-to-back runs), then benchmark semantic-specialization candidates IN ORDER: (a) specialized per-opcode/per-shape helper paths over DecodeCache entries, (b) DynamicMethod (the §138 provisional emitter) for hot shapes only, (c) any third option the numbers justify. All benchmarks: Release, profiler OFF for comparisons, menu+triangle 1B pairs where guest code is involved, repeated runs with variance reported. (2) Pick the winner BY NUMBERS ONLY: it must beat 14.285 ns/insn by a margin that survives variance, or report a second negative result with the measured tables. (3) Deliver the implementation design honoring every standing constraint: block formation per §20.3 (branch/call/return/indirect/exception/page boundary, single-page windows), keying per §20.4, NO boundary elision (IRQ poll at every original instruction boundary), exact fault EIP/vector, --break-log/--trace step transparency, per-instruction idle NoteAccess replay, invalidation rides §134 unchanged, new opt-in flag default-off, no snapshot format change, no new NuGet packages (only XISOSharp + Silk.NET approved), TreatWarningsAsErrors, nullable, format clean, plain [Fact] tests only. Write the design + measured tables + a next-slice recipe with its own acceptance gate as the result-file notes. Binding goldens for every guest run: menu 1B SHA 4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81 with draws=33632 skipped=1402 frames=686 stalls=686; triangle 1B SHA A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C with draws=2706 frames=68 stalls=34 pixels=891421 (triangle needs --hdd AND --dvd together). Standing rules: reference-first, no fake fixes, data/test-samples/ only, References/ untouched.",
+      "acceptance": "Result file with notes carrying: (a) reproduced §138 baseline on this host with variance, (b) candidate benchmark tables with the winner picked by numbers (or a second honest negative), (c) implementation design honoring every constraint above, (d) next-slice recipe with concrete acceptance gate. Zero src/tests diff on the branch."
+    },
+    {
+      "id": "jit-semspec-build",
+      "title": "JIT next slice: implement the spike winner behind a new opt-in flag with exact goldens",
+      "branch": "wave/jit-semspec",
+      "dependsOn": ["jit-semspec-spike"],
+      "budgetMs": 14400000,
+      "prompt": "Build task implementing the jit-semspec-spike recipe. FIRST read runs/wave-15/results/jit-semspec-spike.result.json (its notes carry the measured design + recipe) and research-notes §§134/136/138; if the recipe is ambiguous on any point, follow ImplementationPlan §20 order and the §134 invalidation discipline, and record the deviation. If the spike reported a second negative result (no candidate beats the baseline), DO NOT implement codegen: instead land the highest-value measured improvement that keeps every golden exact (e.g. block-shape fast paths), still behind an opt-in flag, and say so in the result file. Otherwise implement the winning slice behind a NEW opt-in flag (default off; implies --decode-cache/--block-exec behavior as the design requires): formation terminates per §20.3 (branch/call/return/indirect/exception/page boundary; single-page windows only, cross-page ends the block); execution keeps the IDENTICAL interpreter semantics per instruction - NO boundary elision (IRQ poll at every original instruction boundary, exact fault EIP/vector, --break-log/--trace step transparency, per-instruction idle NoteAccess replay per the §134 hit-path rule); invalidation rides §134 unchanged; bounded tables with flush discipline (the §131 gotcha-vii failure mode); no snapshot format change; no new NuGet packages; TreatWarningsAsErrors, nullable, format clean. Unit tests in the §134 style (formation boundaries, fault precision, IRQ/step transparency, verify tripwire where applicable, cap discipline). Binding goldens: menu 1B SHA 4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81 + draws=33632/skipped=1402/frames=686/stalls=686, triangle 1B SHA A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C + draws=2706/frames=68/stalls=34 (triangle needs --hdd AND --dvd together), EXACT on flag-off AND flag-on with all sub-counters; flag-off logs byte-identical (only the flag announcement may differ); same-host wall pairs proving ratio UP vs the §138 14.285 ns/insn baseline with numbers. Full C# suite green (1324 baseline + new tests), tools/wave suite green (42 baseline). Standing rules: reference-first, no fake fixes, data/test-samples/ only, References/ untouched.",
+      "acceptance": "Full suites green (C# 1324 + new, wave-tool 42), format clean, menu+triangle 1B SHAs + full counter tables EXACT on flag-off and flag-on, flag-off byte-identical logs, same-host wall ratio UP vs baseline reported with numbers. Committed on wave/jit-semspec with result file carrying evidence."
+    }
+  ]
+}
