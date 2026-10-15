@@ -42,7 +42,11 @@ const SAVE_RETRY_BASE_MS = 250;
 
 function isTransientSaveError(error: unknown): boolean {
   const code = (error as { code?: unknown }).code;
-  return code === "EPERM" || code === "EBUSY" || code === "EACCES";
+  // ENOENT on the tmp->state rename is the single-process concurrent-save race:
+  // two tasks writing state.json in the same tick share one .tmp path, so the
+  // second rename finds the file already moved. Retrying rewrites .tmp and
+  // succeeds, so it is transient by the same argument as the lock codes.
+  return code === "EPERM" || code === "EBUSY" || code === "EACCES" || code === "ENOENT";
 }
 
 export async function saveRunState(statePath: string, state: RunState): Promise<void> {

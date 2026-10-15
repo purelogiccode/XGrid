@@ -57,3 +57,17 @@ test("missing state loads as null", async () => {
   const loaded = await loadRunState(path.join(os.tmpdir(), "wave-missing", "state.json"));
   assert.equal(loaded, null);
 });
+
+test("concurrent saves all succeed (shared .tmp rename race)", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-state-race-"));
+  const statePath = path.join(dir, "state.json");
+  const state = initialState(plan(), "plan.json", planHash("raw"));
+  for (let round = 0; round < 25; round += 1) {
+    await Promise.all(
+      Array.from({ length: 8 }, () => saveRunState(statePath, state)),
+    );
+  }
+  const loaded = await loadRunState(statePath);
+  assert.equal(loaded?.wave, "w1");
+  assert.equal(loaded?.tasks[0]!.status, "pending");
+});
