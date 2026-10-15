@@ -110,6 +110,7 @@ public sealed partial class XboxCpu
                     if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
                     {
                         InterruptCount++;
+                        _blocks?.EndBoundary();
                         return;
                     }
                 }
@@ -134,6 +135,7 @@ public sealed partial class XboxCpu
 
             if (!instruction.IsValid)
             {
+                _blocks?.EndBoundary();
                 LastFaultVector = 6;
                 LastFaultEip = Context.Eip;
                 LastFaultErrorCode = 0;
@@ -152,6 +154,7 @@ public sealed partial class XboxCpu
         }
         catch (PageFaultSignal fault)
         {
+            _blocks?.EndBoundary();
             Context.Cr2 = fault.LinearAddress;
             LastFaultVector = 14;
             LastFaultEip = Context.Eip;

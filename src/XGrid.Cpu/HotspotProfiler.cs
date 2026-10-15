@@ -99,6 +99,9 @@ public sealed class HotspotProfiler : IHotspotObserver
     /// </summary>
     public ulong DecodeCacheHits { get; private set; }
 
+    /// <summary>Gets or sets optional host-side block counters for the report.</summary>
+    public DecodedBlockCache? Blocks { get; set; }
+
     /// <summary>
     /// Gets the number of instructions that missed the decode cache and were
     /// decoded (§131 leg (d)); zero for every flag-off run.
@@ -349,6 +352,14 @@ public sealed class HotspotProfiler : IHotspotObserver
 
         // §131 leg (d): emitted only when the decode cache ran, so flag-off
         // reports remain byte-identical to the §126/§131 baselines.
+        if (Blocks is { } blocks)
+        {
+            writer.WriteLine(FormattableString.Invariant($"summary,blockDispatches,{blocks.Dispatches},{(blocks.Instructions == 0 ? 0 : (double)blocks.Dispatches / blocks.Instructions):F6}"));
+            writer.WriteLine(FormattableString.Invariant($"summary,blockInstructions,{blocks.Instructions},"));
+            writer.WriteLine(FormattableString.Invariant($"summary,blockBuilds,{blocks.Builds},"));
+            writer.WriteLine(FormattableString.Invariant($"summary,blockVerifyFailures,{blocks.VerifyFailures},"));
+        }
+
         if (DecodeCacheHits != 0 || DecodeCacheMisses != 0)
         {
             double decodes = DecodeCacheHits + DecodeCacheMisses;
