@@ -83,7 +83,7 @@ export async function branchExists(cwd: string, branch: string): Promise<boolean
 }
 
 export async function isClean(cwd: string): Promise<boolean> {
-  const status = await gitChecked(cwd, ["status", "--porcelain"]);
+  const status = await gitChecked(cwd, ["status", "--porcelain", "--untracked-files=no"]);
   return status.length === 0;
 }
 

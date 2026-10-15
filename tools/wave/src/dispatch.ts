@@ -161,7 +161,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
         agent: task.agent,
         model: task.model,
         budgetMs: task.budgetMs,
-        autoApprove: options.plan.autoApprove,
+        autoApprove: task.autoApprove,
         sessionId,
         log: logLine,
       }).catch(
@@ -201,7 +201,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
           agent: task.agent,
           model: task.model,
           budgetMs: Math.min(10 * 60 * 1000, task.budgetMs),
-          autoApprove: options.plan.autoApprove,
+          autoApprove: task.autoApprove,
           sessionId,
           log: logLine,
         }).catch(() => null);

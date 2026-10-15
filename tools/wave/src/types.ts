@@ -26,6 +26,7 @@ export type WaveTask = {
   model?: ModelRef;
   budgetMs?: number;
   retries?: number;
+  autoApprove?: boolean;
   gate?: string;
 };
 
@@ -42,6 +43,7 @@ export type ResolvedTask = {
   model?: ModelRef;
   budgetMs: number;
   retries: number;
+  autoApprove: boolean;
   gate?: string;
 };
 

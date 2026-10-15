@@ -15,6 +15,7 @@ function task(overrides: Partial<ResolvedTask> & { id: string }): ResolvedTask {
     merge: true,
     budgetMs: 1000,
     retries: 0,
+    autoApprove: true,
   };
 }
 

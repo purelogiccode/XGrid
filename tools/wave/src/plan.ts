@@ -150,6 +150,7 @@ export async function loadPlan(planPath: string, repoRoot: string): Promise<Reso
       model: task.model ?? defaults.model,
       budgetMs: task.budgetMs ?? defaults.budgetMs ?? DEFAULT_BUDGET_MS,
       retries: task.retries ?? defaults.retries ?? DEFAULT_RETRIES,
+      autoApprove: task.autoApprove ?? defaults.autoApprove ?? plan.autoApprove ?? true,
       gate: task.gate ?? defaults.gate,
     });
   }

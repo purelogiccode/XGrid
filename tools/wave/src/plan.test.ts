@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { loadPlan, validatePlan } from "./plan.ts";
+import type { ResolvedPlan } from "./types.ts";
 
 function basePlan(): Record<string, unknown> {
   return {
@@ -85,9 +86,41 @@ test("loadPlan resolves defaults, promptFile and branches", async () => {
   assert.equal(plan.tasks[0]!.retries, 2);
   assert.equal(plan.tasks[0]!.agent, "build");
   assert.equal(plan.tasks[0]!.branch, "wave/a");
+  assert.equal(plan.tasks[0]!.autoApprove, true);
   assert.equal(plan.tasks[1]!.serial, true);
   assert.equal(plan.tasks[1]!.merge, true);
   assert.equal(plan.worktreeRoot, path.resolve(root, "wave-worktrees"));
+});
+
+test("autoApprove resolves task > defaults > plan", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wave-plan-"));
+  const load = async (name: string, body: unknown): Promise<ResolvedPlan> => {
+    const planPath = path.join(root, name);
+    fs.writeFileSync(planPath, JSON.stringify(body), "utf8");
+    return loadPlan(planPath, root);
+  };
+  const withDefaults = await load("a.json", {
+    wave: "w1",
+    autoApprove: false,
+    defaults: { autoApprove: true },
+    tasks: [
+      { id: "a", title: "A", prompt: "p", acceptance: "x" },
+      { id: "b", title: "B", prompt: "p", acceptance: "x", autoApprove: false },
+    ],
+  });
+  assert.equal(withDefaults.tasks[0]!.autoApprove, true);
+  assert.equal(withDefaults.tasks[1]!.autoApprove, false);
+  const planOnly = await load("b.json", {
+    wave: "w2",
+    autoApprove: false,
+    tasks: [{ id: "a", title: "A", prompt: "p", acceptance: "x" }],
+  });
+  assert.equal(planOnly.tasks[0]!.autoApprove, false);
+  const bare = await load("c.json", {
+    wave: "w3",
+    tasks: [{ id: "a", title: "A", prompt: "p", acceptance: "x" }],
+  });
+  assert.equal(bare.tasks[0]!.autoApprove, true);
 });
 
 test("default worktree root stays outside the repo", async () => {

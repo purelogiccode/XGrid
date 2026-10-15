@@ -34,13 +34,13 @@ export async function aggregate(options: AggregateOptions): Promise<AggregateSta
   const branch = await currentBranch(options.repoRoot);
   if (branch !== plan.baseBranch) {
     if (!(await isClean(options.repoRoot))) {
-      throw new Error(`repo is on "${branch}" with uncommitted changes; expected "${plan.baseBranch}"`);
+      throw new Error(`repo is on "${branch}" with uncommitted tracked changes; expected "${plan.baseBranch}"`);
     }
     await gitChecked(options.repoRoot, ["checkout", plan.baseBranch]);
     options.log(`[aggregate] checked out ${plan.baseBranch}`);
   }
   if (!(await isClean(options.repoRoot))) {
-    throw new Error("main worktree is not clean; refusing to aggregate");
+    throw new Error("main worktree has uncommitted tracked changes; refusing to aggregate");
   }
 
   const taskStates = taskStateById(state);
