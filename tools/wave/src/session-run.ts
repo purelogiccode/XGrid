@@ -29,6 +29,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Turn-completion predicate (exported for unit tests). V2 stamps
+ * `time.completed` on EVERY assistant step, including mid-turn steps that end
+ * with tool calls (`finish: "tool-calls"`); only a terminal finish means the
+ * turn is over. Observed live on wave-13: harvesting on `completed` alone
+ * returns after the first ~15s model step and nudges a still-working session.
+ */
+export function isTurnComplete(
+  message: SessionMessageAssistant,
+  previousAssistantId: string | undefined,
+): boolean {
+  return (
+    message.id !== previousAssistantId &&
+    message.time.completed !== undefined &&
+    message.finish !== "tool-calls"
+  );
+}
+
 function textOfContent(content: SessionMessageAssistant["content"]): string {
   const texts: string[] = [];
   for (const part of content) {
@@ -140,7 +158,7 @@ export async function runSession(options: RunSessionOptions): Promise<RunSession
       const elapsedMs = Date.now() - startedAt;
       const latest = await latestAssistant(options.client, sessionId);
 
-      if (latest !== null && latest.time.completed !== undefined && latest.id !== previousAssistantId) {
+      if (latest !== null && isTurnComplete(latest, previousAssistantId)) {
         const error = latest.error;
         return {
           sessionId,
