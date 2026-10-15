@@ -1,7 +1,71 @@
 # First-codegen scope — wave worker checkpoint
 
 Base: `6cf7d0e1202ea4d3bf263b85101d6c94ce90f84d`. No product or test changes.
-Title measurements are pending; this checkpoint is not an acceptance claim.
+
+## Measured results (final)
+
+### (a) Remaining cost, wall pairs (Release, `--gpu sw`, profiler OFF, back-to-back, 1B steps)
+
+| Run | Wall s | Speedup vs flag-off | Golden SHA + counters |
+|---|---:|---:|---|
+| menu flag-off | 524.78 | 1.00× | `4EF1FBF6…` draws=33632 skipped=1402 frames=686 stalls=686 |
+| menu `--decode-cache` | 245.74 | **2.14×** | identical SHA + counters |
+| menu cache + `--hotspot` | 250.76 | — | identical; hook cost +5.0 s (+2.0%), below the §128 +5.5% precedent |
+| triangle flag-off | 355.09 | 1.00× | `A1740DE0…` draws=2706 pixels=89142121 frames=68 stalls=34 |
+| triangle `--decode-cache` | 107.47 | **3.30×** | identical SHA + counters |
+| triangle cache + `--hotspot` | 103.32 | — | identical; −3.9% = host noise, attach cost not measurable |
+
+Decode-cache hit shares from the CLI stats: menu 99.5320% / triangle 99.8004%,
+`verifyFailures=0` on both 1B runs (§134 numbers reproduce on this host/build).
+Removing the flag-off fetch path (per-hit: 1 translate + 15 bus reads +
+`Decoder.Decode`) saves **279 ns/insn (menu) and 248 ns/insn (triangle)**
+end-to-end; the synthetic microbenchmark corroborates: cache-off Step
+294.4 ns − cache-on Step 32.7 ns = **261.7 ns** on the same host.
+
+### (a) CPU-side structure (scratch instrumented CPU, sampled 1/1024 steps, cache on, verify off)
+
+Per sampled instruction (ns, includes one probe timestamp call per bucket;
+empty-pair calibration was constant-folded by the JIT and is unusable, so
+absolute values are upper bounds — structure, not production constants):
+
+| Bucket | menu | triangle |
+|---|---:|---:|
+| boundary (TSC + IRQ poll + probe) | 23.9 | 24.6 |
+| fetch + decode-cache hit path | 39.3 | 38.5 |
+| dispatch (switch jump + case entry) | 22.7 | 22.1 |
+| execute bodies (inclusive) | 188.7 | 51.6 |
+| — nested data helpers (inside execute) | 143.8 (76%) | 14.8 (29%) |
+| tail (idle/observer + finally) | 19.1 | 19.7 |
+| Sum | 293.7 | 156.5 |
+| Exclusive after subtracting nested data | 149.9 | 141.7 |
+
+Fixed per-step overhead (boundary+fetch+dispatch+tail) is ~105 ns instrumented
+and nearly identical on both workloads; the workload-dependent part is execute
+bodies, dominated by the memory/data helper paths (76% menu, 29% triangle).
+**The 354-case switch dispatch is not the dominant remaining CPU cost** — the
+executed bodies, especially data-path helpers, are. The instrumented title sum
+(294/157 ns) vs the uninstrumented scratch cache-on Step (32.7 ns on a simple
+synthetic stream) shows large probe inflation; do not read the ns column as
+production costs. Event structure from the HotspotProfiler reports: menu
+502.4M data accesses/1B (0.502/insn), triangle 388.4M (0.388/insn); data
+accesses are RAM 99.9%+; fetch cross-page 0.122%/0.076%; TLB hit 96.9%/96.0%.
+Top steady-state heads: menu `0x800422B0` 9.29% + kernel idle `0x8001B02E/E043`
+3.21%; triangle `0x800422B0` 9.25% + idle 11.29%. Mnemonic mix: menu Mov 33.8%
+/ Jcc 17.6% / Dec 10.3%; triangle Mov 25.8% / Jcc 22.3% / Cmp 12.2% / Nop 11.3%.
+
+### (b) §20.6 options — chosen: DynamicMethod (provisional)
+
+Table above in "Managed-emitter experiment": warmed throughput tied within
+noise (Expression 14.737 / DynamicMethod 14.263 / TypeBuilder 14.188 ns), so
+the choice is construction cost: DynamicMethod 124.6 µs build+first-call and
+6000 B allocation vs Expression 205.6 µs / 29840 B and TypeBuilder 319.3 µs /
+8136 B. Default-runtime cross-check preserves the construction ranking.
+**Negative result: no emitter beats the plain C# decoded-helper loop
+(14.285 ns)** — IL-level codegen over unspecialized bodies buys nothing; a
+future emitter must beat that stronger baseline via semantic specialization.
+This slice's answer per the task's no-codegen constraint: block-granular
+execution first (option 0 below), DynamicMethod only if/when specialization
+is attempted.
 
 ## Managed-emitter experiment (ImplementationPlan §20.6, in order)
 
