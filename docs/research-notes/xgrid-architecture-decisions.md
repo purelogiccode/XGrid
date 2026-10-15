@@ -7539,7 +7539,9 @@ branch/page-tail termination + page-tail window rejection, cap discipline
 transparency vs decode-cache-only (state-hash equality after every call
 across mixed Step/Execute patterns), verify tripwire rejecting a stale
 member before execution, host-write + snapshot-load discarding active
-members. Suite 1316→1321 green at commit; format --verify-no-changes clean;
+members, idle-skip verdict exactness through blocks (the §134 hit-path
+replay), and #UD/#PF exact vector+EIP+CR2 with cursor discard. Suite
+**1324 green** (1316 baseline + 8), format --verify-no-changes clean;
 zero warnings; no new packages.
 
 ### Goldens + counters (all EXACT across modes)
