@@ -45,6 +45,37 @@ public sealed partial class XboxCpu
     /// <summary>Gets or sets full-window verification before each block member executes.</summary>
     public bool BlockVerify { get; set; }
 
+    /// <summary>
+    /// Gets or sets pre-specialized per-shape execution (§139). Default off.
+    /// Enabling implies <see cref="BlockExecutionEnabled"/> (and hence the
+    /// decode cache): block members with a resolved shape run their cached
+    /// handler instead of the mnemonic switch, in <see cref="Step"/> and in
+    /// the <see cref="Execute"/> unrolled runner. Every original boundary is
+    /// retained (IRQ poll, TSC, per-member EIP, exact faults, idle/hotspot
+    /// observation); trace/break-log callers use <see cref="Step"/> and keep
+    /// the member-cursor path. Host-side configuration: untouched by
+    /// <see cref="Reset"/> and snapshot save/load.
+    /// </summary>
+    public bool SpecExecutionEnabled
+    {
+        get => _blocks is not null && _blocks.SpecEnabled;
+        set
+        {
+            if (value)
+            {
+                BlockExecutionEnabled = true;
+                _blocks!.SpecEnabled = true;
+            }
+            else if (_blocks is not null)
+            {
+                _blocks.SpecEnabled = false;
+            }
+        }
+    }
+
+    /// <summary>Gets host-only specialization statistics, or null when block execution is disabled.</summary>
+    public DecodedBlockCache? SpecStatistics => _blocks;
+
     /// <summary>Gets host-only block statistics, or null when disabled.</summary>
     public DecodedBlockCache? BlockStatistics => _blocks;
 
@@ -165,9 +196,13 @@ public sealed partial class XboxCpu
     /// physicals (gotcha iii) and never touch the bus or the MMU; misses
     /// take the byte-identical fetch-fast path (cross-page windows the
     /// legacy path) and fill the cache when the physical is RAM.
+    /// Slice 1 (§139): when specialization is enabled, the block cursor's
+    /// resolved handler is surfaced alongside the member; otherwise null and
+    /// the caller runs the unchanged interpreter body.
     /// </summary>
-    private DecodedInstruction FetchDecodeCached(DecodeCache cache, Span<byte> buffer)
+    private DecodedInstruction FetchDecodeCached(DecodeCache cache, Span<byte> buffer, out SpecHandler? spec)
     {
+        spec = null;
         uint segmentBase = Context.GetSegmentBase(SegmentRegister.Cs);
         uint fetchLinear = segmentBase + Context.Eip;
         bool crossesPage = (fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u;
@@ -215,10 +250,188 @@ public sealed partial class XboxCpu
 
             cache.NoteHit();
             _hotspot?.NoteDecodeCacheHit();
+            if (blockHit && _blocks is { SpecEnabled: true })
+            {
+                spec = _blocks.CurrentHandler;
+            }
+
             return entry.Instruction;
         }
 
         return DecodeFresh(cache, buffer, fetchLinear, crossesPage);
+    }
+
+    /// <summary>
+    /// Slice-2 unrolled runner (§139): serves consecutive block members
+    /// without returning through <see cref="Step"/> per member. Used only
+    /// inside <see cref="Execute"/> (trace/break-log callers use Step and keep
+    /// the member-cursor path). Every original boundary is retained per
+    /// member: TSC increment, IRQ poll at the Step site (a delivered IRQ ends
+    /// the boundary and consumes the budget unit), full-window verify before
+    /// execution, per-member EIP, exact fault EIP/vector/error/CR2, the
+    /// 15-entry idle NoteAccess replay and the hotspot/idle observations.
+    /// Members without a resolved handler run the identical interpreter body.
+    /// Returns the number of members executed (0 when no block serves the
+    /// current head: the caller owns the miss accounting through Step).
+    /// </summary>
+    private int RunSpecBlock(int budget)
+    {
+        DecodedBlockCache? blocks = _blocks;
+        DecodeCache? cache = _decodeCache;
+        if (blocks is null || cache is null || budget <= 0)
+        {
+            return 0;
+        }
+
+        int ran = 0;
+        Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
+        while (ran < budget && !Context.Halted)
+        {
+            uint fetchLinear = Context.GetSegmentBase(SegmentRegister.Cs) + Context.Eip;
+            if ((fetchLinear & 0xFFFu) + (uint)window.Length > 0x1000u)
+            {
+                break;
+            }
+
+            if (!blocks.TryNext(
+                cache,
+                fetchLinear,
+                Context.DefaultOperandSize,
+                Context.DefaultAddressSize,
+                out DecodeCacheEntry entry))
+            {
+                break;
+            }
+
+            Context.Tsc++;
+
+            if (InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
+            {
+                int vector = InterruptSource.Acknowledge();
+                if (vector >= 0)
+                {
+                    Context.Halted = false;
+                    if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
+                    {
+                        InterruptCount++;
+                        blocks.EndBoundary();
+                        return ran + 1;
+                    }
+                }
+            }
+
+            DecodedInstruction instruction = entry.Instruction;
+            SpecHandler? spec = blocks.CurrentHandler;
+
+            _hotspot?.NoteFetch(false);
+
+            IdleSkipDetector? idle = _idle;
+            if (idle is not null)
+            {
+                for (int i = 0; i < window.Length; i++)
+                {
+                    idle.NoteAccess(entry.PhysicalBase + (uint)i, isWrite: false, isInstruction: true);
+                }
+            }
+
+            bool servedFresh = false;
+            if (_decodeCacheVerify || BlockVerify)
+            {
+                for (int i = 0; i < window.Length; i++)
+                {
+                    window[i] = Memory.Read8(entry.PhysicalBase + (uint)i);
+                }
+
+                if (!entry.SourceMatches(window))
+                {
+                    // Same self-healing path as the Step fetch: count the
+                    // tripwire, drop the page and decode the current bytes
+                    // fresh (no hit is recorded for the stale member).
+                    cache.NoteVerifyFailure();
+                    if (BlockVerify)
+                    {
+                        blocks.NoteVerifyFailure();
+                        cache.DropPhysicalPage(entry.PhysicalBase >> 12);
+                    }
+
+                    try
+                    {
+                        instruction = DecodeFresh(cache, window, fetchLinear, crossesPage: false);
+                    }
+                    catch (PageFaultSignal fault)
+                    {
+                        blocks.EndBoundary();
+                        Context.Cr2 = fault.LinearAddress;
+                        LastFaultVector = 14;
+                        LastFaultEip = Context.Eip;
+                        LastFaultErrorCode = fault.ErrorCode;
+                        if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
+                        {
+                            throw new UnhandledGuestException(14, Context.Eip);
+                        }
+
+                        return ran + 1;
+                    }
+
+                    servedFresh = true;
+                    spec = null;
+                }
+            }
+
+            if (!servedFresh)
+            {
+                cache.NoteHit();
+                _hotspot?.NoteDecodeCacheHit();
+            }
+
+            if (!instruction.IsValid)
+            {
+                blocks.EndBoundary();
+                LastFaultVector = 6;
+                LastFaultEip = Context.Eip;
+                LastFaultErrorCode = 0;
+                if (!TryTransferToInterrupt(6, Context.Eip, false, 0))
+                {
+                    throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode);
+                }
+
+                return ran + 1;
+            }
+
+            uint eipBefore = Context.Eip;
+            try
+            {
+                if (spec is null)
+                {
+                    ExecuteInstruction(instruction);
+                }
+                else
+                {
+                    blocks.NoteSpecRan();
+                    spec(this, instruction);
+                }
+            }
+            catch (PageFaultSignal fault)
+            {
+                blocks.EndBoundary();
+                Context.Cr2 = fault.LinearAddress;
+                LastFaultVector = 14;
+                LastFaultEip = Context.Eip;
+                LastFaultErrorCode = fault.ErrorCode;
+                if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
+                {
+                    throw new UnhandledGuestException(14, Context.Eip);
+                }
+
+                return ran + 1;
+            }
+
+            idle?.Observe(instruction, eipBefore, Context.Eip);
+            _hotspot?.Observe(instruction, eipBefore, Context.Eip);
+            ran++;
+        }
+
+        return ran;
     }
 
     /// <summary>
