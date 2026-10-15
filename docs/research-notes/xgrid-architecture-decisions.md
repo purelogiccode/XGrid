@@ -7528,9 +7528,7 @@ existing LoadState flush. CLI `--block-exec`/`--block-verify` + announcement
 + `Block stats` line; profiler report gains `summary,blockDispatches/
 blockInstructions/blockBuilds/blockVerifyFailures` rows.
 
-Unit tests in `DecodedBlockCacheTests.cs` + `BlockExecutionTests.cs`
-(formation boundaries, fault precision, IRQ/step transparency, verify
-tripwire, cap discipline — §134 style)
+### Unit tests (§134 style, `DecodedBlockCacheTests.cs` + `BlockExecutionTests.cs`)
 
 Cursor invalidation at page-drop AND flush (including the empty-table flush
 no-op case — recipe rule 6's gotcha), formation from existing entries only +
