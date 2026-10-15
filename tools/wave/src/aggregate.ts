@@ -132,6 +132,7 @@ export async function aggregate(options: AggregateOptions): Promise<AggregateSta
       directory: options.repoRoot,
       title: `wave ${plan.wave} resolver (${task.id})`,
       prompt,
+      model: plan.defaults.model,
       budgetMs: 30 * 60 * 1000,
       autoApprove: true,
       log: (line) => options.log(`[resolver ${task.id}] ${line}`),

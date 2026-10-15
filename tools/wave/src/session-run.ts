@@ -1,5 +1,6 @@
 import type { OpenCodeClient, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client";
 import { respondPermission, subscribeEvents } from "./opencode.ts";
+import { WAVE_DEFAULT_MODEL } from "./plan.ts";
 import type { ModelRef } from "./types.ts";
 
 export type RunSessionOptions = {
@@ -45,6 +46,19 @@ export function isTurnComplete(
     message.time.completed !== undefined &&
     message.finish !== "tool-calls"
   );
+}
+
+/**
+ * Pin every wave session to opencode-go. A missing model resolves to the wave
+ * default instead of falling through to the server default (which once billed
+ * a full wave to OpenRouter); any other provider is refused outright.
+ */
+export function resolveWaveModel(model: ModelRef | undefined): ModelRef {
+  const resolved = model ?? WAVE_DEFAULT_MODEL;
+  if (resolved.providerID !== WAVE_DEFAULT_MODEL.providerID) {
+    throw new Error(`wave runs on opencode-go only; refusing provider "${resolved.providerID}"`);
+  }
+  return resolved;
 }
 
 function textOfContent(content: SessionMessageAssistant["content"]): string {
@@ -101,12 +115,11 @@ export async function runSession(options: RunSessionOptions): Promise<RunSession
   }
   if (sessionId.length === 0) {
     try {
+      const model = resolveWaveModel(options.model);
       const created = await options.client.session.create({
         title: options.title,
         ...(options.agent === undefined ? {} : { agent: options.agent }),
-        ...(options.model === undefined
-          ? {}
-          : { model: { providerID: options.model.providerID, id: options.model.modelID } }),
+        model: { providerID: model.providerID, id: model.modelID },
         location: { directory: options.directory },
       });
       sessionId = created.id;

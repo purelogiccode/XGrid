@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionMessageAssistant } from "@opencode/client";
-import { isTurnComplete } from "./session-run.ts";
+import { isTurnComplete, resolveWaveModel } from "./session-run.ts";
 
 function fakeAssistant(
   id: string,
@@ -34,4 +34,19 @@ test("the pre-prompt message and incomplete messages never complete", () => {
   assert.equal(isTurnComplete(fakeAssistant("old", "stop", true), "old"), false);
   assert.equal(isTurnComplete(fakeAssistant("new", "stop", false), "old"), false);
   assert.equal(isTurnComplete(fakeAssistant("new", undefined, false), undefined), false);
+});
+
+test("resolveWaveModel pins the opencode-go default and refuses other providers", () => {
+  assert.deepEqual(resolveWaveModel(undefined), {
+    providerID: "opencode-go",
+    modelID: "muse-spark-1.3-contributor",
+  });
+  assert.deepEqual(resolveWaveModel({ providerID: "opencode-go", modelID: "other-model" }), {
+    providerID: "opencode-go",
+    modelID: "other-model",
+  });
+  assert.throws(
+    () => resolveWaveModel({ providerID: "openrouter", modelID: "unbiased/pareto-26.9" }),
+    /opencode-go only/,
+  );
 });

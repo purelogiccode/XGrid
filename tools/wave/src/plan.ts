@@ -14,6 +14,20 @@ const DEFAULT_RETRIES = 1;
 const DEFAULT_PARALLEL = 4;
 const DEFAULT_SERVER_PORT = 4123;
 
+/**
+ * The wave runner only ever runs on opencode-go. Every session (workers,
+ * harvest nudges, resolvers) is pinned to this model unless the plan names a
+ * different opencode-go model; any other provider is rejected at plan
+ * validation and again at session creation, so a missing `model` can never
+ * fall through to a billable third-party default again.
+ */
+export const WAVE_PROVIDER_ID = "opencode-go";
+export const WAVE_MODEL_ID = "muse-spark-1.3-contributor";
+export const WAVE_DEFAULT_MODEL: ModelRef = {
+  providerID: WAVE_PROVIDER_ID,
+  modelID: WAVE_MODEL_ID,
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -24,6 +38,10 @@ function isModelRef(value: unknown): value is ModelRef {
     typeof value["providerID"] === "string" &&
     typeof value["modelID"] === "string"
   );
+}
+
+function isWaveModel(value: unknown): value is ModelRef {
+  return isModelRef(value) && value.providerID === WAVE_PROVIDER_ID;
 }
 
 export function validatePlan(raw: unknown): string[] {
@@ -43,6 +61,10 @@ export function validatePlan(raw: unknown): string[] {
   }
   const seen = new Set<string>();
   const tasks = raw["tasks"] as unknown[];
+  const defaults = isRecord(raw["defaults"]) ? (raw["defaults"] as Record<string, unknown>) : undefined;
+  if (defaults?.["model"] !== undefined && !isWaveModel(defaults["model"])) {
+    errors.push(`plan.defaults.model must be { providerID: "${WAVE_PROVIDER_ID}", modelID }`);
+  }
   tasks.forEach((task, index) => {
     const at = `tasks[${index}]`;
     if (!isRecord(task)) {
@@ -73,8 +95,8 @@ export function validatePlan(raw: unknown): string[] {
         errors.push(`${at}.dependsOn must be an array of task ids`);
       }
     }
-    if (task["model"] !== undefined && !isModelRef(task["model"])) {
-      errors.push(`${at}.model must be { providerID, modelID }`);
+    if (task["model"] !== undefined && !isWaveModel(task["model"])) {
+      errors.push(`${at}.model must be { providerID: "${WAVE_PROVIDER_ID}", modelID }`);
     }
   });
   for (const task of tasks) {
@@ -147,7 +169,7 @@ export async function loadPlan(planPath: string, repoRoot: string): Promise<Reso
       branch: task.branch ?? `wave/${task.id}`,
       merge: task.merge ?? true,
       agent: task.agent ?? defaults.agent,
-      model: task.model ?? defaults.model,
+      model: task.model ?? defaults.model ?? WAVE_DEFAULT_MODEL,
       budgetMs: task.budgetMs ?? defaults.budgetMs ?? DEFAULT_BUDGET_MS,
       retries: task.retries ?? defaults.retries ?? DEFAULT_RETRIES,
       autoApprove: task.autoApprove ?? defaults.autoApprove ?? plan.autoApprove ?? true,
@@ -173,7 +195,7 @@ export async function loadPlan(planPath: string, repoRoot: string): Promise<Reso
     finalGate: plan.finalGate ?? [],
     defaults: {
       agent: defaults.agent,
-      model: defaults.model,
+      model: defaults.model ?? WAVE_DEFAULT_MODEL,
       budgetMs: defaults.budgetMs ?? DEFAULT_BUDGET_MS,
       retries: defaults.retries ?? DEFAULT_RETRIES,
       autoApprove: defaults.autoApprove ?? true,

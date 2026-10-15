@@ -7,6 +7,7 @@
   "autoAggregate": true,
   "finalGate": [],
   "defaults": {
+    "model": { "providerID": "opencode-go", "modelID": "muse-spark-1.3-contributor" },
     "budgetMs": 5400000,
     "retries": 1
   },

@@ -47,7 +47,9 @@ works while a run is active or stopped; Ctrl-C stops it.
   tool reads from the server's own service registration file (`service.json`).
 - Each worker session is created with `location.directory` pointing at its worktree, so sessions edit
   files in that worktree only. `agent` and `model` (`{providerID, modelID}` in the plan) are bound at
-  session creation.
+  session creation. The runner is opencode-go only: a missing `model` resolves to
+  `opencode-go/muse-spark-1.3-contributor`, and any other `providerID` is rejected at plan
+  validation and again at session creation — no session ever falls through to a third-party default.
 - The worker prompt is `prompts/worker.md` rendered per task: `{{prompt}}`, `{{acceptance}}`,
   branch, budget. Workers are told to commit, then write `wt-data/wave/<taskId>.result.json`.
 - Completion is detected by polling the session (completed assistant message), never a
@@ -70,7 +72,7 @@ works while a run is active or stopped; Ctrl-C stops it.
 | `dataLink` | `copy` (default), `junction`, or `none` for `data/` in each worktree; `References/` is always junctioned |
 | `autoAggregate` | merge when the wave settles (default true; `--no-aggregate` overrides) |
 | `finalGate` | commands run in the repo root after all merges (format/build/test scripts) |
-| `defaults` | per-task defaults: `agent`, `model` (`{providerID, modelID}`), `budgetMs`, `retries`, `gate`, `autoApprove` |
+| `defaults` | per-task defaults: `agent`, `model` (`{providerID, modelID}`, opencode-go only), `budgetMs`, `retries`, `gate`, `autoApprove` |
 | `tasks[]` | `id`, `title`, `prompt` or `promptFile`, `acceptance`, `dependsOn[]`, `serial`, `branch`, `merge`, per-task overrides |
 
 Scheduler rules: a task starts only when every dependency is `done`/`merged`; `serial: true` tasks
