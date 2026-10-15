@@ -37,12 +37,31 @@ export async function loadRunState(statePath: string): Promise<RunState | null> 
   }
 }
 
+const SAVE_ATTEMPTS = 8;
+const SAVE_RETRY_BASE_MS = 250;
+
+function isTransientSaveError(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code;
+  return code === "EPERM" || code === "EBUSY" || code === "EACCES";
+}
+
 export async function saveRunState(statePath: string, state: RunState): Promise<void> {
   state.updatedAt = new Date().toISOString();
   await fs.promises.mkdir(path.dirname(statePath), { recursive: true });
   const tempPath = `${statePath}.tmp`;
-  await fs.promises.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  await fs.promises.rename(tempPath, statePath);
+  const payload = `${JSON.stringify(state, null, 2)}\n`;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await fs.promises.writeFile(tempPath, payload, "utf8");
+      await fs.promises.rename(tempPath, statePath);
+      return;
+    } catch (error) {
+      if (!isTransientSaveError(error) || attempt >= SAVE_ATTEMPTS) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, SAVE_RETRY_BASE_MS * attempt));
+    }
+  }
 }
 
 export function taskStateById(state: RunState): Map<string, TaskState> {
