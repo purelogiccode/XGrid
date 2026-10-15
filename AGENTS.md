@@ -475,9 +475,11 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    needs an operator override of the single-dependency rule; triggers
    listed in the brief). Both blocking prerequisites — dirty-bit and
    decode cache — landed this wave, so O2 is unblocked whenever decided.
-4. **Next JIT step:** `--decode-cache` remains opt-in — consider
-   default-on only after a soak wave (byte-identical flag-off proven, but
-   default flips deserve their own gate). The remaining Phase-15 prize is
+4. **Next JIT step:** boot CLI decode cache is now default-on after the
+   §136 soak (1316 tests; menu/triangle 1B goldens + all counters exact on
+   default/on/off/verify; verifyFailures=0; log-diff discipline passes).
+   Use `--no-decode-cache` for the legacy path; standalone `--fetch-fast`
+   and `--decode-verify` remain default-off. The remaining Phase-15 prize is
    codegen (basic blocks/IR); §134's deferred bits (INVLPG linear drop
    index — counters say unneeded; idle-skip+cache at 1B title scale —
    unit-proven) are recorded there. NXDK toolchain (operator/host) still

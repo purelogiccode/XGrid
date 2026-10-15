@@ -7475,3 +7475,56 @@ ratio 0.949, i.e. the choke is not measurable above the host's contention
 noise (bar was "within noise of the +5.5% precedent"; the shared 16-core
 host ran the after-pair under lighter load, so the delta reads negative).
 Both pairs' runs: counters identical to each other, `presentUploads=0`.
+
+## 136. CLI decode-cache default-on soak (2026-10-15)
+
+Scope: only `boot` CLI policy (`src/XGrid.Cli/Program.cs`), not CPU defaults,
+block execution, cache invalidation, device behavior, or snapshot formats.
+`--decode-cache` now defaults on; `--no-decode-cache` restores the legacy
+fetch/decode path. Repeated on/off switches use the last value. Explicit
+`--fetch-fast` remains independent/default-off; `--decode-verify` remains
+default-off and implies cache even with opt-out, preserving its old semantics.
+Announcements and gated stats are unchanged. No packages added.
+
+Reference-first cross-check: xemu-0.8.136 `accel/tcg/translate-all.c:608`
+invalidates translated code through `tb_invalidate_phys_range`; XGrid's
+existing invalidation inventory remains exactly as documented in §134.
+No hardware semantics or reference files were changed.
+
+Acceptance: `dotnet build XGrid.sln -c Release --nologo` zero warnings/errors;
+`dotnet test XGrid.sln -c Release --nologo --no-build` **1316/1316**;
+`dotnet format XGrid.sln --no-restore --verify-no-changes` clean. No full
+ktest execution (reserved for BOSS). Repro: `scripts/decode-cache-soak.ps1`
+with `-Title menu|triangle -Mode off|default|on|verify`, then `-Compare` for
+each title; raw logs/BMPs/JSON commands and timings in `wt-data/wave/`.
+
+All eight 1B-step SW runs have LastFault vec=0 and exact anchors:
+- Menu SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`;
+  draws=33632 skipped=1402 pixels=285171381 textured=278577344 clears=695
+  blended=211696978 depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686
+  programLoad=12 constLoad=2 inlineElements=0.
+- Triangle SHA `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`;
+  draws=2706 skipped=0 pixels=89142121 textured=48754488 clears=6455
+  blended=518 depth=15667336 zclip=0 zclipCull=21526 frames=68 stalls=34
+  programLoad=8 constLoad=100 inlineElements=0.
+- Entire logs match after removing only decode announcement/stats lines and
+  normalizing the frame filename (all other frame diagnostics retained).
+  Both verify runs have verifyFailures=0 (menu hits=995317006;
+  triangle hits=998002456). Off has no decode or fetch-fast announcement.
+
+Sequential same-host walls (seconds; shared-host contention, not isolated
+microbenchmarks):
+
+| Title | Off | Default | Explicit on | Verify | Off/default | Off/on |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Menu | 485.113 | 189.553 | 184.501 | 226.842 | 2.559x | 2.629x |
+| Triangle | 398.452 | 131.103 | 112.278 | 173.286 | 3.039x | 3.549x |
+
+Off/off is 1.000x; default/on wall ratios are 1.027x and 1.168x respectively
+(the CLI settings enable identical code, so do not attribute that variation
+to the flags). Initial neutral-menu off/default probes agreed with each
+other but not the requested anchor (SHA DF0FEB86..., frames=682): the
+harness had omitted the recorded `gpu-slice1-golden.ps1` timed pad recipe.
+Restoring `down@950000000+hold,none@962000000,a@970000000+hold,none@976000000`
+produced the exact anchor, without retuning tolerances or product behavior.
+Triangle uses both HDD and test-sample DVD as required by §134.
