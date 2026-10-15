@@ -94,6 +94,8 @@ internal static class Program
         bool fetchFast = false;
         bool decodeCache = false;
         bool decodeVerify = false;
+        bool blockExec = false;
+        bool blockVerify = false;
         string gpuBackend = "sw";
         string? hotspotPath = null;
         List<string> scans = new();
@@ -240,6 +242,12 @@ internal static class Program
                 case "--fetch-fast":
                     fetchFast = true;
                     break;
+                case "--block-exec":
+                    blockExec = true;
+                    break;
+                case "--block-verify":
+                    blockVerify = true;
+                    break;
                 case "--decode-cache":
                     decodeCache = true;
                     break;
@@ -359,7 +367,7 @@ internal static class Program
                 Console.WriteLine("Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
             }
 
-            if (decodeCache || decodeVerify)
+            if (decodeCache || decodeVerify || blockExec || blockVerify)
             {
                 machine.Cpu.DecodeCacheEnabled = true;
                 Console.WriteLine(
@@ -370,6 +378,18 @@ internal static class Program
                     machine.Cpu.DecodeCacheVerify = true;
                     Console.WriteLine("Decode cache verify=on (re-reads source bytes on every hit)");
                 }
+            }
+
+            if (blockExec || blockVerify)
+            {
+                machine.Cpu.BlockExecutionEnabled = true;
+                machine.Cpu.BlockVerify = blockVerify;
+                if (hotspot is not null)
+                {
+                    hotspot.Blocks = machine.Cpu.BlockStatistics;
+                }
+
+                Console.WriteLine($"Block execution=on (verify={blockVerify}; per-instruction boundaries retained)");
             }
 
             if (loadStatePath is not null)
@@ -1458,6 +1478,11 @@ internal static class Program
 
         // §131 leg (d): printed only while the decode cache is enabled so
         // flag-off logs stay byte-identical to the master baselines.
+        if (machine.Cpu.BlockStatistics is { } blocks)
+        {
+            Console.WriteLine($"Block stats dispatches={blocks.Dispatches} instructions={blocks.Instructions} builds={blocks.Builds} hits={blocks.Hits} entries={blocks.Count} peak={blocks.PeakCount} invalidations={blocks.Invalidations} capFlushes={blocks.CapFlushes} completed={blocks.Completed} redirects={blocks.Redirects} boundaryExits={blocks.BoundaryExits} verifyFailures={blocks.VerifyFailures}");
+        }
+
         if (machine.Cpu.DecodeCacheEnabled)
         {
             ulong decodeCacheHits = machine.Cpu.DecodeCacheHits;
@@ -2177,7 +2202,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache] [--decode-verify] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");

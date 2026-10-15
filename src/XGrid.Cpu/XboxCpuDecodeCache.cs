@@ -16,6 +16,37 @@ public sealed partial class XboxCpu
     private DecodeCache? _decodeCache;
     private ulong _decodeCount;
     private bool _decodeCacheVerify;
+    private DecodedBlockCache? _blocks;
+
+    /// <summary>Gets or sets opt-in block cursor execution. Enabling implies the decode cache.</summary>
+    public bool BlockExecutionEnabled
+    {
+        get => _blocks is not null;
+        set
+        {
+            if (value)
+            {
+                DecodeCacheEnabled = true;
+                _blocks ??= new DecodedBlockCache();
+                _decodeCache!.Blocks = _blocks;
+            }
+            else
+            {
+                if (_decodeCache is not null)
+                {
+                    _decodeCache.Blocks = null;
+                }
+
+                _blocks = null;
+            }
+        }
+    }
+
+    /// <summary>Gets or sets full-window verification before each block member executes.</summary>
+    public bool BlockVerify { get; set; }
+
+    /// <summary>Gets host-only block statistics, or null when disabled.</summary>
+    public DecodedBlockCache? BlockStatistics => _blocks;
 
     /// <summary>
     /// Gets or sets whether the decoded-instruction block cache is enabled
@@ -45,6 +76,7 @@ public sealed partial class XboxCpu
             }
             else if (!value && _decodeCache is not null)
             {
+                BlockExecutionEnabled = false;
                 _decodeCache = null;
                 Mmu.PageTableTrackingEnabled = false;
             }
@@ -140,8 +172,11 @@ public sealed partial class XboxCpu
         uint fetchLinear = segmentBase + Context.Eip;
         bool crossesPage = (fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u;
 
-        if (!crossesPage
-            && cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize, out DecodeCacheEntry entry))
+        DecodeCacheEntry entry = default;
+        bool blockHit = _blocks is not null && !crossesPage
+            && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize, out entry);
+        if (blockHit || (!crossesPage
+            && cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize, out entry)))
         {
             _hotspot?.NoteFetch(false);
 
@@ -156,7 +191,7 @@ public sealed partial class XboxCpu
                 }
             }
 
-            if (_decodeCacheVerify)
+            if (_decodeCacheVerify || (BlockVerify && _blocks is not null))
             {
                 for (int i = 0; i < buffer.Length; i++)
                 {
@@ -168,6 +203,12 @@ public sealed partial class XboxCpu
                     // A writer escaped the invalidation discipline: count the
                     // tripwire and decode fresh (self-healing).
                     cache.NoteVerifyFailure();
+                    if (BlockVerify && _blocks is not null)
+                    {
+                        _blocks.NoteVerifyFailure();
+                        cache.DropPhysicalPage(entry.PhysicalBase >> 12);
+                    }
+
                     return DecodeFresh(cache, buffer, fetchLinear, crossesPage: false);
                 }
             }
