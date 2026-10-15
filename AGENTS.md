@@ -154,7 +154,8 @@ tests/notes), verified against real git state; budget watchdog + retries
 continue in-session from a continuation inventory. The aggregator merges in
 topo order (`--no-ff`), optionally spawns a resolver session for conflicts,
 runs `finalGate`, and writes `runs/<wave>/report.md`. Usage:
-`npm --prefix tools/wave run wave -- run <plan.json> [--resume]`;
+`npm --prefix tools/wave run wave -- run <plan.json> [--resume]`; `wave dashboard <plan.json>`
+serves a live task/log view at 127.0.0.1:4181;
 see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 (end-to-end smoke-tested: worktree → real session → verified commit → clean).
 

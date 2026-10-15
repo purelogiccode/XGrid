@@ -7,6 +7,7 @@ import { loadPlan } from "./plan.ts";
 import { ensureServer } from "./opencode.ts";
 import { abandonedWorktrees, dispatch } from "./dispatch.ts";
 import { aggregate } from "./aggregate.ts";
+import { serveDashboard } from "./dashboard.ts";
 import { loadRunState } from "./state.ts";
 import { removeWorktree } from "./worktree.ts";
 import { defaultDurations, simulate } from "./simulate.ts";
@@ -19,6 +20,7 @@ const USAGE = `xgrid wave - pull-scheduled agent waves on the opencode v2 client
 usage:
   wave run <plan.json> [options]     dispatch a wave (workers take the next task as soon as one finishes)
   wave status <plan.json>            print run state from runs/<wave>/state.json
+  wave dashboard <plan.json>         serve a live dashboard (task states + log tails, auto-refresh)
   wave aggregate <plan.json>         merge finished branches sequentially (--no-ff) and run the final gate
   wave clean <plan.json>             remove worktrees of settled tasks
 
@@ -27,7 +29,7 @@ options:
   --resume             continue an existing run (reuses worktrees, sessions, state)
   --retry-failed       requeue failed/blocked tasks
   --max-parallel <n>   override plan.maxParallel
-  --port <n>           opencode server port (default 4123)
+  --port <n>           opencode server port for run/aggregate, dashboard port for dashboard (default 4181)
   --server <url>       attach to an existing opencode server instead of spawning one
   --no-aggregate       skip the automatic merge leg after dispatch
   --no-resolver        do not spawn a resolver session on merge conflicts
@@ -70,6 +72,8 @@ async function main(): Promise<number> {
       return await runCommand(plan, planPath, root, runDir, statePath);
     case "status":
       return await statusCommand(plan, statePath);
+    case "dashboard":
+      return await dashboardCommand(plan, runDir, statePath);
     case "aggregate":
       return await aggregateCommand(plan, root, runDir, statePath);
     case "clean":
@@ -169,8 +173,31 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  async function aggregateCommand(
+  async function dashboardCommand(
     resolved: ResolvedPlan,
+    runDirectory: string,
+    stateFile: string,
+  ): Promise<number> {
+    const port = values.port !== undefined ? Number(values.port) : 4181;
+    const handle = serveDashboard({
+      runDir: runDirectory,
+      plan: resolved,
+      statePath: stateFile,
+      port,
+      log: (line) => console.log(line),
+    });
+    console.log(`[wave] dashboard at ${handle.url} (Ctrl-C to stop; bound to 127.0.0.1 only)`);
+    await new Promise<void>((resolve) => {
+      const stop = (): void => {
+        handle.close();
+        resolve();
+      };
+      process.once("SIGINT", stop);
+    });
+    return 0;
+  }
+
+  async function aggregateCommand(    resolved: ResolvedPlan,
     repo: string,
     runDirectory: string,
     stateFile: string,
