@@ -51,10 +51,19 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
   console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
   onboarding / design cross-check only — never a register-level oracle.
 
-**Never delete, move, or rewrite anything under `References/`.** It is the vendored
-oracle set every wave depends on — it was emptied once (2026-10-12) and blocked a wave.
-If a reference is missing, restore it from the upstream URLs in
-`docs/research-notes/sources.md` before proceeding; never work around a missing reference.
+**Never delete, move, or rewrite anything inside `References/` — no file, no subfolder,
+ever.** It is the vendored oracle set every wave depends on. It has been emptied twice:
+2026-10-12, and 2026-10-14 18:05–18:07 (a Dropbox **remote-origin** deletion from another
+device/session applied locally — the repo sits inside the Dropbox sync root, so anything
+deleted "in the cloud" lands here as local file loss; no local script ran). Do not run
+`Remove-Item`, `rm -rf`, `git clean`, `robocopy /MIR`, `dotnet clean`, or any
+cleanup/grooming script against `References/` or a path that resolves to it; wave
+worktrees junction `References/` read-only and worktree teardown must never descend
+through that junction. If a reference is missing, restore in this order — never work
+around a missing reference: (1) `D:\xgrid-refs-restore\` (verified full backup
+2026-10-14: 31,801 files / 513 MB, all 8 sets); (2) a client-accessible Windows shadow
+copy of C: (VSS); (3) the upstream URLs in `docs/research-notes/sources.md`
+(`xemu-Playtest-v2` has no upstream URL — operator-supplied only).
 
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
