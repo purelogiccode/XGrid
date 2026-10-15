@@ -30,6 +30,7 @@ function plan(): ResolvedPlan {
         merge: true,
         budgetMs: 1000,
         retries: 1,
+        autoApprove: true,
       },
     ],
   };

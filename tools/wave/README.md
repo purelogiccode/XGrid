@@ -68,7 +68,8 @@ merge in dependency order with `--no-ff`.
 Conflicts are detected on a clean tree (`git merge --abort` first), then — unless `--no-resolver`
 — a resolver session is spawned in the repo root with the conflict output and repo conventions
 (§-union renumbering). Unresolved conflicts are recorded in `state.json` and `report.md` for a
-human/next wave. Nothing is force-pushed and nothing is merged on a dirty tree.
+human/next wave. Nothing is force-pushed, and a tree with uncommitted *tracked* changes is refused
+(untracked files are fine; git still refuses any merge that would overwrite one).
 
 ## Tests
 
