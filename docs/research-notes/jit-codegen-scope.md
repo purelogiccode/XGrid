@@ -1,7 +1,63 @@
 # First-codegen scope — wave worker checkpoint
 
 Base: `6cf7d0e1202ea4d3bf263b85101d6c94ce90f84d`. No product or test changes.
-Measurements and final recommendation are pending; this checkpoint is not an acceptance claim.
+Title measurements are pending; this checkpoint is not an acceptance claim.
+
+## Managed-emitter experiment (ImplementationPlan §20.6, in order)
+
+Host: Ryzen 9 7900 (12 cores/24 threads), Windows 10.0.26300 x64, SDK
+9.0.319, .NET runtime 9.0.21. No affinity/load isolation. Primary run disables
+tiering, cross-check uses defaults. No packages. Prototype and raw logs remain
+uncommitted in `wt-data/wave/options/` as required.
+
+| Variant | Median ns/instruction | Min–max ns | Build + first call median µs | Managed build allocation B |
+|---|---:|---:|---:|---:|
+| Actual XboxCpu.Step, cache off | 294.429 | 291.043–350.395 | — | — |
+| Actual XboxCpu.Step, cache on | 32.731 | 32.187–43.142 | — | — |
+| C# decoded-helper loop | 14.285 | 13.742–18.677 | — | — |
+| 1 Expression.Compile (IL) | 14.737 | 14.005–18.653 | 205.6 | 29840 |
+| 2 DynamicMethod | 14.263 | 13.928–19.278 | **124.6** | **6000** |
+| 3 Reflection.Emit AssemblyBuilder/TypeBuilder | 14.188 | 13.560–18.850 | 319.3 | 8136 |
+
+Thirty construction samples; seven rotated throughput trials of 3.3M guest
+instructions with 330K warmup instructions per trial. The 33-instruction,
+66-byte synthetic stream repeats MOV/ADD/XOR/SUB/INC/AND/CMP/NOP four times,
+then JMPs to the head. All helper variants call the **actual private
+ExecuteInstruction**, bound once by a delegate, with identical decoded structs,
+per-instruction budget/EIP checks, TSC increment and IF/interrupt-source guard.
+This retains the actual switch, not a synthetic replacement for arithmetic.
+It does not implement active IRQ delivery/fault translation, idle callbacks,
+invalidation, or memory/device activity. Step baselines include their real
+fetch/cache and boundary paths; helper baselines do not. Consequently their
+ratio is **not a production speedup** and cannot size title dispatch cost.
+
+**Choose DynamicMethod provisionally for the later first emitter**, because
+steady-state throughput is tied within noise while total construction cost and
+allocation are lowest. Expression's JIT work occurs mostly in Compile versus
+DynamicMethod's first call: compare their **sum**, not build alone. TypeBuilder
+uses a RunAndCollect assembly/type per block; shared-module amortization is
+untested. Default-runtime medians (expression/dynamic/typebuilder) were
+13.657/13.801/14.487 ns and 230.6/146.7/312.2 µs construction+first call: same
+construction ranking, throughput ranking changes. Generated blocks do **not**
+convincingly beat the C# decoded-helper loop. Do not land codegen solely on this
+microbenchmark; semantic specialization must beat that stronger baseline.
+
+Correctness: all six variants in both processes matched GPR/EIP/EFLAGS/TSC hash
+`C8DE1961CCBAF3E191E8E52477287E429CF13DC57FC83CACEC59B2509936E4A9`
+after 1000 blocks; all 42 throughput rows per process matched
+`6F2C21D0966F5FE0CFD3784F4CA726E33A4718AB3021BD08384F6B5B2EB8FF63`.
+13-instruction partial-block exits matched 13 real Steps. These hashes do not
+validate memory/FPU/IRQ/fault state absent from the workload.
+
+Commands:
+
+```powershell
+dotnet build wt-data/wave/options/Options.csproj -c Release --nologo -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false
+$env:DOTNET_TieredCompilation='0'
+dotnet wt-data/wave/options/bin/Release/net9.0/Options.dll | Tee-Object wt-data/wave/options/run-tiering-off.txt
+$env:DOTNET_TieredCompilation=$null
+dotnet wt-data/wave/options/bin/Release/net9.0/Options.dll | Tee-Object wt-data/wave/options/run-default.txt
+```
 
 ## Established facts
 
