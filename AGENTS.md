@@ -145,7 +145,7 @@ green with zero work lost).
    every review point is stuck — close it, record the diagnosis.
 
 **Automation — `tools/wave` (2026-10-14).** The loop above is now also a
-program (Node 24 + opencode SDK; no tmux/WSL): a pull-scheduled worker pool
+program (Node 24 + opencode v2 client; no tmux/WSL): a pull-scheduled worker pool
 keeps N slots busy — an idle slot takes the next ready task *the moment* one
 settles (deps satisfied, `serial` tasks run alone), so fast tasks do not
 wait for slow ones. Each task gets a worktree + `wave/*` branch; the worker

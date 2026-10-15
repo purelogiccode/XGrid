@@ -1,5 +1,5 @@
 import path from "node:path";
-import { clientFor } from "./opencode.ts";
+import { clientFor, type BasicAuth } from "./opencode.ts";
 import { runSession } from "./session-run.ts";
 import { currentBranch, git, gitChecked, isClean } from "./git.ts";
 import { runGate } from "./dispatch.ts";
@@ -15,6 +15,7 @@ export type AggregateOptions = {
   statePath: string;
   runDir: string;
   serverUrl: string;
+  serverAuth?: BasicAuth | undefined;
   resolver: boolean;
   log: (line: string) => void;
 };
@@ -105,7 +106,7 @@ export async function aggregate(options: AggregateOptions): Promise<AggregateSta
 
   async function resolveConflict(task: ResolvedTask, conflictOutput: string): Promise<boolean> {
     options.log(`[aggregate] spawning resolver session for ${task.branch}`);
-    const client = clientFor(options.serverUrl, options.repoRoot);
+    const client = clientFor(options.serverUrl, options.serverAuth);
     const prompt = [
       `You are the wave aggregator resolver for wave "${plan.wave}".`,
       ``,
@@ -128,6 +129,7 @@ export async function aggregate(options: AggregateOptions): Promise<AggregateSta
     ].join("\n");
     const outcome = await runSession({
       client,
+      directory: options.repoRoot,
       title: `wave ${plan.wave} resolver (${task.id})`,
       prompt,
       budgetMs: 30 * 60 * 1000,

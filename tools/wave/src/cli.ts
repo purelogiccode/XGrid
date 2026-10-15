@@ -14,7 +14,7 @@ import type { ResolvedPlan, RunState } from "./types.ts";
 
 const TOOL_DIR = path.resolve(import.meta.dirname, "..");
 
-const USAGE = `xgrid wave - pull-scheduled agent waves on the opencode SDK
+const USAGE = `xgrid wave - pull-scheduled agent waves on the opencode v2 client
 
 usage:
   wave run <plan.json> [options]     dispatch a wave (workers take the next task as soon as one finishes)
@@ -101,6 +101,7 @@ async function main(): Promise<number> {
     process.chdir(repo);
     const server = await ensureServer({
       port: values.port !== undefined ? Number(values.port) : resolved.serverPort,
+      stateDir: path.join(runDirectory, "opencode-service"),
       ...(values.server !== undefined ? { attachUrl: values.server } : {}),
       log: (line) => console.log(line),
     });
@@ -112,6 +113,7 @@ async function main(): Promise<number> {
         planPath: resolvedPlanPath,
         runDir: runDirectory,
         serverUrl: server.url,
+        serverAuth: server.auth,
         toolDir: TOOL_DIR,
         ...(values["max-parallel"] !== undefined ? { maxParallel: Number(values["max-parallel"]) } : {}),
         resume: values.resume,
@@ -127,6 +129,7 @@ async function main(): Promise<number> {
           statePath: stateFile,
           runDir: runDirectory,
           serverUrl: server.url,
+          serverAuth: server.auth,
           resolver: !values["no-resolver"],
           log: (line) => console.log(line),
         });
@@ -180,6 +183,7 @@ async function main(): Promise<number> {
     process.chdir(repo);
     const server = await ensureServer({
       port: values.port !== undefined ? Number(values.port) : resolved.serverPort,
+      stateDir: path.join(runDirectory, "opencode-service"),
       ...(values.server !== undefined ? { attachUrl: values.server } : {}),
       log: (line) => console.log(line),
     });
@@ -191,6 +195,7 @@ async function main(): Promise<number> {
         statePath: stateFile,
         runDir: runDirectory,
         serverUrl: server.url,
+        serverAuth: server.auth,
         resolver: !values["no-resolver"],
         log: (line) => console.log(line),
       });
