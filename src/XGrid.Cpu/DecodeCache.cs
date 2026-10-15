@@ -90,6 +90,9 @@ public sealed class DecodeCache
     private readonly Dictionary<uint, List<uint>> _byPhysicalPage = new();
     private readonly ulong[] _activePages = new ulong[ActivePageWords];
 
+    /// <summary>Gets or sets optional derived blocks; null leaves the legacy cache unchanged.</summary>
+    public DecodedBlockCache? Blocks { get; set; }
+
     /// <summary>Gets the number of fetches served from the cache.</summary>
     public ulong Hits { get; private set; }
 
@@ -168,6 +171,17 @@ public sealed class DecodeCache
             return;
         }
 
+        // Replacement may follow verify failure or a changed decode default.
+        // Derived arrays must not retain the old entry (including aliases).
+        if (_entries.TryGetValue(fetchLinear, out DecodeCacheEntry previous))
+        {
+            Blocks?.Invalidate();
+            if ((previous.PhysicalBase >> 12) != physicalPage)
+            {
+                DropPhysicalPage(previous.PhysicalBase >> 12);
+            }
+        }
+
         if (!_entries.TryGetValue(fetchLinear, out DecodeCacheEntry _))
         {
             if (!_byPhysicalPage.TryGetValue(physicalPage, out List<uint>? keys))
@@ -244,6 +258,7 @@ public sealed class DecodeCache
             return;
         }
 
+        Blocks?.Invalidate();
         if (_byPhysicalPage.TryGetValue(physicalPage, out List<uint>? keys))
         {
             foreach (uint key in keys)
@@ -261,6 +276,7 @@ public sealed class DecodeCache
     /// <summary>Drops every entry and reverse-map link (full flush; a no-op when empty).</summary>
     public void Flush()
     {
+        Blocks?.Invalidate();
         if (_entries.Count == 0 && _byPhysicalPage.Count == 0)
         {
             return;

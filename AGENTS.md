@@ -455,18 +455,39 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   on all three OSes (first green since §127 — WGL guard + test de-flake
   landed pre-wave).** Wave worktrees on `D:\wave-worktrees\` (C: has
   only ~5 GB free — keep media copies on D:, never on C:).
+- **Wave 13 (2026-10-15, §§136–138; three tasks, all green, two merges +
+  resolver).** T1 first-codegen scope FILED (§138 + `docs/research-notes/
+  jit-codegen-scope.md`; probe, unmerged by design): measured remaining-cost
+  breakdown (switch dispatch NOT dominant — data-path helpers are), §20.6
+  emitter benchmark with the honest negative result (no managed emitter beats
+  a plain C# helper loop — semantic specialization required; DynamicMethod
+  provisional), boundary-safe block design + next-slice recipe. T2 block
+  executor MERGED (§136: `DecodedBlockCache`, `--block-exec`/`--block-verify`
+  opt-in, boundary-preserving; suite 1324 (+8); menu/triangle 1B SHAs + all
+  counters exact in off/decode/block/verify/profile; flag-off byte-identical;
+  dispatch share 30.9–36.6%; uncontended pairs 1.04–1.20× over decode-cache).
+  T3 decode default-on soak MERGED (§137: default flip + `--no-decode-cache`
+  opt-out + `scripts/decode-cache-soak.ps1`; menu 2.56× / triangle 3.04×
+  default vs off; verifyFailures=0). §136 collision resolved by the wave
+  resolver (decode → §137). Final gate on merged master: format + build +
+  test ALL PASS; **ktest smoke PASS 7/7** (792,800,535 steps
+  bit-reproducible). Also landed during the wave: `tools/wave` fixes
+  (terminal-finish turn detection, state-save retry on Windows file locks)
+  and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
    once; conflicts were purged 2026-10-09). Baseline: 1316 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — swapchain operator decision + next JIT step + operator items.
 
-1. **WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two
-   merges).** Decode cache merged (menu 2.12–2.20× / triangle 2.97–3.07×,
-   verifyFailures=0 @1B, hit 99.5–99.8%), dirty-bit (a*) merged (goldens
-   `presentUploads=0`, hook cost within noise), post-merge gates all
-   green (smoke 7/7, both SHAs exact, format clean), CI green on all
-   three OSes. **1316 tests.**
+1. **WAVE 13 DONE (§§136–138; three tasks, all green, two merges +
+   resolver).** Block executor landed (opt-in `--block-exec`, suite 1324,
+   exact goldens both flags, dispatch share 30.9–36.6%), decode cache
+   default-on (§137, `--no-decode-cache` opt-out), first-codegen scope filed
+   (§138: switch dispatch NOT dominant; no managed emitter beats a plain C#
+   helper loop yet — semantic specialization required). Post-merge gates
+   green: format + build + test on merged master, **ktest smoke PASS 7/7**
+   (792,800,535 steps bit-reproducible). **1324 tests.**
 2. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
 3. **Operator decision: swapchain/windowing** — brief filed at
@@ -476,12 +497,15 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    needs an operator override of the single-dependency rule; triggers
    listed in the brief). Both blocking prerequisites — dirty-bit and
    decode cache — landed this wave, so O2 is unblocked whenever decided.
-4. **Next JIT step:** `--decode-cache` remains opt-in — consider
-   default-on only after a soak wave (byte-identical flag-off proven, but
-   default flips deserve their own gate). The remaining Phase-15 prize is
-   codegen (basic blocks/IR); §134's deferred bits (INVLPG linear drop
+4. **Next JIT step:** block formation + block-granular execution landed
+   (§136, opt-in `--block-exec`/`--block-verify`; decode cache default-on per
+   §137 — `--no-decode-cache` for legacy; `--fetch-fast`/`--decode-verify`
+   remain default-off). Next slice per §138: semantic specialization must
+   first beat the 14.285 ns/insn plain C# helper-loop baseline (no managed
+   emitter does today — the §138 negative result); DynamicMethod is the
+   provisional emitter if it does. §134's deferred bits (INVLPG linear drop
    index — counters say unneeded; idle-skip+cache at 1B title scale —
-   unit-proven) are recorded there. NXDK toolchain (operator/host) still
+   unit-proven) stay recorded there. NXDK toolchain (operator/host) still
    the mesh blocker.
 5. ktest smoke stays the standing gate.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config

@@ -3021,7 +3021,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 15% | IR, basic blocks, codegen; decode/TLB fetch caches landed (§§131,134) |
+| 15 CPU JIT | 11 | 15% | IR, basic blocks, codegen; decode/TLB caches + block executor landed (§§131,134,136), decode default-on (§137), first-codegen scope (§138) |
 | 16 CPU Optimization | 3 | 10% | benchmark-driven tuning |
 | 17 Memory Optimization | 2 | 10% | tuning |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
@@ -3053,6 +3053,24 @@ Interpretation: the "does the console boot and respond" core is close;
 the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
+
+**Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
+uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
+Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;
+verifyFailures=0 both, log-diff discipline passes, 1316 tests green.
+Default/off speedups 2.56x menu / 3.04x triangle (shared-host walls).
+CPU defaults, snapshots, and block-executor code unchanged.
+
+**Block executor + first-codegen scope complete (136/138, 2026-10-15):**
+opt-in `--block-exec` (`DecodedBlockCache`, boundary-preserving block cursors,
+`--block-verify` tripwire); suite 1324 green; menu/triangle 1B SHAs + all
+counters exact in off/decode/block/verify/profile; flag-off byte-identical;
+dispatch share 30.9-36.6% of steps per block dispatch; uncontended pairs
+1.04-1.20x over decode-cache. Scope study (138) measured the remaining cost:
+dispatch is not dominant (data-path helpers are); no managed emitter beats a
+plain C# helper loop (14.285 ns/insn) - semantic specialization is required
+before any codegen slice; recipe and acceptance gates in
+`docs/research-notes/jit-codegen-scope.md`.
 
 **NEXT SESSION — swapchain operator decision + next JIT step + nxdk toolchain.**
 **WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two merges).**

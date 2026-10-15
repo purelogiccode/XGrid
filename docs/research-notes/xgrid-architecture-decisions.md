@@ -7475,3 +7475,213 @@ ratio 0.949, i.e. the choke is not measurable above the host's contention
 noise (bar was "within noise of the +5.5% precedent"; the shared 16-core
 host ran the after-pair under lighter load, so the delta reads negative).
 Both pairs' runs: counters identical to each other, `presentUploads=0`.
+
+## §136 - JIT slice 4: block formation + block-granular execution behind --block-exec (2026-10-15)
+
+Wave-13 build task on branch `wave/jit-block-exec`. Design source:
+`docs/research-notes/jit-codegen-scope.md` (the scope task's measured design +
+recipe; landed as the wave-13 T1 deliverable) plus §§126/131/134/135.
+
+### Design (as landed)
+
+`DecodedBlockCache` (`src/XGrid.Cpu/DecodedBlockCache.cs`): a parallel
+derived table over `DecodeCache` entries. A block is a stackalloc-formed
+array of up to `MaxInstructions=32` already-cached `DecodeCacheEntry`
+structs, all within one 4 KiB linear page AND one physical page, whose full
+15-byte fetch windows fit the page; formation reads only EXISTING decodes
+(`DecodeCache.TryGet` — no speculative fetch, translate, walk, fault, or
+A/D write, per the recipe's rule 1). `Terminates` (conservative slice-4
+whitelist): branch/call/ret/far-return/IRET/LOOP/JECXZ, #UD marker, traps
+(int/int3/into/hlt), REP/string/I/O, CR/segment/descriptor/system
+instructions, x87, MMX/SSE, and every unlisted mnemonic end the block;
+only common straight-line integer/data ops (mov/alu/inc/dec/test/setcc/
+cmovcc/shifts/rotates/mul-imul/movzx-movsx/lea/push/pop/xchg/not-neg/
+flag-sets/leave/enter/bswap/xadd/cmpxchg/bt*/bsf/bsr/cbw/cdq/shld/shrd/
+cmpxchg8b, no REP) may continue. Key: the head linear address + operand/
+address-size defaults, exactly matching the entry's hit-validation belt;
+mapping identity rides `DecodeCache`'s existing flush discipline (rule 3's
+CR0/CR3/CR4 identity — the decode cache already full-flushes on every CR0/
+CR3/CR4.PSE/INVLPG/CS-base change, so those state changes can never reach a
+stale block). Execution (rule 4/5): `Step()` stays a one-original-boundary
+API — TSC increments, the IRQ poll runs at its existing pre-fetch site and a
+delivered interrupt or fault (`#UD`, `PageFaultSignal`) discards the active
+cursor via `EndBoundary()`; one block dispatch per Step selects the member's
+`DecodedInstruction` and then the IDENTICAL interpreter body runs with its
+normal per-instruction idle `_idle.NoteAccess` replay (15-byte fetch notes
+replayed from entry physicals on every step, the §134 hit-path rule),
+`Observe` calls, and commit points. Host codegen: none (the mnemonic switch
+still runs per instruction; block lookup/cursor reuse is the only change).
+Invalidation (rule 6): rides §134's writers — `Invalidate()` fires from
+`DecodeCache.DropPhysicalPage`, `DecodeCache.Flush`, and the `Insert`
+replacement path; a store to a live code page therefore discards all blocks
+conservatively (over-invalidation, under-invalidation impossible without a
+missed writer). `--block-verify` (rule 7, default off): full 15-byte window
+re-read + compare BEFORE execution; mismatch counts `VerifyFailures`, drops
+the page, and decodes fresh (self-healing).
+
+`XboxCpu.BlockExecutionEnabled` (implies `DecodeCacheEnabled`),
+`XboxCpu.BlockVerify`, `BlockStatistics`. Bounded: `MaxBlocks=4096`
+(≤131072 decoded references = the decode entry cap), reaching it flushes
+blocks only (`CapFlushes`; the decode table itself keeps its own cap). No
+snapshot format change; Reset/snapshot leave host tables cold via the
+existing LoadState flush. CLI `--block-exec`/`--block-verify` + announcement
++ `Block stats` line; profiler report gains `summary,blockDispatches/
+blockInstructions/blockBuilds/blockVerifyFailures` rows.
+
+### Unit tests (§134 style, `DecodedBlockCacheTests.cs` + `BlockExecutionTests.cs`)
+
+Cursor invalidation at page-drop AND flush (including the empty-table flush
+no-op case — recipe rule 6's gotcha), formation from existing entries only +
+branch/page-tail termination + page-tail window rejection, cap discipline
+(peak==MaxBlocks, one cap flush, held cursor discarded), Step/budget
+transparency vs decode-cache-only (state-hash equality after every call
+across mixed Step/Execute patterns), verify tripwire rejecting a stale
+member before execution, host-write + snapshot-load discarding active
+members, idle-skip verdict exactness through blocks (the §134 hit-path
+replay), and #UD/#PF exact vector+EIP+CR2 with cursor discard. Suite
+**1324 green** (1316 baseline + 8), format --verify-no-changes clean;
+zero warnings; no new packages.
+
+### Goldens + counters (all EXACT across modes)
+
+- Triangle 1B (`--hdd AND --dvd`): SHA `A1740DE0…AA27C`, draws=2706
+  pixels=89142121 frames=68 stalls=34 — decode-cache-on AND block-exec
+  identical (first pair + reverse-order repeat), verify + flag-off rows in
+  the final table below.
+- Menu 1B (pad recipe): SHA `4EF1FBF6…CB0DE81`, draws=33632 skipped=1402
+  frames=686 stalls=686 — decode-cache-on AND block-exec identical.
+- `verifyFailures=0` everywhere (invalidation discipline exhaustively
+  proven at 1B steps on both titles). Block stats (triangle 1B):
+  dispatches=364,819,853 instructions=998,002,456 builds=144,708
+  entries=198 peak=1,828 invalidations=750 capFlushes=0 redirects=0
+  boundaryExits=950 verifyFailures=0 (36.6% dispatch share; block average
+  ~2.7 instructions). Menu 1B: dispatches=307,156,366
+  instructions=995,317,006 builds=1,926,977 peak=2,761 invalidations=5,534
+  boundaryExits=1,621 verifyFailures=0 (30.9% dispatch share).
+- Flag-off log identity: `wt-data/wave/logdiff.ps1` compares decode-on vs
+  block-on full logs with the §111/§134 ignore set (announcement lines +
+  gated stats lines + frame path); IDENTICAL on both titles at 1B.
+
+### Wall pairs (1B steps, --gpu sw, profiler OFF, same host, sequential;
+legs killed by the operator session are excluded — every quoted row exit=0)
+
+| Run | decode-cache-on | block-exec | ratio |
+|---|---:|---:|---:|
+| triangle first pair | 134.2 s | 111.4 s | **1.204x** |
+| triangle ABBA pair 1 | 95.8 s | 91.3 s | **1.049x** |
+| triangle ABBA pair 2 | 95.3 s | — (leg killed) | — |
+| triangle contended pair (overlapped batches) | 120.6 s | 124.6 s | 0.968x |
+| menu first pair | 224.6 s | 215.7 s | **1.041x** |
+| menu flag-off reference | 436.0 s | — | off->decode 1.94x, off->block 2.02x |
+| triangle flag-off reference | 338.6 s | — | off->decode 2.81x, off->block 3.04x |
+
+Adjacent-pair verdict: block-exec is faster than decode-cache-on in every
+uncontended adjacent pair (triangle 1.204x, 1.049x; menu 1.041x); the one
+contended pair (two batches overlapped) inverted — walls on this shared
+16-core host are noisy, so the DETERMINISTIC counters are the primary
+dispatch-share evidence: blockDispatches/blockInstructions = 36.6%
+(triangle) / 30.9% (menu), run-identical across every mode (verify/profile
+rows match the plain block rows digit-for-digit). Menu flag-off wall 436.0 s
+vs the scope task's 524.78 s (same recipe, lighter contention).
+
+## 137. CLI decode-cache default-on soak (2026-10-15)
+
+Scope: only `boot` CLI policy (`src/XGrid.Cli/Program.cs`), not CPU defaults,
+block execution, cache invalidation, device behavior, or snapshot formats.
+`--decode-cache` now defaults on; `--no-decode-cache` restores the legacy
+fetch/decode path. Repeated on/off switches use the last value. Explicit
+`--fetch-fast` remains independent/default-off; `--decode-verify` remains
+default-off and implies cache even with opt-out, preserving its old semantics.
+Announcements and gated stats are unchanged. No packages added.
+
+Reference-first cross-check: xemu-0.8.136 `accel/tcg/translate-all.c:608`
+invalidates translated code through `tb_invalidate_phys_range`; XGrid's
+existing invalidation inventory remains exactly as documented in §134.
+No hardware semantics or reference files were changed.
+
+Acceptance: `dotnet build XGrid.sln -c Release --nologo` zero warnings/errors;
+`dotnet test XGrid.sln -c Release --nologo --no-build` **1316/1316**;
+`dotnet format XGrid.sln --no-restore --verify-no-changes` clean. No full
+ktest execution (reserved for BOSS). Repro: `scripts/decode-cache-soak.ps1`
+with `-Title menu|triangle -Mode off|default|on|verify`, then `-Compare` for
+each title; raw logs/BMPs/JSON commands and timings in `wt-data/wave/`.
+
+All eight 1B-step SW runs have LastFault vec=0 and exact anchors:
+- Menu SHA `4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81`;
+  draws=33632 skipped=1402 pixels=285171381 textured=278577344 clears=695
+  blended=211696978 depth=136 zclip=0 zclipCull=21526 frames=686 stalls=686
+  programLoad=12 constLoad=2 inlineElements=0.
+- Triangle SHA `A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C`;
+  draws=2706 skipped=0 pixels=89142121 textured=48754488 clears=6455
+  blended=518 depth=15667336 zclip=0 zclipCull=21526 frames=68 stalls=34
+  programLoad=8 constLoad=100 inlineElements=0.
+- Entire logs match after removing only decode announcement/stats lines and
+  normalizing the frame filename (all other frame diagnostics retained).
+  Both verify runs have verifyFailures=0 (menu hits=995317006;
+  triangle hits=998002456). Off has no decode or fetch-fast announcement.
+
+Sequential same-host walls (seconds; shared-host contention, not isolated
+microbenchmarks):
+
+| Title | Off | Default | Explicit on | Verify | Off/default | Off/on |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Menu | 485.113 | 189.553 | 184.501 | 226.842 | 2.559x | 2.629x |
+| Triangle | 398.452 | 131.103 | 112.278 | 173.286 | 3.039x | 3.549x |
+
+Off/off is 1.000x; default/on wall ratios are 1.027x and 1.168x respectively
+(the CLI settings enable identical code, so do not attribute that variation
+to the flags). Initial neutral-menu off/default probes agreed with each
+other but not the requested anchor (SHA DF0FEB86..., frames=682): the
+harness had omitted the recorded `gpu-slice1-golden.ps1` timed pad recipe.
+Restoring `down@950000000+hold,none@962000000,a@970000000+hold,none@976000000`
+produced the exact anchor, without retuning tolerances or product behavior.
+Triangle uses both HDD and test-sample DVD as required by §134.
+
+## 138. Wave-13 JIT first-codegen scope: measured emitter pick + boundary-safe block recipe (2026-10-15)
+
+Wave-13 probe task (`wave/jit-codegen-scope`, 4 commits, suite 1316 green, zero
+`src/`/`tests/` diff; branch unmerged by design, `merge:false`). Full study:
+`docs/research-notes/jit-codegen-scope.md`. Key results:
+
+- **Remaining cost after §134 (measured, 1B pairs, profiler OFF):** menu
+  flag-off 524.78 s vs `--decode-cache` 245.74 s (2.14×), triangle 355.09 vs
+  107.47 s (3.30×); hit shares 99.532%/99.800%, verifyFailures=0 — the §134
+  numbers reproduce on this host. Scratch-instrumented sampled breakdown
+  (upper bounds; probe inflation documented): fixed per-step overhead
+  (boundary+fetch+dispatch+tail) ≈105 ns instrumented, nearly identical on
+  both titles; the workload-dependent part is execute bodies, dominated by
+  data-path helpers (76% menu / 29% triangle of execute time).
+  **The 354-case switch dispatch is not the dominant remaining cost** — the
+  executed bodies, especially memory/data helpers, are.
+- **§20.6 options 1–3 benchmarked in order** (Ryzen 9 7900; tiering-off primary
+  + default-runtime cross-check): Expression 14.737 / DynamicMethod 14.263 /
+  TypeBuilder 14.188 ns/insn (tied within noise) vs cache-on `Step` 32.7 ns and
+  a plain C# decoded-helper loop 14.285 ns. **Negative result: no managed
+  emitter beats the helper loop** — IL codegen over unspecialized bodies buys
+  nothing; a future emitter must win via semantic specialization. DynamicMethod
+  chosen provisionally (124.6 µs / 6 KB construction+first-call vs Expression
+  205.6/29 840, TypeBuilder 319.3/8 136; compare build+first-call sums, not
+  build alone). Correctness hashes matched for all variants; 13-instruction
+  budget exits matched 13 real Steps.
+- **Corrections to the scoping premise:** `XboxCpuDecodeCache.cs:137–177` hits
+  do zero MMU translations and zero bus reads (verify mode excepted — the
+  1-translate + 15-read cost is a miss path); `HotspotProfiler` counts events,
+  not elapsed time (mnemonic shares are not wall shares); the IRQ boundary is
+  `XboxCpu.cs:102–116` (TSC increments before polling; a delivered IRQ consumes
+  the budget unit without executing the original instruction).
+- **Block design (no boundary elision) — implemented as §136:** form blocks
+  only from valid DecodeCache entries (no speculative reads/translation/faults),
+  15-byte window within one 4 KiB page mapping one physical page, RAM only,
+  32-instruction initial cap; terminate at branch/call/return/indirect/#UD/
+  traps/HLT/page-window/missing entry plus conservative mode/system/REP/I/O
+  terminators; key = head EIP + CS base/mode/sizes + mapping generation (never
+  live GPR/flags/segments); `Step()` stays one original boundary, `Execute()`
+  may reuse the cursor within the caller's budget; IRQ poll at every boundary,
+  exact fault EIP/vector/error-code/CR2, 15-entry idle NoteAccess replay;
+  invalidation rides the §134 sites (extend the cache's drop/flush machinery,
+  no new hooks); `--block-exec`/`--block-verify` default-off; host state only,
+  no snapshot change, no new packages.
+- **Reference facts consulted:** xemu 0.8.136 `target/i386/tcg/translate.c`
+  `4235–4278` (CS base/mode capture), `4300–4310` (per-instruction PCs),
+  `4353–4370` (single-step/IRQ-inhibit/page termination); no implementation
+  copied; XGrid keeps every original boundary (stronger than QEMU chaining).
