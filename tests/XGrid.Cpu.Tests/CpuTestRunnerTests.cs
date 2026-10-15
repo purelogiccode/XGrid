@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using XGrid.Cpu.Testing;
 using Xunit;
 
 namespace XGrid.Cpu.Tests;

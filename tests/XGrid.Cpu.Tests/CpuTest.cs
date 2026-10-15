@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace XGrid.Cpu.Testing;
+namespace XGrid.Cpu.Tests;
 
 /// <summary>Declarative CPU regression test (plan section 8.7).</summary>
 public sealed class CpuTest

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace XGrid.Cpu.Testing;
+namespace XGrid.Cpu.Tests;
 
 /// <summary>Result of running a <see cref="CpuTest"/>.</summary>
 public sealed class CpuTestResult
