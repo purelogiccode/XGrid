@@ -7475,3 +7475,16 @@ ratio 0.949, i.e. the choke is not measurable above the host's contention
 noise (bar was "within noise of the +5.5% precedent"; the shared 16-core
 host ran the after-pair under lighter load, so the delta reads negative).
 Both pairs' runs: counters identical to each other, `presentUploads=0`.
+
+### Wave-13 JIT scope checkpoint (pending BOSS §136 filing)
+
+See `jit-codegen-scope.md` for the worker's measurements and boundary-safe block
+recipe. Reference facts consulted before design: xemu 0.8.136
+`target/i386/tcg/translate.c:4235–4278` captures CS base/mode state;
+`4300–4310` records per-instruction PC metadata; `4353–4370` terminates for
+single-step/IRQ inhibition and page changes. No reference implementation copied.
+The XGrid design retains IRQ polling at every original instruction boundary.
+Correction to the scoping premise: `XboxCpuDecodeCache.cs:137–177` cache hits
+perform no MMU or bus access (verify mode excepted); fetch translate + 15 reads
+remain miss costs. `HotspotProfiler` counts events, not elapsed category time.
+No device or phase completion status changes are implied by this study.

@@ -59,6 +59,38 @@ $env:DOTNET_TieredCompilation=$null
 dotnet wt-data/wave/options/bin/Release/net9.0/Options.dll | Tee-Object wt-data/wave/options/run-default.txt
 ```
 
+## Remaining-cost measurement method
+
+The normal-build comparisons use profiler OFF, back-to-back flag-off/cache-on
+for each workload, followed by a separate cache-on HotspotProfiler run. Menu
+uses the existing four-event pad script; triangle uses HDD and DVD together.
+Both use 1B steps and software GPU. Scratch `pairs.ps1` saves exact argv, walls,
+SHA and counters and stops on a mismatch. These are end-to-end process walls,
+not CPU-only instruction timing. Other host workers can contend; ratios are
+single-pair observations, not isolated-host confidence intervals.
+
+For category attribution, a **scratch copy** of the CPU source is built as a
+replacement DLL in a private copy of the CLI output. The original product DLL
+and all source/test files stay untouched. A deterministic xorshift selector
+samples approximately 1/1024 original Step boundaries. Timestamp brackets
+measure boundary/IRQ work, fetch-cache-decode, switch-entry dispatch (including
+validity/pre-call bookkeeping), execution-body inclusive time, nested data
+helpers, and post-execution tail. All Read/WriteMemory, 64-bit and byte-span
+helpers are covered. Descriptor/IDT direct accesses stay in boundary/execute,
+not the nested data bucket; I/O helpers likewise stay in execute. The timer is
+Stopwatch; an adjacent-empty-timestamp calibration is reported separately.
+
+These are **instrumented sampled elapsed costs**, not an exact decomposition
+of uninstrumented process wall. Timestamp calls, probe branches, inhibited
+inlining, tiering differences, host preemption and device callbacks affect
+measurements. Data overlaps execution and must be subtracted, not summed twice;
+rare IRQ/fault paths may not traverse all brackets. No unjustified transfer of
+mnemonic percentages or synthetic benchmark timings into title wall percentages
+is permitted. The instrumented title's SHA and counters must still match before
+its category table is accepted. Process startup, CLI output, device advancement
+outside Step and other host work remain explicitly unattributed rather than
+being mislabeled switch dispatch.
+
 ## Established facts
 
 - Full Release suite: **1316 passed, zero failed/skipped**, 12 assemblies. Command:
