@@ -205,11 +205,12 @@ export async function ensureServer(options: {
       probe.info.version.startsWith("2.") &&
       (registration === undefined || probe.info.pid === registration.pid)
     ) {
+      const serverPid = probe.info.pid;
       return {
         url,
         auth,
         close() {
-          stopServerProcess(child);
+          stopServerProcess(child, serverPid);
         },
       };
     }
@@ -231,7 +232,16 @@ function stderrSuffix(stderr: string): string {
   return tail.length > 0 ? `\nserver stderr: ${tail}` : "";
 }
 
-function stopServerProcess(child: ChildProcess): void {
+function stopServerProcess(child: ChildProcess, serverPid?: number | undefined): void {
+  // The spawned `opencode` shim exits once the real server is running, so the
+  // child may already be gone while the server lives on (wave-13 close() left
+  // the server listening). Prefer the pid the server registered for itself.
+  if (process.platform === "win32" && serverPid !== undefined) {
+    const result = spawnSync("taskkill", ["/pid", String(serverPid), "/T", "/F"], { windowsHide: true });
+    if (!result.error && result.status === 0) {
+      return;
+    }
+  }
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
