@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectDashboard } from "./dashboard.ts";
+import { collectDashboard, dashboardHtml } from "./dashboard.ts";
 import type { ResolvedPlan, RunState } from "./types.ts";
 
 function fakePlan(): ResolvedPlan {
@@ -94,4 +94,13 @@ test("collector tolerates a missing run directory", () => {
   const data = collectDashboard(path.join(os.tmpdir(), "wave-dash-missing"), fakePlan(), fakeState());
   assert.equal(data.tasks.length, 2);
   assert.deepEqual(data.tasks[0]?.logTail, []);
+});
+
+test("served page script parses as JavaScript", () => {
+  const html = dashboardHtml();
+  const match = /<script>([\s\S]*?)<\/script>/.exec(html);
+  assert.ok(match !== null, "script block present");
+  // Throws SyntaxError on malformed escaping in the served script (the
+  // "loading…" bug: \" inside the TS template produced broken JS).
+  new Function(match[1] ?? "");
 });

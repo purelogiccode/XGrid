@@ -125,12 +125,12 @@ async function refresh() {
       "updated " + d.updatedAt + "  " + counts + (d.serverUrl ? "  server " + d.serverUrl : "");
     document.querySelector("#tasks tbody").innerHTML = d.tasks.map((t) =>
       "<tr><td><b>" + esc(t.id) + "</b><br/>" + esc(t.title) + "</td>" +
-      "<td class=\"" + esc(t.status) + "\">" + esc(t.status) +
+      '<td class="' + esc(t.status) + '">' + esc(t.status) +
       (t.gateOk === false ? " gate:FAILED" : "") + "</td>" +
       "<td>" + t.attempts + "</td>" +
       "<td>" + esc(t.branch) + "<br/>" + esc(t.headCommit ?? "-") + "</td>" +
       "<td>" + esc(t.resultStatus ?? "-") + "</td>" +
-      "<td class=\"err\">" + esc(t.error ?? "") + "</td></tr>"
+      '<td class="err">' + esc(t.error ?? "") + '</td></tr>'
     ).join("");
     document.getElementById("logs").innerHTML = d.tasks.map((t) =>
       "<h3>" + esc(t.id) + "</h3><pre>" + esc(t.logTail.join("\\n")) + "</pre>"
