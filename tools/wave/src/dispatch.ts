@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { OpencodeClient } from "@opencode-ai/sdk";
-import { clientFor } from "./opencode.ts";
+import type { OpenCodeClient } from "@opencode/client";
+import { clientFor, type BasicAuth } from "./opencode.ts";
 import { renderTemplate } from "./prompt.ts";
 import { findWorkerResult } from "./result.ts";
 import { computeAutoBlocked, selectNext, type RunningTask, type SchedTask } from "./scheduler.ts";
@@ -24,6 +24,7 @@ export type DispatchOptions = {
   planPath: string;
   runDir: string;
   serverUrl: string;
+  serverAuth?: BasicAuth | undefined;
   toolDir: string;
   maxParallel?: number;
   resume?: boolean;
@@ -32,7 +33,7 @@ export type DispatchOptions = {
 };
 
 type ActiveSession = {
-  client: OpencodeClient;
+  client: OpenCodeClient;
   sessionId: string;
 };
 
@@ -86,6 +87,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
   }
   await saveRunState(statePath, locked);
 
+  const client = clientFor(options.serverUrl, options.serverAuth);
   const activeSessions = new Map<string, ActiveSession>();
   let interrupted = false;
   const onSigint = (): void => {
@@ -95,7 +97,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
     interrupted = true;
     options.log("[wave] interrupt received; aborting active sessions and saving state");
     for (const active of activeSessions.values()) {
-      void active.client.session.abort({ path: { id: active.sessionId } }).catch(() => undefined);
+      void active.client.session.interrupt({ sessionID: active.sessionId }).catch(() => undefined);
     }
     void saveRunState(statePath, locked).finally(() => process.exit(130));
   };
@@ -135,7 +137,6 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
     await saveRunState(statePath, locked);
     logLine(`worktree ${info.worktree}${info.reused ? " (reused)" : ""} branch ${task.branch}`);
 
-    const client = clientFor(options.serverUrl, info.worktree);
     let lastReason = "unknown";
     let sessionId = taskState.sessionId;
     const basePrompt = renderTemplate(workerTemplate, {
@@ -156,6 +157,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
       const prompt = sessionId === undefined ? basePrompt : `${basePrompt}\n\n${continuation}`;
       const outcome: RunSessionOutcome = await runSession({
         client,
+        directory: info.worktree,
         title: `wave ${locked.wave} ${task.id} (attempt ${attempt})`,
         prompt,
         agent: task.agent,
@@ -194,6 +196,7 @@ export async function dispatch(options: DispatchOptions): Promise<RunState> {
         logLine("worker completed without a result file; sending one harvest nudge");
         const nudge = await runSession({
           client,
+          directory: info.worktree,
           title: `wave ${locked.wave} ${task.id} (harvest)`,
           prompt:
             `You completed the task but did not write wt-data/wave/${task.id}.result.json.\n` +

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Pull-scheduler for XGrid wave agents: dispatcher + worker pool + aggregator on the opencode SDK",
+  "description": "Pull-scheduler for XGrid wave agents: dispatcher + worker pool + aggregator on the opencode v2 client",
   "engines": {
     "node": ">=24.0.0"
   },
@@ -13,9 +13,10 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.19.0"
+    "@opencode/client": "^2.0.29"
   },
   "devDependencies": {
+    "@opencode/client": "^2.0.29",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   }
