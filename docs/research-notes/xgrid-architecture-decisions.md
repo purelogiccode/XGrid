@@ -7883,6 +7883,40 @@ with §138 (helpers dominate, and the new handlers still call the same
 `ReadMemory`/`WriteMemory`). Remaining top fallbacks: Jcc (both
 conditions, both titles), Cli/Sti, Fld/Fstp, Movq/Movntq (MMX),
 Jmp/Call/Ret. Next: Jcc-specialization design (runner must detect
-EIP divergence) or MMX mov shapes — measurement first, as always.
+EIP divergence) or MMX mov shapes - measurement first, as always.
 Flag stays opt-in.
+
+## 143. JIT slice 6: near conditional jumps behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. The slice-5 histogram top
+(Jcc/imm 153M menu / 218M triangle executions) fell to a safe design:
+Jcc always terminates its block, so a handler only sets EIP (taken
+target or fallthrough) and the existing cursor completion ends the
+block - no runner EIP check needed, no IRQ/fault/idle change (Jcc
+cannot fault; NoteAccess replay is per-Step, outside bodies).
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecJcc` maps all 16
+`ConditionCode`s (size-insensitive - target arithmetic is identical
+for every operand size) to 16 handlers with the flag tests inlined
+verbatim from `XboxCpu.EvaluateCondition` (`XboxCpu.cs:4274`) and the
+`nextEip + Immediate` / fallthrough assignment verbatim from the
+interpreter Jcc body (`XboxCpu.cs:448`). Other control flow
+(Jmp/Call/Ret near and far) keeps the interpreter.
+
+Tests: `Jcc_AllConditions_TakenAndFallthrough_MatchInterpreter`
+(16 conditions x rel8/rel32/rel16 x 2 flag setups, branch-skips-inc
+so a wrong direction shows in EAX) + `Jcc_Resolver_CoversAllConditions`.
+Suite **1345/1345**, format clean, zero warnings.
+
+Goldens (18-leg matrix reps 8-10, `D:\spec-soak\legs`, all PASS): SHAs
+exact both anchors, `vec=0`, counters exact, `verifyFailures=0`,
+full logs identical modulo mode lines. Jcc gone from the fallback
+top-8 on both titles; fallbacks menu 339M->163M (-52%), triangle
+374M->151M (-60%). Median walls within-matrix: menu cache 160.65 /
+spec 150.58 = **1.067x**, triangle cache 91.23 / spec 78.91 =
+**1.156x** (best yet, still thin). Remaining top fallbacks:
+Cli/Sti (IRQ-boundary, untouchable), Fld/Fstp/Fmul (x87),
+Movq/Movntq (MMX), Jmp/Call/Ret (near control). Next candidates:
+near Jmp/Call/Ret handlers (same terminator argument as Jcc) or MMX
+mov shapes - the histogram decides. Flag stays opt-in.
 

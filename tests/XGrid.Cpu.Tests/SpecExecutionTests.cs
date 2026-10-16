@@ -193,6 +193,87 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void Jcc_AllConditions_TakenAndFallthrough_MatchInterpreter()
+    {
+        // jcc +1 over inc eax: taken skips the inc, so a wrong direction
+        // shows up in EAX. Two flag setups split every condition across
+        // taken and fallthrough (Pf covered by setup 2).
+        uint[] flagSetups =
+        {
+            FlagBits.Reserved1 | FlagBits.Cf | FlagBits.Zf,
+            FlagBits.Reserved1 | FlagBits.Sf | FlagBits.Of | FlagBits.Pf,
+        };
+        for (int condition = 0; condition < 16; condition++)
+        {
+            RunJcc(new byte[] { (byte)(0x70 + condition), 0x01, 0x40, 0xF4 }, $"jcc rel8 cond {condition}", flagSetups);
+            RunJcc(
+                new byte[] { 0x0F, (byte)(0x80 + condition), 0x01, 0x00, 0x00, 0x00, 0x40, 0xF4 },
+                $"jcc rel32 cond {condition}",
+                flagSetups);
+        }
+
+        RunJcc(
+            new byte[] { 0x66, 0x0F, 0x84, 0x01, 0x00, 0x40, 0xF4 },
+            "jcc rel16 (size-insensitive)",
+            flagSetups);
+        return;
+
+        static void RunJcc(byte[] code, string name, uint[] setups)
+        {
+            foreach (uint flags in setups)
+            {
+                XboxCpu plain = Create(false, code);
+                XboxCpu specCpu = Create(true, code);
+                Preset(plain);
+                Preset(specCpu);
+                plain.Context.Eflags = flags;
+                specCpu.Context.Eflags = flags;
+                try
+                {
+                    Assert.Equal(plain.Execute(16), specCpu.Execute(16));
+                    AssertSameState(plain, specCpu);
+                }
+                catch (Exception exception)
+                {
+                    throw new InvalidOperationException($"Shape '{name}' diverged (flags 0x{flags:X})", exception);
+                }
+
+                Assert.True(plain.Context.Halted && specCpu.Context.Halted);
+            }
+        }
+    }
+
+    [Fact]
+    public void Jcc_Resolver_CoversAllConditions()
+    {
+        for (int condition = 0; condition < 16; condition++)
+        {
+            Assert.NotNull(XboxCpu.ResolveSpec(DecodeRel8(condition)));
+            Assert.NotNull(XboxCpu.ResolveSpec(DecodeRel32(condition)));
+        }
+
+        return;
+
+        static DecodedInstruction DecodeRel8(int condition)
+        {
+            return Decode((byte)(0x70 + condition), 0x01);
+        }
+
+        static DecodedInstruction DecodeRel32(int condition)
+        {
+            return Decode(0x0F, (byte)(0x80 + condition), 0x01, 0x00, 0x00, 0x00);
+        }
+
+        static DecodedInstruction Decode(params byte[] code)
+        {
+            Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
+            window.Clear();
+            code.CopyTo(window);
+            return Decoder.Decode(window, 32, 32);
+        }
+    }
+
+    [Fact]
     public void SegmentOverride_MemShapes_MatchInterpreter()
     {
         // FS base differs from DS base: the override must select the FS byte.
@@ -218,10 +299,9 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x50)));
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x58)));
 
-        // Control, privileged, string/REP, FPU, invalid and uncovered shapes
-        // keep the interpreter.
+        // Control (except near Jcc), privileged, string/REP, FPU, invalid and
+        // uncovered shapes keep the interpreter.
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xEB, 0xFE)));
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0x74, 0x02)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xE8, 0x00, 0x00, 0x00, 0x00)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xC3)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xF4)));

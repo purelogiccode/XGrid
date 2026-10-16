@@ -3135,6 +3135,12 @@ Mov mem,imm) behind `--spec-exec`; 1343/1343 tests, format clean, 18-leg
 golden matrix PASS (SHAs exact, `verifyFailures=0`, logs identical);
 fallbacks menu 392M→339M / triangle 494M→374M; within-matrix spec/cache
 menu **1.046x** / triangle **1.086x**. Flag stays opt-in.
+**§143 DONE (2026-10-16, direct):** JIT slice 6 (near Jcc, all 16
+conditions, size-insensitive) behind `--spec-exec`; 1345/1345 tests,
+format clean, 18-leg golden matrix PASS (SHAs exact, `verifyFailures=0`,
+logs identical); fallbacks menu 339M→163M / triangle 374M→151M;
+within-matrix spec/cache menu **1.067x** / triangle **1.156x**.
+Flag stays opt-in.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
