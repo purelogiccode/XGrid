@@ -87,7 +87,8 @@ public sealed class PadScript
                     return false;
                 }
 
-                if (!ulong.TryParse(sides[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong step))
+                if (!ulong.TryParse(sides[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture,
+                        out ulong step))
                 {
                     return false;
                 }

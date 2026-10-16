@@ -191,7 +191,8 @@ public sealed class HotspotProfilerTests
         mmu.Observer = profiler;
 
         // First lookup misses (walk), second hits: outcomes returned, nothing reported.
-        uint first = mmu.TranslateUncounted(0x00010ABC, false, false, out bool faulted, out _, out bool hit, out bool counted);
+        uint first = mmu.TranslateUncounted(0x00010ABC, false, false, out bool faulted, out _, out bool hit,
+            out bool counted);
         Assert.False(faulted);
         Assert.False(hit);
         Assert.True(counted);
@@ -245,7 +246,8 @@ public sealed class HotspotProfilerTests
 
         Assert.Equal(1UL, profiler.HeadWindows);
         Assert.Equal(HotspotProfiler.HeadWindowRetained, profiler.TrackedHeadCount);
-        Assert.Equal((ulong)(HotspotProfiler.MaxTrackedHeads - HotspotProfiler.HeadWindowRetained), profiler.HeadEvictions);
+        Assert.Equal((ulong)(HotspotProfiler.MaxTrackedHeads - HotspotProfiler.HeadWindowRetained),
+            profiler.HeadEvictions);
 
         // Phase 2: a steady-state hot head accumulates visits post-eviction.
         const uint hot = 0x50000;
@@ -308,7 +310,8 @@ public sealed class HotspotProfilerTests
         Assert.Contains("summary,splitAccesses,1,", report);
         Assert.Contains("mnemonic,Mov,3,", report);
         Assert.Contains("head,0x00002000,2,", report);
-        Assert.True(report.IndexOf("mnemonic,Mov,3,", StringComparison.Ordinal) < report.IndexOf("mnemonic,Jmp,2,", StringComparison.Ordinal));
+        Assert.True(report.IndexOf("mnemonic,Mov,3,", StringComparison.Ordinal) <
+                    report.IndexOf("mnemonic,Jmp,2,", StringComparison.Ordinal));
     }
 
     private sealed class StubIdleHost : IIdleSkipHost

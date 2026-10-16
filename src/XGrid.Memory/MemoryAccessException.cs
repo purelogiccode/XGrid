@@ -17,6 +17,7 @@ public sealed class MemoryAccessException : Exception
     {
     }
 
+    /// <summary>Creates an exception with the default message.</summary>
     public MemoryAccessException()
     {
     }

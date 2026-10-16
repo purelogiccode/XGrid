@@ -327,7 +327,7 @@ internal sealed class IdleSkipDetector
         // Watch a whole dword so the skip loop can compare cheaply; an access
         // straddling the RAM boundary is rejected instead of half-watched.
         if (!host.IsRam(physicalAddress + 1) || !host.IsRam(physicalAddress + 2)
-            || !host.IsRam(physicalAddress + 3))
+                                             || !host.IsRam(physicalAddress + 3))
         {
             _watchOverflow = true;
             return;
@@ -729,8 +729,8 @@ internal sealed class IdleSkipDetector
     {
         IMemoryBus memory = _cpu.Memory;
         return memory.Read8(physicalAddress)
-            | ((uint)memory.Read8(physicalAddress + 1) << 8)
-            | ((uint)memory.Read8(physicalAddress + 2) << 16)
-            | ((uint)memory.Read8(physicalAddress + 3) << 24);
+               | ((uint)memory.Read8(physicalAddress + 1) << 8)
+               | ((uint)memory.Read8(physicalAddress + 2) << 16)
+               | ((uint)memory.Read8(physicalAddress + 3) << 24);
     }
 }

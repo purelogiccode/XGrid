@@ -126,7 +126,7 @@ internal static class IdleSkipBodyRules
             case Mnemonic.Test:
             case Mnemonic.Cmp:
                 return CheckOperandRead(instruction.Operand1, written, defined)
-                    ?? CheckOperandRead(instruction.Operand2, written, defined);
+                       ?? CheckOperandRead(instruction.Operand2, written, defined);
 
             case Mnemonic.Mov:
             case Mnemonic.Movzx:
@@ -216,8 +216,8 @@ internal static class IdleSkipBodyRules
 
         Operand source = instruction.Operand2;
         bool selfClearing = instruction.Mnemonic is Mnemonic.Xor or Mnemonic.Sub
-            && source.Kind == OperandKind.Register
-            && source.RegisterIndex == destination.RegisterIndex;
+                            && source.Kind == OperandKind.Register
+                            && source.RegisterIndex == destination.RegisterIndex;
         if (!selfClearing)
         {
             string? oldDestination = CheckOperandRead(destination, written, defined);

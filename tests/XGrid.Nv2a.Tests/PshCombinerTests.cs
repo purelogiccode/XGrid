@@ -105,7 +105,8 @@ public sealed class PshCombinerTests
     private static (float R, float G, float B, float A) Run(PshCombiner combiner, float[] diffuse, float[][] texels)
     {
         float[][] consts = PshCombiner.BuildConsts(combiner);
-        combiner.Evaluate(diffuse, Vec(0f, 0f, 1f, 1f), Vec(0f, 0f, 0f, 1f), texels, consts, out float r, out float g, out float b, out float a);
+        combiner.Evaluate(diffuse, Vec(0f, 0f, 1f, 1f), Vec(0f, 0f, 0f, 1f), texels, consts, out float r, out float g,
+            out float b, out float a);
         return (r, g, b, a);
     }
 

@@ -133,7 +133,8 @@ public sealed class XdvdfsFileSystemTests : IDisposable
         WriteEntry(root, left: 0, right: 0, start: HelloSector, size: 100, attributes: 0x20, name: "HELLO.TXT");
         int subOffset = Pad(root);
         SetRight(root, 0, (ushort)(subOffset / 4));
-        WriteEntry(root, left: 0, right: 0xFFFF, start: SubTableSector, size: SectorSize, attributes: 0x10, name: "SUB");
+        WriteEntry(root, left: 0, right: 0xFFFF, start: SubTableSector, size: SectorSize, attributes: 0x10,
+            name: "SUB");
         Pad(root);
         Buffer.BlockCopy(root.ToArray(), 0, image, (int)RootSector * SectorSize, root.Count);
         for (int i = 0; i < 100; i++)
@@ -164,7 +165,8 @@ public sealed class XdvdfsFileSystemTests : IDisposable
             new Span<byte>(image, ((int)DescriptorSector * SectorSize) + 0x18, 4), SectorSize);
     }
 
-    private static void WriteEntry(List<byte> table, ushort left, ushort right, uint start, uint size, byte attributes, string name)
+    private static void WriteEntry(List<byte> table, ushort left, ushort right, uint start, uint size, byte attributes,
+        string name)
     {
         byte[] nameBytes = Encoding.ASCII.GetBytes(name);
         byte[] header = new byte[14];

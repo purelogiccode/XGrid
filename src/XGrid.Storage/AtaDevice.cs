@@ -1035,7 +1035,7 @@ public sealed class AtaDevice : ISnapshotable
     private static uint ReadBe32(byte[] buffer, int offset)
     {
         return ((uint)buffer[offset] << 24) | ((uint)buffer[offset + 1] << 16)
-            | ((uint)buffer[offset + 2] << 8) | buffer[offset + 3];
+                                            | ((uint)buffer[offset + 2] << 8) | buffer[offset + 3];
     }
 
     private static ushort ReadBe16(byte[] buffer, int offset)

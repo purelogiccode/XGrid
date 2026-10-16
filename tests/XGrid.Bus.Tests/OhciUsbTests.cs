@@ -52,7 +52,7 @@ public sealed class OhciUsbTests
         public uint Read32(uint address)
         {
             return (uint)(Read8(address) | (Read8(address + 1) << 8) | (Read8(address + 2) << 16) |
-                (Read8(address + 3) << 24));
+                          (Read8(address + 3) << 24));
         }
 
         public void Write8(uint address, byte value)
@@ -572,7 +572,7 @@ public sealed class OhciUsbTests
         daughterboard.Attach(2, controllerHub);
         ohci.Function = daughterboard;
         Assert.True(daughterboard.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0001, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         daughterboard.CompleteStatusStage();
 
         memory.Write32(0x3000 + 4, 0x1500);

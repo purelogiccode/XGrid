@@ -62,7 +62,8 @@ public sealed class PgraphTransformTests
     /// advancing PUT only re-reads the tail region. Guests push contiguously;
     /// this mirrors that.
     /// </summary>
-    private static void PushMethodsContinue(Nv2AMmio nv2A, ArrayMemory memory, params (uint Method, uint Parameter)[] methods)
+    private static void PushMethodsContinue(Nv2AMmio nv2A, ArrayMemory memory,
+        params (uint Method, uint Parameter)[] methods)
     {
         uint start = nv2A.Read(Base + 0x800044u, 4);
         uint address = WriteMethodStream(memory, start, methods);
@@ -1665,7 +1666,8 @@ public sealed class PgraphTransformTests
         uint[][] program =
         {
             Insn(mac: MacMov, aMux: MuxC, constIndex: 58, outR: 0, macMask: 0xF),
-            Insn(mac: MacAdd, aMux: MuxR, aR: 0, cMux: MuxC, constIndex: 59, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+            Insn(mac: MacAdd, aMux: MuxR, aR: 0, cMux: MuxC, constIndex: 59, outMux: 0, outMask: 0xF, outAddress: 0,
+                final: true),
         };
         float[][] constants = ReadConstants(nv2A);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
@@ -1913,9 +1915,11 @@ public sealed class PgraphTransformTests
         WriteTriangleVertices(memory, 0u);
 
         uint[] firstPosition = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
-        uint[] firstColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+        uint[] firstColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 3,
+            final: true);
         uint[] secondPosition = Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0);
-        uint[] secondColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 1, outMux: 0, outMask: 0xF, outAddress: 3, final: true);
+        uint[] secondColor = Insn(mac: MacMov, aMux: MuxC, constIndex: 1, outMux: 0, outMask: 0xF, outAddress: 3,
+            final: true);
 
         PushMethods(
             nv2A,
@@ -2547,7 +2551,8 @@ public sealed class PgraphTransformTests
         ulong drawnBeforeTop = nv2A.DrawnPixels;
         uint getBefore = nv2A.Read(Base + 0x800044u, 4);
         uint putBefore = nv2A.Read(Base + 0x800040u, 4);
-        Assert.True(getBefore < 0x1000u, $"get={getBefore:X} put={putBefore:X} err={nv2A.PusherError:X} capped={nv2A.PusherCapped} words={nv2A.PusherWordsConsumed}");
+        Assert.True(getBefore < 0x1000u,
+            $"get={getBefore:X} put={putBefore:X} err={nv2A.PusherError:X} capped={nv2A.PusherCapped} words={nv2A.PusherWordsConsumed}");
         PushProgramDrawContinue(
             nv2A,
             memory,
@@ -2557,7 +2562,8 @@ public sealed class PgraphTransformTests
             0x3F800000u,
             (0x030Cu, 1u),
             (0x0354u, 0x0203u));
-        Assert.True(nv2A.DrawnPixels > drawnBeforeTop, $"draws={nv2A.DrawsExecuted} get={nv2A.Read(Base + 0x800044u, 4):X} put={nv2A.Read(Base + 0x800040u, 4):X} depthTested={nv2A.DepthTestedPixels} zeta(5,5)={memory.ReadPhysical(0x5000u + (5u * 0x40u) + 20u):X8} color(5,5)={memory.ReadPhysical(0x3000u + (5u * 0x40u) + 20u):X8} w0={memory.ReadPhysical(0u):X8} w1={memory.ReadPhysical(4u):X8}");
+        Assert.True(nv2A.DrawnPixels > drawnBeforeTop,
+            $"draws={nv2A.DrawsExecuted} get={nv2A.Read(Base + 0x800044u, 4):X} put={nv2A.Read(Base + 0x800040u, 4):X} depthTested={nv2A.DepthTestedPixels} zeta(5,5)={memory.ReadPhysical(0x5000u + (5u * 0x40u) + 20u):X8} color(5,5)={memory.ReadPhysical(0x3000u + (5u * 0x40u) + 20u):X8} w0={memory.ReadPhysical(0u):X8} w1={memory.ReadPhysical(4u):X8}");
 
         // Sample the interior rect [3..10] x [3..10] (pixel centers strictly
         // inside both triangles): every pixel must be the top blue

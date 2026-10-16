@@ -107,7 +107,8 @@ public sealed class Nv2aExoticTexModesTests
         return BitConverter.SingleToUInt32Bits(value);
     }
 
-    private static void MethodPush(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes, uint[] instruction, uint loadBase)
+    private static void MethodPush(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes,
+        uint[] instruction, uint loadBase)
     {
         for (int i = 0; i < 4; i++)
         {

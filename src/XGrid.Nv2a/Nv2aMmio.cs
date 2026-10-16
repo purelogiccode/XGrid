@@ -171,7 +171,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodVertexArrayOffsetEnd = 0x175Cu;
     private const uint MethodVertexFormatBase = 0x1760u;
     private const uint MethodVertexFormatEnd = 0x179Cu;
-    private const uint MethodBeginEnd = 0x17FCu; private const uint MethodArrayElement16 = 0x1800u;
+    private const uint MethodBeginEnd = 0x17FCu;
+    private const uint MethodArrayElement16 = 0x1800u;
     private const uint MethodArrayElement32 = 0x1808u;
     private const uint MethodDrawArrays = 0x1810u;
     private const uint MethodInlineArray = 0x1818u;
@@ -972,6 +973,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             value[2] = 0f;
             value[3] = 1f;
         }
+
         foreach (uint[] row in _transformProgram)
         {
             Array.Clear(row);
@@ -3847,7 +3849,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     return component == 3 ? 1f : 0f;
                 }
 
-                return Math.Clamp(NaNToOne(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component])), 0f, 1f);
+                return Math.Clamp(
+                    NaNToOne(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component])), 0f, 1f);
             }
         }
         finally
@@ -4080,6 +4083,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             CombinerDraws++;
         }
+
         if (_transformExecutionMode != TransformModeProgrammable)
         {
             NonProgrammableModeDraws++;
@@ -4447,11 +4451,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return CountSample(address, texel, r, g, b);
     }
 
+    /// <summary>
+    /// Gets whether a texture color format uses linear (pitched) layout rather than
+    /// swizzled layout. The linear formats are the pitch-addressed twins of the
+    /// swizzled color formats (0x10/0x11/0x12/0x1C/0x1D/0x1E); the sampler walks
+    /// them with the CONTROL1 pitch instead of <see cref="SwizzleOffset"/>.
+    /// </summary>
+    /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
+    /// <returns>True for the six linear formats; false for swizzled formats.</returns>
     public static bool IsLinearTextureFormat(uint color)
     {
         return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu;
     }
 
+    /// <summary>
+    /// Gets the bytes per texel for a texture color format: 2 for the 16-bit
+    /// formats (0x02-0x05 and their linear twins), 4 for the 32-bit formats
+    /// (0x06/0x07 and their linear twins), 0 for unsupported formats (the
+    /// caller counts a format miss).
+    /// </summary>
+    /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
+    /// <returns>2, 4, or 0 when the format is not backed by the sampler.</returns>
     public static uint TextureFormatBytesPerTexel(uint color)
     {
         return color switch
@@ -4524,7 +4544,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// per-face swizzle matches the 2D sampler. Faces always clamp at the
     /// edges (GL cube sampling has no wrap across faces).
     /// </summary>
-    private bool TrySampleTextureCube(int slot, float x, float y, float z, out float r, out float g, out float b, out float a)
+    private bool TrySampleTextureCube(int slot, float x, float y, float z, out float r, out float g, out float b,
+        out float a)
     {
         r = 1f;
         g = 1f;
@@ -4569,7 +4590,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// layout) at normalized xyz coordinates. The volume depth comes from
     /// TEXFMT BASE_SIZE_P; the P address mode from TEXADDRESS bits 16-18.
     /// </summary>
-    private bool TrySampleTexture3D(int slot, float u, float v, float w, out float r, out float g, out float b, out float a)
+    private bool TrySampleTexture3D(int slot, float u, float v, float w, out float r, out float g, out float b,
+        out float a)
     {
         r = 1f;
         g = 1f;
@@ -4643,7 +4665,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>Decodes a swizzled A8R8G8B8 (0x06) or R5G6B5 (0x05) texel.</summary>
-    private static bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, out float r, out float g, out float b, out float a)
+    private static bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, out float r, out float g,
+        out float b, out float a)
     {
         r = 1f;
         g = 1f;
@@ -4673,6 +4696,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
+    /// <summary>
+    /// Applies a texture address mode to one texel coordinate. Mode 0 wraps
+    /// (modulo), mode 1 mirrors about the edge, and any other mode clamps to
+    /// [0, size - 1].
+    /// </summary>
+    /// <param name="value">Unwrapped texel coordinate.</param>
+    /// <param name="size">Texture extent (width or height) in texels.</param>
+    /// <param name="mode">Address mode from the SET_TEXTURE_ADDRESS word.</param>
+    /// <returns>The coordinate folded into the texture extent.</returns>
     public static int WrapCoordinate(int value, int size, int mode)
     {
         switch (mode)
@@ -4784,6 +4816,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return color is 0x2Cu or 0x2Eu or 0x2Fu or 0x30u or 0x31u;
     }
 
+    /// <summary>
+    /// Computes the 2D swizzled (Morton-order) texel offset: x and y bits are
+    /// interleaved through width/height-derived masks (xemu
+    /// <c>generate_swizzle_masks</c>), so the caller scales it by bytes per texel.
+    /// </summary>
+    /// <param name="x">Texel column.</param>
+    /// <param name="y">Texel row.</param>
+    /// <param name="width">Texture width in texels.</param>
+    /// <param name="height">Texture height in texels.</param>
+    /// <returns>The texel index within the swizzled surface.</returns>
     public static uint SwizzleOffset(int x, int y, int width, int height)
     {
         uint maskX = 0u;
@@ -4809,8 +4851,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
 
             bit <<= 1;
-        }
-        while (!done);
+        } while (!done);
 
         return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY);
     }
@@ -4853,8 +4894,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
 
             bit <<= 1;
-        }
-        while (!done);
+        } while (!done);
 
         return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY) | InterleaveBits((uint)z, maskZ);
     }
@@ -5098,9 +5138,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint pitch = _surfacePitch & 0xFFFFu;
         bool pitchType = ((_surfaceFormat & 0xF00u) >> 8) == SurfaceTypePitch;
         _presentedValid = (bytes == 2 || bytes == 4) &&
-            width != 0 && width <= MaxPresentDimension &&
-            height != 0 && height <= MaxPresentDimension &&
-            pitch != 0 && pitchType && _memory is not null;
+                          width != 0 && width <= MaxPresentDimension &&
+                          height != 0 && height <= MaxPresentDimension &&
+                          pitch != 0 && pitchType && _memory is not null;
         if (_presentedValid)
         {
             _presentedOffset = SurfaceBase(_dmaColor) + PresentedColorOffset;
@@ -5472,9 +5512,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // with the final combiner disabled) only consumes position, diffuse
         // and the oT0 texcoord pair; fog/spec are unused and the fog factor
         // is irrelevant because the combiner never reads it here.
-        var a = new PgraphVertex(ax, ay, az, aw, ar, ag, ab, aa, 0f, 0f, 0f, 0f, au, av, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
-        var b = new PgraphVertex(bx, by, bz, bw, br, bg, bb, ba, 0f, 0f, 0f, 0f, bu, bv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
-        var c = new PgraphVertex(cx, cy, cz, cw, cr, cg, cb, ca, 0f, 0f, 0f, 0f, cu, cv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        var a = new PgraphVertex(ax, ay, az, aw, ar, ag, ab, aa, 0f, 0f, 0f, 0f, au, av, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        var b = new PgraphVertex(bx, by, bz, bw, br, bg, bb, ba, 0f, 0f, 0f, 0f, bu, bv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        var c = new PgraphVertex(cx, cy, cz, cw, cr, cg, cb, ca, 0f, 0f, 0f, 0f, cu, cv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f, 0f, 1f);
         return new PgraphDrawInfo(
             a, b, c,
             clipX, clipY, clipW, clipH,
@@ -5805,10 +5848,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         for (int slot = 0; slot < MaxTextureSlots; slot++)
         {
             bool enabled = (_textureControl0[slot] & TextureControl0Enable) != 0;
-            key.Append(CultureInfo.InvariantCulture, $"|{(enabled ? 1 : 0)}:{(_textureFormat[slot] >> 8) & 0x7Fu:X2}:{_textureOffset[slot]:X8}:{_textureImageRect[slot]:X8}:{_textureControl1[slot]:X8}:{_textureAddress[slot]:X8}");
+            key.Append(CultureInfo.InvariantCulture,
+                $"|{(enabled ? 1 : 0)}:{(_textureFormat[slot] >> 8) & 0x7Fu:X2}:{_textureOffset[slot]:X8}:{_textureImageRect[slot]:X8}:{_textureControl1[slot]:X8}:{_textureAddress[slot]:X8}");
         }
 
-        key.Append(CultureInfo.InvariantCulture, $"|m{_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}");
+        key.Append(CultureInfo.InvariantCulture,
+            $"|m{_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}");
         key.Append(CultureInfo.InvariantCulture, $"|s{_combiner.StageCount}|f{(_combiner.FinalEnabled ? 1 : 0)}");
         string text = key.ToString();
         if (!_textureStateIndex.TryGetValue(text, out int index))
@@ -5892,11 +5937,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>Gets per-texture-state sample statistics for the last run. Diagnostics.</summary>
-    public List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)> TextureStateStats
+    public List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel
+        , float MinU, float MaxU, float MinV, float MaxV)> TextureStateStats
     {
         get
         {
-            var list = new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>();
+            var list =
+                new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint
+                    FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>();
             for (int i = 0; i < _textureStateKeys.Count; i++)
             {
                 list.Add((
@@ -6222,7 +6270,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             UnsupportedDotMaps++;
         }
 
-        PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], previous[3], out float mx, out float my, out float mz);
+        PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], previous[3], out float mx, out float my,
+            out float mz);
         float[] coord = coords[stage];
         dot = (coord[0] * mx) + (coord[1] * my) + (coord[2] * mz);
         return true;
@@ -6272,6 +6321,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             SetTexelNone(texel);
         }
+
         fog[0] = _fogColor[0];
         fog[1] = _fogColor[1];
         fog[2] = _fogColor[2];
@@ -6396,7 +6446,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
                 else
                 {
-                    _combiner.Evaluate(diffuse, specular, CombinerFogConst, texels, consts, out fr, out fg, out fb, out fa);
+                    _combiner.Evaluate(diffuse, specular, CombinerFogConst, texels, consts, out fr, out fg, out fb,
+                        out fa);
                 }
 
                 if (sampled)

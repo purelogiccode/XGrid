@@ -266,8 +266,8 @@ public sealed class XboxMachine : IIdleSkipHost
         }
 
         return magic[0] == (byte)'M' && magic[1] == (byte)'C' && magic[2] == (byte)'o'
-            && magic[3] == (byte)'m' && magic[4] == (byte)'p' && magic[5] == (byte)'r'
-            && magic[6] == (byte)'H' && magic[7] == (byte)'D'
+               && magic[3] == (byte)'m' && magic[4] == (byte)'p' && magic[5] == (byte)'r'
+               && magic[6] == (byte)'H' && magic[7] == (byte)'D'
             ? ChdDvdImage.Open(path)
             : new IsoDvdImage(path);
     }
@@ -377,7 +377,7 @@ public sealed class XboxMachine : IIdleSkipHost
 
         uint writeCombined = XboxAddressMap.WriteCombinedBase;
         return physicalAddress >= writeCombined + XboxAddressMap.FlashSize
-            && physicalAddress - writeCombined < XboxAddressMap.WriteCombinedSize;
+               && physicalAddress - writeCombined < XboxAddressMap.WriteCombinedSize;
     }
 
     void IIdleSkipHost.AdvanceIdle(ulong steps)
@@ -465,7 +465,7 @@ public sealed class XboxMachine : IIdleSkipHost
     /// <summary>Runs up to the given number of instructions, advancing bus timers.</summary>
     /// <remarks>
     /// With idle-skip enabled, <see cref="XboxCpu.Execute"/> may bulk-advance
-    /// devices itself (via <see cref="AdvanceIdle"/>) for skipped steps; those
+    /// devices itself (via <see cref="IIdleSkipHost.AdvanceIdle"/>) for skipped steps; those
     /// cycles are subtracted here so devices are never advanced twice.
     /// </remarks>
     public int Run(int maxInstructions)
@@ -551,7 +551,8 @@ public sealed class XboxMachine : IIdleSkipHost
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: false);
 
         byte[] magic = reader.ReadBytes(4);
-        if (magic.Length != 4 || !string.Equals(Encoding.ASCII.GetString(magic), SnapshotMagic, StringComparison.Ordinal))
+        if (magic.Length != 4 ||
+            !string.Equals(Encoding.ASCII.GetString(magic), SnapshotMagic, StringComparison.Ordinal))
         {
             throw new InvalidDataException("Not an XGrid snapshot (bad magic).");
         }

@@ -122,7 +122,8 @@ public readonly struct PadInput
                 case "release":
                     break;
                 default:
-                    if (!ushort.TryParse(part.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort mask))
+                    if (!ushort.TryParse(part.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
+                            out ushort mask))
                     {
                         return false;
                     }
@@ -157,6 +158,7 @@ public readonly struct PadInput
         {
             return false;
         }
+
         if (!string.IsNullOrEmpty(analogHex))
         {
             if (analogHex.Length != 16)
@@ -167,7 +169,8 @@ public readonly struct PadInput
             for (int i = 0; i < 8; i++)
             {
                 if (!byte.TryParse(
-                    analogHex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out analog[i]))
+                        analogHex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture,
+                        out analog[i]))
                 {
                     return false;
                 }

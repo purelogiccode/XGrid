@@ -158,9 +158,9 @@ public sealed class IdleSkipMmioTests
         Assert.Contains(
             heads,
             h => h.Head == LoopHead
-                && h.Reason == IdleSkipRejectReason.MmioRead
-                && h.Address == MmioAddress
-                && h.Steps > 0);
+                 && h.Reason == IdleSkipRejectReason.MmioRead
+                 && h.Address == MmioAddress
+                 && h.Steps > 0);
     }
 
     [Fact]

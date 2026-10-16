@@ -58,7 +58,8 @@ public sealed class DeviceSnapshotTests
         public ushort Read16(uint address) => (ushort)(Read8(address) | (Read8(address + 1) << 8));
 
         public uint Read32(uint address) =>
-            (uint)(Read8(address) | (Read8(address + 1) << 8) | (Read8(address + 2) << 16) | (Read8(address + 3) << 24));
+            (uint)(Read8(address) | (Read8(address + 1) << 8) | (Read8(address + 2) << 16) |
+                   (Read8(address + 3) << 24));
 
         public void Write8(uint address, byte value) => _ram[address] = value;
 

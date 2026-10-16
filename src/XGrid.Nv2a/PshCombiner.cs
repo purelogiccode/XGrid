@@ -30,51 +30,87 @@ public sealed class PshCombiner : ISnapshotable
     public const int TextureSlots = 4;
 
     // Register ids (psh_regs.h PS_REGISTER).
+    /// <summary>Combiner register id for the constant-zero input.</summary>
     public const int RegZero = 0x0;
+    /// <summary>Combiner register id for the per-stage C0 constant (SET_COMBINER_FACTOR0).</summary>
     public const int RegC0 = 0x1;
+    /// <summary>Combiner register id for the per-stage C1 constant (SET_COMBINER_FACTOR1).</summary>
     public const int RegC1 = 0x2;
+    /// <summary>Combiner register id for fog (per-fragment fog color and factor supplied by the caller).</summary>
     public const int RegFog = 0x3;
+    /// <summary>Combiner register id for the diffuse vertex color (V0).</summary>
     public const int RegV0 = 0x4;
+    /// <summary>Combiner register id for the specular vertex color (V1).</summary>
     public const int RegV1 = 0x5;
+    /// <summary>Combiner register id for the first texture texel (T1-T3 follow at 0x9-0xB).</summary>
     public const int RegT0 = 0x8;
+    /// <summary>Combiner register id for temporary register R0 (also the MUX select source).</summary>
     public const int RegR0 = 0xC;
+    /// <summary>Combiner register id for temporary register R1.</summary>
     public const int RegR1 = 0xD;
+    /// <summary>Combiner register id for the V1+R0 sum pseudo-register (complement/clamp from final CW1).</summary>
     public const int RegV1R0Sum = 0xE;
+    /// <summary>Combiner register id for the final-combiner E*F product pseudo-register (zero outside it).</summary>
     public const int RegEfProd = 0xF;
 
     // Input mappings (psh_regs.h PS_INPUTMAPPING).
+    /// <summary>Input mapping: unsigned identity, max(x, 0).</summary>
     public const int MapUnsignedIdentity = 0x00;
+    /// <summary>Input mapping: unsigned invert, 1 - clamp(x, 0, 1).</summary>
     public const int MapUnsignedInvert = 0x20;
+    /// <summary>Input mapping: expand to [-1,1], 2 * max(x, 0) - 1.</summary>
     public const int MapExpandNormal = 0x40;
+    /// <summary>Input mapping: negated expand, -2 * max(x, 0) + 1.</summary>
     public const int MapExpandNegate = 0x60;
+    /// <summary>Input mapping: half-bias, max(x, 0) - 0.5.</summary>
     public const int MapHalfbiasNormal = 0x80;
+    /// <summary>Input mapping: negated half-bias, -max(x, 0) + 0.5.</summary>
     public const int MapHalfbiasNegate = 0xA0;
+    /// <summary>Input mapping: signed identity, x unchanged.</summary>
     public const int MapSignedIdentity = 0xC0;
+    /// <summary>Input mapping: signed negate, -x.</summary>
     public const int MapSignedNegate = 0xE0;
 
     // Output mappings (psh_regs.h PS_COMBINEROUTPUT).
+    /// <summary>Output mapping: identity, x.</summary>
     public const int OutIdentity = 0x00;
+    /// <summary>Output mapping: bias, x - 0.5.</summary>
     public const int OutBias = 0x08;
+    /// <summary>Output mapping: shift left one, x * 2.</summary>
     public const int OutShiftLeft1 = 0x10;
+    /// <summary>Output mapping: biased shift left one, (x - 0.5) * 2.</summary>
     public const int OutShiftLeft1Bias = 0x18;
+    /// <summary>Output mapping: shift left two, x * 4.</summary>
     public const int OutShiftLeft2 = 0x20;
+    /// <summary>Output mapping: shift right one, x / 2.</summary>
     public const int OutShiftRight1 = 0x30;
 
     // Output flag bits within an OCW word.
+    /// <summary>OCW flag: the CD pair uses a dot product instead of a multiply.</summary>
     public const uint FlagCdDot = 1u;
+    /// <summary>OCW flag: the AB pair uses a dot product instead of a multiply.</summary>
     public const uint FlagAbDot = 2u;
+    /// <summary>OCW flag: MUX-select on r0.a instead of summing AB and CD.</summary>
     public const uint FlagMux = 4u;
+    /// <summary>OCW flag: the CD result's blue component also writes alpha.</summary>
     public const uint FlagCdBlueToAlpha = 0x40u;
+    /// <summary>OCW flag: the AB result's blue component also writes alpha.</summary>
     public const uint FlagAbBlueToAlpha = 0x80u;
 
     // CONTROL flag bits (psh_regs.h PS_COMBINERCOUNTFLAGS), above the low stage-count byte.
+    /// <summary>CONTROL flag: MUX tests the MSB of r0.a (r0.a &gt;= 0.5) instead of its LSB.</summary>
     public const uint ControlMuxMsb = 0x1u;
+    /// <summary>CONTROL flag: each stage uses its own C0 constant, else stage 0's is shared.</summary>
     public const uint ControlUniqueC0 = 0x10u;
+    /// <summary>CONTROL flag: each stage uses its own C1 constant, else stage 0's is shared.</summary>
     public const uint ControlUniqueC1 = 0x100u;
 
     // Final-combiner setting bits (low byte of final CW1).
+    /// <summary>Final-combiner setting: clamp the V1+R0 sum to [0,1].</summary>
     public const uint FinalClampSum = 0x80u;
+    /// <summary>Final-combiner setting: the sum uses (1 - V1) instead of V1.</summary>
     public const uint FinalComplementV1 = 0x40u;
+    /// <summary>Final-combiner setting: the sum uses (1 - R0) instead of R0.</summary>
     public const uint FinalComplementR0 = 0x20u;
 
     /// <summary>Texture mode: stage produces (0,0,0,1).</summary>
@@ -764,7 +800,8 @@ public sealed class PshCombiner : ISnapshotable
         return ((flags & ControlUniqueC1) != 0) ? consts[(stage * 2) + 1] : consts[1];
     }
 
-    private float ReadComponent(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan, int component)
+    private float ReadComponent(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan,
+        int component)
     {
         if (reg == RegZero)
         {
@@ -806,7 +843,8 @@ public sealed class PshCombiner : ISnapshotable
         return regs[offset + component];
     }
 
-    private float ReadFinalComponent(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts, int reg, int chan, int component)
+    private float ReadFinalComponent(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts,
+        int reg, int chan, int component)
     {
         if (reg == RegEfProd)
         {
@@ -826,7 +864,8 @@ public sealed class PshCombiner : ISnapshotable
         return ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
-    private float ReadFinalAlpha(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts, int reg, int chan)
+    private float ReadFinalAlpha(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts,
+        int reg, int chan)
     {
         // Alpha channel select: BLUE reads .b, ALPHA reads .a.
         int component = chan != 0 ? 3 : 2;
@@ -855,7 +894,8 @@ public sealed class PshCombiner : ISnapshotable
         return ReadComponent(regs, fog, consts, stage, reg, chan, component);
     }
 
-    private void EvalStage(int stage, uint inputs, uint outputs, bool isAlpha, Span<float> regs, float[] fog, float[][] consts)
+    private void EvalStage(int stage, uint inputs, uint outputs, bool isAlpha, Span<float> regs, float[] fog,
+        float[][] consts)
     {
         DecodeInput((inputs >> 24) & 0xFFu, out int aReg, out int aChan, out int aMod);
         DecodeInput((inputs >> 16) & 0xFFu, out int bReg, out int bChan, out int bMod);
@@ -961,7 +1001,8 @@ public sealed class PshCombiner : ISnapshotable
         WriteVec(regs, muxDest, muxx, muxy, muxz, blueToAlpha: false);
     }
 
-    private void ReadMappedVec(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan, int mod, out float x, out float y, out float z)
+    private void ReadMappedVec(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan, int mod,
+        out float x, out float y, out float z)
     {
         if (chan != 0)
         {

@@ -12,7 +12,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(4);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x80, 0x06, 0x0100, 0, 18), out byte[] payload)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Equal(18, payload.Length);
         Assert.Equal(0x09, payload[4]);
@@ -26,7 +26,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(4);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x80, 0x06, 0x0200, 0, 25), out byte[] payload)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Equal(25, payload.Length);
         Assert.Equal(0x19, payload[2] | (payload[3] << 8));
@@ -43,12 +43,12 @@ public sealed class UsbHubTests
     {
         var three = new UsbHub(3);
         Assert.True(three.HandleSetup(new UsbSetupPacket(0xA0, 0x06, 0x2900, 0, 9), out byte[] threeDesc)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(new byte[] { 0x09, 0x29, 0x03, 0x0A, 0x00, 0x01, 0x00, 0x00, 0xFF }, threeDesc);
 
         var four = new UsbHub(4);
         Assert.True(four.HandleSetup(new UsbSetupPacket(0xA0, 0x06, 0x2900, 0, 9), out byte[] fourDesc)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(new byte[] { 0x09, 0x29, 0x04, 0x0A, 0x00, 0x01, 0x00, 0x00, 0xFF }, fourDesc);
     }
 
@@ -58,7 +58,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0xA3, 0x00, 0, 1, 4), out byte[] payload)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Equal(0x0100, payload[0] | (payload[1] << 8));
         Assert.Equal(0, payload[2] | (payload[3] << 8));
@@ -71,7 +71,7 @@ public sealed class UsbHubTests
         hub.Attach(0, new XidGamepad());
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0xA3, 0x00, 0, 1, 4), out byte[] payload)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(0x0101, payload[0] | (payload[1] << 8));
         Assert.Equal(0x0001, payload[2] | (payload[3] << 8));
 
@@ -100,12 +100,12 @@ public sealed class UsbHubTests
         var pad = new XidGamepad();
         hub.Attach(0, pad);
         Assert.True(pad.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0007, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         pad.CompleteStatusStage();
         Assert.Equal(7, pad.Address);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Equal(0, pad.Address);
         Assert.Equal(0x2, hub.GetPortStatus(0) & 0x2);
@@ -124,7 +124,7 @@ public sealed class UsbHubTests
         Assert.Null(hub.FindDevice(0));
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Same(pad, hub.FindDevice(0));
     }
@@ -141,12 +141,12 @@ public sealed class UsbHubTests
         Assert.Null(outer.FindDevice(0));
 
         Assert.True(outer.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 3, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(inner.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0001, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         inner.CompleteStatusStage();
         Assert.True(inner.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         Assert.Same(inner, outer.FindDevice(1));
         Assert.Same(pad, outer.FindDevice(0));
@@ -158,7 +158,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0005, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(0, hub.Address);
 
         hub.CompleteStatusStage();
@@ -172,16 +172,16 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x00, 0x09, 1, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         hub.CompleteStatusStage();
         Assert.True(hub.Configured);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x80, 0x08, 0, 0, 1), out byte[] config)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(new byte[] { 1 }, config);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x00, 0x09, 2, 0, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
     }
 
     [Fact]
@@ -190,15 +190,15 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0xA0, 0x00, 0, 0, 4), out byte[] status)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(new byte[] { 0, 0, 0, 0 }, status);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x20, 0x03, 1, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x20, 0x03, 2, 0, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x20, 0x01, 0, 0, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
     }
 
     [Fact]
@@ -207,13 +207,13 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 2, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 8, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 1, 1, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 4, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
     }
 
     [Fact]
@@ -223,13 +223,13 @@ public sealed class UsbHubTests
         hub.Attach(0, new XidGamepad());
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x01, 16, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.Equal(0, hub.GetPortChange(0));
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x01, 1, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x01, 3, 1, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
         hub.Attach(0, new XidGamepad());
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x23, 0x03, 4, 1, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
 
         hub.Reset();
 
@@ -252,9 +252,9 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x02, 0x01, 0, 0x81, 0), out _)
-            == UsbTransferResult.Ack);
+                    == UsbTransferResult.Ack);
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0x02, 0x01, 0, 0x82, 0), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
     }
 
     [Fact]
@@ -263,7 +263,7 @@ public sealed class UsbHubTests
         var hub = new UsbHub(3);
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0xC1, 0x06, 0x4200, 0, 16), out _)
-            == UsbTransferResult.Stall);
+                    == UsbTransferResult.Stall);
         Assert.True(hub.HandleOut(1, Array.Empty<byte>()) == UsbTransferResult.Stall);
         Assert.True(hub.CompleteControlOut(new byte[] { 1 }) == UsbTransferResult.Stall);
     }

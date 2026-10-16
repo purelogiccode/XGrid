@@ -111,7 +111,8 @@ public sealed class Nv2aFogTexModesTests
         return BitConverter.SingleToUInt32Bits(value);
     }
 
-    private static void MethodPush(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes, uint[] instruction, uint loadBase)
+    private static void MethodPush(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes,
+        uint[] instruction, uint loadBase)
     {
         for (int i = 0; i < 4; i++)
         {
@@ -295,7 +296,8 @@ public sealed class Nv2aFogTexModesTests
         pushes.Add((0x1760u, 0x00001042u));
     }
 
-    private static void PushTextureSlot(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes, int slot, uint offset, uint width, uint height)
+    private static void PushTextureSlot(System.Collections.Generic.List<(uint Method, uint Parameter)> pushes, int slot,
+        uint offset, uint width, uint height)
     {
         uint slotBase = 0x1B00u + ((uint)slot * 0x40u);
         uint format = 0x00000600u |

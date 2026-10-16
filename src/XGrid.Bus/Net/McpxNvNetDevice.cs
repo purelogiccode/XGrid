@@ -95,8 +95,9 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TxFlagUnderflow = 1u << 13;
     private const uint TxFlagError = 1u << 14;
     private const uint TxFlagValid = 1u << 15;
+
     private const uint TxFlagsConsumed = TxFlagValid | TxFlagRetryError | TxFlagDeferred
-        | TxFlagCarrierLost | TxFlagLateCollision | TxFlagUnderflow | TxFlagError;
+                                         | TxFlagCarrierLost | TxFlagLateCollision | TxFlagUnderflow | TxFlagError;
 
     private const int DescriptorSize = 8;
 

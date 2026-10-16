@@ -16,7 +16,16 @@ public static class FrameDiff
     [StructLayout(LayoutKind.Auto)]
     public readonly struct Result
     {
-        public Result(int width, int height, int diffPixels, int edgeBandPixels, int violations, int maxChannelDelta, int rgbDiffPixels)
+        /// <summary>Creates a golden-frame comparison result.</summary>
+        /// <param name="width">The frame width.</param>
+        /// <param name="height">The frame height.</param>
+        /// <param name="diffPixels">The number of pixels that differ at all.</param>
+        /// <param name="edgeBandPixels">The number of differing pixels inside the edge band.</param>
+        /// <param name="violations">The number of policy violations.</param>
+        /// <param name="maxChannelDelta">The maximum per-channel delta seen anywhere.</param>
+        /// <param name="rgbDiffPixels">The number of differing pixels whose RGB changed.</param>
+        public Result(int width, int height, int diffPixels, int edgeBandPixels, int violations, int maxChannelDelta,
+            int rgbDiffPixels)
         {
             Width = width;
             Height = height;
@@ -117,9 +126,9 @@ public static class FrameDiff
             {
                 int p = ((y * width) + x) * 4;
                 bool same = reference[p] == test[p] &&
-                    reference[p + 1] == test[p + 1] &&
-                    reference[p + 2] == test[p + 2] &&
-                    reference[p + 3] == test[p + 3];
+                            reference[p + 1] == test[p + 1] &&
+                            reference[p + 2] == test[p + 2] &&
+                            reference[p + 3] == test[p + 3];
                 if (same)
                 {
                     continue;
@@ -163,9 +172,9 @@ public static class FrameDiff
     private static bool SamePixel(ReadOnlySpan<byte> frame, int a, int b)
     {
         return frame[a] == frame[b] &&
-            frame[a + 1] == frame[b + 1] &&
-            frame[a + 2] == frame[b + 2] &&
-            frame[a + 3] == frame[b + 3];
+               frame[a + 1] == frame[b + 1] &&
+               frame[a + 2] == frame[b + 2] &&
+               frame[a + 3] == frame[b + 3];
     }
 
     private static bool InEdgeBand(bool[] edge, int width, int height, int x, int y)

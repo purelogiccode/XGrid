@@ -22,6 +22,7 @@ public static class VshProgram
 
     /// <summary>D3D scene constant correction (VSH_D3DSCM_CORRECTION).</summary>
     private const int D3DScmCorrection = 96;
+
     private const int AddressOutput = 15;
     private const int FogOutput = 5;
 
@@ -160,8 +161,10 @@ public static class VshProgram
         int outAddress = Field(token, 3, 3, 8) & 0xF;
         bool paired = mac != 0 && ilu != 0;
 
-        float[] a = ReadInput(token, Field(token, 2, 26, 2), Field(token, 2, 28, 4), 1, 6, 8, forceScalar: false, constants, inputs, registers, outputs, address);
-        float[] b = ReadInput(token, Field(token, 2, 11, 2), Field(token, 2, 13, 4), 2, 23, 25, forceScalar: false, constants, inputs, registers, outputs, address);
+        float[] a = ReadInput(token, Field(token, 2, 26, 2), Field(token, 2, 28, 4), 1, 6, 8, forceScalar: false,
+            constants, inputs, registers, outputs, address);
+        float[] b = ReadInput(token, Field(token, 2, 11, 2), Field(token, 2, 13, 4), 2, 23, 25, forceScalar: false,
+            constants, inputs, registers, outputs, address);
         float[] c = ReadInput(
             token,
             Field(token, 3, 28, 2),
@@ -332,7 +335,9 @@ public static class VshProgram
             case Ilu.Rsq:
                 Fill(result, c[0] == 0.0f
                     ? float.PositiveInfinity
-                    : float.IsInfinity(c[0]) ? 0.0f : 1.0f / MathF.Sqrt(MathF.Abs(c[0])));
+                    : float.IsInfinity(c[0])
+                        ? 0.0f
+                        : 1.0f / MathF.Sqrt(MathF.Abs(c[0])));
                 break;
             case Ilu.Exp:
                 result[0] = MathF.Pow(2.0f, MathF.Floor(c[0]));
@@ -516,7 +521,8 @@ public static class VshProgram
         {
             FogGenRadial => MathF.Sqrt((posX * posX) + (posY * posY) + (posZ * posZ)),
             FogGenPlanar => ((fogPlane[0] * posX) + (fogPlane[1] * posY) + (fogPlane[2] * posZ)) + fogPlane[3],
-            FogGenAbsPlanar => MathF.Abs(((fogPlane[0] * posX) + (fogPlane[1] * posY) + (fogPlane[2] * posZ)) + fogPlane[3]),
+            FogGenAbsPlanar => MathF.Abs(((fogPlane[0] * posX) + (fogPlane[1] * posY) + (fogPlane[2] * posZ)) +
+                                         fogPlane[3]),
             FogGenFogX => fogCoord,
             _ => Math.Clamp(specAlpha, 0f, 1f),
         };
@@ -585,10 +591,12 @@ public static class VshProgram
     {
         if (value > 0.0f || BitConverter.SingleToUInt32Bits(value) == 0)
         {
-            return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0x1F800000u), BitConverter.UInt32BitsToSingle(0x5F800000u));
+            return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0x1F800000u),
+                BitConverter.UInt32BitsToSingle(0x5F800000u));
         }
 
-        return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0xDF800000u), BitConverter.UInt32BitsToSingle(0x9F800000u));
+        return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0xDF800000u),
+            BitConverter.UInt32BitsToSingle(0x9F800000u));
     }
 
     private static float Min(float x, float y)

@@ -35,6 +35,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint GsS0Cr = 1u << 8;
     private const uint GsValidMask = (1u << 18) - 1;
     private const uint GsWclearMask = (1u << 15) | (1u << 11) | (1u << 10) | 1u;
+
     private const uint GsRoMask =
         (1u << 14) | (1u << 13) | (1u << 12) | (1u << 9) | (1u << 8) |
         (1u << 7) | (1u << 6) | (1u << 5) | (1u << 4) | (1u << 3) | (1u << 2) | (1u << 1);

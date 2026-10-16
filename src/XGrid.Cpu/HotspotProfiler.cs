@@ -334,27 +334,40 @@ public sealed class HotspotProfiler : IHotspotObserver
 
         writer.WriteLine(FormattableString.Invariant($"# hotspot top={topRows} total={TotalInstructions}"));
         writer.WriteLine(FormattableString.Invariant($"summary,totalInstructions,{TotalInstructions},1.000000"));
-        writer.WriteLine(FormattableString.Invariant($"summary,headVisits,{TotalHeadVisits},{TotalHeadVisits / total:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,trackedHeads,{TrackedHeadCount},{TrackedHeadCount / (double)MaxTrackedHeads:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,headOverflowVisits,{HeadsOverflow},{HeadsOverflow / total:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,headWindows,{HeadWindows},{(double)HeadWindows * HeadWindowInstructions / total:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,headEvictions,{HeadEvictions},{HeadEvictions / heads:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,headVisits,{TotalHeadVisits},{TotalHeadVisits / total:F6}"));
+        writer.WriteLine(FormattableString.Invariant(
+            $"summary,trackedHeads,{TrackedHeadCount},{TrackedHeadCount / (double)MaxTrackedHeads:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,headOverflowVisits,{HeadsOverflow},{HeadsOverflow / total:F6}"));
+        writer.WriteLine(FormattableString.Invariant(
+            $"summary,headWindows,{HeadWindows},{(double)HeadWindows * HeadWindowInstructions / total:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,headEvictions,{HeadEvictions},{HeadEvictions / heads:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,fetches,{Fetches},{Fetches / total:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,fetchCrossPage,{FetchCrossPage},{FetchCrossPage / (Fetches == 0 ? 1.0 : Fetches):F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,fetchSlowFallbacks,{FetchSlowFallbacks},{FetchSlowFallbacks / (Fetches == 0 ? 1.0 : Fetches):F6}"));
+        writer.WriteLine(FormattableString.Invariant(
+            $"summary,fetchCrossPage,{FetchCrossPage},{FetchCrossPage / (Fetches == 0 ? 1.0 : Fetches):F6}"));
+        writer.WriteLine(FormattableString.Invariant(
+            $"summary,fetchSlowFallbacks,{FetchSlowFallbacks},{FetchSlowFallbacks / (Fetches == 0 ? 1.0 : Fetches):F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,tlbHits,{TlbHits},{TlbHits / translates:F6}"));
         writer.WriteLine(FormattableString.Invariant($"summary,tlbMisses,{TlbMisses},{TlbMisses / translates:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,dataReadsRam,{DataReadsRam},{DataReadsRam / accesses:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,dataWritesRam,{DataWritesRam},{DataWritesRam / accesses:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,dataReadsMmio,{DataReadsMmio},{DataReadsMmio / accesses:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,dataWritesMmio,{DataWritesMmio},{DataWritesMmio / accesses:F6}"));
-        writer.WriteLine(FormattableString.Invariant($"summary,splitAccesses,{SplitAccesses},{SplitAccesses / accesses:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,dataReadsRam,{DataReadsRam},{DataReadsRam / accesses:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,dataWritesRam,{DataWritesRam},{DataWritesRam / accesses:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,dataReadsMmio,{DataReadsMmio},{DataReadsMmio / accesses:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,dataWritesMmio,{DataWritesMmio},{DataWritesMmio / accesses:F6}"));
+        writer.WriteLine(
+            FormattableString.Invariant($"summary,splitAccesses,{SplitAccesses},{SplitAccesses / accesses:F6}"));
 
         // §131 leg (d): emitted only when the decode cache ran, so flag-off
         // reports remain byte-identical to the §126/§131 baselines.
         if (Blocks is { } blocks)
         {
-            writer.WriteLine(FormattableString.Invariant($"summary,blockDispatches,{blocks.Dispatches},{(blocks.Instructions == 0 ? 0 : (double)blocks.Dispatches / blocks.Instructions):F6}"));
+            writer.WriteLine(FormattableString.Invariant(
+                $"summary,blockDispatches,{blocks.Dispatches},{(blocks.Instructions == 0 ? 0 : (double)blocks.Dispatches / blocks.Instructions):F6}"));
             writer.WriteLine(FormattableString.Invariant($"summary,blockInstructions,{blocks.Instructions},"));
             writer.WriteLine(FormattableString.Invariant($"summary,blockBuilds,{blocks.Builds},"));
             writer.WriteLine(FormattableString.Invariant($"summary,blockVerifyFailures,{blocks.VerifyFailures},"));
@@ -363,8 +376,12 @@ public sealed class HotspotProfiler : IHotspotObserver
         if (DecodeCacheHits != 0 || DecodeCacheMisses != 0)
         {
             double decodes = DecodeCacheHits + DecodeCacheMisses;
-            writer.WriteLine(FormattableString.Invariant($"summary,decodeCacheHits,{DecodeCacheHits},{DecodeCacheHits / decodes:F6}"));
-            writer.WriteLine(FormattableString.Invariant($"summary,decodeCacheMisses,{DecodeCacheMisses},{DecodeCacheMisses / decodes:F6}"));
+            writer.WriteLine(
+                FormattableString.Invariant(
+                    $"summary,decodeCacheHits,{DecodeCacheHits},{DecodeCacheHits / decodes:F6}"));
+            writer.WriteLine(
+                FormattableString.Invariant(
+                    $"summary,decodeCacheMisses,{DecodeCacheMisses},{DecodeCacheMisses / decodes:F6}"));
         }
 
         foreach ((Mnemonic mnemonic, ulong hits) in TopMnemonics(topRows))

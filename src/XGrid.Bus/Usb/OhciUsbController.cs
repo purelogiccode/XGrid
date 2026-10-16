@@ -1031,9 +1031,11 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
         // only the CBP=0 clear and the toggle update are success-only. The
         // Xbox stack reads back the advanced CBP to learn the actual length.
         uint condition = result == UsbTransferResult.Ack &&
-            (consumed == length || (direction == 2 && (tdFlags & TdRound) != 0))
+                         (consumed == length || (direction == 2 && (tdFlags & TdRound) != 0))
             ? CcNoError
-            : result == UsbTransferResult.Ack ? CcDataUnderrun : CcStall;
+            : result == UsbTransferResult.Ack
+                ? CcDataUnderrun
+                : CcStall;
         if (consumed > 0)
         {
             if (((cbp & 0xFFFu) + (uint)consumed) > 0xFFFu)
@@ -1285,7 +1287,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     private void RetireTd(
-        uint tdAddress, uint tdFlags, uint cbp, uint tdNext, uint delay, uint condition, bool isPeriodic, ref uint edHead)
+        uint tdAddress, uint tdFlags, uint cbp, uint tdNext, uint delay, uint condition, bool isPeriodic,
+        ref uint edHead)
     {
         edHead &= ~DptrMask;
         edHead |= tdNext & DptrMask;
