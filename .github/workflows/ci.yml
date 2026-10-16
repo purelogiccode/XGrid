@@ -3,7 +3,11 @@ name: CI
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   pull_request:
+  workflow_dispatch:
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
@@ -11,12 +15,39 @@ env:
   CI: "true"
 
 jobs:
-  build-test:
+  # Every push to master builds + tests on ubuntu only (~1x minutes).
+  # Docs-only commits skip CI entirely via paths-ignore above.
+  # The full 3-OS matrix runs on pull requests and manual dispatches.
+  quick:
+    name: Build and test (ubuntu-24.04)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: Build
+        run: dotnet build XGrid.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test XGrid.sln -c Release --no-build --no-restore
+
+      - name: Format verification
+        run: dotnet format XGrid.sln --verify-no-changes --no-restore
+
+  full:
     name: Build and test (${{ matrix.os }})
+    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
