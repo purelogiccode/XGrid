@@ -7846,3 +7846,43 @@ stays opt-in, default off — the §140 provisional status is confirmed, no
 default-flip. Next JIT work per the direction file: specialize semantics
 further (dispatch is not dominant); DynamicMethod stays rejected.
 
+## 142. JIT slice 5: ALU-with-memory family behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. The §141 histogram instrument paid off
+immediately: a 1B menu+triangle `--spec-exec` pair ranked fallback shapes
+with both titles agreeing — Jcc/imm (control), Cmp r/m32 + Cmp m/imm32
+(20M/57M and 19M/57M executions), Cli/Sti (boundary), Fld/Fstp (x87).
+Jcc terminates blocks (control flow — needs a runner EIP-check design, a
+later slice); Cli/Sti must keep the interpreter (IF flips change IRQ
+polling at boundaries); x87 stays out. So slice 5 = the ALU-mem family.
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecAluMem` covers Add/Sub/
+And/Or/Xor/Cmp/Test × (reg,mem)/(mem,reg)/(mem,imm) × 8/16/32 (63 shapes)
+plus Mov mem,imm × 8/16/32 — 66 pre-specialized handlers mirroring the
+interpreter bodies through the same `ReadMemory`/`WriteMemory` (fault
+order, invalidation and idle-notes identical by construction). Adc/Sbb
+stay out (carry live), like slices 1+2. Resolver falls through
+(`?? ResolveSpecAluMem`) so existing shapes are untouched.
+`DecodedBlockCache` histogram from §141 is the ongoing instrument;
+CLI prints top-8 `Spec fallback` lines (spec-only output, flag-off
+byte-identical). `scripts/spec-exec-soak.ps1` normalizer strips them.
+
+Tests: `AluMem_Shapes_AtAllSizes_MatchInterpreter` (66 shapes vs the
+interpreter, incl. /0–/7 group encodings and F6/F7 test forms; one
+modrm fix en route — `test m,r` must address `[EBX]`, not `[EAX]`);
+`Resolver_CoversOnlyTheInitialShapes` updated (mov m,imm now resolves).
+Suite **1343/1343**, format clean, zero warnings.
+
+Goldens (18-leg matrix reps 5–7, `D:\spec-soak\legs`, all PASS): SHAs
+exact both anchors, `vec=0`, counters exact, `verifyFailures=0`,
+full logs identical modulo mode lines. Fallbacks absorbed: menu
+392M→339M, triangle 494M→374M; Cmp shapes gone from the top-8. Median
+walls within-matrix: menu cache 158.66 / spec 151.69 = **1.046x**,
+triangle cache 88.19 / spec 81.18 = **1.086x**. Thin again — consistent
+with §138 (helpers dominate, and the new handlers still call the same
+`ReadMemory`/`WriteMemory`). Remaining top fallbacks: Jcc (both
+conditions, both titles), Cli/Sti, Fld/Fstp, Movq/Movntq (MMX),
+Jmp/Call/Ret. Next: Jcc-specialization design (runner must detect
+EIP divergence) or MMX mov shapes — measurement first, as always.
+Flag stays opt-in.
+

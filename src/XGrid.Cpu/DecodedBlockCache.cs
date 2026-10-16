@@ -94,6 +94,19 @@ public sealed class DecodedBlockCache
     /// <summary>Gets members executed through the unrolled runner (slice 2).</summary>
     public ulong SpecRan { get; private set; }
 
+    /// <summary>Maximum retained fallback-shape histogram entries.</summary>
+    public const int MaxFallbackShapes = 512;
+
+    private readonly Dictionary<XboxCpu.SpecShape, ulong> _fallbackShapes = new();
+
+    /// <summary>
+    /// Gets fallback-shape execution counts, tallied at serve time while
+    /// specialization is enabled (slice-3 measurement). Totals always equal
+    /// <see cref="ShapeFallbacks"/>; beyond <see cref="MaxFallbackShapes"/>
+    /// distinct shapes only existing keys keep counting.
+    /// </summary>
+    public IReadOnlyDictionary<XboxCpu.SpecShape, ulong> FallbackShapes => _fallbackShapes;
+
     /// <summary>
     /// Drops all blocks and the cursor. Used at the existing physical-page and
     /// mapping invalidation choke points, including empty-table flushes. No
@@ -135,6 +148,39 @@ public sealed class DecodedBlockCache
     public void NoteSpecRan()
     {
         SpecRan++;
+    }
+
+    private void NoteFallbackShape(in DecodedInstruction instruction)
+    {
+        XboxCpu.SpecShape shape = XboxCpu.SpecShape.From(instruction);
+        if (_fallbackShapes.TryGetValue(shape, out ulong count))
+        {
+            _fallbackShapes[shape] = count + 1;
+        }
+        else if (_fallbackShapes.Count < MaxFallbackShapes)
+        {
+            _fallbackShapes[shape] = 1;
+        }
+    }
+
+    /// <summary>
+    /// Returns the top fallback shapes by execution count (diagnostic only;
+    /// never on a hot path).
+    /// </summary>
+    /// <param name="count">Maximum shapes to return.</param>
+    /// <returns>Shapes ordered by descending execution count.</returns>
+    public (XboxCpu.SpecShape Shape, ulong Count)[] TopFallbackShapes(int count)
+    {
+        var tallies = new List<KeyValuePair<XboxCpu.SpecShape, ulong>>(_fallbackShapes);
+        tallies.Sort(static (a, b) => b.Value.CompareTo(a.Value));
+        int take = Math.Min(count, tallies.Count);
+        var top = new (XboxCpu.SpecShape Shape, ulong Count)[take];
+        for (int i = 0; i < take; i++)
+        {
+            top[i] = (tallies[i].Key, tallies[i].Value);
+        }
+
+        return top;
     }
 
     /// <summary>
@@ -201,6 +247,7 @@ public sealed class DecodedBlockCache
             if (_currentHandler is null)
             {
                 ShapeFallbacks++;
+                NoteFallbackShape(entry.Instruction);
             }
             else
             {
