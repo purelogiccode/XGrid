@@ -7685,3 +7685,131 @@ Wave-13 probe task (`wave/jit-codegen-scope`, 4 commits, suite 1316 green, zero
   `4235–4278` (CS base/mode capture), `4300–4310` (per-instruction PCs),
   `4353–4370` (single-step/IRQ-inhibit/page termination); no implementation
   copied; XGrid keeps every original boundary (stronger than QEMU chaining).
+
+
+## 139. JIT semspec spike: measured winner + build design + recipe (2026-10-15)
+
+READ-ONLY spike (wave/jit-semspec-spike, zero src/tests diff). Harness: Ryzen 9 7900 host (PETERSONPC, 24 threads), SDK 9.0.319, runtime 9.0.21, Release, profiler OFF for comparisons. Prototypes + raw logs uncommitted in wt-data/wave/semspec*/ + wt-data/wave/guests/; independent re-run log wt-data/wave/verify-rerun.log.
+
+## 1. Baseline reproduced on this host
+
+(a) Guest walls (§138 Table-a shape, 1B steps, --gpu sw, back-to-back, binding SHAs + counters exact on all six runs, LastFault vec=0): menu off/on/on2 = 494.17/212.22/162.86 s (2.33x/3.03x); triangle = 297.09/89.40/98.08 s (3.32x/3.03x). SHA menu 4EF1FBF6… draws=33632 skipped=1402 frames=686 stalls=686; triangle A1740DE0… draws=2706 frames=68 stalls=34 pixels=89142121; hit shares 0.9953/0.9980 reproduce §134; verifyFailures=0. Ratios agree with §138 (2.14x/3.30x) and §137 (2.56x/3.04x) within shared-host variance; menu on/on2 spread (212->163 s, 23%) is host contention, which is why the build gate below requires median-of-3. BMP SHAs independently re-hashed this session (Get-FileHash): menu-on 4EF1FBF6… and triangle-on A1740DE0… both exact; menu-on.log re-read: LastFault vec=0, draws=33632 skipped=1402 frames=686 stalls=686, hitShare=0.9953, verifyFailures=0.
+
+(b) Micro baseline (§138 14.285 ns/insn helper loop): faithful repro semspec-real (hand-assembled 33-insn stream, same MOV/ADD/XOR/SUB/INC/AND/CMP/NOP x4 + JMP shape; real product Decoder.Decode with per-index mnemonic asserts; ACTUAL private XboxCpu.ExecuteInstruction forwarded via a DynamicMethod adapter, per-insn TSC++, EIP reset per block; ProjectReference to product XGrid.Cpu — plain Release build; ImportDirectoryBuildProps=false does NOT restore here). V0R tier-off median 13.767 (13.075–14.427, sd 0.528) — within ~4% of 14.285; residual is harness detail (no per-insn budget decrement, ref-forwarding vs in-copy). Default runtime: 10.494 (10.076–12.172). INDEPENDENT re-run same host: tier-off V0R 10.805 (10.523–11.142), default V0R 8.313 (8.303–11.619, trial-0 tiering warmup 51.6 then stable) — absolute micros float ~20% run-to-run on this shared host; ranking and winner margin below are unaffected (see verify-rerun.log).
+
+## 2. Candidates, in order — winner by numbers only
+
+All variants hash-gated to identical end state (regs/flags/EIP) before any timing is accepted; the gate caught two real scratch bugs first (V3 IL stack imbalances; V4R EIP-length accounting) — hashes mismatched, timings discarded, fixed, re-run.
+
+Table R (REAL product bodies, rotated head-to-head, 7 trials x 3.3M insns): V0R helper loop 13.767 (13.075–14.427) tier-off / 10.494 (10.076–12.172) default; V2R (a2) per-shape table over real AluOps/Context, zero switches 4.689 (4.405–5.376), 2.94x / 5.763 (4.434–8.721 tier-transition outlier), 1.82x; V4R (c) hand-unrolled C# over the same specialized bodies 2.313 (2.156–2.957), 5.95x / 2.386 (2.240–3.001), 4.40x. Re-run: V2R 3.849/3.844, V4R 1.978/1.906 — same ranking, bands never overlap in ANY run. Model-harness Table M (lean bodies, same ranking): V0 5.473 / V1 (a1) per-mnemonic delegate 5.412 (1.01x — worthless alone) / V2 4.519 (1.21x) / V4 unrolled 3.182 (1.72x) / V3 (b) DynamicMethod straight-line block 2.881 (1.90x, re-run 2.856 vs V4 3.150 = ~9.4% premium); construction ~1.8 ms + ~43 KB per 33-insn block with boundary checks retained (vs §138's 124.6 us/6 KB for a leaner emission — cost scales with retained checks).
+
+WINNER: V4R (pre-specialized per-shape handlers + unrolled block runner in plain C#, NO emitter). Beats 14.285 AND this-host V0R with variance-proof margins in every observed run, both runtimes (max V4R 3.001 vs min V0R 8.303 — no overlap anywhere). (b) DynamicMethod measured for hot shapes: works, hash-exact, but only ~10% over unrolled C# — REJECTED for the next slice (second negative result for managed codegen as a dispatch play stands; the positive result is specialization-without-codegen). Scope honesty per §138: micros cover dispatch + reg/imm bodies only; title execute is dominated by memory/data helpers (76% menu / 29% triangle), so micro ratios do not transfer 1:1 — the build gate is title walls, not micros.
+
+## 3. Implementation design (every standing constraint honored)
+
+Shape key baked per member at FORM time (never live state): (mnemonic, op1kind, op2kind, size, Jcc condition, seg-override-or-none). GPR indices, immediates, displacements, EFLAGS, segments and addresses stay DATA. Control/privileged/mode-changing/REP/string/IO/FPU/invalid shapes are NOT specialized: they end blocks (as-landed Form) and keep the interpreter. Initial cover: Mov r,r/r,imm/r,m/m,r; Add/Sub/And/Or/Xor r,r/r,imm; Cmp/Test r,r/r,imm; Inc/Dec r; Lea; Push/Pop r/imm; Nop (HotspotProfiler top: menu Mov 33.8/Jcc 17.6/Dec 10.3, triangle Mov 25.8/Jcc 22.3/Cmp 12.2/Nop 11.3; Jcc/Jmp/Call/Ret stay control terminators). Memory shapes bake kind+size+segment, still call ReadMemory/WriteMemory (bus/TLB cost unchanged; fault order preserved by advancing Eip only after successful completion, exactly like ExecuteInstruction's nextEip-at-end). Storage/lifetime: resolve in DecodedBlockCache.Form from valid entries only; store handlers IN the Block record (shared lifetime); invalidation rides §134 unchanged (Invalidate drops derived handlers with blocks; held cursor explicitly discarded; no new hooks). NO elision: per-member cursor check (as-landed TryNext), IRQ poll at the Step site (delivered IRQ -> EndBoundary, budget consumed), TSC++, per-member Eip, exact fault EIP/vector/error/CR2, #UD stays interpreter-served. Step() stays one-boundary; Execute() uses the unrolled runner ONLY with break/trace disarmed, else the member-cursor path (4096-step cadence + pre-insn transparency bit-identical). Hotspot/idle Observe + 15-entry NoteAccess replay stay per member in both paths. Flag --spec-exec default-off (implies --block-exec + cache); --block-verify extended to before-member compare -> NoteVerifyFailure path. Counters: shapeHits, shapeFallbacks, specBlocks, verifyFailures. Host-only: CpuStateVersion stays 1, no snapshot change, no new packages, TreatWarningsAsErrors, nullable, format clean, plain [Fact].
+
+## 4. Next-slice recipe + acceptance gate
+
+Slice 1: shape table + Form-time resolution + cursor-served handlers. Slice 2: unrolled runner for all-specialized blocks (break/trace disarmed only). No DynamicMethod, no packages. Gate: (i) unit tests — every shape at 8/16/32, seg overrides, mem-shape fault EIP/vector/CR2 vs interpreter, #UD terminator, mode/CS-alias keys, SMC mid-block, PT change, CR3/INVLPG/reset/load, cap eviction with live cursor, IRQ at every member incl. IF flip, one-Step + budget-1/N transparency, idle NoteAccess counts, verify-before-execute, trace/break-log differential; (ii) full suite green, format clean; (iii) menu + triangle 1B off/spec/verify: binding SHAs + ALL counters exact, verifyFailures=0, flag-off byte-identical modulo announced paths; (iv) wall gate (profiler OFF, back-to-back, median of 3, same host): spec faster than cache-only on BOTH titles — else report, keep opt-in, no fake gate.
+
+## 5. Sources
+
+Product: XboxCpu.cs:102-116 (IRQ boundary), :333+/891 (dispatch + fall-through Eip), :894-937 (ExecuteAlu), :939-986 (kind switches); XboxCpuDecodeCache.cs:169+ (fetch integration, NoteAccess replay); DecodeCache.cs:15-50/69+ (entry, key/invalidation contract); DecodedBlockCache.cs:11+ (as-landed blocks); XboxCpuSnapshots.cs:12 (version 1); Cli/Program.cs:245-264 (flags). Reference: xemu-0.8.136 target/i386/tcg/translate.c:4235-4278/4300-4310/4353-4370 (per §138, facts only). Prior notes §§134/136/137/138. Full design text: wt-data/wave/section139-final.md.
+
+## 140. JIT semspec build: V4R winner lands behind --spec-exec (2026-10-15)
+
+Branch `wave/jit-semspec` (merged). Implements the §139 spike recipe (slices 1+2, no
+emitter): the spike's measured winner V4R (pre-specialized per-shape handlers
++ unrolled block runner in plain C#, 5.95x/4.40x over the helper loop with
+non-overlapping bands; DynamicMethod rejected at ~10% over unrolled C#).
+
+## What landed
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs` (new): `XboxCpu.SpecHandler` delegate
+(cpu + member; EIP advanced only after successful completion, exactly like
+`ExecuteInstruction`'s nextEip-at-end, so faults keep precise EIP),
+`XboxCpu.SpecShape` key (mnemonic, op1kind, op2kind, size, Jcc condition,
+seg-override-or-none; GPR indices/immediates/displacements stay data) and the
+form-time resolver with 69 cached (allocation-free) handlers. Initial cover
+exactly per recipe: Mov r,r/r,imm/r,m/m,r; Add/Sub/And/Or/Xor r,r/r,imm;
+Cmp/Test r,r/r,imm; Inc/Dec r; Lea r,m; Push r/imm; Pop r; Nop, each at
+8/16/32. Every body is the verbatim interpreter case with kinds pre-resolved
+(same call sequence into Context/AluOps/ReadMemory/WriteMemory/Push/Pop/
+ComputeAddress, including Push's ESP-before-write partial order). Adc/Sbb
+(carry live), control/privileged/mode/REP/string/IO/FPU/invalid and all other
+shapes resolve null and keep the interpreter. `Terminates` unchanged.
+
+`DecodedBlockCache`: `SpecEnabled` (default off; enabling invalidates
+handler-less blocks), handlers stored IN the Block record (shared lifetime;
+invalidation rides §134 unchanged), `CurrentHandler` for the just-served
+member, counters ShapeHits/ShapeFallbacks/SpecBlocks/SpecRan (VerifyFailures
+shared with the `--block-verify` path). `TryNext` signature unchanged.
+
+`Step` (slice 1): serves the cursor handler with unchanged boundary/fault/
+observe treatment; flag-off path byte-identical (untouched branch).
+`Execute` (slice 2): `RunSpecBlock` serves consecutive members without
+returning through Step per member -- TSC++, IRQ poll at the Step site
+(delivered IRQ -> EndBoundary + budget unit consumed), full-window verify
+before execution with the Step-identical self-healing DecodeFresh path (no
+double-count: fresh members skip NoteHit exactly like Step), #UD/#PF paths
+mirrored, 15-entry idle NoteAccess replay, hotspot/idle Observe per member,
+fallback members run ExecuteInstruction in-runner (cursor never rewound).
+Only used inside Execute; trace/break-log callers use Step (member-cursor
+path, 4096 cadence + pre-insn transparency unchanged).
+
+CLI `--spec-exec` (default off; implies decode cache + block exec),
+announcement + gated `Spec stats` line (all other lines byte-identical in
+every other mode). No snapshot change (host-only), no packages.
+
+## Tests (16 new, suite 1340 = 1324 + 16)
+
+`SpecExecutionTests`: Mov/Alu/CmpTest/IncDec-Lea-PushPop-Nop at 8/16/32 vs
+the interpreter (full state + whole-RAM equality), FS-override mem shapes,
+resolver cover/exclusion pins (incl. adc/sbb/mov-mem-imm/push-mem/inc-mem/
+control/traps/#UD excluded), control-mix loop (ShapeHits+Fallbacks+SpecRan),
+warm-block mem-fault precision (vector/EIP/CR2 + committed prefix), #UD
+terminator, IRQ at the 3rd member + STI IF-flip delivery positions, 200-round
+Step/Execute(i) transparency incl. DecodeCacheHits/DecodeCount/profiler
+totals, BlockVerify stale-member tripwire (block + decode counters),
+cap-with-live-cursor, mode-change redirect, flag-off default pins.
+
+Fail-pre-fix evidence: the suite caught a real test-harness trap during
+development (bare IRET after #PF pops the pushed error code as EIP --
+identical on both sides, so the differential held; the test now enters the
+handler once and rewinds EIP instead). No product fail-pre-fix stunt needed:
+goldens below are the behavioral gate.
+
+## Goldens (1B steps, --gpu sw, profiler OFF, sequential same-host, BOSS-run)
+
+Validation recipe executed by BOSS directly (worker handoff, attempts
+exhausted on a provider-hiccup-poisoned session): six off/cache/spec pairs
+via `wt-data/wave/run-pairs.ps1` + two specverify legs, all PASS:
+
+- triangle: off 299.15 s / cache 92.11 s / spec 78.85 s / specverify 161.06 s;
+  SHA `A1740DE0…` exact on all four; NV2A table exact
+  (draws=2706 skipped=0 frames=68 stalls=34); spec/cache = 1.17x.
+- menu: off 379.67 s / cache 164.30 s / spec 153.50 s / specverify 284.96 s;
+  SHA `4EF1FBF6…` exact on all four; NV2A table exact
+  (draws=33632 skipped=1402 frames=686 stalls=686); spec/cache = 1.07x.
+- `LastFault vec=0` every run; `verifyFailures=0` on block, spec, and decode
+  paths of both specverify legs (triangle specRan=503961463,
+  menu specRan=603218307).
+- off-vs-spec log diff: zero lines differ after stripping Decode/Block/Spec
+  + frame-path lines (both titles, 282/282 and 243/243 lines).
+- tools/wave suite 42/42 + typecheck clean alongside.
+- Honest caveat: single runs, not median-of-3 (recipe asked median); the menu
+  margin is thin (7%) but positive on the same host back-to-back. Flag stays
+  opt-in; no fake gate.
+
+## Provenance (wave-15 ops record)
+
+Spike (§139) done clean in 3.7 min. Build worker implemented slices 1+2 and
+committed (`4d0b5b2`, tree clean, 16 tests) but hit `provider.invalid-output`
+mid-validation, then re-prompted the damaged session on resume and died in
+seconds -- attempts exhausted with validation unrun, reported blocked with an
+exact resume recipe instead of a fake done. BOSS ran the recipe verbatim. Tool
+lesson (post-`tools/wave` -- the runner is retired after this wave): retries
+after `provider.invalid-output` must start a fresh session; re-prompting the
+broken one is doomed. Same root lesson as the wave-14 spike loss.
+
