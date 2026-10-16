@@ -95,6 +95,7 @@ public sealed class SevenEosQuirkTests
         uint? Read(uint va) => memory.TryGetValue(va, out uint value) ? value : null;
         uint writtenVa = 0;
         uint writtenValue = 0xFFFFFFFFu;
+
         void Write(uint va, uint value)
         {
             writtenVa = va;

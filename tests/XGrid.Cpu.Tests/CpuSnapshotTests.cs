@@ -27,7 +27,8 @@ public sealed class CpuSnapshotTests
         Assert.True(cpu.Context.Halted);
 
         // Dirty every directly-settable field with unmistakable values.
-        uint[] gprs = { 0xA1A1A1A1, 0xB2B2B2B2, 0xC3C3C3C3, 0xD4D4D4D4, 0xE5E5E5E5, 0xF6F6F6F6, 0x17171717, 0x28282828 };
+        uint[] gprs =
+            { 0xA1A1A1A1, 0xB2B2B2B2, 0xC3C3C3C3, 0xD4D4D4D4, 0xE5E5E5E5, 0xF6F6F6F6, 0x17171717, 0x28282828 };
         for (int i = 0; i < 8; i++)
         {
             cpu.Context.WriteRegister((Gpr)i, gprs[i]);

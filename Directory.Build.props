@@ -9,7 +9,10 @@
     <Deterministic>true</Deterministic>
     <NeutralLanguage>en</NeutralLanguage>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Tests and benchmarks are exempt: xUnit fact names are the documentation. -->
+    <GenerateDocumentationFile Condition="$(MSBuildProjectName.Contains('.Tests'))">false</GenerateDocumentationFile>
+    <GenerateDocumentationFile Condition="$(MSBuildProjectName.Contains('Benchmark'))">false</GenerateDocumentationFile>
 
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>

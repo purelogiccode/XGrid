@@ -28,7 +28,7 @@ public sealed class PresentUploadTests
         public uint ReadPhysical(uint address)
         {
             return (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) |
-                           (_data[address + 3] << 24));
+                          (_data[address + 3] << 24));
         }
     }
 
@@ -110,11 +110,11 @@ public sealed class PresentUploadTests
             nv2A,
             memory,
             (0x0208u, 0x00000104u), // surface format: pitch type, color 4-byte
-            (0x020Cu, pitch),       // color pitch
+            (0x020Cu, pitch), // color pitch
             (0x0200u, 0x00080000u), // clip H width=8
             (0x0204u, 0x00040000u), // clip V height=4
-            (0x0210u, surface),     // color offset
-            (0x012Cu, 0u));         // flip increment write
+            (0x0210u, surface), // color offset
+            (0x012Cu, 0u)); // flip increment write
 
         Assert.Equal(1uL, nv2A.FramesPresented);
         Assert.False(nv2A.PusherCapped);
@@ -140,18 +140,19 @@ public sealed class PresentUploadTests
     }
 
     [Theory]
-    [InlineData(0u, 2u, 8u, 4u)]   // zero width
-    [InlineData(3u, 0u, 12u, 4u)]  // zero height
+    [InlineData(0u, 2u, 8u, 4u)] // zero width
+    [InlineData(3u, 0u, 12u, 4u)] // zero height
     [InlineData(4097u, 2u, 16388u, 4u)] // width over the dimension cap
-    [InlineData(3u, 4097u, 12u, 4u)]    // height over the dimension cap
-    [InlineData(3u, 2u, 0u, 4u)]   // zero pitch
-    [InlineData(4u, 2u, 15u, 4u)]  // pitch narrower than a row
-    [InlineData(3u, 2u, 12u, 2u)]  // non-4-byte format
+    [InlineData(3u, 4097u, 12u, 4u)] // height over the dimension cap
+    [InlineData(3u, 2u, 0u, 4u)] // zero pitch
+    [InlineData(4u, 2u, 15u, 4u)] // pitch narrower than a row
+    [InlineData(3u, 2u, 12u, 2u)] // non-4-byte format
     public void BuildUploadPixels_InvalidRecord_ReturnsFalse(
         uint width, uint height, uint pitch, uint colorBytes)
     {
         var memory = new ArrayMemory();
-        Assert.False(PresentUpload.TryBuildUploadPixels(memory, 0x1000u, width, height, pitch, colorBytes, out byte[]? rgba));
+        Assert.False(PresentUpload.TryBuildUploadPixels(memory, 0x1000u, width, height, pitch, colorBytes,
+            out byte[]? rgba));
         Assert.Null(rgba);
     }
 
@@ -167,7 +168,7 @@ public sealed class PresentUploadTests
     [Fact]
     public void BuildUploadPixels_NullMemory_Throws()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => PresentUpload.TryBuildUploadPixels(null!, 0x1000u, 3, 2, 12, 4, out byte[]? _));
+        Assert.Throws<ArgumentNullException>(() =>
+            PresentUpload.TryBuildUploadPixels(null!, 0x1000u, 3, 2, 12, 4, out byte[]? _));
     }
 }

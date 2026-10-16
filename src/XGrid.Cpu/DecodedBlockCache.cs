@@ -147,7 +147,8 @@ public sealed class DecodedBlockCache
     public bool TryNext(DecodeCache decodes, uint linear, int operandSize, int addressSize, out DecodeCacheEntry entry)
     {
         Block? block = _current;
-        if (block is not null && (_expectedLinear != linear || block.OperandSize != operandSize || block.AddressSize != addressSize))
+        if (block is not null && (_expectedLinear != linear || block.OperandSize != operandSize ||
+                                  block.AddressSize != addressSize))
         {
             Redirects++;
             block = null;
@@ -157,7 +158,8 @@ public sealed class DecodedBlockCache
 
         if (block is null)
         {
-            if (_blocks.TryGetValue(linear, out block) && block.OperandSize == operandSize && block.AddressSize == addressSize)
+            if (_blocks.TryGetValue(linear, out block) && block.OperandSize == operandSize &&
+                block.AddressSize == addressSize)
             {
                 Hits++;
             }
@@ -225,8 +227,8 @@ public sealed class DecodedBlockCache
         uint next = linear;
         uint physicalPage = 0;
         while (count < MaxInstructions && (next >> 12) == (linear >> 12)
-            && (next & 0xFFF) <= 0x1000 - Decoder.MaxInstructionLength
-            && decodes.TryGet(next, operandSize, addressSize, out DecodeCacheEntry entry))
+                                       && (next & 0xFFF) <= 0x1000 - Decoder.MaxInstructionLength
+                                       && decodes.TryGet(next, operandSize, addressSize, out DecodeCacheEntry entry))
         {
             if (count == 0)
             {

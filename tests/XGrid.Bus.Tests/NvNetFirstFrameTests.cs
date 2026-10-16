@@ -102,9 +102,9 @@ public sealed class NvNetFirstFrameTests
         public uint ReadDescriptorBuffer(uint address)
         {
             return ReadPhysical(address)
-                | ((uint)ReadPhysical(address + 1) << 8)
-                | ((uint)ReadPhysical(address + 2) << 16)
-                | ((uint)ReadPhysical(address + 3) << 24);
+                   | ((uint)ReadPhysical(address + 1) << 8)
+                   | ((uint)ReadPhysical(address + 2) << 16)
+                   | ((uint)ReadPhysical(address + 3) << 24);
         }
     }
 

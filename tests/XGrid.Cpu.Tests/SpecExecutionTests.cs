@@ -193,6 +193,7 @@ public sealed class SpecExecutionTests
         // through its pre-specialized handler. (A bare IRET would pop the
         // pushed #PF error code as EIP, so no round-trip is attempted.)
         byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x8B, 0x1D, 0x00, 0x20, 0x00, 0x00, 0x90, 0xF4 };
+
         static XboxCpu CreatePaged(bool spec, byte[] bytes)
         {
             XboxCpu cpu = Create(spec, bytes);
@@ -242,6 +243,7 @@ public sealed class SpecExecutionTests
     public void UdTerminator_ExactVectorAndEip_MatchesInterpreter()
     {
         byte[] code = { 0x90, 0x40, 0x62, 0x00, 0x00, 0xF4 };
+
         static XboxCpu CreateHandled(bool spec, byte[] bytes)
         {
             XboxCpu cpu = Create(spec, bytes);
@@ -269,6 +271,7 @@ public sealed class SpecExecutionTests
         // Six NOPs + HLT; the source fires on the 3rd acknowledge (before the
         // 3rd member). The handler IRETs back into the stream.
         byte[] code = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xF4 };
+
         static XboxCpu CreateIrq(bool spec, byte[] bytes, CountedInterruptSource source)
         {
             XboxCpu cpu = Create(spec, bytes);
@@ -307,6 +310,7 @@ public sealed class SpecExecutionTests
         // IF starts clear with an always-firing source: delivery waits for the
         // STI (a fallback terminator), then lands before the following member.
         byte[] code = { 0x90, 0x90, 0xFB, 0x90, 0x90, 0xF4 };
+
         static XboxCpu CreateSti(bool spec, byte[] bytes)
         {
             XboxCpu cpu = Create(spec, bytes);

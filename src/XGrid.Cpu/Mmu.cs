@@ -110,8 +110,8 @@ public sealed class Mmu
     {
         ulong[]? pages = _pageTablePages;
         return pages is not null
-            && physicalPage < TrackedPages
-            && (pages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
+               && physicalPage < TrackedPages
+               && (pages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
     }
 
     private void TrackPageTablePage(uint physicalPage)
@@ -134,7 +134,8 @@ public sealed class Mmu
         out uint errorCode,
         bool sideEffects = true)
     {
-        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects, notify: true, out _, out _);
+        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects,
+            notify: true, out _, out _);
     }
 
     /// <summary>
@@ -144,9 +145,15 @@ public sealed class Mmu
     /// §131 leg (a)). Page-table side effects (A/D bits, TLB insert) are
     /// identical to <see cref="Translate"/>.
     /// </summary>
+    /// <param name="linearAddress">The linear address to translate.</param>
+    /// <param name="isWrite">True when the access is a write.</param>
+    /// <param name="isInstruction">True when the access is an instruction fetch.</param>
+    /// <param name="faulted">Set to true when translation faults.</param>
+    /// <param name="errorCode">Receives the page-fault error code.</param>
     /// <param name="tlbHit">True when the lookup hit the SoftTLB.</param>
     /// <param name="tlbCounted">False when paging is disabled or
     /// <paramref name="sideEffects"/> is off (nothing would be reported).</param>
+    /// <param name="sideEffects">Whether to apply page-table side effects (accessed/dirty bits, TLB insert).</param>
     /// <returns>The physical address, or zero when <paramref name="faulted"/> is true.</returns>
     public uint TranslateUncounted(
         uint linearAddress,
@@ -158,7 +165,8 @@ public sealed class Mmu
         out bool tlbCounted,
         bool sideEffects = true)
     {
-        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects, notify: false, out tlbHit, out tlbCounted);
+        return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects,
+            notify: false, out tlbHit, out tlbCounted);
     }
 
     private uint TranslateCore(

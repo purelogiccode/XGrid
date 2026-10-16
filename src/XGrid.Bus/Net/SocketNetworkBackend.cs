@@ -497,7 +497,7 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     private static uint ReadU32BE(ReadOnlySpan<byte> span, int offset)
     {
         return ((uint)span[offset] << 24) | ((uint)span[offset + 1] << 16) |
-            ((uint)span[offset + 2] << 8) | span[offset + 3];
+               ((uint)span[offset + 2] << 8) | span[offset + 3];
     }
 
     private static void WriteU16BE(Span<byte> span, int offset, ushort value)
@@ -546,8 +546,8 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     private static ushort UdpChecksum(uint srcIp, uint dstIp, byte proto, ReadOnlySpan<byte> udp)
     {
         uint sum = ((srcIp >> 16) & 0xFFFF) + (srcIp & 0xFFFF) +
-            ((dstIp >> 16) & 0xFFFF) + (dstIp & 0xFFFF) +
-            proto + (uint)udp.Length;
+                   ((dstIp >> 16) & 0xFFFF) + (dstIp & 0xFFFF) +
+                   proto + (uint)udp.Length;
         int i = 0;
         while (i + 1 < udp.Length)
         {

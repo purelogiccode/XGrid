@@ -28,10 +28,12 @@ public static class PshGlslGenerator
         ArgumentNullException.ThrowIfNull(state);
         var sb = new StringBuilder(512);
         sb.Append(legacy ? "L" : "C");
-        sb.Append(CultureInfo.InvariantCulture, $"|{state.Control:X8}|{state.StageProgram:X8}|{state.OtherStageInput:X8}|{state.Final0:X8}|{state.Final1:X8}");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"|{state.Control:X8}|{state.StageProgram:X8}|{state.OtherStageInput:X8}|{state.Final0:X8}|{state.Final1:X8}");
         for (int i = 0; i < PshCombiner.MaxStages; i++)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"|{state.RgbInputs[i]:X8},{state.AlphaInputs[i]:X8},{state.RgbOutputs[i]:X8},{state.AlphaOutputs[i]:X8}");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"|{state.RgbInputs[i]:X8},{state.AlphaInputs[i]:X8},{state.RgbOutputs[i]:X8},{state.AlphaOutputs[i]:X8}");
         }
 
         return sb.ToString();
@@ -79,7 +81,8 @@ public static class PshGlslGenerator
         sb.Append("  float w0 = (((vB.x - vA.x) * (py - vA.y)) - ((vB.y - vA.y) * (px - vA.x))) * invArea;\n");
         sb.Append("  float w1 = (((vC.x - vB.x) * (py - vB.y)) - ((vC.y - vB.y) * (px - vB.x))) * invArea;\n");
         sb.Append("  float w2 = 1.0 - w0 - w1;\n");
-        sb.Append("  if (!((w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0))) discard;\n");
+        sb.Append(
+            "  if (!((w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0))) discard;\n");
         sb.Append("  float p0 = w0;\n");
         sb.Append("  float p1 = w1;\n");
         sb.Append("  float p2 = w2;\n");
@@ -250,7 +253,8 @@ public static class PshGlslGenerator
     private static void AppendCombinerBody(StringBuilder sb, PshCombiner state)
     {
         // color/spec/c0..c3/fogFactor come from the interpolation preamble.
-        sb.Append("  vec4 fog = (uFogEnable == 1) ? vec4(uFogColor.rgb, clamp(fogFactor, 0.0, 1.0)) : vec4(0.0, 0.0, 0.0, 1.0);\n");
+        sb.Append(
+            "  vec4 fog = (uFogEnable == 1) ? vec4(uFogColor.rgb, clamp(fogFactor, 0.0, 1.0)) : vec4(0.0, 0.0, 0.0, 1.0);\n");
         sb.Append("  vec4 t0 = vec4(0.0, 0.0, 0.0, 1.0);\n");
         sb.Append("  vec4 t1 = vec4(0.0, 0.0, 0.0, 1.0);\n");
         sb.Append("  vec4 t2 = vec4(0.0, 0.0, 0.0, 1.0);\n");
@@ -333,13 +337,16 @@ public static class PshGlslGenerator
                     // Cubemap-flagged: software cube-samples when the format
                     // is 05/06 (slice-1 counts that as unsupported) or falls
                     // back to none; slice 1 emits none either way.
-                    sb.Append(CultureInfo.InvariantCulture, $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, {c}.xy); }}\n");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, {c}.xy); }}\n");
                     break;
                 case PshCombiner.TexModeProject3D:
-                    sb.Append(CultureInfo.InvariantCulture, $"  if (uTexDim[{slot}] == 3) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, {c}.xy / {c}.w); }}\n");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (uTexDim[{slot}] == 3) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, {c}.xy / {c}.w); }}\n");
                     break;
                 case PshCombiner.TexModeCubemap:
-                    sb.Append(CultureInfo.InvariantCulture, $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, CubeRemap2D({c}.xyz)); }}\n");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, CubeRemap2D({c}.xyz)); }}\n");
                     break;
                 case PshCombiner.TexModeDpndntAr:
                 case PshCombiner.TexModeDpndntGb:
@@ -414,9 +421,12 @@ public static class PshGlslGenerator
         string abv = ReadAlphaExpr(state, stage, (alphaIn >> 16) & 0xFFu);
         string ac = ReadAlphaExpr(state, stage, (alphaIn >> 8) & 0xFFu);
         string ad = ReadAlphaExpr(state, stage, alphaIn & 0xFFu);
-        sb.Append(CultureInfo.InvariantCulture, $"  float s{stage}aA = InMap({aa}, {(int)((alphaIn >> 24) & 0xE0u)});\n");
-        sb.Append(CultureInfo.InvariantCulture, $"  float s{stage}aB = InMap({abv}, {(int)((alphaIn >> 16) & 0xE0u)});\n");
-        sb.Append(CultureInfo.InvariantCulture, $"  float s{stage}aC = InMap({ac}, {(int)((alphaIn >> 8) & 0xE0u)});\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float s{stage}aA = InMap({aa}, {(int)((alphaIn >> 24) & 0xE0u)});\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float s{stage}aB = InMap({abv}, {(int)((alphaIn >> 16) & 0xE0u)});\n");
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float s{stage}aC = InMap({ac}, {(int)((alphaIn >> 8) & 0xE0u)});\n");
         sb.Append(CultureInfo.InvariantCulture, $"  float s{stage}aD = InMap({ad}, {(int)(alphaIn & 0xE0u)});\n");
         sb.Append(CultureInfo.InvariantCulture,
             $"  float abA{stage} = clamp(OutMap(s{stage}aA * s{stage}aB, {alphaMapping}), -1.0, 1.0);\n");
@@ -431,7 +441,8 @@ public static class PshGlslGenerator
         AppendAlphaWrites(sb, alphaOut, $"abA{stage}", $"cdA{stage}", $"muxA{stage}");
     }
 
-    private static void AppendVecWrites(StringBuilder sb, uint rgbOut, bool abBlue, bool cdBlue, string ab, string cd, string mux)
+    private static void AppendVecWrites(StringBuilder sb, uint rgbOut, bool abBlue, bool cdBlue, string ab, string cd,
+        string mux)
     {
         string? abName = RegName((int)((rgbOut >> 4) & 0xFu));
         string? cdName = RegName((int)(rgbOut & 0xFu));

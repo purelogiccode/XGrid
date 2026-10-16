@@ -117,7 +117,8 @@ public sealed class SocketNetworkBackendTests
         return (ushort)~sum;
     }
 
-    private static byte[] BuildUdpFrame(byte[] srcMac, uint srcIp, ushort srcPort, uint dstIp, ushort dstPort, byte[] payload)
+    private static byte[] BuildUdpFrame(byte[] srcMac, uint srcIp, ushort srcPort, uint dstIp, ushort dstPort,
+        byte[] payload)
     {
         byte[] frame = new byte[14 + 20 + 8 + payload.Length];
         SocketNetworkBackend.GatewayMacAddress.CopyTo(frame, 0);

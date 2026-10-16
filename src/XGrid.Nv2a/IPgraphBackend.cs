@@ -45,6 +45,36 @@ public interface IPgraphBackend
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphVertex
 {
+    /// <summary>Initializes a transformed vertex from its position, colors, texture coordinates and fog factor.</summary>
+    /// <param name="x">Screen-space x.</param>
+    /// <param name="y">Screen-space y.</param>
+    /// <param name="z">Screen-space depth.</param>
+    /// <param name="w">Screen-space w (perspective divide and projective texturing).</param>
+    /// <param name="diffuseR">Diffuse red.</param>
+    /// <param name="diffuseG">Diffuse green.</param>
+    /// <param name="diffuseB">Diffuse blue.</param>
+    /// <param name="diffuseA">Diffuse alpha.</param>
+    /// <param name="specR">Specular red.</param>
+    /// <param name="specG">Specular green.</param>
+    /// <param name="specB">Specular blue.</param>
+    /// <param name="specA">Specular alpha.</param>
+    /// <param name="u0">Stage-0 texture u.</param>
+    /// <param name="v0">Stage-0 texture v.</param>
+    /// <param name="s0">Stage-0 texture third coordinate.</param>
+    /// <param name="u1">Stage-1 texture u.</param>
+    /// <param name="v1">Stage-1 texture v.</param>
+    /// <param name="s1">Stage-1 texture third coordinate.</param>
+    /// <param name="u2">Stage-2 texture u.</param>
+    /// <param name="v2">Stage-2 texture v.</param>
+    /// <param name="s2">Stage-2 texture third coordinate.</param>
+    /// <param name="u3">Stage-3 texture u.</param>
+    /// <param name="v3">Stage-3 texture v.</param>
+    /// <param name="s3">Stage-3 texture third coordinate.</param>
+    /// <param name="t0w">Stage-0 projective w divisor.</param>
+    /// <param name="t1w">Stage-1 projective w divisor.</param>
+    /// <param name="t2w">Stage-2 projective w divisor.</param>
+    /// <param name="t3w">Stage-3 projective w divisor.</param>
+    /// <param name="fog">Interpolated fog factor.</param>
     public PgraphVertex(
         float x, float y, float z, float w,
         float diffuseR, float diffuseG, float diffuseB, float diffuseA,
@@ -87,34 +117,63 @@ public readonly struct PgraphVertex
         Fog = fog;
     }
 
+    /// <summary>Gets the screen-space x-coordinate.</summary>
     public float X { get; }
+    /// <summary>Gets the screen-space y-coordinate.</summary>
     public float Y { get; }
+    /// <summary>Gets the screen-space depth.</summary>
     public float Z { get; }
+    /// <summary>Gets the screen-space w (perspective divide and projective texturing).</summary>
     public float W { get; }
+    /// <summary>Gets the diffuse red component.</summary>
     public float DiffuseR { get; }
+    /// <summary>Gets the diffuse green component.</summary>
     public float DiffuseG { get; }
+    /// <summary>Gets the diffuse blue component.</summary>
     public float DiffuseB { get; }
+    /// <summary>Gets the diffuse alpha component.</summary>
     public float DiffuseA { get; }
+    /// <summary>Gets the specular red component.</summary>
     public float SpecR { get; }
+    /// <summary>Gets the specular green component.</summary>
     public float SpecG { get; }
+    /// <summary>Gets the specular blue component.</summary>
     public float SpecB { get; }
+    /// <summary>Gets the specular alpha component.</summary>
     public float SpecA { get; }
+    /// <summary>Gets the stage-0 texture u coordinate.</summary>
     public float U0 { get; }
+    /// <summary>Gets the stage-0 texture v coordinate.</summary>
     public float V0 { get; }
+    /// <summary>Gets the stage-0 texture third coordinate.</summary>
     public float S0 { get; }
+    /// <summary>Gets the stage-1 texture u coordinate.</summary>
     public float U1 { get; }
+    /// <summary>Gets the stage-1 texture v coordinate.</summary>
     public float V1 { get; }
+    /// <summary>Gets the stage-1 texture third coordinate.</summary>
     public float S1 { get; }
+    /// <summary>Gets the stage-2 texture u coordinate.</summary>
     public float U2 { get; }
+    /// <summary>Gets the stage-2 texture v coordinate.</summary>
     public float V2 { get; }
+    /// <summary>Gets the stage-2 texture third coordinate.</summary>
     public float S2 { get; }
+    /// <summary>Gets the stage-3 texture u coordinate.</summary>
     public float U3 { get; }
+    /// <summary>Gets the stage-3 texture v coordinate.</summary>
     public float V3 { get; }
+    /// <summary>Gets the stage-3 texture third coordinate.</summary>
     public float S3 { get; }
+    /// <summary>Gets the stage-0 projective w divisor.</summary>
     public float T0W { get; }
+    /// <summary>Gets the stage-1 projective w divisor.</summary>
     public float T1W { get; }
+    /// <summary>Gets the stage-2 projective w divisor.</summary>
     public float T2W { get; }
+    /// <summary>Gets the stage-3 projective w divisor.</summary>
     public float T3W { get; }
+    /// <summary>Gets the interpolated fog factor.</summary>
     public float Fog { get; }
 }
 
@@ -122,6 +181,31 @@ public readonly struct PgraphVertex
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphFragmentState
 {
+    /// <summary>Initializes a resolved fragment-state snapshot from the live PGRAPH registers.</summary>
+    /// <param name="alphaTestEnable">Whether the alpha test runs.</param>
+    /// <param name="alphaFunc">Alpha compare function.</param>
+    /// <param name="alphaRef">Alpha reference value.</param>
+    /// <param name="blendEnable">Whether blending runs.</param>
+    /// <param name="blendSrcFactor">Source blend factor.</param>
+    /// <param name="blendDstFactor">Destination blend factor.</param>
+    /// <param name="blendColor">Constant blend color.</param>
+    /// <param name="blendEquation">Blend equation.</param>
+    /// <param name="depthTestEnable">Whether the depth test runs.</param>
+    /// <param name="depthFunc">Depth compare function.</param>
+    /// <param name="depthMask">Whether passing depth writes the zeta buffer.</param>
+    /// <param name="colorMask">Per-channel color write mask.</param>
+    /// <param name="stencilTestEnable">Whether the stencil test runs.</param>
+    /// <param name="stencilWriteMask">Stencil write mask.</param>
+    /// <param name="stencilFunc">Stencil compare function.</param>
+    /// <param name="stencilRef">Stencil reference value.</param>
+    /// <param name="stencilReadMask">Stencil read mask.</param>
+    /// <param name="stencilOpFail">Stencil action on stencil-test failure.</param>
+    /// <param name="stencilOpZfail">Stencil action on depth-test failure.</param>
+    /// <param name="stencilOpZpass">Stencil action on depth-test pass.</param>
+    /// <param name="zclipActive">Whether shader clip planes are active.</param>
+    /// <param name="zclipMin">Minimum clip depth.</param>
+    /// <param name="zclipMax">Maximum clip depth.</param>
+    /// <param name="zclipCull">Whether out-of-range fragments are culled.</param>
     public PgraphFragmentState(
         bool alphaTestEnable, uint alphaFunc, uint alphaRef,
         bool blendEnable, uint blendSrcFactor, uint blendDstFactor, uint blendColor, uint blendEquation,
@@ -157,29 +241,53 @@ public readonly struct PgraphFragmentState
         ZclipCull = zclipCull;
     }
 
+    /// <summary>Gets whether the alpha test runs.</summary>
     public bool AlphaTestEnable { get; }
+    /// <summary>Gets the alpha compare function.</summary>
     public uint AlphaFunc { get; }
+    /// <summary>Gets the alpha reference value.</summary>
     public uint AlphaRef { get; }
+    /// <summary>Gets whether blending runs.</summary>
     public bool BlendEnable { get; }
+    /// <summary>Gets the source blend factor.</summary>
     public uint BlendSrcFactor { get; }
+    /// <summary>Gets the destination blend factor.</summary>
     public uint BlendDstFactor { get; }
+    /// <summary>Gets the constant blend color.</summary>
     public uint BlendColor { get; }
+    /// <summary>Gets the blend equation.</summary>
     public uint BlendEquation { get; }
+    /// <summary>Gets whether the depth test runs.</summary>
     public bool DepthTestEnable { get; }
+    /// <summary>Gets the depth compare function.</summary>
     public uint DepthFunc { get; }
+    /// <summary>Gets whether passing depth writes the zeta buffer.</summary>
     public bool DepthMask { get; }
+    /// <summary>Gets the per-channel color write mask.</summary>
     public uint ColorMask { get; }
+    /// <summary>Gets whether the stencil test runs.</summary>
     public bool StencilTestEnable { get; }
+    /// <summary>Gets the stencil write mask.</summary>
     public uint StencilWriteMask { get; }
+    /// <summary>Gets the stencil compare function.</summary>
     public uint StencilFunc { get; }
+    /// <summary>Gets the stencil reference value.</summary>
     public uint StencilRef { get; }
+    /// <summary>Gets the stencil read mask.</summary>
     public uint StencilReadMask { get; }
+    /// <summary>Gets the stencil action on stencil-test failure.</summary>
     public uint StencilOpFail { get; }
+    /// <summary>Gets the stencil action on depth-test failure.</summary>
     public uint StencilOpZfail { get; }
+    /// <summary>Gets the stencil action on depth-test pass.</summary>
     public uint StencilOpZpass { get; }
+    /// <summary>Gets whether shader clip planes are active.</summary>
     public bool ZclipActive { get; }
+    /// <summary>Gets the minimum clip depth.</summary>
     public float ZclipMin { get; }
+    /// <summary>Gets the maximum clip depth.</summary>
     public float ZclipMax { get; }
+    /// <summary>Gets whether out-of-range fragments are culled.</summary>
     public bool ZclipCull { get; }
 }
 
@@ -187,6 +295,13 @@ public readonly struct PgraphFragmentState
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphTextureSlot
 {
+    /// <summary>Initializes a texture-slot snapshot from the live per-stage texture registers.</summary>
+    /// <param name="offset">Guest-physical texture base offset.</param>
+    /// <param name="format">Raw format word (color id in bits 8-15, cubemap enable in bit 2).</param>
+    /// <param name="address">Raw address word decoded by the U/V address-mode helpers.</param>
+    /// <param name="control0">Raw control word 0 (enable in bit 30).</param>
+    /// <param name="control1">Raw control word 1 (linear pitch in the high 16 bits).</param>
+    /// <param name="imageRect">Packed extent: width in the high 16 bits, height in the low 16.</param>
     public PgraphTextureSlot(uint offset, uint format, uint address, uint control0, uint control1, uint imageRect)
     {
         Offset = offset;
@@ -197,11 +312,17 @@ public readonly struct PgraphTextureSlot
         ImageRect = imageRect;
     }
 
+    /// <summary>Gets the guest-physical texture base offset.</summary>
     public uint Offset { get; }
+    /// <summary>Gets the raw format word (color id in bits 8-15, cubemap enable in bit 2).</summary>
     public uint Format { get; }
+    /// <summary>Gets the raw address word decoded by the U/V address-mode helpers.</summary>
     public uint Address { get; }
+    /// <summary>Gets the raw control word 0 (enable in bit 30).</summary>
     public uint Control0 { get; }
+    /// <summary>Gets the raw control word 1 (linear pitch in the high 16 bits).</summary>
     public uint Control1 { get; }
+    /// <summary>Gets the packed extent: width in the high 16 bits, height in the low 16.</summary>
     public uint ImageRect { get; }
 }
 
@@ -214,6 +335,30 @@ public readonly struct PgraphTextureSlot
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphDrawInfo
 {
+    /// <summary>Initializes a draw record from the transformed triangle and the resolved state the software path uses.</summary>
+    /// <param name="a">First triangle vertex.</param>
+    /// <param name="b">Second triangle vertex.</param>
+    /// <param name="c">Third triangle vertex.</param>
+    /// <param name="clipX">Clip rectangle origin x (surface clip low 16 bits).</param>
+    /// <param name="clipY">Clip rectangle origin y (surface clip low 16 bits).</param>
+    /// <param name="clipW">Clip rectangle width (surface clip high 16 bits).</param>
+    /// <param name="clipH">Clip rectangle height (surface clip high 16 bits).</param>
+    /// <param name="colorBytes">Color bytes per pixel.</param>
+    /// <param name="zetaBytes">Zeta bytes per pixel.</param>
+    /// <param name="combinerActive">Whether the final combiner is enabled for this draw.</param>
+    /// <param name="fragment">Resolved fragment state.</param>
+    /// <param name="texture0">Stage-0 texture slot.</param>
+    /// <param name="texture1">Stage-1 texture slot.</param>
+    /// <param name="texture2">Stage-2 texture slot.</param>
+    /// <param name="texture3">Stage-3 texture slot.</param>
+    /// <param name="combiner">Live combiner instance (valid only for the synchronous callback).</param>
+    /// <param name="fogEnable">Whether fog blending runs.</param>
+    /// <param name="fogR">Fog color red.</param>
+    /// <param name="fogG">Fog color green.</param>
+    /// <param name="fogB">Fog color blue.</param>
+    /// <param name="fogA">Fog color alpha.</param>
+    /// <param name="shaderClipMode">Raw shader clip-mode word (per-stage discard polarity).</param>
+    /// <param name="zFormatFloat">Whether zeta values use the float format.</param>
     public PgraphDrawInfo(
         in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH,
@@ -252,28 +397,51 @@ public readonly struct PgraphDrawInfo
         ZFormatFloat = zFormatFloat;
     }
 
+    /// <summary>Gets the first triangle vertex.</summary>
     public PgraphVertex A { get; }
+    /// <summary>Gets the second triangle vertex.</summary>
     public PgraphVertex B { get; }
+    /// <summary>Gets the third triangle vertex.</summary>
     public PgraphVertex C { get; }
+    /// <summary>Gets the clip rectangle origin x (surface clip low 16 bits).</summary>
     public uint ClipX { get; }
+    /// <summary>Gets the clip rectangle origin y (surface clip low 16 bits).</summary>
     public uint ClipY { get; }
+    /// <summary>Gets the clip rectangle width (surface clip high 16 bits).</summary>
     public uint ClipW { get; }
+    /// <summary>Gets the clip rectangle height (surface clip high 16 bits).</summary>
     public uint ClipH { get; }
+    /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+    /// <summary>Gets the zeta bytes per pixel.</summary>
     public uint ZetaBytes { get; }
+    /// <summary>Gets whether the final combiner is enabled for this draw.</summary>
     public bool CombinerActive { get; }
+    /// <summary>Gets the resolved fragment state.</summary>
     public PgraphFragmentState Fragment { get; }
+    /// <summary>Gets the stage-0 texture slot.</summary>
     public PgraphTextureSlot Texture0 { get; }
+    /// <summary>Gets the stage-1 texture slot.</summary>
     public PgraphTextureSlot Texture1 { get; }
+    /// <summary>Gets the stage-2 texture slot.</summary>
     public PgraphTextureSlot Texture2 { get; }
+    /// <summary>Gets the stage-3 texture slot.</summary>
     public PgraphTextureSlot Texture3 { get; }
+    /// <summary>Gets the live combiner instance (valid only for the synchronous callback).</summary>
     public PshCombiner? Combiner { get; }
+    /// <summary>Gets whether fog blending runs.</summary>
     public bool FogEnable { get; }
+    /// <summary>Gets the fog color red.</summary>
     public float FogR { get; }
+    /// <summary>Gets the fog color green.</summary>
     public float FogG { get; }
+    /// <summary>Gets the fog color blue.</summary>
     public float FogB { get; }
+    /// <summary>Gets the fog color alpha.</summary>
     public float FogA { get; }
+    /// <summary>Gets the raw shader clip-mode word (per-stage discard polarity).</summary>
     public uint ShaderClipMode { get; }
+    /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; }
 
     /// <summary>Gets the texture slot by index (0-3).</summary>
@@ -294,6 +462,22 @@ public readonly struct PgraphDrawInfo
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphClearInfo
 {
+    /// <summary>Initializes a clear record from the rectangle and values the software path filled.</summary>
+    /// <param name="clearColor">Whether the color surface was filled.</param>
+    /// <param name="clearZeta">Whether the zeta surface was filled.</param>
+    /// <param name="xMin">Clear rectangle minimum x (inclusive).</param>
+    /// <param name="yMin">Clear rectangle minimum y (inclusive).</param>
+    /// <param name="xMax">Clear rectangle maximum x (inclusive).</param>
+    /// <param name="yMax">Clear rectangle maximum y (inclusive).</param>
+    /// <param name="clipX">Clip rectangle origin x (surface clip low 16 bits).</param>
+    /// <param name="clipY">Clip rectangle origin y (surface clip low 16 bits).</param>
+    /// <param name="clipW">Clip rectangle width (surface clip high 16 bits).</param>
+    /// <param name="clipH">Clip rectangle height (surface clip high 16 bits).</param>
+    /// <param name="colorValue">Raw color clear value.</param>
+    /// <param name="zetaValue">Raw zeta clear value.</param>
+    /// <param name="colorBytes">Color bytes per pixel.</param>
+    /// <param name="zetaBytes">Zeta bytes per pixel (2 for Z16, 4 for Z24S8).</param>
+    /// <param name="zFormatFloat">Whether zeta values use the float format.</param>
     public PgraphClearInfo(
         bool clearColor, bool clearZeta,
         uint xMin, uint yMin, uint xMax, uint yMax,
@@ -319,20 +503,35 @@ public readonly struct PgraphClearInfo
         ZFormatFloat = zFormatFloat;
     }
 
+    /// <summary>Gets whether the color surface was filled.</summary>
     public bool ClearColor { get; }
+    /// <summary>Gets whether the zeta surface was filled.</summary>
     public bool ClearZeta { get; }
+    /// <summary>Gets the clear rectangle minimum x (inclusive).</summary>
     public uint XMin { get; }
+    /// <summary>Gets the clear rectangle minimum y (inclusive).</summary>
     public uint YMin { get; }
+    /// <summary>Gets the clear rectangle maximum x (inclusive).</summary>
     public uint XMax { get; }
+    /// <summary>Gets the clear rectangle maximum y (inclusive).</summary>
     public uint YMax { get; }
+    /// <summary>Gets the clip rectangle origin x (surface clip low 16 bits).</summary>
     public uint ClipX { get; }
+    /// <summary>Gets the clip rectangle origin y (surface clip low 16 bits).</summary>
     public uint ClipY { get; }
+    /// <summary>Gets the clip rectangle width (surface clip high 16 bits).</summary>
     public uint ClipW { get; }
+    /// <summary>Gets the clip rectangle height (surface clip high 16 bits).</summary>
     public uint ClipH { get; }
+    /// <summary>Gets the raw color clear value.</summary>
     public uint ColorValue { get; }
+    /// <summary>Gets the raw zeta clear value.</summary>
     public uint ZetaValue { get; }
+    /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+    /// <summary>Gets the zeta bytes per pixel (2 for Z16, 4 for Z24S8).</summary>
     public uint ZetaBytes { get; }
+    /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; }
 }
 
@@ -343,6 +542,13 @@ public readonly struct PgraphClearInfo
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphSurfaceRecord
 {
+    /// <summary>Initializes an at-flip surface record from the presented surface state.</summary>
+    /// <param name="width">Presented frame width (surface clip extent).</param>
+    /// <param name="height">Presented frame height (surface clip extent).</param>
+    /// <param name="colorBytes">Color bytes per pixel.</param>
+    /// <param name="frame">Presented-frame sequence number.</param>
+    /// <param name="surfaceAddress">Resolved guest-physical byte address of the presented surface.</param>
+    /// <param name="pitch">Color-surface pitch in bytes (guest-row stride).</param>
     public PgraphSurfaceRecord(uint width, uint height, uint colorBytes, ulong frame, uint surfaceAddress, uint pitch)
     {
         Width = width;
@@ -353,9 +559,13 @@ public readonly struct PgraphSurfaceRecord
         Pitch = pitch;
     }
 
+    /// <summary>Gets the presented frame width (surface clip extent).</summary>
     public uint Width { get; }
+    /// <summary>Gets the presented frame height (surface clip extent).</summary>
     public uint Height { get; }
+    /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+    /// <summary>Gets the presented-frame sequence number.</summary>
     public ulong Frame { get; }
 
     /// <summary>Gets the resolved guest-physical byte address of the presented surface (DMA color-context base + color offset). Carried for the present-upload path; consumers must not change behavior on it yet.</summary>

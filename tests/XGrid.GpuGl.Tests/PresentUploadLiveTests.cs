@@ -20,6 +20,7 @@ public sealed class PresentUploadLiveTests
     {
         _output = output;
     }
+
     private sealed class ArrayMemory : IGpuMemory
     {
         private readonly byte[] _data = new byte[0x10000];
@@ -35,7 +36,7 @@ public sealed class PresentUploadLiveTests
         public uint ReadPhysical(uint address)
         {
             return (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) |
-                           (_data[address + 3] << 24));
+                          (_data[address + 3] << 24));
         }
     }
 

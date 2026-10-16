@@ -105,6 +105,7 @@ public sealed class IdeController : PciDevice, ISnapshotable
     {
         PrimarySlave.AttachDvd(dvd);
     }
+
     /// <summary>Registers the legacy compatibility ports (0x1F0 and 0x3F6).</summary>
     public void RegisterPorts(IoSpace io)
     {

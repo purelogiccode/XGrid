@@ -209,9 +209,11 @@ public sealed partial class XboxCpu
 
         DecodeCacheEntry entry = default;
         bool blockHit = _blocks is not null && !crossesPage
-            && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize, out entry);
+                                            && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize,
+                                                Context.DefaultAddressSize, out entry);
         if (blockHit || (!crossesPage
-            && cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize, out entry)))
+                         && cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize,
+                             out entry)))
         {
             _hotspot?.NoteFetch(false);
 
@@ -294,11 +296,11 @@ public sealed partial class XboxCpu
             }
 
             if (!blocks.TryNext(
-                cache,
-                fetchLinear,
-                Context.DefaultOperandSize,
-                Context.DefaultAddressSize,
-                out DecodeCacheEntry entry))
+                    cache,
+                    fetchLinear,
+                    Context.DefaultOperandSize,
+                    Context.DefaultAddressSize,
+                    out DecodeCacheEntry entry))
             {
                 break;
             }

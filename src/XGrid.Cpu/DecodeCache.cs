@@ -42,10 +42,10 @@ public readonly struct DecodeCacheEntry
     public bool SourceMatches(ReadOnlySpan<byte> window)
     {
         return window.Length >= Decoder.MaxInstructionLength
-            && BinaryPrimitives.ReadUInt64LittleEndian(window) == Source0
-            && BinaryPrimitives.ReadUInt32LittleEndian(window.Slice(8, 4)) == Source8
-            && BinaryPrimitives.ReadUInt16LittleEndian(window.Slice(12, 2)) == Source12
-            && window[14] == Source14;
+               && BinaryPrimitives.ReadUInt64LittleEndian(window) == Source0
+               && BinaryPrimitives.ReadUInt32LittleEndian(window.Slice(8, 4)) == Source8
+               && BinaryPrimitives.ReadUInt16LittleEndian(window.Slice(12, 2)) == Source12
+               && window[14] == Source14;
     }
 }
 
@@ -301,6 +301,6 @@ public sealed class DecodeCache
     private bool IsActive(uint physicalPage)
     {
         return physicalPage < TrackedPages
-            && (_activePages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
+               && (_activePages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
     }
 }

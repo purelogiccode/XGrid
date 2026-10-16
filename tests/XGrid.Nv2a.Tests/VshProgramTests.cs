@@ -415,7 +415,8 @@ public sealed class VshProgramTests
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity };
+        constants[0] = new[]
+            { float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity };
         inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
@@ -645,7 +646,8 @@ public sealed class VshProgramTests
     [Fact]
     public void Log_Infinity_ReturnsInfiniteExponentAndNaNMantissa()
     {
-        float[][] outputs = ExecuteIlu(IluLog, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        float[][] outputs = ExecuteIlu(IluLog, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity,
+            float.PositiveInfinity);
 
         Assert.Equal(float.PositiveInfinity, outputs[0][0]);
         Assert.True(float.IsNaN(outputs[0][1]));

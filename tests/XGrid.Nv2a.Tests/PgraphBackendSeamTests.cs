@@ -245,7 +245,7 @@ public sealed class PgraphBackendSeamTests
             (0x1D98u, 0x03FF0000u), // clear rect H 0..1023
             (0x1D9Cu, 0x03FF0000u), // clear rect V 0..1023
             (0x1D94u, 0x000000F0u), // clear color
-            (0x012Cu, 0u));         // flip increment write
+            (0x012Cu, 0u)); // flip increment write
 
         Assert.Equal(1, backend.Clears);
         Assert.Equal(1, backend.Flips);
@@ -275,7 +275,7 @@ public sealed class PgraphBackendSeamTests
             memory,
             (0x0194u, 0x00000009u), // color context -> DMA base 0x8000
             (0x0210u, 0x00001000u), // color offset
-            (0x012Cu, 0u));         // flip increment write
+            (0x012Cu, 0u)); // flip increment write
 
         Assert.Equal(1, backend.Flips);
         Assert.Equal(0x9000u, backend.LastFlipSurfaceAddress);

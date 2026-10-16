@@ -11,7 +11,8 @@ public sealed class ApuSnapshotTests
         private readonly Dictionary<uint, byte> _ram = new();
 
         public uint Read32(uint address) =>
-            (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) | (ReadByte(address + 3) << 24));
+            (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) |
+                   (ReadByte(address + 3) << 24));
 
         public void Write32(uint address, uint value)
         {
@@ -46,6 +47,7 @@ public sealed class ApuSnapshotTests
     public void Apu_RoundTrip()
     {
         static McpxApuDevice Create() => new(new FakeMemory());
+
         static void Exercise(McpxApuDevice apu)
         {
             const uint Base = McpxApuDevice.BaseAddress;

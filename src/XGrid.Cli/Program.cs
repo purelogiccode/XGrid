@@ -326,9 +326,11 @@ internal static class Program
             machine.Reset();
             machine.Nv2A.MethodStreamCap = pgraphMax;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
-            Console.WriteLine($"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+            Console.WriteLine(
+                $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
 
-            if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) && !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
+            if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) &&
+                !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"Invalid --gpu '{gpuBackend}' (expected sw|gl)");
                 return 1;
@@ -339,7 +341,8 @@ internal static class Program
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null).
                 var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out XGrid.Nv2a.IPgraphBackend? gpuBackendInstance, out string gpuWhy))
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out XGrid.Nv2a.IPgraphBackend? gpuBackendInstance,
+                        out string gpuWhy))
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
                     Console.WriteLine($"GPU backend=gl {gpuWhy}");
@@ -371,7 +374,8 @@ internal static class Program
             if (fetchFast)
             {
                 machine.Cpu.FetchFastPathEnabled = true;
-                Console.WriteLine("Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
+                Console.WriteLine(
+                    "Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
             }
 
             if (decodeCache || decodeVerify || blockExec || blockVerify || specExec)
@@ -402,7 +406,8 @@ internal static class Program
             if (specExec)
             {
                 machine.Cpu.SpecExecutionEnabled = true;
-                Console.WriteLine("Spec execution=on (pre-specialized shapes; implies block-exec; per-instruction boundaries retained)");
+                Console.WriteLine(
+                    "Spec execution=on (pre-specialized shapes; implies block-exec; per-instruction boundaries retained)");
             }
 
             if (loadStatePath is not null)
@@ -459,7 +464,8 @@ internal static class Program
             {
                 if (!PadInput.TryParse(padButtons, padAnalog, padSticks, out PadInput pad))
                 {
-                    Console.Error.WriteLine("Invalid --pad options (buttons: hex16 or names like down/a+down; analog: 16 hex chars; sticks: lx,ly,rx,ry)");
+                    Console.Error.WriteLine(
+                        "Invalid --pad options (buttons: hex16 or names like down/a+down; analog: 16 hex chars; sticks: lx,ly,rx,ry)");
                     return 1;
                 }
 
@@ -472,12 +478,14 @@ internal static class Program
             }
 
             bool padApplied = padInput is null || padStep == 0;
+
             void ApplyPadIfDue(ulong at)
             {
                 if (!padApplied && at >= padStep && padInput is { } due)
                 {
                     machine.Gamepad.SetInput(due.Buttons, due.Analog, due.Sticks);
-                    Console.WriteLine($"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
+                    Console.WriteLine(
+                        $"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
                     padApplied = true;
                 }
             }
@@ -487,7 +495,8 @@ internal static class Program
             {
                 if (!PadScript.TryParse(padScriptSpec, out PadScript? parsed) || parsed is null)
                 {
-                    Console.Error.WriteLine("Invalid --pad-script spec (events: buttonset@step[+hold],... e.g. down@960000000,a@961000000)");
+                    Console.Error.WriteLine(
+                        "Invalid --pad-script spec (events: buttonset@step[+hold],... e.g. down@960000000,a@961000000)");
                     return 1;
                 }
 
@@ -500,7 +509,8 @@ internal static class Program
                 if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
                 {
                     machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
-                    Console.WriteLine($"Pad script buttons=0x{pressed.Buttons:X4} analog={BitConverter.ToString(pressed.Analog)} at step {at}");
+                    Console.WriteLine(
+                        $"Pad script buttons=0x{pressed.Buttons:X4} analog={BitConverter.ToString(pressed.Analog)} at step {at}");
                 }
             }
 
@@ -629,7 +639,7 @@ internal static class Program
             ulong prevEosFires = machine.SevenEosQuirkFires;
             ApplyScriptIfDue(executed);
             while (!breakHit && executed < steps && !machine.Cpu.Context.Halted
-                && !(hasSaveAt && executed >= saveAt))
+                   && !(hasSaveAt && executed >= saveAt))
             {
                 ulong remaining = steps - executed;
                 ulong target = Math.Min(remaining, nextProgress - executed);
@@ -1493,7 +1503,8 @@ internal static class Program
         // flag-off logs stay byte-identical to the master baselines.
         if (machine.Cpu.BlockStatistics is { } blocks)
         {
-            Console.WriteLine($"Block stats dispatches={blocks.Dispatches} instructions={blocks.Instructions} builds={blocks.Builds} hits={blocks.Hits} entries={blocks.Count} peak={blocks.PeakCount} invalidations={blocks.Invalidations} capFlushes={blocks.CapFlushes} completed={blocks.Completed} redirects={blocks.Redirects} boundaryExits={blocks.BoundaryExits} verifyFailures={blocks.VerifyFailures}");
+            Console.WriteLine(
+                $"Block stats dispatches={blocks.Dispatches} instructions={blocks.Instructions} builds={blocks.Builds} hits={blocks.Hits} entries={blocks.Count} peak={blocks.PeakCount} invalidations={blocks.Invalidations} capFlushes={blocks.CapFlushes} completed={blocks.Completed} redirects={blocks.Redirects} boundaryExits={blocks.BoundaryExits} verifyFailures={blocks.VerifyFailures}");
         }
 
         // §139: printed only while specialization is enabled so every other
@@ -1522,6 +1533,7 @@ internal static class Program
                 $"nonRamSkips={machine.Cpu.DecodeCacheSkippedNonRam} " +
                 $"verifyFailures={machine.Cpu.DecodeCacheVerifyFailures}");
         }
+
         Console.WriteLine(
             $"IDE accesses={machine.Ide.AccessCount} " +
             $"lastCmd=0x{machine.Ide.LastCommand:X2} " +
@@ -1548,7 +1560,8 @@ internal static class Program
         var unmappedLog = new System.Text.StringBuilder();
         foreach (uint bucket in unmappedBuckets)
         {
-            unmappedLog.Append(CultureInfo.InvariantCulture, $" {bucket:X3}={machine.Memory.UnmappedAccessCounts[bucket]}");
+            unmappedLog.Append(CultureInfo.InvariantCulture,
+                $" {bucket:X3}={machine.Memory.UnmappedAccessCounts[bucket]}");
         }
 
         Console.WriteLine($"Unmapped phys (1MB buckets):{unmappedLog}");
@@ -1609,7 +1622,8 @@ internal static class Program
         foreach (var txn in machine.Bus.Smbus.RecentTransactions)
         {
             txnLog.Append(
-CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}{(txn.Ok ? string.Empty : "!")}");
+                CultureInfo.InvariantCulture,
+                $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p{txn.Protocol}:{txn.Command:X2}{(txn.Ok ? string.Empty : "!")}");
         }
 
         Console.WriteLine($"SMBus log:{txnLog}");
@@ -1642,7 +1656,9 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             $"NV2A combiner rgb0={machine.Nv2A.CombinerRgbZeroFragments} rgb0Alpha={machine.Nv2A.CombinerRgbZeroAlphaPositiveFragments} " +
             machine.Nv2A.CombinerStateDebug);
-        var texStates = new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>(machine.Nv2A.TextureStateStats);
+        var texStates =
+            new List<(string Key, long Samples, long RgbZero, long Fallbacks, long Misses, uint FirstAddress, uint
+                FirstTexel, float MinU, float MaxU, float MinV, float MaxV)>(machine.Nv2A.TextureStateStats);
         texStates.Sort((a, b) => (b.Samples + b.Fallbacks + b.Misses).CompareTo(a.Samples + a.Fallbacks + a.Misses));
         for (int i = 0; i < texStates.Count && i < 16; i++)
         {
@@ -1653,11 +1669,14 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
                 $"u=[{state.MinU:G},{state.MaxU:G}] v=[{state.MinV:G},{state.MaxV:G}] {state.Key}");
         }
 
-        Console.WriteLine($"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
+        Console.WriteLine(
+            $"NV2A semaphore releases={machine.Nv2A.SemaphoreReleases} last={machine.Nv2A.SemaphoreDebug}");
         if (machine.Nv2A.Backend is not null)
         {
-            Console.WriteLine($"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported}");
+            Console.WriteLine(
+                $"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported}");
         }
+
         var pmcEnLogText = new System.Text.StringBuilder();
         foreach (uint entry in machine.Nv2A.PmcIntrEnLog)
         {
@@ -1681,6 +1700,7 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         {
             Console.WriteLine($"APU log: {entry}");
         }
+
         Console.WriteLine(
             $"ACI nam={machine.Aci.NamAccesses} nabm={machine.Aci.NabmAccesses}");
         Console.WriteLine(
@@ -1722,7 +1742,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             Console.WriteLine($"USB0 xfer: {usbXfer[i]}");
         }
 
-        Console.WriteLine($"USB0 regs:{TopOffsets(machine.Usb0.RegReadCounts)} wr:{TopOffsets(machine.Usb0.RegWriteCounts)}");
+        Console.WriteLine(
+            $"USB0 regs:{TopOffsets(machine.Usb0.RegReadCounts)} wr:{TopOffsets(machine.Usb0.RegWriteCounts)}");
 
         foreach ((uint address, int length, bool virtualDump) in dumps)
         {
@@ -1793,7 +1814,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
 
     private static int Fatx(string[] args)
     {
-        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) && !string.Equals(args[1], "cat", StringComparison.Ordinal)))
+        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) &&
+                                !string.Equals(args[1], "cat", StringComparison.Ordinal)))
         {
             Console.Error.WriteLine(
                 "Usage: xgrid fatx <ls|cat> --image <path> --partition <lba> [--size <sectors>] [--path \\dir] [--out <file>]");
@@ -1881,7 +1903,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
 
     private static int Xdvdfs(string[] args)
     {
-        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) && !string.Equals(args[1], "cat", StringComparison.Ordinal)))
+        if (args.Length < 2 || (!string.Equals(args[1], "ls", StringComparison.Ordinal) &&
+                                !string.Equals(args[1], "cat", StringComparison.Ordinal)))
         {
             Console.Error.WriteLine(
                 "Usage: xgrid xdvdfs <ls|cat> --image <path> [--path \\dir] [--out <file>]");
@@ -1945,8 +1968,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             return 0;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-                                               or InvalidDataException or FileNotFoundException
-                                               or DirectoryNotFoundException)
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException)
         {
             Console.Error.WriteLine($"XDVDFS error: {exception.Message}");
             return 4;
@@ -2028,8 +2051,8 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
             return 0;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-                                               or InvalidDataException or FileNotFoundException
-                                               or DirectoryNotFoundException or ArgumentOutOfRangeException)
+                                              or InvalidDataException or FileNotFoundException
+                                              or DirectoryNotFoundException or ArgumentOutOfRangeException)
         {
             Console.Error.WriteLine($"Sector error: {exception.Message}");
             return 4;
@@ -2227,9 +2250,12 @@ CultureInfo.InvariantCulture, $" {txn.SlaveAddress:X2}:{(txn.Read ? "R" : "W")}p
         Console.WriteLine(
             "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
-        Console.WriteLine("                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
-        Console.WriteLine("                   --fetch-fast and --decode-verify default off; verify implies cache even with opt-out.");
-        Console.WriteLine("                   --block-exec/--block-verify/--spec-exec default off; spec implies block-exec.");
+        Console.WriteLine(
+            "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
+        Console.WriteLine(
+            "                   --fetch-fast and --decode-verify default off; verify implies cache even with opt-out.");
+        Console.WriteLine(
+            "                   --block-exec/--block-verify/--spec-exec default off; spec implies block-exec.");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
         Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");

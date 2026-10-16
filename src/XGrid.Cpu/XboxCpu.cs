@@ -284,7 +284,8 @@ public sealed partial class XboxCpu
     private uint FetchFast(uint fetchLinear, Span<byte> buffer)
     {
         _hotspot?.NoteFetch(false);
-        uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted, out uint errorCode);
+        uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted,
+            out uint errorCode);
         if (faulted)
         {
             throw new PageFaultSignal(fetchLinear, errorCode);
@@ -318,7 +319,8 @@ public sealed partial class XboxCpu
             for (int i = 0; i < buffer.Length; i++)
             {
                 uint linear = segmentBase + Context.Eip + (uint)i;
-                uint physical = TranslateLinearCounted(linear, out bool tlbHit, out bool tlbCounted, out bool faulted, out uint errorCode);
+                uint physical = TranslateLinearCounted(linear, out bool tlbHit, out bool tlbCounted, out bool faulted,
+                    out uint errorCode);
                 if (tlbCounted)
                 {
                     if (tlbHit)
@@ -1171,9 +1173,11 @@ public sealed partial class XboxCpu
     /// caller (after the fault check), preserving the legacy order of
     /// guest-visible effects (fault → no access note).
     /// </summary>
-    private uint TranslateLinearCounted(uint linearAddress, out bool tlbHit, out bool tlbCounted, out bool faulted, out uint errorCode)
+    private uint TranslateLinearCounted(uint linearAddress, out bool tlbHit, out bool tlbCounted, out bool faulted,
+        out uint errorCode)
     {
-        return Mmu.TranslateUncounted(linearAddress, isWrite: false, isInstruction: true, out faulted, out errorCode, out tlbHit, out tlbCounted);
+        return Mmu.TranslateUncounted(linearAddress, isWrite: false, isInstruction: true, out faulted, out errorCode,
+            out tlbHit, out tlbCounted);
     }
 
     /// <summary>
@@ -1310,8 +1314,8 @@ public sealed partial class XboxCpu
         // or D/B flushes (CR0.PE is covered by the CR-write flush;
         // SYSENTER/IRET/interrupt paths all funnel through here).
         bool csChanged = segment == SegmentRegister.Cs
-            && (Context.GetSegmentBase(SegmentRegister.Cs) != baseAddress
-                || Context.CodeSegment32 != code32);
+                         && (Context.GetSegmentBase(SegmentRegister.Cs) != baseAddress
+                             || Context.CodeSegment32 != code32);
 
         Context.SetSegment(segment, selector, baseAddress);
         if (segment == SegmentRegister.Cs)

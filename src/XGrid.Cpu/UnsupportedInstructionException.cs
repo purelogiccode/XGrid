@@ -13,14 +13,20 @@ public sealed class UnsupportedInstructionException : Exception
         Opcode = opcode;
     }
 
+    /// <summary>Initializes a new instance of the <see cref="UnsupportedInstructionException"/> class.</summary>
     public UnsupportedInstructionException()
     {
     }
 
+    /// <summary>Initializes a new instance of the <see cref="UnsupportedInstructionException"/> class with a message.</summary>
+    /// <param name="message">The message describing the error.</param>
     public UnsupportedInstructionException(string? message) : base(message)
     {
     }
 
+    /// <summary>Initializes a new instance of the <see cref="UnsupportedInstructionException"/> class with a message and inner exception.</summary>
+    /// <param name="message">The message describing the error.</param>
+    /// <param name="innerException">The exception that caused this error.</param>
     public UnsupportedInstructionException(string? message, Exception? innerException) : base(message, innerException)
     {
     }

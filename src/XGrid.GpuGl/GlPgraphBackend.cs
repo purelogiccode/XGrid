@@ -747,7 +747,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             FramebufferTarget.ReadFramebuffer, FramebufferAttachment.ColorAttachment0,
             TextureTarget.Texture2D, texture, 0);
         bool complete = _gl.CheckFramebufferStatus(FramebufferTarget.ReadFramebuffer) ==
-            GLEnum.FramebufferComplete;
+                        GLEnum.FramebufferComplete;
         if (complete)
         {
             _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _fbo);
@@ -1152,7 +1152,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         };
     }
 
-    private uint FingerprintTexture(in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height, int pitch)
+    private uint FingerprintTexture(in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height,
+        int pitch)
     {
         // Cheap sampled content fingerprint (head/tail/strided texel words):
         // catches full-buffer re-uploads (the menu's real pattern) without a
@@ -1341,7 +1342,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         float invBw = info.B.W != 0f ? 1f / info.B.W : 0f;
         float invCw = info.C.W != 0f ? 1f / info.C.W : 0f;
         bool perspective = invAw != 0f && invBw != 0f && invCw != 0f &&
-            (info.A.W != info.B.W || info.B.W != info.C.W);
+                           (info.A.W != info.B.W || info.B.W != info.C.W);
         _perspective = perspective ? 1 : 0;
         _invAw = invAw;
         _invBw = invBw;

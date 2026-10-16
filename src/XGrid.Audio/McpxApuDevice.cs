@@ -538,7 +538,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             {
                 if (i >= MaxVoices)
                 {
-                    Log($"voice list overflow list={list} top={_regs[VoiceListTop[list] >> 2]:X} v={_regs[currentReg]:X}");
+                    Log(
+                        $"voice list overflow list={list} top={_regs[VoiceListTop[list] >> 2]:X} v={_regs[currentReg]:X}");
                     break;
                 }
 
@@ -1121,7 +1122,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _regs[FedecMeth >> 2] = Se2FeIdleVoice;
         _regs[FedecParam >> 2] = voice;
         _regs[Fectl >> 2] = (_regs[Fectl >> 2] & ~(FectlFemethmode | FectlFetrapreason))
-            | FectlFemethmodeTrapped | FectlFetrapreasonRequested;
+                            | FectlFemethmodeTrapped | FectlFetrapreasonRequested;
         UpdateIrq();
     }
 
@@ -1129,7 +1130,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     {
         // FENADDR + 16 * (2 + voice * 4 + notifier), status in the last byte (xemu set_notify_status).
         uint notifyOffset = _regs[FenAddr >> 2]
-            + (16u * (NotifierBaseOffset + (voice * NotifierCountPerVoice) + (uint)notifier));
+                            + (16u * (NotifierBaseOffset + (voice * NotifierCountPerVoice) + (uint)notifier));
         _memory.Write8(notifyOffset + 15, NotificationDoneSuccess);
         _memory.Write8(notifyOffset - 1, 1);
         _regs[IsTs >> 2] |= IsTsFevintsts | IsTsFenintsts;

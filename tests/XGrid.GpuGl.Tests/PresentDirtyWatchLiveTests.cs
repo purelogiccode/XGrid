@@ -415,14 +415,14 @@ public sealed class PresentDirtyWatchLiveTests
             (0x0200u, 0x00400000u), // clip H width=64
             (0x0204u, 0x00280000u), // clip V height=40
             (0x0210u, 0x00001000u), // color offset -> surface base 0x1000
-            (0x1D90u, firstColor),  // color clear value
+            (0x1D90u, firstColor), // color clear value
             (0x1D98u, 0x03FF0000u), // clear rect H 0..1023
             (0x1D9Cu, 0x03FF0000u), // clear rect V 0..1023
             (0x1D94u, 0x000000F0u), // clear color enable
-            (0x012Cu, 0u),          // flip increment write (arms the watch)
+            (0x012Cu, 0u), // flip increment write (arms the watch)
             (0x1D90u, secondColor), // second clear value into the same surface
             (0x1D94u, 0x000000F0u),
-            (0x012Cu, 0u),          // second flip (must still serve)
+            (0x012Cu, 0u), // second flip (must still serve)
         };
 
         uint address = streamBase;

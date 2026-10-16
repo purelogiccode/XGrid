@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
+
 /// <summary>
 /// JIT semspec slice (§139): pre-specialized per-shape straight-line handlers
 /// plus the form-time shape table. No emitter, no codegen: each handler is the
@@ -53,7 +54,7 @@ public sealed partial class XboxCpu
                 instruction.Operand1.Size,
                 instruction.Condition,
                 instruction.Operand1.Memory.SegmentOverride
-                    ?? instruction.Operand2.Memory.SegmentOverride);
+                ?? instruction.Operand2.Memory.SegmentOverride);
         }
     }
 
@@ -476,7 +477,8 @@ public sealed partial class XboxCpu
     private static void SpecAddRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Add(first, instruction.Operand2.Immediate, 0, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, 0, 8, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -484,7 +486,8 @@ public sealed partial class XboxCpu
     private static void SpecAddRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Add(first, instruction.Operand2.Immediate, 0, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, 0, 16, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -492,7 +495,8 @@ public sealed partial class XboxCpu
     private static void SpecAddRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Add(first, instruction.Operand2.Immediate, 0, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, 0, 32, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -527,7 +531,8 @@ public sealed partial class XboxCpu
     private static void SpecSubRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Sub(first, instruction.Operand2.Immediate, 0, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, 0, 8, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -535,7 +540,8 @@ public sealed partial class XboxCpu
     private static void SpecSubRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Sub(first, instruction.Operand2.Immediate, 0, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, 0, 16, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -543,7 +549,8 @@ public sealed partial class XboxCpu
     private static void SpecSubRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
-        cpu.Context.Eflags = AluOps.Sub(first, instruction.Operand2.Immediate, 0, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, 0, 32, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -571,7 +578,7 @@ public sealed partial class XboxCpu
     private static void SpecAndRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            & cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
+                       & cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -598,7 +605,7 @@ public sealed partial class XboxCpu
     private static void SpecAndRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            & instruction.Operand2.Immediate) & AluOps.Mask(32);
+                       & instruction.Operand2.Immediate) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -627,7 +634,7 @@ public sealed partial class XboxCpu
     private static void SpecOrRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            | cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
+                       | cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -654,7 +661,7 @@ public sealed partial class XboxCpu
     private static void SpecOrRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            | instruction.Operand2.Immediate) & AluOps.Mask(32);
+                       | instruction.Operand2.Immediate) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -683,7 +690,7 @@ public sealed partial class XboxCpu
     private static void SpecXorRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            ^ cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
+                       ^ cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex)) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -710,7 +717,7 @@ public sealed partial class XboxCpu
     private static void SpecXorRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint result = (cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            ^ instruction.Operand2.Immediate) & AluOps.Mask(32);
+                       ^ instruction.Operand2.Immediate) & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(result, 32, cpu.Context.Eflags);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
@@ -784,7 +791,7 @@ public sealed partial class XboxCpu
     private static void SpecTestRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex)
-            & cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
+                     & cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
         value &= AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(value, 32, cpu.Context.Eflags);
         cpu.Context.Eip += (uint)instruction.Length;

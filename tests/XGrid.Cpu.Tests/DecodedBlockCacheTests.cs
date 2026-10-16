@@ -67,7 +67,8 @@ public sealed class DecodedBlockCacheTests
         Assert.Equal(DecodedBlockCache.MaxBlocks, blocks.PeakCount);
         Assert.Equal(1UL, blocks.CapFlushes);
         Assert.Equal(1, blocks.Count);
-        Assert.True(blocks.TryNext(decodes, (DecodedBlockCache.MaxBlocks + 1u) * 32 + 1, 32, 32, out DecodeCacheEntry last));
+        Assert.True(blocks.TryNext(decodes, (DecodedBlockCache.MaxBlocks + 1u) * 32 + 1, 32, 32,
+            out DecodeCacheEntry last));
         Assert.Equal(Mnemonic.Ret, last.Instruction.Mnemonic);
     }
 

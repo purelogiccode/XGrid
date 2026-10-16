@@ -90,7 +90,8 @@ public sealed class XdvdfsFileSystem : IDisposable
         var entries = new List<Entry>();
         foreach (ExplorerNode node in _explorer.ListChildren(normalized))
         {
-            entries.Add(new Entry(node.Name, node.FullPath, node.Attributes, node.StartSector, node.Size, node.IsDirectory));
+            entries.Add(new Entry(node.Name, node.FullPath, node.Attributes, node.StartSector, node.Size,
+                node.IsDirectory));
         }
 
         return entries;

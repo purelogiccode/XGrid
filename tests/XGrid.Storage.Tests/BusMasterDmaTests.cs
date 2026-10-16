@@ -207,6 +207,7 @@ public sealed class BusMasterDmaTests
         Assert.Equal(0x50u, io.Read8(Taskfile + 7));
         Assert.Equal(0x04u, ide.BusMasterStatus & 0x04u);
     }
+
     [Fact]
     public void AtapiDmaReadCapacityMovesDataToMemory()
     {
