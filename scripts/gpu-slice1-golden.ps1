@@ -18,7 +18,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$cli = "src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll"
+$cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 
 $swBmp = Join-Path $OutDir "golden-sw.bmp"

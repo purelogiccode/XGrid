@@ -12,7 +12,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Out,
     [ValidateSet("off", "probe", "on")][string]$Mode = "off",
     [string]$Steps = "1000000000",
-    [string]$Cli = "src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll",
+    [string]$Cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll",
     [string]$TriangleIso = "C:\Users\HomePC\AppData\Local\Temp\opencode\triangle-iso\triangle.iso"
 )
 

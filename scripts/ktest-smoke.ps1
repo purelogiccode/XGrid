@@ -37,7 +37,7 @@ function Stamp([string]$m) { Write-Host ("[{0:mm\:ss}] {1}" -f $Wall.Elapsed, $m
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$cli = "src\XGrid.Cli\bin\Release\net9.0\XGrid.Cli.dll"
+$cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 if (-not (Test-Path $FirmwareDir)) { Write-Error "Missing firmware dir: $FirmwareDir"; exit 2 }
 if (-not (Test-Path $SuiteXbe)) { Write-Error "Missing suite XBE: $SuiteXbe"; exit 2 }

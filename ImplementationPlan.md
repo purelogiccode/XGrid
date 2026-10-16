@@ -977,7 +977,7 @@ E:\Microsoft Xbox      945 USA retail .chd files (~1.44 TB) + 1403 .dummy placeh
 ```
 
 Libraries for them (both pure C#, zero native deps, target
-net8.0/net9.0/net10.0 - compatible with this repo's net9.0): NuGet
+net8.0/net9.0/net10.0 - compatible with this repo's net10.0): NuGet
 `XISOSharp` 1.4.2 (purelogiccode's C# extract-xiso implementation;
 sibling repo `CSharp_XISOSharp` holds docs + source) for ISO/XISO -
 **referenced since §64** (`XGrid.XboxFs/XdvdfsFileSystem` + `xgrid
@@ -3265,7 +3265,7 @@ FWAIT does not yet deliver #MF for unmasked x87 exceptions.
 ## Conventions for all phases
 
 - **Names**: solution `XGrid.sln`; assemblies `XGrid.*`; test assemblies `XGrid.*.Tests`.
-- **Target**: `.NET 9` (`net9.0`) initially, SDK pinned in `global.json`; `XGrid.Core` must remain
+- **Target**: `.NET 10` (`net10.0`), SDK pinned in `global.json`; `XGrid.Core` must remain
   NativeAOT-compatible where practical (no reflection in hot paths, no `dynamic`).
 - **Language**: nullable enabled, implicit usings off (explicit imports for clarity), file-scoped
   namespaces, `LangVersion latest`, `TreatWarningsAsErrors true`, deterministic builds.
