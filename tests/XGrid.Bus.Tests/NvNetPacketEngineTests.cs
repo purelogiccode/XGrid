@@ -135,8 +135,8 @@ public sealed class NvNetPacketEngineTests
         var net = CreateTransmitter(memory, txCountMask: 1);
         memory.WriteDescriptor(TxBaseAddr, 0x3000, 1, (ushort)TxValid);
         memory.WriteDescriptor(TxBaseAddr + 8, 0x3010, 1, (ushort)(TxValid | TxLastPacket));
-        memory.WritePayload(0x3000, new byte[] { (byte)'A', (byte)'B' });
-        memory.WritePayload(0x3010, new byte[] { (byte)'C', (byte)'D' });
+        memory.WritePayload(0x3000, new[] { (byte)'A', (byte)'B' });
+        memory.WritePayload(0x3010, new[] { (byte)'C', (byte)'D' });
 
         Assert.Equal(2u, net.TxRingCount);
 
@@ -144,7 +144,7 @@ public sealed class NvNetPacketEngineTests
 
         var backend = Assert.IsType<LoopbackNetworkBackend>(net.Backend);
         Assert.Equal(1, backend.SentPackets);
-        Assert.Equal(new byte[] { (byte)'A', (byte)'B', (byte)'C', (byte)'D' }, backend.SentLog[0]);
+        Assert.Equal(new[] { (byte)'A', (byte)'B', (byte)'C', (byte)'D' }, backend.SentLog[0]);
         // Both descriptors consumed; NEXT wrapped past the 2-entry ring to BASE.
         Assert.Equal(0u, memory.ReadDescriptorFlags(TxBaseAddr));
         Assert.Equal(TxLastPacket, memory.ReadDescriptorFlags(TxBaseAddr + 8));
@@ -246,13 +246,13 @@ public sealed class NvNetPacketEngineTests
         var memory = new FakeMemory();
         var net = CreateTransmitter(memory);
         memory.WriteDescriptor(TxBaseAddr, 0x3000, 3, (ushort)(TxValid | TxLastPacket));
-        memory.WritePayload(0x3000, new byte[] { (byte)'P', (byte)'I', (byte)'N', (byte)'G' });
+        memory.WritePayload(0x3000, new[] { (byte)'P', (byte)'I', (byte)'N', (byte)'G' });
 
         net.Write(Base + TxRxControl, 4, Kick);
 
         var backend = Assert.IsType<LoopbackNetworkBackend>(net.Backend);
         Assert.Equal(1, backend.SentPackets);
-        Assert.Equal(new byte[] { (byte)'P', (byte)'I', (byte)'N', (byte)'G' }, backend.SentLog[0]);
+        Assert.Equal(new[] { (byte)'P', (byte)'I', (byte)'N', (byte)'G' }, backend.SentLog[0]);
         Assert.Equal(1, net.TxPackets);
         Assert.Equal(4, net.TxBytes);
         // VALID cleared, LASTPACKET retained, length field preserved.
@@ -290,7 +290,7 @@ public sealed class NvNetPacketEngineTests
         var net = CreateTransmitter(memory, txCountMask: 1);
         memory.WriteDescriptor(TxBaseAddr, 0x3000, 1, (ushort)TxValid);
         memory.WriteDescriptor(TxBaseAddr + 8, 0x3010, 1, 0);
-        memory.WritePayload(0x3000, new byte[] { (byte)'A', (byte)'B' });
+        memory.WritePayload(0x3000, new[] { (byte)'A', (byte)'B' });
 
         net.Write(Base + TxRxControl, 4, Kick);
 

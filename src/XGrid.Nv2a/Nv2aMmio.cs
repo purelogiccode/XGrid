@@ -4,8 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Nv2a;
@@ -272,11 +272,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TextureAddressMirror = 2u;
     private const uint TextureAddressClampToEdge = 3u;
     private const uint TextureAddressBorder = 4u;
-    private const uint TextureAddressClampOgl = 5u;
     private const uint TextureBumpMatBase = 0x28u;
-    private const uint TextureBumpMatEnd = 0x34u;
-    private const uint TextureBumpScale = 0x38u;
-    private const uint TextureBumpOffset = 0x3Cu;
     private const int MaxTextureSlots = 4;
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
@@ -439,7 +435,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[] _fogColor = new float[4];
     private readonly float[] _fogParams = new float[3];
     private readonly PshCombiner _combiner = new();
-    private static readonly float[] CombinerFogConst = new float[] { 0f, 0f, 0f, 1f };
+    private static readonly float[] CombinerFogConst = new[] { 0f, 0f, 0f, 1f };
     private bool _alphaTestEnable;
     private uint _alphaFunc;
     private uint _alphaRef;
@@ -823,7 +819,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns the NV2A control window to its power-on state: clears the PFIFO/PVIDEO/PFB/PGRAPH register arrays, pending/enabled IRQ state, pusher state, and presented-surface bookkeeping.</summary>
     public void Reset()
     {
         Array.Clear(_pfifo);
@@ -1021,7 +1017,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public void SaveState(BinaryWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        writer.Write(Nv2aSnapshotVersion);
+        writer.Write(Nv2ASnapshotVersion);
         writer.Write(RamSize);
         WriteUints(writer, _boundEngine);
         WriteUints(writer, _boundInstance);
@@ -1287,7 +1283,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != Nv2aSnapshotVersion)
+        if (version != Nv2ASnapshotVersion)
         {
             throw new InvalidDataException($"Unsupported NV2A snapshot version {version}.");
         }
@@ -1610,7 +1606,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2aSnapshotVersion = 3;
+    private const int Nv2ASnapshotVersion = 3;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -1696,7 +1692,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Array.Copy(data, target, target.Length);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads from the NV2A register window at the given absolute address, extracting the addressed byte lane from the aligned 32-bit register.</summary>
+    /// <param name="address">Absolute address inside the 16 MB control window.</param>
+    /// <param name="size">Access size in bytes (1, 2, or 4).</param>
+    /// <returns>The register value truncated and shifted to the addressed lane.</returns>
     public uint Read(uint address, int size)
     {
         uint offset = address - BaseAddress;
@@ -1710,7 +1709,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes to the NV2A register window at the given absolute address; sub-word writes read-modify-write only the addressed byte lane of the aligned 32-bit register.</summary>
+    /// <param name="address">Absolute address inside the 16 MB control window.</param>
+    /// <param name="size">Access size in bytes (1, 2, or 4).</param>
+    /// <param name="value">Value to write, in the low <paramref name="size"/> bytes.</param>
     public void Write(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;
@@ -2195,12 +2197,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint ReadUser(uint offset)
     {
         if (IsActiveDmaChannel(offset) && (offset & 0xFFFFu) switch
-        {
-            UserDmaPut => true,
-            UserDmaGet => true,
-            UserRef => true,
-            _ => false,
-        })
+            {
+                UserDmaPut => true,
+                UserDmaGet => true,
+                UserRef => true,
+                _ => false,
+            })
         {
             return (offset & 0xFFFFu) switch
             {
@@ -2280,7 +2282,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         uint hash = folded ^ (channel << (bits - 4));
-        uint offset = ((ramht & RamhtBaseMask) << 8) + hash * 8;
+        uint offset = ((ramht & RamhtBaseMask) << 8) + (hash * 8);
         if (offset + 8 > PraminSize)
         {
             return false;
@@ -2384,13 +2386,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint get = _pfifo[PfifoCache1DmaGet / 4];
         uint put = _pfifo[PfifoCache1DmaPut / 4];
         uint words = 0;
-        while (true)
+        while (!_waitingForNop)
         {
-            if (_waitingForNop)
-            {
-                break;
-            }
-
             if ((_pgraph[PgraphFifo / 4] & PgraphFifoAccess) == 0)
             {
                 break;
@@ -2438,7 +2435,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 {
                     if ((state & DmaStateMethodType) == 0)
                     {
-                        uint advanced = ((state & DmaStateMethod) + 4 * consumed) & DmaStateMethod;
+                        uint advanced = ((state & DmaStateMethod) + (4 * consumed)) & DmaStateMethod;
                         _pfifo[PfifoCache1DmaState / 4] =
                             (_pfifo[PfifoCache1DmaState / 4] & ~DmaStateMethod) | advanced;
                     }
@@ -2794,18 +2791,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 FlipModuloDebug = parameter;
                 break;
             case MethodFlipIncrementWrite:
-                {
-                    uint flipModulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
-                    FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
-                    FramesPresented++;
-                    CapturePresentedFrame();
-                    Backend?.Flip(new PgraphSurfaceRecord(
-                        _surfaceClipH >> 16, _surfaceClipV >> 16,
-                        ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented,
-                        SurfaceBase(_dmaColor) + PresentedColorOffset,
-                        _surfacePitch & 0xFFFFu));
-                    break;
-                }
+            {
+                uint flipModulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
+                FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
+                FramesPresented++;
+                CapturePresentedFrame();
+                Backend?.Flip(new PgraphSurfaceRecord(
+                    _surfaceClipH >> 16, _surfaceClipV >> 16,
+                    ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented,
+                    SurfaceBase(_dmaColor) + PresentedColorOffset,
+                    _surfacePitch & 0xFFFFu));
+                break;
+            }
             case MethodFlipStall:
                 FlipStalls++;
                 break;
@@ -3138,7 +3135,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             int attribute = slot / 2;
             int part = slot % 2;
             _inlineValues[attribute][part * 2] = (short)(parameter & 0xFFFFu);
-            _inlineValues[attribute][part * 2 + 1] = (short)(parameter >> 16);
+            _inlineValues[attribute][(part * 2) + 1] = (short)(parameter >> 16);
             if (attribute == 0 && part == 1)
             {
                 FinishInlineVertex();
@@ -3489,10 +3486,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         for (uint y = ymin; y <= ymax; y++)
         {
-            uint row = offset + y * pitch;
+            uint row = offset + (y * pitch);
             for (uint x = xmin; x <= xmax; x++)
             {
-                uint address = row + x * bytes;
+                uint address = row + (x * bytes);
                 if (address + bytes > RamSize)
                 {
                     return;
@@ -3670,13 +3667,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private static uint PackPixel(uint bytes, float r, float g, float b, float a)
     {
         return bytes == 4
-            ? ((uint)(Math.Clamp(a, 0f, 1f) * 255f + 0.5f) << 24) |
-              ((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f) << 16) |
-              ((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f) << 8) |
-              (uint)(Math.Clamp(b, 0f, 1f) * 255f + 0.5f)
-            : ((uint)(Math.Clamp(r, 0f, 1f) * 31f + 0.5f) << 11) |
-              ((uint)(Math.Clamp(g, 0f, 1f) * 63f + 0.5f) << 5) |
-              (uint)(Math.Clamp(b, 0f, 1f) * 31f + 0.5f);
+            ? ((uint)((Math.Clamp(a, 0f, 1f) * 255f) + 0.5f) << 24) |
+              ((uint)((Math.Clamp(r, 0f, 1f) * 255f) + 0.5f) << 16) |
+              ((uint)((Math.Clamp(g, 0f, 1f) * 255f) + 0.5f) << 8) |
+              (uint)((Math.Clamp(b, 0f, 1f) * 255f) + 0.5f)
+            : ((uint)((Math.Clamp(r, 0f, 1f) * 31f) + 0.5f) << 11) |
+              ((uint)((Math.Clamp(g, 0f, 1f) * 63f) + 0.5f) << 5) |
+              (uint)((Math.Clamp(b, 0f, 1f) * 31f) + 0.5f);
     }
 
     private static float NaNToOne(float value)
@@ -3923,7 +3920,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             float u1, float v1, float s1,
             float u2, float v2, float s2,
             float u3, float v3, float s3,
-            float t0w, float t1w, float t2w, float t3w,
+            float t0W, float t1W, float t2W, float t3W,
             float fog)
         {
             X = x;
@@ -3950,10 +3947,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             U3 = u3;
             V3 = v3;
             S3 = s3;
-            T0W = t0w;
-            T1W = t1w;
-            T2W = t2w;
-            T3W = t3w;
+            T0W = t0W;
+            T1W = t1W;
+            T2W = t2W;
+            T3W = t3W;
             Fog = fog;
         }
 
@@ -4320,17 +4317,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 break;
             case 6:
-                {
-                    int packed = (int)_memory.ReadPhysical(address);
-                    int x = SignExtend(packed & 0x7FF, 11);
-                    int y = SignExtend((packed >> 11) & 0x7FF, 11);
-                    int z = SignExtend((packed >> 22) & 0x3FF, 10);
-                    destination[0] = Math.Max(-1f, x / 1023f);
-                    destination[1] = Math.Max(-1f, y / 1023f);
-                    destination[2] = Math.Max(-1f, z / 511f);
-                    destination[3] = 1f;
-                    break;
-                }
+            {
+                int packed = (int)_memory.ReadPhysical(address);
+                int x = SignExtend(packed & 0x7FF, 11);
+                int y = SignExtend((packed >> 11) & 0x7FF, 11);
+                int z = SignExtend((packed >> 22) & 0x3FF, 10);
+                destination[0] = Math.Max(-1f, x / 1023f);
+                destination[1] = Math.Max(-1f, y / 1023f);
+                destination[2] = Math.Max(-1f, z / 511f);
+                destination[3] = 1f;
+                break;
+            }
 
             default:
                 break;
@@ -4675,22 +4672,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         switch (color)
         {
             case 0x06u:
-                {
-                    uint texel = memory.ReadPhysical(address);
-                    a = ((texel >> 24) & 0xFFu) / 255f;
-                    r = ((texel >> 16) & 0xFFu) / 255f;
-                    g = ((texel >> 8) & 0xFFu) / 255f;
-                    b = (texel & 0xFFu) / 255f;
-                    return true;
-                }
+            {
+                uint texel = memory.ReadPhysical(address);
+                a = ((texel >> 24) & 0xFFu) / 255f;
+                r = ((texel >> 16) & 0xFFu) / 255f;
+                g = ((texel >> 8) & 0xFFu) / 255f;
+                b = (texel & 0xFFu) / 255f;
+                return true;
+            }
             case 0x05u:
-                {
-                    uint texel = memory.ReadPhysical(address) & 0xFFFFu;
-                    r = ((texel >> 11) & 0x1Fu) / 31f;
-                    g = ((texel >> 5) & 0x3Fu) / 63f;
-                    b = (texel & 0x1Fu) / 31f;
-                    return true;
-                }
+            {
+                uint texel = memory.ReadPhysical(address) & 0xFFFFu;
+                r = ((texel >> 11) & 0x1Fu) / 31f;
+                g = ((texel >> 5) & 0x3Fu) / 63f;
+                b = (texel & 0x1Fu) / 31f;
+                return true;
+            }
             default:
                 return false;
         }
@@ -4713,16 +4710,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 value %= size;
                 return value < 0 ? value + size : value;
             case 1:
+            {
+                int period = size * 2;
+                value %= period;
+                if (value < 0)
                 {
-                    int period = size * 2;
-                    value %= period;
-                    if (value < 0)
-                    {
-                        value += period;
-                    }
-
-                    return value < size ? value : period - 1 - value;
+                    value += period;
                 }
+
+                return value < size ? value : period - 1 - value;
+            }
             default:
                 return Math.Clamp(value, 0, size - 1);
         }
@@ -5209,7 +5206,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     alpha = 255u;
                 }
 
-                int at = (int)(((ulong)y * _presentedWidth + x) * 4);
+                int at = (int)((((ulong)y * _presentedWidth) + x) * 4);
                 pixels[at] = (byte)blue;
                 pixels[at + 1] = (byte)green;
                 pixels[at + 2] = (byte)red;
@@ -5238,7 +5235,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 : (current >> 8) & 0xFFFFFFu;
             uint writeMask = _stencilWriteMask & StencilByteMask;
             uint newStencil = writeStencil
-                ? ((current & StencilByteMask) & ~writeMask) | (stencil & writeMask)
+                ? (current & StencilByteMask & ~writeMask) | (stencil & writeMask)
                 : current & StencilByteMask;
             _memory.WritePhysical(address, (depthBits << 8) | newStencil);
             return;
@@ -5438,16 +5435,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 (float R, float G, float B, float A) fd = BlendFactor(_blendDstFactor, src, dst, constant);
                 result = _blendEquation switch
                 {
-                    0u => (src.R * fs.R - dst.R * fd.R, src.G * fs.G - dst.G * fd.G,
-                        src.B * fs.B - dst.B * fd.B, src.A * fs.A - dst.A * fd.A),
-                    1u or 5u => (dst.R * fd.R - src.R * fs.R, dst.G * fd.G - src.G * fs.G,
-                        dst.B * fd.B - src.B * fs.B, dst.A * fd.A - src.A * fs.A),
+                    0u => ((src.R * fs.R) - (dst.R * fd.R), (src.G * fs.G) - (dst.G * fd.G),
+                        (src.B * fs.B) - (dst.B * fd.B), (src.A * fs.A) - (dst.A * fd.A)),
+                    1u or 5u => ((dst.R * fd.R) - (src.R * fs.R), (dst.G * fd.G) - (src.G * fs.G),
+                        (dst.B * fd.B) - (src.B * fs.B), (dst.A * fd.A) - (src.A * fs.A)),
                     3u => (Math.Min(src.R, dst.R), Math.Min(src.G, dst.G),
                         Math.Min(src.B, dst.B), Math.Min(src.A, dst.A)),
                     4u => (Math.Max(src.R, dst.R), Math.Max(src.G, dst.G),
                         Math.Max(src.B, dst.B), Math.Max(src.A, dst.A)),
-                    _ => (src.R * fs.R + dst.R * fd.R, src.G * fs.G + dst.G * fd.G,
-                        src.B * fs.B + dst.B * fd.B, src.A * fs.A + dst.A * fd.A),
+                    _ => ((src.R * fs.R) + (dst.R * fd.R), (src.G * fs.G) + (dst.G * fd.G),
+                        (src.B * fs.B) + (dst.B * fd.B), (src.A * fs.A) + (dst.A * fd.A)),
                 };
                 result = (
                     Math.Clamp(result.R, 0f, 1f),
@@ -5735,22 +5732,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 return SampleInto(stage, tu, tv, texel);
             case PshCombiner.TexModeProject3D:
+            {
+                if (TryResolveShadow(stage, texel))
                 {
-                    if (TryResolveShadow(stage, texel))
-                    {
-                        return false;
-                    }
-
-                    // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
-                    // samplers, (x/w, y/w, z/w) for volume textures.
-                    float invW = 1f / coord[3];
-                    if (TextureDimensionality(stage) == 3)
-                    {
-                        return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
-                    }
-
-                    return SampleInto(stage, tu * invW, tv * invW, texel);
+                    return false;
                 }
+
+                // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
+                // samplers, (x/w, y/w, z/w) for volume textures.
+                float invW = 1f / coord[3];
+                if (TextureDimensionality(stage) == 3)
+                {
+                    return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
+                }
+
+                return SampleInto(stage, tu * invW, tv * invW, texel);
+            }
 
             case PshCombiner.TexModeCubemap:
                 if (IsTextureCubemap(stage))
@@ -6314,8 +6311,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         var diffuse = new float[4];
         var specular = new float[4];
         var fog = new float[4];
-        var texels = new float[][] { new float[4], new float[4], new float[4], new float[4] };
-        var coords = new float[][] { new float[4], new float[4], new float[4], new float[4] };
+        var texels = new[] { new float[4], new float[4], new float[4], new float[4] };
+        var coords = new[] { new float[4], new float[4], new float[4], new float[4] };
         var stageDots = new float[PshCombiner.TextureSlots];
         foreach (float[] texel in texels)
         {

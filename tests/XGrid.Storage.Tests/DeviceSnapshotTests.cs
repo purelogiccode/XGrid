@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using XGrid.Bus.Io;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 using Xunit;
 
 namespace XGrid.Storage.Tests;
@@ -76,17 +76,6 @@ public sealed class DeviceSnapshotTests
     [Fact]
     public void Overlay_RoundTrip()
     {
-        static OverlayDiskImage Create()
-        {
-            var overlay = new OverlayDiskImage(new MemoryDiskImage(16));
-            Span<byte> sector = stackalloc byte[512];
-            sector.Fill(0x5A);
-            overlay.WriteSector(3, sector);
-            sector.Fill(0xA5);
-            overlay.WriteSector(9, sector);
-            return overlay;
-        }
-
         using var first = Create();
         byte[] baseline = Save(first);
         Assert.Equal(2, first.ModifiedSectorCount);
@@ -102,6 +91,18 @@ public sealed class DeviceSnapshotTests
         second.WriteSector(5, sector);
         Load(second, baseline);
         Assert.Equal(baseline, Save(second));
+        return;
+
+        static OverlayDiskImage Create()
+        {
+            var overlay = new OverlayDiskImage(new MemoryDiskImage(16));
+            Span<byte> sector = stackalloc byte[512];
+            sector.Fill(0x5A);
+            overlay.WriteSector(3, sector);
+            sector.Fill(0xA5);
+            overlay.WriteSector(9, sector);
+            return overlay;
+        }
     }
 
     [Fact]
@@ -117,6 +118,21 @@ public sealed class DeviceSnapshotTests
     [Fact]
     public void AtaHdd_RoundTrip()
     {
+        var first = Create();
+        Exercise(first);
+        byte[] baseline = Save(first);
+
+        var second = Create();
+        Load(second, baseline);
+        Assert.Equal(baseline, Save(second));
+        Assert.Equal(first.LastCommand, second.LastCommand);
+        Assert.Equal(first.Status, second.Status);
+
+        Exercise(second);
+        Load(second, baseline);
+        Assert.Equal(baseline, Save(second));
+        return;
+
         static AtaDevice Create()
         {
             var drive = new AtaDevice();
@@ -135,7 +151,11 @@ public sealed class DeviceSnapshotTests
                 drive.ReadTaskfile(0, 16);
             }
         }
+    }
 
+    [Fact]
+    public void AtaAtapi_RoundTrip()
+    {
         var first = Create();
         Exercise(first);
         byte[] baseline = Save(first);
@@ -143,17 +163,12 @@ public sealed class DeviceSnapshotTests
         var second = Create();
         Load(second, baseline);
         Assert.Equal(baseline, Save(second));
-        Assert.Equal(first.LastCommand, second.LastCommand);
-        Assert.Equal(first.Status, second.Status);
 
         Exercise(second);
         Load(second, baseline);
         Assert.Equal(baseline, Save(second));
-    }
+        return;
 
-    [Fact]
-    public void AtaAtapi_RoundTrip()
-    {
         static AtaDevice Create()
         {
             var drive = new AtaDevice(atapi: true);
@@ -181,35 +196,11 @@ public sealed class DeviceSnapshotTests
                 drive.ReadTaskfile(0, 8);
             }
         }
-
-        var first = Create();
-        Exercise(first);
-        byte[] baseline = Save(first);
-
-        var second = Create();
-        Load(second, baseline);
-        Assert.Equal(baseline, Save(second));
-
-        Exercise(second);
-        Load(second, baseline);
-        Assert.Equal(baseline, Save(second));
     }
 
     [Fact]
     public void Ide_RoundTrip()
     {
-        static IdeController Create()
-        {
-            var io = new IoSpace();
-            var ide = new IdeController();
-            ide.AttachPrimaryMaster(new OverlayDiskImage(new MemoryDiskImage(32)));
-            ide.AttachDvd(new MemoryDvdImage(64));
-            ide.RegisterPorts(io);
-            ide.HddPath = "hdd-test-path";
-            ide.DvdPath = "dvd-test-path";
-            return ide;
-        }
-
         var first = Create();
         first.WriteConfig(0x04, 2, 0x0007);
         first.PrimaryMaster.WriteTaskfile(2, 8, 0x01);
@@ -231,5 +222,18 @@ public sealed class DeviceSnapshotTests
         first.PrimaryMaster.WriteTaskfile(7, 8, 0x91);
         Load(second, baseline);
         Assert.Equal(baseline, Save(second));
+        return;
+
+        static IdeController Create()
+        {
+            var io = new IoSpace();
+            var ide = new IdeController();
+            ide.AttachPrimaryMaster(new OverlayDiskImage(new MemoryDiskImage(32)));
+            ide.AttachDvd(new MemoryDvdImage(64));
+            ide.RegisterPorts(io);
+            ide.HddPath = "hdd-test-path";
+            ide.DvdPath = "dvd-test-path";
+            return ide;
+        }
     }
 }

@@ -9,7 +9,7 @@ using XGrid.Bus.Pci;
 using XGrid.Bus.Smbus;
 using XGrid.Bus.Timers;
 using XGrid.Bus.Usb;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 using Xunit;
 
 namespace XGrid.Bus.Tests;
@@ -53,15 +53,26 @@ public sealed class DeviceSnapshotTests
     {
         private readonly Dictionary<uint, byte> _ram = new();
 
-        public byte Read8(uint address) => _ram.GetValueOrDefault(address, (byte)0);
+        public byte Read8(uint address)
+        {
+            return _ram.GetValueOrDefault(address, (byte)0);
+        }
 
-        public ushort Read16(uint address) => (ushort)(Read8(address) | (Read8(address + 1) << 8));
+        public ushort Read16(uint address)
+        {
+            return (ushort)(Read8(address) | (Read8(address + 1) << 8));
+        }
 
-        public uint Read32(uint address) =>
-            (uint)(Read8(address) | (Read8(address + 1) << 8) | (Read8(address + 2) << 16) |
-                   (Read8(address + 3) << 24));
+        public uint Read32(uint address)
+        {
+            return (uint)(Read8(address) | (Read8(address + 1) << 8) | (Read8(address + 2) << 16) |
+                          (Read8(address + 3) << 24));
+        }
 
-        public void Write8(uint address, byte value) => _ram[address] = value;
+        public void Write8(uint address, byte value)
+        {
+            _ram[address] = value;
+        }
 
         public void Write16(uint address, ushort value)
         {

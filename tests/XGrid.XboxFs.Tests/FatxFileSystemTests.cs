@@ -45,7 +45,7 @@ public sealed class FatxFileSystemTests
     public void ReadFile_FollowsClusterChain()
     {
         var fs = OpenFixture(out _);
-        uint clusterBytes = ClusterSectors * 512;
+        const uint clusterBytes = ClusterSectors * 512;
 
         byte[] data = fs.ReadFile("\\BIG.BIN");
 
@@ -123,7 +123,7 @@ public sealed class FatxFileSystemTests
         const uint wideBase = 0x80;
         const uint wideSectors = 2097824u;
         const uint wideClusters = (wideSectors - 8u) / 32u;
-        uint wideData = wideBase + 8u + ((wideClusters * 4u + 511u) / 512u);
+        const uint wideData = wideBase + 8u + (((wideClusters * 4u) + 511u) / 512u);
         var disk = new FakeDisk(wideSectors);
         WriteSuperblock(disk, wideBase, 32);
         disk.WriteFatEntry(wideBase, 0, 0xFFFFFFF8u, wide: true);
@@ -158,7 +158,7 @@ public sealed class FatxFileSystemTests
         WriteEntry(disk, DataStart, 64, "SUB", 0x10, 3, 0);
         WriteEntry(disk, DataStart, 128, "BIG.BIN", 0x00, 4, 2 * ClusterSectors * 512);
         WriteEnd(disk, DataStart, 192);
-        uint sub = DataStart + ((3u - 1u) * ClusterSectors);
+        const uint sub = DataStart + ((3u - 1u) * ClusterSectors);
         WriteEntry(disk, sub, 0, "NESTED.BIN", 0x00, 6, 10);
         WriteEnd(disk, sub, 64);
         FillCluster(disk, 2, (byte)'H', (byte)'X');

@@ -227,7 +227,10 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
         _window = baseAddress == 0 ? null : _io.Register((ushort)baseAddress, 16, this);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one or more consecutive SMBus host registers starting at the masked port offset, assembling them little-endian.</summary>
+    /// <param name="offset">The register offset inside the I/O window (only the low 6 bits are decoded).</param>
+    /// <param name="size">The access size in bytes (1, 2, or 4).</param>
+    /// <returns>The little-endian value of the accessed registers, masked to the access size.</returns>
     public uint Read(ushort offset, int size)
     {
         byte register = (byte)(offset & 0x3F);
@@ -240,7 +243,10 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
         return value & Mask(size);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one or more consecutive SMBus host registers starting at the masked port offset, splitting the value little-endian.</summary>
+    /// <param name="offset">The register offset inside the I/O window (only the low 6 bits are decoded).</param>
+    /// <param name="size">The access size in bytes (1, 2, or 4).</param>
+    /// <param name="value">The little-endian value to write across the registers.</param>
     public void Write(ushort offset, int size, uint value)
     {
         byte register = (byte)(offset & 0x3F);
@@ -271,7 +277,7 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
         {
             case GlobalStatus:
                 if ((Control & InterruptEnable) != 0
-                    && ((value & ClearStatusMask) & ~(Status & ClearStatusMask)) != 0)
+                    && (value & ClearStatusMask & ~(Status & ClearStatusMask)) != 0)
                 {
                     RaiseInterrupt();
                 }

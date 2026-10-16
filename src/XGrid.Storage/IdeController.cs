@@ -2,12 +2,11 @@ using System;
 using System.IO;
 using XGrid.Bus.Io;
 using XGrid.Bus.Pci;
-using XGrid.Core;
 
 namespace XGrid.Storage;
 
 /// <summary>Xbox IDE controller (nForce 10DE:01BC at PCI 0:9.0, IRQ 14) with one primary channel.</summary>
-public sealed class IdeController : PciDevice, ISnapshotable
+public sealed class IdeController : PciDevice
 {
     private const int BusMasterBar = 4;
     private const uint BmStatusActive = 0x01;

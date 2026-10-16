@@ -3,7 +3,7 @@ using Xunit;
 
 namespace XGrid.Nv2a.Tests;
 
-public sealed class Nv2aFogTexModesTests
+public sealed class Nv2AFogTexModesTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
@@ -307,7 +307,7 @@ public sealed class Nv2aFogTexModesTests
         pushes.Add((slotBase + 0x04u, format));
         pushes.Add((slotBase + 0x08u, 0x00000000u));
         pushes.Add((slotBase + 0x0Cu, 0x40000000u));
-        pushes.Add((slotBase + 0x10u, width * 4u << 16));
+        pushes.Add((slotBase + 0x10u, (width * 4u) << 16));
         pushes.Add((slotBase + 0x1Cu, (width << 16) | height));
     }
 

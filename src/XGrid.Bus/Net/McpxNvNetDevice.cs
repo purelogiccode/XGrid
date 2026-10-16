@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Bus.Net;
@@ -61,9 +61,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     // IRQ status bits (xemu nvnet_regs.h).
     private const uint IrqRx = 1u << 1;
     private const uint IrqRxNoBuf = 1u << 2;
-    private const uint IrqTxErr = 1u << 3;
     private const uint IrqTx = 1u << 4;
-    private const uint IrqTimer = 1u << 5;
     private const uint IrqMiiEvent = 1u << 6;
 
     // Register bits (xemu nvnet_regs.h).
@@ -153,8 +151,10 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Raised when the nvnet PCI interrupt line changes state (wired to PIC IRQ4).</summary>
     public event Action<bool>? InterruptChanged;
 
-    /// <inheritdoc />
+    /// <summary>Gets the device name used in traces and diagnostics ("MCPX NVNET").</summary>
+#pragma warning disable CA1822
     public string Name => "MCPX NVNET";
+#pragma warning restore CA1822
 
     /// <summary>Gets the number of MMIO reads, for diagnostics.</summary>
     public long Reads { get; private set; }
@@ -246,7 +246,10 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the RX ring descriptor count (SIZE mask + 1), for diagnostics.</summary>
     public uint RxRingCount => (_regs[RingSize >> 2] >> 16) + 1;
 
-    /// <inheritdoc />
+    /// <summary>Returns the nvnet controller to its power-on state: clears registers, PHY, and
+    /// diagnostics counters, drops any pending frame, then applies xemu's reset defaults
+    /// (TX_RX_CONTROL IDLE preset, adapter link-up, default MAC, PHY init values) and
+    /// recomputes the interrupt line.</summary>
     public void Reset()
     {
         Array.Clear(_regs, 0, _regs.Length);
@@ -749,7 +752,12 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         PollReceive();
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a register in the 1 KB nvnet window at 0xFEF00000: the aligned 32-bit
+    /// register word is selected for the given 1/2/4-byte access at the unaligned offset, counting
+    /// the access in <see cref="Reads"/> and the per-register histogram; addresses outside the
+    /// window read as 0.</summary>
+    /// <param name="address">Absolute address inside the window (base 0xFEF00000).</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
     public uint Read(uint address, int size)
     {
         uint offset = address - BaseAddress;
@@ -772,7 +780,13 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a register in the 1 KB nvnet window at 0xFEF00000: the value is merged into
+    /// the aligned register word for the requested byte lane (partial writes update only their
+    /// bytes) and routed through the register write side effects, counting the access in
+    /// <see cref="Writes"/>; addresses outside the window are ignored.</summary>
+    /// <param name="address">Absolute address inside the window (base 0xFEF00000).</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
+    /// <param name="value">Value to write, right-aligned in the low bytes.</param>
     public void Write(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;

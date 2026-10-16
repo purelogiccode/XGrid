@@ -131,14 +131,6 @@ public sealed class SpecExecutionTests
     [Fact]
     public void Resolver_CoversOnlyTheInitialShapes()
     {
-        static DecodedInstruction Decode(params byte[] code)
-        {
-            Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
-            window.Clear();
-            code.CopyTo(window);
-            return Decoder.Decode(window, 32, 32);
-        }
-
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x90)));
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x89, 0xD8)));
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x8B, 0x03)));
@@ -169,6 +161,15 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
+        return;
+
+        static DecodedInstruction Decode(params byte[] code)
+        {
+            Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
+            window.Clear();
+            code.CopyTo(window);
+            return Decoder.Decode(window, 32, 32);
+        }
     }
 
     [Fact]
@@ -193,18 +194,6 @@ public sealed class SpecExecutionTests
         // through its pre-specialized handler. (A bare IRET would pop the
         // pushed #PF error code as EIP, so no round-trip is attempted.)
         byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x8B, 0x1D, 0x00, 0x20, 0x00, 0x00, 0x90, 0xF4 };
-
-        static XboxCpu CreatePaged(bool spec, byte[] bytes)
-        {
-            XboxCpu cpu = Create(spec, bytes);
-            MapIdentity(cpu.Bus(), 1, 1);
-            MapIdentity(cpu.Bus(), 4, 1);
-            MapIdentity(cpu.Bus(), 7, 2); // IDT/stacked frame pages (frame grows below 0x8000)
-            EnablePaging(cpu);
-            cpu.Ram().Write8(0x1500, 0x90); // handler: nop (never returned through)
-            InstallIdt(cpu, 14, 0x1500);
-            return cpu;
-        }
 
         XboxCpu plain = CreatePaged(false, code);
         XboxCpu specPaged = CreatePaged(true, code);
@@ -237,20 +226,25 @@ public sealed class SpecExecutionTests
         Assert.Equal(0x2000u, specPaged.Context.Cr2);
         Assert.Equal(1u, specPaged.Context.Eax);
         Assert.Equal(0x1500u, specPaged.Context.Eip);
+        return;
+
+        static XboxCpu CreatePaged(bool spec, byte[] bytes)
+        {
+            XboxCpu cpu = Create(spec, bytes);
+            MapIdentity(cpu.Bus(), 1, 1);
+            MapIdentity(cpu.Bus(), 4, 1);
+            MapIdentity(cpu.Bus(), 7, 2); // IDT/stacked frame pages (frame grows below 0x8000)
+            EnablePaging(cpu);
+            cpu.Ram().Write8(0x1500, 0x90); // handler: nop (never returned through)
+            InstallIdt(cpu, 14, 0x1500);
+            return cpu;
+        }
     }
 
     [Fact]
     public void UdTerminator_ExactVectorAndEip_MatchesInterpreter()
     {
         byte[] code = { 0x90, 0x40, 0x62, 0x00, 0x00, 0xF4 };
-
-        static XboxCpu CreateHandled(bool spec, byte[] bytes)
-        {
-            XboxCpu cpu = Create(spec, bytes);
-            cpu.Ram().Write8(0x3000, 0xCF);
-            InstallIdt(cpu, 6, 0x3000);
-            return cpu;
-        }
 
         XboxCpu plain = CreateHandled(false, code);
         XboxCpu specCpu = CreateHandled(true, code);
@@ -263,6 +257,15 @@ public sealed class SpecExecutionTests
 
         Assert.Equal(6, specCpu.LastFaultVector);
         Assert.Equal(0x1002u, specCpu.LastFaultEip);
+        return;
+
+        static XboxCpu CreateHandled(bool spec, byte[] bytes)
+        {
+            XboxCpu cpu = Create(spec, bytes);
+            cpu.Ram().Write8(0x3000, 0xCF);
+            InstallIdt(cpu, 6, 0x3000);
+            return cpu;
+        }
     }
 
     [Fact]
@@ -271,16 +274,6 @@ public sealed class SpecExecutionTests
         // Six NOPs + HLT; the source fires on the 3rd acknowledge (before the
         // 3rd member). The handler IRETs back into the stream.
         byte[] code = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xF4 };
-
-        static XboxCpu CreateIrq(bool spec, byte[] bytes, CountedInterruptSource source)
-        {
-            XboxCpu cpu = Create(spec, bytes);
-            cpu.Ram().Write8(0x3000, 0xCF);
-            InstallIdt(cpu, 0x21, 0x3000);
-            cpu.Context.Eflags |= FlagBits.If;
-            cpu.InterruptSource = source;
-            return cpu;
-        }
 
         XboxCpu plain = CreateIrq(false, code, new CountedInterruptSource(0x21, fireAt: 3));
         XboxCpu specCpu = CreateIrq(true, code, new CountedInterruptSource(0x21, fireAt: 3));
@@ -302,6 +295,17 @@ public sealed class SpecExecutionTests
         Assert.Equal(plain.Execute(16), specCpu.Execute(16));
         AssertSameState(plain, specCpu);
         Assert.Equal(1, specCpu.InterruptCount);
+        return;
+
+        static XboxCpu CreateIrq(bool spec, byte[] bytes, CountedInterruptSource source)
+        {
+            XboxCpu cpu = Create(spec, bytes);
+            cpu.Ram().Write8(0x3000, 0xCF);
+            InstallIdt(cpu, 0x21, 0x3000);
+            cpu.Context.Eflags |= FlagBits.If;
+            cpu.InterruptSource = source;
+            return cpu;
+        }
     }
 
     [Fact]
@@ -310,16 +314,6 @@ public sealed class SpecExecutionTests
         // IF starts clear with an always-firing source: delivery waits for the
         // STI (a fallback terminator), then lands before the following member.
         byte[] code = { 0x90, 0x90, 0xFB, 0x90, 0x90, 0xF4 };
-
-        static XboxCpu CreateSti(bool spec, byte[] bytes)
-        {
-            XboxCpu cpu = Create(spec, bytes);
-            cpu.Ram().Write8(0x3000, 0xCF);
-            InstallIdt(cpu, 0x21, 0x3000);
-            cpu.Context.Eflags &= ~FlagBits.If;
-            cpu.InterruptSource = new CountedInterruptSource(0x21, fireAt: 1);
-            return cpu;
-        }
 
         XboxCpu plain = CreateSti(false, code);
         XboxCpu specCpu = CreateSti(true, code);
@@ -342,6 +336,17 @@ public sealed class SpecExecutionTests
         Assert.Equal(plain.Execute(16), specCpu.Execute(16));
         AssertSameState(plain, specCpu);
         Assert.Equal(1, specCpu.InterruptCount);
+        return;
+
+        static XboxCpu CreateSti(bool spec, byte[] bytes)
+        {
+            XboxCpu cpu = Create(spec, bytes);
+            cpu.Ram().Write8(0x3000, 0xCF);
+            InstallIdt(cpu, 0x21, 0x3000);
+            cpu.Context.Eflags &= ~FlagBits.If;
+            cpu.InterruptSource = new CountedInterruptSource(0x21, fireAt: 1);
+            return cpu;
+        }
     }
 
     [Fact]

@@ -47,7 +47,7 @@ public sealed class AtapiTests
             {
                 for (int i = 0; i < AtaDevice.DvdSectorSize; i++)
                 {
-                    _data[s * AtaDevice.DvdSectorSize + i] = (byte)s;
+                    _data[(s * AtaDevice.DvdSectorSize) + i] = (byte)s;
                 }
             }
         }
@@ -462,14 +462,14 @@ public sealed class AtapiTests
 
         Assert.Equal(total, drive.PacketLog.Count);
         Assert.Equal("FF:0000000000", drive.PacketLog[0]);
-        Assert.Equal($"FF:00{(total - 1):X2}000000", drive.PacketLog[total - 1]);
+        Assert.Equal($"FF:00{total - 1:X2}000000", drive.PacketLog[total - 1]);
     }
 
     [Fact]
     public void PacketLogCapsAtCapacityEvictingOldest()
     {
         AtaDevice drive = AtapiDriveWithMedia();
-        int total = AtaDevice.PacketLogCapacity + 10;
+        const int total = AtaDevice.PacketLogCapacity + 10;
 
         for (int i = 0; i < total; i++)
         {
@@ -481,9 +481,9 @@ public sealed class AtapiTests
         }
 
         Assert.Equal(AtaDevice.PacketLogCapacity, drive.PacketLog.Count);
-        int first = total - AtaDevice.PacketLogCapacity;
-        Assert.Equal($"FF:{(first >> 8):X2}{(first & 0xFF):X2}000000", drive.PacketLog[0]);
-        int last = total - 1;
-        Assert.Equal($"FF:{(last >> 8):X2}{(last & 0xFF):X2}000000", drive.PacketLog[^1]);
+        const int first = total - AtaDevice.PacketLogCapacity;
+        Assert.Equal($"FF:{first >> 8:X2}{first & 0xFF:X2}000000", drive.PacketLog[0]);
+        const int last = total - 1;
+        Assert.Equal($"FF:{last >> 8:X2}{last & 0xFF:X2}000000", drive.PacketLog[^1]);
     }
 }

@@ -92,19 +92,25 @@ public sealed class SevenEosQuirkTests
     public void TryApply_ExactSignature_WritesStateZero()
     {
         var memory = ParkedMemory();
-        uint? Read(uint va) => memory.TryGetValue(va, out uint value) ? value : null;
+
         uint writtenVa = 0;
         uint writtenValue = 0xFFFFFFFFu;
+
+        Assert.True(SevenEosQuirk.TryApply(Read, Write));
+        Assert.Equal(StrmVa + 0x44u, writtenVa);
+        Assert.Equal(0u, writtenValue);
+        return;
+
+        uint? Read(uint va)
+        {
+            return memory.TryGetValue(va, out uint value) ? value : null;
+        }
 
         void Write(uint va, uint value)
         {
             writtenVa = va;
             writtenValue = value;
         }
-
-        Assert.True(SevenEosQuirk.TryApply(Read, Write));
-        Assert.Equal(StrmVa + 0x44u, writtenVa);
-        Assert.Equal(0u, writtenValue);
     }
 
     [Fact]
@@ -113,10 +119,15 @@ public sealed class SevenEosQuirkTests
         var memory = ParkedMemory();
         memory[0x10180u] = 0u;
         bool wrote = false;
-        uint? Read(uint va) => memory.TryGetValue(va, out uint value) ? value : null;
 
         Assert.False(SevenEosQuirk.TryApply(Read, (va, value) => wrote = true));
         Assert.False(wrote);
+        return;
+
+        uint? Read(uint va)
+        {
+            return memory.TryGetValue(va, out uint value) ? value : null;
+        }
     }
 
     [Fact]
@@ -125,10 +136,15 @@ public sealed class SevenEosQuirkTests
         var memory = ParkedMemory();
         memory.Remove(0x10118u);
         bool wrote = false;
-        uint? Read(uint va) => memory.TryGetValue(va, out uint value) ? value : null;
 
         Assert.False(SevenEosQuirk.TryApply(Read, (va, value) => wrote = true));
         Assert.False(wrote);
+        return;
+
+        uint? Read(uint va)
+        {
+            return memory.TryGetValue(va, out uint value) ? value : null;
+        }
     }
 
     [Fact]

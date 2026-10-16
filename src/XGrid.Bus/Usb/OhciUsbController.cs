@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Bus.Usb;
@@ -176,8 +176,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the MMIO base address of this controller.</summary>
     public uint BaseAddress { get; }
 
-    /// <inheritdoc />
+    /// <summary>Gets the device name reported to traces and diagnostics ("OHCI USB").</summary>
+#pragma warning disable CA1822
     public string Name => "OHCI USB";
+#pragma warning restore CA1822
 
     /// <summary>Gets whether the controller interrupt line is asserted, for diagnostics.</summary>
     public bool InterruptAsserted { get; private set; }
@@ -229,7 +231,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Raised when the interrupt line level changes.</summary>
     public event Action<bool>? InterruptChanged;
 
-    /// <inheritdoc />
+    /// <summary>Returns the controller to its power-on state: soft-resets the OHCI registers (HcControl enters suspend), clears the frame/done/pending-transfer state, and resets the root hub ports and attached function.</summary>
     public void Reset()
     {
         SoftResetState();
@@ -470,7 +472,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
 
     private const int SnapshotVersion = 1;
 
-    /// <inheritdoc />
+    /// <summary>Reads an OHCI register at the given absolute address in the 256-byte window, counting the access and falling back to all-ones for out-of-window or non-dword-aligned offsets.</summary>
+    /// <param name="address">The absolute MMIO address (mapped to a window offset by subtracting <see cref="BaseAddress"/>).</param>
+    /// <param name="size">The access size in bytes; the register map is decoded on 4-byte accesses.</param>
+    /// <returns>The register value, or 0xFFFFFFFF when the offset is outside the window or is not 4-byte aligned.</returns>
     public uint Read(uint address, int size)
     {
         uint offset = address - BaseAddress;
@@ -517,7 +522,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes an OHCI register at the given absolute address in the 256-byte window, counting the access; root-hub port offsets are routed to the port state machine, and out-of-window or non-dword-aligned offsets are ignored.</summary>
+    /// <param name="address">The absolute MMIO address (mapped to a window offset by subtracting <see cref="BaseAddress"/>).</param>
+    /// <param name="size">The access size in bytes; the register map is decoded on 4-byte accesses.</param>
+    /// <param name="value">The value written to the register.</param>
     public void Write(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;

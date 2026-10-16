@@ -14,8 +14,6 @@ namespace XGrid.Cpu;
 public sealed partial class XboxCpu
 {
     private DecodeCache? _decodeCache;
-    private ulong _decodeCount;
-    private bool _decodeCacheVerify;
     private DecodedBlockCache? _blocks;
 
     /// <summary>Gets or sets opt-in block cursor execution. Enabling implies the decode cache.</summary>
@@ -58,7 +56,7 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool SpecExecutionEnabled
     {
-        get => _blocks is not null && _blocks.SpecEnabled;
+        get => _blocks?.SpecEnabled == true;
         set
         {
             if (value)
@@ -123,18 +121,14 @@ public sealed partial class XboxCpu
     /// prove the invalidation discipline exhaustive during bring-up, not for
     /// speed.
     /// </summary>
-    public bool DecodeCacheVerify
-    {
-        get => _decodeCacheVerify;
-        set => _decodeCacheVerify = value;
-    }
+    public bool DecodeCacheVerify { get; set; }
 
     /// <summary>
     /// Gets the number of <c>Decoder.Decode</c> invocations (one per executed
     /// instruction while the decode cache is off; misses only while it is on
     /// — the decode-avoided share is 1 - this/Executed).
     /// </summary>
-    public ulong DecodeCount => _decodeCount;
+    public ulong DecodeCount { get; private set; }
 
     /// <summary>Gets the number of instructions served by the decode cache.</summary>
     public ulong DecodeCacheHits => _decodeCache?.Hits ?? 0;
@@ -228,7 +222,7 @@ public sealed partial class XboxCpu
                 }
             }
 
-            if (_decodeCacheVerify || (BlockVerify && _blocks is not null))
+            if (DecodeCacheVerify || (BlockVerify && _blocks is not null))
             {
                 for (int i = 0; i < buffer.Length; i++)
                 {
@@ -337,7 +331,7 @@ public sealed partial class XboxCpu
             }
 
             bool servedFresh = false;
-            if (_decodeCacheVerify || BlockVerify)
+            if (DecodeCacheVerify || BlockVerify)
             {
                 for (int i = 0; i < window.Length; i++)
                 {
@@ -469,7 +463,7 @@ public sealed partial class XboxCpu
             buffer,
             Context.DefaultOperandSize,
             Context.DefaultAddressSize);
-        _decodeCount++;
+        DecodeCount++;
         cache.NoteMiss();
         _hotspot?.NoteDecodeCacheMiss();
 
@@ -510,7 +504,7 @@ public sealed partial class XboxCpu
         }
 
         IIdleSkipHost? host = IdleSkipHost;
-        return host is null || host.IsRam(physical);
+        return host?.IsRam(physical) != false;
     }
 
     /// <summary>

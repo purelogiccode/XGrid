@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using XGrid.Bus.Io;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Timers;
 
@@ -121,14 +121,25 @@ public sealed class Rtc146818 : IIoPortDevice, ISnapshotable
 
     private const int SnapshotVersion = 1;
 
-    /// <inheritdoc />
+    /// <summary>Reads from the RTC window at ports 0x70/0x71: offset 0 returns the current index
+    /// register, offset 1 reads the indexed register — time registers as BCD from the fixed 2000-01-01
+    /// base, status A/B, status C (clearing it and raising <see cref="InterruptAcknowledged"/>), or
+    /// plain CMOS — counting the access in <see cref="AccessCount"/>.</summary>
+    /// <param name="offset">0 for the index port 0x70, 1 for the data port 0x71.</param>
+    /// <param name="size">Access width in bytes (ignored; the RTC returns one byte).</param>
     public uint Read(ushort offset, int size)
     {
         AccessCount++;
         return offset == 0 ? _index : ReadData(_index);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes from the RTC window at ports 0x70/0x71: offset 0 sets the index register
+    /// (masked to 6 bits), offset 1 writes the indexed register — status A (update-inhibit bit
+    /// cleared) and status B stored directly, all other indices written to CMOS — counting the
+    /// access in <see cref="AccessCount"/>.</summary>
+    /// <param name="offset">0 for the index port 0x70, 1 for the data port 0x71.</param>
+    /// <param name="size">Access width in bytes (ignored; the RTC takes one byte).</param>
+    /// <param name="value">Value whose low byte is written.</param>
     public void Write(ushort offset, int size, uint value)
     {
         AccessCount++;

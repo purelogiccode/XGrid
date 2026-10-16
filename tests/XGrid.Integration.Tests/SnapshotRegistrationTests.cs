@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 using XGrid.Host;
 using Xunit;
 

@@ -7,7 +7,7 @@ using XGrid.Bus;
 using XGrid.Bus.Aci;
 using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 using XGrid.Cpu;
 using XGrid.Memory;
 using XGrid.Nv2a;
@@ -260,7 +260,7 @@ public sealed class XboxMachine : IIdleSkipHost
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         Span<byte> magic = stackalloc byte[8];
-        using (System.IO.FileStream stream = System.IO.File.OpenRead(path))
+        using (FileStream stream = File.OpenRead(path))
         {
             stream.ReadExactly(magic);
         }
@@ -280,7 +280,7 @@ public sealed class XboxMachine : IIdleSkipHost
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         Span<byte> magic = stackalloc byte[4];
-        using (System.IO.FileStream stream = System.IO.File.OpenRead(path))
+        using (FileStream stream = File.OpenRead(path))
         {
             stream.ReadExactly(magic);
         }
@@ -404,19 +404,6 @@ public sealed class XboxMachine : IIdleSkipHost
 
         SevenEosQuirkChecks++;
 
-        uint? ReadVa(uint virtualAddress)
-        {
-            uint physical = Cpu.Mmu.Translate(
-                virtualAddress, isWrite: false, isInstruction: false,
-                out bool faulted, out _, sideEffects: false);
-            if (faulted)
-            {
-                return null;
-            }
-
-            return Memory.Read32(physical);
-        }
-
         if (!SevenEosQuirk.IsParkedLive(ReadVa))
         {
             _sevenEosQuirkParkActive = false;
@@ -436,6 +423,29 @@ public sealed class XboxMachine : IIdleSkipHost
             return false;
         }
 
+        if (!SevenEosQuirk.TryApply(ReadVa, WriteVa))
+        {
+            _sevenEosQuirkParkActive = false;
+            return false;
+        }
+
+        SevenEosQuirkFires++;
+        _sevenEosQuirkParkActive = false;
+        return true;
+
+        uint? ReadVa(uint virtualAddress)
+        {
+            uint physical = Cpu.Mmu.Translate(
+                virtualAddress, isWrite: false, isInstruction: false,
+                out bool faulted, out _, sideEffects: false);
+            if (faulted)
+            {
+                return null;
+            }
+
+            return Memory.Read32(physical);
+        }
+
         void WriteVa(uint virtualAddress, uint value)
         {
             uint physical = Cpu.Mmu.Translate(
@@ -450,16 +460,6 @@ public sealed class XboxMachine : IIdleSkipHost
                 Cpu.InvalidateDecodeCachePage(physical);
             }
         }
-
-        if (!SevenEosQuirk.TryApply(ReadVa, WriteVa))
-        {
-            _sevenEosQuirkParkActive = false;
-            return false;
-        }
-
-        SevenEosQuirkFires++;
-        _sevenEosQuirkParkActive = false;
-        return true;
     }
 
     /// <summary>Runs up to the given number of instructions, advancing bus timers.</summary>

@@ -135,41 +135,41 @@ internal static class Program
                     traceRegs = true;
                     break;
                 case "--break":
-                    {
-                        string text = NextValue(args, ref i);
-                        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
-                        breakAddress = Convert.ToUInt32(hex, 16);
-                        break;
-                    }
+                {
+                    string text = NextValue(args, ref i);
+                    string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+                    breakAddress = Convert.ToUInt32(hex, 16);
+                    break;
+                }
                 case "--break-log":
-                    {
-                        string text = NextValue(args, ref i);
-                        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
-                        breakLogAddresses.Add(Convert.ToUInt32(hex, 16));
-                        break;
-                    }
+                {
+                    string text = NextValue(args, ref i);
+                    string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+                    breakLogAddresses.Add(Convert.ToUInt32(hex, 16));
+                    break;
+                }
                 case "--dump":
-                    {
-                        string[] parts = NextValue(args, ref i).Split(',');
-                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                            ? parts[0][2..]
-                            : parts[0];
-                        uint address = Convert.ToUInt32(addressText, 16);
-                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                        dumps.Add((address, length, false));
-                        break;
-                    }
+                {
+                    string[] parts = NextValue(args, ref i).Split(',');
+                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? parts[0][2..]
+                        : parts[0];
+                    uint address = Convert.ToUInt32(addressText, 16);
+                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                    dumps.Add((address, length, false));
+                    break;
+                }
                 case "--dumpv":
-                    {
-                        string[] parts = NextValue(args, ref i).Split(',');
-                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                            ? parts[0][2..]
-                            : parts[0];
-                        uint address = Convert.ToUInt32(addressText, 16);
-                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                        dumps.Add((address, length, true));
-                        break;
-                    }
+                {
+                    string[] parts = NextValue(args, ref i).Split(',');
+                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? parts[0][2..]
+                        : parts[0];
+                    uint address = Convert.ToUInt32(addressText, 16);
+                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                    dumps.Add((address, length, true));
+                    break;
+                }
                 case "--ram":
                     ramMb = uint.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
@@ -271,18 +271,18 @@ internal static class Program
                     scans.Add(NextValue(args, ref i));
                     break;
                 case "--watch":
-                    {
-                        string[] parts = NextValue(args, ref i).Split(',');
-                        string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                            ? parts[0][2..]
-                            : parts[0];
-                        string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                            ? parts[1][2..]
-                            : parts[1];
-                        machineWatchStart = Convert.ToUInt32(startText, 16);
-                        machineWatchEnd = Convert.ToUInt32(endText, 16);
-                        break;
-                    }
+                {
+                    string[] parts = NextValue(args, ref i).Split(',');
+                    string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? parts[0][2..]
+                        : parts[0];
+                    string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? parts[1][2..]
+                        : parts[1];
+                    machineWatchStart = Convert.ToUInt32(startText, 16);
+                    machineWatchEnd = Convert.ToUInt32(endText, 16);
+                    break;
+                }
                 default:
                     Console.Error.WriteLine($"Unknown boot option: {args[i]}");
                     return 1;
@@ -341,7 +341,7 @@ internal static class Program
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null).
                 var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out XGrid.Nv2a.IPgraphBackend? gpuBackendInstance,
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out Nv2a.IPgraphBackend? gpuBackendInstance,
                         out string gpuWhy))
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
@@ -479,17 +479,6 @@ internal static class Program
 
             bool padApplied = padInput is null || padStep == 0;
 
-            void ApplyPadIfDue(ulong at)
-            {
-                if (!padApplied && at >= padStep && padInput is { } due)
-                {
-                    machine.Gamepad.SetInput(due.Buttons, due.Analog, due.Sticks);
-                    Console.WriteLine(
-                        $"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
-                    padApplied = true;
-                }
-            }
-
             PadScript? padScript = null;
             if (padScriptSpec is not null)
             {
@@ -502,16 +491,6 @@ internal static class Program
 
                 padScript = parsed;
                 Console.WriteLine($"Pad script events={padScript.Count}");
-            }
-
-            void ApplyScriptIfDue(ulong at)
-            {
-                if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
-                {
-                    machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
-                    Console.WriteLine(
-                        $"Pad script buttons=0x{pressed.Buttons:X4} analog={BitConverter.ToString(pressed.Analog)} at step {at}");
-                }
             }
 
             machine.Memory.WatchStart = machineWatchStart;
@@ -813,6 +792,27 @@ internal static class Program
             }
 
             return 0;
+
+            void ApplyPadIfDue(ulong at)
+            {
+                if (!padApplied && at >= padStep && padInput is { } due)
+                {
+                    machine.Gamepad.SetInput(due.Buttons, due.Analog, due.Sticks);
+                    Console.WriteLine(
+                        $"Pad buttons=0x{due.Buttons:X4} analog={BitConverter.ToString(due.Analog)} at step {at}");
+                    padApplied = true;
+                }
+            }
+
+            void ApplyScriptIfDue(ulong at)
+            {
+                if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
+                {
+                    machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
+                    Console.WriteLine(
+                        $"Pad script buttons=0x{pressed.Buttons:X4} analog={BitConverter.ToString(pressed.Analog)} at step {at}");
+                }
+            }
         }
         catch (UnsupportedInstructionException exception)
         {
@@ -911,16 +911,16 @@ internal static class Program
                     breakAddress = ParseTestRomAddress(NextValue(args, ref i));
                     break;
                 case "--dump":
-                    {
-                        string[] parts = NextValue(args, ref i).Split(',');
-                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                            ? parts[0][2..]
-                            : parts[0];
-                        uint address = Convert.ToUInt32(addressText, 16);
-                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                        dumps.Add((address, length, false));
-                        break;
-                    }
+                {
+                    string[] parts = NextValue(args, ref i).Split(',');
+                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? parts[0][2..]
+                        : parts[0];
+                    uint address = Convert.ToUInt32(addressText, 16);
+                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                    dumps.Add((address, length, false));
+                    break;
+                }
 
                 default:
                     Console.Error.WriteLine($"Unknown testrom option: {args[i]}");
@@ -1005,14 +1005,6 @@ internal static class Program
             }
 
             padScript = parsed;
-        }
-
-        void ApplyScriptIfDue(ulong at)
-        {
-            if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
-            {
-                machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
-            }
         }
 
         ulong executed = 0;
@@ -1127,6 +1119,14 @@ internal static class Program
         }
 
         return runner.Passed ? 0 : 1;
+
+        void ApplyScriptIfDue(ulong at)
+        {
+            if (padScript is { } script && script.ApplyIfDue(at, out PadInput pressed))
+            {
+                machine.Gamepad.SetInput(pressed.Buttons, pressed.Analog, pressed.Sticks);
+            }
+        }
     }
 
     private static uint ParseTestRomAddress(string text)
@@ -2188,7 +2188,7 @@ internal static class Program
     /// texture reads). Doubles as the present-upload dirty watch handle for
     /// the GL backend (§132 (a*)).
     /// </summary>
-    private sealed class MachineGpuMemory : XGrid.Nv2a.IGpuMemory, IPresentDirtyWatch
+    private sealed class MachineGpuMemory : Nv2a.IGpuMemory, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
 

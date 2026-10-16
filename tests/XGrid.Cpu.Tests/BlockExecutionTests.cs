@@ -19,21 +19,6 @@ public sealed class BlockExecutionTests
     [Fact]
     public void IdleSkip_VerdictsExact_WithBlockExecution()
     {
-        static (XboxCpu Cpu, PollIdleHost Host) CreateIdle(bool block)
-        {
-            XboxCpu cpu = CpuHarness.Create(PollLoopBytes);
-            MapIdentity(cpu.Bus(), 0, 4);
-            EnablePaging(cpu);
-            cpu.Context.Eflags |= FlagBits.If;
-            var host = new PollIdleHost(cpu.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
-            cpu.IdleSkipHost = host;
-            cpu.IdleSkipEnabled = true;
-            cpu.IdleSkipMinIterations = 4;
-            cpu.DecodeCacheEnabled = true;
-            cpu.BlockExecutionEnabled = block;
-            return (cpu, host);
-        }
-
         (XboxCpu off, PollIdleHost offHost) = CreateIdle(false);
         off.Execute(1_000_000);
 
@@ -52,6 +37,22 @@ public sealed class BlockExecutionTests
         Assert.Equal(off.Context.Eip, on.Context.Eip);
         Assert.Equal(off.Context.Tsc, on.Context.Tsc);
         Assert.True(on.BlockStatistics!.Instructions > 0);
+        return;
+
+        static (XboxCpu Cpu, PollIdleHost Host) CreateIdle(bool block)
+        {
+            XboxCpu cpu = CpuHarness.Create(PollLoopBytes);
+            MapIdentity(cpu.Bus(), 0, 4);
+            EnablePaging(cpu);
+            cpu.Context.Eflags |= FlagBits.If;
+            var host = new PollIdleHost(cpu.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
+            cpu.IdleSkipHost = host;
+            cpu.IdleSkipEnabled = true;
+            cpu.IdleSkipMinIterations = 4;
+            cpu.DecodeCacheEnabled = true;
+            cpu.BlockExecutionEnabled = block;
+            return (cpu, host);
+        }
     }
 
     [Fact]
@@ -229,9 +230,9 @@ public sealed class BlockExecutionTests
 
         public uint? PollAddress { get; set; }
 
-        public byte PollValue { get; set; } = 1;
+        private byte PollValue { get; set; } = 1;
 
-        public HashSet<uint> NonRam { get; } = new();
+        private HashSet<uint> NonRam { get; } = new();
 
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
@@ -245,14 +246,14 @@ public sealed class BlockExecutionTests
         public void AdvanceIdle(ulong steps)
         {
             Advanced += steps;
-            if (_deadline is long deadline)
+            if (_deadline is { } deadline)
             {
                 _deadline = deadline > (long)steps ? deadline - (long)steps : 0;
                 if (_deadline == 0)
                 {
                     InitialDeadline = null;
                     _deadline = null;
-                    if (PollAddress is uint poll)
+                    if (PollAddress is { } poll)
                     {
                         _ram.Write8(poll, PollValue);
                     }

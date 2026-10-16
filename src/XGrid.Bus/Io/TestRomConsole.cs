@@ -23,13 +23,21 @@ public sealed class TestRomConsole : IIoPortDevice
     /// <summary>Gets the total number of bytes received on the port.</summary>
     public long ByteCount { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Reads from the console port and always returns 0 — the Bochs-style debug port is
+    /// output-only; guest output arrives through <see cref="Write"/>.</summary>
+    /// <param name="offset">Offset inside the port window (ignored).</param>
+    /// <param name="size">Access width in bytes (ignored).</param>
     public uint Read(ushort offset, int size)
     {
         return 0u;
     }
 
-    /// <inheritdoc />
+    /// <summary>Consumes the low byte written to the port: a 0x0A byte completes the pending text
+    /// as a line appended to <see cref="Lines"/>; every other byte is appended to the current line
+    /// and <see cref="ByteCount"/> is incremented.</summary>
+    /// <param name="offset">Offset inside the port window (ignored).</param>
+    /// <param name="size">Access width in bytes (ignored).</param>
+    /// <param name="value">Value whose low byte is the character written by the guest.</param>
     public void Write(ushort offset, int size, uint value)
     {
         byte current = (byte)value;

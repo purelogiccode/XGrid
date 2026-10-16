@@ -297,7 +297,7 @@ internal sealed class IdleSkipDetector
             // classifies (side-effect free, value changes only with device time)
             // may stay in the body; the skip loop clamps chunks to its deadline.
             if (!isInstruction
-                && _cpu.IdleSkipReadModel is IIdleSkipReadModel model
+                && _cpu.IdleSkipReadModel is { } model
                 && model.TryGetReadEffect(physicalAddress, out _))
             {
                 if (!_iterationMmio.Contains(physicalAddress))

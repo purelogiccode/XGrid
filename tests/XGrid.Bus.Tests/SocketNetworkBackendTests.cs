@@ -172,7 +172,7 @@ public sealed class SocketNetworkBackendTests
 
         Assert.True(backend.TryReceive(out byte[]? reply));
         Assert.NotNull(reply);
-        Assert.Equal(14 + 28, reply!.Length);
+        Assert.Equal(14 + 28, reply.Length);
         // Ethernet: to requestor, from gateway.
         Assert.Equal(GuestMac, reply[0..6]);
         Assert.Equal(SocketNetworkBackend.GatewayMacAddress, reply[6..12]);
@@ -208,7 +208,7 @@ public sealed class SocketNetworkBackendTests
         Assert.True(backend.TryReceive(out byte[]? reply));
         Assert.NotNull(reply);
         // MACs/IPs swapped, ICMP type 0, ident/seq/data preserved.
-        Assert.Equal(GuestMac, reply![0..6]);
+        Assert.Equal(GuestMac, reply[0..6]);
         Assert.Equal(SocketNetworkBackend.GatewayMacAddress, reply[6..12]);
         Assert.Equal(new byte[] { 0xC0, 0xA8, 0x00, 0x01 }, reply[26..30]);
         Assert.Equal(new byte[] { 0xC0, 0xA8, 0x00, 0x02 }, reply[30..34]);

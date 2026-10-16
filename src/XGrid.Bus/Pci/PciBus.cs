@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using XGrid.Bus.Io;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Pci;
 
@@ -39,7 +39,9 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
+#pragma warning disable CA1822
     public string Name => "PCI bus";
+#pragma warning restore CA1822
 
     /// <summary>Raised when a device asserts its interrupt line.</summary>
     public event Action<PciDevice>? InterruptRaised;
@@ -114,7 +116,10 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
         target?.WriteLocal(address, size, value);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a configuration mechanism #1 port byte: offsets 0-3 return the 0xCF8 address
+    /// register, offsets 4-7 (0xCFC) read from the device/register it selects.</summary>
+    /// <param name="offset">Byte offset from the base port 0xCF8.</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4); the size in bits is converted to bytes.</param>
     public uint Read(ushort offset, int size)
     {
         int bytes = size / 8;
@@ -126,7 +131,12 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
         return ReadDataRegister(offset - 4, bytes);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a configuration mechanism #1 port byte: offsets 0-3 merge into the 0xCF8
+    /// address register (its low two bits stay clear), offsets 4-7 (0xCFC) write through to the
+    /// device/register it selects.</summary>
+    /// <param name="offset">Byte offset from the base port 0xCF8.</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4); the size in bits is converted to bytes.</param>
+    /// <param name="value">Value to write, right-aligned in the low bytes.</param>
     public void Write(ushort offset, int size, uint value)
     {
         int bytes = size / 8;
@@ -139,7 +149,8 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
         WriteDataRegister(offset - 4, bytes, value);
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns the bus to its power-on state: clears the configuration address register
+    /// and resets every device attached to this bus and to all of its secondary buses.</summary>
     public void Reset()
     {
         ConfigAddress = 0;

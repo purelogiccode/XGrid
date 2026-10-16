@@ -116,7 +116,7 @@ public sealed class TestRomRunner : IDisposable
         return executed;
     }
 
-    /// <inheritdoc />
+    /// <summary>Unregisters the debug console from the I/O bus and marks the runner disposed; repeat calls are no-ops.</summary>
     public void Dispose()
     {
         if (!_disposed)

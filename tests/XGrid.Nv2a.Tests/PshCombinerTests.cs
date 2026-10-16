@@ -94,12 +94,12 @@ public sealed class PshCombinerTests
 
     private static float[] Vec(float x, float y, float z, float w)
     {
-        return new float[] { x, y, z, w };
+        return new[] { x, y, z, w };
     }
 
     private static float[][] Texels(float r, float g, float b, float a)
     {
-        return new float[][] { Vec(r, g, b, a), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f) };
+        return new[] { Vec(r, g, b, a), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f) };
     }
 
     private static (float R, float G, float B, float A) Run(PshCombiner combiner, float[] diffuse, float[][] texels)

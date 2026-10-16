@@ -1,7 +1,7 @@
 using System;
 using System.IO;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Pci;
 
@@ -103,7 +103,9 @@ public class PciDevice : IXboxDevice, ISnapshotable
     /// <summary>Gets whether I/O space decoding is enabled (command bit 0).</summary>
     public bool IoSpaceEnabled => (ReadConfig(0x04, 2) & 0x0001u) != 0;
 
-    /// <inheritdoc />
+    /// <summary>Returns the device to its power-on state: rebuilds the configuration header from
+    /// the constructor identities (vendor/device IDs, revision, class codes, header type) and
+    /// zeroes every BAR base and probe flag.</summary>
     public virtual void Reset()
     {
         Array.Clear(_config);

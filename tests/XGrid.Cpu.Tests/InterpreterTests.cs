@@ -211,8 +211,8 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(12u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Cf));
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -222,10 +222,10 @@ public sealed class InterpreterTests
         cpu.Context.Eflags &= ~FlagBits.Cf;
 
         cpu.Step();
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
 
         cpu.Step();
-        Assert.False((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0x80000000u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Of) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Of));
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(5u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -289,8 +289,8 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -302,7 +302,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -325,7 +325,7 @@ public sealed class InterpreterTests
 
         cpu.Context.WriteRegister(Gpr.Eax, 0);
         cpu.Step();
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -340,7 +340,7 @@ public sealed class InterpreterTests
         cpu.Context.WriteRegister(Gpr.Eax, 1);
         cpu.Step();
         Assert.Equal(0xFFFFFFFFu, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]
@@ -402,7 +402,7 @@ public sealed class InterpreterTests
 
         Assert.Equal(9u, cpu.Bus().Read32(0x2000));
         Assert.Equal(7u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -417,7 +417,7 @@ public sealed class InterpreterTests
 
         Assert.Equal(5u, cpu.Bus().Read32(0x2000));
         Assert.Equal(5u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) == 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -436,9 +436,9 @@ public sealed class InterpreterTests
 
         Assert.Equal(0x33333333u, cpu.Bus().Read32(0x2000));
         Assert.Equal(0x44444444u, cpu.Bus().Read32(0x2004));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Sf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Sf));
     }
 
     [Fact]
@@ -459,8 +459,8 @@ public sealed class InterpreterTests
         Assert.Equal(0x99999999u, cpu.Bus().Read32(0x2004));
         Assert.Equal(0x11111111u, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.Equal(0x99999999u, cpu.Context.ReadRegister(Gpr.Edx));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) == 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Zf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]
@@ -472,7 +472,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(8u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) == 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -496,7 +496,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0x99u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -509,7 +509,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0xF7u, cpu.Bus().Read32(0x2000));
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]
@@ -522,7 +522,7 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0x20u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) == 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]
@@ -535,6 +535,6 @@ public sealed class InterpreterTests
         cpu.Step();
 
         Assert.Equal(0x100u, cpu.Context.ReadRegister(Gpr.Eax));
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 }

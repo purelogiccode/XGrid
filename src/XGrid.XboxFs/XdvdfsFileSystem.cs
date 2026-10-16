@@ -129,7 +129,7 @@ public sealed class XdvdfsFileSystem : IDisposable
         return ReadNode(node);
     }
 
-    /// <inheritdoc />
+    /// <summary>Disposes the underlying XISOSharp explorer (idempotent).</summary>
     public void Dispose()
     {
         if (!_disposed)

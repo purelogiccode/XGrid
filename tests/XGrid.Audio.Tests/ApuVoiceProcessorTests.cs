@@ -10,6 +10,7 @@ public sealed class ApuVoiceProcessorTests
 
     private const uint FenAddr = 0x115C;
     private const uint FetForce1 = 0x1504;
+    // ReSharper disable once UnusedMember.Local
     private const uint IsTs = 0x1000;
     private const uint VpVaddr = 0x202C;
     private const uint VpSslAddr = 0x2034;
@@ -21,6 +22,7 @@ public sealed class ApuVoiceProcessorTests
     private const uint PioSetVoiceCfgFmt = 0x20304;
     private const uint PioSetVoiceSslA = 0x20320;
     private const uint PioSetVoiceSslB = 0x2035C;
+    // ReSharper disable once UnusedMember.Local
     private const uint PioSetVoiceCfgBufLbo = 0x203A4;
     private const uint PioSetVoiceCfgBufEbo = 0x203DC;
     private const uint PioSetCurrentSsl = 0x20190;
@@ -29,6 +31,7 @@ public sealed class ApuVoiceProcessorTests
 
     private const uint TvL2D = 0x2054;
 
+    // ReSharper disable once UnusedMember.Local
     private const uint VoiceCfgFmt = 0x04;
     private const uint VoiceParState = 0x54;
     private const uint VoiceParOffset = 0x58;
@@ -214,14 +217,6 @@ public sealed class ApuVoiceProcessorTests
     [Fact]
     public void Snapshot_RoundTripsVoiceProcessorState()
     {
-        static void Configure(McpxApuDevice apu, FakeMemory memory)
-        {
-            memory.Write32(SslTable, SegmentData);
-            memory.Write32(SslTable + 4, 0x100);
-            ActivateStreamVoice(apu, 0x40, sslACount: 1);
-            apu.Advance(OneFrame);
-        }
-
         var firstMemory = new FakeMemory();
         var first = new McpxApuDevice(firstMemory);
         Configure(first, firstMemory);
@@ -232,6 +227,15 @@ public sealed class ApuVoiceProcessorTests
         Assert.Equal(baseline, Save(second));
         Assert.Equal(first.SegmentCompletions, second.SegmentCompletions);
         Assert.Equal(first.NotifierWrites, second.NotifierWrites);
+        return;
+
+        static void Configure(McpxApuDevice apu, FakeMemory memory)
+        {
+            memory.Write32(SslTable, SegmentData);
+            memory.Write32(SslTable + 4, 0x100);
+            ActivateStreamVoice(apu, 0x40, sslACount: 1);
+            apu.Advance(OneFrame);
+        }
     }
 
     private static McpxApuDevice Create(FakeMemory memory)
@@ -287,9 +291,11 @@ public sealed class ApuVoiceProcessorTests
     {
         private readonly Dictionary<uint, byte> _ram = new();
 
-        public uint Read32(uint address) =>
-            (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) |
-                   (ReadByte(address + 3) << 24));
+        public uint Read32(uint address)
+        {
+            return (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) |
+                          (ReadByte(address + 3) << 24));
+        }
 
         public void Write32(uint address, uint value)
         {
@@ -299,10 +305,19 @@ public sealed class ApuVoiceProcessorTests
             }
         }
 
-        public void Write8(uint address, byte value) => _ram[address] = value;
+        public void Write8(uint address, byte value)
+        {
+            _ram[address] = value;
+        }
 
-        public byte Read8(uint address) => _ram.GetValueOrDefault(address, (byte)0);
+        public byte Read8(uint address)
+        {
+            return _ram.GetValueOrDefault(address, (byte)0);
+        }
 
-        private byte ReadByte(uint address) => _ram.GetValueOrDefault(address, (byte)0);
+        private byte ReadByte(uint address)
+        {
+            return _ram.GetValueOrDefault(address, (byte)0);
+        }
     }
 }

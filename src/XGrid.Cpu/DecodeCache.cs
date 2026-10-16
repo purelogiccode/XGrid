@@ -50,11 +50,13 @@ public readonly struct DecodeCacheEntry
 }
 
 /// <summary>
+/// <para>
 /// Decoded-instruction block cache (§131 leg (d)): keyed by linear fetch
 /// address (kernel aliases of one physical page are distinct keys — gotcha v),
 /// filled only from single-page RAM fetch windows (cross-page and non-RAM
 /// windows are never cached — gotchas iii/iv), invalidated conservatively.
-///
+/// </para>
+/// <para>
 /// Invalidation contract: an entry may be served only while (a) the linear
 /// fetch address still maps to the same physical page, and (b) the source
 /// bytes are unchanged. (a) is preserved by full flushes on every mapping
@@ -65,6 +67,7 @@ public readonly struct DecodeCacheEntry
 /// shims + the EOS quirk). Host-side measurement state: not part of the
 /// guest; the ENABLED flag lives on <c>XboxCpu</c> and is untouched by
 /// Reset/snapshot like the profiler and fetch-fast flags.
+/// </para>
 /// </summary>
 public sealed class DecodeCache
 {

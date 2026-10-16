@@ -127,18 +127,6 @@ public sealed class DecodeCacheTests
             0xE9, 0xF4, 0x0F, 0x00, 0x00, // 0x1007: jmp 0x2000
         };
 
-        static void WritePageTwo(XboxCpu cpu)
-        {
-            cpu.Ram().Write8(0x2000, 0x90);
-            cpu.Ram().Write8(0x2001, 0x90);
-            cpu.Ram().Write8(0x2002, 0x90);
-            cpu.Ram().Write8(0x2003, 0xE9);
-            cpu.Ram().Write8(0x2004, 0xF8);
-            cpu.Ram().Write8(0x2005, 0xEF);
-            cpu.Ram().Write8(0x2006, 0xFF);
-            cpu.Ram().Write8(0x2007, 0xFF);
-        }
-
         XboxCpu on = CreateFlat(code);
         WritePageTwo(on);
         on.Ram().Write8(0x2050, 0x12);
@@ -169,6 +157,19 @@ public sealed class DecodeCacheTests
         Assert.Equal(1UL, on.DecodeCachePageDrops);
         Assert.Equal(0UL, on.DecodeCacheFullFlushes);
         Assert.Equal(3, on.DecodeCacheEntries);
+        return;
+
+        static void WritePageTwo(XboxCpu cpu)
+        {
+            cpu.Ram().Write8(0x2000, 0x90);
+            cpu.Ram().Write8(0x2001, 0x90);
+            cpu.Ram().Write8(0x2002, 0x90);
+            cpu.Ram().Write8(0x2003, 0xE9);
+            cpu.Ram().Write8(0x2004, 0xF8);
+            cpu.Ram().Write8(0x2005, 0xEF);
+            cpu.Ram().Write8(0x2006, 0xFF);
+            cpu.Ram().Write8(0x2007, 0xFF);
+        }
     }
 
     [Fact]
@@ -339,21 +340,6 @@ public sealed class DecodeCacheTests
     [Fact]
     public void FaultPrecision_Vector14_MatchesFlagOff()
     {
-        static (XboxCpu Cpu, HotspotProfiler Profiler) CreateFaulting(bool cache)
-        {
-            XboxCpu cpu = CpuHarness.Create(StraightLine);
-            MapIdentity(cpu.Bus(), 0, 1);
-            MapIdentity(cpu.Bus(), 6, 1);
-            MapIdentity(cpu.Bus(), 7, 1);
-            MapIdentity(cpu.Bus(), 8, 1);
-            EnablePaging(cpu);
-            InstallIdt(cpu, 14, 0x3000);
-            cpu.DecodeCacheEnabled = cache;
-            var profiler = new HotspotProfiler();
-            cpu.HotspotObserver = profiler;
-            return (cpu, profiler);
-        }
-
         (XboxCpu off, _) = CreateFaulting(false);
         off.Step();
 
@@ -376,6 +362,22 @@ public sealed class DecodeCacheTests
         // miss is counted (the flag-off run likewise records nothing).
         Assert.Equal(0UL, on.DecodeCacheMisses);
         Assert.Equal(0UL, on.DecodeCacheHits);
+        return;
+
+        static (XboxCpu Cpu, HotspotProfiler Profiler) CreateFaulting(bool cache)
+        {
+            XboxCpu cpu = CpuHarness.Create(StraightLine);
+            MapIdentity(cpu.Bus(), 0, 1);
+            MapIdentity(cpu.Bus(), 6, 1);
+            MapIdentity(cpu.Bus(), 7, 1);
+            MapIdentity(cpu.Bus(), 8, 1);
+            EnablePaging(cpu);
+            InstallIdt(cpu, 14, 0x3000);
+            cpu.DecodeCacheEnabled = cache;
+            var profiler = new HotspotProfiler();
+            cpu.HotspotObserver = profiler;
+            return (cpu, profiler);
+        }
     }
 
     [Fact]
@@ -406,20 +408,6 @@ public sealed class DecodeCacheTests
     [Fact]
     public void IdleSkip_VerdictsExact_WithCache()
     {
-        static (XboxCpu Cpu, PollIdleHost Host) CreateIdle(bool cache)
-        {
-            XboxCpu cpu = CpuHarness.Create(PollLoop);
-            MapIdentity(cpu.Bus(), 0, 4);
-            EnablePaging(cpu);
-            cpu.Context.Eflags |= FlagBits.If;
-            var host = new PollIdleHost(cpu.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
-            cpu.IdleSkipHost = host;
-            cpu.IdleSkipEnabled = true;
-            cpu.IdleSkipMinIterations = 4;
-            cpu.DecodeCacheEnabled = cache;
-            return (cpu, host);
-        }
-
         (XboxCpu off, PollIdleHost offHost) = CreateIdle(false);
         off.Execute(1_000_000);
 
@@ -438,6 +426,21 @@ public sealed class DecodeCacheTests
         Assert.Equal(off.Context.Eip, on.Context.Eip);
         Assert.Equal(off.Context.Tsc, on.Context.Tsc);
         Assert.True(on.DecodeCacheHits > 0);
+        return;
+
+        static (XboxCpu Cpu, PollIdleHost Host) CreateIdle(bool cache)
+        {
+            XboxCpu cpu = CpuHarness.Create(PollLoop);
+            MapIdentity(cpu.Bus(), 0, 4);
+            EnablePaging(cpu);
+            cpu.Context.Eflags |= FlagBits.If;
+            var host = new PollIdleHost(cpu.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
+            cpu.IdleSkipHost = host;
+            cpu.IdleSkipEnabled = true;
+            cpu.IdleSkipMinIterations = 4;
+            cpu.DecodeCacheEnabled = cache;
+            return (cpu, host);
+        }
     }
 
     [Fact]
@@ -600,9 +603,9 @@ public sealed class DecodeCacheTests
 
         public uint? PollAddress { get; set; }
 
-        public byte PollValue { get; set; } = 1;
+        private byte PollValue { get; set; } = 1;
 
-        public HashSet<uint> NonRam { get; } = new();
+        private HashSet<uint> NonRam { get; } = new();
 
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
@@ -616,14 +619,14 @@ public sealed class DecodeCacheTests
         public void AdvanceIdle(ulong steps)
         {
             Advanced += steps;
-            if (_deadline is long deadline)
+            if (_deadline is { } deadline)
             {
                 _deadline = deadline > (long)steps ? deadline - (long)steps : 0;
                 if (_deadline == 0)
                 {
                     InitialDeadline = null;
                     _deadline = null;
-                    if (PollAddress is uint poll)
+                    if (PollAddress is { } poll)
                     {
                         _ram.Write8(poll, PollValue);
                     }

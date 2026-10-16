@@ -26,8 +26,8 @@ public sealed class Mmu
     /// <summary>Creates an MMU over the given context and physical bus.</summary>
     public Mmu(XboxContext context, IMemoryBus memory)
     {
-        _context = context ?? throw new System.ArgumentNullException(nameof(context));
-        _memory = memory ?? throw new System.ArgumentNullException(nameof(memory));
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _memory = memory ?? throw new ArgumentNullException(nameof(memory));
     }
 
     /// <summary>
@@ -219,7 +219,7 @@ public sealed class Mmu
             }
         }
 
-        uint pageDirectoryEntryAddress = (_context.Cr3 & 0xFFFFF000u) + ((linearAddress >> 22) & 0x3FFu) * 4u;
+        uint pageDirectoryEntryAddress = (_context.Cr3 & 0xFFFFF000u) + (((linearAddress >> 22) & 0x3FFu) * 4u);
         TrackPageTablePage(pageDirectoryEntryAddress >> 12);
         uint pageDirectoryEntry = _memory.Read32(pageDirectoryEntryAddress);
         if ((pageDirectoryEntry & 1u) == 0)
@@ -248,7 +248,7 @@ public sealed class Mmu
             return largePage + (linearAddress & 0x3FFFFFu);
         }
 
-        uint pageTableEntryAddress = (pageDirectoryEntry & 0xFFFFF000u) + ((linearAddress >> 12) & 0x3FFu) * 4u;
+        uint pageTableEntryAddress = (pageDirectoryEntry & 0xFFFFF000u) + (((linearAddress >> 12) & 0x3FFu) * 4u);
         TrackPageTablePage(pageTableEntryAddress >> 12);
         uint pageTableEntry = _memory.Read32(pageTableEntryAddress);
         if ((pageTableEntry & 1u) == 0)

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Usb;
 
@@ -110,13 +110,13 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
     /// <summary>Gets the number of downstream ports.</summary>
     public int PortCount => _ports.Length;
 
-    /// <inheritdoc />
+    /// <summary>Gets the assigned USB address; it starts at 0 and only changes when a SET_ADDRESS completes its status stage.</summary>
     public byte Address { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets whether a configuration is active; it is set when a deferred SET_CONFIGURATION completes its status stage.</summary>
     public bool Configured { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets the recent hub request log (at most 128 entries), for diagnostics.</summary>
     public IReadOnlyList<string> RequestLog => _requestLog;
 
     /// <summary>Gets the downstream device attached to a port, for diagnostics.</summary>
@@ -150,7 +150,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
         PortUpdate(index);
     }
 
-    /// <inheritdoc />
+    /// <summary>Resets function state (address zero, unconfigured): clears remote-wakeup and the pending address/configuration, and returns every downstream port to the powered state with status and change bits cleared.</summary>
     public void Reset()
     {
         Address = 0;
@@ -258,7 +258,9 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 
     private const int SnapshotVersion = 1;
 
-    /// <inheritdoc />
+    /// <summary>Finds a downstream device by address, considering enabled ports only and recursing into attached child hubs.</summary>
+    /// <param name="address">The USB address to look up.</param>
+    /// <returns>The device function at that address, or null when no enabled port leads to it.</returns>
     public IUsbDeviceFunction? FindDevice(byte address)
     {
         for (int i = 0; i < _ports.Length; i++)
@@ -287,7 +289,10 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
         return null;
     }
 
-    /// <inheritdoc />
+    /// <summary>Handles a setup stage: serves standard requests (descriptor, status, feature, deferred SET_ADDRESS/SET_CONFIGURATION) and hub-class requests (hub/port descriptors, port status and feature control), logging each request and outcome.</summary>
+    /// <param name="setup">The decoded 8-byte setup packet.</param>
+    /// <param name="payload">Receives the data-stage bytes for IN requests; empty for OUT/none.</param>
+    /// <returns>Ack for supported requests, Stall otherwise.</returns>
     public UsbTransferResult HandleSetup(in UsbSetupPacket setup, out byte[] payload)
     {
         UsbTransferResult result = HandleSetupCore(in setup, out payload);
@@ -350,21 +355,30 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Consumes a collected control-OUT data stage. The hub has no control-OUT data stage, so the request is logged and always stalls.</summary>
+    /// <param name="data">The data-stage bytes, which are discarded.</param>
+    /// <returns>Always Stall.</returns>
     public UsbTransferResult CompleteControlOut(byte[] data)
     {
         LogRequest(FormattableString.Invariant($"cout len={data.Length} -> {UsbTransferResult.Stall}"));
         return UsbTransferResult.Stall;
     }
 
-    /// <inheritdoc />
+    /// <summary>Handles a bulk/interrupt OUT transfer. The hub exposes no OUT endpoint, so the transfer is logged and always stalls.</summary>
+    /// <param name="endpoint">The endpoint the host wrote to.</param>
+    /// <param name="data">The OUT payload, which is discarded.</param>
+    /// <returns>Always Stall.</returns>
     public UsbTransferResult HandleOut(byte endpoint, byte[] data)
     {
         LogRequest(FormattableString.Invariant($"out ep{endpoint} len={data.Length} -> {UsbTransferResult.Stall}"));
         return UsbTransferResult.Stall;
     }
 
-    /// <inheritdoc />
+    /// <summary>Produces bulk/interrupt IN bytes for the interrupt status endpoint: returns the per-port change bitmap (one bit per downstream port with a pending change) when anything changed, or Nak when nothing has; other endpoints stall.</summary>
+    /// <param name="endpoint">The endpoint the host read from.</param>
+    /// <param name="length">The requested byte count; 1 collapses the bitmap to a single byte.</param>
+    /// <param name="payload">Receives the change bitmap bytes on Ack; empty on Nak or Stall.</param>
+    /// <returns>Ack with the bitmap, Nak when no port has a pending change, or Stall for other endpoints or too-short reads.</returns>
     public UsbTransferResult HandleIn(byte endpoint, int length, out byte[] payload)
     {
         payload = Array.Empty<byte>();
@@ -411,7 +425,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
         return UsbTransferResult.Ack;
     }
 
-    /// <inheritdoc />
+    /// <summary>Commits deferred state after a successful control status stage: applies the pending SET_ADDRESS and SET_CONFIGURATION and logs the outcome.</summary>
     public void CompleteStatusStage()
     {
         if (_pendingAddress != 0xFF)

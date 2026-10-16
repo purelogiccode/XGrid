@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Net;
 
@@ -36,7 +36,10 @@ public sealed class LoopbackNetworkBackend : INetworkBackend, ISnapshotable
     /// <summary>Gets the number of frames currently queued for loopback.</summary>
     public int QueuedFrames => _loopback.Count;
 
-    /// <inheritdoc />
+    /// <summary>Records a transmitted frame: increments <see cref="SentPackets"/> and
+    /// <see cref="SentBytes"/>, keeps a bounded copy in <see cref="SentLog"/>, and queues a copy
+    /// for loopback, dropping the oldest queued frame past <see cref="MaxQueuedFrames"/>.</summary>
+    /// <param name="frame">The Ethernet frame the guest transmitted.</param>
     public void SendPacket(ReadOnlySpan<byte> frame)
     {
         byte[] copy = frame.ToArray();

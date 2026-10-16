@@ -232,12 +232,16 @@ public sealed class PgraphTransformTests
     private static void PushProgramDraw(Nv2AMmio nv2A, ArrayMemory memory,
         uint c0X, uint c0Y, uint c0Z, uint c0W,
         params (uint Method, uint Parameter)[] state)
-        => PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: false, state);
+    {
+        PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: false, state);
+    }
 
     private static void PushProgramDrawContinue(Nv2AMmio nv2A, ArrayMemory memory,
         uint c0X, uint c0Y, uint c0Z, uint c0W,
         params (uint Method, uint Parameter)[] state)
-        => PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: true, state);
+    {
+        PushProgramDrawCore(nv2A, memory, c0X, c0Y, c0Z, c0W, continuePush: true, state);
+    }
 
     private static void PushProgramDrawCore(Nv2AMmio nv2A, ArrayMemory memory,
         uint c0X, uint c0Y, uint c0Z, uint c0W, bool continuePush,

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Usb;
 
@@ -93,7 +93,6 @@ public interface IUsbDeviceFunction
 public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
 {
     // ReSharper disable once UnusedMember.Local
-    private const byte ControlEndpoint = 0;
     private const byte InterruptEndpoint = 2;
 
     private const byte DescriptorDevice = 1;
@@ -145,16 +144,16 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         Reset();
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the assigned USB address; it starts at 0 and only changes when a SET_ADDRESS completes its status stage.</summary>
     public byte Address { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets whether a configuration is active; it is set when a deferred SET_CONFIGURATION completes its status stage.</summary>
     public bool Configured { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets the recent request log (at most 128 entries), for diagnostics.</summary>
     public IReadOnlyList<string> RequestLog => _requestLog;
 
-    /// <inheritdoc />
+    /// <summary>Resets function state (address zero, unconfigured): clears the pending address/configuration and the rumble output report, rebuilds the neutral input report, and restores the input/output capability reports.</summary>
     public void Reset()
     {
         Address = 0;
@@ -286,7 +285,10 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Handles a setup stage: serves the descriptor requests (device, configuration, string, vendor XID descriptor), HID GET_REPORT/SET_REPORT, GET_CAPABILITIES, and the standard deferred SET_ADDRESS/SET_CONFIGURATION and feature requests, logging each request and outcome.</summary>
+    /// <param name="setup">The decoded 8-byte setup packet.</param>
+    /// <param name="payload">Receives the data-stage bytes for IN requests; empty for OUT/none.</param>
+    /// <returns>Ack for supported requests, Stall otherwise (including oversized GET_REPORT buffers).</returns>
     public UsbTransferResult HandleSetup(in UsbSetupPacket setup, out byte[] payload)
     {
         UsbTransferResult result = HandleSetupCore(in setup, out payload);
@@ -375,7 +377,9 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Consumes a collected control-OUT data stage (HID SET_REPORT): a 6-byte payload is accepted into the output (rumble) report; any other length stalls. The request is logged.</summary>
+    /// <param name="data">The data-stage bytes; only an exactly 6-byte buffer is accepted.</param>
+    /// <returns>Ack for a 6-byte rumble report, Stall otherwise.</returns>
     public UsbTransferResult CompleteControlOut(byte[] data)
     {
         UsbTransferResult result = CompleteControlOutCore(data);
@@ -394,7 +398,10 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         return UsbTransferResult.Ack;
     }
 
-    /// <inheritdoc />
+    /// <summary>Handles a bulk/interrupt OUT transfer: data written to the interrupt OUT endpoint is copied into the output (rumble) report (truncated/padded via copy length); other endpoints stall. The request is logged.</summary>
+    /// <param name="endpoint">The endpoint the host wrote to (expected interrupt endpoint 2).</param>
+    /// <param name="data">The OUT payload; empty payloads leave the report unchanged.</param>
+    /// <returns>Ack on the interrupt OUT endpoint, Stall otherwise.</returns>
     public UsbTransferResult HandleOut(byte endpoint, byte[] data)
     {
         UsbTransferResult result = HandleOutCore(endpoint, data);
@@ -418,7 +425,11 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         return UsbTransferResult.Ack;
     }
 
-    /// <inheritdoc />
+    /// <summary>Produces bulk/interrupt IN bytes: returns the current 20-byte input report (buttons, analogs, sticks) from the interrupt IN endpoint; other endpoints or non-positive lengths stall. The request is logged.</summary>
+    /// <param name="endpoint">The endpoint the host read from (expected interrupt endpoint 2).</param>
+    /// <param name="length">The requested byte count, capped at the report size.</param>
+    /// <param name="payload">Receives the input-report bytes on Ack; empty on Stall.</param>
+    /// <returns>Ack with the input report, or Stall for other endpoints or a non-positive length.</returns>
     public UsbTransferResult HandleIn(byte endpoint, int length, out byte[] payload)
     {
         UsbTransferResult result = HandleInCore(endpoint, length, out payload);
@@ -438,7 +449,7 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
         return UsbTransferResult.Ack;
     }
 
-    /// <inheritdoc />
+    /// <summary>Commits deferred state after a successful control status stage: applies the pending SET_ADDRESS and SET_CONFIGURATION and logs the outcome.</summary>
     public void CompleteStatusStage()
     {
         if (_pendingAddress != 0xFF)

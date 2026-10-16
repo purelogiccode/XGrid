@@ -19,7 +19,7 @@ public sealed class RomDevice : IMmioDevice
     /// <summary>Gets the image size in bytes.</summary>
     public int Size => _data.Length;
 
-    /// <inheritdoc />
+    /// <summary>Reads <paramref name="size"/> bytes little-endian from the image at the offset of <paramref name="address"/> from the window base.</summary>
     public uint Read(uint address, int size)
     {
         int offset = (int)(address - _baseAddress);
@@ -32,7 +32,7 @@ public sealed class RomDevice : IMmioDevice
         return value;
     }
 
-    /// <inheritdoc />
+    /// <summary>Ignored: the window is read-only (a flash command set is planned for a later phase).</summary>
     public void Write(uint address, int size, uint value)
     {
         // Read-only; writes are ignored (flash command set arrives in Phase 6).
@@ -63,7 +63,7 @@ public sealed class RomAliasDevice : IMmioDevice
     /// <summary>Gets the image size in bytes.</summary>
     public int Size => _data.Length;
 
-    /// <inheritdoc />
+    /// <summary>Reads <paramref name="size"/> bytes little-endian from the image with the address offset masked to the power-of-two image size, so the image mirrors across the window.</summary>
     public uint Read(uint address, int size)
     {
         int offset = (int)((address - _baseAddress) & _mask);
@@ -76,7 +76,7 @@ public sealed class RomAliasDevice : IMmioDevice
         return value;
     }
 
-    /// <inheritdoc />
+    /// <summary>Ignored: the window is read-only.</summary>
     public void Write(uint address, int size, uint value)
     {
         // Read-only.
@@ -103,7 +103,7 @@ public sealed class RomOverlayDevice : IMmioDevice
     /// <summary>Gets or sets whether the overlay is active.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <inheritdoc />
+    /// <summary>Reads <paramref name="size"/> bytes little-endian from the overlay while <see cref="Enabled"/> is true; when disabled, forwards the read to the underlying device.</summary>
     public uint Read(uint address, int size)
     {
         if (!Enabled)
@@ -121,7 +121,7 @@ public sealed class RomOverlayDevice : IMmioDevice
         return value;
     }
 
-    /// <inheritdoc />
+    /// <summary>Forwards the write to the underlying device only while <see cref="Enabled"/> is false; writes with the overlay active are ignored.</summary>
     public void Write(uint address, int size, uint value)
     {
         if (!Enabled)

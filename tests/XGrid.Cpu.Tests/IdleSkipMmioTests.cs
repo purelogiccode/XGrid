@@ -148,6 +148,7 @@ public sealed class IdleSkipMmioTests
     [Fact]
     public void Attribution_MmioReject_RecordsHeadStepsAndAddress()
     {
+        // ReSharper disable once UnusedVariable
         (XboxCpu cpu, FakeMmioHost host) = CreateIdleCpu(MmioPollLoopBytes());
         cpu.IdleSkipMeasureOnly = true;
 
@@ -166,6 +167,7 @@ public sealed class IdleSkipMmioTests
     [Fact]
     public void Attribution_PioAndCountdownRejections_AreSeparated()
     {
+        // ReSharper disable once UnusedVariable
         (XboxCpu pioCpu, FakeMmioHost pioHost) = CreateIdleCpu(PioPollLoop);
         pioCpu.IdleSkipMeasureOnly = true;
         pioCpu.Execute(50_000);
@@ -278,14 +280,14 @@ public sealed class IdleSkipMmioTests
             _ram = ram;
         }
 
-        public bool Irq { get; set; }
+        private bool Irq { get; set; }
 
         public ulong Advanced { get; private set; }
 
         /// <summary>Breaks the model (stops classifying everything) once this many cycles have advanced.</summary>
         public ulong? BreakModelAfterAdvance { get; set; }
 
-        public HashSet<uint> NonRam { get; } = new() { MmioAddress };
+        private HashSet<uint> NonRam { get; } = new() { MmioAddress };
 
         public HashSet<uint> Stable { get; } = new();
 
@@ -312,7 +314,7 @@ public sealed class IdleSkipMmioTests
 
         public bool TryGetReadEffect(uint physicalAddress, out IdleSkipReadEffect effect)
         {
-            if (BreakModelAfterAdvance is ulong threshold && Advanced >= threshold)
+            if (BreakModelAfterAdvance is { } threshold && Advanced >= threshold)
             {
                 effect = default;
                 return false;
@@ -376,7 +378,7 @@ public sealed class IdleSkipMmioTests
                 }
             }
 
-            if (FireRamPollAtAdvanced is ulong fireAt && Advanced >= fireAt)
+            if (FireRamPollAtAdvanced is { } fireAt && Advanced >= fireAt)
             {
                 _ram.Write8(RamPollAddress, 1);
                 FireRamPollAtAdvanced = null;

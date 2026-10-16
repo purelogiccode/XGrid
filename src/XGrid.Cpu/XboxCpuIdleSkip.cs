@@ -207,7 +207,7 @@ public sealed partial class XboxCpu
             }
 
             int chunk = Math.Min(_idleSkipChunkSteps, budget - skipped);
-            if (host.StepsUntilNextDeadline is long deadline)
+            if (host.StepsUntilNextDeadline is { } deadline)
             {
                 if (deadline <= 0)
                 {

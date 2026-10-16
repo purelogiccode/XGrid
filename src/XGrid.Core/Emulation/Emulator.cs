@@ -23,7 +23,7 @@ public sealed class Emulator : IEmulator
         Scheduler = new Scheduler();
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the current lifecycle state; starts at <see cref="EmulatorState.Created"/>.</summary>
     public EmulatorState State { get; private set; } = EmulatorState.Created;
 
     /// <summary>Gets the validated configuration.</summary>
@@ -38,7 +38,7 @@ public sealed class Emulator : IEmulator
     /// <summary>Gets the device scheduler.</summary>
     public Scheduler Scheduler { get; }
 
-    /// <inheritdoc />
+    /// <summary>Validates the emulator is in the created state and transitions it to <see cref="EmulatorState.Initialized"/>.</summary>
     public void Initialize()
     {
         if (State != EmulatorState.Created)
@@ -50,7 +50,7 @@ public sealed class Emulator : IEmulator
         Log(LogLevel.Information, "Emulator initialized");
     }
 
-    /// <inheritdoc />
+    /// <summary>Resets the emulated clock and scheduler and returns the emulator to <see cref="EmulatorState.Initialized"/>; valid from the initialized, running, paused, or stopped states.</summary>
     public void Reset()
     {
         if (State is not (EmulatorState.Initialized
@@ -67,7 +67,7 @@ public sealed class Emulator : IEmulator
         Log(LogLevel.Information, "Emulator reset");
     }
 
-    /// <inheritdoc />
+    /// <summary>Transitions the emulator to <see cref="EmulatorState.Running"/> from the initialized or stopped state.</summary>
     public void Start()
     {
         if (State is not (EmulatorState.Initialized or EmulatorState.Stopped))
@@ -79,7 +79,7 @@ public sealed class Emulator : IEmulator
         Log(LogLevel.Information, "Emulator started");
     }
 
-    /// <inheritdoc />
+    /// <summary>Suspends execution by transitioning a running emulator to <see cref="EmulatorState.Paused"/> without discarding state.</summary>
     public void Pause()
     {
         if (State != EmulatorState.Running)
@@ -91,7 +91,7 @@ public sealed class Emulator : IEmulator
         Log(LogLevel.Information, "Emulator paused");
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns a paused emulator to <see cref="EmulatorState.Running"/>.</summary>
     public void Resume()
     {
         if (State != EmulatorState.Paused)
@@ -103,7 +103,7 @@ public sealed class Emulator : IEmulator
         Log(LogLevel.Information, "Emulator resumed");
     }
 
-    /// <inheritdoc />
+    /// <summary>Transitions the emulator to <see cref="EmulatorState.Stopped"/> from the initialized, running, or paused state.</summary>
     public void Stop()
     {
         if (State is not (EmulatorState.Initialized or EmulatorState.Running or EmulatorState.Paused))

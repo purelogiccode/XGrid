@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Storage;
 
@@ -38,10 +38,12 @@ public sealed class RawDiskImage : IDiskImage
         SectorCount = (uint)(_stream.Length / SectorSize);
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of 512-byte sectors derived from the backing file's length.</summary>
     public uint SectorCount { get; }
 
-    /// <inheritdoc />
+    /// <summary>Reads one 512-byte sector from the backing file at byte offset <c>lba * 512</c>.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="destination">Destination holding at least one sector.</param>
     public void ReadSector(uint lba, Span<byte> destination)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
@@ -54,7 +56,9 @@ public sealed class RawDiskImage : IDiskImage
         _stream.ReadExactly(destination[..SectorSize]);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one 512-byte sector to the backing file at byte offset <c>lba * 512</c> and flushes the stream.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="source">Source holding at least one sector.</param>
     public void WriteSector(uint lba, ReadOnlySpan<byte> source)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
@@ -68,7 +72,7 @@ public sealed class RawDiskImage : IDiskImage
         _stream.Flush();
     }
 
-    /// <inheritdoc />
+    /// <summary>Closes the backing file stream.</summary>
     public void Dispose()
     {
         _stream.Dispose();
@@ -94,7 +98,7 @@ public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
         _backing = backing;
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of 512-byte sectors from the backing image.</summary>
     public uint SectorCount => _backing.SectorCount;
 
     /// <summary>Gets the number of sectors modified in the overlay (diagnostics).</summary>
@@ -118,7 +122,9 @@ public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
         return sectors;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one 512-byte sector, serving it from the in-RAM overlay when the LBA was written, otherwise from the backing image.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="destination">Destination holding at least one sector.</param>
     public void ReadSector(uint lba, Span<byte> destination)
     {
         if (_overlay.TryGetValue(lba, out byte[]? sector))
@@ -130,7 +136,9 @@ public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
         _backing.ReadSector(lba, destination);
     }
 
-    /// <inheritdoc />
+    /// <summary>Copies one 512-byte sector into the in-RAM overlay (the backing image is never modified) and appends the LBA to the write log.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="source">Source holding at least one sector.</param>
     public void WriteSector(uint lba, ReadOnlySpan<byte> source)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
@@ -143,7 +151,7 @@ public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
         _writeLog.Add(lba);
     }
 
-    /// <inheritdoc />
+    /// <summary>Disposes the owned backing image.</summary>
     public void Dispose()
     {
         _backing.Dispose();

@@ -146,34 +146,37 @@ public sealed class PgraphBackendSeamTests
     }
 
     /// <summary>The ElementDraw_RunsVertexProgramAndRasterizes stream (existing golden).</summary>
-    private static (uint Method, uint Parameter)[] ElementDrawStream() => new[]
+    private static (uint Method, uint Parameter)[] ElementDrawStream()
     {
-        (0x0208u, 0x00000104u),
-        (0x020Cu, 0x00000040u),
-        (0x0210u, 0x00003000u),
-        (0x0200u, 0x00100000u),
-        (0x0204u, 0x00100000u),
-        (0x1720u, 0x00002000u),
-        (0x1760u, 0x00001042u),
-        (0x1E9Cu, 0u),
-        (0x0B00u, 0u),
-        (0x0B04u, 0x0020001Bu),
-        (0x0B08u, 0x0836006Cu),
-        (0x0B0Cu, 0x0000F800u),
-        (0x0B10u, 0u),
-        (0x0B14u, 0x0020001Bu),
-        (0x0B18u, 0x0C36006Cu),
-        (0x0B1Cu, 0x0000F819u),
-        (0x1EA4u, 0u),
-        (0x0B80u, 0x3F800000u),
-        (0x0B84u, 0x3F000000u),
-        (0x0B88u, 0x3E800000u),
-        (0x0B8Cu, 0x3F800000u),
-        (0x17FCu, 5u),
-        (0x1800u, 0x00010000u),
-        (0x1808u, 0x00000002u),
-        (0x17FCu, 0u),
-    };
+        return new[]
+        {
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0x3F000000u),
+            (0x0B88u, 0x3E800000u),
+            (0x0B8Cu, 0x3F800000u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u),
+        };
+    }
 
     private static void WriteVertices(ArrayMemory memory)
     {

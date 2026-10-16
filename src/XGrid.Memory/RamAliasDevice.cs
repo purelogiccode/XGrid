@@ -24,7 +24,7 @@ public sealed class RamAliasDevice : IMmioDevice
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads from the aliased window: the address is offset from the window base, masked into RAM, and read with the requested size (1, 2, or 4 bytes).</summary>
     public uint Read(uint address, int size)
     {
         uint mapped = Map(address);
@@ -37,7 +37,7 @@ public sealed class RamAliasDevice : IMmioDevice
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes to the aliased window: the address is offset from the window base, masked into RAM, and written with the requested size (1, 2, or 4 bytes).</summary>
     public void Write(uint address, int size, uint value)
     {
         uint mapped = Map(address);

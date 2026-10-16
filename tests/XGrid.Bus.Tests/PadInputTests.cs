@@ -101,7 +101,7 @@ public sealed class PadInputTests
     [Fact]
     public void ButtonSet_ReleaseWords_AreNeutral()
     {
-        foreach (string word in new string[] { "none", "neutral", "release", "0" })
+        foreach (string word in new[] { "none", "neutral", "release", "0" })
         {
             Assert.True(PadInput.TryParseButtonSet(word, out ushort buttons, out byte[] analog));
             Assert.Equal(0, buttons);

@@ -5,8 +5,8 @@ using XGrid.Bus.Io;
 using XGrid.Bus.Pci;
 using XGrid.Bus.Smbus;
 using XGrid.Bus.Timers;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus;
 
@@ -110,12 +110,16 @@ public sealed class XboxBus : IXboxDevice, ISnapshotable
     public Rtc146818 Rtc { get; }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
+#pragma warning disable CA1822
     public string Name => "Xbox bus";
+#pragma warning restore CA1822
 
     /// <summary>Gets whether the MCPX boot ROM overlay is enabled.</summary>
     public bool RomOverlayEnabled => Lpc.RomOverlayEnabled;
 
-    /// <inheritdoc />
+    /// <summary>Returns the whole bus to its power-on state: resets the PCI bus (and with it every
+    /// PCI device and secondary bus), the PIC, the PIT, and the RTC, and clears the accumulated
+    /// cycle-to-tick conversion remainders.</summary>
     public void Reset()
     {
         Pci.Reset();

@@ -259,8 +259,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) == 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x4000));
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x0100));
     }
 
     [Fact]
@@ -285,8 +285,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) == 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x4000));
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x0100));
     }
 
     [Fact]
@@ -298,8 +298,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) == 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) != 0);
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x4000));
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x0100));
     }
 
     [Fact]
@@ -312,8 +312,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) != 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) == 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x0100));
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x4000));
         Assert.Equal(0, cpu.Context.Fpu.Top);
     }
 
@@ -327,8 +327,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0100) == 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x4000));
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x0100));
     }
 
     [Fact]
@@ -352,7 +352,7 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -365,7 +365,7 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.ReadRegister16(Gpr.Eax) & 0x4000) != 0);
+        Assert.NotEqual(0, (cpu.Context.ReadRegister16(Gpr.Eax) & 0x4000));
     }
 
     [Fact]
@@ -593,7 +593,7 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x4000));
     }
 
     [Fact]
@@ -604,8 +604,8 @@ public sealed class FpuTests
         cpu.Step();
         cpu.Step();
 
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x4000) != 0);
-        Assert.True((cpu.Context.Fpu.StatusWord & 0x0400) == 0);
+        Assert.NotEqual(0, (cpu.Context.Fpu.StatusWord & 0x4000));
+        Assert.Equal(0, (cpu.Context.Fpu.StatusWord & 0x0400));
     }
 
     [Fact]

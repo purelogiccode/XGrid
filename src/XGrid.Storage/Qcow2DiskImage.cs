@@ -56,10 +56,12 @@ public sealed class Qcow2DiskImage : IDiskImage
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of 512-byte sectors from the qcow2 virtual size in the header.</summary>
     public uint SectorCount { get; }
 
-    /// <inheritdoc />
+    /// <summary>Walks the qcow2 L1/L2 tables for the cluster holding the LBA and reads one 512-byte sector; unallocated or zero-flagged clusters are reported as zeroes.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="destination">Destination holding at least one sector.</param>
     public void ReadSector(uint lba, Span<byte> destination)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
@@ -100,13 +102,13 @@ public sealed class Qcow2DiskImage : IDiskImage
         _stream.ReadExactly(destination[..512]);
     }
 
-    /// <inheritdoc />
+    /// <summary>Always throws <see cref="System.NotSupportedException"/>; the qcow2 reader is read-only.</summary>
     public void WriteSector(uint lba, ReadOnlySpan<byte> source)
     {
         throw new NotSupportedException("The qcow2 reader is read-only.");
     }
 
-    /// <inheritdoc />
+    /// <summary>Closes the backing file stream.</summary>
     public void Dispose()
     {
         _stream.Dispose();

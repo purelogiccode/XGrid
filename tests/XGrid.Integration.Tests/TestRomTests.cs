@@ -16,7 +16,7 @@ namespace XGrid.Integration.Tests;
 public sealed class TestRomTests
 {
     // tools/testroms/nv2a_quad.bin (1188 bytes, NASM -f bin, ORG 0x1000).
-    private static readonly byte[] Nv2aQuadRom = new byte[]
+    private static readonly byte[] Nv2AQuadRom = new byte[]
     {
         0xBE, 0x38, 0x14, 0x00, 0x00, 0xE8, 0x1B, 0x04, 0x00, 0x00, 0x31, 0xC9,
         0x31, 0xDB, 0x89, 0xD8, 0xC1, 0xE8, 0x03, 0x89, 0xCA, 0xC1, 0xEA, 0x03,
@@ -258,7 +258,7 @@ public sealed class TestRomTests
     public void Nv2aQuad_PassesWithTexturedFlipAndNonZeroFrame()
     {
         using var runner = new TestRomRunner(new XboxMachine(), "nv2a_quad");
-        runner.LoadImage(Nv2aQuadRom, 0x1000, 0x1000, 0x80000);
+        runner.LoadImage(Nv2AQuadRom, 0x1000, 0x1000, 0x80000);
 
         ulong executed = runner.Run(2_000_000);
 

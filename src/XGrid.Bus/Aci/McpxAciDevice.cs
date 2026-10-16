@@ -1,7 +1,7 @@
 using System;
 using System.IO;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Bus.Aci;
@@ -82,8 +82,10 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
         Reset();
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the device name used in traces and diagnostics ("MCPX ACI").</summary>
+#pragma warning disable CA1822
     public string Name => "MCPX ACI";
+#pragma warning restore CA1822
 
     /// <summary>Gets the number of codec (NAM) register accesses, for diagnostics.</summary>
     public long NamAccesses { get; private set; }
@@ -91,7 +93,9 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of bus-master (NABM) register accesses, for diagnostics.</summary>
     public long NabmAccesses { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Returns the ACI to its power-on state: clears the mixer file, global control/status
+    /// registers, and CAS semaphore, clears all bus-master blocks, then applies QEMU's
+    /// ac97_on_reset defaults (blocks 0-2 reset, SO clear, AC'97 mixer register defaults).</summary>
     public void Reset()
     {
         Array.Clear(_mixer);
@@ -169,7 +173,11 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     private const int SnapshotVersion = 1;
 
-    /// <inheritdoc />
+    /// <summary>Reads a register in the 4 KB ACI window at 0xFEC00000: offsets 0x000-0x0FF serve
+    /// the NAM codec file (16-bit mixer reads, any access releasing the CAS semaphore), offsets
+    /// 0x100-0x17F serve the NABM bus-master block, and offsets 0x180 and above read as all ones.</summary>
+    /// <param name="address">Absolute address inside the window (base 0xFEC00000).</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
     public uint Read(uint address, int size)
     {
         uint offset = address - BaseAddress;
@@ -193,7 +201,13 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a register in the 4 KB ACI window at 0xFEC00000: 16-bit NAM writes update
+    /// the mixer (with QEMU's per-register masking and read-only vendor IDs), other NAM sizes only
+    /// release the CAS semaphore, and NABM writes update the global registers or bus-master blocks;
+    /// offsets 0x180 and above are ignored.</summary>
+    /// <param name="address">Absolute address inside the window (base 0xFEC00000).</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
+    /// <param name="value">Value to write, right-aligned in the low bytes.</param>
     public void Write(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;
@@ -448,7 +462,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
         if (offset == GlobSta)
         {
             _globSta &= ~(value & GsWclearMask);
-            _globSta |= (value & ~(GsWclearMask | GsRoMask)) & GsValidMask;
+            _globSta |= value & ~(GsWclearMask | GsRoMask) & GsValidMask;
             return;
         }
 

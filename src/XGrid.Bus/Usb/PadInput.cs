@@ -26,7 +26,7 @@ public readonly struct PadInput
     public short[] Sticks { get; }
 
     /// <summary>Gets the neutral (no input) pad state.</summary>
-    public static PadInput Neutral { get; } = new PadInput(0, new byte[8], new short[4]);
+    public static PadInput Neutral { get; } = new(0, new byte[8], new short[4]);
 
     /// <summary>
     /// Parses a button set: known button names joined with '+' (case-insensitive,
