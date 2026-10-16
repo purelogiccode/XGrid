@@ -2197,12 +2197,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint ReadUser(uint offset)
     {
         if (IsActiveDmaChannel(offset) && (offset & 0xFFFFu) switch
-            {
-                UserDmaPut => true,
-                UserDmaGet => true,
-                UserRef => true,
-                _ => false,
-            })
+        {
+            UserDmaPut => true,
+            UserDmaGet => true,
+            UserRef => true,
+            _ => false,
+        })
         {
             return (offset & 0xFFFFu) switch
             {
@@ -2791,18 +2791,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 FlipModuloDebug = parameter;
                 break;
             case MethodFlipIncrementWrite:
-            {
-                uint flipModulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
-                FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
-                FramesPresented++;
-                CapturePresentedFrame();
-                Backend?.Flip(new PgraphSurfaceRecord(
-                    _surfaceClipH >> 16, _surfaceClipV >> 16,
-                    ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented,
-                    SurfaceBase(_dmaColor) + PresentedColorOffset,
-                    _surfacePitch & 0xFFFFu));
-                break;
-            }
+                {
+                    uint flipModulo = FlipModuloDebug == 0 ? 1u : FlipModuloDebug;
+                    FlipWriteDebug = (FlipWriteDebug + 1) % flipModulo;
+                    FramesPresented++;
+                    CapturePresentedFrame();
+                    Backend?.Flip(new PgraphSurfaceRecord(
+                        _surfaceClipH >> 16, _surfaceClipV >> 16,
+                        ColorBytesPerPixel(_surfaceFormat & 0xFu), FramesPresented,
+                        SurfaceBase(_dmaColor) + PresentedColorOffset,
+                        _surfacePitch & 0xFFFFu));
+                    break;
+                }
             case MethodFlipStall:
                 FlipStalls++;
                 break;
@@ -4317,17 +4317,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 break;
             case 6:
-            {
-                int packed = (int)_memory.ReadPhysical(address);
-                int x = SignExtend(packed & 0x7FF, 11);
-                int y = SignExtend((packed >> 11) & 0x7FF, 11);
-                int z = SignExtend((packed >> 22) & 0x3FF, 10);
-                destination[0] = Math.Max(-1f, x / 1023f);
-                destination[1] = Math.Max(-1f, y / 1023f);
-                destination[2] = Math.Max(-1f, z / 511f);
-                destination[3] = 1f;
-                break;
-            }
+                {
+                    int packed = (int)_memory.ReadPhysical(address);
+                    int x = SignExtend(packed & 0x7FF, 11);
+                    int y = SignExtend((packed >> 11) & 0x7FF, 11);
+                    int z = SignExtend((packed >> 22) & 0x3FF, 10);
+                    destination[0] = Math.Max(-1f, x / 1023f);
+                    destination[1] = Math.Max(-1f, y / 1023f);
+                    destination[2] = Math.Max(-1f, z / 511f);
+                    destination[3] = 1f;
+                    break;
+                }
 
             default:
                 break;
@@ -4672,22 +4672,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         switch (color)
         {
             case 0x06u:
-            {
-                uint texel = memory.ReadPhysical(address);
-                a = ((texel >> 24) & 0xFFu) / 255f;
-                r = ((texel >> 16) & 0xFFu) / 255f;
-                g = ((texel >> 8) & 0xFFu) / 255f;
-                b = (texel & 0xFFu) / 255f;
-                return true;
-            }
+                {
+                    uint texel = memory.ReadPhysical(address);
+                    a = ((texel >> 24) & 0xFFu) / 255f;
+                    r = ((texel >> 16) & 0xFFu) / 255f;
+                    g = ((texel >> 8) & 0xFFu) / 255f;
+                    b = (texel & 0xFFu) / 255f;
+                    return true;
+                }
             case 0x05u:
-            {
-                uint texel = memory.ReadPhysical(address) & 0xFFFFu;
-                r = ((texel >> 11) & 0x1Fu) / 31f;
-                g = ((texel >> 5) & 0x3Fu) / 63f;
-                b = (texel & 0x1Fu) / 31f;
-                return true;
-            }
+                {
+                    uint texel = memory.ReadPhysical(address) & 0xFFFFu;
+                    r = ((texel >> 11) & 0x1Fu) / 31f;
+                    g = ((texel >> 5) & 0x3Fu) / 63f;
+                    b = (texel & 0x1Fu) / 31f;
+                    return true;
+                }
             default:
                 return false;
         }
@@ -4710,16 +4710,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 value %= size;
                 return value < 0 ? value + size : value;
             case 1:
-            {
-                int period = size * 2;
-                value %= period;
-                if (value < 0)
                 {
-                    value += period;
-                }
+                    int period = size * 2;
+                    value %= period;
+                    if (value < 0)
+                    {
+                        value += period;
+                    }
 
-                return value < size ? value : period - 1 - value;
-            }
+                    return value < size ? value : period - 1 - value;
+                }
             default:
                 return Math.Clamp(value, 0, size - 1);
         }
@@ -5732,22 +5732,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 return SampleInto(stage, tu, tv, texel);
             case PshCombiner.TexModeProject3D:
-            {
-                if (TryResolveShadow(stage, texel))
                 {
-                    return false;
-                }
+                    if (TryResolveShadow(stage, texel))
+                    {
+                        return false;
+                    }
 
-                // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
-                // samplers, (x/w, y/w, z/w) for volume textures.
-                float invW = 1f / coord[3];
-                if (TextureDimensionality(stage) == 3)
-                {
-                    return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
-                }
+                    // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
+                    // samplers, (x/w, y/w, z/w) for volume textures.
+                    float invW = 1f / coord[3];
+                    if (TextureDimensionality(stage) == 3)
+                    {
+                        return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
+                    }
 
-                return SampleInto(stage, tu * invW, tv * invW, texel);
-            }
+                    return SampleInto(stage, tu * invW, tv * invW, texel);
+                }
 
             case PshCombiner.TexModeCubemap:
                 if (IsTextureCubemap(stage))

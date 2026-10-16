@@ -135,41 +135,41 @@ internal static class Program
                     traceRegs = true;
                     break;
                 case "--break":
-                {
-                    string text = NextValue(args, ref i);
-                    string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
-                    breakAddress = Convert.ToUInt32(hex, 16);
-                    break;
-                }
+                    {
+                        string text = NextValue(args, ref i);
+                        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+                        breakAddress = Convert.ToUInt32(hex, 16);
+                        break;
+                    }
                 case "--break-log":
-                {
-                    string text = NextValue(args, ref i);
-                    string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
-                    breakLogAddresses.Add(Convert.ToUInt32(hex, 16));
-                    break;
-                }
+                    {
+                        string text = NextValue(args, ref i);
+                        string hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+                        breakLogAddresses.Add(Convert.ToUInt32(hex, 16));
+                        break;
+                    }
                 case "--dump":
-                {
-                    string[] parts = NextValue(args, ref i).Split(',');
-                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? parts[0][2..]
-                        : parts[0];
-                    uint address = Convert.ToUInt32(addressText, 16);
-                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                    dumps.Add((address, length, false));
-                    break;
-                }
+                    {
+                        string[] parts = NextValue(args, ref i).Split(',');
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        uint address = Convert.ToUInt32(addressText, 16);
+                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                        dumps.Add((address, length, false));
+                        break;
+                    }
                 case "--dumpv":
-                {
-                    string[] parts = NextValue(args, ref i).Split(',');
-                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? parts[0][2..]
-                        : parts[0];
-                    uint address = Convert.ToUInt32(addressText, 16);
-                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                    dumps.Add((address, length, true));
-                    break;
-                }
+                    {
+                        string[] parts = NextValue(args, ref i).Split(',');
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        uint address = Convert.ToUInt32(addressText, 16);
+                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                        dumps.Add((address, length, true));
+                        break;
+                    }
                 case "--ram":
                     ramMb = uint.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
@@ -271,18 +271,18 @@ internal static class Program
                     scans.Add(NextValue(args, ref i));
                     break;
                 case "--watch":
-                {
-                    string[] parts = NextValue(args, ref i).Split(',');
-                    string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? parts[0][2..]
-                        : parts[0];
-                    string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? parts[1][2..]
-                        : parts[1];
-                    machineWatchStart = Convert.ToUInt32(startText, 16);
-                    machineWatchEnd = Convert.ToUInt32(endText, 16);
-                    break;
-                }
+                    {
+                        string[] parts = NextValue(args, ref i).Split(',');
+                        string startText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        string endText = parts[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[1][2..]
+                            : parts[1];
+                        machineWatchStart = Convert.ToUInt32(startText, 16);
+                        machineWatchEnd = Convert.ToUInt32(endText, 16);
+                        break;
+                    }
                 default:
                     Console.Error.WriteLine($"Unknown boot option: {args[i]}");
                     return 1;
@@ -911,16 +911,16 @@ internal static class Program
                     breakAddress = ParseTestRomAddress(NextValue(args, ref i));
                     break;
                 case "--dump":
-                {
-                    string[] parts = NextValue(args, ref i).Split(',');
-                    string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? parts[0][2..]
-                        : parts[0];
-                    uint address = Convert.ToUInt32(addressText, 16);
-                    int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
-                    dumps.Add((address, length, false));
-                    break;
-                }
+                    {
+                        string[] parts = NextValue(args, ref i).Split(',');
+                        string addressText = parts[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                            ? parts[0][2..]
+                            : parts[0];
+                        uint address = Convert.ToUInt32(addressText, 16);
+                        int length = parts.Length > 1 ? Convert.ToInt32(parts[1], 16) : 0x40;
+                        dumps.Add((address, length, false));
+                        break;
+                    }
 
                 default:
                     Console.Error.WriteLine($"Unknown testrom option: {args[i]}");

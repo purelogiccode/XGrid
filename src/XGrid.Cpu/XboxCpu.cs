@@ -376,13 +376,13 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Xchg:
-            {
-                uint first = ReadOperand(instruction.Operand1);
-                uint second = ReadOperand(instruction.Operand2);
-                WriteOperand(instruction.Operand1, second);
-                WriteOperand(instruction.Operand2, first);
-                break;
-            }
+                {
+                    uint first = ReadOperand(instruction.Operand1);
+                    uint second = ReadOperand(instruction.Operand2);
+                    WriteOperand(instruction.Operand1, second);
+                    WriteOperand(instruction.Operand2, first);
+                    break;
+                }
 
             case Mnemonic.Push:
                 Push(ReadOperand(instruction.Operand1), instruction.Operand1.Size, instruction.AddressSize);
@@ -404,40 +404,40 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Inc:
-            {
-                uint value = ReadOperand(instruction.Operand1);
-                Context.Eflags = AluOps.Inc(value, instruction.Operand1.Size, Context.Eflags, out uint result);
-                WriteOperand(instruction.Operand1, result);
-                break;
-            }
+                {
+                    uint value = ReadOperand(instruction.Operand1);
+                    Context.Eflags = AluOps.Inc(value, instruction.Operand1.Size, Context.Eflags, out uint result);
+                    WriteOperand(instruction.Operand1, result);
+                    break;
+                }
 
             case Mnemonic.Dec:
-            {
-                uint value = ReadOperand(instruction.Operand1);
-                Context.Eflags = AluOps.Dec(value, instruction.Operand1.Size, Context.Eflags, out uint result);
-                WriteOperand(instruction.Operand1, result);
-                break;
-            }
+                {
+                    uint value = ReadOperand(instruction.Operand1);
+                    Context.Eflags = AluOps.Dec(value, instruction.Operand1.Size, Context.Eflags, out uint result);
+                    WriteOperand(instruction.Operand1, result);
+                    break;
+                }
 
             case Mnemonic.Test:
-            {
-                uint value = ReadOperand(instruction.Operand1) & ReadOperand(instruction.Operand2);
-                value &= AluOps.Mask(instruction.Operand1.Size);
-                Context.Eflags = AluOps.Logical(value, instruction.Operand1.Size, Context.Eflags);
-                break;
-            }
+                {
+                    uint value = ReadOperand(instruction.Operand1) & ReadOperand(instruction.Operand2);
+                    value &= AluOps.Mask(instruction.Operand1.Size);
+                    Context.Eflags = AluOps.Logical(value, instruction.Operand1.Size, Context.Eflags);
+                    break;
+                }
 
             case Mnemonic.Not:
                 WriteOperand(instruction.Operand1, ~ReadOperand(instruction.Operand1));
                 break;
 
             case Mnemonic.Neg:
-            {
-                uint value = ReadOperand(instruction.Operand1);
-                Context.Eflags = AluOps.Neg(value, instruction.Operand1.Size, Context.Eflags, out uint result);
-                WriteOperand(instruction.Operand1, result);
-                break;
-            }
+                {
+                    uint value = ReadOperand(instruction.Operand1);
+                    Context.Eflags = AluOps.Neg(value, instruction.Operand1.Size, Context.Eflags, out uint result);
+                    WriteOperand(instruction.Operand1, result);
+                    break;
+                }
 
             case Mnemonic.Jmp:
                 Context.Eip = instruction.Operand1.Kind == OperandKind.Immediate
@@ -455,14 +455,14 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Call:
-            {
-                uint target = instruction.Operand1.Kind == OperandKind.Immediate
-                    ? nextEip + instruction.Operand1.Immediate
-                    : ReadOperand(instruction.Operand1);
-                Push(nextEip, instruction.OperandSize, instruction.AddressSize);
-                Context.Eip = target;
-                return;
-            }
+                {
+                    uint target = instruction.Operand1.Kind == OperandKind.Immediate
+                        ? nextEip + instruction.Operand1.Immediate
+                        : ReadOperand(instruction.Operand1);
+                    Push(nextEip, instruction.OperandSize, instruction.AddressSize);
+                    Context.Eip = target;
+                    return;
+                }
 
             case Mnemonic.Ret:
                 Context.Eip = Pop(instruction.OperandSize, instruction.AddressSize);
@@ -474,37 +474,37 @@ public sealed partial class XboxCpu
                 return;
 
             case Mnemonic.JmpFar:
-            {
-                (uint offset, ushort selector) = ReadFarTarget(instruction);
-                LoadSegment(SegmentRegister.Cs, selector);
-                Context.Eip = offset;
-                return;
-            }
-
-            case Mnemonic.CallFar:
-            {
-                (uint offset, ushort selector) = ReadFarTarget(instruction);
-                Push(Context.GetSegmentSelector(SegmentRegister.Cs), instruction.OperandSize, instruction.AddressSize);
-                Push(nextEip, instruction.OperandSize, instruction.AddressSize);
-                LoadSegment(SegmentRegister.Cs, selector);
-                Context.Eip = offset;
-                return;
-            }
-
-            case Mnemonic.Retf:
-            {
-                uint offset = Pop(instruction.OperandSize, instruction.AddressSize);
-                ushort selector = (ushort)Pop(instruction.OperandSize, instruction.AddressSize);
-                LoadSegment(SegmentRegister.Cs, selector);
-                Context.Eip = offset;
-
-                if (instruction.Operand1.Kind == OperandKind.Immediate)
                 {
-                    AdjustStackPointer(instruction.Operand1.Immediate, instruction.AddressSize);
+                    (uint offset, ushort selector) = ReadFarTarget(instruction);
+                    LoadSegment(SegmentRegister.Cs, selector);
+                    Context.Eip = offset;
+                    return;
                 }
 
-                return;
-            }
+            case Mnemonic.CallFar:
+                {
+                    (uint offset, ushort selector) = ReadFarTarget(instruction);
+                    Push(Context.GetSegmentSelector(SegmentRegister.Cs), instruction.OperandSize, instruction.AddressSize);
+                    Push(nextEip, instruction.OperandSize, instruction.AddressSize);
+                    LoadSegment(SegmentRegister.Cs, selector);
+                    Context.Eip = offset;
+                    return;
+                }
+
+            case Mnemonic.Retf:
+                {
+                    uint offset = Pop(instruction.OperandSize, instruction.AddressSize);
+                    ushort selector = (ushort)Pop(instruction.OperandSize, instruction.AddressSize);
+                    LoadSegment(SegmentRegister.Cs, selector);
+                    Context.Eip = offset;
+
+                    if (instruction.Operand1.Kind == OperandKind.Immediate)
+                    {
+                        AdjustStackPointer(instruction.Operand1.Immediate, instruction.AddressSize);
+                    }
+
+                    return;
+                }
 
             case Mnemonic.MovSreg:
                 LoadSegment((SegmentRegister)instruction.Operand1.Immediate, (ushort)ReadOperand(instruction.Operand2));
@@ -530,25 +530,25 @@ public sealed partial class XboxCpu
             case Mnemonic.Loop:
             case Mnemonic.LoopE:
             case Mnemonic.LoopNe:
-            {
-                uint counter = (ReadCounter(instruction.AddressSize) - 1u) & AluOps.Mask(instruction.AddressSize);
-                WriteCounter(counter, instruction.AddressSize);
-
-                bool take = instruction.Mnemonic switch
                 {
-                    Mnemonic.Loop => counter != 0,
-                    Mnemonic.LoopE => counter != 0 && (Context.Eflags & FlagBits.Zf) != 0,
-                    _ => counter != 0 && (Context.Eflags & FlagBits.Zf) == 0,
-                };
+                    uint counter = (ReadCounter(instruction.AddressSize) - 1u) & AluOps.Mask(instruction.AddressSize);
+                    WriteCounter(counter, instruction.AddressSize);
 
-                if (take)
-                {
-                    Context.Eip = nextEip + instruction.Operand1.Immediate;
-                    return;
+                    bool take = instruction.Mnemonic switch
+                    {
+                        Mnemonic.Loop => counter != 0,
+                        Mnemonic.LoopE => counter != 0 && (Context.Eflags & FlagBits.Zf) != 0,
+                        _ => counter != 0 && (Context.Eflags & FlagBits.Zf) == 0,
+                    };
+
+                    if (take)
+                    {
+                        Context.Eip = nextEip + instruction.Operand1.Immediate;
+                        return;
+                    }
+
+                    break;
                 }
-
-                break;
-            }
 
             case Mnemonic.Jecxz:
                 if (ReadCounter(instruction.AddressSize) == 0)
@@ -729,46 +729,46 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Bswap:
-            {
-                Gpr register = (Gpr)instruction.Operand1.RegisterIndex;
-                uint value = Context.ReadRegister(register);
-                Context.WriteRegister(
-                    register,
-                    (value >> 24) | ((value >> 8) & 0x0000FF00u) | ((value << 8) & 0x00FF0000u) | (value << 24));
-                break;
-            }
+                {
+                    Gpr register = (Gpr)instruction.Operand1.RegisterIndex;
+                    uint value = Context.ReadRegister(register);
+                    Context.WriteRegister(
+                        register,
+                        (value >> 24) | ((value >> 8) & 0x0000FF00u) | ((value << 8) & 0x00FF0000u) | (value << 24));
+                    break;
+                }
 
             case Mnemonic.Cbw:
-            {
-                if (instruction.OperandSize == 16)
                 {
-                    sbyte value = (sbyte)Context.ReadRegister8(0);
-                    Context.WriteRegister16(Gpr.Eax, (ushort)value);
-                }
-                else
-                {
-                    short value = (short)Context.ReadRegister16(Gpr.Eax);
-                    Context.WriteRegister(Gpr.Eax, (uint)value);
-                }
+                    if (instruction.OperandSize == 16)
+                    {
+                        sbyte value = (sbyte)Context.ReadRegister8(0);
+                        Context.WriteRegister16(Gpr.Eax, (ushort)value);
+                    }
+                    else
+                    {
+                        short value = (short)Context.ReadRegister16(Gpr.Eax);
+                        Context.WriteRegister(Gpr.Eax, (uint)value);
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Cdq:
-            {
-                if (instruction.OperandSize == 16)
                 {
-                    short value = (short)Context.ReadRegister16(Gpr.Eax);
-                    Context.WriteRegister16(Gpr.Edx, value < 0 ? (ushort)0xFFFF : (ushort)0);
-                }
-                else
-                {
-                    int value = (int)Context.ReadRegister(Gpr.Eax);
-                    Context.WriteRegister(Gpr.Edx, value < 0 ? 0xFFFFFFFFu : 0u);
-                }
+                    if (instruction.OperandSize == 16)
+                    {
+                        short value = (short)Context.ReadRegister16(Gpr.Eax);
+                        Context.WriteRegister16(Gpr.Edx, value < 0 ? (ushort)0xFFFF : (ushort)0);
+                    }
+                    else
+                    {
+                        int value = (int)Context.ReadRegister(Gpr.Eax);
+                        Context.WriteRegister(Gpr.Edx, value < 0 ? 0xFFFFFFFFu : 0u);
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Sldt:
                 WriteOperand(instruction.Operand1, Context.Ldtr);
@@ -829,12 +829,12 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Rdmsr:
-            {
-                uint value = ReadMsr(Context.Ecx, out uint high);
-                Context.Eax = value;
-                Context.Edx = high;
-                break;
-            }
+                {
+                    uint value = ReadMsr(Context.Ecx, out uint high);
+                    Context.Eax = value;
+                    Context.Edx = high;
+                    break;
+                }
 
             case Mnemonic.Wrmsr:
                 WriteMsr(Context.Ecx, Context.Eax, Context.Edx);
@@ -1453,30 +1453,30 @@ public sealed partial class XboxCpu
         switch (size)
         {
             case 8:
-            {
-                uint product = (uint)Context.ReadRegister8(0) * (source & 0xFFu);
-                Context.WriteRegister16(Gpr.Eax, (ushort)product);
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFF00u) != 0);
-                break;
-            }
+                {
+                    uint product = (uint)Context.ReadRegister8(0) * (source & 0xFFu);
+                    Context.WriteRegister16(Gpr.Eax, (ushort)product);
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFF00u) != 0);
+                    break;
+                }
 
             case 16:
-            {
-                uint product = (uint)Context.ReadRegister16(Gpr.Eax) * (source & 0xFFFFu);
-                Context.WriteRegister16(Gpr.Eax, (ushort)product);
-                Context.WriteRegister16(Gpr.Edx, (ushort)(product >> 16));
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFFFF0000u) != 0);
-                break;
-            }
+                {
+                    uint product = (uint)Context.ReadRegister16(Gpr.Eax) * (source & 0xFFFFu);
+                    Context.WriteRegister16(Gpr.Eax, (ushort)product);
+                    Context.WriteRegister16(Gpr.Edx, (ushort)(product >> 16));
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFFFF0000u) != 0);
+                    break;
+                }
 
             default:
-            {
-                ulong product = (ulong)Context.ReadRegister(Gpr.Eax) * source;
-                Context.WriteRegister(Gpr.Eax, (uint)product);
-                Context.WriteRegister(Gpr.Edx, (uint)(product >> 32));
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, (product >> 32) != 0);
-                break;
-            }
+                {
+                    ulong product = (ulong)Context.ReadRegister(Gpr.Eax) * source;
+                    Context.WriteRegister(Gpr.Eax, (uint)product);
+                    Context.WriteRegister(Gpr.Edx, (uint)(product >> 32));
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, (product >> 32) != 0);
+                    break;
+                }
         }
 
         return false;
@@ -1510,30 +1510,30 @@ public sealed partial class XboxCpu
         switch (instruction.Operand1.Size)
         {
             case 8:
-            {
-                int product = (sbyte)Context.ReadRegister8(0) * (sbyte)source;
-                Context.WriteRegister16(Gpr.Eax, (ushort)product);
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (sbyte)product);
-                break;
-            }
+                {
+                    int product = (sbyte)Context.ReadRegister8(0) * (sbyte)source;
+                    Context.WriteRegister16(Gpr.Eax, (ushort)product);
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (sbyte)product);
+                    break;
+                }
 
             case 16:
-            {
-                int product = (short)Context.ReadRegister16(Gpr.Eax) * (short)source;
-                Context.WriteRegister16(Gpr.Eax, (ushort)product);
-                Context.WriteRegister16(Gpr.Edx, (ushort)(product >> 16));
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (short)product);
-                break;
-            }
+                {
+                    int product = (short)Context.ReadRegister16(Gpr.Eax) * (short)source;
+                    Context.WriteRegister16(Gpr.Eax, (ushort)product);
+                    Context.WriteRegister16(Gpr.Edx, (ushort)(product >> 16));
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (short)product);
+                    break;
+                }
 
             default:
-            {
-                long product = (long)(int)Context.ReadRegister(Gpr.Eax) * (int)source;
-                Context.WriteRegister(Gpr.Eax, (uint)product);
-                Context.WriteRegister(Gpr.Edx, (uint)(product >> 32));
-                Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (int)product);
-                break;
-            }
+                {
+                    long product = (long)(int)Context.ReadRegister(Gpr.Eax) * (int)source;
+                    Context.WriteRegister(Gpr.Eax, (uint)product);
+                    Context.WriteRegister(Gpr.Edx, (uint)(product >> 32));
+                    Context.Eflags = SetMultiplyFlags(Context.Eflags, product != (int)product);
+                    break;
+                }
         }
     }
 
@@ -1542,63 +1542,63 @@ public sealed partial class XboxCpu
         switch (size)
         {
             case 8:
-            {
-                uint divisor = source & 0xFFu;
-                if (divisor == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    uint divisor = source & 0xFFu;
+                    if (divisor == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                uint dividend = Context.ReadRegister16(Gpr.Eax);
-                uint quotient = dividend / divisor;
-                if (quotient > 0xFFu)
-                {
-                    return RaiseDivideError();
-                }
+                    uint dividend = Context.ReadRegister16(Gpr.Eax);
+                    uint quotient = dividend / divisor;
+                    if (quotient > 0xFFu)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister8(0, (byte)quotient);
-                Context.WriteRegister8(4, (byte)(dividend % divisor));
-                break;
-            }
+                    Context.WriteRegister8(0, (byte)quotient);
+                    Context.WriteRegister8(4, (byte)(dividend % divisor));
+                    break;
+                }
 
             case 16:
-            {
-                uint divisor = source & 0xFFFFu;
-                if (divisor == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    uint divisor = source & 0xFFFFu;
+                    if (divisor == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                uint dividend = ((uint)Context.ReadRegister16(Gpr.Edx) << 16) | Context.ReadRegister16(Gpr.Eax);
-                uint quotient = dividend / divisor;
-                if (quotient > 0xFFFFu)
-                {
-                    return RaiseDivideError();
-                }
+                    uint dividend = ((uint)Context.ReadRegister16(Gpr.Edx) << 16) | Context.ReadRegister16(Gpr.Eax);
+                    uint quotient = dividend / divisor;
+                    if (quotient > 0xFFFFu)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister16(Gpr.Eax, (ushort)quotient);
-                Context.WriteRegister16(Gpr.Edx, (ushort)(dividend % divisor));
-                break;
-            }
+                    Context.WriteRegister16(Gpr.Eax, (ushort)quotient);
+                    Context.WriteRegister16(Gpr.Edx, (ushort)(dividend % divisor));
+                    break;
+                }
 
             default:
-            {
-                if (source == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    if (source == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                ulong dividend = ((ulong)Context.ReadRegister(Gpr.Edx) << 32) | Context.ReadRegister(Gpr.Eax);
-                ulong quotient = dividend / source;
-                if (quotient > 0xFFFFFFFFu)
-                {
-                    return RaiseDivideError();
-                }
+                    ulong dividend = ((ulong)Context.ReadRegister(Gpr.Edx) << 32) | Context.ReadRegister(Gpr.Eax);
+                    ulong quotient = dividend / source;
+                    if (quotient > 0xFFFFFFFFu)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister(Gpr.Eax, (uint)quotient);
-                Context.WriteRegister(Gpr.Edx, (uint)(dividend % source));
-                break;
-            }
+                    Context.WriteRegister(Gpr.Eax, (uint)quotient);
+                    Context.WriteRegister(Gpr.Edx, (uint)(dividend % source));
+                    break;
+                }
         }
 
         return false;
@@ -1609,74 +1609,74 @@ public sealed partial class XboxCpu
         switch (size)
         {
             case 8:
-            {
-                int divisor = (sbyte)source;
-                if (divisor == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    int divisor = (sbyte)source;
+                    if (divisor == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                int dividend = (short)Context.ReadRegister16(Gpr.Eax);
-                int quotient = dividend / divisor;
-                if (quotient is < sbyte.MinValue or > sbyte.MaxValue)
-                {
-                    return RaiseDivideError();
-                }
+                    int dividend = (short)Context.ReadRegister16(Gpr.Eax);
+                    int quotient = dividend / divisor;
+                    if (quotient is < sbyte.MinValue or > sbyte.MaxValue)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister8(0, (byte)quotient);
-                Context.WriteRegister8(4, (byte)(dividend % divisor));
-                break;
-            }
+                    Context.WriteRegister8(0, (byte)quotient);
+                    Context.WriteRegister8(4, (byte)(dividend % divisor));
+                    break;
+                }
 
             case 16:
-            {
-                int divisor = (short)source;
-                if (divisor == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    int divisor = (short)source;
+                    if (divisor == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                int dividend = (int)(((uint)Context.ReadRegister16(Gpr.Edx) << 16) | Context.ReadRegister16(Gpr.Eax));
-                if (dividend == int.MinValue && divisor == -1)
-                {
-                    return RaiseDivideError();
-                }
+                    int dividend = (int)(((uint)Context.ReadRegister16(Gpr.Edx) << 16) | Context.ReadRegister16(Gpr.Eax));
+                    if (dividend == int.MinValue && divisor == -1)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                int quotient = dividend / divisor;
-                if (quotient is < short.MinValue or > short.MaxValue)
-                {
-                    return RaiseDivideError();
-                }
+                    int quotient = dividend / divisor;
+                    if (quotient is < short.MinValue or > short.MaxValue)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister16(Gpr.Eax, (ushort)quotient);
-                Context.WriteRegister16(Gpr.Edx, (ushort)(dividend % divisor));
-                break;
-            }
+                    Context.WriteRegister16(Gpr.Eax, (ushort)quotient);
+                    Context.WriteRegister16(Gpr.Edx, (ushort)(dividend % divisor));
+                    break;
+                }
 
             default:
-            {
-                int divisor = (int)source;
-                if (divisor == 0)
                 {
-                    return RaiseDivideError();
-                }
+                    int divisor = (int)source;
+                    if (divisor == 0)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                long dividend = (long)(((ulong)Context.ReadRegister(Gpr.Edx) << 32) | Context.ReadRegister(Gpr.Eax));
-                if (dividend == long.MinValue && divisor == -1)
-                {
-                    return RaiseDivideError();
-                }
+                    long dividend = (long)(((ulong)Context.ReadRegister(Gpr.Edx) << 32) | Context.ReadRegister(Gpr.Eax));
+                    if (dividend == long.MinValue && divisor == -1)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                long quotient = dividend / divisor;
-                if (quotient is < int.MinValue or > int.MaxValue)
-                {
-                    return RaiseDivideError();
-                }
+                    long quotient = dividend / divisor;
+                    if (quotient is < int.MinValue or > int.MaxValue)
+                    {
+                        return RaiseDivideError();
+                    }
 
-                Context.WriteRegister(Gpr.Eax, (uint)quotient);
-                Context.WriteRegister(Gpr.Edx, (uint)(dividend % divisor));
-                break;
-            }
+                    Context.WriteRegister(Gpr.Eax, (uint)quotient);
+                    Context.WriteRegister(Gpr.Edx, (uint)(dividend % divisor));
+                    break;
+                }
         }
 
         return false;
@@ -1820,16 +1820,16 @@ public sealed partial class XboxCpu
         switch (index)
         {
             case 0:
-            {
-                uint previous = Context.Cr0;
-                Context.Cr0 = value;
-                if (((previous ^ value) & ControlRegisterBits.Cr0Paging) != 0)
                 {
-                    Mmu.Flush();
-                }
+                    uint previous = Context.Cr0;
+                    Context.Cr0 = value;
+                    if (((previous ^ value) & ControlRegisterBits.Cr0Paging) != 0)
+                    {
+                        Mmu.Flush();
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case 2:
                 Context.Cr2 = value;
@@ -1839,16 +1839,16 @@ public sealed partial class XboxCpu
                 Mmu.Flush();
                 break;
             case 4:
-            {
-                uint previous = Context.Cr4;
-                Context.Cr4 = value;
-                if (((previous ^ value) & ControlRegisterBits.Cr4PageSizeExtensions) != 0)
                 {
-                    Mmu.Flush();
-                }
+                    uint previous = Context.Cr4;
+                    Context.Cr4 = value;
+                    if (((previous ^ value) & ControlRegisterBits.Cr4PageSizeExtensions) != 0)
+                    {
+                        Mmu.Flush();
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             default:
                 return;
@@ -2749,12 +2749,12 @@ public sealed partial class XboxCpu
             case Mnemonic.Fsubr:
             case Mnemonic.Fdiv:
             case Mnemonic.Fdivr:
-            {
-                Fpu80 left = ReadFpuReal(instruction.Operand1);
-                Fpu80 right = ReadFpuReal(instruction.Operand2);
-                WriteFpuReal(instruction.Operand1, ApplyFpuArithmetic(instruction.Mnemonic, left, right));
-                break;
-            }
+                {
+                    Fpu80 left = ReadFpuReal(instruction.Operand1);
+                    Fpu80 right = ReadFpuReal(instruction.Operand2);
+                    WriteFpuReal(instruction.Operand1, ApplyFpuArithmetic(instruction.Mnemonic, left, right));
+                    break;
+                }
 
             case Mnemonic.Faddp:
             case Mnemonic.Fmulp:
@@ -2762,14 +2762,14 @@ public sealed partial class XboxCpu
             case Mnemonic.Fsubrp:
             case Mnemonic.Fdivp:
             case Mnemonic.Fdivrp:
-            {
-                Fpu80 left = Fpu.GetRegister(instruction.Operand1.RegisterIndex);
-                Fpu80 right = Fpu.GetRegister(0);
-                Fpu.SetRegister(instruction.Operand1.RegisterIndex,
-                    ApplyFpuArithmetic(instruction.Mnemonic, left, right));
-                Fpu.Pop();
-                break;
-            }
+                {
+                    Fpu80 left = Fpu.GetRegister(instruction.Operand1.RegisterIndex);
+                    Fpu80 right = Fpu.GetRegister(0);
+                    Fpu.SetRegister(instruction.Operand1.RegisterIndex,
+                        ApplyFpuArithmetic(instruction.Mnemonic, left, right));
+                    Fpu.Pop();
+                    break;
+                }
 
             case Mnemonic.Fiadd:
             case Mnemonic.Fimul:
@@ -2785,30 +2785,30 @@ public sealed partial class XboxCpu
             case Mnemonic.Fcomp:
             case Mnemonic.Fucom:
             case Mnemonic.Fucomp:
-            {
-                Operand compared = instruction.Operand2.Kind == OperandKind.None
-                    ? instruction.Operand1
-                    : instruction.Operand2;
-                SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(compared));
-                if (instruction.Mnemonic is Mnemonic.Fcomp or Mnemonic.Fucomp)
                 {
-                    Fpu.Pop();
-                }
+                    Operand compared = instruction.Operand2.Kind == OperandKind.None
+                        ? instruction.Operand1
+                        : instruction.Operand2;
+                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(compared));
+                    if (instruction.Mnemonic is Mnemonic.Fcomp or Mnemonic.Fucomp)
+                    {
+                        Fpu.Pop();
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Ficom:
             case Mnemonic.Ficomp:
-            {
-                SetFpuCompare(Fpu.GetRegister(0), ReadFpuInteger(instruction.Operand1));
-                if (instruction.Mnemonic == Mnemonic.Ficomp)
                 {
-                    Fpu.Pop();
-                }
+                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuInteger(instruction.Operand1));
+                    if (instruction.Mnemonic == Mnemonic.Ficomp)
+                    {
+                        Fpu.Pop();
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Fcompp:
             case Mnemonic.Fucompp:
@@ -2854,12 +2854,12 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Fscale:
-            {
-                double scale = Math.Truncate(Fpu.GetRegister(1).ToDouble());
-                int exponent = (int)Math.Clamp(scale, -32768, 32767);
-                Fpu.SetRegister(0, Fpu80.FromDouble(Math.ScaleB(Fpu.GetRegister(0).ToDouble(), exponent)));
-                break;
-            }
+                {
+                    double scale = Math.Truncate(Fpu.GetRegister(1).ToDouble());
+                    int exponent = (int)Math.Clamp(scale, -32768, 32767);
+                    Fpu.SetRegister(0, Fpu80.FromDouble(Math.ScaleB(Fpu.GetRegister(0).ToDouble(), exponent)));
+                    break;
+                }
 
             case Mnemonic.Fxtract:
                 ExecuteFxtract();
@@ -2973,20 +2973,20 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Fyl2X:
-            {
-                double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble());
-                Fpu.SetRegister(1, Fpu80.FromDouble(result));
-                Fpu.Pop();
-                break;
-            }
+                {
+                    double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble());
+                    Fpu.SetRegister(1, Fpu80.FromDouble(result));
+                    Fpu.Pop();
+                    break;
+                }
 
             case Mnemonic.Fyl2Xp1:
-            {
-                double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble() + 1.0);
-                Fpu.SetRegister(1, Fpu80.FromDouble(result));
-                Fpu.Pop();
-                break;
-            }
+                {
+                    double result = Fpu.GetRegister(1).ToDouble() * Math.Log2(Fpu.GetRegister(0).ToDouble() + 1.0);
+                    Fpu.SetRegister(1, Fpu80.FromDouble(result));
+                    Fpu.Pop();
+                    break;
+                }
 
             case Mnemonic.Fptan:
                 Fpu.SetRegister(0, Fpu80.FromDouble(Math.Tan(Fpu.GetRegister(0).ToDouble())));
@@ -2994,12 +2994,12 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Fpatan:
-            {
-                double result = Math.Atan2(Fpu.GetRegister(1).ToDouble(), Fpu.GetRegister(0).ToDouble());
-                Fpu.SetRegister(1, Fpu80.FromDouble(result));
-                Fpu.Pop();
-                break;
-            }
+                {
+                    double result = Math.Atan2(Fpu.GetRegister(1).ToDouble(), Fpu.GetRegister(0).ToDouble());
+                    Fpu.SetRegister(1, Fpu80.FromDouble(result));
+                    Fpu.Pop();
+                    break;
+                }
 
             case Mnemonic.Fsin:
                 Fpu.SetRegister(0, Fpu80.FromDouble(Math.Sin(Fpu.GetRegister(0).ToDouble())));
@@ -3010,12 +3010,12 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Fsincos:
-            {
-                double angle = Fpu.GetRegister(0).ToDouble();
-                Fpu.SetRegister(0, Fpu80.FromDouble(Math.Sin(angle)));
-                Fpu.Push(Fpu80.FromDouble(Math.Cos(angle)));
-                break;
-            }
+                {
+                    double angle = Fpu.GetRegister(0).ToDouble();
+                    Fpu.SetRegister(0, Fpu80.FromDouble(Math.Sin(angle)));
+                    Fpu.Push(Fpu80.FromDouble(Math.Cos(angle)));
+                    break;
+                }
 
             default:
                 throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode);
@@ -3290,55 +3290,55 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Pshufw:
-            {
-                ulong source = ReadMmxOperand(instruction.Operand2);
-                uint control = instruction.Operand3.Immediate;
-                ulong result = 0;
-                for (int i = 0; i < 4; i++)
                 {
-                    int lane = (int)((control >> (2 * i)) & 3);
-                    result |= (ulong)(ushort)(source >> (16 * lane)) << (16 * i);
-                }
+                    ulong source = ReadMmxOperand(instruction.Operand2);
+                    uint control = instruction.Operand3.Immediate;
+                    ulong result = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int lane = (int)((control >> (2 * i)) & 3);
+                        result |= (ulong)(ushort)(source >> (16 * lane)) << (16 * i);
+                    }
 
-                Context.WriteMmx(instruction.Operand1.RegisterIndex, result);
-                break;
-            }
+                    Context.WriteMmx(instruction.Operand1.RegisterIndex, result);
+                    break;
+                }
 
             case Mnemonic.Pinsrw:
-            {
-                ulong destination = Context.ReadMmx(instruction.Operand1.RegisterIndex);
-                int lane = (int)(instruction.Operand3.Immediate & 3);
-                ulong mask = 0xFFFFUL << (16 * lane);
-                destination = (destination & ~mask) |
-                              (((ulong)ReadGprOrMemory(instruction.Operand2) & 0xFFFF) << (16 * lane));
-                Context.WriteMmx(instruction.Operand1.RegisterIndex, destination);
-                break;
-            }
-
-            case Mnemonic.Pextrw:
-            {
-                ulong source = Context.ReadMmx(instruction.Operand2.RegisterIndex);
-                int lane = (int)(instruction.Operand3.Immediate & 3);
-                Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex,
-                    (uint)((source >> (16 * lane)) & 0xFFFF));
-                break;
-            }
-
-            case Mnemonic.Pmovmskb:
-            {
-                ulong source = Context.ReadMmx(instruction.Operand2.RegisterIndex);
-                uint result = 0;
-                for (int i = 0; i < 8; i++)
                 {
-                    if (((source >> (8 * i)) & 0x80) != 0)
-                    {
-                        result |= 1u << i;
-                    }
+                    ulong destination = Context.ReadMmx(instruction.Operand1.RegisterIndex);
+                    int lane = (int)(instruction.Operand3.Immediate & 3);
+                    ulong mask = 0xFFFFUL << (16 * lane);
+                    destination = (destination & ~mask) |
+                                  (((ulong)ReadGprOrMemory(instruction.Operand2) & 0xFFFF) << (16 * lane));
+                    Context.WriteMmx(instruction.Operand1.RegisterIndex, destination);
+                    break;
                 }
 
-                Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
-                break;
-            }
+            case Mnemonic.Pextrw:
+                {
+                    ulong source = Context.ReadMmx(instruction.Operand2.RegisterIndex);
+                    int lane = (int)(instruction.Operand3.Immediate & 3);
+                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex,
+                        (uint)((source >> (16 * lane)) & 0xFFFF));
+                    break;
+                }
+
+            case Mnemonic.Pmovmskb:
+                {
+                    ulong source = Context.ReadMmx(instruction.Operand2.RegisterIndex);
+                    uint result = 0;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        if (((source >> (8 * i)) & 0x80) != 0)
+                        {
+                            result |= 1u << i;
+                        }
+                    }
+
+                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+                    break;
+                }
 
             case Mnemonic.Movntq:
                 WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
@@ -3346,20 +3346,20 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Maskmovq:
-            {
-                ulong data = Context.ReadMmx(instruction.Operand1.RegisterIndex);
-                ulong mask = Context.ReadMmx(instruction.Operand2.RegisterIndex);
-                uint address = Context.GetSegmentBase(SegmentRegister.Es) + Context.Edi;
-                for (int i = 0; i < 8; i++)
                 {
-                    if (((mask >> (8 * i)) & 0x80) != 0)
+                    ulong data = Context.ReadMmx(instruction.Operand1.RegisterIndex);
+                    ulong mask = Context.ReadMmx(instruction.Operand2.RegisterIndex);
+                    uint address = Context.GetSegmentBase(SegmentRegister.Es) + Context.Edi;
+                    for (int i = 0; i < 8; i++)
                     {
-                        WriteMemory(address + (uint)i, 8, (uint)(data >> (8 * i)) & 0xFFu);
+                        if (((mask >> (8 * i)) & 0x80) != 0)
+                        {
+                            WriteMemory(address + (uint)i, 8, (uint)(data >> (8 * i)) & 0xFFu);
+                        }
                     }
-                }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Psllw:
             case Mnemonic.Pslld:
@@ -3369,22 +3369,22 @@ public sealed partial class XboxCpu
             case Mnemonic.Psrlq:
             case Mnemonic.Psraw:
             case Mnemonic.Psrad:
-            {
-                ulong value = Context.ReadMmx(instruction.Operand1.RegisterIndex);
-                int count = instruction.Operand2.Kind == OperandKind.Immediate
-                    ? (int)instruction.Operand2.Immediate
-                    : (int)(ReadMmxOperand(instruction.Operand2) & 0xFF);
-                Context.WriteMmx(instruction.Operand1.RegisterIndex, ShiftMmx(instruction.Mnemonic, value, count));
-                break;
-            }
+                {
+                    ulong value = Context.ReadMmx(instruction.Operand1.RegisterIndex);
+                    int count = instruction.Operand2.Kind == OperandKind.Immediate
+                        ? (int)instruction.Operand2.Immediate
+                        : (int)(ReadMmxOperand(instruction.Operand2) & 0xFF);
+                    Context.WriteMmx(instruction.Operand1.RegisterIndex, ShiftMmx(instruction.Mnemonic, value, count));
+                    break;
+                }
 
             default:
-            {
-                ulong left = Context.ReadMmx(instruction.Operand1.RegisterIndex);
-                ulong right = ReadMmxOperand(instruction.Operand2);
-                Context.WriteMmx(instruction.Operand1.RegisterIndex, ComputeMmx(instruction.Mnemonic, left, right));
-                break;
-            }
+                {
+                    ulong left = Context.ReadMmx(instruction.Operand1.RegisterIndex);
+                    ulong right = ReadMmxOperand(instruction.Operand2);
+                    Context.WriteMmx(instruction.Operand1.RegisterIndex, ComputeMmx(instruction.Mnemonic, left, right));
+                    break;
+                }
         }
     }
 
@@ -3446,17 +3446,17 @@ public sealed partial class XboxCpu
             case Mnemonic.Pmulhuw:
                 return MapWords(left, right, static (x, y) => (ushort)(((uint)x * y) >> 16));
             case Mnemonic.Pmaddwd:
-            {
-                ulong result = 0;
-                for (int i = 0; i < 4; i++)
                 {
-                    int p0 = (short)(left >> (16 * (2 * i))) * (short)(right >> (16 * (2 * i)));
-                    int p1 = (short)(left >> (16 * ((2 * i) + 1))) * (short)(right >> (16 * ((2 * i) + 1)));
-                    result |= (ulong)(uint)(p0 + p1) << (32 * i);
-                }
+                    ulong result = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        int p0 = (short)(left >> (16 * (2 * i))) * (short)(right >> (16 * (2 * i)));
+                        int p1 = (short)(left >> (16 * ((2 * i) + 1))) * (short)(right >> (16 * ((2 * i) + 1)));
+                        result |= (ulong)(uint)(p0 + p1) << (32 * i);
+                    }
 
-                return result;
-            }
+                    return result;
+                }
 
             case Mnemonic.Pcmpeqb:
                 return MapBytes(left, right, static (x, y) => x == y ? (byte)0xFF : (byte)0);
@@ -3491,15 +3491,15 @@ public sealed partial class XboxCpu
             case Mnemonic.Pmaxuw:
                 return MapWords(left, right, static (x, y) => Math.Max(x, y));
             case Mnemonic.Psadbw:
-            {
-                int sum = 0;
-                for (int i = 0; i < 8; i++)
                 {
-                    sum += Math.Abs((int)((left >> (8 * i)) & 0xFF) - (int)((right >> (8 * i)) & 0xFF));
-                }
+                    int sum = 0;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        sum += Math.Abs((int)((left >> (8 * i)) & 0xFF) - (int)((right >> (8 * i)) & 0xFF));
+                    }
 
-                return (ulong)(ushort)sum;
-            }
+                    return (ulong)(ushort)sum;
+                }
 
             case Mnemonic.Packsswb:
                 return PackWordsToBytes(left, right, static v => SaturateSByte(v));
@@ -3697,88 +3697,88 @@ public sealed partial class XboxCpu
 
             case Mnemonic.Movaps:
             case Mnemonic.Movups:
-            {
-                (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
-                WriteXmmOperand(instruction.Operand1, low, high);
-                break;
-            }
-
-            case Mnemonic.Movss:
-            {
-                if (instruction.Operand1.Kind == OperandKind.Register)
                 {
                     (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
-                    Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, ElementBits((low, high), 0));
-                }
-                else
-                {
-                    uint source = Context.ReadXmmElement(instruction.Operand2.RegisterIndex, 0);
-                    WriteMemory(ComputeAddress(instruction.Operand1.Memory), 32, source);
+                    WriteXmmOperand(instruction.Operand1, low, high);
+                    break;
                 }
 
-                break;
-            }
+            case Mnemonic.Movss:
+                {
+                    if (instruction.Operand1.Kind == OperandKind.Register)
+                    {
+                        (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
+                        Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, ElementBits((low, high), 0));
+                    }
+                    else
+                    {
+                        uint source = Context.ReadXmmElement(instruction.Operand2.RegisterIndex, 0);
+                        WriteMemory(ComputeAddress(instruction.Operand1.Memory), 32, source);
+                    }
+
+                    break;
+                }
 
             case Mnemonic.Movlps:
-            {
-                if (instruction.Operand1.Kind == OperandKind.Memory)
                 {
-                    WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
-                        Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0));
-                }
-                else if (instruction.Operand2.Kind == OperandKind.Memory)
-                {
-                    ulong value = ReadMemory64(ComputeAddress(instruction.Operand2.Memory));
-                    Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, value);
-                }
+                    if (instruction.Operand1.Kind == OperandKind.Memory)
+                    {
+                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
+                            Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0));
+                    }
+                    else if (instruction.Operand2.Kind == OperandKind.Memory)
+                    {
+                        ulong value = ReadMemory64(ComputeAddress(instruction.Operand2.Memory));
+                        Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, value);
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Movhps:
-            {
-                if (instruction.Operand1.Kind == OperandKind.Memory)
                 {
-                    WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
-                        Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1));
-                }
-                else if (instruction.Operand2.Kind == OperandKind.Memory)
-                {
-                    ulong value = ReadMemory64(ComputeAddress(instruction.Operand2.Memory));
-                    Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, value);
-                }
+                    if (instruction.Operand1.Kind == OperandKind.Memory)
+                    {
+                        WriteMemory64(ComputeAddress(instruction.Operand1.Memory),
+                            Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1));
+                    }
+                    else if (instruction.Operand2.Kind == OperandKind.Memory)
+                    {
+                        ulong value = ReadMemory64(ComputeAddress(instruction.Operand2.Memory));
+                        Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, value);
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Mnemonic.Movhlps:
-            {
-                ulong source = Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1);
-                Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, source);
-                break;
-            }
-
-            case Mnemonic.Movlhps:
-            {
-                ulong source = Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0);
-                Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, source);
-                break;
-            }
-
-            case Mnemonic.Movmskps:
-            {
-                uint result = 0;
-                for (int i = 0; i < 4; i++)
                 {
-                    if ((Context.ReadXmmElement(instruction.Operand2.RegisterIndex, i) & 0x80000000u) != 0)
-                    {
-                        result |= 1u << i;
-                    }
+                    ulong source = Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1);
+                    Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, source);
+                    break;
                 }
 
-                Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
-                break;
-            }
+            case Mnemonic.Movlhps:
+                {
+                    ulong source = Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0);
+                    Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, source);
+                    break;
+                }
+
+            case Mnemonic.Movmskps:
+                {
+                    uint result = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        if ((Context.ReadXmmElement(instruction.Operand2.RegisterIndex, i) & 0x80000000u) != 0)
+                        {
+                            result |= 1u << i;
+                        }
+                    }
+
+                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+                    break;
+                }
 
             case Mnemonic.Addps:
             case Mnemonic.Addss:
@@ -3827,72 +3827,72 @@ public sealed partial class XboxCpu
 
             case Mnemonic.Unpcklps:
             case Mnemonic.Unpckhps:
-            {
-                (ulong dlow, ulong dhigh) = Context.ReadXmm128(instruction.Operand1.RegisterIndex);
-                (ulong slow, ulong shigh) = ReadXmmOperand(instruction.Operand2);
-                ulong rlow;
-                ulong rhigh;
-                if (instruction.Mnemonic == Mnemonic.Unpcklps)
                 {
-                    rlow = (dlow & 0xFFFFFFFFUL) | ((slow & 0xFFFFFFFFUL) << 32);
-                    rhigh = ((dlow >> 32) & 0xFFFFFFFFUL) | ((slow >> 32) << 32);
-                }
-                else
-                {
-                    rlow = (dhigh & 0xFFFFFFFFUL) | ((shigh & 0xFFFFFFFFUL) << 32);
-                    rhigh = ((dhigh >> 32) & 0xFFFFFFFFUL) | ((shigh >> 32) << 32);
-                }
+                    (ulong dlow, ulong dhigh) = Context.ReadXmm128(instruction.Operand1.RegisterIndex);
+                    (ulong slow, ulong shigh) = ReadXmmOperand(instruction.Operand2);
+                    ulong rlow;
+                    ulong rhigh;
+                    if (instruction.Mnemonic == Mnemonic.Unpcklps)
+                    {
+                        rlow = (dlow & 0xFFFFFFFFUL) | ((slow & 0xFFFFFFFFUL) << 32);
+                        rhigh = ((dlow >> 32) & 0xFFFFFFFFUL) | ((slow >> 32) << 32);
+                    }
+                    else
+                    {
+                        rlow = (dhigh & 0xFFFFFFFFUL) | ((shigh & 0xFFFFFFFFUL) << 32);
+                        rhigh = ((dhigh >> 32) & 0xFFFFFFFFUL) | ((shigh >> 32) << 32);
+                    }
 
-                Context.WriteXmm128(instruction.Operand1.RegisterIndex, rlow, rhigh);
-                break;
-            }
+                    Context.WriteXmm128(instruction.Operand1.RegisterIndex, rlow, rhigh);
+                    break;
+                }
 
             case Mnemonic.Cvtsi2Ss:
-            {
-                int value = (int)ReadGprOrMemory(instruction.Operand2);
-                Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, BitConverter.SingleToUInt32Bits(value));
-                break;
-            }
+                {
+                    int value = (int)ReadGprOrMemory(instruction.Operand2);
+                    Context.WriteXmmElement(instruction.Operand1.RegisterIndex, 0, BitConverter.SingleToUInt32Bits(value));
+                    break;
+                }
 
             case Mnemonic.Cvtss2Si:
             case Mnemonic.Cvttss2Si:
-            {
-                (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
-                float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
-                int result = ConvertFloatToInt32(value, instruction.Mnemonic == Mnemonic.Cvttss2Si);
-                Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)result);
-                break;
-            }
+                {
+                    (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
+                    float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
+                    int result = ConvertFloatToInt32(value, instruction.Mnemonic == Mnemonic.Cvttss2Si);
+                    Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)result);
+                    break;
+                }
 
             case Mnemonic.Cvtps2Pi:
             case Mnemonic.Cvttps2Pi:
-            {
-                (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
-                bool truncate = instruction.Mnemonic == Mnemonic.Cvttps2Pi;
-                ulong result = 0;
-                for (int i = 0; i < 2; i++)
                 {
-                    float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), i));
-                    result |= (ulong)(uint)ConvertFloatToInt32(value, truncate) << (32 * i);
-                }
+                    (ulong low, ulong high) = ReadXmmOperand(instruction.Operand2);
+                    bool truncate = instruction.Mnemonic == Mnemonic.Cvttps2Pi;
+                    ulong result = 0;
+                    for (int i = 0; i < 2; i++)
+                    {
+                        float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), i));
+                        result |= (ulong)(uint)ConvertFloatToInt32(value, truncate) << (32 * i);
+                    }
 
-                Context.WriteMmx(instruction.Operand1.RegisterIndex, result);
-                break;
-            }
+                    Context.WriteMmx(instruction.Operand1.RegisterIndex, result);
+                    break;
+                }
 
             case Mnemonic.Cvtpi2Ps:
-            {
-                ulong source = ReadMmxOperand(instruction.Operand2);
-                ulong result = 0;
-                for (int i = 0; i < 2; i++)
                 {
-                    int value = (int)(uint)(source >> (32 * i));
-                    result |= (ulong)BitConverter.SingleToUInt32Bits(value) << (32 * i);
-                }
+                    ulong source = ReadMmxOperand(instruction.Operand2);
+                    ulong result = 0;
+                    for (int i = 0; i < 2; i++)
+                    {
+                        int value = (int)(uint)(source >> (32 * i));
+                        result |= (ulong)BitConverter.SingleToUInt32Bits(value) << (32 * i);
+                    }
 
-                Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, result);
-                break;
-            }
+                    Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, result);
+                    break;
+                }
 
             case Mnemonic.Ldmxcsr:
                 Context.Mxcsr = ReadMemory(ComputeAddress(instruction.Operand1.Memory), 32);
@@ -3911,11 +3911,11 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Movntps:
-            {
-                (ulong low, ulong high) = Context.ReadXmm128(instruction.Operand2.RegisterIndex);
-                WriteXmmOperand(instruction.Operand1, low, high);
-                break;
-            }
+                {
+                    (ulong low, ulong high) = Context.ReadXmm128(instruction.Operand2.RegisterIndex);
+                    WriteXmmOperand(instruction.Operand1, low, high);
+                    break;
+                }
 
             default:
                 throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode);
