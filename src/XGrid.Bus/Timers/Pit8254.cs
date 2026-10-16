@@ -286,16 +286,16 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
                     return true;
                 case 2:
                 case 3:
-                {
-                    ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, Divisor);
-                    _counter = (ushort)(Divisor - remainder);
-                    if (_counter == 0)
                     {
-                        _counter = Divisor;
-                    }
+                        ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, Divisor);
+                        _counter = (ushort)(Divisor - remainder);
+                        if (_counter == 0)
+                        {
+                            _counter = Divisor;
+                        }
 
-                    return true;
-                }
+                        return true;
+                    }
                 default:
                     _counter = Divisor;
                     return true;

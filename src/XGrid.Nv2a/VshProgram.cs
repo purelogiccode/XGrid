@@ -346,39 +346,39 @@ public static class VshProgram
                 result[3] = 1.0f;
                 break;
             case Ilu.Log:
-            {
-                float magnitude = MathF.Abs(c[0]);
-                if (magnitude == 0.0f)
                 {
-                    result[0] = float.NegativeInfinity;
-                    result[1] = 1.0f;
-                    result[2] = float.NegativeInfinity;
-                    result[3] = 1.0f;
-                }
-                else
-                {
-                    float floorLog = MathF.Floor(MathF.Log2(magnitude));
-                    result[0] = floorLog;
-                    result[1] = magnitude / MathF.Pow(2.0f, floorLog);
-                    result[2] = MathF.Log2(magnitude);
-                    result[3] = 1.0f;
-                }
+                    float magnitude = MathF.Abs(c[0]);
+                    if (magnitude == 0.0f)
+                    {
+                        result[0] = float.NegativeInfinity;
+                        result[1] = 1.0f;
+                        result[2] = float.NegativeInfinity;
+                        result[3] = 1.0f;
+                    }
+                    else
+                    {
+                        float floorLog = MathF.Floor(MathF.Log2(magnitude));
+                        result[0] = floorLog;
+                        result[1] = magnitude / MathF.Pow(2.0f, floorLog);
+                        result[2] = MathF.Log2(magnitude);
+                        result[3] = 1.0f;
+                    }
 
-                break;
-            }
+                    break;
+                }
 
             case Ilu.Lit:
-            {
-                const float epsilon = 1.0f / 256.0f;
-                float w = Clamp(c[3], -(128.0f - epsilon), 128.0f - epsilon);
-                float x = Max(c[0], 0.0f);
-                float y = Max(c[1], 0.0f);
-                result[0] = 1.0f;
-                result[1] = x;
-                result[2] = x > 0.0f ? MathF.Pow(2.0f, w * MathF.Log2(y)) : 0.0f;
-                result[3] = 1.0f;
-                break;
-            }
+                {
+                    const float epsilon = 1.0f / 256.0f;
+                    float w = Clamp(c[3], -(128.0f - epsilon), 128.0f - epsilon);
+                    float x = Max(c[0], 0.0f);
+                    float y = Max(c[1], 0.0f);
+                    result[0] = 1.0f;
+                    result[1] = x;
+                    result[2] = x > 0.0f ? MathF.Pow(2.0f, w * MathF.Log2(y)) : 0.0f;
+                    result[3] = 1.0f;
+                    break;
+                }
 
             default:
                 break;

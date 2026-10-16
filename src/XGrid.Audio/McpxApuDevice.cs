@@ -855,13 +855,13 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             case PioSetVoiceTarFcb:
                 return WriteCurrentVoice(0x78, value);
             case PioSetVoiceTarPitch:
-            {
-                // The low half of TAR_PITCH_LINK keeps the linked next-voice handle.
-                uint voice = _regs[0x1110 >> 2];
-                uint link = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
-                SetVoiceMask(voice, VoiceTarPitchLink, uint.MaxValue, (value & 0xFFFF0000u) | link);
-                return true;
-            }
+                {
+                    // The low half of TAR_PITCH_LINK keeps the linked next-voice handle.
+                    uint voice = _regs[0x1110 >> 2];
+                    uint link = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
+                    SetVoiceMask(voice, VoiceTarPitchLink, uint.MaxValue, (value & 0xFFFF0000u) | link);
+                    return true;
+                }
 
             case PioSetVoiceCfgBufBase:
                 return WriteCurrentVoice(VoiceCurPslStart, value & OffsetMask24);
