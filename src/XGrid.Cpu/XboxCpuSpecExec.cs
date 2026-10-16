@@ -11,8 +11,9 @@ namespace XGrid.Cpu;
 /// addresses stay data read from the block's cached member, exactly as the
 /// interpreter reads them. Privileged, mode-changing, REP/string,
 /// I/O, FPU and invalid shapes never resolve: they keep the interpreter.
-/// Near conditional jumps resolve (they always terminate their block, so
-/// the handler only sets EIP); all other control flow keeps the interpreter.
+/// Near conditional jumps and near jump/call/return resolve (they always
+/// terminate their block, so the handler only sets EIP); all other control
+/// flow keeps the interpreter.
 /// </summary>
 public sealed partial class XboxCpu
 {
@@ -119,6 +120,16 @@ public sealed partial class XboxCpu
                 return first == OperandKind.Immediate && second == OperandKind.None
                     ? ResolveSpecJcc(instruction.Condition)
                     : null;
+            case Mnemonic.Jmp:
+                return second == OperandKind.None
+                    ? ResolveSpecJmp(first)
+                    : null;
+            case Mnemonic.Call:
+                return second == OperandKind.None
+                    ? ResolveSpecCall(first)
+                    : null;
+            case Mnemonic.Ret:
+                return ResolveSpecRet(first, second);
             default:
                 return null;
         }
@@ -392,6 +403,46 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// Resolves near jumps, calls and returns (slice 7). Like Jcc they
+    /// always terminate their block, so the handlers mirror the interpreter
+    /// bodies verbatim (EIP assignment, return-address push, stack adjust)
+    /// and the cursor completion ends the block. Far forms keep the
+    /// interpreter. A faulting indirect target throws before any EIP write,
+    /// preserving precise fault EIP exactly like the interpreter.
+    /// </summary>
+    private static SpecHandler? ResolveSpecJmp(OperandKind first)
+    {
+        return first switch
+        {
+            OperandKind.Immediate => SpecJmpImmHandler,
+            OperandKind.Register => SpecJmpRegHandler,
+            OperandKind.Memory => SpecJmpMemHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecCall(OperandKind first)
+    {
+        return first switch
+        {
+            OperandKind.Immediate => SpecCallImmHandler,
+            OperandKind.Register => SpecCallRegHandler,
+            OperandKind.Memory => SpecCallMemHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecRet(OperandKind first, OperandKind second)
+    {
+        return (first, second) switch
+        {
+            (OperandKind.None, OperandKind.None) => SpecRetHandler,
+            (OperandKind.Immediate, OperandKind.None) => SpecRetImmHandler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
     /// the existing cursor completion ends the block; IRQ polling, fault and
@@ -507,6 +558,14 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecJccGreaterOrEqualHandler = SpecJccGreaterOrEqual;
     private static readonly SpecHandler SpecJccLessOrEqualHandler = SpecJccLessOrEqual;
     private static readonly SpecHandler SpecJccGreaterHandler = SpecJccGreater;
+    private static readonly SpecHandler SpecJmpImmHandler = SpecJmpImm;
+    private static readonly SpecHandler SpecJmpRegHandler = SpecJmpReg;
+    private static readonly SpecHandler SpecJmpMemHandler = SpecJmpMem;
+    private static readonly SpecHandler SpecCallImmHandler = SpecCallImm;
+    private static readonly SpecHandler SpecCallRegHandler = SpecCallReg;
+    private static readonly SpecHandler SpecCallMemHandler = SpecCallMem;
+    private static readonly SpecHandler SpecRetHandler = SpecRet;
+    private static readonly SpecHandler SpecRetImmHandler = SpecRetImm;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1898,5 +1957,56 @@ public sealed partial class XboxCpu
                            && ((flags & FlagBits.Sf) != 0) == ((flags & FlagBits.Of) != 0))
             ? nextEip + instruction.Operand1.Immediate
             : nextEip;
+    }
+
+    private static void SpecJmpImm(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = nextEip + instruction.Operand1.Immediate;
+    }
+
+    private static void SpecJmpReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.Eip = cpu.ReadOperand(instruction.Operand1);
+    }
+
+    private static void SpecJmpMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.Eip = cpu.ReadOperand(instruction.Operand1);
+    }
+
+    private static void SpecCallImm(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint target = nextEip + instruction.Operand1.Immediate;
+        cpu.Push(nextEip, instruction.OperandSize, instruction.AddressSize);
+        cpu.Context.Eip = target;
+    }
+
+    private static void SpecCallReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint target = cpu.ReadOperand(instruction.Operand1);
+        cpu.Push(nextEip, instruction.OperandSize, instruction.AddressSize);
+        cpu.Context.Eip = target;
+    }
+
+    private static void SpecCallMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint target = cpu.ReadOperand(instruction.Operand1);
+        cpu.Push(nextEip, instruction.OperandSize, instruction.AddressSize);
+        cpu.Context.Eip = target;
+    }
+
+    private static void SpecRet(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.Eip = cpu.Pop(instruction.OperandSize, instruction.AddressSize);
+    }
+
+    private static void SpecRetImm(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.Eip = cpu.Pop(instruction.OperandSize, instruction.AddressSize);
+        cpu.AdjustStackPointer(instruction.Operand1.Immediate, instruction.AddressSize);
     }
 }

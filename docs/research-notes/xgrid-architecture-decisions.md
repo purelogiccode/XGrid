@@ -7920,3 +7920,37 @@ Movq/Movntq (MMX), Jmp/Call/Ret (near control). Next candidates:
 near Jmp/Call/Ret handlers (same terminator argument as Jcc) or MMX
 mov shapes - the histogram decides. Flag stays opt-in.
 
+## 144. JIT slice 7: near jumps, calls and returns behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. Same terminator argument as the
+Jcc slice: near Jmp/Call/Ret always end their block, so the handlers
+mirror the interpreter bodies verbatim (`XboxCpu.cs:442` Jmp,
+`:457` Call, `:467` Ret) and cursor completion ends the block.
+A faulting indirect target throws before any EIP write, preserving
+precise fault EIP exactly like the interpreter. Far forms keep the
+interpreter.
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecJmp/Call/Ret` cover
+(imm/reg/mem, none), (imm/reg/mem, none) and (none|imm, none) - 8
+handlers. Report widened to top-12 `Spec fallback` lines (spec-only
+output; soak normalizer already strips the prefix).
+
+Tests: `NearControl_Shapes_MatchInterpreter` (jmp rel8/rel32/reg/mem,
+call rel32/reg/mem + ret, call + ret imm16 - jumps skip an inc,
+calls return onto a hlt). Fail-pre-fix discipline held again: the
+3 failures on the first run were all stale premises (jmp/call/ret
+resolver Nulls, the ControlMix fallback expectation, the histogram's
+Jmp-only premise) - updated, then 22/22 green. Suite **1346/1346**,
+format clean, zero warnings.
+
+Goldens (18-leg matrix reps 11-13, `D:\spec-soak\legs`, all PASS):
+SHAs exact both anchors, `vec=0`, counters exact, `verifyFailures=0`,
+full logs identical modulo mode lines. Jmp/Call/Ret gone from the
+top-12 on both titles; fallbacks menu 163M->147M, triangle 151M->136M.
+Median walls within-matrix: menu cache 156.40 / spec 147.88 =
+**1.058x**, triangle cache 89.68 / spec 77.43 = **1.158x** (consistent
+~1.02x over the slice-6 spec medians on both titles). Newly visible
+tail (top-12): Movzx r/m32, Shl/Ror/Rol r,imm32, Inc m32, x87
+Fadd/Fistp/Fild, Movq/Movntq (MMX). Next: shift/rotate + movzx
+immediates family, then MMX mov - histogram order. Flag stays opt-in.
+

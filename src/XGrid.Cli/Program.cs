@@ -1517,7 +1517,7 @@ internal static class Program
                 $"specBlocks={spec?.SpecBlocks ?? 0} specRan={spec?.SpecRan ?? 0} verifyFailures={spec?.VerifyFailures ?? 0}");
             if (spec is not null)
             {
-                foreach ((XboxCpu.SpecShape shape, ulong count) in spec.TopFallbackShapes(8))
+                foreach ((XboxCpu.SpecShape shape, ulong count) in spec.TopFallbackShapes(12))
                 {
                     Console.WriteLine(
                         $"Spec fallback {shape.Mnemonic}/{shape.Op1Kind}/{shape.Op2Kind}/{shape.Size}x{shape.Condition}/{shape.SegmentOverride}={count}");
