@@ -130,7 +130,18 @@ public sealed partial class XboxCpu
             }
             else
             {
-                instruction = FetchDecodeCached(_decodeCache, buffer);
+                instruction = FetchDecodeCached(_decodeCache, buffer, out SpecHandler? spec);
+                if (spec is not null && instruction.IsValid)
+                {
+                    // Slice 1 (§139): the cursor's pre-specialized body for
+                    // this exact member. Boundary, fault and observation
+                    // treatment below is unchanged.
+                    uint specEipBefore = Context.Eip;
+                    spec(this, instruction);
+                    _idle?.Observe(instruction, specEipBefore, Context.Eip);
+                    _hotspot?.Observe(instruction, specEipBefore, Context.Eip);
+                    return;
+                }
             }
 
             if (!instruction.IsValid)
@@ -194,6 +205,19 @@ public sealed partial class XboxCpu
                     }
 
                     executed += skipped;
+                    continue;
+                }
+            }
+
+            if (_blocks is { SpecEnabled: true })
+            {
+                // Slice 2 (§139): serve blocked members through the unrolled
+                // runner. Only used inside Execute (trace/break-log callers use
+                // Step and keep the member-cursor path).
+                int specRan = RunSpecBlock(maxInstructions - executed);
+                if (specRan > 0)
+                {
+                    executed += specRan;
                     continue;
                 }
             }
