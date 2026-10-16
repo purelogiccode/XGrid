@@ -9,8 +9,10 @@ namespace XGrid.Cpu;
 /// with the mnemonic/operand-kind/size switches resolved at block-formation
 /// time. GPR indices, immediates, displacements, EFLAGS, segments and
 /// addresses stay data read from the block's cached member, exactly as the
-/// interpreter reads them. Control, privileged, mode-changing, REP/string,
+/// interpreter reads them. Privileged, mode-changing, REP/string,
 /// I/O, FPU and invalid shapes never resolve: they keep the interpreter.
+/// Near conditional jumps resolve (they always terminate their block, so
+/// the handler only sets EIP); all other control flow keeps the interpreter.
 /// </summary>
 public sealed partial class XboxCpu
 {
@@ -112,6 +114,10 @@ public sealed partial class XboxCpu
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
+                    : null;
+            case Mnemonic.Jcc:
+                return first == OperandKind.Immediate && second == OperandKind.None
+                    ? ResolveSpecJcc(instruction.Condition)
                     : null;
             default:
                 return null;
@@ -385,6 +391,37 @@ public sealed partial class XboxCpu
         };
     }
 
+    /// <summary>
+    /// Resolves near conditional jumps (slice 6). Jcc always terminates its
+    /// block, so the handler only sets EIP (taken target or fallthrough) and
+    /// the existing cursor completion ends the block; IRQ polling, fault and
+    /// idle behavior are untouched. Size does not participate: the target
+    /// arithmetic is identical for every operand size.
+    /// </summary>
+    private static SpecHandler? ResolveSpecJcc(ConditionCode condition)
+    {
+        return condition switch
+        {
+            ConditionCode.Overflow => SpecJccOverflowHandler,
+            ConditionCode.NotOverflow => SpecJccNotOverflowHandler,
+            ConditionCode.Below => SpecJccBelowHandler,
+            ConditionCode.AboveOrEqual => SpecJccAboveOrEqualHandler,
+            ConditionCode.Equal => SpecJccEqualHandler,
+            ConditionCode.NotEqual => SpecJccNotEqualHandler,
+            ConditionCode.BelowOrEqual => SpecJccBelowOrEqualHandler,
+            ConditionCode.Above => SpecJccAboveHandler,
+            ConditionCode.Sign => SpecJccSignHandler,
+            ConditionCode.NotSign => SpecJccNotSignHandler,
+            ConditionCode.Parity => SpecJccParityHandler,
+            ConditionCode.NotParity => SpecJccNotParityHandler,
+            ConditionCode.Less => SpecJccLessHandler,
+            ConditionCode.GreaterOrEqual => SpecJccGreaterOrEqualHandler,
+            ConditionCode.LessOrEqual => SpecJccLessOrEqualHandler,
+            ConditionCode.Greater => SpecJccGreaterHandler,
+            _ => null,
+        };
+    }
+
     private static readonly SpecHandler SpecNopHandler = SpecNop;
     private static readonly SpecHandler SpecMovRegReg8Handler = SpecMovRegReg8;
     private static readonly SpecHandler SpecMovRegReg16Handler = SpecMovRegReg16;
@@ -454,6 +491,22 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecPushImm32Handler = SpecPushImm32;
     private static readonly SpecHandler SpecPopReg16Handler = SpecPopReg16;
     private static readonly SpecHandler SpecPopReg32Handler = SpecPopReg32;
+    private static readonly SpecHandler SpecJccOverflowHandler = SpecJccOverflow;
+    private static readonly SpecHandler SpecJccNotOverflowHandler = SpecJccNotOverflow;
+    private static readonly SpecHandler SpecJccBelowHandler = SpecJccBelow;
+    private static readonly SpecHandler SpecJccAboveOrEqualHandler = SpecJccAboveOrEqual;
+    private static readonly SpecHandler SpecJccEqualHandler = SpecJccEqual;
+    private static readonly SpecHandler SpecJccNotEqualHandler = SpecJccNotEqual;
+    private static readonly SpecHandler SpecJccBelowOrEqualHandler = SpecJccBelowOrEqual;
+    private static readonly SpecHandler SpecJccAboveHandler = SpecJccAbove;
+    private static readonly SpecHandler SpecJccSignHandler = SpecJccSign;
+    private static readonly SpecHandler SpecJccNotSignHandler = SpecJccNotSign;
+    private static readonly SpecHandler SpecJccParityHandler = SpecJccParity;
+    private static readonly SpecHandler SpecJccNotParityHandler = SpecJccNotParity;
+    private static readonly SpecHandler SpecJccLessHandler = SpecJccLess;
+    private static readonly SpecHandler SpecJccGreaterOrEqualHandler = SpecJccGreaterOrEqual;
+    private static readonly SpecHandler SpecJccLessOrEqualHandler = SpecJccLessOrEqual;
+    private static readonly SpecHandler SpecJccGreaterHandler = SpecJccGreater;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1709,5 +1762,141 @@ public sealed partial class XboxCpu
         uint value = first & instruction.Operand2.Immediate & AluOps.Mask(32);
         cpu.Context.Eflags = AluOps.Logical(value, 32, cpu.Context.Eflags);
         cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecJccOverflow(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Of) != 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccNotOverflow(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Of) == 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccBelow(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Cf) != 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccAboveOrEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Cf) == 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Zf) != 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccNotEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Zf) == 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccBelowOrEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = ((flags & FlagBits.Cf) != 0 || (flags & FlagBits.Zf) != 0)
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccAbove(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = ((flags & FlagBits.Cf) == 0 && (flags & FlagBits.Zf) == 0)
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccSign(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Sf) != 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccNotSign(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Sf) == 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccParity(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Pf) != 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccNotParity(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        cpu.Context.Eip = (cpu.Context.Eflags & FlagBits.Pf) == 0
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccLess(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = (((flags & FlagBits.Sf) != 0) != ((flags & FlagBits.Of) != 0))
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccGreaterOrEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = (((flags & FlagBits.Sf) != 0) == ((flags & FlagBits.Of) != 0))
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccLessOrEqual(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = ((flags & FlagBits.Zf) != 0
+                           || ((flags & FlagBits.Sf) != 0) != ((flags & FlagBits.Of) != 0))
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
+    }
+
+    private static void SpecJccGreater(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint nextEip = cpu.Context.Eip + (uint)instruction.Length;
+        uint flags = cpu.Context.Eflags;
+        cpu.Context.Eip = ((flags & FlagBits.Zf) == 0
+                           && ((flags & FlagBits.Sf) != 0) == ((flags & FlagBits.Of) != 0))
+            ? nextEip + instruction.Operand1.Immediate
+            : nextEip;
     }
 }
