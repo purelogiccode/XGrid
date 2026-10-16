@@ -274,6 +274,61 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void NearControl_Shapes_MatchInterpreter()
+    {
+        // Jumps skip an inc, calls return onto a hlt: a wrong target shows
+        // up in EAX, ESP or the halt itself. All end at a hlt.
+        RunControl("jmp rel8", new byte[] { 0xEB, 0x01, 0x40, 0xF4 }, static _ => { });
+        RunControl("jmp rel32", new byte[] { 0xE9, 0x01, 0x00, 0x00, 0x00, 0x40, 0xF4 }, static _ => { });
+        RunControl(
+            "jmp eax",
+            new byte[] { 0xB8, 0x08, 0x10, 0x00, 0x00, 0xFF, 0xE0, 0x40, 0xF4 },
+            static _ => { });
+        RunControl(
+            "jmp [ebx]",
+            new byte[] { 0xFF, 0x23, 0x40, 0xF4 },
+            static cpu => cpu.Ram().Write32(0x2000, 0x1003));
+        RunControl(
+            "call rel32; ret",
+            new byte[] { 0xE8, 0x02, 0x00, 0x00, 0x00, 0xF4, 0x40, 0xC3 },
+            static _ => { });
+        RunControl(
+            "call eax; ret",
+            new byte[] { 0xB8, 0x09, 0x10, 0x00, 0x00, 0xFF, 0xD0, 0xF4, 0x40, 0xC3 },
+            static _ => { });
+        RunControl(
+            "call [ebx]; ret",
+            new byte[] { 0xFF, 0x13, 0xF4, 0x40, 0xC3 },
+            static cpu => cpu.Ram().Write32(0x2000, 0x1004));
+        RunControl(
+            "call; ret imm16",
+            new byte[] { 0xE8, 0x03, 0x00, 0x00, 0x00, 0xF4, 0x90, 0x90, 0xC2, 0x04, 0x00 },
+            static _ => { });
+        return;
+
+        static void RunControl(string name, byte[] code, Action<XboxCpu> setup)
+        {
+            XboxCpu plain = Create(false, code);
+            XboxCpu specCpu = Create(true, code);
+            Preset(plain);
+            Preset(specCpu);
+            setup(plain);
+            setup(specCpu);
+            try
+            {
+                Assert.Equal(plain.Execute(32), specCpu.Execute(32));
+                AssertSameState(plain, specCpu);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException($"Shape '{name}' diverged", exception);
+            }
+
+            Assert.True(plain.Context.Halted && specCpu.Context.Halted);
+        }
+    }
+
+    [Fact]
     public void SegmentOverride_MemShapes_MatchInterpreter()
     {
         // FS base differs from DS base: the override must select the FS byte.
@@ -299,11 +354,14 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x50)));
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x58)));
 
-        // Control (except near Jcc), privileged, string/REP, FPU, invalid and
-        // uncovered shapes keep the interpreter.
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xEB, 0xFE)));
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xE8, 0x00, 0x00, 0x00, 0x00)));
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xC3)));
+        // Uncovered control (far/int), privileged, string/REP, FPU, invalid
+        // and uncovered shapes keep the interpreter.
+        Assert.Null(XboxCpu.ResolveSpec(Decode(0xEA, 0x00, 0x00, 0x08, 0x00))); // jmp far
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xEB, 0xFE))); // jmp rel8
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xE9, 0x00, 0x00, 0x00, 0x00))); // jmp rel32
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xE8, 0x00, 0x00, 0x00, 0x00))); // call rel32
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xC3))); // ret
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xC2, 0x04, 0x00))); // ret imm16
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xF4)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xCD, 0x21)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x0F, 0x0B)));
@@ -328,13 +386,14 @@ public sealed class SpecExecutionTests
     [Fact]
     public void ControlMix_Loop_MatchesInterpreter()
     {
-        // inc/xor-imm/dec/nop specialize; the backward jmp keeps the interpreter.
+        // inc/xor-imm/dec/nop/jmp all specialize; the loop runs fully
+        // through handlers with no interpreter fallback.
         XboxCpu plain = Create(false, Loop);
         XboxCpu spec = Create(true, Loop);
         Assert.Equal(plain.Execute(64), spec.Execute(64));
         AssertSameState(plain, spec);
         Assert.True(spec.SpecStatistics!.ShapeHits > 0);
-        Assert.True(spec.SpecStatistics.ShapeFallbacks > 0);
+        Assert.Equal(0UL, spec.SpecStatistics.ShapeFallbacks);
         Assert.True(spec.SpecStatistics.SpecRan > 0);
     }
 
@@ -600,9 +659,11 @@ public sealed class SpecExecutionTests
     [Fact]
     public void FallbackHistogram_TalliesServeTimeShapes()
     {
-        // The loop's backward jump is the only uncovered shape: every other
-        // member specializes, so the whole fallback total must sit on Jmp.
-        XboxCpu cpu = Create(true, Loop);
+        // shl is the only uncovered shape in this loop: inc/xor-imm/dec/nop
+        // specialize and the backward jmp specializes too, so the whole
+        // fallback total must sit on the Shl shape.
+        byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD1, 0xE0, 0xEB, 0xF7 };
+        XboxCpu cpu = Create(true, code);
         cpu.Execute(64);
         DecodedBlockCache stats = cpu.SpecStatistics!;
         Assert.True(stats.ShapeFallbacks > 0);
@@ -612,7 +673,7 @@ public sealed class SpecExecutionTests
         foreach (System.Collections.Generic.KeyValuePair<XboxCpu.SpecShape, ulong> tally in stats.FallbackShapes)
         {
             total += tally.Value;
-            if (tally.Key.Mnemonic == Mnemonic.Jmp)
+            if (tally.Key.Mnemonic == Mnemonic.Shl)
             {
                 jmp = tally.Key;
                 found = true;
@@ -628,7 +689,7 @@ public sealed class SpecExecutionTests
         Assert.Equal(stats.ShapeFallbacks, stats.FallbackShapes[jmp]);
         (XboxCpu.SpecShape shape, ulong count)[] top = stats.TopFallbackShapes(8);
         Assert.Equal(stats.ShapeFallbacks, top[0].count);
-        Assert.Equal(Mnemonic.Jmp, top[0].shape.Mnemonic);
+        Assert.Equal(Mnemonic.Shl, top[0].shape.Mnemonic);
     }
 
     [Fact]
