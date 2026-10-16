@@ -96,7 +96,7 @@ per run by the golden harness.
 
 ---
 
-## 3. How xemu presents (References/xemu-0.8.136 — facts, file:line)
+## 3. How xemu presents (References2/xemu-0.8.136 — facts, file:line)
 
 **xemu's present is completely decoupled from guest flips.**
 

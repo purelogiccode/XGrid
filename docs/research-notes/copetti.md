@@ -1,6 +1,6 @@
 # Copetti — "Xbox Architecture: A Practical Analysis"
 
-Reference: `References/CopettiDocumentation/` (`xbox-architecture.md` + `xbox-architecture.html` +
+Reference: `References2/CopettiDocumentation/` (`xbox-architecture.md` + `xbox-architecture.html` +
 `images/`). Upstream: https://www.copetti.org/writings/consoles/xbox/ (article source:
 https://github.com/flipacholas/Architecture-of-consoles).
 License: **CC BY 4.0** — free for commercial use, but attribution is mandatory: cite
@@ -11,7 +11,7 @@ XGrid docs.
 ## What it is
 
 A long-form (567-line markdown) independent essay on the whole console — the only reference
-in `References/` that explains *why* the machine is shaped the way it is rather than listing
+in `References2/` that explains *why* the machine is shaped the way it is rather than listing
 registers. Sections:
 
 - **CPU** — Pentium III (P6 lineage) core, ISA/microarchitecture, caches; motherboard

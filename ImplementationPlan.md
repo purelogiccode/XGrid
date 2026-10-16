@@ -28,21 +28,21 @@ The implementation uses existing projects as technical references (facts, regist
 algorithms) rather than performing a mechanical source translation. Full extracted findings are in
 `docs/research-notes/` (see the reference study deliverables below).
 
-1. **xemu** — `References/xemu-0.8.136` — GPL-2.0 (per-file LGPL-2+/MIT/GPL-2+)
+1. **xemu** — `References2/xemu-0.8.136` — GPL-2.0 (per-file LGPL-2+/MIT/GPL-2+)
    - Primary reference for Xbox hardware behavior and mature compatibility.
    - Xbox machine/memory map, PCI IDs and IRQ routing, PIII CPUID/MSR quirks, MCPX
      (SMBus/SMC/EEPROM/flash/ACPI/ACI), NV2A (PFIFO/PGRAPH/renderer), APU, USB/XID, nvnet.
-   - Newer in-development fork: `References/xemu-Playtest-v2` (QEMU 10.2 base, Sega Chihiro
+   - Newer in-development fork: `References2/xemu-Playtest-v2` (QEMU 10.2 base, Sega Chihiro
      arcade bring-up). Its NV2A carries host-GPU performance work (cost model, shader seeds,
      uniform cache, writeback heuristics, driver probe) with an un-tuned `nv2a-stock/`
      baseline to diff against — fact source for the GPU-backend performance track. See
      `docs/research-notes/xemu-playtest-v2.md`.
 
-3. **Cxbx-Reloaded** — `References/Cxbx-Reloaded-master` — GPL-2.0
+3. **Cxbx-Reloaded** — `References2/Cxbx-Reloaded-master` — GPL-2.0
    - Reference for XBE format (exact struct offsets), kernel ordinal semantics, NV2A/NV097
      register and method maps, texture swizzle, OHCI/XID, XDVDFS layout.
 
-4. **xqemu** — `References/xqemu-master` — GPL-2.0
+4. **xqemu** — `References2/xqemu-master` — GPL-2.0
    - Older QEMU fork; compact single-file APU register map, SMC/EEPROM defaults, TSC and
      accelerator quirks, hardware documentation pointers. No XDVDFS/FATX/XBE code.
 
@@ -50,7 +50,7 @@ algorithms) rather than performing a mechanical source translation. Full extract
    - Pure C# XDVDFS/XISO library (read/write, CISO, XBE metadata). The only reference project
      approved for direct integration as a library dependency, where architecture allows.
 
-6. **envytools** - `References/envytools-master` - **MIT**
+6. **envytools** - `References2/envytools-master` - **MIT**
    - NVIDIA register/method database (`rnndb/` XML) + GPU architecture docs. Cross-check for
      NV2A method offsets/enums (`rnndb/graph/nv20_3d.xml` + `nv10_3d.xml` = Xbox class
      `0x0097`: `0x17FC` begin/end, `0x1800/0x1810/0x1818` element/array/inline, `0x0B00/0x0B80`
@@ -58,21 +58,21 @@ algorithms) rather than performing a mechanical source translation. Full extract
      XF/vertex-program semantics (`docs/hw/graph/xf/`), PMC/PTIMER. Note: envytools' own
      "NV2A" is the nForce IGP, not the Xbox GPU. See `docs/research-notes/envytools.md`.
 
-7. **nv2a-trace** - `References/nv2a-trace-master` - **MIT**
+7. **nv2a-trace** - `References2/nv2a-trace-master` - **MIT**
    - apitrace-style tracer for a real Xbox GPU (needs hardware + `xboxpy`): per-method
      pre/post state, surface/texture PNG dumps, `debug.html` log. Without hardware its
      pushbuffer command decoder (`XboxHelper.parse_command`), NV2A/CACHE1 register constants
      and `Texture.py` format table are reusable facts. See `docs/research-notes/nv2a-trace.md`.
 
-8. **Copetti - Xbox Architecture** - `References/CopettiDocumentation` - **CC BY 4.0**
+8. **Copetti - Xbox Architecture** - `References2/CopettiDocumentation` - **CC BY 4.0**
    - High-level console architecture essay (`xbox-architecture.md`): CPU/memory/graphics/
      audio/IO/OS/boot/anti-piracy narrative. Orientation, onboarding and design cross-check
      only; attribution required if any text or figure is reused. Never a register-level
      oracle. See `docs/research-notes/copetti.md`.
 
 **Withdrawn reference.** Earlier drafts listed a standalone C# emulator "Xermu"
-(`References/Xermu-main`). No such project exists in the workspace; the operator confirmed
-2026-10-13 that the correct primary LLE reference is `References/xemu-0.8.136`. Do not add
+(`References2/Xermu-main`). No such project exists in the workspace; the operator confirmed
+2026-10-13 that the correct primary LLE reference is `References2/xemu-0.8.136`. Do not add
 Xermu to any list, and do not treat historical citations to it (including
 `xgrid-architecture-decisions.md`) as facts.
 
@@ -109,6 +109,15 @@ Do not attempt to translate xemu line-by-line.
 Instead:
 
 > Reimplement the documented/reverse-engineered Xbox hardware behavior in an independently designed C# architecture.
+
+### Development direction (binding, 2026-10-16)
+
+Canonical priority order: `docs/development-direction.md` (summarized in
+`AGENTS.md` "Development direction"). JIT throughput is the binding constraint
+(CPU 97–100% of wall); headless `--gpu sw` stays the default and gate currency;
+`data/test-samples/` only, no real games; perf flags stay opt-in until
+median-of-3 walls plus exact golden SHAs/counters, `verifyFailures=0`, and
+flag-off byte-identical runs.
 
 ---
 
@@ -3115,6 +3124,11 @@ six 1B off/cache/spec pairs PASS (SHAs exact both titles, spec/cache 1.17×
 triangle / 1.07× menu single-run) + two specverify legs PASS (verifyFailures=0,
 vec=0) + off-vs-spec logs identical. Final gate green: format + build +
 **1340/1340 tests**. Flag stays opt-in (menu margin thin, median-of-3 not done).
+**§141 DONE (2026-10-16, direct):** spec-exec median-of-3 ran
+(`scripts/spec-exec-soak.ps1`, 18/18 legs PASS, SHAs exact both titles,
+`verifyFailures=0`, logs identical modulo mode lines): menu spec/cache
+**1.035x** (inside host noise), triangle **1.130x**. Flag stays opt-in,
+default off — no default-flip. Details in research-notes §141.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
@@ -3369,7 +3383,7 @@ dependency.
 6. `XGridMemoryTool` (plan tools) later; for now expose an inspection API used by the debugger.
 
 **Facts**: use the consolidated address map in `docs/research-notes/xgrid-architecture-decisions.md`,
-validated against XboxWiki `References/XboxDevWiki/html/Memory.html` (Memory): 64 MB RAM 0x00000000-0x03FFFFFF,
+validated against XboxWiki `References2/XboxDevWiki/html/Memory.html` (Memory): 64 MB RAM 0x00000000-0x03FFFFFF,
 NV2A regs 0xFD000000-0xFDFFFFFF, APU regs 0xFE800000-0xFE87FFFF (512 KiB; `ApuSize` corrected
 2026-10-10), ACI regs 0xFEC00000-0xFEC00FFF (`IoApicBase` was a misnomer; renamed `AciBase`
 2026-10-10 — the window is ACI MMIO), USB0 0xFED00000-0xFED00FFF, USB1 0xFED08000-0xFED08FFF, nvnet
@@ -3420,11 +3434,11 @@ Synthetic page-table tests and TLB invalidation tests; CPU executes code through
 
 ### PCI device topology (verified against xemu `hw/xbox/xbox.c`)
 
-Process directive: **consult the reference projects first** (`References/xemu-0.8.136`,
-`References/xemu-Playtest-v2` (newer NV2A/perf cross-check), `References/xqemu-master`,
-`References/Cxbx-Reloaded-master`,
-`References/envytools-master` for NV2A method/register/XF facts, `References/nv2a-trace-master`
-for pushbuffer/PGRAPH tracing facts, `References/XboxDevWiki`, `References/CopettiDocumentation`
+Process directive: **consult the reference projects first** (`References2/xemu-0.8.136`,
+`References2/xemu-Playtest-v2` (newer NV2A/perf cross-check), `References2/xqemu-master`,
+`References2/Cxbx-Reloaded-master`,
+`References2/envytools-master` for NV2A method/register/XF facts, `References2/nv2a-trace-master`
+for pushbuffer/PGRAPH tracing facts, `References2/XboxDevWiki`, `References2/CopettiDocumentation`
 for high-level architecture) to
 confirm hardware layout, IDs, and behavior before implementing or debugging a device. Xemu is
 the LLE reference; Cxbx is HLE (kernel reimplementation, no NV2A emulation) and only
@@ -3485,7 +3499,7 @@ KernelTime/Quantum accounting, IRET. DPC/timer-expiry branch never fires. Exactl
 exists (0x80035A90, Type=6, State=Running, KernelTime≈ticks, WaitBlockList=NULL); the
 IdleThread/NextThread PRCB slots hold zeros/garbage. The wait is KiIdleLoop-on-empty-DPC-queue
 with no waiter object: only a future device event unblocks it. Total: 530 tests pass.
-Reframe from XboxWiki `References/XboxDevWiki/html/Boot Process.html` (Boot Process): `--dump 0x80010000` shows
+Reframe from XboxWiki `References2/XboxDevWiki/html/Boot Process.html` (Boot Process): `--dump 0x80010000` shows
 a valid MZ header, so the 2BL completed its whole program (MCPX ROM disable via LPC 0x80=0x02,
 SMC challenge 0x1C-0x1F + response 0x20/0x21, kernel flash copy + RC4 + LZX to 0x80010000,
 MZ/PE check, entry call) and we are in the KERNEL's idle loop. A 50M-instruction run shows
@@ -3536,7 +3550,7 @@ path and HLE as later fallbacks.
 
 **Acceptance**: M1 — C# CPU executes real firmware with correct basic hardware behavior.
 
-**Findings (XboxWiki `References/XboxDevWiki/html/Boot Process.html`, Boot Process)**: the 2BL program is fully
+**Findings (XboxWiki `References2/XboxDevWiki/html/Boot Process.html`, Boot Process)**: the 2BL program is fully
 documented (MTRR, self-copy, PDE incl. GPU window flags 0xFB, MCPX ROM disable, SMC challenge,
 IDE+NIC enable, LDT config, kernel RC4+LZX to 0x80010000, MZ/PE check, entry call) and our boot
 matches it end to end — kernel MZ verified in RAM, so the paragraphs below about the 2BL
@@ -3553,7 +3567,7 @@ DMA; virtual HDD backed by random-access file with block cache/read-ahead; ATAPI
 2048-byte sectors for XDVDFS; FATX read-only first (superblock/partition/FAT/dirs/files); host
 tooling via XISOSharp adapter behind `IDiscImage`.
 
-**Facts**: `cxbx.md` 6, `xisosharp.md` 2, `xemu.md` 7; XboxWiki `References/XboxDevWiki/html/FATX.html`
+**Facts**: `cxbx.md` 6, `xisosharp.md` 2, `xemu.md` 7; XboxWiki `References2/XboxDevWiki/html/FATX.html`
 (FATX) for the filesystem stage. Note: the boot kernel loads from flash (XboxWiki Boot Process,
 page `51`), so disk I/O belongs to the dashboard phase, not firmware boot.
 
@@ -3592,9 +3606,9 @@ precompiled interpreter ubershaders.
 
 **Acceptance**: M4 framebuffer → M5 2D → M6 3D → M7 shaders → M8 game rendering.
 
-**Facts (XboxWiki)**: `References/XboxDevWiki/html/NV2A.html` (NV2A MMIO/pipeline) plus
+**Facts (XboxWiki)**: `References2/XboxDevWiki/html/NV2A.html` (NV2A MMIO/pipeline) plus
 `NV2A_Vertex attributes`/`NV2A_Fixed Function Pipeline`/`NV2A_Vertex Shader`/
-`NV2A_Pixel Combiner`/`NV2A_Surface Formats` (all under `References/XboxDevWiki/html/`).
+`NV2A_Pixel Combiner`/`NV2A_Surface Formats` (all under `References2/XboxDevWiki/html/`).
 Guest page tables map the 16 MB control window cache-disabled (Boot Process `51`); BAR0 base
 observed 0xFD000000 during real boot.
 
@@ -3619,7 +3633,7 @@ DONE — guest enumerates first try (§55); `--pad` injection latched
 (§56). Remaining: host input behind `IInputBackend`, rumble output,
 pads 2–4, isochronous transfers.
 
-**Facts (XboxWiki `References/XboxDevWiki/html/USB.html`, USB)**: two MCPX OHCI controllers, MMIO per
+**Facts (XboxWiki `References2/XboxDevWiki/html/USB.html`, USB)**: two MCPX OHCI controllers, MMIO per
 standard OHCI spec Table 7-1; USB0 = PCI 0:2.0 IRQ1 (retail game-controller ports), USB1 =
 PCI 0:3.0 IRQ9 (not enabled in retail titles). Firmware values (retail v1.6 PAL):
 HcRevision=0x10 both; USB0 HcRhDescriptorA=0x01001204 (4 ports), USB1 =0x01000202 (2 ports);

@@ -22,6 +22,7 @@ Thumbs.db
 
 # Reference material (large, licensed third-party sources - never committed)
 References/
+References2/
 *.zip
 
 # Local firmware/user data - never committed

@@ -1,6 +1,6 @@
 # Cxbx-Reloaded — Architecture Notes (HLE Emulator)
 
-Reference: `References/Cxbx-Reloaded-master`. License: GPL-2.0 (some files LGPL-2) — facts only.
+Reference: `References2/Cxbx-Reloaded-master`. License: GPL-2.0 (some files LGPL-2) — facts only.
 Cxbx is a Windows HLE emulator that runs Xbox executables natively; XGrid will not use its
 process/HLE model, but its format and register knowledge is the best available.
 

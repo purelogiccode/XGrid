@@ -5,68 +5,84 @@
 Before implementing or debugging hardware behavior, **consult the reference projects first**
 to confirm layout, IDs, registers, and semantics. Extract facts, never copy code.
 
-- `References/xemu-0.8.136` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A). Primary source.
+- `References2/xemu-0.8.136` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A). Primary source.
   Key paths: `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
   `hw/xbox/smbus_xbox_smc.c` (SMC protocol), `hw/xbox/xbox_pci.c` (PCI topology/IDs).
-- `References/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
+- `References2/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
   on a QEMU 10.2.0 base. Its NV2A is the *tuned GPU* (`pgraph/cost.c`, `seed.c`,
   `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the un-tuned baseline at
   `hw/xbox/nv2a-stock/` — `diff -ru` isolates the whole perf delta (GPU-backend
   performance-track facts). Full `chihiro/` subsystem, `xid-light-gun.c`, new SMBus
   devices, 5 newer NV097 methods. Cross-check only; 0.8.136 stays the primary
   (see `docs/research-notes/xemu-playtest-v2.md`).
-- `References/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
-- `References/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
+- `References2/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
+- `References2/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
   `src/core/kernel/common/types.h` (KTHREAD/KWAIT_BLOCK/KAPC offsets, e.g. KTHREAD+0x2C = State).
   Cxbx is also the shader reference (`nv2a_psh.cpp` / `nv2a_vsh.cpp`) — `xemu` `glsl/psh.c` +
   `glsl/vsh-prog.c` are GPL-2+ and are the more complete oracle for the fragment/vertex stages.
-- ~~`References/Xermu-main`~~ — **WITHDRAWN.** An earlier draft listed a standalone C#
+- ~~`References2/Xermu-main`~~ — **WITHDRAWN.** An earlier draft listed a standalone C#
   emulator that was never in the workspace. Operator confirmed 2026-10-13 the primary LLE
-  reference is `References/xemu-0.8.136`. `docs/research-notes/xermu.md` was deleted; historical
+  reference is `References2/xemu-0.8.136`. `docs/research-notes/xermu.md` was deleted; historical
   citations to it (early plan text, `xgrid-architecture-decisions.md`) are unverified — do not
   use them as facts (see `sources.md` "Xermu - WITHDRAWN").
 - `CSharp_XISOSharp` — MIT XDVDFS library: sibling repo (`C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp`,
   docs + source used for API/on-disk facts) + NuGet `XISOSharp` 1.4.2 referenced by `XGrid.XboxFs`
   (`XdvdfsFileSystem` adapter + `xgrid xdvdfs ls/cat`, §64). `CSharp_CHDSharp` sibling covers CHD later.
-- `References/XboxDevWiki` — XboxDevWiki vendored locally (full offline dump
+- `References2/XboxDevWiki` — XboxDevWiki vendored locally (full offline dump
   captured 2026-10-12: `html/<Title>.html` rendered pages with offline
   links/images, `pages/<Title>.wiki` raw wikitext, `images/`, `manifest.json`,
   `index.html`; identify pages by `<title>`). Key pages: Boot Process, BIOS,
   Kernel, MCPX, PCI, USB, NV2A, SMC, MCPX ROM, Hidden Boot Code, Memory.
   Old numeric citations (`51` Boot Process, `53` FATX, ...) translate per
-  `References/XboxDevWiki/README.md`.
-- `References/envytools-master` — **MIT** NVIDIA register/method database + GPU docs
+  `References2/XboxDevWiki/README.md`.
+- `References2/envytools-master` — **MIT** NVIDIA register/method database + GPU docs
   (notes: `docs/research-notes/envytools.md`). First cross-check for NV2A method
   offsets/enums: `rnndb/graph/nv20_3d.xml` (+ `nv10_3d.xml`) = Xbox class `0x0097`
   (`0x17FC` begin/end, `0x1800/0x1810/0x1818` elements/arrays/inline, `0x0B00/0x0B80`
   VP upload); pusher/puller semantics in `docs/hw/fifo/dma-pusher.rst` + `puller.rst`;
   vertex-program/XF semantics in `docs/hw/graph/xf/` (`isa.rst`, `mode.rst`). Caveat:
   envytools' own "NV2A" is the nForce IGP, not the Xbox GPU.
-- `References/nv2a-trace-master` — **MIT** apitrace-for-real-hardware tracer
+- `References2/nv2a-trace-master` — **MIT** apitrace-for-real-hardware tracer
   (notes: `docs/research-notes/nv2a-trace.md`). Hardware ground truth for PGRAPH if a box
   + `xboxpy` are available (per-method pre/post state, surface/texture PNGs, `debug.html`);
   without hardware its `XboxHelper.parse_command` pushbuffer decoder, NV2A/CACHE1 register
   constants and `Texture.py` format table are usable facts.
-- `References/CopettiDocumentation` — CC BY 4.0 (attribution required if reused) high-level
+- `References2/CopettiDocumentation` — CC BY 4.0 (attribution required if reused) high-level
   console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
   onboarding / design cross-check only — never a register-level oracle.
 
-**Never delete, move, or rewrite anything inside `References/` — no file, no subfolder,
+**Never delete, move, or rewrite anything inside `References2/` — no file, no subfolder,
 ever.** It is the vendored oracle set every wave depends on. It has been emptied twice:
 2026-10-12, and 2026-10-14 18:05–18:07 (a Dropbox **remote-origin** deletion from another
 device/session applied locally — the repo sits inside the Dropbox sync root, so anything
 deleted "in the cloud" lands here as local file loss; no local script ran). Do not run
 `Remove-Item`, `rm -rf`, `git clean`, `robocopy /MIR`, `dotnet clean`, or any
-cleanup/grooming script against `References/` or a path that resolves to it; wave
-worktrees junction `References/` read-only and worktree teardown must never descend
+cleanup/grooming script against `References2/` or a path that resolves to it; wave
+worktrees junction `References2/` read-only and worktree teardown must never descend
 through that junction. If a reference is missing, restore in this order — never work
 around a missing reference: (1) `D:\xgrid-refs-restore\` (verified full backup
 2026-10-14: 31,801 files / 513 MB, all 8 sets); (2) a client-accessible Windows shadow
 copy of C: (VSS); (3) the upstream URLs in `docs/research-notes/sources.md`
 (`xemu-Playtest-v2` has no upstream URL — operator-supplied only).
+Renamed `References/` → `References2/` 2026-10-16 by the operator (repeated
+remote-origin deletions of `References/`); both names stay git-ignored.
 
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
+
+## Development direction (required, 2026-10-16)
+
+Canonical order: `docs/development-direction.md`. Summary of hard rules:
+
+1. **JIT throughput first** — CPU is 97–100% of wall; swapchain/GPU is 0–2.9%.
+   Specialize semantics; switch dispatch is not dominant; DynamicMethod stays
+   rejected; boundary-preserving only.
+2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
+   and no NV2A fidelity polish until a `data/test-samples/` histogram proves need.
+3. **No real Xbox games** — `data/test-samples/` only (operator rule).
+4. **Perf flags stay opt-in** until median-of-3 + exact SHAs/counters +
+   `verifyFailures=0` + flag-off byte-identical. ktest smoke 7/7 is the standing gate.
+5. **Direct development** — wave runner retired, no worktrees/detached servers.
 
 ## Build / test / format
 
@@ -528,7 +544,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
    `vsh-prog.c`), `nv2a_regs.h`; for the APU gate xemu `hw/xbox/mcpx/`
    (`vp/`, `dsp/`, `apu.c`);
-   `References/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
+   `References2/Cxbx-Reloaded-master/src/core/kernel/common/types.h` for
    KTHREAD/KWAIT offsets if needed.
 
 Earlier AV-device gate details (research-notes §33, for reference):

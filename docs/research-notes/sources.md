@@ -21,15 +21,15 @@ the reuse is recorded below.
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
 | Silk.NET | pinned when first added (GPU slice 1) | https://github.com/dotnet/Silk.NET | **MIT** | Approved for direct dependency (operator 2026-10-13; see below) |
 
-## Restoring the vendored set (References/)
+## Restoring the vendored set (References2/)
 
-Downloaded 2026-10-12 (extract into `References/`; GitHub zips carry these
+Downloaded 2026-10-12 (extract into `References2/`; GitHub zips carry these
 root folder names):
 - xemu 0.8.136 — https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip
 - xemu-Playtest-v2 — no upstream URL recorded (operator-supplied local snapshot); ask the operator.
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
-- Copetti "Xbox Architecture" — `References/CopettiDocumentation/` (article:
+- Copetti "Xbox Architecture" — `References2/CopettiDocumentation/` (article:
   https://www.copetti.org/writings/consoles/xbox/ ; article source text:
   https://github.com/flipacholas/Architecture-of-consoles ). Files:
   `xbox-architecture.md` + `.html` + `images/`.
@@ -38,13 +38,13 @@ root folder names):
   prepended one-line note that NV20/Kelvin register/method data is the target).
 - nv2a-trace — https://github.com/XboxDev/nv2a-trace/archive/refs/heads/master.zip
   (extracts to `nv2a-trace-master/`).
-- XboxDevWiki — full offline dump in `References/XboxDevWiki/` (captured
+- XboxDevWiki — full offline dump in `References2/XboxDevWiki/` (captured
   2026-10-12 via the MediaWiki API): all 160 ns-0 articles as standalone HTML
   (`html/`) + raw wikitext (`pages/`), all 117 images (`images/`),
   `manifest.json` + `index.html`; re-dump via `scripts/dump-xboxdevwiki.ps1`.
   Old numeric `.mhtml` citations (`16` NV2A, `22` Memory, `41` USB, `51` Boot
   Process, `53` FATX, ...) map to title-based files — see
-  `References/XboxDevWiki/README.md`. No explicit license declared on the wiki
+  `References2/XboxDevWiki/README.md`. No explicit license declared on the wiki
   (footer lists only privacy/about/disclaimer); facts-only per project policy.
 
 ## Per-project license detail
@@ -75,9 +75,9 @@ root folder names):
 
 ### Xermu - WITHDRAWN (never a real reference)
 - Older drafts of this inventory listed a "Xermu" standalone C# Xbox emulator
-  (`References/Xermu-main`). No such project exists in the workspace and the operator
+  (`References2/Xermu-main`). No such project exists in the workspace and the operator
   confirmed on 2026-10-13 that the correct (and only) primary LLE reference is
-  `References/xemu-0.8.136`.
+  `References2/xemu-0.8.136`.
 - `docs/research-notes/xermu.md` was deleted. Historical citations to it (early plan text,
   `xgrid-architecture-decisions.md`) are unverified - do not use them as facts. Use xemu,
   xqemu, Cxbx, XboxDevWiki or envytools instead.
@@ -95,7 +95,7 @@ root folder names):
 - Verdict: read for facts only.
 
 ### Copetti — Xbox Architecture (local snapshot)
-- `References/CopettiDocumentation/xbox-architecture.md` (+ `.html`, `images/`).
+- `References2/CopettiDocumentation/xbox-architecture.md` (+ `.html`, `images/`).
 - **CC BY 4.0** — the article's own "Copyright and permissions" section requires
   attribution (link to the article + license, per its guidelines); commercial use
   permitted. If any text/figure is reused in XGrid docs, cite
@@ -105,7 +105,7 @@ root folder names):
   register semantics use xemu / XboxDevWiki / envytools.
 
 ### envytools (master snapshot)
-- `References/envytools-master/`. Root `COPYING` is the **MIT/Expat** license
+- `References2/envytools-master/`. Root `COPYING` is the **MIT/Expat** license
   (Copyright 2013 the envytools authors) — unlike the other GPU references, this
   one is copy-permissive.
 - Contains: `rnndb/` (rules-ng-ng XML register/class/method/enum database),
@@ -120,7 +120,7 @@ root folder names):
   envytools calls `NV20_3D` (Kelvin family).
 
 ### nv2a-trace (master snapshot)
-- `References/nv2a-trace-master/`. **MIT**, Copyright (c) 2018-2022 XboxDev maintainers.
+- `References2/nv2a-trace-master/`. **MIT**, Copyright (c) 2018-2022 XboxDev maintainers.
 - apitrace-style tracer for a *real* Xbox GPU: pauses the DMA pusher, inspects each
   method before execution, dumps intermediate surfaces/textures (PNG in `out/`,
   plus `debug.html`). Requires real hardware + `xboxpy`; README warns it is
@@ -140,7 +140,7 @@ root folder names):
   - **ZArchiveSharp** (MIT, PureLogicCode.com) — consumed as NuGet dependency 1.4.0.
 - Approved integration: XGrid may reference the `XISOSharp` library (project or NuGet). If any
   XISOSharp source is adapted into XGrid, the MIT notice and the extract-xiso advertising clause
-  must be preserved. `References/` inside that repo (extract-xiso, xdvdfs 0.8.3, XboxKit 0.7,
+  must be preserved. `References2/` inside that repo (extract-xiso, xdvdfs 0.8.3, XboxKit 0.7,
   Avalonia sources) is third-party material — do not copy.
 - Caveat: `XISOSharp` has a runtime dependency on `ZArchiveSharp 1.4.0` (not BCL-only).
 - Integrated 2026-10-11: `XGrid.XboxFs` references NuGet `XISOSharp` 1.4.2

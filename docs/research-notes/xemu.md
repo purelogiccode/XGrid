@@ -1,6 +1,6 @@
 # xemu 0.8.136 — Hardware Facts and Architecture Notes
 
-Reference: `References/xemu-0.8.136` (QEMU fork, `--target-list=i386-softmmu`, `-DXBOX=1`).
+Reference: `References2/xemu-0.8.136` (QEMU fork, `--target-list=i386-softmmu`, `-DXBOX=1`).
 License: GPL-2.0/LGPL-2+/MIT per file — facts extracted here, no code copied.
 
 Legend: **[HW]** Xbox hardware fact, **[XEMU]** xemu-specific workaround/implementation, **[QEMU]**

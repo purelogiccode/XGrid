@@ -1,6 +1,6 @@
 # nv2a-trace — apitrace for the real Xbox GPU
 
-Reference: `References/nv2a-trace-master` (upstream: https://github.com/XboxDev/nv2a-trace)
+Reference: `References2/nv2a-trace-master` (upstream: https://github.com/XboxDev/nv2a-trace)
 License: **MIT**, Copyright (c) 2018-2022 XboxDev maintainers.
 
 What it is: a remote tracer that runs on a dev PC, talks to a **real Xbox** through

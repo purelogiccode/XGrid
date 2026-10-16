@@ -1,6 +1,6 @@
 # xqemu — Architecture Notes (Older QEMU Fork)
 
-Reference: `References/xqemu-master` (QEMU 4.0.0 base). License: GPL-2.0 (mixed per-file) — facts
+Reference: `References2/xqemu-master` (QEMU 4.0.0 base). License: GPL-2.0 (mixed per-file) — facts
 only. xqemu is the predecessor of xemu; it has less coverage but a few unique artifacts.
 
 ---

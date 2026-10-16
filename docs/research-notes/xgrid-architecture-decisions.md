@@ -5,8 +5,8 @@ Sources: `docs/research-notes/{xemu,cxbx,xqemu,xisosharp,sources}.md`.
 This document converts the reference study into concrete decisions for the plan's phases.
 
 **Note — "Xermu" citations below are unverified.** An earlier draft listed a standalone C#
-emulator "Xermu" (`References/Xermu-main`). It never existed in the workspace; the operator
-confirmed 2026-10-13 the primary reference is `References/xemu-0.8.136`. Mentions of Xermu
+emulator "Xermu" (`References2/Xermu-main`). It never existed in the workspace; the operator
+confirmed 2026-10-13 the primary reference is `References2/xemu-0.8.136`. Mentions of Xermu
 in this file are historical artifacts of that draft — do not treat them as facts or as a
 pointer to any project. See `sources.md` "Xermu - WITHDRAWN".
 
@@ -398,7 +398,7 @@ Output report 6 bytes (left/right actuator u16)
 ## 16. Xbox PCI topology (from xemu `hw/xbox/xbox.c`) and reference-first process
 
 Process directive: consult the reference projects first for hardware specs and behavior.
-Xemu (`References/xemu-0.8.136`) is the LLE reference for MCPX/PCI/IDE/NV2A; Cxbx-Reloaded and
+Xemu (`References2/xemu-0.8.136`) is the LLE reference for MCPX/PCI/IDE/NV2A; Cxbx-Reloaded and
 Xermu are HLE (kernel reimplementation, no NV2A emulation) and only inform kernel-facing
 behavior. Facts are extracted, never copied.
 
@@ -477,7 +477,7 @@ alternatives are NV2A MMIO presence or IDE I/O completion (cmd=0005 legacy, neve
 
 ## 18. Reframe: we are in the kernel, not the 2BL (XboxWiki Boot Process, page 51)
 
-`References/XboxWiki/51.mhtml` documents the 2BL program: MTRR setup, self-copy, PDE at 0xF000
+`References2/XboxWiki/51.mhtml` documents the 2BL program: MTRR setup, self-copy, PDE at 0xF000
 (GPU regs at 0xFDxxxxxx with flags 0xFB = cache-disabled, flash, PDE self-map), MCPX ROM disable
 (`out32 0xCF8,0x80000880` + `out8 0xCFC,0x02` — our LPC overlay handling), SMC watchdog
 challenge (0x1C-0x1F must be non-zero, response to 0x20/0x21), IDE+NIC enable (LPC reg 0x8C),
@@ -513,7 +513,7 @@ IDE+FATX+XBE dashboard path.
 
 ## 20. Dashboard-path reference synthesis (2026-10-09; Cxbx/XboxWiki/xemu/Xermu/xqemu)
 
-- XboxWiki Boot Process (`References/XboxWiki/51.mhtml`): reset `0xFFFFFFF0`, flash
+- XboxWiki Boot Process (`References2/XboxWiki/51.mhtml`): reset `0xFFFFFFF0`, flash
   top 16 MiB `0xFF000000-0xFFFFFFFF`, MCPX ROM overlay last 512 B `0xFFFFFE00`;
   xcodes 9 B (`02` PEEK, `03` POKE, `04/05` PCI, `06` AND/OR, `07` prefix, `08` BNE,
   `09` BRA, `10` ACC2, `11` OUTB, `12` INB, `EE` END); MCPX-disable
@@ -532,7 +532,7 @@ IDE+FATX+XBE dashboard path.
   SMC PIC16LC @`0x10` (`33`, `91`): `01` version, `03` tray, `04` AV pack,
   `11` IRQ read-clear, `1B` scratch, `1C-1F` challenge non-zero, `20/21`
   response ignored; `02` power, `07/08` LED, `0C` tray, `1A` IRQ-enable.
-- xemu LLE (`References/xemu-0.8.136`): PCI all `10DE` (host `02A5`, LPC `01B2`,
+- xemu LLE (`References2/xemu-0.8.136`): PCI all `10DE` (host `02A5`, LPC `01B2`,
   SMBus `01B4`, USB `01C2` x2, nvnet `01C3`, APU `01B0`, ACI `01B1`, IDE `01BC`
   when `XBOX`, AGP `01B7`, NV2A `02A0` on secondary bus); `0xCF8/0xCFC`;
   `INT_ROUT=0x0E065491` (USB0 1, USB1 9, nvnet 4, APU 5, ACI 6, IDE 14),
@@ -547,7 +547,7 @@ IDE+FATX+XBE dashboard path.
   `0b011`; opcodes `F1/F2/F3/F4/F5/F6`, only `F2` implemented as 512 B PIO-out
   that never verifies. MCPX ROM: 512 B overlay, `0x80&2` disables. NV2A BAR0
   16 MiB + BAR1 VRAM alias; `BOOT_0 0x02A000A3`, IRQ on `pending&enabled`.
-- Cxbx (`References/Cxbx-Reloaded-master`): `types.h` KTHREAD `0x110`,
+- Cxbx (`References2/Cxbx-Reloaded-master`): `types.h` KTHREAD `0x110`,
   State `0x2C` (Running 2), WaitBlockList `0x58`, Quantum `0x6C`; KPRCB
   Current/Next/IdleThread, DPC list; XBE `XBEH`, EP/KT XOR retail
   `A8FC57AB/5B6D40B6`, debug `94859D4B/EFB1F152`, Chihiro `40B5C16E/2290059D`;
@@ -591,7 +591,7 @@ defaults already match xemu here (`SmcDevice`: version `P01`, AV `HDTV`, scratch
   shows the full 128-word EEPROM sweep `0x00-0xFE` reconstructing the file
   256/256 with 0 mismatches; SMC challenge `52/72/EA/46`, version `P`,
   AV `01`, INTSTATUS `02`, scratch `04` all match xemu.
-- Reference crypto nailed down (`References/xemu-0.8.136/hw/xbox/
+- Reference crypto nailed down (`References2/xemu-0.8.136/hw/xbox/
   eeprom_generation.c`, `util/sha1.c`, `util/sha1.h` — facts only):
   `length` counts bits with a 512-bit preset (pretends a 64-byte key block was
   hashed; "Middle Message"), LE words, BE length field; compute = SHA1(first
@@ -2243,7 +2243,7 @@ u32 sector/size, attrs, Latin-1 names, pad-to-4, 0xFFFF terminator).
 parses via `xbe info`: Retail, base `0x10000`, TitleId `0x4541000D`,
 Media `0x2` (DVD_X2, pressed), 9 sections, 5 libraries, TLS present.
 
-**Correction.** `CSharp_XISOSharp` is NOT vendored under `References/`
+**Correction.** `CSharp_XISOSharp` is NOT vendored under `References2/`
 (AGENTS.md + plan §13.5 wording was wrong) - it lives as the sibling
 repo `C:/Users/HomePC/Dropbox/source/repos/CSharp_XISOSharp` (docs/ +
 source used for API + on-disk facts) and as the NuGet package. Same
@@ -2714,7 +2714,7 @@ scope for this.
 
 ## 78. NV2A fog state + dependent/bump/dot texture modes (2026-10-12)
 
-Reference facts (`References/xemu-0.8.136`, `nv2a_regs.h` + `pgraph/`
+Reference facts (`References2/xemu-0.8.136`, `nv2a_regs.h` + `pgraph/`
 `pgraph.c` + `glsl/psh.c` + `glsl/vsh.c` + `glsl/vsh-prog.c` +
 `psh_regs.h`; reimplemented scalar, never copied):
 
@@ -3394,7 +3394,7 @@ run proves the flag is clear during all 33K draws). End EIP
 ## 91. NV2A fixed-function foggen + HILO dot maps (2026-10-12)
 
 Work in `Temp\opencode\worktrees\nv2a-foggen-hilo` (wave/nv2a-foggen-hilo).
-Closes the two §78 remainders. Reference facts (`References/xemu-0.8.136`,
+Closes the two §78 remainders. Reference facts (`References2/xemu-0.8.136`,
 reimplemented scalar, never copied):
 
 - **Gen values** (`nv2a_regs.h:917-922` -> `pgraph.c:1131-1150` CSV0_D):
@@ -3590,7 +3590,7 @@ next gate is decoding the `0x138xx` wait. Full suite 1034/1034
 
 Worktree `Temp\opencode\worktrees\nv2a-rgb-zero` (`wave/nv2a-rgb-zero`);
 firmware read-only; artifacts in `Temp\opencode\rgb-zero\`. Reference
-facts from `References/xemu-0.8.136/hw/xbox/nv2a/pgraph/` (`texture.c`
+facts from `References2/xemu-0.8.136/hw/xbox/nv2a/pgraph/` (`texture.c`
 `pgraph_get_texture_shape`, `glsl/psh.c` sample sites + `norm`,
 `gl/vk/constants.h` format tables). The §93 symptom (right layout,
 RGB=0, structured alpha, one untextured blue column) had THREE
@@ -3699,7 +3699,7 @@ formats, mipmap LOD selection (base level only), DXT decode.
 
 Closes the §78/§91 remainder: cubemap, project3d, clipplane, the
 reflection dot-chain modes, and HILO hemisphere dot maps 5-7. Primary
-reference `References/xemu-0.8.136/hw/xbox/nv2a/pgraph/glsl/psh.c`
+reference `References2/xemu-0.8.136/hw/xbox/nv2a/pgraph/glsl/psh.c`
 (mode switch ~L1108-1369, sampler types L620-695, dotmap funcs
 L851-910, remap helpers L936-976), `pgraph/texture.c`
 (`pgraph_get_texture_length` L143-192, shape L194-326),
@@ -3976,7 +3976,7 @@ runs simulate the natural end state (buffer drained → EOS quirk → drain
 loop).
 
 **Fix path (next wave).** APU voice-processor + DSP streaming emulation
-from `References/xemu-0.8.136/hw/xbox/mcpx/apu/`: `vp/vp.c` (`fe_method`
+from `References2/xemu-0.8.136/hw/xbox/mcpx/apu/`: `vp/vp.c` (`fe_method`
 PIO dispatch, voice lists, SSL segment processing `0x600+`, notifier
 statuses, position advance), `dsp/dsp.c` + `dsp/dsp_dma.c` + `dsp/gp_ep.c`
 (GP FIFOs, position DMA, FE interrupt), `apu.c` FEVINTSTS/FENINTSTS +
@@ -4550,7 +4550,7 @@ Branch `wave/apu-vp-dsp` (worktree `Temp\opencode\worktrees\apu-vp-dsp`). Fixes 
 for stream channel `0x100` status 3, and status 3 needed the APU voice processor's
 position/notifier feedback, which XGrid stored but never advanced.
 
-**xemu facts extracted** (`References/xemu-0.8.136/hw/xbox/mcpx/apu/`):
+**xemu facts extracted** (`References2/xemu-0.8.136/hw/xbox/mcpx/apu/`):
 - Voice state lives in *guest RAM* at `VPVADDR + voice*0x80`; every VP PIO method
   reads/writes it via `voice_get_mask`/`voice_set_mask` (`vp/vp.c:100-116`).
   Registers: `VPVADDR 0x202C`, `VPSGEADDR 0x2030`, `VPSSLADDR 0x2034`,
@@ -7812,4 +7812,37 @@ exact resume recipe instead of a fake done. BOSS ran the recipe verbatim. Tool
 lesson (post-`tools/wave` -- the runner is retired after this wave): retries
 after `provider.invalid-output` must start a fresh session; re-prompting the
 broken one is doomed. Same root lesson as the wave-14 spike loss.
+
+## 141. Spec-exec median-of-3: flag stays opt-in (2026-10-16)
+
+Direct development, no wave. Gate from `docs/development-direction.md` §2/§4:
+median-of-3 walls before any default-flip claim. Harness:
+`scripts/spec-exec-soak.ps1` (modeled on `decode-cache-soak.ps1`; legs
+`cache` = default decode-cache-on, `spec` = `--spec-exec`,
+`specverify` = `--spec-exec --block-verify`; 1B steps, `--gpu sw`).
+Media: private copies on `D:\spec-soak\media` (BIOS/mcpx/eeprom/dashboard
+HDD from `D:\wt-data\nv2a-clamp67`, triangle.iso built from
+`data/test-samples/triangle.xbe` via XISOSharp); legs on
+`D:\spec-soak\legs` (C: has ~5 GB free — never on C:). One leg
+(menu/cache/r1) ran pre-restart; a server restart cancelled the batch and it
+was resumed with skip-done logic — all 18 legs exit 0.
+
+Correctness (all 18): BMP SHAs exact both anchors
+(menu `4EF1FBF6…`, triangle `A1740DE0…`), `LastFault vec=0`, counter
+anchors exact (menu 33632/1402/686/686, triangle 2706/68/34),
+`verifyFailures=0` everywhere, full logs identical modulo the mode
+announcement/stats lines + frame path (`-Compare` PASS).
+
+Median walls (seconds, sequential, shared host):
+
+| Title | cache | spec | spec/cache | specverify |
+| --- | ---: | ---: | ---: | ---: |
+| Menu | 166.08 | 160.43 | 1.035x | 190.84 |
+| Triangle | 88.10 | 77.99 | 1.130x | 118.13 |
+
+Menu margin (1.035x) is inside host noise (spec r3 outlier 187.9 s vs
+157.2/160.4); triangle 1.13x is real but modest. Verdict: `--spec-exec`
+stays opt-in, default off — the §140 provisional status is confirmed, no
+default-flip. Next JIT work per the direction file: specialize semantics
+further (dispatch is not dominant); DynamicMethod stays rejected.
 

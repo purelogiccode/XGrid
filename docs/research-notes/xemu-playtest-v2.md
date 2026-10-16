@@ -1,6 +1,6 @@
 # xemu-Playtest-v2 — in-development xemu fork (Sega Chihiro arcade bring-up)
 
-Reference: `References/xemu-Playtest-v2` (operator-supplied local snapshot, 2026-09-28;
+Reference: `References2/xemu-Playtest-v2` (operator-supplied local snapshot, 2026-09-28;
 no upstream URL recorded — ask the operator before re-downloading).
 License: xemu-family — GPL-2.0 overall; per-file LGPL-2+ (most `hw/xbox/**`, including
 `nv2a-stock`), MIT (`smbus_xcalibur.c` etc.), GPL-2+ (shader/GLSL files). **Facts only.**
