@@ -2964,7 +2964,7 @@ Every phase lists: goal, prerequisites, tasks, files/interfaces, tests, acceptan
 and the reference notes to consult. Phases are ordered; do not start a later phase on an unstable
 earlier one except where explicitly parallel (Track B/C).
 
-## Implementation status (last updated 2026-10-12; XboxWiki findings integrated below)
+## Implementation status (last updated 2026-10-16; wave-15 concluded, tools/wave retired; XboxWiki findings integrated below)
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -2992,12 +2992,12 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; VP voice processor DONE (§107: PIO methods, guest-RAM voice state, SSL advance, notifiers + idle voice; 007's PlayMPC streams complete through the real advance callback — the `0x20FC1` drain gate PASSED). Remaining: DSP cores (register-only; not yet needed), mixing/resampling, host output |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
-| 15–23 | Not started | |
+| 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices 1+2 §§139–140); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); swapchain brief filed (O2 recommended, headless default). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
 
-Current test baseline: **1277 tests passing** (39 Core, 438 Cpu, 55 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 71 GpuGl);
-`dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean.
+Current test baseline: **1340 tests passing** (39 Core, 476 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
+`dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-12)
+## Project completion assessment (2026-10-16; refreshed for wave-15)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3021,7 +3021,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 15% | IR, basic blocks, codegen; decode/TLB caches + block executor landed (§§131,134,136), decode default-on (§137), first-codegen scope (§138) |
+| 15 CPU JIT | 11 | 20% | codegen IR/machine emitter still open; decode/TLB caches + block executor landed (§§131,134,136), decode default-on (§137), first-codegen scope (§138), semspec slices 1+2 opt-in `--spec-exec` (§§139–140) |
 | 16 CPU Optimization | 3 | 10% | benchmark-driven tuning |
 | 17 Memory Optimization | 2 | 10% | tuning |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
@@ -3031,7 +3031,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~62% complete overall** (weighted: 66.8 of 108 weight-points).
+**Result: ~62% complete overall** (weighted: 67.4 of 108 weight-points).
 By track:
 
 - **LLE core (phases 0–14): ~84%.** The real console chain — MCPX ROM ->
@@ -3039,10 +3039,12 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15–23): ~21%.** Dominated by the CPU
-  JIT (15% — interpreter with decode/TLB fetch caches, no codegen yet) and
+- **Performance/finish track (phases 15–23): ~22%.** Dominated by the CPU
+  JIT (20% — interpreter with default-on decode cache, opt-in block executor
+  and semspec slices 1+2, no codegen yet) and
   optimization phases; this is the throughput gap between forensic runs
-  (~14M insn/s Release baseline; decode cache adds 2.1–3.1× on titles)
+  (~14M insn/s Release baseline; decode cache adds 2.1–3.1× on titles,
+  spec-exec +1.07–1.17× single-run over cache)
   and interactive rates.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
@@ -3072,8 +3074,8 @@ plain C# helper loop (14.285 ns/insn) - semantic specialization is required
 before any codegen slice; recipe and acceptance gates in
 `docs/research-notes/jit-codegen-scope.md`.
 
-**NEXT SESSION — swapchain operator decision + next JIT step + nxdk toolchain.**
-**WAVE 12 DONE (§§134–135 + brief; four tasks, all green, two merges).**
+**CURRENT STATE (2026-10-16) — wave-15 concluded; wave runner retired.**
+**WAVE 13 DONE (§§136–138; two merges + resolver).**
 T1 decode cache MERGED (§134: `DecodeCache` linear-key/physical-reverse-map,
 conservative invalidation at the §131 inventory sites, `--decode-cache`
 implies fetch-fast, `--decode-verify`; **menu 2.12–2.20× / triangle 2.97–
@@ -3093,6 +3095,32 @@ gates green: ktest smoke PASS 7/7, menu golden (SW SHA anchor + GL SHA
 bit-identical to base, `presentUploads=0`), triangle golden PASS,
 format clean; CI green on all three OSes.** Baseline for next wave:
 green master.
+**WAVE 13 DONE (§§136–138; two merges + resolver).** T2 block executor
+MERGED (§136: `DecodedBlockCache`, `--block-exec`/`--block-verify` opt-in,
+boundary-preserving); T3 decode default-on soak MERGED (§137: default flip +
+`--no-decode-cache` opt-out, menu 2.56× / triangle 3.04× default vs off);
+T1 first-codegen scope FILED (§138 + `docs/research-notes/jit-codegen-scope.md`,
+probe, unmerged by design — no managed emitter beats a plain C# helper loop,
+semantic specialization required). Final gate: format + build + test green,
+ktest smoke 7/7 (792,800,535 steps bit-reproducible).
+**WAVE 15 DONE (§§139–140; spike done clean, build finished by BOSS handoff).**
+Spike filed §139 (V4R winner: pre-specialized per-shape handlers + unrolled C#
+runner, 5.95×/4.40× over the helper loop; DynamicMethod rejected at ~10% over
+unrolled C#). Build landed slices 1+2 behind opt-in `--spec-exec` (default off;
+`XboxCpuSpecExec.cs` + 16 new `SpecExecutionTests`), merged as
+`wave/jit-semspec`. The build worker was stopped by an opencode-go
+`provider.invalid-output` hiccup with attempts exhausted and reported blocked
+with an exact recipe instead of a fake done; BOSS ran the recipe verbatim: all
+six 1B off/cache/spec pairs PASS (SHAs exact both titles, spec/cache 1.17×
+triangle / 1.07× menu single-run) + two specverify legs PASS (verifyFailures=0,
+vec=0) + off-vs-spec logs identical. Final gate green: format + build +
+**1340/1340 tests**. Flag stays opt-in (menu margin thin, median-of-3 not done).
+**The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
+deleted; no further waves. Development continues directly (no BOSS protocol, no
+worktrees, no detached servers). Standing operator rule: NO real Xbox games —
+all title work uses `data/test-samples/`. Next JIT step: median-of-3 wall
+confirmation for the thin menu margin; DynamicMethod stays rejected unless new
+numbers say otherwise. NXDK toolchain (operator/host) still the mesh blocker.
 `F36A2`/LBA 8 CLOSED as no-bug (§73).
 **`RemoteX`** dash (XBApp, static IP); streams + carved runner in temp.
 M5 (`VshProgram` interpreter — mux mapping and ORB polarity corrected in §42,
