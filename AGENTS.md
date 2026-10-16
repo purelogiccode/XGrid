@@ -478,16 +478,22 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    once; conflicts were purged 2026-10-09). Baseline: 1316 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — swapchain operator decision + next JIT step + operator items.
+## Next session — wave-15 concluded; wave runner retired.
 
-1. **WAVE 13 DONE (§§136–138; three tasks, all green, two merges +
-   resolver).** Block executor landed (opt-in `--block-exec`, suite 1324,
-   exact goldens both flags, dispatch share 30.9–36.6%), decode cache
-   default-on (§137, `--no-decode-cache` opt-out), first-codegen scope filed
-   (§138: switch dispatch NOT dominant; no managed emitter beats a plain C#
-   helper loop yet — semantic specialization required). Post-merge gates
-   green: format + build + test on merged master, **ktest smoke PASS 7/7**
-   (792,800,535 steps bit-reproducible). **1324 tests.**
+1. **WAVE 15 DONE (§§139–140; spike done clean, build finished by BOSS
+   handoff).** Spike filed §139 (V4R winner: pre-specialized per-shape
+   handlers + unrolled C# runner, 5.95x/4.40x over the helper loop;
+   DynamicMethod rejected at ~10% over unrolled C#). Build landed slices 1+2
+   behind opt-in `--spec-exec` (default off; `XboxCpuSpecExec.cs` + 16 new
+   `SpecExecutionTests`), merged as `wave/jit-semspec`. The build worker was
+   stopped by an opencode-go `provider.invalid-output` hiccup with attempts
+   exhausted, and reported blocked with an exact recipe instead of a fake
+   done; BOSS ran the recipe verbatim: all six 1B off/cache/spec pairs PASS
+   (SHAs exact both titles, spec/cache 1.17x triangle / 1.07x menu single-run)
+   + two specverify legs PASS (verifyFailures=0, vec=0) + off-vs-spec logs
+   identical + wave-tool suite 42/42. Final gate green: format + build +
+   **1340/1340 tests**. Flag stays opt-in (menu margin thin, median-of-3
+   not done).
 2. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
 3. **Operator decision: swapchain/windowing** — brief filed at
@@ -495,19 +501,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    pure user32/gdi32 interop on the existing WGL context, vsync off,
    ~400–600 LOC; O1 headless stays the default and gate currency; O3
    needs an operator override of the single-dependency rule; triggers
-   listed in the brief). Both blocking prerequisites — dirty-bit and
-   decode cache — landed this wave, so O2 is unblocked whenever decided.
-4. **Next JIT step:** block formation + block-granular execution landed
-   (§136, opt-in `--block-exec`/`--block-verify`; decode cache default-on per
-   §137 — `--no-decode-cache` for legacy; `--fetch-fast`/`--decode-verify`
-   remain default-off). Next slice per §138: semantic specialization must
-   first beat the 14.285 ns/insn plain C# helper-loop baseline (no managed
-   emitter does today — the §138 negative result); DynamicMethod is the
-   provisional emitter if it does. §134's deferred bits (INVLPG linear drop
-   index — counters say unneeded; idle-skip+cache at 1B title scale —
-   unit-proven) stay recorded there. NXDK toolchain (operator/host) still
-   the mesh blocker.
-5. ktest smoke stays the standing gate.
+   listed in the brief).
+4. **Next JIT step:** per §140, slices 1+2 are in (`--spec-exec`,
+   `--block-exec`, `--decode-cache` default-on per §137 with
+   `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
+   default-off). Open: median-of-3 wall confirmation for the thin menu
+   margin; DynamicMethod stays rejected unless new numbers say otherwise.
+   NXDK toolchain (operator/host) still the mesh blocker.
+5. **The wave runner is retired (operator decision 2026-10-15).**
+   `tools/wave/` will be deleted; no further waves. Development continues
+   directly (no BOSS protocol, no worktrees, no detached servers). Tool
+   lessons recorded in §140 provenance (fresh session after
+   `provider.invalid-output`; ENOENT save-retry already in `state.ts`).
+   ktest smoke stays the standing gate.
 6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +

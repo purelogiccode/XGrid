@@ -20,6 +20,31 @@ public sealed class DecodedBlockCache
     private Block? _current;
     private int _index;
     private uint _expectedLinear;
+    private XboxCpu.SpecHandler? _currentHandler;
+    private bool _specEnabled;
+
+    /// <summary>
+    /// Gets or sets whether formation resolves pre-specialized per-shape
+    /// handlers (§139). Off by default: formation stores entries only and the
+    /// interpreter path is unchanged. Enabling drops any handler-less blocks
+    /// so every retained block carries its resolved handlers.
+    /// </summary>
+    public bool SpecEnabled
+    {
+        get => _specEnabled;
+        set
+        {
+            if (value && !_specEnabled)
+            {
+                Invalidate();
+            }
+
+            _specEnabled = value;
+        }
+    }
+
+    /// <summary>Gets the handler for the member just served by <see cref="TryNext"/> (null when disabled or fallback).</summary>
+    public XboxCpu.SpecHandler? CurrentHandler => _currentHandler;
 
     /// <summary>Gets block selections, not mnemonic-switch eliminations.</summary>
     public ulong Dispatches { get; private set; }
@@ -57,6 +82,18 @@ public sealed class DecodedBlockCache
     /// <summary>Gets cursor exits due to IRQ or faults.</summary>
     public ulong BoundaryExits { get; private set; }
 
+    /// <summary>Gets block members served with a pre-specialized handler (slice 1 cursor value).</summary>
+    public ulong ShapeHits { get; private set; }
+
+    /// <summary>Gets block members served by the interpreter while specialization is enabled.</summary>
+    public ulong ShapeFallbacks { get; private set; }
+
+    /// <summary>Gets blocks formed with every member pre-specialized (unrolled-runner eligible).</summary>
+    public ulong SpecBlocks { get; private set; }
+
+    /// <summary>Gets members executed through the unrolled runner (slice 2).</summary>
+    public ulong SpecRan { get; private set; }
+
     /// <summary>
     /// Drops all blocks and the cursor. Used at the existing physical-page and
     /// mapping invalidation choke points, including empty-table flushes. No
@@ -72,6 +109,7 @@ public sealed class DecodedBlockCache
 
         _blocks.Clear();
         _current = null;
+        _currentHandler = null;
     }
 
     /// <summary>Ends reuse after an interrupt or fault boundary.</summary>
@@ -82,6 +120,8 @@ public sealed class DecodedBlockCache
             BoundaryExits++;
             _current = null;
         }
+
+        _currentHandler = null;
     }
 
     /// <summary>Records a missed writer and abandons all derived state.</summary>
@@ -89,6 +129,12 @@ public sealed class DecodedBlockCache
     {
         VerifyFailures++;
         Invalidate();
+    }
+
+    /// <summary>Records one member executed through the unrolled runner.</summary>
+    public void NoteSpecRan()
+    {
+        SpecRan++;
     }
 
     /// <summary>
@@ -106,6 +152,7 @@ public sealed class DecodedBlockCache
             Redirects++;
             block = null;
             _current = null;
+            _currentHandler = null;
         }
 
         if (block is null)
@@ -120,6 +167,7 @@ public sealed class DecodedBlockCache
                 if (block is null)
                 {
                     entry = default;
+                    _currentHandler = null;
                     return false;
                 }
 
@@ -131,6 +179,11 @@ public sealed class DecodedBlockCache
 
                 _blocks[linear] = block;
                 Builds++;
+                if (block.AllSpecialized)
+                {
+                    SpecBlocks++;
+                }
+
                 PeakCount = Math.Max(PeakCount, _blocks.Count);
             }
 
@@ -139,7 +192,21 @@ public sealed class DecodedBlockCache
             _index = 0;
         }
 
-        entry = block.Entries[_index++];
+        entry = block.Entries[_index];
+        _currentHandler = block.Handlers is { } handlers ? handlers[_index] : null;
+        if (_specEnabled)
+        {
+            if (_currentHandler is null)
+            {
+                ShapeFallbacks++;
+            }
+            else
+            {
+                ShapeHits++;
+            }
+        }
+
+        _index++;
         _expectedLinear = linear + (uint)entry.Instruction.Length;
         Instructions++;
         if (_index == block.Entries.Length)
@@ -151,7 +218,7 @@ public sealed class DecodedBlockCache
         return true;
     }
 
-    private static Block? Form(DecodeCache decodes, uint linear, int operandSize, int addressSize)
+    private Block? Form(DecodeCache decodes, uint linear, int operandSize, int addressSize)
     {
         Span<DecodeCacheEntry> entries = stackalloc DecodeCacheEntry[MaxInstructions];
         int count = 0;
@@ -179,7 +246,29 @@ public sealed class DecodedBlockCache
             next += (uint)entry.Instruction.Length;
         }
 
-        return count == 0 ? null : new Block(entries[..count].ToArray(), operandSize, addressSize);
+        if (count == 0)
+        {
+            return null;
+        }
+
+        XboxCpu.SpecHandler?[]? handlers = null;
+        bool allSpecialized = false;
+        if (_specEnabled)
+        {
+            handlers = new XboxCpu.SpecHandler?[count];
+            allSpecialized = true;
+            for (int i = 0; i < count; i++)
+            {
+                XboxCpu.SpecHandler? handler = XboxCpu.ResolveSpec(entries[i].Instruction);
+                handlers[i] = handler;
+                if (handler is null)
+                {
+                    allSpecialized = false;
+                }
+            }
+        }
+
+        return new Block(entries[..count].ToArray(), operandSize, addressSize, handlers, allSpecialized);
     }
 
     /// <summary>
@@ -208,5 +297,10 @@ public sealed class DecodedBlockCache
             or Mnemonic.Shld or Mnemonic.Shrd or Mnemonic.Cmpxchg8B);
     }
 
-    private sealed record Block(DecodeCacheEntry[] Entries, int OperandSize, int AddressSize);
+    private sealed record Block(
+        DecodeCacheEntry[] Entries,
+        int OperandSize,
+        int AddressSize,
+        XboxCpu.SpecHandler?[]? Handlers,
+        bool AllSpecialized);
 }
