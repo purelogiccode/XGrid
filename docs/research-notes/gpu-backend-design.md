@@ -4,7 +4,7 @@ Wave `wave/gpu-backend-scope` (worktree `Temp\opencode\worktrees\gpu-backend-sco
 branch from master @692653c). DOCS ONLY — no `src/`/`tests/` changes in this wave.
 Companion pointer: `xgrid-architecture-decisions.md` §110.
 
-**Evidence policy.** Facts only from `References/` (xemu/Cxbx = GPL/LGPL: structure and
+**Evidence policy.** Facts only from `References2/` (xemu/Cxbx = GPL/LGPL: structure and
 semantics extracted, **no code copied**; envytools/nv2a-trace = MIT, names/offsets cited
 as facts, no programmatic reuse) plus this repo's own research notes (cited as §N) and
 runs captured for this document (command + outputs quoted verbatim). Where a required
@@ -307,7 +307,7 @@ are recorded per host GPU + driver until a tolerance band is proven portable.
 
 ## 4. Playtest-v2 performance lessons (applicability matrix)
 
-Facts read directly from `References/xemu-Playtest-v2/hw/xbox/nv2a/` (LGPL/GPL headers;
+Facts read directly from `References2/xemu-Playtest-v2/hw/xbox/nv2a/` (LGPL/GPL headers;
 structure + techniques only):
 
 - **`pgraph/cost.c` (745 lines)** — per-frame *real-hardware speed* cost model:

@@ -1,6 +1,6 @@
 # envytools — NVIDIA register/method database and GPU docs
 
-Reference: `References/envytools-master` (upstream: https://github.com/envytools/envytools)
+Reference: `References2/envytools-master` (upstream: https://github.com/envytools/envytools)
 License: **MIT** (root `COPYING`) — copy-permissive; still facts-only by default (see
 `sources.md` rule: record before any programmatic reuse).
 

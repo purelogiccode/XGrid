@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\References\XboxDevWiki'))
+$Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\References2\XboxDevWiki'))
 $Api  = 'https://xboxdevwiki.net/api.php'
 $Base = 'https://xboxdevwiki.net'
 $PagesDir = Join-Path $Root 'pages'

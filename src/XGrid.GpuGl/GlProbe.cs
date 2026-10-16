@@ -6,7 +6,7 @@ namespace XGrid.GpuGl;
 /// <summary>
 /// One-time behavioral self-test at backend init (the gl/probe.c pattern —
 /// structure and ±2 tolerance facts taken from
-/// References/xemu-Playtest-v2/hw/xbox/nv2a/pgraph/gl/probe.c; GPL/LGPL
+/// References2/xemu-Playtest-v2/hw/xbox/nv2a/pgraph/gl/probe.c; GPL/LGPL
 /// code is NOT copied — this is an independent minimal implementation):
 /// compile a tiny program, create an FBO and require completeness, draw a
 /// known-texel quad and read the pixel back within ±2. Any GL error or a

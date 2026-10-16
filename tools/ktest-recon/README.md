@@ -1,7 +1,7 @@
 # ktest-recon — kernel-test-suite bring-up scripts (§116, §120)
 
 Recon/helper scripts for the kernel-test-suite bring-up. They operate on
-**private media copies** (never the main checkout, never `References/`).
+**private media copies** (never the main checkout, never `References2/`).
 §116 diagnosed the gate; §120 unblocked it — see
 `docs/research-notes/xgrid-architecture-decisions.md`.
 
