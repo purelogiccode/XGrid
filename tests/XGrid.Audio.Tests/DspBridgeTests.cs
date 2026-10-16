@@ -274,8 +274,8 @@ public sealed class DspBridgeTests
         Assert.Equal(3, reader.ReadInt32());
         writer.Write(2);
 
-        const int RegCount = 0x80000 / 4;
-        for (int i = 0; i < RegCount; i++)
+        const int regCount = 0x80000 / 4;
+        for (int i = 0; i < regCount; i++)
         {
             writer.Write(reader.ReadUInt32());
         }
@@ -328,9 +328,11 @@ public sealed class DspBridgeTests
     {
         private readonly Dictionary<uint, byte> _ram = new();
 
-        public uint Read32(uint address) =>
-            (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) |
-                   (ReadByte(address + 3) << 24));
+        public uint Read32(uint address)
+        {
+            return (uint)(ReadByte(address) | (ReadByte(address + 1) << 8) | (ReadByte(address + 2) << 16) |
+                          (ReadByte(address + 3) << 24));
+        }
 
         public void Write32(uint address, uint value)
         {
@@ -340,8 +342,14 @@ public sealed class DspBridgeTests
             }
         }
 
-        public void Write8(uint address, byte value) => _ram[address] = value;
+        public void Write8(uint address, byte value)
+        {
+            _ram[address] = value;
+        }
 
-        private byte ReadByte(uint address) => _ram.GetValueOrDefault(address, (byte)0);
+        private byte ReadByte(uint address)
+        {
+            return _ram.GetValueOrDefault(address, (byte)0);
+        }
     }
 }

@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using XGrid.Bus.Io;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Timers;
 
@@ -24,12 +24,18 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
+#pragma warning disable CA1822
     public string Name => "8254 PIT";
+#pragma warning restore CA1822
 
     /// <summary>Raised when a channel output pulses (channel 0 drives IRQ0).</summary>
     public event Action<int>? Output;
 
-    /// <inheritdoc />
+    /// <summary>Reads from the PIT window at ports 0x40-0x43: offset 3 returns the last control
+    /// word written, offsets 0-2 return the selected channel's counter byte (honoring a prior latch
+    /// and the programmed 8/16-bit read access).</summary>
+    /// <param name="offset">Byte offset from port 0x40 (0-2 counter, 3 control).</param>
+    /// <param name="size">Access width in bytes (ignored; the PIT counter port returns one byte).</param>
     public uint Read(ushort offset, int size)
     {
         if (offset == 3)
@@ -40,7 +46,12 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
         return _channels[offset & 3].ReadCounter();
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes to the PIT window at ports 0x40-0x43: offset 3 is the control word (channel
+    /// select, byte access, mode; access 0 latches the counter instead), offsets 0-2 write the
+    /// selected channel's reload count byte.</summary>
+    /// <param name="offset">Byte offset from port 0x40 (0-2 counter, 3 control).</param>
+    /// <param name="size">Access width in bytes (ignored; the PIT counter port takes one byte).</param>
+    /// <param name="value">Value whose low byte is written.</param>
     public void Write(ushort offset, int size, uint value)
     {
         if (offset == 3)
@@ -70,7 +81,8 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns the PIT to its power-on state: clears the control word and resets all three
+    /// channels (divisor 0, stopped, latches cleared).</summary>
     public void Reset()
     {
         _control = 0;
@@ -274,16 +286,16 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
                     return true;
                 case 2:
                 case 3:
+                {
+                    ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, Divisor);
+                    _counter = (ushort)(Divisor - remainder);
+                    if (_counter == 0)
                     {
-                        ulong remainder = (counter == 0 ? 0 : ticks - counter) % Math.Max(1u, Divisor);
-                        _counter = (ushort)(Divisor - remainder);
-                        if (_counter == 0)
-                        {
-                            _counter = Divisor;
-                        }
-
-                        return true;
+                        _counter = Divisor;
                     }
+
+                    return true;
+                }
                 default:
                     _counter = Divisor;
                     return true;

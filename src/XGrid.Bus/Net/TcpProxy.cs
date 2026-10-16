@@ -20,8 +20,6 @@ namespace XGrid.Bus.Net;
 public sealed class TcpProxy : IDisposable
 {
     private readonly TcpListener _listener;
-    private readonly string _targetHost;
-    private readonly int _targetPort;
     private readonly List<Socket> _sockets = new();
     private readonly Lock _gate = new();
     private Thread? _acceptThread;
@@ -46,8 +44,8 @@ public sealed class TcpProxy : IDisposable
             throw new ArgumentOutOfRangeException(nameof(targetPort));
         }
 
-        _targetHost = targetHost;
-        _targetPort = targetPort;
+        TargetHost = targetHost;
+        TargetPort = targetPort;
         _listener = new TcpListener(IPAddress.Loopback, listenPort);
         _boundPort = listenPort;
     }
@@ -56,10 +54,10 @@ public sealed class TcpProxy : IDisposable
     public int ListenPort => _boundPort;
 
     /// <summary>Gets the configured forward target host.</summary>
-    public string TargetHost => _targetHost;
+    public string TargetHost { get; }
 
     /// <summary>Gets the configured forward target port.</summary>
-    public int TargetPort => _targetPort;
+    public int TargetPort { get; }
 
     /// <summary>Gets the number of accepted client connections.</summary>
     public long Connections => Interlocked.Read(ref _connections);
@@ -117,7 +115,8 @@ public sealed class TcpProxy : IDisposable
         _acceptThread = null;
     }
 
-    /// <inheritdoc />
+    /// <summary>Marks the proxy disposed: stops the listener, closes live relays, and joins the
+    /// accept thread via <see cref="Stop"/>. Repeated calls are ignored.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -127,7 +126,6 @@ public sealed class TcpProxy : IDisposable
 
         _disposed = true;
         Stop();
-        GC.SuppressFinalize(this);
     }
 
     private void AcceptLoop()
@@ -173,7 +171,7 @@ public sealed class TcpProxy : IDisposable
         var target = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         try
         {
-            target.Connect(_targetHost, _targetPort);
+            target.Connect(TargetHost, TargetPort);
         }
         catch (SocketException)
         {

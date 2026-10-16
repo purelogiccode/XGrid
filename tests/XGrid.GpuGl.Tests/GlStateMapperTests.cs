@@ -133,7 +133,7 @@ public sealed class GlStateMapperTests
     {
         // depth field k -> normalized k/16777215 must round-trip through the
         // GL fixed-point conversion (the exact store the software path does).
-        uint zetaValue = (123456u << 8) | 0xABu;
+        const uint zetaValue = (123456u << 8) | 0xABu;
         GlStateMapper.MapZetaClear(zetaValue, 4u, out double depth, out int stencil);
         Assert.Equal(0xAB, stencil);
         Assert.Equal(123456u / 16777215.0, depth);

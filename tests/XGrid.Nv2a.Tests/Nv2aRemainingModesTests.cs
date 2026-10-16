@@ -13,12 +13,13 @@ namespace XGrid.Nv2a.Tests;
 /// <c>NV097_SET_TEXTURE_BORDER_COLOR</c>) and <c>nv2a_regs.h</c>
 /// (TEXADDRESS ADDRU bits 0-2 / ADDRV bits 8-10 / ADDRP bits 16-18).
 /// </summary>
-public sealed class Nv2aRemainingModesTests
+public sealed class Nv2ARemainingModesTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
     private const int MacMov = 1;
     private const int MuxR = 1;
     private const int MuxV = 2;
+    // ReSharper disable once UnusedMember.Local
     private const int MuxC = 3;
 
     private sealed class ArrayMemory : IGpuMemory
@@ -223,10 +224,10 @@ public sealed class Nv2aRemainingModesTests
         PushPassR0(pushes);
     }
 
-    private const uint Swizzled2x2Format =
+    private const uint Swizzled2X2Format =
         (0x06u << 8) | (1u << 16) | (1u << 20) | (1u << 24) | (2u << 6);
 
-    private static void WriteSwizzled2x2(ArrayMemory memory)
+    private static void WriteSwizzled2X2(ArrayMemory memory)
     {
         memory.WritePhysical(0x4000u, 0xFF111111u);
         memory.WritePhysical(0x4004u, 0xFF222222u);
@@ -311,7 +312,7 @@ public sealed class Nv2aRemainingModesTests
         float w)
     {
         WriteTriangle(memory);
-        WriteSwizzled2x2(memory);
+        WriteSwizzled2X2(memory);
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
@@ -328,7 +329,7 @@ public sealed class Nv2aRemainingModesTests
     public void Draw_Project2DDividesByW()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2x2Format, 0u, 1.0f, 0.25f, 2.0f);
+        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2X2Format, 0u, 1.0f, 0.25f, 2.0f);
         Assert.Equal(0xFF222222u, ReadPixel(memory, 2, 2));
         Assert.True(nv2A.TexturedPixels > 0);
     }
@@ -337,7 +338,7 @@ public sealed class Nv2aRemainingModesTests
     public void Draw_Project2DUnitWMatchesUndivided()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2x2Format, 0u, 0.5f, 0.25f, 1.0f);
+        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2X2Format, 0u, 0.5f, 0.25f, 1.0f);
         Assert.Equal(0xFF222222u, ReadPixel(memory, 2, 2));
     }
 
@@ -345,7 +346,7 @@ public sealed class Nv2aRemainingModesTests
     public void Draw_AddressUWrapMatchesReferenceBit0()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2x2Format, 0x00000001u, -0.25f, 0.25f, 1.0f);
+        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2X2Format, 0x00000001u, -0.25f, 0.25f, 1.0f);
         Assert.Equal(0xFF222222u, ReadPixel(memory, 2, 2));
     }
 
@@ -353,7 +354,7 @@ public sealed class Nv2aRemainingModesTests
     public void Draw_AddressVClampUsesReferenceBit8()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
-        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2x2Format, 0x00000300u, 0.25f, -0.5f, 1.0f);
+        PushProjectDraw(nv2A, memory, 0x01u, Swizzled2X2Format, 0x00000300u, 0.25f, -0.5f, 1.0f);
         Assert.Equal(0xFF111111u, ReadPixel(memory, 2, 2));
     }
 
@@ -362,12 +363,12 @@ public sealed class Nv2aRemainingModesTests
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangle(memory);
-        WriteSwizzled2x2(memory);
+        WriteSwizzled2X2(memory);
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 1.5f, 0.25f, 0f, 1.0f);
-        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2x2Format, 0x00000004u, 2u, 2u);
+        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2X2Format, 0x00000004u, 2u, 2u);
         pushes.Add((0x1B24u, 0xFFFF0000u));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
@@ -381,12 +382,12 @@ public sealed class Nv2aRemainingModesTests
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangle(memory);
-        WriteSwizzled2x2(memory);
+        WriteSwizzled2X2(memory);
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 0.25f, 0.25f, 0f, 1.0f);
-        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2x2Format, 0x00000004u, 2u, 2u);
+        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2X2Format, 0x00000004u, 2u, 2u);
         pushes.Add((0x1B24u, 0xFFFF0000u));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
@@ -450,12 +451,12 @@ public sealed class Nv2aRemainingModesTests
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         WriteTriangle(memory);
-        WriteSwizzled2x2(memory);
+        WriteSwizzled2X2(memory);
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 0.25f, 0.25f, 0f, 1.0f);
-        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2x2Format, 0x00000004u, 2u, 2u);
+        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2X2Format, 0x00000004u, 2u, 2u);
         pushes.Add((0x1B24u, 0xFFFF0000u));
         pushes.Add((0x1E6Cu, 7u));
         PushStagePassTexel(pushes, 0, 0x01u);

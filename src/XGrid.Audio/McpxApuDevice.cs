@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Audio;
@@ -85,6 +85,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint FetForce1Se2FeIdleVoice = 1u << 15;
     private const uint Se2FeIdleVoice = 0x00008000;
 
+    // ReSharper disable once UnusedMember.Local
     private const uint VoiceStateOffset = 0x54;
     private const uint VoiceSize = 0x80;
     private const uint PioFreeCount = 0x80;
@@ -220,8 +221,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Raised when the APU PCI interrupt line changes state.</summary>
     public event Action<bool>? InterruptChanged;
 
-    /// <inheritdoc />
+    /// <summary>Gets the device name used in traces and diagnostics (<c>MCPX APU</c>).</summary>
+#pragma warning disable CA1822
     public string Name => "MCPX APU";
+#pragma warning restore CA1822
 
     /// <summary>Gets the number of register reads, for diagnostics.</summary>
     public long ReadCount { get; private set; }
@@ -270,7 +273,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     private readonly List<string> _eventLog = new();
 
-    /// <inheritdoc />
+    /// <summary>Returns the APU to its power-on state: clears registers, voice-lock and SSL state, empties the pending idle-voice queue, and deasserts the interrupt line.</summary>
     public void Reset()
     {
         Array.Clear(_regs);
@@ -697,7 +700,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         VoiceOffCompletions++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one register from the 512 KB APU window at the given absolute address; the VP PIO-free register always reports the queue empty (xemu-faithful) and sub-word reads extract the addressed byte lane.</summary>
+    /// <param name="address">Absolute address inside the APU window.</param>
+    /// <param name="size">Access size in bytes (1, 2, or 4).</param>
+    /// <returns>The register value truncated and shifted to the addressed lane.</returns>
     public uint Read(uint address, int size)
     {
         uint offset = address - BaseAddress;
@@ -718,7 +724,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one register in the 512 KB APU window at the given absolute address; sub-word writes read-modify-write only the addressed byte lane and out-of-window writes are ignored.</summary>
+    /// <param name="address">Absolute address inside the APU window.</param>
+    /// <param name="size">Access size in bytes (1, 2, or 4).</param>
+    /// <param name="value">Value to write, in the low <paramref name="size"/> bytes.</param>
     public void Write(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;
@@ -846,13 +855,13 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             case PioSetVoiceTarFcb:
                 return WriteCurrentVoice(0x78, value);
             case PioSetVoiceTarPitch:
-                {
-                    // The low half of TAR_PITCH_LINK keeps the linked next-voice handle.
-                    uint voice = _regs[0x1110 >> 2];
-                    uint link = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
-                    SetVoiceMask(voice, VoiceTarPitchLink, uint.MaxValue, (value & 0xFFFF0000u) | link);
-                    return true;
-                }
+            {
+                // The low half of TAR_PITCH_LINK keeps the linked next-voice handle.
+                uint voice = _regs[0x1110 >> 2];
+                uint link = GetVoiceMask(voice, VoiceTarPitchLink, HandleMask16);
+                SetVoiceMask(voice, VoiceTarPitchLink, uint.MaxValue, (value & 0xFFFF0000u) | link);
+                return true;
+            }
 
             case PioSetVoiceCfgBufBase:
                 return WriteCurrentVoice(VoiceCurPslStart, value & OffsetMask24);

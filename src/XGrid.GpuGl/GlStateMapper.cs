@@ -13,72 +13,106 @@ public static class GlStateMapper
     // OpenGL core enum values (numeric, so tests stay context-free).
     /// <summary>Blend factor of zero.</summary>
     public const uint GlZero = 0x0000;
+
     /// <summary>Blend factor of one.</summary>
     public const uint GlOne = 0x0001;
+
     /// <summary>Source-color blend factor.</summary>
     public const uint GlSrcColor = 0x0300;
+
     /// <summary>One-minus-source-color blend factor.</summary>
     public const uint GlOneMinusSrcColor = 0x0301;
+
     /// <summary>Source-alpha blend factor.</summary>
     public const uint GlSrcAlpha = 0x0302;
+
     /// <summary>One-minus-source-alpha blend factor.</summary>
     public const uint GlOneMinusSrcAlpha = 0x0303;
+
     /// <summary>Destination-alpha blend factor.</summary>
     public const uint GlDstAlpha = 0x0304;
+
     /// <summary>One-minus-destination-alpha blend factor.</summary>
     public const uint GlOneMinusDstAlpha = 0x0305;
+
     /// <summary>Destination-color blend factor.</summary>
     public const uint GlDstColor = 0x0306;
+
     /// <summary>One-minus-destination-color blend factor.</summary>
     public const uint GlOneMinusDstColor = 0x0307;
+
     /// <summary>Source-alpha-saturate blend factor.</summary>
     public const uint GlSrcAlphaSaturate = 0x0308;
+
     /// <summary>Constant-color blend factor.</summary>
     public const uint GlConstantColor = 0x8001;
+
     /// <summary>One-minus-constant-color blend factor.</summary>
     public const uint GlOneMinusConstantColor = 0x8002;
+
     /// <summary>Constant-alpha blend factor.</summary>
     public const uint GlConstantAlpha = 0x8003;
+
     /// <summary>One-minus-constant-alpha blend factor.</summary>
     public const uint GlOneMinusConstantAlpha = 0x8004;
+
     /// <summary>Additive blend equation.</summary>
     public const uint GlFuncAdd = 0x8006;
+
     /// <summary>Minimum blend equation.</summary>
     public const uint GlMin = 0x8007;
+
     /// <summary>Maximum blend equation.</summary>
     public const uint GlMax = 0x8008;
+
     /// <summary>Subtractive blend equation.</summary>
     public const uint GlFuncSubtract = 0x800A;
+
     /// <summary>Reverse-subtractive blend equation.</summary>
     public const uint GlFuncReverseSubtract = 0x800D;
+
     /// <summary>Stencil operation that keeps the stored value.</summary>
     public const uint GlKeep = 0x1E00;
+
     /// <summary>Stencil operation that replaces the stored value with the reference.</summary>
     public const uint GlReplace = 0x1E01;
+
     /// <summary>Stencil operation that increments the stored value, clamped.</summary>
     public const uint GlIncr = 0x1E02;
+
     /// <summary>Stencil operation that decrements the stored value, clamped.</summary>
     public const uint GlDecr = 0x1E03;
+
     /// <summary>Stencil operation that bitwise-inverts the stored value.</summary>
     public const uint GlInvert = 0x150A;
+
     /// <summary>Stencil operation that increments the stored value, wrapping.</summary>
     public const uint GlIncrWrap = 0x8507;
+
     /// <summary>Stencil operation that decrements the stored value, wrapping.</summary>
     public const uint GlDecrWrap = 0x8508;
+
     /// <summary>Compare function that never passes.</summary>
     public const uint GlNever = 0x0200;
+
     /// <summary>Compare function that passes when the incoming value is less.</summary>
     public const uint GlLess = 0x0201;
+
     /// <summary>Compare function that passes on equality.</summary>
     public const uint GlEqual = 0x0202;
+
     /// <summary>Compare function that passes when less than or equal.</summary>
     public const uint GlLequal = 0x0203;
+
     /// <summary>Compare function that passes when greater.</summary>
     public const uint GlGreater = 0x0204;
+
     /// <summary>Compare function that passes on inequality.</summary>
     public const uint GlNotequal = 0x0205;
+
     /// <summary>Compare function that passes when greater than or equal.</summary>
     public const uint GlGequal = 0x0206;
+
     /// <summary>Compare function that always passes.</summary>
     public const uint GlAlways = 0x0207;
 

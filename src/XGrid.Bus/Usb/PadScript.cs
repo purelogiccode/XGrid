@@ -47,16 +47,10 @@ public sealed class PadScript
     }
 
     /// <summary>Gets the number of parsed events.</summary>
-    public int Count
-    {
-        get { return _events.Count; }
-    }
+    public int Count => _events.Count;
 
     /// <summary>Gets the parsed events in application order (stable by step).</summary>
-    public IReadOnlyList<PadScriptEvent> Events
-    {
-        get { return _events; }
-    }
+    public IReadOnlyList<PadScriptEvent> Events => _events;
 
     /// <summary>Parses a script spec; null or empty yields a script with no events.</summary>
     public static bool TryParse(string? spec, out PadScript? script)

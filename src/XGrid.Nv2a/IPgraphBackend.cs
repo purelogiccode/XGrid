@@ -70,10 +70,10 @@ public readonly struct PgraphVertex
     /// <param name="u3">Stage-3 texture u.</param>
     /// <param name="v3">Stage-3 texture v.</param>
     /// <param name="s3">Stage-3 texture third coordinate.</param>
-    /// <param name="t0w">Stage-0 projective w divisor.</param>
-    /// <param name="t1w">Stage-1 projective w divisor.</param>
-    /// <param name="t2w">Stage-2 projective w divisor.</param>
-    /// <param name="t3w">Stage-3 projective w divisor.</param>
+    /// <param name="t0W">Stage-0 projective w divisor.</param>
+    /// <param name="t1W">Stage-1 projective w divisor.</param>
+    /// <param name="t2W">Stage-2 projective w divisor.</param>
+    /// <param name="t3W">Stage-3 projective w divisor.</param>
     /// <param name="fog">Interpolated fog factor.</param>
     public PgraphVertex(
         float x, float y, float z, float w,
@@ -83,7 +83,7 @@ public readonly struct PgraphVertex
         float u1, float v1, float s1,
         float u2, float v2, float s2,
         float u3, float v3, float s3,
-        float t0w, float t1w, float t2w, float t3w,
+        float t0W, float t1W, float t2W, float t3W,
         float fog)
     {
         X = x;
@@ -110,69 +110,97 @@ public readonly struct PgraphVertex
         U3 = u3;
         V3 = v3;
         S3 = s3;
-        T0W = t0w;
-        T1W = t1w;
-        T2W = t2w;
-        T3W = t3w;
+        T0W = t0W;
+        T1W = t1W;
+        T2W = t2W;
+        T3W = t3W;
         Fog = fog;
     }
 
     /// <summary>Gets the screen-space x-coordinate.</summary>
     public float X { get; }
+
     /// <summary>Gets the screen-space y-coordinate.</summary>
     public float Y { get; }
+
     /// <summary>Gets the screen-space depth.</summary>
     public float Z { get; }
+
     /// <summary>Gets the screen-space w (perspective divide and projective texturing).</summary>
     public float W { get; }
+
     /// <summary>Gets the diffuse red component.</summary>
     public float DiffuseR { get; }
+
     /// <summary>Gets the diffuse green component.</summary>
     public float DiffuseG { get; }
+
     /// <summary>Gets the diffuse blue component.</summary>
     public float DiffuseB { get; }
+
     /// <summary>Gets the diffuse alpha component.</summary>
     public float DiffuseA { get; }
+
     /// <summary>Gets the specular red component.</summary>
     public float SpecR { get; }
+
     /// <summary>Gets the specular green component.</summary>
     public float SpecG { get; }
+
     /// <summary>Gets the specular blue component.</summary>
     public float SpecB { get; }
+
     /// <summary>Gets the specular alpha component.</summary>
     public float SpecA { get; }
+
     /// <summary>Gets the stage-0 texture u coordinate.</summary>
     public float U0 { get; }
+
     /// <summary>Gets the stage-0 texture v coordinate.</summary>
     public float V0 { get; }
+
     /// <summary>Gets the stage-0 texture third coordinate.</summary>
     public float S0 { get; }
+
     /// <summary>Gets the stage-1 texture u coordinate.</summary>
     public float U1 { get; }
+
     /// <summary>Gets the stage-1 texture v coordinate.</summary>
     public float V1 { get; }
+
     /// <summary>Gets the stage-1 texture third coordinate.</summary>
     public float S1 { get; }
+
     /// <summary>Gets the stage-2 texture u coordinate.</summary>
     public float U2 { get; }
+
     /// <summary>Gets the stage-2 texture v coordinate.</summary>
     public float V2 { get; }
+
     /// <summary>Gets the stage-2 texture third coordinate.</summary>
     public float S2 { get; }
+
     /// <summary>Gets the stage-3 texture u coordinate.</summary>
     public float U3 { get; }
+
     /// <summary>Gets the stage-3 texture v coordinate.</summary>
     public float V3 { get; }
+
     /// <summary>Gets the stage-3 texture third coordinate.</summary>
     public float S3 { get; }
+
     /// <summary>Gets the stage-0 projective w divisor.</summary>
     public float T0W { get; }
+
     /// <summary>Gets the stage-1 projective w divisor.</summary>
     public float T1W { get; }
+
     /// <summary>Gets the stage-2 projective w divisor.</summary>
     public float T2W { get; }
+
     /// <summary>Gets the stage-3 projective w divisor.</summary>
     public float T3W { get; }
+
     /// <summary>Gets the interpolated fog factor.</summary>
     public float Fog { get; }
 }
@@ -243,50 +271,73 @@ public readonly struct PgraphFragmentState
 
     /// <summary>Gets whether the alpha test runs.</summary>
     public bool AlphaTestEnable { get; }
+
     /// <summary>Gets the alpha compare function.</summary>
     public uint AlphaFunc { get; }
+
     /// <summary>Gets the alpha reference value.</summary>
     public uint AlphaRef { get; }
+
     /// <summary>Gets whether blending runs.</summary>
     public bool BlendEnable { get; }
+
     /// <summary>Gets the source blend factor.</summary>
     public uint BlendSrcFactor { get; }
+
     /// <summary>Gets the destination blend factor.</summary>
     public uint BlendDstFactor { get; }
+
     /// <summary>Gets the constant blend color.</summary>
     public uint BlendColor { get; }
+
     /// <summary>Gets the blend equation.</summary>
     public uint BlendEquation { get; }
+
     /// <summary>Gets whether the depth test runs.</summary>
     public bool DepthTestEnable { get; }
+
     /// <summary>Gets the depth compare function.</summary>
     public uint DepthFunc { get; }
+
     /// <summary>Gets whether passing depth writes the zeta buffer.</summary>
     public bool DepthMask { get; }
+
     /// <summary>Gets the per-channel color write mask.</summary>
     public uint ColorMask { get; }
+
     /// <summary>Gets whether the stencil test runs.</summary>
     public bool StencilTestEnable { get; }
+
     /// <summary>Gets the stencil write mask.</summary>
     public uint StencilWriteMask { get; }
+
     /// <summary>Gets the stencil compare function.</summary>
     public uint StencilFunc { get; }
+
     /// <summary>Gets the stencil reference value.</summary>
     public uint StencilRef { get; }
+
     /// <summary>Gets the stencil read mask.</summary>
     public uint StencilReadMask { get; }
+
     /// <summary>Gets the stencil action on stencil-test failure.</summary>
     public uint StencilOpFail { get; }
+
     /// <summary>Gets the stencil action on depth-test failure.</summary>
     public uint StencilOpZfail { get; }
+
     /// <summary>Gets the stencil action on depth-test pass.</summary>
     public uint StencilOpZpass { get; }
+
     /// <summary>Gets whether shader clip planes are active.</summary>
     public bool ZclipActive { get; }
+
     /// <summary>Gets the minimum clip depth.</summary>
     public float ZclipMin { get; }
+
     /// <summary>Gets the maximum clip depth.</summary>
     public float ZclipMax { get; }
+
     /// <summary>Gets whether out-of-range fragments are culled.</summary>
     public bool ZclipCull { get; }
 }
@@ -314,14 +365,19 @@ public readonly struct PgraphTextureSlot
 
     /// <summary>Gets the guest-physical texture base offset.</summary>
     public uint Offset { get; }
+
     /// <summary>Gets the raw format word (color id in bits 8-15, cubemap enable in bit 2).</summary>
     public uint Format { get; }
+
     /// <summary>Gets the raw address word decoded by the U/V address-mode helpers.</summary>
     public uint Address { get; }
+
     /// <summary>Gets the raw control word 0 (enable in bit 30).</summary>
     public uint Control0 { get; }
+
     /// <summary>Gets the raw control word 1 (linear pitch in the high 16 bits).</summary>
     public uint Control1 { get; }
+
     /// <summary>Gets the packed extent: width in the high 16 bits, height in the low 16.</summary>
     public uint ImageRect { get; }
 }
@@ -399,48 +455,70 @@ public readonly struct PgraphDrawInfo
 
     /// <summary>Gets the first triangle vertex.</summary>
     public PgraphVertex A { get; }
+
     /// <summary>Gets the second triangle vertex.</summary>
     public PgraphVertex B { get; }
+
     /// <summary>Gets the third triangle vertex.</summary>
     public PgraphVertex C { get; }
+
     /// <summary>Gets the clip rectangle origin x (surface clip low 16 bits).</summary>
     public uint ClipX { get; }
+
     /// <summary>Gets the clip rectangle origin y (surface clip low 16 bits).</summary>
     public uint ClipY { get; }
+
     /// <summary>Gets the clip rectangle width (surface clip high 16 bits).</summary>
     public uint ClipW { get; }
+
     /// <summary>Gets the clip rectangle height (surface clip high 16 bits).</summary>
     public uint ClipH { get; }
+
     /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+
     /// <summary>Gets the zeta bytes per pixel.</summary>
     public uint ZetaBytes { get; }
+
     /// <summary>Gets whether the final combiner is enabled for this draw.</summary>
     public bool CombinerActive { get; }
+
     /// <summary>Gets the resolved fragment state.</summary>
     public PgraphFragmentState Fragment { get; }
+
     /// <summary>Gets the stage-0 texture slot.</summary>
     public PgraphTextureSlot Texture0 { get; }
+
     /// <summary>Gets the stage-1 texture slot.</summary>
     public PgraphTextureSlot Texture1 { get; }
+
     /// <summary>Gets the stage-2 texture slot.</summary>
     public PgraphTextureSlot Texture2 { get; }
+
     /// <summary>Gets the stage-3 texture slot.</summary>
     public PgraphTextureSlot Texture3 { get; }
+
     /// <summary>Gets the live combiner instance (valid only for the synchronous callback).</summary>
     public PshCombiner? Combiner { get; }
+
     /// <summary>Gets whether fog blending runs.</summary>
     public bool FogEnable { get; }
+
     /// <summary>Gets the fog color red.</summary>
     public float FogR { get; }
+
     /// <summary>Gets the fog color green.</summary>
     public float FogG { get; }
+
     /// <summary>Gets the fog color blue.</summary>
     public float FogB { get; }
+
     /// <summary>Gets the fog color alpha.</summary>
     public float FogA { get; }
+
     /// <summary>Gets the raw shader clip-mode word (per-stage discard polarity).</summary>
     public uint ShaderClipMode { get; }
+
     /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; }
 
@@ -505,32 +583,46 @@ public readonly struct PgraphClearInfo
 
     /// <summary>Gets whether the color surface was filled.</summary>
     public bool ClearColor { get; }
+
     /// <summary>Gets whether the zeta surface was filled.</summary>
     public bool ClearZeta { get; }
+
     /// <summary>Gets the clear rectangle minimum x (inclusive).</summary>
     public uint XMin { get; }
+
     /// <summary>Gets the clear rectangle minimum y (inclusive).</summary>
     public uint YMin { get; }
+
     /// <summary>Gets the clear rectangle maximum x (inclusive).</summary>
     public uint XMax { get; }
+
     /// <summary>Gets the clear rectangle maximum y (inclusive).</summary>
     public uint YMax { get; }
+
     /// <summary>Gets the clip rectangle origin x (surface clip low 16 bits).</summary>
     public uint ClipX { get; }
+
     /// <summary>Gets the clip rectangle origin y (surface clip low 16 bits).</summary>
     public uint ClipY { get; }
+
     /// <summary>Gets the clip rectangle width (surface clip high 16 bits).</summary>
     public uint ClipW { get; }
+
     /// <summary>Gets the clip rectangle height (surface clip high 16 bits).</summary>
     public uint ClipH { get; }
+
     /// <summary>Gets the raw color clear value.</summary>
     public uint ColorValue { get; }
+
     /// <summary>Gets the raw zeta clear value.</summary>
     public uint ZetaValue { get; }
+
     /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+
     /// <summary>Gets the zeta bytes per pixel (2 for Z16, 4 for Z24S8).</summary>
     public uint ZetaBytes { get; }
+
     /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; }
 }
@@ -561,10 +653,13 @@ public readonly struct PgraphSurfaceRecord
 
     /// <summary>Gets the presented frame width (surface clip extent).</summary>
     public uint Width { get; }
+
     /// <summary>Gets the presented frame height (surface clip extent).</summary>
     public uint Height { get; }
+
     /// <summary>Gets the color bytes per pixel.</summary>
     public uint ColorBytes { get; }
+
     /// <summary>Gets the presented-frame sequence number.</summary>
     public ulong Frame { get; }
 

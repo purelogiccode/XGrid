@@ -18,7 +18,7 @@ public sealed class DvdImageTests : IDisposable
         {
             for (int i = 0; i < IsoDvdImage.SectorSize; i++)
             {
-                file[s * IsoDvdImage.SectorSize + i] = (byte)(s * 16 + (i & 0x0F));
+                file[(s * IsoDvdImage.SectorSize) + i] = (byte)((s * 16) + (i & 0x0F));
             }
         }
 

@@ -41,37 +41,52 @@ public sealed class IoSpace : IIoBus
         return new Registration(this, region);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one byte from an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/> and returns 0xFF when no registered window covers the port.</summary>
+    /// <param name="port">The port number to read.</param>
     public byte Read8(ushort port)
     {
         return (byte)Read(port, 8);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a 16-bit little-endian value from an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/> and returns 0xFFFF when no registered window covers the port.</summary>
+    /// <param name="port">The port number to read.</param>
     public ushort Read16(ushort port)
     {
         return (ushort)Read(port, 16);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a 32-bit little-endian value from an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/> and returns 0xFFFFFFFF when no registered window covers the port.</summary>
+    /// <param name="port">The port number to read.</param>
     public uint Read32(ushort port)
     {
         return Read(port, 32);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one byte to an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/>; writes to ports no window covers are discarded.</summary>
+    /// <param name="port">The port number to write.</param>
+    /// <param name="value">The byte to write.</param>
     public void Write8(ushort port, byte value)
     {
         Write(port, 8, value);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a 16-bit value to an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/>; writes to ports no window covers are discarded.</summary>
+    /// <param name="port">The port number to write.</param>
+    /// <param name="value">The 16-bit value to write.</param>
     public void Write16(ushort port, ushort value)
     {
         Write(port, 16, value);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a 32-bit value to an I/O port: counts the access for
+    /// <see cref="PortAccessCounts"/>; writes to ports no window covers are discarded.</summary>
+    /// <param name="port">The port number to write.</param>
+    /// <param name="value">The 32-bit value to write.</param>
     public void Write32(ushort port, uint value)
     {
         Write(port, 32, value);

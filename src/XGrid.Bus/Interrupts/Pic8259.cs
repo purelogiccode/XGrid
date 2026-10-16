@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using XGrid.Bus.Io;
-using XGrid.Core;
 using XGrid.Core.Devices;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Interrupts;
 
@@ -22,7 +22,9 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
+#pragma warning disable CA1822
     public string Name => "8259 PIC";
+#pragma warning restore CA1822
 
     /// <summary>Gets the master interrupt mask register.</summary>
     public byte MasterMask => _master.Mask;
@@ -85,7 +87,9 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
         return _master.AcknowledgeLine(masterLine);
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns both PICs to their power-on state: masks fully enabled (0xFF), request and
+    /// in-service latches cleared, init sequencing off, with master vector base 0x20 and slave
+    /// vector base 0x28.</summary>
     public void Reset()
     {
         _master.Reset(0x20);

@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Memory;
 
@@ -135,7 +135,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
         _gpuWriteSuppression--;
     }
 
-    /// <inheritdoc />
+    /// <summary>Adds the presented-surface span to the watched set; zero lengths are no-ops, duplicates are ignored, and once four spans are armed the oldest is evicted round-robin.</summary>
     public void ArmPresentWatch(uint address, uint length)
     {
         if (length == 0)
@@ -168,20 +168,20 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
         _presentWatchNext = (_presentWatchNext + 1) % PresentWatchMaxSpans;
     }
 
-    /// <inheritdoc />
+    /// <summary>Clears the watched-span set and the round-robin cursor; the present dirty bit is not cleared (fail-closed survives a disarm).</summary>
     public void DisarmPresentWatch()
     {
         _presentWatchCount = 0;
         _presentWatchNext = 0;
     }
 
-    /// <inheritdoc />
+    /// <summary>Marks the presented surface dirty (fail-closed: snapshot load or reset while a backend FBO may still hold prior content).</summary>
     public void MarkPresentDirty()
     {
         _presentDirty = true;
     }
 
-    /// <inheritdoc />
+    /// <summary>Clears the present dirty bit, to be called only after an upload made the backend FBO authoritative from guest RAM.</summary>
     public void ClearPresentDirty()
     {
         _presentDirty = false;

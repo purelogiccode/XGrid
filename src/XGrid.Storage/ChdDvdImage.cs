@@ -54,10 +54,12 @@ public sealed class ChdDvdImage : IDvdImage
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of 2048-byte sectors derived from the CHD's total byte length.</summary>
     public uint SectorCount { get; }
 
-    /// <inheritdoc />
+    /// <summary>Reads one 2048-byte sector from the CHD through a scratch buffer (guest LBA maps directly to CHD byte offset <c>lba * 2048</c>).</summary>
+    /// <param name="lba">Guest logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="destination">Destination holding at least one DVD sector.</param>
     public void ReadSector(uint lba, Span<byte> destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -76,7 +78,7 @@ public sealed class ChdDvdImage : IDvdImage
         _scratch.AsSpan().CopyTo(destination);
     }
 
-    /// <inheritdoc />
+    /// <summary>Disposes the underlying CHD reader (idempotent).</summary>
     public void Dispose()
     {
         if (!_disposed)

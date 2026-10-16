@@ -279,9 +279,9 @@ public sealed class SseTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) == 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Pf) == 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Cf));
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Pf));
     }
 
     [Fact]
@@ -293,9 +293,9 @@ public sealed class SseTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Pf) != 0);
-        Assert.True((cpu.Context.Eflags & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Pf));
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
 
     [Fact]

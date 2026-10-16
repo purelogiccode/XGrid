@@ -183,7 +183,11 @@ public sealed class LpcController : PciDevice, IIoPortDevice
         _ioWindow = baseAddress == 0 ? null : _io.Register((ushort)baseAddress, 256, this);
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads from the LPC ACPI PM I/O window mapped at BAR0: offset 0x00 returns the
+    /// PM1 status register, offset 0x02 the PM1 enable register, offset 0x08 the 24-bit free-running
+    /// PM timer counter, and all other offsets read as 0.</summary>
+    /// <param name="offset">Byte offset inside the 256-byte BAR0 window.</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
     public uint Read(ushort offset, int size)
     {
         uint value = offset switch
@@ -197,7 +201,12 @@ public sealed class LpcController : PciDevice, IIoPortDevice
         return value & Mask(size);
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes to the LPC ACPI PM I/O window mapped at BAR0: writes to offset 0x00 are
+    /// write-1-to-clear on the PM1 status register and writes to offset 0x02 set the PM1 enable
+    /// register; all other offsets are ignored.</summary>
+    /// <param name="offset">Byte offset inside the 256-byte BAR0 window.</param>
+    /// <param name="size">Access width in bytes (1, 2, or 4).</param>
+    /// <param name="value">Value to write, right-aligned in the low bytes.</param>
     public void Write(ushort offset, int size, uint value)
     {
         switch (offset)

@@ -45,61 +45,85 @@ public abstract class SmbusDevice : ISmbusDevice
         Address = address;
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the 7-bit SMBus address the device was created with.</summary>
     public byte Address { get; }
 
-    /// <inheritdoc />
+    /// <summary>Handles a quick command. This base implementation accepts every quick command and returns true.</summary>
+    /// <param name="read">Whether the quick command is a read.</param>
+    /// <returns>Always true (no error).</returns>
     public virtual bool Quick(bool read)
     {
         return true;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one byte without a command (protocol BYTE). This base implementation rejects the protocol: it returns false and reports 0.</summary>
+    /// <param name="value">Receives the byte read; 0 when the protocol is unsupported.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool TryReceiveByte(out byte value)
     {
         value = 0;
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads one byte after a command (protocol BYTE_DATA). This base implementation rejects the protocol: it returns false and reports 0.</summary>
+    /// <param name="command">The command byte sent before the read.</param>
+    /// <param name="value">Receives the byte read; 0 when the protocol is unsupported.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool TryReadByte(byte command, out byte value)
     {
         value = 0;
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a word after a command (protocol WORD_DATA). This base implementation rejects the protocol: it returns false and reports 0.</summary>
+    /// <param name="command">The command byte sent before the read.</param>
+    /// <param name="value">Receives the word read; 0 when the protocol is unsupported.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool TryReadWord(byte command, out ushort value)
     {
         value = 0;
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Reads a block after a command (protocol BLOCK_DATA). This base implementation rejects the protocol and returns -1 without touching the buffer.</summary>
+    /// <param name="command">The command byte sent before the read.</param>
+    /// <param name="buffer">Receives the block bytes; left untouched when the protocol is unsupported.</param>
+    /// <returns>Always -1 (protocol unsupported).</returns>
     public virtual int ReadBlock(byte command, Span<byte> buffer)
     {
         return -1;
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one byte without a command (protocol BYTE). This base implementation rejects the protocol and returns false.</summary>
+    /// <param name="value">The byte to write.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool SendByte(byte value)
     {
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes one byte after a command (protocol BYTE_DATA). This base implementation rejects the protocol and returns false.</summary>
+    /// <param name="command">The command byte sent before the write.</param>
+    /// <param name="value">The byte to write.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool WriteByte(byte command, byte value)
     {
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a word after a command (protocol WORD_DATA). This base implementation rejects the protocol and returns false.</summary>
+    /// <param name="command">The command byte sent before the write.</param>
+    /// <param name="value">The word to write.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool WriteWord(byte command, ushort value)
     {
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Writes a block after a command (protocol BLOCK_DATA). This base implementation rejects the protocol and returns false.</summary>
+    /// <param name="command">The command byte sent before the write.</param>
+    /// <param name="data">The block bytes to write.</param>
+    /// <returns>Always false (protocol unsupported).</returns>
     public virtual bool WriteBlock(byte command, ReadOnlySpan<byte> data)
     {
         return false;

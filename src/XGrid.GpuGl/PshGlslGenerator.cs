@@ -622,16 +622,16 @@ public static class PshGlslGenerator
             case PshCombiner.RegZero:
                 return "0.0";
             case PshCombiner.RegC0:
-                {
-                    string c = StageConstExpr(state, stage, isC0: true);
-                    return chan ? $"{c}.a" : SwizzleComponent(c, component);
-                }
+            {
+                string c = StageConstExpr(state, stage, isC0: true);
+                return chan ? $"{c}.a" : SwizzleComponent(c, component);
+            }
 
             case PshCombiner.RegC1:
-                {
-                    string c = StageConstExpr(state, stage, isC0: false);
-                    return chan ? $"{c}.a" : SwizzleComponent(c, component);
-                }
+            {
+                string c = StageConstExpr(state, stage, isC0: false);
+                return chan ? $"{c}.a" : SwizzleComponent(c, component);
+            }
 
             case PshCombiner.RegFog:
                 return chan ? "fog.a" : SwizzleComponent("fog", component);
@@ -654,7 +654,6 @@ public static class PshGlslGenerator
             case PshCombiner.RegV1R0Sum:
                 return V1R0SumExpr(state, component);
             case PshCombiner.RegEfProd:
-                return "0.0";
             default:
                 return "0.0";
         }

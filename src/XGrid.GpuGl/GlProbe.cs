@@ -161,12 +161,7 @@ internal static class GlProbe
                 }
             }
 
-            if (CheckError(gl, "probe readback", ref why))
-            {
-                return false;
-            }
-
-            return true;
+            return !CheckError(gl, "probe readback", ref why);
         }
         finally
         {

@@ -77,7 +77,7 @@ public sealed class MmuTests
         mmu.Translate(0x00401000, true, false, out bool faulted, out uint errorCode);
 
         Assert.True(faulted);
-        Assert.True((errorCode & 2u) != 0);
+        Assert.NotEqual(0u, (errorCode & 2u));
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class MmuTests
         mmu.Translate(0x00401000, true, false, out bool faulted, out uint errorCode);
 
         Assert.True(faulted);
-        Assert.True((errorCode & 1u) != 0);
+        Assert.NotEqual(0u, (errorCode & 1u));
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class MmuTests
         mmu.Translate(0x00401000, false, false, out _, out _);
 
         uint pte = bus.Read32(PageTable + ((0x00401000u >> 12) & 0x3FF) * 4);
-        Assert.True((pte & 0x20u) != 0);
+        Assert.NotEqual(0u, (pte & 0x20u));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class MmuTests
         mmu.Translate(0x00401000, true, false, out _, out _);
 
         uint pte = bus.Read32(PageTable + ((0x00401000u >> 12) & 0x3FF) * 4);
-        Assert.True((pte & 0x40u) != 0);
+        Assert.NotEqual(0u, (pte & 0x40u));
     }
 
     [Fact]
@@ -185,6 +185,6 @@ public sealed class MmuTests
         mmu.Translate(0x00401000, false, true, out bool faulted, out uint errorCode);
 
         Assert.True(faulted);
-        Assert.True((errorCode & 0x10u) != 0);
+        Assert.NotEqual(0u, (errorCode & 0x10u));
     }
 }

@@ -5,12 +5,14 @@ using System.IO;
 namespace XGrid.Cpu;
 
 /// <summary>
+/// <para>
 /// Bounded hotspot profiler for JIT scoping (§126, first half of the
 /// recommended slice: profiler only, no decode cache). Counts per-mnemonic
 /// executions (array indexed by mnemonic), per-PC executions for code heads
 /// (taken-transfer targets), and fetch/translate counters (SoftTLB
 /// hit/miss, cross-page splits, RAM-vs-MMIO data accesses).
-///
+/// </para>
+/// <para>
 /// Bounded following the §119 precedent: code heads are capped at
 /// <see cref="MaxTrackedHeads"/> entries with <see cref="HeadsOverflow"/>
 /// counting visits to heads beyond the cap. The cap alone saturates on a
@@ -22,6 +24,7 @@ namespace XGrid.Cpu;
 /// deterministic for a fixed run. The profiler is host-side
 /// measurement state: it is not part of the guest and is untouched by
 /// <c>XboxCpu.Reset</c> and snapshot save/load.
+/// </para>
 /// </summary>
 public sealed class HotspotProfiler : IHotspotObserver
 {
@@ -111,7 +114,11 @@ public sealed class HotspotProfiler : IHotspotObserver
     /// <summary>Gets the total number of translated data accesses (RAM + MMIO, reads + writes).</summary>
     public ulong TotalDataAccesses => DataReadsRam + DataWritesRam + DataReadsMmio + DataWritesMmio;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Records one executed instruction: bumps the total and per-mnemonic
+    /// counters, runs head-window eviction, and records a code-head visit
+    /// when execution did not fall through to the next instruction.
+    /// </summary>
     public void Observe(in DecodedInstruction instruction, uint eipBefore, uint eipAfter)
     {
         TotalInstructions++;
@@ -184,7 +191,7 @@ public sealed class HotspotProfiler : IHotspotObserver
         HeadEvictions += (ulong)drop.Count;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one instruction-fetch window, counting page-crossing windows separately.</summary>
     public void NoteFetch(bool crossesPage)
     {
         Fetches++;
@@ -194,19 +201,19 @@ public sealed class HotspotProfiler : IHotspotObserver
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one SoftTLB lookup hit.</summary>
     public void NoteTlbHit()
     {
         TlbHits++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one SoftTLB lookup miss.</summary>
     public void NoteTlbMiss()
     {
         TlbMisses++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Adds a batch of SoftTLB lookup hits; throws if <paramref name="count"/> is negative.</summary>
     public void NoteTlbHits(int count)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
@@ -214,7 +221,7 @@ public sealed class HotspotProfiler : IHotspotObserver
         TlbHits += (ulong)count;
     }
 
-    /// <inheritdoc />
+    /// <summary>Adds a batch of SoftTLB lookup misses; throws if <paramref name="count"/> is negative.</summary>
     public void NoteTlbMisses(int count)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
@@ -222,7 +229,7 @@ public sealed class HotspotProfiler : IHotspotObserver
         TlbMisses += (ulong)count;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one translated data access, incrementing the RAM or MMIO read/write counter per <paramref name="isWrite"/> and <paramref name="isRam"/>.</summary>
     public void NoteDataAccess(bool isWrite, bool isRam)
     {
         if (isRam)
@@ -249,25 +256,25 @@ public sealed class HotspotProfiler : IHotspotObserver
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one multi-byte data access that crossed a 4 KB page.</summary>
     public void NoteSplitAccess()
     {
         SplitAccesses++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one fetch window served by the slow per-byte path while the fetch fast path was enabled.</summary>
     public void NoteFetchSlow()
     {
         FetchSlowFallbacks++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one instruction served by the decode cache (the decode was avoided).</summary>
     public void NoteDecodeCacheHit()
     {
         DecodeCacheHits++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Records one instruction that missed the decode cache and was decoded.</summary>
     public void NoteDecodeCacheMiss()
     {
         DecodeCacheMisses++;

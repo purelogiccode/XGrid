@@ -100,7 +100,7 @@ public sealed class ControlFlowTests
 
         cpu.Execute(3);
 
-        Assert.True((cpu.Context.ReadRegister(Gpr.Eax) & FlagBits.Cf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.ReadRegister(Gpr.Eax) & FlagBits.Cf));
     }
 
     [Fact]

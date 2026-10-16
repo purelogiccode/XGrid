@@ -137,7 +137,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // §135 fail-closed stale-present diagnostic.
     private long _fboReallocs;
     private long _fboZetaDrops;
-    private long _clipXYNonZero;
+    private long _clipXyNonZero;
     private long _flipEmpty;
     private long _presentUploads;
     private long _flipStaleUploads;
@@ -201,7 +201,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.GenBuffers(1, out _vbo);
         _gl.BindVertexArray(_vao);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
-        uint stride = (uint)VertexStrideBytes;
+        const uint stride = (uint)VertexStrideBytes;
         _gl.EnableVertexAttribArray(0);
         _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
         _gl.BindVertexArray(0);
@@ -217,7 +217,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.ClearColor(0f, 0f, 0f, 0f);
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of draws, clears and flips that failed with a fatal GL error or an unsupported in-subset state; the gate requires 0.</summary>
     public long BackendUnsupported { get; private set; }
 
     /// <summary>Gets the number of methods observed through the seam.</summary>
@@ -241,7 +241,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// <summary>Gets the number of fragment programs compiled.</summary>
     public long ProgramsCompiled { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets a one-line diagnostics summary of the GL backend: counters, unsupported buckets, diagnostics, timings, and any latched fatal error.</summary>
     public string DebugSummary
     {
         get
@@ -252,7 +252,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXYNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads}]");
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads}]");
             _timings.AppendTo(sb);
             if (_fatalError is not null)
             {
@@ -263,7 +263,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Observes one PGRAPH method triple at the top of RecordMethod, counting it in <see cref="MethodsObserved"/>; issues no GL calls.</summary>
     public void Method(uint subchannel, uint method, uint parameter)
     {
         _ = subchannel;
@@ -272,7 +272,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         MethodsObserved++;
     }
 
-    /// <inheritdoc />
+    /// <summary>Submits the triangle to GL via DrawCore, timing the call; a thrown GL exception increments <see cref="BackendUnsupported"/> and latches a fatal error that suppresses later work.</summary>
     public void Draw(in PgraphDrawInfo info)
     {
         if (_fatalError is not null)
@@ -295,7 +295,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Mirrors a clear the software path performed into the FBO via ClearCore, timing the call; a thrown GL exception increments <see cref="BackendUnsupported"/> and latches a fatal error.</summary>
     public void Clear(in PgraphClearInfo info)
     {
         if (_fatalError is not null)
@@ -316,7 +316,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Handles the present event by reading the presented frame back from the FBO via FlipCore; a thrown GL exception increments <see cref="BackendUnsupported"/> and latches a fatal error.</summary>
     public void Flip(in PgraphSurfaceRecord record)
     {
         if (_fatalError is not null)
@@ -335,7 +335,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Returns the last flip's readback frame as BGRA bytes.</summary>
+    /// <returns>False when no frame has been read back; the caller must not mix in software pixels.</returns>
     public bool ReadbackPresented(out uint width, out uint height, out byte[] bgra)
     {
         width = _readbackWidth;
@@ -344,7 +345,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         return _readback is not null;
     }
 
-    /// <inheritdoc />
+    /// <summary>Drops host-side GL state (FBO, textures, readback, counters) for a snapshot load or machine reset, and marks the present dirty so the next flip re-uploads instead of serving leftovers.</summary>
     public void ResetState()
     {
         // Host-side only: drop surfaces/textures/readback. Programs are
@@ -382,7 +383,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _fatalCount = 0;
         _fboReallocs = 0;
         _fboZetaDrops = 0;
-        _clipXYNonZero = 0;
+        _clipXyNonZero = 0;
         _flipEmpty = 0;
         _presentUploads = 0;
         _flipStaleUploads = 0;
@@ -396,7 +397,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _dirtyWatch?.DisarmPresentWatch();
     }
 
-    /// <inheritdoc />
+    /// <summary>Deletes the FBO, textures, programs, buffers and vertex shader, disarms the present watch, and disposes the GL and WGL contexts.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -453,7 +454,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         Draws++;
         if (info.ClipX != 0 || info.ClipY != 0)
         {
-            _clipXYNonZero++;
+            _clipXyNonZero++;
         }
 
         if (info.ColorBytes != 4)
@@ -532,7 +533,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         Clears++;
         if (info.ClipX != 0 || info.ClipY != 0)
         {
-            _clipXYNonZero++;
+            _clipXyNonZero++;
         }
 
         if (info.ClearColor && info.ColorBytes != 4)
@@ -617,7 +618,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // uncertainty the flip uploads; a guard failure below takes the
         // flipEmpty abstain path and keeps the honest gap.
         bool droppedStaleFbo = false;
-        if (_fbo != 0 && _dirtyWatch is not null && _dirtyWatch.PresentDirty)
+        if (_fbo != 0 && _dirtyWatch?.PresentDirty == true)
         {
             DeleteFbo();
             droppedStaleFbo = true;
@@ -1142,16 +1143,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    private static int MapWrap(uint mode)
-    {
-        return mode switch
-        {
-            0 => (int)GLEnum.Repeat,
-            1 => (int)GLEnum.MirroredRepeat,
-            _ => (int)GLEnum.ClampToEdge,
-        };
-    }
-
     private uint FingerprintTexture(in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height,
         int pitch)
     {
@@ -1161,8 +1152,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         uint hash = 2166136261u;
         for (int i = 0; i < 16; i++)
         {
-            int x = (int)((ulong)(i * 97 + 13) % (uint)width);
-            int y = (int)((ulong)(i * 389 + 7) % (uint)height);
+            int x = (int)((ulong)((i * 97) + 13) % (uint)width);
+            int y = (int)((ulong)((i * 389) + 7) % (uint)height);
             uint address = TexelAddress(in slot, linear, bytes, width, height, pitch, x, y);
             uint texel = bytes == 2
                 ? _memory.ReadPhysical(address) & 0xFFFFu
@@ -1200,10 +1191,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                     : _memory.ReadPhysical(address);
                 Nv2AMmio.DecodeTextureTexel(color, texel, out float r, out float g, out float b, out float a);
                 int at = ((y * width) + x) * 4;
-                rgba[at] = (byte)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f);
-                rgba[at + 1] = (byte)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f);
-                rgba[at + 2] = (byte)(Math.Clamp(b, 0f, 1f) * 255f + 0.5f);
-                rgba[at + 3] = (byte)(Math.Clamp(a, 0f, 1f) * 255f + 0.5f);
+                rgba[at] = (byte)((Math.Clamp(r, 0f, 1f) * 255f) + 0.5f);
+                rgba[at + 1] = (byte)((Math.Clamp(g, 0f, 1f) * 255f) + 0.5f);
+                rgba[at + 2] = (byte)((Math.Clamp(b, 0f, 1f) * 255f) + 0.5f);
+                rgba[at + 3] = (byte)((Math.Clamp(a, 0f, 1f) * 255f) + 0.5f);
             }
         }
 

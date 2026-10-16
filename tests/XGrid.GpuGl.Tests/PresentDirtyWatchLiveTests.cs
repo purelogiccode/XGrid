@@ -54,6 +54,7 @@ public sealed class PresentDirtyWatchLiveTests
             _memory = new AddressSpace(ram);
         }
 
+        // ReSharper disable once UnusedMember.Local
         public PhysicalMemory Ram => _memory.Ram;
 
         public bool PresentDirty => _memory.Ram.PresentDirty;

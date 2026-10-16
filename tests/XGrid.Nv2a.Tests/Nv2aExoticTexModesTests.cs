@@ -11,7 +11,7 @@ namespace XGrid.Nv2a.Tests;
 /// Mode equations follow xemu hw/xbox/nv2a/pgraph/glsl/psh.c; the hemisphere
 /// dot decode follows the Cxbx 16-bit sign1/sign2/sign3 extensions.
 /// </summary>
-public sealed class Nv2aExoticTexModesTests
+public sealed class Nv2AExoticTexModesTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
     private const int MacMov = 1;
@@ -320,7 +320,7 @@ public sealed class Nv2aExoticTexModesTests
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, 1f, 0.5f, 0f, 1f);
         PushFormatTextureSlot(pushes, 0, 0x4000u, 0x00001200u, 0u, 4u, 2u);
-        pushes.Add((0x1B10u, 4u * 4u << 16));
+        pushes.Add((0x1B10u, (4u * 4u) << 16));
         PushStagePassTexel(pushes, 0, 0x03u);
         PushDraw(pushes);
         PushMethods(nv2A, memory, pushes.ToArray());

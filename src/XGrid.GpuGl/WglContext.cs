@@ -10,7 +10,7 @@ namespace XGrid.GpuGl;
 /// caller must run a behavioral self-test after creation; a version string
 /// is never trusted.
 /// </summary>
-internal sealed class WglContext : IDisposable
+internal sealed partial class WglContext : IDisposable
 {
     private const int WsOverlapped = 0x00000000;
     private const uint PfdDrawToWindow = 0x00000004;
@@ -107,7 +107,7 @@ internal sealed class WglContext : IDisposable
     /// <summary>wglGetProcAddress with an opengl32 GetProcAddress fallback.</summary>
     public IntPtr GetProcAddress(string name)
     {
-        IntPtr address = wglGetProcAddress(name);
+        IntPtr address = WglGetProcAddress(name);
         long raw = address.ToInt64();
         if (address == IntPtr.Zero || (raw >= 1 && raw <= 3) || raw == -1)
         {
@@ -162,32 +162,32 @@ internal sealed class WglContext : IDisposable
         public uint dwDamageMask;
     }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr GetModuleHandleW(string? lpModuleName);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr GetModuleHandleW(string? lpModuleName);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr CreateWindowExW(
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr CreateWindowExW(
         uint dwExStyle, string lpClassName, string lpWindowName, uint dwStyle,
         int x, int y, int nWidth, int nHeight,
         IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetDC(IntPtr hwnd);
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetDC(IntPtr hwnd);
 
-    [DllImport("user32.dll")]
-    private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [LibraryImport("user32.dll")]
+    private static partial int ReleaseDC(IntPtr hwnd, IntPtr dc);
 
     [DllImport("user32.dll")]
     private static extern bool DestroyWindow(IntPtr hwnd);
 
-    [DllImport("gdi32.dll")]
-    private static extern int ChoosePixelFormat(IntPtr dc, ref PixelFormatDescriptor pixelFormat);
+    [LibraryImport("gdi32.dll")]
+    private static partial int ChoosePixelFormat(IntPtr dc, ref PixelFormatDescriptor pixelFormat);
 
     [DllImport("gdi32.dll")]
     private static extern bool SetPixelFormat(IntPtr dc, int pixelFormat, ref PixelFormatDescriptor descriptor);
 
-    [DllImport("opengl32.dll")]
-    private static extern IntPtr wglCreateContext(IntPtr dc);
+    [LibraryImport("opengl32.dll")]
+    private static partial IntPtr wglCreateContext(IntPtr dc);
 
     [DllImport("opengl32.dll")]
     private static extern bool wglMakeCurrent(IntPtr dc, IntPtr hglrc);
@@ -195,9 +195,11 @@ internal sealed class WglContext : IDisposable
     [DllImport("opengl32.dll")]
     private static extern bool wglDeleteContext(IntPtr hglrc);
 
-    [DllImport("opengl32.dll", CharSet = CharSet.Ansi)]
-    private static extern IntPtr wglGetProcAddress(string name);
+    [LibraryImport("opengl32.dll", StringMarshalling = StringMarshalling.Custom,
+        StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+    private static partial IntPtr WglGetProcAddress(string name);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
-    private static extern IntPtr GetProcAddress(IntPtr module, string name);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Custom,
+        StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+    private static partial IntPtr GetProcAddress(IntPtr module, string name);
 }

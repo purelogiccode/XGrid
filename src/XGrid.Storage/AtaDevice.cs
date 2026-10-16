@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Storage;
 
@@ -90,7 +90,10 @@ public sealed class AtaDevice : ISnapshotable
     /// <summary>Gets the staged DMA response bytes (valid while <see cref="DmaResponseReady"/>).</summary>
     public ReadOnlySpan<byte> DmaResponse => StagedData();
 
-    private Span<byte> StagedData() => (_dmaLarge ?? DmaBuffer).AsSpan(0, _transferLength);
+    private Span<byte> StagedData()
+    {
+        return (_dmaLarge ?? DmaBuffer).AsSpan(0, _transferLength);
+    }
 
     /// <summary>Gets the drive staging buffer for bus-master sector copies.</summary>
     public byte[] DmaBuffer { get; } = new byte[SectorSize];

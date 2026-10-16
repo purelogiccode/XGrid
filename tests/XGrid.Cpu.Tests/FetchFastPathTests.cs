@@ -97,18 +97,6 @@ public sealed class FetchFastPathTests
     [Fact]
     public void FetchFast_CrossPageWindow_FallsBack_WithIdenticalTotals()
     {
-        static XboxCpu CreateAtPageEnd(bool fast)
-        {
-            XboxCpu cpu = CpuHarness.Create();
-            cpu.Bus().Write8(0x1FFB, 0x90);
-            cpu.Bus().Write8(0x1FFC, 0xF4);
-            MapIdentity(cpu.Bus(), 0, 4);
-            EnablePaging(cpu);
-            cpu.Context.Eip = 0x1FFB;
-            cpu.FetchFastPathEnabled = fast;
-            return cpu;
-        }
-
         var offProfiler = new HotspotProfiler();
         XboxCpu off = CreateAtPageEnd(false);
         off.HotspotObserver = offProfiler;
@@ -137,23 +125,24 @@ public sealed class FetchFastPathTests
         Assert.Equal(offProfiler.TlbMisses, onProfiler.TlbMisses);
         Assert.Equal(2UL, onProfiler.TlbMisses);
         Assert.Equal(28UL, onProfiler.TlbHits);
+        return;
+
+        static XboxCpu CreateAtPageEnd(bool fast)
+        {
+            XboxCpu cpu = CpuHarness.Create();
+            cpu.Bus().Write8(0x1FFB, 0x90);
+            cpu.Bus().Write8(0x1FFC, 0xF4);
+            MapIdentity(cpu.Bus(), 0, 4);
+            EnablePaging(cpu);
+            cpu.Context.Eip = 0x1FFB;
+            cpu.FetchFastPathEnabled = fast;
+            return cpu;
+        }
     }
 
     [Fact]
     public void FetchFast_LargePage_OneMissPerFetch()
     {
-        static XboxCpu CreateLarge(bool fast)
-        {
-            XboxCpu cpu = CpuHarness.Create(StraightLine);
-            cpu.Bus().Write32(PageDirectory, 0x83u);
-            cpu.Context.Cr3 = PageDirectory;
-            cpu.Context.Cr4 = ControlRegisterBits.Cr4PageSizeExtensions;
-            cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
-            cpu.Mmu.Flush();
-            cpu.FetchFastPathEnabled = fast;
-            return cpu;
-        }
-
         var offProfiler = new HotspotProfiler();
         XboxCpu off = CreateLarge(false);
         off.HotspotObserver = offProfiler;
@@ -177,26 +166,24 @@ public sealed class FetchFastPathTests
         Assert.Equal(0UL, onProfiler.TlbHits);
         Assert.Equal(4UL, onProfiler.Fetches);
         Assert.Equal(0UL, onProfiler.FetchSlowFallbacks);
+        return;
+
+        static XboxCpu CreateLarge(bool fast)
+        {
+            XboxCpu cpu = CpuHarness.Create(StraightLine);
+            cpu.Bus().Write32(PageDirectory, 0x83u);
+            cpu.Context.Cr3 = PageDirectory;
+            cpu.Context.Cr4 = ControlRegisterBits.Cr4PageSizeExtensions;
+            cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
+            cpu.Mmu.Flush();
+            cpu.FetchFastPathEnabled = fast;
+            return cpu;
+        }
     }
 
     [Fact]
     public void FetchFast_FaultPrecision_MatchesSlowPath()
     {
-        static (XboxCpu Cpu, HotspotProfiler Profiler) CreateFaulting(bool fast)
-        {
-            XboxCpu cpu = CpuHarness.Create(StraightLine);
-            MapIdentity(cpu.Bus(), 0, 1);
-            MapIdentity(cpu.Bus(), 6, 1);
-            MapIdentity(cpu.Bus(), 7, 1);
-            MapIdentity(cpu.Bus(), 8, 1);
-            EnablePaging(cpu);
-            InstallIdt(cpu, 14, 0x3000);
-            cpu.FetchFastPathEnabled = fast;
-            var profiler = new HotspotProfiler();
-            cpu.HotspotObserver = profiler;
-            return (cpu, profiler);
-        }
-
         (XboxCpu off, HotspotProfiler offProfiler) = CreateFaulting(false);
         off.Step();
 
@@ -220,6 +207,22 @@ public sealed class FetchFastPathTests
         Assert.Equal(1UL, onProfiler.Fetches);
         Assert.Equal(offProfiler.TlbHits, onProfiler.TlbHits);
         Assert.Equal(offProfiler.TlbMisses, onProfiler.TlbMisses);
+        return;
+
+        static (XboxCpu Cpu, HotspotProfiler Profiler) CreateFaulting(bool fast)
+        {
+            XboxCpu cpu = CpuHarness.Create(StraightLine);
+            MapIdentity(cpu.Bus(), 0, 1);
+            MapIdentity(cpu.Bus(), 6, 1);
+            MapIdentity(cpu.Bus(), 7, 1);
+            MapIdentity(cpu.Bus(), 8, 1);
+            EnablePaging(cpu);
+            InstallIdt(cpu, 14, 0x3000);
+            cpu.FetchFastPathEnabled = fast;
+            var profiler = new HotspotProfiler();
+            cpu.HotspotObserver = profiler;
+            return (cpu, profiler);
+        }
     }
 
     [Fact]

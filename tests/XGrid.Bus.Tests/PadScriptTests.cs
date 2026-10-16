@@ -10,11 +10,11 @@ public sealed class PadScriptTests
     {
         Assert.True(PadScript.TryParse(null, out PadScript? script));
         Assert.NotNull(script);
-        Assert.Equal(0, script!.Count);
+        Assert.Equal(0, script.Count);
 
         Assert.True(PadScript.TryParse("  ", out script));
         Assert.NotNull(script);
-        Assert.Equal(0, script!.Count);
+        Assert.Equal(0, script.Count);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("a@100", out PadScript? script));
         Assert.NotNull(script);
 
-        PadScriptEvent only = Assert.Single(script!.Events);
+        PadScriptEvent only = Assert.Single(script.Events);
         Assert.Equal((ulong)100, only.Step);
         Assert.False(only.Hold);
         Assert.Equal(0, only.Input.Buttons);
@@ -36,7 +36,7 @@ public sealed class PadScriptTests
     {
         Assert.True(PadScript.TryParse("b@200,a@100", out PadScript? script));
         Assert.NotNull(script);
-        Assert.Equal(2, script!.Count);
+        Assert.Equal(2, script.Count);
         Assert.Equal((ulong)100, script.Events[0].Step);
         Assert.Equal((ulong)200, script.Events[1].Step);
         Assert.Equal(0xFF, script.Events[0].Input.Analog[0]);
@@ -48,7 +48,7 @@ public sealed class PadScriptTests
     {
         Assert.True(PadScript.TryParse("a@100,down@100", out PadScript? script));
         Assert.NotNull(script);
-        Assert.Equal(0xFF, script!.Events[0].Input.Analog[0]);
+        Assert.Equal(0xFF, script.Events[0].Input.Analog[0]);
         Assert.Equal(0x0002, script.Events[1].Input.Buttons);
     }
 
@@ -58,13 +58,13 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("down@100+hold", out PadScript? script));
         Assert.NotNull(script);
 
-        PadScriptEvent only = Assert.Single(script!.Events);
+        PadScriptEvent only = Assert.Single(script.Events);
         Assert.True(only.Hold);
         Assert.Equal(0x0002, only.Input.Buttons);
 
         Assert.True(PadScript.TryParse("a@50+HOLD", out script));
         Assert.NotNull(script);
-        Assert.True(Assert.Single(script!.Events).Hold);
+        Assert.True(Assert.Single(script.Events).Hold);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class PadScriptTests
     {
         Assert.True(PadScript.TryParse("0002@100", out PadScript? script));
         Assert.NotNull(script);
-        Assert.Equal(0x0002, Assert.Single(script!.Events).Input.Buttons);
+        Assert.Equal(0x0002, Assert.Single(script.Events).Input.Buttons);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("none@300", out PadScript? script));
         Assert.NotNull(script);
 
-        PadScriptEvent only = Assert.Single(script!.Events);
+        PadScriptEvent only = Assert.Single(script.Events);
         Assert.Equal((ulong)300, only.Step);
         Assert.Equal(0, only.Input.Buttons);
         Assert.Equal(new byte[8], only.Input.Analog);
@@ -107,7 +107,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("a@100", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.False(script!.ApplyIfDue(50, out _));
+        Assert.False(script.ApplyIfDue(50, out _));
         Assert.True(script.ApplyIfDue(100, out PadInput pressed));
         Assert.Equal(0xFF, pressed.Analog[0]);
 
@@ -124,7 +124,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("down@100+hold", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.True(script!.ApplyIfDue(100, out PadInput pressed));
+        Assert.True(script.ApplyIfDue(100, out PadInput pressed));
         Assert.Equal(0x0002, pressed.Buttons);
         Assert.False(script.ApplyIfDue(100 + (5 * PadScript.DefaultPressSteps), out _));
         Assert.False(script.TryGetNextBoundary(100 + (5 * PadScript.DefaultPressSteps), out _));
@@ -136,7 +136,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("down@100+hold,none@200", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.True(script!.ApplyIfDue(100, out PadInput pressed));
+        Assert.True(script.ApplyIfDue(100, out PadInput pressed));
         Assert.Equal(0x0002, pressed.Buttons);
         Assert.True(script.ApplyIfDue(200, out pressed));
         Assert.Equal(0, pressed.Buttons);
@@ -149,7 +149,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("a@100,b@150", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.True(script!.ApplyIfDue(100, out PadInput pressed));
+        Assert.True(script.ApplyIfDue(100, out PadInput pressed));
         Assert.Equal(0xFF, pressed.Analog[0]);
         Assert.True(script.ApplyIfDue(150, out pressed));
         Assert.Equal(0xFF, pressed.Analog[1]);
@@ -166,7 +166,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("a@100,down@5000000+hold", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.True(script!.TryGetNextBoundary(0, out ulong boundary));
+        Assert.True(script.TryGetNextBoundary(0, out ulong boundary));
         Assert.Equal((ulong)100, boundary);
 
         Assert.True(script.ApplyIfDue(100, out _));
@@ -187,7 +187,7 @@ public sealed class PadScriptTests
         Assert.True(PadScript.TryParse("a@100", out PadScript? script));
         Assert.NotNull(script);
 
-        Assert.True(script!.ApplyIfDue(100, out _));
+        Assert.True(script.ApplyIfDue(100, out _));
         script.Reset();
         Assert.True(script.ApplyIfDue(100, out PadInput pressed));
         Assert.Equal(0xFF, pressed.Analog[0]);

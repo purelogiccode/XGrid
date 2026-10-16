@@ -21,7 +21,7 @@ public sealed class BusMasterDmaTests
             {
                 for (int i = 0; i < AtaDevice.DvdSectorSize; i++)
                 {
-                    _data[s * AtaDevice.DvdSectorSize + i] = (byte)(s + 3);
+                    _data[(s * AtaDevice.DvdSectorSize) + i] = (byte)(s + 3);
                 }
             }
         }

@@ -57,7 +57,7 @@ public sealed class InterruptTests
         Assert.Equal(0x7FF4u, cpu.Context.ReadRegister(Gpr.Esp));
         Assert.Equal(0x1002u, cpu.Bus().Read32(0x7FF4));
         Assert.Equal(0x08u, cpu.Bus().Read32(0x7FF8));
-        Assert.True((cpu.Bus().Read32(0x7FFC) & FlagBits.Reserved1) != 0);
+        Assert.NotEqual(0u, (cpu.Bus().Read32(0x7FFC) & FlagBits.Reserved1));
     }
 
     [Fact]
@@ -148,8 +148,8 @@ public sealed class InterruptTests
 
         cpu.Step();
 
-        Assert.False((cpu.Context.Eflags & FlagBits.If) != 0);
-        Assert.False((cpu.Context.Eflags & FlagBits.Tf) != 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.If));
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Tf));
     }
 
     [Fact]

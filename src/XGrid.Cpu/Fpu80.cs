@@ -346,7 +346,7 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
         return !left.Equals(right);
     }
 
-    /// <inheritdoc />
+    /// <summary>Determines whether this value's raw <see cref="SignExponent"/> and <see cref="Significand"/> bits equal those of <paramref name="other"/>.</summary>
     public bool Equals(Fpu80 other)
     {
         return SignExponent == other.SignExponent && Significand == other.Significand;

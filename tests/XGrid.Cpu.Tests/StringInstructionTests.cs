@@ -101,7 +101,7 @@ public sealed class StringInstructionTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
         Assert.Equal(0x3001u, cpu.Context.ReadRegister(Gpr.Edi));
     }
 
@@ -116,7 +116,7 @@ public sealed class StringInstructionTests
 
         cpu.Step();
 
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class StringInstructionTests
 
         Assert.Equal(1u, cpu.Context.ReadRegister(Gpr.Ecx));
         Assert.Equal(0x3003u, cpu.Context.ReadRegister(Gpr.Edi));
-        Assert.True((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 
     [Fact]
@@ -152,6 +152,6 @@ public sealed class StringInstructionTests
         cpu.Step();
 
         Assert.Equal(2u, cpu.Context.ReadRegister(Gpr.Ecx));
-        Assert.False((cpu.Context.Eflags & FlagBits.Zf) != 0);
+        Assert.Equal(0u, (cpu.Context.Eflags & FlagBits.Zf));
     }
 }

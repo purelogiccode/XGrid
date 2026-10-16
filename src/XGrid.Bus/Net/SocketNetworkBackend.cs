@@ -83,7 +83,11 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     /// <summary>Gets the guest IPv4 address learned from outbound frames (network order).</summary>
     public uint GuestIp => _guestIp;
 
-    /// <inheritdoc />
+    /// <summary>Handles one guest Ethernet frame: counts it in <see cref="SentPackets"/>/
+    /// <see cref="SentBytes"/>, learns the guest MAC, answers ARP for the virtual gateway,
+    /// answers ICMP echo addressed to the gateway, relays guest UDP through host sockets with
+    /// NAT port mapping, and counts every other frame as dropped.</summary>
+    /// <param name="frame">The Ethernet frame the guest transmitted.</param>
     public void SendPacket(ReadOnlySpan<byte> frame)
     {
         if (_disposed)
@@ -110,7 +114,7 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         copy.AsSpan(6, 6).CopyTo(_guestMac);
         _haveGuestMac = true;
 
-        ushort etherType = ReadU16BE(frame, 12);
+        ushort etherType = ReadU16Be(frame, 12);
         if (etherType == EtherTypeArp)
         {
             HandleArp(frame);
@@ -125,7 +129,10 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Drains one queued response frame for the RX engine, first polling host UDP sockets
+    /// for inbound datagrams and sweeping idle or failed NAT mappings; never blocks.</summary>
+    /// <param name="frame">The dequeued frame when the return value is true; otherwise null.</param>
+    /// <returns>True when a frame was dequeued; false when none is available.</returns>
     public bool TryReceive(out byte[]? frame)
     {
         if (!_disposed)
@@ -149,7 +156,8 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>Marks the backend disposed — later frames are counted as dropped — and closes every
+    /// UDP NAT mapping socket. Idempotent.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -164,7 +172,6 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         }
 
         _udpMappings.Clear();
-        GC.SuppressFinalize(this);
     }
 
     private void HandleArp(ReadOnlySpan<byte> frame)
@@ -177,14 +184,14 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         }
 
         ReadOnlySpan<byte> arp = frame.Slice(14);
-        if (ReadU16BE(arp, 0) != 1 || ReadU16BE(arp, 2) != EtherTypeIpv4 ||
-            arp[4] != 6 || arp[5] != 4 || ReadU16BE(arp, 6) != 1)
+        if (ReadU16Be(arp, 0) != 1 || ReadU16Be(arp, 2) != EtherTypeIpv4 ||
+            arp[4] != 6 || arp[5] != 4 || ReadU16Be(arp, 6) != 1)
         {
             DroppedPackets++;
             return;
         }
 
-        uint targetIp = ReadU32BE(arp, 24);
+        uint targetIp = ReadU32Be(arp, 24);
         if (targetIp != GatewayIpAddress)
         {
             DroppedPackets++;
@@ -192,23 +199,23 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         }
 
         byte[] senderMac = arp.Slice(8, 6).ToArray();
-        uint senderIp = ReadU32BE(arp, 14);
+        uint senderIp = ReadU32Be(arp, 14);
         LearnHost(senderIp, senderMac);
 
         byte[] reply = new byte[14 + 28];
         senderMac.CopyTo(reply, 0);
         GatewayMacAddress.CopyTo(reply, 6);
-        WriteU16BE(reply, 12, EtherTypeArp);
+        WriteU16Be(reply, 12, EtherTypeArp);
         Span<byte> body = reply.AsSpan(14);
-        WriteU16BE(body, 0, 1);
-        WriteU16BE(body, 2, EtherTypeIpv4);
+        WriteU16Be(body, 0, 1);
+        WriteU16Be(body, 2, EtherTypeIpv4);
         body[4] = 6;
         body[5] = 4;
-        WriteU16BE(body, 6, 2);
+        WriteU16Be(body, 6, 2);
         GatewayMacAddress.AsSpan().CopyTo(body.Slice(8));
-        WriteU32BE(body, 14, GatewayIpAddress);
+        WriteU32Be(body, 14, GatewayIpAddress);
         senderMac.AsSpan().CopyTo(body.Slice(18));
-        WriteU32BE(body, 24, senderIp);
+        WriteU32Be(body, 24, senderIp);
         EnqueueResponse(reply);
         ArpReplies++;
     }
@@ -235,8 +242,8 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
             return;
         }
 
-        uint srcIp = ReadU32BE(ip, 12);
-        uint dstIp = ReadU32BE(ip, 16);
+        uint srcIp = ReadU32Be(ip, 12);
+        uint dstIp = ReadU32Be(ip, 16);
         byte[] srcMac = frame.Slice(6, 6).ToArray();
         LearnHost(srcIp, srcMac);
 
@@ -282,16 +289,16 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         // Echo reply: swap MACs/IPs, type 0, recomputed checksum.
         byte[] reply = frame.ToArray();
         byte[] requestorMac = frame.Slice(6, 6).ToArray();
-        uint requestorIp = ReadU32BE(frame, 14 + 12);
+        uint requestorIp = ReadU32Be(frame, 14 + 12);
         requestorMac.CopyTo(reply, 0);
         GatewayMacAddress.CopyTo(reply, 6);
-        WriteU32BE(reply.AsSpan(), 14 + 12, GatewayIpAddress);
-        WriteU32BE(reply.AsSpan(), 14 + 16, requestorIp);
+        WriteU32Be(reply.AsSpan(), 14 + 12, GatewayIpAddress);
+        WriteU32Be(reply.AsSpan(), 14 + 16, requestorIp);
         reply[icmpOffset] = IcmpEchoReply;
-        WriteU16BE(reply, icmpOffset + 2, 0);
-        WriteU16BE(reply, icmpOffset + 2, Checksum(reply.AsSpan(icmpOffset)));
-        WriteU16BE(reply, 14 + 10, 0);
-        WriteU16BE(reply, 14 + 10, Checksum(reply.AsSpan(14, (reply[14] & 0x0F) * 4)));
+        WriteU16Be(reply, icmpOffset + 2, 0);
+        WriteU16Be(reply, icmpOffset + 2, Checksum(reply.AsSpan(icmpOffset)));
+        WriteU16Be(reply, 14 + 10, 0);
+        WriteU16Be(reply, 14 + 10, Checksum(reply.AsSpan(14, (reply[14] & 0x0F) * 4)));
         EnqueueResponse(reply);
         IcmpReplies++;
     }
@@ -305,9 +312,9 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
             return;
         }
 
-        ushort srcPort = ReadU16BE(frame, udpOffset);
-        ushort dstPort = ReadU16BE(frame, udpOffset + 2);
-        int udpLength = ReadU16BE(frame, udpOffset + 4);
+        ushort srcPort = ReadU16Be(frame, udpOffset);
+        ushort dstPort = ReadU16Be(frame, udpOffset + 2);
+        int udpLength = ReadU16Be(frame, udpOffset + 4);
         if (udpLength < 8 || frame.Length < udpOffset + udpLength)
         {
             DroppedPackets++;
@@ -414,28 +421,28 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         byte[] frame = new byte[14 + 20 + 8 + payload.Length];
         guestMac.CopyTo(frame, 0);
         GatewayMacAddress.CopyTo(frame, 6);
-        WriteU16BE(frame, 12, EtherTypeIpv4);
+        WriteU16Be(frame, 12, EtherTypeIpv4);
 
         Span<byte> ip = frame.AsSpan(14, 20);
         ip[0] = 0x45;
         ip[1] = 0;
-        WriteU16BE(ip, 2, (ushort)(20 + 8 + payload.Length));
-        WriteU16BE(ip, 4, _ipIdent++);
-        WriteU16BE(ip, 6, 0);
+        WriteU16Be(ip, 2, (ushort)(20 + 8 + payload.Length));
+        WriteU16Be(ip, 4, _ipIdent++);
+        WriteU16Be(ip, 6, 0);
         ip[8] = 64;
         ip[9] = IpProtoUdp;
-        WriteU16BE(ip, 10, 0);
-        WriteU32BE(ip, 12, senderIp);
-        WriteU32BE(ip, 16, mapping.GuestIp);
-        WriteU16BE(ip, 10, Checksum(ip));
+        WriteU16Be(ip, 10, 0);
+        WriteU32Be(ip, 12, senderIp);
+        WriteU32Be(ip, 16, mapping.GuestIp);
+        WriteU16Be(ip, 10, Checksum(ip));
 
         Span<byte> udp = frame.AsSpan(34, 8 + payload.Length);
-        WriteU16BE(udp, 0, (ushort)sender.Port);
-        WriteU16BE(udp, 2, mapping.GuestPort);
-        WriteU16BE(udp, 4, (ushort)(8 + payload.Length));
-        WriteU16BE(udp, 6, 0);
+        WriteU16Be(udp, 0, (ushort)sender.Port);
+        WriteU16Be(udp, 2, mapping.GuestPort);
+        WriteU16Be(udp, 4, (ushort)(8 + payload.Length));
+        WriteU16Be(udp, 6, 0);
         payload.CopyTo(udp.Slice(8));
-        WriteU16BE(udp, 6, UdpChecksum(senderIp, mapping.GuestIp, IpProtoUdp, udp));
+        WriteU16Be(udp, 6, UdpChecksum(senderIp, mapping.GuestIp, IpProtoUdp, udp));
         return frame;
     }
 
@@ -489,30 +496,30 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         return ip == 0xFFFFFFFFu || ip == (GatewayIpAddress | 0xFFu);
     }
 
-    private static ushort ReadU16BE(ReadOnlySpan<byte> span, int offset)
+    private static ushort ReadU16Be(ReadOnlySpan<byte> span, int offset)
     {
         return (ushort)((span[offset] << 8) | span[offset + 1]);
     }
 
-    private static uint ReadU32BE(ReadOnlySpan<byte> span, int offset)
+    private static uint ReadU32Be(ReadOnlySpan<byte> span, int offset)
     {
         return ((uint)span[offset] << 24) | ((uint)span[offset + 1] << 16) |
                ((uint)span[offset + 2] << 8) | span[offset + 3];
     }
 
-    private static void WriteU16BE(Span<byte> span, int offset, ushort value)
+    private static void WriteU16Be(Span<byte> span, int offset, ushort value)
     {
         span[offset] = (byte)(value >> 8);
         span[offset + 1] = (byte)value;
     }
 
-    private static void WriteU16BE(byte[] array, int offset, ushort value)
+    private static void WriteU16Be(byte[] array, int offset, ushort value)
     {
         array[offset] = (byte)(value >> 8);
         array[offset + 1] = (byte)value;
     }
 
-    private static void WriteU32BE(Span<byte> span, int offset, uint value)
+    private static void WriteU32Be(Span<byte> span, int offset, uint value)
     {
         span[offset] = (byte)(value >> 24);
         span[offset + 1] = (byte)(value >> 16);
@@ -571,7 +578,7 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
 
     private static byte[] ToBigEndianBytes(uint ip)
     {
-        return new byte[] { (byte)(ip >> 24), (byte)(ip >> 16), (byte)(ip >> 8), (byte)ip };
+        return new[] { (byte)(ip >> 24), (byte)(ip >> 16), (byte)(ip >> 8), (byte)ip };
     }
 
     private static uint FromBigEndianBytes(byte[] bytes)

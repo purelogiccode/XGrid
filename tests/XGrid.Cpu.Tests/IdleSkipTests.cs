@@ -14,6 +14,7 @@ public sealed class IdleSkipTests
 {
     private const uint PollAddress = 0x2000;
     private const uint MmioLookalikeAddress = 0x3000;
+    // ReSharper disable once UnusedMember.Local
     private const uint LoopHead = 0x1000;
 
     // mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt
@@ -278,9 +279,10 @@ public sealed class IdleSkipTests
 
         public ulong? FirePollAtAdvanced { get; set; }
 
+        // ReSharper disable once MemberHidesStaticFromOuterClass
         public uint? PollAddress { get; set; }
 
-        public byte PollValue { get; set; } = 1;
+        private byte PollValue { get; set; } = 1;
 
         public HashSet<uint> NonRam { get; } = new();
 
@@ -296,14 +298,14 @@ public sealed class IdleSkipTests
         public void AdvanceIdle(ulong steps)
         {
             Advanced += steps;
-            if (_deadline is long deadline)
+            if (_deadline is { } deadline)
             {
                 _deadline = deadline > (long)steps ? deadline - (long)steps : 0;
                 if (_deadline == 0)
                 {
                     InitialDeadline = null;
                     _deadline = null;
-                    if (FirePollAtDeadline && PollAddress is uint deadlinePoll)
+                    if (FirePollAtDeadline && PollAddress is { } deadlinePoll)
                     {
                         _ram.Write8(deadlinePoll, PollValue);
                     }
@@ -315,7 +317,7 @@ public sealed class IdleSkipTests
                 }
             }
 
-            if (FirePollAtAdvanced is ulong fireAt && Advanced >= fireAt && PollAddress is uint address)
+            if (FirePollAtAdvanced is { } fireAt && Advanced >= fireAt && PollAddress is { } address)
             {
                 _ram.Write8(address, PollValue);
                 FirePollAtAdvanced = null;

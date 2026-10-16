@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 
 namespace XGrid.Bus.Smbus;
 
@@ -180,11 +180,11 @@ public sealed class SmcDevice : SmbusDevice, ISnapshotable
             case 0x0F:
                 return _error;
             case 0x11:
-                {
-                    byte value = _interruptStatus;
-                    _interruptStatus = 0;
-                    return value;
-                }
+            {
+                byte value = _interruptStatus;
+                _interruptStatus = 0;
+                return value;
+            }
 
             case 0x1B:
                 return _scratch;

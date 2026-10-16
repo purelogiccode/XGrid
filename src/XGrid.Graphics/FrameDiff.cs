@@ -61,8 +61,10 @@ public static class FrameDiff
         public bool Passed => Violations == 0;
 
         /// <inheritdoc />
-        public override string ToString() =>
-            $"diff={DiffPixels} rgbDiff={RgbDiffPixels} edgeBand={EdgeBandPixels} violations={Violations} maxDelta={MaxChannelDelta} {Width}x{Height}";
+        public override string ToString()
+        {
+            return $"diff={DiffPixels} rgbDiff={RgbDiffPixels} edgeBand={EdgeBandPixels} violations={Violations} maxDelta={MaxChannelDelta} {Width}x{Height}";
+        }
     }
 
     /// <summary>
@@ -95,11 +97,7 @@ public static class FrameDiff
             for (int x = 0; x < width; x++)
             {
                 int p = ((y * width) + x) * 4;
-                bool isEdge = false;
-                if (x + 1 < width && !SamePixel(reference, p, p + 4))
-                {
-                    isEdge = true;
-                }
+                bool isEdge = x + 1 < width && !SamePixel(reference, p, p + 4);
 
                 if (!isEdge && x > 0 && !SamePixel(reference, p, p - 4))
                 {

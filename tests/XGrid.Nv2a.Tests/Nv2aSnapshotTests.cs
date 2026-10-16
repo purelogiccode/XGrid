@@ -1,10 +1,10 @@
 using System.IO;
-using XGrid.Core;
+using XGrid.Core.Snapshots;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
 
-public sealed class Nv2aSnapshotTests
+public sealed class Nv2ASnapshotTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
@@ -158,6 +158,17 @@ public sealed class Nv2aSnapshotTests
     [Fact]
     public void Combiner_RoundTrip()
     {
+        var first = new PshCombiner();
+        ExerciseCombiner(first);
+        byte[] baseline = Save(first);
+
+        var second = new PshCombiner();
+        Load(second, baseline);
+        Assert.Equal(baseline, Save(second));
+        Assert.Equal(first.Control, second.Control);
+        Assert.Equal(first.Final1, second.Final1);
+        return;
+
         static void ExerciseCombiner(PshCombiner combiner)
         {
             combiner.RgbInputs[0] = 0x00001234;
@@ -174,15 +185,5 @@ public sealed class Nv2aSnapshotTests
             combiner.Final0 = 0x12345678;
             combiner.Final1 = 0x9ABCDEF0;
         }
-
-        var first = new PshCombiner();
-        ExerciseCombiner(first);
-        byte[] baseline = Save(first);
-
-        var second = new PshCombiner();
-        Load(second, baseline);
-        Assert.Equal(baseline, Save(second));
-        Assert.Equal(first.Control, second.Control);
-        Assert.Equal(first.Final1, second.Final1);
     }
 }

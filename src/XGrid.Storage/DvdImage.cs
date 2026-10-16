@@ -35,10 +35,12 @@ public sealed class IsoDvdImage : IDvdImage
         SectorCount = (uint)(_stream.Length / SectorSize);
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the number of 2048-byte sectors derived from the backing file's length.</summary>
     public uint SectorCount { get; }
 
-    /// <inheritdoc />
+    /// <summary>Reads one 2048-byte sector from the backing file at byte offset <c>lba * 2048</c>.</summary>
+    /// <param name="lba">Logical block address, less than <see cref="SectorCount"/>.</param>
+    /// <param name="destination">Destination holding at least one DVD sector.</param>
     public void ReadSector(uint lba, Span<byte> destination)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(lba, SectorCount);
@@ -51,7 +53,7 @@ public sealed class IsoDvdImage : IDvdImage
         _stream.ReadExactly(destination[..SectorSize]);
     }
 
-    /// <inheritdoc />
+    /// <summary>Closes the backing file stream.</summary>
     public void Dispose()
     {
         _stream.Dispose();
