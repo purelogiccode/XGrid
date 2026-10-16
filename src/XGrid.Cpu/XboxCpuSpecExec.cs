@@ -130,6 +130,16 @@ public sealed partial class XboxCpu
                     : null;
             case Mnemonic.Ret:
                 return ResolveSpecRet(first, second);
+            case Mnemonic.Shl:
+            case Mnemonic.Shr:
+            case Mnemonic.Sar:
+            case Mnemonic.Rol:
+            case Mnemonic.Ror:
+                return ResolveSpecShift(instruction.Mnemonic, first, second, size);
+            case Mnemonic.Movzx:
+            case Mnemonic.Movsx:
+                return ResolveSpecMoveExtend(
+                    instruction.Mnemonic, first, second, size, instruction.Operand2.Size);
             default:
                 return null;
         }
@@ -443,6 +453,110 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// Resolves shift/rotate-by-immediate shapes (slice 8): Shl/Shr/Sar/
+    /// Rol/Ror with register or memory destinations. The count comes from
+    /// the immediate exactly like `ExecuteShift`; the bodies call the same
+    /// `ShiftOps` entry points. CL-counted and Rcl/Rcr forms keep the
+    /// interpreter.
+    /// </summary>
+    private static SpecHandler? ResolveSpecShift(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
+    {
+        int pair;
+        if (first == OperandKind.Register && second == OperandKind.Immediate)
+        {
+            pair = 0;
+        }
+        else if (first == OperandKind.Memory && second == OperandKind.Immediate)
+        {
+            pair = 1;
+        }
+        else
+        {
+            return null;
+        }
+
+        return (mnemonic, pair, size) switch
+        {
+            (Mnemonic.Shl, 0, 8) => SpecShlRegImm8Handler,
+            (Mnemonic.Shl, 0, 16) => SpecShlRegImm16Handler,
+            (Mnemonic.Shl, 0, 32) => SpecShlRegImm32Handler,
+            (Mnemonic.Shl, 1, 8) => SpecShlMemImm8Handler,
+            (Mnemonic.Shl, 1, 16) => SpecShlMemImm16Handler,
+            (Mnemonic.Shl, 1, 32) => SpecShlMemImm32Handler,
+            (Mnemonic.Shr, 0, 8) => SpecShrRegImm8Handler,
+            (Mnemonic.Shr, 0, 16) => SpecShrRegImm16Handler,
+            (Mnemonic.Shr, 0, 32) => SpecShrRegImm32Handler,
+            (Mnemonic.Shr, 1, 8) => SpecShrMemImm8Handler,
+            (Mnemonic.Shr, 1, 16) => SpecShrMemImm16Handler,
+            (Mnemonic.Shr, 1, 32) => SpecShrMemImm32Handler,
+            (Mnemonic.Sar, 0, 8) => SpecSarRegImm8Handler,
+            (Mnemonic.Sar, 0, 16) => SpecSarRegImm16Handler,
+            (Mnemonic.Sar, 0, 32) => SpecSarRegImm32Handler,
+            (Mnemonic.Sar, 1, 8) => SpecSarMemImm8Handler,
+            (Mnemonic.Sar, 1, 16) => SpecSarMemImm16Handler,
+            (Mnemonic.Sar, 1, 32) => SpecSarMemImm32Handler,
+            (Mnemonic.Rol, 0, 8) => SpecRolRegImm8Handler,
+            (Mnemonic.Rol, 0, 16) => SpecRolRegImm16Handler,
+            (Mnemonic.Rol, 0, 32) => SpecRolRegImm32Handler,
+            (Mnemonic.Rol, 1, 8) => SpecRolMemImm8Handler,
+            (Mnemonic.Rol, 1, 16) => SpecRolMemImm16Handler,
+            (Mnemonic.Rol, 1, 32) => SpecRolMemImm32Handler,
+            (Mnemonic.Ror, 0, 8) => SpecRorRegImm8Handler,
+            (Mnemonic.Ror, 0, 16) => SpecRorRegImm16Handler,
+            (Mnemonic.Ror, 0, 32) => SpecRorRegImm32Handler,
+            (Mnemonic.Ror, 1, 8) => SpecRorMemImm8Handler,
+            (Mnemonic.Ror, 1, 16) => SpecRorMemImm16Handler,
+            (Mnemonic.Ror, 1, 32) => SpecRorMemImm32Handler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Resolves zero/sign-extension shapes (slice 8): Movzx/Movsx with
+    /// register or memory sources into 16/32-bit registers. The source
+    /// width selects the mask/sign rule exactly like
+    /// `ExecuteMoveExtend`.
+    /// </summary>
+    private static SpecHandler? ResolveSpecMoveExtend(
+        Mnemonic mnemonic, OperandKind first, OperandKind second, int size, int sourceSize)
+    {
+        int pair;
+        if (first == OperandKind.Register && second == OperandKind.Register)
+        {
+            pair = 0;
+        }
+        else if (first == OperandKind.Register && second == OperandKind.Memory)
+        {
+            pair = 1;
+        }
+        else
+        {
+            return null;
+        }
+
+        return (mnemonic, pair, size, sourceSize) switch
+        {
+            (Mnemonic.Movzx, 0, 16, 8) => SpecMovzxRegReg168Handler,
+            (Mnemonic.Movzx, 0, 32, 8) => SpecMovzxRegReg328Handler,
+            (Mnemonic.Movzx, 0, 16, 16) => SpecMovzxRegReg1616Handler,
+            (Mnemonic.Movzx, 0, 32, 16) => SpecMovzxRegReg3216Handler,
+            (Mnemonic.Movzx, 1, 16, 8) => SpecMovzxRegMem168Handler,
+            (Mnemonic.Movzx, 1, 32, 8) => SpecMovzxRegMem328Handler,
+            (Mnemonic.Movzx, 1, 16, 16) => SpecMovzxRegMem1616Handler,
+            (Mnemonic.Movzx, 1, 32, 16) => SpecMovzxRegMem3216Handler,
+            (Mnemonic.Movsx, 0, 16, 8) => SpecMovsxRegReg168Handler,
+            (Mnemonic.Movsx, 0, 32, 8) => SpecMovsxRegReg328Handler,
+            (Mnemonic.Movsx, 0, 16, 16) => SpecMovsxRegReg1616Handler,
+            (Mnemonic.Movsx, 0, 32, 16) => SpecMovsxRegReg3216Handler,
+            (Mnemonic.Movsx, 1, 16, 8) => SpecMovsxRegMem168Handler,
+            (Mnemonic.Movsx, 1, 32, 8) => SpecMovsxRegMem328Handler,
+            (Mnemonic.Movsx, 1, 16, 16) => SpecMovsxRegMem1616Handler,
+            (Mnemonic.Movsx, 1, 32, 16) => SpecMovsxRegMem3216Handler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
     /// the existing cursor completion ends the block; IRQ polling, fault and
@@ -566,6 +680,52 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecCallMemHandler = SpecCallMem;
     private static readonly SpecHandler SpecRetHandler = SpecRet;
     private static readonly SpecHandler SpecRetImmHandler = SpecRetImm;
+    private static readonly SpecHandler SpecShlRegImm8Handler = SpecShlRegImm8;
+    private static readonly SpecHandler SpecShlRegImm16Handler = SpecShlRegImm16;
+    private static readonly SpecHandler SpecShlRegImm32Handler = SpecShlRegImm32;
+    private static readonly SpecHandler SpecShlMemImm8Handler = SpecShlMemImm8;
+    private static readonly SpecHandler SpecShlMemImm16Handler = SpecShlMemImm16;
+    private static readonly SpecHandler SpecShlMemImm32Handler = SpecShlMemImm32;
+    private static readonly SpecHandler SpecShrRegImm8Handler = SpecShrRegImm8;
+    private static readonly SpecHandler SpecShrRegImm16Handler = SpecShrRegImm16;
+    private static readonly SpecHandler SpecShrRegImm32Handler = SpecShrRegImm32;
+    private static readonly SpecHandler SpecShrMemImm8Handler = SpecShrMemImm8;
+    private static readonly SpecHandler SpecShrMemImm16Handler = SpecShrMemImm16;
+    private static readonly SpecHandler SpecShrMemImm32Handler = SpecShrMemImm32;
+    private static readonly SpecHandler SpecSarRegImm8Handler = SpecSarRegImm8;
+    private static readonly SpecHandler SpecSarRegImm16Handler = SpecSarRegImm16;
+    private static readonly SpecHandler SpecSarRegImm32Handler = SpecSarRegImm32;
+    private static readonly SpecHandler SpecSarMemImm8Handler = SpecSarMemImm8;
+    private static readonly SpecHandler SpecSarMemImm16Handler = SpecSarMemImm16;
+    private static readonly SpecHandler SpecSarMemImm32Handler = SpecSarMemImm32;
+    private static readonly SpecHandler SpecRolRegImm8Handler = SpecRolRegImm8;
+    private static readonly SpecHandler SpecRolRegImm16Handler = SpecRolRegImm16;
+    private static readonly SpecHandler SpecRolRegImm32Handler = SpecRolRegImm32;
+    private static readonly SpecHandler SpecRolMemImm8Handler = SpecRolMemImm8;
+    private static readonly SpecHandler SpecRolMemImm16Handler = SpecRolMemImm16;
+    private static readonly SpecHandler SpecRolMemImm32Handler = SpecRolMemImm32;
+    private static readonly SpecHandler SpecRorRegImm8Handler = SpecRorRegImm8;
+    private static readonly SpecHandler SpecRorRegImm16Handler = SpecRorRegImm16;
+    private static readonly SpecHandler SpecRorRegImm32Handler = SpecRorRegImm32;
+    private static readonly SpecHandler SpecRorMemImm8Handler = SpecRorMemImm8;
+    private static readonly SpecHandler SpecRorMemImm16Handler = SpecRorMemImm16;
+    private static readonly SpecHandler SpecRorMemImm32Handler = SpecRorMemImm32;
+    private static readonly SpecHandler SpecMovzxRegReg168Handler = SpecMovzxRegReg168;
+    private static readonly SpecHandler SpecMovzxRegReg328Handler = SpecMovzxRegReg328;
+    private static readonly SpecHandler SpecMovzxRegReg1616Handler = SpecMovzxRegReg1616;
+    private static readonly SpecHandler SpecMovzxRegReg3216Handler = SpecMovzxRegReg3216;
+    private static readonly SpecHandler SpecMovzxRegMem168Handler = SpecMovzxRegMem168;
+    private static readonly SpecHandler SpecMovzxRegMem328Handler = SpecMovzxRegMem328;
+    private static readonly SpecHandler SpecMovzxRegMem1616Handler = SpecMovzxRegMem1616;
+    private static readonly SpecHandler SpecMovzxRegMem3216Handler = SpecMovzxRegMem3216;
+    private static readonly SpecHandler SpecMovsxRegReg168Handler = SpecMovsxRegReg168;
+    private static readonly SpecHandler SpecMovsxRegReg328Handler = SpecMovsxRegReg328;
+    private static readonly SpecHandler SpecMovsxRegReg1616Handler = SpecMovsxRegReg1616;
+    private static readonly SpecHandler SpecMovsxRegReg3216Handler = SpecMovsxRegReg3216;
+    private static readonly SpecHandler SpecMovsxRegMem168Handler = SpecMovsxRegMem168;
+    private static readonly SpecHandler SpecMovsxRegMem328Handler = SpecMovsxRegMem328;
+    private static readonly SpecHandler SpecMovsxRegMem1616Handler = SpecMovsxRegMem1616;
+    private static readonly SpecHandler SpecMovsxRegMem3216Handler = SpecMovsxRegMem3216;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -2008,5 +2168,373 @@ public sealed partial class XboxCpu
     {
         cpu.Context.Eip = cpu.Pop(instruction.OperandSize, instruction.AddressSize);
         cpu.AdjustStackPointer(instruction.Operand1.Immediate, instruction.AddressSize);
+    }
+
+    private static void SpecShlRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shl(value, (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shl(value, (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shl(value, (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shl(cpu.ReadMemory(address, 8), (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shl(cpu.ReadMemory(address, 16), (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shl(cpu.ReadMemory(address, 32), (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shr(value, (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shr(value, (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Shr(value, (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shr(cpu.ReadMemory(address, 8), (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shr(cpu.ReadMemory(address, 16), (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Shr(cpu.ReadMemory(address, 32), (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Sar(value, (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Sar(value, (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Sar(value, (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Sar(cpu.ReadMemory(address, 8), (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Sar(cpu.ReadMemory(address, 16), (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Sar(cpu.ReadMemory(address, 32), (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Rol(value, (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Rol(value, (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Rol(value, (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Rol(cpu.ReadMemory(address, 8), (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Rol(cpu.ReadMemory(address, 16), (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Rol(cpu.ReadMemory(address, 32), (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Ror(value, (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Ror(value, (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        cpu.Context.Eflags = ShiftOps.Ror(value, (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Ror(cpu.ReadMemory(address, 8), (int)instruction.Operand2.Immediate, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Ror(cpu.ReadMemory(address, 16), (int)instruction.Operand2.Immediate, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = ShiftOps.Ror(cpu.ReadMemory(address, 32), (int)instruction.Operand2.Immediate, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegReg168(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex) & 0xFFu));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegReg328(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex) & 0xFFu);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegReg1616(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegReg3216(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex) & 0xFFFFu);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegMem168(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8) & 0xFFu));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegMem328(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8) & 0xFFu);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegMem1616(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovzxRegMem3216(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16) & 0xFFFFu);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegReg168(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(uint)(int)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegReg328(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (uint)(int)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegReg1616(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(uint)(int)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegReg3216(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (uint)(int)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegMem168(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(uint)(int)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegMem328(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (uint)(int)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegMem1616(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister16(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (ushort)(uint)(int)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovsxRegMem3216(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteRegister(
+            (Gpr)instruction.Operand1.RegisterIndex,
+            (uint)(int)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
+        cpu.Context.Eip += (uint)instruction.Length;
     }
 }
