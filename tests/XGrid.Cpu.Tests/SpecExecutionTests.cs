@@ -274,6 +274,60 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void ShiftExtend_Shapes_AtAllSizes_MatchInterpreter()
+    {
+        // Slice-8 family (§145): C1-group shifts by immediate and 0F B6/B7/BE/BF
+        // extension. modrm 0xE0/0xC0 addresses EAX, 0x23/0x03 address [EBX].
+        RunShapes(
+            ("shl r32,imm8", new byte[] { 0xC1, 0xE0, 0x05 }),
+            ("shl r8,imm8", new byte[] { 0xC0, 0xE0, 0x05 }),
+            ("shl r16,imm8", new byte[] { 0x66, 0xC1, 0xE0, 0x05 }),
+            ("shl m32,imm8", new byte[] { 0xC1, 0x23, 0x05 }),
+            ("shl m8,imm8", new byte[] { 0xC0, 0x23, 0x05 }),
+            ("shl m16,imm8", new byte[] { 0x66, 0xC1, 0x23, 0x05 }),
+            ("shr r32,imm8", new byte[] { 0xC1, 0xE8, 0x05 }),
+            ("shr r8,imm8", new byte[] { 0xC0, 0xE8, 0x05 }),
+            ("shr r16,imm8", new byte[] { 0x66, 0xC1, 0xE8, 0x05 }),
+            ("shr m32,imm8", new byte[] { 0xC1, 0x2B, 0x05 }),
+            ("shr m8,imm8", new byte[] { 0xC0, 0x2B, 0x05 }),
+            ("shr m16,imm8", new byte[] { 0x66, 0xC1, 0x2B, 0x05 }),
+            ("sar r32,imm8", new byte[] { 0xC1, 0xF8, 0x05 }),
+            ("sar r8,imm8", new byte[] { 0xC0, 0xF8, 0x05 }),
+            ("sar r16,imm8", new byte[] { 0x66, 0xC1, 0xF8, 0x05 }),
+            ("sar m32,imm8", new byte[] { 0xC1, 0x3B, 0x05 }),
+            ("sar m8,imm8", new byte[] { 0xC0, 0x3B, 0x05 }),
+            ("sar m16,imm8", new byte[] { 0x66, 0xC1, 0x3B, 0x05 }),
+            ("rol r32,imm8", new byte[] { 0xC1, 0xC0, 0x05 }),
+            ("rol r8,imm8", new byte[] { 0xC0, 0xC0, 0x05 }),
+            ("rol r16,imm8", new byte[] { 0x66, 0xC1, 0xC0, 0x05 }),
+            ("rol m32,imm8", new byte[] { 0xC1, 0x03, 0x05 }),
+            ("rol m8,imm8", new byte[] { 0xC0, 0x03, 0x05 }),
+            ("rol m16,imm8", new byte[] { 0x66, 0xC1, 0x03, 0x05 }),
+            ("ror r32,imm8", new byte[] { 0xC1, 0xC8, 0x05 }),
+            ("ror r8,imm8", new byte[] { 0xC0, 0xC8, 0x05 }),
+            ("ror r16,imm8", new byte[] { 0x66, 0xC1, 0xC8, 0x05 }),
+            ("ror m32,imm8", new byte[] { 0xC1, 0x0B, 0x05 }),
+            ("ror m8,imm8", new byte[] { 0xC0, 0x0B, 0x05 }),
+            ("ror m16,imm8", new byte[] { 0x66, 0xC1, 0x0B, 0x05 }),
+            ("movzx r32,r8", new byte[] { 0x0F, 0xB6, 0xC0 }),
+            ("movzx r32,m8", new byte[] { 0x0F, 0xB6, 0x03 }),
+            ("movzx r16,r8", new byte[] { 0x66, 0x0F, 0xB6, 0xC0 }),
+            ("movzx r16,m8", new byte[] { 0x66, 0x0F, 0xB6, 0x03 }),
+            ("movzx r32,r16", new byte[] { 0x0F, 0xB7, 0xC0 }),
+            ("movzx r32,m16", new byte[] { 0x0F, 0xB7, 0x03 }),
+            ("movzx r16,r16", new byte[] { 0x66, 0x0F, 0xB7, 0xC0 }),
+            ("movzx r16,m16", new byte[] { 0x66, 0x0F, 0xB7, 0x03 }),
+            ("movsx r32,r8", new byte[] { 0x0F, 0xBE, 0xC0 }),
+            ("movsx r32,m8", new byte[] { 0x0F, 0xBE, 0x03 }),
+            ("movsx r16,r8", new byte[] { 0x66, 0x0F, 0xBE, 0xC0 }),
+            ("movsx r16,m8", new byte[] { 0x66, 0x0F, 0xBE, 0x03 }),
+            ("movsx r32,r16", new byte[] { 0x0F, 0xBF, 0xC0 }),
+            ("movsx r32,m16", new byte[] { 0x0F, 0xBF, 0x03 }),
+            ("movsx r16,r16", new byte[] { 0x66, 0x0F, 0xBF, 0xC0 }),
+            ("movsx r16,m16", new byte[] { 0x66, 0x0F, 0xBF, 0x03 }));
+    }
+
+    [Fact]
     public void NearControl_Shapes_MatchInterpreter()
     {
         // Jumps skip an inc, calls return onto a hlt: a wrong target shows
@@ -370,7 +424,8 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb: carry live
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl: uncovered
+        Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;
 
@@ -659,10 +714,11 @@ public sealed class SpecExecutionTests
     [Fact]
     public void FallbackHistogram_TalliesServeTimeShapes()
     {
-        // shl is the only uncovered shape in this loop: inc/xor-imm/dec/nop
-        // specialize and the backward jmp specializes too, so the whole
-        // fallback total must sit on the Shl shape.
-        byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD1, 0xE0, 0xEB, 0xF7 };
+        // shl r,cl is the only uncovered shape in this loop (the D1
+        // implicit-count form carries an immediate and already specializes):
+        // inc/xor-imm/dec/nop specialize and the backward jmp specializes
+        // too, so the whole fallback total must sit on the Shl shape.
+        byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD3, 0xE0, 0xEB, 0xF7 };
         XboxCpu cpu = Create(true, code);
         cpu.Execute(64);
         DecodedBlockCache stats = cpu.SpecStatistics!;

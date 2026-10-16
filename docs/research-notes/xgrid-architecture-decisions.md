@@ -7954,3 +7954,48 @@ tail (top-12): Movzx r/m32, Shl/Ror/Rol r,imm32, Inc m32, x87
 Fadd/Fistp/Fild, Movq/Movntq (MMX). Next: shift/rotate + movzx
 immediates family, then MMX mov - histogram order. Flag stays opt-in.
 
+## 145. JIT slice 8: shifts/rotates + zero/sign extension behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. Histogram tail from §144:
+Shl/Ror/Rol r,imm32 (~6-7M menu) and Movzx r/m32 (6.6M menu).
+`ExecuteShift`/`ExecuteMoveExtend` (`XboxCpu.cs:1350,1860`) are thin
+wrappers over `ShiftOps`/mask rules through `ReadOperand`/
+`WriteOperand`, so per-shape handlers mirror them with direct
+register/memory access and the same helper calls.
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecShift` covers
+Shl/Shr/Sar/Rol/Ror x (reg,imm)/(mem,imm) x 8/16/32 (30 shapes;
+CL-counted and Rcl/Rcr keep the interpreter) and
+`ResolveSpecMoveExtend` covers Movzx/Movsx x (reg,reg)/(reg,mem) x
+dst 16/32 x src 8/16 (16 shapes; the source width selects the
+mask/sign rule exactly like the interpreter). 46 handlers.
+
+Tests: `ShiftExtend_Shapes_AtAllSizes_MatchInterpreter` (46 shapes).
+Fail-pre-fix discipline again: 2 failures, both stale premises -
+and one real discovery: the D1 implicit-count shift decodes WITH an
+immediate operand, so it was already covered (locked with a
+resolver assert); the histogram loop now uses the CL-counted form.
+Suite **1347/1347**, format clean, zero warnings.
+
+Goldens (18-leg matrix reps 14-16, `D:\spec-soak\legs`, all PASS,
+`scripts/compare-soak-reps.ps1`): SHAs exact both anchors, `vec=0`,
+counters exact, `verifyFailures=0`, full logs identical modulo mode
+lines. Targets absorbed (no Shl/Ror/Rol/Sar/Shr/Movzx/Movsx in the
+top-12 either title); fallbacks menu 147M->124M, triangle 136M->131M.
+Median walls within-matrix: menu cache 158.97 / spec 147.57 =
+**1.077x**, triangle cache 85.30 / spec 81.97 = **1.041x**.
+
+Two lessons. (1) Per-shape specialization is saturating: four slices
+absorbed ~260M menu / ~360M triangle fallback executions and the
+cumulative spec/cache ratio sits at ~1.06-1.16x - exactly the §138
+prediction (helpers dominate, dispatch does not). The remaining cost
+is the memory path (`ReadMemory`/`WriteMemory` -> translate + bus);
+the next lever is a memory-path design, not more shapes. It needs
+daylight scoping, not a midnight implementation. (2) Soak-binaries
+must come from a FULL solution build: the first reps-14-16 matrix
+silently measured slice-7 code (`dotnet test` on one project does not
+refresh the CLI's `XGrid.Cpu.dll` copy) - caught by digit-identical
+counters, discarded, rebuilt, re-run for real. New `Spec fallback`
+tail: Movq/Movntq, x87, Inc/Dec m32, Mulss (SSE), Jmp-nothing -
+control is fully specialized. Flag stays opt-in.
+
