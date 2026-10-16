@@ -119,6 +119,80 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void AluMem_Shapes_AtAllSizes_MatchInterpreter()
+    {
+        // Slice-3 family (§142): ALU with a memory operand. modrm 0x03 reads
+        // [EBX] (Preset maps 0x2000 with known content); 0x18 swaps reg/mem.
+        RunShapes(
+            ("mov m8,imm8", new byte[] { 0xC6, 0x03, 0x05 }),
+            ("mov m16,imm16", new byte[] { 0x66, 0xC7, 0x03, 0x34, 0x12 }),
+            ("mov m32,imm32", new byte[] { 0xC7, 0x03, 0x78, 0x56, 0x34, 0x12 }),
+            ("add r32,m32", new byte[] { 0x03, 0x03 }),
+            ("add r8,m8", new byte[] { 0x02, 0x03 }),
+            ("add r16,m16", new byte[] { 0x66, 0x03, 0x03 }),
+            ("add m32,r32", new byte[] { 0x01, 0x03 }),
+            ("add m8,r8", new byte[] { 0x00, 0x03 }),
+            ("add m16,r16", new byte[] { 0x66, 0x01, 0x03 }),
+            ("add m32,imm8", new byte[] { 0x83, 0x03, 0x05 }),
+            ("add m8,imm8", new byte[] { 0x80, 0x03, 0x05 }),
+            ("add m32,imm32", new byte[] { 0x81, 0x03, 0x78, 0x56, 0x34, 0x12 }),
+            ("sub r32,m32", new byte[] { 0x2B, 0x03 }),
+            ("sub r8,m8", new byte[] { 0x2A, 0x03 }),
+            ("sub r16,m16", new byte[] { 0x66, 0x2B, 0x03 }),
+            ("sub m32,r32", new byte[] { 0x29, 0x03 }),
+            ("sub m8,r8", new byte[] { 0x28, 0x03 }),
+            ("sub m16,r16", new byte[] { 0x66, 0x29, 0x03 }),
+            ("sub m32,imm8", new byte[] { 0x83, 0x2B, 0x05 }),
+            ("sub m8,imm8", new byte[] { 0x80, 0x2B, 0x05 }),
+            ("sub m32,imm32", new byte[] { 0x81, 0x2B, 0x78, 0x56, 0x34, 0x12 }),
+            ("and r32,m32", new byte[] { 0x23, 0x03 }),
+            ("and r8,m8", new byte[] { 0x22, 0x03 }),
+            ("and r16,m16", new byte[] { 0x66, 0x23, 0x03 }),
+            ("and m32,r32", new byte[] { 0x21, 0x03 }),
+            ("and m8,r8", new byte[] { 0x20, 0x03 }),
+            ("and m16,r16", new byte[] { 0x66, 0x21, 0x03 }),
+            ("and m32,imm8", new byte[] { 0x83, 0x23, 0x05 }),
+            ("and m8,imm8", new byte[] { 0x80, 0x23, 0x05 }),
+            ("and m32,imm32", new byte[] { 0x81, 0x23, 0x78, 0x56, 0x34, 0x12 }),
+            ("or r32,m32", new byte[] { 0x0B, 0x03 }),
+            ("or r8,m8", new byte[] { 0x0A, 0x03 }),
+            ("or r16,m16", new byte[] { 0x66, 0x0B, 0x03 }),
+            ("or m32,r32", new byte[] { 0x09, 0x03 }),
+            ("or m8,r8", new byte[] { 0x08, 0x03 }),
+            ("or m16,r16", new byte[] { 0x66, 0x09, 0x03 }),
+            ("or m32,imm8", new byte[] { 0x83, 0x0B, 0x05 }),
+            ("or m8,imm8", new byte[] { 0x80, 0x0B, 0x05 }),
+            ("or m32,imm32", new byte[] { 0x81, 0x0B, 0x78, 0x56, 0x34, 0x12 }),
+            ("xor r32,m32", new byte[] { 0x33, 0x03 }),
+            ("xor r8,m8", new byte[] { 0x32, 0x03 }),
+            ("xor r16,m16", new byte[] { 0x66, 0x33, 0x03 }),
+            ("xor m32,r32", new byte[] { 0x31, 0x03 }),
+            ("xor m8,r8", new byte[] { 0x30, 0x03 }),
+            ("xor m16,r16", new byte[] { 0x66, 0x31, 0x03 }),
+            ("xor m32,imm8", new byte[] { 0x83, 0x33, 0x05 }),
+            ("xor m8,imm8", new byte[] { 0x80, 0x33, 0x05 }),
+            ("xor m32,imm32", new byte[] { 0x81, 0x33, 0x78, 0x56, 0x34, 0x12 }),
+            ("cmp r32,m32", new byte[] { 0x3B, 0x03 }),
+            ("cmp r8,m8", new byte[] { 0x3A, 0x03 }),
+            ("cmp r16,m16", new byte[] { 0x66, 0x3B, 0x03 }),
+            ("cmp m32,r32", new byte[] { 0x39, 0x03 }),
+            ("cmp m8,r8", new byte[] { 0x38, 0x03 }),
+            ("cmp m16,r16", new byte[] { 0x66, 0x39, 0x03 }),
+            ("cmp m32,imm8", new byte[] { 0x83, 0x3B, 0x05 }),
+            ("cmp m8,imm8", new byte[] { 0x80, 0x3B, 0x05 }),
+            ("cmp m32,imm32", new byte[] { 0x81, 0x3B, 0x78, 0x56, 0x34, 0x12 }),
+            ("test r32,m32", new byte[] { 0x85, 0x03 }),
+            ("test r8,m8", new byte[] { 0x84, 0x03 }),
+            ("test r16,m16", new byte[] { 0x66, 0x85, 0x03 }),
+            ("test m32,r32", new byte[] { 0x85, 0x1B }),
+            ("test m8,r8", new byte[] { 0x84, 0x1B }),
+            ("test m16,r16", new byte[] { 0x66, 0x85, 0x1B }),
+            ("test m8,imm8", new byte[] { 0xF6, 0x03, 0x05 }),
+            ("test m16,imm16", new byte[] { 0x66, 0xF7, 0x03, 0x34, 0x12 }),
+            ("test m32,imm32", new byte[] { 0xF7, 0x03, 0x78, 0x56, 0x34, 0x12 }));
+    }
+
+    [Fact]
     public void SegmentOverride_MemShapes_MatchInterpreter()
     {
         // FS base differs from DS base: the override must select the FS byte.
@@ -156,7 +230,6 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x62, 0x00, 0x00)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x10, 0xD8))); // adc: carry live
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb: carry live
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xC7, 0x03, 0x01, 0x00, 0x00, 0x00))); // mov m,imm
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl: uncovered
@@ -442,6 +515,54 @@ public sealed class SpecExecutionTests
         Assert.Null(cpu.BlockStatistics);
         cpu.Execute(16);
         Assert.False(cpu.SpecExecutionEnabled);
+    }
+
+    [Fact]
+    public void FallbackHistogram_TalliesServeTimeShapes()
+    {
+        // The loop's backward jump is the only uncovered shape: every other
+        // member specializes, so the whole fallback total must sit on Jmp.
+        XboxCpu cpu = Create(true, Loop);
+        cpu.Execute(64);
+        DecodedBlockCache stats = cpu.SpecStatistics!;
+        Assert.True(stats.ShapeFallbacks > 0);
+        ulong total = 0;
+        XboxCpu.SpecShape jmp = default;
+        bool found = false;
+        foreach (System.Collections.Generic.KeyValuePair<XboxCpu.SpecShape, ulong> tally in stats.FallbackShapes)
+        {
+            total += tally.Value;
+            if (tally.Key.Mnemonic == Mnemonic.Jmp)
+            {
+                jmp = tally.Key;
+                found = true;
+            }
+            else
+            {
+                Assert.NotEqual(Mnemonic.Nop, tally.Key.Mnemonic);
+            }
+        }
+
+        Assert.True(found);
+        Assert.Equal(stats.ShapeFallbacks, total);
+        Assert.Equal(stats.ShapeFallbacks, stats.FallbackShapes[jmp]);
+        (XboxCpu.SpecShape shape, ulong count)[] top = stats.TopFallbackShapes(8);
+        Assert.Equal(stats.ShapeFallbacks, top[0].count);
+        Assert.Equal(Mnemonic.Jmp, top[0].shape.Mnemonic);
+    }
+
+    [Fact]
+    public void FallbackHistogram_EmptyWhenSpecDisabled()
+    {
+        var blocks = new DecodedBlockCache();
+        var decodes = new DecodeCache { Blocks = blocks };
+        Fill(decodes, 0x1000, 0xEB);
+        Fill(decodes, 0x1002, 0x90);
+        Assert.True(blocks.TryNext(decodes, 0x1000, 32, 32, out _));
+        Assert.True(blocks.TryNext(decodes, 0x1002, 32, 32, out _));
+        Assert.Equal(0UL, blocks.ShapeFallbacks);
+        Assert.Empty(blocks.FallbackShapes);
+        Assert.Empty(blocks.TopFallbackShapes(8));
     }
 
     private static void RunShapes(params (string Name, byte[] Code)[] shapes)

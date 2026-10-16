@@ -3129,6 +3129,12 @@ vec=0) + off-vs-spec logs identical. Final gate green: format + build +
 `verifyFailures=0`, logs identical modulo mode lines): menu spec/cache
 **1.035x** (inside host noise), triangle **1.130x**. Flag stays opt-in,
 default off — no default-flip. Details in research-notes §141.
+**§142 DONE (2026-10-16, direct):** JIT slice 5 (ALU-with-memory family,
+66 handlers: Add/Sub/And/Or/Xor/Cmp/Test × reg,mem/mem,reg/mem,imm +
+Mov mem,imm) behind `--spec-exec`; 1343/1343 tests, format clean, 18-leg
+golden matrix PASS (SHAs exact, `verifyFailures=0`, logs identical);
+fallbacks menu 392M→339M / triangle 494M→374M; within-matrix spec/cache
+menu **1.046x** / triangle **1.086x**. Flag stays opt-in.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —

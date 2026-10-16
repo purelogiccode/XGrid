@@ -13,7 +13,7 @@ $menuSha = '4EF1FBF66CB96CD74DB3EC076D128CC2DAC47E8709A583449EE9EB1C8CB0DE81'
 $triSha = 'A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C'
 function Normalize-Log($text) {
     # Preserve every other byte/counter, including frame diagnostics.
-    (($text -split '\r?\n' | Where-Object { $_ -notmatch '^(Decode cache|Block stats|Spec stats|Block execution=|Spec execution=|Fetch fast path)' }) -join "`n") -replace '(?m)^Frame \S+ ', 'Frame <path> '
+    (($text -split '\r?\n' | Where-Object { $_ -notmatch '^(Decode cache|Block stats|Spec stats|Spec fallback|Block execution=|Spec execution=|Fetch fast path)' }) -join "`n") -replace '(?m)^Frame \S+ ', 'Frame <path> '
 }
 if ($Compare) {
     $rows = @()
