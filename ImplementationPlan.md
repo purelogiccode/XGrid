@@ -3315,6 +3315,15 @@ EIP-identical probe); 10 new tests, suite 1385/1385, format clean,
 menu spec 154.7 s SHAs exact, menu cache 166.0 s byte-identical,
 `--block-exec` SHA exact; single-run walls only, §164 median stands).
 Flag stays opt-in.
+**§167 DONE (2026-10-17, direct):** dispatch slice 5 (Cli/Sti continue
+blocks — 2-token `Terminates` change, still fallback-interpreted;
+behavior-neutral by construction since delivery polls per instruction;
+dispatches triangle −32% / menu −14% with interrupts bit-identical
+1883/3153) — 5 new `BlockFormationTests`, suite 1390/1390, format
+clean, 4-leg golden gate PASS (`D:\spec-soak\slice24`: triangle spec
+77.2 s + menu spec 145.4 s SHAs exact, menu cache 158.3 s control-leg
+exact, `--block-exec` SHA exact; single-run walls only). Flag stays
+opt-in.
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the
