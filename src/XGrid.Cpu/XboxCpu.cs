@@ -14,6 +14,17 @@ public sealed partial class XboxCpu
     private uint _sysenterEip;
     private IHotspotObserver? _hotspot;
 
+    // Memory-path slice 1 (§161): RAM-direct fast path. When the bus is the
+    // standard AddressSpace, its RAM is cached here so physical accesses can
+    // skip the IMemoryBus interface dispatch + region-table branch and hit
+    // the same Ram methods the bus would call. The bus object (and RAM size)
+    // is fixed for the CPU's lifetime — snapshots reload RAM contents in
+    // place — so the cache never goes stale. Null (non-AddressSpace bus)
+    // means the legacy bus path everywhere.
+    private readonly PhysicalMemory? _ramDirect;
+    private readonly AddressSpace? _ramSpace;
+    private readonly uint _ramSize;
+
     /// <summary>Creates a CPU over the given memory and I/O buses.</summary>
     public XboxCpu(IMemoryBus memory, IIoBus? ioBus = null)
     {
@@ -21,6 +32,9 @@ public sealed partial class XboxCpu
         Io = ioBus ?? NullIoBus.Instance;
         Context = new XboxContext();
         Mmu = new Mmu(Context, memory);
+        _ramSpace = memory as AddressSpace;
+        _ramDirect = _ramSpace?.Ram;
+        _ramSize = _ramDirect?.Size ?? 0;
 
         // Every mapping-change site funnels through Mmu.Flush/FlushPage (CR
         // writes, INVD/WBINVD, INVLPG, Reset, snapshot load); the decode-cache
@@ -1125,6 +1139,19 @@ public sealed partial class XboxCpu
 
     private uint RawRead(uint address, int size)
     {
+        // Slice-1 RAM fast path: same Ram method the AddressSpace branch
+        // would call (reads carry no watch/counter side effects), so the
+        // only skipped work is the interface dispatch + region branch.
+        PhysicalMemory? ram = _ramDirect;
+        if (ram is not null)
+        {
+            uint length = size == 8 ? 1u : size == 16 ? 2u : 4u;
+            if ((ulong)address + length <= _ramSize)
+            {
+                return size == 8 ? ram.Read8(address) : size == 16 ? ram.Read16(address) : ram.Read32(address);
+            }
+        }
+
         return size switch
         {
             8 => Memory.Read8(address),
@@ -1135,6 +1162,34 @@ public sealed partial class XboxCpu
 
     private void RawWrite(uint address, int size, uint value)
     {
+        // Slice-1 RAM fast path: NoteStorePhysical still runs first (decode
+        // page-drop is correctness, not observability), and the AddressSpace
+        // write watch is preserved by falling back whenever it could fire.
+        // Ram.Write* runs the same present-dirty choke the bus path hits.
+        PhysicalMemory? ram = _ramDirect;
+        if (ram is not null)
+        {
+            uint length = size == 8 ? 1u : size == 16 ? 2u : 4u;
+            if ((ulong)address + length <= _ramSize && !IsWatched(address, length))
+            {
+                NoteStorePhysical(address, size);
+                if (size == 8)
+                {
+                    ram.Write8(address, (byte)value);
+                }
+                else if (size == 16)
+                {
+                    ram.Write16(address, (ushort)value);
+                }
+                else
+                {
+                    ram.Write32(address, value);
+                }
+
+                return;
+            }
+        }
+
         NoteStorePhysical(address, size);
         switch (size)
         {
@@ -1149,6 +1204,34 @@ public sealed partial class XboxCpu
                 break;
         }
     }
+
+    /// <summary>
+    /// Slice-1 guard: true when the AddressSpace write watch could fire for
+    /// [address, address+length), in which case the caller takes the legacy
+    /// bus path so CheckWatch + WatchHit run exactly as before.
+    /// </summary>
+    private bool IsWatched(uint address, uint length)
+    {
+        AddressSpace? space = _ramSpace;
+        if (space is null || space.WatchEnd <= space.WatchStart)
+        {
+            return false;
+        }
+
+        ulong start = address;
+        ulong end = start + length;
+        return start < space.WatchEnd && space.WatchStart < end;
+    }
+
+    /// <summary>
+    /// Slice-1 gate for multi-translate fusions (XMM128/FPU80): those change
+    /// the per-access translate count (2→1), which changes idle-access and
+    /// TLB-outcome tallies, so they run only when no observer can see the
+    /// difference. Narrow 8/16/32/64 paths keep identical note counts and
+    /// need no gate. Hotspot data notes are emitted by the callers either
+    /// way and are unaffected.
+    /// </summary>
+    private bool FastWideAllowed => _hotspot is null && _idle is null && Mmu.Observer is null;
 
     private static bool CrossesPage(uint address, int sizeInBits)
     {
@@ -2245,12 +2328,26 @@ public sealed partial class XboxCpu
     {
         if (!Mmu.IsEnabled)
         {
+            // Slice 1: one direct 64-bit RAM read instead of two bus
+            // dispatches (little-endian combine is identical by construction).
+            PhysicalMemory? ram = _ramDirect;
+            if (ram is not null && (ulong)address + 8 <= _ramSize)
+            {
+                return ram.Read64(address);
+            }
+
             return (ulong)Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
         }
 
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: false, isInstruction: false);
+            PhysicalMemory? ram = _ramDirect;
+            if (ram is not null && (ulong)physical + 8 <= _ramSize)
+            {
+                return ram.Read64(physical);
+            }
+
             return (ulong)Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
         }
 
@@ -2268,6 +2365,16 @@ public sealed partial class XboxCpu
     {
         if (!Mmu.IsEnabled)
         {
+            // Slice 1: mirror of the read fusion. NoteStorePhysical still
+            // runs first; the write watch is preserved via fallback.
+            PhysicalMemory? ram = _ramDirect;
+            if (ram is not null && (ulong)address + 8 <= _ramSize && !IsWatched(address, 8))
+            {
+                NoteStorePhysical(address, 64);
+                ram.Write64(address, value);
+                return;
+            }
+
             NoteStorePhysical(address, 64);
             Memory.Write32(address, (uint)value);
             Memory.Write32(address + 4, (uint)(value >> 32));
@@ -2277,6 +2384,14 @@ public sealed partial class XboxCpu
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
+            PhysicalMemory? ram = _ramDirect;
+            if (ram is not null && (ulong)physical + 8 <= _ramSize && !IsWatched(physical, 8))
+            {
+                NoteStorePhysical(physical, 64);
+                ram.Write64(physical, value);
+                return;
+            }
+
             NoteStorePhysical(physical, 64);
             Memory.Write32(physical, (uint)value);
             Memory.Write32(physical + 4, (uint)(value >> 32));
@@ -2293,13 +2408,48 @@ public sealed partial class XboxCpu
 
     private Fpu80 ReadMemoryFpu80(uint address)
     {
-        ulong significand = ReadMemory64(address);
-        ushort signExponent = (ushort)ReadMemory(address + 8, 16);
-        return new Fpu80(signExponent, significand);
+        // Slice 1: single-translate 80-bit RAM read (two translates + a
+        // hotspot-noted 16-bit tail in the legacy path). Gated on no
+        // observers (note counts change 2-idle+1-hotspot to 1-idle+0);
+        // one-page guard keeps fault behavior identical (the second
+        // translate can only fault on a different page).
+        PhysicalMemory? ram = _ramDirect;
+        if (FastWideAllowed && ram is not null
+            && (address & 0xFFFu) + 10 <= 0x1000u && (ulong)address + 10 <= _ramSize)
+        {
+            uint physical = TranslateLinear(address, isWrite: false, isInstruction: false);
+            if ((ulong)physical + 10 <= _ramSize)
+            {
+                ulong significand = ram.Read64(physical);
+                ushort signExponent = ram.Read16(physical + 8);
+                return new Fpu80(signExponent, significand);
+            }
+        }
+
+        ulong legacySignificand = ReadMemory64(address);
+        ushort legacySignExponent = (ushort)ReadMemory(address + 8, 16);
+        return new Fpu80(legacySignExponent, legacySignificand);
     }
 
     private void WriteMemoryFpu80(uint address, Fpu80 value)
     {
+        // Slice 1: mirror of the read fusion. NoteStorePhysical(80) on one
+        // page drops exactly the page the legacy two drops hit (idempotent);
+        // present-dirty accumulates by OR so chunking is invisible.
+        PhysicalMemory? ram = _ramDirect;
+        if (FastWideAllowed && ram is not null
+            && (address & 0xFFFu) + 10 <= 0x1000u && (ulong)address + 10 <= _ramSize)
+        {
+            uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
+            if ((ulong)physical + 10 <= _ramSize && !IsWatched(physical, 10))
+            {
+                NoteStorePhysical(physical, 80);
+                ram.Write64(physical, value.Significand);
+                ram.Write16(physical + 8, value.SignExponent);
+                return;
+            }
+        }
+
         WriteMemory64(address, value.Significand);
         WriteMemory(address + 8, 16, value.SignExponent);
     }
@@ -4148,6 +4298,20 @@ public sealed partial class XboxCpu
         }
 
         uint address = ComputeAddress(operand.Memory);
+        // Slice 1: single-translate 128-bit RAM read (legacy: two
+        // ReadMemory64 = two translates + four bus dispatches). Same
+        // one-page + observer gating as the FPU80 fusion.
+        PhysicalMemory? ram = _ramDirect;
+        if (FastWideAllowed && ram is not null
+            && (address & 0xFFFu) + 16 <= 0x1000u && (ulong)address + 16 <= _ramSize)
+        {
+            uint physical = TranslateLinear(address, isWrite: false, isInstruction: false);
+            if ((ulong)physical + 16 <= _ramSize)
+            {
+                return (ram.Read64(physical), ram.Read64(physical + 8));
+            }
+        }
+
         return (ReadMemory64(address), ReadMemory64(address + 8));
     }
 
@@ -4160,6 +4324,20 @@ public sealed partial class XboxCpu
         }
 
         uint address = ComputeAddress(operand.Memory);
+        PhysicalMemory? ram = _ramDirect;
+        if (FastWideAllowed && ram is not null
+            && (address & 0xFFFu) + 16 <= 0x1000u && (ulong)address + 16 <= _ramSize)
+        {
+            uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
+            if ((ulong)physical + 16 <= _ramSize && !IsWatched(physical, 16))
+            {
+                NoteStorePhysical(physical, 128);
+                ram.Write64(physical, low);
+                ram.Write64(physical + 8, high);
+                return;
+            }
+        }
+
         WriteMemory64(address, low);
         WriteMemory64(address + 8, high);
     }

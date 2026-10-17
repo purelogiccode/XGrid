@@ -8394,6 +8394,56 @@ real; medians are robust to it. Verdict: real but thin — flag stays
 opt-in; default-flip needs the memory-path build (§159) first, then a
 fresh median-of-3. No wall claim beyond the ratio itself.
 
+## 161. Memory-path slice 1: RAM-direct fast path + wide-access single-translate (2026-10-17)
+
+Direct development, early-morning build from the §159 recipe (first of
+three options; TLB-inline and span/burst remain). All in
+`XboxCpu.cs`, no resolver/whitelist change (no new shapes — this is
+pure data-path cost removal, active in every mode including flag-off):
+
+- **RawRead/RawWrite RAM-direct:** when the bus is the standard
+  `AddressSpace` (cached at construction; snapshots reload RAM in
+  place so it never stales), physical accesses inside RAM skip the
+  `IMemoryBus` dispatch + region-table branch and call the same
+  `Ram.Read*/Write*` the bus would. Reads are side-effect-free;
+  writes keep `NoteStorePhysical` first and fall back whenever the
+  `AddressSpace` write watch could fire (watch check is pure).
+- **64-bit direct:** `Read/WriteMemory64` do one `Ram.Read/Write64`
+  instead of two bus `Read/Write32` (identical LE combine; no note
+  counts change anywhere on these paths, so no gate needed).
+- **XMM128/FPU80 single-translate:** two translates → one + direct
+  Ram halves, guarded by one-page containment (the second translate
+  can only fault on a different page), RAM range re-checked
+  post-translate (PTEs may point at MMIO), write-watch fallback, and
+  the `FastWideAllowed` gate (observers-null: translate-count change
+  would drift idle/TLB tallies otherwise). `NoteStorePhysical(128/80)`
+  on one page drops exactly the page the legacy double-drop hit.
+
+Deliberately OUT (follow-ups): `Read/WriteMemoryBytes` bulk path
+(Fxsave/Fnsave env — rare, per-byte exact today), RMW
+compute-address-once (saves little; fault-priority subtleties),
+`AggressiveInlining` annotations (unmeasured).
+
+Tests: `MemoryFastPathTests` (8): RAM32/XMM128/FPU80 round trips with
+paging on, XMM128 + FPU80 page-cross fallback exactness, MMIO-physical
+fallback with identical 4×32 device traffic each way, write-watch
+still firing, and the observer gate pin (cold-TLB XMM128 load reports
+exactly 2 singular TLB notes under a profiler). Suite **1367/1367**,
+format clean.
+
+Goldens (`D:\\spec-soak\\slice21`, full-solution build, `--gpu sw`):
+triangle spec r1 PASS 102.1 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact, dispatches identical to
+slice20 (formation untouched). Menu spec r1 PASS 203.8 s — SHA
+`4EF1FBF6…` exact, `vec=0`, `verifyFailures=0`, draws=33632
+skipped=1402 anchor exact. Menu cache r1 PASS 230.9 s SHA exact
+(flag-off byte-identical — the fast path is mode-independent and
+bit-exact). `--block-exec` cross-check PASS (SHA `A1740DE0…` exact).
+Walls are single-run gate checks only (menu 203.8 vs 184.2 slice20,
+triangle 102.1 vs 96.9 — host noise dominates single runs; the §160
+median stands as the wall reference, fresh median-of-3 comes after
+the remaining memory-path slices). Flag stays opt-in.
+
 ## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
 
 Direct development, early-morning slice through the shared-helper
