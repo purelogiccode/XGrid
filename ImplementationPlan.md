@@ -3233,6 +3233,18 @@ fallbacks menu 38.4M→36.2M / triangle −0.5M with every slice-16 shape
 gone from both tails. New tail: Movss-family/Rsqrtss (packed SSE),
 Rcl-imm, Fcom/Fcomp/Fchs, Sbb-imm (carry-live, out), Movs (string,
 out), Cli/Sti. Flag stays opt-in.
+**§155 DONE (2026-10-16, direct):** JIT slice 17 (x87 Fcom/Fcomp/Fucom/
+Fucomp + Ficom/Ficomp + Fchs/Fabs/Ftst + Ffree/Ffreep/Fdecstp/Fincstp/
+Fnclex/Fninit — 16 handlers, all continue blocks) behind `--spec-exec`;
+1356/1356 tests, format clean, 2-leg spec golden check PASS
+(`D:\\spec-soak\\slice17`: menu 169.9 s SHA `4EF1FBF6…`, triangle 85.1 s
+SHA `A1740DE0…`, both `vec=0`, `verifyFailures=0`, anchors exact) +
+`--block-exec` cross-check PASS; fallbacks menu 36.2M→35.7M / triangle
+−0.2M with x87 data fully absorbed on both titles (remaining x87:
+transcendentals, Fcmovcc, Fcomi, CW/env/state, BCD — none in top-12).
+New tail: Cli/Sti (untouchable), Movs (string, out), packed-SSE moves +
+Rsqrtss, Rcl-imm, Sbb/Adc-imm (carry-live, out), Cdq, Pushf. Flag stays
+opt-in.
 **ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
 02:13 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.
