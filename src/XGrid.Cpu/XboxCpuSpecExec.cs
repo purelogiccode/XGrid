@@ -142,6 +142,23 @@ public sealed partial class XboxCpu
                 return first == OperandKind.Memory && second == OperandKind.Register
                     ? SpecMovntqMemRegHandler
                     : null;
+            case Mnemonic.Prefetch:
+                // Slice 11: the prefetch hint decodes with a memory operand
+                // it never touches (the interpreter breaks without reading
+                // it), so the handler is EIP-advance only — and like the
+                // fences it may continue its block.
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecPrefetchHandler
+                    : null;
+            case Mnemonic.Sfence:
+            case Mnemonic.Lfence:
+            case Mnemonic.Mfence:
+                // Slice 11: ordering fences are interpreter nops
+                // (`SseTests.Prefetch_IsNoOp` pins the family); the handler
+                // only advances EIP and the shapes continue their block.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? ResolveSpecFence(instruction.Mnemonic)
+                    : null;
             default:
                 return null;
         }
@@ -584,6 +601,17 @@ public sealed partial class XboxCpu
         };
     }
 
+    private static SpecHandler? ResolveSpecFence(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Sfence => SpecSfenceHandler,
+            Mnemonic.Lfence => SpecLfenceHandler,
+            Mnemonic.Mfence => SpecMfenceHandler,
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
@@ -764,6 +792,10 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecMovqRegMemHandler = SpecMovqRegMem;
     private static readonly SpecHandler SpecMovqMemRegHandler = SpecMovqMemReg;
     private static readonly SpecHandler SpecMovntqMemRegHandler = SpecMovntqMemReg;
+    private static readonly SpecHandler SpecPrefetchHandler = SpecHintNop;
+    private static readonly SpecHandler SpecSfenceHandler = SpecHintNop;
+    private static readonly SpecHandler SpecLfenceHandler = SpecHintNop;
+    private static readonly SpecHandler SpecMfenceHandler = SpecHintNop;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1424,6 +1456,15 @@ public sealed partial class XboxCpu
         cpu.WriteMemory64(
             cpu.ComputeAddress(instruction.Operand1.Memory),
             cpu.Context.ReadMmx(instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecHintNop(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 11: Prefetch/Sfence/Lfence/Mfence are interpreter nops
+        // (`ExecuteSse` breaks without touching any operand or flag), so
+        // the handler only advances EIP. Shared by all four shapes; the
+        // per-mnemonic cached fields above keep the form-time table exact.
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

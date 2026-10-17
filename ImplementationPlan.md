@@ -3171,6 +3171,15 @@ continue blocks) behind `--spec-exec`; 1349/1349 tests, format clean,
 (−15.2M Movq/Movntq absorbed) / triangle −90K; block dispatches menu
 307M→292M (continuation confirmed). Walls within noise — no wall claim.
 Next: x87 (daylight slice), SSE, Prefetch. Flag stays opt-in.
+**§148 DONE (2026-10-16, direct):** JIT slice 11 (Prefetch + Sfence/
+Lfence/Mfence hints, 1 shared EIP-advance handler, all 4 continue
+blocks) behind `--spec-exec`; 1350/1350 tests, format clean, 2-leg spec
+golden check PASS (`D:\spec-soak\slice11`: menu 223.2 s SHA `4EF1FBF6…`,
+triangle 117.6 s SHA `A1740DE0…`, both `vec=0`, `verifyFailures=0`,
+counter anchors exact; walls contention-inflated, no wall claim);
+fallbacks menu 105.6M→103.7M (−1.9M Prefetch absorbed) / triangle −10K.
+Remaining top: Cli/Sti (untouchable), x87 (daylight), SSE. Flag stays
+opt-in.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
