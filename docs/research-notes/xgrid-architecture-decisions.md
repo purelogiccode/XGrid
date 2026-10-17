@@ -8298,6 +8298,34 @@ Fcom/Fcomp/Fchs, Sbb-imm (carry-live, out by design). Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
 
+## 155. JIT slice 17: x87 compares + sign/test + tag control behind --spec-exec (2026-10-16)
+
+Direct development, late-evening slice completing the x87 data family
+(the §150 scope's last register-safe rows). Fcom/Fcomp/Fucom/Fucomp
+(ST(i) + ST(0),mem via one shared body — operand read into a temp
+before `SetFpuCompare` touches status bits, conditional pop only after
+success), Ficom/Ficomp (mem-only, same discipline with
+`ReadFpuInteger`), Fchs/Fabs/Ftst (pure ST(0) ops), Ffree/Ffreep
+(tag-only + optional pop), Fdecstp/Fincstp (TOP wrap), Fnclex/Fninit
+(exception control). 16 handlers; whitelist += all 16. Explicitly still
+OUT (daylight): transcendentals, Fcmovcc, Fcomi (EFLAGS-writing),
+Fldcw/Fnstcw/env/state, BCD.
+
+Tests: `FpuCompare_Shapes_MatchInterpreter` (16 shapes vs the
+interpreter, compares behind `fld1` against real stack values) + 15
+resolver pins. Suite **1356/1356**, format clean.
+
+Goldens (`D:\\spec-soak\\slice17`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 85.1 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Fchs gone (−0.2M, x87 fully
+absorbed on triangle — remaining tail is Cli/Sti, packed-SSE,
+Rcl-imm, Sbb-imm). Menu spec r1 PASS 169.9 s — SHA `4EF1FBF6…` exact,
+`vec=0`, `verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+**fallbacks 36.2M→35.7M (−0.5M)** with Fcom/Fcomp/Fchs gone (newly
+exposed: Adc-imm, Cdq, Pushf smalls). Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 ## 152. JIT slice 14: x87 reg-forms + Fsub/Fdiv families behind --spec-exec (2026-10-16)
 
 Direct development, late-evening slice completing the §150 scope's

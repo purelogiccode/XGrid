@@ -120,6 +120,33 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void FpuCompare_Shapes_MatchInterpreter()
+    {
+        // Slice-17 family (§155): x87 compares, ST(0) sign/test ops and
+        // tag/TOP/exception-control ops. Compares run behind `fld1`
+        // prefixes against real stack values (integer compares read the
+        // Preset 0xAABBCCDD int at [EBX]); all are read-before-mutate
+        // verbatim mirrors, so fault/step ordering matches exactly.
+        RunShapes(
+            ("fld1; fld1; fcom st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xD1 }),
+            ("fld1; fld1; fcomp st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xD9 }),
+            ("fld1; fld1; fucom st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDD, 0xE1 }),
+            ("fld1; fld1; fucomp st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDD, 0xE9 }),
+            ("fld1; fcom m32", new byte[] { 0xD9, 0xE8, 0xD8, 0x13 }),
+            ("fld1; fcomp m64", new byte[] { 0xD9, 0xE8, 0xDC, 0x1B }),
+            ("fld1; ficom m32", new byte[] { 0xD9, 0xE8, 0xDA, 0x13 }),
+            ("fld1; ficomp m16", new byte[] { 0xD9, 0xE8, 0xDE, 0x0B }),
+            ("fld1; fchs", new byte[] { 0xD9, 0xE8, 0xD9, 0xE0 }),
+            ("fld1; fabs", new byte[] { 0xD9, 0xE8, 0xD9, 0xE1 }),
+            ("fld1; ftst", new byte[] { 0xD9, 0xE8, 0xD9, 0xE4 }),
+            ("fld1; fld1; ffree st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDD, 0xC1 }),
+            ("fdecstp", new byte[] { 0xD9, 0xF6 }),
+            ("fincstp", new byte[] { 0xD9, 0xF7 }),
+            ("fnclex", new byte[] { 0xDB, 0xE2 }),
+            ("fninit", new byte[] { 0xDB, 0xE3 }));
+    }
+
+    [Fact]
     public void IntRemainder_Shapes_MatchInterpreter()
     {
         // Slice-16 family (§154): Neg/Not, Div/Idiv single, Bswap, Xchg,
@@ -692,6 +719,19 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x33))); // fidiv m32 (slice 16)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDF, 0xE0))); // fnstsw ax (slice 16)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0x3B))); // fnstsw m16 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xD1))); // fcom st1 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xD9))); // fcomp st1 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xE1))); // fucom st1 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xE9))); // fucomp st1 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x13))); // fcom m32 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x13))); // ficom m32 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDE, 0x0B))); // ficomp m16 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xE0))); // fchs (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xE1))); // fabs (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xE4))); // ftst (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xC1))); // ffree st1 (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xF6))); // fdecstp (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDB, 0xE2))); // fnclex (slice 17)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;

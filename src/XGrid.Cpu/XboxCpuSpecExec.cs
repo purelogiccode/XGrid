@@ -188,6 +188,41 @@ public sealed partial class XboxCpu
                     && (first == OperandKind.None || first == OperandKind.Memory)
                     ? SpecFnstswHandler
                     : null;
+            case Mnemonic.Fcom:
+            case Mnemonic.Fcomp:
+            case Mnemonic.Fucom:
+            case Mnemonic.Fucomp:
+                // Slice 17: x87 compares (ST(i) or ST(0),mem) through one
+                // shared body: the compared operand is read into a temp
+                // before `SetFpuCompare` touches any status bit, and the
+                // conditional pop runs only after a successful read.
+                return first == OperandKind.Register
+                    && (second == OperandKind.None || second == OperandKind.Memory)
+                    ? ResolveSpecFpuCompare(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Ficom:
+            case Mnemonic.Ficomp:
+                // Slice 17: integer compares (mem-only) through the same
+                // shared body with `ReadFpuInteger` as the source.
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? ResolveSpecFpuIntegerCompare(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Fchs:
+            case Mnemonic.Fabs:
+            case Mnemonic.Ftst:
+                // Slice 17: ST(0) sign/test ops, pure register/state.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? ResolveSpecFpuUnary(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Ffree:
+            case Mnemonic.Ffreep:
+            case Mnemonic.Fdecstp:
+            case Mnemonic.Fincstp:
+            case Mnemonic.Fnclex:
+            case Mnemonic.Fninit:
+                // Slice 17: tag/TOP/exception-control ops, verbatim
+                // one-liners with no operands beyond an optional ST(i).
+                return ResolveSpecFpuControl(instruction.Mnemonic, first, second);
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -925,6 +960,53 @@ public sealed partial class XboxCpu
         };
     }
 
+    private static SpecHandler? ResolveSpecFpuCompare(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Fcom => SpecFcomHandler,
+            Mnemonic.Fcomp => SpecFcompHandler,
+            Mnemonic.Fucom => SpecFucomHandler,
+            Mnemonic.Fucomp => SpecFucompHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecFpuIntegerCompare(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Ficom => SpecFicomHandler,
+            Mnemonic.Ficomp => SpecFicompHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecFpuUnary(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Fchs => SpecFchsHandler,
+            Mnemonic.Fabs => SpecFabsHandler,
+            Mnemonic.Ftst => SpecFtstHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecFpuControl(Mnemonic mnemonic, OperandKind first, OperandKind second)
+    {
+        return (mnemonic, first, second) switch
+        {
+            (Mnemonic.Ffree, OperandKind.Register, OperandKind.None) => SpecFfreeHandler,
+            (Mnemonic.Ffreep, OperandKind.Register, OperandKind.None) => SpecFfreepHandler,
+            (Mnemonic.Fdecstp, OperandKind.None, OperandKind.None) => SpecFdecstpHandler,
+            (Mnemonic.Fincstp, OperandKind.None, OperandKind.None) => SpecFincstpHandler,
+            (Mnemonic.Fnclex, OperandKind.None, OperandKind.None) => SpecFnclexHandler,
+            (Mnemonic.Fninit, OperandKind.None, OperandKind.None) => SpecFninitHandler,
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
@@ -1141,6 +1223,21 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecFidivHandler = SpecFidiv;
     private static readonly SpecHandler SpecFidivrHandler = SpecFidivr;
     private static readonly SpecHandler SpecFnstswHandler = SpecFnstsw;
+    private static readonly SpecHandler SpecFcomHandler = SpecFcom;
+    private static readonly SpecHandler SpecFcompHandler = SpecFcomp;
+    private static readonly SpecHandler SpecFucomHandler = SpecFucom;
+    private static readonly SpecHandler SpecFucompHandler = SpecFucomp;
+    private static readonly SpecHandler SpecFicomHandler = SpecFicom;
+    private static readonly SpecHandler SpecFicompHandler = SpecFicomp;
+    private static readonly SpecHandler SpecFchsHandler = SpecFchs;
+    private static readonly SpecHandler SpecFabsHandler = SpecFabs;
+    private static readonly SpecHandler SpecFtstHandler = SpecFtst;
+    private static readonly SpecHandler SpecFfreeHandler = SpecFfree;
+    private static readonly SpecHandler SpecFfreepHandler = SpecFfreep;
+    private static readonly SpecHandler SpecFdecstpHandler = SpecFdecstp;
+    private static readonly SpecHandler SpecFincstpHandler = SpecFincstp;
+    private static readonly SpecHandler SpecFnclexHandler = SpecFnclex;
+    private static readonly SpecHandler SpecFninitHandler = SpecFninit;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -2353,6 +2450,123 @@ public sealed partial class XboxCpu
                 cpu.ComputeAddress(instruction.Operand1.Memory), 16, cpu.Fpu.StatusWord);
         }
 
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFcom(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuCompare(cpu, in instruction, pop: false);
+    }
+
+    private static void SpecFcomp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuCompare(cpu, in instruction, pop: true);
+    }
+
+    private static void SpecFucom(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuCompare(cpu, in instruction, pop: false);
+    }
+
+    private static void SpecFucomp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuCompare(cpu, in instruction, pop: true);
+    }
+
+    private static void SpecFpuCompare(XboxCpu cpu, in DecodedInstruction instruction, bool pop)
+    {
+        // Slice-17 shared compare: verbatim interpreter
+        // `Fcom/Fcomp/Fucom/Fucomp` case. The compared operand is read
+        // into a temp before `SetFpuCompare` touches any status bit, so
+        // a faulting memory source throws with no FPU mutation and
+        // precise EIP; the conditional pop runs only after success.
+        Operand compared = instruction.Operand2.Kind == OperandKind.None
+            ? instruction.Operand1
+            : instruction.Operand2;
+        cpu.SetFpuCompare(cpu.Fpu.GetRegister(0), cpu.ReadFpuReal(compared));
+        if (pop)
+        {
+            cpu.Fpu.Pop();
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFicom(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerCompare(cpu, in instruction, pop: false);
+    }
+
+    private static void SpecFicomp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerCompare(cpu, in instruction, pop: true);
+    }
+
+    private static void SpecFpuIntegerCompare(XboxCpu cpu, in DecodedInstruction instruction, bool pop)
+    {
+        // Slice-17 shared integer compare: verbatim interpreter
+        // `Ficom/Ficomp` case with the same read-before-compare order.
+        cpu.SetFpuCompare(cpu.Fpu.GetRegister(0), cpu.ReadFpuInteger(instruction.Operand1));
+        if (pop)
+        {
+            cpu.Fpu.Pop();
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFchs(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.SetRegister(0, cpu.Fpu.GetRegister(0).Negate());
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFabs(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.SetRegister(0, cpu.Fpu.GetRegister(0).Abs());
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFtst(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.SetFpuCompare(cpu.Fpu.GetRegister(0), Fpu80.Zero);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFfree(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Free(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFfreep(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Free(instruction.Operand1.RegisterIndex);
+        cpu.Fpu.Pop();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFdecstp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Top = (cpu.Fpu.Top - 1) & 7;
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFincstp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Top = (cpu.Fpu.Top + 1) & 7;
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFnclex(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.ClearExceptions();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFninit(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Init();
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
