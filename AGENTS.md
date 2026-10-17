@@ -564,7 +564,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     Slice30 gate: SHAs exact both titles, triangle emit 66.0 s < spec
     76.0 s, menu emit 180.3 s ~= spec 182.2 s (parity, was 6.50x at E1);
     builds menu 1.24M-->5.8k. Serve layer no longer the bottleneck
-    (E3 body inlining next). Smoke PASS 7/7. **1410/1410 tests**.
+    (E3 body inlining next, scoped §175). Median-of-3: triangle emit
+    1.089x spec, menu emit 0.944x spec (warmup transient suspected,
+    second triplet running). Smoke PASS 7/7. **1410/1410 tests**.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
