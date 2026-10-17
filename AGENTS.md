@@ -525,6 +525,13 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    triangle spec 98.9 s + menu spec 187.9 s SHAs exact, menu cache
    207.4 s byte-identical, `--block-exec` SHA exact; all single-run,
    no claim). **1375/1375 tests**, format clean.
+   Then memory-path slice 4 (§165, same night): rep movs/stos span
+   path (page-chunked, order-exact; ZF/IO strings stay legacy). Caught
+   a real ESI-on-stos bug via the gate (tests green, triangle halted
+   at 6.6M; fixed + ESI pin). 4-leg gate PASS (`D:\spec-soak\slice23`:
+   triangle spec 82.2 s + menu spec 154.7 s SHAs exact, menu cache
+   166.0 s byte-identical, `--block-exec` SHA exact; single-run, no
+   claim; §164 median stands). **1385/1385 tests**, format clean.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
@@ -582,12 +589,16 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    wide-access single-translate, mode-independent). Slices 13-20 cut
    the menu fallback total 101.8M→34.1M (x87 fully absorbed on both
    titles); median-of-3 post-slices-13–20 stands at menu 1.072x /
-   triangle 1.185x (§160). Remaining memory-path work per §159:
-   RMW compute-once (hot handlers already hoist; interpreter generic
-   path keeps fault-priority semantics — likely done by inspection),
-   then a fresh median-of-3 before any default-flip talk. Remaining shape tail: Sbb/Adc (carry-live,
+   triangle 1.185x (§160). Memory-path build per §159 now complete:
+   slice 1 (RAM-direct/wide-S1) + slices 2+3 (Bytes bulk, xlat cache)
+   + slice 4 (rep-string span); RMW compute-once done by inspection
+   (hot handlers hoist; interpreter keeps fault-priority semantics).
+   Fresh median-3 post-slices-1–3 (§164): menu 1.070x / tri 1.164x →
+   flag stays opt-in (flip calculus is the ratio). Remaining shape
+   tail: Sbb/Adc (carry-live,
    out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos
-   (string, out), Cli/Sti (untouchable) — all <100k or deliberate
+   (rep bulk landed §165 but shapes still interpreter-dispatched),
+   Cli/Sti (untouchable) — all <100k or deliberate
    outs; shape work is done except daylight items. DynamicMethod stays
    rejected unless new numbers say otherwise. NXDK toolchain
    (operator/host) still the mesh blocker.

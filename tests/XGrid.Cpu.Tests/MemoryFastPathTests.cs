@@ -352,6 +352,219 @@ public sealed class MemoryFastPathTests
         Assert.Equal(2, counter.SingularTranslates);
     }
 
+    [Fact]
+    public void RepMovsd_RamToRam_ExactWithRegisterCommit()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xA5); // rep movsd
+        for (uint i = 0; i < 8; i++)
+        {
+            cpu.Bus().Write32(0x2000 + i * 4, 0x11111111u * (i + 1));
+        }
+
+        cpu.Context.Esi = 0x2000;
+        cpu.Context.Edi = 0x3000;
+        cpu.Context.Ecx = 8;
+        cpu.Execute(1);
+
+        for (uint i = 0; i < 8; i++)
+        {
+            Assert.Equal(0x11111111u * (i + 1), cpu.Bus().Read32(0x3000 + i * 4));
+        }
+
+        Assert.Equal(0x2020u, cpu.Context.Esi);
+        Assert.Equal(0x3020u, cpu.Context.Edi);
+        Assert.Equal(0u, cpu.Context.Ecx);
+    }
+
+    [Fact]
+    public void RepMovsb_MultiPage_ForwardExact()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xA4); // rep movsb
+        for (uint i = 0; i < 128; i++)
+        {
+            cpu.Bus().Write8(0x2FC0 + i, (byte)(i + 1));
+        }
+
+        cpu.Context.Esi = 0x2FC0; // spans 0x2FC0..0x303F (page cross)
+        cpu.Context.Edi = 0x2080;
+        cpu.Context.Ecx = 128;
+        cpu.Execute(1);
+
+        for (uint i = 0; i < 128; i++)
+        {
+            Assert.Equal((byte)(i + 1), cpu.Bus().Read8(0x2080 + i));
+        }
+
+        Assert.Equal(0x3040u, cpu.Context.Esi);
+        Assert.Equal(0x2100u, cpu.Context.Edi);
+        Assert.Equal(0u, cpu.Context.Ecx);
+    }
+
+    [Fact]
+    public void RepMovsd_Backward_Df1_Exact()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xA5); // rep movsd
+        for (uint i = 0; i < 4; i++)
+        {
+            cpu.Bus().Write32(0x20F0 + i * 4, 0xA0u + i);
+        }
+
+        cpu.Context.Esi = 0x20FC;
+        cpu.Context.Edi = 0x30FC;
+        cpu.Context.Ecx = 4;
+        cpu.Context.Eflags |= FlagBits.Df;
+        cpu.Execute(1);
+
+        for (uint i = 0; i < 4; i++)
+        {
+            Assert.Equal(0xA0u + i, cpu.Bus().Read32(0x30F0 + i * 4));
+        }
+
+        Assert.Equal(0x20ECu, cpu.Context.Esi);
+        Assert.Equal(0x30ECu, cpu.Context.Edi);
+        Assert.Equal(0u, cpu.Context.Ecx);
+    }
+
+    [Fact]
+    public void RepMovsd_OverlappingForward_MemmoveOrder()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xA5); // rep movsd
+        for (uint i = 0; i < 12; i++)
+        {
+            cpu.Bus().Write32(0x2000 + i * 4, i);
+        }
+
+        cpu.Context.Esi = 0x2000;
+        cpu.Context.Edi = 0x2008; // overlaps src (forward memmove)
+        cpu.Context.Ecx = 8;
+        cpu.Execute(1);
+
+        // x86 rep movs is iterative, NOT memmove: elements re-read
+        // already-overwritten bytes (a naive span copy would yield 0..7 and
+        // fail here — this pins the order-exactness).
+        for (uint i = 0; i < 8; i++)
+        {
+            Assert.Equal(i & 1u, cpu.Bus().Read32(0x2008 + i * 4));
+        }
+    }
+
+    [Fact]
+    public void RepStosd_Fill_Exact()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xAB); // rep stosd
+        cpu.Context.Esi = 0x12345678; // stos never touches ESI (regression pin)
+        cpu.Context.Edi = 0x2000;
+        cpu.Context.Eax = 0xDEADBEEFu;
+        cpu.Context.Ecx = 16;
+        cpu.Execute(1);
+
+        for (uint i = 0; i < 16; i++)
+        {
+            Assert.Equal(0xDEADBEEFu, cpu.Bus().Read32(0x2000 + i * 4));
+        }
+
+        Assert.Equal(0x2040u, cpu.Context.Edi);
+        Assert.Equal(0u, cpu.Context.Ecx);
+        Assert.Equal(0x12345678u, cpu.Context.Esi);
+    }
+
+    [Fact]
+    public void RepStosd_ZeroCount_IsNoOp()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xAB); // rep stosd
+        cpu.Bus().Write32(0x2000, 0x12345678);
+        cpu.Context.Edi = 0x2000;
+        cpu.Context.Eax = 0xDEADBEEFu;
+        cpu.Context.Ecx = 0;
+        cpu.Execute(1);
+
+        Assert.Equal(0x12345678u, cpu.Bus().Read32(0x2000));
+        Assert.Equal(0x2000u, cpu.Context.Edi);
+    }
+
+    [Fact]
+    public void RepMovsd_MmioDst_FallsBackWithIdenticalTraffic()
+    {
+        XboxCpu cpu = CreatePaged(0xF3, 0xA5); // rep movsd
+        var device = new CountingMmioDevice();
+        cpu.Bus().AddRegion("test", 0xF0000000, 0x1000, device);
+        Map4K(cpu.Bus(), 0x3000, 0xF0000000);
+        cpu.Bus().Write32(0x2000, 0xAAAAAAAAu);
+        cpu.Bus().Write32(0x2004, 0xBBBBBBBu);
+        cpu.Context.Esi = 0x2000;
+        cpu.Context.Edi = 0x3000;
+        cpu.Context.Ecx = 2;
+        cpu.Execute(1);
+
+        // Legacy shape: one 32-bit device write per element.
+        Assert.Empty(device.Reads);
+        Assert.Equal(2, device.Writes.Count);
+        Assert.Equal(0xF0000000u, device.Writes[0].Address);
+        Assert.Equal(0xF0000004u, device.Writes[1].Address);
+        Assert.All(device.Writes, w => Assert.Equal(4, w.Size));
+        Assert.Equal(0u, cpu.Context.Ecx);
+    }
+
+    [Fact]
+    public void RepStosd_WriteWatch_StillFiresPerElement()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xF3, 0xAB); // rep stosd
+        cpu.Context.Edi = 0x2000;
+        cpu.Context.Eax = 0xDEADBEEFu;
+        cpu.Context.Ecx = 8;
+        var hits = new List<(uint Address, int Size, uint Value)>();
+        cpu.Bus().WatchStart = 0x2000;
+        cpu.Bus().WatchEnd = 0x2020;
+        cpu.Bus().WatchHit += (address, size, value) => hits.Add((address, size, value));
+        cpu.Step();
+
+        Assert.Equal(8, hits.Count);
+        Assert.Equal(0x2000u, hits[0].Address);
+        Assert.Equal(0x201Cu, hits[7].Address);
+        Assert.All(hits, h => Assert.Equal(4, h.Size));
+    }
+
+    [Fact]
+    public void RepMovsd_Addr16Wrap_FallsBackExact()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x67, 0xF3, 0xA5); // addr16 rep movsd
+        Map4K(cpu.Bus(), 0x0000, 0x0000);
+        Map4K(cpu.Bus(), 0xF000, 0xF000); // SI=0xFFFC lives in page 0xF000
+        Map4K(cpu.Bus(), 0x1000, 0x1000);
+        Map4K(cpu.Bus(), 0x2000, 0x2000);
+        Map4K(cpu.Bus(), 0x3000, 0x3000);
+        EnablePaging(cpu);
+        cpu.Bus().Write32(0xFFFC, 0x11111111);
+        cpu.Bus().Write32(0x0000, 0x22222222);
+        cpu.Context.Esi = 0xFFFC; // 0xFFFC+8 wraps 64K -> legacy path
+        cpu.Context.Edi = 0x3000;
+        cpu.Context.Ecx = 2;
+        cpu.Execute(1);
+
+        Assert.Equal(0x11111111u, cpu.Bus().Read32(0x3000));
+        Assert.Equal(0x22222222u, cpu.Bus().Read32(0x3004));
+        Assert.Equal(0x0004u, cpu.Context.Esi); // two post-iteration advances with 64K wrap
+        Assert.Equal(0x3008u, cpu.Context.Edi);
+        Assert.Equal(0u, cpu.Context.Ecx);
+    }
+
+    [Fact]
+    public void ObserverAttached_StringKeepsPerIterationNotes()
+    {
+        // Gate pin: with a profiler attached rep movsd x2 reports four
+        // singular data-translate notes (read+write per iteration).
+        XboxCpu cpu = CreatePaged(0xF3, 0xA5); // rep movsd
+        cpu.Context.Esi = 0x2000;
+        cpu.Context.Edi = 0x3000;
+        cpu.Context.Ecx = 2;
+        var counter = new TlbCounter();
+        cpu.HotspotObserver = counter;
+        cpu.Mmu.Flush();
+        cpu.Execute(1);
+
+        Assert.Equal(4, counter.SingularTranslates);
+    }
+
     private static void InstallIdt(XboxCpu cpu)
     {
         uint gate = 0x6000 + 14 * 8;

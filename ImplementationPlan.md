@@ -3305,6 +3305,16 @@ only, no claim; fresh median-of-3 (§164: menu 1.070x / triangle
 1.164x — ratios flat vs §160, but ~7% menu / ~3–4% triangle ABSOLUTE
 on both modes) → default-flip decision: flag stays opt-in. ktest
 smoke PASS 7/7 alongside (02:12).
+**§165 DONE (2026-10-17, direct):** memory-path slice 4 (rep movs/stos
+span path: page-chunked one-translate-per-side + order-exact direct RAM
+elements; ZF-dependent/IO strings stay legacy; 16-bit/64K-wrap and 4 GB
+fallbacks) — caught a real ESI-on-stos bug via the golden gate (unit
+tests all green, triangle halted at 6.6M; fixed + ESI pin + 10M-step
+EIP-identical probe); 10 new tests, suite 1385/1385, format clean,
+4-leg golden gate PASS (`D:\spec-soak\slice23`: triangle spec 82.2 s +
+menu spec 154.7 s SHAs exact, menu cache 166.0 s byte-identical,
+`--block-exec` SHA exact; single-run walls only, §164 median stands).
+Flag stays opt-in.
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,

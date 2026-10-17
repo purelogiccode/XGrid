@@ -8675,3 +8675,47 @@ dispatch share (section 136: 30.9-36.6%), (c) a machine-code emitter
 (section 138 -- the actual lever; everything so far is specialization).
 No wall claim beyond the ratios themselves. ktest smoke PASS 7/7
 alongside (02:12, known deltas, park-break reproducibility unbroken).
+
+## 165. Memory-path slice 4: rep movs/stos span path (2026-10-17)
+
+Direct development, fourth build from the section 159 recipe (option 3
+remainder -- the median22 tail showed Movs 981,712 + Stos 56,886
+interpreter dispatches, each iterating ECX bytes at two translates per
+byte). `ExecuteStringBulk` in `XboxCpu.cs`, hooked into `ExecuteString`
+for Rep-prefixed ZF-independent moves only (Cmps/Scas exit early on ZF;
+Lods/Ins/Outs touch registers or IO per iteration -- legacy loop kept).
+
+- Paging on (FastWideAllowed-gated): page-bounded chunks with one
+  translate per side per chunk + direct RAM element ops in legacy visit
+  order (overlap/aliasing exact by order -- the overlap test pins the
+  iterative [0,1,0,1...] result a naive span copy would get wrong);
+  straddling elements take one exact legacy iteration; non-RAM or
+  watched chunks fall back per chunk (MMIO traffic, watch hits,
+  unmapped counters preserved); indices/counter commit per chunk so
+  fault partial states match legacy.
+- Paging off: whole-range RAM + no-watch check, then the same chunked
+  move with per-page decode drops (no translates, no faults possible).
+- 16-bit address size falls back on any 64K wrap; 32-bit on any 4 GB
+  wrap; ECX=0 is a no-op in both paths.
+
+**Real bug caught by the golden gate (not by unit tests):** the first
+version advanced ESI on `rep stos`, which the legacy loop never touches
+-- all 26 unit tests passed, but the triangle boot halted at 6.6M steps
+(EIP 0x0040079E) while the --hotspot run (bulk force-off) sailed to 10M.
+Fixed (per-mnemonic register commit), verified by a 10M-step probe with
+EIP bit-identical to the legacy path, and pinned by a new ESI-
+preservation test. Lesson: register-touch asymmetry is the string-op
+fault-priority equivalent -- the gate earns its keep.
+
+Tests: 10 new (forward/multi-page/backward-DF1/overlap-order/fill/
+zero-count/MMIO-fallback/watch-fallback/addr16-wrap/observer-gate +
+ESI pin). Suite **1385/1385**, format clean. 4-leg golden gate
+(`D:\spec-soak\slice23`, full-solution rebuild -- the earlier `dotnet
+test` does NOT rebuild the CLI, so the first slice23 pass ran stale
+binaries and was redone): triangle spec 82.2 s + menu spec 154.7 s
+SHAs exact, `vec=0`, `verifyFailures=0`, anchors exact; menu cache
+166.0 s SHA exact (flag-off byte-identical); triangle `--block-exec`
+SHA `A1740DE0...` exact, draws=2706. Walls single-run only -- and note
+the menu-cache 207-->166 drop happened between runs of IDENTICAL
+binaries (host shift, not code). The section 164 median stands. Flag
+stays opt-in.
