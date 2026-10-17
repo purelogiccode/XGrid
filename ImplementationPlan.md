@@ -3006,7 +3006,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-17; refreshed for the emitter program §§171–175)
+## Project completion assessment (2026-10-17; refreshed for the emitter program §§171–176)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3030,17 +3030,17 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 45% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); first codegen E1–E2c landed (§§171–174: DynamicMethod tails at spec parity, median-backed; `--emit` opt-in); E3 body inlining scoped (§175); emitter program open |
+| 15 CPU JIT | 11 | 48% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E2c (§§171–174: DynamicMethod tails at spec parity; `--emit` opt-in); E3-1 body inlining landed (§176: `--emit-inline` twins + IL fast paths for the top Mov shapes); E3-2 flag folding + wider body cover open |
 | 16 CPU Optimization | 3 | 25% | benchmark-driven tuning; medians §160/164/166/169/175 in place; profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 60% | 1410 tests + goldens/median harnesses + ktest smoke; fuzzing, wider compatibility corpus |
+| 20 Automated Testing | 3 | 60% | 1421 tests + goldens/median harnesses (`emit-gate.ps1`/`emit-median.ps1`) + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 50% | GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~68% complete overall** (weighted: 73.4 of 108 weight-points, recomputed 2026-10-17 after the emitter program §§171–175; was ~65%/70.6 pts on 2026-10-16).
+**Result: ~68% complete overall** (weighted: 73.7 of 108 weight-points, recomputed 2026-10-17 after E3-0/E3-1 §§175–176; was 73.4 pts after §§171–175).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:

@@ -568,6 +568,21 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     1.089x spec, menu emit 0.944x spec (first-triplet median; second
     triplet 148.0/150.3/154.1 confirms r1 warmup outlier, steady state
     at parity-with-slight-deficit). Smoke PASS 7/7. **1410/1410 tests**.
+    E3-0/E3-1 LANDED (§§175-176, direct): `--shape-tally` served-shape
+    histogram (default-off, suppresses emit; 1B rankings in §176 -- the
+    twins' shapes are 34.9% of menu / 35.3% of triangle members); E3-1a
+    `--emit-inline` context-hoisted lean twins for 8 memory shapes (twins
+    derived from ResolveSpec handlers; hotspot branches folded out under
+    the RunEmitTail guard); E3-1b baked IL fast paths for the two 32-bit
+    Mov reg<->mem shapes (inline address + translate-cache probe +
+    RAM-direct read/write; every non-fast case falls back to the exact
+    twin; Mmu.Observer hoisted per invocation). +8 EmitTests (differentials
+    incl. FS/GS, 16-bit addressing, watched store, non-RAM physical,
+    mid-tail fault precision, gates) + 3 tally tests. Gate
+    `scripts/emit-gate.ps1`; walls in §176: interleaved median-of-3 (menu)
+    emit 174.2 s vs emit-inline 171.4 s = **1.016x** thin-positive
+    (triangle 1.037x single-run, no claim). Flag stays opt-in.
+    **1421/1421 tests**.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
