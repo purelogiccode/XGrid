@@ -79,13 +79,18 @@ internal static class BlockEmitter
     /// <param name="entries">The block's live entry array (shared lifetime).</param>
     /// <param name="handlers">The block's resolved handlers (all non-null).</param>
     /// <param name="linears">Expected linear PC per member.</param>
+    /// <param name="inlineBodies">True to serve members with a resolved E3-1 inline twin (context-hoisted lean body) where one exists.</param>
+    /// <param name="inlineMembers">Receives the number of members baked onto the inline path.</param>
     /// <returns>The runner, or null for non-emittable tails.</returns>
     internal static EmitTailRunner? Build(
         uint headLinear,
         DecodeCacheEntry[] entries,
         XboxCpu.SpecHandler?[] handlers,
-        uint[] linears)
+        uint[] linears,
+        bool inlineBodies,
+        out int inlineMembers)
     {
+        inlineMembers = 0;
         if (entries.Length < 2 || entries.Length != linears.Length || entries.Length != handlers.Length)
         {
             return null;
@@ -106,6 +111,29 @@ internal static class BlockEmitter
                 || target.GetParameters().Length != 2)
             {
                 return null;
+            }
+        }
+
+        // E3-1: resolve the inline twin per member at build time (null keeps
+        // the plain handler call). The twin is validated like the handler so
+        // an unexpected signature falls back instead of baking a bad call.
+        var inline = new MethodInfo?[entries.Length];
+        if (inlineBodies)
+        {
+            for (int i = 1; i < entries.Length; i++)
+            {
+                XboxCpu.SpecInlineHandler? twin = XboxCpu.ResolveInlineHandler(entries[i].Instruction);
+                if (twin is null)
+                {
+                    continue;
+                }
+
+                MethodInfo candidate = twin.Method;
+                if (candidate.IsStatic && candidate.ReturnType == typeof(void)
+                    && candidate.GetParameters().Length == 3)
+                {
+                    inline[i] = candidate;
+                }
             }
         }
 
@@ -190,14 +218,29 @@ internal static class BlockEmitter
 
             // Semantic body: direct static call on the member instruction in
             // place (entry address + instruction field address, no copies),
-            // with no delegate indirection.
+            // with no delegate indirection. E3-1 members take the resolved
+            // inline twin (context hoisted into the runner).
             il.MarkLabel(body);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldarg_1);
-            il.Emit(OpCodes.Ldc_I4, j);
-            il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
-            il.Emit(OpCodes.Ldflda, EntryInstruction);
-            il.EmitCall(OpCodes.Call, (MethodInfo)handlers[j]!.Method, null);
+            if (inline[j] is { } inlineMethod)
+            {
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldarg_1);
+                il.Emit(OpCodes.Ldc_I4, j);
+                il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
+                il.Emit(OpCodes.Ldflda, EntryInstruction);
+                il.EmitCall(OpCodes.Call, inlineMethod, null);
+                inlineMembers++;
+            }
+            else
+            {
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldarg_1);
+                il.Emit(OpCodes.Ldc_I4, j);
+                il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
+                il.Emit(OpCodes.Ldflda, EntryInstruction);
+                il.EmitCall(OpCodes.Call, (MethodInfo)handlers[j]!.Method, null);
+            }
 
             il.Emit(OpCodes.Ldloc, served);
             il.Emit(OpCodes.Ldc_I4_1);

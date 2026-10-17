@@ -96,10 +96,37 @@ public sealed partial class XboxCpu
         }
     }
 
+    /// <summary>
+    /// Gets or sets E3-1 inline bodies inside emitted tails (§175): members
+    /// whose shape has a lean context-hoisted twin run it instead of the
+    /// generic spec handler. Default off. Enabling implies
+    /// <see cref="EmitEnabled"/>. Host-side configuration: untouched by
+    /// <see cref="Reset"/> and snapshot save/load.
+    /// </summary>
+    public bool EmitInlineEnabled
+    {
+        get => _emitInlineEnabled;
+        set
+        {
+            if (value)
+            {
+                EmitEnabled = true;
+            }
+
+            _emitInlineEnabled = value;
+            if (_blocks is not null)
+            {
+                _blocks.EmitInlineEnabled = value;
+            }
+        }
+    }
+
     /// <summary>Gets the live block invalidation generation for emitted runners.</summary>
     internal ulong BlockGeneration => _blocks?.Generation ?? 0;
 
     private bool _emitEnabled;
+
+    private bool _emitInlineEnabled;
 
     private readonly int[] _emitProgress = new int[BlockEmitter.ProgressLength];
 

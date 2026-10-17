@@ -99,6 +99,28 @@ public sealed class DecodedBlockCache
 
     private readonly Dictionary<XboxCpu.SpecShape, ulong> _fallbackShapes = new();
 
+    /// <summary>Maximum retained served-shape histogram entries.</summary>
+    public const int MaxServedShapes = 512;
+
+    private readonly Dictionary<XboxCpu.SpecShape, ulong> _servedShapes = new();
+    private bool _shapeTallyEnabled;
+
+    /// <summary>
+    /// Gets or sets whether specialized-member serves are tallied by shape
+    /// (§175 E3-0, diagnostic only). Default off: while disabled the serve
+    /// path pays a single field read and every existing mode stays
+    /// byte-identical. While enabled the totals equal <see cref="ShapeHits"/>
+    /// (fallback members are already tallied separately).
+    /// </summary>
+    public bool ShapeTallyEnabled
+    {
+        get => _shapeTallyEnabled;
+        set => _shapeTallyEnabled = value;
+    }
+
+    /// <summary>Gets served-shape execution counts (empty unless <see cref="ShapeTallyEnabled"/>).</summary>
+    public IReadOnlyDictionary<XboxCpu.SpecShape, ulong> ServedShapes => _servedShapes;
+
     /// <summary>Gets the invalidation generation (bumped on every <see cref="Invalidate"/>).</summary>
     public ulong Generation { get; private set; }
 
@@ -110,6 +132,16 @@ public sealed class DecodedBlockCache
 
     /// <summary>Gets members served through emitted tails.</summary>
     public ulong EmitRan { get; private set; }
+
+    /// <summary>Gets members baked onto E3-1 inline bodies across built runners.</summary>
+    public ulong EmitInlineMembers { get; private set; }
+
+    /// <summary>
+    /// Gets or sets E3-1 inline bodies for emitted tails (§175, default off).
+    /// Host-side configuration set before boot; runners record the flag they
+    /// were built with and rebuild on next use when it differs.
+    /// </summary>
+    public bool EmitInlineEnabled { get; set; }
 
     /// <summary>
     /// Gets fallback-shape execution counts, tallied at serve time while
@@ -174,6 +206,39 @@ public sealed class DecodedBlockCache
         {
             _fallbackShapes[shape] = 1;
         }
+    }
+
+    private void NoteServedShape(in DecodedInstruction instruction)
+    {
+        XboxCpu.SpecShape shape = XboxCpu.SpecShape.From(instruction);
+        if (_servedShapes.TryGetValue(shape, out ulong count))
+        {
+            _servedShapes[shape] = count + 1;
+        }
+        else if (_servedShapes.Count < MaxServedShapes)
+        {
+            _servedShapes[shape] = 1;
+        }
+    }
+
+    /// <summary>
+    /// Returns the top served shapes by execution count (diagnostic only;
+    /// never on a hot path). Empty unless <see cref="ShapeTallyEnabled"/>.
+    /// </summary>
+    /// <param name="count">Maximum shapes to return.</param>
+    /// <returns>Shapes ordered by descending execution count.</returns>
+    public (XboxCpu.SpecShape Shape, ulong Count)[] TopServedShapes(int count)
+    {
+        var tallies = new List<KeyValuePair<XboxCpu.SpecShape, ulong>>(_servedShapes);
+        tallies.Sort(static (a, b) => b.Value.CompareTo(a.Value));
+        int take = Math.Min(count, tallies.Count);
+        var top = new (XboxCpu.SpecShape Shape, ulong Count)[take];
+        for (int i = 0; i < take; i++)
+        {
+            top[i] = (tallies[i].Key, tallies[i].Value);
+        }
+
+        return top;
     }
 
     /// <summary>
@@ -266,6 +331,10 @@ public sealed class DecodedBlockCache
             else
             {
                 ShapeHits++;
+                if (_shapeTallyEnabled)
+                {
+                    NoteServedShape(entry.Instruction);
+                }
             }
         }
 
@@ -444,6 +513,9 @@ public sealed class DecodedBlockCache
 
         /// <summary>Invalidation generation the cached runner was built for.</summary>
         public ulong RunnerGeneration;
+
+        /// <summary>Whether the cached runner was built with E3-1 inline bodies.</summary>
+        public bool RunnerInline;
     }
 
     /// <summary>
@@ -471,14 +543,16 @@ public sealed class DecodedBlockCache
             && block.Visits >= EmitThreshold)
         {
             entries = block.Entries;
-            if (block.Runner is { } cached && block.RunnerGeneration == Generation)
+            if (block.Runner is { } cached && block.RunnerGeneration == Generation
+                && block.RunnerInline == EmitInlineEnabled)
             {
                 EmitHits++;
                 runner = cached;
                 return true;
             }
 
-            runner = BlockEmitter.Build(block.HeadLinear, block.Entries, block.Handlers, block.EmitLinears);
+            runner = BlockEmitter.Build(block.HeadLinear, block.Entries, block.Handlers, block.EmitLinears,
+                EmitInlineEnabled, out int inlineMembers);
             if (runner is null)
             {
                 entries = null!;
@@ -487,6 +561,8 @@ public sealed class DecodedBlockCache
 
             block.Runner = runner;
             block.RunnerGeneration = Generation;
+            block.RunnerInline = EmitInlineEnabled;
+            EmitInlineMembers += (ulong)inlineMembers;
             EmitBuilds++;
             return true;
         }

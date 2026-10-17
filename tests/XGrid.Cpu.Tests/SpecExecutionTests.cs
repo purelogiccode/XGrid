@@ -1272,6 +1272,78 @@ public sealed class SpecExecutionTests
         Assert.Empty(blocks.TopFallbackShapes(8));
     }
 
+    [Fact]
+    public void ServedShapeTally_UnitLevel_CountsServedMembersOnlyWhenEnabled()
+    {
+        // inc eax; nop — both specialized; the tally must count both serves
+        // under the flag and stay empty without it (block formation itself
+        // must not tally).
+        var off = new DecodedBlockCache { SpecEnabled = true };
+        var offDecodes = new DecodeCache { Blocks = off };
+        Fill(offDecodes, 0x1000, 0x40);
+        Fill(offDecodes, 0x1001, 0x90);
+        Assert.True(off.TryNext(offDecodes, 0x1000, 32, 32, out _));
+        Assert.True(off.TryNext(offDecodes, 0x1001, 32, 32, out _));
+        Assert.Equal(2UL, off.ShapeHits);
+        Assert.Empty(off.ServedShapes);
+        Assert.Empty(off.TopServedShapes(8));
+
+        var on = new DecodedBlockCache { SpecEnabled = true, ShapeTallyEnabled = true };
+        var onDecodes = new DecodeCache { Blocks = on };
+        Fill(onDecodes, 0x1000, 0x40);
+        Fill(onDecodes, 0x1001, 0x90);
+        Assert.True(on.TryNext(onDecodes, 0x1000, 32, 32, out _));
+        Assert.True(on.TryNext(onDecodes, 0x1001, 32, 32, out _));
+        Assert.Equal(2UL, on.ShapeHits);
+        Assert.Equal(2, on.ServedShapes.Count);
+        var top = on.TopServedShapes(8);
+        Assert.Equal(2, top.Length);
+        Assert.Equal(1UL, top[0].Count);
+        Assert.Equal(1UL, top[1].Count);
+    }
+
+    [Fact]
+    public void ServedShapeTally_DefaultOff_LeavesHistogramEmpty()
+    {
+        // The slice-15 loop specializes every member; without the flag the
+        // serve path must not tally anything (and the run stays exact).
+        byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD3, 0xE0, 0xEB, 0xF7 };
+        XboxCpu cpu = Create(true, code);
+        cpu.Execute(64);
+        DecodedBlockCache stats = cpu.SpecStatistics!;
+        Assert.True(stats.ShapeHits > 0);
+        Assert.Empty(stats.ServedShapes);
+        Assert.Empty(stats.TopServedShapes(8));
+    }
+
+    [Fact]
+    public void ServedShapeTally_TotalsEqualShapeHits_AndStateStaysIdentical()
+    {
+        byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD3, 0xE0, 0xEB, 0xF7 };
+
+        XboxCpu off = Create(true, code);
+        off.Execute(64);
+
+        XboxCpu on = Create(true, code);
+        on.SpecStatistics!.ShapeTallyEnabled = true;
+        on.Execute(64);
+
+        DecodedBlockCache stats = on.SpecStatistics!;
+        ulong total = 0;
+        foreach (var entry in stats.ServedShapes)
+        {
+            total += entry.Value;
+        }
+
+        Assert.True(stats.ShapeHits > 0);
+        Assert.Equal(stats.ShapeHits, total);
+        Assert.NotEmpty(stats.TopServedShapes(8));
+        Assert.Equal(0UL, stats.ShapeFallbacks);
+
+        // Diagnostic only: enabling the tally changes no guest state.
+        AssertSameState(off, on);
+    }
+
     private static void RunShapes(params (string Name, byte[] Code)[] shapes)
     {
         foreach ((string name, byte[] code) in shapes)

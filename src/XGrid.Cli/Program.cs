@@ -98,6 +98,8 @@ internal static class Program
         bool blockVerify = false;
         bool specExec = false;
         bool emit = false;
+        bool emitInline = false;
+        bool shapeTally = false;
         string gpuBackend = "sw";
         string? hotspotPath = null;
         List<string> scans = new();
@@ -256,6 +258,12 @@ internal static class Program
                 case "--emit":
                     emit = true;
                     break;
+                case "--emit-inline":
+                    emitInline = true;
+                    break;
+                case "--shape-tally":
+                    shapeTally = true;
+                    break;
                 case "--decode-cache":
                     decodeCache = true;
                     break;
@@ -382,7 +390,7 @@ internal static class Program
                     "Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
             }
 
-            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec || emit)
+            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec || emit || shapeTally)
             {
                 machine.Cpu.DecodeCacheEnabled = true;
                 Console.WriteLine(
@@ -395,7 +403,7 @@ internal static class Program
                 }
             }
 
-            if (blockExec || blockVerify || specExec || emit)
+            if (blockExec || blockVerify || specExec || emit || shapeTally)
             {
                 machine.Cpu.BlockExecutionEnabled = true;
                 machine.Cpu.BlockVerify = blockVerify;
@@ -407,18 +415,41 @@ internal static class Program
                 Console.WriteLine($"Block execution=on (verify={blockVerify}; per-instruction boundaries retained)");
             }
 
-            if (specExec || emit)
+            if (specExec || emit || shapeTally)
             {
                 machine.Cpu.SpecExecutionEnabled = true;
                 Console.WriteLine(
                     "Spec execution=on (pre-specialized shapes; implies block-exec; per-instruction boundaries retained)");
             }
 
-            if (emit)
+            if (shapeTally)
             {
-                machine.Cpu.EmitEnabled = true;
-                Console.WriteLine(
-                    "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
+                machine.Cpu.SpecStatistics!.ShapeTallyEnabled = true;
+                Console.WriteLine("Shape tally=on (served-shape histogram; diagnostic only)");
+            }
+
+            if (emit || emitInline)
+            {
+                if (shapeTally)
+                {
+                    // §175 E3-0: the tally measures executed shapes on the
+                    // member path; emitted tails bypass TryNext, so emission
+                    // stays off while tallying to keep the histogram exact.
+                    Console.WriteLine("Emit=suppressed (--shape-tally measures the member path)");
+                }
+                else if (emitInline)
+                {
+                    machine.Cpu.EmitInlineEnabled = true;
+                    Console.WriteLine(
+                        "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
+                    Console.WriteLine("Emit inline bodies=on (E3-1 lean memory shapes)");
+                }
+                else
+                {
+                    machine.Cpu.EmitEnabled = true;
+                    Console.WriteLine(
+                        "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
+                }
             }
 
             if (loadStatePath is not null)
@@ -1533,6 +1564,17 @@ internal static class Program
                     Console.WriteLine(
                         $"Spec fallback {shape.Mnemonic}/{shape.Op1Kind}/{shape.Op2Kind}/{shape.Size}x{shape.Condition}/{shape.SegmentOverride}={count}");
                 }
+
+                if (spec.ShapeTallyEnabled)
+                {
+                    // §175 E3-0: full served-shape ranking (top 40; the
+                    // histogram caps at 512 distinct shapes).
+                    foreach ((XboxCpu.SpecShape shape, ulong count) in spec.TopServedShapes(40))
+                    {
+                        Console.WriteLine(
+                            $"Spec served {shape.Mnemonic}/{shape.Op1Kind}/{shape.Op2Kind}/{shape.Size}x{shape.Condition}/{shape.SegmentOverride}={count}");
+                    }
+                }
             }
         }
 
@@ -1543,6 +1585,10 @@ internal static class Program
             DecodedBlockCache? emit = machine.Cpu.SpecStatistics;
             Console.WriteLine(
                 $"Emit stats builds={emit?.EmitBuilds ?? 0} hits={emit?.EmitHits ?? 0} ran={emit?.EmitRan ?? 0}");
+            if (machine.Cpu.EmitInlineEnabled)
+            {
+                Console.WriteLine($"Emit inline members={emit?.EmitInlineMembers ?? 0}");
+            }
         }
 
         if (machine.Cpu.DecodeCacheEnabled)
@@ -2276,7 +2322,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
@@ -2284,6 +2330,10 @@ internal static class Program
             "                   --fetch-fast and --decode-verify default off; verify implies cache even with opt-out.");
         Console.WriteLine(
             "                   --block-exec/--block-verify/--spec-exec default off; spec implies block-exec.");
+        Console.WriteLine(
+            "                   --shape-tally implies spec-exec, prints the served-shape histogram at exit, and suppresses --emit.");
+        Console.WriteLine(
+            "                   --emit-inline implies --emit and serves E3-1 lean bodies for covered memory shapes.");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
         Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");
