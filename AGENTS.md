@@ -539,6 +539,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    dispatches tri −32% / menu −14%, interrupts bit-identical
    1883/3153; behavior-neutral by construction). 4-leg gate PASS
    (`D:\spec-soak\slice24`). **1390/1390 tests**.
+   Shape slice 6 (§168): Cli/Sti spec handlers (fallbacks tri
+   113.3M→185k / menu 34.1M→1.7M; interrupts identical). 4-leg gate
+   PASS (`D:\spec-soak\slice25`). **1391/1391 tests**.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
