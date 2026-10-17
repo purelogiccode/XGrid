@@ -8141,3 +8141,9 @@ gone from the tail, fallbacks 103.7M→101.8M (−1.9M); dispatches
 alone — scalar SSE is fully absorbed. Walls within noise, no wall
 claim. Flag stays opt-in; x87 stays a daylight slice.
 
+**Block-exec cross-check (same evening):** slices 10–12 widened
+`Terminates`, which also reshapes `--block-exec` blocks, so one
+triangle 1B `--block-exec` leg ran (`D:\spec-soak\slice12\
+triangle-block-r1`): SHA `A1740DE0…` exact, `vec=0`, draws=2706 anchor
+exact. The shared whitelist change is safe under both opt-in flags.
+
