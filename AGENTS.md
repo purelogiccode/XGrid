@@ -532,6 +532,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    triangle spec 82.2 s + menu spec 154.7 s SHAs exact, menu cache
    166.0 s byte-identical, `--block-exec` SHA exact; single-run, no
    claim; §164 median stands). **1385/1385 tests**, format clean.
+   Fresh median-3 with slice 4 (§166): menu 1.088x / tri 1.161x
+   (12/12 PASS; absolutes host-shifted, ratios robust). Soak script
+   hardened (stale-BMP SHA hole closed).
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP

@@ -3315,6 +3315,13 @@ EIP-identical probe); 10 new tests, suite 1385/1385, format clean,
 menu spec 154.7 s SHAs exact, menu cache 166.0 s byte-identical,
 `--block-exec` SHA exact; single-run walls only, §164 median stands).
 Flag stays opt-in.
+**§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
+(`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
+triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the
+robust signal (absolutes shifted ~20% on identical binaries = host
+shift, no attribution claim). Soak-script gate hardening (delete BMP
+pre-run, fail on `Frame unavailable`, require BMP) after the stale-BMP
+SHA hole. Flag stays opt-in.
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,
