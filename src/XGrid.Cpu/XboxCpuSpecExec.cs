@@ -262,6 +262,59 @@ public sealed partial class XboxCpu
                 return first == OperandKind.Memory && second == OperandKind.Register
                     ? SpecMovntpsHandler
                     : null;
+            case Mnemonic.Sqrtps:
+            case Mnemonic.Sqrtss:
+            case Mnemonic.Rsqrtps:
+            case Mnemonic.Rsqrtss:
+            case Mnemonic.Rcpps:
+            case Mnemonic.Rcpss:
+                // Slice 19: SSE square-root/reciprocal (packed + scalar)
+                // through the shared `ExecuteSseUnary` helper — plain
+                // host-float ops, no MXCSR/exception behavior anywhere in
+                // the interpreter. Scalar ss forms carry the F3 mandatory
+                // prefix (gate below, like slices 12/18).
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecSseUnaryHandler
+                    : null;
+            case Mnemonic.Addps:
+            case Mnemonic.Subps:
+            case Mnemonic.Mulps:
+            case Mnemonic.Divps:
+            case Mnemonic.Minps:
+            case Mnemonic.Maxps:
+                // Slice 19: packed SSE arithmetic through the shared
+                // `ExecuteSseArithmetic` helper (the scalar sisters were
+                // slice 12; the helper's packed loop is equally verbatim).
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecSsePackedArithmeticHandler
+                    : null;
+            case Mnemonic.Andps:
+            case Mnemonic.Andnps:
+            case Mnemonic.Orps:
+            case Mnemonic.Xorps:
+                // Slice 19: packed SSE logicals through `ExecuteSseLogical`.
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecSseLogicalHandler
+                    : null;
+            case Mnemonic.Cmpps:
+            case Mnemonic.Cmpss:
+                // Slice 19: packed/scalar SSE compares (Cmpss carries F3).
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecSseCompareHandler
+                    : null;
+            case Mnemonic.Comiss:
+            case Mnemonic.Ucomiss:
+                // Slice 19: scalar ordered/unordered compares into EFLAGS
+                // through `ExecuteSseCompareScalar` (flags only, no control
+                // flow — the mirror is exact by shared code).
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecSseCompareScalarHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -919,17 +972,18 @@ public sealed partial class XboxCpu
     /// Slice-12 gate helper: the shapes whose 0xF3 byte is a mandatory
     /// opcode prefix (so they decode with Rep==Rep). Shared by
     /// <see cref="ResolveSpec"/> and
-    /// <see cref="DecodedBlockCache.Terminates"/>. Slice 18 adds Movss
-    /// (scalar low-element move). Packed SSE, string/REP and every other
-    /// mnemonic is excluded.
+    /// <see cref="DecodedBlockCache.Terminates"/>. Slice 18 added Movss;
+    /// slice 19 adds the scalar sqrt/rcp/compare (Sqrtss/Rsqrtss/Rcpss/
+    /// Cmpss). Packed SSE, string/REP and every other mnemonic excluded.
     /// </summary>
     /// <param name="mnemonic">The mnemonic to test.</param>
-    /// <returns>True for the slice-12 scalar shapes plus Movss.</returns>
+    /// <returns>True for the F3-mandatory SSE shapes.</returns>
     internal static bool IsMandatoryF3Scalar(Mnemonic mnemonic)
     {
         return mnemonic is Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
             or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si
-            or Mnemonic.Movss;
+            or Mnemonic.Movss or Mnemonic.Sqrtss or Mnemonic.Rsqrtss or Mnemonic.Rcpss
+            or Mnemonic.Cmpss;
     }
 
     /// <summary>
@@ -1319,6 +1373,11 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecMovlhpsHandler = SpecMovlhps;
     private static readonly SpecHandler SpecMovntpsHandler = SpecMovntps;
     private static readonly SpecHandler SpecMovmskpsHandler = SpecMovmskps;
+    private static readonly SpecHandler SpecSseUnaryHandler = SpecSseUnary;
+    private static readonly SpecHandler SpecSsePackedArithmeticHandler = SpecSsePackedArithmetic;
+    private static readonly SpecHandler SpecSseLogicalHandler = SpecSseLogical;
+    private static readonly SpecHandler SpecSseCompareHandler = SpecSseCompare;
+    private static readonly SpecHandler SpecSseCompareScalarHandler = SpecSseCompareScalar;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -2764,6 +2823,43 @@ public sealed partial class XboxCpu
         }
 
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSseUnary(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 19: verbatim interpreter sqrt/rcp case (packed + scalar
+        // distinguished inside the shared helper, exactly as dispatched).
+        cpu.ExecuteSseUnary(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSsePackedArithmetic(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 19: verbatim interpreter packed-arithmetic case.
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSseLogical(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 19: verbatim interpreter packed-logical case.
+        cpu.ExecuteSseLogical(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSseCompare(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 19: verbatim interpreter packed/scalar compare case.
+        cpu.ExecuteSseCompare(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSseCompareScalar(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 19: verbatim interpreter Comiss/Ucomiss case (EFLAGS
+        // only, no control flow).
+        cpu.ExecuteSseCompareScalar(instruction);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

@@ -3255,6 +3255,15 @@ PASS (`D:\\spec-soak\\slice18`: menu 167.6 s SHA `4EF1FBF6…`, triangle
 triangle −0.8M with every packed move gone from both tails. New tail:
 Cli/Sti, Movs/Stos (string, out), Rsqrtss, Rcl-imm, Sbb/Adc
 (carry-live, out), Cdq, Pushf/Popf. Flag stays opt-in.
+**§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
+arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
+continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,
+2-leg spec golden check PASS (`D:\\spec-soak\\slice19`: menu 165.2 s SHA
+`4EF1FBF6…`, triangle 85.6 s SHA `A1740DE0…`, both `vec=0`,
+`verifyFailures=0`, anchors exact) + `--block-exec` cross-check PASS;
+fallbacks menu 34.8M→34.6M / triangle −0.2M with Rsqrtss gone from both
+tails. New tail: Cli/Sti, Movs/Stos (string, out), Rcl-imm, Sbb/Adc
+(carry-live, out), Cdq, Pushf/Popf, Setcc. Flag stays opt-in.
 **ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
 02:13 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.

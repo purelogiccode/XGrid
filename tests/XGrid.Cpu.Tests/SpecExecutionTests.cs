@@ -120,6 +120,33 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void SseCompute_Shapes_MatchInterpreter()
+    {
+        // Slice-19 family (§157): SSE sqrt/reciprocal, packed arithmetic,
+        // packed logicals and compares through the shared interpreter
+        // helpers. All run on shared zero XMM state with [EBX] as the
+        // memory side; the F3 scalar forms (sqrtss/rsqrtss/rcpss/cmpss)
+        // prove the extended mandatory-prefix gate.
+        RunShapes(
+            ("sqrtps xmm,xmm", new byte[] { 0x0F, 0x51, 0xC8 }),
+            ("sqrtss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x51, 0xC8 }),
+            ("rsqrtps xmm,xmm", new byte[] { 0x0F, 0x52, 0xC8 }),
+            ("rsqrtss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x52, 0xC8 }),
+            ("rsqrtss xmm,m32", new byte[] { 0xF3, 0x0F, 0x52, 0x03 }),
+            ("rcpss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x53, 0xC8 }),
+            ("addps xmm,xmm", new byte[] { 0x0F, 0x58, 0xC8 }),
+            ("addps xmm,m128", new byte[] { 0x0F, 0x58, 0x03 }),
+            ("mulps xmm,xmm", new byte[] { 0x0F, 0x59, 0xC8 }),
+            ("maxps xmm,xmm", new byte[] { 0x0F, 0x5F, 0xC8 }),
+            ("andps xmm,xmm", new byte[] { 0x0F, 0x54, 0xC8 }),
+            ("xorps xmm,xmm", new byte[] { 0x0F, 0x57, 0xC8 }),
+            ("cmpps xmm,xmm,0", new byte[] { 0x0F, 0xC2, 0xC8, 0x00 }),
+            ("cmpss xmm,xmm,0", new byte[] { 0xF3, 0x0F, 0xC2, 0xC8, 0x00 }),
+            ("comiss xmm,xmm", new byte[] { 0x0F, 0x2F, 0xC8 }),
+            ("ucomiss xmm,xmm", new byte[] { 0x0F, 0x2E, 0xC8 }));
+    }
+
+    [Fact]
     public void SseMove_Shapes_MatchInterpreter()
     {
         // Slice-18 family (§156): packed 128-bit moves, scalar Movss,
@@ -775,6 +802,19 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x12, 0xC8))); // movhlps (slice 18)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2B, 0x03))); // movntps m128,xmm (slice 18)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x50, 0xC8))); // movmskps (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x51, 0xC8))); // sqrtps (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x51, 0xC8))); // sqrtss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x52, 0xC8))); // rsqrtss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x52, 0x03))); // rsqrtss m32 (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x53, 0xC8))); // rcpss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x58, 0xC8))); // addps (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x59, 0x03))); // mulps m128 (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x54, 0xC8))); // andps (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x57, 0xC8))); // xorps (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xC2, 0xC8, 0x00))); // cmpps (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0xC2, 0xC8, 0x00))); // cmpss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2F, 0xC8))); // comiss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2E, 0xC8))); // ucomiss (slice 19)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;

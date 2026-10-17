@@ -8302,6 +8302,34 @@ Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 
 ## 156. JIT slice 18: packed-SSE moves behind --spec-exec (2026-10-17)
 
+## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
+
+Direct development, early-morning slice through the shared-helper
+pattern at its most leveraged: 5 shared bodies covering 20 mnemonics —
+Sqrtps/Sqrtss/Rsqrtps/Rsqrtss/Rcpps/Rcpss (`ExecuteSseUnary`),
+Addps/Subps/Mulps/Divps/Minps/Maxps (`ExecuteSseArithmetic`, whose
+packed loop is as verbatim as the slice-12 scalar path),
+Andps/Andnps/Orps/Xorps (`ExecuteSseLogical`), Cmpps/Cmpss
+(`ExecuteSseCompare`), Comiss/Ucomiss (`ExecuteSseCompareScalar`,
+EFLAGS-only, no control flow). `IsMandatoryF3Scalar` gains four more
+members (Sqrtss/Rsqrtss/Rcpss/Cmpss); whitelist += all 20.
+
+Tests: `SseCompute_Shapes_MatchInterpreter` (16 shapes, F3 forms
+proving the extended gate) + 14 resolver pins. Suite **1358/1358**,
+format clean.
+
+Goldens (`D:\\spec-soak\\slice19`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 85.6 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Rsqrtss gone (−0.2M).
+Menu spec r1 PASS 165.2 s (fastest menu spec yet, single run, no claim)
+— SHA `4EF1FBF6…` exact, `vec=0`, `verifyFailures=0`, draws=33632
+skipped=1402 anchor exact; **fallbacks 34.8M→34.6M (−0.2M)** with
+Rsqrtss gone (newly exposed: Setcc r8). New tail: Cli/Sti
+(untouchable), Movs/Stos (string, out), Rcl-imm, Sbb/Adc (carry-live,
+out), Cdq, Pushf/Popf, Setcc. Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 Direct development, early-morning slice taking the packed-move tail.
 Movaps/Movups (reg,reg/reg,mem/mem,reg via the same
 `ReadXmmOperand`/`WriteXmmOperand` helpers), Movss (all three forms —
