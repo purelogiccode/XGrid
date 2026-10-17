@@ -579,10 +579,16 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     twin; Mmu.Observer hoisted per invocation). +8 EmitTests (differentials
     incl. FS/GS, 16-bit addressing, watched store, non-RAM physical,
     mid-tail fault precision, gates) + 3 tally tests. Gate
-    `scripts/emit-gate.ps1`; walls in §176: interleaved median-of-3 (menu)
-    emit 174.2 s vs emit-inline 171.4 s = **1.016x** thin-positive
-    (triangle 1.037x single-run, no claim). Flag stays opt-in.
-    **1421/1421 tests**.
+    `scripts/emit-gate.ps1`; walls in §176: two interleaved median-of-3
+    triplets (e31: menu emit 174.2 s vs emit-inline 171.4 s = 1.016x;
+    e32: 146.4 vs 150.5, **sign flips**) -> **wall-neutral within host
+    noise** (triangle 1.015-1.037x single-run, no claim). Flag stays
+    opt-in. **1421/1421 tests**. E3-1c (§177, same day): fast kinds
+    extended to Cmp reg/mem/imm + Test mem,imm + 8-bit Mov
+    (fast-eligible shapes 35.1% of menu / 34.6% of triangle members;
+    550/550 inline members baked fast on the menu smoke); walls in §177.
+    Next diagnostic before more body work: twin-call counter to measure
+    the emitted fast paths' data-translate hit rate.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all

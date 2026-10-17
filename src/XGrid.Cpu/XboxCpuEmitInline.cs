@@ -152,31 +152,66 @@ public sealed partial class XboxCpu
     private static readonly SpecInlineHandler CmpMemImm32FastHandler = CmpMemImm32Fast;
     private static readonly SpecInlineHandler TestMemImm32FastHandler = TestMemImm32Fast;
 
+    /// <summary>Baked fast-path family for an E3-1b/1c member.</summary>
+    internal enum InlineFastKind
+    {
+        /// <summary>No baked fast path; the member always takes the twin call.</summary>
+        None,
+
+        /// <summary>mov r32, [mem]</summary>
+        MovLoad32,
+
+        /// <summary>mov [mem], r32</summary>
+        MovStore32,
+
+        /// <summary>mov r8, [mem]</summary>
+        MovLoad8,
+
+        /// <summary>mov [mem], r8</summary>
+        MovStore8,
+
+        /// <summary>cmp r32, [mem]</summary>
+        CmpRegMem32,
+
+        /// <summary>cmp [mem], r32</summary>
+        CmpMemReg32,
+
+        /// <summary>cmp [mem], imm32</summary>
+        CmpMemImm32,
+
+        /// <summary>test [mem], imm32</summary>
+        TestMemImm32,
+    }
+
     /// <summary>
-    /// Build-time descriptor for an E3-1b IL fast path (32-bit Mov between a
-    /// register and memory). All operand facts are baked from the immutable
-    /// decoded instruction; only register values, the segment base and the
-    /// memory/translate state stay live. <see cref="FastAddress"/> is false
-    /// when the address form is outside the fast subset (16-bit addressing),
-    /// in which case the member keeps the twin call.
+    /// Build-time descriptor for an E3-1b/E3-1c IL fast path. All operand
+    /// facts are baked from the immutable decoded instruction; only register
+    /// values, the segment base and the memory/translate state stay live.
+    /// <see cref="Kind"/> is <see cref="InlineFastKind.None"/> when the shape
+    /// is outside the fast subset (16-bit addressing), in which case the
+    /// member keeps the twin call.
     /// </summary>
     internal readonly record struct InlineFastPlan(
         SpecInlineHandler Body,
-        bool IsStore,
-        bool FastAddress,
+        InlineFastKind Kind,
         SegmentRegister Segment,
         int BaseRegister,
         int IndexRegister,
         int Scale,
         uint Displacement,
         int RegisterIndex,
+        uint Immediate,
         int Size,
-        uint Length);
+        uint Length)
+    {
+        /// <summary>Gets whether the fast path writes memory.</summary>
+        public bool IsStore => Kind is InlineFastKind.MovStore32 or InlineFastKind.MovStore8;
+    }
 
     /// <summary>
-    /// Resolves a member to its E3-1b plan: the exact twin plus the baked
-    /// fast-path descriptor when the shape is a 32-bit Mov register/memory
-    /// form. Null when the shape has no twin.
+    /// Resolves a member to its E3-1b/E3-1c plan: the exact twin plus the
+    /// baked fast-path descriptor when the shape is a covered memory form.
+    /// Null when the shape has no twin.
     /// </summary>
     internal static InlineFastPlan? ResolveInlinePlan(in DecodedInstruction instruction)
     {
@@ -186,40 +221,91 @@ public sealed partial class XboxCpu
             return null;
         }
 
-        if (instruction.Mnemonic == Mnemonic.Mov && instruction.Operand1.Size == 32)
+        if (instruction.Mnemonic == Mnemonic.Mov)
         {
             if (instruction.Operand1.Kind == OperandKind.Register && instruction.Operand2.Kind == OperandKind.Memory)
             {
-                return BuildPlan(twin, isStore: false, instruction.Operand2.Memory,
-                    instruction.Operand1.RegisterIndex, instruction.Length);
+                return instruction.Operand1.Size switch
+                {
+                    32 => BuildPlan(twin, InlineFastKind.MovLoad32, instruction.Operand2.Memory,
+                        instruction.Operand1.RegisterIndex, 0, 32, instruction.Length),
+                    8 => BuildPlan(twin, InlineFastKind.MovLoad8, instruction.Operand2.Memory,
+                        instruction.Operand1.RegisterIndex, 0, 8, instruction.Length),
+                    _ => TwinOnly(twin, instruction.Length),
+                };
             }
 
             if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Register)
             {
-                return BuildPlan(twin, isStore: true, instruction.Operand1.Memory,
-                    instruction.Operand2.RegisterIndex, instruction.Length);
+                return instruction.Operand1.Size switch
+                {
+                    32 => BuildPlan(twin, InlineFastKind.MovStore32, instruction.Operand1.Memory,
+                        instruction.Operand2.RegisterIndex, 0, 32, instruction.Length),
+                    8 => BuildPlan(twin, InlineFastKind.MovStore8, instruction.Operand1.Memory,
+                        instruction.Operand2.RegisterIndex, 0, 8, instruction.Length),
+                    _ => TwinOnly(twin, instruction.Length),
+                };
             }
         }
 
-        return new InlineFastPlan(twin, IsStore: false, FastAddress: false, SegmentRegister.Ds, -1, -1, 1, 0, -1, 32,
-            (uint)instruction.Length);
+        if (instruction.Mnemonic == Mnemonic.Cmp && instruction.Operand1.Size == 32)
+        {
+            if (instruction.Operand1.Kind == OperandKind.Register && instruction.Operand2.Kind == OperandKind.Memory)
+            {
+                return BuildPlan(twin, InlineFastKind.CmpRegMem32, instruction.Operand2.Memory,
+                    instruction.Operand1.RegisterIndex, 0, 32, instruction.Length);
+            }
+
+            if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Register)
+            {
+                return BuildPlan(twin, InlineFastKind.CmpMemReg32, instruction.Operand1.Memory,
+                    instruction.Operand2.RegisterIndex, 0, 32, instruction.Length);
+            }
+
+            if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Immediate)
+            {
+                return BuildPlan(twin, InlineFastKind.CmpMemImm32, instruction.Operand1.Memory,
+                    -1, instruction.Operand2.Immediate, 32, instruction.Length);
+            }
+        }
+
+        if (instruction.Mnemonic == Mnemonic.Test && instruction.Operand1.Size == 32
+            && instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Immediate)
+        {
+            return BuildPlan(twin, InlineFastKind.TestMemImm32, instruction.Operand1.Memory,
+                -1, instruction.Operand2.Immediate, 32, instruction.Length);
+        }
+
+        return TwinOnly(twin, instruction.Length);
+    }
+
+    private static InlineFastPlan TwinOnly(SpecInlineHandler twin, int length)
+    {
+        return new InlineFastPlan(twin, InlineFastKind.None, SegmentRegister.Ds, -1, -1, 1, 0, -1, 0, 32,
+            (uint)length);
     }
 
     private static InlineFastPlan BuildPlan(
-        SpecInlineHandler twin, bool isStore, in MemoryOperand memory, int registerIndex, int length)
+        SpecInlineHandler twin,
+        InlineFastKind kind,
+        in MemoryOperand memory,
+        int registerIndex,
+        uint immediate,
+        int size,
+        int length)
     {
         SegmentRegister segment = memory.SegmentOverride ?? DefaultSegment(memory);
         return new InlineFastPlan(
             twin,
-            isStore,
-            FastAddress: !memory.Is16Bit,
+            memory.Is16Bit ? InlineFastKind.None : kind,
             segment,
             memory.HasBase ? (int)memory.Base : -1,
             memory.HasIndex ? (int)memory.Index : -1,
             (int)memory.Scale,
             memory.Displacement,
             registerIndex,
-            32,
+            immediate,
+            size,
             (uint)length);
     }
 

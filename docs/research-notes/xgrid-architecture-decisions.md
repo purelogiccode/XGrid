@@ -9155,10 +9155,49 @@ emit-inline (72.6 s). Interleaved median-of-3 (menu): **emit 174.2 s vs
 emit-inline 171.4 s = 1.016x** -- thin-positive; the per-pair ratios
 (1.19/1.05/0.99) show the first emit leg as a warmup outlier and the
 steady-state pairs at ~parity. Triangle single-run: emit 75.3 s vs
-emit-inline 72.6 s (1.037x, single run, **no claim**). Verdict: E3-1's
-call-depth savings are real but small at title scale (the fast path covers
-28.6% of menu members; the removed call layer is a fraction of those
-members' cost, and the non-covered ~65% is dominated by irreducible
-per-member boundaries). Flag stays opt-in (`--emit-inline`), no default
-flip; the E3-2 (flag folding) and wider-cover steps stay scoped but are
-now measured as diminishing-returns territory.
+emit-inline 72.6 s (1.037x, single run, **no claim**).
+Second interleaved triplet on the E3-1c binary (`D:\spec-soak\e32`):
+menu emit 184.6/145.6/146.4 (median 146.4) vs emit-inline 152.1/144.7/150.5
+(median 150.5) -- **the sign flips**; per-pair ratios 1.21/1.006/0.973.
+The robust statement after both triplets: E3-1 (twins + fast paths) is
+**wall-neutral within host noise** on the menu (host load swings +-25%,
+sub-3% effects unresolvable); triangle single-run deltas 1.015-1.037x
+favour inline but carry no claim. Verdict: mechanism landed, exact and
+opt-in; the removed call layer is a small fraction of covered members'
+cost, and the non-covered ~65% is dominated by irreducible per-member
+boundaries. Before further body work, measure the 4-entry data-translate
+cache hit rate inside the emitted fast paths (a twin-call counter
+diagnostic) -- a low hit rate would make the guard cost exceed the saved
+call layer on thrashing working sets.
+
+## 177. E3-1c: fast-path cover for Cmp/Test/8-bit Mov (2026-10-17, direct)
+
+Extends the E3-1b plan mechanism from two kinds to eight
+(`InlineFastPlan.Kind`): MovLoad32/MovStore32/MovLoad8/MovStore8,
+CmpRegMem32/CmpMemReg32/CmpMemImm32, TestMemImm32. The shared prologue
+(baked address, size-aware cross-page guard -- 8-bit never crosses --,
+translate-tag probe, store writable/WP guard, RAM bounds, watched-store
+check) feeds a kind-specific tail: 32-bit register moves via direct
+`_registers` access, 8-bit moves through the masking accessors
+(ReadRegister8/WriteRegister8), Cmp through `AluOps.Sub` with the baked
+immediate for the imm form, Test through `value & imm` (Mask(32) is the
+identity). Baked immediates come from the immutable decoded instruction;
+every non-fast case still branches to the exact twin.
+
+Coverage (1B tallies): fast-eligible shapes rise from 284.3M (28.6%) to
+348.6M (35.1%) of menu members; triangle from 228.2M (22.9%) to 344.9M
+(34.6%) -- triangle gains the Cmp forms (114.7M) that dominate its mix.
+Build-time evidence: the 100M-step menu smoke bakes 550/550 inline members
+onto fast paths (was 461 at E3-1b).
+
+Tests: the existing E3-1 differentials cover every new kind by construction
+(MemoryShapes carries 8-bit Mov/Cmp/Test shapes; fault, cross-page, watched,
+non-RAM and 16-bit pins unchanged); all 26 EmitTests stay green, suite
+1421/1421, format clean.
+
+Gate + walls: e32 interleaved triplet on the E3-1c binary -- all 8 legs
+PASS, SHAs exact both titles (`menu emit 184.6/145.6/146.4` median 146.4 vs
+`menu emit-inline 152.1/144.7/150.5` median 150.5; triangle emit 66.1 vs
+emit-inline 65.1). Combined with the e31 triplet (sign flipped: 174.2 vs
+171.4), E3-1a/b/c is **wall-neutral within host noise**; triangle
+single-run 1.015x favours inline, no claim. Flag stays opt-in.
