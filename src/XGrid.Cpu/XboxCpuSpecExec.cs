@@ -114,6 +114,22 @@ public sealed partial class XboxCpu
                 return second == OperandKind.None
                     ? ResolveSpecPush(first, size)
                     : null;
+            case Mnemonic.Mul:
+                // Slice 15: single-operand unsigned multiply (reg/mem).
+                // The shared body calls the same `ExecuteMulDiv` dispatch
+                // the interpreter uses, so flags and the EDX:EAX writes
+                // match exactly.
+                return first != OperandKind.Immediate && second == OperandKind.None
+                    ? SpecMulHandler
+                    : null;
+            case Mnemonic.Imul:
+                // Slice 15: all signed-multiply forms through the same
+                // `ExecuteImul` helper (1-op r/m, 2-op reg,reg/reg,mem,
+                // 3-op reg,reg/mem,imm). Reads precede writes in every
+                // form, so EIP stays precise exactly like the interpreter.
+                return first == OperandKind.Register
+                    ? SpecImulHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -516,6 +532,8 @@ public sealed partial class XboxCpu
             (OperandKind.Register, 32) => SpecPushReg32Handler,
             (OperandKind.Immediate, 16) => SpecPushImm16Handler,
             (OperandKind.Immediate, 32) => SpecPushImm32Handler,
+            (OperandKind.Memory, 16) => SpecPushMemHandler,
+            (OperandKind.Memory, 32) => SpecPushMemHandler,
             _ => null,
         };
     }
@@ -571,14 +589,37 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
-    /// Resolves shift/rotate-by-immediate shapes (slice 8): Shl/Shr/Sar/
-    /// Rol/Ror with register or memory destinations. The count comes from
-    /// the immediate exactly like `ExecuteShift`; the bodies call the same
-    /// `ShiftOps` entry points. CL-counted and Rcl/Rcr forms keep the
-    /// interpreter.
+    /// Resolves shift/rotate shapes (slices 8 + 15): Shl/Shr/Sar/Rol/Ror
+    /// with register or memory destinations, counted by immediate
+    /// (slice 8) or CL (slice 15 — the decoder stamps D2/D3 counts as
+    /// Register index 1, verified in `DecodeShiftRm`). CL-count bodies
+    /// call the same `ExecuteShift` helper the interpreter uses, so
+    /// count masking and flag behavior match exactly. Rcl/Rcr forms keep
+    /// the interpreter.
     /// </summary>
     private static SpecHandler? ResolveSpecShift(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
     {
+        if (second == OperandKind.Register)
+        {
+            // Slice 15: r,CL and m,CL. One shared body per mnemonic reads
+            // the size from the cached member at serve time, exactly like
+            // the interpreter — no per-size split needed.
+            if (first != OperandKind.Register && first != OperandKind.Memory)
+            {
+                return null;
+            }
+
+            return mnemonic switch
+            {
+                Mnemonic.Shl => SpecShlCountClHandler,
+                Mnemonic.Shr => SpecShrCountClHandler,
+                Mnemonic.Sar => SpecSarCountClHandler,
+                Mnemonic.Rol => SpecRolCountClHandler,
+                Mnemonic.Ror => SpecRorCountClHandler,
+                _ => null,
+            };
+        }
+
         int pair;
         if (first == OperandKind.Register && second == OperandKind.Immediate)
         {
@@ -1013,6 +1054,14 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecCvttss2SiRegRegHandler = SpecCvttss2SiRegReg;
     private static readonly SpecHandler SpecCvttss2SiRegMemHandler = SpecCvttss2SiRegMem;
     private static readonly SpecHandler SpecFldMemHandler = SpecFldMem;
+    private static readonly SpecHandler SpecMulHandler = SpecMul;
+    private static readonly SpecHandler SpecImulHandler = SpecImul;
+    private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
+    private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
+    private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
+    private static readonly SpecHandler SpecSarCountClHandler = SpecSarCountCl;
+    private static readonly SpecHandler SpecRolCountClHandler = SpecRolCountCl;
+    private static readonly SpecHandler SpecRorCountClHandler = SpecRorCountCl;
     private static readonly SpecHandler SpecFldRegHandler = SpecFldReg;
     private static readonly SpecHandler SpecFstMemHandler = SpecFstMem;
     private static readonly SpecHandler SpecFstHandler = SpecFst;
@@ -2050,6 +2099,69 @@ public sealed partial class XboxCpu
     private static void SpecPushImm32(XboxCpu cpu, in DecodedInstruction instruction)
     {
         cpu.Push(instruction.Operand1.Immediate, 32, instruction.AddressSize);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecPushMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 15: verbatim interpreter `Push` case. The source read
+        // faults before ESP moves; a faulting stack write throws with the
+        // same ESP state as the interpreter since the `Push` helper runs
+        // the identical sequence on both paths.
+        cpu.Push(cpu.ReadOperand(instruction.Operand1), instruction.Operand1.Size, instruction.AddressSize);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShlCountCl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecShrCountCl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSarCountCl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRolCountCl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRorCountCl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMul(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 15: verbatim interpreter Mul path. `ExecuteMulDiv`
+        // dispatches on the mnemonic exactly like `ExecuteInstruction`;
+        // Mul itself never raises, so EIP always advances — but the
+        // early-return shape is kept so the mirror cannot drift if the
+        // helper ever gains a faulting path.
+        if (cpu.ExecuteMulDiv(instruction))
+        {
+            return;
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecImul(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 15: verbatim interpreter Imul path (all three operand
+        // forms). `ExecuteImul` reads before writing in every form.
+        cpu.ExecuteImul(instruction);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

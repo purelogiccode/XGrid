@@ -8221,6 +8221,46 @@ exact) + the `--block-exec` cross-check leg that slices 10–12
 established; flag-off byte-identical; walls reported without claim
 (but this is the first slice since slice 8 allowed to hope).
 
+## 153. JIT slice 15: shifts-by-CL + Push-m + Mul/Imul behind --spec-exec (2026-10-16)
+
+Direct development, late-evening slice taking the whole top of the
+§152 tail in one go. Shifts/rotates counted by CL (the decoder stamps
+D2/D3 counts as Register index 1 — verified in `DecodeShiftRm`, so the
+`second == Register` gate is exactly CL): 5 shared per-mnemonic bodies
+calling the same `ExecuteShift` helper the interpreter uses (count
+masking + flags identical by construction). Push-m: 1 shared body
+through the same `Push` helper (source read faults before ESP moves;
+stack-write fault order identical since the helper sequence is shared).
+Mul single + Imul all-forms: 2 shared bodies through `ExecuteMulDiv`/
+`ExecuteImul` (reads precede writes in every form). 8 handlers covering
+~50 shapes; no `Terminates` change needed (all four families already
+continued blocks) — but the shared whitelist now serves genuinely new
+traffic, so the `--block-exec` cross-check leg runs again.
+
+En-route test maintenance: `FallbackHistogram_TalliesServeTimeShapes`
+inverted to the zero-fallback form — shl r,cl was its last uncovered
+shape, so the loop is now fully specialized (and the zeros double as a
+regression pin). The stale `push m` and `shl r,cl` Null pins flipped to
+NotNull; a new `rcl eax,cl` Null pin guards the kept-interpreter forms.
+
+Tests: `ShiftCountCl_Mul_Shapes_MatchInterpreter` (14 shapes; shift
+shapes prefix `mov cl,3` so both sides shift by a real count) + 11
+resolver pins (10 NotNull + rcl-Null). Suite **1354/1354**, format clean.
+
+Goldens (`D:\\spec-soak\\slice15`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 88.0 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Shl-r,r/Mul/Imul/Push-m
+gone from the tail, fallbacks −2.0M (formation unchanged — no
+whitelist delta — so dispatches identical at 352,840,133, as expected).
+Menu spec r1 PASS 168.3 s (fastest menu spec yet, single run, no
+claim) — SHA `4EF1FBF6…` exact, `vec=0`, `verifyFailures=0`,
+draws=33632 skipped=1402 anchor exact; **fallbacks 43.5M→38.4M
+(−5.1M, −12%)** with every slice-15 shape gone from the tail.
+New tail: Cli/Sti (untouchable), Movs (string, stays interpreter),
+Leave, Neg, Fnstsw, Fiadd, Div-r, Bswap, Not, Movss. Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 ## 152. JIT slice 14: x87 reg-forms + Fsub/Fdiv families behind --spec-exec (2026-10-16)
 
 Direct development, late-evening slice completing the §150 scope's

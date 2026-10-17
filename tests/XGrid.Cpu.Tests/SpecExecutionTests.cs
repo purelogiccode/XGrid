@@ -120,6 +120,33 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void ShiftCountCl_Mul_Shapes_MatchInterpreter()
+    {
+        // Slice-15 family (§153): shifts/rotates counted by CL (the
+        // decoder stamps D2/D3 counts as Register index 1, so the
+        // resolver gate is exact), push-mem and Mul/Imul. Shift shapes
+        // prefix `mov cl,3` so both sides shift by a real nonzero count
+        // (Preset leaves ECX alone); Mul/Imul run on Preset register
+        // values. Bodies call the same `ExecuteShift`/`Push`/
+        // `ExecuteMulDiv`/`ExecuteImul` helpers the interpreter uses.
+        RunShapes(
+            ("shl r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xE0 }),
+            ("shr r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xE8 }),
+            ("sar r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xF8 }),
+            ("rol r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xC0 }),
+            ("ror r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xC8 }),
+            ("shl m32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0x23 }),
+            ("shr m32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0x2B }),
+            ("push m32", new byte[] { 0xFF, 0x33 }),
+            ("mul r32", new byte[] { 0xF7, 0xE0 }),
+            ("mul m32", new byte[] { 0xF7, 0x23 }),
+            ("imul r32", new byte[] { 0xF7, 0xE8 }),
+            ("imul r32,r32", new byte[] { 0x0F, 0xAF, 0xC8 }),
+            ("imul r32,m32", new byte[] { 0x0F, 0xAF, 0x0B }),
+            ("imul r32,m32,imm8", new byte[] { 0x6B, 0x0B, 0x05 }));
+    }
+
+    [Fact]
     public void FpuReg_Shapes_MatchInterpreter()
     {
         // Slice-14 family (§152): x87 register forms — Fld ST(i), Fxch,
@@ -560,7 +587,7 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x62, 0x00, 0x00)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x10, 0xD8))); // adc: carry live
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb: carry live
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m32 (slice 15)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m32 (slice 9)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x0B))); // dec m32 (slice 9)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFE, 0x03))); // inc m8 (slice 9)
@@ -607,7 +634,17 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xF1))); // fdiv st0,st1 (slice 14)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x23))); // fsub m32 (slice 14)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xD1))); // fst st1 (slice 14)
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r32,cl (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD3, 0xE8))); // shr r32,cl (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD3, 0xF8))); // sar r32,cl (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD3, 0x23))); // shl m32,cl (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xE0))); // mul r32 (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0x23))); // mul m32 (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xE8))); // imul r32 (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAF, 0xC8))); // imul r32,r32 (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAF, 0x0B))); // imul r32,m32 (slice 15)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x6B, 0x0B, 0x05))); // imul r32,m32,imm8 (slice 15)
+        Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xD0))); // rcl eax,cl: keeps the interpreter
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;
@@ -897,38 +934,19 @@ public sealed class SpecExecutionTests
     [Fact]
     public void FallbackHistogram_TalliesServeTimeShapes()
     {
-        // shl r,cl is the only uncovered shape in this loop (the D1
-        // implicit-count form carries an immediate and already specializes):
-        // inc/xor-imm/dec/nop specialize and the backward jmp specializes
-        // too, so the whole fallback total must sit on the Shl shape.
+        // Slice 15: shl r,cl was the last uncovered shape in this loop —
+        // now every member specializes (inc/xor-imm/dec/nop/shl-cl/jmp),
+        // so the loop runs with zero fallbacks. The histogram still
+        // tallies serve-time shapes: with nothing uncovered the total and
+        // the map must be empty (and this doubles as a regression pin
+        // that shl-cl stays covered — un-resolving it fails the zeros).
         byte[] code = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xD3, 0xE0, 0xEB, 0xF7 };
         XboxCpu cpu = Create(true, code);
         cpu.Execute(64);
         DecodedBlockCache stats = cpu.SpecStatistics!;
-        Assert.True(stats.ShapeFallbacks > 0);
-        ulong total = 0;
-        XboxCpu.SpecShape jmp = default;
-        bool found = false;
-        foreach (System.Collections.Generic.KeyValuePair<XboxCpu.SpecShape, ulong> tally in stats.FallbackShapes)
-        {
-            total += tally.Value;
-            if (tally.Key.Mnemonic == Mnemonic.Shl)
-            {
-                jmp = tally.Key;
-                found = true;
-            }
-            else
-            {
-                Assert.NotEqual(Mnemonic.Nop, tally.Key.Mnemonic);
-            }
-        }
-
-        Assert.True(found);
-        Assert.Equal(stats.ShapeFallbacks, total);
-        Assert.Equal(stats.ShapeFallbacks, stats.FallbackShapes[jmp]);
-        (XboxCpu.SpecShape shape, ulong count)[] top = stats.TopFallbackShapes(8);
-        Assert.Equal(stats.ShapeFallbacks, top[0].count);
-        Assert.Equal(Mnemonic.Shl, top[0].shape.Mnemonic);
+        Assert.Equal(0UL, stats.ShapeFallbacks);
+        Assert.Empty(stats.FallbackShapes);
+        Assert.Empty(stats.TopFallbackShapes(8));
     }
 
     [Fact]
