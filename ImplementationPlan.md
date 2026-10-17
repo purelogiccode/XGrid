@@ -3346,6 +3346,21 @@ differential (carry 0+1) + 34 pins, suite 1392/1392, format clean,
 menu spec 144.3 s SHAs exact, menu cache 155.1 s control-leg exact,
 `--block-exec` SHA exact; fallbacks −52%/−28%, interrupts identical;
 single-run walls only). Flag stays opt-in.
+**§171 DONE (2026-10-17, direct):** first codegen E1 (DynamicMethod
+block-tail emitter behind opt-in `--emit`: per-head cached runners with
+direct static calls, all boundaries retained, invalidation-gated;
+DecodeCacheEntry.Instruction is now an addressable readonly field) — 11
+emit differentials incl. host-counter exactness, suite 1403/1403,
+format clean, 8-leg golden gate PASS (`D:\spec-soak\slice27`: SHAs
+exact both titles, vec=0, anchors exact, interrupts identical
+1883/3153). VERDICT wall-negative: emit 1.93x/6.50x slower than spec
+(triangle/menu) — per-runner construction+first-JIT (~0.7 ms) cannot
+amortize over short churned tails (menu builds 1.34M distinct heads);
+§138 negative confirmed at title scale. Flag stays opt-in (zero impact);
+E2 scoped as threshold-tiered emission. Post-fix triangle-emit 1B
+re-run SHA exact with serve counters bit-identical; 50M counter-diff
+fully identical incl. decode hits (pending exits earn no hit -- the poll
+precedes it -- pinned by a 7-position sweep).
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the

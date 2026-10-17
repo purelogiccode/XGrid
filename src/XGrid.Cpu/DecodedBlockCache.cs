@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
 
@@ -99,6 +100,20 @@ public sealed class DecodedBlockCache
 
     private readonly Dictionary<XboxCpu.SpecShape, ulong> _fallbackShapes = new();
 
+    /// <summary>Gets the invalidation generation (bumped on every <see cref="Invalidate"/>).</summary>
+    public ulong Generation { get; private set; }
+
+    private readonly Dictionary<EmitKey, EmittedRunner> _emitted = new();
+
+    /// <summary>Gets emitted tail runners built (DynamicMethod construction).</summary>
+    public ulong EmitBuilds { get; private set; }
+
+    /// <summary>Gets emitted-tail cache hits (runner reuse).</summary>
+    public ulong EmitHits { get; private set; }
+
+    /// <summary>Gets members served through emitted tails.</summary>
+    public ulong EmitRan { get; private set; }
+
     /// <summary>
     /// Gets fallback-shape execution counts, tallied at serve time while
     /// specialization is enabled (slice-3 measurement). Totals always equal
@@ -120,7 +135,9 @@ public sealed class DecodedBlockCache
             Invalidations++;
         }
 
+        Generation++;
         _blocks.Clear();
+        _emitted.Clear();
         _current = null;
         _currentHandler = null;
     }
@@ -317,7 +334,19 @@ public sealed class DecodedBlockCache
             }
         }
 
-        return new Block(entries[..count].ToArray(), operandSize, addressSize, handlers, allSpecialized);
+        uint[]? linears = null;
+        if (allSpecialized)
+        {
+            linears = new uint[count];
+            uint memberLinear = linear;
+            for (int i = 0; i < count; i++)
+            {
+                linears[i] = memberLinear;
+                memberLinear += (uint)entries[i].Instruction.Length;
+            }
+        }
+
+        return new Block(entries[..count].ToArray(), operandSize, addressSize, handlers, allSpecialized, linear, linears);
     }
 
     /// <summary>
@@ -406,5 +435,172 @@ public sealed class DecodedBlockCache
         int OperandSize,
         int AddressSize,
         XboxCpu.SpecHandler?[]? Handlers,
-        bool AllSpecialized);
+        bool AllSpecialized,
+        uint HeadLinear,
+        uint[]? EmitLinears);
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct EmitKey(uint HeadLinear, int OperandSize, int AddressSize);
+
+    private sealed record EmittedRunner(ulong Generation, EmitTailRunner Runner);
+
+    /// <summary>
+    /// Opens the current cursor's tail for emitted service: the cursor must be
+    /// active exactly one member in (member 0 just ran through the member
+    /// path) on a fully-specialized block. Start &gt; 1 (after a mid-block
+    /// bail) stays on the member path.
+    /// </summary>
+    internal bool TryBeginTail(
+        out DecodeCacheEntry[] entries,
+        out XboxCpu.SpecHandler?[] handlers,
+        out uint[] linears,
+        out uint head)
+    {
+        Block? block = _current;
+        if (block is not null && _specEnabled && _index == 1 && block.AllSpecialized
+            && block.Handlers is not null && block.EmitLinears is not null && block.Entries.Length >= 2)
+        {
+            entries = block.Entries;
+            handlers = block.Handlers;
+            linears = block.EmitLinears;
+            head = block.HeadLinear;
+            return true;
+        }
+
+        entries = null!;
+        handlers = null!;
+        linears = null!;
+        head = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Looks up (or builds) the emitted tail runner for one block head.
+    /// Runners are validated against the live invalidation generation; every
+    /// <see cref="Invalidate"/> clears the table, so a stale runner can never
+    /// serve. Returns null when the tail is not emittable.
+    /// </summary>
+    internal EmitTailRunner? GetEmitRunner(
+        uint head,
+        int operandSize,
+        int addressSize,
+        DecodeCacheEntry[] entries,
+        XboxCpu.SpecHandler?[] handlers,
+        uint[] linears)
+    {
+        var key = new EmitKey(head, operandSize, addressSize);
+        if (_emitted.TryGetValue(key, out EmittedRunner? cached) && cached.Generation == Generation)
+        {
+            EmitHits++;
+            return cached.Runner;
+        }
+
+        EmitTailRunner? runner = BlockEmitter.Build(head, entries, handlers, linears);
+        if (runner is null)
+        {
+            return null;
+        }
+
+        if (_emitted.Count >= MaxBlocks)
+        {
+            _emitted.Clear();
+        }
+
+        _emitted[key] = new EmittedRunner(Generation, runner);
+        EmitBuilds++;
+        return runner;
+    }
+
+    /// <summary>
+    /// Accounts for tail members served by an emitted runner: decode hits,
+    /// block instructions, specialization tallies and the cursor advance. Safe
+    /// when the cursor is already gone (a mid-tail store invalidated the
+    /// table): served members still count their hits and instructions.
+    /// </summary>
+    internal void NoteEmittedRan(int count, DecodeCache cache)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            cache.NoteHit();
+        }
+
+        if (count <= 0)
+        {
+            return;
+        }
+
+        Instructions += (ulong)count;
+        ShapeHits += (ulong)count;
+        SpecRan += (ulong)count;
+        EmitRan += (ulong)count;
+
+        Block? block = _current;
+        if (block is null)
+        {
+            return;
+        }
+
+        int start = _index;
+        _index += count;
+        for (int k = start; k < _index; k++)
+        {
+            _expectedLinear += (uint)block.Entries[k].Instruction.Length;
+        }
+
+        if (_index == block.Entries.Length)
+        {
+            Completed++;
+            _current = null;
+        }
+    }
+
+    /// <summary>
+    /// Accounts for the in-flight member of an emitted-tail fault/pending
+    /// exit: the member the runner was serving when it bailed. Mirrors the
+    /// member path's <see cref="TryNext"/> counting for that member
+    /// (Instructions, ShapeHits and the cursor advance). The decode hit and
+    /// SpecRan follow the member path's order: the IRQ poll precedes the hit
+    /// (so a pending exit earns no hit), while a faulting body runs after it
+    /// (so a fault exit earns both the hit and SpecRan). Called before the
+    /// exit's EndBoundary so the cursor state (including completion) matches
+    /// the member path exactly.
+    /// </summary>
+    /// <param name="cache">The decode cache (hit accounting).</param>
+    /// <param name="countBody">True for fault exits (body entered).</param>
+    internal void NoteEmittedExit(DecodeCache cache, bool countBody)
+    {
+        Block? block = _current;
+        if (block is null)
+        {
+            return;
+        }
+
+        Instructions++;
+        ShapeHits++;
+        if (countBody)
+        {
+            cache.NoteHit();
+            SpecRan++;
+        }
+
+        _expectedLinear += (uint)block.Entries[_index].Instruction.Length;
+        _index++;
+        if (_index == block.Entries.Length)
+        {
+            Completed++;
+            _current = null;
+        }
+    }
+
+    /// <summary>
+    /// Records an emitted-tail EIP mismatch: the cursor is dropped without
+    /// invalidating the retained block, exactly as the <see cref="TryNext"/>
+    /// redirect path.
+    /// </summary>
+    internal void NoteRedirect()
+    {
+        Redirects++;
+        _current = null;
+        _currentHandler = null;
+    }
 }

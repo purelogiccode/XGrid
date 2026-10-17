@@ -8875,3 +8875,98 @@ first): triangle spec 74.4 s + menu spec 144.3 s SHAs exact, `vec=0`,
 draws=2706. Fallbacks triangle 185k-->90k (-52%), menu 1.70M-->1.22M
 (-28%); interrupts identical 1883/3153. Walls single-run only. Flag
 stays opt-in.
+
+## 171. First codegen: DynamicMethod block-tail emitter behind --emit (2026-10-17)
+
+Direct development, per the section-138 recipe (block-granular execution
+first, DynamicMethod only when specialization is attempted -- specialization
+is now at asymptote after slices 5-20 + memory-path 1-4 + dispatch 5-6 +
+shape 7, so the emitter is the next lever). E1 serves members 1..N-1 of
+each fully-specialized block through a per-head cached DynamicMethod with
+direct static calls (no per-member TryNext cursor, no delegate Invoke);
+member 0 always runs the existing member path so head lookup, formation
+and all head counting are untouched.
+
+Boundary preservation (per member, in emitted order): budget cap, live
+generation check (self-modification), baked-EIP check (redirects), TSC++,
+IRQ poll at the Step site (a pending IRQ reports its consumed vector and
+bails; the C# wrapper runs the exact member-path transfer), then the
+direct static call. Faults propagate through the emitted frames to the
+wrapper catch, which replays the Step catch body verbatim (CR2, vector 14,
+EIP, error code, transfer-or-throw) with the exact served count from the
+progress array. The wrapper skips emission whenever idle-skip, hotspot
+observation, or either verify mode is active, so those paths are
+byte-identical by construction; invalid members can never enter (only
+AllSpecialized blocks emit, and ResolveSpec rejects invalid). Counters are
+kept exact: decode NoteHit per served member plus Instructions/ShapeHits/
+SpecRan/EmitRan advances and cursor/completion bookkeeping in
+NoteEmittedRan; redirects replicate the TryNext cursor-drop; invalidation
+(DecodeCache drops/flushes, cap eviction, snapshot load via Mmu.Flush)
+clears the emit table through the single Invalidate choke point with a
+generation bump, so a stale runner can never serve.
+
+Two real bugs found en route (both fixed, both covered): (1) the first
+IL revision used ldelema-DecodedInstruction on a DecodeCacheEntry array
+(wrong stride -- garbage RegisterIndex, IndexOutOfRange in
+SpecXorRegImm32); the fix addresses the entry then ldflda's the member,
+which required converting DecodeCacheEntry.Instruction from an
+auto-property to a public readonly field plus an explicit constructor
+(CA1051 suppressed with justification; all reads source-compatible, one
+construction site updated). (2) Test chains ending in jmp-$ spin on a
+single-member block whose tail is always empty -- vacuous for emission;
+chains now loop to the block head. Proven en route: a same-page CPU store
+poisons formation (every store drops the page's entries, so no block ever
+forms across it) -- the mid-tail generation check is unreachable via CPU
+stores and exists for device writes; the SMC test pins the
+perpetual-miss path instead. Also established: an IF flip cannot happen
+inside an emitted tail (every IF writer is a fallback or a terminator),
+so the STI test flips in the preceding block.
+
+Tests: new EmitTests (11 tests: straight chain vs plain+spec, Jcc loop,
+register-steered mid-tail fault with precise CR2/EIP, IRQ at tail
+positions 2-5, STI-flip-then-emit, SMC perpetual-miss + patch coherence,
+CPUID fallback tallies, verify/observer gating with zero EmitRan and
+identical profiler counts). Suite 1403/1403 (1392 + 11), format clean.
+50M-step triangle probe with --emit: builds=4599, hits=8.4M,
+ran=40.8M/49.4M specialized (83% tail-served), vec=0.
+
+GATE (D:\spec-soak\slice27_run.ps1, 8 legs, full-solution rebuild first):
+ALL PASS, SHAs exact both titles, vec=0, NV2A anchors exact, interrupts
+identical (triangle 1883, menu 3153). Walls (single-run, host stable --
+triangle spec reproduces slice-26's 74.4 s at 74.5 s):
+triangle emit 144.0 s / spec 74.5 s / cache 94.7 s / block 86.1 s;
+menu emit 984.1 s / spec 151.4 s / cache 158.9 s / block 160.0 s.
+Emit tails served 759M/998M (triangle) and 782M/995M (menu) with
+redirects=0 and verifyFailures=0 throughout.
+VERDICT: E1 is wall-NEGATIVE, decisively: 1.93x (triangle) and 6.50x
+(menu) slower than spec-exec. The slowdown scales with runner builds
+(80k vs 1.24M): ~0.7 ms construction+first-JIT per DynamicMethod fits
+both excesses (80k x 0.7 ms ~= 56 s vs 69 s; 1.24M x 0.7 ms ~= 870 s vs
+833 s; §138's 0.12 ms was a tiny synthetic method). Menu builds
+1.34M distinct block heads, each paying construction once for ~3-member
+tails. Wrap-only codegen cannot amortize per-block construction over
+short churned tails -- the §138 negative result confirmed at title
+scale. Flag stays opt-in (default-off: zero product impact); E1 is kept
+as the correctness asset and the harness E2 builds on.
+Counter-exactness follow-up: the gate showed host-only micro-deltas
+(instructions/shapeHits -612 triangle / -823 menu = in-flight member of
+tail fault/pending exits never TryNext-counted; BoundaryExits +3 menu =
+cursor still active at last-member exits). Fixed via NoteEmittedExit
+(mirrors the member path's serve-count + cursor advance before
+EndBoundary). Refining further, the member path's IRQ poll precedes its
+decode hit, so pending exits earn NO hit while fault exits earn both hit
+and SpecRan -- NoteEmittedExit mirrors exactly that split, pinned by a
+7-position steady-state delivery sweep (fault needs the hit, pending
+must not have it) plus the fault differential. A failed transfer now
+re-serves via the member path instead of skipping the member. Unit
+counter asserts added (all serve/exit tallies incl. fault + IRQ exits).
+Post-fix 50M triangle diff spec-vs-emit: every Block/Spec/decode/IRQ/
+vec line bit-identical. Closed-delegate/shape guard added to Build
+(falls back exact). Suite 1410/1410, format clean.
+E2 SCOPE (next): threshold-tiered emission -- build the runner lazily
+after N head visits so cold single-visit code (the 1.3M) never pays
+construction while hot loops amortize it; attach the runner to the
+Block (kills the head-key dict + silent cap + per-visit lookup); hoist
+Context/InterruptSource loads to per-invocation locals. If tiered
+emission cannot beat the C# unrolled path either, the serve layer is
+declared at ceiling and only body-level semantic work remains.
