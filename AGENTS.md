@@ -507,10 +507,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    both titles, `vec=0`, `verifyFailures=0`, counter anchors exact).
    Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
    walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
-   **1352/1352 tests after slices 12–13 below.** Flag stays opt-in
+   **1353/1353 tests after slices 12-14 below.** Flag stays opt-in
    (saturation + no median-of-3 per slice; soak binaries must come
    from a FULL solution build — §145 lesson).
-2. **SLICES 12–13 DONE (§§149, §151, same evening).** Scalar SSE (Addss/Subss/
+2. **SLICES 12–14 DONE (§§149, §151–152, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
    discovery en route (`Decoder.cs:72-73,94` — 0xF3 is both mandatory
@@ -520,7 +520,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    ~25 shapes) — fallbacks menu 101.8M→**49.3M (−52%)**, dispatches
    −18%, fastest spec yet (single run, no claim). 2-leg 1B spec
    goldens PASS each slice (SHAs exact, `vec=0`, `verifyFailures=0`)
-   + `--block-exec` cross-check leg PASS. **1352/1352
+   + `--block-exec` cross-check leg PASS. Then slice 14 (§152): x87
+   reg-forms + Fsub/Fdiv families (19 handlers) — fallbacks menu
+   49.3M→**43.5M (−12%)**. 2-leg 1B spec goldens PASS each slice
+   (SHAs exact, `vec=0`, `verifyFailures=0`). **1353/1353
    tests**, format clean, ktest smoke PASS 7/7 post-slices 9–11
    (792,800,535 steps bit-reproducible).
 3. **Standing operator rule: NO real Xbox games.** All title work uses
@@ -531,18 +534,17 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    ~400–600 LOC; O1 headless stays the default and gate currency; O3
    needs an operator override of the single-dependency rule; triggers
    listed in the brief).
-5. **Next JIT step:** slices 1+2 and 5–13 are in (`--spec-exec`,
+5. **Next JIT step:** slices 1+2 and 5-14 are in (`--spec-exec`,
    `--block-exec`, `--decode-cache` default-on per §137 with
    `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
-   default-off). Slice 13 halved the menu fallback total (101.8M→49.3M,
-   dispatches −18%) — the first slice since slice 8 allowed to hope;
-   median-of-3 still required before any wall claim. The next lever
-   after shapes is the memory-path design (`ReadMemory`/`WriteMemory`
-   → translate + bus), a daylight scoping task. Remaining shape tail:
-   x87 reg-forms (Fld-reg/Fxch/Fld1/Faddp) + Fsub, Cli/Sti (untouchable,
-   IRQ-boundary), Shl/Shr r,r, Movs, Push-m, Mul-m. DynamicMethod stays
-   rejected unless new numbers say otherwise. NXDK toolchain
-   (operator/host) still the mesh blocker.
+   default-off). Slices 13-14 cut the menu fallback total 101.8M→43.5M
+   (dispatches -18% then -2%); median-of-3 still required before any
+   wall claim. The next lever after shapes is the memory-path design
+   (`ReadMemory`/`WriteMemory` → translate + bus), a daylight scoping
+   task. Remaining shape tail: Shl/Shr r,r (CL forms), Push-m, Mul-m,
+   Movs (string, out), Leave/Neg/Fnstsw/Fiadd, Cli/Sti (untouchable,
+   IRQ-boundary). DynamicMethod stays rejected unless new numbers say
+   otherwise. NXDK toolchain (operator/host) still the mesh blocker.
 6. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues
    directly (no BOSS protocol, no worktrees, no detached servers). Tool

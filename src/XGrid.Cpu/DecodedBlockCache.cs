@@ -321,15 +321,17 @@ public sealed class DecodedBlockCache
     }
 
     /// <summary>
-    /// Conservative slice-4 formation (extended by slices 10-13): only
+    /// Conservative slice-4 formation (extended by slices 10-14): only
     /// common straight-line integer/data operations may continue, now
     /// including the MMX 64-bit moves (pure data through the x87-aliased
     /// file), the Prefetch/Fence hints (interpreter nops), scalar SSE
     /// arithmetic/converts (single-helper verbatim bodies) and x87
     /// loads/stores/integer moves plus ST(0) add/multiply (read-before-
-    /// mutate, EIP-precise). Every branch, trap, system/mode, string/REP,
-    /// I/O and unlisted instruction ends the block (including future
-    /// mnemonics).
+    /// mutate, EIP-precise) and the slice-14 reg-forms (Fld ST(i), Fxch,
+    /// constant loads, pop-arithmetic, Fsub/Fdiv families — all pure
+    /// register ops or verbatim mirrors). Every branch, trap, system/mode,
+    /// string/REP, I/O and unlisted instruction ends the block (including
+    /// future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
     public static bool Terminates(in DecodedInstruction instruction)
@@ -363,7 +365,12 @@ public sealed class DecodedBlockCache
             or Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
             or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si
             or Mnemonic.Fld or Mnemonic.Fst or Mnemonic.Fstp or Mnemonic.Fild or Mnemonic.Fistp
-            or Mnemonic.Fadd or Mnemonic.Fmul);
+            or Mnemonic.Fadd or Mnemonic.Fmul or Mnemonic.Fsub or Mnemonic.Fsubr
+            or Mnemonic.Fdiv or Mnemonic.Fdivr or Mnemonic.Fxch
+            or Mnemonic.Faddp or Mnemonic.Fmulp or Mnemonic.Fsubp or Mnemonic.Fsubrp
+            or Mnemonic.Fdivp or Mnemonic.Fdivrp
+            or Mnemonic.Fld1 or Mnemonic.Fldl2T or Mnemonic.Fldl2E or Mnemonic.Fldpi
+            or Mnemonic.Fldlg2 or Mnemonic.Fldln2 or Mnemonic.Fldz);
     }
 
     private sealed record Block(

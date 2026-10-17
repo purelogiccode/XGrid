@@ -3203,6 +3203,16 @@ fallbacks menu 101.8M→49.3M (−52%) / triangle −8M with all six mem
 shapes gone from both tails; dispatches menu −18%. New tail: Cli/Sti,
 Shl/Shr r,r, Fld-reg/Fxch/Fld1/Faddp, Movs, Push-m, Fsub r,m, Mul-m.
 Flag stays opt-in.
+**§152 DONE (2026-10-16, direct):** JIT slice 14 (x87 `Fld ST(i)`/
+`Fst ST(i)`, `Fxch`, all 7 constant loads, 6 pop-arithmetic forms,
+`Fsub/Fsubr/Fdiv/Fdivr` reg,reg + reg,mem — 19 handlers, all continue
+blocks) behind `--spec-exec`; 1353/1353 tests, format clean, 2-leg spec
+golden check PASS (`D:\\spec-soak\\slice14`: menu 204.1 s SHA
+`4EF1FBF6…`, triangle 102.0 s SHA `A1740DE0…`, both `vec=0`,
+`verifyFailures=0`, anchors exact); fallbacks menu 49.3M→43.5M (−12%)
+/ triangle −2.2M with every slice-14 shape gone from both tails. New
+tail: Shl/Shr r,r (CL forms), Push-m, Mul-m, Movs (string, out),
+Leave/Neg/Fnstsw/Fiadd. Flag stays opt-in.
 **ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
 02:13 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.
