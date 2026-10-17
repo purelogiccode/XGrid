@@ -97,13 +97,9 @@ public sealed partial class XboxCpu
                 return ResolveSpecTest(instruction.Mnemonic, first, second, size)
                     ?? ResolveSpecAluMem(instruction.Mnemonic, first, second, size);
             case Mnemonic.Inc:
-                return first == OperandKind.Register && second == OperandKind.None
-                    ? ResolveSpecIncDec(isInc: true, size)
-                    : null;
+                return ResolveSpecIncDec(isInc: true, first, size);
             case Mnemonic.Dec:
-                return first == OperandKind.Register && second == OperandKind.None
-                    ? ResolveSpecIncDec(isInc: false, size)
-                    : null;
+                return ResolveSpecIncDec(isInc: false, first, size);
             case Mnemonic.Lea:
                 return first == OperandKind.Register && second == OperandKind.Memory
                     ? ResolveSpecLea(size)
@@ -366,16 +362,22 @@ public sealed partial class XboxCpu
         };
     }
 
-    private static SpecHandler? ResolveSpecIncDec(bool isInc, int size)
+    private static SpecHandler? ResolveSpecIncDec(bool isInc, OperandKind first, int size)
     {
-        return (isInc, size) switch
+        return (isInc, first, size) switch
         {
-            (true, 8) => SpecIncReg8Handler,
-            (true, 16) => SpecIncReg16Handler,
-            (true, 32) => SpecIncReg32Handler,
-            (false, 8) => SpecDecReg8Handler,
-            (false, 16) => SpecDecReg16Handler,
-            (false, 32) => SpecDecReg32Handler,
+            (true, OperandKind.Register, 8) => SpecIncReg8Handler,
+            (true, OperandKind.Register, 16) => SpecIncReg16Handler,
+            (true, OperandKind.Register, 32) => SpecIncReg32Handler,
+            (true, OperandKind.Memory, 8) => SpecIncMem8Handler,
+            (true, OperandKind.Memory, 16) => SpecIncMem16Handler,
+            (true, OperandKind.Memory, 32) => SpecIncMem32Handler,
+            (false, OperandKind.Register, 8) => SpecDecReg8Handler,
+            (false, OperandKind.Register, 16) => SpecDecReg16Handler,
+            (false, OperandKind.Register, 32) => SpecDecReg32Handler,
+            (false, OperandKind.Memory, 8) => SpecDecMem8Handler,
+            (false, OperandKind.Memory, 16) => SpecDecMem16Handler,
+            (false, OperandKind.Memory, 32) => SpecDecMem32Handler,
             _ => null,
         };
     }
@@ -648,6 +650,12 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecDecReg8Handler = SpecDecReg8;
     private static readonly SpecHandler SpecDecReg16Handler = SpecDecReg16;
     private static readonly SpecHandler SpecDecReg32Handler = SpecDecReg32;
+    private static readonly SpecHandler SpecIncMem8Handler = SpecIncMem8;
+    private static readonly SpecHandler SpecIncMem16Handler = SpecIncMem16;
+    private static readonly SpecHandler SpecIncMem32Handler = SpecIncMem32;
+    private static readonly SpecHandler SpecDecMem8Handler = SpecDecMem8;
+    private static readonly SpecHandler SpecDecMem16Handler = SpecDecMem16;
+    private static readonly SpecHandler SpecDecMem32Handler = SpecDecMem32;
     private static readonly SpecHandler SpecLeaRegMem16Handler = SpecLeaRegMem16;
     private static readonly SpecHandler SpecLeaRegMem32Handler = SpecLeaRegMem32;
     private static readonly SpecHandler SpecPushReg16Handler = SpecPushReg16;
@@ -1312,6 +1320,54 @@ public sealed partial class XboxCpu
         uint value = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
         cpu.Context.Eflags = AluOps.Dec(value, 32, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecIncMem8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Inc(cpu.ReadMemory(address, 8), 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecIncMem16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Inc(cpu.ReadMemory(address, 16), 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecIncMem32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Inc(cpu.ReadMemory(address, 32), 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecDecMem8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Dec(cpu.ReadMemory(address, 8), 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecDecMem16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Dec(cpu.ReadMemory(address, 16), 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecDecMem32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        cpu.Context.Eflags = AluOps.Dec(cpu.ReadMemory(address, 32), 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
