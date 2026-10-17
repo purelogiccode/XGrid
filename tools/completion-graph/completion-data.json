@@ -1,0 +1,41 @@
+{
+  "generated": "2026-10-17",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-17)",
+  "note": "Area = phase weight (remaining-effort share). Color = percent done.",
+  "tracks": [
+    {
+      "name": "LLE core (real console chain)",
+      "phases": [
+        { "p": 0, "name": "Bootstrap", "weight": 1, "done": 100 },
+        { "p": 1, "name": "Core", "weight": 2, "done": 100 },
+        { "p": 2, "name": "Memory", "weight": 3, "done": 100 },
+        { "p": 3, "name": "CPU (x86 PIII)", "weight": 11, "done": 95 },
+        { "p": 4, "name": "MMU", "weight": 3, "done": 100 },
+        { "p": 5, "name": "Bus & IRQ", "weight": 6, "done": 85 },
+        { "p": 6, "name": "MCPX", "weight": 6, "done": 80 },
+        { "p": 7, "name": "Firmware & Boot", "weight": 5, "done": 90 },
+        { "p": 8, "name": "Storage", "weight": 5, "done": 85 },
+        { "p": 9, "name": "XBE Loader", "weight": 3, "done": 90 },
+        { "p": 10, "name": "Kernel Interface", "weight": 2, "done": 5 },
+        { "p": 11, "name": "NV2A (GPU)", "weight": 15, "done": 88 },
+        { "p": 12, "name": "APU (audio)", "weight": 4, "done": 55 },
+        { "p": 13, "name": "USB & Controllers", "weight": 4, "done": 70 },
+        { "p": 14, "name": "Networking", "weight": 4, "done": 70 }
+      ]
+    },
+    {
+      "name": "Performance & finish",
+      "phases": [
+        { "p": 15, "name": "CPU JIT", "weight": 11, "done": 45 },
+        { "p": 16, "name": "CPU Optimization", "weight": 3, "done": 25 },
+        { "p": 17, "name": "Memory Optimization", "weight": 2, "done": 40 },
+        { "p": 18, "name": "GPU Optimization", "weight": 4, "done": 10 },
+        { "p": 19, "name": "Debugger", "weight": 3, "done": 30 },
+        { "p": 20, "name": "Automated Testing", "weight": 3, "done": 60 },
+        { "p": 21, "name": "CLI & Frontend", "weight": 3, "done": 50 },
+        { "p": 22, "name": "Save States & Replay", "weight": 2, "done": 5 },
+        { "p": 23, "name": "Release", "weight": 3, "done": 10 }
+      ]
+    }
+  ]
+}
