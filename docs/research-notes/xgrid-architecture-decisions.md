@@ -8300,6 +8300,35 @@ Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 
 ## 155. JIT slice 17: x87 compares + sign/test + tag control behind --spec-exec (2026-10-16)
 
+## 156. JIT slice 18: packed-SSE moves behind --spec-exec (2026-10-17)
+
+Direct development, early-morning slice taking the packed-move tail.
+Movaps/Movups (reg,reg/reg,mem/mem,reg via the same
+`ReadXmmOperand`/`WriteXmmOperand` helpers), Movss (all three forms —
+scalar low-element move with the F3 mandatory prefix, so
+`IsMandatoryF3Scalar` gains its ninth member with comment updated),
+Movlps/Movhps (both directions, including the reg,reg fall-through
+untouched on both paths exactly like the interpreter), Movhlps/Movlhps
+(pure register), Movntps (hint ignored on both paths — plain store),
+Movmskps (verbatim sign-mask loop). 9 handlers; whitelist += all 9.
+One compile-time typo (Movskps) caught by the build, zero test impact.
+
+Tests: `SseMove_Shapes_MatchInterpreter` (17 shapes vs the
+interpreter on shared zero XMM state + Preset [EBX]) + 14 resolver
+pins. Suite **1357/1357**, format clean.
+
+Goldens (`D:\\spec-soak\\slice18`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 89.7 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; every packed move gone
+(−0.8M). Menu spec r1 PASS 167.6 s — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+**fallbacks 35.7M→34.8M (−0.8M)** with all Movss gone (newly exposed:
+Popf, Sbb r,m, Stos smalls). New tail: Cli/Sti (untouchable), Movs/
+Stos (string, out), Rsqrtss, Rcl-imm, Sbb/Adc (carry-live, out), Cdq,
+Pushf/Popf. Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 Direct development, late-evening slice completing the x87 data family
 (the §150 scope's last register-safe rows). Fcom/Fcomp/Fucom/Fucomp
 (ST(i) + ST(0),mem via one shared body — operand read into a temp

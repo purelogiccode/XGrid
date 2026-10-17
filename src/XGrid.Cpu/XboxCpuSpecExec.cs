@@ -223,6 +223,45 @@ public sealed partial class XboxCpu
                 // Slice 17: tag/TOP/exception-control ops, verbatim
                 // one-liners with no operands beyond an optional ST(i).
                 return ResolveSpecFpuControl(instruction.Mnemonic, first, second);
+            case Mnemonic.Movaps:
+            case Mnemonic.Movups:
+                // Slice 18: packed 128-bit moves through the same
+                // `ReadXmmOperand`/`WriteXmmOperand` helpers (reg,reg /
+                // reg,mem / mem,reg — reads precede writes, widths ride
+                // the cached member exactly like the interpreter).
+                return (first == OperandKind.Register || first == OperandKind.Memory)
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? ResolveSpecSseMove(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Movss:
+                // Slice 18: scalar low-element move (F3 mandatory prefix —
+                // covered by the `IsMandatoryF3Scalar` gate like slice 12).
+                return (first == OperandKind.Register || first == OperandKind.Memory)
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecMovssHandler
+                    : null;
+            case Mnemonic.Movlps:
+            case Mnemonic.Movhps:
+                // Slice 18: low/high 64-bit moves, verbatim mirrors
+                // (either direction; reg,reg falls through untouched on
+                // both paths exactly like the interpreter).
+                return (first == OperandKind.Register || first == OperandKind.Memory)
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? ResolveSpecSseMove64(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Movhlps:
+            case Mnemonic.Movlhps:
+            case Mnemonic.Movmskps:
+                // Slice 18: reg,reg shuffles/mask — pure register data.
+                return first == OperandKind.Register && second == OperandKind.Register
+                    ? ResolveSpecSseShuffle(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Movntps:
+                // Slice 18: non-temporal store (the interpreter ignores
+                // the hint — plain 128-bit store through the same helper).
+                return first == OperandKind.Memory && second == OperandKind.Register
+                    ? SpecMovntpsHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -877,18 +916,20 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
-    /// Slice-12 gate helper: the scalar-SSE shapes whose 0xF3 byte is a
-    /// mandatory opcode prefix (so they decode with Rep==Rep). Shared by
+    /// Slice-12 gate helper: the shapes whose 0xF3 byte is a mandatory
+    /// opcode prefix (so they decode with Rep==Rep). Shared by
     /// <see cref="ResolveSpec"/> and
-    /// <see cref="DecodedBlockCache.Terminates"/>. Packed SSE, string/REP
-    /// and every other mnemonic is excluded.
+    /// <see cref="DecodedBlockCache.Terminates"/>. Slice 18 adds Movss
+    /// (scalar low-element move). Packed SSE, string/REP and every other
+    /// mnemonic is excluded.
     /// </summary>
     /// <param name="mnemonic">The mnemonic to test.</param>
-    /// <returns>True for the eight slice-12 scalar shapes.</returns>
+    /// <returns>True for the slice-12 scalar shapes plus Movss.</returns>
     internal static bool IsMandatoryF3Scalar(Mnemonic mnemonic)
     {
         return mnemonic is Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
-            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si;
+            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si
+            or Mnemonic.Movss;
     }
 
     /// <summary>
@@ -1003,6 +1044,37 @@ public sealed partial class XboxCpu
             (Mnemonic.Fincstp, OperandKind.None, OperandKind.None) => SpecFincstpHandler,
             (Mnemonic.Fnclex, OperandKind.None, OperandKind.None) => SpecFnclexHandler,
             (Mnemonic.Fninit, OperandKind.None, OperandKind.None) => SpecFninitHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecSseMove(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Movaps => SpecMovapsHandler,
+            Mnemonic.Movups => SpecMovupsHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecSseMove64(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Movlps => SpecMovlpsHandler,
+            Mnemonic.Movhps => SpecMovhpsHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecSseShuffle(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Movhlps => SpecMovhlpsHandler,
+            Mnemonic.Movlhps => SpecMovlhpsHandler,
+            Mnemonic.Movmskps => SpecMovmskpsHandler,
             _ => null,
         };
     }
@@ -1238,6 +1310,15 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecFincstpHandler = SpecFincstp;
     private static readonly SpecHandler SpecFnclexHandler = SpecFnclex;
     private static readonly SpecHandler SpecFninitHandler = SpecFninit;
+    private static readonly SpecHandler SpecMovapsHandler = SpecMovaps;
+    private static readonly SpecHandler SpecMovupsHandler = SpecMovups;
+    private static readonly SpecHandler SpecMovssHandler = SpecMovss;
+    private static readonly SpecHandler SpecMovlpsHandler = SpecMovlps;
+    private static readonly SpecHandler SpecMovhpsHandler = SpecMovhps;
+    private static readonly SpecHandler SpecMovhlpsHandler = SpecMovhlps;
+    private static readonly SpecHandler SpecMovlhpsHandler = SpecMovlhps;
+    private static readonly SpecHandler SpecMovntpsHandler = SpecMovntps;
+    private static readonly SpecHandler SpecMovmskpsHandler = SpecMovmskps;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -2567,6 +2648,122 @@ public sealed partial class XboxCpu
     private static void SpecFninit(XboxCpu cpu, in DecodedInstruction instruction)
     {
         cpu.Fpu.Init();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovaps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movaps` case.
+        (ulong low, ulong high) = cpu.ReadXmmOperand(instruction.Operand2);
+        cpu.WriteXmmOperand(instruction.Operand1, low, high);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovups(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movups` case (same helpers —
+        // alignment is the interpreter's business, identical on both).
+        (ulong low, ulong high) = cpu.ReadXmmOperand(instruction.Operand2);
+        cpu.WriteXmmOperand(instruction.Operand1, low, high);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovss(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movss` case (all three forms).
+        // The mem-store form reads the XMM element (no fault) before the
+        // m32 write, so EIP stays precise exactly like the interpreter.
+        if (instruction.Operand1.Kind == OperandKind.Register)
+        {
+            (ulong low, ulong high) = cpu.ReadXmmOperand(instruction.Operand2);
+            cpu.Context.WriteXmmElement(
+                instruction.Operand1.RegisterIndex, 0, ElementBits((low, high), 0));
+        }
+        else
+        {
+            uint source = cpu.Context.ReadXmmElement(instruction.Operand2.RegisterIndex, 0);
+            cpu.WriteMemory(cpu.ComputeAddress(instruction.Operand1.Memory), 32, source);
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovlps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movlps` case, including the
+        // reg,reg fall-through (untouched on both paths).
+        if (instruction.Operand1.Kind == OperandKind.Memory)
+        {
+            cpu.WriteMemory64(
+                cpu.ComputeAddress(instruction.Operand1.Memory),
+                cpu.Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0));
+        }
+        else if (instruction.Operand2.Kind == OperandKind.Memory)
+        {
+            ulong value = cpu.ReadMemory64(cpu.ComputeAddress(instruction.Operand2.Memory));
+            cpu.Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, value);
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovhps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movhps` case (same fall-through
+        // discipline as Movlps).
+        if (instruction.Operand1.Kind == OperandKind.Memory)
+        {
+            cpu.WriteMemory64(
+                cpu.ComputeAddress(instruction.Operand1.Memory),
+                cpu.Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1));
+        }
+        else if (instruction.Operand2.Kind == OperandKind.Memory)
+        {
+            ulong value = cpu.ReadMemory64(cpu.ComputeAddress(instruction.Operand2.Memory));
+            cpu.Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, value);
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovhlps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movhlps` case.
+        ulong source = cpu.Context.ReadXmm64(instruction.Operand2.RegisterIndex, 1);
+        cpu.Context.WriteXmm64(instruction.Operand1.RegisterIndex, 0, source);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovlhps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movlhps` case.
+        ulong source = cpu.Context.ReadXmm64(instruction.Operand2.RegisterIndex, 0);
+        cpu.Context.WriteXmm64(instruction.Operand1.RegisterIndex, 1, source);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovntps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movntps` case (hint ignored on
+        // both paths — plain 128-bit store).
+        (ulong low, ulong high) = cpu.Context.ReadXmm128(instruction.Operand2.RegisterIndex);
+        cpu.WriteXmmOperand(instruction.Operand1, low, high);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovmskps(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 18: verbatim interpreter `Movmskps` case.
+        uint result = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            if ((cpu.Context.ReadXmmElement(instruction.Operand2.RegisterIndex, i) & 0x80000000u) != 0)
+            {
+                result |= 1u << i;
+            }
+        }
+
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

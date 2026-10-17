@@ -507,10 +507,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    both titles, `vec=0`, `verifyFailures=0`, counter anchors exact).
    Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
    walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
-   **1356/1356 tests after slices 12-17 below.** Flag stays opt-in
+   **1357/1357 tests after slices 12-18 below.** Flag stays opt-in
    (saturation + no median-of-3 per slice; soak binaries must come
    from a FULL solution build — §145 lesson).
-2. **SLICES 12–17 DONE (§§149, §151–155, same evening).** Scalar SSE (Addss/Subss/
+2. **SLICES 12–18 DONE (§§149, §151–156, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
    discovery en route (`Decoder.cs:72-73,94` — 0xF3 is both mandatory
@@ -540,6 +540,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    (16 handlers — x87 data fully absorbed on both titles) —
    fallbacks menu 36.2M→**35.7M**. 2-leg 1B spec goldens PASS +
    `--block-exec` cross-check PASS. **1356/1356 tests**, format clean.
+   Then slice 18 (§156): packed-SSE moves (9 handlers incl. the F3-gate
+   ninth member) — fallbacks menu 35.7M→**34.8M**. 2-leg 1B spec
+   goldens PASS + `--block-exec` cross-check PASS. **1357/1357
+   tests**, format clean.
 3. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
 4. **Operator decision: swapchain/windowing** — brief filed at
@@ -548,10 +552,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    ~400–600 LOC; O1 headless stays the default and gate currency; O3
    needs an operator override of the single-dependency rule; triggers
    listed in the brief).
-5. **Next JIT step:** slices 1+2 and 5-17 are in (`--spec-exec`,
+5. **Next JIT step:** slices 1+2 and 5-18 are in (`--spec-exec`,
    `--block-exec`, `--decode-cache` default-on per §137 with
    `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
-   default-off). Slices 13-17 cut the menu fallback total 101.8M→35.7M
+   default-off). Slices 13-18 cut the menu fallback total 101.8M→34.8M;
    (x87 fully absorbed on both titles); median-of-3 still required
    before any wall claim. The next lever after shapes is the
    memory-path design (`ReadMemory`/`WriteMemory` → translate + bus),
