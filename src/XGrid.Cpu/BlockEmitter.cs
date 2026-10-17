@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using System.Reflection.Emit;
 using XGrid.Core.Devices;
@@ -66,6 +67,21 @@ internal static class BlockEmitter
     private static readonly MethodInfo GetCr0 =
         typeof(XboxContext).GetProperty("Cr0")!.GetMethod!;
 
+    private static readonly MethodInfo SetEflags =
+        typeof(XboxContext).GetProperty("Eflags")!.SetMethod!;
+
+    private static readonly MethodInfo AluSub =
+        typeof(AluOps).GetMethod("Sub")!;
+
+    private static readonly MethodInfo AluLogical =
+        typeof(AluOps).GetMethod("Logical")!;
+
+    private static readonly MethodInfo ReadRegister8 =
+        typeof(XboxContext).GetMethod("ReadRegister8")!;
+
+    private static readonly MethodInfo WriteRegister8 =
+        typeof(XboxContext).GetMethod("WriteRegister8")!;
+
     private static readonly MethodInfo GetSegmentBase =
         typeof(XboxContext).GetMethod("GetSegmentBase")!;
 
@@ -98,6 +114,12 @@ internal static class BlockEmitter
 
     private static readonly MethodInfo RamWrite32 =
         typeof(PhysicalMemory).GetMethod("Write32")!;
+
+    private static readonly MethodInfo RamRead8 =
+        typeof(PhysicalMemory).GetMethod("Read8")!;
+
+    private static readonly MethodInfo RamWrite8 =
+        typeof(PhysicalMemory).GetMethod("Write8")!;
 
     private static readonly MethodInfo GetTsc =
         typeof(XboxContext).GetProperty("Tsc")!.GetMethod!;
@@ -184,7 +206,7 @@ internal static class BlockEmitter
                     && candidate.GetParameters().Length == 3)
                 {
                     plans[i] = plan;
-                    if (plan.Value.FastAddress)
+                    if (plan.Value.Kind != XboxCpu.InlineFastKind.None)
                     {
                         anyFast = true;
                     }
@@ -224,6 +246,7 @@ internal static class BlockEmitter
         LocalBuilder? fastSlot = null;
         LocalBuilder? fastPhys = null;
         LocalBuilder? fastValue = null;
+        LocalBuilder? fastAux = null;
         LocalBuilder? fastRam = null;
         LocalBuilder? fastOk = null;
         if (anyFast)
@@ -233,6 +256,7 @@ internal static class BlockEmitter
             fastSlot = il.DeclareLocal(typeof(int));
             fastPhys = il.DeclareLocal(typeof(uint));
             fastValue = il.DeclareLocal(typeof(uint));
+            fastAux = il.DeclareLocal(typeof(uint));
             fastRam = il.DeclareLocal(typeof(PhysicalMemory));
             fastOk = il.DeclareLocal(typeof(bool));
             il.Emit(OpCodes.Ldarg_0);
@@ -311,12 +335,12 @@ internal static class BlockEmitter
             il.MarkLabel(body);
             if (plans[j] is { } plan)
             {
-                if (plan.FastAddress && fastOk is not null)
+                if (plan.Kind != XboxCpu.InlineFastKind.None && fastOk is not null)
                 {
                     Label slow = il.DefineLabel();
                     Label done = il.DefineLabel();
                     EmitFastMemoryPath(il, plan, context, fastOk, slow,
-                        fastAddr!, fastVpn!, fastSlot!, fastPhys!, fastValue!, fastRam!);
+                        fastAddr!, fastVpn!, fastSlot!, fastPhys!, fastValue!, fastAux!, fastRam!);
                     il.Emit(OpCodes.Br, done);
                     il.MarkLabel(slow);
                     EmitTwinCall(il, plan.Body, context, j);
@@ -395,6 +419,7 @@ internal static class BlockEmitter
         LocalBuilder slot,
         LocalBuilder phys,
         LocalBuilder value,
+        LocalBuilder aux,
         LocalBuilder ram)
     {
         il.Emit(OpCodes.Ldloc, fastOk);
@@ -436,12 +461,16 @@ internal static class BlockEmitter
 
         il.Emit(OpCodes.Stloc, addr);
 
-        // Cross-page accesses keep the interpreter's per-byte order via the twin.
-        il.Emit(OpCodes.Ldloc, addr);
-        il.Emit(OpCodes.Ldc_I4, 0xFFF);
-        il.Emit(OpCodes.And);
-        il.Emit(OpCodes.Ldc_I4, 0xFFC);
-        il.Emit(OpCodes.Bgt_Un, slow);
+        // Cross-page accesses keep the interpreter's per-byte order via the
+        // twin. Only 32-bit accesses can cross a page boundary.
+        if (plan.Size == 32)
+        {
+            il.Emit(OpCodes.Ldloc, addr);
+            il.Emit(OpCodes.Ldc_I4, 0xFFF);
+            il.Emit(OpCodes.And);
+            il.Emit(OpCodes.Ldc_I4, 0xFFC);
+            il.Emit(OpCodes.Bgt_Un, slow);
+        }
 
         // vpn = addr >> 12; slot = vpn & 3; cache tag must match.
         il.Emit(OpCodes.Ldloc, addr);
@@ -496,7 +525,7 @@ internal static class BlockEmitter
         il.Emit(OpCodes.Brfalse, slow);
         il.Emit(OpCodes.Ldloc, phys);
         il.Emit(OpCodes.Conv_U8);
-        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Ldc_I4, plan.Size / 8);
         il.Emit(OpCodes.Conv_U8);
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Ldarg_0);
@@ -509,39 +538,12 @@ internal static class BlockEmitter
             // Watched ranges keep the legacy bus path (CheckWatch + WatchHit).
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldc_I4_4);
+            il.Emit(OpCodes.Ldc_I4, plan.Size / 8);
             il.Emit(OpCodes.Call, IsWatched);
             il.Emit(OpCodes.Brtrue, slow);
-
-            il.Emit(OpCodes.Ldloc, context);
-            il.Emit(OpCodes.Ldfld, ContextRegisters);
-            il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
-            il.Emit(OpCodes.Ldelem_I4);
-            il.Emit(OpCodes.Stloc, value);
-
-            // RawWrite order: NoteStorePhysical, then the RAM write (whose
-            // present-dirty choke rides PhysicalMemory.Write32).
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldc_I4, plan.Size);
-            il.Emit(OpCodes.Call, NoteStorePhysical);
-            il.Emit(OpCodes.Ldloc, ram);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldloc, value);
-            il.Emit(OpCodes.Call, RamWrite32);
         }
-        else
-        {
-            il.Emit(OpCodes.Ldloc, ram);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Call, RamRead32);
-            il.Emit(OpCodes.Stloc, value);
-            il.Emit(OpCodes.Ldloc, context);
-            il.Emit(OpCodes.Ldfld, ContextRegisters);
-            il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
-            il.Emit(OpCodes.Ldloc, value);
-            il.Emit(OpCodes.Stelem_I4);
-        }
+
+        EmitFastTail(il, plan, context, value, aux, ram, phys);
 
         // EIP advances only after completion, exactly as the handler.
         il.Emit(OpCodes.Ldloc, context);
@@ -550,5 +552,160 @@ internal static class BlockEmitter
         il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Length));
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Call, SetEip);
+    }
+
+    /// <summary>
+    /// Kind-specific tail of the E3-1b/E3-1c fast path, after the address,
+    /// translate-cache, RAM and store-guard checks passed. Each case mirrors
+    /// its spec handler's body with the operand facts baked.
+    /// </summary>
+    private static void EmitFastTail(
+        ILGenerator il,
+        XboxCpu.InlineFastPlan plan,
+        LocalBuilder context,
+        LocalBuilder value,
+        LocalBuilder aux,
+        LocalBuilder ram,
+        LocalBuilder phys)
+    {
+        switch (plan.Kind)
+        {
+            case XboxCpu.InlineFastKind.MovLoad32:
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead32);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldfld, ContextRegisters);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Stelem_I4);
+                break;
+
+            case XboxCpu.InlineFastKind.MovLoad8:
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead8);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Conv_U1);
+                il.Emit(OpCodes.Call, WriteRegister8);
+                break;
+
+            case XboxCpu.InlineFastKind.MovStore32:
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldfld, ContextRegisters);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Ldelem_I4);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Ldc_I4, 32);
+                il.Emit(OpCodes.Call, NoteStorePhysical);
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Call, RamWrite32);
+                break;
+
+            case XboxCpu.InlineFastKind.MovStore8:
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Call, ReadRegister8);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Ldc_I4, 8);
+                il.Emit(OpCodes.Call, NoteStorePhysical);
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Conv_U1);
+                il.Emit(OpCodes.Call, RamWrite8);
+                break;
+
+            case XboxCpu.InlineFastKind.CmpRegMem32:
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldfld, ContextRegisters);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Ldelem_I4);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead32);
+                il.Emit(OpCodes.Stloc, aux);
+                EmitFastCmpFlags(il, context, value, aux, aux);
+                break;
+
+            case XboxCpu.InlineFastKind.CmpMemReg32:
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead32);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldfld, ContextRegisters);
+                il.Emit(OpCodes.Ldc_I4, plan.RegisterIndex);
+                il.Emit(OpCodes.Ldelem_I4);
+                il.Emit(OpCodes.Stloc, aux);
+                EmitFastCmpFlags(il, context, value, aux, aux);
+                break;
+
+            case XboxCpu.InlineFastKind.CmpMemImm32:
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead32);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                il.Emit(OpCodes.Ldc_I4_0);
+                il.Emit(OpCodes.Ldc_I4, 32);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Call, GetEflags);
+                il.Emit(OpCodes.Ldloca, aux);
+                il.Emit(OpCodes.Call, AluSub);
+                il.Emit(OpCodes.Call, SetEflags);
+                break;
+
+            case XboxCpu.InlineFastKind.TestMemImm32:
+                il.Emit(OpCodes.Ldloc, ram);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Call, RamRead32);
+                il.Emit(OpCodes.Stloc, value);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Ldloc, value);
+                il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                il.Emit(OpCodes.And);
+                il.Emit(OpCodes.Ldc_I4, 32);
+                il.Emit(OpCodes.Ldloc, context);
+                il.Emit(OpCodes.Call, GetEflags);
+                il.Emit(OpCodes.Call, AluLogical);
+                il.Emit(OpCodes.Call, SetEflags);
+                break;
+
+            default:
+                throw new InvalidOperationException($"No fast tail for kind {plan.Kind}.");
+        }
+    }
+
+    /// <summary>
+    /// Emits <c>eflags = AluOps.Sub(first, second, 0, 32, eflags, out _)</c>
+    /// with <paramref name="scratch"/> as the discarded result local.
+    /// </summary>
+    private static void EmitFastCmpFlags(
+        ILGenerator il, LocalBuilder context, LocalBuilder first, LocalBuilder second, LocalBuilder scratch)
+    {
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldloc, first);
+        il.Emit(OpCodes.Ldloc, second);
+        il.Emit(OpCodes.Ldc_I4_0);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Call, GetEflags);
+        il.Emit(OpCodes.Ldloca, scratch);
+        il.Emit(OpCodes.Call, AluSub);
+        il.Emit(OpCodes.Call, SetEflags);
     }
 }
