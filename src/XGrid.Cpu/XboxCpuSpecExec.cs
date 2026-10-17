@@ -118,9 +118,18 @@ public sealed partial class XboxCpu
                 // Slice 15: single-operand unsigned multiply (reg/mem).
                 // The shared body calls the same `ExecuteMulDiv` dispatch
                 // the interpreter uses, so flags and the EDX:EAX writes
-                // match exactly.
+                // match exactly. Slice 16 extends the same body to Div/Idiv
+                // (a #DE raise transfers EIP mid-block; the serve-time
+                // `_expectedLinear` guard redirects exactly like the
+                // control-flow handlers, so whitelisting is safe).
                 return first != OperandKind.Immediate && second == OperandKind.None
                     ? SpecMulHandler
+                    : null;
+            case Mnemonic.Div:
+            case Mnemonic.Idiv:
+                // Slice 16: single-operand divide through the shared body.
+                return first != OperandKind.Immediate && second == OperandKind.None
+                    ? SpecDivHandler
                     : null;
             case Mnemonic.Imul:
                 // Slice 15: all signed-multiply forms through the same
@@ -129,6 +138,55 @@ public sealed partial class XboxCpu
                 // form, so EIP stays precise exactly like the interpreter.
                 return first == OperandKind.Register
                     ? SpecImulHandler
+                    : null;
+            case Mnemonic.Neg:
+                // Slice 16: two's-complement negate, Inc/Dec-pattern
+                // mirror (read, `AluOps.Neg`, write, EIP after).
+                return second == OperandKind.None
+                    && (first == OperandKind.Register || first == OperandKind.Memory)
+                    ? SpecNegHandler
+                    : null;
+            case Mnemonic.Not:
+                // Slice 16: bitwise complement (no flags touched).
+                return second == OperandKind.None
+                    && (first == OperandKind.Register || first == OperandKind.Memory)
+                    ? SpecNotHandler
+                    : null;
+            case Mnemonic.Bswap:
+                // Slice 16: byte-swap, register-only, no flags.
+                return first == OperandKind.Register && second == OperandKind.None
+                    ? SpecBswapHandler
+                    : null;
+            case Mnemonic.Xchg:
+                // Slice 16: exchange via the verbatim read-read-write-write
+                // sequence (fault order identical since the code is shared
+                // shape-for-shape with the interpreter's inline case).
+                return (first == OperandKind.Register || first == OperandKind.Memory)
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecXchgHandler
+                    : null;
+            case Mnemonic.Leave:
+                // Slice 16: frame teardown through the same `ExecuteLeave`
+                // helper (16/32-bit ESP/EBP handling inside).
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecLeaveHandler
+                    : null;
+            case Mnemonic.Fiadd:
+            case Mnemonic.Fimul:
+            case Mnemonic.Fisub:
+            case Mnemonic.Fisubr:
+            case Mnemonic.Fidiv:
+            case Mnemonic.Fidivr:
+                // Slice 16: x87 integer arithmetic (mem-only) through one
+                // shared body: integer read faults before ST(0) updates.
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? ResolveSpecFpuInteger(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Fnstsw:
+                // Slice 16: status word to AX or m16, verbatim mirror.
+                return second == OperandKind.None
+                    && (first == OperandKind.None || first == OperandKind.Memory)
+                    ? SpecFnstswHandler
                     : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
@@ -853,6 +911,20 @@ public sealed partial class XboxCpu
         };
     }
 
+    private static SpecHandler? ResolveSpecFpuInteger(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Fiadd => SpecFiaddHandler,
+            Mnemonic.Fimul => SpecFimulHandler,
+            Mnemonic.Fisub => SpecFisubHandler,
+            Mnemonic.Fisubr => SpecFisubrHandler,
+            Mnemonic.Fidiv => SpecFidivHandler,
+            Mnemonic.Fidivr => SpecFidivrHandler,
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
@@ -1054,8 +1126,21 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecCvttss2SiRegRegHandler = SpecCvttss2SiRegReg;
     private static readonly SpecHandler SpecCvttss2SiRegMemHandler = SpecCvttss2SiRegMem;
     private static readonly SpecHandler SpecFldMemHandler = SpecFldMem;
-    private static readonly SpecHandler SpecMulHandler = SpecMul;
+    private static readonly SpecHandler SpecMulHandler = SpecMulDivSingle;
+    private static readonly SpecHandler SpecDivHandler = SpecMulDivSingle;
     private static readonly SpecHandler SpecImulHandler = SpecImul;
+    private static readonly SpecHandler SpecNegHandler = SpecNeg;
+    private static readonly SpecHandler SpecNotHandler = SpecNot;
+    private static readonly SpecHandler SpecBswapHandler = SpecBswap;
+    private static readonly SpecHandler SpecXchgHandler = SpecXchg;
+    private static readonly SpecHandler SpecLeaveHandler = SpecLeave;
+    private static readonly SpecHandler SpecFiaddHandler = SpecFiadd;
+    private static readonly SpecHandler SpecFimulHandler = SpecFimul;
+    private static readonly SpecHandler SpecFisubHandler = SpecFisub;
+    private static readonly SpecHandler SpecFisubrHandler = SpecFisubr;
+    private static readonly SpecHandler SpecFidivHandler = SpecFidiv;
+    private static readonly SpecHandler SpecFidivrHandler = SpecFidivr;
+    private static readonly SpecHandler SpecFnstswHandler = SpecFnstsw;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -2142,13 +2227,14 @@ public sealed partial class XboxCpu
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
-    private static void SpecMul(XboxCpu cpu, in DecodedInstruction instruction)
+    private static void SpecMulDivSingle(XboxCpu cpu, in DecodedInstruction instruction)
     {
-        // Slice 15: verbatim interpreter Mul path. `ExecuteMulDiv`
-        // dispatches on the mnemonic exactly like `ExecuteInstruction`;
-        // Mul itself never raises, so EIP always advances — but the
-        // early-return shape is kept so the mirror cannot drift if the
-        // helper ever gains a faulting path.
+        // Slice 15 (Mul) + slice 16 (Div/Idiv): verbatim interpreter
+        // Mul/Div path. `ExecuteMulDiv` dispatches on the mnemonic exactly
+        // like `ExecuteInstruction`; a Div/Idiv #DE raise transfers EIP
+        // and returns true (no advance), otherwise EIP advances — the
+        // serve-time `_expectedLinear` guard redirects mid-block raises
+        // exactly like the control-flow handlers.
         if (cpu.ExecuteMulDiv(instruction))
         {
             return;
@@ -2162,6 +2248,111 @@ public sealed partial class XboxCpu
         // Slice 15: verbatim interpreter Imul path (all three operand
         // forms). `ExecuteImul` reads before writing in every form.
         cpu.ExecuteImul(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecNeg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Neg` case (Inc/Dec pattern).
+        uint value = cpu.ReadOperand(instruction.Operand1);
+        cpu.Context.Eflags = AluOps.Neg(value, instruction.Operand1.Size, cpu.Context.Eflags, out uint result);
+        cpu.WriteOperand(instruction.Operand1, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecNot(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Not` case (no flags touched).
+        cpu.WriteOperand(instruction.Operand1, ~cpu.ReadOperand(instruction.Operand1));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecBswap(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Bswap` case (reg-only, no flags).
+        Gpr register = (Gpr)instruction.Operand1.RegisterIndex;
+        uint value = cpu.Context.ReadRegister(register);
+        cpu.Context.WriteRegister(
+            register,
+            (value >> 24) | ((value >> 8) & 0x0000FF00u) | ((value << 8) & 0x00FF0000u) | (value << 24));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecXchg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Xchg` case. The read-read-
+        // write-write order is shared shape-for-shape, so a faulting
+        // memory side throws at the identical point with identical EIP.
+        uint first = cpu.ReadOperand(instruction.Operand1);
+        uint second = cpu.ReadOperand(instruction.Operand2);
+        cpu.WriteOperand(instruction.Operand1, second);
+        cpu.WriteOperand(instruction.Operand2, first);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecLeave(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Leave` case (16/32-bit
+        // ESP/EBP handling lives in the shared helper; a faulting stack
+        // pop throws with the same ESP/EBP state on both paths).
+        cpu.ExecuteLeave(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFiadd(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fiadd);
+    }
+
+    private static void SpecFimul(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fimul);
+    }
+
+    private static void SpecFisub(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fisub);
+    }
+
+    private static void SpecFisubr(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fisubr);
+    }
+
+    private static void SpecFidiv(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fidiv);
+    }
+
+    private static void SpecFidivr(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuIntegerArithmetic(cpu, in instruction, Mnemonic.Fidivr);
+    }
+
+    private static void SpecFpuIntegerArithmetic(XboxCpu cpu, in DecodedInstruction instruction, Mnemonic mnemonic)
+    {
+        // Slice-16 shared x87 integer arithmetic: verbatim interpreter
+        // `Fiadd/...` case. The integer read faults before ST(0) updates,
+        // so EIP stays precise exactly like the interpreter.
+        cpu.Fpu.SetRegister(
+            0, ApplyFpuArithmetic(mnemonic, cpu.Fpu.GetRegister(0), cpu.ReadFpuInteger(instruction.Operand1)));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFnstsw(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 16: verbatim interpreter `Fnstsw` case (AX or m16).
+        // A faulting m16 write throws before any state change.
+        if (instruction.Operand1.Kind == OperandKind.None)
+        {
+            cpu.Context.WriteRegister16(Gpr.Eax, cpu.Fpu.StatusWord);
+        }
+        else
+        {
+            cpu.WriteMemory(
+                cpu.ComputeAddress(instruction.Operand1.Memory), 16, cpu.Fpu.StatusWord);
+        }
+
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
