@@ -107,12 +107,12 @@
 <text x='1061.9' y='874.4' font-size='13.7' font-weight='700' fill='#111827' text-anchor='middle'>P0</text>
 <text x='1048.7' y='912.9' font-size='24' font-weight='700' fill='#111827'>Boots…</text>
 </g>
-<g class='tile' data-p='15' data-name='CPU JIT' data-done='45' data-weight='11'>
-<rect x='1149' y='120' width='503' height='278.2' rx='10' fill='#E8BB28' stroke='#0B1220' stroke-width='1.5'/>
+<g class='tile' data-p='15' data-name='CPU JIT' data-done='48' data-weight='11'>
+<rect x='1149' y='120' width='503' height='278.2' rx='10' fill='#E8C228' stroke='#0B1220' stroke-width='1.5'/>
 <rect x='1158' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.20)'/>
 <text x='1171.2' y='147' font-size='13.7' font-weight='700' fill='#FFFFFF' text-anchor='middle'>P15</text>
 <text x='1158' y='185.4' font-size='24' font-weight='700' fill='#FFFFFF'>CPU JIT</text>
-<text x='1158' y='226.1' font-size='17.3' opacity='0.94' fill='#FFFFFF'>45% done &#183; weight 11</text>
+<text x='1158' y='226.1' font-size='17.3' opacity='0.94' fill='#FFFFFF'>48% done &#183; weight 11</text>
 </g>
 <g class='tile' data-p='18' data-name='GPU Optimization' data-done='10' data-weight='4'>
 <rect x='1149' y='398.2' width='287.4' height='177.1' rx='10' fill='#E87128' stroke='#0B1220' stroke-width='1.5'/>
@@ -277,6 +277,6 @@
 <text x='236' y='1035' font-size='11.5' fill='#94A3B8'>50%</text>
 <text x='438' y='1035' font-size='11.5' fill='#94A3B8'>100%</text>
 <circle cx='1562' cy='1014' r='9' fill='none' stroke='#F8FAFC' stroke-width='3' stroke-dasharray='26 34.5' transform='rotate(-90 1562 1014)'/>
-<text x='1562' y='1018' font-size='10.5' font-weight='700' fill='#F8FAFC' text-anchor='middle'>68%</text>
+<text x='1562' y='1018' font-size='10.5' font-weight='700' fill='#F8FAFC' text-anchor='middle'>68.3%</text>
 <text x='1658' y='1035' font-size='11.5' fill='#94A3B8' text-anchor='end'>weighted overall</text>
 </svg>

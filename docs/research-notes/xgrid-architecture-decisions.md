@@ -9092,3 +9092,73 @@ alone as the warmup outlier; r2-r6 span 145-156 (host noise dominates).
 Six-sample median 152.2 vs spec 147.0 = 0.965x: the robust claim stays
 parity-with-slight-deficit, i.e. the serve layer is at ceiling and only
 body work (E3) can move walls further.
+
+## 176. E3-0 served-shape tally + E3-1 inline bodies (2026-10-17, direct)
+
+E3-0 (measurement, landed): `--shape-tally` (implies spec-exec, suppresses
+`--emit`, default-off) extends the §139 fallback-histogram pattern to every
+specialized serve: `DecodedBlockCache.ShapeTallyEnabled` + `NoteServedShape` +
+`TopServedShapes`; the CLI prints `Spec served
+<Mnemonic>/<Op1>/<Op2>/<Size>x<Cond>/<Seg>=count` (top 40) at exit.
+Diagnostic only: the flag-off serve path is unchanged (one field read inside
+the spec branch) and enabling it leaves guest state identical (SaveState
+differential pin). Unit pins: +3 tests.
+
+Measured 1B rankings (`D:\spec-soak\e30`, spec-exec member path; totals are
+specialized serves):
+- menu (994.1M): Mov/R/M/32 156.1M; Mov/M/R/32 128.2M; Jcc/NE 115.0M;
+  Dec 101.2M; Jcc/EQ 38.1M; Nop 34.7M; Inc 31.3M; Cmp/R/M/32 20.2M;
+  Mov/R/R/32 18.5M; Cmp/M/Imm/32 18.5M; Cli 16.3M; Sti 16.2M;
+  Mov/R/M/8 13.0M; Add/R/Imm 13.0M; Fld/M 12.8M; Fstp/M 11.3M;
+  Mov/M/R/8 11.1M; Movq/R/M/64 7.6M; Movntq/M/R/64 7.6M; Movzx/R/M 6.6M.
+- triangle (997.9M): Mov/R/M/32 122.4M; Jcc/EQ 118.5M; Nop 113.5M;
+  Mov/M/R/32 105.8M; Jcc/NE 100.0M; Dec 93.6M; Cmp/M/Imm/32 57.4M;
+  Cmp/R/M/32 57.3M; Cli 56.6M; Sti 56.6M; Mov/R/R/32 15.9M; ...
+Twins cover 347.1M/994.1M = 34.9% of menu members and 352.3M/997.9M = 35.3%
+of triangle members (Mov 8/32 both directions + the three Cmp forms +
+Test/M/Imm). x87/MMX memory shapes (Fld/Fstp/Fild/Fistp/Movq/Movntq) stay
+uncovered by this slice.
+
+E3-1a (landed, opt-in `--emit-inline`, implies `--emit`): `SpecInlineHandler`
+twins derived from `ResolveSpec` handlers (twin-for-handler: the two can
+never disagree about cover; only the vehicle differs); `BlockEmitter.Build`
+bakes the twin call with the runner's hoisted context; runners record the
+flag they were built with (`RunnerInline`) and rebuild on mismatch;
+`EmitInlineMembers` build counter. Eight twins mirror ReadMemory/WriteMemory
+minus the hotspot branches (unreachable under the RunEmitTail guard), keeping
+the MMU gate, cross-page per-byte order, store watch and NoteStorePhysical
+semantics statement-for-statement.
+
+E3-1b (landed, same flag): for the two 32-bit Mov reg<->mem shapes the
+emitted member is a baked IL fast path: inline effective-address compute
+(baked base/index/scale/disp/segment; live register and segment-base values),
+cross-page guard, data-translate cache probe (tag + store writable/WP), RAM
+bounds, then PhysicalMemory.Read32/Write32 with RawWrite's
+IsWatched/NoteStorePhysical order; every non-fast case (16-bit addressing,
+cross-page, tag miss, non-RAM, watched/unwritable store, Mmu.Observer
+attached) branches to the exact twin. `Mmu.Observer is null` is hoisted per
+invocation (TranslateLinear's FastWideAllowed gate; its hotspot/idle halves
+are guaranteed by the RunEmitTail guard). `EmitFastMembers` build counter.
+
+Tests: +7 EmitTests (all covered shapes incl. FS/GS overrides, 16-bit
+addressing stays on the twin, watched store hits exact, non-RAM physical
+falls back, load fault mid-tail precise Cr2, store cross-page fault precise
+Cr2, observer/verify gates, resolver discipline). Gate: `scripts/emit-gate.ps1`
+(title x mode legs, SHA + counter + fault + verify asserts).
+
+Gate evidence (`D:\spec-soak\e31`, emit-gate legs; all PASS, SHAs exact both
+titles, `vec=0`, counter anchors exact, `verifyFailures=0`): menu cache
+(216.2 s) + spec (206.5 s) on the E3-1a binary; then on the E3-1b binary
+menu emit x3 (204.7/174.2/170.1 s) + menu emit-inline x3
+(171.4/166.4/172.1 s) interleaved, triangle emit (75.3 s) + triangle
+emit-inline (72.6 s). Interleaved median-of-3 (menu): **emit 174.2 s vs
+emit-inline 171.4 s = 1.016x** -- thin-positive; the per-pair ratios
+(1.19/1.05/0.99) show the first emit leg as a warmup outlier and the
+steady-state pairs at ~parity. Triangle single-run: emit 75.3 s vs
+emit-inline 72.6 s (1.037x, single run, **no claim**). Verdict: E3-1's
+call-depth savings are real but small at title scale (the fast path covers
+28.6% of menu members; the removed call layer is a fraction of those
+members' cost, and the non-covered ~65% is dominated by irreducible
+per-member boundaries). Flag stays opt-in (`--emit-inline`), no default
+flip; the E3-2 (flag folding) and wider-cover steps stay scoped but are
+now measured as diminishing-returns territory.

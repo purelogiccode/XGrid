@@ -1587,7 +1587,7 @@ internal static class Program
                 $"Emit stats builds={emit?.EmitBuilds ?? 0} hits={emit?.EmitHits ?? 0} ran={emit?.EmitRan ?? 0}");
             if (machine.Cpu.EmitInlineEnabled)
             {
-                Console.WriteLine($"Emit inline members={emit?.EmitInlineMembers ?? 0}");
+                Console.WriteLine($"Emit inline members={emit?.EmitInlineMembers ?? 0} fast={emit?.EmitFastMembers ?? 0}");
             }
         }
 

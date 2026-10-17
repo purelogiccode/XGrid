@@ -136,6 +136,9 @@ public sealed class DecodedBlockCache
     /// <summary>Gets members baked onto E3-1 inline bodies across built runners.</summary>
     public ulong EmitInlineMembers { get; private set; }
 
+    /// <summary>Gets members baked onto the E3-1b IL fast path across built runners.</summary>
+    public ulong EmitFastMembers { get; private set; }
+
     /// <summary>
     /// Gets or sets E3-1 inline bodies for emitted tails (§175, default off).
     /// Host-side configuration set before boot; runners record the flag they
@@ -552,7 +555,7 @@ public sealed class DecodedBlockCache
             }
 
             runner = BlockEmitter.Build(block.HeadLinear, block.Entries, block.Handlers, block.EmitLinears,
-                EmitInlineEnabled, out int inlineMembers);
+                EmitInlineEnabled, out int inlineMembers, out int fastMembers);
             if (runner is null)
             {
                 entries = null!;
@@ -563,6 +566,7 @@ public sealed class DecodedBlockCache
             block.RunnerGeneration = Generation;
             block.RunnerInline = EmitInlineEnabled;
             EmitInlineMembers += (ulong)inlineMembers;
+            EmitFastMembers += (ulong)fastMembers;
             EmitBuilds++;
             return true;
         }

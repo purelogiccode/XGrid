@@ -294,6 +294,7 @@ public sealed class EmitTests
         DecodedBlockCache stats = inline.SpecStatistics!;
         Assert.True(stats.EmitRan > 0);
         Assert.True(stats.EmitInlineMembers > 0);
+        Assert.True(stats.EmitFastMembers > 0);
     }
 
     [Fact]
@@ -317,6 +318,9 @@ public sealed class EmitTests
         AssertSameState(spec, inline);
         AssertSameCounters(spec, inline);
         Assert.True(inline.SpecStatistics!.EmitInlineMembers > 0);
+
+        // 16-bit addressing stays on the twin call (no baked fast path).
+        Assert.Equal(0UL, inline.SpecStatistics!.EmitFastMembers);
     }
 
     [Fact]
@@ -349,6 +353,10 @@ public sealed class EmitTests
         Assert.Equal(specHits, inlineHits);
         Assert.Equal(lastSpecValue, lastInlineValue);
         Assert.True(inline.SpecStatistics!.EmitRan > 0);
+
+        // The store is baked onto the fast path; the watch check routes it
+        // to the twin at runtime (same hits, same values).
+        Assert.True(inline.SpecStatistics!.EmitFastMembers > 0);
     }
 
     [Fact]
@@ -413,6 +421,34 @@ public sealed class EmitTests
         Assert.Equal(0x1006u, inline.LastFaultEip);
         Assert.Equal(0x3000u, inline.Context.Cr2);
         Assert.True(inline.SpecStatistics!.EmitRan > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_NonRamPhysical_MatchesSpec()
+    {
+        // A page-table entry can map a linear page outside RAM: the fast
+        // path's RAM-bounds check must fall back to the twin, which takes
+        // the same bus read/write path (counters included).
+        byte[] code = { 0x90, 0x8B, 0x03, 0x89, 0x43, 0x04, 0xEB, 0xF8 }; // nop; mov eax,[ebx]; mov [ebx+4],eax; jmp head
+
+        XboxCpu spec = CreatePaged(EmitMode.Spec, code);
+        XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
+
+        // VPN3 -> phys 0x10000000 (far above the 64 KB test RAM), present+writable.
+        spec.Bus().Write32(PageTable + (3 * 4), 0x10000000u | 3u);
+        inline.Bus().Write32(PageTable + (3 * 4), 0x10000000u | 3u);
+        spec.Context.Ebx = 0x3000;
+        inline.Context.Ebx = 0x3000;
+
+        // The harness bus throws on unmapped access by default; sentinel
+        // mode lets both modes take the identical bus fallback path.
+        spec.Bus().UnmappedPolicy = UnmappedAccessPolicy.Sentinel;
+        inline.Bus().UnmappedPolicy = UnmappedAccessPolicy.Sentinel;
+
+        Assert.Equal(spec.Execute(6400), inline.Execute(6400));
+        AssertSameState(spec, inline);
+        AssertSameCounters(spec, inline);
+        Assert.True(inline.SpecStatistics!.EmitFastMembers > 0);
     }
 
     [Fact]

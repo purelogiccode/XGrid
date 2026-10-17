@@ -153,6 +153,77 @@ public sealed partial class XboxCpu
     private static readonly SpecInlineHandler TestMemImm32FastHandler = TestMemImm32Fast;
 
     /// <summary>
+    /// Build-time descriptor for an E3-1b IL fast path (32-bit Mov between a
+    /// register and memory). All operand facts are baked from the immutable
+    /// decoded instruction; only register values, the segment base and the
+    /// memory/translate state stay live. <see cref="FastAddress"/> is false
+    /// when the address form is outside the fast subset (16-bit addressing),
+    /// in which case the member keeps the twin call.
+    /// </summary>
+    internal readonly record struct InlineFastPlan(
+        SpecInlineHandler Body,
+        bool IsStore,
+        bool FastAddress,
+        SegmentRegister Segment,
+        int BaseRegister,
+        int IndexRegister,
+        int Scale,
+        uint Displacement,
+        int RegisterIndex,
+        int Size,
+        uint Length);
+
+    /// <summary>
+    /// Resolves a member to its E3-1b plan: the exact twin plus the baked
+    /// fast-path descriptor when the shape is a 32-bit Mov register/memory
+    /// form. Null when the shape has no twin.
+    /// </summary>
+    internal static InlineFastPlan? ResolveInlinePlan(in DecodedInstruction instruction)
+    {
+        SpecInlineHandler? twin = ResolveInlineHandler(instruction);
+        if (twin is null)
+        {
+            return null;
+        }
+
+        if (instruction.Mnemonic == Mnemonic.Mov && instruction.Operand1.Size == 32)
+        {
+            if (instruction.Operand1.Kind == OperandKind.Register && instruction.Operand2.Kind == OperandKind.Memory)
+            {
+                return BuildPlan(twin, isStore: false, instruction.Operand2.Memory,
+                    instruction.Operand1.RegisterIndex, instruction.Length);
+            }
+
+            if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Register)
+            {
+                return BuildPlan(twin, isStore: true, instruction.Operand1.Memory,
+                    instruction.Operand2.RegisterIndex, instruction.Length);
+            }
+        }
+
+        return new InlineFastPlan(twin, IsStore: false, FastAddress: false, SegmentRegister.Ds, -1, -1, 1, 0, -1, 32,
+            (uint)instruction.Length);
+    }
+
+    private static InlineFastPlan BuildPlan(
+        SpecInlineHandler twin, bool isStore, in MemoryOperand memory, int registerIndex, int length)
+    {
+        SegmentRegister segment = memory.SegmentOverride ?? DefaultSegment(memory);
+        return new InlineFastPlan(
+            twin,
+            isStore,
+            FastAddress: !memory.Is16Bit,
+            segment,
+            memory.HasBase ? (int)memory.Base : -1,
+            memory.HasIndex ? (int)memory.Index : -1,
+            (int)memory.Scale,
+            memory.Displacement,
+            registerIndex,
+            32,
+            (uint)length);
+    }
+
+    /// <summary>
     /// Resolves a member to its inline body twin, or null when the shape has
     /// none. The twin is derived from <see cref="ResolveSpec"/>'s handler so
     /// the two can never disagree about which shapes are covered; only the
