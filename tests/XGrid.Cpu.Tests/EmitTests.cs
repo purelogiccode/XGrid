@@ -507,11 +507,12 @@ public sealed class EmitTests
     [Fact]
     public void InlineBodies_RandomPrograms_MatchAcrossAllModes()
     {
-        // Randomized differential net for the E3-1 fast paths: seeded
-        // programs mixing every covered memory shape with random registers,
-        // displacements, prefixes and immediates must evolve identically
-        // under plain, spec, emit and emit-inline (paged, so the fast path
-        // actually completes; unpaged, so the twins carry the same shapes).
+        // Randomized differential net for the serve layer and the E3-1 fast
+        // paths: seeded programs mixing every covered memory shape (random
+        // registers, displacements, prefixes, immediates) with inc/dec/add/
+        // jcc(rel 0)/cli/sti/nop filler must evolve identically under plain,
+        // spec, emit and emit-inline (paged, so the fast path actually
+        // completes; unpaged, so the twins carry the same shapes).
         for (int program = 0; program < 40; program++)
         {
             var rng = new Random(0xE31A + program);
@@ -565,7 +566,7 @@ public sealed class EmitTests
             int loadDest = new[] { 0, 1, 2 }[rng.Next(3)];
             int disp = new[] { 0, 4, 8, 0x10 }[rng.Next(4)];
             byte modrm = (byte)(0x40 | (reg << 3) | baseReg);
-            switch (rng.Next(8))
+            switch (rng.Next(14))
             {
                 case 0:
                     EmitPrefix(code, rng);
@@ -610,7 +611,7 @@ public sealed class EmitTests
                     code.Add((byte)disp);
                     code.Add((byte)rng.Next(256));
                     break;
-                default:
+                case 7:
                     EmitPrefix(code, rng);
                     code.Add(0xF7);
                     code.Add((byte)(0x40 | baseReg));
@@ -620,6 +621,29 @@ public sealed class EmitTests
                         code.Add((byte)rng.Next(256));
                     }
 
+                    break;
+                case 8:
+                    code.Add((byte)(0x40 + loadDest)); // inc r32
+                    break;
+                case 9:
+                    code.Add((byte)(0x48 + loadDest)); // dec r32
+                    break;
+                case 10:
+                    code.Add(0x83); // add r32, imm8
+                    code.Add((byte)(0xC0 | loadDest));
+                    code.Add((byte)rng.Next(256));
+                    break;
+                case 11:
+                    // jcc rel8=0: evaluates a random condition without
+                    // changing control flow.
+                    code.Add((byte)(0x70 | rng.Next(16)));
+                    code.Add(0x00);
+                    break;
+                case 12:
+                    code.Add(0x90); // nop
+                    break;
+                default:
+                    code.Add(rng.Next(2) == 0 ? (byte)0xFA : (byte)0xFB); // cli/sti
                     break;
             }
         }

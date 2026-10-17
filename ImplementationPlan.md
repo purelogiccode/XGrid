@@ -3030,7 +3030,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 50% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E2c (§§171–174: DynamicMethod tails; `--emit` opt-in); E3-1 body inlining landed + quiet-host measured (§§176–179: `--emit-inline` twins + IL fast paths; beats plain emit 1.4%/2.9% menu/triangle, beats spec 18.4% on triangle, menu at parity; emitted hitRate 0.92/0.98); default flip + E3-2 open |
+| 15 CPU JIT | 11 | 50% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E2c (§§171–174: DynamicMethod tails; `--emit` opt-in); E3-1 body inlining landed + quiet-host measured (§§176–179a: `--emit-inline` twins + IL fast paths; **triangle 1.184x spec / 1.029x emit, 3/3 pairs**; menu parity within 2% at n=7; emitted hitRate 0.92/0.98); default flip + E3-2 open |
 | 16 CPU Optimization | 3 | 25% | benchmark-driven tuning; medians §160/164/166/169/175 in place; profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |

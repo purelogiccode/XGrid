@@ -9262,3 +9262,21 @@ menu deficit but do not overtake the plain handler path there. Flag stays
 opt-in; a default-mode change is an operator decision (the §137
 decode-cache precedent applies: conditions met -- median-backed, SHAs and
 counters exact, verifyFailures=0, flag-off byte-identical).
+
+### 179a. Menu n=7 correction (same day, immediate addendum)
+
+Four more interleaved menu rounds (r8-r11, same conditions) were added
+before this verdict was relied upon. Menu median-of-7:
+- spec 143.7 (141.9/142.6/143.0/143.7/143.9/145.2/149.1);
+- **emit 141.8** (139.0/141.2/141.7/141.8/142.9/147.8/151.9);
+- emit-inline 144.4 (140.8/142.4/143.0/144.4/144.8/145.8/145.9).
+**The menu ordering flips again**: emit < spec < emit-inline, all within
+~1.8%, and emit-inline-vs-emit signs are mixed (inline wins 3 of 7 rounds).
+The r5-r7 menu readings were a warmup-biased sample (r5-r7 legs run
+systematically slower than r8-r11 on both modes). The corrected menu
+verdict is **parity across all three modes (+-2%)**; only the triangle
+verdict stands as measured (emit-inline 62.5 < emit 64.3 < spec 74.0,
+3/3 paired wins, 1.184x over spec). Lesson recorded: menu's E3-1 delta is
+below what median-of-3 resolves even on a quiet host -- n>=7 is the
+menu-evidence standard for sub-2% claims, and mixed signs must be reported
+as parity, not averaged into a win.

@@ -593,13 +593,15 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     fast-served at a few ns each; only ~50% of fast-kind members are
     tail-served at all). Further body work is low-value against the
     boundary-dominated remainder; flag stays opt-in.
-    QUIET-HOST VERDICT (§179, supersedes the noisy §§176-177 readings):
-    18-leg interleaved campaign, all SHAs exact -> menu spec 143.7 /
-    emit 147.8 / **emit-inline 145.8** s; triangle spec 74.0 / emit 64.3 /
-    **emit-inline 62.5** s. Emit-inline beats plain emit 5/6 paired
-    rounds (**1.4% menu / 2.9% triangle**) and beats spec by **18.4% on
-    triangle**; menu spec remains marginally fastest (inline 1.5% behind).
-    Default-mode change is an operator decision (conditions met).
+    QUIET-HOST VERDICT (§179 + 179a, supersedes the noisy §§176-177
+    readings): 30-leg interleaved campaign, all SHAs exact. TRIANGLE:
+    spec 74.0 / emit 64.3 / **emit-inline 62.5** s -- inline wins 3/3
+    paired rounds vs emit and **1.184x vs spec**. MENU (median-of-7,
+    corrected): emit 141.8 / spec 143.7 / emit-inline 144.4 s -- **parity
+    across all three modes (+-2%)**, mixed per-round signs; menu deltas
+    are below median-of-3 resolution even on a quiet host (n>=7 is the
+    sub-2% standard; mixed signs = parity, never averaged into a win).
+    Flag stays opt-in; a default-mode change is an operator decision.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
