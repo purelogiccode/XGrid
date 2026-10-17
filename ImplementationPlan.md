@@ -3332,6 +3332,12 @@ suite 1391/1391, format clean, 4-leg golden gate PASS
 (`D:\spec-soak\slice25`: triangle spec 73.0 s + menu spec 142.8 s SHAs
 exact, menu cache 160.3 s control-leg exact, `--block-exec` SHA exact;
 single-run walls only). Flag stays opt-in.
+**§169 DONE (2026-10-17, direct):** median-of-3 post-slices-5+6
+(`D:\\spec-soak\\median25`, 12/12 PASS): menu **1.084x** (156.28/144.16),
+triangle **1.231x** (89.88/73.00) — reads as real (spec-only gains
+−4.8%/−1.1% vs cache controls drifting the other way; magnitudes track
+fallback volumes; tight triangle-spec legs). Specialization declared at
+asymptote; emitter (§138) is the next lever. Flag stays opt-in.
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the

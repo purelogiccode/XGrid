@@ -542,6 +542,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    Shape slice 6 (§168): Cli/Sti spec handlers (fallbacks tri
    113.3M→185k / menu 34.1M→1.7M; interrupts identical). 4-leg gate
    PASS (`D:\spec-soak\slice25`). **1391/1391 tests**.
+   Median-3 post-slices-5+6 (§169): menu 1.084x / tri 1.231x
+   (12/12 PASS; reads as real — spec-only gains vs controls).
+   Specialization at asymptote; emitter next. Flag stays opt-in.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
