@@ -8638,3 +8638,40 @@ faster than slice21's 102.1/203.8/230.9, but host noise dominates
 single runs — the §160 median stands; fresh median-of-3 next). Flag
 stays opt-in.
 
+
+## 164. Median-of-3 post-memory-path-slices-1-3: spec/cache 1.070x menu / 1.164x triangle (2026-10-17)
+
+12-leg matrix (`D:\spec-soak\median22`, cache+spec x 3 reps x 2 titles,
+full-solution build, undisturbed run): all 12 legs PASS (SHAs exact both
+titles, `vec=0`, counter anchors exact, `verifyFailures=0` everywhere --
+the per-leg script gate checks each; the `-Compare` log-identity step
+was not run because it expects specverify legs the matrix omits by
+design, same 12-leg shape as section 160).
+
+Walls (median-of-3):
+- menu cache 205.07 / 209.04 / 203.80 --> median **205.07 s**;
+  spec 191.60 / 191.59 / 186.35 --> median **191.59 s** --> **spec/cache
+  1.070x**.
+- triangle cache 110.41 / 115.99 / 113.14 --> median **113.14 s**;
+  spec 90.34 / 110.61 / 97.17 --> median **97.17 s** --> **spec/cache
+  1.164x** (spec r2 110.61 vs 90-97 siblings is host noise of the same
+  kind as section 160's cache r2; medians are robust to it).
+
+Vs section 160 (menu 1.072x, triangle 1.185x): ratios essentially flat
+(-0.2/-2.1 points, within noise). The slices' win is ABSOLUTE and
+mode-independent, exactly as designed: menu cache 221.58-->205.07
+(-7.5%), menu spec 206.75-->191.59 (-7.3%), triangle cache
+118.49-->113.14 (-4.5%), triangle spec 99.99-->97.17 (-2.8%). Slices 1-3
+bought ~7% menu / ~3-4% triangle on BOTH modes -- the RAM-direct,
+bulk-span and translate-cache costs were never spec-specific.
+
+**Default-flip decision: flag stays opt-in.** The flip calculus is the
+ratio, and the ratio hasn't moved: spec's edge is still thin
+(+7%/+16%) for the extra code-path surface it carries. The remaining
+levers are (a) the rep-string span path (section 159 option 3 remainder --
+median22 tail shows Movs 981,712 + Stos 56,886 interpreter dispatches,
+each iterating ECX bytes at 2 translates per byte), (b) block-executor
+dispatch share (section 136: 30.9-36.6%), (c) a machine-code emitter
+(section 138 -- the actual lever; everything so far is specialization).
+No wall claim beyond the ratios themselves. ktest smoke PASS 7/7
+alongside (02:12, known deltas, park-break reproducibility unbroken).

@@ -3301,7 +3301,10 @@ format clean, joint 4-leg golden gate PASS (`D:\\spec-soak\\slice22`:
 triangle spec 98.9 s + menu spec 187.9 s SHAs exact, `vec=0`,
 `verifyFailures=0`, anchors exact; menu cache 207.4 s SHA exact =
 flag-off byte-identical; `--block-exec` SHA exact). Walls single-run
-only, no claim; fresh median-of-3 next. Flag stays opt-in.
+only, no claim; fresh median-of-3 (§164: menu 1.070x / triangle
+1.164x — ratios flat vs §160, but ~7% menu / ~3–4% triangle ABSOLUTE
+on both modes) → default-flip decision: flag stays opt-in. ktest
+smoke PASS 7/7 alongside (02:12).
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,
