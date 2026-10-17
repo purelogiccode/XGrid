@@ -2271,6 +2271,11 @@ public sealed partial class XboxCpu
             return;
         }
 
+        if (ExecuteStringBulk(instruction, size, addressSize))
+        {
+            return;
+        }
+
         while (ReadCounter(addressSize) != 0)
         {
             ExecuteStringIteration(instruction, size, addressSize);
@@ -2289,6 +2294,366 @@ public sealed partial class XboxCpu
                     break;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Slice-4 bulk path for `rep movs` / `rep stos` (§165): runs of
+    /// elements move at two translates per page-chunk plus direct RAM
+    /// element ops in legacy order, instead of two translates + two bus
+    /// dispatches per element. Only the two ZF-independent moves qualify
+    /// (Cmps/Scas exit early on ZF; Lods/Ins/Outs touch registers or IO
+    /// per iteration). Gated on <see cref="FastWideAllowed"/> (per-chunk
+    /// translate/idle/hotspot notes replace per-iteration ones) with
+    /// per-chunk fallback to the exact legacy iteration for non-RAM or
+    /// watched chunks, so MMIO traffic, watch hits, unmapped counters and
+    /// fault partial states (indices/counter updated per chunk) are all
+    /// identical. Returns false when the legacy loop must run.
+    /// </summary>
+    private bool ExecuteStringBulk(in DecodedInstruction instruction, int size, int addressSize)
+    {
+        if (instruction.Mnemonic is not (Mnemonic.Movs or Mnemonic.Stos) || !FastWideAllowed)
+        {
+            return false;
+        }
+
+        PhysicalMemory? ram = _ramDirect;
+        if (ram is null)
+        {
+            return false;
+        }
+
+        uint count = ReadCounter(addressSize);
+        if (count == 0)
+        {
+            return true;
+        }
+
+        bool decrement = (Context.Eflags & FlagBits.Df) != 0;
+        int delta = size / 8;
+        ulong totalBytes = (ulong)count * (ulong)delta;
+        uint srcIndex = ReadIndex(Gpr.Esi, addressSize);
+        uint dstIndex = ReadIndex(Gpr.Edi, addressSize);
+
+        if (addressSize == 16)
+        {
+            // Indices wrap mod 2^16 per iteration; bulk needs a wrap-free run
+            // so the touched linears stay contiguous.
+            ulong span = totalBytes - (ulong)delta;
+            if (!decrement)
+            {
+                if ((ulong)srcIndex + totalBytes > 0x10000u || (ulong)dstIndex + totalBytes > 0x10000u)
+                {
+                    return false;
+                }
+            }
+            else if (srcIndex < span || dstIndex < span)
+            {
+                return false;
+            }
+        }
+        else if (decrement)
+        {
+            ulong span = totalBytes - (ulong)delta;
+            if (srcIndex < span || dstIndex < span
+                || (ulong)srcIndex + (ulong)delta > 0x1_0000_0000u
+                || (ulong)dstIndex + (ulong)delta > 0x1_0000_0000u)
+            {
+                return false;
+            }
+        }
+        else if ((ulong)srcIndex + totalBytes > 0x1_0000_0000u
+            || (ulong)dstIndex + totalBytes > 0x1_0000_0000u)
+        {
+            return false;
+        }
+
+        uint dsBase = Context.GetSegmentBase(SegmentRegister.Ds);
+        uint esBase = Context.GetSegmentBase(SegmentRegister.Es);
+        bool paging = Mmu.IsEnabled;
+        bool move = instruction.Mnemonic == Mnemonic.Movs;
+        uint fill = move ? 0 : ReadAccumulator(size);
+
+        if (!paging)
+        {
+            // Lowest touched index per string (direction-independent range);
+            // the pre-checks above guarantee no wrap, so the range is exact.
+            ulong spanBytes = totalBytes - (ulong)delta;
+            uint srcLo = dsBase + (decrement ? (uint)(srcIndex - spanBytes) : srcIndex);
+            uint dstLo = esBase + (decrement ? (uint)(dstIndex - spanBytes) : dstIndex);
+            if ((ulong)dstLo + totalBytes > _ramSize || IsWatched(dstLo, (uint)totalBytes))
+            {
+                return false;
+            }
+
+            if (move && (ulong)srcLo + totalBytes > _ramSize)
+            {
+                return false;
+            }
+
+            // No translates and no faults possible: move per page (decode
+            // page-drop granularity) in legacy order, then commit registers.
+            MoveSpanRam(ram, dsBase, esBase, srcIndex, dstIndex, count, delta, size, fill,
+                move, decrement, addressSize);
+            AdvanceBulk(srcIndex, dstIndex, count, delta, decrement, addressSize, move);
+            return true;
+        }
+
+        uint srcCursor = srcIndex;
+        uint dstCursor = dstIndex;
+        uint remaining = count;
+        while (remaining > 0)
+        {
+            uint srcLinear = dsBase + srcCursor;
+            uint dstLinear = esBase + dstCursor;
+
+            // Same-page run length from the cursor element. A straddling
+            // element (its bytes cross a page boundary) takes exactly one
+            // legacy iteration, whose split byte loop is already exact.
+            uint dstOff = dstLinear & 0xFFFu;
+            uint iters;
+            if (!decrement)
+            {
+                iters = (0x1000u - dstOff) / (uint)delta;
+            }
+            else if (dstOff + (uint)delta > 0x1000u)
+            {
+                iters = 0;
+            }
+            else
+            {
+                iters = dstOff / (uint)delta + 1u;
+            }
+
+            if (move && iters > 0)
+            {
+                uint srcOff = srcLinear & 0xFFFu;
+                uint srcIters;
+                if (!decrement)
+                {
+                    srcIters = (0x1000u - srcOff) / (uint)delta;
+                }
+                else if (srcOff + (uint)delta > 0x1000u)
+                {
+                    srcIters = 0;
+                }
+                else
+                {
+                    srcIters = srcOff / (uint)delta + 1u;
+                }
+
+                iters = Math.Min(iters, srcIters);
+            }
+
+            // Element straddling a page boundary: one exact legacy iteration
+            // (its split byte loop), then re-chunk. Rare by alignment.
+            if (iters == 0)
+            {
+                ExecuteStringIteration(instruction, size, addressSize);
+                WriteCounter(ReadCounter(addressSize) - 1u, addressSize);
+                srcCursor = ReadIndex(Gpr.Esi, addressSize);
+                dstCursor = ReadIndex(Gpr.Edi, addressSize);
+                remaining--;
+                continue;
+            }
+
+            if (iters > remaining)
+            {
+                iters = remaining;
+            }
+
+            uint bytes = iters * (uint)delta;
+            uint srcPhys = 0;
+            if (move)
+            {
+                // Throws with indices/counter at the chunk start: matches the
+                // legacy fault partial state.
+                srcPhys = TranslateLinear(srcLinear, isWrite: false, isInstruction: false);
+            }
+
+            uint dstPhys = TranslateLinear(dstLinear, isWrite: true, isInstruction: false);
+            if ((ulong)dstPhys + bytes > _ramSize || IsWatched(dstPhys, bytes)
+                || (move && (ulong)srcPhys + bytes > _ramSize))
+            {
+                for (uint i = 0; i < iters; i++)
+                {
+                    ExecuteStringIteration(instruction, size, addressSize);
+                    WriteCounter(ReadCounter(addressSize) - 1u, addressSize);
+                }
+
+                srcCursor = ReadIndex(Gpr.Esi, addressSize);
+                dstCursor = ReadIndex(Gpr.Edi, addressSize);
+                remaining -= iters;
+                continue;
+            }
+
+            uint elementSpan = bytes - (uint)delta;
+            uint srcChunk = move
+                ? srcPhys - (decrement ? elementSpan : 0u)
+                : 0u;
+            uint dstChunk = dstPhys - (decrement ? elementSpan : 0u);
+            NoteStorePhysical(dstChunk, (int)bytes * 8);
+            MoveChunkRam(ram, srcChunk, dstChunk, iters, delta, size, fill,
+                move, decrement);
+
+            if (decrement)
+            {
+                srcCursor -= iters * (uint)delta;
+                dstCursor -= iters * (uint)delta;
+            }
+            else
+            {
+                srcCursor += iters * (uint)delta;
+                dstCursor += iters * (uint)delta;
+            }
+
+            remaining -= iters;
+            if (move)
+            {
+                WriteIndex(Gpr.Esi, srcCursor, addressSize);
+            }
+
+            WriteIndex(Gpr.Edi, dstCursor, addressSize);
+            WriteCounter(ReadCounter(addressSize) - iters, addressSize);
+        }
+
+        return true;
+    }
+
+    private void MoveSpanRam(PhysicalMemory ram, uint dsBase, uint esBase, uint srcStart, uint dstStart,
+        uint count, int delta, int size, uint fill, bool move, bool decrement, int addressSize)
+    {
+        // MMU-off whole-span move: chunked per destination page for the
+        // decode page drop, elements in legacy visit order (overlap and
+        // aliasing exact by order). Only the mnemonic's own index commits
+        // (rep stos never touches ESI); nothing can fault, so the end state
+        // always matches the legacy loop.
+        uint srcCursor = srcStart;
+        uint dstCursor = dstStart;
+        uint remaining = count;
+        while (remaining > 0)
+        {
+            uint dstLinear = esBase + dstCursor;
+            uint iters;
+            if (!decrement)
+            {
+                iters = (0x1000u - (dstLinear & 0xFFFu)) / (uint)delta;
+            }
+            else if ((dstLinear & 0xFFFu) + (uint)delta > 0x1000u)
+            {
+                iters = 0;
+            }
+            else
+            {
+                iters = ((dstLinear & 0xFFFu) / (uint)delta) + 1u;
+            }
+
+            if (iters == 0)
+            {
+                iters = 1;
+            }
+
+            if (iters > remaining)
+            {
+                iters = remaining;
+            }
+
+            uint srcLinear = dsBase + srcCursor;
+            uint bytes = iters * (uint)delta;
+            uint dstChunk = decrement ? dstLinear - (bytes - (uint)delta) : dstLinear;
+            uint srcChunk = decrement ? srcLinear - (bytes - (uint)delta) : srcLinear;
+            NoteStorePhysical(dstChunk, (int)bytes * 8);
+            MoveChunkRam(ram, srcChunk, dstChunk, iters, delta, size, fill, move, decrement);
+
+            if (decrement)
+            {
+                srcCursor -= bytes;
+                dstCursor -= bytes;
+            }
+            else
+            {
+                srcCursor += bytes;
+                dstCursor += bytes;
+            }
+
+            remaining -= iters;
+            if (move)
+            {
+                WriteIndex(Gpr.Esi, srcCursor, addressSize);
+            }
+
+            WriteIndex(Gpr.Edi, dstCursor, addressSize);
+            WriteCounter(ReadCounter(addressSize) - iters, addressSize);
+        }
+    }
+
+    private void MoveChunkRam(PhysicalMemory ram, uint srcBase, uint dstBase, uint iters, int delta, int size,
+        uint fill, bool move, bool decrement = false)
+    {
+        // Elements in legacy visit order: chunk base is the lowest address;
+        // backward runs visit high to low. Order-exact under any overlap.
+        for (uint k = 0; k < iters; k++)
+        {
+            uint o = (decrement ? iters - 1u - k : k) * (uint)delta;
+            uint s = srcBase + o;
+            uint d = dstBase + o;
+            if (move)
+            {
+                switch (size)
+                {
+                    case 8:
+                        ram.Write8(d, ram.Read8(s));
+                        break;
+                    case 16:
+                        ram.Write16(d, ram.Read16(s));
+                        break;
+                    default:
+                        ram.Write32(d, ram.Read32(s));
+                        break;
+                }
+            }
+            else
+            {
+                switch (size)
+                {
+                    case 8:
+                        ram.Write8(d, (byte)fill);
+                        break;
+                    case 16:
+                        ram.Write16(d, (ushort)fill);
+                        break;
+                    default:
+                        ram.Write32(d, fill);
+                        break;
+                }
+            }
+        }
+    }
+
+    private void AdvanceBulk(uint srcStart, uint dstStart, uint count, int delta, bool decrement,
+        int addressSize, bool move)
+    {
+        uint total = count * (uint)delta;
+        uint dstEnd = decrement ? dstStart - total : dstStart + total;
+        if (move)
+        {
+            uint srcEnd = decrement ? srcStart - total : srcStart + total;
+            WriteIndex(Gpr.Esi, srcEnd, addressSize);
+        }
+
+        WriteIndex(Gpr.Edi, dstEnd, addressSize);
+        WriteCounter(0, addressSize);
+    }
+
+    private void WriteIndex(Gpr register, uint value, int addressSize)
+    {
+        if (addressSize == 16)
+        {
+            Context.WriteRegister16(register, (ushort)value);
+        }
+        else
+        {
+            Context.WriteRegister(register, value);
         }
     }
 
