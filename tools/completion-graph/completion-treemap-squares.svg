@@ -106,11 +106,11 @@
 <rect x='299.3' y='180.3' width='35.8' height='35.8' rx='6.4' fill='#1F2C47'/>
 <rect x='337.1' y='180.3' width='35.8' height='35.8' rx='6.4' fill='#1F2C47'/>
 <rect x='374.9' y='180.3' width='35.8' height='35.8' rx='6.4' fill='#1F2C47'/>
-<rect x='34' y='126' width='377.6' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='34' y='126' width='377.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='37' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='50.2' y='147' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P11</text>
 <text x='37' y='185.4' font-size='24' font-weight='700' fill='#F1F5F9'>NV2A (GPU)</text>
-<text x='37' y='197.8' font-size='17.3' opacity='0.94' fill='#F1F5F9'>88/100 &#183; weight 15</text>
+<text x='37' y='226.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>88/100 &#183; weight 15</text>
 </g>
 <g class='tile' data-p='3' data-name='CPU (x86 PIII)' data-done='95' data-weight='11' data-squares='1'>
 <rect x='28' y='616.2' width='389.6' height='363.8' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -214,11 +214,11 @@
 <rect x='294.2' y='623.2' width='33.2' height='33.2' rx='6' fill='#1F2C47'/>
 <rect x='329.4' y='623.2' width='33.2' height='33.2' rx='6' fill='#1F2C47'/>
 <rect x='364.6' y='623.2' width='33.2' height='33.2' rx='6' fill='#1F2C47'/>
-<rect x='34' y='622.2' width='377.6' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='34' y='622.2' width='377.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='37' y='625.2' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='50.2' y='643.1' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P3</text>
 <text x='37' y='681.6' font-size='24' font-weight='700' fill='#F1F5F9'>CPU (x86 PIII)</text>
-<text x='37' y='693.9' font-size='17.3' opacity='0.94' fill='#F1F5F9'>95/100 &#183; weight 11</text>
+<text x='37' y='722.2' font-size='17.3' opacity='0.94' fill='#F1F5F9'>95/100 &#183; weight 11</text>
 </g>
 <g class='tile' data-p='5' data-name='Bus &amp; IRQ' data-done='85' data-weight='6' data-squares='1'>
 <rect x='417.6' y='120' width='253.9' height='304.6' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -322,11 +322,11 @@
 <rect x='594' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
 <rect x='618.1' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
 <rect x='642.3' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
-<rect x='423.6' y='126' width='241.9' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='423.6' y='126' width='241.9' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='426.6' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='439.8' y='147' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P5</text>
 <text x='426.6' y='185.4' font-size='24' font-weight='700' fill='#F1F5F9'>Bus &amp; IRQ</text>
-<text x='426.6' y='197.8' font-size='17.3' opacity='0.94' fill='#F1F5F9'>85/100 &#183; weight 6</text>
+<text x='426.6' y='226.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>85/100 &#183; weight 6</text>
 </g>
 <g class='tile' data-p='6' data-name='MCPX' data-done='80' data-weight='6' data-squares='1'>
 <rect x='671.5' y='120' width='253.9' height='304.6' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -430,11 +430,11 @@
 <rect x='847.8' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
 <rect x='872' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
 <rect x='896.2' y='152.4' width='22.2' height='22.2' rx='4' fill='#1F2C47'/>
-<rect x='677.5' y='126' width='241.9' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='677.5' y='126' width='241.9' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='680.5' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='693.7' y='147' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P6</text>
 <text x='680.5' y='185.4' font-size='24' font-weight='700' fill='#F1F5F9'>MCPX</text>
-<text x='680.5' y='197.8' font-size='17.3' opacity='0.94' fill='#F1F5F9'>80/100 &#183; weight 6</text>
+<text x='680.5' y='226.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>80/100 &#183; weight 6</text>
 </g>
 <g class='tile' data-p='7' data-name='Firmware &amp; Boot' data-done='90' data-weight='5' data-squares='1'>
 <rect x='925.4' y='120' width='211.6' height='304.6' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -538,12 +538,12 @@
 <rect x='1072.1' y='173.5' width='18' height='18' rx='3.2' fill='#1F2C47'/>
 <rect x='1092' y='173.5' width='18' height='18' rx='3.2' fill='#1F2C47'/>
 <rect x='1112' y='173.5' width='18' height='18' rx='3.2' fill='#1F2C47'/>
-<rect x='931.4' y='126' width='199.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='931.4' y='126' width='199.6' height='136.4' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='934.4' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='947.6' y='147' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P7</text>
 <text x='934.4' y='185.4' font-size='24' font-weight='700' fill='#F1F5F9'>Firmware &amp;</text>
 <text x='934.4' y='213.7' font-size='24' font-weight='700' fill='#F1F5F9'>Boot</text>
-<text x='934.4' y='226.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>90/100 &#183; weight 5</text>
+<text x='934.4' y='254.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>90/100 &#183; weight 5</text>
 </g>
 <g class='tile' data-p='8' data-name='Storage' data-done='85' data-weight='5' data-squares='1'>
 <rect x='417.6' y='424.6' width='208.8' height='308.6' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -647,11 +647,11 @@
 <rect x='562.4' y='481.4' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
 <rect x='582.1' y='481.4' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
 <rect x='601.8' y='481.4' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
-<rect x='423.6' y='430.6' width='196.8' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='423.6' y='430.6' width='196.8' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='426.6' y='433.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='439.8' y='451.5' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P8</text>
 <text x='426.6' y='490' font-size='24' font-weight='700' fill='#F1F5F9'>Storage</text>
-<text x='426.6' y='502.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>85/100 &#183; weight 5</text>
+<text x='426.6' y='530.7' font-size='17.3' opacity='0.94' fill='#F1F5F9'>85/100 &#183; weight 5</text>
 </g>
 <g class='tile' data-p='12' data-name='APU (audio)' data-done='55' data-weight='4' data-squares='1'>
 <rect x='417.6' y='733.1' width='208.8' height='246.9' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -755,11 +755,11 @@
 <rect x='562.4' y='759.2' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
 <rect x='582.1' y='759.2' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
 <rect x='601.8' y='759.2' width='17.7' height='17.7' rx='3.2' fill='#1F2C47'/>
-<rect x='423.6' y='739.1' width='196.8' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='423.6' y='739.1' width='196.8' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='426.6' y='742.1' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='439.8' y='760.1' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P12</text>
 <text x='426.6' y='798.5' font-size='24' font-weight='700' fill='#F1F5F9'>APU (audio)</text>
-<text x='426.6' y='810.9' font-size='17.3' opacity='0.94' fill='#F1F5F9'>55/100 &#183; weight 4</text>
+<text x='426.6' y='839.2' font-size='17.3' opacity='0.94' fill='#F1F5F9'>55/100 &#183; weight 4</text>
 </g>
 <g class='tile' data-p='13' data-name='USB &amp; Controllers' data-done='70' data-weight='4' data-squares='1'>
 <rect x='626.5' y='424.6' width='255.2' height='202' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -863,11 +863,11 @@
 <rect x='793.1' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
 <rect x='812.1' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
 <rect x='831.1' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
-<rect x='632.5' y='430.6' width='243.2' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='632.5' y='430.6' width='243.2' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='635.5' y='433.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='648.7' y='451.5' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P13</text>
 <text x='635.5' y='490' font-size='24' font-weight='700' fill='#F1F5F9'>USB &amp; Controllers</text>
-<text x='635.5' y='502.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>70/100 &#183; weight 4</text>
+<text x='635.5' y='530.7' font-size='17.3' opacity='0.94' fill='#F1F5F9'>70/100 &#183; weight 4</text>
 </g>
 <g class='tile' data-p='14' data-name='Networking' data-done='70' data-weight='4' data-squares='1'>
 <rect x='881.7' y='424.6' width='255.2' height='202' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -971,11 +971,11 @@
 <rect x='1048.3' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
 <rect x='1067.3' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
 <rect x='1086.3' y='431.6' width='17' height='17' rx='3.1' fill='#1F2C47'/>
-<rect x='887.7' y='430.6' width='243.2' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='887.7' y='430.6' width='243.2' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='890.7' y='433.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='903.9' y='451.5' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P14</text>
 <text x='890.7' y='490' font-size='24' font-weight='700' fill='#F1F5F9'>Networking</text>
-<text x='890.7' y='502.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>70/100 &#183; weight 4</text>
+<text x='890.7' y='530.7' font-size='17.3' opacity='0.94' fill='#F1F5F9'>70/100 &#183; weight 4</text>
 </g>
 <g class='tile' data-p='2' data-name='Memory' data-done='100' data-weight='3' data-squares='1'>
 <rect x='626.5' y='626.6' width='218.8' height='176.7' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1079,11 +1079,11 @@
 <rect x='769.8' y='633.6' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
 <rect x='786.3' y='633.6' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
 <rect x='802.8' y='633.6' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
-<rect x='632.5' y='632.6' width='206.8' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='632.5' y='632.6' width='206.8' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='635.5' y='635.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='648.7' y='653.5' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P2</text>
 <text x='635.5' y='692' font-size='24' font-weight='700' fill='#F1F5F9'>Memory</text>
-<text x='635.5' y='704.3' font-size='17.3' opacity='0.94' fill='#F1F5F9'>100/100 &#183; weight 3</text>
+<text x='635.5' y='732.6' font-size='17.3' opacity='0.94' fill='#F1F5F9'>100/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='4' data-name='MMU' data-done='100' data-weight='3' data-squares='1'>
 <rect x='626.5' y='803.3' width='218.8' height='176.7' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1187,11 +1187,11 @@
 <rect x='769.8' y='810.3' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
 <rect x='786.3' y='810.3' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
 <rect x='802.8' y='810.3' width='14.5' height='14.5' rx='2.6' fill='#1EC85A'/>
-<rect x='632.5' y='809.3' width='206.8' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='632.5' y='809.3' width='206.8' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='635.5' y='812.3' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='648.7' y='830.2' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P4</text>
 <text x='635.5' y='868.7' font-size='24' font-weight='700' fill='#F1F5F9'>MMU</text>
-<text x='635.5' y='881' font-size='17.3' opacity='0.94' fill='#F1F5F9'>100/100 &#183; weight 3</text>
+<text x='635.5' y='909.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>100/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='9' data-name='XBE Loader' data-done='90' data-weight='3' data-squares='1'>
 <rect x='845.3' y='626.6' width='175' height='220.9' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1295,11 +1295,11 @@
 <rect x='966.4' y='656.5' width='14.3' height='14.3' rx='2.6' fill='#1F2C47'/>
 <rect x='982.7' y='656.5' width='14.3' height='14.3' rx='2.6' fill='#1F2C47'/>
 <rect x='999' y='656.5' width='14.3' height='14.3' rx='2.6' fill='#1F2C47'/>
-<rect x='851.3' y='632.6' width='163' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='851.3' y='632.6' width='163' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='854.3' y='635.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='867.5' y='653.5' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P9</text>
 <text x='854.3' y='692' font-size='24' font-weight='700' fill='#F1F5F9'>XBE Loader</text>
-<text x='854.3' y='704.3' font-size='17.3' opacity='0.94' fill='#F1F5F9'>90/100 &#183; weight 3</text>
+<text x='854.3' y='732.6' font-size='17.3' opacity='0.94' fill='#F1F5F9'>90/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='1' data-name='Core' data-done='100' data-weight='2' data-squares='1'>
 <rect x='1020.3' y='626.6' width='116.7' height='220.9' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1510,12 +1510,11 @@
 <rect x='967.3' y='854.5' width='10.5' height='10.5' rx='1.9' fill='#1F2C47'/>
 <rect x='979.3' y='854.5' width='10.5' height='10.5' rx='1.9' fill='#1F2C47'/>
 <rect x='991.3' y='854.5' width='10.5' height='10.5' rx='1.9' fill='#1F2C47'/>
-<rect x='851.3' y='853.5' width='182.5' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='851.3' y='853.5' width='182.5' height='95.7' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='854.3' y='856.5' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='867.5' y='874.4' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P10</text>
 <text x='854.3' y='912.9' font-size='24' font-weight='700' fill='#F1F5F9'>Kernel</text>
 <text x='854.3' y='941.2' font-size='24' font-weight='700' fill='#F1F5F9'>Interface</text>
-<text x='854.3' y='953.5' font-size='17.3' opacity='0.94' fill='#F1F5F9'>5/100 &#183; weight 2</text>
 </g>
 <g class='tile' data-p='0' data-name='Bootstrap' data-done='100' data-weight='1' data-squares='1'>
 <rect x='1039.7' y='847.5' width='97.2' height='132.5' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1726,11 +1725,11 @@
 <rect x='1454.7' y='127' width='24.6' height='24.6' rx='4.4' fill='#1F2C47'/>
 <rect x='1481.4' y='127' width='24.6' height='24.6' rx='4.4' fill='#1F2C47'/>
 <rect x='1508' y='127' width='24.6' height='24.6' rx='4.4' fill='#1F2C47'/>
-<rect x='1155' y='126' width='491' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1155' y='126' width='491' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1158' y='129' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1171.2' y='147' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P15</text>
 <text x='1158' y='185.4' font-size='24' font-weight='700' fill='#F1F5F9'>CPU JIT</text>
-<text x='1158' y='197.8' font-size='17.3' opacity='0.94' fill='#F1F5F9'>45/100 &#183; weight 11</text>
+<text x='1158' y='226.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>45/100 &#183; weight 11</text>
 </g>
 <g class='tile' data-p='18' data-name='GPU Optimization' data-done='10' data-weight='4' data-squares='1'>
 <rect x='1149' y='398.2' width='287.4' height='177.1' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1834,11 +1833,11 @@
 <rect x='1326.7' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
 <rect x='1343.2' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
 <rect x='1359.7' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
-<rect x='1155' y='404.2' width='275.4' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1155' y='404.2' width='275.4' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1158' y='407.2' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1171.2' y='425.2' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P18</text>
 <text x='1158' y='463.6' font-size='24' font-weight='700' fill='#F1F5F9'>GPU Optimization</text>
-<text x='1158' y='476' font-size='17.3' opacity='0.94' fill='#F1F5F9'>10/100 &#183; weight 4</text>
+<text x='1158' y='504.3' font-size='17.3' opacity='0.94' fill='#F1F5F9'>10/100 &#183; weight 4</text>
 </g>
 <g class='tile' data-p='16' data-name='CPU Optimization' data-done='25' data-weight='3' data-squares='1'>
 <rect x='1436.4' y='398.2' width='215.6' height='177.1' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -1942,12 +1941,12 @@
 <rect x='1578.2' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
 <rect x='1594.7' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
 <rect x='1611.2' y='405.2' width='14.5' height='14.5' rx='2.6' fill='#1F2C47'/>
-<rect x='1442.4' y='404.2' width='203.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1442.4' y='404.2' width='203.6' height='136.4' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1445.4' y='407.2' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1458.6' y='425.2' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P16</text>
 <text x='1445.4' y='463.6' font-size='24' font-weight='700' fill='#F1F5F9'>CPU</text>
 <text x='1445.4' y='492' font-size='24' font-weight='700' fill='#F1F5F9'>Optimization</text>
-<text x='1445.4' y='504.3' font-size='17.3' opacity='0.94' fill='#F1F5F9'>25/100 &#183; weight 3</text>
+<text x='1445.4' y='532.6' font-size='17.3' opacity='0.94' fill='#F1F5F9'>25/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='19' data-name='Debugger' data-done='30' data-weight='3' data-squares='1'>
 <rect x='1149' y='575.3' width='188.6' height='202.4' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -2051,11 +2050,11 @@
 <rect x='1279.6' y='589.2' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
 <rect x='1297.3' y='589.2' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
 <rect x='1314.9' y='589.2' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
-<rect x='1155' y='581.3' width='176.6' height='79.8' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1155' y='581.3' width='176.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1158' y='584.3' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1171.2' y='602.2' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P19</text>
 <text x='1158' y='640.7' font-size='24' font-weight='700' fill='#F1F5F9'>Debugger</text>
-<text x='1158' y='653.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>30/100 &#183; weight 3</text>
+<text x='1158' y='681.4' font-size='17.3' opacity='0.94' fill='#F1F5F9'>30/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='20' data-name='Automated Testing' data-done='60' data-weight='3' data-squares='1'>
 <rect x='1149' y='777.6' width='188.6' height='202.4' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -2159,12 +2158,12 @@
 <rect x='1279.6' y='791.5' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
 <rect x='1297.3' y='791.5' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
 <rect x='1314.9' y='791.5' width='15.7' height='15.7' rx='2.8' fill='#1F2C47'/>
-<rect x='1155' y='783.6' width='176.6' height='108.1' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1155' y='783.6' width='176.6' height='136.4' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1158' y='786.6' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1171.2' y='804.6' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P20</text>
 <text x='1158' y='843' font-size='24' font-weight='700' fill='#F1F5F9'>Automated</text>
 <text x='1158' y='871.4' font-size='24' font-weight='700' fill='#F1F5F9'>Testing</text>
-<text x='1158' y='883.7' font-size='17.3' opacity='0.94' fill='#F1F5F9'>60/100 &#183; weight 3</text>
+<text x='1158' y='912.1' font-size='17.3' opacity='0.94' fill='#F1F5F9'>60/100 &#183; weight 3</text>
 </g>
 <g class='tile' data-p='21' data-name='CLI &amp; Frontend' data-done='50' data-weight='3' data-squares='1'>
 <rect x='1337.6' y='575.3' width='157.2' height='242.8' rx='10' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>
@@ -2591,13 +2590,12 @@
 <rect x='1603.4' y='827.5' width='12.6' height='12.6' rx='2.3' fill='#1F2C47'/>
 <rect x='1617.9' y='827.5' width='12.6' height='12.6' rx='2.3' fill='#1F2C47'/>
 <rect x='1632.4' y='827.5' width='12.6' height='12.6' rx='2.3' fill='#1F2C47'/>
-<rect x='1500.8' y='824.1' width='145.2' height='136.4' rx='8' fill='rgba(11,18,32,0.72)'/>
+<rect x='1500.8' y='824.1' width='145.2' height='124' rx='8' fill='rgba(11,18,32,0.72)'/>
 <rect x='1503.8' y='827.1' width='26.4' height='26.4' rx='6.6' fill='rgba(255,255,255,0.12)'/>
 <text x='1517' y='845.1' font-size='13.7' font-weight='700' fill='#F1F5F9' text-anchor='middle'>P22</text>
 <text x='1503.8' y='883.5' font-size='24' font-weight='700' fill='#F1F5F9'>Save</text>
 <text x='1503.8' y='911.8' font-size='24' font-weight='700' fill='#F1F5F9'>States &amp;</text>
 <text x='1503.8' y='940.2' font-size='24' font-weight='700' fill='#F1F5F9'>Replay</text>
-<text x='1503.8' y='952.5' font-size='17.3' opacity='0.94' fill='#F1F5F9'>5/100 &#183; weight 2</text>
 </g>
 <text x='26' y='1000' font-size='12.5' fill='#94A3B8'>filled squares / 100 = percent done</text>
 <rect x='26' y='1047.6' width='3' height='3' fill='#1EC85A'/>

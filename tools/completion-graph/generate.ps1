@@ -7,7 +7,10 @@
 # Usage: pwsh -File tools/completion-graph/generate.ps1
 param(
     [string]$DataPath = (Join-Path $PSScriptRoot 'completion-data.json'),
-    [string]$OutDir = $PSScriptRoot
+    [string]$OutDir = $PSScriptRoot,
+    [ValidateSet('solid', 'fill', 'squares', 'all')]
+    [string]$Style = 'solid',
+    [switch]$Png
 )
 $ErrorActionPreference = 'Stop'
 # pt-BR hosts format doubles with commas ("389,6"), which is invalid in SVG attributes.
@@ -265,7 +268,7 @@ function Build-Svg([string]$style) {
 
         # percent + weight under the name, when there is room
         $subFs = [Math]::Max(11.0, $nameFs * 0.72)
-        $subY = $textY + ($lines.Count - 1) * $nameFs * 1.18 + $subFs * 0.6 + 2
+        $subY = $textY + $lines.Count * $nameFs * 1.18 + $subFs * 0.6 + 2
         if ($style -eq 'squares') {
             $subPlain = "$($ph.done)/100 - weight $($ph.weight)"
         } else {
@@ -392,9 +395,21 @@ document.querySelectorAll('svg g.tile').forEach(g => {
 "@
 }
 
-# ---------- write both styles ----------
+# ---------- write styles (solid is the repo default) ----------
 $utf8 = [System.Text.UTF8Encoding]::new($false)
-foreach ($style in @('squares', 'fill', 'solid')) {
+$styles = if ($Style -eq 'all') { @('solid', 'fill', 'squares') } else { @($Style) }
+
+$edge = $null
+if ($Png) {
+    foreach ($cand in @(
+            "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "C:\Program Files\Microsoft\Edge\Application\msedge.exe")) {
+        if (Test-Path $cand) { $edge = $cand; break }
+    }
+    if ($null -eq $edge) { Write-Warning 'Edge not found; skipping PNG refresh' }
+}
+
+foreach ($style in $styles) {
     $suffix = switch ($style) { 'solid' { '' } 'fill' { '-fill' } 'squares' { '-squares' } }
     $svgPath = Join-Path $OutDir "completion-treemap$suffix.svg"
     $htmlPath = Join-Path $OutDir "completion-treemap$suffix.html"
@@ -402,5 +417,14 @@ foreach ($style in @('squares', 'fill', 'solid')) {
     [System.IO.File]::WriteAllText($svgPath, $svg, $utf8)
     [System.IO.File]::WriteAllText($htmlPath, (Build-Html $svg "XGrid completion treemap ($style)"), $utf8)
     Write-Host "wrote $svgPath + $htmlPath"
+
+    if ($null -ne $edge) {
+        $pngPath = Join-Path $OutDir "completion-treemap$suffix.png"
+        $uri = "file:///" + ($svgPath -replace '\\', '/')
+        Start-Process -FilePath $edge -Wait -NoNewWindow -ArgumentList @(
+            '--headless=new', '--disable-gpu', "--screenshot=$pngPath", '--window-size=1680,1080',
+            '--hide-scrollbars', $uri) | Out-Null
+        Write-Host "wrote $pngPath"
+    }
 }
 Write-Host "overall $overall% across $($phaseRects.Count) phases"
