@@ -3265,6 +3265,17 @@ fallbacks menu 34.6M→34.1M / triangle −0.2M with Rcl-imm/Cdq/Pushf/
 Popf/Setcc gone from both tails. New tail: Cli/Sti, Movs/Stos (string,
 out), Sbb/Adc (carry-live, out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps.
 Flag stays opt-in.
+**§159 DONE (2026-10-17, direct):** memory-path scope filed (read-only
+probe: common-case ~6-7 calls + translate + RAM touch per access; all
+interpreter + 20 spec slices funnel through 4-6 helpers; three design
+options with hazards — TLB-inline, identity fast path, span/burst).
+**§160 DONE (2026-10-17, direct):** median-of-3 post-slices-13–20
+(`D:\\spec-soak\\median20`, 12/12 legs PASS, SHAs + anchors +
+`verifyFailures=0`): menu spec/cache **1.072x** (221.58/206.75),
+triangle **1.185x** (118.49/99.99) vs §141's 1.035x/1.130x — first
+measured wall movement since slice 8 (+3.7/+5.5 points tracking the
+−91% fallback absorption). Flag stays opt-in (thin; default-flip needs
+the §159 build first).
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,

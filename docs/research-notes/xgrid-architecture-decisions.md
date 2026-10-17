@@ -8371,6 +8371,29 @@ span the linear address) + profiler notes or golden counters drift.
 walls reported before any default-flip talk. Not tonight's work —
 this note is the recipe.
 
+## 160. Median-of-3 post-slices-13–20: spec/cache 1.072x menu / 1.185x triangle (2026-10-17)
+
+12-leg matrix (`D:\\spec-soak\\median20`, cache+spec × 3 reps × 2 titles,
+full-solution build, undisturbed overnight run — only light file reads
+alongside): all 12 legs PASS (SHAs exact both titles, `vec=0`,
+counter anchors exact, `verifyFailures=0` everywhere, so the matrix
+doubles as a 6-rep golden re-validation of slices 13–20).
+
+Walls (median-of-3):
+- menu cache 221.58 / 227.28 / 221.48 → median **221.58 s**;
+  spec 206.75 / 201.25 / 207.47 → median **206.75 s** → **spec/cache 1.072x**.
+- triangle cache 118.49 / 127.68 / 115.98 → median **118.49 s**;
+  spec 101.27 / 99.75 / 99.99 → median **99.99 s** → **spec/cache 1.185x**.
+
+Vs §141 (menu 1.035x, triangle 1.130x, slices 1+2 only): slices 5–20
+bought **+3.7 points menu / +5.5 points triangle** — the first measured
+wall movement since slice 8, and it tracks the fallback absorption
+(menu 392M→34.1M, −91%; triangle to carry/string/privileged residue).
+Triangle-cache r2 (127.68 s vs 116–118 s siblings) shows host noise is
+real; medians are robust to it. Verdict: real but thin — flag stays
+opt-in; default-flip needs the memory-path build (§159) first, then a
+fresh median-of-3. No wall claim beyond the ratio itself.
+
 ## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
 
 Direct development, early-morning slice through the shared-helper
