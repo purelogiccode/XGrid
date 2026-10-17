@@ -593,6 +593,13 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     fast-served at a few ns each; only ~50% of fast-kind members are
     tail-served at all). Further body work is low-value against the
     boundary-dominated remainder; flag stays opt-in.
+    QUIET-HOST VERDICT (§179, supersedes the noisy §§176-177 readings):
+    18-leg interleaved campaign, all SHAs exact -> menu spec 143.7 /
+    emit 147.8 / **emit-inline 145.8** s; triangle spec 74.0 / emit 64.3 /
+    **emit-inline 62.5** s. Emit-inline beats plain emit 5/6 paired
+    rounds (**1.4% menu / 2.9% triangle**) and beats spec by **18.4% on
+    triangle**; menu spec remains marginally fastest (inline 1.5% behind).
+    Default-mode change is an operator decision (conditions met).
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all

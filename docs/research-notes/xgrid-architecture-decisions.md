@@ -9234,3 +9234,31 @@ prefixes/immediates, looping) runs each program under plain, spec, emit
 and emit-inline in both unpaged and paged harnesses and asserts identical
 state, RAM and counters -- 40 programs x 2 x 4 modes per suite run, plus
 the earlier hand-written differentials and the diag counter pins.
+
+## 179. E3-1 verdict, quiet-host re-measurement (2026-10-17)
+
+18-leg interleaved campaign (`D:\spec-soak\quiet1`; 3 rounds x {spec, emit,
+emit-inline} x {menu, triangle}; host verified quiet -- Fortnite off, load
+23%; every leg SHA-exact, counters exact, vec=0, verifyFailures=0). The
+earlier triplets (e31/e32, §§176-177) ran under +-25% host noise and were
+reported wall-neutral; this campaign supersedes them.
+
+Medians (seconds):
+- menu: spec 143.7 (141.9/143.7/149.1); emit 147.8 (141.7/147.8/151.9);
+  **emit-inline 145.8 (142.4/145.8/145.9)**.
+- triangle: spec 74.0 (71.6/74.0/76.1); emit 64.3 (64.2/64.3/65.0);
+  **emit-inline 62.5 (61.2/62.5/63.0)**.
+
+Ratios:
+- menu: emit/spec 1.0285; inline/spec 1.0146; **emit/inline 1.0137**.
+- triangle: spec/emit 1.1509; spec/inline 1.1840; **emit/inline 1.0288**.
+
+Paired-round signs: emit-inline vs emit 5/6 wins (menu r5/r6 win, r7 -0.5%;
+triangle 3/3). Verdict: the E3-1 fast paths are a **measured win over plain
+emit on both titles** and a **measured 18.4% win over spec on triangle**;
+on the memory-heavy menu, spec remains marginally fastest (inline 1.5%
+behind, emit 2.9% behind) -- the fast paths recover most of the emitter's
+menu deficit but do not overtake the plain handler path there. Flag stays
+opt-in; a default-mode change is an operator decision (the §137
+decode-cache precedent applies: conditions met -- median-backed, SHAs and
+counters exact, verifyFailures=0, flag-off byte-identical).
