@@ -8100,3 +8100,9 @@ Walls contention-inflated — no wall claim. Remaining top: Cli/Sti
 (IRQ-boundary, untouchable), x87 family (daylight slice), SSE
 Mulss/Cvttss2Si/Fadd. Flag stays opt-in.
 
+**ktest smoke re-run (2026-10-16, post-slices 9–11): PASS 7/7** in
+02:14 — all rows green with §120 known deltas matching (NtResume/
+NtSuspend XGrid-ahead, the rest faithful); XGrid park break at exactly
+792,800,535 steps (bit-reproducible vs the §123/§136 anchors), both
+logs `EndOfTests=True`. Slices 9–11 disturb nothing in the kernel suite.
+

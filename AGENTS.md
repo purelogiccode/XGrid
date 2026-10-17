@@ -491,25 +491,25 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   (terminal-finish turn detection, state-save retry on Windows file locks)
   and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1316 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1350 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — wave-15 concluded; wave runner retired.
+## Next session — slices 9–11 landed (2026-10-16 evening); wave runner retired.
 
-1. **WAVE 15 DONE (§§139–140; spike done clean, build finished by BOSS
-   handoff).** Spike filed §139 (V4R winner: pre-specialized per-shape
-   handlers + unrolled C# runner, 5.95x/4.40x over the helper loop;
-   DynamicMethod rejected at ~10% over unrolled C#). Build landed slices 1+2
-   behind opt-in `--spec-exec` (default off; `XboxCpuSpecExec.cs` + 16 new
-   `SpecExecutionTests`), merged as `wave/jit-semspec`. The build worker was
-   stopped by an opencode-go `provider.invalid-output` hiccup with attempts
-   exhausted, and reported blocked with an exact recipe instead of a fake
-   done; BOSS ran the recipe verbatim: all six 1B off/cache/spec pairs PASS
-   (SHAs exact both titles, spec/cache 1.17x triangle / 1.07x menu single-run)
-   + two specverify legs PASS (verifyFailures=0, vec=0) + off-vs-spec logs
-   identical + wave-tool suite 42/42. Final gate green: format + build +
-   **1340/1340 tests**. Flag stays opt-in (menu margin thin, median-of-3
-   not done).
+1. **SLICES 5–11 DONE (§§142–148, direct development).** After wave-15
+   (slices 1+2, 1340 tests) came the §141 median-of-3 (flag stays
+   opt-in: menu 1.035x, triangle 1.130x), then slices 5–8 (ALU-mem,
+   Jcc, near Jmp/Call/Ret, shifts + Movzx/Movsx; §§142–145) and tonight
+   slices 9–11: Inc/Dec-with-memory (§146, 6 handlers), MMX Movq/Movntq
+   (§147, 4 handlers, both now continue blocks), Prefetch + fences
+   (§148, 1 shared nop handler). Each slice: unit differential +
+   resolver pins, full suite green, 2-leg 1B spec goldens (SHAs exact
+   both titles, `vec=0`, `verifyFailures=0`, counter anchors exact).
+   Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
+   walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
+   **1350/1350 tests.** Flag stays opt-in (saturation + no median-of-3
+   per slice; soak binaries must come from a FULL solution build —
+   §145 lesson).
 2. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
 3. **Operator decision: swapchain/windowing** — brief filed at
@@ -518,12 +518,17 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    ~400–600 LOC; O1 headless stays the default and gate currency; O3
    needs an operator override of the single-dependency rule; triggers
    listed in the brief).
-4. **Next JIT step:** per §140, slices 1+2 are in (`--spec-exec`,
+4. **Next JIT step:** slices 1+2 and 5–11 are in (`--spec-exec`,
    `--block-exec`, `--decode-cache` default-on per §137 with
    `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
-   default-off). Open: median-of-3 wall confirmation for the thin menu
-   margin; DynamicMethod stays rejected unless new numbers say otherwise.
-   NXDK toolchain (operator/host) still the mesh blocker.
+   default-off). Per-shape specialization is SATURATED (slices 9–11
+   absorb fallbacks but move no walls) — the next lever is the
+   memory-path design (`ReadMemory`/`WriteMemory` → translate + bus),
+   a daylight scoping task, not midnight work. Remaining shape tail:
+   x87 family (own slice — FPU stack/TOP/tags), SSE Mulss/Cvttss2Si/
+   Fadd, Cli/Sti (untouchable, IRQ-boundary). DynamicMethod stays
+   rejected unless new numbers say otherwise. NXDK toolchain
+   (operator/host) still the mesh blocker.
 5. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues
    directly (no BOSS protocol, no worktrees, no detached servers). Tool
