@@ -9002,3 +9002,21 @@ Remaining menu excess (~229 s) fits 432k warm-head constructions
 (~0.5 ms each): threshold tuning (raising T) is the next knob.
 50M triangle probe: builds 4599-->1269 with identical emission volume
 (40.7M) and identical spec stats.
+
+## 173. Threshold tuning: T=8 --> 64 (2026-10-17, same session)
+
+E2b timebox on the §172 tail: menu still pays 432k warm-head
+constructions at T=8 (heads visited 8-63x run member-path at spec speed
+anyway, so raising T strictly sheds construction with negligible
+steady-state cost). Single const change; unit budgets extended for the
+higher threshold (no rule changes -- 18/18 green). 1B menu-emit probe
+leg at T=64: 178.7 s (was 376.2 s -- another 2.1x, now 1.21x spec),
+builds 432496-->69722 (6.2x), ran 714M (warm code on the member path,
+as designed), SHA exact, interrupts 3153, vec=0, NV2A anchors exact.
+GATE (D:\spec-soak\slice29_run.ps1, 8 legs): ALL PASS, SHAs exact both
+titles, vec=0, anchors exact, interrupts identical 1883/3153.
+triangle emit 71.0 s / spec 73.6 s (parity-or-better reproduced);
+menu emit 179.2 s / spec 153.2 s (1.17x -- was 2.56x at T=8, 6.50x at
+E1). Builds: triangle 3624, menu 69722 (warm-head constructions only).
+Remaining menu excess (~26 s) fits the 70k constructions. ktest smoke
+PASS 7/7 (01:40). Flag stays opt-in.

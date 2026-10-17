@@ -452,7 +452,7 @@ public sealed class DecodedBlockCache
     /// hot blocks amortize it. Member-path service is exact at every visit,
     /// so the threshold changes only the serve vehicle, never behavior.
     /// </summary>
-    public const int EmitThreshold = 8;
+    public const int EmitThreshold = 64;
 
     /// <summary>
     /// Opens the current cursor's tail for emitted service: the cursor must be

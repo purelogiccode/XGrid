@@ -3374,6 +3374,15 @@ interrupts identical 1883/3153; triangle emit 71.6 s BEATS spec
 and bit-identical tallies. Remaining menu excess fits 432k warm-head
 constructions: threshold tuning is the next knob. ktest smoke PASS
 7/7 (01:42). Flag stays opt-in.
+**§173 DONE (2026-10-17, direct):** threshold T=8-->64 (single const;
+unit budgets extended, 18/18 green) -- 8-leg golden gate PASS
+(`D:\spec-soak\slice29`: SHAs exact, vec=0, anchors exact, interrupts
+identical; triangle emit 71.0 s beats spec 73.6 s again; menu emit
+179.2 s / spec 153.2 s = 1.17x, was 2.56x at T=8). Builds menu
+432k-->70k (triangle 9k-->3.6k) with identical emission volume and
+bit-identical tallies. ktest smoke PASS 7/7 (01:40). Suite 1410/1410,
+format clean. Flag stays opt-in; E2 lands here unless the T=256
+timebox (below) wins cleanly.
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the
