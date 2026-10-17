@@ -8073,3 +8073,30 @@ triangle 85.6→87.3) — absorption only, no wall claim; saturation holds.
 Remaining: x87 family (its own slice — FPU stack/TOP/tags, daylight),
 SSE Mulss/Cvttss2Si, Prefetch hint. Flag stays opt-in.
 
+## 148. JIT slice 11: Prefetch + ordering fences behind --spec-exec (2026-10-16)
+
+Direct development, overnight micro-slice. The slice-10 menu tail's
+newly visible Prefetch (1.9M) plus the three fences are the cheapest
+remaining shapes: all four are interpreter nops (`ExecuteSse` breaks
+without touching any operand, flag, or memory — `SseTests.
+Prefetch_IsNoOp` pins the family), so one shared EIP-advance-only
+handler (`SpecHintNop`, four cached fields) serves them and all four
+continue their block (whitelist + resolver cases). Prefetch's memory
+operand is never read, so even an unmapped address cannot fault —
+exactly like the interpreter.
+
+Tests: `Hint_Shapes_MatchInterpreter` (4 shapes vs the interpreter)
++ 4 resolver NotNull pins. Suite **1350/1350**, format clean.
+
+Goldens (`D:\spec-soak\slice11`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 117.6 s (contention-inflated wall) — SHA
+`A1740DE0…` exact, `vec=0`, `verifyFailures=0`, draws=2706 anchor
+exact. Menu spec r1 PASS 223.2 s (same contention) — SHA `4EF1FBF6…`
+exact, `vec=0`, `verifyFailures=0`, draws=33632 skipped=1402 anchor
+exact; fallbacks 105.6M→103.7M (−1.9M, exactly the Prefetch count)
+with Prefetch gone from the top-12 tail (fences never reached the
+top-12 but are covered + pinned); block dispatches 291.9M→290.0M.
+Walls contention-inflated — no wall claim. Remaining top: Cli/Sti
+(IRQ-boundary, untouchable), x87 family (daylight slice), SSE
+Mulss/Cvttss2Si/Fadd. Flag stays opt-in.
+

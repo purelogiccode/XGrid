@@ -120,6 +120,20 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void Hint_Shapes_MatchInterpreter()
+    {
+        // Slice-11 family (§148): Prefetch + ordering fences are interpreter
+        // nops. Prefetch decodes with a memory operand it never touches
+        // (0F 18 /1 with a disp32), so even an unmapped address must not
+        // fault — the differential proves it (both sides advance EIP).
+        RunShapes(
+            ("prefetch m8", new byte[] { 0x0F, 0x18, 0x0D, 0x00, 0x20, 0x00, 0x00 }),
+            ("lfence", new byte[] { 0x0F, 0xAE, 0xE8 }),
+            ("mfence", new byte[] { 0x0F, 0xAE, 0xF0 }),
+            ("sfence", new byte[] { 0x0F, 0xAE, 0xF8 }));
+    }
+
+    [Fact]
     public void MmxMov_Shapes_MatchInterpreter()
     {
         // Slice-10 family (§147): MMX 64-bit moves. modrm 0x03 addresses
@@ -465,6 +479,10 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x7F, 0x03))); // movq m64,mm (slice 10)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x6F, 0xC8))); // movq mm,mm (slice 10)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xE7, 0x03))); // movntq m64,mm (slice 10)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x18, 0x0D, 0x00, 0x20, 0x00, 0x00))); // prefetch m8 (slice 11)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xE8))); // lfence (slice 11)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xF0))); // mfence (slice 11)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xF8))); // sfence (slice 11)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
