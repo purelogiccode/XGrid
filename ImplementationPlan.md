@@ -3398,7 +3398,12 @@ specialization; non-goals listed) + first median-backed emitter claim
 (`D:\spec-soak\median31`, 12 legs, all SHAs exact): triangle emit
 1.089x spec (74.29 vs 80.91 medians); menu emit 0.944x spec
 (155.71 vs 146.97 medians -- 6% deficit; emit legs descend 171-->145
-across reps, consistent with warmup, tested by a second triplet).
+across reps, consistent with warmup, tested by a second triplet:
+148.0/150.3/154.1 confirm r1 outlier, steady state at parity).
+E3 Step 0 measured (menu 1B hotspot, same sequence as emit): Mov 33.8%,
+502M RAM data accesses; missing per-shape split --> E3-0 scoped
+(flag-gated served-shape tally) to rank families for E3-1
+(Mov-mem inline leads by volume x depth).
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the

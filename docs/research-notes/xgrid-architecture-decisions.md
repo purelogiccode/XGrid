@@ -9054,8 +9054,18 @@ median-of-3 before any wall claim, flag stays opt-in throughout):
   (shape x body-cost) under `--emit` on both titles from HotspotProfiler
   mnemonic mix x emitted-member volume; rank families by volume x body
   call depth. Pick the first family from numbers, not instinct.
+  Measured 2026-10-17 (menu 1B, `--spec-exec --hotspot`, same guest
+  sequence as emit): Mov 33.8% (338M), Jcc 17.6%, Dec 10.3%, Cmp 5.9%,
+  dataReadsRam 291M + dataWritesRam 211M (= 502M RAM accesses, ~0.5 per
+  step), Push/Fld/Fstp/Fmul ~5% combined, Cli+Sti 3.3% (already minimal
+  2-op bodies). Missing piece: the profiler counts mnemonics, not
+  shapes -- Mov reg-reg vs Mov r/m volume is unknown. E3-0 (tiny,
+  flag-gated): extend the fallback-shape histogram pattern to ALL
+  served shapes (a served-shape tally, default-off so the hot path is
+  untouched) and re-probe; rank = shape volume x body call depth.
 - Candidate E3-1: inline hot memory-load bodies (Mov r/m32-family first
-  if the ranking says so) -- address compute (live segment base +
+  if the ranking says so -- 338M Movs + 502M RAM accesses make it the
+  volume x depth leader by a wide margin; per-shape split pending E3-0) -- address compute (live segment base +
   base+index*scale+disp), single-translate fast path, direct RAM read,
   all as IL with the interpreter's exact fault order (compute -->
   translate which may PageFaultSignal --> access; EIP advances only
