@@ -9039,3 +9039,41 @@ was 6.50x at E1). Builds: triangle 1044, menu 5816. Host drift
 within-gate emit<=spec ordering is the robust signal). Emit stays
 opt-in (zero default impact); E3 (body inlining) is the next lever.
 ktest smoke PASS 7/7 (01:50). Suite 1410/1410, format clean.
+
+## 175. E3 scope: semantic specialization of hot bodies (2026-10-17, scoped, not started)
+
+Serve-layer verdict (§§171-174): per-block DynamicMethod tails with
+lazy tiered builds reach spec parity-or-better on both titles;
+per-member boundaries (gen/EIP/TSC/poll) are irreducible per §138
+rules 4-5, and the remaining wall lives in executed BODIES (data-path
+helpers were 76% of menu execute in §138). E3 must therefore specialize
+bodies, not serve them faster. Scoped program (each slice lands
+independently with unit differentials + pins, full suite, 4-leg goldens,
+median-of-3 before any wall claim, flag stays opt-in throughout):
+- Step 0 (measurement, no product change): attribute wall to
+  (shape x body-cost) under `--emit` on both titles from HotspotProfiler
+  mnemonic mix x emitted-member volume; rank families by volume x body
+  call depth. Pick the first family from numbers, not instinct.
+- Candidate E3-1: inline hot memory-load bodies (Mov r/m32-family first
+  if the ranking says so) -- address compute (live segment base +
+  base+index*scale+disp), single-translate fast path, direct RAM read,
+  all as IL with the interpreter's exact fault order (compute -->
+  translate which may PageFaultSignal --> access; EIP advances only
+  after completion). Reuse the EmitTests differential + fault-precision
+  pattern.
+- Candidate E3-2: flag-folding across straight-line ALU runs
+  (formation-time liveness + no-flags handler twins) -- only if E3-1
+  measurement shows flags material.
+- Explicit non-goals: no EH changes, no speculation, no cross-block
+  fusion, no background-thread JIT (needs a determinism review first).
+- Standing rules carry over: median-of-3 before any wall claim;
+  single-run walls reported without claim.
+Median-of-3 (§175 gate `D:\spec-soak\median31`, 12 legs, all SHAs
+exact): triangle emit 74.29 s (72.78/74.29/80.00) vs spec 80.91 s
+(79.72/80.91/81.64) --> **emit 1.089x spec**; menu emit 155.71 s
+(171.47/155.71/145.36) vs spec 146.97 s (146.90/146.97/152.02) -->
+**emit 0.944x spec**. First median-backed emitter claim: triangle
+faster, menu 6% deficit. Observation (not a claim): menu emit legs
+descend across reps (171-->156-->145) while spec legs are flat,
+consistent with a first-run warmup transient (construction + first-JIT
++ tiering); a second pre-registered menu-emit triplet (r4-r6) tests it.
