@@ -82,6 +82,7 @@ public sealed partial class XboxCpu
 
     private static void MovRegMem8Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint address = cpu.ComputeAddress(instruction.Operand2.Memory);
         uint value = ReadDataFast(cpu, address, 8);
         ctx.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)value);
@@ -90,6 +91,7 @@ public sealed partial class XboxCpu
 
     private static void MovRegMem32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint address = cpu.ComputeAddress(instruction.Operand2.Memory);
         uint value = ReadDataFast(cpu, address, 32);
         ctx.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, value);
@@ -98,6 +100,7 @@ public sealed partial class XboxCpu
 
     private static void MovMemReg8Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
         uint value = ctx.ReadRegister8(instruction.Operand2.RegisterIndex);
         WriteDataFast(cpu, address, 8, value);
@@ -106,6 +109,7 @@ public sealed partial class XboxCpu
 
     private static void MovMemReg32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
         uint value = ctx.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
         WriteDataFast(cpu, address, 32, value);
@@ -114,6 +118,7 @@ public sealed partial class XboxCpu
 
     private static void CmpRegMem32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint first = ctx.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
         uint second = ReadDataFast(cpu, cpu.ComputeAddress(instruction.Operand2.Memory), 32);
         ctx.Eflags = AluOps.Sub(first, second, 0, 32, ctx.Eflags, out _);
@@ -122,6 +127,7 @@ public sealed partial class XboxCpu
 
     private static void CmpMemReg32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint first = ReadDataFast(cpu, cpu.ComputeAddress(instruction.Operand1.Memory), 32);
         uint second = ctx.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
         ctx.Eflags = AluOps.Sub(first, second, 0, 32, ctx.Eflags, out _);
@@ -130,6 +136,7 @@ public sealed partial class XboxCpu
 
     private static void CmpMemImm32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint first = ReadDataFast(cpu, cpu.ComputeAddress(instruction.Operand1.Memory), 32);
         ctx.Eflags = AluOps.Sub(first, instruction.Operand2.Immediate, 0, 32, ctx.Eflags, out _);
         ctx.Eip += (uint)instruction.Length;
@@ -137,6 +144,7 @@ public sealed partial class XboxCpu
 
     private static void TestMemImm32Fast(XboxContext ctx, XboxCpu cpu, ref DecodedInstruction instruction)
     {
+        cpu.InlineTwinCalls++;
         uint first = ReadDataFast(cpu, cpu.ComputeAddress(instruction.Operand1.Memory), 32);
         uint value = first & instruction.Operand2.Immediate & AluOps.Mask(32);
         ctx.Eflags = AluOps.Logical(value, 32, ctx.Eflags);
@@ -151,6 +159,19 @@ public sealed partial class XboxCpu
     private static readonly SpecInlineHandler CmpMemReg32FastHandler = CmpMemReg32Fast;
     private static readonly SpecInlineHandler CmpMemImm32FastHandler = CmpMemImm32Fast;
     private static readonly SpecInlineHandler TestMemImm32FastHandler = TestMemImm32Fast;
+
+    // E3-1d counters: the fast-path fields are only written by emitted IL,
+    // which the compiler cannot see (CS0649). Default zero is the contract.
+#pragma warning disable CS0649
+    /// <summary>E3-1d diagnostic: fast-path members served through emitted fast paths (runners built with counters).</summary>
+    internal long InlineFastHits;
+
+    /// <summary>E3-1d diagnostic: fast-path fallbacks caused by a data-translate cache tag miss.</summary>
+    internal long InlineTagMisses;
+#pragma warning restore CS0649
+
+    /// <summary>E3-1d diagnostic: twin calls from emitted tails (all fast-path fallbacks plus, structurally, any twins-only members).</summary>
+    internal long InlineTwinCalls;
 
     /// <summary>Baked fast-path family for an E3-1b/1c member.</summary>
     internal enum InlineFastKind

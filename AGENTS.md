@@ -587,8 +587,12 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     extended to Cmp reg/mem/imm + Test mem,imm + 8-bit Mov
     (fast-eligible shapes 35.1% of menu / 34.6% of triangle members;
     550/550 inline members baked fast on the menu smoke); walls in §177.
-    Next diagnostic before more body work: twin-call counter to measure
-    the emitted fast paths' data-translate hit rate.
+    E3-1d diag (§178): `--emit-diag` baked counters -> fast-path hitRate
+    **0.9161 menu / 0.9831 triangle** (fallbacks ~98% tag misses, no
+    thrash); wall-neutral is a scale fact (16-18% of all members
+    fast-served at a few ns each; only ~50% of fast-kind members are
+    tail-served at all). Further body work is low-value against the
+    boundary-dominated remainder; flag stays opt-in.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all

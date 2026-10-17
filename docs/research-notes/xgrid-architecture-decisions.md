@@ -9201,3 +9201,29 @@ PASS, SHAs exact both titles (`menu emit 184.6/145.6/146.4` median 146.4 vs
 emit-inline 65.1). Combined with the e31 triplet (sign flipped: 174.2 vs
 171.4), E3-1a/b/c is **wall-neutral within host noise**; triangle
 single-run 1.015x favours inline, no claim. Flag stays opt-in.
+
+## 178. E3-1d: emitted fast-path hit rate measured (2026-10-17, direct)
+
+`--emit-diag` (implies `--emit-inline`): E3-1d diagnostic counters baked
+into runners at build time (zero cost when off; runners record the flag and
+rebuild on mismatch). Counters: fastHits (fast path completed), tagMisses
+(data-translate tag miss), twinCalls (every fallback through the exact
+twin). Paged unit differential pins hits, a steered-VPN tag-miss fallback
+and the accounting; unpaged runs never take the fast path (no translate
+cache without paging -- the twin keeps them exact).
+
+1B measurements (`D:\spec-soak\e33`, SHAs exact both titles, `vec=0`):
+- menu: fastHits 158,738,154; tagMisses 14,213,974; twinCalls 14,533,678;
+  **hitRate 0.9161**; EmitRan 626.4M of 994.1M members tail-served.
+- triangle: fastHits 178,889,942; tagMisses 2,147,082; twinCalls 3,068,370;
+  **hitRate 0.9831**; EmitRan 745.0M of 997.9M.
+Fallbacks are ~98% tag misses (no thrash pathology; the 4-entry cache
+behaves). The fast path is therefore alive at scale -- the wall-neutral
+verdict of §§176-177 is a scale fact: only ~50% of fast-kind members are
+tail-served (menu 173.2M of 348.6M; triangle 181.9M of 344.9M), and
+158.7M/178.9M hits at a few ns saved per hit project to ~0.3-0.5% (menu,
+unmeasurable under the +-25% host noise) and ~1-1.5% (triangle, matching
+the single-run 1.015-1.037x readings). Remaining levers are scoped, not
+taken: raising tail-serve share (threshold re-tune against §174's
+construction trade-off) or member-path fast dispatch; both are low-value
+against the boundary-dominated remainder. Flag stays opt-in.

@@ -121,6 +121,12 @@ internal static class BlockEmitter
     private static readonly MethodInfo RamWrite8 =
         typeof(PhysicalMemory).GetMethod("Write8")!;
 
+    private static readonly FieldInfo InlineFastHitsField =
+        typeof(XboxCpu).GetField("InlineFastHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly FieldInfo InlineTagMissesField =
+        typeof(XboxCpu).GetField("InlineTagMisses", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     private static readonly MethodInfo GetTsc =
         typeof(XboxContext).GetProperty("Tsc")!.GetMethod!;
 
@@ -148,6 +154,7 @@ internal static class BlockEmitter
     /// <param name="handlers">The block's resolved handlers (all non-null).</param>
     /// <param name="linears">Expected linear PC per member.</param>
     /// <param name="inlineBodies">True to serve members with a resolved E3-1 inline twin (context-hoisted lean body) where one exists.</param>
+    /// <param name="inlineCounters">True to bake E3-1d diagnostic counters into the fast paths.</param>
     /// <param name="inlineMembers">Receives the number of members baked onto the inline path.</param>
     /// <param name="fastMembers">Receives the number of members baked onto the E3-1b IL fast path.</param>
     /// <returns>The runner, or null for non-emittable tails.</returns>
@@ -157,6 +164,7 @@ internal static class BlockEmitter
         XboxCpu.SpecHandler?[] handlers,
         uint[] linears,
         bool inlineBodies,
+        bool inlineCounters,
         out int inlineMembers,
         out int fastMembers)
     {
@@ -339,7 +347,7 @@ internal static class BlockEmitter
                 {
                     Label slow = il.DefineLabel();
                     Label done = il.DefineLabel();
-                    EmitFastMemoryPath(il, plan, context, fastOk, slow,
+                    EmitFastMemoryPath(il, plan, context, fastOk, slow, inlineCounters,
                         fastAddr!, fastVpn!, fastSlot!, fastPhys!, fastValue!, fastAux!, fastRam!);
                     il.Emit(OpCodes.Br, done);
                     il.MarkLabel(slow);
@@ -414,6 +422,7 @@ internal static class BlockEmitter
         LocalBuilder context,
         LocalBuilder fastOk,
         Label slow,
+        bool inlineCounters,
         LocalBuilder addr,
         LocalBuilder vpn,
         LocalBuilder slot,
@@ -486,7 +495,18 @@ internal static class BlockEmitter
         il.Emit(OpCodes.Ldloc, slot);
         il.Emit(OpCodes.Ldelem_I4);
         il.Emit(OpCodes.Ldloc, vpn);
-        il.Emit(OpCodes.Bne_Un, slow);
+        if (inlineCounters)
+        {
+            Label tagOk = il.DefineLabel();
+            il.Emit(OpCodes.Beq, tagOk);
+            EmitCounterIncrement(il, InlineTagMissesField);
+            il.Emit(OpCodes.Br, slow);
+            il.MarkLabel(tagOk);
+        }
+        else
+        {
+            il.Emit(OpCodes.Bne_Un, slow);
+        }
 
         // Stores: the WP-gated unwritable case must fault through the twin
         // (TranslateLinear's cached-hit replay), so it takes the slow path.
@@ -544,6 +564,11 @@ internal static class BlockEmitter
         }
 
         EmitFastTail(il, plan, context, value, aux, ram, phys);
+
+        if (inlineCounters)
+        {
+            EmitCounterIncrement(il, InlineFastHitsField);
+        }
 
         // EIP advances only after completion, exactly as the handler.
         il.Emit(OpCodes.Ldloc, context);
@@ -688,6 +713,21 @@ internal static class BlockEmitter
             default:
                 throw new InvalidOperationException($"No fast tail for kind {plan.Kind}.");
         }
+    }
+
+    /// <summary>
+    /// Emits <c>cpu.field++</c> for an E3-1d diagnostic counter (int64
+    /// instance field on the CPU).
+    /// </summary>
+    private static void EmitCounterIncrement(ILGenerator il, FieldInfo field)
+    {
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldfld, field);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Conv_I8);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stfld, field);
     }
 
     /// <summary>
