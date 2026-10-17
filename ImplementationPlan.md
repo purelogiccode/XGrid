@@ -3281,6 +3281,10 @@ tails. New tail: Cli/Sti, Movs/Stos (string, out), Rcl-imm, Sbb/Adc
 01:49 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 4th run in a row); x87-reg/shift-CL/Mul/int-remainder/
 x87-compare disturb nothing.
+**ktest smoke re-run (2026-10-17, post-slices 18–20): PASS 7/7** in
+02:12 — known deltas matching, park break at exactly 792,800,535 steps
+(bit-reproducible 5th run in a row); packed-SSE/SSE-compute/flags
+disturb nothing.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
