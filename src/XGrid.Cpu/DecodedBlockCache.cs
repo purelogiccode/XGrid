@@ -321,8 +321,10 @@ public sealed class DecodedBlockCache
     }
 
     /// <summary>
-    /// Conservative slice-4 formation: only common straight-line integer/data
-    /// operations may continue. Every branch, trap, system/mode, string/REP,
+    /// Conservative slice-4 formation (extended by slice 10): only common
+    /// straight-line integer/data operations may continue, now including the
+    /// MMX 64-bit moves (pure data through the x87-aliased file, no flags
+    /// or control flow). Every branch, trap, system/mode, string/REP,
     /// I/O and unlisted instruction ends the block (including future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
@@ -343,7 +345,7 @@ public sealed class DecodedBlockCache
             or Mnemonic.Setcc or Mnemonic.Cmovcc or Mnemonic.Leave or Mnemonic.Enter or Mnemonic.Bswap
             or Mnemonic.Xadd or Mnemonic.Cmpxchg or Mnemonic.Bsf or Mnemonic.Bsr or Mnemonic.Bt
             or Mnemonic.Bts or Mnemonic.Btr or Mnemonic.Btc or Mnemonic.Cbw or Mnemonic.Cdq
-            or Mnemonic.Shld or Mnemonic.Shrd or Mnemonic.Cmpxchg8B);
+            or Mnemonic.Shld or Mnemonic.Shrd or Mnemonic.Cmpxchg8B or Mnemonic.Movq or Mnemonic.Movntq);
     }
 
     private sealed record Block(

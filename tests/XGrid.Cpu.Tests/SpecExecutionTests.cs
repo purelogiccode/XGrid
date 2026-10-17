@@ -120,6 +120,21 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void MmxMov_Shapes_MatchInterpreter()
+    {
+        // Slice-10 family (§147): MMX 64-bit moves. modrm 0x03 addresses
+        // [EBX] (Preset maps 0x2000 with known content, 8-byte aligned);
+        // 0xC8 is the reg,reg form. No flags are touched (Preset's CF/ZF
+        // pin that); EIP advances only after completion, so a faulting
+        // memory shape keeps precise EIP exactly like the interpreter.
+        RunShapes(
+            ("movq mm,m64", new byte[] { 0x0F, 0x6F, 0x03 }),
+            ("movq m64,mm", new byte[] { 0x0F, 0x7F, 0x03 }),
+            ("movq mm,mm", new byte[] { 0x0F, 0x6F, 0xC8 }),
+            ("movntq m64,mm", new byte[] { 0x0F, 0xE7, 0x03 }));
+    }
+
+    [Fact]
     public void IncDecMem_Shapes_MatchInterpreter()
     {
         // Slice-9 family (§146): Inc/Dec with a memory destination through
@@ -446,6 +461,10 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x0B))); // dec m32 (slice 9)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFE, 0x03))); // inc m8 (slice 9)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFE, 0x0B))); // dec m8 (slice 9)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x6F, 0x03))); // movq mm,m64 (slice 10)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x7F, 0x03))); // movq m64,mm (slice 10)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x6F, 0xC8))); // movq mm,mm (slice 10)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xE7, 0x03))); // movntq m64,mm (slice 10)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp

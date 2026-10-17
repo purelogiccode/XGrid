@@ -3162,6 +3162,15 @@ SHA `4EF1FBF6…`, triangle 85.6 s SHA `A1740DE0…`, both `vec=0`,
 triangle 131M→129M with Inc/Dec gone from the tail (remaining top:
 Cli/Sti, x87, Movq/Movntq, SSE). Next: MMX Movq/Movntq (slice 10),
 then x87. Flag stays opt-in.
+**§147 DONE (2026-10-16, direct):** JIT slice 10 (MMX Movq reg,reg/
+reg,mem/mem,reg + Movntq mem,reg, 4 handlers, both mnemonics now
+continue blocks) behind `--spec-exec`; 1349/1349 tests, format clean,
+2-leg spec golden check PASS (`D:\spec-soak\slice10`: menu 200.1 s SHA
+`4EF1FBF6…`, triangle 87.3 s SHA `A1740DE0…`, both `vec=0`,
+`verifyFailures=0`, counter anchors exact); fallbacks menu 120.8M→105.6M
+(−15.2M Movq/Movntq absorbed) / triangle −90K; block dispatches menu
+307M→292M (continuation confirmed). Walls within noise — no wall claim.
+Next: x87 (daylight slice), SSE, Prefetch. Flag stays opt-in.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
