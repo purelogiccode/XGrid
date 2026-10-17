@@ -381,7 +381,13 @@ public sealed class DecodedBlockCache
             or Mnemonic.Fnclex or Mnemonic.Fninit
             or Mnemonic.Movaps or Mnemonic.Movups or Mnemonic.Movss
             or Mnemonic.Movlps or Mnemonic.Movhps or Mnemonic.Movhlps or Mnemonic.Movlhps
-            or Mnemonic.Movntps or Mnemonic.Movmskps);
+            or Mnemonic.Movntps or Mnemonic.Movmskps
+            or Mnemonic.Sqrtps or Mnemonic.Sqrtss or Mnemonic.Rsqrtps or Mnemonic.Rsqrtss
+            or Mnemonic.Rcpps or Mnemonic.Rcpss
+            or Mnemonic.Addps or Mnemonic.Subps or Mnemonic.Mulps or Mnemonic.Divps
+            or Mnemonic.Minps or Mnemonic.Maxps
+            or Mnemonic.Andps or Mnemonic.Andnps or Mnemonic.Orps or Mnemonic.Xorps
+            or Mnemonic.Cmpps or Mnemonic.Cmpss or Mnemonic.Comiss or Mnemonic.Ucomiss);
     }
 
     private sealed record Block(
