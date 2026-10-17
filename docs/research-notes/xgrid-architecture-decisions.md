@@ -9020,3 +9020,22 @@ menu emit 179.2 s / spec 153.2 s (1.17x -- was 2.56x at T=8, 6.50x at
 E1). Builds: triangle 3624, menu 69722 (warm-head constructions only).
 Remaining menu excess (~26 s) fits the 70k constructions. ktest smoke
 PASS 7/7 (01:40). Flag stays opt-in.
+
+## 174. Threshold T=1024: emit at spec parity (2026-10-17, same session)
+
+Same one-const timebox, one step further: the T=64-->256 probe leg
+showed 163.4 s / 24k builds (another 15 s), so T=1024. Unit budgets
+extended again (18/18 green). 1B menu-emit probe leg at T=1024:
+153.6 s (spec band 147-153 s -- parity), builds 24450-->5816,
+ran 626M, SHA exact, interrupts 3153, vec=0, anchors exact.
+Construction is now a minority cost; the remaining delta is the
+per-member floor (E3 body work). GATE
+(D:\spec-soak\slice30_run.ps1, 8 legs): ALL PASS, SHAs exact both
+titles, vec=0, anchors exact, interrupts identical 1883/3153.
+triangle emit 66.0 s / spec 76.0 s (parity-or-better, reproduced
+across three gates); menu emit 180.3 s / spec 182.2 s (parity;
+was 6.50x at E1). Builds: triangle 1044, menu 5816. Host drift
+~3-19% between gates (single-run walls, no wall claim -- the
+within-gate emit<=spec ordering is the robust signal). Emit stays
+opt-in (zero default impact); E3 (body inlining) is the next lever.
+ktest smoke PASS 7/7 (01:50). Suite 1410/1410, format clean.
