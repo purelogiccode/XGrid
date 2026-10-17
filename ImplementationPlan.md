@@ -3213,6 +3213,16 @@ golden check PASS (`D:\\spec-soak\\slice14`: menu 204.1 s SHA
 / triangle −2.2M with every slice-14 shape gone from both tails. New
 tail: Shl/Shr r,r (CL forms), Push-m, Mul-m, Movs (string, out),
 Leave/Neg/Fnstsw/Fiadd. Flag stays opt-in.
+**§153 DONE (2026-10-16, direct):** JIT slice 15 (shifts/rotates by CL,
+Push-m, Mul single + Imul all-forms — 8 shared bodies through the same
+interpreter helpers, ~50 shapes, no `Terminates` change needed) behind
+`--spec-exec`; 1354/1354 tests, format clean, 2-leg spec golden check
+PASS (`D:\\spec-soak\\slice15`: menu 168.3 s SHA `4EF1FBF6…`, triangle
+88.0 s SHA `A1740DE0…`, both `vec=0`, `verifyFailures=0`, anchors
+exact) + `--block-exec` cross-check PASS; fallbacks menu 43.5M→38.4M
+(−12%) / triangle −2.0M with every slice-15 shape gone from both tails.
+New tail: Cli/Sti (untouchable), Movs (string, out), Leave, Neg,
+Fnstsw, Fiadd, Div-r, Bswap, Not, Movss. Flag stays opt-in.
 **ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
 02:13 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.
