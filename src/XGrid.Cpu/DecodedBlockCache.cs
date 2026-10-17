@@ -332,7 +332,12 @@ public sealed class DecodedBlockCache
     /// slice-18 packed-SSE moves (verbatim read-before-write mirrors),
     /// and the slice-20 remainder (carry-rotates via the shared shift
     /// helper, sign-extension, flag push/pop, conditional set/move,
-    /// timestamp). Every branch, trap, system/mode, string/REP, I/O and
+    /// timestamp), plus slice-5 Cli/Sti (straight-line IF-flag writes,
+    /// EIP-precise, still fallback-interpreted: interrupt delivery is
+    /// polled before every instruction in both Step and RunSpecBlock, so
+    /// merging blocks across them moves no delivery point — it only
+    /// erases the 1-instruction boundary dispatches, which are 95-100%
+    /// of the remaining fallback tail). Every branch, trap, system/mode, string/REP, I/O and
     /// unlisted instruction ends the block (including future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
@@ -390,7 +395,8 @@ public sealed class DecodedBlockCache
             or Mnemonic.Minps or Mnemonic.Maxps
             or Mnemonic.Andps or Mnemonic.Andnps or Mnemonic.Orps or Mnemonic.Xorps
             or Mnemonic.Cmpps or Mnemonic.Cmpss or Mnemonic.Comiss or Mnemonic.Ucomiss
-            or Mnemonic.Popf or Mnemonic.Rdtsc);
+            or Mnemonic.Popf or Mnemonic.Rdtsc
+            or Mnemonic.Cli or Mnemonic.Sti);
     }
 
     private sealed record Block(

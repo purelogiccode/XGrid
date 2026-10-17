@@ -535,6 +535,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    Fresh median-3 with slice 4 (§166): menu 1.088x / tri 1.161x
    (12/12 PASS; absolutes host-shifted, ratios robust). Soak script
    hardened (stale-BMP SHA hole closed).
+   Dispatch slice 5 (§167): Cli/Sti continue blocks (2-token change;
+   dispatches tri −32% / menu −14%, interrupts bit-identical
+   1883/3153; behavior-neutral by construction). 4-leg gate PASS
+   (`D:\spec-soak\slice24`). **1390/1390 tests**.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP

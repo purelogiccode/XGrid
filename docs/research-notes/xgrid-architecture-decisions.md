@@ -8748,3 +8748,39 @@ no frame was produced (the slice-4 bug run "passed" SHA on a leftover
 file; only the counter anchor caught it). The script now deletes the
 bmp before the run, fails on `Frame unavailable`, and requires the bmp
 to exist. No product code touched.
+
+## 167. Dispatch slice 5: Cli/Sti continue blocks (2026-10-17)
+
+Direct development, first slice at the block-dispatch share (section
+136: 30.9-36.6%). The slice23 tails showed Cli/Sti are 95-100% of ALL
+remaining fallbacks (triangle 113.3M of 113.3M, menu 32.5M of 34.1M) --
+and since unlisted mnemonics terminate blocks, every one of those
+~145M executions was a 1-instruction boundary dispatch.
+
+Two-token change (`DecodedBlockCache.Terminates` continue-list + doc):
+Cli/Sti stay fallback-interpreted, blocks just merge across them.
+Behavior-neutral BY CONSTRUCTION, not just by gate: interrupt delivery
+is polled before every instruction in both `Step` and `RunSpecBlock`,
+so no delivery point moves (the STI 1-insn shadow was already not
+modeled -- delivery fires at the next poll either way).
+
+Measured (slice23 --> slice24, identical guest code):
+- dispatches triangle 351.6M --> 238.5M (-113.1M, -32%); menu 228.8M
+  --> 196.4M (-32.4M, -14%). Exactly the Cli+Sti boundary count.
+- instructions, shape hits/fallbacks, builds: identical.
+- `Interrupts delivered` IDENTICAL both titles (triangle 1883, menu
+  3153) -- delivery timing provably unchanged at 1B steps.
+- SHAs exact everywhere (see gate below).
+
+Tests: 5 new `BlockFormationTests` (Cli/Sti continue pins, Ret/Hlt
+contrast pins, IF toggle/clear functional under enabled blocks).
+Suite **1390/1390**, format clean. 4-leg golden gate
+(`D:\spec-soak\slice24`, full-solution rebuild BEFORE the legs -- the
+slice23 staleness lesson is now procedure): triangle spec 77.2 s +
+menu spec 145.4 s SHAs exact, `vec=0`, `verifyFailures=0`, anchors
+exact; menu cache 158.3 s SHA exact (control leg -- Step path
+untouched, as designed); triangle `--block-exec` SHA `A1740DE0...`
+exact, draws=2706. Walls single-run only (directionally -6% both spec
+legs, consistent with -14/-32% fewer dispatches at a ~30% dispatch
+share -- but no claim; the next median owns wall truth). Flag stays
+opt-in.
