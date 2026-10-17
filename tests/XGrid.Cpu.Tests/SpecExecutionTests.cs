@@ -120,6 +120,36 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void FpuReg_Shapes_MatchInterpreter()
+    {
+        // Slice-14 family (§152): x87 register forms — Fld ST(i), Fxch,
+        // constant loads, pop-arithmetic and the Fsub/Fdiv families.
+        // All run behind `fld1` prefixes so they execute against real
+        // stack values; all are pure register ops (no fault possible)
+        // except the reg,mem arithmetic which reads [EBX] into a temp
+        // before any FPU mutation, exactly like the interpreter.
+        RunShapes(
+            ("fld1; fld st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xC1 }),
+            ("fld1; fld1; fxch st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD9, 0xC9 }),
+            ("fld1", new byte[] { 0xD9, 0xE8 }),
+            ("fldz", new byte[] { 0xD9, 0xEE }),
+            ("fldpi", new byte[] { 0xD9, 0xEB }),
+            ("fld1; fld1; faddp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xC1 }),
+            ("fld1; fld1; fmulp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xC9 }),
+            ("fld1; fld1; fsubp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xE9 }),
+            ("fld1; fld1; fsubrp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xE1 }),
+            ("fld1; fld1; fdivp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xF9 }),
+            ("fld1; fld1; fdivrp st1,st0", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xDE, 0xF1 }),
+            ("fld1; fld1; fsub st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xE1 }),
+            ("fld1; fld1; fsubr st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xE9 }),
+            ("fld1; fld1; fdiv st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xF1 }),
+            ("fld1; fld1; fdivr st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xF9 }),
+            ("fld1; fsub m32", new byte[] { 0xD9, 0xE8, 0xD8, 0x23 }),
+            ("fld1; fdiv m32", new byte[] { 0xD9, 0xE8, 0xD8, 0x33 }),
+            ("fld1; fst st1", new byte[] { 0xD9, 0xE8, 0xDD, 0xD1 }));
+    }
+
+    [Fact]
     public void FpuMem_Shapes_MatchInterpreter()
     {
         // Slice-13 family (§151): x87 loads/stores/integer moves plus
@@ -565,6 +595,18 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x03))); // fadd m32 (slice 13)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x0B))); // fmul m32 (slice 13)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xC1))); // fadd st0,st1 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xC1))); // fld st1 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xC9))); // fxch st1 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xE8))); // fld1 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xEE))); // fldz (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDE, 0xC1))); // faddp (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDE, 0xC9))); // fmulp (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDE, 0xE9))); // fsubp (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDE, 0xF9))); // fdivp (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xE1))); // fsub st0,st1 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xF1))); // fdiv st0,st1 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x23))); // fsub m32 (slice 14)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xD1))); // fst st1 (slice 14)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp

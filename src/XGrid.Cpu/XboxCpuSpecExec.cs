@@ -189,13 +189,16 @@ public sealed partial class XboxCpu
                 // case verbatim (read before any FPU mutation, EIP only
                 // after completion); widths ride the operand Size exactly
                 // like `ReadFpuReal`/`WriteFpuReal`/`ReadFpuInteger`/
-                // `WriteFpuInteger`.
-                return first == OperandKind.Memory && second == OperandKind.None
-                    ? SpecFldMemHandler
+                // `WriteFpuInteger`. Slice 14 adds the register form
+                // (Fld ST(i) pushes a copy — no fault possible).
+                return second == OperandKind.None
+                    && (first == OperandKind.Memory || first == OperandKind.Register)
+                    ? (first == OperandKind.Memory ? SpecFldMemHandler : SpecFldRegHandler)
                     : null;
             case Mnemonic.Fst:
-                return first == OperandKind.Memory && second == OperandKind.None
-                    ? SpecFstMemHandler
+                return second == OperandKind.None
+                    && (first == OperandKind.Memory || first == OperandKind.Register)
+                    ? SpecFstHandler
                     : null;
             case Mnemonic.Fstp:
                 return second == OperandKind.None
@@ -213,6 +216,42 @@ public sealed partial class XboxCpu
                 return ResolveSpecFpuAlu(Mnemonic.Fadd, first, second);
             case Mnemonic.Fmul:
                 return ResolveSpecFpuAlu(Mnemonic.Fmul, first, second);
+            case Mnemonic.Fsub:
+                return ResolveSpecFpuAlu(Mnemonic.Fsub, first, second);
+            case Mnemonic.Fsubr:
+                return ResolveSpecFpuAlu(Mnemonic.Fsubr, first, second);
+            case Mnemonic.Fdiv:
+                return ResolveSpecFpuAlu(Mnemonic.Fdiv, first, second);
+            case Mnemonic.Fdivr:
+                return ResolveSpecFpuAlu(Mnemonic.Fdivr, first, second);
+            case Mnemonic.Faddp:
+            case Mnemonic.Fmulp:
+            case Mnemonic.Fsubp:
+            case Mnemonic.Fsubrp:
+            case Mnemonic.Fdivp:
+            case Mnemonic.Fdivrp:
+                // Slice 14: x87 pop-arithmetic (ST(i),ST(0) -> ST(i), pop).
+                // Verbatim interpreter pop-form body; no memory, no fault.
+                return first == OperandKind.Register && second == OperandKind.Register
+                    ? ResolveSpecFpuPop(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Fxch:
+                // Slice 14: register exchange, no flags, no fault.
+                return first == OperandKind.Register && second == OperandKind.None
+                    ? SpecFxchHandler
+                    : null;
+            case Mnemonic.Fld1:
+            case Mnemonic.Fldl2T:
+            case Mnemonic.Fldl2E:
+            case Mnemonic.Fldpi:
+            case Mnemonic.Fldlg2:
+            case Mnemonic.Fldln2:
+            case Mnemonic.Fldz:
+                // Slice 14: constant loads push a fixed Fpu80 — verbatim
+                // interpreter cases, no operand, no fault.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? ResolveSpecFldConst(instruction.Mnemonic)
+                    : null;
             default:
                 return null;
         }
@@ -736,6 +775,39 @@ public sealed partial class XboxCpu
         {
             Mnemonic.Fadd => SpecFaddHandler,
             Mnemonic.Fmul => SpecFmulHandler,
+            Mnemonic.Fsub => SpecFsubHandler,
+            Mnemonic.Fsubr => SpecFsubrHandler,
+            Mnemonic.Fdiv => SpecFdivHandler,
+            Mnemonic.Fdivr => SpecFdivrHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecFpuPop(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Faddp => SpecFaddpHandler,
+            Mnemonic.Fmulp => SpecFmulpHandler,
+            Mnemonic.Fsubp => SpecFsubpHandler,
+            Mnemonic.Fsubrp => SpecFsubrpHandler,
+            Mnemonic.Fdivp => SpecFdivpHandler,
+            Mnemonic.Fdivrp => SpecFdivrpHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecFldConst(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Fld1 => SpecFld1Handler,
+            Mnemonic.Fldl2T => SpecFldl2THandler,
+            Mnemonic.Fldl2E => SpecFldl2EHandler,
+            Mnemonic.Fldpi => SpecFldpiHandler,
+            Mnemonic.Fldlg2 => SpecFldlg2Handler,
+            Mnemonic.Fldln2 => SpecFldln2Handler,
+            Mnemonic.Fldz => SpecFldzHandler,
             _ => null,
         };
     }
@@ -941,12 +1013,32 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecCvttss2SiRegRegHandler = SpecCvttss2SiRegReg;
     private static readonly SpecHandler SpecCvttss2SiRegMemHandler = SpecCvttss2SiRegMem;
     private static readonly SpecHandler SpecFldMemHandler = SpecFldMem;
+    private static readonly SpecHandler SpecFldRegHandler = SpecFldReg;
     private static readonly SpecHandler SpecFstMemHandler = SpecFstMem;
+    private static readonly SpecHandler SpecFstHandler = SpecFst;
     private static readonly SpecHandler SpecFstpHandler = SpecFstp;
     private static readonly SpecHandler SpecFildMemHandler = SpecFildMem;
     private static readonly SpecHandler SpecFistpMemHandler = SpecFistpMem;
     private static readonly SpecHandler SpecFaddHandler = SpecFadd;
     private static readonly SpecHandler SpecFmulHandler = SpecFmul;
+    private static readonly SpecHandler SpecFsubHandler = SpecFsub;
+    private static readonly SpecHandler SpecFsubrHandler = SpecFsubr;
+    private static readonly SpecHandler SpecFdivHandler = SpecFdiv;
+    private static readonly SpecHandler SpecFdivrHandler = SpecFdivr;
+    private static readonly SpecHandler SpecFaddpHandler = SpecFaddp;
+    private static readonly SpecHandler SpecFmulpHandler = SpecFmulp;
+    private static readonly SpecHandler SpecFsubpHandler = SpecFsubp;
+    private static readonly SpecHandler SpecFsubrpHandler = SpecFsubrp;
+    private static readonly SpecHandler SpecFdivpHandler = SpecFdivp;
+    private static readonly SpecHandler SpecFdivrpHandler = SpecFdivrp;
+    private static readonly SpecHandler SpecFxchHandler = SpecFxch;
+    private static readonly SpecHandler SpecFld1Handler = SpecFld1;
+    private static readonly SpecHandler SpecFldl2THandler = SpecFldl2T;
+    private static readonly SpecHandler SpecFldl2EHandler = SpecFldl2E;
+    private static readonly SpecHandler SpecFldpiHandler = SpecFldpi;
+    private static readonly SpecHandler SpecFldlg2Handler = SpecFldlg2;
+    private static readonly SpecHandler SpecFldln2Handler = SpecFldln2;
+    private static readonly SpecHandler SpecFldzHandler = SpecFldz;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1740,6 +1832,21 @@ public sealed partial class XboxCpu
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
+    private static void SpecFst(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 14: same verbatim `Fst` body — `WriteFpuReal` handles both
+        // memory and ST(i) destinations, so one body serves both shapes.
+        cpu.WriteFpuReal(instruction.Operand1, cpu.Fpu.GetRegister(0));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 14: verbatim `Fld ST(i)` — pushes a copy, no fault possible.
+        cpu.Fpu.Push(cpu.Fpu.GetRegister(instruction.Operand1.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
     private static void SpecFstp(XboxCpu cpu, in DecodedInstruction instruction)
     {
         // Slice 13: verbatim `Fstp` case (store then pop). The pop runs
@@ -1774,6 +1881,118 @@ public sealed partial class XboxCpu
     private static void SpecFmul(XboxCpu cpu, in DecodedInstruction instruction)
     {
         SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fmul);
+    }
+
+    private static void SpecFsub(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fsub);
+    }
+
+    private static void SpecFsubr(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fsubr);
+    }
+
+    private static void SpecFdiv(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fdiv);
+    }
+
+    private static void SpecFdivr(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fdivr);
+    }
+
+    private static void SpecFaddp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Faddp);
+    }
+
+    private static void SpecFmulp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Fmulp);
+    }
+
+    private static void SpecFsubp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Fsubp);
+    }
+
+    private static void SpecFsubrp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Fsubrp);
+    }
+
+    private static void SpecFdivp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Fdivp);
+    }
+
+    private static void SpecFdivrp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuPopArithmetic(cpu, in instruction, Mnemonic.Fdivrp);
+    }
+
+    private static void SpecFpuPopArithmetic(XboxCpu cpu, in DecodedInstruction instruction, Mnemonic mnemonic)
+    {
+        // Slice-14 shared pop-arithmetic: verbatim interpreter
+        // `Faddp/Fmulp/...` case. Both registers read before the write;
+        // no memory, no fault; pop runs after the write.
+        Fpu80 left = cpu.Fpu.GetRegister(instruction.Operand1.RegisterIndex);
+        Fpu80 right = cpu.Fpu.GetRegister(0);
+        cpu.Fpu.SetRegister(
+            instruction.Operand1.RegisterIndex, ApplyFpuArithmetic(mnemonic, left, right));
+        cpu.Fpu.Pop();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFxch(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 14: verbatim `Fxch` — pure register exchange.
+        cpu.Fpu.Exchange(instruction.Operand1.RegisterIndex);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFld1(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.One);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldl2T(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.Log2Ten);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldl2E(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.Log2E);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldpi(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.Pi);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldlg2(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.Log10Two);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldln2(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.LnTwo);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldz(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Fpu.Push(Fpu80.Zero);
+        cpu.Context.Eip += (uint)instruction.Length;
     }
 
     private static void SpecFpuArithmetic(XboxCpu cpu, in DecodedInstruction instruction, Mnemonic mnemonic)

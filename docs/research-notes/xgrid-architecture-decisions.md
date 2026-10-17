@@ -8221,3 +8221,33 @@ exact) + the `--block-exec` cross-check leg that slices 10–12
 established; flag-off byte-identical; walls reported without claim
 (but this is the first slice since slice 8 allowed to hope).
 
+## 152. JIT slice 14: x87 reg-forms + Fsub/Fdiv families behind --spec-exec (2026-10-16)
+
+Direct development, late-evening slice completing the §150 scope's
+register half. `Fld ST(i)`, `Fst ST(i)` (same verbatim body — 
+`WriteFpuReal` handles both kinds), `Fxch`, all 7 constant loads
+(`Fld1/Fldl2T/Fldl2E/Fldpi/Fldlg2/Fldln2/Fldz`), the 6 pop-arithmetic
+forms (`Faddp/Fmulp/Fsubp/Fsubrp/Fdivp/Fdivrp` via one shared
+read-read-write-pop body) and the 4 missing ST(0) families
+(`Fsub/Fsubr/Fdiv/Fdivr` reg,reg + reg,mem via the existing shared
+`SpecFpuArithmetic` — `ApplyFpuArithmetic` already mapped them, only
+the resolver excluded them). All continue their block (pure register
+ops or verbatim mirrors); no faults possible except reg,mem arithmetic
+which reads into temps first.
+
+Tests: `FpuReg_Shapes_MatchInterpreter` (18 shapes vs the interpreter,
+all behind `fld1` prefixes against real stack values) + 13 resolver
+NotNull pins. Suite **1353/1353**, format clean.
+
+Goldens (`D:\\spec-soak\\slice14`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 102.0 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Fld-reg/Faddp gone from
+the tail, fallbacks −2.2M; dispatches −1.3M. Menu spec r1 PASS 204.1 s
+(contention-inflated wall) — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+**fallbacks 49.3M→43.5M (−5.8M, −12%)** with every slice-14 shape
+gone from the tail; dispatches 235.6M→231.3M. New tail: Cli/Sti
+(untouchable), Shl/Shr r,r (CL-count forms — slice 15), Movs (string,
+stays interpreter), Push-m, Mul-m, Leave, Neg, Fnstsw, Fiadd. Flag
+stays opt-in.
+
