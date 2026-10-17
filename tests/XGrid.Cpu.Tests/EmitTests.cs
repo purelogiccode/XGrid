@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text;
 using XGrid.Core.Devices;
@@ -246,11 +247,233 @@ public sealed class EmitTests
         Assert.Equal(specProfile.TotalInstructions, profile.TotalInstructions);
     }
 
+    private static readonly byte[] MemoryShapes =
+    {
+        0x8B, 0x03, // mov eax,[ebx]           (load32)
+        0x89, 0x43, 0x04, // mov [ebx+4],eax  (store32)
+        0x8A, 0x0B, // mov cl,[ebx]            (load8)
+        0x88, 0x4B, 0x05, // mov [ebx+5],cl   (store8)
+        0x3B, 0x43, 0x08, // cmp eax,[ebx+8]  (cmp reg,mem32)
+        0x39, 0x4B, 0x08, // cmp [ebx+8],ecx  (cmp mem,reg32)
+        0x83, 0x7B, 0x0C, 0x55, // cmp dword [ebx+12],0x55 (cmp mem,imm32)
+        0xF7, 0x43, 0x10, 0x0F, 0x00, 0x00, 0x00, // test dword [ebx+16],0xF (test mem,imm32)
+        0x64, 0x8B, 0x0B, // mov ecx, fs:[ebx]    (segment override load)
+        0x65, 0x89, 0x4B, 0x14, // mov gs:[ebx+0x14],ecx (segment override store)
+        0xEB, 0xDC, // jmp head
+    };
+
+    [Fact]
+    public void InlineBodies_MemoryShapes_MatchSpecAndEmit()
+    {
+        // E3-1: every covered memory shape (loads/stores at 8 and 32, both
+        // Cmp directions, Cmp/Test against immediates, FS/GS overrides)
+        // served through the inline twin must match the spec handlers and
+        // the plain emit path exactly, and the inline path must actually be
+        // exercised.
+        XboxCpu spec = Create(EmitMode.Spec, MemoryShapes);
+        XboxCpu emit = Create(EmitMode.Emit, MemoryShapes);
+        XboxCpu inline = Create(EmitMode.EmitInline, MemoryShapes);
+        Preset(spec);
+        Preset(emit);
+        Preset(inline);
+        spec.Context.SetSegment(SegmentRegister.Fs, 0x20, 0x1000);
+        spec.Context.SetSegment(SegmentRegister.Gs, 0x28, 0x3000);
+        emit.Context.SetSegment(SegmentRegister.Fs, 0x20, 0x1000);
+        emit.Context.SetSegment(SegmentRegister.Gs, 0x28, 0x3000);
+        inline.Context.SetSegment(SegmentRegister.Fs, 0x20, 0x1000);
+        inline.Context.SetSegment(SegmentRegister.Gs, 0x28, 0x3000);
+
+        Assert.Equal(40960, spec.Execute(40960));
+        Assert.Equal(40960, emit.Execute(40960));
+        Assert.Equal(40960, inline.Execute(40960));
+        AssertSameState(spec, inline);
+        AssertSameState(emit, inline);
+        AssertSameCounters(spec, inline);
+        AssertSameCounters(emit, inline);
+
+        DecodedBlockCache stats = inline.SpecStatistics!;
+        Assert.True(stats.EmitRan > 0);
+        Assert.True(stats.EmitInlineMembers > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_16BitAddressing_MatchesSpec()
+    {
+        // 67-prefixed load: address = BX+SI (16-bit, wrapped) + DS base.
+        // EBX=0x2000 makes BX=0x2000 and ESI=0 makes SI=0, so the load
+        // reads 0x2000 through the same shared ComputeAddress path. The
+        // load sits at member 1 so a warmed tail serves it.
+        byte[] code = { 0x90, 0x67, 0x8B, 0x00, 0x90, 0xEB, 0xF9 }; // nop; mov eax,[bx+si]; nop; jmp head
+
+        XboxCpu spec = Create(EmitMode.Spec, code);
+        XboxCpu inline = Create(EmitMode.EmitInline, code);
+        Preset(spec);
+        Preset(inline);
+        spec.Context.Esi = 0;
+        inline.Context.Esi = 0;
+
+        Assert.Equal(20480, spec.Execute(20480));
+        Assert.Equal(20480, inline.Execute(20480));
+        AssertSameState(spec, inline);
+        AssertSameCounters(spec, inline);
+        Assert.True(inline.SpecStatistics!.EmitInlineMembers > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_WatchedStore_MatchesSpec_WatchHitsExact()
+    {
+        // A watched physical range steers RawWrite onto the legacy bus path
+        // (CheckWatch + WatchHit). The inline body must take the same path
+        // with identical hit counts and values.
+        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4 };
+
+        XboxCpu spec = Create(EmitMode.Spec, code);
+        XboxCpu inline = Create(EmitMode.EmitInline, code);
+        spec.Context.Ecx = 0x2000;
+        inline.Context.Ecx = 0x2000;
+        spec.Bus().WatchStart = 0x2000;
+        spec.Bus().WatchEnd = 0x2010;
+        inline.Bus().WatchStart = 0x2000;
+        inline.Bus().WatchEnd = 0x2010;
+        int specHits = 0;
+        int inlineHits = 0;
+        uint lastSpecValue = 0;
+        uint lastInlineValue = 0;
+        spec.Bus().WatchHit += (_, _, value) => { specHits++; lastSpecValue = value; };
+        inline.Bus().WatchHit += (_, _, value) => { inlineHits++; lastInlineValue = value; };
+
+        Assert.Equal(spec.Execute(6400), inline.Execute(6400));
+        AssertSameState(spec, inline);
+        AssertSameCounters(spec, inline);
+        Assert.True(specHits > 0);
+        Assert.Equal(specHits, inlineHits);
+        Assert.Equal(lastSpecValue, lastInlineValue);
+        Assert.True(inline.SpecStatistics!.EmitRan > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_LoadFaultMidTail_MatchesSpec_PreciseCr2()
+    {
+        // Same shape as the emit fault test but with a load that has an
+        // inline twin: phase A warms the block against a mapped page; phase
+        // B steers ECX at an unmapped VPN so the warmed tail faults mid-tail
+        // through the inline body's translate call.
+        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x8B, 0x01, 0x90, 0x90, 0xEB, 0xF4 };
+
+        XboxCpu spec = CreatePaged(EmitMode.Spec, code);
+        XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
+        spec.Context.Ecx = 0x2000;
+        inline.Context.Ecx = 0x2000;
+
+        Assert.Equal(spec.Execute(6400), inline.Execute(6400));
+        AssertSameState(spec, inline);
+
+        spec.Context.Ecx = 0x9000;
+        inline.Context.Ecx = 0x9000;
+        spec.Context.Eip = 0x1000;
+        inline.Context.Eip = 0x1000;
+
+        Assert.Equal(spec.Execute(16), inline.Execute(16));
+        AssertSameState(spec, inline);
+        AssertSameCounters(spec, inline);
+        Assert.Equal(14, inline.LastFaultVector);
+        Assert.Equal(0x1006u, inline.LastFaultEip);
+        Assert.Equal(0x9000u, inline.Context.Cr2);
+        Assert.Equal(1u, inline.Context.Eax);
+        Assert.True(inline.SpecStatistics!.EmitRan > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_StoreCrossPage_MatchesSpec_PreciseCr2()
+    {
+        // mov [ecx],ebx sits at member 2 so a warmed tail serves it. Phase A
+        // stores inside VPN2 (mapped); phase B steers ECX to the last two
+        // bytes of VPN2 so the store crosses into unmapped VPN3 and faults
+        // on the third byte through the inline body's per-byte translate
+        // loop, with the store's start EIP.
+        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4 };
+
+        XboxCpu spec = CreatePaged(EmitMode.Spec, code);
+        XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
+        spec.Context.Ecx = 0x2000;
+        inline.Context.Ecx = 0x2000;
+
+        Assert.Equal(spec.Execute(6400), inline.Execute(6400));
+        AssertSameState(spec, inline);
+
+        spec.Context.Ecx = 0x2FFE;
+        inline.Context.Ecx = 0x2FFE;
+        spec.Context.Eip = 0x1000;
+        inline.Context.Eip = 0x1000;
+
+        Assert.Equal(spec.Execute(16), inline.Execute(16));
+        AssertSameState(spec, inline);
+        AssertSameCounters(spec, inline);
+        Assert.Equal(14, inline.LastFaultVector);
+        Assert.Equal(0x1006u, inline.LastFaultEip);
+        Assert.Equal(0x3000u, inline.Context.Cr2);
+        Assert.True(inline.SpecStatistics!.EmitRan > 0);
+    }
+
+    [Fact]
+    public void InlineBodies_GatesSkipInlineEmit()
+    {
+        XboxCpu verified = Create(EmitMode.EmitInline, Chain);
+        Preset(verified);
+        verified.BlockVerify = true;
+        XboxCpu spec = Create(EmitMode.Spec, Chain);
+        Preset(spec);
+
+        Assert.Equal(spec.Execute(32), verified.Execute(32));
+        AssertSameState(spec, verified);
+        Assert.Equal(0u, verified.SpecStatistics!.EmitRan);
+
+        XboxCpu observed = Create(EmitMode.EmitInline, Chain);
+        Preset(observed);
+        observed.HotspotObserver = new HotspotProfiler();
+        XboxCpu specObserved = Create(EmitMode.Spec, Chain);
+        Preset(specObserved);
+        specObserved.HotspotObserver = new HotspotProfiler();
+
+        Assert.Equal(specObserved.Execute(32), observed.Execute(32));
+        AssertSameState(specObserved, observed);
+        Assert.Equal(0u, observed.SpecStatistics!.EmitRan);
+    }
+
+    [Fact]
+    public void InlineResolver_TwinsFollowHandlerCover()
+    {
+        // The twin resolver must return a body exactly when the shape has a
+        // handler and that handler has a twin; uncovered shapes and
+        // covered-but-twinless shapes return null.
+        Span<byte> bytes = stackalloc byte[15];
+        bytes.Clear();
+        bytes[0] = 0x8B;
+        bytes[1] = 0x03; // mov eax,[ebx]
+        DecodedInstruction load = Decoder.Decode(bytes, 32, 32);
+        Assert.NotNull(XboxCpu.ResolveInlineHandler(load));
+
+        bytes.Clear();
+        bytes[0] = 0x01;
+        bytes[1] = 0xD8; // add eax,ebx (handler yes, twin no)
+        DecodedInstruction alu = Decoder.Decode(bytes, 32, 32);
+        Assert.NotNull(XboxCpu.ResolveSpec(alu));
+        Assert.Null(XboxCpu.ResolveInlineHandler(alu));
+
+        bytes.Clear();
+        bytes[0] = 0xF3;
+        bytes[1] = 0xAB; // rep stosd (no handler, no twin)
+        DecodedInstruction rep = Decoder.Decode(bytes, 32, 32);
+        Assert.Null(XboxCpu.ResolveSpec(rep));
+        Assert.Null(XboxCpu.ResolveInlineHandler(rep));
+    }
+
     private enum EmitMode
     {
         Off,
         Spec,
         Emit,
+        EmitInline,
     }
 
     private static XboxCpu Create(EmitMode mode, byte[] code)
@@ -265,6 +488,11 @@ public sealed class EmitTests
         if (mode == EmitMode.Emit)
         {
             cpu.EmitEnabled = true;
+        }
+
+        if (mode == EmitMode.EmitInline)
+        {
+            cpu.EmitInlineEnabled = true;
         }
 
         return cpu;
