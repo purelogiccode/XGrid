@@ -8,7 +8,8 @@ using Xunit;
 namespace XGrid.Cpu.Tests;
 
 /// <summary>
-/// Slice-1/slice-2 specialization tests (§139, §134 style): every covered
+/// Slice-1/slice-2 specialization tests (§139, §134 style, extended by
+/// slices 3-9): every covered
 /// shape at 8/16/32 against the interpreter, segment overrides, mem-shape
 /// fault precision, #UD termination, IRQ delivery at every member including an
 /// IF flip, Step/budget transparency, idle NoteAccess replay, the before-
@@ -116,6 +117,24 @@ public sealed class SpecExecutionTests
             ("push imm32; pop r32", new byte[] { 0x68, 0x78, 0x56, 0x34, 0x12, 0x58 }),
             ("push imm8; pop r32", new byte[] { 0x6A, 0x05, 0x58 }),
             ("nop; nop", new byte[] { 0x90, 0x90 }));
+    }
+
+    [Fact]
+    public void IncDecMem_Shapes_MatchInterpreter()
+    {
+        // Slice-9 family (§146): Inc/Dec with a memory destination through
+        // ComputeAddress + ReadMemory/WriteMemory. modrm 0x03 addresses
+        // [EBX] (Preset maps 0x2000); Preset sets CF so a CF-clobbering
+        // body fails the EFLAGS comparison. EIP advances only after the
+        // write completes, so a faulting shape keeps precise EIP exactly
+        // like the interpreter (covered by MemFault_PreciseEipVectorCr2).
+        RunShapes(
+            ("inc m8", new byte[] { 0xFE, 0x03 }),
+            ("inc m16", new byte[] { 0x66, 0xFF, 0x03 }),
+            ("inc m32", new byte[] { 0xFF, 0x03 }),
+            ("dec m8", new byte[] { 0xFE, 0x0B }),
+            ("dec m16", new byte[] { 0x66, 0xFF, 0x0B }),
+            ("dec m32", new byte[] { 0xFF, 0x0B }));
     }
 
     [Fact]
@@ -423,7 +442,10 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x10, 0xD8))); // adc: carry live
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb: carry live
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m32 (slice 9)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x0B))); // dec m32 (slice 9)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFE, 0x03))); // inc m8 (slice 9)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFE, 0x0B))); // dec m8 (slice 9)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp

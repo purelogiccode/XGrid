@@ -7999,3 +7999,44 @@ counters, discarded, rebuilt, re-run for real. New `Spec fallback`
 tail: Movq/Movntq, x87, Inc/Dec m32, Mulss (SSE), Jmp-nothing -
 control is fully specialized. Flag stays opt-in.
 
+## 146. JIT slice 9: Inc/Dec with memory behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. First item off the §145 tail:
+Inc/Dec m8/m16/m32 are the smallest safe family left (register handlers
++ `ComputeAddress` RMW; CF-preserving `AluOps.Inc/Dec` already in
+codebase; fault order identical by construction — `Eip += Length` only
+after `WriteMemory` completes, exactly like the interpreter's
+`Context.Eip = nextEip` at `XboxCpu.cs:919` which a faulting
+`ReadOperand`/`WriteOperand` never reaches).
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecIncDec` now takes the
+first `OperandKind` and covers (reg/mem × 8/16/32) — 12 handlers total;
+dispatch routes both `OperandKind.Register` and `OperandKind.Memory`
+(`second` is always `None`; anything else falls to null). Bodies mirror
+the slice-8 shift-mem pattern through the same
+`ComputeAddress`/`ReadMemory`/`WriteMemory` (invalidation rides §134;
+segment override rides the `SpecShape` key like every other mem shape).
+
+Tests: `IncDecMem_Shapes_MatchInterpreter` (6 shapes vs the
+interpreter through `Execute(16)` + whole-RAM equality; `Preset` sets
+CF so a CF-clobbering body fails EFLAGS; modrm `0x03/0x0B` address
+`[EBX]`); `Resolver_CoversOnlyTheInitialShapes` pins the four new
+NotNulls (`FF /0`, `FF /1`, `FE /0`, `FE /1`; `push m` stays null).
+Fail-pre-fix anchor: the resolver pins (a differential `RunShapes`
+passes on interpreter fallback, so the pins are the coverage proof).
+Suite **1348/1348**, format clean, zero warnings.
+
+Goldens (`D:\spec-soak\slice9`, full-solution build per the §145 lesson,
+`--gpu sw` spec legs): triangle spec r1 PASS 85.6 s —
+SHA `A1740DE0…` exact, `vec=0`, `verifyFailures=0`, draws=2706 anchor
+exact; fallbacks 131M→129M with Inc/Dec gone from the top-12 tail
+(remaining: Cli/Sti, x87 Fld/Fstp/Fmul/Fadd, Mulss/Cvttss2Si SSE).
+Menu spec r1 PASS 197.0 s — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact; fallbacks
+124M→120.8M with Inc/Dec gone from the top-12 tail (remaining top:
+Cli/Sti, x87 Fld/Fstp/Fmul/Fadd/Fistp/Fild/Fst, Movq/Movntq,
+Fadd-mem). Next tail: MMX Movq/Movntq (flag-free, no FPU-stack
+interaction — smallest safe slice 10) then x87 as its own slice.
+Flag stays opt-in — specialization remains saturated per §145, and the
+memory path still needs its daylight design.
+
