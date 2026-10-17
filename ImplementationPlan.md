@@ -3286,6 +3286,22 @@ gate PASS (`D:\\spec-soak\\slice21`: triangle spec 102.1 s + menu spec
 menu cache SHA exact = flag-off byte-identical; `--block-exec`
 cross-check SHA exact). Walls single-run only, no claim. Flag stays
 opt-in.
+**§162 DONE (2026-10-17, direct):** memory-path slice 2
+(Read/WriteMemoryBytes bulk path: MMU-off whole-span copy via new
+`PhysicalMemory.WriteSpan` + MMU-on page-chunked one-translate-per-page
+with per-chunk MMIO/watch/fault-exact fallbacks; Fxsave 512 B goes
+512 translates → 1–2) — 5 new tests; suite 1372/1372 at that point.
+**§163 DONE (2026-10-17, direct):** memory-path slice 3 (4-entry
+direct-mapped data-translate cache in `TranslateLinear` via new
+`Mmu.TranslateDataFast`; WP fault replayed exact; flush/INVLPG/
+PTE-store invalidation; page-table tracking now always-on so the
+signal survives `--no-decode-cache`; hit-implies-SoftTLB-hit coherence
+proof; WP test fail-pre-fix proven) — 3 new tests; suite 1375/1375,
+format clean, joint 4-leg golden gate PASS (`D:\\spec-soak\\slice22`:
+triangle spec 98.9 s + menu spec 187.9 s SHAs exact, `vec=0`,
+`verifyFailures=0`, anchors exact; menu cache 207.4 s SHA exact =
+flag-off byte-identical; `--block-exec` SHA exact). Walls single-run
+only, no claim; fresh median-of-3 next. Flag stays opt-in.
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,

@@ -8559,3 +8559,82 @@ gone from the tail; dispatches 235.6M→231.3M. New tail: Cli/Sti
 stays interpreter), Push-m, Mul-m, Leave, Neg, Fnstsw, Fiadd. Flag
 stays opt-in.
 
+## 162. Memory-path slice 2: Read/WriteMemoryBytes bulk path (2026-10-17)
+
+Direct development, second build from the §159 recipe (Bytes bulk path;
+RMW compute-once stays OUT — the hot spec handlers already hoist
+`uint address` once per handler, and the interpreter generic path keeps
+its read/write fault-priority semantics). All callers move ≤512 B
+(Fxsave/Fxrstor 512, Fnsave/Frstor 94/108, Fldenv/Fnstenv 14/28), so
+every op touches ≤2 pages.
+
+- **MMU-off:** whole-range RAM + no-watch → one span copy (writes: per-
+  page `NoteStorePhysical` + new `PhysicalMemory.WriteSpan`, which runs
+  the same present-dirty choke the N per-byte `Write8` calls hit — the
+  choke is range-based so one call is exact); otherwise the legacy
+  per-byte bus loop (MMIO Region traffic + unmapped counters preserved).
+- **MMU-on (FastWideAllowed-gated, same observers-null gate as slice
+  1):** page-bounded chunks, one translate per chunk + span copy for RAM
+  chunks, exact per-byte legacy loop for non-RAM-physical chunks.
+  Fault behavior identical: a chunk-start translate can only fault for
+  its own page, so the first-failing linear matches the legacy
+  first-failing byte, and already-copied chunks match the legacy partial
+  fill (writes keep translate→store→drop order per chunk). Watch
+  overlap falls back per chunk (per-byte WatchHit traffic preserved).
+- **Fxsave 512 B: 512 translates + 512 bus dispatches → 1–2 translates
+  + span copies** on the RAM fast path.
+
+Tests: 5 new in `MemoryFastPathTests` (Fxsave/Fxrstor round trip paging
+on incl. image-magic check, page-crossing two-chunk exactness, MMIO
+fallback with 512×size-1 device traffic each way, write-watch 512
+per-byte hits, observer gate pin at 512 singular translates). Suite
+**1372/1372** at that point, format clean.
+
+## 163. Memory-path slice 3: 4-entry data-translate cache (2026-10-17)
+
+Direct development, third build from the §159 recipe (option 1,
+TLB-hit inline — estreito: a 4-entry direct-mapped VPN→(4 KB-slice
+base + PTE-writable) memo inside `TranslateLinear`, not a second TLB).
+A hit skips the two Translate call layers + SoftTLB lookup and replays
+the SoftTLB-hit branch exactly (WP-gated writability fault with the
+same P=1/W=1 data error code 3); a miss runs the full core with
+identical side effects via the new `Mmu.TranslateDataFast` wrapper
+(same `TranslateCore`, verdict threaded out, observer notes off) and
+populates one slot. Fetch (`isInstruction`) never consults it; the
+idle-skip access note fires once per call on both paths; only the
+Mmu-observer TLB notes are skipped, covered by the shared
+`FastWideAllowed` gate (profiler attached → legacy tallies exact).
+
+- **Coherence proof (no new discipline needed):** a cache hit implies
+  the SoftTLB would hit too — any access evicting the SoftTLB entry
+  also evicts this strictly-coarser slot (SoftTLB index vpn&255,
+  mine vpn&3; collisions in the former always collide in the
+  latter). So the memo can never return anything the SoftTLB walk
+  path wouldn't. Invalidation still mirrors every SoftTLB flush
+  (`OnMmuFlush`/`OnMmuFlushPage`) plus the page-table-page store hook
+  as belt-and-braces.
+- **Hole found and closed en route:** `Mmu.PageTableTrackingEnabled`
+  defaulted off and `--no-decode-cache` turned it off, which would
+  blind the store hook. Tracking is now enabled at `XboxCpu`
+  construction and the decode setter no longer disables it (host-side
+  only, no guest effect; no tests depended on the toggle).
+
+Tests: 3 new (guest-PTE-store + INVLPG remap observes the new mapping;
+WP fault on the cached hit traps to vector 14 with Cr2 + error code 3
+— fail-pre-fix proven by corrupting the verdict to writable=true;
+observer gate pin at 2 singular notes for two cold stores). Suite
+**1375/1375**, format clean.
+
+Joint 4-leg golden gate (`D:\\spec-soak\\slice22`, full-solution build,
+`--gpu sw`, undisturbed except light file reads): triangle spec r1
+PASS 98.9 s — SHA `A1740DE0…` exact, `vec=0`, `verifyFailures=0`,
+draws=2706; menu spec r1 PASS 187.9 s — SHA `4EF1FBF6…` exact,
+`vec=0`, `verifyFailures=0`, draws=33632 skipped=1402; menu cache r1
+PASS 207.4 s SHA exact (flag-off byte-identical — both slices are
+mode-independent and bit-exact); triangle `--block-exec` cross-check
+PASS (SHA `A1740DE0…` exact, `vec=0`, `verifyFailures=0`,
+draws=2706). Walls are single-run gate checks only (directionally
+faster than slice21's 102.1/203.8/230.9, but host noise dominates
+single runs — the §160 median stands; fresh median-of-3 next). Flag
+stays opt-in.
+
