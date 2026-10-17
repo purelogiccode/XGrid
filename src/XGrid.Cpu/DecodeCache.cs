@@ -14,8 +14,35 @@ namespace XGrid.Cpu;
 /// </summary>
 public readonly struct DecodeCacheEntry
 {
-    /// <summary>Gets the decoded instruction (may be an invalid marker).</summary>
-    public DecodedInstruction Instruction { get; init; }
+    /// <summary>
+    /// The decoded instruction (may be an invalid marker). A public field
+    /// (not a property) so emitted runners can address the member instruction
+    /// in place with ldelema+ldflda instead of copying the entry.
+    /// </summary>
+#pragma warning disable CA1051 // Addressable field required for emitted ldflda; the struct stays readonly.
+    public readonly DecodedInstruction Instruction;
+#pragma warning restore CA1051
+
+    /// <summary>Initializes a cache entry.</summary>
+    public DecodeCacheEntry(
+        DecodedInstruction instruction,
+        uint physicalBase,
+        int operandSize,
+        int addressSize,
+        ulong source0,
+        uint source8,
+        ushort source12,
+        byte source14)
+    {
+        Instruction = instruction;
+        PhysicalBase = physicalBase;
+        OperandSize = operandSize;
+        AddressSize = addressSize;
+        Source0 = source0;
+        Source8 = source8;
+        Source12 = source12;
+        Source14 = source14;
+    }
 
     /// <summary>Gets the physical address of fetch-window byte 0 at fill time.</summary>
     public uint PhysicalBase { get; init; }
@@ -197,17 +224,15 @@ public sealed class DecodeCache
             MarkActive(physicalPage);
         }
 
-        _entries[fetchLinear] = new DecodeCacheEntry
-        {
-            Instruction = instruction,
-            PhysicalBase = physicalBase,
-            OperandSize = operandSize,
-            AddressSize = addressSize,
-            Source0 = BinaryPrimitives.ReadUInt64LittleEndian(sourceWindow),
-            Source8 = BinaryPrimitives.ReadUInt32LittleEndian(sourceWindow.Slice(8, 4)),
-            Source12 = BinaryPrimitives.ReadUInt16LittleEndian(sourceWindow.Slice(12, 2)),
-            Source14 = sourceWindow[14],
-        };
+        _entries[fetchLinear] = new DecodeCacheEntry(
+            instruction,
+            physicalBase,
+            operandSize,
+            addressSize,
+            BinaryPrimitives.ReadUInt64LittleEndian(sourceWindow),
+            BinaryPrimitives.ReadUInt32LittleEndian(sourceWindow.Slice(8, 4)),
+            BinaryPrimitives.ReadUInt16LittleEndian(sourceWindow.Slice(12, 2)),
+            sourceWindow[14]);
         Fills++;
         if (_entries.Count > PeakCount)
         {

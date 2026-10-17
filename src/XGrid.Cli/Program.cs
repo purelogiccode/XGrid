@@ -97,6 +97,7 @@ internal static class Program
         bool blockExec = false;
         bool blockVerify = false;
         bool specExec = false;
+        bool emit = false;
         string gpuBackend = "sw";
         string? hotspotPath = null;
         List<string> scans = new();
@@ -252,6 +253,9 @@ internal static class Program
                 case "--spec-exec":
                     specExec = true;
                     break;
+                case "--emit":
+                    emit = true;
+                    break;
                 case "--decode-cache":
                     decodeCache = true;
                     break;
@@ -378,7 +382,7 @@ internal static class Program
                     "Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
             }
 
-            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec)
+            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec || emit)
             {
                 machine.Cpu.DecodeCacheEnabled = true;
                 Console.WriteLine(
@@ -391,7 +395,7 @@ internal static class Program
                 }
             }
 
-            if (blockExec || blockVerify || specExec)
+            if (blockExec || blockVerify || specExec || emit)
             {
                 machine.Cpu.BlockExecutionEnabled = true;
                 machine.Cpu.BlockVerify = blockVerify;
@@ -403,11 +407,18 @@ internal static class Program
                 Console.WriteLine($"Block execution=on (verify={blockVerify}; per-instruction boundaries retained)");
             }
 
-            if (specExec)
+            if (specExec || emit)
             {
                 machine.Cpu.SpecExecutionEnabled = true;
                 Console.WriteLine(
                     "Spec execution=on (pre-specialized shapes; implies block-exec; per-instruction boundaries retained)");
+            }
+
+            if (emit)
+            {
+                machine.Cpu.EmitEnabled = true;
+                Console.WriteLine(
+                    "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
             }
 
             if (loadStatePath is not null)
@@ -1523,6 +1534,15 @@ internal static class Program
                         $"Spec fallback {shape.Mnemonic}/{shape.Op1Kind}/{shape.Op2Kind}/{shape.Size}x{shape.Condition}/{shape.SegmentOverride}={count}");
                 }
             }
+        }
+
+        // §171: printed only while emission is enabled so every other
+        // mode's logs stay byte-identical to their baselines.
+        if (machine.Cpu.EmitEnabled)
+        {
+            DecodedBlockCache? emit = machine.Cpu.SpecStatistics;
+            Console.WriteLine(
+                $"Emit stats builds={emit?.EmitBuilds ?? 0} hits={emit?.EmitHits ?? 0} ran={emit?.EmitRan ?? 0}");
         }
 
         if (machine.Cpu.DecodeCacheEnabled)

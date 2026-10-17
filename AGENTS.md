@@ -491,7 +491,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   (terminal-finish turn detection, state-save retry on Windows file locks)
   and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1350 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: 1410 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
@@ -548,6 +548,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    Shape slice 7 (§170): Adc/Sbb all forms + FPU-control/Emms/Fwait
    (fallbacks −52%/−28%; stale carry-live label retired). 4-leg gate
    PASS (`D:\spec-soak\slice26`). **1392/1392 tests**.
+
+    Emitter E1 (§171, morning session): first DynamicMethod slice behind
+    opt-in `--emit` (per-block tail runners, direct static calls, all
+    boundaries retained, invalidation-gated). 8-leg golden gate PASS
+    (`D:\spec-soak\slice27`): SHAs exact both titles, `vec=0`, anchors
+    exact, interrupts identical 1883/3153. VERDICT wall-negative: emit
+    1.93x/6.50x slower than spec (triangle/menu) -- per-runner
+    construction+first-JIT (~0.7 ms) cannot amortize over short churned
+    tails; §138 negative confirmed at title scale. Flag stays opt-in
+    (zero impact). Serve/exit tallies bit-identical incl. a 7-position
+    delivery sweep. ktest smoke PASS 7/7 (01:45). **1410/1410 tests**,
+    format clean. E2 scoped (threshold-tiered emission) -- next.
+
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
@@ -615,8 +628,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos
    (rep bulk landed §165 but shapes still interpreter-dispatched),
    Cli/Sti (untouchable) — all <100k or deliberate
-   outs; shape work is done except daylight items. DynamicMethod stays
-   rejected unless new numbers say otherwise. NXDK toolchain
+   outs; shape work is done except daylight items. DynamicMethod tried
+   in §171 (E1: wall-negative, construction-dominated) and stays opt-in;
+   E2 (threshold-tiered emission) scoped next. NXDK toolchain
    (operator/host) still the mesh blocker.
 6. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues

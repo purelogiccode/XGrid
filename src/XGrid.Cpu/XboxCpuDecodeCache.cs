@@ -71,6 +71,38 @@ public sealed partial class XboxCpu
         }
     }
 
+    /// <summary>
+    /// Gets or sets emitted tail service (§171, first DynamicMethod slice).
+    /// Default off. Enabling implies <see cref="SpecExecutionEnabled"/> (and
+    /// hence block execution and the decode cache): fully-specialized block
+    /// tails run through a per-block emitted runner with direct static calls
+    /// instead of per-member cursor service plus delegate indirection. Every
+    /// original boundary is retained per member (generation/EIP checks, TSC,
+    /// IRQ poll, precise faults); the runner is skipped whenever idle-skip,
+    /// hotspot observation, or either verify mode is active. Host-side
+    /// configuration: untouched by <see cref="Reset"/> and snapshot save/load.
+    /// </summary>
+    public bool EmitEnabled
+    {
+        get => _emitEnabled;
+        set
+        {
+            if (value)
+            {
+                SpecExecutionEnabled = true;
+            }
+
+            _emitEnabled = value;
+        }
+    }
+
+    /// <summary>Gets the live block invalidation generation for emitted runners.</summary>
+    internal ulong BlockGeneration => _blocks?.Generation ?? 0;
+
+    private bool _emitEnabled;
+
+    private readonly int[] _emitProgress = new int[BlockEmitter.ProgressLength];
+
     /// <summary>Gets host-only specialization statistics, or null when block execution is disabled.</summary>
     public DecodedBlockCache? SpecStatistics => _blocks;
 
@@ -427,9 +459,118 @@ public sealed partial class XboxCpu
             idle?.Observe(instruction, eipBefore, Context.Eip);
             _hotspot?.Observe(instruction, eipBefore, Context.Eip);
             ran++;
+
+            if (RunEmitTail(budget - ran, ref ran))
+            {
+                return ran;
+            }
         }
 
         return ran;
+    }
+
+    /// <summary>
+    /// Emitted-tail service (§171): after one member ran through the member
+    /// path, serves the rest of the current fully-specialized block through
+    /// its cached DynamicMethod runner. Returns true when the caller must
+    /// return immediately (a pending IRQ or a fault consumed its budget unit
+    /// and ran the transfer path, mirroring the member path exactly).
+    /// </summary>
+    /// <param name="remaining">Budget left in this <c>RunSpecBlock</c> call.</param>
+    /// <param name="ran">Members served so far (updated in place).</param>
+    /// <returns>True when the transfer path ran and the caller must return.</returns>
+    private bool RunEmitTail(int remaining, ref int ran)
+    {
+        if (!_emitEnabled || remaining <= 0 || _idle is not null || _hotspot is not null
+            || DecodeCacheVerify || BlockVerify)
+        {
+            return false;
+        }
+
+        DecodedBlockCache? blocks = _blocks;
+        DecodeCache? cache = _decodeCache;
+        if (blocks is null || cache is null || !blocks.SpecEnabled)
+        {
+            return false;
+        }
+
+        if (!blocks.TryBeginTail(out DecodeCacheEntry[]? entries, out SpecHandler?[]? handlers,
+                out uint[]? linears, out uint head))
+        {
+            return false;
+        }
+
+        EmitTailRunner? runner = blocks.GetEmitRunner(
+            head,
+            Context.DefaultOperandSize,
+            Context.DefaultAddressSize,
+            entries,
+            handlers,
+            linears);
+        if (runner is null)
+        {
+            return false;
+        }
+
+        _emitProgress[BlockEmitter.ProgressServed] = 0;
+        _emitProgress[BlockEmitter.ProgressPending] = -1;
+        _emitProgress[BlockEmitter.ProgressRedirect] = 0;
+        ulong generation = blocks.Generation;
+        try
+        {
+            runner(this, entries, _emitProgress, remaining, generation);
+        }
+        catch (PageFaultSignal fault)
+        {
+            int faultServed = _emitProgress[BlockEmitter.ProgressServed];
+            blocks.NoteEmittedRan(faultServed, cache);
+            blocks.NoteEmittedExit(cache, countBody: true);
+            ran += faultServed;
+            blocks.EndBoundary();
+            Context.Cr2 = fault.LinearAddress;
+            LastFaultVector = 14;
+            LastFaultEip = Context.Eip;
+            LastFaultErrorCode = fault.ErrorCode;
+            if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
+            {
+                throw new UnhandledGuestException(14, Context.Eip);
+            }
+
+            ran++;
+            return true;
+        }
+
+        int served = _emitProgress[BlockEmitter.ProgressServed];
+        blocks.NoteEmittedRan(served, cache);
+        ran += served;
+        if (_emitProgress[BlockEmitter.ProgressRedirect] != 0)
+        {
+            blocks.NoteRedirect();
+        }
+
+        int pending = _emitProgress[BlockEmitter.ProgressPending];
+        if (pending >= 0)
+        {
+            // One acknowledge was consumed by the runner; run the transfer
+            // exactly as the member path (a failed transfer falls through to
+            // the normal path, which re-serves the member: the exit is only
+            // accounted on success, so a failed transfer never skips the
+            // member nor double-counts it).
+            Context.Halted = false;
+            if (TryTransferToInterrupt(pending, Context.Eip, false, 0))
+            {
+                // The in-flight member counts exactly as the member path's
+                // TryNext serve without the decode hit (the poll precedes it),
+                // so the cursor state at the transfer matches too.
+                blocks.NoteEmittedExit(cache, countBody: false);
+                InterruptCount++;
+                blocks.EndBoundary();
+                ran++;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
