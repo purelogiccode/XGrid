@@ -321,13 +321,15 @@ public sealed class DecodedBlockCache
     }
 
     /// <summary>
-    /// Conservative slice-4 formation (extended by slices 10-12): only
+    /// Conservative slice-4 formation (extended by slices 10-13): only
     /// common straight-line integer/data operations may continue, now
     /// including the MMX 64-bit moves (pure data through the x87-aliased
-    /// file), the Prefetch/Fence hints (interpreter nops) and scalar SSE
-    /// arithmetic/converts (single-helper verbatim bodies). Every branch,
-    /// trap, system/mode, string/REP, I/O and unlisted instruction ends the
-    /// block (including future mnemonics).
+    /// file), the Prefetch/Fence hints (interpreter nops), scalar SSE
+    /// arithmetic/converts (single-helper verbatim bodies) and x87
+    /// loads/stores/integer moves plus ST(0) add/multiply (read-before-
+    /// mutate, EIP-precise). Every branch, trap, system/mode, string/REP,
+    /// I/O and unlisted instruction ends the block (including future
+    /// mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
     public static bool Terminates(in DecodedInstruction instruction)
@@ -359,7 +361,9 @@ public sealed class DecodedBlockCache
             or Mnemonic.Shld or Mnemonic.Shrd or Mnemonic.Cmpxchg8B or Mnemonic.Movq or Mnemonic.Movntq
             or Mnemonic.Prefetch or Mnemonic.Sfence or Mnemonic.Lfence or Mnemonic.Mfence
             or Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
-            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si);
+            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si
+            or Mnemonic.Fld or Mnemonic.Fst or Mnemonic.Fstp or Mnemonic.Fild or Mnemonic.Fistp
+            or Mnemonic.Fadd or Mnemonic.Fmul);
     }
 
     private sealed record Block(

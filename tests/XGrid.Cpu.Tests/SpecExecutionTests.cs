@@ -120,6 +120,39 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void FpuMem_Shapes_MatchInterpreter()
+    {
+        // Slice-13 family (§151): x87 loads/stores/integer moves plus
+        // ST(0) add/multiply. Stack ops run behind an `fld1` prefix so
+        // they execute against a real ST0 (both sides share the empty
+        // start, so the differential is exact either way); modrm 0x03
+        // addresses [EBX] (Preset maps 0x2000). Fstp/Fst never touch
+        // EFLAGS; Fistp's RoundingMode/IE live in the shared helper.
+        RunShapes(
+            ("fld m32", new byte[] { 0xD9, 0x03 }),
+            ("fld m64", new byte[] { 0xDD, 0x03 }),
+            ("fld m80", new byte[] { 0xDB, 0x2B }),
+            ("fld1; fst m32", new byte[] { 0xD9, 0xE8, 0xD9, 0x13 }),
+            ("fld1; fst m64", new byte[] { 0xD9, 0xE8, 0xDD, 0x13 }),
+            ("fld1; fstp m32", new byte[] { 0xD9, 0xE8, 0xD9, 0x1B }),
+            ("fld1; fstp m64", new byte[] { 0xD9, 0xE8, 0xDD, 0x1B }),
+            ("fld1; fstp m80", new byte[] { 0xD9, 0xE8, 0xDB, 0x3B }),
+            ("fld1; fstp st0", new byte[] { 0xD9, 0xE8, 0xDD, 0xD8 }),
+            ("fild m16", new byte[] { 0xDF, 0x03 }),
+            ("fild m32", new byte[] { 0xDB, 0x03 }),
+            ("fild m64", new byte[] { 0xDF, 0x2B }),
+            ("fld1; fistp m16", new byte[] { 0xD9, 0xE8, 0xDF, 0x1B }),
+            ("fld1; fistp m32", new byte[] { 0xD9, 0xE8, 0xDB, 0x1B }),
+            ("fld1; fistp m64", new byte[] { 0xD9, 0xE8, 0xDF, 0x3B }),
+            ("fld1; fadd m32", new byte[] { 0xD9, 0xE8, 0xD8, 0x03 }),
+            ("fld1; fadd m64", new byte[] { 0xD9, 0xE8, 0xDC, 0x03 }),
+            ("fld1; fld1; fadd st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xC1 }),
+            ("fld1; fmul m32", new byte[] { 0xD9, 0xE8, 0xD8, 0x0B }),
+            ("fld1; fmul m64", new byte[] { 0xD9, 0xE8, 0xDC, 0x0B }),
+            ("fld1; fld1; fmul st0,st1", new byte[] { 0xD9, 0xE8, 0xD9, 0xE8, 0xD8, 0xC9 }));
+    }
+
+    [Fact]
     public void SseScalar_Shapes_MatchInterpreter()
     {
         // Slice-12 family (§149): scalar SSE arithmetic (one verbatim
@@ -520,6 +553,18 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x2D, 0x03))); // cvtss2si r32,m32 (slice 12)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x2C, 0x03))); // cvttss2si r32,m32 (slice 12)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xF3, 0xA4))); // rep movsb: real repeat keeps the interpreter
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0x03))); // fld m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0x03))); // fld m64 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDB, 0x2B))); // fld m80 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0x13))); // fst m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0x1B))); // fstp m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xD8))); // fstp st0 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDB, 0x03))); // fild m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDF, 0x2B))); // fild m64 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDB, 0x1B))); // fistp m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x03))); // fadd m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0x0B))); // fmul m32 (slice 13)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD8, 0xC1))); // fadd st0,st1 (slice 13)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp

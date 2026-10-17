@@ -183,6 +183,36 @@ public sealed partial class XboxCpu
                 // `ConvertFloatToInt32` helper (truncate flag baked per
                 // mnemonic exactly like the interpreter).
                 return ResolveSpecSseCvt(first, second, instruction.Mnemonic);
+            case Mnemonic.Fld:
+                // Slice 13: x87 load/store/integer-load/store + ST(0)
+                // arithmetic. All bodies below mirror their interpreter
+                // case verbatim (read before any FPU mutation, EIP only
+                // after completion); widths ride the operand Size exactly
+                // like `ReadFpuReal`/`WriteFpuReal`/`ReadFpuInteger`/
+                // `WriteFpuInteger`.
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFldMemHandler
+                    : null;
+            case Mnemonic.Fst:
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFstMemHandler
+                    : null;
+            case Mnemonic.Fstp:
+                return second == OperandKind.None
+                    ? SpecFstpHandler
+                    : null;
+            case Mnemonic.Fild:
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFildMemHandler
+                    : null;
+            case Mnemonic.Fistp:
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFistpMemHandler
+                    : null;
+            case Mnemonic.Fadd:
+                return ResolveSpecFpuAlu(Mnemonic.Fadd, first, second);
+            case Mnemonic.Fmul:
+                return ResolveSpecFpuAlu(Mnemonic.Fmul, first, second);
             default:
                 return null;
         }
@@ -689,6 +719,28 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// Resolves x87 ST(0) arithmetic (slice 13): Fadd/Fmul with a register
+    /// or memory source. One shared body per mnemonic mirrors the
+    /// interpreter's read-read-write sequence for every operand combo, so
+    /// both (reg,reg) and (reg,mem) resolve.
+    /// </summary>
+    private static SpecHandler? ResolveSpecFpuAlu(Mnemonic mnemonic, OperandKind first, OperandKind second)
+    {
+        if (first != OperandKind.Register
+            || (second != OperandKind.Register && second != OperandKind.Memory))
+        {
+            return null;
+        }
+
+        return mnemonic switch
+        {
+            Mnemonic.Fadd => SpecFaddHandler,
+            Mnemonic.Fmul => SpecFmulHandler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
     /// the existing cursor completion ends the block; IRQ polling, fault and
@@ -888,6 +940,13 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecCvtss2SiRegMemHandler = SpecCvtss2SiRegMem;
     private static readonly SpecHandler SpecCvttss2SiRegRegHandler = SpecCvttss2SiRegReg;
     private static readonly SpecHandler SpecCvttss2SiRegMemHandler = SpecCvttss2SiRegMem;
+    private static readonly SpecHandler SpecFldMemHandler = SpecFldMem;
+    private static readonly SpecHandler SpecFstMemHandler = SpecFstMem;
+    private static readonly SpecHandler SpecFstpHandler = SpecFstp;
+    private static readonly SpecHandler SpecFildMemHandler = SpecFildMem;
+    private static readonly SpecHandler SpecFistpMemHandler = SpecFistpMem;
+    private static readonly SpecHandler SpecFaddHandler = SpecFadd;
+    private static readonly SpecHandler SpecFmulHandler = SpecFmul;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1662,6 +1721,70 @@ public sealed partial class XboxCpu
         float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
         int result = cpu.ConvertFloatToInt32(value, truncate);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 13: verbatim `Fld` case. The bus read faults before the
+        // push mutates TOP/tags, so EIP stays precise exactly like the
+        // interpreter; width rides Operand1.Size (32/64/80).
+        cpu.Fpu.Push(cpu.ReadFpuReal(instruction.Operand1));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFstMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 13: verbatim `Fst` case (store, no pop, no stack change).
+        cpu.WriteFpuReal(instruction.Operand1, cpu.Fpu.GetRegister(0));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFstp(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 13: verbatim `Fstp` case (store then pop). The pop runs
+        // only after the write succeeds, for both memory and ST(i) forms.
+        cpu.WriteFpuReal(instruction.Operand1, cpu.Fpu.GetRegister(0));
+        cpu.Fpu.Pop();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFildMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 13: verbatim `Fild` case (width 16/32/64 via Operand1.Size).
+        cpu.Fpu.Push(cpu.ReadFpuInteger(instruction.Operand1));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFistpMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 13: verbatim `Fistp` case. RoundingMode and the
+        // overflow-to-indefinite + IE flag live inside `WriteFpuInteger`,
+        // shared with the interpreter; the pop runs only after the write.
+        cpu.WriteFpuInteger(instruction.Operand1, cpu.Fpu.GetRegister(0));
+        cpu.Fpu.Pop();
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFadd(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fadd);
+    }
+
+    private static void SpecFmul(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecFpuArithmetic(cpu, in instruction, Mnemonic.Fmul);
+    }
+
+    private static void SpecFpuArithmetic(XboxCpu cpu, in DecodedInstruction instruction, Mnemonic mnemonic)
+    {
+        // Slice-13 shared ST(0) arithmetic: verbatim interpreter
+        // read-read-write sequence. Both sources are read into temps
+        // before the destination register is written, so a faulting
+        // memory source throws with no FPU mutation and precise EIP.
+        Fpu80 left = cpu.ReadFpuReal(instruction.Operand1);
+        Fpu80 right = cpu.ReadFpuReal(instruction.Operand2);
+        cpu.WriteFpuReal(instruction.Operand1, ApplyFpuArithmetic(mnemonic, left, right));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
