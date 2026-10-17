@@ -3377,6 +3377,12 @@ disturb nothing.
 in 02:12 — known deltas matching, park break at exactly 792,800,535
 steps (bit-reproducible 6th run in a row); RAM-direct + wide-access
 fusion disturb nothing.
+**ktest smoke re-runs (2026-10-17, night slices 2–7): PASS 7/7** after
+§§162–163 (02:12), §165 (01:45), §167 (01:37), §168 (01:37) and §170
+(01:34) — known deltas matching every time, park break
+bit-reproducible throughout; Bytes bulk, xlat cache, rep-string span,
+Cli/Sti continuation+handlers and Adc/Sbb+FPU-control disturb
+nothing.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
