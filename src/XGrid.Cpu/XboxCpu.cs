@@ -25,6 +25,25 @@ public sealed partial class XboxCpu
     private readonly AddressSpace? _ramSpace;
     private readonly uint _ramSize;
 
+    // Memory-path slice 3 (§162): 4-entry direct-mapped data-translate
+    // cache (linear VPN tag → physical 4 KB-slice base + PTE writable
+    // verdict). A hit skips the two Translate call layers + SoftTLB lookup;
+    // a miss populates one slot via TranslateDataFast (same core, same side
+    // effects, no observer notes — hence the FastWideAllowed gate, shared
+    // with slices 1–2: with any profiler attached the legacy path keeps
+    // idle/TLB tallies exact). Invalid entries carry tag uint.MaxValue (a
+    // 20-bit VPN never matches); _dataXlatArmed lets the store hook skip the
+    // page-table check when the cache is empty. Cleared on every mapping
+    // change (OnMmuFlush/OnMmuFlushPage) and on any CPU store to a tracked
+    // page-table page (same signal that full-flushes the decode cache —
+    // guest PTE rewrites must take effect; the MMU's own A/D-bit writes
+    // never remap, and device/DMA page-table writes are outside the
+    // SoftTLB's contract too). Fetch (isInstruction) never consults it.
+    private readonly uint[] _dataXlatTag = [uint.MaxValue, uint.MaxValue, uint.MaxValue, uint.MaxValue];
+    private readonly uint[] _dataXlatPhys = new uint[4];
+    private readonly bool[] _dataXlatWritable = new bool[4];
+    private bool _dataXlatArmed;
+
     /// <summary>Creates a CPU over the given memory and I/O buses.</summary>
     public XboxCpu(IMemoryBus memory, IIoBus? ioBus = null)
     {
@@ -41,6 +60,12 @@ public sealed partial class XboxCpu
         // full flush rides the same choke point (null-check no-op when off).
         Mmu.OnFlush = OnMmuFlush;
         Mmu.OnFlushPage = OnMmuFlushPage;
+
+        // Slice-3: the data-translate cache needs the page-table-page signal
+        // in every mode (including --no-decode-cache, whose setter leaves
+        // tracking on for this reason), so a guest PTE rewrite always
+        // invalidates cached translations. Tracking is host-side only.
+        Mmu.PageTableTrackingEnabled = true;
     }
 
     /// <summary>Gets the architectural state.</summary>
@@ -1240,6 +1265,45 @@ public sealed partial class XboxCpu
 
     private uint TranslateLinear(uint linearAddress, bool isWrite, bool isInstruction)
     {
+        // Slice-3 data-translate cache: direct-mapped on the VPN low bits.
+        // Hit replays the SoftTLB hit branch exactly (WP-gated writability
+        // fault with the same P=1/W=1 data error code); miss runs the full
+        // core with identical side effects and populates the slot. The
+        // idle-skip access note fires on both paths exactly once per call,
+        // like the legacy path; only the Mmu-observer TLB notes are skipped,
+        // which the FastWideAllowed gate covers.
+        if (!isInstruction && FastWideAllowed)
+        {
+            uint vpn = linearAddress >> 12;
+            int slot = (int)(vpn & 3u);
+            if (_dataXlatTag[slot] == vpn)
+            {
+                if (isWrite && !_dataXlatWritable[slot]
+                    && (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0)
+                {
+                    throw new PageFaultSignal(linearAddress, 3u);
+                }
+
+                uint hit = _dataXlatPhys[slot] + (linearAddress & 0xFFFu);
+                _idle?.NoteAccess(hit, isWrite, isInstruction);
+                return hit;
+            }
+
+            uint solved = Mmu.TranslateDataFast(linearAddress, isWrite, out bool fastFaulted,
+                out uint fastError, out uint pageBase, out bool pageWritable);
+            if (fastFaulted)
+            {
+                throw new PageFaultSignal(linearAddress, fastError);
+            }
+
+            _dataXlatTag[slot] = vpn;
+            _dataXlatPhys[slot] = pageBase;
+            _dataXlatWritable[slot] = pageWritable;
+            _dataXlatArmed = true;
+            _idle?.NoteAccess(solved, isWrite, isInstruction);
+            return solved;
+        }
+
         uint physical = Mmu.Translate(linearAddress, isWrite, isInstruction, out bool faulted, out uint errorCode);
         if (faulted)
         {
@@ -1248,6 +1312,20 @@ public sealed partial class XboxCpu
 
         _idle?.NoteAccess(physical, isWrite, isInstruction);
         return physical;
+    }
+
+    private void InvalidateDataXlat()
+    {
+        if (!_dataXlatArmed)
+        {
+            return;
+        }
+
+        _dataXlatTag[0] = uint.MaxValue;
+        _dataXlatTag[1] = uint.MaxValue;
+        _dataXlatTag[2] = uint.MaxValue;
+        _dataXlatTag[3] = uint.MaxValue;
+        _dataXlatArmed = false;
     }
 
     /// <summary>
@@ -2456,16 +2534,142 @@ public sealed partial class XboxCpu
 
     private void ReadMemoryBytes(uint address, Span<byte> destination)
     {
-        for (int i = 0; i < destination.Length; i++)
+        int length = destination.Length;
+        if (length == 0)
         {
-            destination[i] = Mmu.IsEnabled
-                ? Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false))
-                : Memory.Read8(address + (uint)i);
+            return;
+        }
+
+        // Slice-2 bulk path: Fxsave/Fxrstor move 512 B (512 translates +
+        // 512 bus dispatches in the legacy loop). RAM-only spans copy in
+        // page-bounded chunks with one translate per page; anything touching
+        // MMIO/unmapped falls back to the exact per-byte loop for that
+        // chunk. Fault behavior is identical: the chunk-start translate can
+        // only fault for its own page, so the first-failing linear matches
+        // the legacy first-failing byte, and already-copied chunks match the
+        // legacy partial fill. Gated on FastWideAllowed (translate/idle/TLB
+        // note counts change N→pages); the MMU-off shape needs no gate (no
+        // translates, no observer-visible difference).
+        PhysicalMemory? ram = _ramDirect;
+        if (!Mmu.IsEnabled)
+        {
+            if (ram is not null && (ulong)address + (ulong)length <= _ramSize)
+            {
+                ram.GetReadOnlySpan(address, length).CopyTo(destination);
+                return;
+            }
+
+            for (int i = 0; i < length; i++)
+            {
+                destination[i] = Memory.Read8(address + (uint)i);
+            }
+
+            return;
+        }
+
+        if (FastWideAllowed && ram is not null)
+        {
+            int offset = 0;
+            while (offset < length)
+            {
+                uint linear = address + (uint)offset;
+                int chunk = Math.Min(length - offset, (int)(0x1000u - (linear & 0xFFFu)));
+                uint physical = TranslateLinear(linear, isWrite: false, isInstruction: false);
+                if ((ulong)physical + (ulong)chunk <= _ramSize)
+                {
+                    ram.GetReadOnlySpan(physical, chunk).CopyTo(destination.Slice(offset, chunk));
+                }
+                else
+                {
+                    for (int i = 0; i < chunk; i++)
+                    {
+                        destination[offset + i] = Memory.Read8(TranslateLinear(linear + (uint)i, isWrite: false, isInstruction: false));
+                    }
+                }
+
+                offset += chunk;
+            }
+
+            return;
+        }
+
+        for (int i = 0; i < length; i++)
+        {
+            destination[i] = Memory.Read8(TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false));
         }
     }
 
     private void WriteMemoryBytes(uint address, ReadOnlySpan<byte> source)
     {
+        int length = source.Length;
+        if (length == 0)
+        {
+            return;
+        }
+
+        // Slice-2 mirror of the read bulk path. Per-chunk order matches the
+        // legacy loop (translate → store → page drop) so fault partial
+        // writes are identical; NoteStorePhysical per page-bounded chunk
+        // drops exactly the pages the legacy per-byte drops hit
+        // (idempotent), and WriteSpan runs the same present-dirty choke.
+        // Watch overlap falls back per chunk to preserve per-byte WatchHit
+        // traffic. Same gating as the read path.
+        PhysicalMemory? ram = _ramDirect;
+        if (!Mmu.IsEnabled)
+        {
+            if (ram is not null && (ulong)address + (ulong)length <= _ramSize && !IsWatched(address, (uint)length))
+            {
+                int offset = 0;
+                while (offset < length)
+                {
+                    uint chunkBase = address + (uint)offset;
+                    int chunk = Math.Min(length - offset, (int)(0x1000u - (chunkBase & 0xFFFu)));
+                    NoteStorePhysical(chunkBase, chunk * 8);
+                    ram.WriteSpan(chunkBase, source.Slice(offset, chunk));
+                    offset += chunk;
+                }
+
+                return;
+            }
+
+            for (int i = 0; i < length; i++)
+            {
+                NoteStorePhysical(address + (uint)i, 8);
+                Memory.Write8(address + (uint)i, source[i]);
+            }
+
+            return;
+        }
+
+        if (FastWideAllowed && ram is not null)
+        {
+            int offset = 0;
+            while (offset < length)
+            {
+                uint linear = address + (uint)offset;
+                int chunk = Math.Min(length - offset, (int)(0x1000u - (linear & 0xFFFu)));
+                uint physical = TranslateLinear(linear, isWrite: true, isInstruction: false);
+                if ((ulong)physical + (ulong)chunk <= _ramSize && !IsWatched(physical, (uint)chunk))
+                {
+                    NoteStorePhysical(physical, chunk * 8);
+                    ram.WriteSpan(physical, source.Slice(offset, chunk));
+                }
+                else
+                {
+                    for (int i = 0; i < chunk; i++)
+                    {
+                        uint phys = TranslateLinear(linear + (uint)i, isWrite: true, isInstruction: false);
+                        Memory.Write8(phys, source[offset + i]);
+                        NoteStorePhysical(phys, 8);
+                    }
+                }
+
+                offset += chunk;
+            }
+
+            return;
+        }
+
         for (int i = 0; i < source.Length; i++)
         {
             if (Mmu.IsEnabled)

@@ -96,6 +96,18 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
         NoteGuestWrite(address, 8);
     }
 
+    /// <summary>
+    /// Bulk byte write (memory-path slice 2, §162): span copy plus the single
+    /// present-dirty choke the N per-byte <see cref="Write8"/> calls would
+    /// hit. The choke is range-based so one call covers the whole span
+    /// exactly; callers still run the decode-cache page drop per page.
+    /// </summary>
+    public void WriteSpan(uint address, ReadOnlySpan<byte> source)
+    {
+        source.CopyTo(GetSpan(address, source.Length));
+        NoteGuestWrite(address, source.Length);
+    }
+
     /// <summary>Returns a writable span over RAM.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {

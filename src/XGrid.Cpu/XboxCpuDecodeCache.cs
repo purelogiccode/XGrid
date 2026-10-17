@@ -107,7 +107,9 @@ public sealed partial class XboxCpu
             {
                 BlockExecutionEnabled = false;
                 _decodeCache = null;
-                Mmu.PageTableTrackingEnabled = false;
+
+                // Slice-3: tracking stays on for the data-translate cache's
+                // page-table-page signal (host-side only, no guest effect).
             }
         }
     }
@@ -519,7 +521,7 @@ public sealed partial class XboxCpu
     private void NoteStorePhysical(uint physical, int sizeInBits)
     {
         DecodeCache? cache = _decodeCache;
-        if (cache is null)
+        if (cache is null && !_dataXlatArmed)
         {
             return;
         }
@@ -528,14 +530,21 @@ public sealed partial class XboxCpu
         uint lastPage = (physical + (uint)(sizeInBits / 8) - 1u) >> 12;
         if (Mmu.IsPageTablePage(firstPage) || (lastPage != firstPage && Mmu.IsPageTablePage(lastPage)))
         {
-            cache.Flush();
+            // Guest rewrote a page-table page: join the decode-cache full
+            // flush here. Strictly this is belt-and-braces: a cache hit
+            // implies the SoftTLB would hit too (any access evicting the
+            // SoftTLB entry also evicts this coarser slot), and every
+            // SoftTLB flush clears this cache — but the hook keeps the two
+            // disciplines aligned if either side ever changes.
+            cache?.Flush();
+            InvalidateDataXlat();
             return;
         }
 
-        cache.DropPhysicalPage(firstPage);
+        cache?.DropPhysicalPage(firstPage);
         if (lastPage != firstPage)
         {
-            cache.DropPhysicalPage(lastPage);
+            cache?.DropPhysicalPage(lastPage);
         }
     }
 
@@ -547,6 +556,7 @@ public sealed partial class XboxCpu
     private void OnMmuFlush()
     {
         _decodeCache?.Flush();
+        InvalidateDataXlat();
     }
 
     /// <summary>
@@ -556,5 +566,6 @@ public sealed partial class XboxCpu
     private void OnMmuFlushPage(uint virtualAddress)
     {
         _decodeCache?.Flush();
+        InvalidateDataXlat();
     }
 }

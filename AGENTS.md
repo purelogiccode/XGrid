@@ -516,6 +516,15 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    gated) — no new shapes, active every mode; 4-leg golden gate PASS
    (spec SHAs exact both titles, flag-off byte-identical,
    `--block-exec` exact). **1367/1367 tests**, format clean.
+   Then memory-path slices 2+3 (§§162–163, same night): Bytes bulk
+   path (page-chunked one-translate-per-page + span copy via new
+   `PhysicalMemory.WriteSpan`; Fxsave 512 B goes 512 translates →
+   1–2) + 4-entry data-translate cache in `TranslateLinear` (new
+   `Mmu.TranslateDataFast`; WP fault replayed exact; tracking
+   always-on). Joint 4-leg golden gate PASS (`D:\spec-soak\slice22`:
+   triangle spec 98.9 s + menu spec 187.9 s SHAs exact, menu cache
+   207.4 s byte-identical, `--block-exec` SHA exact; all single-run,
+   no claim). **1375/1375 tests**, format clean.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
@@ -574,8 +583,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    the menu fallback total 101.8M→34.1M (x87 fully absorbed on both
    titles); median-of-3 post-slices-13–20 stands at menu 1.072x /
    triangle 1.185x (§160). Remaining memory-path work per §159:
-   Bytes bulk path, RMW compute-once, then a fresh median-of-3 before
-   any default-flip talk. Remaining shape tail: Sbb/Adc (carry-live,
+   RMW compute-once (hot handlers already hoist; interpreter generic
+   path keeps fault-priority semantics — likely done by inspection),
+   then a fresh median-of-3 before any default-flip talk. Remaining shape tail: Sbb/Adc (carry-live,
    out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos
    (string, out), Cli/Sti (untouchable) — all <100k or deliberate
    outs; shape work is done except daylight items. DynamicMethod stays

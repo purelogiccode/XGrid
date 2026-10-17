@@ -186,6 +186,183 @@ public sealed class MemoryFastPathTests
         Assert.Equal(2, counter.SingularTranslates);
     }
 
+    [Fact]
+    public void BytesBulk_FxsaveFxrstor_RoundTrip_PagingOn()
+    {
+        XboxCpu cpu = CreatePaged(
+            0x0F, 0xAE, 0x03, // fxsave [ebx]
+            0x0F, 0xAE, 0x0B); // fxrstor [ebx]
+        cpu.Context.Fpu.SetRegister(0, Fpu80.One);
+        cpu.Context.WriteXmm128(0, 0x1122334455667788UL, 0x99AABBCCDDEEFF00UL);
+        cpu.Context.Mxcsr = 0x5F80;
+        cpu.Execute(1);
+
+        // The 512 B image landed via the bulk path: image magic intact.
+        Assert.Equal(0x0000FFBFu, cpu.Bus().Read32(0x2000 + 28));
+
+        cpu.Context.Fpu.Init();
+        cpu.Context.WriteXmm128(0, 0, 0);
+        cpu.Context.Mxcsr = 0x1F80;
+        cpu.Execute(1);
+
+        Assert.Equal(Fpu80.One, cpu.Context.Fpu.GetRegister(0));
+        Assert.Equal((0x1122334455667788UL, 0x99AABBCCDDEEFF00UL), cpu.Context.ReadXmm128(0));
+        Assert.Equal(0x5F80u, cpu.Context.Mxcsr);
+    }
+
+    [Fact]
+    public void BytesBulk_PageCross_MultiChunkExact()
+    {
+        // 512 B at 0x2F00 spans 0x2F00..0x30FF: two page chunks, both RAM.
+        XboxCpu cpu = CreatePaged(
+            0x0F, 0xAE, 0x03, // fxsave [ebx]
+            0x0F, 0xAE, 0x0B); // fxrstor [ebx]
+        cpu.Context.Ebx = 0x2F00;
+        cpu.Context.Fpu.SetRegister(0, Fpu80.One);
+        cpu.Context.WriteXmm128(3, 0xA5A5A5A5A5A5A5A5UL, 0x5A5A5A5A5A5A5A5AUL);
+        cpu.Execute(1);
+
+        Assert.Equal(0x0000FFBFu, cpu.Bus().Read32(0x2F00 + 28));
+
+        cpu.Context.Fpu.Init();
+        cpu.Context.WriteXmm128(3, 0, 0);
+        cpu.Execute(1);
+
+        Assert.Equal(Fpu80.One, cpu.Context.Fpu.GetRegister(0));
+        Assert.Equal((0xA5A5A5A5A5A5A5A5UL, 0x5A5A5A5A5A5A5A5AUL), cpu.Context.ReadXmm128(3));
+    }
+
+    [Fact]
+    public void BytesBulk_MmioPhysical_FallsBackWithIdenticalTraffic()
+    {
+        XboxCpu cpu = CreatePaged(
+            0x0F, 0xAE, 0x03, // fxsave [ebx]
+            0x0F, 0xAE, 0x0B); // fxrstor [ebx]
+        var device = new CountingMmioDevice();
+        cpu.Bus().AddRegion("test", 0xF0000000, 0x1000, device);
+        Map4K(cpu.Bus(), 0x2000, 0xF0000000);
+        cpu.Execute(2);
+
+        // Legacy shape: 512 single-byte device accesses each way.
+        Assert.Equal(512, device.Writes.Count);
+        Assert.Equal(512, device.Reads.Count);
+        for (int i = 0; i < 512; i++)
+        {
+            Assert.Equal(0xF0000000u + (uint)i, device.Writes[i].Address);
+            Assert.Equal(1, device.Writes[i].Size);
+            Assert.Equal(0xF0000000u + (uint)i, device.Reads[i].Address);
+            Assert.Equal(1, device.Reads[i].Size);
+        }
+    }
+
+    [Fact]
+    public void BytesBulk_WriteWatch_StillFiresPerByte()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xAE, 0x03); // fxsave [ebx]
+        cpu.Context.Ebx = 0x2000;
+        var hits = new List<(uint Address, int Size, uint Value)>();
+        cpu.Bus().WatchStart = 0x2000;
+        cpu.Bus().WatchEnd = 0x2200;
+        cpu.Bus().WatchHit += (address, size, value) => hits.Add((address, size, value));
+        cpu.Step();
+
+        Assert.Equal(512, hits.Count);
+        Assert.Equal(0x2000u, hits[0].Address);
+        Assert.Equal(0x21FFu, hits[511].Address);
+        Assert.All(hits, h => Assert.Equal(1, h.Size));
+    }
+
+    [Fact]
+    public void ObserverAttached_BytesKeepsPerByteTranslates()
+    {
+        // Gate pin: with a profiler attached the 512 B fxrstor must take the
+        // legacy per-byte path (512 singular data-translate notes on a cold
+        // TLB), so idle and TLB tallies never drift.
+        XboxCpu cpu = CreatePaged(0x0F, 0xAE, 0x0B); // fxrstor [ebx]
+        var counter = new TlbCounter();
+        cpu.HotspotObserver = counter;
+        cpu.Mmu.Flush();
+        cpu.Step();
+
+        Assert.Equal(512, counter.SingularTranslates);
+    }
+
+    [Fact]
+    public void DataXlat_GuestPteStorePlusInvlpg_ObservesNewMapping()
+    {
+        // Combined invalidation gate: a guest PTE rewrite through a CPU
+        // store must clear the cached translation, so the post-INVLPG walk
+        // observes the new mapping (stale either in the SoftTLB or the
+        // slice-3 cache reads back 0x11111111).
+        XboxCpu cpu = CreatePaged(
+            0x8B, 0x03, // mov eax,[ebx] (populates vpn2 -> 0x2000)
+            0xB8, 0x00, 0x20, 0x00, 0x00, // mov eax,0x2000
+            0xC7, 0x05, 0x08, 0x50, 0x00, 0x00, 0x03, 0x30, 0x00, 0x00, // mov dword [0x5008],0x3003
+            0x0F, 0x01, 0x38, // invlpg [eax]
+            0x8B, 0x03); // mov eax,[ebx]
+        Map4K(cpu.Bus(), 0x5000, 0x5000);
+        cpu.Bus().Write32(0x2000, 0x11111111);
+        cpu.Bus().Write32(0x3000, 0x22222222);
+        cpu.Execute(5);
+
+        Assert.Equal(0x22222222u, cpu.Context.ReadRegister(Gpr.Eax));
+    }
+
+    [Fact]
+    public void DataXlat_WriteProtectFault_PreservedOnCachedHit()
+    {
+        // The hit path must replay the WP fault with the identical P=1/W=1
+        // data error code: the read populates the (read-only) verdict, the
+        // write must still trap to vector 14 with Cr2 + error code 3.
+        XboxCpu cpu = CpuHarness.Create(
+            0x8B, 0x03, // mov eax,[ebx]
+            0x89, 0x03); // mov [ebx],eax
+        Map4K(cpu.Bus(), 0x1000, 0x1000);
+        Map4K(cpu.Bus(), 0x2000, 0x2000, writable: false);
+        Map4K(cpu.Bus(), 0x3000, 0x3000);
+        Map4K(cpu.Bus(), 0x6000, 0x6000);
+        Map4K(cpu.Bus(), 0x7000, 0x7000); // fault-frame stack page (ESP=0x8000 pushes into 0x7xxx)
+        Map4K(cpu.Bus(), 0x8000, 0x8000);
+        InstallIdt(cpu);
+        cpu.Context.Cr3 = PageDirectory;
+        cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging
+            | ControlRegisterBits.Cr0WriteProtect;
+        cpu.Mmu.Flush();
+        cpu.Context.Ebx = 0x2000;
+        cpu.Bus().Write32(0x2000, 0xAAAAAAAAu);
+        cpu.Execute(2);
+
+        Assert.Equal(0x3000u, cpu.Context.Eip);
+        Assert.Equal(0x2000u, cpu.Context.Cr2);
+        Assert.Equal(3u, cpu.Bus().Read32(0x7FF0));
+    }
+
+    [Fact]
+    public void ObserverAttached_DataAccessKeepsTranslateNotes()
+    {
+        // Gate pin: with a profiler attached the slice-3 cache stays off, so
+        // two cold stores report two singular data-translate notes (1 miss +
+        // 1 hit), never collapsing to one.
+        XboxCpu cpu = CreatePaged(0x89, 0x03, 0x89, 0x03); // mov [ebx],eax x2
+        var counter = new TlbCounter();
+        cpu.HotspotObserver = counter;
+        cpu.Mmu.Flush();
+        cpu.Execute(2);
+
+        Assert.Equal(2, counter.SingularTranslates);
+    }
+
+    private static void InstallIdt(XboxCpu cpu)
+    {
+        uint gate = 0x6000 + 14 * 8;
+        cpu.Bus().Write16(gate, 0x3000);
+        cpu.Bus().Write16(gate + 2, 0x08);
+        cpu.Bus().Write16(gate + 4, 0x8E00);
+        cpu.Bus().Write16(gate + 6, 0x0000);
+        cpu.Context.Idtr.Base = 0x6000;
+        cpu.Context.Idtr.Limit = 0x7FF;
+    }
+
     private sealed class CountingMmioDevice : IMmioDevice
     {
         public readonly List<(uint Address, int Size)> Reads = [];

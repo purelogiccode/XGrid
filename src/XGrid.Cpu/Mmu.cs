@@ -124,6 +124,25 @@ public sealed class Mmu
     }
 
 
+    /// <summary>
+    /// Translates a data access with side effects but no observer notes,
+    /// additionally reporting the verdict for the CPU's data-translate fast
+    /// path (memory-path slice 3, §162): the 4 KB slice base backing the
+    /// result plus the PTE writability bit, so a cached hit can replay the
+    /// exact WP fault check. Fault behavior, A/D-bit side effects and TLB
+    /// inserts are identical to <see cref="Translate"/>.
+    /// </summary>
+    public uint TranslateDataFast(
+        uint linearAddress,
+        bool isWrite,
+        out bool faulted,
+        out uint errorCode,
+        out uint physicalPage,
+        out bool writable)
+    {
+        return TranslateCore(linearAddress, isWrite, isInstruction: false, out faulted, out errorCode,
+            sideEffects: true, notify: false, out _, out _, out physicalPage, out writable);
+    }
     /// <summary>Translates a linear address to a physical address.</summary>
     /// <returns>The physical address, or zero when <paramref name="faulted"/> is true.</returns>
     public uint Translate(
@@ -135,7 +154,7 @@ public sealed class Mmu
         bool sideEffects = true)
     {
         return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects,
-            notify: true, out _, out _);
+            notify: true, out _, out _, out _, out _);
     }
 
     /// <summary>
@@ -166,7 +185,7 @@ public sealed class Mmu
         bool sideEffects = true)
     {
         return TranslateCore(linearAddress, isWrite, isInstruction, out faulted, out errorCode, sideEffects,
-            notify: false, out tlbHit, out tlbCounted);
+            notify: false, out tlbHit, out tlbCounted, out _, out _);
     }
 
     private uint TranslateCore(
@@ -178,15 +197,21 @@ public sealed class Mmu
         bool sideEffects,
         bool notify,
         out bool tlbHit,
-        out bool tlbCounted)
+        out bool tlbCounted,
+        out uint pageBase,
+        out bool pageWritable)
     {
         faulted = false;
         errorCode = 0;
         tlbHit = false;
         tlbCounted = false;
+        pageBase = 0;
+        pageWritable = false;
 
         if (!IsEnabled)
         {
+            pageBase = linearAddress & 0xFFFFF000u;
+            pageWritable = true;
             return linearAddress;
         }
 
@@ -195,6 +220,8 @@ public sealed class Mmu
         {
             tlbHit = true;
             tlbCounted = true;
+            pageBase = cachedPage;
+            pageWritable = cachedWritable;
             if (notify)
             {
                 Observer?.NoteTlbHit();
@@ -245,7 +272,10 @@ public sealed class Mmu
                 _memory.Write32(pageDirectoryEntryAddress, pageDirectoryEntry | 0x20u | (isWrite ? 0x40u : 0u));
             }
 
-            return largePage + (linearAddress & 0x3FFFFFu);
+            uint largePhysical = largePage + (linearAddress & 0x3FFFFFu);
+            pageBase = largePhysical & 0xFFFFF000u;
+            pageWritable = largeWritable;
+            return largePhysical;
         }
 
         uint pageTableEntryAddress = (pageDirectoryEntry & 0xFFFFF000u) + (((linearAddress >> 12) & 0x3FFu) * 4u);
@@ -273,6 +303,8 @@ public sealed class Mmu
             _tlb.Insert(virtualPageNumber, physicalPage, writable);
         }
 
+        pageBase = physicalPage;
+        pageWritable = writable;
         return physicalPage + (linearAddress & 0xFFFu);
     }
 
