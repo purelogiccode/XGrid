@@ -559,10 +559,12 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     tails; §138 negative confirmed at title scale. Flag stays opt-in
     (zero impact). Serve/exit tallies bit-identical incl. a 7-position
     delivery sweep. ktest smoke PASS 7/7 (01:45). **1410/1410 tests**,
-    format clean. E2 LANDED (§172): lazy builds at 8th head visit + block-attached
-    runners + Context hoisting -- triangle emit 71.6 s beats spec 73.0 s,
-    menu emit 376.2 s (was 984.1 s), builds collapsed 8.9x/2.9x, all
-    exact; smoke PASS 7/7. Threshold tuning is the next knob.
+    format clean. E2 LANDED (§172-174): tiered emission (lazy builds + block-attached
+    runners + Context hoisting), threshold tuned 8-->64-->256-->1024.
+    Slice30 gate: SHAs exact both titles, triangle emit 66.0 s < spec
+    76.0 s, menu emit 180.3 s ~= spec 182.2 s (parity, was 6.50x at E1);
+    builds menu 1.24M-->5.8k. Serve layer no longer the bottleneck
+    (E3 body inlining next). Smoke PASS 7/7. **1410/1410 tests**.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all

@@ -3383,6 +3383,16 @@ identical; triangle emit 71.0 s beats spec 73.6 s again; menu emit
 bit-identical tallies. ktest smoke PASS 7/7 (01:40). Suite 1410/1410,
 format clean. Flag stays opt-in; E2 lands here unless the T=256
 timebox (below) wins cleanly.
+**§174 DONE (2026-10-17, direct):** threshold T=64-->256-->1024 (two
+one-const steps; unit budgets extended each time, 18/18 green) --
+8-leg golden gate PASS (`D:\spec-soak\slice30`: SHAs exact, vec=0,
+anchors exact, interrupts identical 1883/3153; triangle emit 66.0 s
+< spec 76.0 s; menu emit 180.3 s ~= spec 182.2 s = parity, was
+6.50x at E1). Builds menu 70k-->5.8k (triangle 3.6k-->1k).
+Per-member emit is at/cheaper than the C# unrolled path; the serve
+layer is no longer the bottleneck (E3 body inlining is next).
+ktest smoke PASS 7/7 (01:50). Suite 1410/1410, format clean.
+Flag stays opt-in (zero default impact).
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the

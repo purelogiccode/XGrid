@@ -40,9 +40,9 @@ public sealed class EmitTests
         Preset(spec);
         Preset(emit);
 
-        Assert.Equal(800, plain.Execute(800));
-        Assert.Equal(800, spec.Execute(800));
-        Assert.Equal(800, emit.Execute(800));
+        Assert.Equal(12800, plain.Execute(12800));
+        Assert.Equal(12800, spec.Execute(12800));
+        Assert.Equal(12800, emit.Execute(12800));
         AssertSameState(plain, spec);
         AssertSameState(plain, emit);
         AssertSameCounters(spec, emit);
@@ -62,7 +62,7 @@ public sealed class EmitTests
         Preset(spec);
         Preset(emit);
 
-        Assert.Equal(spec.Execute(640), emit.Execute(640));
+        Assert.Equal(spec.Execute(10240), emit.Execute(10240));
         AssertSameState(spec, emit);
         AssertSameCounters(spec, emit);
         Assert.True(emit.SpecStatistics!.EmitRan > 0);
@@ -83,7 +83,7 @@ public sealed class EmitTests
         spec.Context.Ecx = 0x2000;
         emit.Context.Ecx = 0x2000;
 
-        Assert.Equal(spec.Execute(640), emit.Execute(640));
+        Assert.Equal(spec.Execute(6400), emit.Execute(6400));
         AssertSameState(spec, emit);
 
         spec.Context.Ecx = 0x9000;
@@ -120,21 +120,21 @@ public sealed class EmitTests
     }
 
     [Theory]
-    [InlineData(584)]
-    [InlineData(585)]
-    [InlineData(586)]
-    [InlineData(587)]
-    [InlineData(588)]
-    [InlineData(589)]
-    [InlineData(590)]
+    [InlineData(7208)]
+    [InlineData(7209)]
+    [InlineData(7210)]
+    [InlineData(7211)]
+    [InlineData(7212)]
+    [InlineData(7213)]
+    [InlineData(7214)]
     public void IrqSteadyState_FiresMidTail_MatchesSpec(int fireAt)
     {
         // The source stays quiet through warm-up (blocks form, the tiering
         // threshold passes, tails emit), then fires at the given ack: across
         // the sweep delivery lands at every member of the 7-member block on
         // both sides (7 cold-step acks, then polls run member-0, tail-1, ...
-        // per iteration, so acks 584-590 cover tail-2..6 plus member-0 and
-        // tail-1 at well past-threshold visits). Unlike faults, a pending
+        // per iteration, so acks 7208-7214 cover all 7 positions at well
+        // past-threshold visits). Unlike faults, a pending
         // exit earns no decode hit (the poll precedes it on the member
         // path), which AssertSameCounters pins.
         byte[] code = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xF8 };
@@ -142,7 +142,7 @@ public sealed class EmitTests
         XboxCpu spec = CreateIrq(EmitMode.Spec, code, fireAt);
         XboxCpu emit = CreateIrq(EmitMode.Emit, code, fireAt);
 
-        Assert.Equal(spec.Execute(800), emit.Execute(800));
+        Assert.Equal(spec.Execute(8000), emit.Execute(8000));
         AssertSameState(spec, emit);
         AssertSameCounters(spec, emit);
         Assert.Equal(1, emit.InterruptCount);
@@ -166,7 +166,7 @@ public sealed class EmitTests
         XboxCpu spec = CreateSti(EmitMode.Spec, code);
         XboxCpu emit = CreateSti(EmitMode.Emit, code);
 
-        Assert.Equal(spec.Execute(640), emit.Execute(640));
+        Assert.Equal(spec.Execute(5120), emit.Execute(5120));
         AssertSameState(spec, emit);
         AssertSameCounters(spec, emit);
         Assert.Equal(1, emit.InterruptCount);
@@ -211,7 +211,7 @@ public sealed class EmitTests
         Preset(spec);
         Preset(emit);
 
-        Assert.Equal(spec.Execute(640), emit.Execute(640));
+        Assert.Equal(spec.Execute(5120), emit.Execute(5120));
         AssertSameState(spec, emit);
         AssertSameCounters(spec, emit);
         Assert.Equal(spec.SpecStatistics!.ShapeFallbacks, emit.SpecStatistics!.ShapeFallbacks);
