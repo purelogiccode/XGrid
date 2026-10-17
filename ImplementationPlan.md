@@ -3003,7 +3003,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
 | 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices 1+2 §§139–140); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); swapchain brief filed (O2 recommended, headless default). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
 
-Current test baseline: **1340 tests passing** (39 Core, 476 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
+Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
 ## Project completion assessment (2026-10-16; refreshed for wave-15)
@@ -3030,7 +3030,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 20% | codegen IR/machine emitter still open; decode/TLB caches + block executor landed (§§131,134,136), decode default-on (§137), first-codegen scope (§138), semspec slices 1+2 opt-in `--spec-exec` (§§139–140) |
+| 15 CPU JIT | 11 | 30% | semspec slices 1+2 (§§139–140) and 5–13 (§§142–151) opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136), decode default-on (§137), first-codegen scope (§138); codegen IR/machine emitter still open |
 | 16 CPU Optimization | 3 | 10% | benchmark-driven tuning |
 | 17 Memory Optimization | 2 | 10% | tuning |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
@@ -3040,7 +3040,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~62% complete overall** (weighted: 67.4 of 108 weight-points).
+**Result: ~65% complete overall** (weighted: 70.6 of 108 weight-points, recomputed 2026-10-16; JIT 20%→30% on slices 5–13).
 By track:
 
 - **LLE core (phases 0–14): ~84%.** The real console chain — MCPX ROM ->
@@ -3048,12 +3048,12 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15–23): ~22%.** Dominated by the CPU
-  JIT (20% — interpreter with default-on decode cache, opt-in block executor
-  and semspec slices 1+2, no codegen yet) and
+- **Performance/finish track (phases 15–23): ~25%.** Dominated by the CPU
+  JIT (30% — interpreter with default-on decode cache, opt-in block executor
+  and semspec slices 1+2 and 5–13, no codegen yet) and
   optimization phases; this is the throughput gap between forensic runs
   (~14M insn/s Release baseline; decode cache adds 2.1–3.1× on titles,
-  spec-exec +1.07–1.17× single-run over cache)
+  spec-exec absorbs fallbacks with walls still near cache parity)
   and interactive rates.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
