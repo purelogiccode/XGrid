@@ -494,7 +494,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    once; conflicts were purged 2026-10-09). Baseline: 1350 tests green,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — slices 9–11 landed (2026-10-16 evening); wave runner retired.
+## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
 1. **SLICES 5–11 DONE (§§142–148, direct development).** After wave-15
    (slices 1+2, 1340 tests) came the §141 median-of-3 (flag stays
@@ -508,8 +508,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
    walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
    **1359/1359 tests after slices 12-20 below.** Flag stays opt-in
-   (saturation + no median-of-3 per slice; soak binaries must come
-   from a FULL solution build — §145 lesson).
+   (median-of-3 post-slices-13–20: menu 1.072x / triangle 1.185x —
+   real but thin; soak binaries must come from a FULL solution build
+   — §145 lesson).
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
@@ -567,11 +568,13 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    (x87 fully absorbed on both titles); median-of-3 still required
    before any wall claim. The next lever after shapes is the
    memory-path design (`ReadMemory`/`WriteMemory` → translate + bus),
-   a daylight scoping task. Remaining shape tail: Sbb/Adc
-   (carry-live, out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls,
-   Movs/Stos (string, out), Cli/Sti (untouchable). DynamicMethod stays
-   rejected unless new numbers say otherwise. NXDK toolchain
-   (operator/host) still the mesh blocker.
+   scoped in §159 (TLB-inline / identity fast path / span-burst +
+   hazards + gate). Remaining shape tail: Sbb/Adc (carry-live, out),
+   Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos (string,
+   out), Cli/Sti (untouchable) — all <100k or deliberate outs; shape
+   work is done except daylight items. DynamicMethod stays rejected
+   unless new numbers say otherwise. NXDK toolchain (operator/host)
+   still the mesh blocker.
 6. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues
    directly (no BOSS protocol, no worktrees, no detached servers). Tool
