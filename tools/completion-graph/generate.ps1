@@ -151,6 +151,10 @@ $overall = [Math]::Round(100.0 * $doneAcc / $totalWeight, 1)
 
 # ---------- renderers ----------
 function Get-TextAttrs([string]$style, [double]$done, [double]$fontSize) {
+    if ($style -eq 'squares') {
+        # plain light text; it sits on a dark label plate over the mosaic
+        return "fill='#F1F5F9'"
+    }
     if ($style -eq 'fill') {
         # light text with a dark outline reads on both the dark slot and the bright fill
         return "fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'"
@@ -161,7 +165,11 @@ function Get-TextAttrs([string]$style, [double]$done, [double]$fontSize) {
 
 function Build-Svg([string]$style) {
     $svg = [System.Text.StringBuilder]::new()
-    $fillNote = if ($style -eq 'fill') { "Fill height = percent done (bottom-up); fill color = same heat." } else { "Tile color = percent done." }
+    $fillNote = switch ($style) {
+        'fill' { "Fill height = percent done (bottom-up); fill color = same heat." }
+        'squares' { "Each tile holds 100 unit squares; filled count = percent done (bottom-up)." }
+        default { "Tile color = percent done." }
+    }
     [void]$svg.AppendLine("<svg xmlns='http://www.w3.org/2000/svg' width='$W' height='$H' viewBox='0 0 $W $H' font-family='Segoe UI, Segoe UI Emoji, sans-serif'>")
     [void]$svg.AppendLine("<rect width='$W' height='$H' fill='#0B1220'/>")
     [void]$svg.AppendLine("<text x='$M' y='34' font-size='25' font-weight='700' fill='#F8FAFC'>XGrid - code completion by phase</text>")
@@ -178,9 +186,32 @@ function Build-Svg([string]$style) {
         $rr = [Math]::Min(10, [Math]::Min($r.w, $r.h) / 4)
         $rectX = $r.x.ToString('0.#'); $rectY = $r.y.ToString('0.#'); $rectW = $r.w.ToString('0.#'); $rectH = $r.h.ToString('0.#'); $rectR = $rr.ToString('0.#')
         $attrs = "data-p='$($ph.p)' data-name='$(ConvertTo-XmlText $ph.name)' data-done='$($ph.done)' data-weight='$($ph.weight)'"
+        if ($style -eq 'squares') { $attrs += " data-squares='1'" }
 
         [void]$svg.AppendLine("<g class='tile' $attrs>")
-        if ($style -eq 'fill') {
+        if ($style -eq 'squares') {
+            # the tile is a slot holding a 10x10 grid of unit squares; the bottom
+            # `done` squares are filled (row-major, bottom-up)
+            [void]$svg.AppendLine("<rect x='$rectX' y='$rectY' width='$rectW' height='$rectH' rx='$rectR' fill='#141E33' stroke='#0B1220' stroke-width='1.5'/>")
+            $padG = 7.0
+            $cell = [Math]::Min(($r.w - 2 * $padG - 18) / 10, ($r.h - 2 * $padG - 18) / 10)
+            if ($cell -ge 4.0) {
+                $gap = [Math]::Min(2.0, [Math]::Max(1.0, $cell * 0.15))
+                $cell = [Math]::Min(($r.w - 2 * $padG - 9 * $gap) / 10, ($r.h - 2 * $padG - 9 * $gap) / 10)
+                $gridW = 10 * $cell + 9 * $gap
+                $gx = $r.x + ($r.w - $gridW) / 2
+                $gy = $r.y + ($r.h - $gridW) / 2
+                $cellR = ($cell * 0.18).ToString('0.#')
+                for ($i = 0; $i -lt 100; $i++) {
+                    $row = 9 - [int][Math]::Floor($i / 10)
+                    $col = $i % 10
+                    $cellX = ($gx + $col * ($cell + $gap)).ToString('0.#')
+                    $cellY = ($gy + $row * ($cell + $gap)).ToString('0.#')
+                    $cellFill = if ($i -lt $ph.done) { '#1EC85A' } else { '#1F2C47' }
+                    [void]$svg.AppendLine("<rect x='$cellX' y='$cellY' width='$($cell.ToString('0.#'))' height='$($cell.ToString('0.#'))' rx='$cellR' fill='$cellFill'/>")
+                }
+            }
+        } elseif ($style -eq 'fill') {
             $clipId = "clip$($ph.p)"
             [void]$svg.AppendLine("<defs><clipPath id='$clipId'><rect x='$rectX' y='$rectY' width='$rectW' height='$rectH' rx='$rectR'/></clipPath></defs>")
             [void]$svg.AppendLine("<rect x='$rectX' y='$rectY' width='$rectW' height='$rectH' rx='$rectR' fill='#1A2740' stroke='#0B1220' stroke-width='1.5'/>")
@@ -229,25 +260,43 @@ function Build-Svg([string]$style) {
         $chipSize = [Math]::Min(30.0, [Math]::Max(16.0, $nameFs * 1.1))
         $chipY = $r.y + $pad
         $chipX = $r.x + $pad
-        $chipColor = if ($style -eq 'fill') { 'rgba(11,18,32,0.45)' } elseif (Test-Light $ph.done) { 'rgba(17,24,39,0.16)' } else { 'rgba(255,255,255,0.20)' }
+        $textX = $r.x + $pad
+        $textY = $chipY + $chipSize + 6 + $nameFs
+
+        # percent + weight under the name, when there is room
+        $subFs = [Math]::Max(11.0, $nameFs * 0.72)
+        $subY = $textY + ($lines.Count - 1) * $nameFs * 1.18 + $subFs * 0.6 + 2
+        if ($style -eq 'squares') {
+            $subPlain = "$($ph.done)/100 - weight $($ph.weight)"
+        } else {
+            $subPlain = "$($ph.done)% done - weight $($ph.weight)"
+        }
+        $subEst = $subPlain.Length * 0.5 * $subFs
+        $subShown = (($subY - $r.y) -le ($r.h - 6)) -and ($subEst -le $availW)
+        $textEnd = if ($subShown) { $subY + 2 } else { $textY + ($lines.Count - 1) * $nameFs * 1.18 + 2 }
+
+        if ($style -eq 'squares') {
+            # dark label plate so text stays readable over the mosaic
+            $plateX = ($r.x + 6).ToString('0.#'); $plateY = ($r.y + 6).ToString('0.#')
+            $plateW = ($r.w - 12).ToString('0.#')
+            $plateH = ([Math]::Min($r.h - 12, $textEnd - $r.y - 6 + 6)).ToString('0.#')
+            [void]$svg.AppendLine("<rect x='$plateX' y='$plateY' width='$plateW' height='$plateH' rx='8' fill='rgba(11,18,32,0.72)'/>")
+        }
+
+        $chipColor = if ($style -eq 'squares') { 'rgba(255,255,255,0.12)' } elseif ($style -eq 'fill') { 'rgba(11,18,32,0.45)' } elseif (Test-Light $ph.done) { 'rgba(17,24,39,0.16)' } else { 'rgba(255,255,255,0.20)' }
         $chipR = ($chipSize / 4).ToString('0.#')
         [void]$svg.AppendLine("<rect x='$($chipX.ToString('0.#'))' y='$($chipY.ToString('0.#'))' width='$($chipSize.ToString('0.#'))' height='$($chipSize.ToString('0.#'))' rx='$chipR' fill='$chipColor'/>")
         $chipTx = ($chipX + $chipSize / 2).ToString('0.#'); $chipTy = ($chipY + $chipSize * 0.68).ToString('0.#'); $chipFs = ($chipSize * 0.52).ToString('0.#')
         [void]$svg.AppendLine("<text x='$chipTx' y='$chipTy' font-size='$chipFs' font-weight='700' $(Get-TextAttrs $style $ph.done 0) text-anchor='middle'>P$($ph.p)</text>")
 
         $textAttrs = Get-TextAttrs $style $ph.done $nameFs
-        $textX = $r.x + $pad
-        $textY = $chipY + $chipSize + 6 + $nameFs
+        $lineY = $textY
         foreach ($line in $lines) {
-            [void]$svg.AppendLine("<text x='$($textX.ToString('0.#'))' y='$($textY.ToString('0.#'))' font-size='$($nameFs.ToString('0.#'))' font-weight='700' $textAttrs>$(ConvertTo-XmlText $line)</text>")
-            $textY += $nameFs * 1.18
+            [void]$svg.AppendLine("<text x='$($textX.ToString('0.#'))' y='$($lineY.ToString('0.#'))' font-size='$($nameFs.ToString('0.#'))' font-weight='700' $textAttrs>$(ConvertTo-XmlText $line)</text>")
+            $lineY += $nameFs * 1.18
         }
-        # percent + weight under the name, when there is room
-        $subFs = [Math]::Max(11.0, $nameFs * 0.72)
-        $subY = $textY + $subFs * 0.6 + 2
-        $subText = "$($ph.done)% done &#183; weight $($ph.weight)"
-        $subEst = ($ph.done.ToString().Length + 22) * 0.5 * $subFs
-        if (($subY - $r.y) -le ($r.h - 6) -and $subEst -le $availW) {
+        if ($subShown) {
+            $subText = $subPlain.Replace(' - ', ' &#183; ')
             $subAttrs = Get-TextAttrs $style $ph.done $subFs
             [void]$svg.AppendLine("<text x='$($textX.ToString('0.#'))' y='$($subY.ToString('0.#'))' font-size='$($subFs.ToString('0.#'))' opacity='0.94' $subAttrs>$subText</text>")
         }
@@ -271,6 +320,24 @@ function Build-Svg([string]$style) {
             [void]$svg.AppendLine("<rect x='$($bx.ToString('0.#'))' y='$(($by + $box - $fh).ToString('0.#'))' width='$box' height='$($fh.ToString('0.#'))' rx='6' fill='$color'/>")
             [void]$svg.AppendLine("<text x='$(($bx + $box + 8).ToString('0.#'))' y='$(($by + $box * 0.68).ToString('0.#'))' font-size='13' fill='#CBD5E1'>$pct%</text>")
             $bx += $box + 66
+        }
+    } elseif ($style -eq 'squares') {
+        [void]$svg.AppendLine("<text x='$lx' y='$($legendY - 8)' font-size='12.5' fill='#94A3B8'>filled squares / 100 = percent done</text>")
+        $bx = $lx
+        $cell = 3.0; $gap = 1.4
+        $gw = 10 * $cell + 9 * $gap
+        foreach ($pct in @(25, 50, 100)) {
+            for ($i = 0; $i -lt 100; $i++) {
+                if ($i -ge $pct) { continue }
+                $row = 9 - [int][Math]::Floor($i / 10)
+                $col = $i % 10
+                $cellX = ($bx + $col * ($cell + $gap)).ToString('0.#')
+                $cellY = ($legendY + $row * ($cell + $gap)).ToString('0.#')
+                [void]$svg.AppendLine("<rect x='$cellX' y='$cellY' width='3' height='3' fill='#1EC85A'/>")
+            }
+            [void]$svg.AppendLine("<rect x='$(($bx - 2).ToString('0.#'))' y='$(($legendY - 2).ToString('0.#'))' width='$(($gw + 4).ToString('0.#'))' height='$(($gw + 4).ToString('0.#'))' rx='5' fill='none' stroke='#334155'/>")
+            [void]$svg.AppendLine("<text x='$(($bx + $gw + 9).ToString('0.#'))' y='$(($legendY + $gw * 0.62).ToString('0.#'))' font-size='13' fill='#CBD5E1'>$pct/100</text>")
+            $bx += $gw + 64
         }
     } else {
         [void]$svg.AppendLine("<text x='$lx' y='$($legendY - 8)' font-size='12.5' fill='#94A3B8'>completion</text>")
@@ -312,8 +379,8 @@ document.querySelectorAll('svg g.tile').forEach(g => {
   g.addEventListener('mousemove', e => {
     g.style.filter = 'brightness(1.14)';
     tt.innerHTML = 'Phase <b>' + g.dataset.p + ' - ' + g.dataset.name + '</b><br>' +
-      g.dataset.done + '% complete &middot; weight ' + g.dataset.weight +
-      ' of 108 weight-points';
+      g.dataset.done + '% complete' + (g.dataset.squares ? ' &middot; ' + g.dataset.done + '/100 squares' : '') +
+      ' &middot; weight ' + g.dataset.weight + ' of 108 weight-points';
     tt.style.left = Math.min(e.clientX + 14, innerWidth - 360) + 'px';
     tt.style.top = (e.clientY + 16) + 'px';
     tt.style.opacity = '1';
@@ -327,8 +394,8 @@ document.querySelectorAll('svg g.tile').forEach(g => {
 
 # ---------- write both styles ----------
 $utf8 = [System.Text.UTF8Encoding]::new($false)
-foreach ($style in @('fill', 'solid')) {
-    $suffix = if ($style -eq 'solid') { '' } else { '-fill' }
+foreach ($style in @('squares', 'fill', 'solid')) {
+    $suffix = switch ($style) { 'solid' { '' } 'fill' { '-fill' } 'squares' { '-squares' } }
     $svgPath = Join-Path $OutDir "completion-treemap$suffix.svg"
     $htmlPath = Join-Path $OutDir "completion-treemap$suffix.html"
     $svg = Build-Svg $style
