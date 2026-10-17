@@ -9280,3 +9280,15 @@ verdict stands as measured (emit-inline 62.5 < emit 64.3 < spec 74.0,
 below what median-of-3 resolves even on a quiet host -- n>=7 is the
 menu-evidence standard for sub-2% claims, and mixed signs must be reported
 as parity, not averaged into a win.
+
+### 179b. Triangle n=7 confirmation (same day)
+
+Four more interleaved triangle rounds (r8-r11). Triangle median-of-7:
+- spec 71.6 (69.0/71.2/71.5/71.6/74.0/75.4/76.1);
+- emit 64.3 (63.1/63.2/64.2/64.3/64.3/65.0/65.5);
+- **emit-inline 63.0** (61.2/61.6/62.5/63.0/64.6/64.6/64.7).
+Paired emit-vs-inline signs: inline wins 5 of 7 rounds (losses r8/r10 at
+~2.3%). Corrected triangle verdict: **emit-inline 1.021x over emit (5/7
+pairs) and 1.137x over spec** -- softer than the n=3 reading (2.9%, 3/3)
+but consistent in direction. The spec-vs-emitter gap (1.113x) is far
+beyond noise and is the dominant, robust emitter win on this title.
