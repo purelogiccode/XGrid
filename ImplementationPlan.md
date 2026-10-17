@@ -3035,7 +3035,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 10% | rasterizer/backend performance |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 60% | 1421 tests + goldens/median harnesses (`emit-gate.ps1`/`emit-median.ps1`) + ktest smoke; fuzzing, wider compatibility corpus |
+| 20 Automated Testing | 3 | 60% | 1423 tests + goldens/median harnesses (`emit-gate.ps1`/`emit-median.ps1`) + randomized emit-inline differential net + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 50% | GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |

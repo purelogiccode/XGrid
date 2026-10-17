@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using XGrid.Core.Devices;
@@ -501,6 +502,162 @@ public sealed class EmitTests
         Assert.True(diag.EmitInlineTagMisses <= diag.EmitInlineTwinCalls);
         Assert.True(diag.EmitInlineFastHits > hitsBefore);
         Assert.True(diag.EmitInlineFastHits + diag.EmitInlineTwinCalls <= (long)diag.SpecStatistics!.EmitRan);
+    }
+
+    [Fact]
+    public void InlineBodies_RandomPrograms_MatchAcrossAllModes()
+    {
+        // Randomized differential net for the E3-1 fast paths: seeded
+        // programs mixing every covered memory shape with random registers,
+        // displacements, prefixes and immediates must evolve identically
+        // under plain, spec, emit and emit-inline (paged, so the fast path
+        // actually completes; unpaged, so the twins carry the same shapes).
+        for (int program = 0; program < 40; program++)
+        {
+            var rng = new Random(0xE31A + program);
+            byte[] code = BuildRandomProgram(rng);
+
+            foreach (bool paged in new[] { false, true })
+            {
+                XboxCpu plain = paged ? CreatePaged(EmitMode.Off, code) : Create(EmitMode.Off, code);
+                XboxCpu spec = paged ? CreatePaged(EmitMode.Spec, code) : Create(EmitMode.Spec, code);
+                XboxCpu emit = paged ? CreatePaged(EmitMode.Emit, code) : Create(EmitMode.Emit, code);
+                XboxCpu inline = paged ? CreatePaged(EmitMode.EmitInline, code) : Create(EmitMode.EmitInline, code);
+
+                foreach (XboxCpu cpu in new[] { plain, spec, emit, inline })
+                {
+                    SeedRandomState(cpu, new Random((program * 7) + 1));
+                }
+
+                int steps = 65536;
+                Assert.Equal(steps, plain.Execute(steps));
+                Assert.Equal(steps, spec.Execute(steps));
+                Assert.Equal(steps, emit.Execute(steps));
+                Assert.Equal(steps, inline.Execute(steps));
+                AssertSameState(plain, spec);
+                AssertSameState(spec, emit);
+                AssertSameState(emit, inline);
+                AssertSameCounters(spec, emit);
+                AssertSameCounters(emit, inline);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds one seeded program from the covered memory-shape templates
+    /// with random registers (ebx/ebp/esi/edi bases), disp8, optional FS/GS
+    /// prefix and immediates, looping via a jmp. Data bases sit in the
+    /// identity-mapped VPN2 window (0x2000..0x202C), away from the paged
+    /// harness's page tables.
+    /// </summary>
+    private static byte[] BuildRandomProgram(Random rng)
+    {
+        var code = new List<byte>();
+        for (int i = 0; i < 12; i++)
+        {
+            int baseReg = new[] { 3, 5, 6, 7 }[rng.Next(4)];
+            int reg = rng.Next(8);
+
+            // Load destinations must not be an addressing register (or ESP):
+            // a random value loaded into EBX/EBP/ESI/EDI would turn the next
+            // member's base into a wild address. 8-bit destinations are
+            // limited to AL/CL/DL for the same reason (BL is EBX's low byte).
+            int loadDest = new[] { 0, 1, 2 }[rng.Next(3)];
+            int disp = new[] { 0, 4, 8, 0x10 }[rng.Next(4)];
+            byte modrm = (byte)(0x40 | (reg << 3) | baseReg);
+            switch (rng.Next(8))
+            {
+                case 0:
+                    EmitPrefix(code, rng);
+                    code.Add(0x8B);
+                    code.Add((byte)(0x40 | (loadDest << 3) | baseReg));
+                    code.Add((byte)disp);
+                    break;
+                case 1:
+                    EmitPrefix(code, rng);
+                    code.Add(0x89);
+                    code.Add(modrm);
+                    code.Add((byte)disp);
+                    break;
+                case 2:
+                    EmitPrefix(code, rng);
+                    code.Add(0x8A);
+                    code.Add((byte)(0x40 | (loadDest << 3) | baseReg));
+                    code.Add((byte)disp);
+                    break;
+                case 3:
+                    EmitPrefix(code, rng);
+                    code.Add(0x88);
+                    code.Add(modrm);
+                    code.Add((byte)disp);
+                    break;
+                case 4:
+                    EmitPrefix(code, rng);
+                    code.Add(0x3B);
+                    code.Add(modrm);
+                    code.Add((byte)disp);
+                    break;
+                case 5:
+                    EmitPrefix(code, rng);
+                    code.Add(0x39);
+                    code.Add(modrm);
+                    code.Add((byte)disp);
+                    break;
+                case 6:
+                    EmitPrefix(code, rng);
+                    code.Add(0x83);
+                    code.Add((byte)(0x78 | baseReg));
+                    code.Add((byte)disp);
+                    code.Add((byte)rng.Next(256));
+                    break;
+                default:
+                    EmitPrefix(code, rng);
+                    code.Add(0xF7);
+                    code.Add((byte)(0x40 | baseReg));
+                    code.Add((byte)disp);
+                    for (int b = 0; b < 4; b++)
+                    {
+                        code.Add((byte)rng.Next(256));
+                    }
+
+                    break;
+            }
+        }
+
+        // Loop back to the head (rel8 covers the 12-instruction body).
+        int rel = -(code.Count + 2);
+        code.Add(0xEB);
+        code.Add(unchecked((byte)rel));
+        return code.ToArray();
+    }
+
+    private static void EmitPrefix(List<byte> code, Random rng)
+    {
+        switch (rng.Next(6))
+        {
+            case 0:
+                code.Add(0x64); // fs:
+                break;
+            case 1:
+                code.Add(0x65); // gs:
+                break;
+        }
+    }
+
+    private static void SeedRandomState(XboxCpu cpu, Random rng)
+    {
+        cpu.Context.Eax = (uint)rng.Next();
+        cpu.Context.Ecx = (uint)rng.Next();
+        cpu.Context.Edx = (uint)rng.Next();
+        cpu.Context.Eflags = FlagBits.Reserved1 | (uint)rng.Next();
+        cpu.Context.Ebx = 0x2000;
+        cpu.Context.Ebp = 0x2004;
+        cpu.Context.Esi = 0x2008;
+        cpu.Context.Edi = 0x200C;
+        for (uint address = 0x2000; address <= 0x202C; address += 4)
+        {
+            cpu.Ram().Write32(address, (uint)rng.Next());
+        }
     }
 
     [Fact]

@@ -9227,3 +9227,10 @@ the single-run 1.015-1.037x readings). Remaining levers are scoped, not
 taken: raising tail-serve share (threshold re-tune against §174's
 construction trade-off) or member-path fast dispatch; both are low-value
 against the boundary-dominated remainder. Flag stays opt-in.
+
+Verification addendum: a randomized differential net (seeded programs of
+12 mixed covered-shape members with random registers/displacements/
+prefixes/immediates, looping) runs each program under plain, spec, emit
+and emit-inline in both unpaged and paged harnesses and asserts identical
+state, RAM and counters -- 40 programs x 2 x 4 modes per suite run, plus
+the earlier hand-written differentials and the diag counter pins.
