@@ -136,6 +136,12 @@ public sealed partial class XboxCpu
             case Mnemonic.Movsx:
                 return ResolveSpecMoveExtend(
                     instruction.Mnemonic, first, second, size, instruction.Operand2.Size);
+            case Mnemonic.Movq:
+                return ResolveSpecMovq(first, second);
+            case Mnemonic.Movntq:
+                return first == OperandKind.Memory && second == OperandKind.Register
+                    ? SpecMovntqMemRegHandler
+                    : null;
             default:
                 return null;
         }
@@ -559,6 +565,26 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// Resolves MMX 64-bit move shapes (slice 10): Movq reg,reg/reg,mem/
+    /// mem,reg and Movntq mem,reg. Pure data moves through the x87-aliased
+    /// MMX file (no flags, no control flow), so unlike Jcc/Jmp they may
+    /// continue their block — <see cref="DecodedBlockCache.Terminates"/>
+    /// whitelists both mnemonics. Bodies mirror the interpreter through
+    /// the same <c>ReadMmxOperand</c>/<c>WriteMmxOperand</c>/
+    /// <c>WriteMemory64</c> helpers with EIP advanced only after completion.
+    /// </summary>
+    private static SpecHandler? ResolveSpecMovq(OperandKind first, OperandKind second)
+    {
+        return (first, second) switch
+        {
+            (OperandKind.Register, OperandKind.Register) => SpecMovqRegRegHandler,
+            (OperandKind.Register, OperandKind.Memory) => SpecMovqRegMemHandler,
+            (OperandKind.Memory, OperandKind.Register) => SpecMovqMemRegHandler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
     /// the existing cursor completion ends the block; IRQ polling, fault and
@@ -734,6 +760,10 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecMovsxRegMem328Handler = SpecMovsxRegMem328;
     private static readonly SpecHandler SpecMovsxRegMem1616Handler = SpecMovsxRegMem1616;
     private static readonly SpecHandler SpecMovsxRegMem3216Handler = SpecMovsxRegMem3216;
+    private static readonly SpecHandler SpecMovqRegRegHandler = SpecMovqRegReg;
+    private static readonly SpecHandler SpecMovqRegMemHandler = SpecMovqRegMem;
+    private static readonly SpecHandler SpecMovqMemRegHandler = SpecMovqMemReg;
+    private static readonly SpecHandler SpecMovntqMemRegHandler = SpecMovntqMemReg;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1368,6 +1398,32 @@ public sealed partial class XboxCpu
         uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
         cpu.Context.Eflags = AluOps.Dec(cpu.ReadMemory(address, 32), 32, cpu.Context.Eflags, out uint result);
         cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovqRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteMmx(instruction.Operand1.RegisterIndex, cpu.ReadMmxOperand(instruction.Operand2));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovqRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.Context.WriteMmx(instruction.Operand1.RegisterIndex, cpu.ReadMmxOperand(instruction.Operand2));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovqMemReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.WriteMmxOperand(instruction.Operand1, cpu.Context.ReadMmx(instruction.Operand2.RegisterIndex));
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMovntqMemReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.WriteMemory64(
+            cpu.ComputeAddress(instruction.Operand1.Memory),
+            cpu.Context.ReadMmx(instruction.Operand2.RegisterIndex));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

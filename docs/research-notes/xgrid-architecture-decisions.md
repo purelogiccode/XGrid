@@ -8040,3 +8040,36 @@ interaction — smallest safe slice 10) then x87 as its own slice.
 Flag stays opt-in — specialization remains saturated per §145, and the
 memory path still needs its daylight design.
 
+## 147. JIT slice 10: MMX 64-bit moves behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. Second item off the §145 tail:
+Movq (reg,reg/reg,mem/mem,reg) + Movntq (mem,reg) are flag-free pure
+data moves through the x87-aliased MMX file — so unlike the Jcc/Jmp
+terminators they may CONTINUE their block (`DecodedBlockCache.
+Terminates` whitelists both mnemonics; formation + invalidation ride
+§134/§136 unchanged). Bodies mirror the interpreter through the same
+`ReadMmxOperand`/`WriteMmxOperand`/`WriteMemory64` helpers with EIP
+advanced only after completion (precise fault EIP preserved exactly
+like `XboxCpu.cs:919`).
+
+`src/XGrid.Cpu/XboxCpuSpecExec.cs`: `ResolveSpecMovq` + the Movntq
+inline case — 4 handlers. No formation change beyond the two whitelist
+entries; no snapshot change; flag stays opt-in.
+
+Tests: `MmxMov_Shapes_MatchInterpreter` (4 shapes vs the interpreter
++ whole-RAM equality; modrm `0x03` = `[EBX]`, `0xC8` = reg,reg) +
+4 resolver NotNull pins. Suite **1349/1349**, format clean.
+
+Goldens (`D:\spec-soak\slice10`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 87.3 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact (fallbacks −90K; triangle
+barely uses MMX). Menu spec r1 PASS 200.1 s — SHA `4EF1FBF6…` exact,
+`vec=0`, `verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+fallbacks 120.8M→105.6M (−15.2M, −12.6%) with Movq/Movntq gone from
+the top-12 tail (new tail: Cli/Sti, x87 Fld/Fstp/Fmul/Fadd/Fistp/Fild/
+Fst, Prefetch 1.9M); block dispatches 307M→292M (continuation works —
+fewer dispatches, longer blocks). Walls within noise (menu 197.0→200.1,
+triangle 85.6→87.3) — absorption only, no wall claim; saturation holds.
+Remaining: x87 family (its own slice — FPU stack/TOP/tags, daylight),
+SSE Mulss/Cvttss2Si, Prefetch hint. Flag stays opt-in.
+
