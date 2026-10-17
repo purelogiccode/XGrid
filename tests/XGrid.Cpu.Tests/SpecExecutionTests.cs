@@ -120,6 +120,36 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void SseMove_Shapes_MatchInterpreter()
+    {
+        // Slice-18 family (§156): packed 128-bit moves, scalar Movss,
+        // low/high 64-bit moves, HL shuffles, non-temporal store and
+        // Movmskps. All run on shared zero XMM state (both sides) with
+        // [EBX] (Preset 0x2000 content) as the memory side; every body
+        // reads before writing, so fault/step ordering matches exactly.
+        // Movss carries the F3 mandatory prefix (Rep-stamped) like the
+        // slice-12 scalars — the differential proves the gate holds.
+        RunShapes(
+            ("movups xmm,xmm", new byte[] { 0x0F, 0x10, 0xC8 }),
+            ("movups xmm,m128", new byte[] { 0x0F, 0x10, 0x03 }),
+            ("movups m128,xmm", new byte[] { 0x0F, 0x11, 0x03 }),
+            ("movaps xmm,xmm", new byte[] { 0x0F, 0x28, 0xC8 }),
+            ("movaps xmm,m128", new byte[] { 0x0F, 0x28, 0x03 }),
+            ("movaps m128,xmm", new byte[] { 0x0F, 0x29, 0x03 }),
+            ("movss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x10, 0xC8 }),
+            ("movss xmm,m32", new byte[] { 0xF3, 0x0F, 0x10, 0x03 }),
+            ("movss m32,xmm", new byte[] { 0xF3, 0x0F, 0x11, 0x03 }),
+            ("movlps xmm,m64", new byte[] { 0x0F, 0x12, 0x03 }),
+            ("movlps m64,xmm", new byte[] { 0x0F, 0x13, 0x03 }),
+            ("movhps xmm,m64", new byte[] { 0x0F, 0x16, 0x03 }),
+            ("movhps m64,xmm", new byte[] { 0x0F, 0x17, 0x03 }),
+            ("movhlps xmm,xmm", new byte[] { 0x0F, 0x12, 0xC8 }),
+            ("movlhps xmm,xmm", new byte[] { 0x0F, 0x16, 0xC8 }),
+            ("movntps m128,xmm", new byte[] { 0x0F, 0x2B, 0x03 }),
+            ("movmskps r32,xmm", new byte[] { 0x0F, 0x50, 0xC8 }));
+    }
+
+    [Fact]
     public void FpuCompare_Shapes_MatchInterpreter()
     {
         // Slice-17 family (§155): x87 compares, ST(0) sign/test ops and
@@ -732,6 +762,19 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0xC1))); // ffree st1 (slice 17)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0xF6))); // fdecstp (slice 17)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDB, 0xE2))); // fnclex (slice 17)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x10, 0xC8))); // movups xmm,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x10, 0x03))); // movups xmm,m128 (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x11, 0x03))); // movups m128,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x28, 0xC8))); // movaps xmm,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x29, 0x03))); // movaps m128,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x10, 0xC8))); // movss xmm,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x10, 0x03))); // movss xmm,m32 (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x11, 0x03))); // movss m32,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x12, 0x03))); // movlps xmm,m64 (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x13, 0x03))); // movlps m64,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x12, 0xC8))); // movhlps (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2B, 0x03))); // movntps m128,xmm (slice 18)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x50, 0xC8))); // movmskps (slice 18)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;

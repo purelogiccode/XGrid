@@ -321,17 +321,17 @@ public sealed class DecodedBlockCache
     }
 
     /// <summary>
-    /// Conservative slice-4 formation (extended by slices 10-17): only
+    /// Conservative slice-4 formation (extended by slices 10-18): only
     /// common straight-line integer/data operations may continue, now
     /// including the MMX 64-bit moves (pure data through the x87-aliased
     /// file), the Prefetch/Fence hints (interpreter nops), scalar SSE
     /// arithmetic/converts (single-helper verbatim bodies), x87
     /// loads/stores/integer moves plus ST(0) arithmetic (read-before-
     /// mutate, EIP-precise), the slice-14 reg-forms, the slice-16
-    /// remainder, and the slice-17 compares/unary/tag-control (verbatim
-    /// read-before-compare mirrors, pure register/state ops). Every
-    /// branch, trap, system/mode, string/REP, I/O and unlisted instruction
-    /// ends the block (including future mnemonics).
+    /// remainder, the slice-17 compares/unary/tag-control, and the
+    /// slice-18 packed-SSE moves (verbatim read-before-write mirrors).
+    /// Every branch, trap, system/mode, string/REP, I/O and unlisted
+    /// instruction ends the block (including future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
     public static bool Terminates(in DecodedInstruction instruction)
@@ -378,7 +378,10 @@ public sealed class DecodedBlockCache
             or Mnemonic.Ficom or Mnemonic.Ficomp
             or Mnemonic.Fchs or Mnemonic.Fabs or Mnemonic.Ftst
             or Mnemonic.Ffree or Mnemonic.Ffreep or Mnemonic.Fdecstp or Mnemonic.Fincstp
-            or Mnemonic.Fnclex or Mnemonic.Fninit);
+            or Mnemonic.Fnclex or Mnemonic.Fninit
+            or Mnemonic.Movaps or Mnemonic.Movups or Mnemonic.Movss
+            or Mnemonic.Movlps or Mnemonic.Movhps or Mnemonic.Movhlps or Mnemonic.Movlhps
+            or Mnemonic.Movntps or Mnemonic.Movmskps);
     }
 
     private sealed record Block(
