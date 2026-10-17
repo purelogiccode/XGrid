@@ -8970,3 +8970,35 @@ Block (kills the head-key dict + silent cap + per-visit lookup); hoist
 Context/InterruptSource loads to per-invocation locals. If tiered
 emission cannot beat the C# unrolled path either, the serve layer is
 declared at ceiling and only body-level semantic work remains.
+
+## 172. Tiered emission: lazy runner builds + block-attached cache (2026-10-17)
+
+Direct follow-up to the §171 wall verdict (per-runner ~0.7 ms
+construction+first-JIT cannot amortize over short churned tails: menu
+built 1.24M runners for ~3-member tails). E2 attacks construction
+directly, changing only the serve vehicle: (1) lazy builds -- a block's
+tail runner is built on its 8th head visit (`DecodedBlockCache.
+EmitThreshold`; visits counted at head selection), so cold single-visit
+code never pays construction while hot loops amortize it; pre-threshold
+visits run the exact member path. (2) The runner cache moved onto the
+Block (Runner/RunnerGen validated against the invalidation generation),
+killing the head-key dict, its per-visit lookup, and the silent 4096-cap
+clear -- runners die with their blocks, and Invalidate needs no separate
+table clear. (3) The emitted prologue hoists Context into a local (one
+callvirt per invocation instead of three per member); InterruptSource
+stays a live per-member read and generation/EIP stay per-member checks.
+Threshold/tiering change counting nowhere (unit counter asserts
+extended by longer budgets, not new rules).
+50M triangle probe: builds 4599-->1269 with identical emission volume
+(40.7M) and identical spec stats.
+GATE (D:\spec-soak\slice28_run.ps1, 8 legs): ALL PASS, SHAs exact both
+titles, vec=0, anchors exact, interrupts identical 1883/3153.
+triangle emit 71.6 s / spec 73.0 s (emit at parity-or-better -- the first
+codegen configuration not slower than the C# unrolled path); menu emit
+376.2 s / spec 147.2 s (was 984 s: 2.6x better, still 2.56x spec).
+Builds collapsed by tiering: triangle 80k-->9k, menu 1.24M-->432k with
+identical emission volume and bit-identical serve/exit/decode tallies.
+Remaining menu excess (~229 s) fits 432k warm-head constructions
+(~0.5 ms each): threshold tuning (raising T) is the next knob.
+50M triangle probe: builds 4599-->1269 with identical emission volume
+(40.7M) and identical spec stats.

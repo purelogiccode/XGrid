@@ -119,8 +119,16 @@ internal static class BlockEmitter
         LocalBuilder served = il.DeclareLocal(typeof(int));
         LocalBuilder source = il.DeclareLocal(typeof(IInterruptSource));
         LocalBuilder vector = il.DeclareLocal(typeof(int));
+        LocalBuilder context = il.DeclareLocal(typeof(XboxContext));
         Label end = il.DefineLabel();
         Label redirect = il.DefineLabel();
+
+        // Per-invocation hoists: the context never changes mid-block
+        // (segment reloads and mode changes flush). InterruptSource stays a
+        // live per-member read.
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Callvirt, GetContext);
+        il.Emit(OpCodes.Stloc, context);
 
         for (int j = 1; j < entries.Length; j++)
         {
@@ -140,16 +148,14 @@ internal static class BlockEmitter
             il.Emit(OpCodes.Brfalse, end);
 
             // Redirect: EIP != baked member linear -> redirect exit.
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Callvirt, GetContext);
+            il.Emit(OpCodes.Ldloc, context);
             il.Emit(OpCodes.Callvirt, GetEip);
             il.Emit(OpCodes.Ldc_I4, unchecked((int)linears[j]));
             il.Emit(OpCodes.Ceq);
             il.Emit(OpCodes.Brfalse, redirect);
 
             // TSC++ before the poll, exactly as the member path.
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Callvirt, GetContext);
+            il.Emit(OpCodes.Ldloc, context);
             il.Emit(OpCodes.Dup);
             il.Emit(OpCodes.Callvirt, GetTsc);
             il.Emit(OpCodes.Ldc_I4_1);
@@ -163,8 +169,7 @@ internal static class BlockEmitter
             il.Emit(OpCodes.Stloc, source);
             il.Emit(OpCodes.Ldloc, source);
             il.Emit(OpCodes.Brfalse, body);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Callvirt, GetContext);
+            il.Emit(OpCodes.Ldloc, context);
             il.Emit(OpCodes.Callvirt, GetEflags);
             il.Emit(OpCodes.Ldc_I4, (int)FlagBits.If);
             il.Emit(OpCodes.And);
