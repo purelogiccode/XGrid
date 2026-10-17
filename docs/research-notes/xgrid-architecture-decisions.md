@@ -8147,3 +8147,52 @@ triangle 1B `--block-exec` leg ran (`D:\spec-soak\slice12\
 triangle-block-r1`): SHA `A1740DE0…` exact, `vec=0`, draws=2706 anchor
 exact. The shared whitelist change is safe under both opt-in flags.
 
+## 150. x87 slice scope: the last big family, filed for daylight (2026-10-16)
+
+Read-only scope (no product change; inventory by a probe agent, verified
+against `XboxCpu.cs` + `FpuState.cs` + the slice-12 menu/triangle
+fallback tails). x87 is the #1 remaining fallback family by far:
+**~50.8M menu** (`Fld/Mem` 12.8M, `Fstp/Mem` 11.3M, `Fmul/Reg/Mem`
+6.6M, `Fadd/Reg/Mem` 4.5M, `Fistp/Mem` 4.2M, `Fild/Mem` 3.8M,
+`Fmul/Reg/Reg` 2.7M, `Fst/Mem` 2.6M, `Fstp/Reg` 2.1M, `Fadd/Reg/Reg`
+1.6M) and **~9M triangle** — bigger than slices 9–12 combined. The
+only slice with a real chance of moving walls before the memory-path
+design. It stays daylight work (FPU stack/TOP/tags + IE semantics
+deserve a fresh session), this note is the build recipe.
+
+**Why it is safe (verified, not assumed).** (i) EIP precision is free:
+`nextEip` commits only at `XboxCpu.cs:919`; every memory-form case
+reads before mutating any FPU state, so a faulting bus access throws
+with EIP still on the member — handlers that advance EIP only after
+completion mirror this exactly. (ii) Invalidation needs ZERO new
+hooks: `WriteMemoryFpu80` = `WriteMemory64` + `WriteMemory`, and every
+CPU store path funnels through `NoteStorePhysical` (`RawWrite:1138`,
+`WriteMemory64`, `WriteMemoryBytes`) into the §134 page-drop — FPU
+writes are ordinary CPU stores. (iii) No reordering anywhere: handlers
+are verbatim bodies, so the MMX-aliasing hazard (`SetMmxRegister`
+clobbers phys regs without moving TOP) cannot trigger. (iv) TOP lives
+in SW bits 11–13 and tags auto-classify on Push/SetRegister — all data,
+all mirrored.
+
+**Recommended scope (slice 13): 6 mem shapes ≈ 88% of menu x87** —
+`Fld m32/m64/m80`, `Fstp m32/m64/m80`, `Fst m32/m64/m80`,
+`Fild m16/m32/m64`, `Fistp m16/m32/m64` (RoundingMode + IE-on-overflow
+via the same `WriteFpuInteger` helper, truncate baked per width),
+`Fadd/Fmul ST(0),m32/m64` (double read into a temp, then SetRegister —
+fault precedes all mutation). Follow-up slice 14: reg-reg ALU,
+`Faddp`, `Fstp ST(i)`, `Fcom/Fcomp` (CC + IE-on-NaN + conditional pop),
+`Fldcw/Fnstcw/Fnstsw` (CW changes later-conversion meaning — order
+with Fistp shapes needs the verbatim-mirror discipline, no batching).
+Explicitly OUT: BCD (`Fbld/Fbstp`), env/state (`Fldenv/Fnstenv/
+Fnsave/Frstor`), transcendentals, `Fxam/Ftst`, `Fcmovcc`.
+
+**Acceptance gate (same as slices 9–12 plus FPU-specific rows):**
+differentials at every width incl. m80 + all 4 CW rounding modes for
+`Fistp` + overflow→IE/indefinite cases + 8-deep stack wraparound +
+MMX-clobber sequence; resolver pins incl. a real-REP still-null guard;
+`Terminates` continuation (straight-line data like slice 10) with the
+2-leg 1B golden gate (SHAs, `vec=0`, `verifyFailures=0`, anchors
+exact) + the `--block-exec` cross-check leg that slices 10–12
+established; flag-off byte-identical; walls reported without claim
+(but this is the first slice since slice 8 allowed to hope).
+
