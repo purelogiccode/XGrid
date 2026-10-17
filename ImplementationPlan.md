@@ -3203,6 +3203,9 @@ fallbacks menu 101.8M→49.3M (−52%) / triangle −8M with all six mem
 shapes gone from both tails; dispatches menu −18%. New tail: Cli/Sti,
 Shl/Shr r,r, Fld-reg/Fxch/Fld1/Faddp, Movs, Push-m, Fsub r,m, Mul-m.
 Flag stays opt-in.
+**ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
+02:13 — known deltas matching, park break at exactly 792,800,535 steps
+(bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
