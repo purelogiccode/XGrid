@@ -3255,6 +3255,16 @@ PASS (`D:\\spec-soak\\slice18`: menu 167.6 s SHA `4EF1FBF6…`, triangle
 triangle −0.8M with every packed move gone from both tails. New tail:
 Cli/Sti, Movs/Stos (string, out), Rsqrtss, Rcl-imm, Sbb/Adc
 (carry-live, out), Cdq, Pushf/Popf. Flag stays opt-in.
+**§158 DONE (2026-10-17, direct):** JIT slice 20 (Rcl/Rcr imm+CL,
+Cbw/Cdq, Pushf/Popf, Setcc/Cmovcc, Rdtsc — 9 handlers, Popf/Rdtsc
+whitelist additions) behind `--spec-exec`; 1359/1359 tests, format
+clean, 2-leg spec golden check PASS (`D:\\spec-soak\\slice20`: menu
+184.2 s SHA `4EF1FBF6…`, triangle 96.9 s SHA `A1740DE0…`, both `vec=0`,
+`verifyFailures=0`, anchors exact) + `--block-exec` cross-check PASS;
+fallbacks menu 34.6M→34.1M / triangle −0.2M with Rcl-imm/Cdq/Pushf/
+Popf/Setcc gone from both tails. New tail: Cli/Sti, Movs/Stos (string,
+out), Sbb/Adc (carry-live, out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps.
+Flag stays opt-in.
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,

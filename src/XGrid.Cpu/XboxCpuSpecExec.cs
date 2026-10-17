@@ -315,6 +315,47 @@ public sealed partial class XboxCpu
                     && (second == OperandKind.Register || second == OperandKind.Memory)
                     ? SpecSseCompareScalarHandler
                     : null;
+            case Mnemonic.Cbw:
+            case Mnemonic.Cdq:
+                // Slice 20: sign-extension, no operands — the operand-size
+                // branch lives in the shared body, read from the cached
+                // member exactly like the interpreter.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? ResolveSpecSignExtend(instruction.Mnemonic)
+                    : null;
+            case Mnemonic.Pushf:
+                // Slice 20: flag push (Reserved1 forced, like the
+                // interpreter); operand size rides the member.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecPushfHandler
+                    : null;
+            case Mnemonic.Popf:
+                // Slice 20: flag pop (IF changes take effect at the
+                // existing IRQ-check boundaries on both paths — the mirror
+                // is exact by shared code shape).
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecPopfHandler
+                    : null;
+            case Mnemonic.Setcc:
+                // Slice 20: condition to byte — the condition rides the
+                // cached member, evaluated by the shared helper.
+                return (first == OperandKind.Register || first == OperandKind.Memory)
+                    && second == OperandKind.None
+                    ? SpecSetccHandler
+                    : null;
+            case Mnemonic.Cmovcc:
+                // Slice 20: conditional move through the shared condition
+                // helper (read-before-write, flags only).
+                return first == OperandKind.Register
+                    && (second == OperandKind.Register || second == OperandKind.Memory)
+                    ? SpecCmovccHandler
+                    : null;
+            case Mnemonic.Rdtsc:
+                // Slice 20: timestamp read — both sides advance TSC
+                // identically per executed step, so the mirror is exact.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecRdtscHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -338,6 +379,8 @@ public sealed partial class XboxCpu
             case Mnemonic.Sar:
             case Mnemonic.Rol:
             case Mnemonic.Ror:
+            case Mnemonic.Rcl:
+            case Mnemonic.Rcr:
                 return ResolveSpecShift(instruction.Mnemonic, first, second, size);
             case Mnemonic.Movzx:
             case Mnemonic.Movsx:
@@ -784,6 +827,21 @@ public sealed partial class XboxCpu
     /// </summary>
     private static SpecHandler? ResolveSpecShift(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
     {
+        // Slice 20: Rcl/Rcr (carry-through rotates, excluded from slice 8
+        // for scope, not safety) take a shared `ExecuteShift` body for
+        // every count kind — the helper threads CF exactly like the
+        // interpreter on both paths.
+        if (mnemonic is Mnemonic.Rcl or Mnemonic.Rcr)
+        {
+            if ((first != OperandKind.Register && first != OperandKind.Memory)
+                || (second != OperandKind.Immediate && second != OperandKind.Register))
+            {
+                return null;
+            }
+
+            return mnemonic == Mnemonic.Rcl ? SpecRclHandler : SpecRcrHandler;
+        }
+
         if (second == OperandKind.Register)
         {
             // Slice 15: r,CL and m,CL. One shared body per mnemonic reads
@@ -1133,6 +1191,16 @@ public sealed partial class XboxCpu
         };
     }
 
+    private static SpecHandler? ResolveSpecSignExtend(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Cbw => SpecCbwHandler,
+            Mnemonic.Cdq => SpecCdqHandler,
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
@@ -1378,6 +1446,15 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecSseLogicalHandler = SpecSseLogical;
     private static readonly SpecHandler SpecSseCompareHandler = SpecSseCompare;
     private static readonly SpecHandler SpecSseCompareScalarHandler = SpecSseCompareScalar;
+    private static readonly SpecHandler SpecRclHandler = SpecRcl;
+    private static readonly SpecHandler SpecRcrHandler = SpecRcr;
+    private static readonly SpecHandler SpecCbwHandler = SpecCbw;
+    private static readonly SpecHandler SpecCdqHandler = SpecCdq;
+    private static readonly SpecHandler SpecPushfHandler = SpecPushf;
+    private static readonly SpecHandler SpecPopfHandler = SpecPopf;
+    private static readonly SpecHandler SpecSetccHandler = SpecSetcc;
+    private static readonly SpecHandler SpecCmovccHandler = SpecCmovcc;
+    private static readonly SpecHandler SpecRdtscHandler = SpecRdtsc;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -2860,6 +2937,100 @@ public sealed partial class XboxCpu
         // Slice 19: verbatim interpreter Comiss/Ucomiss case (EFLAGS
         // only, no control flow).
         cpu.ExecuteSseCompareScalar(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRcl(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter carry-rotate (CF threaded
+        // inside the shared helper on both paths).
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRcr(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteShift(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecCbw(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Cbw` case (operand-size
+        // branch read from the cached member on both paths).
+        if (instruction.OperandSize == 16)
+        {
+            sbyte value = (sbyte)cpu.Context.ReadRegister8(0);
+            cpu.Context.WriteRegister16(Gpr.Eax, (ushort)value);
+        }
+        else
+        {
+            short value = (short)cpu.Context.ReadRegister16(Gpr.Eax);
+            cpu.Context.WriteRegister(Gpr.Eax, (uint)value);
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecCdq(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Cdq` case.
+        if (instruction.OperandSize == 16)
+        {
+            short value = (short)cpu.Context.ReadRegister16(Gpr.Eax);
+            cpu.Context.WriteRegister16(Gpr.Edx, value < 0 ? (ushort)0xFFFF : (ushort)0);
+        }
+        else
+        {
+            int value = (int)cpu.Context.ReadRegister(Gpr.Eax);
+            cpu.Context.WriteRegister(Gpr.Edx, value < 0 ? 0xFFFFFFFFu : 0u);
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecPushf(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Pushf` case.
+        cpu.Push(cpu.Context.Eflags | FlagBits.Reserved1, instruction.OperandSize, instruction.AddressSize);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecPopf(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Popf` case (a faulting stack
+        // read throws before EFLAGS changes; IF effects land at the
+        // existing IRQ-check boundaries on both paths).
+        cpu.Context.Eflags = cpu.Pop(instruction.OperandSize, instruction.AddressSize) | FlagBits.Reserved1;
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSetcc(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Setcc` case (condition rides
+        // the cached member through the shared evaluator).
+        cpu.WriteOperand(instruction.Operand1, cpu.EvaluateCondition(instruction.Condition) ? 1u : 0u);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecCmovcc(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Cmovcc` case (flags only, no
+        // control flow; the unread side stays untouched on both paths).
+        if (cpu.EvaluateCondition(instruction.Condition))
+        {
+            cpu.WriteOperand(instruction.Operand1, cpu.ReadOperand(instruction.Operand2));
+        }
+
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecRdtsc(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 20: verbatim interpreter `Rdtsc` case (TSC advances per
+        // executed step identically on both sides of a differential).
+        cpu.Context.Eax = (uint)cpu.Context.Tsc;
+        cpu.Context.Edx = (uint)(cpu.Context.Tsc >> 32);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

@@ -120,6 +120,32 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void FlagsMisc_Shapes_MatchInterpreter()
+    {
+        // Slice-20 family (§158): carry-rotates, sign-extension, flag
+        // push/pop, conditional set/move and Rdtsc. All are verbatim
+        // mirrors of single-helper or inline interpreter cases; the
+        // popf shape pushes first so both sides restore identical flags
+        // (a bare popf would ingest whatever the stack holds — still
+        // deterministic, but pushfd+popf exercises both handlers).
+        RunShapes(
+            ("rcl r32,1", new byte[] { 0xD1, 0xD0 }),
+            ("rcl r32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0xD0 }),
+            ("rcr m32,1", new byte[] { 0xD1, 0x1B }),
+            ("rcr m32,cl", new byte[] { 0xB1, 0x03, 0xD3, 0x1B }),
+            ("cwde", new byte[] { 0x98 }),
+            ("cbw", new byte[] { 0x66, 0x98 }),
+            ("cdq", new byte[] { 0x99 }),
+            ("pushf", new byte[] { 0x9C }),
+            ("pushfd; popf", new byte[] { 0x9C, 0x9D }),
+            ("setne al", new byte[] { 0x0F, 0x95, 0xC0 }),
+            ("setbe m8", new byte[] { 0x0F, 0x96, 0x03 }),
+            ("cmovne ecx,eax", new byte[] { 0x0F, 0x45, 0xC8 }),
+            ("cmovbe eax,m32", new byte[] { 0x0F, 0x46, 0x03 }),
+            ("rdtsc", new byte[] { 0x0F, 0x31 }));
+    }
+
+    [Fact]
     public void SseCompute_Shapes_MatchInterpreter()
     {
         // Slice-19 family (§157): SSE sqrt/reciprocal, packed arithmetic,
@@ -759,7 +785,7 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAF, 0xC8))); // imul r32,r32 (slice 15)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAF, 0x0B))); // imul r32,m32 (slice 15)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x6B, 0x0B, 0x05))); // imul r32,m32,imm8 (slice 15)
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xD0))); // rcl eax,cl: keeps the interpreter
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD3, 0xD0))); // rcl r32,cl (slice 20)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xD8))); // neg r32 (slice 16)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0x1B))); // neg m32 (slice 16)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xD0))); // not r32 (slice 16)
@@ -815,6 +841,17 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0xC2, 0xC8, 0x00))); // cmpss (slice 19)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2F, 0xC8))); // comiss (slice 19)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x2E, 0xC8))); // ucomiss (slice 19)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xD0))); // rcl r32,1 (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0x1B))); // rcr m32,1 (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x98))); // cwde (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x98))); // cbw (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x99))); // cdq (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x9C))); // pushf (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x9D))); // popf (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x95, 0xC0))); // setne al (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x96, 0x03))); // setbe m8 (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x45, 0xC8))); // cmovne (slice 20)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x31))); // rdtsc (slice 20)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;
