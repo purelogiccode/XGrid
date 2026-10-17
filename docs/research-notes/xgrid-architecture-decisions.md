@@ -8298,12 +8298,6 @@ Fcom/Fcomp/Fchs, Sbb-imm (carry-live, out by design). Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
 
-## 155. JIT slice 17: x87 compares + sign/test + tag control behind --spec-exec (2026-10-16)
-
-## 156. JIT slice 18: packed-SSE moves behind --spec-exec (2026-10-17)
-
-## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
-
 ## 158. JIT slice 20: carry-rotates + sign-extension + flags + cond-move + TSC behind --spec-exec (2026-10-17)
 
 Direct development, early-morning slice closing the integer/flags
@@ -8335,6 +8329,50 @@ out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps. Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
 
+## 159. Memory-path scope: the next lever, filed from a probe (2026-10-17)
+
+Read-only scope (no product change; inventory by a probe agent against
+`XboxCpu.cs` + `DecodedBlockCache.cs` + `Mmu.cs` + `AddressSpace.cs` +
+the slice-20 menu golden). Shape work is now in extreme diminishing
+returns (every remaining tail row is <100k or a deliberate out:
+Cli/Sti, Movs/Stos, Sbb/Adc, Cmpxchg8B, FPU control, Shufps) — the
+§138 verdict stands and the numbers now prove the mechanism: slice-20
+menu runs 961M specialized handler invocations against 228.8M block
+dispatches moving 995.3M instructions (~4.35 insn/dispatch, 96.6%
+specialized, fallbacks 3.4% topped by untouchables). Dispatch is not
+the cost; the per-touch memory path is.
+
+**Common-case cost (`ReadMemory32`, MMU on, no page cross):** ~6-7 small
+calls + 1 `Mmu.Translate` + 1 RAM touch — `ComputeAddress`
+(base+index+disp), `IsEnabled` + `CrossesPage` prologue, `TranslateLinear`
+(translate + fault branch + idle-note), `RawRead` → `AddressSpace.Read32`
+→ `PhysicalMemory.Read32` (span + endian), plus the profiler pair when
+hooked. Writes add `NoteStorePhysical` (page-drop) + `CheckWatch`/
+`NoteGuestWrite`. Confirmed: every interpreter + all ~20 spec slices
+funnel through the same 4-6 helpers (`Read/WriteMemory`,
+`Read/WriteMemory64`, `ComputeAddress`, `RawRead/RawWrite`) — zero direct
+bus touches from spec code — so optimizing the helpers covers everything.
+
+**Options (with hazards):** (1) TLB-hit inline / last-page cache —
+subscribe to the existing flush set (`OnMmuFlush/Page`, page-table-page
+stores already full-flush); faults must stay exact so the generation
+must cover PTE stores. (2) Identity-translation fast path for pinned
+low-RAM pages — must still prove access rights (validate-once-per-page
+verdict cache) and stay RAM-only (MMIO Region hits + unmapped counters
+must keep firing). (3) Span/burst path for 64/F80/Bytes/push/pop/string
+— one translate + `Ram.GetSpan` with whole-span RAM pre-check;
+write path must still run per-page `NoteStorePhysical` + present-dirty
+(aliases `0x80000000`/mirror/WC: translate first, span second, never
+span the linear address) + profiler notes or golden counters drift.
+
+**Gate for the build slice:** median-of-3 cache-vs-spec on both titles
+(the median20 matrix running tonight is the pre-change baseline) +
+`verifyFailures=0` + flag-off byte-identical + counter anchors exact;
+walls reported before any default-flip talk. Not tonight's work —
+this note is the recipe.
+
+## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
+
 Direct development, early-morning slice through the shared-helper
 pattern at its most leveraged: 5 shared bodies covering 20 mnemonics —
 Sqrtps/Sqrtss/Rsqrtps/Rsqrtss/Rcpps/Rcpss (`ExecuteSseUnary`),
@@ -8360,6 +8398,8 @@ Rsqrtss gone (newly exposed: Setcc r8). New tail: Cli/Sti
 out), Cdq, Pushf/Popf, Setcc. Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
+
+## 156. JIT slice 18: packed-SSE moves behind --spec-exec (2026-10-17)
 
 Direct development, early-morning slice taking the packed-move tail.
 Movaps/Movups (reg,reg/reg,mem/mem,reg via the same
@@ -8387,6 +8427,8 @@ Stos (string, out), Rsqrtss, Rcl-imm, Sbb/Adc (carry-live, out), Cdq,
 Pushf/Popf. Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
+
+## 155. JIT slice 17: x87 compares + sign/test + tag control behind --spec-exec (2026-10-16)
 
 Direct development, late-evening slice completing the x87 data family
 (the §150 scope's last register-safe rows). Fcom/Fcomp/Fucom/Fucomp
