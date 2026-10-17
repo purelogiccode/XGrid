@@ -8304,6 +8304,37 @@ Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 
 ## 157. JIT slice 19: SSE sqrt/rcp + packed arithmetic/logicals/compares behind --spec-exec (2026-10-17)
 
+## 158. JIT slice 20: carry-rotates + sign-extension + flags + cond-move + TSC behind --spec-exec (2026-10-17)
+
+Direct development, early-morning slice closing the integer/flags
+remainder. Rcl/Rcr (imm + CL, excluded from slice 8 for scope, not
+safety) via shared `ExecuteShift` bodies — CF threaded identically;
+Cbw/Cdq (already whitelisted, operand-size branch in-body);
+Pushf/Popf (verbatim; IF effects land at existing IRQ boundaries on
+both paths); Setcc/Cmovcc (condition rides the member through the
+shared evaluator; Cmovcc is flags-only, no control flow); Rdtsc
+(TSC advances identically per step on both differential sides). 9
+handlers; whitelist += Popf/Rdtsc only (the rest already continued —
+verified, no duplicates). One self-caught redundancy en route (Rcl/Rcr
+routed twice — Shl-group + inserted block; removed the latter) and one
+stale-guard flip (the slice-15 `rcl eax,cl` Null pin now resolves).
+
+Tests: `FlagsMisc_Shapes_MatchInterpreter` (14 shapes; popf runs
+behind pushfd so both sides restore identical flags) + 13 resolver
+pins. Suite **1359/1359**, format clean.
+
+Goldens (`D:\\spec-soak\\slice20`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 96.9 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Rcl-imm gone (−0.2M).
+Menu spec r1 PASS 184.2 s — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+**fallbacks 34.6M→34.1M (−0.5M)** with Rcl-imm/Cdq/Pushf/Popf/Setcc
+gone (newly exposed: Cmpxchg8B, Fldcw/Fnstcw, Fwait, Shufps). New tail:
+Cli/Sti (untouchable), Movs/Stos (string, out), Sbb/Adc (carry-live,
+out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps. Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 Direct development, early-morning slice through the shared-helper
 pattern at its most leveraged: 5 shared bodies covering 20 mnemonics —
 Sqrtps/Sqrtss/Rsqrtps/Rsqrtss/Rcpps/Rcpss (`ExecuteSseUnary`),
