@@ -92,7 +92,9 @@ public sealed partial class XboxCpu
             case Mnemonic.Mov:
                 return ResolveSpecMov(first, second, size);
             case Mnemonic.Add:
+            case Mnemonic.Adc:
             case Mnemonic.Sub:
+            case Mnemonic.Sbb:
             case Mnemonic.And:
             case Mnemonic.Or:
             case Mnemonic.Xor:
@@ -187,6 +189,29 @@ public sealed partial class XboxCpu
                 return second == OperandKind.None
                     && (first == OperandKind.None || first == OperandKind.Memory)
                     ? SpecFnstswHandler
+                    : null;
+            case Mnemonic.Fldcw:
+                // Slice 7 (§170): control-word load (m16-only), verbatim
+                // mirror (a faulting read throws before FCW changes).
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFldcwHandler
+                    : null;
+            case Mnemonic.Fnstcw:
+                // Slice 7 (§170): control-word store (m16-only), verbatim
+                // mirror.
+                return first == OperandKind.Memory && second == OperandKind.None
+                    ? SpecFnstcwHandler
+                    : null;
+            case Mnemonic.Fwait:
+                // Slice 7 (§170): wait-for-FPU nop (all x87 exceptions stay
+                // masked under the default FCW; the interpreter is a break).
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecFwaitHandler
+                    : null;
+            case Mnemonic.Emms:
+                // Slice 7 (§170): empty-MMX-state one-liner, verbatim.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecEmmsHandler
                     : null;
             case Mnemonic.Fcom:
             case Mnemonic.Fcomp:
@@ -609,6 +634,18 @@ public sealed partial class XboxCpu
             (Mnemonic.Xor, false, 8) => SpecXorRegImm8Handler,
             (Mnemonic.Xor, false, 16) => SpecXorRegImm16Handler,
             (Mnemonic.Xor, false, 32) => SpecXorRegImm32Handler,
+            (Mnemonic.Adc, true, 8) => SpecAdcRegReg8Handler,
+            (Mnemonic.Adc, true, 16) => SpecAdcRegReg16Handler,
+            (Mnemonic.Adc, true, 32) => SpecAdcRegReg32Handler,
+            (Mnemonic.Adc, false, 8) => SpecAdcRegImm8Handler,
+            (Mnemonic.Adc, false, 16) => SpecAdcRegImm16Handler,
+            (Mnemonic.Adc, false, 32) => SpecAdcRegImm32Handler,
+            (Mnemonic.Sbb, true, 8) => SpecSbbRegReg8Handler,
+            (Mnemonic.Sbb, true, 16) => SpecSbbRegReg16Handler,
+            (Mnemonic.Sbb, true, 32) => SpecSbbRegReg32Handler,
+            (Mnemonic.Sbb, false, 8) => SpecSbbRegImm8Handler,
+            (Mnemonic.Sbb, false, 16) => SpecSbbRegImm16Handler,
+            (Mnemonic.Sbb, false, 32) => SpecSbbRegImm32Handler,
             _ => null,
         };
     }
@@ -643,7 +680,9 @@ public sealed partial class XboxCpu
     /// <summary>
     /// Resolves ALU shapes with a memory operand (slice 3): register/memory,
     /// memory/register and memory/immediate for the carry-free ALU and
-    /// compare/test mnemonics. Adc/Sbb stay unresolved (carry live).
+    /// compare/test mnemonics, plus Adc/Sbb from slice 7 (§170 — the live
+    /// carry reads the same EFLAGS bit the interpreter's `ExecuteAlu`
+    /// uses, so the mirror is exact by shared shape).
     /// </summary>
     private static SpecHandler? ResolveSpecAluMem(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
     {
@@ -712,6 +751,24 @@ public sealed partial class XboxCpu
             (Mnemonic.Xor, 2, 8) => SpecXorMemImm8Handler,
             (Mnemonic.Xor, 2, 16) => SpecXorMemImm16Handler,
             (Mnemonic.Xor, 2, 32) => SpecXorMemImm32Handler,
+            (Mnemonic.Adc, 0, 8) => SpecAdcRegMem8Handler,
+            (Mnemonic.Adc, 0, 16) => SpecAdcRegMem16Handler,
+            (Mnemonic.Adc, 0, 32) => SpecAdcRegMem32Handler,
+            (Mnemonic.Adc, 1, 8) => SpecAdcMemReg8Handler,
+            (Mnemonic.Adc, 1, 16) => SpecAdcMemReg16Handler,
+            (Mnemonic.Adc, 1, 32) => SpecAdcMemReg32Handler,
+            (Mnemonic.Adc, 2, 8) => SpecAdcMemImm8Handler,
+            (Mnemonic.Adc, 2, 16) => SpecAdcMemImm16Handler,
+            (Mnemonic.Adc, 2, 32) => SpecAdcMemImm32Handler,
+            (Mnemonic.Sbb, 0, 8) => SpecSbbRegMem8Handler,
+            (Mnemonic.Sbb, 0, 16) => SpecSbbRegMem16Handler,
+            (Mnemonic.Sbb, 0, 32) => SpecSbbRegMem32Handler,
+            (Mnemonic.Sbb, 1, 8) => SpecSbbMemReg8Handler,
+            (Mnemonic.Sbb, 1, 16) => SpecSbbMemReg16Handler,
+            (Mnemonic.Sbb, 1, 32) => SpecSbbMemReg32Handler,
+            (Mnemonic.Sbb, 2, 8) => SpecSbbMemImm8Handler,
+            (Mnemonic.Sbb, 2, 16) => SpecSbbMemImm16Handler,
+            (Mnemonic.Sbb, 2, 32) => SpecSbbMemImm32Handler,
             (Mnemonic.Cmp, 0, 8) => SpecCmpRegMem8Handler,
             (Mnemonic.Cmp, 0, 16) => SpecCmpRegMem16Handler,
             (Mnemonic.Cmp, 0, 32) => SpecCmpRegMem32Handler,
@@ -1269,6 +1326,40 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecSubRegImm8Handler = SpecSubRegImm8;
     private static readonly SpecHandler SpecSubRegImm16Handler = SpecSubRegImm16;
     private static readonly SpecHandler SpecSubRegImm32Handler = SpecSubRegImm32;
+    private static readonly SpecHandler SpecAdcRegReg8Handler = SpecAdcRegReg8;
+    private static readonly SpecHandler SpecAdcRegReg16Handler = SpecAdcRegReg16;
+    private static readonly SpecHandler SpecAdcRegReg32Handler = SpecAdcRegReg32;
+    private static readonly SpecHandler SpecAdcRegImm8Handler = SpecAdcRegImm8;
+    private static readonly SpecHandler SpecAdcRegImm16Handler = SpecAdcRegImm16;
+    private static readonly SpecHandler SpecAdcRegImm32Handler = SpecAdcRegImm32;
+    private static readonly SpecHandler SpecAdcRegMem8Handler = SpecAdcRegMem8;
+    private static readonly SpecHandler SpecAdcRegMem16Handler = SpecAdcRegMem16;
+    private static readonly SpecHandler SpecAdcRegMem32Handler = SpecAdcRegMem32;
+    private static readonly SpecHandler SpecAdcMemReg8Handler = SpecAdcMemReg8;
+    private static readonly SpecHandler SpecAdcMemReg16Handler = SpecAdcMemReg16;
+    private static readonly SpecHandler SpecAdcMemReg32Handler = SpecAdcMemReg32;
+    private static readonly SpecHandler SpecAdcMemImm8Handler = SpecAdcMemImm8;
+    private static readonly SpecHandler SpecAdcMemImm16Handler = SpecAdcMemImm16;
+    private static readonly SpecHandler SpecAdcMemImm32Handler = SpecAdcMemImm32;
+    private static readonly SpecHandler SpecSbbRegReg8Handler = SpecSbbRegReg8;
+    private static readonly SpecHandler SpecSbbRegReg16Handler = SpecSbbRegReg16;
+    private static readonly SpecHandler SpecSbbRegReg32Handler = SpecSbbRegReg32;
+    private static readonly SpecHandler SpecSbbRegImm8Handler = SpecSbbRegImm8;
+    private static readonly SpecHandler SpecSbbRegImm16Handler = SpecSbbRegImm16;
+    private static readonly SpecHandler SpecSbbRegImm32Handler = SpecSbbRegImm32;
+    private static readonly SpecHandler SpecSbbRegMem8Handler = SpecSbbRegMem8;
+    private static readonly SpecHandler SpecSbbRegMem16Handler = SpecSbbRegMem16;
+    private static readonly SpecHandler SpecSbbRegMem32Handler = SpecSbbRegMem32;
+    private static readonly SpecHandler SpecSbbMemReg8Handler = SpecSbbMemReg8;
+    private static readonly SpecHandler SpecSbbMemReg16Handler = SpecSbbMemReg16;
+    private static readonly SpecHandler SpecSbbMemReg32Handler = SpecSbbMemReg32;
+    private static readonly SpecHandler SpecSbbMemImm8Handler = SpecSbbMemImm8;
+    private static readonly SpecHandler SpecSbbMemImm16Handler = SpecSbbMemImm16;
+    private static readonly SpecHandler SpecSbbMemImm32Handler = SpecSbbMemImm32;
+    private static readonly SpecHandler SpecFldcwHandler = SpecFldcw;
+    private static readonly SpecHandler SpecFnstcwHandler = SpecFnstcw;
+    private static readonly SpecHandler SpecFwaitHandler = SpecFwait;
+    private static readonly SpecHandler SpecEmmsHandler = SpecEmms;
     private static readonly SpecHandler SpecAndRegReg8Handler = SpecAndRegReg8;
     private static readonly SpecHandler SpecAndRegReg16Handler = SpecAndRegReg16;
     private static readonly SpecHandler SpecAndRegReg32Handler = SpecAndRegReg32;
@@ -1717,6 +1808,352 @@ public sealed partial class XboxCpu
         cpu.Context.Eflags =
             AluOps.Add(first, instruction.Operand2.Immediate, 0, 32, cpu.Context.Eflags, out uint result);
         cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    // Slice 7 (§170): Adc/Sbb mirrors of the Add/Sub shapes above. The
+    // only difference is the carry/borrow bit, read live from EFLAGS
+    // exactly like the interpreter's `ExecuteAlu` — multi-instruction
+    // carry chains observe identical CF traffic on both paths.
+
+    private static void SpecAdcRegReg8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegReg16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegMem8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegMem16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcRegMem32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 32);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemReg8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 8);
+        uint second = cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemReg16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 16);
+        uint second = cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemReg32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 32);
+        uint second = cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Add(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 8);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 16);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAdcMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 32);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Add(first, instruction.Operand2.Immediate, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegReg8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegReg16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegReg32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegMem8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister8(instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister8(instruction.Operand1.RegisterIndex, (byte)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegMem16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister16((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister16((Gpr)instruction.Operand1.RegisterIndex, (ushort)result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbRegMem32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint first = cpu.Context.ReadRegister((Gpr)instruction.Operand1.RegisterIndex);
+        uint second = cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 32);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemReg8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 8);
+        uint second = cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemReg16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 16);
+        uint second = cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemReg32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 32);
+        uint second = cpu.Context.ReadRegister((Gpr)instruction.Operand2.RegisterIndex);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags = AluOps.Sub(first, second, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemImm8(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 8);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 8, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 8, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemImm16(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 16);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 16, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 16, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSbbMemImm32(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        uint address = cpu.ComputeAddress(instruction.Operand1.Memory);
+        uint first = cpu.ReadMemory(address, 32);
+        uint carry = (cpu.Context.Eflags & FlagBits.Cf) != 0 ? 1u : 0u;
+        cpu.Context.Eflags =
+            AluOps.Sub(first, instruction.Operand2.Immediate, carry, 32, cpu.Context.Eflags, out uint result);
+        cpu.WriteMemory(address, 32, result);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFldcw(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 7 (§170): verbatim interpreter `Fldcw` case (a faulting
+        // read throws before FCW changes).
+        cpu.Fpu.ControlWord =
+            (ushort)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand1.Memory), 16);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFnstcw(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 7 (§170): verbatim interpreter `Fnstcw` case.
+        cpu.WriteMemory(cpu.ComputeAddress(instruction.Operand1.Memory), 16, cpu.Fpu.ControlWord);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecFwait(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 7 (§170): verbatim interpreter `Fwait` case (a break).
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecEmms(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 7 (§170): verbatim interpreter `Emms` case.
+        cpu.Fpu.EmptyAll();
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
