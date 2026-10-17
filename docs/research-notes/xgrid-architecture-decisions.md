@@ -8811,3 +8811,37 @@ triangle spec 73.0 s + menu spec 142.8 s SHAs exact, `vec=0`,
 (Step path untouched -- Cli/Sti handlers only resolve in block/spec
 modes); triangle `--block-exec` SHA `A1740DE0...` exact, draws=2706.
 Walls single-run only. Flag stays opt-in.
+
+## 169. Median-of-3 post-slices-5+6: spec/cache 1.084x menu / 1.231x triangle (2026-10-17)
+
+12-leg matrix (`D:\spec-soak\median25`, cache+spec x 3 reps x 2 titles,
+full-solution build with slices 5+6, undisturbed run): all 12 legs PASS.
+
+Walls (median-of-3):
+- menu cache 157.06 / 156.15 / 156.28 --> median **156.28 s**;
+  spec 144.16 / 143.12 / 145.42 --> median **144.16 s** --> **spec/cache
+  1.084x**.
+- triangle cache 89.88 / 86.70 / 90.21 --> median **89.88 s**;
+  spec 72.84 / 73.00 / 75.65 --> median **73.00 s** --> **spec/cache
+  1.231x**.
+
+Vs median24 (menu 1.054x, triangle 1.124x): triangle +10.7 points, menu
++3.0. This one reads as REAL, not host shift, for three converging
+reasons: (1) the gains are spec-ONLY (triangle spec -4.8%, menu spec
+-1.1%) while the cache controls -- byte-identical code paths slices 5+6
+cannot touch -- drifted the OTHER way (+4.2%/+1.7% noise); (2) the
+magnitudes track the fallback volumes slice 6 removed (triangle 113M
+vs menu 34M bodies); (3) triangle-spec legs are tight (72.8/73.0/75.6)
+and cleanly below median24's (80.0/76.4/76.7). Slice 5's dispatch cut
+and slice 6's fallback-body cut compose exactly where predicted.
+Median24's menu 1.054 now looks like the outlier; the menu ratio is
+back at its section-166 level (1.084 vs 1.088).
+
+Standing: flag stays opt-in (1.08-1.23x still thin for a default flip;
+the emitter of section 138 remains the lever). The specialization
+program is declared at its asymptote: remaining tails are carry-live
+(deliberate outs), bulk-covered strings, and noise-floor unpacks;
+the per-dispatch remainder (~7ns dict lookups) was scoped and rejected
+as sub-noise (section 167 deliberation). Next wall truth (if any
+further slice lands) needs a fresh median -- single runs have been
+proven unreliable twice tonight.
