@@ -3324,6 +3324,14 @@ clean, 4-leg golden gate PASS (`D:\spec-soak\slice24`: triangle spec
 77.2 s + menu spec 145.4 s SHAs exact, menu cache 158.3 s control-leg
 exact, `--block-exec` SHA exact; single-run walls only). Flag stays
 opt-in.
+**§168 DONE (2026-10-17, direct):** shape slice 6 (Cli/Sti spec
+handlers — verbatim IF-bit bodies + resolver cases; fallbacks triangle
+113.3M→185k / menu 34.1M→1.7M with Cli/Sti gone from both tails;
+instructions + interrupts 1883/3153 identical) — differential + 2 pins,
+suite 1391/1391, format clean, 4-leg golden gate PASS
+(`D:\spec-soak\slice25`: triangle spec 73.0 s + menu spec 142.8 s SHAs
+exact, menu cache 160.3 s control-leg exact, `--block-exec` SHA exact;
+single-run walls only). Flag stays opt-in.
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the

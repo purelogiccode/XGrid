@@ -146,6 +146,19 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void CliSti_Shapes_MatchInterpreter()
+    {
+        // Slice 6 (§168): IF clear/set plus both orders — verbatim
+        // interpreter mirrors, EIP-precise, IRQ effects at the existing
+        // per-instruction poll boundaries on both sides.
+        RunShapes(
+            ("cli", new byte[] { 0xFA }),
+            ("sti", new byte[] { 0xFB }),
+            ("cli; sti", new byte[] { 0xFA, 0xFB }),
+            ("sti; cli", new byte[] { 0xFB, 0xFA }));
+    }
+
+    [Fact]
     public void SseCompute_Shapes_MatchInterpreter()
     {
         // Slice-19 family (§157): SSE sqrt/reciprocal, packed arithmetic,
@@ -854,6 +867,8 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x31))); // rdtsc (slice 20)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFA))); // cli (slice 6/§168)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFB))); // sti (slice 6/§168)
         return;
 
         static DecodedInstruction Decode(params byte[] code)

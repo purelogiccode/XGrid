@@ -8784,3 +8784,30 @@ exact, draws=2706. Walls single-run only (directionally -6% both spec
 legs, consistent with -14/-32% fewer dispatches at a ~30% dispatch
 share -- but no claim; the next median owns wall truth). Flag stays
 opt-in.
+
+## 168. Shape slice 6: Cli/Sti spec handlers (2026-10-17)
+
+Direct development, complement to slice 5: slice 5 merged the blocks
+(the boundary dispatches are gone) but every Cli/Sti still paid the
+fallback body (interpreter `ExecuteInstruction` switch + the
+`NoteFallbackShape` dictionary). Two verbatim handlers (`SpecCli`/
+`SpecSti`: IF bit + EIP advance) + resolver cases + 2 pins turn the
+entire 95-100% fallback volume into shape hits.
+
+Measured (slice24 --> slice25, identical guest code):
+- triangle fallbacks 113,328,528 --> 184,872 (-99.84%); menu
+  34,146,625 --> 1,700,771 (-95%). Cli/Sti gone from both tails.
+- new tails: triangle Sbb-imm 87k / Movs 36k / Punpcklwd+hwd 25k /
+  Stos 8k; menu Movs 982k (rep dispatches -- bulk-covered inside) /
+  Sbb+Adc ~330k / Stos 57k. The carry-live and string shapes stay
+  deliberate outs; MMX unpacks are noise.
+- instructions, interrupts (1883/3153), builds: identical.
+
+Tests: `CliSti_Shapes_MatchInterpreter` (4 shapes incl. both orders)
++ 2 resolver pins. Suite **1391/1391**, format clean. 4-leg golden
+gate (`D:\spec-soak\slice25`, full-solution rebuild first):
+triangle spec 73.0 s + menu spec 142.8 s SHAs exact, `vec=0`,
+`verifyFailures=0`, anchors exact; menu cache 160.3 s SHA exact
+(Step path untouched -- Cli/Sti handlers only resolve in block/spec
+modes); triangle `--block-exec` SHA `A1740DE0...` exact, draws=2706.
+Walls single-run only. Flag stays opt-in.

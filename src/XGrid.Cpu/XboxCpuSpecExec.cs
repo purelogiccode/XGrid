@@ -356,6 +356,18 @@ public sealed partial class XboxCpu
                 return first == OperandKind.None && second == OperandKind.None
                     ? SpecRdtscHandler
                     : null;
+            case Mnemonic.Cli:
+                // Slice 6 (§168): IF clear — operandless by decode; the
+                // block keeps flowing (slice 5) and the body is the
+                // verbatim interpreter case.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecCliHandler
+                    : null;
+            case Mnemonic.Sti:
+                // Slice 6 (§168): IF set — same shape as Cli.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecStiHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -1455,6 +1467,8 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecSetccHandler = SpecSetcc;
     private static readonly SpecHandler SpecCmovccHandler = SpecCmovcc;
     private static readonly SpecHandler SpecRdtscHandler = SpecRdtsc;
+    private static readonly SpecHandler SpecCliHandler = SpecCli;
+    private static readonly SpecHandler SpecStiHandler = SpecSti;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -3031,6 +3045,24 @@ public sealed partial class XboxCpu
         // executed step identically on both sides of a differential).
         cpu.Context.Eax = (uint)cpu.Context.Tsc;
         cpu.Context.Edx = (uint)(cpu.Context.Tsc >> 32);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecCli(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 6 (§168): verbatim interpreter `Cli` case (IF effects land
+        // at the existing per-instruction IRQ-check boundaries on both
+        // paths — the mirror is exact by shared shape).
+        cpu.Context.Eflags &= ~FlagBits.If;
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSti(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // Slice 6 (§168): verbatim interpreter `Sti` case (same
+        // boundary argument as Cli; the 1-instruction STI shadow was
+        // never modeled — delivery fires at the next poll either way).
+        cpu.Context.Eflags |= FlagBits.If;
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
