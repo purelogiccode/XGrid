@@ -4,7 +4,7 @@
 # Private firmware/HDD and test-sample media only.
 param(
     [ValidateSet('menu', 'triangle')][string]$Title = 'menu',
-    [ValidateSet('cache', 'spec', 'emit', 'emitinline')][string]$Mode = 'spec',
+    [ValidateSet('cache', 'spec', 'emit', 'emitinline', 'emitdiag')][string]$Mode = 'spec',
     [int]$Rep = 1,
     [string]$Media = 'D:\spec-soak\media',
     [string]$OutDir = 'D:\spec-soak\legs'
@@ -21,6 +21,7 @@ switch ($Mode) {
     'spec' { $cliArgs += '--spec-exec' }
     'emit' { $cliArgs += '--emit' }
     'emitinline' { $cliArgs += '--emit-inline' }
+    'emitdiag' { $cliArgs += @('--emit-inline', '--emit-diag') }
 }
 $sha = if ($Title -eq 'menu') { $menuSha } else { $triSha }
 $bmp = "$OutDir/$Title-$Mode-r$Rep.bmp"
@@ -44,5 +45,6 @@ if ($log -notmatch $counter) { throw 'Counter anchor mismatch' }
 if ($Mode -ne 'cache' -and $log -notmatch 'verifyFailures=0\b') { throw 'Verify failures reported' }
 if ($Mode -eq 'emit' -and $log -notmatch 'Emit stats builds=') { throw 'Emit not enabled' }
 if ($Mode -eq 'emitinline' -and $log -notmatch 'Emit inline bodies=on') { throw 'Inline emit not enabled' }
+if ($Mode -eq 'emitdiag' -and $log -notmatch 'Emit inline diag=') { throw 'Inline diag not enabled' }
 [ordered]@{ title = $Title; mode = $Mode; rep = $Rep; command = $command; wallSeconds = $watch.Elapsed.TotalSeconds; sha256 = $actualSha; counters = ([regex]::Match($log, '(?m)^NV2A draws executed=.*').Value); result = 'pass' } | ConvertTo-Json | Set-Content "$OutDir/$Title-$Mode-r$Rep.json"
 Write-Host "PASS $Title/$Mode/r$Rep $([math]::Round($watch.Elapsed.TotalSeconds,1))s SHA=$actualSha"

@@ -452,6 +452,58 @@ public sealed class EmitTests
     }
 
     [Fact]
+    public void InlineBodies_DiagCounters_CountHitsAndTagMisses()
+    {
+        // Paged harness: the data-translate cache is only populated with
+        // paging on, so only paged runs can complete the fast path (unpaged
+        // data accesses never consult the cache and always fall back to the
+        // twin, which is exact). The loop carries one member of every fast
+        // kind: Mov load/store 32 and 8, Cmp reg/mem + mem/reg + mem/imm,
+        // Test mem/imm.
+        byte[] code =
+        {
+            0x90, // nop (head)
+            0x8B, 0x03, // mov eax,[ebx]
+            0x89, 0x43, 0x04, // mov [ebx+4],eax
+            0x8A, 0x0B, // mov cl,[ebx]
+            0x88, 0x4B, 0x05, // mov [ebx+5],cl
+            0x3B, 0x43, 0x08, // cmp eax,[ebx+8]
+            0x39, 0x4B, 0x08, // cmp [ebx+8],ecx
+            0x83, 0x7B, 0x0C, 0x55, // cmp dword [ebx+12],0x55
+            0xF7, 0x43, 0x10, 0x0F, 0x00, 0x00, 0x00, // test dword [ebx+16],0xF
+            0xEB, 0xE2, // jmp head
+        };
+
+        XboxCpu off = CreatePaged(EmitMode.EmitInline, code);
+        off.Context.Ebx = 0x2000;
+        Assert.Equal(40960, off.Execute(40960));
+        Assert.Equal(0L, off.EmitInlineFastHits);
+        Assert.Equal(0L, off.EmitInlineTagMisses);
+
+        XboxCpu diag = CreatePaged(EmitMode.EmitInline, code);
+        diag.Context.Ebx = 0x2000;
+        diag.EmitInlineCountersEnabled = true;
+        Assert.Equal(40960, diag.Execute(40960));
+
+        Assert.True(diag.EmitInlineFastHits > 0);
+        Assert.Equal(0L, diag.EmitInlineTwinCalls); // warm-up populated every tag before tails ran
+        Assert.Equal(0L, diag.EmitInlineTagMisses);
+
+        // Phase B: steer EBX to another mapped VPN (7, identity-mapped RAM
+        // away from the page tables) so the warmed tail takes a tag-miss
+        // fallback once, then hits again.
+        long hitsBefore = diag.EmitInlineFastHits;
+        diag.Context.Ebx = 0x7000;
+        diag.Context.Eip = 0x1000;
+        Assert.Equal(40960, diag.Execute(40960));
+        Assert.True(diag.EmitInlineTwinCalls > 0);
+        Assert.True(diag.EmitInlineTagMisses > 0);
+        Assert.True(diag.EmitInlineTagMisses <= diag.EmitInlineTwinCalls);
+        Assert.True(diag.EmitInlineFastHits > hitsBefore);
+        Assert.True(diag.EmitInlineFastHits + diag.EmitInlineTwinCalls <= (long)diag.SpecStatistics!.EmitRan);
+    }
+
+    [Fact]
     public void InlineBodies_GatesSkipInlineEmit()
     {
         XboxCpu verified = Create(EmitMode.EmitInline, Chain);

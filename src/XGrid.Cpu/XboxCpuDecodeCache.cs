@@ -121,12 +121,48 @@ public sealed partial class XboxCpu
         }
     }
 
+    /// <summary>
+    /// Gets or sets E3-1d diagnostic counters inside emitted fast paths
+    /// (default off; implies <see cref="EmitInlineEnabled"/>). Counters are
+    /// baked into runners at build time: zero cost when off. Host-side
+    /// configuration: untouched by <see cref="Reset"/> and snapshot
+    /// save/load.
+    /// </summary>
+    public bool EmitInlineCountersEnabled
+    {
+        get => _emitInlineCountersEnabled;
+        set
+        {
+            if (value)
+            {
+                EmitInlineEnabled = true;
+            }
+
+            _emitInlineCountersEnabled = value;
+            if (_blocks is not null)
+            {
+                _blocks.EmitInlineCountersEnabled = value;
+            }
+        }
+    }
+
+    /// <summary>Gets E3-1d diagnostic: fast-path members served (runners built with counters).</summary>
+    public long EmitInlineFastHits => InlineFastHits;
+
+    /// <summary>Gets E3-1d diagnostic: fast-path fallbacks caused by a data-translate tag miss.</summary>
+    public long EmitInlineTagMisses => InlineTagMisses;
+
+    /// <summary>Gets E3-1d diagnostic: twin calls from emitted tails.</summary>
+    public long EmitInlineTwinCalls => InlineTwinCalls;
+
     /// <summary>Gets the live block invalidation generation for emitted runners.</summary>
     internal ulong BlockGeneration => _blocks?.Generation ?? 0;
 
     private bool _emitEnabled;
 
     private bool _emitInlineEnabled;
+
+    private bool _emitInlineCountersEnabled;
 
     private readonly int[] _emitProgress = new int[BlockEmitter.ProgressLength];
 

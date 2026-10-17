@@ -147,6 +147,13 @@ public sealed class DecodedBlockCache
     public bool EmitInlineEnabled { get; set; }
 
     /// <summary>
+    /// Gets or sets E3-1d diagnostic counters baked into emitted fast paths
+    /// (default off). Counters are baked at runner build time, so runners
+    /// record the flag and rebuild when it differs.
+    /// </summary>
+    public bool EmitInlineCountersEnabled { get; set; }
+
+    /// <summary>
     /// Gets fallback-shape execution counts, tallied at serve time while
     /// specialization is enabled (slice-3 measurement). Totals always equal
     /// <see cref="ShapeFallbacks"/>; beyond <see cref="MaxFallbackShapes"/>
@@ -519,6 +526,9 @@ public sealed class DecodedBlockCache
 
         /// <summary>Whether the cached runner was built with E3-1 inline bodies.</summary>
         public bool RunnerInline;
+
+        /// <summary>Whether the cached runner was built with E3-1d diagnostic counters.</summary>
+        public bool RunnerCounters;
     }
 
     /// <summary>
@@ -547,7 +557,8 @@ public sealed class DecodedBlockCache
         {
             entries = block.Entries;
             if (block.Runner is { } cached && block.RunnerGeneration == Generation
-                && block.RunnerInline == EmitInlineEnabled)
+                && block.RunnerInline == EmitInlineEnabled
+                && block.RunnerCounters == EmitInlineCountersEnabled)
             {
                 EmitHits++;
                 runner = cached;
@@ -555,7 +566,7 @@ public sealed class DecodedBlockCache
             }
 
             runner = BlockEmitter.Build(block.HeadLinear, block.Entries, block.Handlers, block.EmitLinears,
-                EmitInlineEnabled, out int inlineMembers, out int fastMembers);
+                EmitInlineEnabled, EmitInlineCountersEnabled, out int inlineMembers, out int fastMembers);
             if (runner is null)
             {
                 entries = null!;
@@ -565,6 +576,7 @@ public sealed class DecodedBlockCache
             block.Runner = runner;
             block.RunnerGeneration = Generation;
             block.RunnerInline = EmitInlineEnabled;
+            block.RunnerCounters = EmitInlineCountersEnabled;
             EmitInlineMembers += (ulong)inlineMembers;
             EmitFastMembers += (ulong)fastMembers;
             EmitBuilds++;

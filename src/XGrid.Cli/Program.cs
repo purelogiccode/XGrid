@@ -99,6 +99,7 @@ internal static class Program
         bool specExec = false;
         bool emit = false;
         bool emitInline = false;
+        bool emitDiag = false;
         bool shapeTally = false;
         string gpuBackend = "sw";
         string? hotspotPath = null;
@@ -260,6 +261,9 @@ internal static class Program
                     break;
                 case "--emit-inline":
                     emitInline = true;
+                    break;
+                case "--emit-diag":
+                    emitDiag = true;
                     break;
                 case "--shape-tally":
                     shapeTally = true;
@@ -428,7 +432,7 @@ internal static class Program
                 Console.WriteLine("Shape tally=on (served-shape histogram; diagnostic only)");
             }
 
-            if (emit || emitInline)
+            if (emit || emitInline || emitDiag)
             {
                 if (shapeTally)
                 {
@@ -437,12 +441,17 @@ internal static class Program
                     // stays off while tallying to keep the histogram exact.
                     Console.WriteLine("Emit=suppressed (--shape-tally measures the member path)");
                 }
-                else if (emitInline)
+                else if (emitInline || emitDiag)
                 {
                     machine.Cpu.EmitInlineEnabled = true;
                     Console.WriteLine(
                         "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
                     Console.WriteLine("Emit inline bodies=on (E3-1 lean memory shapes)");
+                    if (emitDiag)
+                    {
+                        machine.Cpu.EmitInlineCountersEnabled = true;
+                        Console.WriteLine("Emit inline diag=on (fast-path counters; diagnostic only)");
+                    }
                 }
                 else
                 {
@@ -1589,6 +1598,17 @@ internal static class Program
             {
                 Console.WriteLine($"Emit inline members={emit?.EmitInlineMembers ?? 0} fast={emit?.EmitFastMembers ?? 0}");
             }
+
+            if (machine.Cpu.EmitInlineCountersEnabled)
+            {
+                long hits = machine.Cpu.EmitInlineFastHits;
+                long misses = machine.Cpu.EmitInlineTagMisses;
+                long twins = machine.Cpu.EmitInlineTwinCalls;
+                double denom = hits + twins;
+                double hitRate = denom == 0 ? 0 : hits / denom;
+                Console.WriteLine(FormattableString.Invariant(
+                    $"Emit inline diag fastHits={hits} tagMisses={misses} twinCalls={twins} hitRate={hitRate:F4}"));
+            }
         }
 
         if (machine.Cpu.DecodeCacheEnabled)
@@ -2322,7 +2342,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
@@ -2334,6 +2354,8 @@ internal static class Program
             "                   --shape-tally implies spec-exec, prints the served-shape histogram at exit, and suppresses --emit.");
         Console.WriteLine(
             "                   --emit-inline implies --emit and serves E3-1 lean bodies for covered memory shapes.");
+        Console.WriteLine(
+            "                   --emit-diag implies --emit-inline and prints baked fast-path counters (diagnostic).");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
         Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");
