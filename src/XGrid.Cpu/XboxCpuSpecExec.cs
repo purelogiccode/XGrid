@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
@@ -70,7 +71,12 @@ public sealed partial class XboxCpu
     /// <returns>The handler, or null for fallback shapes.</returns>
     public static SpecHandler? ResolveSpec(in DecodedInstruction instruction)
     {
-        if (!instruction.IsValid || instruction.Rep != RepPrefix.None)
+        // Slice 12: the scalar-SSE shapes carry Rep==Rep (their 0xF3 byte
+        // is a mandatory opcode prefix, never a repeat), so they are
+        // exempt from the REP reject below. Every other Rep-prefixed
+        // instruction keeps the interpreter.
+        if (!instruction.IsValid
+            || (instruction.Rep != RepPrefix.None && !IsMandatoryF3Scalar(instruction.Mnemonic)))
         {
             return null;
         }
@@ -159,6 +165,24 @@ public sealed partial class XboxCpu
                 return first == OperandKind.None && second == OperandKind.None
                     ? ResolveSpecFence(instruction.Mnemonic)
                     : null;
+            case Mnemonic.Addss:
+            case Mnemonic.Subss:
+            case Mnemonic.Mulss:
+            case Mnemonic.Divss:
+            case Mnemonic.Minss:
+            case Mnemonic.Maxss:
+                // Slice 12: scalar SSE arithmetic is one verbatim helper
+                // call (`ExecuteSseArithmetic` — plain host-float ops, no
+                // MXCSR/exception behavior in the interpreter); the handler
+                // only avoids the dispatch switch and the shapes continue
+                // their block. Packed forms keep the interpreter.
+                return ResolveSpecSseScalar(instruction.Mnemonic, first, second);
+            case Mnemonic.Cvtss2Si:
+            case Mnemonic.Cvttss2Si:
+                // Slice 12: scalar float-to-int through the same
+                // `ConvertFloatToInt32` helper (truncate flag baked per
+                // mnemonic exactly like the interpreter).
+                return ResolveSpecSseCvt(first, second, instruction.Mnemonic);
             default:
                 return null;
         }
@@ -612,6 +636,58 @@ public sealed partial class XboxCpu
         };
     }
 
+    private static SpecHandler? ResolveSpecSseScalar(Mnemonic mnemonic, OperandKind first, OperandKind second)
+    {
+        if (first != OperandKind.Register)
+        {
+            return null;
+        }
+
+        return (mnemonic, second) switch
+        {
+            (Mnemonic.Addss, OperandKind.Register) => SpecAddssRegRegHandler,
+            (Mnemonic.Addss, OperandKind.Memory) => SpecAddssRegMemHandler,
+            (Mnemonic.Subss, OperandKind.Register) => SpecSubssRegRegHandler,
+            (Mnemonic.Subss, OperandKind.Memory) => SpecSubssRegMemHandler,
+            (Mnemonic.Mulss, OperandKind.Register) => SpecMulssRegRegHandler,
+            (Mnemonic.Mulss, OperandKind.Memory) => SpecMulssRegMemHandler,
+            (Mnemonic.Divss, OperandKind.Register) => SpecDivssRegRegHandler,
+            (Mnemonic.Divss, OperandKind.Memory) => SpecDivssRegMemHandler,
+            (Mnemonic.Minss, OperandKind.Register) => SpecMinssRegRegHandler,
+            (Mnemonic.Minss, OperandKind.Memory) => SpecMinssRegMemHandler,
+            (Mnemonic.Maxss, OperandKind.Register) => SpecMaxssRegRegHandler,
+            (Mnemonic.Maxss, OperandKind.Memory) => SpecMaxssRegMemHandler,
+            _ => null,
+        };
+    }
+
+    private static SpecHandler? ResolveSpecSseCvt(OperandKind first, OperandKind second, Mnemonic mnemonic)
+    {
+        return (mnemonic, first, second) switch
+        {
+            (Mnemonic.Cvtss2Si, OperandKind.Register, OperandKind.Register) => SpecCvtss2SiRegRegHandler,
+            (Mnemonic.Cvtss2Si, OperandKind.Register, OperandKind.Memory) => SpecCvtss2SiRegMemHandler,
+            (Mnemonic.Cvttss2Si, OperandKind.Register, OperandKind.Register) => SpecCvttss2SiRegRegHandler,
+            (Mnemonic.Cvttss2Si, OperandKind.Register, OperandKind.Memory) => SpecCvttss2SiRegMemHandler,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Slice-12 gate helper: the scalar-SSE shapes whose 0xF3 byte is a
+    /// mandatory opcode prefix (so they decode with Rep==Rep). Shared by
+    /// <see cref="ResolveSpec"/> and
+    /// <see cref="DecodedBlockCache.Terminates"/>. Packed SSE, string/REP
+    /// and every other mnemonic is excluded.
+    /// </summary>
+    /// <param name="mnemonic">The mnemonic to test.</param>
+    /// <returns>True for the eight slice-12 scalar shapes.</returns>
+    internal static bool IsMandatoryF3Scalar(Mnemonic mnemonic)
+    {
+        return mnemonic is Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
+            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si;
+    }
+
     /// <summary>
     /// Resolves near conditional jumps (slice 6). Jcc always terminates its
     /// block, so the handler only sets EIP (taken target or fallthrough) and
@@ -796,6 +872,22 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecSfenceHandler = SpecHintNop;
     private static readonly SpecHandler SpecLfenceHandler = SpecHintNop;
     private static readonly SpecHandler SpecMfenceHandler = SpecHintNop;
+    private static readonly SpecHandler SpecAddssRegRegHandler = SpecAddssRegReg;
+    private static readonly SpecHandler SpecAddssRegMemHandler = SpecAddssRegMem;
+    private static readonly SpecHandler SpecSubssRegRegHandler = SpecSubssRegReg;
+    private static readonly SpecHandler SpecSubssRegMemHandler = SpecSubssRegMem;
+    private static readonly SpecHandler SpecMulssRegRegHandler = SpecMulssRegReg;
+    private static readonly SpecHandler SpecMulssRegMemHandler = SpecMulssRegMem;
+    private static readonly SpecHandler SpecDivssRegRegHandler = SpecDivssRegReg;
+    private static readonly SpecHandler SpecDivssRegMemHandler = SpecDivssRegMem;
+    private static readonly SpecHandler SpecMinssRegRegHandler = SpecMinssRegReg;
+    private static readonly SpecHandler SpecMinssRegMemHandler = SpecMinssRegMem;
+    private static readonly SpecHandler SpecMaxssRegRegHandler = SpecMaxssRegReg;
+    private static readonly SpecHandler SpecMaxssRegMemHandler = SpecMaxssRegMem;
+    private static readonly SpecHandler SpecCvtss2SiRegRegHandler = SpecCvtss2SiRegReg;
+    private static readonly SpecHandler SpecCvtss2SiRegMemHandler = SpecCvtss2SiRegMem;
+    private static readonly SpecHandler SpecCvttss2SiRegRegHandler = SpecCvttss2SiRegReg;
+    private static readonly SpecHandler SpecCvttss2SiRegMemHandler = SpecCvttss2SiRegMem;
     private static readonly SpecHandler SpecMovMemImm8Handler = SpecMovMemImm8;
     private static readonly SpecHandler SpecMovMemImm16Handler = SpecMovMemImm16;
     private static readonly SpecHandler SpecMovMemImm32Handler = SpecMovMemImm32;
@@ -1465,6 +1557,111 @@ public sealed partial class XboxCpu
         // (`ExecuteSse` breaks without touching any operand or flag), so
         // the handler only advances EIP. Shared by all four shapes; the
         // per-mnemonic cached fields above keep the form-time table exact.
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAddssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecAddssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSubssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSubssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMulssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMulssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecDivssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecDivssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMinssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMinssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMaxssRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecMaxssRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        cpu.ExecuteSseArithmetic(instruction);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecCvtss2SiRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecConvertScalarToInt(cpu, in instruction, truncate: false);
+    }
+
+    private static void SpecCvtss2SiRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecConvertScalarToInt(cpu, in instruction, truncate: false);
+    }
+
+    private static void SpecCvttss2SiRegReg(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecConvertScalarToInt(cpu, in instruction, truncate: true);
+    }
+
+    private static void SpecCvttss2SiRegMem(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        SpecConvertScalarToInt(cpu, in instruction, truncate: true);
+    }
+
+    private static void SpecConvertScalarToInt(XboxCpu cpu, in DecodedInstruction instruction, bool truncate)
+    {
+        // Slice-12 convert body: verbatim interpreter `Cvtss2Si`/`Cvttss2Si`
+        // case with the truncate flag baked per mnemonic. A faulting memory
+        // source throws before any register write or EIP advance, exactly
+        // like the interpreter.
+        (ulong low, ulong high) = cpu.ReadXmmOperand(instruction.Operand2);
+        float value = BitConverter.UInt32BitsToSingle(ElementBits((low, high), 0));
+        int result = cpu.ConvertFloatToInt32(value, truncate);
+        cpu.Context.WriteRegister((Gpr)instruction.Operand1.RegisterIndex, (uint)result);
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

@@ -8106,3 +8106,38 @@ NtSuspend XGrid-ahead, the rest faithful); XGrid park break at exactly
 792,800,535 steps (bit-reproducible vs the §123/§136 anchors), both
 logs `EndOfTests=True`. Slices 9–11 disturb nothing in the kernel suite.
 
+## 149. JIT slice 12: scalar SSE arithmetic + converts behind --spec-exec (2026-10-16)
+
+Direct development, overnight slice. The remaining measurable SSE tail
+(Mulss 713K triangle; Fadd-mem 4.5M + Fmul + Cvttss2Si menu): scalar
+Addss/Subss/Mulss/Divss/Minss/Maxss (reg,reg/reg,mem) are one verbatim
+`ExecuteSseArithmetic` call each — plain host-float ops, no MXCSR or
+exception behavior anywhere in the interpreter — and Cvtss2Si/Cvttss2Si
+(reg,reg/reg,mem) mirror their case through the same
+`ConvertFloatToInt32` helper with the truncate flag baked. 16 handlers.
+
+Real discovery en route (fail-pre-fix proven): the 0xF3 byte is BOTH a
+mandatory opcode prefix AND stamped `Rep==Rep` (`Decoder.cs:72-73,94`),
+so the `Rep != None` early-rejects in `ResolveSpec` and `Terminates`
+silently excluded every F3 shape — the first resolver pins failed null
+before the fix, pass after. Shared gate helper
+`IsMandatoryF3Scalar` (exactly the 8 slice-12 mnemonics; packed SSE,
+string/REP and all others still reject/terminate) + a `rep movsb`
+stays-null pin so a real repeat can never specialize. Like slice 10,
+the shapes continue their block (pure straight-line data).
+
+Tests: `SseScalar_Shapes_MatchInterpreter` (16 shapes vs the
+interpreter) + 9 resolver NotNull pins + the `rep movsb` null pin.
+Suite **1351/1351**, format clean.
+
+Goldens (`D:\spec-soak\slice12`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 99.7 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Mulss/Cvttss2Si gone from
+the tail, fallbacks −1.8M; block dispatches −1.8M (continuation works).
+Menu spec r1 PASS 178.6 s — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact; Fadd-mem
+gone from the tail, fallbacks 103.7M→101.8M (−1.9M); dispatches
+290.0M→288.2M. Remaining top: Cli/Sti (untouchable) + the x87 family
+alone — scalar SSE is fully absorbed. Walls within noise, no wall
+claim. Flag stays opt-in; x87 stays a daylight slice.
+

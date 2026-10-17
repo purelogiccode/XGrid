@@ -321,17 +321,27 @@ public sealed class DecodedBlockCache
     }
 
     /// <summary>
-    /// Conservative slice-4 formation (extended by slices 10-11): only
+    /// Conservative slice-4 formation (extended by slices 10-12): only
     /// common straight-line integer/data operations may continue, now
     /// including the MMX 64-bit moves (pure data through the x87-aliased
-    /// file) and the Prefetch/Fence hints (interpreter nops). Every branch,
+    /// file), the Prefetch/Fence hints (interpreter nops) and scalar SSE
+    /// arithmetic/converts (single-helper verbatim bodies). Every branch,
     /// trap, system/mode, string/REP, I/O and unlisted instruction ends the
     /// block (including future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
     public static bool Terminates(in DecodedInstruction instruction)
     {
-        if (!instruction.IsValid || instruction.Length <= 0 || instruction.Rep != RepPrefix.None)
+        if (!instruction.IsValid || instruction.Length <= 0)
+        {
+            return true;
+        }
+
+        // Slice 12: the F3 scalar-SSE shapes carry Rep==Rep (the 0xF3 byte
+        // is their mandatory opcode prefix, never a repeat) but are pure
+        // straight-line data ops, so they continue like the whitelist below.
+        // Every other Rep-prefixed instruction still terminates.
+        if (instruction.Rep != RepPrefix.None && !XboxCpu.IsMandatoryF3Scalar(instruction.Mnemonic))
         {
             return true;
         }
@@ -347,7 +357,9 @@ public sealed class DecodedBlockCache
             or Mnemonic.Xadd or Mnemonic.Cmpxchg or Mnemonic.Bsf or Mnemonic.Bsr or Mnemonic.Bt
             or Mnemonic.Bts or Mnemonic.Btr or Mnemonic.Btc or Mnemonic.Cbw or Mnemonic.Cdq
             or Mnemonic.Shld or Mnemonic.Shrd or Mnemonic.Cmpxchg8B or Mnemonic.Movq or Mnemonic.Movntq
-            or Mnemonic.Prefetch or Mnemonic.Sfence or Mnemonic.Lfence or Mnemonic.Mfence);
+            or Mnemonic.Prefetch or Mnemonic.Sfence or Mnemonic.Lfence or Mnemonic.Mfence
+            or Mnemonic.Addss or Mnemonic.Subss or Mnemonic.Mulss or Mnemonic.Divss
+            or Mnemonic.Minss or Mnemonic.Maxss or Mnemonic.Cvtss2Si or Mnemonic.Cvttss2Si);
     }
 
     private sealed record Block(

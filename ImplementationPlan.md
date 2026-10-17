@@ -3180,6 +3180,16 @@ counter anchors exact; walls contention-inflated, no wall claim);
 fallbacks menu 105.6M→103.7M (−1.9M Prefetch absorbed) / triangle −10K.
 Remaining top: Cli/Sti (untouchable), x87 (daylight), SSE. Flag stays
 opt-in.
+**§149 DONE (2026-10-16, direct):** JIT slice 12 (scalar SSE Addss/
+Subss/Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
+continue blocks) behind `--spec-exec`; 1351/1351 tests, format clean,
+2-leg spec golden check PASS (`D:\spec-soak\slice12`: menu 178.6 s SHA
+`4EF1FBF6…`, triangle 99.7 s SHA `A1740DE0…`, both `vec=0`,
+`verifyFailures=0`, counter anchors exact); fallbacks menu 103.7M→101.8M
+/ triangle −1.8M with scalar SSE gone from both tails (remaining: Cli/
+Sti + x87). En route: real F3-vs-REP discovery (`Decoder.cs:72-73,94`,
+shared `IsMandatoryF3Scalar` gate + `rep movsb` null pin). Flag stays
+opt-in; x87 stays daylight.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —

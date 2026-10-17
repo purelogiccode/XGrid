@@ -120,6 +120,33 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void SseScalar_Shapes_MatchInterpreter()
+    {
+        // Slice-12 family (§149): scalar SSE arithmetic (one verbatim
+        // `ExecuteSseArithmetic` call) and scalar float-to-int converts
+        // (same `ConvertFloatToInt32` helper, truncate baked). modrm 0x03
+        // reads [EBX]; 0xC8 is the reg,reg form. A faulting memory source
+        // throws before any write, exactly like the interpreter.
+        RunShapes(
+            ("addss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x58, 0xC8 }),
+            ("addss xmm,m32", new byte[] { 0xF3, 0x0F, 0x58, 0x03 }),
+            ("subss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x5C, 0xC8 }),
+            ("subss xmm,m32", new byte[] { 0xF3, 0x0F, 0x5C, 0x03 }),
+            ("mulss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x59, 0xC8 }),
+            ("mulss xmm,m32", new byte[] { 0xF3, 0x0F, 0x59, 0x03 }),
+            ("divss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x5E, 0xC8 }),
+            ("divss xmm,m32", new byte[] { 0xF3, 0x0F, 0x5E, 0x03 }),
+            ("minss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x5D, 0xC8 }),
+            ("minss xmm,m32", new byte[] { 0xF3, 0x0F, 0x5D, 0x03 }),
+            ("maxss xmm,xmm", new byte[] { 0xF3, 0x0F, 0x5F, 0xC8 }),
+            ("maxss xmm,m32", new byte[] { 0xF3, 0x0F, 0x5F, 0x03 }),
+            ("cvtss2si r32,xmm", new byte[] { 0xF3, 0x0F, 0x2D, 0xC8 }),
+            ("cvtss2si r32,m32", new byte[] { 0xF3, 0x0F, 0x2D, 0x03 }),
+            ("cvttss2si r32,xmm", new byte[] { 0xF3, 0x0F, 0x2C, 0xC8 }),
+            ("cvttss2si r32,m32", new byte[] { 0xF3, 0x0F, 0x2C, 0x03 }));
+    }
+
+    [Fact]
     public void Hint_Shapes_MatchInterpreter()
     {
         // Slice-11 family (§148): Prefetch + ordering fences are interpreter
@@ -483,6 +510,16 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xE8))); // lfence (slice 11)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xF0))); // mfence (slice 11)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAE, 0xF8))); // sfence (slice 11)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x59, 0xC8))); // mulss xmm,xmm (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x59, 0x03))); // mulss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x58, 0x03))); // addss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x5C, 0x03))); // subss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x5E, 0x03))); // divss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x5D, 0x03))); // minss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x5F, 0x03))); // maxss xmm,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x2D, 0x03))); // cvtss2si r32,m32 (slice 12)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF3, 0x0F, 0x2C, 0x03))); // cvttss2si r32,m32 (slice 12)
+        Assert.Null(XboxCpu.ResolveSpec(Decode(0xF3, 0xA4))); // rep movsb: real repeat keeps the interpreter
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xE0))); // shl r,cl: uncovered
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp

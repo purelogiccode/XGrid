@@ -507,44 +507,53 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    both titles, `vec=0`, `verifyFailures=0`, counter anchors exact).
    Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
    walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
-   **1350/1350 tests.** Flag stays opt-in (saturation + no median-of-3
-   per slice; soak binaries must come from a FULL solution build —
-   §145 lesson).
-2. **Standing operator rule: NO real Xbox games.** All title work uses
+   **1351/1351 tests after slice 12 below.** Flag stays opt-in
+   (saturation + no median-of-3 per slice; soak binaries must come
+   from a FULL solution build — §145 lesson).
+2. **SLICE 12 DONE (§149, same evening).** Scalar SSE (Addss/Subss/
+   Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
+   continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
+   discovery en route (`Decoder.cs:72-73,94` — 0xF3 is both mandatory
+   prefix and stamped Rep; shared `IsMandatoryF3Scalar` gate exempts
+   exactly the 8 shapes, `rep movsb` pinned null). 2-leg 1B spec
+   goldens PASS (SHAs exact, `vec=0`, `verifyFailures=0`); scalar SSE
+   gone from both tails (remaining: Cli/Sti + x87). **1351/1351
+   tests**, format clean, ktest smoke PASS 7/7 post-slices 9–11
+   (792,800,535 steps bit-reproducible).
+3. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred.
-3. **Operator decision: swapchain/windowing** — brief filed at
+4. **Operator decision: swapchain/windowing** — brief filed at
    `docs/research-notes/gpu-swapchain-brief.md` (O2 = opt-in `--window`,
    pure user32/gdi32 interop on the existing WGL context, vsync off,
    ~400–600 LOC; O1 headless stays the default and gate currency; O3
    needs an operator override of the single-dependency rule; triggers
    listed in the brief).
-4. **Next JIT step:** slices 1+2 and 5–11 are in (`--spec-exec`,
+5. **Next JIT step:** slices 1+2 and 5–12 are in (`--spec-exec`,
    `--block-exec`, `--decode-cache` default-on per §137 with
    `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
-   default-off). Per-shape specialization is SATURATED (slices 9–11
+   default-off). Per-shape specialization is SATURATED (slices 9–12
    absorb fallbacks but move no walls) — the next lever is the
    memory-path design (`ReadMemory`/`WriteMemory` → translate + bus),
    a daylight scoping task, not midnight work. Remaining shape tail:
-   x87 family (own slice — FPU stack/TOP/tags), SSE Mulss/Cvttss2Si/
-   Fadd, Cli/Sti (untouchable, IRQ-boundary). DynamicMethod stays
-   rejected unless new numbers say otherwise. NXDK toolchain
-   (operator/host) still the mesh blocker.
-5. **The wave runner is retired (operator decision 2026-10-15).**
+   x87 family (own slice — FPU stack/TOP/tags), Cli/Sti (untouchable,
+   IRQ-boundary). DynamicMethod stays rejected unless new numbers say
+   otherwise. NXDK toolchain (operator/host) still the mesh blocker.
+6. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues
    directly (no BOSS protocol, no worktrees, no detached servers). Tool
    lessons recorded in §140 provenance (fresh session after
    `provider.invalid-output`; ENOENT save-retry already in `state.ts`).
    ktest smoke stays the standing gate.
-6. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
+7. `F36A2`/LBA 8 CLOSED as no-bug (§73): LBA 8 is the Xbox config
    sector (Partition0 network settings; `PCBX`/`55 AA` = its format, not
    MBR) under kernel RMW at step ~656M (EIP `0x8002430E`, IDENTIFY +
    READ/WRITE DMA, faithful serving, no fault); `F36A2` is the §49–51
    WC-fill page artifact, unrelated to disk I/O. Track C JIT for
    interactivity still the throughput bottleneck.
-7. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
+8. Parallel tracks when blocked: Track C JIT for interactivity (5B-step
    batch runs take ~6 min at ~14M insn/s Release; true interactive
    rates still need JIT).
-8. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
+9. Reference oracles: `xemu -trace` + QEMU monitor (`xp` physical reads; xemu
    deadlocks at the animation wait, so it is no longer an oracle past that
    point); xemu `hw/xbox/nv2a/pgraph/` (`methods.h.inc`, `draw.c`, `surface.c`,
    `vsh-prog.c`), `nv2a_regs.h`; for the APU gate xemu `hw/xbox/mcpx/`
