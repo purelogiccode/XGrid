@@ -3248,6 +3248,10 @@ opt-in.
 **ktest smoke re-run (2026-10-16, post-slices 12–13): PASS 7/7** in
 02:13 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 3rd run in a row); SSE+x87 disturb nothing.
+**ktest smoke re-run (2026-10-16, post-slices 14–17): PASS 7/7** in
+01:49 — known deltas matching, park break at exactly 792,800,535 steps
+(bit-reproducible 4th run in a row); x87-reg/shift-CL/Mul/int-remainder/
+x87-compare disturb nothing.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
