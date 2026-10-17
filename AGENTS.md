@@ -565,8 +565,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
     76.0 s, menu emit 180.3 s ~= spec 182.2 s (parity, was 6.50x at E1);
     builds menu 1.24M-->5.8k. Serve layer no longer the bottleneck
     (E3 body inlining next, scoped §175). Median-of-3: triangle emit
-    1.089x spec, menu emit 0.944x spec (warmup transient suspected,
-    second triplet running). Smoke PASS 7/7. **1410/1410 tests**.
+    1.089x spec, menu emit 0.944x spec (first-triplet median; second
+    triplet 148.0/150.3/154.1 confirms r1 warmup outlier, steady state
+    at parity-with-slight-deficit). Smoke PASS 7/7. **1410/1410 tests**.
 
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
