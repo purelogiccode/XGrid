@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
 
@@ -103,8 +102,6 @@ public sealed class DecodedBlockCache
     /// <summary>Gets the invalidation generation (bumped on every <see cref="Invalidate"/>).</summary>
     public ulong Generation { get; private set; }
 
-    private readonly Dictionary<EmitKey, EmittedRunner> _emitted = new();
-
     /// <summary>Gets emitted tail runners built (DynamicMethod construction).</summary>
     public ulong EmitBuilds { get; private set; }
 
@@ -137,7 +134,6 @@ public sealed class DecodedBlockCache
 
         Generation++;
         _blocks.Clear();
-        _emitted.Clear();
         _current = null;
         _currentHandler = null;
     }
@@ -253,6 +249,7 @@ public sealed class DecodedBlockCache
             }
 
             Dispatches++;
+            block.Visits++;
             _current = block;
             _index = 0;
         }
@@ -437,78 +434,66 @@ public sealed class DecodedBlockCache
         XboxCpu.SpecHandler?[]? Handlers,
         bool AllSpecialized,
         uint HeadLinear,
-        uint[]? EmitLinears);
+        uint[]? EmitLinears)
+    {
+        /// <summary>Head selections served (tiering visits for lazy emission).</summary>
+        public ulong Visits;
 
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct EmitKey(uint HeadLinear, int OperandSize, int AddressSize);
+        /// <summary>Cached tail runner (null until built).</summary>
+        public EmitTailRunner? Runner;
 
-    private sealed record EmittedRunner(ulong Generation, EmitTailRunner Runner);
+        /// <summary>Invalidation generation the cached runner was built for.</summary>
+        public ulong RunnerGeneration;
+    }
+
+    /// <summary>
+    /// Head visits before a block's tail runner is built (§172 tiering).
+    /// Cold single-visit code never pays DynamicMethod construction; only
+    /// hot blocks amortize it. Member-path service is exact at every visit,
+    /// so the threshold changes only the serve vehicle, never behavior.
+    /// </summary>
+    public const int EmitThreshold = 8;
 
     /// <summary>
     /// Opens the current cursor's tail for emitted service: the cursor must be
     /// active exactly one member in (member 0 just ran through the member
-    /// path) on a fully-specialized block. Start &gt; 1 (after a mid-block
-    /// bail) stays on the member path.
+    /// path) on a fully-specialized block whose head crossed the tiering
+    /// threshold. Start &gt; 1 (after a mid-block bail) stays on the member
+    /// path, as do pre-threshold visits.
     /// </summary>
     internal bool TryBeginTail(
         out DecodeCacheEntry[] entries,
-        out XboxCpu.SpecHandler?[] handlers,
-        out uint[] linears,
-        out uint head)
+        out EmitTailRunner? runner)
     {
         Block? block = _current;
         if (block is not null && _specEnabled && _index == 1 && block.AllSpecialized
-            && block.Handlers is not null && block.EmitLinears is not null && block.Entries.Length >= 2)
+            && block.Handlers is not null && block.EmitLinears is not null && block.Entries.Length >= 2
+            && block.Visits >= EmitThreshold)
         {
             entries = block.Entries;
-            handlers = block.Handlers;
-            linears = block.EmitLinears;
-            head = block.HeadLinear;
+            if (block.Runner is { } cached && block.RunnerGeneration == Generation)
+            {
+                EmitHits++;
+                runner = cached;
+                return true;
+            }
+
+            runner = BlockEmitter.Build(block.HeadLinear, block.Entries, block.Handlers, block.EmitLinears);
+            if (runner is null)
+            {
+                entries = null!;
+                return false;
+            }
+
+            block.Runner = runner;
+            block.RunnerGeneration = Generation;
+            EmitBuilds++;
             return true;
         }
 
         entries = null!;
-        handlers = null!;
-        linears = null!;
-        head = 0;
+        runner = null;
         return false;
-    }
-
-    /// <summary>
-    /// Looks up (or builds) the emitted tail runner for one block head.
-    /// Runners are validated against the live invalidation generation; every
-    /// <see cref="Invalidate"/> clears the table, so a stale runner can never
-    /// serve. Returns null when the tail is not emittable.
-    /// </summary>
-    internal EmitTailRunner? GetEmitRunner(
-        uint head,
-        int operandSize,
-        int addressSize,
-        DecodeCacheEntry[] entries,
-        XboxCpu.SpecHandler?[] handlers,
-        uint[] linears)
-    {
-        var key = new EmitKey(head, operandSize, addressSize);
-        if (_emitted.TryGetValue(key, out EmittedRunner? cached) && cached.Generation == Generation)
-        {
-            EmitHits++;
-            return cached.Runner;
-        }
-
-        EmitTailRunner? runner = BlockEmitter.Build(head, entries, handlers, linears);
-        if (runner is null)
-        {
-            return null;
-        }
-
-        if (_emitted.Count >= MaxBlocks)
-        {
-            _emitted.Clear();
-        }
-
-        _emitted[key] = new EmittedRunner(Generation, runner);
-        EmitBuilds++;
-        return runner;
     }
 
     /// <summary>

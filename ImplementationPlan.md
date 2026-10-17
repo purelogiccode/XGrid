@@ -3361,6 +3361,19 @@ E2 scoped as threshold-tiered emission. Post-fix triangle-emit 1B
 re-run SHA exact with serve counters bit-identical; 50M counter-diff
 fully identical incl. decode hits (pending exits earn no hit -- the poll
 precedes it -- pinned by a 7-position sweep).
+**§172 DONE (2026-10-17, direct):** tiered emission (lazy runner build
+at 8th head visit + runner cache on the Block, killing the head-key
+dict and silent cap + per-visit lookup + Context hoisted in the
+emitted prologue) -- 18 emit differentials (incl. steady-state
+pending sweep), suite 1410/1410, format clean, 8-leg golden gate PASS
+(`D:\spec-soak\slice28`: SHAs exact both titles, vec=0, anchors exact,
+interrupts identical 1883/3153; triangle emit 71.6 s BEATS spec
+73.0 s -- first codegen config at parity-or-better; menu emit
+376.2 s vs spec 147.2 s, was 984.1 s). Builds collapsed by tiering
+(triangle 80k-->9k, menu 1.24M-->432k) with identical emission volume
+and bit-identical tallies. Remaining menu excess fits 432k warm-head
+constructions: threshold tuning is the next knob. ktest smoke PASS
+7/7 (01:42). Flag stays opt-in.
 **§166 DONE (2026-10-17, direct):** median-of-3 post-slice-4
 (`D:\\spec-soak\\median23`, 12/12 PASS): menu **1.088x** (158.89/146.10),
 triangle **1.161x** (91.62/78.93) vs §164's 1.070x/1.164x — ratios the
