@@ -9077,3 +9077,8 @@ faster, menu 6% deficit. Observation (not a claim): menu emit legs
 descend across reps (171-->156-->145) while spec legs are flat,
 consistent with a first-run warmup transient (construction + first-JIT
 + tiering); a second pre-registered menu-emit triplet (r4-r6) tests it.
+Second triplet: 148.0 / 150.3 / 154.1, SHAs exact -- r1 (171.5) stands
+alone as the warmup outlier; r2-r6 span 145-156 (host noise dominates).
+Six-sample median 152.2 vs spec 147.0 = 0.965x: the robust claim stays
+parity-with-slight-deficit, i.e. the serve layer is at ceiling and only
+body work (E3) can move walls further.
