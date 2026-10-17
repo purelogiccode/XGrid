@@ -8261,6 +8261,43 @@ Leave, Neg, Fnstsw, Fiadd, Div-r, Bswap, Not, Movss. Flag stays opt-in.
 Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
 `vec=0`, draws=2706 anchor exact).
 
+## 154. JIT slice 16: integer remainder + x87 integer arithmetic behind --spec-exec (2026-10-16)
+
+Direct development, late-evening slice sweeping the §153 tail's
+safe remainder. Neg (Inc/Dec-pattern mirror via `AluOps.Neg`), Not
+(flag-free complement), Bswap (reg-only byte-swap), Xchg (verbatim
+read-read-write-write — fault order identical by shared code shape),
+Leave (same `ExecuteLeave` helper), Div/Idiv single through the shared
+`SpecMulDivSingle` body (Mul's method renamed — a Div/Idiv #DE raise
+transfers EIP mid-block and the serve-time `_expectedLinear` guard
+redirects exactly like the control-flow handlers, so the new Div/Idiv
+whitelist entries are safe; verified against `TryNext:196`), x87
+integer arithmetic (`Fiadd/Fimul/Fisub/Fisubr/Fidiv/Fidivr` mem-only via
+one shared body — integer read faults before ST(0) updates) and Fnstsw
+(AX + m16 verbatim mirror). 15 handlers; whitelist += Div/Idiv,
+Fiadd-family, Fnstsw (Neg/Not/Bswap/Xchg/Leave already continued).
+
+Tests: `IntRemainder_Shapes_MatchInterpreter` (19 shapes; Div shapes
+use small dividends — Preset EAX/EDX would overflow the quotient and
+raise #DE identically on both sides, which `RunShapes` would misread as
+divergence; div-mem relies on Preset values whose quotient fits u32;
+idiv-mem stores 7 first; Fiadd shapes run behind `fld1`) + 18 resolver
+pins. Suite **1355/1355**, format clean.
+
+Goldens (`D:\\spec-soak\\slice16`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 86.8 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; Leave/Neg/Bswap/Xchg gone
+from the tail (−0.5M; new triangle tail exposes packed-SSE moves,
+Rcl-imm, Fchs, Sbb-imm). Menu spec r1 PASS 167.9 s (fastest menu spec
+yet, single run, no claim) — SHA `4EF1FBF6…` exact, `vec=0`,
+`verifyFailures=0`, draws=33632 skipped=1402 anchor exact;
+**fallbacks 38.4M→36.2M (−2.2M)** with every slice-16 shape gone from
+the tail; dispatches 231.3M→230.4M. New tail: Cli/Sti (untouchable),
+Movs (string, out), Movss-family/Rsqrtss (packed SSE), Rcl-imm,
+Fcom/Fcomp/Fchs, Sbb-imm (carry-live, out by design). Flag stays opt-in.
+Block-exec cross-check PASS (`triangle-block-r1`: SHA `A1740DE0…` exact,
+`vec=0`, draws=2706 anchor exact).
+
 ## 152. JIT slice 14: x87 reg-forms + Fsub/Fdiv families behind --spec-exec (2026-10-16)
 
 Direct development, late-evening slice completing the §150 scope's

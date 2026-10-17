@@ -120,6 +120,37 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void IntRemainder_Shapes_MatchInterpreter()
+    {
+        // Slice-16 family (§154): Neg/Not, Div/Idiv single, Bswap, Xchg,
+        // Leave, x87 integer arithmetic and Fnstsw. Div shapes use small
+        // dividends (`mov eax,8; mov edx,0` — Preset EAX/EDX would overflow
+        // the quotient and raise #DE on both sides); div-mem relies on
+        // Preset values (quotient fits u32); idiv-mem stores 7 first.
+        // Fiadd shapes run behind `fld1` against a real ST0.
+        RunShapes(
+            ("neg r32", new byte[] { 0xF7, 0xD8 }),
+            ("neg m32", new byte[] { 0xF7, 0x1B }),
+            ("not r32", new byte[] { 0xF7, 0xD0 }),
+            ("not m32", new byte[] { 0xF7, 0x13 }),
+            ("div r32", new byte[] { 0xB8, 0x08, 0x00, 0x00, 0x00, 0xBA, 0x00, 0x00, 0x00, 0x00, 0xF7, 0xF1 }),
+            ("div m32", new byte[] { 0xF7, 0x33 }),
+            ("idiv r32", new byte[] { 0xB8, 0x08, 0x00, 0x00, 0x00, 0xBA, 0x00, 0x00, 0x00, 0x00, 0xF7, 0xF9 }),
+            ("idiv m32", new byte[] { 0xB8, 0x08, 0x00, 0x00, 0x00, 0xBA, 0x00, 0x00, 0x00, 0x00, 0xC7, 0x03, 0x07, 0x00, 0x00, 0x00, 0xF7, 0x3B }),
+            ("bswap eax", new byte[] { 0x0F, 0xC8 }),
+            ("bswap ecx", new byte[] { 0x0F, 0xC9 }),
+            ("xchg r32,r32", new byte[] { 0x87, 0xC1 }),
+            ("xchg r32,m32", new byte[] { 0x87, 0x0B }),
+            ("leave", new byte[] { 0xC9 }),
+            ("fld1; fiadd m32", new byte[] { 0xD9, 0xE8, 0xDA, 0x03 }),
+            ("fld1; fimul m32", new byte[] { 0xD9, 0xE8, 0xDA, 0x0B }),
+            ("fld1; fisub m32", new byte[] { 0xD9, 0xE8, 0xDA, 0x23 }),
+            ("fld1; fidiv m32", new byte[] { 0xD9, 0xE8, 0xDA, 0x33 }),
+            ("fnstsw ax", new byte[] { 0xDF, 0xE0 }),
+            ("fld1; fnstsw m16", new byte[] { 0xD9, 0xE8, 0xDD, 0x3B }));
+    }
+
+    [Fact]
     public void ShiftCountCl_Mul_Shapes_MatchInterpreter()
     {
         // Slice-15 family (§153): shifts/rotates counted by CL (the
@@ -645,6 +676,22 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xAF, 0x0B))); // imul r32,m32 (slice 15)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x6B, 0x0B, 0x05))); // imul r32,m32,imm8 (slice 15)
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xD3, 0xD0))); // rcl eax,cl: keeps the interpreter
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xD8))); // neg r32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0x1B))); // neg m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xD0))); // not r32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xF0))); // div r32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0x33))); // div m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF7, 0xF8))); // idiv r32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0xC8))); // bswap eax (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x87, 0xC1))); // xchg r32,r32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x87, 0x0B))); // xchg r32,m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xC9))); // leave (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x03))); // fiadd m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x0B))); // fimul m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x2B))); // fisubr m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDA, 0x33))); // fidiv m32 (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDF, 0xE0))); // fnstsw ax (slice 16)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xDD, 0x3B))); // fnstsw m16 (slice 16)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD1, 0xE0))); // shl r,1: implicit imm
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         return;
