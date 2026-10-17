@@ -3306,6 +3306,10 @@ x87-compare disturb nothing.
 02:12 — known deltas matching, park break at exactly 792,800,535 steps
 (bit-reproducible 5th run in a row); packed-SSE/SSE-compute/flags
 disturb nothing.
+**ktest smoke re-run (2026-10-17, post-memory-path-slice-1): PASS 7/7**
+in 02:12 — known deltas matching, park break at exactly 792,800,535
+steps (bit-reproducible 6th run in a row); RAM-direct + wide-access
+fusion disturb nothing.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —
