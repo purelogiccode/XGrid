@@ -3276,6 +3276,16 @@ triangle **1.185x** (118.49/99.99) vs §141's 1.035x/1.130x — first
 measured wall movement since slice 8 (+3.7/+5.5 points tracking the
 −91% fallback absorption). Flag stays opt-in (thin; default-flip needs
 the §159 build first).
+**§161 DONE (2026-10-17, direct):** memory-path slice 1 (RAM-direct
+RawRead/RawWrite + 64-bit direct + XMM128/FPU80 single-translate,
+observers-null gated, watch/MMIO/page-cross fallbacks) — no
+resolver/whitelist change, active every mode; 8 new
+`MemoryFastPathTests` (1367/1367 tests), format clean, 4-leg golden
+gate PASS (`D:\\spec-soak\\slice21`: triangle spec 102.1 s + menu spec
+203.8 s SHAs exact, `vec=0`, `verifyFailures=0`, anchors exact;
+menu cache SHA exact = flag-off byte-identical; `--block-exec`
+cross-check SHA exact). Walls single-run only, no claim. Flag stays
+opt-in.
 **§157 DONE (2026-10-17, direct):** JIT slice 19 (SSE sqrt/rcp + packed
 arithmetic/logicals/compares — 5 shared bodies, 20 mnemonics, all
 continue blocks) behind `--spec-exec`; 1358/1358 tests, format clean,

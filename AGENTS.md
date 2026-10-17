@@ -507,10 +507,15 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    both titles, `vec=0`, `verifyFailures=0`, counter anchors exact).
    Fallbacks menu 392M→103.7M / triangle 494M→129M across slices 5–11;
    walls saturated (~1.04–1.16x — §138 confirmed, helpers dominate).
-   **1359/1359 tests after slices 12-20 below.** Flag stays opt-in
+   **1367/1367 tests after slices 12-20 + memory-path slice 1 below.** Flag stays opt-in
    (median-of-3 post-slices-13–20: menu 1.072x / triangle 1.185x —
    real but thin; soak binaries must come from a FULL solution build
    — §145 lesson).
+   Then memory-path slice 1 (§161): RAM-direct RawRead/RawWrite +
+   64-bit direct + XMM128/FPU80 single-translate (observers-null
+   gated) — no new shapes, active every mode; 4-leg golden gate PASS
+   (spec SHAs exact both titles, flag-off byte-identical,
+   `--block-exec` exact). **1367/1367 tests**, format clean.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP
@@ -564,17 +569,18 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 5. **Next JIT step:** slices 1+2 and 5-20 are in (`--spec-exec`,
    `--block-exec`, `--decode-cache` default-on per §137 with
    `--no-decode-cache` opt-out; `--fetch-fast`/`--decode-verify` stay
-   default-off). Slices 13-20 cut the menu fallback total 101.8M→34.1M;
-   (x87 fully absorbed on both titles); median-of-3 still required
-   before any wall claim. The next lever after shapes is the
-   memory-path design (`ReadMemory`/`WriteMemory` → translate + bus),
-   scoped in §159 (TLB-inline / identity fast path / span-burst +
-   hazards + gate). Remaining shape tail: Sbb/Adc (carry-live, out),
-   Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos (string,
-   out), Cli/Sti (untouchable) — all <100k or deliberate outs; shape
-   work is done except daylight items. DynamicMethod stays rejected
-   unless new numbers say otherwise. NXDK toolchain (operator/host)
-   still the mesh blocker.
+   default-off) plus memory-path slice 1 (§161: RAM-direct +
+   wide-access single-translate, mode-independent). Slices 13-20 cut
+   the menu fallback total 101.8M→34.1M (x87 fully absorbed on both
+   titles); median-of-3 post-slices-13–20 stands at menu 1.072x /
+   triangle 1.185x (§160). Remaining memory-path work per §159:
+   Bytes bulk path, RMW compute-once, then a fresh median-of-3 before
+   any default-flip talk. Remaining shape tail: Sbb/Adc (carry-live,
+   out), Cmpxchg8B, Fldcw/Fnstcw/Fwait, Shufps + smalls, Movs/Stos
+   (string, out), Cli/Sti (untouchable) — all <100k or deliberate
+   outs; shape work is done except daylight items. DynamicMethod stays
+   rejected unless new numbers say otherwise. NXDK toolchain
+   (operator/host) still the mesh blocker.
 6. **The wave runner is retired (operator decision 2026-10-15).**
    `tools/wave/` will be deleted; no further waves. Development continues
    directly (no BOSS protocol, no worktrees, no detached servers). Tool
