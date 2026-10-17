@@ -3190,6 +3190,19 @@ continue blocks) behind `--spec-exec`; 1351/1351 tests, format clean,
 Sti + x87). En route: real F3-vs-REP discovery (`Decoder.cs:72-73,94`,
 shared `IsMandatoryF3Scalar` gate + `rep movsb` null pin). Flag stays
 opt-in; x87 stays daylight.
+**§150 DONE (2026-10-16, direct):** x87 slice scope filed (read-only
+probe: ~50.8M menu / ~9M triangle inventory, safety verified —
+read-before-mutate, zero new invalidation hooks, no reordering).
+**§151 DONE (2026-10-16, direct):** JIT slice 13 (`Fld/Fst/Fstp`
+m32/m64/m80 + `Fstp ST(i)`, `Fild/Fistp` m16/m32/m64, `Fadd/Fmul`
+reg,reg + reg,mem — 7 shared bodies, ~25 shapes) behind `--spec-exec`;
+1352/1352 tests, format clean, 2-leg spec golden check PASS
+(`D:\spec-soak\slice13`: menu 175.6 s SHA `4EF1FBF6…`, triangle 87.9 s
+SHA `A1740DE0…`, both `vec=0`, `verifyFailures=0`, anchors exact);
+fallbacks menu 101.8M→49.3M (−52%) / triangle −8M with all six mem
+shapes gone from both tails; dispatches menu −18%. New tail: Cli/Sti,
+Shl/Shr r,r, Fld-reg/Fxch/Fld1/Faddp, Movs, Push-m, Fsub r,m, Mul-m.
+Flag stays opt-in.
 **The wave runner is retired (operator decision 2026-10-15).** `tools/wave/`
 deleted; no further waves. Development continues directly (no BOSS protocol, no
 worktrees, no detached servers). Standing operator rule: NO real Xbox games —

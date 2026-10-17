@@ -8147,6 +8147,31 @@ triangle 1B `--block-exec` leg ran (`D:\spec-soak\slice12\
 triangle-block-r1`): SHA `A1740DE0…` exact, `vec=0`, draws=2706 anchor
 exact. The shared whitelist change is safe under both opt-in flags.
 
+## 151. JIT slice 13: x87 loads/stores/add/multiply behind --spec-exec (2026-10-16)
+
+Direct development, evening slice built on the §150 scope (the daylight
+caution is lifted: every subtle point verified — read-before-mutate,
+zero new invalidation hooks, no reordering). `Fld/Fst/Fstp` m32/m64/m80
+(+ `Fstp ST(i)`), `Fild/Fistp` m16/m32/m64, `Fadd/Fmul` (reg,reg +
+reg,mem via one shared body each): 7 shared handler methods covering
+~25 shapes. All continue their block (straight-line data).
+
+Tests: `FpuMem_Shapes_MatchInterpreter` (21 shapes vs the interpreter,
+stack ops behind `fld1` so they run against a real ST0) + 12 resolver
+NotNull pins. Suite **1352/1352**, format clean, zero warnings.
+
+Goldens (`D:\spec-soak\slice13`, full-solution build, `--gpu sw` spec
+legs): triangle spec r1 PASS 87.9 s — SHA `A1740DE0…` exact, `vec=0`,
+`verifyFailures=0`, draws=2706 anchor exact; x87 mem nearly gone
+(only `Fld ST(i)` + `Faddp` remain), fallbacks −8M; dispatches −2.5%.
+Menu spec r1 PASS 175.6 s (fastest spec yet, single run, no claim) —
+SHA `4EF1FBF6…` exact, `vec=0`, `verifyFailures=0`, draws=33632
+skipped=1402 anchor exact; **fallbacks 101.8M→49.3M (−52.5M, −52%)**
+with all six mem shapes gone from the tail; dispatches 288.2M→235.6M
+(−18%, much longer blocks). New tail is diverse smalls: Cli/Sti,
+Shl/Shr r,r (1.4M — slice 8 covered reg,imm/mem,imm only), Fld-reg,
+Fxch, Movs, Faddp, Push-m, Fld1, Fsub r,m, Mul-m. Flag stays opt-in.
+
 ## 150. x87 slice scope: the last big family, filed for daylight (2026-10-16)
 
 Read-only scope (no product change; inventory by a probe agent, verified
