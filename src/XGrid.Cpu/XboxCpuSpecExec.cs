@@ -1567,6 +1567,7 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecRolCountClHandler = SpecRolCountCl;
     private static readonly SpecHandler SpecRorCountClHandler = SpecRorCountCl;
     private static readonly SpecHandler SpecFldRegHandler = SpecFldReg;
+    // ReSharper disable once UnusedMember.Local
     private static readonly SpecHandler SpecFstMemHandler = SpecFstMem;
     private static readonly SpecHandler SpecFstHandler = SpecFst;
     private static readonly SpecHandler SpecFstpHandler = SpecFstp;

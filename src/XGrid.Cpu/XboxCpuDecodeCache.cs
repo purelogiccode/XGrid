@@ -494,7 +494,7 @@ public sealed partial class XboxCpu
             return false;
         }
 
-        if (!blocks.TryBeginTail(out DecodeCacheEntry[]? entries, out EmitTailRunner? runner))
+        if (!blocks.TryBeginTail(out DecodeCacheEntry[] entries, out EmitTailRunner? runner))
         {
             return false;
         }

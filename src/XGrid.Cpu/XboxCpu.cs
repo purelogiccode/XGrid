@@ -2587,7 +2587,7 @@ public sealed partial class XboxCpu
         }
     }
 
-    private void MoveChunkRam(PhysicalMemory ram, uint srcBase, uint dstBase, uint iters, int delta, int size,
+    private static void MoveChunkRam(PhysicalMemory ram, uint srcBase, uint dstBase, uint iters, int delta, int size,
         uint fill, bool move, bool decrement = false)
     {
         // Elements in legacy visit order: chunk base is the lowest address;
