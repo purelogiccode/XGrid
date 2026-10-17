@@ -545,6 +545,9 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
    Median-3 post-slices-5+6 (§169): menu 1.084x / tri 1.231x
    (12/12 PASS; reads as real — spec-only gains vs controls).
    Specialization at asymptote; emitter next. Flag stays opt-in.
+   Shape slice 7 (§170): Adc/Sbb all forms + FPU-control/Emms/Fwait
+   (fallbacks −52%/−28%; stale carry-live label retired). 4-leg gate
+   PASS (`D:\spec-soak\slice26`). **1392/1392 tests**.
 2. **SLICES 12–20 DONE (§§149, §151–158, same evening).** Scalar SSE (Addss/Subss/
    Mulss/Divss/Minss/Maxss + Cvtss2Si/Cvttss2Si, 16 handlers, all
    continue blocks) behind opt-in `--spec-exec`; real F3-vs-REP

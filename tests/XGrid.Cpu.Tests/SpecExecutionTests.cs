@@ -159,6 +159,59 @@ public sealed class SpecExecutionTests
     }
 
     [Fact]
+    public void AdcSbb_Shapes_MatchInterpreter()
+    {
+        // Slice 7 (§170): add-with-carry / subtract-with-borrow in every
+        // form and size. The preset sets CF, so plain shapes prove the
+        // carry=1 path; clc-prefixed 32-bit twins prove carry=0.
+        RunShapes(
+            ("adc r8,r8", new byte[] { 0x10, 0xD8 }),
+            ("adc r16,r16", new byte[] { 0x66, 0x11, 0xD8 }),
+            ("adc r32,r32", new byte[] { 0x11, 0xD8 }),
+            ("adc r8,imm8", new byte[] { 0x14, 0x05 }),
+            ("adc r16,imm16", new byte[] { 0x66, 0x15, 0x34, 0x12 }),
+            ("adc r32,imm32", new byte[] { 0x15, 0x78, 0x56, 0x34, 0x12 }),
+            ("adc r32,imm8", new byte[] { 0x83, 0xD0, 0x05 }),
+            ("adc r8,m8", new byte[] { 0x12, 0x03 }),
+            ("adc r16,m16", new byte[] { 0x66, 0x13, 0x03 }),
+            ("adc r32,m32", new byte[] { 0x13, 0x03 }),
+            ("adc m8,r8", new byte[] { 0x10, 0x03 }),
+            ("adc m16,r16", new byte[] { 0x66, 0x11, 0x03 }),
+            ("adc m32,r32", new byte[] { 0x11, 0x03 }),
+            ("adc m8,imm8", new byte[] { 0x80, 0x13, 0x05 }),
+            ("adc m16,imm16", new byte[] { 0x66, 0x81, 0x13, 0x34, 0x12 }),
+            ("adc m32,imm32", new byte[] { 0x81, 0x13, 0x78, 0x56, 0x34, 0x12 }),
+            ("sbb r8,r8", new byte[] { 0x18, 0xD8 }),
+            ("sbb r16,r16", new byte[] { 0x66, 0x1B, 0xD8 }),
+            ("sbb r32,r32", new byte[] { 0x1B, 0xD8 }),
+            ("sbb r8,imm8", new byte[] { 0x1C, 0x05 }),
+            ("sbb r16,imm16", new byte[] { 0x66, 0x1D, 0x34, 0x12 }),
+            ("sbb r32,imm32", new byte[] { 0x1D, 0x78, 0x56, 0x34, 0x12 }),
+            ("sbb r32,imm8", new byte[] { 0x83, 0xD8, 0x05 }),
+            ("sbb r8,m8", new byte[] { 0x1A, 0x03 }),
+            ("sbb r16,m16", new byte[] { 0x66, 0x1B, 0x03 }),
+            ("sbb r32,m32", new byte[] { 0x1B, 0x03 }),
+            ("sbb m8,r8", new byte[] { 0x18, 0x03 }),
+            ("sbb m16,r16", new byte[] { 0x66, 0x19, 0x03 }),
+            ("sbb m32,r32", new byte[] { 0x19, 0x03 }),
+            ("sbb m8,imm8", new byte[] { 0x80, 0x1B, 0x05 }),
+            ("sbb m16,imm16", new byte[] { 0x66, 0x81, 0x1B, 0x34, 0x12 }),
+            ("sbb m32,imm32", new byte[] { 0x81, 0x1B, 0x78, 0x56, 0x34, 0x12 }),
+            ("clc; adc r32,r32", new byte[] { 0xF8, 0x11, 0xD8 }),
+            ("clc; adc r32,imm32", new byte[] { 0xF8, 0x15, 0x78, 0x56, 0x34, 0x12 }),
+            ("clc; adc r32,m32", new byte[] { 0xF8, 0x13, 0x03 }),
+            ("clc; adc m32,r32", new byte[] { 0xF8, 0x11, 0x03 }),
+            ("clc; sbb r32,r32", new byte[] { 0xF8, 0x1B, 0xD8 }),
+            ("clc; sbb r32,imm32", new byte[] { 0xF8, 0x1D, 0x78, 0x56, 0x34, 0x12 }),
+            ("clc; sbb r32,m32", new byte[] { 0xF8, 0x1B, 0x03 }),
+            ("clc; sbb m32,r32", new byte[] { 0xF8, 0x19, 0x03 }),
+            ("fldcw m16", new byte[] { 0xD9, 0x2D, 0x00, 0x20, 0x00, 0x00 }),
+            ("fnstcw m16", new byte[] { 0xD9, 0x3D, 0x00, 0x20, 0x00, 0x00 }),
+            ("fwait", new byte[] { 0x9B }),
+            ("emms", new byte[] { 0x0F, 0x77 }));
+    }
+
+    [Fact]
     public void SseCompute_Shapes_MatchInterpreter()
     {
         // Slice-19 family (§157): SSE sqrt/reciprocal, packed arithmetic,
@@ -739,8 +792,6 @@ public sealed class SpecExecutionTests
         Assert.Null(XboxCpu.ResolveSpec(Decode(0xCD, 0x21)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x0F, 0x0B)));
         Assert.Null(XboxCpu.ResolveSpec(Decode(0x62, 0x00, 0x00)));
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0x10, 0xD8))); // adc: carry live
-        Assert.Null(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb: carry live
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x30))); // push m32 (slice 15)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x03))); // inc m32 (slice 9)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFF, 0x0B))); // dec m32 (slice 9)
@@ -869,6 +920,42 @@ public sealed class SpecExecutionTests
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xF6, 0xC0, 0x01))); // test r8,imm8 via F6 grp
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFA))); // cli (slice 6/§168)
         Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xFB))); // sti (slice 6/§168)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x10, 0xD8))); // adc r8,r8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x11, 0xD8))); // adc r16,r16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x11, 0xD8))); // adc r32,r32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x14, 0x05))); // adc r8,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x15, 0x34, 0x12))); // adc r16,imm16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x15, 0x78, 0x56, 0x34, 0x12))); // adc r32,imm32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x83, 0xD0, 0x05))); // adc r32,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x12, 0x03))); // adc r8,m8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x13, 0x03))); // adc r16,m16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x13, 0x03))); // adc r32,m32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x10, 0x03))); // adc m8,r8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x11, 0x03))); // adc m16,r16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x11, 0x03))); // adc m32,r32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x80, 0x13, 0x05))); // adc m8,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x81, 0x13, 0x34, 0x12))); // adc m16,imm16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x81, 0x13, 0x78, 0x56, 0x34, 0x12))); // adc m32,imm32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x18, 0xD8))); // sbb r8,r8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x1B, 0xD8))); // sbb r16,r16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x1B, 0xD8))); // sbb r32,r32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x1C, 0x05))); // sbb r8,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x1D, 0x34, 0x12))); // sbb r16,imm16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x1D, 0x78, 0x56, 0x34, 0x12))); // sbb r32,imm32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x83, 0xD8, 0x05))); // sbb r32,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x1A, 0x03))); // sbb r8,m8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x1B, 0x03))); // sbb r16,m16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x1B, 0x03))); // sbb r32,m32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x18, 0x03))); // sbb m8,r8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x19, 0x03))); // sbb m16,r16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x19, 0x03))); // sbb m32,r32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x80, 0x1B, 0x05))); // sbb m8,imm8 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x66, 0x81, 0x1B, 0x34, 0x12))); // sbb m16,imm16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x81, 0x1B, 0x78, 0x56, 0x34, 0x12))); // sbb m32,imm32 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0x2D, 0x00, 0x20, 0x00, 0x00))); // fldcw m16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0xD9, 0x3D, 0x00, 0x20, 0x00, 0x00))); // fnstcw m16 (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x9B))); // fwait (slice 7)
+        Assert.NotNull(XboxCpu.ResolveSpec(Decode(0x0F, 0x77))); // emms (slice 7)
         return;
 
         static DecodedInstruction Decode(params byte[] code)

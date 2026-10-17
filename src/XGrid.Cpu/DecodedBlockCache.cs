@@ -337,7 +337,8 @@ public sealed class DecodedBlockCache
     /// polled before every instruction in both Step and RunSpecBlock, so
     /// merging blocks across them moves no delivery point — it only
     /// erases the 1-instruction boundary dispatches, which are 95-100%
-    /// of the remaining fallback tail). Every branch, trap, system/mode, string/REP, I/O and
+    /// of the remaining fallback tail), plus slice-7 Fldcw/Fnstcw/Fwait/
+    /// Emms (straight-line FPU-control one-liners, verbatim mirrors). Every branch, trap, system/mode, string/REP, I/O and
     /// unlisted instruction ends the block (including future mnemonics).
     /// Memory faults are never predicted; they exit at the original boundary.
     /// </summary>
@@ -396,7 +397,8 @@ public sealed class DecodedBlockCache
             or Mnemonic.Andps or Mnemonic.Andnps or Mnemonic.Orps or Mnemonic.Xorps
             or Mnemonic.Cmpps or Mnemonic.Cmpss or Mnemonic.Comiss or Mnemonic.Ucomiss
             or Mnemonic.Popf or Mnemonic.Rdtsc
-            or Mnemonic.Cli or Mnemonic.Sti);
+            or Mnemonic.Cli or Mnemonic.Sti
+            or Mnemonic.Fldcw or Mnemonic.Fnstcw or Mnemonic.Fwait or Mnemonic.Emms);
     }
 
     private sealed record Block(

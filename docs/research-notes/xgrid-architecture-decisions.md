@@ -8845,3 +8845,33 @@ the per-dispatch remainder (~7ns dict lookups) was scoped and rejected
 as sub-noise (section 167 deliberation). Next wall truth (if any
 further slice lands) needs a fresh median -- single runs have been
 proven unreliable twice tonight.
+
+## 170. Shape slice 7: Adc/Sbb + FPU-control + Emms/Fwait behind --spec-exec (2026-10-17)
+
+Direct development, from the 3B deep-run tail (section 165 follow-up):
+Adc/Sbb 3.4M + Fldcw/Fnstcw/Fwait ~1M + Emms 306k -- the largest
+unspecialized volume left after slice 6 (Movs/Stos are bulk-covered;
+Cmpxchg8B/Shufps stay deliberate outs). The old "carry-live, out" label
+(phase-15 era) was stale: handlers read CF live from EFLAGS exactly
+like the interpreter's `ExecuteAlu`, so multi-instruction carry chains
+observe identical traffic on both paths.
+
+- 30 handlers: Adc/Sbb x RegReg/RegImm/RegMem/MemReg/MemImm x 8/16/32,
+  verbatim Add/Sub mirrors with the live carry bit.
+- 4 one-liners: Fldcw/Fnstcw (m16, fault-order exact), Fwait (nop),
+  Emms (`Fpu.EmptyAll`).
+- Resolver rows in `ResolveSpecAlu`/`ResolveSpecAluMem` (whose doc still
+  claimed Adc/Sbb unresolved -- corrected); Fldcw/Fnstcw/Fwait/Emms join
+  the `Terminates` continue-list (straight-line, EIP-precise).
+
+Tests: `AdcSbb_Shapes_MatchInterpreter` (44 shapes: every form/size,
+carry=1 from the CF-set preset plus clc-prefixed carry=0 32-bit twins;
+Fldcw/Fnstcw/Fwait/Emms) + 34 resolver pins; 2 stale `Null` pins
+(adc/sbb carry-live) removed. Suite **1392/1392**, format clean.
+4-leg golden gate (`D:\spec-soak\slice26`, full-solution rebuild
+first): triangle spec 74.4 s + menu spec 144.3 s SHAs exact, `vec=0`,
+`verifyFailures=0`, anchors exact; menu cache 155.1 s SHA exact
+(control leg); triangle `--block-exec` SHA `A1740DE0...` exact,
+draws=2706. Fallbacks triangle 185k-->90k (-52%), menu 1.70M-->1.22M
+(-28%); interrupts identical 1883/3153. Walls single-run only. Flag
+stays opt-in.
