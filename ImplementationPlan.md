@@ -3006,7 +3006,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-17; refreshed for the emitter program §§171–176)
+## Project completion assessment (2026-10-17; refreshed for the emitter program §§171–179b)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3040,7 +3040,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~68% complete overall** (weighted: 73.7 of 108 weight-points, recomputed 2026-10-17 after E3-0/E3-1 §§175–176; was 73.4 pts after §§171–175).
+**Result: ~68.5% complete overall** (weighted: 74.0 of 108 weight-points, recomputed 2026-10-17 after the quiet-host emitter verdict §§176–179b; was 73.7 pts after §§171–176).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:
