@@ -53,11 +53,14 @@ $logPath = "$OutDir/$Title-$Mode-r$Rep.log"
 $cliArgs += @('--frame', $bmp)
 $command = 'dotnet ' + ($cliArgs -join ' ')
 $watch = [Diagnostics.Stopwatch]::StartNew()
+if (Test-Path $bmp) { Remove-Item $bmp -Force }
 & dotnet @cliArgs > $logPath 2>&1
 $exitCode = $LASTEXITCODE
 $watch.Stop()
 if ($exitCode -ne 0) { throw "Boot failed: $exitCode ($logPath)" }
 $log = Get-Content $logPath -Raw
+if ($log -match 'Frame unavailable') { throw 'Frame unavailable (no present happened)' }
+if (!(Test-Path $bmp)) { throw "Frame BMP missing: $bmp" }
 $actualSha = (Get-FileHash $bmp -Algorithm SHA256).Hash
 if ($actualSha -ne $sha) { throw "SHA mismatch: $actualSha" }
 if ($log -notmatch 'LastFault vec=0\b') { throw 'Guest fault' }

@@ -8719,3 +8719,32 @@ SHA `A1740DE0...` exact, draws=2706. Walls single-run only -- and note
 the menu-cache 207-->166 drop happened between runs of IDENTICAL
 binaries (host shift, not code). The section 164 median stands. Flag
 stays opt-in.
+
+## 166. Median-of-3 post-slice-4: spec/cache 1.088x menu / 1.161x triangle (2026-10-17)
+
+12-leg matrix (`D:\spec-soak\median23`, cache+spec x 3 reps x 2 titles,
+full-solution build with slice 4, undisturbed run): all 12 legs PASS.
+
+Walls (median-of-3):
+- menu cache 166.54 / 158.89 / 156.36 --> median **158.89 s**;
+  spec 146.10 / 154.21 / 145.71 --> median **146.10 s** --> **spec/cache
+  1.088x**.
+- triangle cache 92.44 / 87.92 / 91.62 --> median **91.62 s**;
+  spec 80.57 / 78.59 / 78.93 --> median **78.93 s** --> **spec/cache
+  1.161x**.
+
+Vs section 164 (menu 1.070x, triangle 1.164x): triangle flat (-0.3
+points); menu +1.8 points, which is exactly the arithmetic of
+mode-INDEPENDENT savings (equal absolute seconds off both modes raises
+C/S when C>S) -- but NO attribution claim is made: absolutes fell
+~20% between matrices on IDENTICAL binaries (slice23-stale menu/cache
+166.9 vs median22 ~205), so a host shift dominates and slice-4's share
+is unmeasurable from walls. The robust signals are the ratios (both
+modes share the host) and the engagement probe (section 165: bulk fires
+for Movs+Stos, both paging modes, up to 6144-iteration runs).
+
+Gate-integrity fix alongside: the soak script hashed a STALE bmp when
+no frame was produced (the slice-4 bug run "passed" SHA on a leftover
+file; only the counter anchor caught it). The script now deletes the
+bmp before the run, fails on `Frame unavailable`, and requires the bmp
+to exist. No product code touched.
