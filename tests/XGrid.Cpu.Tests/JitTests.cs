@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using XGrid.Core.Devices;
 using XGrid.Memory;
 using Xunit;
 
@@ -454,11 +455,139 @@ public sealed class JitTests
         Assert.True(jit.JitServedTotal > 0);
     }
 
+    [Fact]
+    public void CliStiMembers_MatchInterpreter()
+    {
+        // cli/sti are flag members in the fast mode (IF round-trips through
+        // the flags local); no interrupt source, so the observable state is
+        // flags + EIP only.
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3
+            0xFA,                         // cli
+            0xFB,                         // sti
+            0x40,                         // inc eax
+            0xFA,                         // cli
+            0x40,                         // inc eax
+            0x49,
+            0x75, 0xF8,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(8)]
+    [InlineData(13)]
+    public void IrqExact_SingleFire_MatchesInterpreter(int fireAt)
+    {
+        RunIrqSweep(() => new CountedInterruptSource(0x21, fireAt));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(7)]
+    public void IrqExact_PeriodicFire_MatchesInterpreter(int every)
+    {
+        RunIrqSweep(() => new PeriodicInterruptSource(0x21, every));
+    }
+
+    private static void RunIrqSweep(Func<IInterruptSource> sourceFactory)
+    {
+        byte[] code =
+        [
+            0xB9, 0x08, 0x00, 0x00, 0x00, // mov ecx,8
+            0x40,                         // inc eax
+            0x49,                         // dec ecx
+            0x75, 0xFC,                   // jne loop
+            0xF4,
+        ];
+
+        XboxCpu plain = CreateIrqSource(code, sourceFactory(), jit: false, exact: false);
+        XboxCpu jit = CreateIrqSource(code, sourceFactory(), jit: true, exact: true);
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        AssertSameState(plain, jit);
+    }
+
+    private static XboxCpu CreateIrqSource(byte[] code, IInterruptSource source, bool jit, bool exact)
+    {
+        XboxCpu cpu = jit ? CreateJit(code) : CpuHarness.Create(code);
+        cpu.Ram().Write8(0x3000, 0xCF); // iret
+        InstallIdt(cpu, 0x21, 0x3000);
+        cpu.Context.Eflags |= FlagBits.If;
+        cpu.InterruptSource = source;
+        if (exact)
+        {
+            cpu.JitExact = true;
+        }
+
+        return cpu;
+    }
+
+    /// <summary>Fires one vector at the Nth acknowledge (shared shape with EmitTests).</summary>
+    private sealed class CountedInterruptSource : IInterruptSource
+    {
+        private readonly int _vector;
+        private readonly int _fireAt;
+        private int _acks;
+
+        public CountedInterruptSource(int vector, int fireAt)
+        {
+            _vector = vector;
+            _fireAt = fireAt;
+        }
+
+        public int Acknowledge()
+        {
+            _acks++;
+            return _acks == _fireAt ? _vector : -1;
+        }
+    }
+
+    /// <summary>Fires the vector on every Nth acknowledge.</summary>
+    private sealed class PeriodicInterruptSource : IInterruptSource
+    {
+        private readonly int _vector;
+        private readonly int _every;
+        private int _acks;
+
+        public PeriodicInterruptSource(int vector, int every)
+        {
+            _vector = vector;
+            _every = every;
+        }
+
+        public int Acknowledge()
+        {
+            _acks++;
+            return _acks % _every == 0 ? _vector : -1;
+        }
+    }
+
     private static XboxCpu CreateJit(byte[] code)
     {
         XboxCpu cpu = CpuHarness.Create(code);
         cpu.DecodeCacheEnabled = true;
         cpu.SpecExecutionEnabled = true;
+        cpu.JitBuildThreshold = 1;
         cpu.JitEnabled = true;
         return cpu;
     }

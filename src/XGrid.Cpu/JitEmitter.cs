@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using System.Reflection.Emit;
+using XGrid.Core.Devices;
 using XGrid.Memory;
 
 namespace XGrid.Cpu;
@@ -80,6 +81,18 @@ internal static class JitEmitter
     private static readonly FieldInfo JitProgress =
         typeof(XboxCpu).GetField("_jitProgress", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
+    private static readonly FieldInfo JitSlowMembers =
+        typeof(XboxCpu).GetField("_jitSlowMembers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly FieldInfo JitPending =
+        typeof(XboxCpu).GetField("_jitPending", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo GetInterruptSource =
+        typeof(XboxCpu).GetProperty("InterruptSource")!.GetMethod!;
+
+    private static readonly MethodInfo Acknowledge =
+        typeof(IInterruptSource).GetMethod("Acknowledge")!;
+
     private static readonly MethodInfo IsWatched =
         typeof(XboxCpu).GetMethod("IsWatched", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -147,7 +160,7 @@ internal static class JitEmitter
     /// thrown <c>PageFaultSignal</c> leaves the context at the faulting
     /// member's boundary).
     /// </summary>
-    public static JitRun? Build(uint headLinear, ReadOnlySpan<JitMemberPlan> plans)
+    public static JitRun? Build(uint headLinear, ReadOnlySpan<JitMemberPlan> plans, bool exactBoundaries)
     {
         if (plans.Length == 0)
         {
@@ -181,6 +194,8 @@ internal static class JitEmitter
         LocalBuilder phys = il.DeclareLocal(typeof(uint));
         LocalBuilder slot = il.DeclareLocal(typeof(int));
         LocalBuilder ram = il.DeclareLocal(typeof(PhysicalMemory));
+        LocalBuilder interruptSource = il.DeclareLocal(typeof(IInterruptSource));
+        LocalBuilder vector = il.DeclareLocal(typeof(int));
         Label exit = il.DefineLabel();
 
         // Prologue: hoist the context and load the full cached register state.
@@ -224,6 +239,11 @@ internal static class JitEmitter
             il.Emit(OpCodes.Add);
             il.Emit(OpCodes.Stloc, tsc);
 
+            if (exactBoundaries)
+            {
+                EmitExactPoll(il, context, gprs, eip, flags, tsc, served, interruptSource, vector);
+            }
+
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
                 a1, a2, res, addr, vpn, phys, slot, ram);
 
@@ -252,6 +272,50 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Ret);
         return (JitRun)method.CreateDelegate(typeof(JitRun));
+    }
+
+    /// <summary>
+    /// Exact mode's per-member IRQ poll: with IF set, acknowledge once; a
+    /// pending vector is recorded and the runner exits with the full state
+    /// synced at this member's boundary (TSC already incremented). Mirrors
+    /// <c>Step</c>/<c>RunSpecBlock</c> order bit for bit.
+    /// </summary>
+    private static void EmitExactPoll(
+        ILGenerator il,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder interruptSource,
+        LocalBuilder vector)
+    {
+        Label body = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Callvirt, GetInterruptSource);
+        il.Emit(OpCodes.Stloc, interruptSource);
+        il.Emit(OpCodes.Ldloc, interruptSource);
+        il.Emit(OpCodes.Brfalse, body);
+        il.Emit(OpCodes.Ldloc, flags);
+        il.Emit(OpCodes.Ldc_I4, (int)FlagBits.If);
+        il.Emit(OpCodes.And);
+        il.Emit(OpCodes.Brfalse, body);
+        il.Emit(OpCodes.Ldloc, interruptSource);
+        il.Emit(OpCodes.Callvirt, Acknowledge);
+        il.Emit(OpCodes.Stloc, vector);
+        il.Emit(OpCodes.Ldloc, vector);
+        il.Emit(OpCodes.Ldc_I4_0);
+        il.Emit(OpCodes.Blt, body);
+
+        // Pending: record the consumed vector and exit at this boundary.
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, vector);
+        il.Emit(OpCodes.Stfld, JitPending);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldloc, served);
+        il.Emit(OpCodes.Ret);
+        il.MarkLabel(body);
     }
 
     private static void EmitMember(
@@ -507,6 +571,20 @@ internal static class JitEmitter
                     il.MarkLabel(done);
                     break;
                 }
+
+            case JitKind.Cli:
+                il.Emit(OpCodes.Ldloc, flags);
+                il.Emit(OpCodes.Ldc_I4, ~(int)FlagBits.If);
+                il.Emit(OpCodes.And);
+                il.Emit(OpCodes.Stloc, flags);
+                break;
+
+            case JitKind.Sti:
+                il.Emit(OpCodes.Ldloc, flags);
+                il.Emit(OpCodes.Ldc_I4, (int)FlagBits.If);
+                il.Emit(OpCodes.Or);
+                il.Emit(OpCodes.Stloc, flags);
+                break;
 
             case JitKind.Nop:
                 break;
@@ -1311,6 +1389,15 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Stfld, JitProgress);
+
+        // Diagnostic: count members that took the interpreter fallback.
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Dup);
+        il.Emit(OpCodes.Ldfld, JitSlowMembers);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Conv_I8);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stfld, JitSlowMembers);
         EmitStoreState(il, context, gprs, eip, flags, tsc);
     }
 
