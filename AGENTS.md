@@ -75,18 +75,21 @@ file references) and update `ImplementationPlan.md` status when a device or phas
 Canonical order: `docs/development-direction.md`; fast-mode JIT track:
 `docs/research-notes/jit-track-charter.md`. Summary of hard rules:
 
-1. **Track B (GPU backend) + Track D (MMIO) lead the xemu-class campaign
-   (re-aimed 2026-10-19, §195).** Measured: the software rasterizer was
-   36–38% of both 1B walls and the GL backend was an observation *mirror*
-   (software ran unconditionally) — `--gpu-replace` adds replacement mode
-   (§196: menu 64.02→48.29 s, triangle 27.91→17.82 s, CPU SHAs exact,
-   frames maxDelta=1). Remaining: ~2.5 µs/draw is driver cost → **B2c draw
-   batching** (per-draw uniforms → attributes/UBO, one call per state run);
-   then MMIO fast dispatch (119M slow members at 1B menu), JIT Phase-2
-   leftovers (chaining/threshold, ~5–8%), RAM writeback for
-   framebuffer-reading content. Track C JIT is leftovers-only; accurate-mode
-   rules unchanged (specialize semantics; boundary-preserving; `DynamicMethod`
-   stays opt-in via `--jit`; raw emitter gated by charter Phase-3).
+1. **Track B (GPU backend) + Track D (MMIO/JIT fast paths) lead the xemu-class
+   campaign (re-aimed 2026-10-19, §§195–198).** Day result (1B, fast mode):
+   **triangle 27.9 → 20.28 s sw / 17.8 → 10.68 s gl+replace; menu 64.0 →
+   56.82 s sw / 48.3 → 41.39 s gl+replace** — the xemu-class gap on the
+   triangle is now ~11× (from 18–29×); CPU-bound work is already ahead of
+   xemu. Landed: `--gpu-replace` (§196), `--jit-mmio` (§197), the 256-slot
+   data-translate cache, cross-page decode-cache entries, the `--jit-spin`
+   idle-wait skip (§198) and the `--jit-timing` gate (§198a). Remaining
+   levers: **B2c draw batching** (per-draw uniforms → attributes/UBO, one
+   call per state run), D3b (blocks across page-end heads), the runner's
+   ~18 ns/block state sync (125M invocations), the RAM writeback for
+   framebuffer-reading content, and JIT Phase-2 leftovers (chaining,
+   threshold; ~5–8%). Accurate-mode rules unchanged (specialize semantics;
+   boundary-preserving; `DynamicMethod` stays opt-in via `--jit`; raw
+   emitter gated by charter Phase-3).
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
    and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
    (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).

@@ -3142,6 +3142,30 @@ per-draw uniforms → attributes/UBO, one call per state run) is the next
 GPU-path slice**, alongside the RAM writeback for framebuffer-reading
 content. D1 (MMIO fast dispatch) and C1 (JIT leftovers) remain queued.
 
+**Update (2026-10-19, same day — D1/D2/D3a + fast-mode spin skip + timing
+gate landed; §§196–198).** Track D delivered more than expected, plus a
+CPU-side slice:
+- **D1 `--jit-mmio`** (device fast path; opt-in): 352K/941K accesses served,
+  bit-exact; device accesses are only 0.3%/4.6% of the slow class — neutral
+  wall, but the diagnosis was decisive.
+- **D2** data-translate cache 4 → 256 slots: slow members −25%/−19%, ~2%
+  menu (4/4 paired).
+- **D3a** cross-page decode-cache entries: crossPageSkips 761K → 0,
+  `--decode-verify` clean; the triangle's non-JIT cost was a vblank spin at
+  page-end addresses (§197).
+- **`--jit-spin`** fast-mode idle-wait skip (§198): the kernel idle loop
+  (0x8001B02E) fast-forwarded; triangle −17%, menu −4%; frames identical.
+- **`--jit-timing`** (§198a): the per-invocation runner timing was costing
+  ~15–25 ns × 125–237M invocations — gated off by default; triangle −24%,
+  menu −8%, same SHAs.
+**Best-ever 1B (fast mode): triangle 10.68 s gl+replace / 20.28 s sw
+(1.67×/1.38× vs the 27.9 s baseline); menu 41.39 s / 56.82 s (1.17×/1.13×).**
+The xemu-class gap on the triangle narrowed from 18–29× to **~11×** (xemu
+~70 fps vs 6.4 fps). Next levers: B2c draw batching, D3b (blocks across
+page-end heads), the runner's per-block state sync (~18 ns/invocation ×
+125M), and the RAM writeback. Real-content policy: benchmark-only real ISOs
+authorized (§197).
+
 **Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
 uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
 Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;
