@@ -9582,3 +9582,27 @@ exact): menu 74.3 s vs the 143.7 s baseline (1.93x); triangle 36.6 s vs
 71.6 s (1.96x).** Rasterizer-only: menu 119.2 -> 26.9 s (4.4x), triangle
 54.7 -> 9.9 s (5.5x). The blend slice is claimed on the raster delta (3/3
 paired wins) with the wall median as corroboration; no other claim changed.
+
+## 187. Rasterizer slice R7: lean interpolation for modulate fills (2026-10-18, direct)
+
+Fresh ablation on the current binary attributed the menu's 26.9 s raster as:
+barycentric + interpolation + loop ~10-11 s, sampler ~8-9 s, fragment ~8-9 s
+(fast combiners ~1-2 s). The kind-1 modulate config (402,600 fills, ~245M px)
+consumes only the interpolated diffuse, stage-0 texcoords and depth -
+specular, stages 1-3 texcoords and the fog factor (16 of 24 interpolated
+vectors) are dead for those fills whenever stages 1-3 are unbound.
+`FillTrianglePsh` now computes only the live vectors under a per-fill
+`leanInterp` condition (kind==1 && texModes[1..3]==None; all k1 fills
+qualify: `lean=402600` measured). The computed values stay operation-for-
+operation identical, and no reader of the skipped vectors exists under the
+condition (the resolve loop skips None-mode slots, no dot mode can live in
+stages 1-3 for kind 1, the modulate evaluator reads only texels[0]).
+
+Gate (`D:\spec-soak\r10` + `D:\spec-soak\lean-median`): SHAs exact, counters
+exact, normalized stdout byte-identical to r9. Median-of-3 menu raster
+26.90 -> **24.55 s** (24.38/24.55/24.69), menu wall 74.3 -> **70.8 s**
+(70.4/70.8/71.0). Triangle unchanged (k1=0 fills; 9.90 s raster).
+
+Closing numbers: menu **70.8 s vs 143.7 s baseline (2.03x)**, rasterizer-only
+menu 119.2 -> 24.6 s (4.9x); triangle **36.6 s (1.96x)**, raster 54.7 ->
+9.9 s (5.5x).

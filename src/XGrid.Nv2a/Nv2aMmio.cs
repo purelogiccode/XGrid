@@ -359,6 +359,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private string _diagCombinerConfig = "none";
     private int _combinerFastKind;
     private readonly long[] _diagFastKindFills = new long[4];
+    private long _diagLeanFills;
     // Per-fill fragment constants (set by PrepareFragmentConstants at the start
     // of every fill; no guest register write can interleave with a fill).
     private float _alphaRefScaled;
@@ -385,7 +386,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the per-kind fast-path fill counts. Diagnostics.</summary>
     public string FastKindDebug =>
-        $"k1={_diagFastKindFills[1]} k2={_diagFastKindFills[2]} k3={_diagFastKindFills[3]}";
+        $"k1={_diagFastKindFills[1]} k2={_diagFastKindFills[2]} k3={_diagFastKindFills[3]} lean={_diagLeanFills}";
     private long _rasterLegacyTicks;
     private long _rasterPshTicks;
     private long _rasterLegacyCalls;
@@ -6584,6 +6585,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             anyStageDotReader |= mode == PshCombiner.TexModeDotSt || mode == PshCombiner.TexModeDotStr3D;
         }
 
+        // Lean interpolation for kind-1 modulate fills whose stages 1-3 are
+        // unbound: the modulate combiner consumes only the interpolated
+        // diffuse, the stage-0 texcoords and depth, so the specular, stages
+        // 1-3 texcoords and fog-factor interpolations (16 of 24 vectors) are
+        // dead and skipped. All conditions are per-fill; the values that are
+        // computed stay operation-for-operation identical.
+        bool leanInterp = _combinerFastKind == 1 &&
+                          texModes[1] == PshCombiner.TexModeNone &&
+                          texModes[2] == PshCombiner.TexModeNone &&
+                          texModes[3] == PshCombiner.TexModeNone;
+
         long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
         for (uint y = y0; y <= y1; y++)
         {
@@ -6624,43 +6636,54 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 diffuse[1] = (p1 * a.DiffuseG) + (p2 * b.DiffuseG) + (p0 * c.DiffuseG);
                 diffuse[2] = (p1 * a.DiffuseB) + (p2 * b.DiffuseB) + (p0 * c.DiffuseB);
                 diffuse[3] = (p1 * a.DiffuseA) + (p2 * b.DiffuseA) + (p0 * c.DiffuseA);
-                specular[0] = (p1 * a.SpecR) + (p2 * b.SpecR) + (p0 * c.SpecR);
-                specular[1] = (p1 * a.SpecG) + (p2 * b.SpecG) + (p0 * c.SpecG);
-                specular[2] = (p1 * a.SpecB) + (p2 * b.SpecB) + (p0 * c.SpecB);
-                specular[3] = (p1 * a.SpecA) + (p2 * b.SpecA) + (p0 * c.SpecA);
                 float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
                 float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
                 float ts0 = (p1 * a.S0) + (p2 * b.S0) + (p0 * c.S0);
                 float tw0 = (p1 * a.T0W) + (p2 * b.T0W) + (p0 * c.T0W);
-                float tu1 = (p1 * a.U1) + (p2 * b.U1) + (p0 * c.U1);
-                float tv1 = (p1 * a.V1) + (p2 * b.V1) + (p0 * c.V1);
-                float ts1 = (p1 * a.S1) + (p2 * b.S1) + (p0 * c.S1);
-                float tw1 = (p1 * a.T1W) + (p2 * b.T1W) + (p0 * c.T1W);
-                float tu2 = (p1 * a.U2) + (p2 * b.U2) + (p0 * c.U2);
-                float tv2 = (p1 * a.V2) + (p2 * b.V2) + (p0 * c.V2);
-                float ts2 = (p1 * a.S2) + (p2 * b.S2) + (p0 * c.S2);
-                float tw2 = (p1 * a.T2W) + (p2 * b.T2W) + (p0 * c.T2W);
-                float tu3 = (p1 * a.U3) + (p2 * b.U3) + (p0 * c.U3);
-                float tv3 = (p1 * a.V3) + (p2 * b.V3) + (p0 * c.V3);
-                float ts3 = (p1 * a.S3) + (p2 * b.S3) + (p0 * c.S3);
-                float tw3 = (p1 * a.T3W) + (p2 * b.T3W) + (p0 * c.T3W);
                 coords[0][0] = tu0;
                 coords[0][1] = tv0;
                 coords[0][2] = ts0;
                 coords[0][3] = tw0;
-                coords[1][0] = tu1;
-                coords[1][1] = tv1;
-                coords[1][2] = ts1;
-                coords[1][3] = tw1;
-                coords[2][0] = tu2;
-                coords[2][1] = tv2;
-                coords[2][2] = ts2;
-                coords[2][3] = tw2;
-                coords[3][0] = tu3;
-                coords[3][1] = tv3;
-                coords[3][2] = ts3;
-                coords[3][3] = tw3;
-                float fogFactor = (p1 * a.Fog) + (p2 * b.Fog) + (p0 * c.Fog);
+                float fogFactor = 0f;
+                if (!leanInterp)
+                {
+                    // Full interpolation: specular, stages 1-3 texcoords and
+                    // the fog factor are only consumed by the generic/lighting
+                    // combiner paths. The lean path (kind-1 modulate fills
+                    // with stages 1-3 unbound) skips the dead 16 of 24
+                    // vectors; the values it does compute are operation-for-
+                    // operation identical (same order, same operands).
+                    specular[0] = (p1 * a.SpecR) + (p2 * b.SpecR) + (p0 * c.SpecR);
+                    specular[1] = (p1 * a.SpecG) + (p2 * b.SpecG) + (p0 * c.SpecG);
+                    specular[2] = (p1 * a.SpecB) + (p2 * b.SpecB) + (p0 * c.SpecB);
+                    specular[3] = (p1 * a.SpecA) + (p2 * b.SpecA) + (p0 * c.SpecA);
+                    float tu1 = (p1 * a.U1) + (p2 * b.U1) + (p0 * c.U1);
+                    float tv1 = (p1 * a.V1) + (p2 * b.V1) + (p0 * c.V1);
+                    float ts1 = (p1 * a.S1) + (p2 * b.S1) + (p0 * c.S1);
+                    float tw1 = (p1 * a.T1W) + (p2 * b.T1W) + (p0 * c.T1W);
+                    float tu2 = (p1 * a.U2) + (p2 * b.U2) + (p0 * c.U2);
+                    float tv2 = (p1 * a.V2) + (p2 * b.V2) + (p0 * c.V2);
+                    float ts2 = (p1 * a.S2) + (p2 * b.S2) + (p0 * c.S2);
+                    float tw2 = (p1 * a.T2W) + (p2 * b.T2W) + (p0 * c.T2W);
+                    float tu3 = (p1 * a.U3) + (p2 * b.U3) + (p0 * c.U3);
+                    float tv3 = (p1 * a.V3) + (p2 * b.V3) + (p0 * c.V3);
+                    float ts3 = (p1 * a.S3) + (p2 * b.S3) + (p0 * c.S3);
+                    float tw3 = (p1 * a.T3W) + (p2 * b.T3W) + (p0 * c.T3W);
+                    coords[1][0] = tu1;
+                    coords[1][1] = tv1;
+                    coords[1][2] = ts1;
+                    coords[1][3] = tw1;
+                    coords[2][0] = tu2;
+                    coords[2][1] = tv2;
+                    coords[2][2] = ts2;
+                    coords[2][3] = tw2;
+                    coords[3][0] = tu3;
+                    coords[3][1] = tv3;
+                    coords[3][2] = ts3;
+                    coords[3][3] = tw3;
+                    fogFactor = (p1 * a.Fog) + (p2 * b.Fog) + (p0 * c.Fog);
+                }
+
                 float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
 
                 if (anyClipPlane)
@@ -6749,6 +6772,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (_combinerFastKind is >= 1 and <= 3)
             {
                 _diagFastKindFills[_combinerFastKind]++;
+            }
+
+            if (leanInterp)
+            {
+                _diagLeanFills++;
             }
 
             // Diagnostic: accumulate pixels per combiner configuration (per fill).
