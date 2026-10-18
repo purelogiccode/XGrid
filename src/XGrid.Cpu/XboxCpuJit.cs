@@ -16,7 +16,7 @@ namespace XGrid.Cpu;
 /// is relaxed to block granularity. Host-side configuration: untouched by
 /// <see cref="Reset"/> and snapshot save/load.
 /// </summary>
-public sealed partial class XboxCpu
+public sealed unsafe partial class XboxCpu
 {
     private bool _jitEnabled;
     private JitBlockCache? _jitBlocks;
@@ -438,7 +438,33 @@ public sealed partial class XboxCpu
             long runnerStart = JitTiming ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             try
             {
-                served = block.Runner(this, block.Entries, budget - total);
+                if (block.RawRunner != 0 && budget - total >= block.MemberCount)
+                {
+                    // The raw runner keeps guest state in host registers for the
+                    // whole block, so it needs the full member budget up front
+                    // (otherwise it yields and the caller serves the tail).
+                    RawState rawState = BuildRawState();
+                    RawEnter();
+                    try
+                    {
+                        served = ((delegate*<XboxCpu, RawState*, DecodeCacheEntry[], int, int>)block.RawRunner)(
+                            this, &rawState, block.Entries, budget - total);
+                    }
+                    finally
+                    {
+                        RawExit();
+                    }
+
+                    NoteRawInvocation();
+                }
+                else if (block.Runner is not null)
+                {
+                    served = block.Runner(this, block.Entries, budget - total);
+                }
+                else
+                {
+                    served = 0;
+                }
             }
             catch (PageFaultSignal fault)
             {
@@ -734,11 +760,28 @@ public sealed partial class XboxCpu
             }
         }
 
-        JitRun? runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
-        if (runner is null)
+        // C3: fast mode prefers a native runner. Exact mode keeps the IL
+        // runner (per-member polls and the debugging contract), and any host
+        // that cannot execute raw code falls back to it too.
+        nint rawRunner = 0;
+        JitRun? runner = null;
+        if (JitRawBlocks && !JitExact)
         {
-            jit.Store(headLinear, generation, null);
-            return null;
+            rawRunner = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count));
+            if (rawRunner != 0)
+            {
+                NoteRawBlockBuilt();
+            }
+        }
+
+        if (rawRunner == 0)
+        {
+            runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+            if (runner is null)
+            {
+                jit.Store(headLinear, generation, null);
+                return null;
+            }
         }
 
         bool hasSti = false;
@@ -762,7 +805,7 @@ public sealed partial class XboxCpu
 
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            entries.AsSpan(0, count).ToArray(), runner, hasSti, hasStore);
+            entries.AsSpan(0, count).ToArray(), runner, rawRunner, hasSti, hasStore);
         jit.Store(headLinear, generation, block);
         return block;
     }
