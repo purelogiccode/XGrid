@@ -3135,9 +3135,12 @@ observation mirror; `--gpu-replace` adds replacement mode (software
 rasterizer skips honored draws). Quiet-host 1B fast: **menu 64.02 → 48.29 s
 (1.33× sw, 1.52× spec-ctl), triangle 27.91 → 17.82 s (1.57× / 2.08×)**,
 CPU SHAs exact, frames within the maxDelta≤1 policy, BackendUnsupported=0,
-RAM divergence confined to renderer-owned surface memory. B2b (per-draw
-overhead: drawMs 7.07 s menu) and the RAM writeback for framebuffer-reading
-content are the next slices.
+RAM divergence confined to renderer-owned surface memory. B2b (state shadow
++ per-program uniform caches + non-allocating consts) landed: pixel-identical
+and wall-neutral — the ~2.5 µs/draw is driver cost, so **B2c (draw batching:
+per-draw uniforms → attributes/UBO, one call per state run) is the next
+GPU-path slice**, alongside the RAM writeback for framebuffer-reading
+content. D1 (MMIO fast dispatch) and C1 (JIT leftovers) remain queued.
 
 **Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
 uses cache by default; `--no-decode-cache` restores legacy fetch/decode.

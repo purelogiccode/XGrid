@@ -649,6 +649,41 @@ public sealed class PshCombiner : ISnapshotable
         };
     }
 
+    /// <summary>Unpacks one ARGB word into <paramref name="destination"/> at <paramref name="offset"/> (R,G,B,A) without allocating.</summary>
+    public static void UnpackArgbTo(uint argb, float[] destination, int offset)
+    {
+        destination[offset] = ((argb >> 16) & 0xFFu) / 255f;
+        destination[offset + 1] = ((argb >> 8) & 0xFFu) / 255f;
+        destination[offset + 2] = (argb & 0xFFu) / 255f;
+        destination[offset + 3] = ((argb >> 24) & 0xFFu) / 255f;
+    }
+
+    /// <summary>
+    /// Fills a flat 72-float buffer (18 vec4 constants, same order and values
+    /// as <see cref="BuildConsts"/>) without allocating. Used by the GPU
+    /// backend's per-draw uniform upload: the software path's
+    /// <see cref="BuildConsts"/> allocates 19 arrays per draw, which is pure
+    /// overhead for a uniform block.
+    /// </summary>
+    public static void FillConsts(PshCombiner state, float[] flat)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(flat);
+        if (flat.Length < 72)
+        {
+            throw new ArgumentException("flat buffer must hold 72 floats", nameof(flat));
+        }
+
+        for (int i = 0; i < MaxStages; i++)
+        {
+            UnpackArgbTo(state.Factor0[i], flat, i * 8);
+            UnpackArgbTo(state.Factor1[i], flat, (i * 8) + 4);
+        }
+
+        UnpackArgbTo(state.SpecFogFactor[0], flat, 64);
+        UnpackArgbTo(state.SpecFogFactor[1], flat, 68);
+    }
+
     /// <summary>Applies an input mapping to a single component value.</summary>
     public static float ApplyInputMapping(float x, int mapping)
     {
