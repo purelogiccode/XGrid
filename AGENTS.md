@@ -523,6 +523,24 @@ O6/O7-class); the CPU side is again the larger half of both walls. The
 decode-flush narrowing candidates are filed in
 `docs/research-notes/decode-flush-audit.md`.
 
+### GL backend + opt-in window (2026-10-17 evening, direct; §184) — DONE
+
+- **Latent regression FIXED:** commit `4b5af0d` renamed `wglGetProcAddress`
+  to `WglGetProcAddress` without an `EntryPoint`, so `--gpu gl` had been
+  silently falling back to software (`EntryPointNotFoundException`). Fixed;
+  `GPU backend=gl probe ok; GL_VERSION=4.6.0 NVIDIA 610.88` and the slice-1
+  golden script pass again.
+- **Opt-in live window (`--window`, brief O2; T1 conditions met; no new
+  dependency):** `WglContext.TryShowWindow`/`SwapBuffers`/`PumpMessages`
+  (+swap interval 0), `GlPgraphBackend.PresentToWindow` after the readback
+  (sink only — blit FBO -> default framebuffer, swap, pump, title counters),
+  `IPgraphBackend.Pump()` default no-op pumped between batches, 2M-step
+  batch cap in window mode. Live: `GL window presents=35 status=window
+  640x480 vsync=off`, `BackendUnsupported=0`; guest counters identical to a
+  `--gpu sw` control at the same steps; WGL-guarded `WindowPresentLiveTests`.
+  Headless `--gpu sw` stays the default and gate currency; `--window` is an
+  observation sink (no input, no vsync).
+
 1. **SLICES 5–11 DONE (§§142–148, direct development).** After wave-15
    (slices 1+2, 1340 tests) came the §141 median-of-3 (flag stays
    opt-in: menu 1.035x, triangle 1.130x), then slices 5–8 (ALU-mem,

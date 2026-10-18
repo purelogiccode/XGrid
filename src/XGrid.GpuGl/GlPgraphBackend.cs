@@ -147,6 +147,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private float _invBw;
     private float _invCw;
     private float _clipY;
+    private readonly bool _windowRequested;
+    private bool _windowShown;
+    private long _windowPresents;
+    private string _windowStatus;
 
     private sealed class GlProgram
     {
@@ -188,13 +192,16 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         public int Height { get; }
     }
 
-    internal GlPgraphBackend(WglContext context, INativeContext glContext, GL gl, IGpuMemory memory)
+    internal GlPgraphBackend(WglContext context, INativeContext glContext, GL gl, IGpuMemory memory,
+        bool windowEnabled = false)
     {
         _context = context;
         _glContext = glContext;
         _gl = gl;
         _memory = memory;
         _dirtyWatch = memory as IPresentDirtyWatch;
+        _windowRequested = windowEnabled;
+        _windowStatus = windowEnabled ? "pending first frame" : "off";
 
         _vertexShader = CompileVertexShader();
         _gl.GenVertexArrays(1, out _vao);
@@ -713,6 +720,73 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _dirtyWatch.ArmPresentWatch(
                 record.SurfaceAddress,
                 span > uint.MaxValue ? uint.MaxValue : (uint)span);
+        }
+
+        if (_windowRequested)
+        {
+            PresentToWindow(width, height);
+        }
+    }
+
+    /// <summary>Gets the number of frames presented to the live window. Diagnostics.</summary>
+    public long WindowPresents => _windowPresents;
+
+    /// <summary>Gets the window-mode status summary. Diagnostics.</summary>
+    public string WindowStatus => _windowStatus;
+
+    /// <summary>
+    /// Presents the just-read-back frame to the visible window (opt-in
+    /// <c>--window</c>): shows/sizes the window on the first frame, blits the
+    /// FBO into the default framebuffer (NEAREST, scaled to the client area),
+    /// swaps, pumps messages and updates the title counters. Any failure
+    /// degrades to headless (status recorded, presentation disabled) — the
+    /// golden path and the readback are untouched.
+    /// </summary>
+    private void PresentToWindow(uint width, uint height)
+    {
+        if (!_windowShown)
+        {
+            _windowShown = true;
+            if (!_context.TryShowWindow(width, height, out string why))
+            {
+                _windowStatus = $"window unavailable: {why}";
+                return;
+            }
+
+            _windowStatus = $"window {width}x{height} vsync=off";
+        }
+
+        if (_fatalError is not null)
+        {
+            return;
+        }
+
+        uint clientWidth = width;
+        uint clientHeight = height;
+        if (_context.TryGetClientSize(out uint cw, out uint ch) && cw > 0 && ch > 0)
+        {
+            clientWidth = cw;
+            clientHeight = ch;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fbo);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        _gl.BlitFramebuffer(
+            0, 0, (int)width, (int)height,
+            0, 0, (int)clientWidth, (int)clientHeight,
+            ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+        _context.SwapBuffers();
+        _windowPresents++;
+        _context.PumpMessages();
+        _context.SetTitle($"XGrid — flips={Flips} presented={_windowPresents} {width}x{height}");
+    }
+
+    /// <summary>Drains window messages between emulation batches (window mode only).</summary>
+    public void Pump()
+    {
+        if (_windowRequested && _windowShown)
+        {
+            _context.PumpMessages();
         }
     }
 

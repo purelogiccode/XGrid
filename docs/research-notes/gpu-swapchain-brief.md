@@ -1,5 +1,15 @@
 # Swapchain / windowing decision brief (wave-12 T4, 2026-10-14)
 
+> **STATUS 2026-10-17: T1 IMPLEMENTED (O2 adopted).** The triggers were met
+> (§132 (a*) dirty-bit merged; free build slot) and the opt-in `--window`
+> landed — pure user32/gdi32/opengl32 interop, `wglSwapIntervalEXT(0)`,
+> sink-after-readback, headless `--gpu sw` unchanged and still the default +
+> gate currency. Implementation + acceptance evidence: research-notes §184
+> (`docs/research-notes/xgrid-architecture-decisions.md`). Also fixed en
+> route: a latent `wglGetProcAddress` EntryPoint regression that had made
+> `--gpu gl` silently fall back to software (§184). T2 (O3 package) stays
+> deferred; O4 stays a non-goal.
+
 Decision brief for the operator-pending item: **"should XGrid present frames to a
 visible host window (swapchain), and via which mechanism?"** Read-only research —
 one new file, no existing file touched, no commits. `§N` refs (with line numbers)

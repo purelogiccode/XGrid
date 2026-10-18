@@ -16,6 +16,12 @@ public static class GlBackendFactory
     /// <summary>Creates the GL backend, running the probe self-test at init.</summary>
     public static bool TryCreate(IGpuMemory memory, out IPgraphBackend? backend, out string why)
     {
+        return TryCreate(memory, windowEnabled: false, out backend, out why);
+    }
+
+    /// <summary>Creates the GL backend with the opt-in live window (<c>--window</c>).</summary>
+    public static bool TryCreate(IGpuMemory memory, bool windowEnabled, out IPgraphBackend? backend, out string why)
+    {
         ArgumentNullException.ThrowIfNull(memory);
         backend = null;
         if (!WglContext.TryCreate(out WglContext? context, out why) || context is null)
@@ -36,7 +42,7 @@ public static class GlBackendFactory
                 return false;
             }
 
-            backend = new GlPgraphBackend(context, created, gl, memory);
+            backend = new GlPgraphBackend(context, created, gl, memory, windowEnabled);
             unsafe
             {
                 byte* version = gl.GetString(StringName.Version);
