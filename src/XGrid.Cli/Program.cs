@@ -1798,6 +1798,15 @@ internal static class Program
                 $"crossPageSkips={machine.Cpu.DecodeCacheSkippedCrossPage} " +
                 $"nonRamSkips={machine.Cpu.DecodeCacheSkippedNonRam} " +
                 $"verifyFailures={machine.Cpu.DecodeCacheVerifyFailures}");
+            if (machine.Cpu.DecodeCacheNonRamPages is { } nonRamPages)
+            {
+                var top = System.Linq.Enumerable.Take(
+                    System.Linq.Enumerable.Select(
+                        System.Linq.Enumerable.OrderByDescending(nonRamPages, static pair => pair.Value),
+                        static pair => $"0x{pair.Key:X5}({pair.Value})"),
+                    8);
+                Console.WriteLine("Non-cacheable fetch pages: " + string.Join(' ', top));
+            }
         }
 
         Console.WriteLine(

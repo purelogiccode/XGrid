@@ -714,6 +714,23 @@ public sealed partial class XboxCpu
             return null;
         }
 
+        // C2 slice 1: stamp the block's write mask onto every plan so the
+        // emitter's sync sites (fault/interpreter paths) can store exactly
+        // the registers this block may change.
+        uint blockWrite = 0;
+        for (int i = 0; i < count; i++)
+        {
+            blockWrite |= JitStateMask.WriteMask(plans[i]);
+        }
+
+        if (blockWrite != 0)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                plans[i] = plans[i] with { BlockWriteMask = blockWrite };
+            }
+        }
+
         JitRun? runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
         if (runner is null)
         {

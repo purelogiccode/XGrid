@@ -110,6 +110,15 @@ internal readonly struct JitMemberPlan
     /// <summary>Member index in the block's entry array (CallSpec fallback).</summary>
     public int EntryIndex { get; init; }
 
+    /// <summary>
+    /// C2 slice 1: the block's total guest-register write mask, stamped onto
+    /// every plan at formation. The emitter stores this set (and only this
+    /// set) at the block epilogue and at every mid-block sync; every register
+    /// in it is loaded at the prologue, so an over-store writes back an
+    /// unchanged value.
+    /// </summary>
+    public uint BlockWriteMask { get; init; }
+
     /// <summary>Resolved static spec handler (CallSpec fallback).</summary>
     public MethodInfo? SpecHandler { get; init; }
 

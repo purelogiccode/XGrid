@@ -326,6 +326,27 @@ public sealed class DecodeCache
         SkippedNonRam++;
     }
 
+    private readonly System.Collections.Generic.Dictionary<uint, long>? _nonRamPages =
+        string.Equals(System.Environment.GetEnvironmentVariable("XGRID_NONRAM"), "1", System.StringComparison.Ordinal)
+            ? new System.Collections.Generic.Dictionary<uint, long>()
+            : null;
+
+    /// <summary>Gets the non-cacheable fetch pages seen when XGRID_NONRAM=1 (diagnostic).</summary>
+    public System.Collections.Generic.IReadOnlyDictionary<uint, long>? NonRamPages => _nonRamPages;
+
+    /// <summary>Tallies the physical page of a non-cacheable fetch (diagnostic).</summary>
+    public void NoteNonRamPage(uint physical)
+    {
+        System.Collections.Generic.Dictionary<uint, long>? pages = _nonRamPages;
+        if (pages is null)
+        {
+            return;
+        }
+
+        pages.TryGetValue(physical, out long count);
+        pages[physical] = count + 1;
+    }
+
     /// <summary>
     /// Drops every entry whose source bytes live in the given physical page
     /// (page-granular store invalidation; a no-op for pages with no entries —

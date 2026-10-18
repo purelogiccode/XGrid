@@ -33,23 +33,18 @@ internal static class JitEmitter
     private static readonly MethodInfo GetContext =
         typeof(XboxCpu).GetProperty("Context")!.GetMethod!;
 
-    private static readonly MethodInfo GetEip =
-        typeof(XboxContext).GetProperty("Eip")!.GetMethod!;
+    // C2 slice 1: Eip/Eflags/Tsc are plain auto-properties with no side
+    // effects, so the emitted code addresses their backing fields directly.
+    // The six property callvirts per block (plus one per memory member for
+    // the fault-precise Eip store) were pure call overhead.
+    private static readonly FieldInfo ContextEip =
+        typeof(XboxContext).GetField("<Eip>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-    private static readonly MethodInfo SetEip =
-        typeof(XboxContext).GetProperty("Eip")!.SetMethod!;
+    private static readonly FieldInfo ContextEflags =
+        typeof(XboxContext).GetField("<Eflags>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
-    private static readonly MethodInfo GetEflags =
-        typeof(XboxContext).GetProperty("Eflags")!.GetMethod!;
-
-    private static readonly MethodInfo SetEflags =
-        typeof(XboxContext).GetProperty("Eflags")!.SetMethod!;
-
-    private static readonly MethodInfo GetTsc =
-        typeof(XboxContext).GetProperty("Tsc")!.GetMethod!;
-
-    private static readonly MethodInfo SetTsc =
-        typeof(XboxContext).GetProperty("Tsc")!.SetMethod!;
+    private static readonly FieldInfo ContextTsc =
+        typeof(XboxContext).GetField("<Tsc>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static readonly MethodInfo GetEsp =
         typeof(XboxContext).GetProperty("Esp")!.GetMethod!;
@@ -183,6 +178,21 @@ internal static class JitEmitter
             return null;
         }
 
+        // C2 slice 1 (lazy state sync): load the union of every member's read
+        // and write masks, store only the block's write mask. Registers the
+        // block never touches cost nothing; over-stores at mid-block sync
+        // points write back unchanged values (every write-mask register is
+        // loaded at the prologue).
+        uint loadMask = 0;
+        uint storeMask = 0;
+        for (int i = 0; i < plans.Length; i++)
+        {
+            uint read = JitStateMask.ReadMask(plans[i]);
+            uint write = JitStateMask.WriteMask(plans[i]);
+            loadMask |= read | write;
+            storeMask |= write;
+        }
+
         var method = new DynamicMethod(
             $"JitBlock_{headLinear:X8}_{plans.Length}",
             typeof(int),
@@ -214,11 +224,12 @@ internal static class JitEmitter
         LocalBuilder vector = il.DeclareLocal(typeof(int));
         Label exit = il.DefineLabel();
 
-        // Prologue: hoist the context and load the full cached register state.
+        // Prologue: hoist the context and load the cached register state the
+        // block actually reads or writes.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Callvirt, GetContext);
         il.Emit(OpCodes.Stloc, context);
-        EmitLoadState(il, context, gprs, eip, flags, tsc);
+        EmitLoadState(il, context, gprs, eip, flags, tsc, loadMask);
 
         for (int m = 0; m < plans.Length; m++)
         {
@@ -238,7 +249,8 @@ internal static class JitEmitter
 
             if (exactBoundaries)
             {
-                EmitExactPoll(il, context, gprs, eip, flags, tsc, served, interruptSource, vector);
+                EmitExactPoll(il, context, gprs, eip, flags, tsc, served, interruptSource, vector,
+                    plan.BlockWriteMask);
             }
 
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
@@ -258,7 +270,8 @@ internal static class JitEmitter
                 EmitPostPoll(il, context, gprs, eip, flags, tsc, served,
                     interruptSource, vector,
                     advanceEip: plan.Kind != JitKind.CallSpec,
-                    length: plan.Length);
+                    length: plan.Length,
+                    plan.BlockWriteMask);
             }
 
             if (!plan.IsTerminator && plan.Kind != JitKind.CallSpec)
@@ -283,7 +296,7 @@ internal static class JitEmitter
         }
 
         il.MarkLabel(exit);
-        EmitStoreState(il, context, gprs, eip, flags, tsc);
+        EmitStoreState(il, context, gprs, eip, flags, tsc, storeMask);
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Ret);
         return (JitRun)method.CreateDelegate(typeof(JitRun));
@@ -304,7 +317,8 @@ internal static class JitEmitter
         LocalBuilder tsc,
         LocalBuilder served,
         LocalBuilder interruptSource,
-        LocalBuilder vector)
+        LocalBuilder vector,
+        uint storeMask)
     {
         Label body = il.DefineLabel();
         il.Emit(OpCodes.Ldarg_0);
@@ -327,7 +341,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, vector);
         il.Emit(OpCodes.Stfld, JitPending);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, storeMask);
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Ret);
         il.MarkLabel(body);
@@ -356,7 +370,8 @@ internal static class JitEmitter
         LocalBuilder interruptSource,
         LocalBuilder vector,
         bool advanceEip,
-        int length)
+        int length,
+        uint storeMask)
     {
         Label done = il.DefineLabel();
         il.Emit(OpCodes.Ldarg_0);
@@ -397,7 +412,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Stloc, served);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, storeMask);
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Ret);
         il.MarkLabel(done);
@@ -505,7 +520,7 @@ internal static class JitEmitter
                     }
 
                     il.MarkLabel(slow);
-                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
                     il.Emit(OpCodes.Ldarg_0);
                     il.Emit(OpCodes.Ldloc, addr);
                     il.Emit(OpCodes.Ldc_I4, plan.Size);
@@ -558,7 +573,7 @@ internal static class JitEmitter
                     il.Emit(OpCodes.Stloc, a1);
                     il.Emit(OpCodes.Br, done);
                     il.MarkLabel(slow);
-                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
                     il.Emit(OpCodes.Ldarg_0);
                     il.Emit(OpCodes.Ldloc, addr);
                     il.Emit(OpCodes.Ldc_I4, plan.Size);
@@ -691,14 +706,14 @@ internal static class JitEmitter
                     // points do not (the outer loop advances after the
                     // member).
                     EmitEipStore(il, context, eip);
-                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
                     il.Emit(OpCodes.Ldarg_0);
                     il.Emit(OpCodes.Ldarg_1);
                     il.Emit(OpCodes.Ldc_I4, plan.EntryIndex);
                     il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
                     il.Emit(OpCodes.Ldflda, EntryInstruction);
                     il.Emit(OpCodes.Call, plan.SpecHandler!);
-                    EmitLoadState(il, context, gprs, eip, flags, tsc);
+                    EmitLoadState(il, context, gprs, eip, flags, tsc, JitStateMask.All);
                     break;
                 }
 
@@ -708,12 +723,12 @@ internal static class JitEmitter
                     // page flush, reload. The flush only clears caches; the
                     // block stays valid and simply advances.
                     EmitAddress(il, plan, context, gprs, addr);
-                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
                     il.Emit(OpCodes.Ldarg_0);
                     il.Emit(OpCodes.Callvirt, GetMmu);
                     il.Emit(OpCodes.Ldloc, addr);
                     il.Emit(OpCodes.Callvirt, FlushPage);
-                    EmitLoadState(il, context, gprs, eip, flags, tsc);
+                    EmitLoadState(il, context, gprs, eip, flags, tsc, JitStateMask.All);
                     break;
                 }
 
@@ -804,7 +819,7 @@ internal static class JitEmitter
         }
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, plan.Size);
@@ -859,7 +874,7 @@ internal static class JitEmitter
         }
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, plan.Size);
@@ -941,7 +956,7 @@ internal static class JitEmitter
         }
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, plan.Size);
@@ -1030,7 +1045,7 @@ internal static class JitEmitter
             EmitExtendValue(il, plan);
             il.Emit(OpCodes.Br, done);
             il.MarkLabel(slow);
-            EmitSync(il, context, gprs, eip, flags, tsc, served);
+            EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldloc, addr);
             il.Emit(OpCodes.Ldc_I4, plan.SourceSize);
@@ -1105,7 +1120,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Br, done);
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         if (plan.Kind == JitKind.PushR)
         {
@@ -1166,7 +1181,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Br, done);
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldc_I4, 32);
         il.Emit(OpCodes.Ldc_I4, 32);
@@ -1227,7 +1242,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Br, done);
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, eip);
         il.Emit(OpCodes.Ldc_I4, plan.Length);
@@ -1279,7 +1294,7 @@ internal static class JitEmitter
             il.Emit(OpCodes.Stloc, target);
             il.Emit(OpCodes.Br, loadDone);
             il.MarkLabel(slowLoad);
-            EmitSync(il, context, gprs, eip, flags, tsc, served);
+            EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldloc, addr);
             il.Emit(OpCodes.Ldc_I4, 32);
@@ -1319,7 +1334,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Br, pushDone);
 
         il.MarkLabel(slowPush);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, eip);
         il.Emit(OpCodes.Ldc_I4, plan.Length);
@@ -1362,7 +1377,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Stloc, target);
         il.Emit(OpCodes.Br, done);
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, 32);
@@ -1430,7 +1445,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Br, done);
 
         il.MarkLabel(slow);
-        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldc_I4, 32);
         il.Emit(OpCodes.Ldc_I4, 32);
@@ -1734,7 +1749,7 @@ internal static class JitEmitter
         // runs (handlers advance EIP only after completion).
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Callvirt, SetEip);
+        il.Emit(OpCodes.Stfld, ContextEip);
     }
 
     private static void EmitSync(
@@ -1744,7 +1759,8 @@ internal static class JitEmitter
         LocalBuilder eip,
         LocalBuilder flags,
         LocalBuilder tsc,
-        LocalBuilder served)
+        LocalBuilder served,
+        uint storeMask)
     {
         // The fault path reads the members completed before the fault.
         il.Emit(OpCodes.Ldarg_0);
@@ -1759,7 +1775,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Conv_I8);
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Stfld, JitSlowMembers);
-        EmitStoreState(il, context, gprs, eip, flags, tsc);
+        EmitStoreState(il, context, gprs, eip, flags, tsc, storeMask);
     }
 
     private static void EmitLoadState(
@@ -1768,27 +1784,37 @@ internal static class JitEmitter
         LocalBuilder[] gprs,
         LocalBuilder eip,
         LocalBuilder flags,
-        LocalBuilder tsc)
+        LocalBuilder tsc,
+        uint loadMask)
     {
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldfld, ContextRegisters);
-        for (int i = 0; i < gprs.Length; i++)
+        if (loadMask != 0)
         {
-            il.Emit(OpCodes.Dup);
-            il.Emit(OpCodes.Ldc_I4, i);
-            il.Emit(OpCodes.Ldelem_I4);
-            il.Emit(OpCodes.Stloc, gprs[i]);
+            il.Emit(OpCodes.Ldloc, context);
+            il.Emit(OpCodes.Ldfld, ContextRegisters);
+            for (int i = 0; i < gprs.Length; i++)
+            {
+                if ((loadMask & (1u << i)) == 0)
+                {
+                    continue;
+                }
+
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, i);
+                il.Emit(OpCodes.Ldelem_I4);
+                il.Emit(OpCodes.Stloc, gprs[i]);
+            }
+
+            il.Emit(OpCodes.Pop);
         }
 
-        il.Emit(OpCodes.Pop);
         il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetEip);
+        il.Emit(OpCodes.Ldfld, ContextEip);
         il.Emit(OpCodes.Stloc, eip);
         il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetEflags);
+        il.Emit(OpCodes.Ldfld, ContextEflags);
         il.Emit(OpCodes.Stloc, flags);
         il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetTsc);
+        il.Emit(OpCodes.Ldfld, ContextTsc);
         il.Emit(OpCodes.Stloc, tsc);
     }
 
@@ -1798,21 +1824,32 @@ internal static class JitEmitter
         LocalBuilder[] gprs,
         LocalBuilder eip,
         LocalBuilder flags,
-        LocalBuilder tsc)
+        LocalBuilder tsc,
+        uint storeMask)
     {
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Callvirt, SetEip);
+        il.Emit(OpCodes.Stfld, ContextEip);
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldloc, flags);
-        il.Emit(OpCodes.Callvirt, SetEflags);
+        il.Emit(OpCodes.Stfld, ContextEflags);
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldloc, tsc);
-        il.Emit(OpCodes.Callvirt, SetTsc);
+        il.Emit(OpCodes.Stfld, ContextTsc);
+        if (storeMask == 0)
+        {
+            return;
+        }
+
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldfld, ContextRegisters);
         for (int i = 0; i < gprs.Length; i++)
         {
+            if ((storeMask & (1u << i)) == 0)
+            {
+                continue;
+            }
+
             il.Emit(OpCodes.Dup);
             il.Emit(OpCodes.Ldc_I4, i);
             il.Emit(OpCodes.Ldloc, gprs[i]);

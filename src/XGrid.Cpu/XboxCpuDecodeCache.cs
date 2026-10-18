@@ -266,6 +266,10 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of fetch windows skipped because the physical was non-RAM.</summary>
     public ulong DecodeCacheSkippedNonRam => _decodeCache?.SkippedNonRam ?? 0;
 
+    /// <summary>Gets the non-cacheable fetch pages when XGRID_NONRAM=1 (diagnostic).</summary>
+    public System.Collections.Generic.IReadOnlyDictionary<uint, long>? DecodeCacheNonRamPages =>
+        _decodeCache?.NonRamPages;
+
     /// <summary>Gets the number of debug-verify mismatches (missed-invalidation tripwire).</summary>
     public ulong DecodeCacheVerifyFailures => _decodeCache?.VerifyFailures ?? 0;
 
@@ -398,11 +402,13 @@ public sealed partial class XboxCpu
         while (ran < budget && !Context.Halted)
         {
             uint fetchLinear = Context.GetSegmentBase(SegmentRegister.Cs) + Context.Eip;
-            if ((fetchLinear & 0xFFFu) + (uint)window.Length > 0x1000u)
-            {
-                break;
-            }
 
+            // D3b (follow-up): no page-edge guard here. The 15-byte window is
+            // only ever filled through entry.PhysicalOf(i) (idle replay and
+            // the verify path), which is cross-page aware, and block
+            // formation accepts cross-page members since D3b. Heads in the
+            // last 14 bytes of a page were falling through to the ~350 ns
+            // Step path once per member.
             if (!blocks.TryNext(
                     cache,
                     fetchLinear,
@@ -733,6 +739,7 @@ public sealed partial class XboxCpu
         else
         {
             cache.NoteSkippedNonRam();
+            cache.NoteNonRamPage(basePhysical);
         }
 
         return instruction;
