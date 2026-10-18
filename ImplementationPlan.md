@@ -110,14 +110,17 @@ Instead:
 
 > Reimplement the documented/reverse-engineered Xbox hardware behavior in an independently designed C# architecture.
 
-### Development direction (binding, 2026-10-16)
+### Development direction (binding, 2026-10-18)
 
 Canonical priority order: `docs/development-direction.md` (summarized in
 `AGENTS.md` "Development direction"). JIT throughput is the binding constraint
 (CPU 97–100% of wall); headless `--gpu sw` stays the default and gate currency;
-`data/test-samples/` only, no real games; perf flags stay opt-in until
+`data/test-samples/` only, no real games (fast-mode benchmark-only use needs
+an explicit operator decision); accurate-mode perf flags stay opt-in until
 median-of-3 walls plus exact golden SHAs/counters, `verifyFailures=0`, and
-flag-off byte-identical runs.
+flag-off byte-identical runs. **Fast-mode JIT track chartered 2026-10-18:**
+`docs/research-notes/jit-track-charter.md` (dual-mode contract; Phase 1
+DynamicMethod block JIT; two-tier validation; kill criteria).
 
 ---
 
@@ -1539,6 +1542,15 @@ Start with the minimum required for games.
 
 This should begin only after the interpreter is stable.
 
+> **Status 2026-10-18: LIVE — governed by
+> `docs/research-notes/jit-track-charter.md`.** The interpreter is stable and
+> relay-style emission measured wall-neutral (E1–E3, §§171–179b). The
+> charter's Phase 1 differs in kind from those slices: whole-block
+> straight-line code with register-cached guest state, inlined RAM fast
+> paths, block-local flags — under the dual-mode contract (fast mode only;
+> the accurate mode stays gate currency). Phases 0–4 + kill criteria live in
+> the charter; the architecture sketch below remains the target.
+
 ## 20.1 JIT architecture
 
 ```text
@@ -2726,6 +2738,12 @@ Shaders
 
 ## Track C — Performance
 
+> **Status 2026-10-18: the JIT stage below is chartered as the fast-mode
+> track** — `docs/research-notes/jit-track-charter.md` (dual-mode contract,
+> phases 0–4, kill criteria). Interpreter-track wins are captured
+> (decode-cache frontier §§131/134/137; shape slices §§139–170; rasterizer
+> campaign §§180–187); the codegen tier is the authorized next step.
+
 ```text
 Interpreter
  ↓
@@ -2973,7 +2991,7 @@ Every phase lists: goal, prerequisites, tasks, files/interfaces, tests, acceptan
 and the reference notes to consult. Phases are ordered; do not start a later phase on an unstable
 earlier one except where explicitly parallel (Track B/C).
 
-## Implementation status (last updated 2026-10-16; wave-15 concluded, tools/wave retired; XboxWiki findings integrated below)
+## Implementation status (last updated 2026-10-18; wave-15 concluded, tools/wave retired; XboxWiki findings integrated below)
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -3001,7 +3019,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; VP voice processor DONE (§107: PIO methods, guest-RAM voice state, SSL advance, notifiers + idle voice; 007's PlayMPC streams complete through the real advance callback — the `0x20FC1` drain gate PASSED). Remaining: DSP cores (register-only; not yet needed), mixing/resampling, host output |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
-| 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices 1+2 §§139–140); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); swapchain brief filed (O2 recommended, headless default). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
+| 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices §§139–170, memory-path slices §§161–165, E1–E3 emission trial wall-neutral §§171–179b); rasterizer campaign §§180–187 (menu 2.03× / triangle 1.96×, all SHAs exact); **fast-mode JIT track chartered 2026-10-18** (`docs/research-notes/jit-track-charter.md` — dual-mode contract, phases 0–4, kill criteria; Phase 0 bench harness next); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); `--window` present (§184). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
 
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
