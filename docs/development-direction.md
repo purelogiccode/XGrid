@@ -123,11 +123,14 @@ Xbox games; non-GPL.
 
 ## 4. Hard non-goals
 
-- **No real Xbox games.** All title work uses `data/test-samples/`
-  (`triangle.xbe`, `nxdk-hello/led/mesh/triangle/`,
-  `kernel-test-suite-default.xbe`). 007/retail probes deferred (operator
-  rule). Fast-mode *benchmark-only* use of real titles requires an explicit
-  operator decision — none granted as of 2026-10-18 (charter §6).
+- **Real-content policy (operator-delegated 2026-10-19).** `data/test-samples/`
+  (`triangle.xbe`, `nxdk-hello/led/mesh/triangle/`, `kernel-test-suite-default.xbe`)
+  stays the **gate currency**: golden SHAs, ktest smoke, every acceptance test.
+  Real Xbox ISOs at `H:\Tests\XBOXTest` are authorized for **fast-mode
+  benchmark-only use** — wall/throughput measurement and xemu-class
+  comparisons. Not for golden gates, not for accurate-mode acceptance, not
+  for NV2A/APU fidelity work (that stays gated by the sample-usage rule).
+  Long real-title probes still need snapshots-first discipline (plan V1).
 - **License stays non-GPL.** No QEMU/xemu code translation; GPL is not the
   TCG-port vehicle (charter §1). New deps: only Iced (MIT, Phase 3) approved
   so far; otherwise the NuGet rule stands (precedent: `Xunit.SkippableFact`

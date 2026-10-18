@@ -90,8 +90,11 @@ Canonical order: `docs/development-direction.md`; fast-mode JIT track:
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
    and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
    (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).
-3. **No real Xbox games** — `data/test-samples/` only (operator rule; fast-mode
-   benchmark-only use needs an explicit operator decision).
+3. **Real-content policy (2026-10-19, operator-delegated).** `data/test-samples/`
+   stays gate currency (goldens, ktest smoke, acceptance). Real Xbox ISOs at
+   `H:\Tests\XBOXTest` are authorized for fast-mode **benchmark-only** use
+   (wall/throughput, xemu-class comparisons) — never gates, never accurate-mode
+   acceptance, never fidelity work.
 4. **Two-tier perf validation.** Accurate-mode promotion + every default flip:
    median-of-3 + exact SHAs/counters + `verifyFailures=0` + flag-off
    byte-identical. Fast-mode exploration: bench + unit differentials

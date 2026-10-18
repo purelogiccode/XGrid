@@ -101,13 +101,13 @@ public sealed partial class XboxCpu
     /// <summary>Tallies one non-JIT run (called by <c>Execute</c> while the JIT is on).</summary>
     internal void NoteNonJitRun(int ran)
     {
+        NonJitCalls++;
+        NonJitInstructions += (ulong)ran;
         if (!JitTally)
         {
             return;
         }
 
-        NonJitCalls++;
-        NonJitInstructions += (ulong)ran;
         int bucket = ran <= 1 ? 0 : ran <= 4 ? 1 : ran <= 16 ? 2 : ran <= 64 ? 3 : ran <= 256 ? 4 : ran <= 1024 ? 5 : 6;
         _nonJitRunBuckets[bucket]++;
     }

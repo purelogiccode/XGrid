@@ -404,6 +404,51 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// Cross-page fetch fast path (D3): one translate per page instead of the
+    /// legacy per-byte loop. Every byte of a page shares that page's mapping,
+    /// so faults, A/D side effects, TLB inserts, per-byte idle-skip access
+    /// notes and bus reads are identical to the slow path; a faulting page
+    /// raises at the same first-faulting byte the slow path would raise at.
+    /// Returns byte 0's physical; <paramref name="secondPhysicalBase"/> is the
+    /// physical of the first byte of the second page.
+    /// </summary>
+    private uint FetchFastCrossPage(uint fetchLinear, Span<byte> buffer, out uint secondPhysicalBase)
+    {
+        _hotspot?.NoteFetch(true);
+        int split = 0x1000 - (int)(fetchLinear & 0xFFFu);
+        uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted,
+            out uint errorCode);
+        if (faulted)
+        {
+            throw new PageFaultSignal(fetchLinear, errorCode);
+        }
+
+        for (int i = 0; i < split; i++)
+        {
+            uint physical = basePhysical + (uint)i;
+            _idle?.NoteAccess(physical, isWrite: false, isInstruction: true);
+            buffer[i] = Memory.Read8(physical);
+        }
+
+        uint secondLinear = fetchLinear + (uint)split;
+        secondPhysicalBase = Mmu.Translate(secondLinear, isWrite: false, isInstruction: true, out faulted,
+            out errorCode);
+        if (faulted)
+        {
+            throw new PageFaultSignal(secondLinear, errorCode);
+        }
+
+        for (int i = split; i < buffer.Length; i++)
+        {
+            uint physical = secondPhysicalBase + (uint)(i - split);
+            _idle?.NoteAccess(physical, isWrite: false, isInstruction: true);
+            buffer[i] = Memory.Read8(physical);
+        }
+
+        return basePhysical;
+    }
+
+    /// <summary>
     /// Profiler-on fetch: byte-identical translates with batched TLB tallies
     /// (§131 leg (a)). The reported totals equal the fifteen per-byte
     /// outcomes. Each iteration accumulates its outcome before any fault is

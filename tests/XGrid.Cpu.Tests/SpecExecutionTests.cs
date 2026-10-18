@@ -1450,7 +1450,7 @@ public sealed class SpecExecutionTests
         Span<byte> bytes = stackalloc byte[15];
         bytes.Clear();
         bytes[0] = opcode;
-        cache.Insert(linear, Decoder.Decode(bytes, 32, 32), linear, bytes, 32, 32);
+        cache.Insert(linear, Decoder.Decode(bytes, 32, 32), linear, 0, 0, bytes, 32, 32);
     }
 
     private static void MapIdentity(AddressSpace bus, uint firstVpn, uint count)
