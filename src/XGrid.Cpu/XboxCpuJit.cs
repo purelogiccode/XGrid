@@ -112,6 +112,9 @@ public sealed partial class XboxCpu
         _nonJitRunBuckets[bucket]++;
     }
 
+    /// <summary>Per-mnemonic tally of members that took the interpreter fallback (XGRID_SLOW=1).</summary>
+    public long[] SlowMemberCounts { get; } = new long[512];
+
     /// <summary>Tallies one non-JIT member mnemonic (called by the spec runner while the JIT is on).</summary>
     internal void NoteNonJitMnemonic(Mnemonic mnemonic)
     {
@@ -689,7 +692,7 @@ public sealed partial class XboxCpu
                 break;
             }
 
-            plans[count] = plan with { EntryIndex = count };
+            plans[count] = plan with { EntryIndex = count, Mnemonic = entry.Instruction.Mnemonic };
             entries[count] = entry;
             count++;
             linear += (uint)entry.Instruction.Length;
@@ -745,6 +748,7 @@ public sealed partial class XboxCpu
             JitKind kind = plans[i].Kind;
             hasSti |= kind == JitKind.Sti;
             hasStore |= kind is JitKind.MovStore or JitKind.MovStoreImm or JitKind.IncM or JitKind.DecM
+                or JitKind.FpuStoreReal or JitKind.FpuStoreRealPop
                 or JitKind.PushR or JitKind.PushI or JitKind.PopR
                 or JitKind.CallRel or JitKind.CallReg or JitKind.CallMem or JitKind.CallSpec
                 or JitKind.CallInterpreter or JitKind.Invlpg;

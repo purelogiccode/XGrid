@@ -1781,6 +1781,11 @@ internal static class Program
                 Console.WriteLine("Jit rejected " + FormatJitMnemonicTop(machine.Cpu.JitRejectedMnemonics, 12));
                 Console.WriteLine("Jit tail " + FormatJitMnemonicTop(machine.Cpu.NonJitMnemonics, 16));
             }
+
+            if (string.Equals(Environment.GetEnvironmentVariable("XGRID_SLOW"), "1", StringComparison.Ordinal))
+            {
+                Console.WriteLine("Slow members " + FormatJitMnemonicTop(machine.Cpu.SlowMemberCounts, 16));
+            }
         }
 
         if (machine.Cpu.DecodeCacheEnabled)
