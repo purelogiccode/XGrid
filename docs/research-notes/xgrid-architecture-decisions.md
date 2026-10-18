@@ -9386,3 +9386,39 @@ planned evaluator (~25-30 s menu / ~20 s triangle estimated); a hand-
 transcribed specialized evaluator per config (F1-style, differential-pinned)
 is the next slice. Then sampler descriptor/swizzle hoists and the
 fragment/memory lane (inventory O1-O5).
+
+## 182. Rasterizer slices R4 + R5: lighting fast path (corrected) + sampler plans (2026-10-17, direct)
+
+R4 (lighting specialization): `PshCombiner.GetSpecializedKind` recognizes the
+two multi-stage "squared lighting" configs (stages=8 c=00011108 and stages=7
+c=00011107; 62.4M fragments on EACH title) and
+`EvaluateLightingSpecialized` transcribes them operation for operation
+(stage 0 dots, 1 unsigned + N signed power stages, combine stage, add stage,
+final with SPECFOGFACTOR0). First recognizer attempt required unsigned power
+stages for all stages and never matched - the histogram words are
+`ri1=0D0D0000` then `ri2..=CDCD0000` (stage 1 unsigned, stages 2+ signed);
+the corrected recognizer + transcription are pinned by a differential test
+over the REAL words (250 randomized constant sets x 200 samples each) plus
+the end-to-end goldens. A `--gpu-time` fastfill counter (`k1/k2/k3` fills per
+kind) was added so a silent recognizer miss can never masquerade as "no
+speedup" again.
+
+R5 (sampler plans): per-draw `SamplerPlan` (built in `EnterTextureState` for
+BOTH draw paths) hoists the per-sample format/shape/wrap-mode/pitch/swizzle-
+mask decode; `WrapCoordinatePlanned` folds the modulo to a mask for
+power-of-two extents (proven identical for every int including negatives);
+the swizzle path uses the hoisted masks and `InterleaveBits` stops at the
+mask's highest set bit (skipped iterations were no-ops); `SwizzleOffset`
+shares the mask builder. Pure hoists: every counter and texel value
+unchanged.
+
+Gate (`D:\spec-soak\r5`, all counters exact, normalized stdout byte-identical
+to r4 on both titles, SHAs exact):
+- menu: raster psh 59.24 -> **30.17 s**, leg wall 112.4 -> 77.5 s
+  (fastfills k1=402600, k2=39645, k3=13929 - all three kinds engaged).
+- triangle: raster psh 38.36 -> **9.87 s**, leg wall 64.8 -> 37.3 s
+  (k2=39645, k3=13929; k1=0 as expected).
+
+Cumulative session rasterizer progress (single runs, host varying):
+menu raster 119.2 -> 30.2 s (3.9x), triangle 54.7 -> 9.9 s (5.5x); menu leg
+wall ~165 -> 77.5 s, triangle ~83 -> 37.3 s. Suite 1427 tests.

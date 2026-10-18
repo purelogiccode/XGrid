@@ -357,7 +357,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly IGpuMemory? _memory;
     // Diagnostic (`--gpu-time`): distinct combiner-configuration histogram.
     private string _diagCombinerConfig = "none";
-    private bool _combinerFastModulate;
+    private int _combinerFastKind;
+    private readonly long[] _diagFastKindFills = new long[4];
     // Per-fill fragment constants (set by PrepareFragmentConstants at the start
     // of every fill; no guest register write can interleave with a fill).
     private float _alphaRefScaled;
@@ -375,9 +376,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[][] _pshCoords = { new float[4], new float[4], new float[4], new float[4] };
     private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
     private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
+    // Per-draw sampler plans (rebuilt in EnterTextureState for both draw paths).
+    private readonly SamplerPlan[] _samplerPlans = new SamplerPlan[MaxTextureSlots];
 
-    /// <summary>TEMP-DIAG (not for commit): pixels/fills per combiner configuration.</summary>
+    /// <summary>Gets the per-configuration fill/pixel counts (`--gpu-time` diagnostic).</summary>
     public Dictionary<string, (long Draws, long Pixels)> CombinerConfigStats { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets the per-kind fast-path fill counts. Diagnostics.</summary>
+    public string FastKindDebug =>
+        $"k1={_diagFastKindFills[1]} k2={_diagFastKindFills[2]} k3={_diagFastKindFills[3]}";
     private long _rasterLegacyTicks;
     private long _rasterPshTicks;
     private long _rasterLegacyCalls;
@@ -4126,7 +4133,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (combinerActive)
         {
             CombinerDraws++;
-            _combinerFastModulate = _combiner.IsModulateT0V0Passthrough();
+            _combinerFastKind = _combiner.GetSpecializedKind();
             _combiner.RebuildPlan(combinerConsts);
             if (RasterTimingEnabled)
             {
@@ -4146,7 +4153,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
         else
         {
-            _combinerFastModulate = false;
+            _combinerFastKind = 0;
         }
 
         if (_transformExecutionMode != TransformModeProgrammable)
@@ -4429,49 +4436,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
-        uint color = (_textureFormat[slot] >> 8) & 0x7Fu;
+        ref readonly SamplerPlan plan = ref _samplerPlans[slot];
+        uint color = plan.Color;
         _textureFormatAttempts[color]++;
-        bool linear = IsLinearTextureFormat(color);
-        int width;
-        int height;
-        if (linear)
-        {
-            // Linear formats are sized by the image rect (reference texture
-            // shape: rect_width/rect_height for kelvin linear formats).
-            width = (int)(_textureImageRect[slot] >> 16);
-            height = (int)(_textureImageRect[slot] & 0xFFFFu);
-        }
-        else
-        {
-            // Swizzled formats are sized by the power-of-two base size in the
-            // format word; the image rect does not apply to them (xemu
-            // pgraph_get_texture_shape uses 1 << BASE_SIZE_U/V when not linear).
-            width = 1 << (int)((_textureFormat[slot] >> 20) & 0xFu);
-            height = 1 << (int)((_textureFormat[slot] >> 24) & 0xFu);
-        }
-
-        if (width <= 0 || height <= 0)
+        if (plan.Width <= 0 || plan.Height <= 0)
         {
             TextureSampleBadSize++;
             return false;
         }
 
-        int addressWord = (int)_textureAddress[slot];
-        int uAddr = DecodeTextureAddressU(addressWord);
-        int vAddr = DecodeTextureAddressV(addressWord);
-
         // Linear (LU_IMAGE_*) formats address texels directly: the guest supplies
         // texel-unit coordinates and the reference shader normalizes by the
         // texture size (psh.c rect_tex norm). Swizzled (SZ_*) formats use
         // normalized coordinates, as on the hardware.
-        int rawX = (int)MathF.Floor(linear ? u : u * width);
-        int rawY = (int)MathF.Floor(linear ? v : v * height);
-        if (uAddr == (int)TextureAddressBorder || vAddr == (int)TextureAddressBorder)
+        int rawX = (int)MathF.Floor(plan.Linear ? u : u * plan.Width);
+        int rawY = (int)MathF.Floor(plan.Linear ? v : v * plan.Height);
+        if (plan.UAddr == (int)TextureAddressBorder || plan.VAddr == (int)TextureAddressBorder)
         {
             // A coordinate outside [0,size) on a BORDER axis returns the
             // NV097_SET_TEXTURE_BORDER_COLOR texel (xemu GL_CLAMP_TO_BORDER).
-            bool outU = uAddr == (int)TextureAddressBorder && (rawX < 0 || rawX >= width);
-            bool outV = vAddr == (int)TextureAddressBorder && (rawY < 0 || rawY >= height);
+            bool outU = plan.UAddr == (int)TextureAddressBorder && (rawX < 0 || rawX >= plan.Width);
+            bool outV = plan.VAddr == (int)TextureAddressBorder && (rawY < 0 || rawY >= plan.Height);
             if (outU || outV)
             {
                 DecodeBorderColor(_textureBorderColor[slot], out r, out g, out b, out a);
@@ -4480,11 +4465,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
         }
 
-        int x = WrapCoordinate(rawX, width, ToWrapMode(uAddr));
-        int y = WrapCoordinate(rawY, height, ToWrapMode(vAddr));
+        int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
+        int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
         TrackTextureCoords(x, y);
 
-        uint bytesPerTexel = TextureFormatBytesPerTexel(color);
+        uint bytesPerTexel = plan.BytesPerTexel;
         if (bytesPerTexel == 0)
         {
             _textureFormatMisses[color]++;
@@ -4492,28 +4477,184 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
-        uint address = _textureOffset[slot];
-        uint texel;
-        if (linear)
+        uint address = plan.Offset;
+        if (plan.Linear)
         {
+            address += (uint)((y * plan.Pitch) + (x * (int)bytesPerTexel));
+        }
+        else
+        {
+            address += (InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                        InterleaveBits((uint)y, plan.SwizzleMaskY)) * bytesPerTexel;
+        }
+
+        uint texel = bytesPerTexel == 2
+            ? _memory.ReadPhysical(address) & 0xFFFFu
+            : _memory.ReadPhysical(address);
+        DecodeTextureTexel(color, texel, out r, out g, out b, out a);
+        return CountSample(address, texel, r, g, b);
+    }
+
+    /// <summary>
+    /// Per-draw texture sampler descriptor: the per-sample decode of format,
+    /// shape, wrap modes, pitch and swizzle masks is loop-invariant, so it is
+    /// resolved once per draw in <see cref="BuildSamplerPlans"/> (called from
+    /// <c>EnterTextureState</c> for both draw paths). Pure hoist: every value
+    /// is the same expression the per-sample code used, so sampling results
+    /// and counters are unchanged.
+    /// </summary>
+    private struct SamplerPlan
+    {
+        public uint Color;
+        public bool Linear;
+        public int Width;
+        public int Height;
+        public uint BytesPerTexel;
+        public int Pitch;
+        public int WrapModeU;
+        public int WrapModeV;
+        public int WrapMaskU;
+        public int WrapMaskV;
+        public int MirrorMaskU;
+        public int MirrorMaskV;
+        public int UAddr;
+        public int VAddr;
+        public uint Offset;
+        public uint SwizzleMaskX;
+        public uint SwizzleMaskY;
+    }
+
+    private void BuildSamplerPlans()
+    {
+        for (int slot = 0; slot < MaxTextureSlots; slot++)
+        {
+            ref SamplerPlan plan = ref _samplerPlans[slot];
+            uint color = (_textureFormat[slot] >> 8) & 0x7Fu;
+            plan.Color = color;
+            bool linear = IsLinearTextureFormat(color);
+            plan.Linear = linear;
+            int width;
+            int height;
+            if (linear)
+            {
+                width = (int)(_textureImageRect[slot] >> 16);
+                height = (int)(_textureImageRect[slot] & 0xFFFFu);
+            }
+            else
+            {
+                width = 1 << (int)((_textureFormat[slot] >> 20) & 0xFu);
+                height = 1 << (int)((_textureFormat[slot] >> 24) & 0xFu);
+            }
+
+            plan.Width = width;
+            plan.Height = height;
+            uint bytesPerTexel = TextureFormatBytesPerTexel(color);
+            plan.BytesPerTexel = bytesPerTexel;
             int pitch = (int)(_textureControl1[slot] >> 16);
             if (pitch <= 0)
             {
                 pitch = (int)(width * bytesPerTexel);
             }
 
-            address += (uint)((y * pitch) + (x * (int)bytesPerTexel));
+            plan.Pitch = pitch;
+            int addressWord = (int)_textureAddress[slot];
+            plan.UAddr = DecodeTextureAddressU(addressWord);
+            plan.VAddr = DecodeTextureAddressV(addressWord);
+            plan.WrapModeU = ToWrapMode(plan.UAddr);
+            plan.WrapModeV = ToWrapMode(plan.VAddr);
+            bool potU = width > 0 && (width & (width - 1)) == 0;
+            bool potV = height > 0 && (height & (height - 1)) == 0;
+            plan.WrapMaskU = potU ? width - 1 : -1;
+            plan.WrapMaskV = potV ? height - 1 : -1;
+            plan.MirrorMaskU = potU ? (width * 2) - 1 : -1;
+            plan.MirrorMaskV = potV ? (height * 2) - 1 : -1;
+            plan.Offset = _textureOffset[slot];
+            if (width > 0 && height > 0)
+            {
+                ComputeSwizzleMasks(width, height, out uint maskX, out uint maskY);
+                plan.SwizzleMaskX = maskX;
+                plan.SwizzleMaskY = maskY;
+            }
+            else
+            {
+                plan.SwizzleMaskX = 0u;
+                plan.SwizzleMaskY = 0u;
+            }
         }
-        else
-        {
-            address += SwizzleOffset(x, y, width, height) * bytesPerTexel;
-        }
+    }
 
-        texel = bytesPerTexel == 2
-            ? _memory.ReadPhysical(address) & 0xFFFFu
-            : _memory.ReadPhysical(address);
-        DecodeTextureTexel(color, texel, out r, out g, out b, out a);
-        return CountSample(address, texel, r, g, b);
+    /// <summary>
+    /// Address-mode fold with the power-of-two fast path: for POT extents the
+    /// modulo folds to a mask (identical results for every int, including
+    /// negatives); non-POT extents keep the modulo.
+    /// </summary>
+    private static int WrapCoordinatePlanned(int value, int size, int mode, int wrapMask, int mirrorMask)
+    {
+        switch (mode)
+        {
+            case 0:
+                if (wrapMask >= 0)
+                {
+                    value &= wrapMask;
+                    return value;
+                }
+
+                value %= size;
+                return value < 0 ? value + size : value;
+            case 1:
+                {
+                    int period = size * 2;
+                    if (mirrorMask >= 0)
+                    {
+                        value &= mirrorMask;
+                    }
+                    else
+                    {
+                        value %= period;
+                        if (value < 0)
+                        {
+                            value += period;
+                        }
+                    }
+
+                    return value < size ? value : period - 1 - value;
+                }
+            default:
+                return Math.Clamp(value, 0, size - 1);
+        }
+    }
+
+    /// <summary>
+    /// Builds the Morton-order interleave masks for a texture shape (xemu
+    /// <c>generate_swizzle_masks</c>): x bits and y bits take alternating
+    /// positions in the texel index.
+    /// </summary>
+    private static void ComputeSwizzleMasks(int width, int height, out uint maskX, out uint maskY)
+    {
+        maskX = 0u;
+        maskY = 0u;
+        uint bit = 1u;
+        uint maskBit = 1u;
+        bool done;
+        do
+        {
+            done = true;
+            if (bit < (uint)width)
+            {
+                maskX |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            if (bit < (uint)height)
+            {
+                maskY |= maskBit;
+                maskBit <<= 1;
+                done = false;
+            }
+
+            bit <<= 1;
+        } while (!done);
     }
 
     /// <summary>
@@ -4893,31 +5034,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>The texel index within the swizzled surface.</returns>
     public static uint SwizzleOffset(int x, int y, int width, int height)
     {
-        uint maskX = 0u;
-        uint maskY = 0u;
-        uint bit = 1u;
-        uint maskBit = 1u;
-        bool done;
-        do
-        {
-            done = true;
-            if (bit < (uint)width)
-            {
-                maskX |= maskBit;
-                maskBit <<= 1;
-                done = false;
-            }
-
-            if (bit < (uint)height)
-            {
-                maskY |= maskBit;
-                maskBit <<= 1;
-                done = false;
-            }
-
-            bit <<= 1;
-        } while (!done);
-
+        ComputeSwizzleMasks(width, height, out uint maskX, out uint maskY);
         return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY);
     }
 
@@ -4969,7 +5086,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint result = 0u;
         uint maskBit = 1u;
         int valueBit = 0;
-        while (maskBit != 0u)
+        // Bits above the mask's highest set bit contribute nothing; stopping
+        // there is exact (the skipped iterations were no-ops).
+        while (maskBit != 0u && maskBit <= mask)
         {
             if ((mask & maskBit) != 0u)
             {
@@ -5963,6 +6082,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         _currentTextureState = index;
+        BuildSamplerPlans();
     }
 
     private void TrackTextureCoords(float u, float v)
@@ -6549,9 +6669,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float fg;
                 float fb;
                 float fa;
-                if (_combinerFastModulate)
+                if (_combinerFastKind == 1)
                 {
                     PshCombiner.EvaluateModulateT0V0(diffuse, texels, out fr, out fg, out fb, out fa);
+                }
+                else if (_combinerFastKind is 2 or 3)
+                {
+                    PshCombiner.EvaluateLightingSpecialized(_combinerFastKind, diffuse, specular, texels, consts,
+                        out fr, out fg, out fb, out fa);
                 }
                 else if (_fogEnable)
                 {
@@ -6586,6 +6711,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _rasterPshTicks += Stopwatch.GetTimestamp() - rasterStart;
             _rasterPshCalls++;
+            if (_combinerFastKind is >= 1 and <= 3)
+            {
+                _diagFastKindFills[_combinerFastKind]++;
+            }
 
             // Diagnostic: accumulate pixels per combiner configuration (per fill).
             if (diagPixels > 0)

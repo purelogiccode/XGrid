@@ -574,6 +574,99 @@ public sealed class PshCombinerTests
         Assert.False(combiner.IsModulateT0V0Passthrough());
     }
 
+    [Fact]
+    public void LightingFastPath_MatchesGenericEvaluate_BitExact()
+    {
+        // stages=8 config (c=00011108): stage 0 dots C0 against expand(T1/T2).
+        var eight = new PshCombiner { Control = 0x00011108u, Final0 = 0x0C0B000Fu, Final1 = 0x0C011180u };
+        eight.RgbInputs[0] = 0xC149C14Au;
+        eight.AlphaInputs[0] = 0xD159D15Au;
+        eight.RgbOutputs[0] = 0x000C30CDu;
+        eight.RgbInputs[1] = 0x0D0D0000u;
+        eight.RgbOutputs[1] = 0x000000D0u;
+        for (int stage = 2; stage <= 5; stage++)
+        {
+            eight.RgbInputs[stage] = 0xCDCD0000u;
+            eight.RgbOutputs[stage] = 0x000000D0u;
+        }
+
+        eight.RgbInputs[6] = 0xC10CC20Du;
+        eight.RgbOutputs[6] = 0x000005CDu;
+        eight.RgbInputs[7] = 0xC40520C1u;
+        eight.RgbOutputs[7] = 0x00000C00u;
+        Assert.Equal(2, eight.GetSpecializedKind());
+        AssertLightingMatchesGeneric(eight, 2, new Random(2001), 250);
+
+        // stages=7 config (c=00011107): stage 0 dots expand(T0) against expand(T1/T2).
+        var seven = new PshCombiner { Control = 0x00011107u, Final0 = 0x0C0B000Fu, Final1 = 0x0C011180u };
+        seven.RgbInputs[0] = 0x4849484Au;
+        seven.AlphaInputs[0] = 0x5859585Au;
+        seven.RgbOutputs[0] = 0x000C30CDu;
+        seven.RgbInputs[1] = 0x0D0D0000u;
+        seven.RgbOutputs[1] = 0x000000D0u;
+        for (int stage = 2; stage <= 4; stage++)
+        {
+            seven.RgbInputs[stage] = 0xCDCD0000u;
+            seven.RgbOutputs[stage] = 0x000000D0u;
+        }
+
+        seven.RgbInputs[5] = 0xC10CC20Du;
+        seven.RgbOutputs[5] = 0x000005CDu;
+        seven.RgbInputs[6] = 0xC40520C1u;
+        seven.RgbOutputs[6] = 0x00000C00u;
+        Assert.Equal(3, seven.GetSpecializedKind());
+        AssertLightingMatchesGeneric(seven, 3, new Random(2002), 250);
+
+        // Recognizer rejects a single changed stage word.
+        eight.RgbInputs[3] = 0x0D0D0000u;
+        Assert.Equal(0, eight.GetSpecializedKind());
+        eight.RgbInputs[3] = 0xCDCD0000u;
+        Assert.Equal(2, eight.GetSpecializedKind());
+    }
+
+    private static void AssertLightingMatchesGeneric(PshCombiner combiner, int kind, Random rng, int constSets)
+    {
+        for (int set = 0; set < constSets; set++)
+        {
+            for (int i = 0; i < PshCombiner.MaxStages; i++)
+            {
+                combiner.Factor0[i] = (uint)rng.Next();
+                combiner.Factor1[i] = (uint)rng.Next();
+            }
+
+            combiner.SpecFogFactor[0] = (uint)rng.Next();
+            combiner.SpecFogFactor[1] = (uint)rng.Next();
+            float[][] consts = PshCombiner.BuildConsts(combiner);
+            combiner.RebuildPlan(consts);
+            for (int i = 0; i < 200; i++)
+            {
+                float[] diffuse = RandomVec(rng);
+                float[] specular = RandomVec(rng);
+                float[] fog = RandomVec(rng);
+                var texels = new[] { RandomVec(rng), RandomVec(rng), RandomVec(rng), RandomVec(rng) };
+                combiner.Evaluate(diffuse, specular, fog, texels, consts,
+                    out float r1, out float g1, out float b1, out float a1);
+                PshCombiner.EvaluateLightingSpecialized(kind, diffuse, specular, texels, consts,
+                    out float r2, out float g2, out float b2, out float a2);
+                int r1b = BitConverter.SingleToInt32Bits(r1);
+                int g1b = BitConverter.SingleToInt32Bits(g1);
+                int b1b = BitConverter.SingleToInt32Bits(b1);
+                int a1b = BitConverter.SingleToInt32Bits(a1);
+                int r2b = BitConverter.SingleToInt32Bits(r2);
+                int g2b = BitConverter.SingleToInt32Bits(g2);
+                int b2b = BitConverter.SingleToInt32Bits(b2);
+                int a2b = BitConverter.SingleToInt32Bits(a2);
+                if (r1b != r2b || g1b != g2b || b1b != b2b || a1b != a2b)
+                {
+                    throw new Xunit.Sdk.XunitException(
+                        $"lighting kind={kind} divergence set={set} sample={i}: " +
+                        $"generic=({r1b:X8},{g1b:X8},{b1b:X8},{a1b:X8}) " +
+                        $"specialized=({r2b:X8},{g2b:X8},{b2b:X8},{a2b:X8})");
+                }
+            }
+        }
+    }
+
     private static void AssertPlannedMatchesGeneric(PshCombiner combiner, Random rng, int samples)
     {
         float[][] consts = PshCombiner.BuildConsts(combiner);
@@ -708,9 +801,11 @@ public sealed class PshCombinerTests
         eight.AlphaInputs[0] = 0xD159D15Au;
         eight.RgbOutputs[0] = 0x000C30CDu;
         eight.AlphaOutputs[0] = 0x00000000u;
-        for (int stage = 1; stage <= 5; stage++)
+        eight.RgbInputs[1] = 0x0D0D0000u;
+        eight.RgbOutputs[1] = 0x000000D0u;
+        for (int stage = 2; stage <= 5; stage++)
         {
-            eight.RgbInputs[stage] = 0x0D0D0000u;
+            eight.RgbInputs[stage] = 0xCDCD0000u;
             eight.RgbOutputs[stage] = 0x000000D0u;
         }
 
@@ -731,9 +826,11 @@ public sealed class PshCombinerTests
         seven.AlphaInputs[0] = 0x5859585Au;
         seven.RgbOutputs[0] = 0x000C30CDu;
         seven.AlphaOutputs[0] = 0x00000000u;
-        for (int stage = 1; stage <= 4; stage++)
+        seven.RgbInputs[1] = 0x0D0D0000u;
+        seven.RgbOutputs[1] = 0x000000D0u;
+        for (int stage = 2; stage <= 4; stage++)
         {
-            seven.RgbInputs[stage] = 0x0D0D0000u;
+            seven.RgbInputs[stage] = 0xCDCD0000u;
             seven.RgbOutputs[stage] = 0x000000D0u;
         }
 

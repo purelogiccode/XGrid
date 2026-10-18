@@ -807,6 +807,189 @@ public sealed class PshCombiner : ISnapshotable
     }
 
     /// <summary>
+    /// Recognizes the two multi-stage "squared lighting" configurations the
+    /// menu and triangle actually run (histogram: stages=8 c=00011108 and
+    /// stages=7 c=00011107). Returns 0 when the state is neither, 1 for the
+    /// modulate config (<see cref="IsModulateT0V0Passthrough"/>), 2 for the
+    /// 8-stage variant (stage 0 dot uses C0 against T1/T2) and 3 for the
+    /// 7-stage variant (stage 0 dot uses T0). When non-zero,
+    /// <see cref="EvaluateLightingSpecialized"/> (kinds 2/3) is bit-identical
+    /// to <see cref="Evaluate"/> for this state (pinned by the differential
+    /// test). Checked once per draw.
+    /// </summary>
+    public int GetSpecializedKind()
+    {
+        if (IsModulateT0V0Passthrough())
+        {
+            return 1;
+        }
+
+        if (Final0 != 0x0C0B000Fu || Final1 != 0x0C011180u || AlphaOutputs[0] != 0u ||
+            RgbOutputs[0] != 0x000C30CDu)
+        {
+            return 0;
+        }
+
+        if (Control == 0x00011108u && RgbInputs[0] == 0xC149C14Au && AlphaInputs[0] == 0xD159D15Au &&
+            IsLightingTail(combineStage: 6, addStage: 7))
+        {
+            return 2;
+        }
+
+        if (Control == 0x00011107u && RgbInputs[0] == 0x4849484Au && AlphaInputs[0] == 0x5859585Au &&
+            IsLightingTail(combineStage: 5, addStage: 6))
+        {
+            return 3;
+        }
+
+        return 0;
+    }
+
+    private bool IsLightingTail(int combineStage, int addStage)
+    {
+        for (int stage = 1; stage <= addStage; stage++)
+        {
+            if (AlphaInputs[stage] != 0u || AlphaOutputs[stage] != 0u)
+            {
+                return false;
+            }
+        }
+
+        if (RgbInputs[1] != 0x0D0D0000u || RgbOutputs[1] != 0x000000D0u)
+        {
+            return false;
+        }
+
+        for (int stage = 2; stage < combineStage; stage++)
+        {
+            if (RgbInputs[stage] != 0xCDCD0000u || RgbOutputs[stage] != 0x000000D0u)
+            {
+                return false;
+            }
+        }
+
+        return RgbInputs[combineStage] == 0xC10CC20Du && RgbOutputs[combineStage] == 0x000005CDu &&
+               RgbInputs[addStage] == 0xC40520C1u && RgbOutputs[addStage] == 0x00000C00u;
+    }
+
+    /// <summary>
+    /// Bit-exact specialized evaluator for kinds 2/3 of
+    /// <see cref="GetSpecializedKind"/>. Mirrors the generic path operation
+    /// for operation with the configuration constants folded: stage 0
+    /// dots (C0/T0 expanded against T1/T2 expanded), N power stages on R1
+    /// (max-square clamps), the combine stage (R0 = C0*R0, R1 = C1*R1,
+    /// V1 = R0+R1), the add stage (R0 = V0*V1 + C0) and the final combiner
+    /// (E = R0, F = SPECFOGFACTOR0, A = R0, B = T3, C = 0, D = E*F, G =
+    /// SPECFOGFACTOR0.a, all unsigned-identity mapped). All dead alpha halves
+    /// and no-op register destinations of the original stage list are
+    /// skipped (no counters or state live there). Same Math.Max/Math.Clamp
+    /// calls as the generic path, so NaN and signed-zero behavior is
+    /// identical.
+    /// </summary>
+    public static void EvaluateLightingSpecialized(
+        int kind,
+        float[] diffuse,
+        float[] specular,
+        float[][] texels,
+        float[][] consts,
+        out float r,
+        out float g,
+        out float b,
+        out float a)
+    {
+        bool stage0FromC0 = kind == 2;
+        int powerStages = stage0FromC0 ? 5 : 4;
+        int combineStage = stage0FromC0 ? 6 : 5;
+        int addStage = stage0FromC0 ? 7 : 6;
+        float[] c0Stage0 = consts[0];
+        float[] c0Combine = consts[combineStage * 2];
+        float[] c1Combine = consts[(combineStage * 2) + 1];
+        float[] c0Add = consts[addStage * 2];
+        float[] specFog0 = consts[16];
+
+        // Stage 0: ab = dot(a, b), cd = dot(a, d) with a = C0 (signed
+        // identity) or expand(T0), b = expand(T1), d = expand(T2). The dot
+        // is clamped to -1..1 and written to R0 (ab) and R1 (cd) with
+        // blue-to-alpha replication.
+        float a0 = stage0FromC0 ? c0Stage0[0] : (2f * Math.Max(texels[0][0], 0f)) - 1f;
+        float a1 = stage0FromC0 ? c0Stage0[1] : (2f * Math.Max(texels[0][1], 0f)) - 1f;
+        float a2 = stage0FromC0 ? c0Stage0[2] : (2f * Math.Max(texels[0][2], 0f)) - 1f;
+        float b0 = (2f * Math.Max(texels[1][0], 0f)) - 1f;
+        float b1 = (2f * Math.Max(texels[1][1], 0f)) - 1f;
+        float b2 = (2f * Math.Max(texels[1][2], 0f)) - 1f;
+        float d0 = (2f * Math.Max(texels[2][0], 0f)) - 1f;
+        float d1 = (2f * Math.Max(texels[2][1], 0f)) - 1f;
+        float d2 = (2f * Math.Max(texels[2][2], 0f)) - 1f;
+        float r0R = Math.Clamp((a0 * b0) + (a1 * b1) + (a2 * b2), -1f, 1f);
+        float r0G = r0R;
+        float r0B = r0R;
+        float r1R = Math.Clamp((a0 * d0) + (a1 * d1) + (a2 * d2), -1f, 1f);
+        float r1G = r1R;
+        float r1B = r1R;
+
+        // Power stages: stage 1 is unsigned (R1.c = clamp(max(R1.c, 0) *
+        // max(R1.c, 0))); stages 2..N are signed (R1.c = clamp(R1.c * R1.c)).
+        // The CD = 0 and MUX terms of the original stages write to no-op
+        // destinations.
+        r1R = Math.Clamp(Math.Max(r1R, 0f) * Math.Max(r1R, 0f), -1f, 1f);
+        r1G = Math.Clamp(Math.Max(r1G, 0f) * Math.Max(r1G, 0f), -1f, 1f);
+        r1B = Math.Clamp(Math.Max(r1B, 0f) * Math.Max(r1B, 0f), -1f, 1f);
+        for (int stage = 1; stage < powerStages; stage++)
+        {
+            r1R = Math.Clamp(r1R * r1R, -1f, 1f);
+            r1G = Math.Clamp(r1G * r1G, -1f, 1f);
+            r1B = Math.Clamp(r1B * r1B, -1f, 1f);
+        }
+
+        // Combine stage: R0 = clamp(C0 * max(R0, 0)); R1 = clamp(C1 *
+        // max(R1, 0)); V1 = clamp(R0 + R1). All reads precede all writes.
+        float abR = Math.Clamp(c0Combine[0] * Math.Max(r0R, 0f), -1f, 1f);
+        float abG = Math.Clamp(c0Combine[1] * Math.Max(r0G, 0f), -1f, 1f);
+        float abB = Math.Clamp(c0Combine[2] * Math.Max(r0B, 0f), -1f, 1f);
+        float cdR = Math.Clamp(c1Combine[0] * Math.Max(r1R, 0f), -1f, 1f);
+        float cdG = Math.Clamp(c1Combine[1] * Math.Max(r1G, 0f), -1f, 1f);
+        float cdB = Math.Clamp(c1Combine[2] * Math.Max(r1B, 0f), -1f, 1f);
+        float v1R = Math.Clamp(abR + cdR, -1f, 1f);
+        float v1G = Math.Clamp(abG + cdG, -1f, 1f);
+        float v1B = Math.Clamp(abB + cdB, -1f, 1f);
+        r0R = abR;
+        r0G = abG;
+        r0B = abB;
+
+        // Add stage: R0 = clamp(V0 * max(V1, 0) + 1 * C0) (the Zero input
+        // through the unsigned-invert mapping is exactly 1).
+        float addR = Math.Clamp(diffuse[0] * Math.Max(v1R, 0f), -1f, 1f);
+        float addG = Math.Clamp(diffuse[1] * Math.Max(v1G, 0f), -1f, 1f);
+        float addB = Math.Clamp(diffuse[2] * Math.Max(v1B, 0f), -1f, 1f);
+        float addCdR = Math.Clamp(1f * c0Add[0], -1f, 1f);
+        float addCdG = Math.Clamp(1f * c0Add[1], -1f, 1f);
+        float addCdB = Math.Clamp(1f * c0Add[2], -1f, 1f);
+        r0R = Math.Clamp(addR + addCdR, -1f, 1f);
+        r0G = Math.Clamp(addG + addCdG, -1f, 1f);
+        r0B = Math.Clamp(addB + addCdB, -1f, 1f);
+
+        // Final: E = R0, F = SPECFOGFACTOR0 (consts[16]), ef = E*F; D =
+        // max(ef, 0); A = max(R0, 0); B = max(T3, 0); C = 0; G =
+        // max(SPECFOGFACTOR0.a, 0).
+        float efR = Math.Max(r0R, 0f) * Math.Max(specFog0[0], 0f);
+        float efG = Math.Max(r0G, 0f) * Math.Max(specFog0[1], 0f);
+        float efB = Math.Max(r0B, 0f) * Math.Max(specFog0[2], 0f);
+        float dxR = Math.Max(efR, 0f);
+        float dxG = Math.Max(efG, 0f);
+        float dxB = Math.Max(efB, 0f);
+        float axR = Math.Max(r0R, 0f);
+        float axG = Math.Max(r0G, 0f);
+        float axB = Math.Max(r0B, 0f);
+        float bxR = Math.Max(texels[3][0], 0f);
+        float bxG = Math.Max(texels[3][1], 0f);
+        float bxB = Math.Max(texels[3][2], 0f);
+        r = dxR + (0f + ((bxR - 0f) * axR));
+        g = dxG + (0f + ((bxG - 0f) * axG));
+        b = dxB + (0f + ((bxB - 0f) * axB));
+        a = Math.Max(specFog0[3], 0f);
+    }
+
+    /// <summary>
     /// Bit-exact specialized evaluator for
     /// <see cref="IsModulateT0V0Passthrough"/>. Mirrors the generic path
     /// operation for operation with the configuration constants folded:
