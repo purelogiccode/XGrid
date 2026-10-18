@@ -554,8 +554,16 @@ Invlpg. **Menu 1B fast: 99% served, fully bit-exact (SHAs + golden frame,
 shift; exact mode bit-exact); `--jit-tally` diagnostics added. A
 poll-exit bug (EIP not advanced for interpreter-call poll-after members →
 instruction re-executed after the handler) was caught by the 100M SHA
-gates and fixed. Suite 1476 green, format clean. Quiet-host medians of
-this build are the next measurement.
+gates and fixed. Suite 1476 green, format clean.
+
+**Quiet-host results of this build (medians of 3 fast / single controls; all
+SHAs verified; §194 amendment 2):** triangle 1B plain 51.28 s / spec-ctl
+37.10 s / **fast 27.91 s (1.33× ctl, 1.84× plain)**; menu 1B plain 81.91 s
+/ spec-ctl 73.61 s / **fast 64.02 s (1.15× ctl, 1.28× plain)**; ktest 2B
+CPU-bound **3.76×**. Breakdown: the software rasterizer is 36–38% of both
+walls (24.3 s menu / 10.1 s triangle) and MMIO slow-path members (118.9M /
+21.3M) dominate the runner's non-raster time — the next levers are Track B
+(GPU) and MMIO-path work, not CPU-side JIT tuning.
 
 ### Fast-mode JIT track chartered (2026-10-18) — operator decision
 

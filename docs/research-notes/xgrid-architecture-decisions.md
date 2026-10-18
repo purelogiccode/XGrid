@@ -9935,3 +9935,28 @@ SHA + golden frame, 686/686), triangle fast keeps its documented 3-dword
 context-save residual (identical across builds; exact mode bit-exact), and
 the ktest suite log stays identical except the single 5 ms NtResumeThread
 measurement. Served share at 1B menu: 99.0%.
+
+**Amendment 2 (quiet host, load 3-5%): the honest end-to-end numbers.**
+The 192-era "76 Msteps/s" fast figures were a wedged guest (193); after
+the fix + coverage campaign (194), the fast mode runs the real workloads
+bit-exactly (menu) or with the documented 3-dword residual (triangle), so
+the end-to-end walls are finally comparable. Medians of 3 (fast), single
+controls, all SHAs verified:
+
+| 1B run | plain (interpreter) | spec-control | fast | fast vs ctl | fast vs plain |
+|---|---:|---:|---:|---:|---:|
+| triangle | 51.28 s (19.5 Msteps/s) | 37.10 s | **27.91 s** (35.8 Msteps/s) | 1.33x | 1.84x |
+| menu | 81.91 s (12.2 Msteps/s) | 73.61 s | **64.02 s** (15.6 Msteps/s) | 1.15x | 1.28x |
+| ktest 2B (CPU-bound) | - | 88.9 s (accurate) | **23.6 s** | 3.76x | - |
+
+Breakdown (`--gpu-time` + JIT stats, quiet): menu fast 63.3 s = CPU-JIT
+~23.4 s + bookkeeping 4.8 s + non-JIT 10.8 s + **software rasterizer
+24.3 s (38% of the wall)**; triangle fast 27.7 s = CPU-JIT ~4.3 s +
+bookkeeping 4.5 s + non-JIT 8.8 s + **raster 10.1 s (36%)**. The runner's
+non-raster time is dominated by MMIO slow-path members dispatching to
+NV2A devices (118.9M slow members on menu 1B; 21.3M triangle) - real
+device work fast mode cannot remove. So: the fast JIT is ~3.8x on
+CPU-bound code, ~1.5x/1.3x CPU-side on the triangle/menu, and 1.15-1.33x
+end-to-end because both walls are now owned by the software GPU path; the
+next levers are Track B (GPU backend/rasterizer) and MMIO-path work, not
+further CPU-side JIT tuning.
