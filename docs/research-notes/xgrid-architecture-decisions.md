@@ -9622,3 +9622,18 @@ experiment of the campaign (write scopes/page memo, byte->float tables, TLB
 resize, counter batching) - the remaining sampler cost is the irreducible
 per-sample work (floor/wrap/address/decode/read) and the remaining raster is
 at its practical floor for this architecture.
+
+## 189. Session close: full-suite re-run attempt filed as an open item (2026-10-18)
+
+Attempted the full 378-test ktest suite on the closing binary (full
+config.txt, patched XBE, `--break 4E03A --writedump`, 40B-step budget). The
+run did not reach the park within the window and produced no writedump -
+inconclusive, not a session gate (the standing 7-test smoke passes 7/7 on
+the same binary). A 75-second `--hotspot` probe of the full config shows the
+guest advancing ~1.3M steps/s with a **33% TLB miss rate** (vs 9.5% in the
+menu boot; 100M steps, decodeCacheHits 99.35%, headVisits 15%) - consistent
+with heavy flush-driven TLB churn in the suite's test code (the §185 finding
+that the TLB misses are flush-driven, not capacity-driven). Next step if
+picked up: profile the full-config boot with per-trigger flush counters (the
+decode-flush audit's §7 probes) before theorizing; the 7-test smoke remains
+the standard cross-check meanwhile.
