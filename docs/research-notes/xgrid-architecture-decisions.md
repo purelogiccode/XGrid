@@ -10341,3 +10341,69 @@ blocker for the trace emitter.
 **Plan impact.** None on the milestone ladder: triangle 11.09 s vs the M1
 target ≤6 s (C2), menu 47.35 s vs M1 ≤20 s (C2 + B2c). The CPU engine remains
 the whole wall; C2 (`jit-trace-emitter-design.md`) is the next slice.
+
+## 199d. C2 slices 1-3 + two negative results: where the fast-mode wall actually goes (2026-10-19/20)
+
+**Landed (all SHAs exact, four-engine 200M bit-identical, suite 1481 green):**
+
+1. **C2 slice 1 - lazy GPR state sync** (`JitStateMask`): per-kind read/write
+   masks; the runner loads the union at the prologue and stores only the write
+   mask at the epilogue and every fault/interpreter sync (over-stores write
+   back unchanged values, so no cumulative bookkeeping is needed). 8-bit
+   AH..BH fold to `index & 3` (caught by `PartialRegisters_Mov8`).
+   Plus: emitted Eip/Eflags/Tsc accesses now use the auto-property backing
+   fields instead of six callvirts per block (and one per memory member).
+   Measured: triangle outer 9462 -> 8593 ms.
+2. **C2 slice 3 - native single-precision memory x87** (`FpuLoadReal`,
+   `FpuStoreReal`, `FpuStoreRealPop`): `Fld/Fst/Fstp m32` run through the same
+   RAM probe as integer loads/stores with one FPU helper call mirroring
+   `ReadFpuReal`/`WriteFpuReal`. Slow members: triangle 16.5M -> 12.5M,
+   menu 88.9M -> 62.6M.
+3. **Diagnostics**: per-mnemonic slow-member tally (`XGRID_SLOW=1`, emitted
+   counter at the CallSpec site); non-cacheable fetch page tally
+   (`XGRID_NONRAM=1`).
+
+**Final quiet-host medians (1B, fast, gl+replace+spin, 3 runs, SHAs exact):**
+triangle **10.63 s** (10.54/10.63/10.89), menu **45.62 s** (45.33/45.62/46.53).
+
+**The measured cost structure (this is the important part):**
+
+| Component | Triangle 1B | Notes |
+|---|---:|---|
+| Chain (memo + lookup + poll + call) | ~1.0 s | ~8 ns/invocation |
+| State sync | ~1.5-2 s | ~15-20 ns/block |
+| Ordinary member bodies | ~5-6 s | ~14 ns/member (memory probe ~25 ns, ALU ~8 ns) |
+| Slow (interpreter-fallback) members | ~1 s | 12.5M members at ~80 ns |
+| Non-JIT cold code | ~1.9 s | 523K episodes (spec runner) |
+| GL replace path | ~0.5 s | |
+
+**Negative result 1 - block fusion.** Fusing `JmpRel` successors and then
+guarded fusion of branch/call successors (fall-through for forward branches,
+target for loops, callee for calls, one EIP compare per boundary, exact
+fast-mode boundary poll) cut invocations 125M -> 22.4M (-82%) but the wall
+rose to 14.98 s (12.9 s outer): bigger runners cost ~50% more per member
+(codegen quality / I-cache) and the emitted boundary poll costs more than the
+outer dispatch it saves. At one fusion per block: 11.70 s vs 10.75 s. Reverted.
+Fusion also silently disabled the spin skip (fused blocks contain stores, so
+`HasSti && !HasStore` never held: spinSkips 7514 -> 0) - a fused block must
+never span an STI/POPF, which the reverted code enforced.
+
+**Negative result 2 - 1024-slot data translate cache.** 11.41 s vs 10.72 s at
+256 slots (L1 pressure). Reverted.
+
+**Conclusion for the next session.** The block JIT is at its structural floor:
+~14 ns per ordinary member, of which the memory probe and the per-member
+bookkeeping dominate, and neither can be removed inside IL emission. The
+remaining path to xemu-class (charter Phase 3 / C3) is the raw emitter:
+fixed host registers for the guest GPRs, flags in a host register, inline
+TLB probes, and patch-on-link block chaining. The trace/fusion family is
+measured out (see above) - do not retry it without a different boundary-poll
+strategy (a cheap `Pending` flag on the interrupt source would be the
+prerequisite: the interface `Acknowledge` call per boundary is what killed
+fusion).
+
+**Follow-ups filed:** (a) `IInterruptSource.Pending` as a cheap field so both
+the outer poll and any future fused poll cost ~2 ns; (b) the non-JIT cold
+residue (1.9 s) needs the spec runner to stop declining episodes (entries not
+cached at formation time - `DecodedBlockCache.Form` uses `decodes.TryGet`
+only); (c) 64/80-bit and register x87 forms still take the spec handler.
