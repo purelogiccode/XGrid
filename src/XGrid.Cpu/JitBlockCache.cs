@@ -12,6 +12,9 @@ namespace XGrid.Cpu;
 /// </summary>
 internal delegate int JitRun(XboxCpu cpu, DecodeCacheEntry[] entries, int budget);
 
+/// <summary>C3 raw runner: the native block entered through a managed-to-native transition.</summary>
+internal unsafe delegate int RawRun(XboxCpu cpu, RawState* state, DecodeCacheEntry[] entries, int budget);
+
 /// <summary>One built fast-mode block (a run of natively emittable members).</summary>
 internal sealed class JitBlock
 {
@@ -24,7 +27,7 @@ internal sealed class JitBlock
         int memberCount,
         DecodeCacheEntry[] entries,
         JitRun? runner,
-        nint rawRunner,
+        RawRun? rawRunner,
         bool hasSti,
         bool hasStore)
     {
@@ -66,7 +69,7 @@ internal sealed class JitBlock
     public JitRun? Runner { get; }
 
     /// <summary>Gets the C3 raw runner function pointer (0 when absent).</summary>
-    public nint RawRunner { get; }
+    public RawRun? RawRunner { get; }
 
     /// <summary>Gets whether the block contains an STI member (fast-mode idle-wait detection).</summary>
     public bool HasSti { get; }

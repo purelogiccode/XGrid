@@ -10407,3 +10407,77 @@ the outer poll and any future fused poll cost ~2 ns; (b) the non-JIT cold
 residue (1.9 s) needs the spec runner to stop declining episodes (entries not
 cached at formation time - `DecodedBlockCache.Form` uses `decodes.TryGet`
 only); (c) 64/80-bit and register x87 forms still take the spec handler.
+
+## 199e. C3 slice 1: the raw x86-64 block emitter foundation (2026-10-20)
+
+Charter Phase 3 (authorized, §4) is now **started**: `RawBlockEmitter` builds
+one native x86-64 function per block with **Iced 1.21.0** (MIT, the approved
+Phase-3 dependency; `Directory.Packages.props` + `sources.md`).
+
+**Architecture (as landed):**
+
+- Guest GPRs pinned in fixed host registers across the whole block:
+  eax/ecx/edx/ebx -> EAX/ECX/EDX/EBX (kept in the legacy registers so
+  AH/CH/DH/BH stay addressable), esp/ebp/esi/edi -> R12D/R13D/R14D/R15D.
+  An ordinary member costs its own instruction plus one EIP slot store and a
+  three-instruction served increment (lea, so live host flags survive).
+- Guest arithmetic flags live in the **host FLAGS register**; the
+  non-arithmetic bits (IF/DF/IOPL/TF/NT/...) ride in a control frame slot
+  updated by CLI/STI/CLD/STD. A flag materializer writes
+  `(host & 0x8D5) | ctrl` into the frame only when a probe or helper needs the
+  host flags, and at exits; `popfq` is always fed
+  `eflags & (0x8D5 | DF)` because IOPL/TF/NT fault in user mode.
+- Memory members inline the data translate-cache probe (tag compare, physical
+  page, writable bit for stores, RAM bound) against **pinned** pointers, then
+  load/store directly through the pinned RAM base. Any miss, watched range or
+  non-RAM physical exits to the exact `ReadMemory`/`WriteMemory` helper with
+  the state synced first, so fault precision is unchanged.
+- Shapes the raw path does not encode (x87/SSE, string ops, calls, indirect
+  jumps, awkward 8-bit forms) call `RawHelpers.ExecuteSpec`, which resolves the
+  same spec handler the IL emitter uses (or the interpreter body) and leaves
+  `Context.Eip` at the next instruction - so **every block is emittable**.
+- `RawState` carries the pinned pointers (register file, translate tables, RAM)
+  plus an unmanaged scratch block for Eip/Eflags/Tsc/progress. Objects that
+  contain references cannot be pinned, hence the scratch block rather than
+  addressing `XboxContext` directly.
+- The raw runner is entered through `Marshal.GetDelegateForFunctionPointer`
+  (a real managed->native transition), which is what lets the helpers be plain
+  `[UnmanagedCallersOnly]`; calling them from a raw frame entered via `calli`
+  from managed code is rejected by the runtime ("attempted to call a
+  UnmanagedCallersOnly method from managed code") - measured, not guessed.
+- Blocks are formed and invalidated by the existing block cache; the raw runner
+  replaces the IL runner only when it builds. **No per-member budget check is
+  emitted**: `RunJitBlock` calls a raw block only when the remaining budget
+  covers every member, which is what keeps the host flags live between
+  members. Exact mode (`--jit-exact`) keeps the IL runner.
+
+**Bring-up bugs fixed (all caught by the differentials):** 32-bit `sub esp`
+truncating RSP (the host stack is above 4 GB); `popf` vs `popfq` (16-bit pop,
+stack imbalance); unmasked `popfq`; prologue argument order; loading the
+`RawState` pointer fields instead of dereferencing them; the flag materializer
+clobbering guest EAX before the register store; the probe's VPN computation
+clobbering the staged store value (store values now stage in RSI); missing
+served increments for terminators (Jmp/Jcc returned before the increment, and
+the Jcc emitter's internal jumps skipped it - every block was one short).
+
+**Validation:** 7 raw differentials green (`RawJitTests`: ALU loop, memory
+forms, memory-immediate forms, `cmp [mem],imm`, stack push/pop, flags across
+conditionals, x87 fallback trampoline), suite **1488 green**, format clean.
+
+**Known gaps (documented, not hidden):**
+1. A **backward `jne` over a `cmp [mem],imm` block** crashes the test host
+   (the single-pass form passes). This is the next bring-up item; until it is
+   fixed the raw path stays **opt-in** (`--jit-raw`, default off) and title
+   runs must not use it.
+2. `--jit-raw` has no performance measurement yet (it cannot run the triangle
+   until gap 1 is closed).
+3. High-byte 8-bit memory forms, 64/80-bit x87 and MMX moves still route
+   through the helper trampoline (correct, just not native yet).
+4. Each raw block allocates a 64 KB executable page and never frees it; block
+   rebuilds are rare (revalidation), so this is bounded but should become an
+   exact-size allocation plus a free list.
+
+**Next steps (in order):** close gap 1 (loop re-entry), then measure the raw
+path on the triangle/menu 1B goldens against the 10.63 s / 45.62 s baselines,
+then extend the native shape set (64/80-bit x87, MMX moves, push/pop/call/ret),
+then flip the fast-mode default once the medians show a win.
