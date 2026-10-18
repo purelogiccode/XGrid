@@ -114,6 +114,12 @@ internal static class JitEmitter
     private static readonly MethodInfo WriteMemory =
         typeof(XboxCpu).GetMethod("WriteMemory", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
+    private static readonly MethodInfo ReadPhysicalJit =
+        typeof(XboxCpu).GetMethod("ReadPhysicalJit", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo WritePhysicalJit =
+        typeof(XboxCpu).GetMethod("WritePhysicalJit", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     private static readonly MethodInfo Push =
         typeof(XboxCpu).GetMethod("Push", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -169,7 +175,8 @@ internal static class JitEmitter
     /// thrown <c>PageFaultSignal</c> leaves the context at the faulting
     /// member's boundary).
     /// </summary>
-    public static JitRun? Build(uint headLinear, ReadOnlySpan<JitMemberPlan> plans, bool exactBoundaries)
+    public static JitRun? Build(uint headLinear, ReadOnlySpan<JitMemberPlan> plans, bool exactBoundaries,
+        bool mmioFast)
     {
         if (plans.Length == 0)
         {
@@ -235,7 +242,7 @@ internal static class JitEmitter
             }
 
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
-                a1, a2, res, addr, vpn, phys, slot, ram);
+                a1, a2, res, addr, vpn, phys, slot, ram, mmioFast);
 
             if (!exactBoundaries && (plan.Kind == JitKind.Sti || plan.PollAfter))
             {
@@ -412,7 +419,8 @@ internal static class JitEmitter
         LocalBuilder vpn,
         LocalBuilder phys,
         LocalBuilder slot,
-        LocalBuilder ram)
+        LocalBuilder ram,
+        bool mmioFast)
     {
         switch (plan.Kind)
         {
@@ -427,7 +435,7 @@ internal static class JitEmitter
                 break;
 
             case JitKind.MovLoad:
-                EmitLoadMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                EmitLoadMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
                     loadValue: () =>
                     {
                         EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, res);
@@ -436,12 +444,12 @@ internal static class JitEmitter
                 break;
 
             case JitKind.MovStore:
-                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
                     emitValue: () => EmitReadReg(il, gprs, plan.Size, plan.RegIndex));
                 break;
 
             case JitKind.MovStoreImm:
-                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
                     emitValue: () => il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate)));
                 break;
 
@@ -477,12 +485,25 @@ internal static class JitEmitter
                     il.Emit(OpCodes.Stloc, a1);
                     Label done = il.DefineLabel();
                     Label slow = il.DefineLabel();
+                    Label device = il.DefineLabel();
                     EmitEipStore(il, context, eip);
                     EmitAddress(il, plan, context, gprs, addr);
-                    EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+                    EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow,
+                        mmioFast ? device : null);
                     EmitRamRead(il, plan.Size, ram, phys);
                     il.Emit(OpCodes.Stloc, a2);
                     il.Emit(OpCodes.Br, done);
+                    if (mmioFast)
+                    {
+                        il.MarkLabel(device);
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Ldloc, phys);
+                        il.Emit(OpCodes.Ldc_I4, plan.Size);
+                        il.Emit(OpCodes.Call, ReadPhysicalJit);
+                        il.Emit(OpCodes.Stloc, a2);
+                        il.Emit(OpCodes.Br, done);
+                    }
+
                     il.MarkLabel(slow);
                     EmitSync(il, context, gprs, eip, flags, tsc, served);
                     il.Emit(OpCodes.Ldarg_0);
@@ -504,7 +525,7 @@ internal static class JitEmitter
             case JitKind.AluMR:
             case JitKind.AluMI:
                 EmitReadModifyWrite(il, plan, context, gprs, eip, flags, tsc, served, a1, a2, res, addr, vpn, phys,
-                    slot, ram);
+                    slot, ram, mmioFast);
                 break;
 
             case JitKind.TestRR:
@@ -567,7 +588,7 @@ internal static class JitEmitter
             case JitKind.IncM:
             case JitKind.DecM:
                 EmitReadModifyWrite(il, plan, context, gprs, eip, flags, tsc, served, a1, a2, res, addr, vpn, phys,
-                    slot, ram);
+                    slot, ram, mmioFast);
                 break;
 
             case JitKind.Lea:
@@ -747,19 +768,41 @@ internal static class JitEmitter
         LocalBuilder phys,
         LocalBuilder slot,
         LocalBuilder ram,
+        bool mmioFast,
         Action loadValue,
         LocalBuilder writeScratch)
     {
         Label done = il.DefineLabel();
         Label slow = il.DefineLabel();
+        Label device = il.DefineLabel();
         EmitEipStore(il, context, eip);
         EmitAddress(il, plan, context, gprs, addr);
-        EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow,
+            mmioFast ? device : null);
         EmitRamRead(il, plan.Size, ram, phys);
         il.Emit(OpCodes.Stloc, writeScratch);
         il.Emit(OpCodes.Ldloc, writeScratch);
         loadValue();
         il.Emit(OpCodes.Br, done);
+        if (mmioFast)
+        {
+            // Device fast path (--jit-mmio): the probe translated this
+            // single-page access and holds the physical address, so the
+            // interpreter's re-translate is skipped and the access goes
+            // straight to the same RawRead the interpreter would reach. No
+            // fault is possible (the probe checked the translation), so no
+            // context sync is needed.
+            il.MarkLabel(device);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, phys);
+            il.Emit(OpCodes.Ldc_I4, plan.Size);
+            il.Emit(OpCodes.Call, ReadPhysicalJit);
+            il.Emit(OpCodes.Stloc, writeScratch);
+            il.Emit(OpCodes.Ldloc, writeScratch);
+            loadValue();
+            il.Emit(OpCodes.Br, done);
+        }
+
         il.MarkLabel(slow);
         EmitSync(il, context, gprs, eip, flags, tsc, served);
         il.Emit(OpCodes.Ldarg_0);
@@ -785,17 +828,36 @@ internal static class JitEmitter
         LocalBuilder phys,
         LocalBuilder slot,
         LocalBuilder ram,
+        bool mmioFast,
         Action emitValue)
     {
         Label done = il.DefineLabel();
         Label slow = il.DefineLabel();
+        Label device = il.DefineLabel();
         EmitEipStore(il, context, eip);
         EmitAddress(il, plan, context, gprs, addr);
-        EmitProbe(il, context, isStore: true, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitProbe(il, context, isStore: true, plan.Size / 8, addr, vpn, slot, phys, ram, slow,
+            mmioFast ? device : null);
         EmitWatchGuard(il, plan.Size / 8, phys, slow);
         EmitNoteStore(il, plan.Size, phys);
         EmitRamWrite(il, plan.Size, ram, phys, emitValue);
         il.Emit(OpCodes.Br, done);
+        if (mmioFast)
+        {
+            // Device fast path (--jit-mmio): the probe checked writability and
+            // translated the access, so the interpreter's re-translate is
+            // skipped and the store goes straight to RawWrite — which keeps
+            // the bus watch check (AddressSpace.Write* -> CheckWatch) and the
+            // NoteStorePhysical choke exactly as the interpreter would run them.
+            il.MarkLabel(device);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, phys);
+            il.Emit(OpCodes.Ldc_I4, plan.Size);
+            emitValue();
+            il.Emit(OpCodes.Call, WritePhysicalJit);
+            il.Emit(OpCodes.Br, done);
+        }
+
         il.MarkLabel(slow);
         EmitSync(il, context, gprs, eip, flags, tsc, served);
         il.Emit(OpCodes.Ldarg_0);
@@ -828,15 +890,18 @@ internal static class JitEmitter
         LocalBuilder vpn,
         LocalBuilder phys,
         LocalBuilder slot,
-        LocalBuilder ram)
+        LocalBuilder ram,
+        bool mmioFast)
     {
         bool isCmp = plan.AluOp == JitAluOp.Cmp;
         bool stores = !isCmp;
         Label done = il.DefineLabel();
         Label slow = il.DefineLabel();
+        Label device = il.DefineLabel();
         EmitEipStore(il, context, eip);
         EmitAddress(il, plan, context, gprs, addr);
-        EmitProbe(il, context, isStore: stores, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitProbe(il, context, isStore: stores, plan.Size / 8, addr, vpn, slot, phys, ram, slow,
+            mmioFast ? device : null);
         EmitRamRead(il, plan.Size, ram, phys);
         il.Emit(OpCodes.Stloc, a1);
         EmitSecondOperand(il, plan, gprs, a2);
@@ -849,6 +914,32 @@ internal static class JitEmitter
         }
 
         il.Emit(OpCodes.Br, done);
+        if (mmioFast)
+        {
+            // Device fast path (--jit-mmio): read and write through the
+            // already-translated physical address (RawRead/RawWrite keep the
+            // interpreter's watch and NoteStore semantics); the probe checked
+            // writability, so no fault can be skipped.
+            il.MarkLabel(device);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, phys);
+            il.Emit(OpCodes.Ldc_I4, plan.Size);
+            il.Emit(OpCodes.Call, ReadPhysicalJit);
+            il.Emit(OpCodes.Stloc, a1);
+            EmitSecondOperand(il, plan, gprs, a2);
+            ComputeRmw(il, plan, flags, a1, a2, res);
+            if (stores)
+            {
+                il.Emit(OpCodes.Ldarg_0);
+                il.Emit(OpCodes.Ldloc, phys);
+                il.Emit(OpCodes.Ldc_I4, plan.Size);
+                il.Emit(OpCodes.Ldloc, res);
+                il.Emit(OpCodes.Call, WritePhysicalJit);
+            }
+
+            il.Emit(OpCodes.Br, done);
+        }
+
         il.MarkLabel(slow);
         EmitSync(il, context, gprs, eip, flags, tsc, served);
         il.Emit(OpCodes.Ldarg_0);
@@ -1511,6 +1602,7 @@ internal static class JitEmitter
         LocalBuilder phys,
         LocalBuilder ram,
         Label slow,
+        Label? device = null,
         bool skipCrossPage = false)
     {
         if (!skipCrossPage && sizeBytes > 1)
@@ -1576,7 +1668,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, RamSize);
         il.Emit(OpCodes.Conv_U8);
-        il.Emit(OpCodes.Bgt_Un, slow);
+        il.Emit(OpCodes.Bgt_Un, device ?? slow);
     }
 
     private static void EmitRamRead(ILGenerator il, int size, LocalBuilder ram, LocalBuilder phys)

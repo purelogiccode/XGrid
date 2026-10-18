@@ -1277,6 +1277,27 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// JIT device fast path (<c>--jit-mmio</c>): the emitted probe already
+    /// translated the single-page, translate-cache-hit access and holds the
+    /// physical address, so the interpreter's re-translate is skipped and the
+    /// access lands on the same RawRead the interpreter path would reach. The
+    /// probe checked writability for stores, so no fault can be skipped; the
+    /// bus write path still runs CheckWatch and NoteStorePhysical.
+    /// </summary>
+    private uint ReadPhysicalJit(uint physical, int size)
+    {
+        _jitMmioMembers++;
+        return RawRead(physical, size);
+    }
+
+    /// <inheritdoc cref="ReadPhysicalJit"/>
+    private void WritePhysicalJit(uint physical, int size, uint value)
+    {
+        _jitMmioMembers++;
+        RawWrite(physical, size, value);
+    }
+
+    /// <summary>
     /// Slice-1 guard: true when the AddressSpace write watch could fire for
     /// [address, address+length), in which case the caller takes the legacy
     /// bus path so CheckWatch + WatchHit run exactly as before.
