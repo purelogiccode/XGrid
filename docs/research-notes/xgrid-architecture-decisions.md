@@ -9960,3 +9960,16 @@ CPU-bound code, ~1.5x/1.3x CPU-side on the triangle/menu, and 1.15-1.33x
 end-to-end because both walls are now owned by the software GPU path; the
 next levers are Track B (GPU backend/rasterizer) and MMIO-path work, not
 further CPU-side JIT tuning.
+
+**Amendment 3: the GL backend is not a wall lever for the 1B workloads
+(measured, quiet host).** Pairing fast/accurate modes with `--gpu gl` (all
+guest SHAs identical, frames correct): menu fast sw 64.02 vs gl 71.16-72.48
+(worse by 7-10 s), menu spec-ctl sw 73.61 vs gl 83.65 (also worse - the
+extra cost is CPU-side and mode-independent); triangle fast sw 27.91 vs gl
+27.48 (parity). The GL path's draw/readback timings are small (menu
+drawMs 6.85 s vs sw raster 24.3 s) but its per-method/per-draw CPU cost on
+2.76M tiny draws / 18M methods replaces the saved raster time. Conclusion:
+for these tests the software rasterizer is the better default; GL wins
+would need batched/bigger draws or per-draw overhead work, and that track
+stays gated as chartered. The end-to-end fast-mode story is therefore
+CPU+MMIO-bound: 27.9 s triangle / 64.0 s menu (1.33x / 1.15x vs spec-ctl).
