@@ -26,7 +26,7 @@ animation wait, §32).
    ≈ 7 ns; the remaining Phase-2 leftovers are worth ~1.5–2× at most. The
    charter's Phase-3 entry condition is **met** (plateau >3× short of
    xemu-class). Order:
-   **C2 trace emitter** — multi-block traces with guest state in locals across
+   **C2 trace emitter** (design: jit-trace-emitter-design.md) — multi-block traces with guest state in locals across
    the whole trace, inline RAM fast paths for the hot member shapes, interrupt
    polls at the same boundaries, side exits to the existing block JIT;
    target CPU-side ≥2× (triangle runner ≤3 s, menu CPU ≤11 s).
