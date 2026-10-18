@@ -365,20 +365,16 @@ public sealed class DecodedBlockCache
         Span<DecodeCacheEntry> entries = stackalloc DecodeCacheEntry[MaxInstructions];
         int count = 0;
         uint next = linear;
-        uint physicalPage = 0;
-        while (count < MaxInstructions && (next >> 12) == (linear >> 12)
-                                       && (next & 0xFFF) <= 0x1000 - Decoder.MaxInstructionLength
-                                       && decodes.TryGet(next, operandSize, addressSize, out DecodeCacheEntry entry))
-        {
-            if (count == 0)
-            {
-                physicalPage = entry.PhysicalBase >> 12;
-            }
-            else if ((entry.PhysicalBase >> 12) != physicalPage)
-            {
-                break;
-            }
 
+        // D3b: spec blocks may span a page boundary (the decode cache carries
+        // cross-page entries since D3a, the runner's window replay and verify
+        // both go through entry.PhysicalOf(i), and invalidation is the
+        // conservative all-block eviction). The old single-page and 15-byte
+        // window guards made every head in the last 14 bytes of a page fall
+        // through to the ~500 ns interpreter Step path.
+        while (count < MaxInstructions
+               && decodes.TryGet(next, operandSize, addressSize, out DecodeCacheEntry entry))
+        {
             entries[count++] = entry;
             if (Terminates(entry.Instruction))
             {

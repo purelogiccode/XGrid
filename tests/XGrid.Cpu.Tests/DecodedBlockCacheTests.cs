@@ -30,7 +30,7 @@ public sealed class DecodedBlockCacheTests
     }
 
     [Fact]
-    public void Formation_UsesOnlyExistingSinglePageWindows_AndEndsAtBranch()
+    public void Formation_UsesOnlyExistingWindows_AndEndsAtBranch()
     {
         var blocks = new DecodedBlockCache();
         var decodes = new DecodeCache { Blocks = blocks };
@@ -46,9 +46,26 @@ public sealed class DecodedBlockCacheTests
         Assert.False(blocks.TryNext(decodes, 0x1003, 32, 32, out _));
 
         Fill(decodes, 0x1FF1, 0x90); // Last full 15-byte window.
-        Fill(decodes, 0x1FF2, 0x90); // Defensively rejected even if inserted directly.
+        Fill(decodes, 0x1FF2, 0x90); // D3b: page-edge heads form (cross-page windows).
         Assert.True(blocks.TryNext(decodes, 0x1FF1, 32, 32, out _));
-        Assert.False(blocks.TryNext(decodes, 0x1FF2, 32, 32, out _));
+        Assert.True(blocks.TryNext(decodes, 0x1FF2, 32, 32, out _));
+    }
+
+    [Fact]
+    public void Formation_SpansPageBoundary_WhenEntriesExist()
+    {
+        var blocks = new DecodedBlockCache();
+        var decodes = new DecodeCache { Blocks = blocks };
+        Fill(decodes, 0x1FFE, 0x90);
+        Fill(decodes, 0x1FFF, 0x90);
+        Fill(decodes, 0x2000, 0xC3);
+        Assert.True(blocks.TryNext(decodes, 0x1FFE, 32, 32, out DecodeCacheEntry first));
+        Assert.Equal(Mnemonic.Nop, first.Instruction.Mnemonic);
+        Assert.True(blocks.TryNext(decodes, 0x1FFF, 32, 32, out _));
+        Assert.True(blocks.TryNext(decodes, 0x2000, 32, 32, out DecodeCacheEntry ret));
+        Assert.Equal(Mnemonic.Ret, ret.Instruction.Mnemonic);
+        Assert.Equal(1UL, blocks.Dispatches);
+        Assert.Equal(1UL, blocks.Completed);
     }
 
     [Fact]

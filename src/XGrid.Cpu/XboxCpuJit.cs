@@ -336,17 +336,11 @@ public sealed partial class XboxCpu
                 switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
                 {
                     case JitBlockCache.Verdict.Pending:
-                        if (JitTally)
-                        {
-                            _jitYieldReasons[0]++;
-                        }
+                        _jitYieldReasons[0]++;
 
                         return total;
                     case JitBlockCache.Verdict.Rejected:
-                        if (JitTally)
-                        {
-                            _jitYieldReasons[1]++;
-                        }
+                        _jitYieldReasons[1]++;
 
                         return total;
                     case JitBlockCache.Verdict.Stale:
@@ -364,10 +358,7 @@ public sealed partial class XboxCpu
                         block = FormJitBlock(cache, jit, fetchLinear, generation);
                         if (block is null)
                         {
-                            if (JitTally)
-                            {
-                                _jitYieldReasons[2]++;
-                            }
+                            _jitYieldReasons[2]++;
 
                             return total;
                         }
@@ -377,10 +368,7 @@ public sealed partial class XboxCpu
                         block = FormJitBlock(cache, jit, fetchLinear, generation);
                         if (block is null)
                         {
-                            if (JitTally)
-                            {
-                                _jitYieldReasons[2]++;
-                            }
+                            _jitYieldReasons[2]++;
 
                             return total;
                         }
@@ -394,10 +382,7 @@ public sealed partial class XboxCpu
                 || block.OperandSize != operandSize
                 || block.AddressSize != addressSize)
             {
-                if (JitTally)
-                {
-                    _jitYieldReasons[3]++;
-                }
+                _jitYieldReasons[3]++;
 
                 return total;
             }
@@ -505,10 +490,7 @@ public sealed partial class XboxCpu
             total += served;
             if (served == 0)
             {
-                if (JitTally)
-                {
-                    _jitYieldReasons[4]++;
-                }
+                _jitYieldReasons[4]++;
 
                 return total;
             }
@@ -533,15 +515,27 @@ public sealed partial class XboxCpu
         uint linear = block.HeadLinear;
         foreach (DecodeCacheEntry entry in block.Entries)
         {
-            uint physical = Mmu.Translate(linear, isWrite: false, isInstruction: true, out bool faulted, out _);
-            if (faulted)
+            // Page-aware 15-byte window (D3b): a member in the last 14 bytes
+            // of a page compares against bytes from both pages, exactly the
+            // window it was decoded from. One translate per page touched.
+            uint at = linear;
+            int offset = 0;
+            while (offset < window.Length)
             {
-                return false;
-            }
+                uint physical = Mmu.Translate(at, isWrite: false, isInstruction: true, out bool faulted, out _);
+                if (faulted)
+                {
+                    return false;
+                }
 
-            for (int i = 0; i < window.Length; i++)
-            {
-                window[i] = Memory.Read8(physical + (uint)i);
+                int chunk = Math.Min(window.Length - offset, (int)(0x1000u - (at & 0xFFFu)));
+                for (int i = 0; i < chunk; i++)
+                {
+                    window[offset + i] = Memory.Read8(physical + (uint)i);
+                }
+
+                at += (uint)chunk;
+                offset += chunk;
             }
 
             if (!entry.SourceMatches(window))
@@ -626,15 +620,20 @@ public sealed partial class XboxCpu
         out DecodeCacheEntry entry)
     {
         entry = default;
-        if ((fetchLinear & 0xFFFu) + (uint)Decoder.MaxInstructionLength > 0x1000u)
-        {
-            return false;
-        }
-
+        bool crossesPage = (fetchLinear & 0xFFFu) + (uint)Decoder.MaxInstructionLength > 0x1000u;
         Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
         try
         {
-            FetchFast(fetchLinear, window);
+            if (crossesPage)
+            {
+                // D3b: a head in the last 14 bytes of a page decodes through
+                // the two-page fetch; the entry carries the second base.
+                FetchFastCrossPage(fetchLinear, window, out _);
+            }
+            else
+            {
+                FetchFast(fetchLinear, window);
+            }
         }
         catch (PageFaultSignal)
         {
@@ -645,19 +644,20 @@ public sealed partial class XboxCpu
             return false;
         }
 
-        DecodeFresh(cache, window, fetchLinear, crossesPage: false);
+        DecodeFresh(cache, window, fetchLinear, crossesPage);
         return cache.TryGet(fetchLinear, operandSize, addressSize, out entry);
     }
 
     /// <summary>
     /// Forms the block headed at <paramref name="headLinear"/>: members are
-    /// consecutive decode-cache entries on one 4 KB fetch page, each planned
+    /// consecutive decode-cache entries (cross-page windows supported since
+    /// D3b, so heads in the last 14 bytes of a page form too), each planned
     /// to a native shape; the block ends at a terminator, at a member with no
-    /// native shape, at the page edge, or at the member cap. A formation that
-    /// ran out of cached entries is transient (no verdict is recorded — the
-    /// member path fills the cache and the next attempt sees further); a head
-    /// whose first member has no native shape is a cached permanent
-    /// rejection until the generation moves.
+    /// native shape, or at the member cap. A formation that ran out of cached
+    /// entries is transient (no verdict is recorded - the member path fills
+    /// the cache and the next attempt sees further); a head whose first
+    /// member has no native shape is a cached permanent rejection until the
+    /// generation moves.
     /// </summary>
     private JitBlock? FormJitBlock(DecodeCache cache, JitBlockCache jit, uint headLinear, ulong generation)
     {
@@ -671,12 +671,6 @@ public sealed partial class XboxCpu
         bool covered = false;
         while (count < JitEmitter.MaxMembers)
         {
-            if ((linear & 0xFFFu) + (uint)Decoder.MaxInstructionLength > 0x1000u)
-            {
-                covered = true;
-                break;
-            }
-
             if (!cache.TryGet(linear, operandSize, addressSize, out DecodeCacheEntry entry)
                 && !TryFillDecodeEntry(cache, linear, operandSize, addressSize, out entry))
             {

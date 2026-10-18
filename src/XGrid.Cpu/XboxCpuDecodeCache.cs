@@ -433,10 +433,10 @@ public sealed partial class XboxCpu
             DecodedInstruction instruction = entry.Instruction;
             SpecHandler? spec = blocks.CurrentHandler;
 
-            if (JitTally)
-            {
-                NoteNonJitMnemonic(instruction.Mnemonic);
-            }
+            // Diagnostic tally (cheap: one array bump per non-JIT member); it
+            // feeds the env-gated "Jit tail" report so the tail is visible in
+            // ordinary runs, not only under --jit-tally (which is inert).
+            NoteNonJitMnemonic(instruction.Mnemonic);
 
             _hotspot?.NoteFetch(false);
 
@@ -476,7 +476,7 @@ public sealed partial class XboxCpu
 
                     try
                     {
-                        instruction = DecodeFresh(cache, window, fetchLinear, crossesPage: false);
+                        instruction = DecodeFresh(cache, window, fetchLinear, crossesPage: entry.CrossSplit != 0);
                     }
                     catch (PageFaultSignal fault)
                     {
