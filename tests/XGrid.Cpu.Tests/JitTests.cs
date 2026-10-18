@@ -624,6 +624,32 @@ public sealed class JitTests
         Assert.True(jit.JitServedTotal > 0);
     }
 
+    [Fact]
+    public void Ret16_NotPlanned_MatchesInterpreter()
+    {
+        // 66 C3 = ret with a 16-bit operand size: pops a word (EIP from the
+        // low 16 bits) and leaves ESP+2. The planner must reject it (32-bit
+        // ret emitted otherwise) and the member path must stay exact.
+        byte[] code =
+        [
+            0xBC, 0x00, 0x80, 0x00, 0x00, // mov esp,0x8000
+            0x68, 0x10, 0x10, 0x00, 0x00, // push 0x1010
+            0x66, 0xC3,                   // 16-bit ret -> EIP=0x1010
+            0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, // padding
+            0xF4,                         // hlt at 0x1010
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(100);
+        jit.Execute(100);
+
+        AssertSameState(plain, jit);
+    }
+
     private static XboxCpu CreateJit(byte[] code)
     {
         XboxCpu cpu = CpuHarness.Create(code);
