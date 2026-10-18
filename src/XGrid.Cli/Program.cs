@@ -102,6 +102,7 @@ internal static class Program
         bool emitInline = false;
         bool emitDiag = false;
         bool shapeTally = false;
+        bool jit = false;
         bool bench = false;
         string? benchName = null;
         string gpuBackend = "sw";
@@ -273,6 +274,9 @@ internal static class Program
                 case "--shape-tally":
                     shapeTally = true;
                     break;
+                case "--jit":
+                    jit = true;
+                    break;
                 case "--bench":
                     bench = true;
                     break;
@@ -423,7 +427,7 @@ internal static class Program
                     "Fetch fast path=on (single-translate fetch; absolute-step recipes: use flag-off runs)");
             }
 
-            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec || emit || shapeTally)
+            if (decodeCache || decodeVerify || blockExec || blockVerify || specExec || emit || shapeTally || jit)
             {
                 machine.Cpu.DecodeCacheEnabled = true;
                 Console.WriteLine(
@@ -488,6 +492,14 @@ internal static class Program
                     Console.WriteLine(
                         "Emit=on (DynamicMethod block tails; implies spec-exec; per-instruction boundaries retained)");
                 }
+            }
+
+            if (jit)
+            {
+                machine.Cpu.JitEnabled = true;
+                Console.WriteLine(
+                    "Jit=on (fast-mode block engine; whole-block native serving; block-granular IRQ poll; " +
+                    "absolute-step recipes: use flag-off runs)");
             }
 
             if (loadStatePath is not null)
@@ -1680,6 +1692,17 @@ internal static class Program
             }
         }
 
+        // J1: printed only while the fast-mode engine is enabled so every
+        // other mode's logs stay byte-identical to their baselines.
+        if (machine.Cpu.JitEnabled)
+        {
+            Console.WriteLine(
+                $"Jit stats blocks={machine.Cpu.JitBlocksBuilt} served={machine.Cpu.JitServedTotal} " +
+                $"invocations={machine.Cpu.JitInvocations} faults={machine.Cpu.JitFaults} " +
+                $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +
+                $"cachedHeads={machine.Cpu.JitHeadCacheCount}");
+        }
+
         if (machine.Cpu.DecodeCacheEnabled)
         {
             ulong decodeCacheHits = machine.Cpu.DecodeCacheHits;
@@ -2431,7 +2454,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
@@ -2445,6 +2468,8 @@ internal static class Program
             "                   --emit-inline implies --emit and serves E3-1 lean bodies for covered memory shapes.");
         Console.WriteLine(
             "                   --emit-diag implies --emit-inline and prints baked fast-path counters (diagnostic).");
+        Console.WriteLine(
+            "                   --jit enables the fast-mode block engine (whole-block native serving; implies spec-exec; block-granular IRQ poll).");
         Console.WriteLine(
             "                   --bench prints BENCH steps/wall/msps + RAM/CPU SHA-256 after the run (host-only diagnostic).");
         Console.WriteLine(
