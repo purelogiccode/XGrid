@@ -9606,3 +9606,19 @@ exact, normalized stdout byte-identical to r9. Median-of-3 menu raster
 Closing numbers: menu **70.8 s vs 143.7 s baseline (2.03x)**, rasterizer-only
 menu 119.2 -> 24.6 s (4.9x); triangle **36.6 s (1.96x)**, raster 54.7 ->
 9.9 s (5.5x).
+
+## 188. Sampler counter batching measured neutral, reverted (2026-10-18, direct)
+
+Fresh ablation on the lean-path binary: skipping the texel-resolve loop cuts
+the menu raster 24.55 -> 15.96 s (the sampler is ~8.6 s, 35% of the raster -
+still the largest single block). A per-fill accumulation of the sampler
+diagnostics (per-slot format attempts/misses, per-state samples/rgbZero/
+misses, min/max seeding, first-address capture - flushed at fill end with
+pre-fill snapshotted conditions, exact semantics) measured NEUTRAL: menu
+raster 24.50 s vs the 24.55 s median (SHAs exact, counters exact). The
+per-sample counter updates were already ~1-2 ns each and the accumulation's
+per-call branch offsets them. Reverted. This is the fifth neutral/reverted
+experiment of the campaign (write scopes/page memo, byte->float tables, TLB
+resize, counter batching) - the remaining sampler cost is the irreducible
+per-sample work (floor/wrap/address/decode/read) and the remaining raster is
+at its practical floor for this architecture.
