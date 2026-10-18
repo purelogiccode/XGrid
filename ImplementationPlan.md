@@ -3130,6 +3130,15 @@ Gate rules unchanged: accurate mode is gate currency; headless `--gpu sw`
 default; never mix; no async; quiet-host medians for wall claims (pause and
 ask the operator when Fortnite is running); no real Xbox games; non-GPL.
 
+**Status (2026-10-19).** B1 + B2a LANDED (§196): the backend was an
+observation mirror; `--gpu-replace` adds replacement mode (software
+rasterizer skips honored draws). Quiet-host 1B fast: **menu 64.02 → 48.29 s
+(1.33× sw, 1.52× spec-ctl), triangle 27.91 → 17.82 s (1.57× / 2.08×)**,
+CPU SHAs exact, frames within the maxDelta≤1 policy, BackendUnsupported=0,
+RAM divergence confined to renderer-owned surface memory. B2b (per-draw
+overhead: drawMs 7.07 s menu) and the RAM writeback for framebuffer-reading
+content are the next slices.
+
 **Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
 uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
 Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;

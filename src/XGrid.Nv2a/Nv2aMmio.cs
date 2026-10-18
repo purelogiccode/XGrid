@@ -5805,11 +5805,28 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        Backend?.Draw(BuildLegacyDrawInfo(
-            ax, ay, az, aw, ar, ag, ab, aa, au, av,
-            bx, by, bz, bw, br, bg, bb, ba, bu, bv,
-            cx, cy, cz, cw, cr, cg, cb, ca, cu, cv,
-            clipX, clipY, clipW, clipH, bytes, zetaBytes));
+        IPgraphBackend? backend = Backend;
+        if (backend is not null)
+        {
+            PgraphDrawInfo backendInfo = BuildLegacyDrawInfo(
+                ax, ay, az, aw, ar, ag, ab, aa, au, av,
+                bx, by, bz, bw, br, bg, bb, ba, bu, bv,
+                cx, cy, cz, cw, cr, cg, cb, ca, cu, cv,
+                clipX, clipY, clipW, clipH, bytes, zetaBytes);
+            if (backend.ReplaceMode)
+            {
+                if (backend.TryDraw(backendInfo))
+                {
+                    // Replacement mode: the backend owns the pixels for this
+                    // draw; the software rasterizer is skipped entirely.
+                    return;
+                }
+            }
+            else
+            {
+                backend.Draw(backendInfo);
+            }
+        }
 
         float invArea = 1f / area;
         float invAw = aw != 0f ? 1f / aw : 0f;
@@ -6547,7 +6564,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        Backend?.Draw(BuildDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true));
+        IPgraphBackend? backend = Backend;
+        if (backend is not null)
+        {
+            PgraphDrawInfo backendInfo = BuildDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true);
+            if (backend.ReplaceMode)
+            {
+                if (backend.TryDraw(backendInfo))
+                {
+                    // Replacement mode: the backend owns the pixels for this
+                    // draw; the software rasterizer is skipped entirely.
+                    return;
+                }
+            }
+            else
+            {
+                backend.Draw(backendInfo);
+            }
+        }
 
         float invArea = 1f / area;
         float invAw = a.W != 0f ? 1f / a.W : 0f;
