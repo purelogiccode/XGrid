@@ -10262,3 +10262,15 @@ M3 (xemu-class): triangle ≤1.5 s, menu ≤4 s — within ~1.3–3× of the rea
 band. The menu has no xemu oracle (xemu deadlocks at the dashboard animation
 wait, §32); its target is the real-time band, the triangle/ktest keep measured
 xemu comparisons.
+
+**Amendment (§199b, same evening): the "bookkeeping" line item was a
+misattribution.** `XboxMachine.Run` now times `Cpu.Execute` vs device
+`Advance`: on the 1B triangle **executeMs 18,475 / advanceMs 51** (wall
+18,532 on a loaded host) — the device-advance path and the CLI loop are
+~100 ms total, i.e. **the whole wall is the CPU engine**. The earlier "menu
+bookkeeping 4.8 s / triangle ~2.2 s" was a derived residual that actually
+belonged to the JIT outer-loop overhead (chain dispatch, memo, budget
+checks) inside `Cpu.Execute`. Plan consequence: drop the separate
+"bookkeeping profiling/optimization" item; the outer-loop overhead is part
+of C2 (traces remove per-block dispatch) and is measured by
+`Host timing executeMs/advanceMs` from now on.
