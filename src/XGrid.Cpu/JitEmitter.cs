@@ -1619,7 +1619,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Shr_Un);
         il.Emit(OpCodes.Stloc, vpn);
         il.Emit(OpCodes.Ldloc, vpn);
-        il.Emit(OpCodes.Ldc_I4_3);
+        il.Emit(OpCodes.Ldc_I4, (int)XboxCpu.DataXlatMask);
         il.Emit(OpCodes.And);
         il.Emit(OpCodes.Stloc, slot);
         il.Emit(OpCodes.Ldarg_0);

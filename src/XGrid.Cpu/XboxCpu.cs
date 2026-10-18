@@ -25,10 +25,10 @@ public sealed partial class XboxCpu
     private readonly AddressSpace? _ramSpace;
     private readonly uint _ramSize;
 
-    // Memory-path slice 3 (§162): 4-entry direct-mapped data-translate
-    // cache (linear VPN tag → physical 4 KB-slice base + PTE writable
-    // verdict). A hit skips the two Translate call layers + SoftTLB lookup;
-    // a miss populates one slot via TranslateDataFast (same core, same side
+    // Memory-path slice 3 (§162) + D2: direct-mapped data-translate cache
+    // (linear VPN tag → physical 4 KB-slice base + PTE writable verdict).
+    // A hit skips the two Translate call layers + SoftTLB lookup; a miss
+    // populates one slot via TranslateDataFast (same core, same side
     // effects, no observer notes — hence the FastWideAllowed gate, shared
     // with slices 1–2: with any profiler attached the legacy path keeps
     // idle/TLB tallies exact). Invalid entries carry tag uint.MaxValue (a
@@ -39,10 +39,25 @@ public sealed partial class XboxCpu
     // guest PTE rewrites must take effect; the MMU's own A/D-bit writes
     // never remap, and device/DMA page-table writes are outside the
     // SoftTLB's contract too). Fetch (isInstruction) never consults it.
-    private readonly uint[] _dataXlatTag = [uint.MaxValue, uint.MaxValue, uint.MaxValue, uint.MaxValue];
-    private readonly uint[] _dataXlatPhys = new uint[4];
-    private readonly bool[] _dataXlatWritable = new bool[4];
+    // D2: 256 slots (was 4). The 1B goldens' dominant slow-member class was
+    // tag misses — a 4-slot direct-mapped cache thrashes on any working set
+    // past four pages. The mask is baked into both emitters, so slots must
+    // stay a power of two and match <see cref="DataXlatMask"/>.
+    internal const int DataXlatSlots = 256;
+
+    internal const uint DataXlatMask = DataXlatSlots - 1;
+
+    private readonly uint[] _dataXlatTag = CreateDataXlatTags();
+    private readonly uint[] _dataXlatPhys = new uint[DataXlatSlots];
+    private readonly bool[] _dataXlatWritable = new bool[DataXlatSlots];
     private bool _dataXlatArmed;
+
+    private static uint[] CreateDataXlatTags()
+    {
+        var tags = new uint[DataXlatSlots];
+        Array.Fill(tags, uint.MaxValue);
+        return tags;
+    }
 
     /// <summary>Creates a CPU over the given memory and I/O buses.</summary>
     public XboxCpu(IMemoryBus memory, IIoBus? ioBus = null)
@@ -1342,7 +1357,7 @@ public sealed partial class XboxCpu
         if (!isInstruction && FastWideAllowed)
         {
             uint vpn = linearAddress >> 12;
-            int slot = (int)(vpn & 3u);
+            int slot = (int)(vpn & DataXlatMask);
             if (_dataXlatTag[slot] == vpn)
             {
                 if (isWrite && !_dataXlatWritable[slot]
@@ -1388,10 +1403,7 @@ public sealed partial class XboxCpu
             return;
         }
 
-        _dataXlatTag[0] = uint.MaxValue;
-        _dataXlatTag[1] = uint.MaxValue;
-        _dataXlatTag[2] = uint.MaxValue;
-        _dataXlatTag[3] = uint.MaxValue;
+        Array.Fill(_dataXlatTag, uint.MaxValue);
         _dataXlatArmed = false;
     }
 
