@@ -305,7 +305,12 @@ public sealed class JitTests
         jit.Execute(1000);
 
         AssertSameState(plain, jit);
-        Assert.True(jit.JitServedTotal > 0);
+        Assert.True(
+            jit.JitServedTotal > 0,
+            $"served={jit.JitServedTotal} rejected={jit.JitRejectedHeads} transient={jit.JitTransientBails} " +
+            $"pendingVisits={jit.JitPendingVisits} heads={jit.JitHeadCacheCount} built={jit.JitBlocksBuilt} " +
+            $"gen={jit.JitBlockGeneration} reval={jit.JitRevalidations} " +
+            $"yield=[{string.Join(',', jit.JitYieldReasons)}]");
     }
 
     [Fact]
@@ -695,11 +700,263 @@ public sealed class JitTests
         Assert.True(jit.JitServedTotal > 0);
     }
 
+    [Fact]
+    public void FlushMidRun_RevalidatesAndStaysExact()
+    {
+        // A decode-cache flush (what every guest page-table store triggers)
+        // must not kill built blocks whose code is unchanged: the stale block
+        // is revalidated by byte comparison and kept.
+        byte[] code =
+        [
+            0xB9, 0x20, 0x00, 0x00, 0x00, // mov ecx,0x20
+            0x01, 0xD8,                   // add eax,ebx
+            0x2D, 0x02, 0x00, 0x00, 0x00, // sub eax,2
+            0x49,                         // dec ecx
+            0x75, 0xF6,                   // jne loop (0x1005 - 0x100E = -9)
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(60);
+        jit.Execute(60);
+        AssertSameState(plain, jit);
+
+        jit.InvalidateDecodeCache();
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitRevalidations > 0, $"revalidations={jit.JitRevalidations}");
+        Assert.True(jit.Context.Halted);
+    }
+
+    [Fact]
+    public void SelfModifyingCode_MatchesInterpreter()
+    {
+        // The loop body patches its own NOP into an `inc ecx`; both machines
+        // must observe the new bytes (the store drops the code page and the
+        // JIT rebuilds/keeps blocks accordingly).
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3
+            0x40,                         // inc eax          (loop head 0x1005)
+            0x90,                         // nop              (patched at 0x1006)
+            0xC6, 0x05, 0x06, 0x10, 0x00, 0x00, 0x42, // mov byte [0x1006],0x42 (inc edx)
+            0x49,                         // dec ecx
+            0x75, 0xF4,                   // jne loop (0x1011 - 0x100F = -12)
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(400);
+        jit.Execute(400);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+    }
+
+    [Fact]
+    public void IndirectCallReg_MatchesInterpreter()
+    {
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00, // mov ecx,4         0x1000
+            0xB8, 0x1A, 0x10, 0x00, 0x00, // mov eax,0x101A    0x1005
+            0xFF, 0xD0,                   // call eax          0x100A
+            0x49,                         // dec ecx           0x100C
+            0x75, 0xF6,                   // jne 0x1005        0x100D
+            0xF4,                         // hlt               0x100F
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // pad to 0x101A
+            0x40,                         // inc eax           0x101A
+            0xC3,                         // ret               0x101B
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void IndirectCallMemAndJmpMem_MatchesInterpreter()
+    {
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00, // mov ecx,4            0x1000
+            0xC7, 0x05, 0x30, 0x10, 0x00, 0x00, 0x1C, 0x10, 0x00, 0x00, // mov [0x1030],0x101C  0x1005
+            0xFF, 0x15, 0x30, 0x10, 0x00, 0x00, // call [0x1030]       0x100F
+            0x49,                         // dec ecx              0x1015
+            0x75, 0xED,                   // jne 0x1005           0x1016
+            0xF4,                         // hlt                  0x1018
+            0x00, 0x00, 0x00,             // pad                  0x1019
+            0x40,                         // inc eax              0x101C
+            0xC3,                         // ret                  0x101D
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+
+        // Same shape, but the loop exits through an indirect jump.
+        byte[] jmpCode =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3            0x1000
+            0xC7, 0x05, 0x30, 0x10, 0x00, 0x00, 0x15, 0x10, 0x00, 0x00, // mov [0x1030],0x1015  0x1005
+            0xFF, 0x25, 0x30, 0x10, 0x00, 0x00, // jmp [0x1030]        0x100F
+            0x40,                         // inc eax              0x1015
+            0x49,                         // dec ecx              0x1016
+            0x75, 0xEC,                   // jne 0x1005           0x1017
+            0xF4,                         // hlt                  0x1019
+        ];
+
+        XboxCpu plainJmp = CpuHarness.Create(jmpCode);
+        XboxCpu jitJmp = CreateJit(jmpCode);
+        Preset(plainJmp);
+        Preset(jitJmp);
+
+        plainJmp.Execute(600);
+        jitJmp.Execute(600);
+
+        AssertSameState(plainJmp, jitJmp);
+        Assert.True(jitJmp.Context.Halted);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void IrqFast_PopfWindowPoll_NoStarvation(int fireAt)
+    {
+        // POPF can enable interrupts mid-block (the stack frame sets IF);
+        // like STI it must be followed by a poll or a wakeup between POPF
+        // and the next CLI would starve.
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3
+            0x68, 0x02, 0x02, 0x00, 0x00, // push 0x202        (IF set)
+            0x9D,                         // popf
+            0x90,                         // nop
+            0xFA,                         // cli
+            0x49,                         // dec ecx
+            0x75, 0xF5,                   // jne 0x1005
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        foreach (XboxCpu cpu in new[] { plain, jit })
+        {
+            cpu.Ram().Write8(0x3000, 0xCF); // iret
+            InstallIdt(cpu, 0x21, 0x3000);
+            cpu.Context.Eflags &= ~FlagBits.If;
+            cpu.InterruptSource = new CountedInterruptSource(0x21, fireAt);
+        }
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        Assert.True(plain.Context.Halted);
+        Assert.True(jit.Context.Halted);
+        Assert.Equal(1, plain.InterruptCount);
+        Assert.Equal(1, jit.InterruptCount);
+    }
+
+    [Fact]
+    public void Strings_MovsStos_MatchesInterpreter()
+    {
+        // Non-rep Movs/Stos with both directions (std/cld toggling DF).
+        byte[] code =
+        [
+            0xBE, 0x00, 0x20, 0x00, 0x00, // mov esi,0x2000
+            0xBF, 0x00, 0x21, 0x00, 0x00, // mov edi,0x2100
+            0xB8, 0x41, 0x41, 0x41, 0x41, // mov eax,0x41414141
+            0xB9, 0x04, 0x00, 0x00, 0x00, // mov ecx,4
+            0xA4,                         // movsb            (loop head 0x1014)
+            0xAB,                         // stosd
+            0xAB,                         // stosd
+            0xFD,                         // std
+            0xA4,                         // movsb
+            0xFC,                         // cld
+            0x49,                         // dec ecx
+            0x75, 0xF7,                   // jne 0x1014
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+        for (uint i = 0; i < 0x40; i++)
+        {
+            plain.Ram().Write8(0x2000 + i, (byte)(i + 1));
+            jit.Ram().Write8(0x2000 + i, (byte)(i + 1));
+        }
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void Invlpg_MatchesInterpreter()
+    {
+        // INVLPG mid-loop: the flush drives the same caches on both machines
+        // and the JIT block survives (its bytes are unchanged).
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3
+            0x0F, 0x01, 0x3D, 0x00, 0x20, 0x00, 0x00, // invlpg [0x2000]  (loop head 0x1005)
+            0x40,                         // inc eax
+            0x49,                         // dec ecx
+            0x75, 0xF5,                   // jne 0x1005
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(600);
+        jit.Execute(600);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
     private static XboxCpu CreateJit(byte[] code)
     {
         XboxCpu cpu = CpuHarness.Create(code);
         cpu.DecodeCacheEnabled = true;
         cpu.SpecExecutionEnabled = true;
+        cpu.JitSpecSlice = int.MaxValue;
         cpu.JitBuildThreshold = 1;
         cpu.JitEnabled = true;
         return cpu;

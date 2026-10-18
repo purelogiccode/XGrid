@@ -269,6 +269,7 @@ public sealed partial class XboxCpu
                 long nonJitStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 int nonJitRan = RunNonJit(maxInstructions - executed);
                 AddNonJitTicks(System.Diagnostics.Stopwatch.GetTimestamp() - nonJitStart);
+                NoteNonJitRun(nonJitRan);
                 executed += nonJitRan;
                 continue;
             }
@@ -295,14 +296,16 @@ public sealed partial class XboxCpu
 
     /// <summary>
     /// The non-JIT fallback inside <see cref="Execute"/> while the fast-mode
-    /// engine is enabled: the spec-block runner, else one stepped
-    /// instruction. Always makes progress.
+    /// engine is enabled: the spec-block runner (sliced so the JIT gets a
+    /// chance at the head every <see cref="JitSpecSlice"/> instructions),
+    /// else one stepped instruction. Always makes progress.
     /// </summary>
     private int RunNonJit(int budget)
     {
         if (_blocks is { SpecEnabled: true })
         {
-            int specRan = RunSpecBlock(budget);
+            int slice = JitSpecSlice > 0 && JitSpecSlice < budget ? JitSpecSlice : budget;
+            int specRan = RunSpecBlock(slice);
             if (specRan > 0)
             {
                 return specRan;

@@ -104,7 +104,9 @@ internal static class Program
         bool shapeTally = false;
         bool jit = false;
         bool jitExact = false;
+        bool jitTally = false;
         int jitThreshold = 8;
+        int jitSlice = 256;
         bool bench = false;
         string? benchName = null;
         string gpuBackend = "sw";
@@ -281,6 +283,12 @@ internal static class Program
                     break;
                 case "--jit-exact":
                     jitExact = true;
+                    break;
+                case "--jit-tally":
+                    jitTally = true;
+                    break;
+                case "--jit-slice":
+                    jitSlice = int.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--jit-threshold":
                     jitThreshold = int.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
@@ -506,11 +514,14 @@ internal static class Program
             {
                 machine.Cpu.JitBuildThreshold = jitThreshold;
                 machine.Cpu.JitExact = jitExact;
+                machine.Cpu.JitTally = jitTally;
+                machine.Cpu.JitSpecSlice = jitSlice;
                 machine.Cpu.JitEnabled = true;
                 Console.WriteLine(
                     $"Jit=on (fast-mode block engine; whole-block native serving; " +
-                    $"poll={(jitExact ? "per-member(exact)" : "per-block")}; threshold={jitThreshold}; " +
-                    "absolute-step recipes: use flag-off runs)");
+                    $"poll={(jitExact ? "per-member(exact)" : "per-block")}; threshold={jitThreshold}; slice={jitSlice}" +
+                    (jitTally ? "; tally=on" : string.Empty) +
+                    "; absolute-step recipes: use flag-off runs)");
             }
 
             if (loadStatePath is not null)
@@ -1717,7 +1728,24 @@ internal static class Program
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
                 $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +
                 $"pendingVisits={machine.Cpu.JitPendingVisits} " +
-                $"cachedHeads={machine.Cpu.JitHeadCacheCount}");
+                $"cachedHeads={machine.Cpu.JitHeadCacheCount} pendingHeads={machine.Cpu.JitPendingHeadCount} " +
+                $"blockGen={machine.Cpu.JitBlockGeneration} pageDrops={machine.Cpu.DecodeCachePageDrops} " +
+                $"fullFlushes={machine.Cpu.DecodeCacheFullFlushes} revalidations={machine.Cpu.JitRevalidations} " +
+                $"flushSrc(pt={machine.Cpu.FlushFromPtStore} mmu={machine.Cpu.FlushFromMmu} " +
+                $"invlpg={machine.Cpu.FlushFromFlushPage} host={machine.Cpu.FlushFromHost})");
+
+            if (machine.Cpu.JitTally)
+            {
+                long[] yield = machine.Cpu.JitYieldReasons;
+                Console.WriteLine(
+                    $"Jit yield pending={yield[0]} rejected={yield[1]} formBail={yield[2]} " +
+                    $"mismatch={yield[3]} noProgress={yield[4]}");
+                Console.WriteLine(
+                    $"Jit tail calls={machine.Cpu.NonJitCalls} instructions={machine.Cpu.NonJitInstructions} " +
+                    $"runs={string.Join(',', machine.Cpu.NonJitRunBuckets)}");
+                Console.WriteLine("Jit rejected " + FormatJitMnemonicTop(machine.Cpu.JitRejectedMnemonics, 12));
+                Console.WriteLine("Jit tail " + FormatJitMnemonicTop(machine.Cpu.NonJitMnemonics, 16));
+            }
         }
 
         if (machine.Cpu.DecodeCacheEnabled)
@@ -2461,6 +2489,35 @@ internal static class Program
         {
             _memory.Ram.ClearPresentDirty();
         }
+    }
+
+    private static string FormatJitMnemonicTop(long[] counts, int take)
+    {
+        var top = new List<(long Count, int Index)>();
+        for (int i = 0; i < counts.Length; i++)
+        {
+            if (counts[i] > 0)
+            {
+                top.Add((counts[i], i));
+            }
+        }
+
+        top.Sort((a, b) => b.Count.CompareTo(a.Count));
+        var text = new System.Text.StringBuilder("top=");
+        for (int i = 0; i < top.Count && i < take; i++)
+        {
+            if (i > 0)
+            {
+                text.Append(',');
+            }
+
+            text.Append(Enum.GetName(typeof(XGrid.Cpu.Mnemonic), top[i].Index)
+                ?? top[i].Index.ToString(CultureInfo.InvariantCulture));
+            text.Append(':');
+            text.Append(top[i].Count.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return text.ToString();
     }
 
     private static string FormatJitBuckets((long Ticks, long Count)[] buckets)
