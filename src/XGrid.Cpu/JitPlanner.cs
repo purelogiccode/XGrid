@@ -610,7 +610,7 @@ internal static class JitPlanner
 
     private static JitMemberPlan PlanRet(in DecodedInstruction instruction)
     {
-        if (instruction.AddressSize != 32)
+        if (instruction.AddressSize != 32 || instruction.OperandSize != 32)
         {
             return default;
         }
