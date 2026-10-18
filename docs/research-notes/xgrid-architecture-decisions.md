@@ -9339,10 +9339,10 @@ the recognizer is per-draw and exact by construction + differential.
 
 Also landed: `--gpu-time` diagnostics (raster seconds per fill path + the
 combiner config histogram) with tests; decode-flush audit filed
-(`D:\spec-soak\analysis\decode-flush-audit.md`: steady-state page-drop
+(`docs/research-notes/decode-flush-audit.md`: steady-state page-drop
 churn ~2-5% of menu wall via whole-block-table wipes; per-page block
 versioning is the narrowing candidate) and rasterizer inventory filed
-(`D:\spec-soak\analysis\rasterizer-inventory.md`, O1-O10).
+(`docs/research-notes/rasterizer-inventory.md`, O1-O10).
 
 Next: the two multi-stage configs (62.4M menu + 62.4M triangle fragments) are
 the largest remaining rasterizer cost; then sampler (~23 s menu) and
@@ -9422,3 +9422,44 @@ to r4 on both titles, SHAs exact):
 Cumulative session rasterizer progress (single runs, host varying):
 menu raster 119.2 -> 30.2 s (3.9x), triangle 54.7 -> 9.9 s (5.5x); menu leg
 wall ~165 -> 77.5 s, triangle ~83 -> 37.3 s. Suite 1427 tests.
+
+## 183. Rasterizer session close: final medians, neutral experiments reverted (2026-10-17, direct)
+
+Final median-of-3 (interleaved rounds, `scripts/emit-median.ps1`,
+`D:\spec-soak\final-median`; every leg SHA-exact):
+- menu spec: 76.4 / 77.6 / 83.1 s -> **median 77.6 s** (quiet-host baseline
+  median 143.7 s -> **1.85x**).
+- triangle spec: 35.2 / 35.5 / 37.8 s -> **median 35.5 s** (baseline 71.6 s
+  -> **2.02x**).
+
+Rasterizer-only progress (`--gpu-time`, single runs): menu 119.2 -> 30.2 s
+(3.9x), triangle 54.7 -> 9.9 s (5.5x). Session slices: F1 modulate fast path
+(§180), loop skips + per-fill constants (§181), planned combiner (§181),
+lighting fast paths + sampler plans (§182).
+
+Two further experiments measured NEUTRAL and were REVERTED (negative results
+recorded here so they are not re-attempted without new evidence):
+1. GPU write scopes + page-drop memo (`IGpuMemory.Begin/EndGpuWriteScope`
+   default methods, `PhysicalGpuMemory` scoped `WritePhysical`, per-triangle
+   scope wraps at all three fill/clear call sites): menu raster 30.26 vs
+   30.17 s, triangle 10.09 vs 9.87 s - the per-write suppression pair and the
+   decode-cache page-drop check are already ~1-2 ns each; the scope wraps
+   cost as much as they save. Reverted (r6).
+2. Byte->float decode tables (`/ 255f`, `/ 31f`, `/ 63f`, `/ 15f` replaced by
+   precomputed tables with identical bit patterns) in `DecodeTextureTexel`,
+   `TryReadPixelFloat`, `TryDecodeSwizzledTexel`: menu 30.50 vs 30.17 s,
+   triangle 9.90 vs 9.87 s - the four independent divss per texel pipeline
+   better than expected and the table lookups' bounds checks offset the
+   difference. Reverted (r7).
+
+Interpretation: after the six landed slices the remaining raster cost is
+fundamental per-pixel work (barycentric + interpolation + one sample + one
+fragment pipeline pass at ~100 ns/px combined), not hoistable decode or
+bookkeeping. The next raster lever would be structural (e.g., row-span
+iteration, inventory O6/O7-class work), and the CPU side is again the larger
+half of both walls (menu ~47 s of 77.6 s).
+
+Standing gates at session close: full suite 1427 tests, format clean, ktest
+smoke PASS 7/7, menu/triangle 1B SHAs and every counter exact across all
+gated legs (r1-r7 + final median campaign), normalized stdout byte-identical
+at every slice.

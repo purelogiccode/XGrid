@@ -496,6 +496,33 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
+### Rasterizer throughput campaign (2026-10-17 evening, direct; §§180–183) — DONE
+
+The software rasterizer was the dominant wall on both 1B goldens (menu 68%,
+triangle 66% — measured with the new opt-in `--gpu-time` diagnostic). Six
+bit-exact slices landed; every gate: menu/triangle SHAs exact, every counter
+exact, normalized stdout byte-identical, suite green:
+1. F1: dashboard modulate-config fast path (§180) — raster 119.2 → 80.1 s.
+2. R2: loop skips + per-fill fragment constants + scratch reuse (§181) → 76.2 s.
+3. R3: planned combiner evaluator (§181) → 59.5 s.
+4. R4: lighting-config fast paths (§182; recognizer + transcription pinned by
+   differential tests over the REAL config words — the first recognizer had
+   misread the histogram and silently never matched; the `fastfills=k1/k2/k3`
+   counter exists so that can never hide again) + R5: per-draw sampler
+   plans (§182) → **menu 30.2 s / triangle 9.9 s**.
+Two further experiments measured NEUTRAL and were reverted (§183: GPU write
+scopes/page memo; byte→float decode tables) — the remaining raster cost is
+fundamental per-pixel work (~100 ns/px), not hoistable decode/bookkeeping.
+**Final median-of-3 (interleaved, all SHAs exact): menu 77.6 s (1.85× vs the
+143.7 s baseline), triangle 35.5 s (2.02× vs 71.6 s).** ktest smoke PASS 7/7.
+Diagnostics to keep: `--gpu-time` (raster seconds per fill path, combiner
+config histogram, fastfill k1/k2/k3 counts).
+Next raster levers if ever needed: row-span iteration and structural
+per-pixel work (inventory `docs/research-notes/rasterizer-inventory.md`
+O6/O7-class); the CPU side is again the larger half of both walls. The
+decode-flush narrowing candidates are filed in
+`docs/research-notes/decode-flush-audit.md`.
+
 1. **SLICES 5–11 DONE (§§142–148, direct development).** After wave-15
    (slices 1+2, 1340 tests) came the §141 median-of-3 (flag stays
    opt-in: menu 1.035x, triangle 1.130x), then slices 5–8 (ALU-mem,
