@@ -55,6 +55,13 @@ internal static class JitEmitter
     private static readonly MethodInfo GetSegmentBase =
         typeof(XboxContext).GetMethod("GetSegmentBase")!;
 
+    /// <summary>Slow-member mnemonic tally enabled by XGRID_SLOW=1 (diagnostic).</summary>
+    private static readonly bool TallySlowMembers =
+        string.Equals(Environment.GetEnvironmentVariable("XGRID_SLOW"), "1", StringComparison.Ordinal);
+
+    private static readonly FieldInfo SlowMemberCountsField =
+        typeof(XboxCpu).GetField("<SlowMemberCounts>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     private static readonly FieldInfo ContextRegisters =
         typeof(XboxContext).GetField("_registers", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -111,6 +118,15 @@ internal static class JitEmitter
 
     private static readonly MethodInfo ReadPhysicalJit =
         typeof(XboxCpu).GetMethod("ReadPhysicalJit", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo JitFpuPushSingle =
+        typeof(XboxCpu).GetMethod("JitFpuPushSingle", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo JitFpuSingleBits =
+        typeof(XboxCpu).GetMethod("JitFpuSingleBits", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo JitFpuPop =
+        typeof(XboxCpu).GetMethod("JitFpuPop", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static readonly MethodInfo WritePhysicalJit =
         typeof(XboxCpu).GetMethod("WritePhysicalJit", BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -463,6 +479,39 @@ internal static class JitEmitter
                     emitValue: () => EmitReadReg(il, gprs, plan.Size, plan.RegIndex));
                 break;
 
+            case JitKind.FpuLoadReal:
+                // C2 slice 3: Fld m32 through the same RAM probe as an integer
+                // load; the FPU push is one helper call mirroring ReadFpuReal.
+                EmitLoadMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
+                    loadValue: () =>
+                    {
+                        // The probe leaves the loaded value on the stack;
+                        // consume it into the scratch local, then push it
+                        // onto the x87 stack.
+                        il.Emit(OpCodes.Stloc, res);
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Ldloc, res);
+                        il.Emit(OpCodes.Call, JitFpuPushSingle);
+                    },
+                    writeScratch: res);
+                break;
+
+            case JitKind.FpuStoreReal:
+            case JitKind.FpuStoreRealPop:
+                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
+                    emitValue: () =>
+                    {
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Call, JitFpuSingleBits);
+                    });
+                if (plan.Kind == JitKind.FpuStoreRealPop)
+                {
+                    il.Emit(OpCodes.Ldarg_0);
+                    il.Emit(OpCodes.Call, JitFpuPop);
+                }
+
+                break;
+
             case JitKind.MovStoreImm:
                 EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram, mmioFast,
                     emitValue: () => il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate)));
@@ -706,6 +755,21 @@ internal static class JitEmitter
                     // points do not (the outer loop advances after the
                     // member).
                     EmitEipStore(il, context, eip);
+                    if (TallySlowMembers)
+                    {
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Ldfld, SlowMemberCountsField);
+                        il.Emit(OpCodes.Ldc_I4, (int)plan.Mnemonic);
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Ldfld, SlowMemberCountsField);
+                        il.Emit(OpCodes.Ldc_I4, (int)plan.Mnemonic);
+                        il.Emit(OpCodes.Ldelem_I8);
+                        il.Emit(OpCodes.Ldc_I4_1);
+                        il.Emit(OpCodes.Conv_I8);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Stelem_I8);
+                    }
+
                     EmitSync(il, context, gprs, eip, flags, tsc, served, plan.BlockWriteMask);
                     il.Emit(OpCodes.Ldarg_0);
                     il.Emit(OpCodes.Ldarg_1);

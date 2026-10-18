@@ -40,6 +40,8 @@ internal static class JitStateMask
                 return 0;
             case JitKind.MovLoad:
                 return address;
+            case JitKind.FpuLoadReal:
+                return address;
             case JitKind.MovStore:
                 return RegBit(plan, plan.RegIndex) | address;
             case JitKind.MovStoreImm:
@@ -131,6 +133,8 @@ internal static class JitStateMask
                 return RegBit(plan, plan.RegIndex) | Bit(Esp);
             case JitKind.MovStore:
             case JitKind.MovStoreImm:
+            case JitKind.FpuStoreReal:
+            case JitKind.FpuStoreRealPop:
             case JitKind.AluMR:
             case JitKind.AluMI:
             case JitKind.TestRR:

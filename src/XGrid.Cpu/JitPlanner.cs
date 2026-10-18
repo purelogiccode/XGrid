@@ -19,6 +19,9 @@ internal enum JitKind : byte
     TestRR,
     TestRI,
     TestMI,
+    FpuLoadReal,
+    FpuStoreReal,
+    FpuStoreRealPop,
     IncR,
     DecR,
     IncM,
@@ -139,6 +142,9 @@ internal readonly struct JitMemberPlan
     public SegmentRegister Segment { get; init; }
 
     public bool IsTerminator { get; init; }
+
+    /// <summary>Source mnemonic (diagnostics: the slow-member tally).</summary>
+    public Mnemonic Mnemonic { get; init; }
 }
 
 /// <summary>
@@ -232,6 +238,9 @@ internal static class JitPlanner
             Mnemonic.Adc => PlanAlu(instruction, JitAluOp.Adc),
             Mnemonic.Sbb => PlanAlu(instruction, JitAluOp.Sbb),
             Mnemonic.Test => PlanTest(instruction),
+            Mnemonic.Fld => PlanFpuReal(instruction, JitKind.FpuLoadReal),
+            Mnemonic.Fst => PlanFpuReal(instruction, JitKind.FpuStoreReal),
+            Mnemonic.Fstp => PlanFpuReal(instruction, JitKind.FpuStoreRealPop),
             Mnemonic.Inc => PlanIncDec(instruction, inc: true),
             Mnemonic.Dec => PlanIncDec(instruction, inc: false),
             Mnemonic.Lea => PlanLea(instruction),
@@ -267,6 +276,27 @@ internal static class JitPlanner
             Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
             _ => default,
         };
+    }
+
+    /// <summary>
+    /// C2 slice 3: single-precision memory real forms (Fld/Fst/Fstp m32) run
+    /// natively through the same RAM probe as the integer loads/stores; the
+    /// FPU side is one helper call that mirrors ReadFpuReal/WriteFpuReal
+    /// exactly (the demo/dashboard float math is 32-bit). Wider 64/80-bit and
+    /// register forms keep the spec handler.
+    /// </summary>
+    private static JitMemberPlan PlanFpuReal(in DecodedInstruction instruction, JitKind kind)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Memory || first.Size != 32)
+        {
+            return default;
+        }
+
+        MemoryOperand memory = first.Memory;
+        return WithMemory(
+            new JitMemberPlan { Kind = kind, Length = instruction.Length, Size = 32 },
+            in memory);
     }
 
     private static JitMemberPlan PlanMov(in DecodedInstruction instruction)

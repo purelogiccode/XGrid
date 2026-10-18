@@ -1358,6 +1358,30 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
+    /// C2 slice 3: JIT fast path for <c>Fld m32</c> after the RAM probe - pushes
+    /// the single-precision real exactly as <c>ReadFpuReal</c> does.
+    /// </summary>
+    private void JitFpuPushSingle(uint bits)
+    {
+        Fpu.Push(Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(bits)));
+    }
+
+    /// <summary>
+    /// JIT fast path for <c>Fst/Fstp m32</c>: ST(0) as single-precision bits,
+    /// the same conversion <c>WriteFpuReal</c> applies.
+    /// </summary>
+    private uint JitFpuSingleBits()
+    {
+        return BitConverter.SingleToUInt32Bits((float)Fpu.GetRegister(0).ToDouble());
+    }
+
+    /// <summary>JIT fast path for the pop half of <c>Fstp m32</c> (after the store succeeds).</summary>
+    private void JitFpuPop()
+    {
+        Fpu.Pop();
+    }
+
+    /// <summary>
     /// Slice-1 guard: true when the AddressSpace write watch could fire for
     /// [address, address+length), in which case the caller takes the legacy
     /// bus path so CheckWatch + WatchHit run exactly as before.
