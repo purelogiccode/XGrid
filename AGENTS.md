@@ -510,14 +510,16 @@ exact, normalized stdout byte-identical, suite green:
    misread the histogram and silently never matched; the `fastfills=k1/k2/k3`
    counter exists so that can never hide again) + R5: per-draw sampler
    plans (§182) → **menu 30.2 s / triangle 9.9 s**; R6: SrcAlpha/InvSrcAlpha/
-   ADD blend specialization (§186, 3/3 paired wins, −3.25 s) → **menu 26.9 s**.
+   ADD blend specialization (§186, 3/3 paired wins, −3.25 s) → **menu 26.9 s**;
+   R7: lean interpolation for modulate fills (§187, 16 of 24 dead vectors
+   skipped; `lean=402600` fills) → **menu 24.6 s**.
 Two further experiments measured NEUTRAL and were reverted (§183: GPU write
 scopes/page memo; byte→float decode tables) — the remaining raster cost is
 fundamental per-pixel work (~100 ns/px), not hoistable decode/bookkeeping.
-**Closing medians (median-of-3, interleaved, all SHAs exact, §186a): menu
-74.3 s (1.93× vs the 143.7 s baseline), triangle 36.6 s (1.96× vs 71.6 s);
-rasterizer-only menu 119.2 → 26.9 s (4.4×), triangle 54.7 → 9.9 s (5.5×).**
-ktest smoke PASS 7/7 (twice on final binaries).
+**Closing medians (median-of-3, interleaved, all SHAs exact, §186a/§187):
+menu 70.8 s (2.03× vs the 143.7 s baseline), triangle 36.6 s (1.96× vs
+71.6 s); rasterizer-only menu 119.2 → 24.6 s (4.9×), triangle 54.7 → 9.9 s
+(5.5×).** ktest smoke PASS 7/7 (on final binaries).
 Diagnostics to keep: `--gpu-time` (raster seconds per fill path, combiner
 config histogram, fastfill k1/k2/k3 counts).
 Next raster levers if ever needed: row-span iteration and structural

@@ -146,14 +146,14 @@
 <text x='1158' y='185.4' font-size='24' font-weight='700' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'>CPU JIT</text>
 <text x='1158' y='226.1' font-size='17.3' opacity='0.94' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'>50% done &#183; weight 11</text>
 </g>
-<g class='tile' data-p='18' data-name='GPU Optimization' data-done='32' data-weight='4'>
+<g class='tile' data-p='18' data-name='GPU Optimization' data-done='34' data-weight='4'>
 <defs><clipPath id='clip18'><rect x='1149' y='398.2' width='287.4' height='177.1' rx='10'/></clipPath></defs>
 <rect x='1149' y='398.2' width='287.4' height='177.1' rx='10' fill='#1A2740' stroke='#0B1220' stroke-width='1.5'/>
-<g clip-path='url(#clip18)'><rect x='1149' y='518.6' width='287.4' height='56.7' fill='#E8A028'/></g>
+<g clip-path='url(#clip18)'><rect x='1149' y='515.1' width='287.4' height='60.2' fill='#E8A428'/></g>
 <rect x='1158' y='407.2' width='26.4' height='26.4' rx='6.6' fill='rgba(11,18,32,0.45)'/>
 <text x='1171.2' y='425.2' font-size='13.7' font-weight='700' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke' text-anchor='middle'>P18</text>
 <text x='1158' y='463.6' font-size='24' font-weight='700' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'>GPU Optimization</text>
-<text x='1158' y='504.3' font-size='17.3' opacity='0.94' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'>32% done &#183; weight 4</text>
+<text x='1158' y='504.3' font-size='17.3' opacity='0.94' fill='#F8FAFC' stroke='#0B1220' stroke-width='2.4' paint-order='stroke'>34% done &#183; weight 4</text>
 </g>
 <g class='tile' data-p='16' data-name='CPU Optimization' data-done='25' data-weight='3'>
 <defs><clipPath id='clip16'><rect x='1436.4' y='398.2' width='215.6' height='177.1' rx='10'/></clipPath></defs>
@@ -231,6 +231,6 @@
 <rect x='226' y='1008' width='34' height='34' rx='6' fill='#1EC85A'/>
 <text x='268' y='1031.1' font-size='13' fill='#CBD5E1'>100%</text>
 <circle cx='1562' cy='1014' r='9' fill='none' stroke='#F8FAFC' stroke-width='3' stroke-dasharray='26 34.5' transform='rotate(-90 1562 1014)'/>
-<text x='1562' y='1018' font-size='10.5' font-weight='700' fill='#F8FAFC' text-anchor='middle'>69.3%</text>
+<text x='1562' y='1018' font-size='10.5' font-weight='700' fill='#F8FAFC' text-anchor='middle'>69.4%</text>
 <text x='1658' y='1035' font-size='11.5' fill='#94A3B8' text-anchor='end'>weighted overall</text>
 </svg>
