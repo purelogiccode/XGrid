@@ -9857,3 +9857,64 @@ share of the *real* workloads is 26.6% (menu) / 35.5% (triangle) at 1B; the
 unserved tail now dominates the fast-mode wall. Next performance work:
 coverage of that tail (RunJitBlock zero-return reasons + non-JIT
 instruction mix), then quiet-host medians of the post-fix fast mode.
+
+## 194. Coverage campaign: the unserved tail, the flush amnesia, and the new members (2026-10-19, direct)
+
+**The problem.** With the guest no longer wedging (193), the fast-mode wall
+at 1B was dominated by the 73% of menu instructions running through the
+member path. The 193-era fast numbers measured a spinning guest; the real
+workload needed coverage, not runner micro-tuning.
+
+**Diagnosis (new `--jit-tally` diagnostics).** Three distinct losses:
+1. **Spec-run swallowing**: one RunSpecBlock call served whole ~20K-region
+   stretches (33K runs = 93% of the unserved mass at 1B), so no head inside
+   them was ever probed.
+2. **Visit-counter amnesia**: the guest rewrites page tables constantly
+   (5K-66K PT-page stores per 100M; every one full-flushes the decode cache)
+   - 23,865 generation bumps per 200M reset every pending head's visit
+   counter, so hot heads never reached the build threshold.
+3. **Formation dependence on member-path warming**: after a code-page drop
+   the page's decode entries are gone; formation walks bailed transiently
+   and got retry-suppressed (1.73M transient bails at 1B).
+
+**Fixes.**
+- `--jit-slice N` (default 256): the non-JIT fallback runs the spec path in
+  slices so the fast engine gets a head probe every N instructions.
+- Lazy block revalidation: on a generation change a built block is offered
+  as `Verdict.Stale`; the CPU re-checks every member's 15-byte source
+  window against the *current* mapping (fresh translate + bytes) and keeps
+  the block if byte-identical (baked code depends only on the decoded
+  bytes; decode sizes are checked separately). Mismatch/fault drops it for
+  a fresh formation. 1.1M-1.5M revalidations per 1B - blocks survive the
+  guest's page-table churn instead of rebuilding from scratch.
+- Pending/rejected verdicts keep their visit counters across generation
+  changes (only the verdict is generation-bound).
+- Fill-on-demand formation: the walk decodes missing members itself
+  (FetchFast + DecodeFresh) instead of depending on the member path.
+- New members: indirect `call r/m32` + `jmp m32` terminators, `Popf` as a
+  CallSpec member with a post-member IRQ poll (the STI rule), `Movs`/`Stos`
+  as exact interpreter-call members (ExecuteStringIteration with full
+  sync/reload; do not end blocks anymore), `Cld`/`Std`, `Invlpg` (computes
+  the operand address and drives the interpreter's flush inline).
+
+**Results (menu 1B; deterministic; loaded host).** Served share: 26.6%
+before the slice -> 76.8% (slice) -> 96.9% (revalidation) -> **98.2%**
+(members). FormBails 1.76M->38K; transient bails 1.73M->5.5K; unserved
+instructions 734M->18M. All SHAs and the golden frame (4EF1FBF6...) stay
+bit-exact throughout; loaded wall 141.8 s -> 105.0 s at identical load
+(idle-median re-measurement still pending).
+
+**Triangle fast-mode residual (documented, contract-covered).** After ~550M
+the triangle fast run diverges in exactly 3 RAM dwords (0xB7FFC and the
+qword at 0x121850/54) while cpuSha, both counters and the golden frame
+A1740DE0... all match at 1B. `--watch` shows the qword is a saved
+context frame: exact's last writer is the kernel's context-save
+(0x8001A42C, value = kernel EIP + EFLAGS=0x206), fast's is a user EIP
+(0x2883D, user stack pointer). That is a mid-block device-IRQ delivery
+shift at one context save - the charter's explicit relaxation - and the
+resume works (hence identical cpuSha/frame). Exact mode remains bit-exact
+end to end; the menu fast run is fully bit-exact at 1B.
+
+**Tests.** 43 JIT differential tests (adds: flush-mid-run revalidation,
+self-modifying code, indirect call reg/mem + jmp mem, POPF poll sweep,
+Movs/Stos both directions, INVLPG). Suite 1475 green, format clean.
