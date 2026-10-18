@@ -9786,3 +9786,20 @@ schedule, so their *work composition* can differ (the fast menu run
 presents 1 frame vs the control's 686; the triangle 1 frame vs 68) — rate
 comparisons are like-for-like per instruction served, but not per unit of
 guest work.
+
+**Kernel-test-suite validation (same night).** Standing accurate smoke
+re-run after the JIT work: **PASS 7/7 rows green in 01:18** (xgrid 4/7 vs
+xemu 2/7, known deltas match). JIT on the suite workload (staged subset ISO,
+2B steps, Execute-driven — the `--break` leg uses `Step` and bypasses the
+JIT by design): accurate `722BCBA2…/AB1417FA…` 88.9 s; **jit-exact
+bit-identical SHAs** (`722BCBA2…/AB1417FA…`, 1.35B instructions served,
+faults=0) 84.2 s; **fast 23.6 s = 84.7 Msteps/s, 98.5% served**, no fault
+(the fast SHA differs by timing as on the titles).
+
+**Fast-mode medians (1B, interleaved, same window, th=16).** triangle
+12.95/14.45/13.02 → **13.02 s median = 76.8 Msteps/s**; menu
+13.04/12.82/12.84 → **12.84 s median = 77.9 Msteps/s**. Threshold at 1B is
+insensitive within ~3% (8→13.33, 16→~13.0, 24→13.19). vs the §186 recorded
+medians from a different day/host state (menu 70.8, triangle 36.6 plain-
+default): 5.4× / 2.8× — cross-day numbers, quoted with the §176 caveat;
+same-window controls: menu 88.05 s, triangle 44.65–44.9 s.
