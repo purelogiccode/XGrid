@@ -99,9 +99,6 @@ internal readonly struct JitMemberPlan
     /// <summary>True when the member can enable interrupts (POPF) and must be followed by an IRQ poll.</summary>
     public bool PollAfter { get; init; }
 
-    /// <summary>True when the interpreter entry point takes the (size, addressSize) pair (string ops).</summary>
-    public bool PassSizes { get; init; }
-
     public JitAluOp AluOp { get; init; }
 
     public JitShiftOp ShiftOp { get; init; }
@@ -250,6 +247,13 @@ internal static class JitPlanner
             Mnemonic.Std => new JitMemberPlan { Kind = JitKind.Std, Length = instruction.Length },
             Mnemonic.Movs => PlanString(instruction, JitKind.CallInterpreter),
             Mnemonic.Stos => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Cmps => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Scas => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Lods => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Ins => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Outs => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.In => PlanPortIo(instruction, ExecuteInMethod),
+            Mnemonic.Out => PlanPortIo(instruction, ExecuteOutMethod),
             Mnemonic.Invlpg => PlanInvlpg(instruction),
             Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
             _ => default,
@@ -615,33 +619,64 @@ internal static class JitPlanner
         return default;
     }
 
-    /// <summary>
-    /// The interpreter's exact single-iteration string body. Calling it from a
-    /// member keeps Movs/Stos from ending blocks (they used to reject heads
-    /// outright): the region around them now stays served, at interpreter
-    /// cost for the one instruction. Non-rep forms only — the rep loop and its
-    /// ZF exits stay on the interpreter member path, as does 16-bit addressing.
-    /// </summary>
-    private static readonly MethodInfo ExecuteStringIterationMethod =
+    /// <summary>The interpreter's exact string handler (rep loop and the
+    /// single-iteration path both); strings used to reject heads outright.</summary>
+    private static readonly MethodInfo ExecuteStringMethod =
         typeof(XboxCpu).GetMethod(
-            "ExecuteStringIteration",
+            "ExecuteString",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    /// <summary>The interpreter's exact port-input handler.</summary>
+    private static readonly MethodInfo ExecuteInMethod =
+        typeof(XboxCpu).GetMethod(
+            "ExecuteIn",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    /// <summary>The interpreter's exact port-output handler.</summary>
+    private static readonly MethodInfo ExecuteOutMethod =
+        typeof(XboxCpu).GetMethod(
+            "ExecuteOut",
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static JitMemberPlan PlanString(in DecodedInstruction instruction, JitKind kind)
     {
-        if (instruction.AddressSize != 32 || instruction.Rep != RepPrefix.None
-            || instruction.OperandSize is not (8 or 16 or 32))
+        if (instruction.AddressSize != 32 || instruction.OperandSize is not (8 or 16 or 32))
+        {
+            return default;
+        }
+
+        // Poll at the member's boundary (the STI rule): a rep can touch
+        // device-mapped memory (Ins/Outs do port I/O outright), and the
+        // interpreter would deliver a raised vector at the very next
+        // instruction boundary, not at the block's end.
+        return new JitMemberPlan
+        {
+            Kind = kind,
+            Length = instruction.Length,
+            Size = instruction.OperandSize,
+            SpecHandler = ExecuteStringMethod,
+            PollAfter = true,
+        };
+    }
+
+    /// <summary>IN/OUT (non-string port I/O): the interpreter's exact handlers.
+    /// Port I/O is how the guest pokes the PIC/PIT/devices, so a device-raised
+    /// IRQ is likely imminent: poll at the member's boundary (the STI rule) so
+    /// delivery matches the interpreter instead of waiting for the block end.</summary>
+    private static JitMemberPlan PlanPortIo(in DecodedInstruction instruction, MethodInfo handler)
+    {
+        if (instruction.AddressSize != 32 || instruction.OperandSize is not (8 or 16 or 32))
         {
             return default;
         }
 
         return new JitMemberPlan
         {
-            Kind = kind,
+            Kind = JitKind.CallInterpreter,
             Length = instruction.Length,
             Size = instruction.OperandSize,
-            SpecHandler = ExecuteStringIterationMethod,
-            PassSizes = true,
+            SpecHandler = handler,
+            PollAfter = true,
         };
     }
 

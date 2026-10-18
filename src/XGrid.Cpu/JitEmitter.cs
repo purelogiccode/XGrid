@@ -239,16 +239,18 @@ internal static class JitEmitter
 
             if (!exactBoundaries && (plan.Kind == JitKind.Sti || plan.PollAfter))
             {
-                // STI (and POPF) can leave the block with interrupts enabled:
-                // the per-block entry poll cannot see that window when a
-                // block's entry runs with IF cleared (the kernel idle thread's
-                // sti/nop/nop/cli spin is exactly this shape), so poll at the
-                // member's boundary — the interpreter would deliver at the
-                // very next instruction boundary. STI advances EIP itself
-                // here; a CallSpec member (POPF) already owns EIP.
+                // STI (and POPF and IN/OUT) can leave the block with interrupts
+                // enabled: the per-block entry poll cannot see that window when
+                // a block's entry runs with IF cleared (the kernel idle
+                // thread's sti/nop/nop/cli spin is exactly this shape), so poll
+                // at the member's boundary — the interpreter would deliver at
+                // the very next instruction boundary. The exit advances EIP
+                // for every member that does not own it: spec handlers
+                // (CallSpec) already advanced Context.Eip; native members and
+                // interpreter-call members have not.
                 EmitPostPoll(il, context, gprs, eip, flags, tsc, served,
                     interruptSource, vector,
-                    advanceEip: plan.Kind == JitKind.Sti,
+                    advanceEip: plan.Kind != JitKind.CallSpec,
                     length: plan.Length);
             }
 
@@ -674,12 +676,6 @@ internal static class JitEmitter
                     il.Emit(OpCodes.Ldc_I4, plan.EntryIndex);
                     il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
                     il.Emit(OpCodes.Ldflda, EntryInstruction);
-                    if (plan.PassSizes)
-                    {
-                        il.Emit(OpCodes.Ldc_I4, plan.Size);
-                        il.Emit(OpCodes.Ldc_I4, 32);
-                    }
-
                     il.Emit(OpCodes.Call, plan.SpecHandler!);
                     EmitLoadState(il, context, gprs, eip, flags, tsc);
                     break;
