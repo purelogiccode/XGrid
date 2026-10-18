@@ -70,19 +70,23 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
-## Development direction (required, 2026-10-18)
+## Development direction (required, 2026-10-19)
 
 Canonical order: `docs/development-direction.md`; fast-mode JIT track:
 `docs/research-notes/jit-track-charter.md`. Summary of hard rules:
 
-1. **JIT throughput first** — CPU is 97–100% of wall; GPU/swapchain 0–2.9%.
-   Accurate-mode rules unchanged (specialize semantics; dispatch not dominant;
-   boundary-preserving; `DynamicMethod` rejected for relay slices).
-   **Fast-mode execution engine chartered 2026-10-18** (dual-mode contract;
-   `DynamicMethod` block JIT authorized for fast mode; raw emitter gated by
-   the charter's Phase-3 condition; kill criteria in charter §4). Post-R7
-   walls: menu 70.8 s / triangle 36.6 s per 1B (§186a/§187) vs the
-   10²–10³ Msteps/s real-time band.
+1. **Track B (GPU backend) + Track D (MMIO) lead the xemu-class campaign
+   (re-aimed 2026-10-19, §195).** Measured: the software rasterizer was
+   36–38% of both 1B walls and the GL backend was an observation *mirror*
+   (software ran unconditionally) — `--gpu-replace` adds replacement mode
+   (§196: menu 64.02→48.29 s, triangle 27.91→17.82 s, CPU SHAs exact,
+   frames maxDelta=1). Remaining: ~2.5 µs/draw is driver cost → **B2c draw
+   batching** (per-draw uniforms → attributes/UBO, one call per state run);
+   then MMIO fast dispatch (119M slow members at 1B menu), JIT Phase-2
+   leftovers (chaining/threshold, ~5–8%), RAM writeback for
+   framebuffer-reading content. Track C JIT is leftovers-only; accurate-mode
+   rules unchanged (specialize semantics; boundary-preserving; `DynamicMethod`
+   stays opt-in via `--jit`; raw emitter gated by charter Phase-3).
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
    and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
    (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).

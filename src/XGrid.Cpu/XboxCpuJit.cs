@@ -65,6 +65,11 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of emitted members that took the interpreter slow path (diagnostic).</summary>
     public long JitSlowMembers => _jitSlowMembers;
 
+    private long _jitMmioMembers;
+
+    /// <summary>Gets the number of emitted members served through the device fast path (diagnostic, <c>--jit-mmio</c>).</summary>
+    public long JitMmioMembers => _jitMmioMembers;
+
     /// <summary>
     /// Gets or sets the coverage tally (opt-in diagnostic): why RunJitBlock
     /// yields without serving, how long the non-JIT runs are, and which
@@ -206,6 +211,17 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool JitExact { get; set; }
 
+    /// <summary>
+    /// Gets or sets the device fast path (<c>--jit-mmio</c>, D1 slice): emitted
+    /// members whose probe translated a single-page access into non-RAM
+    /// physical space (devices) call <c>ReadPhysicalJit</c>/<c>WritePhysicalJit</c>
+    /// with the already-translated address instead of the full interpreter
+    /// sync + re-translate. Bit-exact by construction (same RawRead/RawWrite
+    /// the interpreter reaches; the probe checked translation and writability,
+    /// so no fault can be skipped). Default off.
+    /// </summary>
+    public bool JitMmioFast { get; set; }
+
     /// <summary>Pending interrupt vector reported by an exact-mode runner (-1 none).</summary>
     private int _jitPending = -1;
 
@@ -226,6 +242,7 @@ public sealed partial class XboxCpu
                 SpecExecutionEnabled = true;
                 _jitBlocks ??= new JitBlockCache();
                 _jitSlowMembers = 0;
+                _jitMmioMembers = 0;
             }
 
             _jitEnabled = value;
@@ -590,7 +607,7 @@ public sealed partial class XboxCpu
             return null;
         }
 
-        JitRun? runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact);
+        JitRun? runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
         if (runner is null)
         {
             jit.Store(headLinear, generation, null);

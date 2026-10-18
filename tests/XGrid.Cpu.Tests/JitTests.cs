@@ -102,6 +102,120 @@ public sealed class JitTests
         Assert.True(jit.JitServedTotal > 0, $"JIT served {jit.JitServedTotal} instructions.");
     }
 
+    /// <summary>
+    /// Device fast path (--jit-mmio, D1 slice): with a device window mapped
+    /// beyond RAM and a virtual page translated to it, the second pass over
+    /// the loop is JIT-served and the probe's translate-cache hit routes the
+    /// accesses through ReadPhysicalJit/WritePhysicalJit. The plain
+    /// interpreter and the JIT (fast and exact modes) must land in identical
+    /// architectural state, with identical device traffic.
+    /// </summary>
+    [Fact]
+    public void MmioFastPath_MatchesInterpreter_AndServesDeviceAccesses()
+    {
+        // Interleaves the device page (linear 0x200000 -> physical 0x10000000,
+        // beyond RAM) with cold RAM pages (0x9000/0xA000/0xB000, each holding a
+        // distinct pattern) so every data page starts as a translate-cache tag
+        // miss: the probe's non-device failures must stay on the interpreter
+        // path (a stale-phys device branch here would read the wrong address).
+        // mov eax,0x200000; mov ebx,0x9000; mov ecx,3;
+        // loop: mov edx,[eax]; mov esi,[ebx]; mov [eax+4],edx;
+        //       add ebx,0x1000; dec ecx; jne loop; hlt
+        byte[] code =
+        [
+            0xB8, 0x00, 0x00, 0x20, 0x00,
+            0xBB, 0x00, 0x90, 0x00, 0x00,
+            0xB9, 0x03, 0x00, 0x00, 0x00,
+            0x8B, 0x10,
+            0x8B, 0x33,
+            0x89, 0x50, 0x04,
+            0x81, 0xC3, 0x00, 0x10, 0x00, 0x00,
+            0x49,
+            0x75, 0xF0,
+            0xF4,
+        ];
+
+        (XboxCpu plain, RecordingDevice plainDevice) = CreateMmio(code, jit: false, exact: false);
+        (XboxCpu jit, RecordingDevice jitDevice) = CreateMmio(code, jit: true, exact: false);
+        (XboxCpu exact, RecordingDevice exactDevice) = CreateMmio(code, jit: true, exact: true);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+        exact.Execute(1000);
+        AssertSameState(plain, jit);
+        AssertSameState(plain, exact);
+
+        // Second pass: the block is formed, the device page is cached, and
+        // the emitted probe takes the device fast path.
+        foreach (XboxCpu cpu in new[] { plain, jit, exact })
+        {
+            cpu.Context.Halted = false;
+            cpu.Context.Eip = CpuHarness.CodeAddress;
+        }
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+        exact.Execute(1000);
+
+        AssertSameState(plain, jit);
+        AssertSameState(plain, exact);
+        Assert.True(jit.Context.Halted);
+        Assert.True(jit.JitServedTotal > 0, $"JIT served {jit.JitServedTotal} instructions.");
+        Assert.True(jit.JitMmioMembers > 0, $"device fast path served {jit.JitMmioMembers} members.");
+        Assert.Equal(plainDevice.Reads, jitDevice.Reads);
+        Assert.Equal(plainDevice.Writes, jitDevice.Writes);
+        Assert.Equal(6, jitDevice.Reads); // one device read per loop iteration, two passes
+        Assert.Equal(6, jitDevice.Writes); // one device write per iteration, two passes
+        Assert.Equal(0xCCCCCCCCu, jit.Context.Esi); // last cold RAM pattern read
+        return;
+
+        static (XboxCpu Cpu, RecordingDevice Device) CreateMmio(byte[] code, bool jit, bool exact)
+        {
+            XboxCpu cpu = jit ? CreateJit(code) : CpuHarness.Create(code);
+            var device = new RecordingDevice();
+            cpu.Bus().AddRegion("testdev", 0x10000000u, 0x1000u, device);
+            MapIdentity(cpu.Bus(), 0, 16);
+            cpu.Bus().Write32(PageTable + (0x200u * 4u), 0x10000000u | 3u);
+            EnablePaging(cpu);
+            cpu.Ram().Write32(0x9000, 0xAAAAAAAAu);
+            cpu.Ram().Write32(0xA000, 0xBBBBBBBBu);
+            cpu.Ram().Write32(0xB000, 0xCCCCCCCCu);
+            if (jit)
+            {
+                cpu.JitMmioFast = true;
+                cpu.JitExact = exact;
+            }
+
+            return (cpu, device);
+        }
+    }
+
+    /// <summary>Minimal deterministic device: reads return the last written value.</summary>
+    private sealed class RecordingDevice : IMmioDevice
+    {
+        private uint _value = 0x11112222u;
+
+        public int Reads { get; private set; }
+
+        public int Writes { get; private set; }
+
+        public uint Read(uint address, int size)
+        {
+            _ = address;
+            _ = size;
+            Reads++;
+            return _value;
+        }
+
+        public void Write(uint address, int size, uint value)
+        {
+            _ = address;
+            _ = size;
+            Writes++;
+            _value = value;
+        }
+    }
+
     [Fact]
     public void JccConditions_Sweep_MatchesInterpreter()
     {
