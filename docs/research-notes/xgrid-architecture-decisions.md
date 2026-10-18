@@ -9681,3 +9681,108 @@ Updated pointers: `development-direction.md` §1/§2b/§3/§4; `AGENTS.md`
 "Development direction" + next-session; `ImplementationPlan.md` Phase 15 +
 Track C + status table. Next work item: Phase 0 bench + `--jit-verify`
 harness.
+
+## 191. Fast-mode JIT J1a: bench harness + first whole-block engine (2026-10-18 night, direct)
+
+Charter Phase 0/1 started the same day. Landed:
+
+- **`boot --bench [--bench-name]`** (Phase 0): one grep-able line after the
+  run loop — `BENCH name= steps= wall= msps= ramSha256= cpuSha256=` (CPU SHA
+  over `XboxCpu.SaveState` bytes). Validated: hashes byte-identical across
+  repeats; the flag-off logs unchanged (guarded print).
+- **J1a engine** (`--jit`; `XboxCpuJit.cs` / `JitBlockCache.cs` /
+  `JitEmitter.cs` / `JitPlanner.cs`): whole-block DynamicMethod runners that
+  keep all eight GPRs, EIP, EFLAGS and TSC in IL locals across the block;
+  inlined translate-cache probe + RAM-direct read/write (same guard set as
+  E3-1b: cross-page, WP replay, watched ranges, NoteStorePhysical order);
+  every non-fast case takes the exact interpreter path (`ReadMemory`/
+  `WriteMemory`) after a full local→context sync, so faults unwind at the
+  member boundary exactly. Fast mode's only relaxation vs the interpreter:
+  the IRQ poll is once per block (charter §2). Head-keyed cache with
+  generation-stamped verdicts (rebuilt on decode-cache invalidation),
+  permanent rejections cached, transient formation bails retried.
+- First differential tests (12): mov/alu/flags loops, jcc condition sweep
+  (32 rows), cross-page memory, paged fault delivery, rejection fallback,
+  fuzz (seeded random programs).
+
+Found+fixed en route (all caught by differential tests, never in titles):
+`MovRR32` loaded destination/stored source (operands swapped); register-only
+members never advanced the EIP local; `cmp [m],imm` (planned as AluMI)
+stored its result because the no-store check only covered AluMR.
+
+Measurements (single runs, same host window; absolutes host-shifted vs the
+rasterizer campaign — the triangle plain-default 1B wall measured 63.7 s
+today vs the §186 median 36.6 s, so only same-window ratios are quoted):
+triangle 10M/100M `--jit` runs were **bit-identical** to plain (RAM+CPU SHA)
+in J1a, no fault.
+
+## 192. Fast-mode JIT J1b–J1d: shapes, CallSpec, tuning, exact mode, and the real-time-band result (2026-10-18 night, direct)
+
+**J1b shapes.** 8/16/32-bit mov/alu (incl. Adc/Sbb) RR/RI/RM/MR/MI, test MI,
+inc/dec mem, mov m,imm, lea, movzx/movsx (both widths, reg+mem), shift-imm
+(7 ops), push/pop/call/ret/jmp-indirect; generalized memory probe helper.
+**J1c.** Cli/Sti as flag members (defragments the kernel idle loop — the top
+two heads, each 5.3M visits at 100M); `--jit-threshold N` (default 8; visit
+count before a head is built — a DynamicMethod compile costs ~1 ms and
+one-shot cold code must never pay it; building at every first sight built
+4415 blocks for ~9 s of pure compile time); `--jit-exact` (per-member IRQ
+poll mirroring Step's order; bit-exact); `_jitProgress` fault accounting;
+run diagnostics (runnerMs/outerMs/nonJitMs/buckets/slowMembers/calls).
+**J1d.** CallSpec fallback members: any valid non-control-transfer
+instruction with a static spec handler runs that exact handler inside the
+block after a full context sync + state reload (x87, scalar SSE, shift-by-CL,
+not/neg, rdtsc, …) — control transfers and CS-affecting ops excluded; the
+handler owns EIP (double-advance bug fixed). RunJitBlock now chains blocks
+inside one call until budget/boundary (628K calls vs 18.5M per 100M) with a
+32-entry direct-mapped head memo and loop-invariant fetch base/decode sizes.
+
+**Correctness evidence (the strong part).**
+
+- 29 JIT differential tests green (full state incl. FPU/XMM/RAM, IRQ sweeps
+  single + periodic, fault delivery, paged, fuzz over 24-shape programs).
+- **1B exact-mode runs are bit-exact vs the accurate control**: menu
+  `ramSha256=D9C99A58… cpuSha256=3D2740B8…` and frame
+  `4EF1FBF66CB96CD7…` (= recorded golden), frames=686 stalls=686;
+  triangle `5E6A6741…/9AC069E6…` and frame
+  `A1740DE069128A04…` (= recorded golden), frames=68 stalls=34. 266M
+  (menu) / 355M (triangle) instructions served through emitted code with
+  pixel-identical output.
+- Fast mode diverges from the accurate SHAs at high coverage — **proven to
+  be IRQ-position timing only** (exact mode on the same binary is bit-exact;
+  the divergence appears only once coverage × IRQ density is high). Fast
+  mode is per the charter never gate currency.
+
+**Measured rates (1B steps, same host window, single runs — no median
+claim; ratios robust, absolutes host-shifted).**
+
+| run | wall | Msteps/s |
+|---|---:|---:|
+| menu plain-default | (not re-run) | — |
+| menu spec-ctl (`--spec-exec`) | 88.05 s | 11.4 |
+| menu **fast** (`--jit --jit-threshold 16`) | **13.07 s** | **76.5** |
+| menu exact | 109.9 s | 9.1 |
+| triangle plain-default | 63.7 s | 15.7 |
+| triangle spec-ctl | 44.7 s | 22.4 |
+| triangle **fast** | **13.14 s** | **76.1** |
+| triangle exact | 44.9 s | 22.3 |
+
+Coverage at 1B: menu 97.1% served, triangle 97.6%; runner time itself ≈
+6.5 s of the 13.1 s (the rest is RunJitBlock bookkeeping + the non-served
+tail). **Both titles land at ~76 Msteps/s — the 10²–10³ Msteps/s real-time
+band the charter called xemu-class.** Threshold tuning at 100M: 2→7.2 s
+(compile churn), 4→3.7, 8→3.09, 16→2.99 (served 76.1M), 32→4.44 (**cliff**:
+the hot heads sit at 16–31 start-of-block visits, so default stays 8 as the
+robust point; re-tune at 1B where visit counts are ~10× higher).
+
+Open items carried forward: fast-mode block chaining beyond the inner loop
+(direct block-to-block jumps); shape tail (strings, mul/div, push/pop
+memory forms, shifts-by-CL native); fast-mode disassembly dump; re-measure
+with medians once the host is quiescent; measure the menu fast mode with
+rendering-identical interleaving (the fast run renders 1 frame vs 686 — its
+work composition differs, see below).
+
+Caution recorded: fast-mode runs execute the guest on a timing-perturbed
+schedule, so their *work composition* can differ (the fast menu run
+presents 1 frame vs the control's 686; the triangle 1 frame vs 68) — rate
+comparisons are like-for-like per instruction served, but not per unit of
+guest work.

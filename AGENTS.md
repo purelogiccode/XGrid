@@ -506,6 +506,28 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
+### Fast-mode JIT J1a–J1d LANDED (2026-10-18 night, direct; §§191–192) — the real-time band is reached
+
+Charter Phase 0 + Phase 1 (J1 slice) done in one night: `boot --bench`
+(BENCH line: wall/msps/RAM+CPU SHA); `--jit` whole-block engine (GPR/EIP/
+EFLAGS/TSC in IL locals, inlined translate-cache + RAM fast paths, exact
+interpreter fallback; head cache with visit-threshold builds,
+`--jit-threshold` default 8; block-chained inner loop + 32-entry memo;
+CallSpec fallback members for all static spec handlers; Cli/Sti flag
+members); `--jit-exact` per-member poll — bit-exact.
+
+Evidence: 29 JIT differential tests (fuzz, IRQ sweeps, faults, paging);
+**1B exact-mode runs bit-exact vs the accurate control on BOTH titles,
+golden frames reproduced** (menu `4EF1FBF6…` 686/686, triangle
+`A1740DE0…` 68/34); fast mode's SHA divergence proven to be IRQ-position
+timing only. Rates (1B, same host window, single runs; absolutes
+host-shifted, ratios robust): **menu fast 13.07 s (76.5 Msteps/s, 97.1%
+served) vs spec-ctl 88.05 s = 6.7×; triangle fast 13.14 s (76.1 Msteps/s,
+97.6% served) vs spec-ctl 44.7 s = 3.4×** — the 10²–10³ Msteps/s band.
+Fast mode is never gate currency; exact mode is the bit-exact variant.
+Suite 1461 green, format clean. Next: block chaining (direct jumps),
+shape tail, medians-on-quiet-host, 1B threshold re-tune.
+
 ### Fast-mode JIT track chartered (2026-10-18) — operator decision
 
 Long-run goal: at least xemu-class performance. Governing doc:

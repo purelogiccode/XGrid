@@ -1550,6 +1550,13 @@ This should begin only after the interpreter is stable.
 > paths, block-local flags — under the dual-mode contract (fast mode only;
 > the accurate mode stays gate currency). Phases 0–4 + kill criteria live in
 > the charter; the architecture sketch below remains the target.
+>
+> **J1a–J1d landed 2026-10-18 night (§§191–192):** Phase 0 bench
+> (`boot --bench`) + a working whole-block engine behind `--jit`
+> (`--jit-threshold`, `--jit-exact`). 1B exact-mode runs are bit-exact vs
+> the accurate control on both titles and reproduce the golden frames;
+> fast mode reaches ~76 Msteps/s at 1B (menu 13.07 s / triangle 13.14 s vs
+> 88.05/44.65 s spec-controls; fast mode is never gate currency).
 
 ## 20.1 JIT architecture
 
