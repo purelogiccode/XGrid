@@ -1,23 +1,25 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
-> **STATUS 2026-10-18 NIGHT: PHASE 0 + PHASE 1 LANDED; PHASE-1 TARGETS
-> EXCEEDED (see §§191–192 for the full evidence).** J1a–J1d: `boot --bench`;
-> `--jit` whole-block engine (visit-threshold builds, inner block loop,
-> CallSpec fallback members, Cli/Sti members); `--jit-exact` per-member poll
-> — bit-exact. **1B exact-mode runs are bit-identical to the accurate
-> control on both titles and reproduce the golden frames** (menu
-> `4EF1FBF6…` 686/686; triangle `A1740DE0…` 68/34); the ktest smoke passes
-> 7/7 and the 2B suite workload is bit-identical under exact mode. Fast
-> mode (never gate currency) reaches **~77 Msteps/s at 1B** (menu 12.84 s /
-> triangle 13.02 s medians; 97% served) — the 10²–10³ Msteps/s band, past
-> the Phase-1 targets (triangle ≤22 s / menu ≤50 s) and already inside the
-> Phase-2 integration targets (≤12 s / ≤30 s) on the menu. Remaining for
-> Phase 2: block-to-block chaining in IL (the outer-loop bookkeeping is
-> ~4 s/1B), threshold auto-tuning, medians on a quiescent host. Phase 3
-> (raw emitter) entry condition: measure after Phase 2 — the DynamicMethod
-> path is currently well inside the band, so Phase 3 is not indicated yet.
-> Fast-mode SHAs differ from accurate by timing only (proven via exact
-> mode); fast-mode runs are deterministic for a fixed binary+flags.
+> **STATUS 2026-10-19 (quiet host): PHASE 0 + 1 LANDED; CPU-SIDE TARGETS MET
+> ON CPU-BOUND WORK; END-TO-END WALLS NOW GPU/MMIO-BOUND (see §§191–194).**
+> J1a–J1d + the coverage campaign: `boot --bench`, `--jit` whole-block engine
+> (visit-threshold builds, sliced non-JIT runs, lazy block revalidation,
+> fill-on-demand formation, indirect call/jmp, all string ops incl. rep,
+> In/Out, Popf, Cld/Std, Invlpg as members), `--jit-exact` per-member poll,
+> `--jit-tally` diagnostics. **Fidelity: 1B exact-mode runs are bit-identical
+> to the accurate control on both titles with golden frames; fast mode is
+> bit-exact on the menu (686/686) and has a 3-dword context-save residual on
+> the triangle (documented delivery shift); ktest smoke 7/7 and the 2B suite
+> log match (one 5 ms timing row).** Quiet-host 1B medians: triangle fast
+> 27.91 s (1.33× spec-ctl, 1.84× plain), menu fast 64.02 s (1.15×/1.28×);
+> ktest 2B CPU-bound **3.76×**. The Phase-1 "≥2.5–3× CPU-side" bar is met on
+> CPU-bound code; the golden workloads' walls are now 36–38% software
+> rasterizer plus MMIO device dispatch inside the runner — end-to-end gains
+> there need Track B (GPU) + MMIO work, not more CPU-side JIT. Phase 2
+> leftovers: IL-level chaining (the outer dispatch is ~4.5 s/1B), threshold
+> auto-tune. Phase 3 not indicated (DynamicMethod path is well inside the
+> CPU-side band). Fast mode is never gate currency; runs are deterministic
+> per binary+flags.
 
 > **STATUS: AUTHORIZED 2026-10-18 by the operator.** Long-run goal: *at least
 > xemu-class performance*. This file is the governing document for the track —
