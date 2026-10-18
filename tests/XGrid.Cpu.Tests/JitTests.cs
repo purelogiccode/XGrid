@@ -177,14 +177,16 @@ public sealed class JitTests
     [Fact]
     public void NonEmittableHead_RejectedAndFallsBack()
     {
-        // push eax; nop; jmp $-2 (loops over the push head: the second visit
-        // finds a cached entry and records a permanent rejection).
-        byte[] code = [0x50, 0x90, 0xEB, 0xFC];
+        // rep movsb (unplanned) looped: the second visit finds a cached entry
+        // and records a permanent rejection; ECX=0 keeps the rep a no-op.
+        byte[] code = [0xF3, 0xA4, 0xEB, 0xFC];
 
         XboxCpu plain = CpuHarness.Create(code);
         XboxCpu jit = CreateJit(code);
         Preset(plain);
         Preset(jit);
+        plain.Context.Ecx = 0;
+        jit.Context.Ecx = 0;
 
         plain.Execute(50);
         jit.Execute(50);
@@ -237,6 +239,219 @@ public sealed class JitTests
         jit.Execute(400);
 
         AssertSameState(plain, jit);
+    }
+
+    [Fact]
+    public void PartialRegisters_Mov8_MatchesInterpreter()
+    {
+        // al/cl/dl/bl/ah/ch/dh/bh moves through a loop; high-byte semantics
+        // (AH etc.) are the sharp edge of the 8-bit register model.
+        byte[] code =
+        [
+            0xB9, 0x06, 0x00, 0x00, 0x00, // mov ecx,6
+            0x88, 0xC8,                   // mov al,cl
+            0x88, 0xE2,                   // mov dl,ah
+            0x88, 0xD6,                   // mov dh,dl
+            0x88, 0xF4,                   // mov ah,dh
+            0x88, 0xF8,                   // mov al,bh
+            0x88, 0xFC,                   // mov ah,bh
+            0x41,                         // inc ecx
+            0x88, 0xC1,                   // mov cl,al
+            0x49,                         // dec ecx
+            0x75, 0xE9,                   // jne loop (0x1005)
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void AdcSbbChain_MatchesInterpreter()
+    {
+        // 64-bit-style add/adc/sbb chains through a loop.
+        byte[] code =
+        [
+            0xB9, 0x05, 0x00, 0x00, 0x00,
+            0xB8, 0xFF, 0xFF, 0xFF, 0xFF, // mov eax,0xFFFFFFFF
+            0xBB, 0x01, 0x00, 0x00, 0x00, // mov ebx,1
+            0xBA, 0x00, 0x00, 0x00, 0x00, // mov edx,0
+            0x01, 0xD8,                   // add eax,ebx  -> CF
+            0x83, 0xD2, 0x00,             // adc edx,0
+            0x29, 0xD8,                   // sub eax,ebx
+            0x83, 0xDA, 0x00,             // sbb edx,0
+            0x81, 0xC0, 0x34, 0x12, 0x00, 0x00, // add eax,0x1234
+            0x81, 0xD2, 0x79, 0x0F, 0x00, 0x00, // adc edx,0x0F79
+            0x49,
+            0x75, 0xDE,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void MemoryAluForms_MatchInterpreter()
+    {
+        // RMW memory forms: add [m],r; inc dword [m]; cmp [m],imm;
+        // add [m],imm; and byte [m],imm; dec byte [m]; test [m],imm.
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00,       // mov ecx,4
+            0xA1, 0x00, 0x20, 0x00, 0x00,       // mov eax,[0x2000]
+            0x01, 0x05, 0x04, 0x20, 0x00, 0x00, // add [0x2004],eax
+            0xFF, 0x05, 0x08, 0x20, 0x00, 0x00, // inc dword [0x2008]
+            0x83, 0x3D, 0x0C, 0x20, 0x00, 0x00, 0x05, // cmp dword [0x200C],5
+            0x75, 0x01,                         // jne +1 (skip dec? sets flags)
+            0x90,
+            0x81, 0x05, 0x10, 0x20, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, // add [0x2010],3
+            0x80, 0x25, 0x14, 0x20, 0x00, 0x00, 0x0F, // and byte [0x2014],0x0F
+            0xFE, 0x0D, 0x15, 0x20, 0x00, 0x00, // dec byte [0x2015]
+            0xF7, 0x05, 0x18, 0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // test dword [0x2018],1
+            0x49,
+            0x75, 0xC6,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+        plain.Ram().Write32(0x2004, 0x01020304);
+        jit.Ram().Write32(0x2004, 0x01020304);
+        plain.Ram().Write32(0x2008, 0xFFFFFFFE);
+        jit.Ram().Write32(0x2008, 0xFFFFFFFE);
+        plain.Ram().Write32(0x200C, 0x00000005);
+        jit.Ram().Write32(0x200C, 0x00000005);
+        plain.Ram().Write32(0x2010, 0x7FFFFFFF);
+        jit.Ram().Write32(0x2010, 0x7FFFFFFF);
+        plain.Ram().Write16(0x2014, 0xAAFF);
+        jit.Ram().Write16(0x2014, 0xAAFF);
+        plain.Ram().Write32(0x2018, 0x00000003);
+        jit.Ram().Write32(0x2018, 0x00000003);
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void PushPopCallRet_MatchesInterpreter()
+    {
+        // mov ecx,4; loop: push eax; push 0x1234; pop ebx; call sub; mov eax,ebx;
+        // dec ecx; jne loop; hlt; sub: push ebp; mov ebp,esp; pop ebp; ret.
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00, // mov ecx,4
+            0x50,                         // push eax
+            0x68, 0x34, 0x12, 0x00, 0x00, // push 0x1234
+            0x5B,                         // pop ebx
+            0xE8, 0x0A, 0x00, 0x00, 0x00, // call 0x101B
+            0x89, 0xD8,                   // mov eax,ebx
+            0x49,
+            0x75, 0xEF,
+            0xF4,
+            0x00, 0x00, 0x00, 0x00,       // padding (never executed)
+            0x55,                         // push ebp
+            0x89, 0xE5,                   // mov ebp,esp
+            0x5D,                         // pop ebp
+            0xC3,                         // ret
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.Context.Halted);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void ShiftsAndExtend_MatchesInterpreter()
+    {
+        // shl/shr/sar/rol/ror with immediates + movzx/movsx + lea, looped.
+        byte[] code =
+        [
+            0xB9, 0x05, 0x00, 0x00, 0x00, // mov ecx,5
+            0xB8, 0x81, 0x23, 0x45, 0x67, // mov eax,0x67452381
+            0xC1, 0xE0, 0x03,             // shl eax,3
+            0xC1, 0xE8, 0x02,             // shr eax,2
+            0xC1, 0xF8, 0x01,             // sar eax,1
+            0xC1, 0xC0, 0x04,             // rol eax,4
+            0xC1, 0xC8, 0x03,             // ror eax,3
+            0x0F, 0xB6, 0xD8,             // movzx ebx,al
+            0x0F, 0xBE, 0xD0,             // movsx edx,al
+            0x0F, 0xB7, 0xF3,             // movzx esi,bx
+            0x0F, 0xBF, 0xFA,             // movsx edi,dx
+            0x8D, 0x1C, 0x8D, 0x10, 0x00, 0x00, 0x00, // lea ebx,[ecx*4+0x10]
+            0x8D, 0x74, 0xB5, 0x08,       // lea esi,[ebp+esi*4+8]
+            0x49,
+            0x75, 0xD2,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void IndirectJmp_MatchesInterpreter()
+    {
+        // mov eax, target; jmp eax (a jump-table-shaped dispatch), looped.
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00, // mov ecx,3
+            0xB8, 0x0D, 0x10, 0x00, 0x00, // mov eax,0x100D
+            0xFF, 0xE0,                   // jmp eax
+            0x90,                         // nop (skipped)
+            0x40,                         // inc eax
+            0x49,
+            0x75, 0xF4,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
     }
 
     private static XboxCpu CreateJit(byte[] code)
@@ -402,10 +617,12 @@ public sealed class JitTests
     }
 
     /// <summary>
-    /// Random program over the J1 emittable shapes: register/immediate data
-    /// ops, absolute-disp32 loads/stores, and backward jcc/jmp branches to
-    /// earlier instruction boundaries (bounded by the execute cap). Every
-    /// program terminates in HLT when reached.
+    /// Random program over the J1b emittable shapes: register/immediate/
+    /// memory data ops at 8/16/32 bits, movzx/movsx, lea, shifts, push/pop,
+    /// and backward jcc/jmp branches to earlier instruction boundaries
+    /// (bounded by the execute cap). ESP is never loaded with a large
+    /// immediate so the stack discipline stays inside RAM. Every program
+    /// terminates in HLT when reached.
     /// </summary>
     private static byte[] RandomProgram(int seed, int instructionCount)
     {
@@ -415,10 +632,10 @@ public sealed class JitTests
         for (int i = 0; i < instructionCount; i++)
         {
             boundaries.Add(code.Count);
-            switch (random.Next(12))
+            switch (random.Next(24))
             {
                 case 0:
-                    code.Add((byte)(0xB8 + random.Next(8)));
+                    code.Add((byte)(0xB8 + PickRegNoEsp(random)));
                     AppendU32(code, (uint)random.Next());
                     break;
                 case 1:
@@ -426,14 +643,14 @@ public sealed class JitTests
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 2:
-                    code.Add((byte)new byte[] { 0x01, 0x29, 0x21, 0x09, 0x31, 0x39 }[random.Next(6)]);
+                    code.Add((byte)new byte[] { 0x01, 0x29, 0x21, 0x09, 0x31, 0x39, 0x11, 0x19 }[random.Next(8)]);
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 3:
                     {
-                        byte[] groups = [0xC0, 0xC8, 0xE0, 0xE8, 0xF0, 0xF8];
+                        byte[] groups = [0xC0, 0xC8, 0xD0, 0xD8, 0xE0, 0xE8, 0xF0, 0xF8];
                         code.Add(0x81);
-                        code.Add((byte)(groups[random.Next(6)] | random.Next(8)));
+                        code.Add((byte)(groups[random.Next(8)] | PickRegNoEsp(random)));
                         AppendU32(code, (uint)random.Next());
                         break;
                     }
@@ -465,14 +682,115 @@ public sealed class JitTests
                     code.Add(0xEB);
                     code.Add((byte)PickBackwardRel(boundaries, code.Count, random));
                     break;
-                default:
-                    code.Add(0x90);
+                case 11:
+                    code.Add(0x88);
+                    code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
+                case 12:
+                    code.Add((byte)new byte[] { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38 }[random.Next(8)]);
+                    code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
+                    break;
+                case 13:
+                    {
+                        byte[] groups8 = [0xC0, 0xC8, 0xD0, 0xD8, 0xE0, 0xE8, 0xF0, 0xF8];
+                        code.Add(0x80);
+                        code.Add((byte)(groups8[random.Next(8)] | random.Next(8)));
+                        code.Add((byte)random.Next(256));
+                        break;
+                    }
+                case 14:
+                    code.Add(0x66);
+                    code.Add((byte)(0xB8 + PickRegNoEsp(random)));
+                    code.Add((byte)random.Next(256));
+                    code.Add((byte)random.Next(256));
+                    break;
+                case 15:
+                    code.Add(0x0F);
+                    code.Add((byte)(random.Next(2) == 0 ? 0xB6 : 0xBE));
+                    code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
+                    break;
+                case 16:
+                    code.Add(0x0F);
+                    code.Add((byte)(random.Next(2) == 0 ? 0xB7 : 0xBF));
+                    code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
+                    break;
+                case 17:
+                    code.Add(0x8D);
+                    code.Add((byte)((random.Next(8) << 3) | 0x05));
+                    AppendU32(code, (uint)(0x2000 + random.Next(0x1000) * 4));
+                    break;
+                case 18:
+                    {
+                        byte[] shiftGroups = [0xC0, 0xC8, 0xD0, 0xD8, 0xE0, 0xE8, 0xF8];
+                        code.Add(0xC1);
+                        code.Add((byte)(shiftGroups[random.Next(7)] | random.Next(8)));
+                        code.Add((byte)random.Next(1, 33));
+                        break;
+                    }
+                case 19:
+                    if (random.Next(2) == 0)
+                    {
+                        code.Add((byte)(0x50 + random.Next(8))); // push r32
+                    }
+                    else
+                    {
+                        code.Add((byte)(0x58 + random.Next(8))); // pop r32
+                    }
+
+                    break;
+                case 20:
+                    {
+                        byte[] memOps = [0x01, 0x29, 0x21, 0x09, 0x31, 0x39];
+                        code.Add(memOps[random.Next(6)]);
+                        code.Add((byte)((random.Next(8) << 3) | 0x05));
+                        AppendU32(code, (uint)(0x2000 + random.Next(0x1000) * 4));
+                        break;
+                    }
+                case 21:
+                    if (random.Next(4) == 0)
+                    {
+                        code.Add(0xC7); // mov [disp32], imm32
+                        code.Add(0x05);
+                        AppendU32(code, (uint)(0x2000 + random.Next(0x1000) * 4));
+                        AppendU32(code, (uint)random.Next());
+                    }
+                    else
+                    {
+                        byte[] groupsM = [0x05, 0x0D, 0x25, 0x2D, 0x35, 0x3D];
+                        code.Add(0x81); // alu [disp32], imm32
+                        code.Add(groupsM[random.Next(6)]);
+                        AppendU32(code, (uint)(0x2000 + random.Next(0x1000) * 4));
+                        AppendU32(code, (uint)random.Next());
+                    }
+
+                    break;
+                case 22:
+                    code.Add(0x66);
+                    code.Add(0x89);
+                    code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
+                    break;
+                default:
+                    {
+                        byte[] groups16 = [0xC0, 0xC8, 0xE0, 0xE8, 0xF0, 0xF8];
+                        code.Add(0x66);
+                        code.Add(0x81);
+                        code.Add((byte)(groups16[random.Next(6)] | PickRegNoEsp(random)));
+                        code.Add((byte)random.Next(256));
+                        code.Add((byte)random.Next(256));
+                        break;
+                    }
             }
         }
 
         code.Add(0xF4);
         return code.ToArray();
+    }
+
+    /// <summary>Picks a register for immediate loads, never ESP (stack safety).</summary>
+    private static int PickRegNoEsp(Random random)
+    {
+        int reg = random.Next(7);
+        return reg >= 4 ? reg + 1 : reg;
     }
 
     /// <summary>

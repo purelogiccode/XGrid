@@ -5,311 +5,24 @@ using XGrid.Memory;
 
 namespace XGrid.Cpu;
 
-/// <summary>Native member shapes the fast-mode emitter can bake (J1 slice).</summary>
-internal enum JitKind : byte
-{
-    None = 0,
-    MovRR32,
-    MovRI32,
-    MovLoad32,
-    MovStore32,
-    AluRR32,
-    AluRI32,
-    TestRR32,
-    TestRI32,
-    IncR32,
-    DecR32,
-    Nop,
-    JmpRel,
-    JccRel,
-}
-
-/// <summary>ALU operation selector baked into a plan.</summary>
-internal enum JitAluOp : byte
-{
-    None = 0,
-    Add,
-    Sub,
-    And,
-    Or,
-    Xor,
-    Cmp,
-}
-
-/// <summary>One planned block member: everything the emitter needs, baked.</summary>
-internal readonly struct JitMemberPlan
-{
-    public JitKind Kind { get; init; }
-
-    public int Length { get; init; }
-
-    /// <summary>Primary register (destination for loads/algebra, source for stores).</summary>
-    public int RegIndex { get; init; }
-
-    /// <summary>Second source register for register/register forms.</summary>
-    public int SecondRegIndex { get; init; }
-
-    /// <summary>Immediate operand (or branch displacement, as raw uint bits).</summary>
-    public uint Immediate { get; init; }
-
-    public JitAluOp AluOp { get; init; }
-
-    public ConditionCode Condition { get; init; }
-
-    public bool HasMemory { get; init; }
-
-    public int BaseRegister { get; init; }
-
-    public bool HasBase { get; init; }
-
-    public int IndexRegister { get; init; }
-
-    public bool HasIndex { get; init; }
-
-    public int Scale { get; init; }
-
-    public uint Displacement { get; init; }
-
-    public SegmentRegister Segment { get; init; }
-
-    public bool IsTerminator { get; init; }
-}
-
 /// <summary>
-/// Fast-mode plan resolver: maps a decoded instruction to a fully baked
-/// native shape, or <see cref="JitKind.None"/> to end the block before it.
-/// Only 32-bit register/immediate forms, 32-bit addressing without a segment
-/// override, and direct rel8/rel32 near Jmp/Jcc terminators are planned in
-/// the J1 slice; everything else keeps the existing member path. Semantics
-/// mirror the shapes in <c>XboxCpuSpecExec</c> exactly (inc/dec via
-/// <see cref="AluOps"/>, test via <see cref="AluOps.Logical"/>, Jcc via the
-/// same flag tests as <c>EvaluateCondition</c>).
-/// </summary>
-internal static class JitPlanner
-{
-    public static JitMemberPlan Plan(in DecodedInstruction instruction)
-    {
-        return instruction.Mnemonic switch
-        {
-            Mnemonic.Mov => PlanMov(instruction),
-            Mnemonic.Add => PlanAlu(instruction, JitAluOp.Add),
-            Mnemonic.Sub => PlanAlu(instruction, JitAluOp.Sub),
-            Mnemonic.And => PlanAlu(instruction, JitAluOp.And),
-            Mnemonic.Or => PlanAlu(instruction, JitAluOp.Or),
-            Mnemonic.Xor => PlanAlu(instruction, JitAluOp.Xor),
-            Mnemonic.Cmp => PlanAlu(instruction, JitAluOp.Cmp),
-            Mnemonic.Test => PlanTest(instruction),
-            Mnemonic.Inc => PlanIncDec(instruction, inc: true),
-            Mnemonic.Dec => PlanIncDec(instruction, inc: false),
-            Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
-            Mnemonic.Jmp => PlanJmp(instruction),
-            Mnemonic.Jcc => PlanJcc(instruction),
-            _ => default,
-        };
-    }
-
-    private static JitMemberPlan PlanMov(in DecodedInstruction instruction)
-    {
-        Operand first = instruction.Operand1;
-        Operand second = instruction.Operand2;
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.MovRR32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                SecondRegIndex = second.RegisterIndex,
-            };
-        }
-
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Immediate && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.MovRI32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                Immediate = second.Immediate,
-            };
-        }
-
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Memory && first.Size == 32)
-        {
-            var plan = new JitMemberPlan
-            {
-                Kind = JitKind.MovLoad32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-            };
-            return WithMemory(plan, second.Memory);
-        }
-
-        if (first.Kind == OperandKind.Memory && second.Kind == OperandKind.Register && second.Size == 32)
-        {
-            var plan = new JitMemberPlan
-            {
-                Kind = JitKind.MovStore32,
-                Length = instruction.Length,
-                RegIndex = second.RegisterIndex,
-            };
-            return WithMemory(plan, first.Memory);
-        }
-
-        return default;
-    }
-
-    private static JitMemberPlan PlanAlu(in DecodedInstruction instruction, JitAluOp op)
-    {
-        Operand first = instruction.Operand1;
-        Operand second = instruction.Operand2;
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.AluRR32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                SecondRegIndex = second.RegisterIndex,
-                AluOp = op,
-            };
-        }
-
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Immediate && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.AluRI32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                Immediate = second.Immediate,
-                AluOp = op,
-            };
-        }
-
-        return default;
-    }
-
-    private static JitMemberPlan PlanTest(in DecodedInstruction instruction)
-    {
-        Operand first = instruction.Operand1;
-        Operand second = instruction.Operand2;
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.TestRR32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                SecondRegIndex = second.RegisterIndex,
-            };
-        }
-
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Immediate && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.TestRI32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-                Immediate = second.Immediate,
-            };
-        }
-
-        return default;
-    }
-
-    private static JitMemberPlan PlanIncDec(in DecodedInstruction instruction, bool inc)
-    {
-        Operand first = instruction.Operand1;
-        if (first.Kind == OperandKind.Register && first.Size == 32)
-        {
-            return new JitMemberPlan
-            {
-                Kind = inc ? JitKind.IncR32 : JitKind.DecR32,
-                Length = instruction.Length,
-                RegIndex = first.RegisterIndex,
-            };
-        }
-
-        return default;
-    }
-
-    private static JitMemberPlan PlanJmp(in DecodedInstruction instruction)
-    {
-        if (instruction.Operand1.Kind == OperandKind.Immediate)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.JmpRel,
-                Length = instruction.Length,
-                Immediate = instruction.Operand1.Immediate,
-                IsTerminator = true,
-            };
-        }
-
-        return default;
-    }
-
-    private static JitMemberPlan PlanJcc(in DecodedInstruction instruction)
-    {
-        if (instruction.Operand1.Kind == OperandKind.Immediate)
-        {
-            return new JitMemberPlan
-            {
-                Kind = JitKind.JccRel,
-                Length = instruction.Length,
-                Immediate = instruction.Operand1.Immediate,
-                Condition = instruction.Condition,
-                IsTerminator = true,
-            };
-        }
-
-        return default;
-    }
-
-    /// <summary>
-    /// Fills the memory facts for an address-taking member. Rejected (None)
-    /// for 16-bit addressing or any segment override — those keep the member
-    /// path. The default segment mirrors <c>XboxCpu.DefaultSegment</c> for
-    /// 32-bit addressing (SS for ESP/EBP-based, DS otherwise).
-    /// </summary>
-    private static JitMemberPlan WithMemory(JitMemberPlan plan, in MemoryOperand memory)
-    {
-        if (memory.Is16Bit || memory.SegmentOverride is not null)
-        {
-            return default;
-        }
-
-        SegmentRegister segment = memory.HasBase && (memory.Base == Gpr.Esp || memory.Base == Gpr.Ebp)
-            ? SegmentRegister.Ss
-            : SegmentRegister.Ds;
-        return plan with
-        {
-            HasMemory = true,
-            HasBase = memory.HasBase,
-            BaseRegister = (int)memory.Base,
-            HasIndex = memory.HasIndex,
-            IndexRegister = (int)memory.Index,
-            Scale = memory.Scale == 0 ? 1 : memory.Scale,
-            Displacement = memory.Displacement,
-            Segment = segment,
-        };
-    }
-}
-
-/// <summary>
-/// Fast-mode block emitter (J1 slice): builds one DynamicMethod per block that
-/// keeps all eight GPRs, EIP, EFLAGS and TSC in IL locals across the whole
-/// block and serves each member with baked native code. Memory members run an
-/// inlined translate-cache probe + RAM-direct access; every non-fast case
-/// (cache miss, non-RAM, cross-page, watched store, non-writable store with
-/// WP set) takes the exact interpreter access path (ReadMemory/WriteMemory)
-/// after syncing the locals back to the context, so faults stay precise and
-/// every side effect keeps its legacy order. The only boundary relaxed
-/// relative to the interpreter is the IRQ poll position: the caller polls
-/// once per block (RunJitBlock), which the dual-mode contract permits; TSC,
-/// EIP, faults and stores all stay per-instruction exact.
+/// Fast-mode block emitter (J1b slice): builds one DynamicMethod per block
+/// that keeps all eight GPRs, EIP, EFLAGS and TSC in IL locals across the
+/// whole block and serves each member with baked native code.
+///
+/// Data members run either fully in the locals (register/immediate forms) or
+/// through an inlined translate-cache probe + RAM-direct access; every
+/// non-fast case (cache miss, non-RAM, cross-page, watched store,
+/// non-writable store under WP) takes the exact interpreter access path
+/// (ReadMemory/WriteMemory/Push/Pop) after syncing the locals back to the
+/// context, so faults stay precise and every side effect keeps its legacy
+/// order. Stack members (push/pop/call/ret) mirror the interpreter's
+/// Push/Pop helpers including their ESP-before-write order.
+///
+/// The only boundary relaxed relative to the interpreter is the IRQ poll
+/// position: the caller polls once per block (RunJitBlock), which the
+/// dual-mode contract permits; TSC, EIP, faults and stores all stay
+/// per-instruction exact.
 /// </summary>
 internal static class JitEmitter
 {
@@ -336,6 +49,9 @@ internal static class JitEmitter
 
     private static readonly MethodInfo SetTsc =
         typeof(XboxContext).GetProperty("Tsc")!.SetMethod!;
+
+    private static readonly MethodInfo GetEsp =
+        typeof(XboxContext).GetProperty("Esp")!.GetMethod!;
 
     private static readonly MethodInfo GetCr0 =
         typeof(XboxContext).GetProperty("Cr0")!.GetMethod!;
@@ -376,8 +92,26 @@ internal static class JitEmitter
     private static readonly MethodInfo WriteMemory =
         typeof(XboxCpu).GetMethod("WriteMemory", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
+    private static readonly MethodInfo Push =
+        typeof(XboxCpu).GetMethod("Push", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo Pop =
+        typeof(XboxCpu).GetMethod("Pop", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo RamRead8 =
+        typeof(PhysicalMemory).GetMethod("Read8")!;
+
+    private static readonly MethodInfo RamRead16 =
+        typeof(PhysicalMemory).GetMethod("Read16")!;
+
     private static readonly MethodInfo RamRead32 =
         typeof(PhysicalMemory).GetMethod("Read32")!;
+
+    private static readonly MethodInfo RamWrite8 =
+        typeof(PhysicalMemory).GetMethod("Write8")!;
+
+    private static readonly MethodInfo RamWrite16 =
+        typeof(PhysicalMemory).GetMethod("Write16")!;
 
     private static readonly MethodInfo RamWrite32 =
         typeof(PhysicalMemory).GetMethod("Write32")!;
@@ -396,6 +130,14 @@ internal static class JitEmitter
 
     private static readonly MethodInfo AluDec =
         typeof(AluOps).GetMethod("Dec")!;
+
+    private static readonly MethodInfo ShiftShl = typeof(ShiftOps).GetMethod("Shl")!;
+    private static readonly MethodInfo ShiftShr = typeof(ShiftOps).GetMethod("Shr")!;
+    private static readonly MethodInfo ShiftSar = typeof(ShiftOps).GetMethod("Sar")!;
+    private static readonly MethodInfo ShiftRol = typeof(ShiftOps).GetMethod("Rol")!;
+    private static readonly MethodInfo ShiftRor = typeof(ShiftOps).GetMethod("Ror")!;
+    private static readonly MethodInfo ShiftRcl = typeof(ShiftOps).GetMethod("Rcl")!;
+    private static readonly MethodInfo ShiftRcr = typeof(ShiftOps).GetMethod("Rcr")!;
 
     /// <summary>
     /// Builds a runner for the given planned members, or null when the plan
@@ -485,6 +227,16 @@ internal static class JitEmitter
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
                 a1, a2, res, addr, vpn, phys, slot, ram);
 
+            if (!plan.IsTerminator)
+            {
+                // Non-terminator members advance EIP after completion
+                // (handlers and the emitted bodies advance only on success).
+                il.Emit(OpCodes.Ldloc, eip);
+                il.Emit(OpCodes.Ldc_I4, plan.Length);
+                il.Emit(OpCodes.Add);
+                il.Emit(OpCodes.Stloc, eip);
+            }
+
             il.Emit(OpCodes.Ldloc, served);
             il.Emit(OpCodes.Ldc_I4_1);
             il.Emit(OpCodes.Add);
@@ -504,7 +256,7 @@ internal static class JitEmitter
 
     private static void EmitMember(
         ILGenerator il,
-        in JitMemberPlan plan,
+        JitMemberPlan plan,
         LocalBuilder context,
         LocalBuilder[] gprs,
         LocalBuilder eip,
@@ -522,38 +274,207 @@ internal static class JitEmitter
     {
         switch (plan.Kind)
         {
-            case JitKind.MovRR32:
-                il.Emit(OpCodes.Ldloc, gprs[plan.SecondRegIndex]);
-                il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
+            case JitKind.MovRR:
+                EmitReadReg(il, gprs, plan.Size, plan.SecondRegIndex);
+                EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, res);
                 break;
 
-            case JitKind.MovRI32:
+            case JitKind.MovRI:
                 il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
-                il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
+                EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, res);
                 break;
 
-            case JitKind.MovLoad32:
-            case JitKind.MovStore32:
-                EmitMemoryMember(il, plan, context, gprs, eip, flags, tsc, served,
-                    a1, addr, vpn, phys, slot, ram);
+            case JitKind.MovLoad:
+                EmitLoadMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                    loadValue: () =>
+                    {
+                        EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, res);
+                    },
+                    writeScratch: res);
                 break;
 
-            case JitKind.AluRR32:
-            case JitKind.AluRI32:
-                EmitAlu(il, plan, gprs, flags, a1, a2, res);
+            case JitKind.MovStore:
+                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                    emitValue: () => EmitReadReg(il, gprs, plan.Size, plan.RegIndex));
                 break;
 
-            case JitKind.TestRR32:
-            case JitKind.TestRI32:
-                EmitTest(il, plan, gprs, flags, a1, a2, res);
+            case JitKind.MovStoreImm:
+                EmitStoreMember(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram,
+                    emitValue: () => il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate)));
                 break;
 
-            case JitKind.IncR32:
-            case JitKind.DecR32:
-                EmitIncDec(il, plan, gprs, flags, res);
+            case JitKind.AluRR:
+            case JitKind.AluRI:
+                {
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Stloc, a1);
+                    if (plan.Kind == JitKind.AluRR)
+                    {
+                        EmitReadReg(il, gprs, plan.Size, plan.SecondRegIndex);
+                    }
+                    else
+                    {
+                        il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                    }
+
+                    il.Emit(OpCodes.Stloc, a2);
+                    EmitAluCompute(il, plan, flags, a1, a2, res);
+                    if (plan.AluOp != JitAluOp.Cmp)
+                    {
+                        il.Emit(OpCodes.Ldloc, res);
+                        EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                    }
+
+                    break;
+                }
+
+            case JitKind.AluRM:
+                {
+                    // r op= [m]: load the memory value, then compute in the locals.
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Stloc, a1);
+                    Label done = il.DefineLabel();
+                    Label slow = il.DefineLabel();
+                    EmitEipStore(il, context, eip);
+                    EmitAddress(il, plan, context, gprs, addr);
+                    EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+                    EmitRamRead(il, plan.Size, ram, phys);
+                    il.Emit(OpCodes.Stloc, a2);
+                    il.Emit(OpCodes.Br, done);
+                    il.MarkLabel(slow);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    il.Emit(OpCodes.Ldarg_0);
+                    il.Emit(OpCodes.Ldloc, addr);
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Call, ReadMemory);
+                    il.Emit(OpCodes.Stloc, a2);
+                    il.MarkLabel(done);
+                    EmitAluCompute(il, plan, flags, a1, a2, res);
+                    if (plan.AluOp != JitAluOp.Cmp)
+                    {
+                        il.Emit(OpCodes.Ldloc, res);
+                        EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                    }
+
+                    break;
+                }
+
+            case JitKind.AluMR:
+            case JitKind.AluMI:
+                EmitReadModifyWrite(il, plan, context, gprs, eip, flags, tsc, served, a1, a2, res, addr, vpn, phys,
+                    slot, ram);
                 break;
 
-            case JitKind.Nop:
+            case JitKind.TestRR:
+            case JitKind.TestRI:
+                {
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Stloc, a1);
+                    if (plan.Kind == JitKind.TestRR)
+                    {
+                        EmitReadReg(il, gprs, plan.Size, plan.SecondRegIndex);
+                    }
+                    else
+                    {
+                        il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                    }
+
+                    il.Emit(OpCodes.Stloc, a2);
+                    EmitTestCompute(il, plan.Size, flags, a1, a2);
+                    break;
+                }
+
+            case JitKind.TestMI:
+                {
+                    Label done = il.DefineLabel();
+                    Label slow = il.DefineLabel();
+                    EmitEipStore(il, context, eip);
+                    EmitAddress(il, plan, context, gprs, addr);
+                    EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+                    EmitRamRead(il, plan.Size, ram, phys);
+                    il.Emit(OpCodes.Stloc, a1);
+                    il.Emit(OpCodes.Br, done);
+                    il.MarkLabel(slow);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    il.Emit(OpCodes.Ldarg_0);
+                    il.Emit(OpCodes.Ldloc, addr);
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Call, ReadMemory);
+                    il.Emit(OpCodes.Stloc, a1);
+                    il.MarkLabel(done);
+                    il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                    il.Emit(OpCodes.Stloc, a2);
+                    EmitTestCompute(il, plan.Size, flags, a1, a2);
+                    break;
+                }
+
+            case JitKind.IncR:
+            case JitKind.DecR:
+                {
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Ldloc, flags);
+                    il.Emit(OpCodes.Ldloca, res);
+                    il.Emit(OpCodes.Call, plan.Kind == JitKind.IncR ? AluInc : AluDec);
+                    il.Emit(OpCodes.Stloc, flags);
+                    il.Emit(OpCodes.Ldloc, res);
+                    EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                    break;
+                }
+
+            case JitKind.IncM:
+            case JitKind.DecM:
+                EmitReadModifyWrite(il, plan, context, gprs, eip, flags, tsc, served, a1, a2, res, addr, vpn, phys,
+                    slot, ram);
+                break;
+
+            case JitKind.Lea:
+                // Cannot fault: no EIP store needed.
+                EmitAddress(il, plan, context, gprs, addr);
+                il.Emit(OpCodes.Ldloc, addr);
+                EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                break;
+
+            case JitKind.MovExtend:
+                EmitExtend(il, plan, context, gprs, eip, flags, tsc, served, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.ShiftRI:
+                {
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Stloc, a1);
+                    il.Emit(OpCodes.Ldloc, a1);
+                    il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Ldloc, flags);
+                    il.Emit(OpCodes.Ldloca, res);
+                    il.Emit(OpCodes.Call, ShiftMethod(plan.ShiftOp));
+                    il.Emit(OpCodes.Stloc, flags);
+                    il.Emit(OpCodes.Ldloc, res);
+                    EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                    break;
+                }
+
+            case JitKind.PushR:
+            case JitKind.PushI:
+                EmitPush(il, plan, context, gprs, eip, flags, tsc, served, a1, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.PopR:
+                EmitPop(il, plan, context, gprs, eip, flags, tsc, served, a1, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.CallRel:
+                EmitCallRel(il, plan, context, gprs, eip, flags, tsc, served, a2, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.RetNear:
+                EmitRet(il, plan, context, gprs, eip, flags, tsc, served, a1, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.JmpReg:
+                il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
+                il.Emit(OpCodes.Stloc, eip);
                 break;
 
             case JitKind.JmpRel:
@@ -587,170 +508,319 @@ internal static class JitEmitter
                     break;
                 }
 
+            case JitKind.Nop:
+                break;
+
             default:
                 throw new InvalidOperationException($"No emitter for kind {plan.Kind}.");
         }
-
-        // Every non-terminator member whose EIP advance is not handled inside
-        // its own emitter advances the local by the instruction length here.
-        switch (plan.Kind)
-        {
-            case JitKind.MovLoad32:
-            case JitKind.MovStore32:
-            case JitKind.JmpRel:
-            case JitKind.JccRel:
-                break;
-            default:
-                il.Emit(OpCodes.Ldloc, eip);
-                il.Emit(OpCodes.Ldc_I4, plan.Length);
-                il.Emit(OpCodes.Add);
-                il.Emit(OpCodes.Stloc, eip);
-                break;
-        }
     }
 
-    private static void EmitAlu(
+    /// <summary>Load-only member: probe + RAM read, converging on the value in <paramref name="writeScratch"/>.</summary>
+    private static void EmitLoadMember(
         ILGenerator il,
-        in JitMemberPlan plan,
+        JitMemberPlan plan,
+        LocalBuilder context,
         LocalBuilder[] gprs,
+        LocalBuilder eip,
         LocalBuilder flags,
-        LocalBuilder a1,
-        LocalBuilder a2,
-        LocalBuilder res)
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram,
+        Action loadValue,
+        LocalBuilder writeScratch)
     {
-        il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
-        il.Emit(OpCodes.Stloc, a1);
-        if (plan.Kind == JitKind.AluRR32)
-        {
-            il.Emit(OpCodes.Ldloc, gprs[plan.SecondRegIndex]);
-        }
-        else
-        {
-            il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
-        }
-
-        il.Emit(OpCodes.Stloc, a2);
-        switch (plan.AluOp)
-        {
-            case JitAluOp.Add:
-            case JitAluOp.Sub:
-            case JitAluOp.Cmp:
-                EmitAluBinaryCall(
-                    il,
-                    plan.AluOp == JitAluOp.Add ? AluAdd : AluSub,
-                    a1,
-                    a2,
-                    flags,
-                    res);
-                if (plan.AluOp != JitAluOp.Cmp)
-                {
-                    il.Emit(OpCodes.Ldloc, res);
-                    il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
-                }
-
-                break;
-
-            default:
-                {
-                    // And/Or/Xor: compute the value, then AluOps.Logical.
-                    il.Emit(OpCodes.Ldloc, a1);
-                    il.Emit(OpCodes.Ldloc, a2);
-                    il.Emit(plan.AluOp switch
-                    {
-                        JitAluOp.And => OpCodes.And,
-                        JitAluOp.Or => OpCodes.Or,
-                        _ => OpCodes.Xor,
-                    });
-                    il.Emit(OpCodes.Stloc, res);
-                    EmitLogicalFlags(il, res, flags);
-                    il.Emit(OpCodes.Ldloc, res);
-                    il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
-                    break;
-                }
-        }
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+        EmitAddress(il, plan, context, gprs, addr);
+        EmitProbe(il, context, isStore: false, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitRamRead(il, plan.Size, ram, phys);
+        il.Emit(OpCodes.Stloc, writeScratch);
+        il.Emit(OpCodes.Ldloc, writeScratch);
+        loadValue();
+        il.Emit(OpCodes.Br, done);
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, addr);
+        il.Emit(OpCodes.Ldc_I4, plan.Size);
+        il.Emit(OpCodes.Call, ReadMemory);
+        loadValue();
+        il.MarkLabel(done);
     }
 
-    private static void EmitTest(
+    /// <summary>Store member: probe + RAM write with the watch guard, converging on no value.</summary>
+    private static void EmitStoreMember(
         ILGenerator il,
-        in JitMemberPlan plan,
+        JitMemberPlan plan,
+        LocalBuilder context,
         LocalBuilder[] gprs,
+        LocalBuilder eip,
         LocalBuilder flags,
-        LocalBuilder a1,
-        LocalBuilder a2,
-        LocalBuilder res)
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram,
+        Action emitValue)
     {
-        il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
-        il.Emit(OpCodes.Stloc, a1);
-        if (plan.Kind == JitKind.TestRR32)
-        {
-            il.Emit(OpCodes.Ldloc, gprs[plan.SecondRegIndex]);
-        }
-        else
-        {
-            il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
-        }
-
-        il.Emit(OpCodes.Stloc, a2);
-        il.Emit(OpCodes.Ldloc, a1);
-        il.Emit(OpCodes.Ldloc, a2);
-        il.Emit(OpCodes.And);
-        il.Emit(OpCodes.Stloc, res);
-        EmitLogicalFlags(il, res, flags);
-    }
-
-    private static void EmitIncDec(
-        ILGenerator il,
-        in JitMemberPlan plan,
-        LocalBuilder[] gprs,
-        LocalBuilder flags,
-        LocalBuilder res)
-    {
-        il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
-        il.Emit(OpCodes.Ldc_I4, 32);
-        il.Emit(OpCodes.Ldloc, flags);
-        il.Emit(OpCodes.Ldloca, res);
-        il.Emit(OpCodes.Call, plan.Kind == JitKind.IncR32 ? AluInc : AluDec);
-        il.Emit(OpCodes.Stloc, flags);
-        il.Emit(OpCodes.Ldloc, res);
-        il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
-    }
-
-    private static void EmitAluBinaryCall(
-        ILGenerator il,
-        MethodInfo op,
-        LocalBuilder a1,
-        LocalBuilder a2,
-        LocalBuilder flags,
-        LocalBuilder res)
-    {
-        il.Emit(OpCodes.Ldloc, a1);
-        il.Emit(OpCodes.Ldloc, a2);
-        il.Emit(OpCodes.Ldc_I4_0);
-        il.Emit(OpCodes.Ldc_I4, 32);
-        il.Emit(OpCodes.Ldloc, flags);
-        il.Emit(OpCodes.Ldloca, res);
-        il.Emit(OpCodes.Call, op);
-        il.Emit(OpCodes.Stloc, flags);
-    }
-
-    private static void EmitLogicalFlags(ILGenerator il, LocalBuilder value, LocalBuilder flags)
-    {
-        il.Emit(OpCodes.Ldloc, value);
-        il.Emit(OpCodes.Ldc_I4, 32);
-        il.Emit(OpCodes.Ldloc, flags);
-        il.Emit(OpCodes.Call, AluLogical);
-        il.Emit(OpCodes.Stloc, flags);
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+        EmitAddress(il, plan, context, gprs, addr);
+        EmitProbe(il, context, isStore: true, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitWatchGuard(il, plan.Size / 8, phys, slow);
+        EmitNoteStore(il, plan.Size, phys);
+        EmitRamWrite(il, plan.Size, ram, phys, emitValue);
+        il.Emit(OpCodes.Br, done);
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, addr);
+        il.Emit(OpCodes.Ldc_I4, plan.Size);
+        emitValue();
+        il.Emit(OpCodes.Call, WriteMemory);
+        il.MarkLabel(done);
     }
 
     /// <summary>
-    /// Emits one 32-bit register/memory member: EIP store for fault precision,
-    /// inlined translate-cache probe + RAM-direct access, and the exact
-    /// interpreter access path on any non-fast case (with a full local->context
-    /// sync so thrown faults see the member boundary exactly).
+    /// Read-modify-write member (AluMR/AluMI/IncM/DecM): probe once (the fast
+    /// path is only taken when the page is writable and in RAM), read, compute,
+    /// NoteStorePhysical and write; the slow path is the exact interpreter
+    /// ReadMemory + compute + WriteMemory sequence.
     /// </summary>
-    private static void EmitMemoryMember(
+    private static void EmitReadModifyWrite(
         ILGenerator il,
-        in JitMemberPlan plan,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder a1,
+        LocalBuilder a2,
+        LocalBuilder res,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        bool isCmp = plan.AluOp == JitAluOp.Cmp;
+        bool stores = !isCmp;
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+        EmitAddress(il, plan, context, gprs, addr);
+        EmitProbe(il, context, isStore: stores, plan.Size / 8, addr, vpn, slot, phys, ram, slow);
+        EmitRamRead(il, plan.Size, ram, phys);
+        il.Emit(OpCodes.Stloc, a1);
+        EmitSecondOperand(il, plan, gprs, a2);
+        ComputeRmw(il, plan, flags, a1, a2, res);
+        if (stores)
+        {
+            EmitWatchGuard(il, plan.Size / 8, phys, slow);
+            EmitNoteStore(il, plan.Size, phys);
+            EmitRamWrite(il, plan.Size, ram, phys, () => il.Emit(OpCodes.Ldloc, res));
+        }
+
+        il.Emit(OpCodes.Br, done);
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, addr);
+        il.Emit(OpCodes.Ldc_I4, plan.Size);
+        il.Emit(OpCodes.Call, ReadMemory);
+        il.Emit(OpCodes.Stloc, a1);
+        EmitSecondOperand(il, plan, gprs, a2);
+        ComputeRmw(il, plan, flags, a1, a2, res);
+        if (stores)
+        {
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, addr);
+            il.Emit(OpCodes.Ldc_I4, plan.Size);
+            il.Emit(OpCodes.Ldloc, res);
+            il.Emit(OpCodes.Call, WriteMemory);
+        }
+
+        il.MarkLabel(done);
+    }
+
+    /// <summary>Second operand for the RMW compute (register source or baked immediate).</summary>
+    private static void EmitSecondOperand(ILGenerator il, JitMemberPlan plan, LocalBuilder[] gprs, LocalBuilder a2)
+    {
+        switch (plan.Kind)
+        {
+            case JitKind.AluMR:
+                EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                il.Emit(OpCodes.Stloc, a2);
+                break;
+            case JitKind.AluMI:
+                il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+                il.Emit(OpCodes.Stloc, a2);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private static void ComputeRmw(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder flags,
+        LocalBuilder a1,
+        LocalBuilder a2,
+        LocalBuilder res)
+    {
+        switch (plan.Kind)
+        {
+            case JitKind.IncM:
+            case JitKind.DecM:
+                il.Emit(OpCodes.Ldloc, a1);
+                il.Emit(OpCodes.Ldc_I4, plan.Size);
+                il.Emit(OpCodes.Ldloc, flags);
+                il.Emit(OpCodes.Ldloca, res);
+                il.Emit(OpCodes.Call, plan.Kind == JitKind.IncM ? AluInc : AluDec);
+                il.Emit(OpCodes.Stloc, flags);
+                break;
+            default:
+                EmitAluCompute(il, plan, flags, a1, a2, res);
+                break;
+        }
+    }
+
+    private static void EmitExtend(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        if (plan.HasMemory)
+        {
+            Label done = il.DefineLabel();
+            Label slow = il.DefineLabel();
+            EmitEipStore(il, context, eip);
+            EmitAddress(il, plan, context, gprs, addr);
+            EmitProbe(il, context, isStore: false, plan.SourceSize / 8, addr, vpn, slot, phys, ram, slow);
+            EmitRamRead(il, plan.SourceSize, ram, phys);
+            EmitExtendValue(il, plan);
+            il.Emit(OpCodes.Br, done);
+            il.MarkLabel(slow);
+            EmitSync(il, context, gprs, eip, flags, tsc, served);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, addr);
+            il.Emit(OpCodes.Ldc_I4, plan.SourceSize);
+            il.Emit(OpCodes.Call, ReadMemory);
+            EmitExtendValue(il, plan);
+            il.MarkLabel(done);
+        }
+        else
+        {
+            EmitReadReg(il, gprs, plan.SourceSize, plan.SecondRegIndex);
+            EmitExtendValue(il, plan);
+        }
+
+        EmitWriteRegFromStack(il, gprs, 32, plan.RegIndex, phys);
+    }
+
+    private static void EmitExtendValue(ILGenerator il, JitMemberPlan plan)
+    {
+        // The value is on the stack, masked to its source width by the read;
+        // sign-extend via conv.i1/i2, zero-extend via conv.u1/u2.
+        il.Emit(plan.SourceSize == 8
+            ? plan.SignExtend ? OpCodes.Conv_I1 : OpCodes.Conv_U1
+            : plan.SignExtend ? OpCodes.Conv_I2 : OpCodes.Conv_U2);
+    }
+
+    private static void EmitPush(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder scratch,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+
+        // newEsp = ESP - 4; addr = SS.base + newEsp.
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Sub);
+        il.Emit(OpCodes.Stloc, scratch);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldc_I4, (int)SegmentRegister.Ss);
+        il.Emit(OpCodes.Call, GetSegmentBase);
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, addr);
+
+        EmitProbe(il, context, isStore: true, 4, addr, vpn, slot, phys, ram, slow);
+        EmitWatchGuard(il, 4, phys, slow);
+        EmitNoteStore(il, 32, phys);
+        if (plan.Kind == JitKind.PushR)
+        {
+            EmitRamWrite(il, 32, ram, phys, () => il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]));
+        }
+        else
+        {
+            EmitRamWrite(il, 32, ram, phys, () => il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate)));
+        }
+
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Br, done);
+
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        if (plan.Kind == JitKind.PushR)
+        {
+            il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+        }
+
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, Push);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEsp);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.MarkLabel(done);
+    }
+
+    private static void EmitPop(
+        ILGenerator il,
+        JitMemberPlan plan,
         LocalBuilder context,
         LocalBuilder[] gprs,
         LocalBuilder eip,
@@ -764,15 +834,290 @@ internal static class JitEmitter
         LocalBuilder slot,
         LocalBuilder ram)
     {
-        bool isStore = plan.Kind == JitKind.MovStore32;
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
 
-        // Fault precision: the context carries the member EIP while its
-        // access runs (handlers advance EIP only after completion).
         il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Callvirt, SetEip);
+        il.Emit(OpCodes.Ldc_I4, (int)SegmentRegister.Ss);
+        il.Emit(OpCodes.Call, GetSegmentBase);
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, addr);
 
-        // addr = segmentBase + base + index*scale + disp (32-bit wrap).
+        EmitProbe(il, context, isStore: false, 4, addr, vpn, slot, phys, ram, slow);
+        il.Emit(OpCodes.Ldloc, ram);
+        il.Emit(OpCodes.Ldloc, phys);
+        il.Emit(OpCodes.Call, RamRead32);
+        il.Emit(OpCodes.Stloc, a1);
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldloc, a1);
+        EmitWriteRegFromStack(il, gprs, 32, plan.RegIndex, a1);
+        il.Emit(OpCodes.Br, done);
+
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, Pop);
+        il.Emit(OpCodes.Stloc, a1);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEsp);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldloc, a1);
+        EmitWriteRegFromStack(il, gprs, 32, plan.RegIndex, a1);
+        il.MarkLabel(done);
+    }
+
+    private static void EmitCallRel(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder scratch,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+
+        // newEsp = ESP - 4; addr = SS.base + newEsp.
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Sub);
+        il.Emit(OpCodes.Stloc, scratch);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldc_I4, (int)SegmentRegister.Ss);
+        il.Emit(OpCodes.Call, GetSegmentBase);
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, addr);
+
+        EmitProbe(il, context, isStore: true, 4, addr, vpn, slot, phys, ram, slow);
+        EmitWatchGuard(il, 4, phys, slow);
+        EmitNoteStore(il, 32, phys);
+        EmitRamWrite(il, 32, ram, phys, () =>
+        {
+            il.Emit(OpCodes.Ldloc, eip);
+            il.Emit(OpCodes.Ldc_I4, plan.Length);
+            il.Emit(OpCodes.Add);
+        });
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        EmitJumpTarget(il, plan, eip);
+        il.Emit(OpCodes.Br, done);
+
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, eip);
+        il.Emit(OpCodes.Ldc_I4, plan.Length);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, Push);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEsp);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        EmitJumpTarget(il, plan, eip);
+        il.MarkLabel(done);
+    }
+
+    private static void EmitJumpTarget(ILGenerator il, JitMemberPlan plan, LocalBuilder eip)
+    {
+        il.Emit(OpCodes.Ldloc, eip);
+        il.Emit(OpCodes.Ldc_I4, plan.Length);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, eip);
+    }
+
+    private static void EmitRet(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder a1,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldc_I4, (int)SegmentRegister.Ss);
+        il.Emit(OpCodes.Call, GetSegmentBase);
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, addr);
+
+        EmitProbe(il, context, isStore: false, 4, addr, vpn, slot, phys, ram, slow);
+        il.Emit(OpCodes.Ldloc, ram);
+        il.Emit(OpCodes.Ldloc, phys);
+        il.Emit(OpCodes.Call, RamRead32);
+        il.Emit(OpCodes.Stloc, a1);
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Add);
+        if (plan.Immediate != 0)
+        {
+            il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+            il.Emit(OpCodes.Add);
+        }
+
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldloc, a1);
+        il.Emit(OpCodes.Stloc, eip);
+        il.Emit(OpCodes.Br, done);
+
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, Pop);
+        il.Emit(OpCodes.Stloc, a1);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEsp);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        if (plan.Immediate != 0)
+        {
+            il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+            il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
+            il.Emit(OpCodes.Add);
+            il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        }
+
+        il.Emit(OpCodes.Ldloc, a1);
+        il.Emit(OpCodes.Stloc, eip);
+        il.MarkLabel(done);
+    }
+
+    /// <summary>ALU compute over a1 (first operand) and a2 (second operand), result and flags in locals.</summary>
+    private static void EmitAluCompute(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder flags,
+        LocalBuilder a1,
+        LocalBuilder a2,
+        LocalBuilder res)
+    {
+        switch (plan.AluOp)
+        {
+            case JitAluOp.Add:
+            case JitAluOp.Adc:
+            case JitAluOp.Sub:
+            case JitAluOp.Sbb:
+            case JitAluOp.Cmp:
+                {
+                    bool add = plan.AluOp is JitAluOp.Add or JitAluOp.Adc;
+                    bool carry = plan.AluOp is JitAluOp.Adc or JitAluOp.Sbb;
+                    il.Emit(OpCodes.Ldloc, a1);
+                    il.Emit(OpCodes.Ldloc, a2);
+                    if (carry)
+                    {
+                        il.Emit(OpCodes.Ldloc, flags);
+                        il.Emit(OpCodes.Ldc_I4, (int)FlagBits.Cf);
+                        il.Emit(OpCodes.And);
+                        il.Emit(OpCodes.Ldc_I4_0);
+                        il.Emit(OpCodes.Cgt_Un);
+                    }
+                    else
+                    {
+                        il.Emit(OpCodes.Ldc_I4_0);
+                    }
+
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Ldloc, flags);
+                    il.Emit(OpCodes.Ldloca, res);
+                    il.Emit(OpCodes.Call, add ? AluAdd : AluSub);
+                    il.Emit(OpCodes.Stloc, flags);
+                    break;
+                }
+
+            default:
+                {
+                    // And/Or/Xor: compute the masked value, then AluOps.Logical.
+                    il.Emit(OpCodes.Ldloc, a1);
+                    il.Emit(OpCodes.Ldloc, a2);
+                    il.Emit(plan.AluOp switch
+                    {
+                        JitAluOp.And => OpCodes.And,
+                        JitAluOp.Or => OpCodes.Or,
+                        _ => OpCodes.Xor,
+                    });
+                    EmitMaskValue(il, plan.Size);
+                    il.Emit(OpCodes.Stloc, res);
+                    il.Emit(OpCodes.Ldloc, res);
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Ldloc, flags);
+                    il.Emit(OpCodes.Call, AluLogical);
+                    il.Emit(OpCodes.Stloc, flags);
+                    break;
+                }
+        }
+    }
+
+    private static void EmitTestCompute(
+        ILGenerator il,
+        int size,
+        LocalBuilder flags,
+        LocalBuilder a1,
+        LocalBuilder a2)
+    {
+        il.Emit(OpCodes.Ldloc, a1);
+        il.Emit(OpCodes.Ldloc, a2);
+        il.Emit(OpCodes.And);
+        EmitMaskValue(il, size);
+        il.Emit(OpCodes.Ldc_I4, size);
+        il.Emit(OpCodes.Ldloc, flags);
+        il.Emit(OpCodes.Call, AluLogical);
+        il.Emit(OpCodes.Stloc, flags);
+    }
+
+    private static void EmitMaskValue(ILGenerator il, int size)
+    {
+        if (size == 8)
+        {
+            il.Emit(OpCodes.Ldc_I4, 0xFF);
+            il.Emit(OpCodes.And);
+        }
+        else if (size == 16)
+        {
+            il.Emit(OpCodes.Ldc_I4, 0xFFFF);
+            il.Emit(OpCodes.And);
+        }
+    }
+
+    /// <summary>Emits the effective address of the member's memory operand into <paramref name="addr"/>.</summary>
+    private static void EmitAddress(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder addr)
+    {
         il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldc_I4, (int)plan.Segment);
         il.Emit(OpCodes.Call, GetSegmentBase);
@@ -801,19 +1146,35 @@ internal static class JitEmitter
         }
 
         il.Emit(OpCodes.Stloc, addr);
+    }
 
-        Label slow = il.DefineLabel();
-        Label done = il.DefineLabel();
+    /// <summary>
+    /// Emits the inlined fast-access guards: cross-page (when applicable),
+    /// translate-cache tag, WP-writability for stores, RAM-direct presence
+    /// and bounds. Any failure branches to <paramref name="slow"/>.
+    /// </summary>
+    private static void EmitProbe(
+        ILGenerator il,
+        LocalBuilder context,
+        bool isStore,
+        int sizeBytes,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder slot,
+        LocalBuilder phys,
+        LocalBuilder ram,
+        Label slow,
+        bool skipCrossPage = false)
+    {
+        if (!skipCrossPage && sizeBytes > 1)
+        {
+            il.Emit(OpCodes.Ldloc, addr);
+            il.Emit(OpCodes.Ldc_I4, 0xFFF);
+            il.Emit(OpCodes.And);
+            il.Emit(OpCodes.Ldc_I4, 0x1000 - sizeBytes);
+            il.Emit(OpCodes.Bgt_Un, slow);
+        }
 
-        // Cross-page accesses keep the interpreter's per-byte order via the
-        // member path (only 32-bit accesses can cross here).
-        il.Emit(OpCodes.Ldloc, addr);
-        il.Emit(OpCodes.Ldc_I4, 0xFFF);
-        il.Emit(OpCodes.And);
-        il.Emit(OpCodes.Ldc_I4, 0xFFC);
-        il.Emit(OpCodes.Bgt_Un, slow);
-
-        // vpn = addr >> 12; slot = vpn & 3; the tag must match.
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, 12);
         il.Emit(OpCodes.Shr_Un);
@@ -831,8 +1192,6 @@ internal static class JitEmitter
 
         if (isStore)
         {
-            // WP-gated unwritable stores fault through the member path
-            // (TranslateLinear's cached-hit replay).
             Label writable = il.DefineLabel();
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldfld, DataXlatWritable);
@@ -847,7 +1206,6 @@ internal static class JitEmitter
             il.MarkLabel(writable);
         }
 
-        // phys = cached page base + page offset.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, DataXlatPhys);
         il.Emit(OpCodes.Ldloc, slot);
@@ -858,7 +1216,6 @@ internal static class JitEmitter
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Stloc, phys);
 
-        // RAM-direct only: non-RAM or out-of-bounds takes the member path.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, RamDirect);
         il.Emit(OpCodes.Stloc, ram);
@@ -866,76 +1223,223 @@ internal static class JitEmitter
         il.Emit(OpCodes.Brfalse, slow);
         il.Emit(OpCodes.Ldloc, phys);
         il.Emit(OpCodes.Conv_U8);
-        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Ldc_I4, sizeBytes);
         il.Emit(OpCodes.Conv_U8);
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldfld, RamSize);
         il.Emit(OpCodes.Conv_U8);
         il.Emit(OpCodes.Bgt_Un, slow);
+    }
 
-        if (isStore)
+    private static void EmitRamRead(ILGenerator il, int size, LocalBuilder ram, LocalBuilder phys)
+    {
+        il.Emit(OpCodes.Ldloc, ram);
+        il.Emit(OpCodes.Ldloc, phys);
+        il.Emit(OpCodes.Call, size switch
         {
-            // Watched ranges keep the legacy bus path (CheckWatch + WatchHit).
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldc_I4, 4);
-            il.Emit(OpCodes.Call, IsWatched);
-            il.Emit(OpCodes.Brtrue, slow);
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldc_I4, 32);
-            il.Emit(OpCodes.Call, NoteStorePhysical);
-            il.Emit(OpCodes.Ldloc, ram);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
-            il.Emit(OpCodes.Call, RamWrite32);
+            8 => RamRead8,
+            16 => RamRead16,
+            _ => RamRead32,
+        });
+    }
+
+    private static void EmitRamWrite(
+        ILGenerator il,
+        int size,
+        LocalBuilder ram,
+        LocalBuilder phys,
+        Action emitValue)
+    {
+        il.Emit(OpCodes.Ldloc, ram);
+        il.Emit(OpCodes.Ldloc, phys);
+        emitValue();
+        if (size == 8)
+        {
+            il.Emit(OpCodes.Conv_U1);
         }
-        else
+        else if (size == 16)
         {
-            il.Emit(OpCodes.Ldloc, ram);
-            il.Emit(OpCodes.Ldloc, phys);
-            il.Emit(OpCodes.Call, RamRead32);
-            il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
+            il.Emit(OpCodes.Conv_U2);
         }
 
+        il.Emit(OpCodes.Call, size switch
+        {
+            8 => RamWrite8,
+            16 => RamWrite16,
+            _ => RamWrite32,
+        });
+    }
+
+    private static void EmitWatchGuard(ILGenerator il, int sizeBytes, LocalBuilder phys, Label slow)
+    {
+        // Watched ranges keep the legacy bus path (CheckWatch + WatchHit).
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, phys);
+        il.Emit(OpCodes.Ldc_I4, sizeBytes);
+        il.Emit(OpCodes.Call, IsWatched);
+        il.Emit(OpCodes.Brtrue, slow);
+    }
+
+    private static void EmitNoteStore(ILGenerator il, int sizeBits, LocalBuilder phys)
+    {
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, phys);
+        il.Emit(OpCodes.Ldc_I4, sizeBits);
+        il.Emit(OpCodes.Call, NoteStorePhysical);
+    }
+
+    private static void EmitEipStore(ILGenerator il, LocalBuilder context, LocalBuilder eip)
+    {
+        // Fault precision: the context carries the member EIP while its access
+        // runs (handlers advance EIP only after completion).
+        il.Emit(OpCodes.Ldloc, context);
         il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Ldc_I4, plan.Length);
-        il.Emit(OpCodes.Add);
-        il.Emit(OpCodes.Stloc, eip);
-        il.Emit(OpCodes.Br, done);
+        il.Emit(OpCodes.Callvirt, SetEip);
+    }
 
-        // Slow path: sync every local back to the context, then run the exact
-        // interpreter access (same helpers, same side-effect order, precise
-        // faults — the thrown signal unwinds to the caller with the context
-        // already at this member's boundary).
-        il.MarkLabel(slow);
+    private static void EmitSync(
+        ILGenerator il,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served)
+    {
+        // The fault path reads the members completed before the fault.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Stfld, JitProgress);
         EmitStoreState(il, context, gprs, eip, flags, tsc);
-        if (isStore)
+    }
+
+    private static void EmitStoreState(
+        ILGenerator il,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc)
+    {
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldloc, eip);
+        il.Emit(OpCodes.Callvirt, SetEip);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldloc, flags);
+        il.Emit(OpCodes.Callvirt, SetEflags);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldloc, tsc);
+        il.Emit(OpCodes.Callvirt, SetTsc);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldfld, ContextRegisters);
+        for (int i = 0; i < gprs.Length; i++)
         {
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldloc, addr);
-            il.Emit(OpCodes.Ldc_I4, 32);
-            il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
-            il.Emit(OpCodes.Call, WriteMemory);
-        }
-        else
-        {
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ldloc, addr);
-            il.Emit(OpCodes.Ldc_I4, 32);
-            il.Emit(OpCodes.Call, ReadMemory);
-            il.Emit(OpCodes.Stloc, gprs[plan.RegIndex]);
+            il.Emit(OpCodes.Dup);
+            il.Emit(OpCodes.Ldc_I4, i);
+            il.Emit(OpCodes.Ldloc, gprs[i]);
+            il.Emit(OpCodes.Stelem_I4);
         }
 
-        il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Ldc_I4, plan.Length);
-        il.Emit(OpCodes.Add);
-        il.Emit(OpCodes.Stloc, eip);
-        il.MarkLabel(done);
+        il.Emit(OpCodes.Pop);
+    }
+
+    /// <summary>Pushes the value of one register (size-masked) onto the IL stack.</summary>
+    private static void EmitReadReg(ILGenerator il, LocalBuilder[] gprs, int size, int index)
+    {
+        switch (size)
+        {
+            case 8:
+                if (index < 4)
+                {
+                    il.Emit(OpCodes.Ldloc, gprs[index]);
+                    il.Emit(OpCodes.Ldc_I4, 0xFF);
+                    il.Emit(OpCodes.And);
+                }
+                else
+                {
+                    il.Emit(OpCodes.Ldloc, gprs[index & 3]);
+                    il.Emit(OpCodes.Ldc_I4, 8);
+                    il.Emit(OpCodes.Shr_Un);
+                    il.Emit(OpCodes.Ldc_I4, 0xFF);
+                    il.Emit(OpCodes.And);
+                }
+
+                break;
+            case 16:
+                il.Emit(OpCodes.Ldloc, gprs[index]);
+                il.Emit(OpCodes.Ldc_I4, 0xFFFF);
+                il.Emit(OpCodes.And);
+                break;
+            default:
+                il.Emit(OpCodes.Ldloc, gprs[index]);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Pops a value and writes it into one register with partial-write
+    /// semantics identical to <c>XboxContext.WriteRegister8/16/32</c>.
+    /// </summary>
+    private static void EmitWriteRegFromStack(
+        ILGenerator il,
+        LocalBuilder[] gprs,
+        int size,
+        int index,
+        LocalBuilder scratch)
+    {
+        switch (size)
+        {
+            case 8:
+                {
+                    il.Emit(OpCodes.Stloc, scratch);
+                    int target = index & 3;
+                    il.Emit(OpCodes.Ldloc, gprs[target]);
+                    il.Emit(OpCodes.Ldc_I4, unchecked((int)(index < 4 ? 0xFFFFFF00u : 0xFFFF00FFu)));
+                    il.Emit(OpCodes.And);
+                    il.Emit(OpCodes.Ldloc, scratch);
+                    il.Emit(OpCodes.Ldc_I4, 0xFF);
+                    il.Emit(OpCodes.And);
+                    if (index >= 4)
+                    {
+                        il.Emit(OpCodes.Ldc_I4, 8);
+                        il.Emit(OpCodes.Shl);
+                    }
+
+                    il.Emit(OpCodes.Or);
+                    il.Emit(OpCodes.Stloc, gprs[target]);
+                    break;
+                }
+
+            case 16:
+                il.Emit(OpCodes.Stloc, scratch);
+                il.Emit(OpCodes.Ldloc, gprs[index]);
+                il.Emit(OpCodes.Ldc_I4, unchecked((int)0xFFFF0000u));
+                il.Emit(OpCodes.And);
+                il.Emit(OpCodes.Ldloc, scratch);
+                il.Emit(OpCodes.Ldc_I4, 0xFFFF);
+                il.Emit(OpCodes.And);
+                il.Emit(OpCodes.Or);
+                il.Emit(OpCodes.Stloc, gprs[index]);
+                break;
+            default:
+                il.Emit(OpCodes.Stloc, gprs[index]);
+                break;
+        }
+    }
+
+    private static MethodInfo ShiftMethod(JitShiftOp op)
+    {
+        return op switch
+        {
+            JitShiftOp.Shl => ShiftShl,
+            JitShiftOp.Shr => ShiftShr,
+            JitShiftOp.Sar => ShiftSar,
+            JitShiftOp.Rol => ShiftRol,
+            JitShiftOp.Ror => ShiftRor,
+            JitShiftOp.Rcl => ShiftRcl,
+            _ => ShiftRcr,
+        };
     }
 
     /// <summary>
@@ -1034,35 +1538,5 @@ internal static class JitEmitter
     {
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Xor);
-    }
-
-    private static void EmitStoreState(
-        ILGenerator il,
-        LocalBuilder context,
-        LocalBuilder[] gprs,
-        LocalBuilder eip,
-        LocalBuilder flags,
-        LocalBuilder tsc)
-    {
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Callvirt, SetEip);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldloc, flags);
-        il.Emit(OpCodes.Callvirt, SetEflags);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldloc, tsc);
-        il.Emit(OpCodes.Callvirt, SetTsc);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldfld, ContextRegisters);
-        for (int i = 0; i < gprs.Length; i++)
-        {
-            il.Emit(OpCodes.Dup);
-            il.Emit(OpCodes.Ldc_I4, i);
-            il.Emit(OpCodes.Ldloc, gprs[i]);
-            il.Emit(OpCodes.Stelem_I4);
-        }
-
-        il.Emit(OpCodes.Pop);
     }
 }
