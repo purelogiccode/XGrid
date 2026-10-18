@@ -540,6 +540,23 @@ one 5 ms measured duration). Real-workload served share at 1B: 26.6%
 (menu) / 35.5% (triangle) — the unserved tail is the next coverage lever,
 with quiet-host medians still pending.
 
+### Coverage campaign (§194, `0bc0a35` + `e4975e1`) — real workloads now run on the JIT
+
+The 193-era fast numbers measured a spinning guest; the real workloads ran
+73% through the member path. Fixed in one campaign: non-JIT runs are
+sliced (`--jit-slice`, default 256) so the JIT probes a head every 256
+instructions; blocks survive the guest's page-table churn via lazy byte
+revalidation (`Verdict.Stale` → fresh translate + source-window compare)
+with persistent visit counters and fill-on-demand formation; new members:
+indirect call/jmp, Popf, all string ops incl. rep forms, In/Out, Cld/Std,
+Invlpg. **Menu 1B fast: 99% served, fully bit-exact (SHAs + golden frame,
+686/686)**; triangle fast keeps a 3-dword context-save residual (delivery
+shift; exact mode bit-exact); `--jit-tally` diagnostics added. A
+poll-exit bug (EIP not advanced for interpreter-call poll-after members →
+instruction re-executed after the handler) was caught by the 100M SHA
+gates and fixed. Suite 1476 green, format clean. Quiet-host medians of
+this build are the next measurement.
+
 ### Fast-mode JIT track chartered (2026-10-18) — operator decision
 
 Long-run goal: at least xemu-class performance. Governing doc:

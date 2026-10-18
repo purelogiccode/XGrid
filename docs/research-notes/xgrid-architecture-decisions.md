@@ -9918,3 +9918,20 @@ end to end; the menu fast run is fully bit-exact at 1B.
 **Tests.** 43 JIT differential tests (adds: flush-mid-run revalidation,
 self-modifying code, indirect call reg/mem + jmp mem, POPF poll sweep,
 Movs/Stos both directions, INVLPG). Suite 1475 green, format clean.
+
+**Amendment (same day): all string ops + port I/O as members, and a real
+poll-exit bug found by the bit-exactness gates.** `Movs/Stos/Cmps/Scas/
+Lods/Ins/Outs` (including the rep forms, via the interpreter's ExecuteString
+as a CallInterpreter member) and `In/Out` (ExecuteIn/ExecuteOut) joined the
+member set with post-member IRQ polls (both are device-facing; the
+interpreter would deliver a raised vector at the next instruction
+boundary). First attempt diverged massively (302K dwords at 100M): the
+poll-exit path advanced EIP only for Sti, so an interpreter-call member
+exited the poll with EIP still on itself and re-executed after the handler
+(double port I/O, PIC/PIT derailment). Fix: every poll-after member that
+does not own EIP advances it on the poll exit (`advanceEip = kind !=
+CallSpec`). After the fix: menu 1B fast is fully bit-exact again (ram/cpu
+SHA + golden frame, 686/686), triangle fast keeps its documented 3-dword
+context-save residual (identical across builds; exact mode bit-exact), and
+the ktest suite log stays identical except the single 5 ms NtResumeThread
+measurement. Served share at 1B menu: 99.0%.
