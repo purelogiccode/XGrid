@@ -1,5 +1,24 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-18 NIGHT: PHASE 0 + PHASE 1 LANDED; PHASE-1 TARGETS
+> EXCEEDED (see §§191–192 for the full evidence).** J1a–J1d: `boot --bench`;
+> `--jit` whole-block engine (visit-threshold builds, inner block loop,
+> CallSpec fallback members, Cli/Sti members); `--jit-exact` per-member poll
+> — bit-exact. **1B exact-mode runs are bit-identical to the accurate
+> control on both titles and reproduce the golden frames** (menu
+> `4EF1FBF6…` 686/686; triangle `A1740DE0…` 68/34); the ktest smoke passes
+> 7/7 and the 2B suite workload is bit-identical under exact mode. Fast
+> mode (never gate currency) reaches **~77 Msteps/s at 1B** (menu 12.84 s /
+> triangle 13.02 s medians; 97% served) — the 10²–10³ Msteps/s band, past
+> the Phase-1 targets (triangle ≤22 s / menu ≤50 s) and already inside the
+> Phase-2 integration targets (≤12 s / ≤30 s) on the menu. Remaining for
+> Phase 2: block-to-block chaining in IL (the outer-loop bookkeeping is
+> ~4 s/1B), threshold auto-tuning, medians on a quiescent host. Phase 3
+> (raw emitter) entry condition: measure after Phase 2 — the DynamicMethod
+> path is currently well inside the band, so Phase 3 is not indicated yet.
+> Fast-mode SHAs differ from accurate by timing only (proven via exact
+> mode); fast-mode runs are deterministic for a fixed binary+flags.
+
 > **STATUS: AUTHORIZED 2026-10-18 by the operator.** Long-run goal: *at least
 > xemu-class performance*. This file is the governing document for the track —
 > dual-mode contract (§2), correctness methodology (§3), phases + kill criteria
