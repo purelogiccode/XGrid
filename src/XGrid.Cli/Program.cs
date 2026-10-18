@@ -1711,6 +1711,8 @@ internal static class Program
                 $"Jit stats blocks={machine.Cpu.JitBlocksBuilt} served={machine.Cpu.JitServedTotal} " +
                 $"invocations={machine.Cpu.JitInvocations} calls={machine.Cpu.JitCallCount} faults={machine.Cpu.JitFaults} " +
                 $"runnerMs={machine.Cpu.JitRunnerTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
+                $"outerMs={machine.Cpu.JitOuterTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
+                $"nonJitMs={machine.Cpu.NonJitTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
                 $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +

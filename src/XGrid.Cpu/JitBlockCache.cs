@@ -10,7 +10,7 @@ namespace XGrid.Cpu;
 /// member's boundary before the call, so the caller's fault delivery is
 /// exact).
 /// </summary>
-internal delegate int JitRun(XboxCpu cpu, int budget);
+internal delegate int JitRun(XboxCpu cpu, DecodeCacheEntry[] entries, int budget);
 
 /// <summary>One built fast-mode block (a run of natively emittable members).</summary>
 internal sealed class JitBlock
@@ -22,6 +22,7 @@ internal sealed class JitBlock
         int addressSize,
         ulong generation,
         int memberCount,
+        DecodeCacheEntry[] entries,
         JitRun runner)
     {
         HeadLinear = headLinear;
@@ -30,6 +31,7 @@ internal sealed class JitBlock
         AddressSize = addressSize;
         Generation = generation;
         MemberCount = memberCount;
+        Entries = entries;
         Runner = runner;
     }
 
@@ -50,6 +52,9 @@ internal sealed class JitBlock
 
     /// <summary>Gets the number of members the runner serves (at most <see cref="JitEmitter.MaxMembers"/>).</summary>
     public int MemberCount { get; }
+
+    /// <summary>Gets the member decode entries (CallSpec fallback instructions).</summary>
+    public DecodeCacheEntry[] Entries { get; }
 
     /// <summary>Gets the emitted runner.</summary>
     public JitRun Runner { get; }
@@ -72,7 +77,37 @@ internal sealed class JitBlockCache
     /// <summary>Maximum cached heads before non-built entries are dropped.</summary>
     public const int MaxHeads = 65536;
 
+    private const int MemoSize = 32;
+
     private readonly Dictionary<uint, Entry> _heads = new();
+    private readonly uint[] _memoHead = new uint[MemoSize];
+    private readonly ulong[] _memoGeneration = new ulong[MemoSize];
+    private readonly JitBlock?[] _memoBlock = new JitBlock?[MemoSize];
+
+    /// <summary>
+    /// Direct-mapped lookup memo: skips the dictionary for the hottest heads
+    /// (generation-checked, so invalidation is automatic; an evicted entry's
+    /// block stays valid — invalidation is generation-based, not table-based).
+    /// </summary>
+    public JitBlock? TryMemo(uint headLinear, ulong generation)
+    {
+        int slot = (int)(headLinear & (MemoSize - 1));
+        JitBlock? block = _memoBlock[slot];
+        if (block is not null && _memoHead[slot] == headLinear && _memoGeneration[slot] == generation)
+        {
+            return block;
+        }
+
+        return null;
+    }
+
+    private void Memoize(uint headLinear, ulong generation, JitBlock block)
+    {
+        int slot = (int)(headLinear & (MemoSize - 1));
+        _memoHead[slot] = headLinear;
+        _memoGeneration[slot] = generation;
+        _memoBlock[slot] = block;
+    }
 
     /// <summary>Gets the number of runners built.</summary>
     public ulong BlocksBuilt { get; private set; }
@@ -123,6 +158,7 @@ internal sealed class JitBlockCache
         if (entry.Block is not null)
         {
             block = entry.Block;
+            Memoize(headLinear, generation, entry.Block);
             return Verdict.Hit;
         }
 
@@ -164,6 +200,7 @@ internal sealed class JitBlockCache
         else
         {
             BlocksBuilt++;
+            Memoize(headLinear, generation, block);
         }
     }
 
@@ -183,6 +220,9 @@ internal sealed class JitBlockCache
     public void Invalidate()
     {
         _heads.Clear();
+        System.Array.Clear(_memoBlock);
+        System.Array.Clear(_memoHead);
+        System.Array.Clear(_memoGeneration);
     }
 
     /// <summary>
