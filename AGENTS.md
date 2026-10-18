@@ -520,6 +520,24 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
+**2026-10-20 status (direct development, 12-hour window).** Fast-mode medians
+on the quiet host: **triangle 1B 10.63 s, menu 1B 45.62 s** (gl+replace+spin,
+SHAs exact 4F1FCBC0/7DAB63EB, DD023100/F5D61C94). Landed: D3b page-edge
+block formation (nonJitCalls -59%), C2 slice 1 lazy GPR state sync +
+direct context backing-field access, C2 slice 3 native Fld/Fst/Fstp m32.
+Measured cost structure (decisions §199d): chain ~1 s, state sync ~1.5-2 s,
+ordinary members ~5-6 s (~14 ns each, memory probe ~25 ns), slow members
+~1 s, cold non-JIT ~1.9 s, GL ~0.5 s. **Two negative results recorded:**
+block fusion (-82% invocations but +40% wall from codegen/I-cache and the
+emitted boundary poll; it also silently disabled the spin skip) and a
+1024-slot data translate cache (L1 pressure). The block JIT is at its
+structural floor - the next real lever is **C3 (raw emitter: fixed host
+registers, flags in a register, inline TLB, patch-on-link)**, with a cheap
+IInterruptSource.Pending field as the prerequisite for any future fused
+poll. Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix),
+XGRID_NONRAM=1 (non-cacheable fetch pages), --jit-timing (runner vs
+chain split), Host timing (execute vs advance).
+
 ### Fast-mode JIT J1a–J1d LANDED (2026-10-18 night, direct; §§191–192) — the real-time band is reached
 
 Charter Phase 0 + Phase 1 (J1 slice) done in one night: `boot --bench`
