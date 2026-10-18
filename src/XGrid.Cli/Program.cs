@@ -106,6 +106,7 @@ internal static class Program
         bool jitExact = false;
         bool jitTally = false;
         bool jitMmio = false;
+        bool jitSpin = false;
         int jitThreshold = 8;
         int jitSlice = 256;
         bool bench = false;
@@ -288,6 +289,9 @@ internal static class Program
                     break;
                 case "--jit-mmio":
                     jitMmio = true;
+                    break;
+                case "--jit-spin":
+                    jitSpin = true;
                     break;
                 case "--jit-tally":
                     jitTally = true;
@@ -530,6 +534,7 @@ internal static class Program
                 machine.Cpu.JitExact = jitExact;
                 machine.Cpu.JitTally = jitTally;
                 machine.Cpu.JitMmioFast = jitMmio;
+                machine.Cpu.JitSpinSkip = jitSpin;
                 machine.Cpu.JitSpecSlice = jitSlice;
                 machine.Cpu.JitEnabled = true;
                 Console.WriteLine(
@@ -537,6 +542,7 @@ internal static class Program
                     $"poll={(jitExact ? "per-member(exact)" : "per-block")}; threshold={jitThreshold}; slice={jitSlice}" +
                     (jitTally ? "; tally=on" : string.Empty) +
                     (jitMmio ? "; mmio=on" : string.Empty) +
+                    (jitSpin ? "; spin=on" : string.Empty) +
                     "; absolute-step recipes: use flag-off runs)");
             }
 
@@ -1743,6 +1749,7 @@ internal static class Program
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
+                (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
                 $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +
                 $"pendingVisits={machine.Cpu.JitPendingVisits} " +
@@ -2563,7 +2570,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

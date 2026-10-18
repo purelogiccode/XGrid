@@ -10141,3 +10141,47 @@ pmemsave + PNG): xemu renders 2,093 frames in 30 wall-seconds (~70 fps,
 guest FPS 61-62 = real-time); XGrid fast presents 68 frames in 27.9 s (sw) /
 17.8 s (gl-replace) = 2.4 / 3.8 fps. **The xemu-class gap on GPU/vblank-bound
 content is 18-29x; on CPU-bound content it is closed.**
+
+## 198. Fast-mode idle-wait skip (--jit-spin): the triangle's spin was the kernel idle loop (2026-10-19, direct)
+
+**Diagnosis.** The §197 page-end spin (0x80060FF3) was only part of the
+story: tracing the guest at 400M/600M/900M steps shows it spends most of its
+time in the kernel idle loop at 0x8001B02E (sti/nop/nop/cli/cmp/je — the
+§111/§193 park), and in a pure delay loop at 0x800422B0 (dec [esp]; jne).
+Neither is JIT-expensive per se, but the idle loop is a store-free block
+cycle that re-enables interrupts with nothing pending — a textbook
+fast-forward target. The existing `--idle-skip` detector cannot see it under
+`--jit` (the JIT's inline paths bypass the detector's access notes, and the
+JIT is deliberately inert while `_idle` is set).
+
+**Implementation (landed, opt-in `--jit-spin`).** JIT-side detection, no
+detector interaction: `JitBlock` now carries `HasSti`/`HasStore` (computed
+from the member plans; `AluMR`/`AluMI` count as stores only when the ALU op
+is not `Cmp` — the compare forms are pure reads, exactly as the emitter runs
+them; the initial classification missed this and reset the streak every idle
+iteration, spinMax=1). In `RunJitBlock`, a store-free block with an STI
+member increments a streak; at 32 the runner calls `TrySkipIdleWait`, which
+advances the host (`IIdleSkipHost.AdvanceIdle`) in `IdleSkipChunkSteps`
+chunks until an interrupt is pending (the machine's `StepsUntilNextDeadline`
+is null, so the IRQ condition is the stop), advances the guest TSC by the
+same count, and reports the steps to both the outer budget and
+`TakeIdleAdvanced` (no double device advance). Fast mode only; runs with it
+are not bit-exact by construction (time advances in lumps) — the accurate
+mode and every gate path are untouched.
+
+**Measured (1B, same host window, single runs; frames identical to the
+baselines: 68/34 triangle, 686/686 menu).**
+| config | before | with --jit-spin |
+|---|---|---|
+| triangle fast sw | 27.58 s | **22.95 s** (1.20x) |
+| triangle fast gl+replace | 17.82 s | **13.99 s** (1.27x) |
+| menu fast sw | 63.19 s | **60.65 s** (1.04x) |
+| menu fast gl+replace | 48.29 s | **44.96 s** (1.07x) |
+Fast-forwarded steps: triangle 450.6M (45% of 1B), menu 128.6M (12.9%); 7,514/2,160 skip events (~60K steps each — the machine's 65,536-step Execute batch caps one skip). The triangle is the best-ever 1B result (13.99 s; 2.0x vs the 27.9 s sw baseline) and the xemu-class gap narrows from 18-29x to **14.4x** (xemu ~70 fps vs 4.86 fps).
+
+**Why the remaining gap.** With the spin gone the triangle's wall is real
+work: the guest's pbkit pushbuffer stores + NV2A method processing + the
+software raster (sw) or the GL draw path. The next levers are the JIT's
+per-block overhead (237M block invocations at ~4.2 instructions each) and
+the non-JIT residue (page-end instructions). Suite 1480 green, format
+clean, ktest smoke PASS (1:06).

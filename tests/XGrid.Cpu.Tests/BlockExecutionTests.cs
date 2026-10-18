@@ -214,6 +214,59 @@ public sealed class BlockExecutionTests
     /// start that fires the poll write when the advance reaches it (the
     /// IdleSkipTests shape, trimmed to what the verdict test needs).
     /// </summary>
+    [Fact]
+    public void JitSpinSkip_AdvancesIdleWait_ToHostEvent()
+    {
+        // Kernel idle-loop shape: sti; nop; nop; cli; mov eax,[0x2000];
+        // test eax,eax; jz back; hlt. The poll byte is written by the host's
+        // AdvanceIdle at its deadline, so the loop can only exit through a
+        // fast-forwarded device event.
+        byte[] code =
+        {
+            0xFB, 0x90, 0x90, 0xFA, 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF3, 0xF4,
+        };
+
+        XboxCpu cpu = CpuHarness.Create(code);
+        MapIdentity(cpu.Bus(), 0, 4);
+        EnablePaging(cpu);
+        cpu.Context.Eflags |= FlagBits.If;
+        cpu.DecodeCacheEnabled = true;
+        cpu.JitSpecSlice = int.MaxValue;
+        cpu.JitBuildThreshold = 1;
+        cpu.JitEnabled = true;
+        cpu.JitSpinSkip = true;
+        var host = new PollIdleHost(cpu.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
+        cpu.IdleSkipHost = host;
+
+        int executed = cpu.Execute(50_000_000);
+
+        Assert.True(cpu.Context.Halted);
+        Assert.True(cpu.JitSpinSkips > 0, $"skips={cpu.JitSpinSkips}");
+        Assert.True(cpu.JitSpinSkippedSteps > 0, $"skipped={cpu.JitSpinSkippedSteps}");
+        Assert.True(executed < 5000, $"executed={executed}");
+        Assert.True(host.Advanced > 0);
+
+        // Without the flag the loop cannot exit (nothing advances the host):
+        // the same program spins to the budget and the skip never fires.
+        XboxCpu off = CpuHarness.Create(code);
+        MapIdentity(off.Bus(), 0, 4);
+        EnablePaging(off);
+        off.Context.Eflags |= FlagBits.If;
+        off.DecodeCacheEnabled = true;
+        off.JitSpecSlice = int.MaxValue;
+        off.JitBuildThreshold = 1;
+        off.JitEnabled = true;
+        var offHost = new PollIdleHost(off.Ram()) { PollAddress = 0x2000, InitialDeadline = 1000 };
+        off.IdleSkipHost = offHost;
+
+        int offExecuted = off.Execute(1_000_000);
+
+        Assert.False(off.Context.Halted);
+        Assert.Equal(0, off.JitSpinSkips);
+        Assert.Equal(1_000_000, offExecuted);
+        Assert.Equal(0UL, offHost.Advanced);
+    }
+
     private sealed class PollIdleHost : IIdleSkipHost
     {
         private readonly PhysicalMemory _ram;
