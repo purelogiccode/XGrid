@@ -75,21 +75,25 @@ file references) and update `ImplementationPlan.md` status when a device or phas
 Canonical order: `docs/development-direction.md`; fast-mode JIT track:
 `docs/research-notes/jit-track-charter.md`. Summary of hard rules:
 
-1. **Track B (GPU backend) + Track D (MMIO/JIT fast paths) lead the xemu-class
-   campaign (re-aimed 2026-10-19, §§195–198).** Day result (1B, fast mode):
-   **triangle 27.9 → 20.28 s sw / 17.8 → 10.68 s gl+replace; menu 64.0 →
-   56.82 s sw / 48.3 → 41.39 s gl+replace** — the xemu-class gap on the
-   triangle is now ~11× (from 18–29×); CPU-bound work is already ahead of
-   xemu. Landed: `--gpu-replace` (§196), `--jit-mmio` (§197), the 256-slot
-   data-translate cache, cross-page decode-cache entries, the `--jit-spin`
-   idle-wait skip (§198) and the `--jit-timing` gate (§198a). Remaining
-   levers: **B2c draw batching** (per-draw uniforms → attributes/UBO, one
-   call per state run), D3b (blocks across page-end heads), the runner's
-   ~18 ns/block state sync (125M invocations), the RAM writeback for
-   framebuffer-reading content, and JIT Phase-2 leftovers (chaining,
-   threshold; ~5–8%). Accurate-mode rules unchanged (specialize semantics;
-   boundary-preserving; `DynamicMethod` stays opt-in via `--jit`; raw
-   emitter gated by charter Phase-3).
+1. **Track C (CPU engine) leads the xemu-class campaign again (re-aimed
+   2026-10-19 evening, §199).** Day result (1B, fast mode): triangle 27.9 →
+   **20.28 s sw / 10.68 s gl+replace**; menu 64.0 → **56.82 s sw / 41.39 s
+   gl+replace** — but the *structure* inverted: the CPU engine is again the
+   largest line item (triangle runner 6.1 s of 10.68 s = 57%; menu CPU ≈17–19 s
+   of 41.39 s ≈45%), and the `DynamicMethod` block JIT is at its structural
+   ceiling (~18 ns fixed per block × 125M invocations + ~7 ns per member ×
+   543M). The charter's Phase-3 entry condition is **met** (plateau >3× short
+   of xemu-class; xemu ≈830 Msteps/s on the triangle vs our 94M/24M).
+   Order: **C2 trace emitter** (multi-block traces, state in locals across the
+   trace, inline RAM fast paths, same boundary polls; ≥2× CPU) → **C3 raw
+   emitter** (Iced now unblocked: register allocation, direct block chaining,
+   inline TLB; another ≥2×). Cheap Track-D wins first (D3b page-end
+   wait/residue 1.9 s/3.6 s; bookkeeping 2.2 s/4.8 s profiling). Track B
+   follows: **B2c draw batching** (2 µs/draw × 53M draws on the real dashboard
+   = 106 s/4B steps) and the **window present path** (a redundant 1.6 ms
+   readback per flip in window mode). Accurate-mode rules unchanged
+   (specialize semantics; boundary-preserving; `DynamicMethod` stays opt-in
+   via `--jit`; the raw emitter is now authorized by charter §4 Phase 3).
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
    and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
    (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).

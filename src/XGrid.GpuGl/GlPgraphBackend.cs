@@ -835,11 +835,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             clientHeight = ch;
         }
 
+        // The FBO holds the guest image with guest y=0 at the GL bottom (the
+        // readback depends on it: ReadPixels' bottom-up rows come out
+        // guest-top-down and the BMP export is upright). The window's GL
+        // bottom must therefore receive the guest's LAST row, so the
+        // destination rect is flipped vertically — with a same-origin rect
+        // the live window shows every frame upside down.
         _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _fbo);
         _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
         _gl.BlitFramebuffer(
             0, 0, (int)width, (int)height,
-            0, 0, (int)clientWidth, (int)clientHeight,
+            0, (int)clientHeight, (int)clientWidth, 0,
             ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
         _context.SwapBuffers();
         _windowPresents++;

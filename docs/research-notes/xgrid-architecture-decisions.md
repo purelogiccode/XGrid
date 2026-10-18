@@ -10199,3 +10199,66 @@ triangle gl+replace **10.68 s** (1.67x), menu sw **56.82 s** (1.13x),
 menu gl+replace **41.39 s** (1.17x). Triangle now runs at 12.7% of
 real-time (6.4 fps vs xemu ~70 fps: the xemu-class gap is ~11x, from
 18-29x this morning).
+
+## 199. Plan re-aim: the CPU engine is the lead track again; charter Phase 3 unblocked (2026-10-19 evening)
+
+**The question.** "Are we on the right track for xemu-class performance?" —
+answered from measurements, not intent.
+
+**Measured structure after §§195–198a (1B goldens, fast mode, quiet host,
+single runs).**
+- triangle **10.68 s** gl+replace+spin (20.28 s sw) = runner **6.1 s (57%)**
+  + nonJit 1.9 s (18%) + GL 0.5 s + bookkeeping ~2.2 s.
+- menu **41.39 s** gl+replace+spin (56.82 s sw) ≈ CPU-JIT **17–19 s (~45%)**
+  + GL draw 7.0 s (17%) + bookkeeping 4.8 s (12%) + nonJit 3.6 s (9%).
+- Runner internals: **125M block invocations at ~18 ns fixed** (context
+  load/store + dispatch + memo) + **543M members at ~7 ns** (helper-call
+  memory paths). The DynamicMethod block JIT's remaining Phase-2 leftovers
+  are worth ~1.5–2× at most.
+- xemu on the same triangle: 2,093 frames / 30 wall-s ≈ 1.13× real-time
+  ≈ **830 Msteps/s**. XGrid: 94 Msteps/s (triangle) / 24 Msteps/s (menu) —
+  **~9× / ~30×** off. CPU-bound work (ktest) stays ahead of xemu (9–10 s vs
+  15 s); the gap is the per-instruction cost on non-trivial guest code.
+
+**Verdict.** The 2026-10-19 re-aim ("Track B + Track D lead, JIT leftovers
+only") was correct for the *pre-`--gpu-replace`* cost structure and is now
+stale: with the rasterizer gone, the CPU engine is again the largest line
+item on both titles, and its engine is structurally capped. The charter's
+own Phase-3 entry condition ("plateau >3× short of the xemu-class target")
+is **met**. This is a plan correction, not a product regression: the day's
+landed work (gpu-replace, jit-mmio, 256-slot data-translate cache, cross-page
+decode entries, `--jit-spin`, `--jit-timing`) is all still net-positive.
+
+**Real-dashboard profile (new evidence).** A 4B-step window-mode dashboard
+run (single run, window overhead included, 480 s = 8.3 Msteps/s vs 24
+Msteps/s headless — **window mode costs ~3× today**): **53,115,811 GL draws
+at ~2 µs → drawMs 106.1 s (22% of the run)**; **12,675 flips each paying a
+1.6 ms readback → readbackMs 20.7 s (4%)** although the window path blits the
+FBO directly and does not need that readback; 736M slow members; 349M NV2A
+method writes. The dashboard's real workload is therefore **draw-submission-
+and-present-bound as much as CPU-bound** — B2c batching and the window present
+path are not optional polish.
+
+**Decision — execution order (docs updated: `development-direction.md` §1/§2b/
+§2c, `AGENTS.md` rule 1, `ImplementationPlan.md` campaign section,
+`jit-track-charter.md` status + Phase 2.5/Phase 3).**
+1. **D3b + bookkeeping** (cheap, days): identify the page-end wait loop and
+   remove the nonJit residue (1.9 s triangle / 3.6 s menu) via cross-page
+   block formation or a generalized wait-skip; profile the machine/CLI
+   advance path (2.2 s / 4.8 s) before optimizing it.
+2. **C2 trace emitter** (charter Phase 2.5, immediate): multi-block traces in
+   one DynamicMethod, guest state in locals across the trace, inline RAM fast
+   paths, interrupt polls at every block boundary (the §193 wakeup contract),
+   side exits to the block JIT. Target CPU-side ≥2×.
+3. **C3 raw emitter** (charter Phase 3, Iced now authorized): register
+   allocation, direct block chaining (patch-on-link), inline softmmu-style TLB
+   probes. Target another ≥2×.
+4. **B2c draw batching** (2 µs/draw → ≤0.5 µs) and the **window present
+   path** (drop the redundant per-flip readback; batch the pump).
+
+**Milestone ladder (1B, fast mode, gl+replace+spin).** M1 (C2 + D3b +
+bookkeeping): triangle ≤6 s, menu ≤20 s. M2 (C3): triangle ≤3 s, menu ≤12 s.
+M3 (xemu-class): triangle ≤1.5 s, menu ≤4 s — within ~1.3–3× of the real-time
+band. The menu has no xemu oracle (xemu deadlocks at the dashboard animation
+wait, §32); its target is the real-time band, the triangle/ktest keep measured
+xemu comparisons.
