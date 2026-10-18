@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -571,5 +572,206 @@ public sealed class PshCombinerTests
 
         combiner.Final0 = 0x0000000Du; // D = R1
         Assert.False(combiner.IsModulateT0V0Passthrough());
+    }
+
+    private static void AssertPlannedMatchesGeneric(PshCombiner combiner, Random rng, int samples)
+    {
+        float[][] consts = PshCombiner.BuildConsts(combiner);
+        combiner.RebuildPlan(consts);
+        for (int i = 0; i < samples; i++)
+        {
+            float[] diffuse = RandomVec(rng);
+            float[] specular = RandomVec(rng);
+            float[] fog = RandomVec(rng);
+            var texels = new[] { RandomVec(rng), RandomVec(rng), RandomVec(rng), RandomVec(rng) };
+            combiner.Evaluate(diffuse, specular, fog, texels, consts,
+                out float r1, out float g1, out float b1, out float a1);
+            combiner.EvaluatePlanned(diffuse, specular, fog, texels, consts,
+                out float r2, out float g2, out float b2, out float a2);
+            int r1b = BitConverter.SingleToInt32Bits(r1);
+            int g1b = BitConverter.SingleToInt32Bits(g1);
+            int b1b = BitConverter.SingleToInt32Bits(b1);
+            int a1b = BitConverter.SingleToInt32Bits(a1);
+            int r2b = BitConverter.SingleToInt32Bits(r2);
+            int g2b = BitConverter.SingleToInt32Bits(g2);
+            int b2b = BitConverter.SingleToInt32Bits(b2);
+            int a2b = BitConverter.SingleToInt32Bits(a2);
+            if (r1b != r2b || g1b != g2b || b1b != b2b || a1b != a2b)
+            {
+                var words = new System.Text.StringBuilder();
+                words.Append(CultureInfo.InvariantCulture,
+                    $"c={combiner.Control:X8} f0={combiner.Final0:X8} f1={combiner.Final1:X8}");
+                for (int stage = 0; stage < combiner.StageCount; stage++)
+                {
+                    words.Append(CultureInfo.InvariantCulture,
+                        $" ri{stage}={combiner.RgbInputs[stage]:X8} ai{stage}={combiner.AlphaInputs[stage]:X8}" +
+                        $" ro{stage}={combiner.RgbOutputs[stage]:X8} ao{stage}={combiner.AlphaOutputs[stage]:X8}");
+                }
+
+                throw new Xunit.Sdk.XunitException(
+                    $"planned/generic divergence at sample {i}: {words} " +
+                    $"generic=({r1b:X8},{g1b:X8},{b1b:X8},{a1b:X8}) " +
+                    $"planned=({r2b:X8},{g2b:X8},{b2b:X8},{a2b:X8})");
+            }
+        }
+    }
+
+    private static bool CheckDivergence(PshCombiner combiner, Random rng, int samples)
+    {
+        float[][] consts = PshCombiner.BuildConsts(combiner);
+        combiner.RebuildPlan(consts);
+        for (int i = 0; i < samples; i++)
+        {
+            float[] diffuse = RandomVec(rng);
+            float[] specular = RandomVec(rng);
+            float[] fog = RandomVec(rng);
+            var texels = new[] { RandomVec(rng), RandomVec(rng), RandomVec(rng), RandomVec(rng) };
+            combiner.Evaluate(diffuse, specular, fog, texels, consts,
+                out float r1, out float g1, out float b1, out float a1);
+            combiner.EvaluatePlanned(diffuse, specular, fog, texels, consts,
+                out float r2, out float g2, out float b2, out float a2);
+            if (BitConverter.SingleToInt32Bits(r1) != BitConverter.SingleToInt32Bits(r2) ||
+                BitConverter.SingleToInt32Bits(g1) != BitConverter.SingleToInt32Bits(g2) ||
+                BitConverter.SingleToInt32Bits(b1) != BitConverter.SingleToInt32Bits(b2) ||
+                BitConverter.SingleToInt32Bits(a1) != BitConverter.SingleToInt32Bits(a2))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [Fact]
+    public void PlannedPath_FinalEfProdMapping_RegressionPin()
+    {
+        // Regression pin: the first planned-path divergence found during
+        // development was a missing input mapping on the final combiner's
+        // EF_PROD reads (config below: D = EfProd with UnsignedInvert). The
+        // four cases isolate stages vs final and the EfProd slot.
+        uint[] ri = { 0x09D1C176u, 0x1E1B4EC3u, 0x62B9630Au, 0x1076D0F5u, 0x7062236Du, 0x7675F7F3u, 0x5DC0F139u, 0x063B5164u };
+        uint[] ai = { 0x2EBA3D74u, 0x14F69F7Eu, 0x3279F03Au, 0x3FB6FF90u, 0x42C89934u, 0x49CF3202u, 0x07318715u, 0x4A6FDFCDu };
+        uint[] ro = { 0x0000E301u, 0x0009781Du, 0x000D039Fu, 0x0004EB9Fu, 0x0005C1D6u, 0x000A5067u, 0x000722F8u, 0x000B6605u };
+        uint[] ao = { 0x0000EB97u, 0x00097B85u, 0x000D0128u, 0x0004E7ADu, 0x0005C928u, 0x000A5196u, 0x00072E5Fu, 0x000B6350u };
+
+        // A: no final combiner -> isolates the stages.
+        var noFinal = BuildConfig(8, ri, ai, ro, ao, 0u, 0u);
+        Assert.False(CheckDivergence(noFinal, new Random(7), 200), "A: stages only");
+
+        // B: single stage 0.
+        var stage0 = BuildConfig(1, ri, ai, ro, ao, 0x6135E63Fu, 0x1596C3B7u);
+        Assert.False(CheckDivergence(stage0, new Random(7), 200), "B: stage 0 only + final");
+
+        // C: stage 7 only (stage count 8 with the other stage words zeroed).
+        uint[] zeroRi = new uint[8];
+        uint[] zeroAi = new uint[8];
+        uint[] zeroRo = new uint[8];
+        uint[] zeroAo = new uint[8];
+        zeroRi[7] = ri[7];
+        zeroRo[7] = ro[7];
+        zeroAi[7] = ai[7];
+        zeroAo[7] = ao[7];
+        var stage7 = BuildConfig(8, zeroRi, zeroAi, zeroRo, zeroAo, 0x6135E63Fu, 0x1596C3B7u);
+        Assert.False(CheckDivergence(stage7, new Random(7), 200), "C: stage 7 only + final");
+
+        // D: final only (stage count 0).
+        var finalOnly = BuildConfig(0, ri, ai, ro, ao, 0x6135E63Fu, 0x1596C3B7u);
+        Assert.False(CheckDivergence(finalOnly, new Random(7), 200), "D: final only");
+    }
+
+    private static PshCombiner BuildConfig(int stages, uint[] ri, uint[] ai, uint[] ro, uint[] ao, uint final0,
+        uint final1)
+    {
+        var combiner = new PshCombiner { Control = (uint)stages, Final0 = final0, Final1 = final1 };
+        for (int s = 0; s < PshCombiner.MaxStages; s++)
+        {
+            combiner.RgbInputs[s] = ri[s];
+            combiner.AlphaInputs[s] = ai[s];
+            combiner.RgbOutputs[s] = ro[s];
+            combiner.AlphaOutputs[s] = ao[s];
+        }
+
+        return combiner;
+    }
+
+    [Fact]
+    public void PlannedPath_MatchesGenericEvaluate_RealConfigs()
+    {
+        // stages=8 config (c=00011108) the menu/triangle actually run.
+        var eight = new PshCombiner
+        {
+            Control = 0x00011108u,
+            Final0 = 0x0C0B000Fu,
+            Final1 = 0x0C011180u,
+        };
+        eight.RgbInputs[0] = 0xC149C14Au;
+        eight.AlphaInputs[0] = 0xD159D15Au;
+        eight.RgbOutputs[0] = 0x000C30CDu;
+        eight.AlphaOutputs[0] = 0x00000000u;
+        for (int stage = 1; stage <= 5; stage++)
+        {
+            eight.RgbInputs[stage] = 0x0D0D0000u;
+            eight.RgbOutputs[stage] = 0x000000D0u;
+        }
+
+        eight.RgbInputs[6] = 0xC10CC20Du;
+        eight.RgbOutputs[6] = 0x000005CDu;
+        eight.RgbInputs[7] = 0xC40520C1u;
+        eight.RgbOutputs[7] = 0x00000C00u;
+        AssertPlannedMatchesGeneric(eight, new Random(1001), 800);
+
+        // stages=7 variant (c=00011107).
+        var seven = new PshCombiner
+        {
+            Control = 0x00011107u,
+            Final0 = 0x0C0B000Fu,
+            Final1 = 0x0C011180u,
+        };
+        seven.RgbInputs[0] = 0x4849484Au;
+        seven.AlphaInputs[0] = 0x5859585Au;
+        seven.RgbOutputs[0] = 0x000C30CDu;
+        seven.AlphaOutputs[0] = 0x00000000u;
+        for (int stage = 1; stage <= 4; stage++)
+        {
+            seven.RgbInputs[stage] = 0x0D0D0000u;
+            seven.RgbOutputs[stage] = 0x000000D0u;
+        }
+
+        seven.RgbInputs[5] = 0xC10CC20Du;
+        seven.RgbOutputs[5] = 0x000005CDu;
+        seven.RgbInputs[6] = 0xC40520C1u;
+        seven.RgbOutputs[6] = 0x00000C00u;
+        AssertPlannedMatchesGeneric(seven, new Random(1002), 800);
+
+        // Randomized configurations for breadth (dots, muxes, mappings,
+        // unique-C0/C1 flags, final EfProd/V1R0Sum, disabled final). Output
+        // mappings are restricted to the six valid Out* encodings (the
+        // generic path throws on the reserved ones, which hardware cannot
+        // produce).
+        int[] validMappings = { 0x00, 0x08, 0x10, 0x18, 0x20, 0x30 };
+        var rng = new Random(20261018);
+        for (int n = 0; n < 40; n++)
+        {
+            var combiner = new PshCombiner
+            {
+                Control = (uint)(rng.Next(0, 9) | (rng.Next(2) == 0 ? 0x10 : 0) | (rng.Next(2) == 0 ? 0x100 : 0) |
+                                  (rng.Next(2) == 0 ? 0x1 : 0)),
+                Final0 = (uint)rng.Next(),
+                Final1 = (uint)rng.Next(),
+            };
+            for (int stage = 0; stage < PshCombiner.MaxStages; stage++)
+            {
+                uint outFlags = (uint)(validMappings[rng.Next(validMappings.Length)] |
+                                       (rng.Next(2) == 0 ? 0x1 : 0) | (rng.Next(2) == 0 ? 0x2 : 0) |
+                                       (rng.Next(2) == 0 ? 0x4 : 0) | (rng.Next(2) == 0 ? 0x40 : 0) |
+                                       (rng.Next(2) == 0 ? 0x80 : 0));
+                combiner.RgbInputs[stage] = (uint)rng.Next();
+                combiner.AlphaInputs[stage] = (uint)rng.Next();
+                combiner.RgbOutputs[stage] = (uint)(rng.Next() & 0x0FFF) | (outFlags << 12);
+                combiner.AlphaOutputs[stage] = (uint)(rng.Next() & 0x0FFF) | (outFlags << 12);
+            }
+
+            AssertPlannedMatchesGeneric(combiner, rng, 120);
+        }
     }
 }
