@@ -103,6 +103,8 @@ internal static class Program
         bool emitDiag = false;
         bool shapeTally = false;
         bool jit = false;
+        bool jitExact = false;
+        int jitThreshold = 8;
         bool bench = false;
         string? benchName = null;
         string gpuBackend = "sw";
@@ -276,6 +278,12 @@ internal static class Program
                     break;
                 case "--jit":
                     jit = true;
+                    break;
+                case "--jit-exact":
+                    jitExact = true;
+                    break;
+                case "--jit-threshold":
+                    jitThreshold = int.Parse(NextValue(args, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--bench":
                     bench = true;
@@ -496,9 +504,12 @@ internal static class Program
 
             if (jit)
             {
+                machine.Cpu.JitBuildThreshold = jitThreshold;
+                machine.Cpu.JitExact = jitExact;
                 machine.Cpu.JitEnabled = true;
                 Console.WriteLine(
-                    "Jit=on (fast-mode block engine; whole-block native serving; block-granular IRQ poll; " +
+                    $"Jit=on (fast-mode block engine; whole-block native serving; " +
+                    $"poll={(jitExact ? "per-member(exact)" : "per-block")}; threshold={jitThreshold}; " +
                     "absolute-step recipes: use flag-off runs)");
             }
 
@@ -1698,8 +1709,12 @@ internal static class Program
         {
             Console.WriteLine(
                 $"Jit stats blocks={machine.Cpu.JitBlocksBuilt} served={machine.Cpu.JitServedTotal} " +
-                $"invocations={machine.Cpu.JitInvocations} faults={machine.Cpu.JitFaults} " +
+                $"invocations={machine.Cpu.JitInvocations} calls={machine.Cpu.JitCallCount} faults={machine.Cpu.JitFaults} " +
+                $"runnerMs={machine.Cpu.JitRunnerTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
+                $"slowMembers={machine.Cpu.JitSlowMembers} " +
+                FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
                 $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +
+                $"pendingVisits={machine.Cpu.JitPendingVisits} " +
                 $"cachedHeads={machine.Cpu.JitHeadCacheCount}");
         }
 
@@ -2444,6 +2459,22 @@ internal static class Program
         {
             _memory.Ram.ClearPresentDirty();
         }
+    }
+
+    private static string FormatJitBuckets((long Ticks, long Count)[] buckets)
+    {
+        var text = new System.Text.StringBuilder();
+        for (int i = 0; i < buckets.Length; i++)
+        {
+            if (i > 0)
+            {
+                text.Append(' ');
+            }
+
+            text.Append(CultureInfo.InvariantCulture, $"b{i}={buckets[i].Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0}ms/{buckets[i].Count}");
+        }
+
+        return text.ToString();
     }
 
     private static void PrintUsage()

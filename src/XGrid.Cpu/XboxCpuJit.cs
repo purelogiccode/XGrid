@@ -30,6 +30,38 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of runner invocations.</summary>
     public ulong JitInvocations { get; private set; }
 
+    /// <summary>Gets the number of RunJitBlock entries (diagnostic).</summary>
+    public ulong JitCallCount { get; private set; }
+
+    private long _jitRunnerTicks;
+
+    /// <summary>Gets the accumulated time inside emitted runners, in Stopwatch ticks (diagnostic).</summary>
+    public long JitRunnerTicks => _jitRunnerTicks;
+
+    private long _jitSlowMembers;
+
+    /// <summary>Gets the number of emitted members that took the interpreter slow path (diagnostic).</summary>
+    public long JitSlowMembers => _jitSlowMembers;
+
+    private readonly long[] _jitBucketTicks = new long[5];
+
+    private readonly long[] _jitBucketCounts = new long[5];
+
+    /// <summary>Gets per-size-bucket invocation ticks (1, 2-4, 5-16, 17-31, 32) (diagnostic).</summary>
+    public (long Ticks, long Count)[] JitBuckets
+    {
+        get
+        {
+            var result = new (long, long)[5];
+            for (int i = 0; i < 5; i++)
+            {
+                result[i] = (_jitBucketTicks[i], _jitBucketCounts[i]);
+            }
+
+            return result;
+        }
+    }
+
     /// <summary>Gets the number of block faults delivered.</summary>
     public ulong JitFaults { get; private set; }
 
@@ -44,6 +76,29 @@ public sealed partial class XboxCpu
 
     /// <summary>Gets the number of heads currently cached.</summary>
     public int JitHeadCacheCount => _jitBlocks?.Count ?? 0;
+
+    /// <summary>Gets the number of visits to heads below the build threshold.</summary>
+    public ulong JitPendingVisits => _jitBlocks?.PendingVisits ?? 0;
+
+    /// <summary>
+    /// Gets or sets the number of times a head must be reached before its
+    /// block is built (a DynamicMethod compile is expensive and cold code
+    /// must not pay for it). Default 1024; tests lower it for immediate
+    /// building.
+    /// </summary>
+    public int JitBuildThreshold { get; set; } = 1024;
+
+    /// <summary>
+    /// Gets or sets exact-boundary mode: the emitted runner polls interrupts
+    /// per member (mirroring <c>Step</c>'s boundary exactly, TSC++ then poll)
+    /// instead of the fast mode's once-per-block poll. This makes fast-mode
+    /// runs bit-exact against the interpreter for the same input, at the cost
+    /// of a poll per instruction. Default off.
+    /// </summary>
+    public bool JitExact { get; set; }
+
+    /// <summary>Pending interrupt vector reported by an exact-mode runner (-1 none).</summary>
+    private int _jitPending = -1;
 
     /// <summary>
     /// Gets or sets opt-in fast-mode block execution (<c>--jit</c>). Default
@@ -61,6 +116,7 @@ public sealed partial class XboxCpu
             {
                 SpecExecutionEnabled = true;
                 _jitBlocks ??= new JitBlockCache();
+                _jitSlowMembers = 0;
             }
 
             _jitEnabled = value;
@@ -89,6 +145,7 @@ public sealed partial class XboxCpu
             return 0;
         }
 
+        JitCallCount++;
         DecodeCache? cache = _decodeCache;
         DecodedBlockCache? blocks = _blocks;
         JitBlockCache? jit = _jitBlocks;
@@ -103,9 +160,10 @@ public sealed partial class XboxCpu
         ulong generation = blocks.Generation;
         uint fetchLinear = Context.GetSegmentBase(SegmentRegister.Cs) + Context.Eip;
         JitBlock? block;
-        switch (jit.Lookup(fetchLinear, generation, out block))
+        switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
         {
             case JitBlockCache.Verdict.Rejected:
+            case JitBlockCache.Verdict.Pending:
                 return 0;
             case JitBlockCache.Verdict.Absent:
                 block = FormJitBlock(cache, jit, fetchLinear, generation);
@@ -126,10 +184,9 @@ public sealed partial class XboxCpu
             return 0;
         }
 
-        // Fast-mode boundary: one IRQ poll per block. A pending vector is
-        // delivered before any member runs, exactly as Step/RunSpecBlock, and
-        // consumes one budget unit.
-        if (InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
+        // Fast mode's boundary: one IRQ poll per block; exact mode polls per
+        // member inside the runner instead (mirroring Step's order).
+        if (!JitExact && InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
         {
             int vector = InterruptSource.Acknowledge();
             if (vector >= 0)
@@ -146,10 +203,17 @@ public sealed partial class XboxCpu
         }
 
         _jitProgress = 0;
+        _jitPending = -1;
         int served;
         try
         {
+            long runnerStart = System.Diagnostics.Stopwatch.GetTimestamp();
             served = block.Runner(this, budget);
+            long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
+            _jitRunnerTicks += runnerTicks;
+            int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
+            _jitBucketTicks[bucket] += runnerTicks;
+            _jitBucketCounts[bucket]++;
         }
         catch (PageFaultSignal fault)
         {
@@ -170,6 +234,22 @@ public sealed partial class XboxCpu
             JitServedTotal += (ulong)(done + 1);
             JitInvocations++;
             return done + 1;
+        }
+
+        // Exact mode: a runner reported a pending vector at a member boundary.
+        // Deliver it exactly as RunSpecBlock does (the member was not served).
+        if (_jitPending >= 0)
+        {
+            int vector = _jitPending;
+            Context.Halted = false;
+            if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
+            {
+                InterruptCount++;
+                blocks.EndBoundary();
+                JitServedTotal += (ulong)(served + 1);
+                JitInvocations++;
+                return served + 1;
+            }
         }
 
         JitServedTotal += (ulong)served;
@@ -229,8 +309,8 @@ public sealed partial class XboxCpu
         if (!covered)
         {
             // The walk ran out of cached entries before reaching a stable
-            // end: no verdict, the caller serves a miss and entries fill.
-            jit.NoteTransientBail();
+            // end: no verdict, retried after a visit delay.
+            jit.NoteTransientBail(headLinear, generation);
             return null;
         }
 
@@ -240,7 +320,7 @@ public sealed partial class XboxCpu
             return null;
         }
 
-        JitRun? runner = JitEmitter.Build(headLinear, plans.Slice(0, count));
+        JitRun? runner = JitEmitter.Build(headLinear, plans.Slice(0, count), JitExact);
         if (runner is null)
         {
             jit.Store(headLinear, generation, null);

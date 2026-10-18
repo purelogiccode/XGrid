@@ -32,6 +32,8 @@ internal enum JitKind : byte
     JmpReg,
     JmpRel,
     JccRel,
+    Cli,
+    Sti,
     Nop,
 }
 
@@ -155,6 +157,8 @@ internal static class JitPlanner
             Mnemonic.Ret => PlanRet(instruction),
             Mnemonic.Jmp => PlanJmp(instruction),
             Mnemonic.Jcc => PlanJcc(instruction),
+            Mnemonic.Cli => new JitMemberPlan { Kind = JitKind.Cli, Length = instruction.Length },
+            Mnemonic.Sti => new JitMemberPlan { Kind = JitKind.Sti, Length = instruction.Length },
             Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
             _ => default,
         };

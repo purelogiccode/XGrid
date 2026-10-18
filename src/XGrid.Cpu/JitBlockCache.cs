@@ -12,7 +12,7 @@ namespace XGrid.Cpu;
 /// </summary>
 internal delegate int JitRun(XboxCpu cpu, int budget);
 
-/// <summary>One built fast-mode block (a maximal run of natively emittable members).</summary>
+/// <summary>One built fast-mode block (a run of natively emittable members).</summary>
 internal sealed class JitBlock
 {
     public JitBlock(
@@ -58,16 +58,19 @@ internal sealed class JitBlock
 /// <summary>
 /// Head-keyed fast-mode block cache. Every entry is stamped with the block
 /// generation: a generation bump (decode-cache page drop, full flush, or an
-/// explicit invalidate) makes stale entries self-invalidate on lookup. A
-/// <c>null</c> block records a permanent verdict for that head (the first
-/// member has no native shape) so formation is not re-attempted until the
-/// generation moves; transient formation bails (entries not cached yet) are
-/// not recorded and are retried.
+/// explicit invalidate) makes stale entries self-invalidate on lookup.
+///
+/// A head is not built on first sight: the entry counts visits and formation
+/// starts only at <see cref="XboxCpu.JitBuildThreshold"/> visits, because a
+/// DynamicMethod compile costs ~1 ms and one-shot cold code must never pay
+/// for it. A <c>null</c> block records a permanent verdict for that head
+/// (first member has no native shape) so formation is not re-attempted until
+/// the generation moves.
 /// </summary>
 internal sealed class JitBlockCache
 {
-    /// <summary>Maximum cached heads before the whole table is dropped.</summary>
-    public const int MaxHeads = 8192;
+    /// <summary>Maximum cached heads before non-built entries are dropped.</summary>
+    public const int MaxHeads = 65536;
 
     private readonly Dictionary<uint, Entry> _heads = new();
 
@@ -76,6 +79,9 @@ internal sealed class JitBlockCache
 
     /// <summary>Gets the number of heads with a cached permanent rejection.</summary>
     public ulong Rejected { get; private set; }
+
+    /// <summary>Gets the number of visits to heads that were not yet eligible for building.</summary>
+    public ulong PendingVisits { get; private set; }
 
     /// <summary>Gets the number of formation attempts that bailed transiently (entries not cached yet).</summary>
     public ulong TransientBails { get; private set; }
@@ -86,8 +92,11 @@ internal sealed class JitBlockCache
     /// <summary>Lookup verdict for a head.</summary>
     public enum Verdict
     {
-        /// <summary>No entry (or a stale one) — the caller should attempt formation.</summary>
+        /// <summary>Eligible for formation — the caller should attempt it.</summary>
         Absent,
+
+        /// <summary>Seen, but not yet at the build threshold: skip quietly.</summary>
+        Pending,
 
         /// <summary>A permanent rejection is cached for this head/generation.</summary>
         Rejected,
@@ -96,23 +105,42 @@ internal sealed class JitBlockCache
         Hit,
     }
 
-    /// <summary>Looks up a head; stale-generation entries are dropped.</summary>
-    public Verdict Lookup(uint headLinear, ulong generation, out JitBlock? block)
+    /// <summary>
+    /// Looks up a head. Stale-generation entries are dropped; unseen heads are
+    /// recorded as pending; pending heads become eligible at
+    /// <paramref name="buildThreshold"/> visits.
+    /// </summary>
+    public Verdict Lookup(uint headLinear, ulong generation, int buildThreshold, out JitBlock? block)
     {
         block = null;
-        if (!_heads.TryGetValue(headLinear, out Entry entry))
+        if (!_heads.TryGetValue(headLinear, out Entry entry) || entry.Generation != generation)
+        {
+            _heads[headLinear] = new Entry { Generation = generation, Visits = 1 };
+            PendingVisits++;
+            return Verdict.Pending;
+        }
+
+        if (entry.Block is not null)
+        {
+            block = entry.Block;
+            return Verdict.Hit;
+        }
+
+        if (entry.Rejected)
+        {
+            return Verdict.Rejected;
+        }
+
+        int visits = entry.Visits + 1;
+        entry.Visits = visits;
+        if (visits >= buildThreshold && visits >= entry.RetryAtVisits)
         {
             return Verdict.Absent;
         }
 
-        if (entry.Generation != generation)
-        {
-            _heads.Remove(headLinear);
-            return Verdict.Absent;
-        }
-
-        block = entry.Block;
-        return entry.Block is null ? Verdict.Rejected : Verdict.Hit;
+        _heads[headLinear] = entry;
+        PendingVisits++;
+        return Verdict.Pending;
     }
 
     /// <summary>Stores a built block (or a permanent rejection when <paramref name="block"/> is null).</summary>
@@ -120,10 +148,15 @@ internal sealed class JitBlockCache
     {
         if (_heads.Count >= MaxHeads)
         {
-            _heads.Clear();
+            DropUnbuiltEntries();
         }
 
-        _heads[headLinear] = new Entry { Generation = generation, Block = block };
+        _heads[headLinear] = new Entry
+        {
+            Generation = generation,
+            Block = block,
+            Rejected = block is null,
+        };
         if (block is null)
         {
             Rejected++;
@@ -134,10 +167,16 @@ internal sealed class JitBlockCache
         }
     }
 
-    /// <summary>Records a transient formation bail (no verdict cached).</summary>
-    public void NoteTransientBail()
+    /// <summary>Records a transient formation bail: retry the walk in 64 visits.</summary>
+    public void NoteTransientBail(uint headLinear, ulong generation)
     {
         TransientBails++;
+        if (_heads.TryGetValue(headLinear, out Entry entry) && entry.Generation == generation
+            && entry.Block is null && !entry.Rejected)
+        {
+            entry.RetryAtVisits = entry.Visits + 64;
+            _heads[headLinear] = entry;
+        }
     }
 
     /// <summary>Drops every cached verdict.</summary>
@@ -146,10 +185,43 @@ internal sealed class JitBlockCache
         _heads.Clear();
     }
 
-    private readonly struct Entry
+    /// <summary>
+    /// Drops pending (never-built, never-rejected) entries; falls back to a
+    /// full clear when the table holds nothing but verdicts.
+    /// </summary>
+    private void DropUnbuiltEntries()
+    {
+        List<uint>? drop = null;
+        foreach ((uint head, Entry entry) in _heads)
+        {
+            if (entry.Block is null && !entry.Rejected && entry.Visits < 16)
+            {
+                (drop ??= new List<uint>()).Add(head);
+            }
+        }
+
+        if (drop is null || drop.Count == 0)
+        {
+            _heads.Clear();
+            return;
+        }
+
+        foreach (uint head in drop)
+        {
+            _heads.Remove(head);
+        }
+    }
+
+    private struct Entry
     {
         public ulong Generation { get; init; }
 
-        public JitBlock? Block { get; init; }
+        public JitBlock? Block { get; set; }
+
+        public bool Rejected { get; set; }
+
+        public int Visits { get; set; }
+
+        public int RetryAtVisits { get; set; }
     }
 }
