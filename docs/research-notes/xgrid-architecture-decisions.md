@@ -9637,3 +9637,47 @@ that the TLB misses are flush-driven, not capacity-driven). Next step if
 picked up: profile the full-config boot with per-trigger flush counters (the
 decode-flush audit's §7 probes) before theorizing; the 7-test smoke remains
 the standard cross-check meanwhile.
+
+## 190. Fast-mode JIT track chartered (2026-10-18, operator decision)
+
+Operator decision: pursue **at least xemu-class performance** long-run; repo
+constraints may be relaxed to speed development, but the GPL/TCG-transport
+route was rejected — QEMU TCG is entangled with QEMU, and a C# port is both a
+GPL derivative work and ≈ equal effort to an own emitter; MIT references
+exist (Ryujinx ARMeilleure infrastructure, Iced encoding). The project stays
+non-GPL.
+
+Charter filed: `docs/research-notes/jit-track-charter.md` — governing doc for
+the track:
+
+- **Dual-mode contract.** Accurate mode unchanged (gate currency,
+  boundary-preserving, byte-identical contracts). Fast mode (`--jit`,
+  opt-in) relaxes TSC/step/IRQ observability to block granularity while
+  retaining MMIO program order + fault precision; `--jit-exact` is the
+  bit-exact debug variant; one engine per run; fast mode is never gate
+  currency.
+- **Phases 0–4 with kill criteria.** P0 bench/verify harness; P1
+  DynamicMethod block JIT — differ in kind from E1–E3 (whole-block
+  straight-line, register-cached guest state, inlined RAM fast paths,
+  block-local flags); target ≥2.5–3× bench CPU-side, kill <1.5× after 4
+  focused weeks or 3 structural iterations; P2 lazy flags/chaining/tiering
+  (5–10×); P3 raw emitter only if P1–2 plateau >3× short of target; P4
+  fast-mode playability (GPU coverage/pacing/audio/input) after P2.
+- **Two-tier validation.** Exploration slices = bench + unit differentials;
+  promotion = the full accurate-mode ceremony + sync-point differential +
+  ktest outcome.
+- **Constraint deltas approved.** `DynamicMethod` authorized for fast mode
+  only; Iced (MIT) approved for Phase 3 (not yet referenced); per-slice
+  ceremony relaxed to two-tier; games rule unchanged (fast-mode
+  benchmark-only use pends an explicit operator decision); license stays
+  non-GPL.
+- **Why now (measured).** Interpreter track asymptoted (fallbacks −66% vs
+  walls 1.07–1.19×, §§149–169); relay emission wall-neutral (E1–E3,
+  §§171–179b; §20.6 microbenchmark); current post-R7 walls menu 70.8 s /
+  triangle 36.6 s per 1B steps (§186a/§187) vs the 10²–10³ Msteps/s
+  real-time band (`gpu-swapchain-brief.md` §5 math).
+
+Updated pointers: `development-direction.md` §1/§2b/§3/§4; `AGENTS.md`
+"Development direction" + next-session; `ImplementationPlan.md` Phase 15 +
+Track C + status table. Next work item: Phase 0 bench + `--jit-verify`
+harness.

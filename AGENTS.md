@@ -70,18 +70,28 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
-## Development direction (required, 2026-10-16)
+## Development direction (required, 2026-10-18)
 
-Canonical order: `docs/development-direction.md`. Summary of hard rules:
+Canonical order: `docs/development-direction.md`; fast-mode JIT track:
+`docs/research-notes/jit-track-charter.md`. Summary of hard rules:
 
-1. **JIT throughput first** — CPU is 97–100% of wall; swapchain/GPU is 0–2.9%.
-   Specialize semantics; switch dispatch is not dominant; DynamicMethod stays
-   rejected; boundary-preserving only.
+1. **JIT throughput first** — CPU is 97–100% of wall; GPU/swapchain 0–2.9%.
+   Accurate-mode rules unchanged (specialize semantics; dispatch not dominant;
+   boundary-preserving; `DynamicMethod` rejected for relay slices).
+   **Fast-mode execution engine chartered 2026-10-18** (dual-mode contract;
+   `DynamicMethod` block JIT authorized for fast mode; raw emitter gated by
+   the charter's Phase-3 condition; kill criteria in charter §4). Post-R7
+   walls: menu 70.8 s / triangle 36.6 s per 1B (§186a/§187) vs the
+   10²–10³ Msteps/s real-time band.
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
-   and no NV2A fidelity polish until a `data/test-samples/` histogram proves need.
-3. **No real Xbox games** — `data/test-samples/` only (operator rule).
-4. **Perf flags stay opt-in** until median-of-3 + exact SHAs/counters +
-   `verifyFailures=0` + flag-off byte-identical. ktest smoke 7/7 is the standing gate.
+   and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
+   (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).
+3. **No real Xbox games** — `data/test-samples/` only (operator rule; fast-mode
+   benchmark-only use needs an explicit operator decision).
+4. **Two-tier perf validation.** Accurate-mode promotion + every default flip:
+   median-of-3 + exact SHAs/counters + `verifyFailures=0` + flag-off
+   byte-identical. Fast-mode exploration: bench + unit differentials
+   (charter §5). ktest smoke 7/7 is the standing gate.
 5. **Direct development** — wave runner retired, no worktrees/detached servers.
 
 ## Build / test / format
@@ -495,6 +505,17 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
+
+### Fast-mode JIT track chartered (2026-10-18) — operator decision
+
+Long-run goal: at least xemu-class performance. Governing doc:
+`docs/research-notes/jit-track-charter.md` (dual-mode contract; Phase 1
+DynamicMethod block JIT authorized; Phase 3 raw emitter gated on Phase 1–2
+evidence; kill criteria; two-tier validation; license stays non-GPL). The
+accurate mode remains gate currency; fast mode (`--jit`) is never gate
+currency and is validated by sync-point differentials + `--jit-exact`
+bit-exact debugging. Next work item: Phase 0 bench + `--jit-verify` harness.
+Recorded: decisions §190; `development-direction.md` §1/§2b; Phase 15/Track C.
 
 ### Rasterizer throughput campaign (2026-10-17 evening, direct; §§180–183) — DONE
 
