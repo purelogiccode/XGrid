@@ -10311,3 +10311,33 @@ store only those it writes; the plan struct already exposes `RegIndex` /
 `SecondRegIndex` / `BaseRegister` / `IndexRegister` per member, so the sets
 are derivable from the plans — validate with the 200M four-engine
 differential and the 1B fast anchors).
+
+## 199c. Quiet-host medians (2026-10-19 late): D3b is counter-positive but wall-neutral; the real residue is the Step-episode cost
+
+**Measured (1B, fast mode, gl+replace+spin, 3 interleaved runs, quiet host
+after the operator stopped Fortnite):**
+| Leg | Walls | Median | SHA |
+|---|---|---|---|
+| triangle | 10.88 / 11.09 / 11.30 s | **11.09 s** | 4F1FCBC0/7DAB63EB exact |
+| menu | 42.80 / 47.35 / 47.58 s | **47.35 s** | DD023100/F5D61C94 exact |
+
+`Host timing` confirms the wall is the CPU engine (triangle executeMs 10,869–
+11,284, advanceMs 8; menu executeMs 42,775–47,554, advanceMs 23). The menu
+spread (42.8–47.6 s) shows residual host noise — the earlier single 41.39 s
+was a quieter window; no menu improvement is claimed.
+
+**D3b verdict.** Deterministic counters improved (nonJitCalls 1,281,644 →
+522,460, rejectedHeads 431 → 113, specRan 4.9M) but the **non-JIT time did not
+move** (1.86–1.93 s before and after). Attribution: the 522K remaining
+episodes still average ~10 `Step()` calls each (~350 ns/instruction) — the
+spec runner declines them, most likely because its `Form` only uses
+`decodes.TryGet` (no fill-on-demand) and the page churn/`MaxBlocks` churn
+leaves entries missing at the moment of formation. **Follow-up item (cheap,
+deterministic): give the spec `Form` the same fill-on-demand the JIT has
+(`TryFillDecodeEntry`), or count why it declines (a spec-decline reason
+counter) before changing anything.** This is a C2-adjacent item, not a
+blocker for the trace emitter.
+
+**Plan impact.** None on the milestone ladder: triangle 11.09 s vs the M1
+target ≤6 s (C2), menu 47.35 s vs M1 ≤20 s (C2 + B2c). The CPU engine remains
+the whole wall; C2 (`jit-trace-emitter-design.md`) is the next slice.
