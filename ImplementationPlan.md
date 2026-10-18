@@ -3031,7 +3031,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-17; refreshed for the emitter program §§171–179b and the rasterizer campaign §§180–183)
+## Project completion assessment (2026-10-19; refreshed for the fast-mode JIT track §§190–194, the GL window §184 and the idle-skip measurement §185)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3055,17 +3055,17 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 50% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E2c (§§171–174: DynamicMethod tails; `--emit` opt-in); E3-1 body inlining landed + quiet-host measured (§§176–179b, 42 legs: `--emit-inline` twins + IL fast paths; **triangle n=7: 1.137x spec / 1.021x emit (5/7 pairs)**; menu parity ±2% at n=7; emitted hitRate 0.92/0.98); default flip + E3-2 open |
-| 16 CPU Optimization | 3 | 25% | benchmark-driven tuning; medians §160/164/166/169/175 in place; profile-driven next |
+| 15 CPU JIT | 11 | 72% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact (triangle keeps a documented 3-dword residual), ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 27.9 s / menu 64.0 s**; remaining: `--jit` default-flip decision, IL chaining (~4.5 s/1B bookkeeping), threshold auto-tune, E3-2, Phase-3 gate (not indicated) |
+| 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
-| 18 GPU Optimization | 4 | 34% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); remaining: fundamental per-pixel work, backend performance |
+| 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); remaining: fundamental per-pixel work, backend performance |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 60% | 1423 tests + goldens/median harnesses (`emit-gate.ps1`/`emit-median.ps1`) + randomized emit-inline differential net + ktest smoke; fuzzing, wider compatibility corpus |
-| 21 CLI & Frontend | 3 | 50% | GUI frontend |
+| 20 Automated Testing | 3 | 65% | 1476 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + ktest smoke; fuzzing, wider compatibility corpus |
+| 21 CLI & Frontend | 3 | 52% | opt-in `--window` live present sink (§184); GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~69% complete overall** (weighted: 74.8 of 108 weight-points, recomputed 2026-10-17 after the rasterizer campaign §§180–183; was 74.0 after §§176–179b).
+**Result: ~72% complete overall** (weighted: 77.9 of 108 weight-points, recomputed 2026-10-19 after the fast-mode JIT campaign §§190–194; was 74.8 after §§180–187).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:
@@ -3075,15 +3075,16 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15–23): ~28%.** Dominated by the CPU
-  JIT (30% — interpreter with default-on decode cache, opt-in block executor
-  and semspec slices 1+2 and 5–13, no codegen yet) and
-  optimization phases; this is the throughput gap between forensic runs
-  (~14M insn/s Release baseline; decode cache adds 2.1–3.1× on titles,
-  spec-exec absorbs fallbacks with walls still near cache parity)
-  and interactive rates. The software rasterizer was the largest single wall
-  item on both goldens and is now 3.9×/5.5× faster bit-exactly (§§180–182:
-  menu 1B leg 143.7 → 77.6 s, triangle 71.6 → 35.5 s, median-of-3).
+- **Performance/finish track (phases 15–23): ~47%.** Dominated by the CPU
+  JIT (72% — interpreter with default-on decode cache, opt-in spec/block/
+  emit layers, and the chartered fast-mode engine: `--jit` whole-block
+  DynamicMethod runners at 99% served, bit-exact on the menu at 1B, ktest
+  2B 3.76× CPU-bound; quiet-host fast medians triangle 27.9 s / menu
+  64.0 s) and the optimization phases; the remaining wall is GPU/MMIO-bound
+  (the software rasterizer is 36–38% of both 1B walls) rather than
+  CPU-side. The software rasterizer was the largest single wall item on
+  both goldens and is now 4.9×/5.5× faster bit-exactly (§§180–187; menu 1B
+  leg 143.7 → 70.8 s, triangle 71.6 → 36.6 s, closing medians).
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
   polling -> menu navigation -> activation) all work; a readable colored
