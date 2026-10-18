@@ -358,6 +358,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     // Diagnostic (`--gpu-time`): distinct combiner-configuration histogram.
     private string _diagCombinerConfig = "none";
     private bool _combinerFastModulate;
+    // Per-fill fragment constants (set by PrepareFragmentConstants at the start
+    // of every fill; no guest register write can interleave with a fill).
+    private float _alphaRefScaled;
+    private float _blendConstR;
+    private float _blendConstG;
+    private float _blendConstB;
+    private float _blendConstA;
+    private float _zclipRange;
+    // Reused PSH fill scratch (bit-identical to the previous per-triangle
+    // allocations; fully re-initialized at the start of every fill).
+    private readonly float[] _pshDiffuse = new float[4];
+    private readonly float[] _pshSpecular = new float[4];
+    private readonly float[] _pshFog = new float[4];
+    private readonly float[][] _pshTexels = { new float[4], new float[4], new float[4], new float[4] };
+    private readonly float[][] _pshCoords = { new float[4], new float[4], new float[4], new float[4] };
+    private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
+    private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
 
     /// <summary>TEMP-DIAG (not for commit): pixels/fills per combiner configuration.</summary>
     public Dictionary<string, (long Draws, long Pixels)> CombinerConfigStats { get; } = new(StringComparer.Ordinal);
@@ -4110,6 +4127,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             CombinerDraws++;
             _combinerFastModulate = _combiner.IsModulateT0V0Passthrough();
+            _combiner.RebuildPlan(combinerConsts);
             if (RasterTimingEnabled)
             {
                 // Diagnostic: capture the distinct combiner configuration.
@@ -5141,16 +5159,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// regs to zero, but guests always program them before 3D, so
     /// passthrough-until-written is observationally identical).
     /// </summary>
-    private bool ApplyZclip(ref float depth, uint zetaBytes)
+    private bool ApplyZclip(ref float depth)
     {
-        uint zetaFormat = zetaBytes switch
-        {
-            2u => ZetaFormatZ16,
-            4u => ZetaFormatZ24S8,
-            _ => 0u,
-        };
-        float range = ZetaDepthRange(zetaFormat, _zFormatFloat);
-        float zvalue = depth * range;
+        float zvalue = depth * _zclipRange;
         if (zvalue < _zclipMin || zvalue > _zclipMax)
         {
             if (_zclipCull)
@@ -5160,7 +5171,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
 
             ZclipClampedPixels++;
-            depth = Math.Clamp(zvalue, _zclipMin, _zclipMax) / range;
+            depth = Math.Clamp(zvalue, _zclipMin, _zclipMax) / _zclipRange;
         }
 
         // In-bounds depths keep their normalized value bit-exact: the
@@ -5342,12 +5353,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // ZCLIP runs at the top of the reference fragment shader (before the
         // alpha test and before any depth/stencil/color write), so discard
         // mode kills the fragment even when the depth test is disabled.
-        if (_zclipActive && !ApplyZclip(ref depth, zetaBytes))
+        if (_zclipActive && !ApplyZclip(ref depth))
         {
             return;
         }
 
-        if (_alphaTestEnable && !CompareFunc(_alphaFunc, a, _alphaRef / 255f))
+        if (_alphaTestEnable && !CompareFunc(_alphaFunc, a, _alphaRefScaled))
         {
             return;
         }
@@ -5475,12 +5486,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
             if (_blendEnable)
             {
-                uint blend = _blendColor;
                 (float R, float G, float B, float A) constant = (
-                    ((blend >> 16) & 0xFFu) / 255f,
-                    ((blend >> 8) & 0xFFu) / 255f,
-                    (blend & 0xFFu) / 255f,
-                    ((blend >> 24) & 0xFFu) / 255f);
+                    _blendConstR, _blendConstG, _blendConstB, _blendConstA);
                 (float R, float G, float B, float A) fs = BlendFactor(_blendSrcFactor, src, dst, constant);
                 (float R, float G, float B, float A) fd = BlendFactor(_blendDstFactor, src, dst, constant);
                 result = _blendEquation switch
@@ -5591,6 +5598,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             v.Fog);
     }
 
+    /// <summary>
+    /// Caches per-fill fragment constants (alpha reference scale, blend
+    /// constant vector, zclip depth range) so the per-pixel fragment path
+    /// does not recompute them. Values are computed with the exact same
+    /// expressions as the per-pixel path (bit-identical); a fill cannot be
+    /// interleaved with guest register writes, so the cache is always
+    /// current inside the pixel loops.
+    /// </summary>
+    private void PrepareFragmentConstants(uint zetaBytes)
+    {
+        _alphaRefScaled = _alphaRef / 255f;
+        uint blend = _blendColor;
+        _blendConstR = ((blend >> 16) & 0xFFu) / 255f;
+        _blendConstG = ((blend >> 8) & 0xFFu) / 255f;
+        _blendConstB = (blend & 0xFFu) / 255f;
+        _blendConstA = ((blend >> 24) & 0xFFu) / 255f;
+        uint zetaFormat = zetaBytes switch
+        {
+            2u => ZetaFormatZ16,
+            4u => ZetaFormatZ24S8,
+            _ => 0u,
+        };
+        _zclipRange = ZetaDepthRange(zetaFormat, _zFormatFloat);
+    }
+
     private void FillTriangle(
         float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av,
         float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv,
@@ -5607,6 +5639,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);
         _zetaSurfaceBase = SurfaceBase(_dmaZeta);
+        PrepareFragmentConstants(zetaBytes);
 
         uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(ax, bx), cx));
         uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(ax, bx), cx));
@@ -6347,6 +6380,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint zetaPitch = (_surfacePitch >> 16) & 0xFFFFu;
         _colorSurfaceBase = SurfaceBase(_dmaColor);
         _zetaSurfaceBase = SurfaceBase(_dmaZeta);
+        PrepareFragmentConstants(zetaBytes);
 
         uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.X, b.X), c.X));
         uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(a.X, b.X), c.X));
@@ -6365,13 +6399,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float invCw = c.W != 0f ? 1f / c.W : 0f;
         bool perspective = invAw != 0f && invBw != 0f && invCw != 0f && (a.W != b.W || b.W != c.W);
 
-        // Per-triangle scratch: interpolated inputs and resolved texels for Evaluate.
-        var diffuse = new float[4];
-        var specular = new float[4];
-        var fog = new float[4];
-        var texels = new[] { new float[4], new float[4], new float[4], new float[4] };
-        var coords = new[] { new float[4], new float[4], new float[4], new float[4] };
-        var stageDots = new float[PshCombiner.TextureSlots];
+        // Reused per-fill scratch (fully re-initialized below; bit-identical
+        // to the previous per-triangle allocations).
+        float[] diffuse = _pshDiffuse;
+        float[] specular = _pshSpecular;
+        float[] fog = _pshFog;
+        float[][] texels = _pshTexels;
+        float[][] coords = _pshCoords;
+        float[] stageDots = _pshStageDots;
+        int[] texModes = _pshTexModes;
         foreach (float[] texel in texels)
         {
             SetTexelNone(texel);
@@ -6380,13 +6416,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         fog[0] = _fogColor[0];
         fog[1] = _fogColor[1];
         fog[2] = _fogColor[2];
-        int[] texModes =
+        texModes[0] = _combiner.DecodeTexMode(0);
+        texModes[1] = _combiner.DecodeTexMode(1);
+        texModes[2] = _combiner.DecodeTexMode(2);
+        texModes[3] = _combiner.DecodeTexMode(3);
+        bool anyClipPlane = false;
+        bool anyStageDotReader = false;
+        for (int i = 0; i < PshCombiner.TextureSlots; i++)
         {
-            _combiner.DecodeTexMode(0),
-            _combiner.DecodeTexMode(1),
-            _combiner.DecodeTexMode(2),
-            _combiner.DecodeTexMode(3),
-        };
+            int mode = texModes[i];
+            anyClipPlane |= mode == PshCombiner.TexModeClipPlane;
+            anyStageDotReader |= mode == PshCombiner.TexModeDotSt || mode == PshCombiner.TexModeDotStr3D;
+        }
 
         long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
         for (uint y = y0; y <= y1; y++)
@@ -6467,25 +6508,37 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float fogFactor = (p1 * a.Fog) + (p2 * b.Fog) + (p0 * c.Fog);
                 float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
 
-                bool clipped = false;
-                for (int i = 0; i < PshCombiner.TextureSlots; i++)
+                if (anyClipPlane)
                 {
-                    if (texModes[i] == PshCombiner.TexModeClipPlane && ClipPlaneDiscards(i, coords[i]))
+                    bool clipped = false;
+                    for (int i = 0; i < PshCombiner.TextureSlots; i++)
                     {
-                        clipped = true;
-                        break;
+                        if (texModes[i] == PshCombiner.TexModeClipPlane && ClipPlaneDiscards(i, coords[i]))
+                        {
+                            clipped = true;
+                            break;
+                        }
+                    }
+
+                    if (clipped)
+                    {
+                        continue;
                     }
                 }
 
-                if (clipped)
+                bool sampled = false;
+                if (anyStageDotReader)
                 {
-                    continue;
+                    Array.Clear(stageDots);
                 }
 
-                bool sampled = false;
-                Array.Clear(stageDots);
                 for (int i = 0; i < PshCombiner.TextureSlots; i++)
                 {
+                    if (texModes[i] == PshCombiner.TexModeNone)
+                    {
+                        continue;
+                    }
+
                     if (ResolveTexel(i, texModes[i], coords, texels, stageDots))
                     {
                         sampled = true;
@@ -6503,12 +6556,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 else if (_fogEnable)
                 {
                     fog[3] = Math.Clamp(fogFactor, 0f, 1f);
-                    _combiner.Evaluate(diffuse, specular, fog, texels, consts, out fr, out fg, out fb, out fa);
+                    _combiner.EvaluatePlanned(diffuse, specular, fog, texels, consts, out fr, out fg, out fb, out fa);
                 }
                 else
                 {
-                    _combiner.Evaluate(diffuse, specular, CombinerFogConst, texels, consts, out fr, out fg, out fb,
-                        out fa);
+                    _combiner.EvaluatePlanned(diffuse, specular, CombinerFogConst, texels, consts, out fr, out fg,
+                        out fb, out fa);
                 }
 
                 if (sampled)

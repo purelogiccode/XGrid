@@ -839,6 +839,417 @@ public sealed class PshCombiner : ISnapshotable
         return Math.Max(mux, 0f) + 0f;
     }
 
+    // ------------------------------------------------------------------
+    // Per-draw input plan (EvaluatePlanned): the stage/final input decode,
+    // register offsets and constant-source values are pure functions of the
+    // combiner state, so they are computed once per draw instead of once per
+    // fragment. Constant sources (Zero/C0/C1) carry their already-mapped
+    // per-component values; register sources carry a flat regs offset and
+    // the input mapping; everything else falls back to the generic read
+    // path. The arithmetic stays identical operation for operation (pinned
+    // by the planned-vs-generic differential test).
+    // ------------------------------------------------------------------
+
+    private const byte PlanGeneric = 0;
+    private const byte PlanReg = 1;
+    private const byte PlanConst = 2;
+    private const byte PlanEfProd = 3;
+
+    private readonly byte[] _planKind = new byte[MaxStages * 8];
+    private readonly short[] _planOffset = new short[MaxStages * 8];
+    private readonly byte[] _planMap = new byte[MaxStages * 8];
+    private readonly byte[] _planRegCode = new byte[MaxStages * 8];
+    private readonly byte[] _planChan = new byte[MaxStages * 8];
+    private readonly byte[] _planStage = new byte[MaxStages * 8];
+    private readonly float[] _planConst = new float[MaxStages * 8 * 4];
+    private readonly int[] _planOut = new int[MaxStages * 2 * 4];
+
+    private readonly byte[] _finalKind = new byte[7];
+    private readonly short[] _finalOffset = new short[7];
+    private readonly byte[] _finalMap = new byte[7];
+    private readonly byte[] _finalRegCode = new byte[7];
+    private readonly byte[] _finalChan = new byte[7];
+    private readonly float[] _finalConst = new float[7 * 4];
+
+    /// <summary>
+    /// Rebuilds the per-draw input plan for the current combiner state.
+    /// Call once per draw (alongside <see cref="BuildConsts"/>) before using
+    /// <see cref="EvaluatePlanned"/>. Constant-source values are produced by
+    /// the same <see cref="ReadComponent"/> + <see cref="MapComponent"/>
+    /// calls the generic path uses, so they are bit-identical.
+    /// </summary>
+    public void RebuildPlan(float[][] consts)
+    {
+        ArgumentNullException.ThrowIfNull(consts);
+        int stages = StageCount;
+        for (int stage = 0; stage < stages; stage++)
+        {
+            BuildStagePlan(stage, isAlpha: false, RgbInputs[stage], RgbOutputs[stage], consts);
+            BuildStagePlan(stage, isAlpha: true, AlphaInputs[stage], AlphaOutputs[stage], consts);
+        }
+
+        BuildFinalPlan(consts);
+    }
+
+    private void BuildStagePlan(int stage, bool isAlpha, uint inputs, uint outputs, float[][] consts)
+    {
+        int half = (stage * 2) + (isAlpha ? 1 : 0);
+        int baseSlot = half * 4;
+        BuildInputPlan(baseSlot + 0, stage, (inputs >> 24) & 0xFFu, consts);
+        BuildInputPlan(baseSlot + 1, stage, (inputs >> 16) & 0xFFu, consts);
+        BuildInputPlan(baseSlot + 2, stage, (inputs >> 8) & 0xFFu, consts);
+        BuildInputPlan(baseSlot + 3, stage, inputs & 0xFFu, consts);
+        _planOut[(half * 4) + 0] = (int)((outputs >> 4) & 0xFu);
+        _planOut[(half * 4) + 1] = (int)(outputs & 0xFu);
+        _planOut[(half * 4) + 2] = (int)((outputs >> 8) & 0xFu);
+        _planOut[(half * 4) + 3] = (int)(outputs >> 12);
+    }
+
+    private void BuildInputPlan(int slot, int stage, uint input, float[][] consts)
+    {
+        DecodeInput(input, out int reg, out int chan, out int mod);
+        _planRegCode[slot] = (byte)reg;
+        _planChan[slot] = (byte)chan;
+        _planMap[slot] = (byte)mod;
+        _planStage[slot] = (byte)stage;
+        if (reg is RegZero or RegC0 or RegC1)
+        {
+            _planKind[slot] = PlanConst;
+            for (int component = 0; component < 4; component++)
+            {
+                _planConst[(slot * 4) + component] =
+                    MapComponent(ReadComponent(default, Array.Empty<float>(), consts, stage, reg, chan, component), mod);
+            }
+
+            return;
+        }
+
+        int offset = RegOffset(reg);
+        if (offset >= 0)
+        {
+            _planKind[slot] = PlanReg;
+            _planOffset[slot] = (short)offset;
+            return;
+        }
+
+        _planKind[slot] = PlanGeneric;
+    }
+
+    private void BuildFinalPlan(float[][] consts)
+    {
+        DecodeInput((Final1 >> 24) & 0xFFu, out int eReg, out int eChan, out int eMod);
+        DecodeInput((Final1 >> 16) & 0xFFu, out int fReg, out int fChan, out int fMod);
+        DecodeInput((Final0 >> 24) & 0xFFu, out int aReg, out int aChan, out int aMod);
+        DecodeInput((Final0 >> 16) & 0xFFu, out int bReg, out int bChan, out int bMod);
+        DecodeInput((Final0 >> 8) & 0xFFu, out int cReg, out int cChan, out int cMod);
+        DecodeInput(Final0 & 0xFFu, out int dReg, out int dChan, out int dMod);
+        DecodeInput((Final1 >> 8) & 0xFFu, out int gReg, out int gChan, out int gMod);
+        BuildFinalSlot(0, eReg, eChan, eMod, consts);
+        BuildFinalSlot(1, fReg, fChan, fMod, consts);
+        BuildFinalSlot(2, aReg, aChan, aMod, consts);
+        BuildFinalSlot(3, bReg, bChan, bMod, consts);
+        BuildFinalSlot(4, cReg, cChan, cMod, consts);
+        BuildFinalSlot(5, dReg, dChan, dMod, consts);
+        BuildFinalSlot(6, gReg, gChan, gMod, consts);
+    }
+
+    private void BuildFinalSlot(int slot, int reg, int chan, int mod, float[][] consts)
+    {
+        _finalRegCode[slot] = (byte)reg;
+        _finalChan[slot] = (byte)chan;
+        _finalMap[slot] = (byte)mod;
+        if (reg == RegEfProd)
+        {
+            _finalKind[slot] = PlanEfProd;
+            return;
+        }
+
+        if (reg is RegZero or RegC0 or RegC1)
+        {
+            _finalKind[slot] = PlanConst;
+            for (int component = 0; component < 4; component++)
+            {
+                _finalConst[(slot * 4) + component] = MapComponent(
+                    ReadFinalComponent(default, 0f, 0f, 0f, Array.Empty<float>(), consts, reg, chan, component), mod);
+            }
+
+            return;
+        }
+
+        int offset = RegOffset(reg);
+        if (offset >= 0)
+        {
+            _finalKind[slot] = PlanReg;
+            _finalOffset[slot] = (short)offset;
+            return;
+        }
+
+        _finalKind[slot] = PlanGeneric;
+    }
+
+    /// <summary>
+    /// Plan-driven evaluator: same inputs as <see cref="Evaluate"/> and
+    /// bit-identical results, reading the per-draw plan built by
+    /// <see cref="RebuildPlan"/> instead of re-decoding every input word,
+    /// register offset and constant mapping per fragment. The generic path
+    /// stays the reference implementation; the planned path is pinned to it
+    /// by the planned-vs-generic differential test.
+    /// </summary>
+    public void EvaluatePlanned(
+        float[] diffuse,
+        float[] specular,
+        float[] fog,
+        float[][] texels,
+        float[][] consts,
+        out float r,
+        out float g,
+        out float b,
+        out float a)
+    {
+        ArgumentNullException.ThrowIfNull(diffuse);
+        ArgumentNullException.ThrowIfNull(specular);
+        ArgumentNullException.ThrowIfNull(fog);
+        ArgumentNullException.ThrowIfNull(texels);
+        ArgumentNullException.ThrowIfNull(consts);
+
+        Span<float> regs = stackalloc float[8 * 4];
+        CopyVec(regs.Slice(0, 4), diffuse);
+        CopyVec(regs.Slice(4, 4), specular);
+        for (int i = 0; i < TextureSlots; i++)
+        {
+            CopyVec(regs.Slice(8 + (i * 4), 4), texels[i]);
+        }
+
+        regs[24] = 0f;
+        regs[25] = 0f;
+        regs[26] = 0f;
+        int texMode0 = DecodeTexMode(0);
+        regs[27] = texMode0 != TexModeNone ? texels[0][3] : 1f;
+        regs[28] = 0f;
+        regs[29] = 0f;
+        regs[30] = 0f;
+        regs[31] = 0f;
+
+        int stages = StageCount;
+        for (int stage = 0; stage < stages; stage++)
+        {
+            EvalStagePlanned(stage, isAlpha: false, regs, fog, consts);
+            EvalStagePlanned(stage, isAlpha: true, regs, fog, consts);
+        }
+
+        if (!FinalEnabled)
+        {
+            r = regs[24];
+            g = regs[25];
+            b = regs[26];
+            a = regs[27];
+            return;
+        }
+
+        // Final combiner: E/F first (A-D/G may read EF_PROD); E/F resolve
+        // EF_PROD to zero exactly like the generic path (efx = efy = efz = 0).
+        float ex = ReadFinalPlanned(0, 0, regs, 0f, 0f, 0f, fog, consts);
+        float ey = ReadFinalPlanned(0, 1, regs, 0f, 0f, 0f, fog, consts);
+        float ez = ReadFinalPlanned(0, 2, regs, 0f, 0f, 0f, fog, consts);
+        float fx = ReadFinalPlanned(1, 0, regs, 0f, 0f, 0f, fog, consts);
+        float fy = ReadFinalPlanned(1, 1, regs, 0f, 0f, 0f, fog, consts);
+        float fz = ReadFinalPlanned(1, 2, regs, 0f, 0f, 0f, fog, consts);
+        float efx = ex * fx;
+        float efy = ey * fy;
+        float efz = ez * fz;
+
+        float ax = ReadFinalPlanned(2, 0, regs, efx, efy, efz, fog, consts);
+        float ay = ReadFinalPlanned(2, 1, regs, efx, efy, efz, fog, consts);
+        float az = ReadFinalPlanned(2, 2, regs, efx, efy, efz, fog, consts);
+        float bx = ReadFinalPlanned(3, 0, regs, efx, efy, efz, fog, consts);
+        float by = ReadFinalPlanned(3, 1, regs, efx, efy, efz, fog, consts);
+        float bz = ReadFinalPlanned(3, 2, regs, efx, efy, efz, fog, consts);
+        float cx = ReadFinalPlanned(4, 0, regs, efx, efy, efz, fog, consts);
+        float cy = ReadFinalPlanned(4, 1, regs, efx, efy, efz, fog, consts);
+        float cz = ReadFinalPlanned(4, 2, regs, efx, efy, efz, fog, consts);
+        float dx = ReadFinalPlanned(5, 0, regs, efx, efy, efz, fog, consts);
+        float dy = ReadFinalPlanned(5, 1, regs, efx, efy, efz, fog, consts);
+        float dz = ReadFinalPlanned(5, 2, regs, efx, efy, efz, fog, consts);
+
+        r = dx + (cx + ((bx - cx) * ax));
+        g = dy + (cy + ((by - cy) * ay));
+        b = dz + (cz + ((bz - cz) * az));
+        a = ReadFinalAlphaPlanned(6, regs, efx, efy, efz, fog, consts);
+    }
+
+    private void EvalStagePlanned(int stage, bool isAlpha, Span<float> regs, float[] fog, float[][] consts)
+    {
+        int half = (stage * 2) + (isAlpha ? 1 : 0);
+        int baseSlot = half * 4;
+        int abDest = _planOut[(half * 4) + 0];
+        int cdDest = _planOut[(half * 4) + 1];
+        int muxDest = _planOut[(half * 4) + 2];
+        uint outFlags = (uint)_planOut[(half * 4) + 3];
+        int mapping = (int)(outFlags & 0x38u);
+
+        if (isAlpha)
+        {
+            float a = ReadPlanned(baseSlot + 0, _planChan[baseSlot + 0] != 0 ? 3 : 2, regs, fog, consts);
+            float b = ReadPlanned(baseSlot + 1, _planChan[baseSlot + 1] != 0 ? 3 : 2, regs, fog, consts);
+            float c = ReadPlanned(baseSlot + 2, _planChan[baseSlot + 2] != 0 ? 3 : 2, regs, fog, consts);
+            float d = ReadPlanned(baseSlot + 3, _planChan[baseSlot + 3] != 0 ? 3 : 2, regs, fog, consts);
+
+            float ab = a * b;
+            float cd = c * d;
+            ab = Math.Clamp(ApplyOutputMapping(ab, mapping), -1f, 1f);
+            cd = Math.Clamp(ApplyOutputMapping(cd, mapping), -1f, 1f);
+
+            float mux = ((outFlags & FlagMux) != 0) ? MuxSelect(regs[27], ab, cd) : ab + cd;
+            mux = Math.Clamp(ApplyOutputMapping(mux, mapping), -1f, 1f);
+
+            WriteAlpha(regs, abDest, ab);
+            WriteAlpha(regs, cdDest, cd);
+            WriteAlpha(regs, muxDest, mux);
+            return;
+        }
+
+        ReadPlannedVec(baseSlot + 0, regs, fog, consts, out float ax, out float ay, out float az);
+        ReadPlannedVec(baseSlot + 1, regs, fog, consts, out float bx, out float by, out float bz);
+        ReadPlannedVec(baseSlot + 2, regs, fog, consts, out float cx, out float cy, out float cz);
+        ReadPlannedVec(baseSlot + 3, regs, fog, consts, out float dx, out float dy, out float dz);
+
+        float abx;
+        float aby;
+        float abz;
+        if ((outFlags & FlagAbDot) != 0)
+        {
+            float dot = (ax * bx) + (ay * by) + (az * bz);
+            abx = dot;
+            aby = dot;
+            abz = dot;
+        }
+        else
+        {
+            abx = ax * bx;
+            aby = ay * by;
+            abz = az * bz;
+        }
+
+        float cdx;
+        float cdy;
+        float cdz;
+        if ((outFlags & FlagCdDot) != 0)
+        {
+            float dot = (cx * dx) + (cy * dy) + (cz * dz);
+            cdx = dot;
+            cdy = dot;
+            cdz = dot;
+        }
+        else
+        {
+            cdx = cx * dx;
+            cdy = cy * dy;
+            cdz = cz * dz;
+        }
+
+        abx = Math.Clamp(ApplyOutputMapping(abx, mapping), -1f, 1f);
+        aby = Math.Clamp(ApplyOutputMapping(aby, mapping), -1f, 1f);
+        abz = Math.Clamp(ApplyOutputMapping(abz, mapping), -1f, 1f);
+        cdx = Math.Clamp(ApplyOutputMapping(cdx, mapping), -1f, 1f);
+        cdy = Math.Clamp(ApplyOutputMapping(cdy, mapping), -1f, 1f);
+        cdz = Math.Clamp(ApplyOutputMapping(cdz, mapping), -1f, 1f);
+
+        float muxx;
+        float muxy;
+        float muxz;
+        if ((outFlags & FlagMux) != 0)
+        {
+            muxx = MuxSelect(regs[27], abx, cdx);
+            muxy = MuxSelect(regs[27], aby, cdy);
+            muxz = MuxSelect(regs[27], abz, cdz);
+        }
+        else
+        {
+            muxx = abx + cdx;
+            muxy = aby + cdy;
+            muxz = abz + cdz;
+        }
+
+        muxx = Math.Clamp(ApplyOutputMapping(muxx, mapping), -1f, 1f);
+        muxy = Math.Clamp(ApplyOutputMapping(muxy, mapping), -1f, 1f);
+        muxz = Math.Clamp(ApplyOutputMapping(muxz, mapping), -1f, 1f);
+
+        WriteVec(regs, abDest, abx, aby, abz, (outFlags & FlagAbBlueToAlpha) != 0);
+        WriteVec(regs, cdDest, cdx, cdy, cdz, (outFlags & FlagCdBlueToAlpha) != 0);
+        WriteVec(regs, muxDest, muxx, muxy, muxz, blueToAlpha: false);
+    }
+
+    private float ReadPlanned(int slot, int component, Span<float> regs, float[] fog, float[][] consts)
+    {
+        switch (_planKind[slot])
+        {
+            case PlanReg:
+                return MapComponent(regs[_planOffset[slot] + component], _planMap[slot]);
+            case PlanConst:
+                return _planConst[(slot * 4) + component];
+            default:
+                return MapComponent(
+                    ReadComponent(regs, fog, consts, _planStage[slot], _planRegCode[slot], _planChan[slot], component),
+                    _planMap[slot]);
+        }
+    }
+
+    private void ReadPlannedVec(int slot, Span<float> regs, float[] fog, float[][] consts, out float x, out float y,
+        out float z)
+    {
+        if (_planChan[slot] != 0)
+        {
+            float w = ReadPlanned(slot, 3, regs, fog, consts);
+            x = w;
+            y = w;
+            z = w;
+            return;
+        }
+
+        x = ReadPlanned(slot, 0, regs, fog, consts);
+        y = ReadPlanned(slot, 1, regs, fog, consts);
+        z = ReadPlanned(slot, 2, regs, fog, consts);
+    }
+
+    private float ReadFinalPlanned(int slot, int component, Span<float> regs, float efx, float efy, float efz,
+        float[] fog, float[][] consts)
+    {
+        switch (_finalKind[slot])
+        {
+            case PlanReg:
+                return MapComponent(regs[_finalOffset[slot] + component], _finalMap[slot]);
+            case PlanConst:
+                return _finalConst[(slot * 4) + component];
+            case PlanEfProd:
+                return MapComponent(component == 0 ? efx : component == 1 ? efy : efz, _finalMap[slot]);
+            default:
+                return MapComponent(
+                    ReadFinalComponent(regs, efx, efy, efz, fog, consts, _finalRegCode[slot], _finalChan[slot],
+                        component),
+                    _finalMap[slot]);
+        }
+    }
+
+    private float ReadFinalAlphaPlanned(int slot, Span<float> regs, float efx, float efy, float efz, float[] fog,
+        float[][] consts)
+    {
+        // Alpha channel select: BLUE reads .b, ALPHA reads .a (ReadFinalAlpha).
+        int component = _finalChan[slot] != 0 ? 3 : 2;
+        switch (_finalKind[slot])
+        {
+            case PlanReg:
+                return MapComponent(regs[_finalOffset[slot] + component], _finalMap[slot]);
+            case PlanConst:
+                return _finalConst[(slot * 4) + component];
+            case PlanEfProd:
+                return MapComponent(component == 3 ? 0f : efz, _finalMap[slot]);
+            default:
+                return MapComponent(
+                    ReadComponent(regs, fog, consts, MaxStages, _finalRegCode[slot], _finalChan[slot], component),
+                    _finalMap[slot]);
+        }
+    }
+
     private static void CopyVec(Span<float> destination, float[] source)
     {
         destination[0] = source[0];

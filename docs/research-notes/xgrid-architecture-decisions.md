@@ -9347,3 +9347,42 @@ versioning is the narrowing candidate) and rasterizer inventory filed
 Next: the two multi-stage configs (62.4M menu + 62.4M triangle fragments) are
 the largest remaining rasterizer cost; then sampler (~23 s menu) and
 ProcessFragment (~15 s menu) hoists.
+
+## 181. Rasterizer slices R2 + R3: loop skips, per-fill constants, and the planned combiner evaluator (2026-10-17, direct)
+
+R2 (safe hoists, `D:\spec-soak\r2`): per-fill `PrepareFragmentConstants`
+(alpha-ref scale, blend constant vector, zclip depth range - same expressions,
+computed once per fill instead of per pixel); per-fill scratch reuse in
+`FillTrianglePsh` (the per-triangle array allocations become instance scratch,
+fully re-initialized per fill); per-fill loop skips: `None`-mode slots skip the
+`ResolveTexel` call (texel already None), the clip-plane scan is skipped when
+no slot is CLIPPLANE, `Array.Clear(stageDots)` is skipped when no slot is
+DOT_ST/DOT_STR_3D (the only stageDots readers). Gate: menu/triangle SHAs +
+all counters exact, normalized stdout byte-identical. Effect: menu raster
+80.07 -> 76.16 s, triangle 52.70 -> 49.55 s (single runs).
+
+R3 (planned combiner, `D:\spec-soak\r3`): `PshCombiner.RebuildPlan`
+precomputes once per draw the per-stage/final input decode (flat regs offsets
++ mappings), the already-mapped constant-source values (Zero/C0/C1 via the
+same ReadComponent+MapComponent calls), the per-half output words and the
+final EfProd kind; `EvaluatePlanned` mirrors `Evaluate` operation for
+operation while reading the plan. Wired in `FlushProgramDraw` next to
+`BuildConsts`; the fill loop uses it for every non-F1 config (the two 7/8-
+stage configs that cover 22% of menu and 70% of triangle fragments).
+Exactness: a planned-vs-generic differential test over the two real configs
+plus 40 randomized configurations x 120 samples caught one real transcription
+bug during development (missing input mapping on the final EF_PROD reads; now
+a four-case regression pin) - fixed and re-pinned; plus the end-to-end goldens
+(SHAs exact, counters exact, normalized logs byte-identical). Effect: menu
+raster 76.16 -> 59.50 s, triangle 49.55 -> 38.36 s (single runs).
+
+Cumulative rasterizer progress this session (single-run walls, host varying;
+the raster seconds are the signal): menu 119.2 -> 59.5 s (2.0x), triangle
+54.7 -> 38.4 s (1.4x); menu leg wall ~165 -> 110.7 s, triangle ~83 -> 67.1 s.
+Both titles: SHAs and every counter exact at every step; suite 1427 tests.
+
+Next (largest remaining raster cost): the two 7/8-stage configs still run the
+planned evaluator (~25-30 s menu / ~20 s triangle estimated); a hand-
+transcribed specialized evaluator per config (F1-style, differential-pinned)
+is the next slice. Then sampler descriptor/swizzle hoists and the
+fragment/memory lane (inventory O1-O5).
