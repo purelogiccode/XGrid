@@ -9561,3 +9561,24 @@ single-run raster seconds (36.5/13.3 s vs 30.2/9.9 s) are not evidence. The
 interleaved A/B (old-vs-new raster seconds) is pending a quiet window; the
 change is a strict op-count reduction for the dominant config and is
 reverted if the quiet measurement disagrees.
+
+### 186a. Blend slice quiet-host A/B + session closing medians (2026-10-18, direct)
+
+Interleaved A/B (`D:\spec-soak\ab-blend`; pre-blend binary built from HEAD~1
+staged beside the current one, 3 paired rounds, order alternating, every leg
+SHA-exact):
+- menu raster psh: pre-blend 30.56/29.83/30.15 (median 30.15) vs blend
+  26.98/26.83/26.90 (median **26.90**) - **3/3 paired wins, -3.25 s**
+  (10.8% of the rasterizer; covers 211.7M blended fragments).
+- menu wall: 78.9/75.1/75.4 (median 75.4) vs 79.1/74.3/73.5 (median 74.3) -
+  2/3 wins; the wall carries ~4 s of host drift across the campaign, but the
+  closing median (74.3 s) sits exactly 3.3 s under the S183 median (77.6 s),
+  matching the raster delta.
+- triangle: raster 10.16/9.62/10.16 vs 10.05/9.60/9.90 (unchanged, as
+  expected - only 382 blended fragments); walls within noise.
+
+**Session closing medians (median-of-3, interleaved, quiet host, SHAs
+exact): menu 74.3 s vs the 143.7 s baseline (1.93x); triangle 36.6 s vs
+71.6 s (1.96x).** Rasterizer-only: menu 119.2 -> 26.9 s (4.4x), triangle
+54.7 -> 9.9 s (5.5x). The blend slice is claimed on the raster delta (3/3
+paired wins) with the wall median as corroboration; no other claim changed.
