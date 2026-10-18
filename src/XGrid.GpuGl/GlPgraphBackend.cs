@@ -100,6 +100,34 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly int[] _texWrapY = new int[4];
     private readonly int[] _texCube = new int[4];
     private readonly int[] _texDim = new int[4];
+    private readonly float[] _scalarScratch = new float[14];
+    private readonly float[] _texScratch = new float[32];
+
+    // GL-state shadow for ApplyState: consecutive draws usually share the
+    // same resolved ROP state, so the redundant Enable/Disable/Func calls are
+    // skipped. The shadow always reflects what was last uploaded to GL;
+    // _stateValid starts false so the first draw applies everything.
+    private bool _stateValid;
+    private bool _glBlendEnabled;
+    private float _glBlendR;
+    private float _glBlendG;
+    private float _glBlendB;
+    private float _glBlendA;
+    private uint _glBlendSrc;
+    private uint _glBlendDst;
+    private uint _glBlendEquation;
+    private uint _glColorMask;
+    private bool _glDepthEnabled;
+    private uint _glDepthFunc;
+    private bool _glDepthMask;
+    private bool _glStencilEnabled;
+    private uint _glStencilFunc;
+    private uint _glStencilRef;
+    private uint _glStencilReadMask;
+    private uint _glStencilOpFail;
+    private uint _glStencilOpZfail;
+    private uint _glStencilOpZpass;
+    private uint _glStencilWriteMask;
 
     private uint _fbo;
     private uint _colorRenderbuffer;
@@ -164,6 +192,23 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         public uint Id { get; }
 
         public Dictionary<string, int> Locations { get; }
+
+        // Per-program uniform upload caches. GL uniform state lives on the
+        // program object, so unchanged values can be skipped entirely; the
+        // *Valid flags force a full upload on first use.
+        public float[] ScalarCache { get; } = new float[14];
+
+        public float[] TexCache { get; } = new float[32];
+
+        public float[] ConstCache { get; } = new float[72];
+
+        public uint ScalarClipWord { get; set; }
+
+        public bool ScalarValid { get; set; }
+
+        public bool TexValid { get; set; }
+
+        public bool ConstValid { get; set; }
 
         public int Location(string name)
         {
@@ -1314,54 +1359,127 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private void ApplyState(in PgraphDrawInfo info)
     {
         PgraphFragmentState fragment = info.Fragment;
-        if (fragment.BlendEnable)
-        {
-            _gl.Enable(EnableCap.Blend);
-            GlStateMapper.MapBlendColor(fragment.BlendColor, out float br, out float bg, out float bb, out float ba);
-            _gl.BlendColor(br, bg, bb, ba);
-            _gl.BlendFunc(
-                (GLEnum)GlStateMapper.MapBlendFactor(fragment.BlendSrcFactor),
-                (GLEnum)GlStateMapper.MapBlendFactor(fragment.BlendDstFactor));
-            _gl.BlendEquation((GLEnum)GlStateMapper.MapBlendEquation(fragment.BlendEquation));
-        }
-        else
-        {
-            _gl.Disable(EnableCap.Blend);
-        }
-
+        GlStateMapper.MapBlendColor(fragment.BlendColor, out float br, out float bg, out float bb, out float ba);
         GlStateMapper.MapColorMask(
             fragment.ColorMask, out bool maskR, out bool maskG, out bool maskB, out bool maskA);
-        _gl.ColorMask(maskR, maskG, maskB, maskA);
+        uint colorMask = (maskR ? 1u : 0u) | (maskG ? 2u : 0u) | (maskB ? 4u : 0u) | (maskA ? 8u : 0u);
+        uint blendSrc = fragment.BlendEnable ? fragment.BlendSrcFactor : 0u;
+        uint blendDst = fragment.BlendEnable ? fragment.BlendDstFactor : 0u;
+        uint blendEquation = fragment.BlendEnable ? fragment.BlendEquation : 0u;
+        bool depthEnabled = fragment.DepthTestEnable && info.ZetaBytes != 0;
+        uint depthFunc = depthEnabled ? fragment.DepthFunc : 0u;
+        bool depthMask = depthEnabled && fragment.DepthMask;
+        bool stencilEnabled = fragment.StencilTestEnable && info.ZetaBytes == 4;
+        uint stencilFunc = stencilEnabled ? fragment.StencilFunc : 0u;
+        uint stencilRef = stencilEnabled ? fragment.StencilRef & 0xFFu : 0u;
+        uint stencilReadMask = stencilEnabled ? fragment.StencilReadMask & 0xFFu : 0u;
+        uint stencilOpFail = stencilEnabled ? fragment.StencilOpFail : 0u;
+        uint stencilOpZfail = stencilEnabled ? fragment.StencilOpZfail : 0u;
+        uint stencilOpZpass = stencilEnabled ? fragment.StencilOpZpass : 0u;
+        uint stencilWriteMask = stencilEnabled ? fragment.StencilWriteMask & 0xFFu : 0u;
 
-        if (fragment.DepthTestEnable && info.ZetaBytes != 0)
+        if (!_stateValid ||
+            _glBlendEnabled != fragment.BlendEnable ||
+            _glBlendR != br || _glBlendG != bg || _glBlendB != bb || _glBlendA != ba ||
+            _glBlendSrc != blendSrc || _glBlendDst != blendDst || _glBlendEquation != blendEquation)
         {
-            _gl.Enable(EnableCap.DepthTest);
-            _gl.DepthFunc((GLEnum)GlStateMapper.MapCompareFunc(fragment.DepthFunc));
-            _gl.DepthMask(fragment.DepthMask);
-        }
-        else
-        {
-            _gl.Disable(EnableCap.DepthTest);
-            _gl.DepthMask(false);
+            if (fragment.BlendEnable)
+            {
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendColor(br, bg, bb, ba);
+                _gl.BlendFunc(
+                    (GLEnum)GlStateMapper.MapBlendFactor(fragment.BlendSrcFactor),
+                    (GLEnum)GlStateMapper.MapBlendFactor(fragment.BlendDstFactor));
+                _gl.BlendEquation((GLEnum)GlStateMapper.MapBlendEquation(fragment.BlendEquation));
+            }
+            else
+            {
+                _gl.Disable(EnableCap.Blend);
+            }
+
+            _glBlendEnabled = fragment.BlendEnable;
+            _glBlendR = br;
+            _glBlendG = bg;
+            _glBlendB = bb;
+            _glBlendA = ba;
+            _glBlendSrc = blendSrc;
+            _glBlendDst = blendDst;
+            _glBlendEquation = blendEquation;
         }
 
-        if (fragment.StencilTestEnable && info.ZetaBytes == 4)
+        if (!_stateValid || _glColorMask != colorMask)
         {
-            _gl.Enable(EnableCap.StencilTest);
-            _gl.StencilFunc(
-                (GLEnum)GlStateMapper.MapCompareFunc(fragment.StencilFunc),
-                (int)(fragment.StencilRef & 0xFFu),
-                fragment.StencilReadMask & 0xFFu);
-            _gl.StencilOp(
-                (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpFail),
-                (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpZfail),
-                (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpZpass));
-            _gl.StencilMask(fragment.StencilWriteMask & 0xFFu);
+            _gl.ColorMask(maskR, maskG, maskB, maskA);
+            _glColorMask = colorMask;
         }
-        else
+
+        if (!_stateValid || _glDepthEnabled != depthEnabled || _glDepthFunc != depthFunc || _glDepthMask != depthMask)
         {
-            _gl.Disable(EnableCap.StencilTest);
+            if (depthEnabled)
+            {
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.DepthFunc((GLEnum)GlStateMapper.MapCompareFunc(fragment.DepthFunc));
+                _gl.DepthMask(fragment.DepthMask);
+            }
+            else
+            {
+                _gl.Disable(EnableCap.DepthTest);
+                _gl.DepthMask(false);
+            }
+
+            _glDepthEnabled = depthEnabled;
+            _glDepthFunc = depthFunc;
+            _glDepthMask = depthMask;
         }
+
+        if (!_stateValid ||
+            _glStencilEnabled != stencilEnabled || _glStencilFunc != stencilFunc ||
+            _glStencilRef != stencilRef || _glStencilReadMask != stencilReadMask ||
+            _glStencilOpFail != stencilOpFail || _glStencilOpZfail != stencilOpZfail ||
+            _glStencilOpZpass != stencilOpZpass || _glStencilWriteMask != stencilWriteMask)
+        {
+            if (stencilEnabled)
+            {
+                _gl.Enable(EnableCap.StencilTest);
+                _gl.StencilFunc(
+                    (GLEnum)GlStateMapper.MapCompareFunc(fragment.StencilFunc),
+                    (int)(fragment.StencilRef & 0xFFu),
+                    fragment.StencilReadMask & 0xFFu);
+                _gl.StencilOp(
+                    (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpFail),
+                    (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpZfail),
+                    (GLEnum)GlStateMapper.MapStencilOp(fragment.StencilOpZpass));
+                _gl.StencilMask(fragment.StencilWriteMask & 0xFFu);
+            }
+            else
+            {
+                _gl.Disable(EnableCap.StencilTest);
+            }
+
+            _glStencilEnabled = stencilEnabled;
+            _glStencilFunc = stencilFunc;
+            _glStencilRef = stencilRef;
+            _glStencilReadMask = stencilReadMask;
+            _glStencilOpFail = stencilOpFail;
+            _glStencilOpZfail = stencilOpZfail;
+            _glStencilOpZpass = stencilOpZpass;
+            _glStencilWriteMask = stencilWriteMask;
+        }
+
+        _stateValid = true;
+    }
+
+    private static bool SameValues(float[] a, float[] b, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (a[i] != b[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void ApplyUniforms(GlProgram program, in PgraphDrawInfo info, PshCombiner? combiner)
@@ -1375,41 +1493,81 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
-        float[][] consts = PshCombiner.BuildConsts(combiner);
-        for (int i = 0; i < consts.Length; i++)
+        PshCombiner.FillConsts(combiner, _constFlat);
+        if (!program.ConstValid || !SameValues(_constFlat, program.ConstCache, 72))
         {
-            _constFlat[(i * 4) + 0] = consts[i][0];
-            _constFlat[(i * 4) + 1] = consts[i][1];
-            _constFlat[(i * 4) + 2] = consts[i][2];
-            _constFlat[(i * 4) + 3] = consts[i][3];
+            _gl.Uniform4(program.Location("uConsts[0]"), 18u, ref _constFlat[0]);
+            Array.Copy(_constFlat, program.ConstCache, 72);
+            program.ConstValid = true;
         }
 
-        _gl.Uniform4(program.Location("uConsts[0]"), 18u, ref _constFlat[0]);
         SetScalarUniforms(program, in info, in fragment);
         SetTextureUniforms(program);
     }
 
     private void SetScalarUniforms(GlProgram program, in PgraphDrawInfo info, in PgraphFragmentState fragment)
     {
-        _gl.Uniform4(
-            program.Location("uFogColor"), info.FogR, info.FogG, info.FogB, info.FogA);
-        _gl.Uniform1(program.Location("uFogEnable"), info.FogEnable ? 1 : 0);
-        _gl.Uniform1(program.Location("uAlphaTestEnable"), fragment.AlphaTestEnable ? 1 : 0);
-        _gl.Uniform1(program.Location("uAlphaFunc"), (int)fragment.AlphaFunc);
-        _gl.Uniform1(program.Location("uAlphaRef"), fragment.AlphaRef / 255f);
-        _gl.Uniform1(program.Location("uZclipActive"), fragment.ZclipActive ? 1 : 0);
-        _gl.Uniform1(program.Location("uZclipCull"), fragment.ZclipCull ? 1 : 0);
-        _gl.Uniform1(program.Location("uZclipMin"), fragment.ZclipMin);
-        _gl.Uniform1(program.Location("uZclipMax"), fragment.ZclipMax);
+        float[] values = _scalarScratch;
+        values[0] = info.FogR;
+        values[1] = info.FogG;
+        values[2] = info.FogB;
+        values[3] = info.FogA;
+        values[4] = info.FogEnable ? 1 : 0;
+        values[5] = fragment.AlphaTestEnable ? 1 : 0;
+        values[6] = fragment.AlphaFunc;
+        values[7] = fragment.AlphaRef / 255f;
+        values[8] = fragment.ZclipActive ? 1 : 0;
+        values[9] = fragment.ZclipCull ? 1 : 0;
+        values[10] = fragment.ZclipMin;
+        values[11] = fragment.ZclipMax;
         uint zetaFormat = info.ZetaBytes switch { 2u => 1u, 4u => 2u, _ => 0u };
-        float zetaRange = Nv2AMmio.ZetaDepthRange(zetaFormat, info.ZFormatFloat);
-        _gl.Uniform1(program.Location("uZetaRange"), zetaRange);
-        _gl.Uniform1(program.Location("uZetaBytes"), (int)info.ZetaBytes);
+        values[12] = Nv2AMmio.ZetaDepthRange(zetaFormat, info.ZFormatFloat);
+        values[13] = info.ZetaBytes;
+
+        if (program.ScalarValid &&
+            program.ScalarClipWord == info.ShaderClipMode &&
+            SameValues(values, program.ScalarCache, 14))
+        {
+            return;
+        }
+
+        _gl.Uniform4(program.Location("uFogColor"), values[0], values[1], values[2], values[3]);
+        _gl.Uniform1(program.Location("uFogEnable"), values[4]);
+        _gl.Uniform1(program.Location("uAlphaTestEnable"), values[5]);
+        _gl.Uniform1(program.Location("uAlphaFunc"), (int)values[6]);
+        _gl.Uniform1(program.Location("uAlphaRef"), values[7]);
+        _gl.Uniform1(program.Location("uZclipActive"), values[8]);
+        _gl.Uniform1(program.Location("uZclipCull"), values[9]);
+        _gl.Uniform1(program.Location("uZclipMin"), values[10]);
+        _gl.Uniform1(program.Location("uZclipMax"), values[11]);
+        _gl.Uniform1(program.Location("uZetaRange"), values[12]);
+        _gl.Uniform1(program.Location("uZetaBytes"), (int)values[13]);
         _gl.Uniform1(program.Location("uShaderClip"), info.ShaderClipMode);
+        Array.Copy(values, program.ScalarCache, 14);
+        program.ScalarClipWord = info.ShaderClipMode;
+        program.ScalarValid = true;
     }
 
     private void SetTextureUniforms(GlProgram program)
     {
+        float[] values = _texScratch;
+        for (int i = 0; i < 4; i++)
+        {
+            values[i] = _texOk[i];
+            values[4 + (i * 2)] = _texSize[i * 2];
+            values[5 + (i * 2)] = _texSize[(i * 2) + 1];
+            values[12 + i] = _texLinear[i];
+            values[16 + i] = _texWrapX[i];
+            values[20 + i] = _texWrapY[i];
+            values[24 + i] = _texCube[i];
+            values[28 + i] = _texDim[i];
+        }
+
+        if (program.TexValid && SameValues(values, program.TexCache, 32))
+        {
+            return;
+        }
+
         _gl.Uniform1(program.Location("uTexOk[0]"), 4u, ref _texOk[0]);
         _gl.Uniform2(program.Location("uTexSize[0]"), 4u, ref _texSize[0]);
         _gl.Uniform1(program.Location("uTexLinear[0]"), 4u, ref _texLinear[0]);
@@ -1417,6 +1575,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(program.Location("uTexWrapY[0]"), 4u, ref _texWrapY[0]);
         _gl.Uniform1(program.Location("uTexCube[0]"), 4u, ref _texCube[0]);
         _gl.Uniform1(program.Location("uTexDim[0]"), 4u, ref _texDim[0]);
+        Array.Copy(values, program.TexCache, 32);
+        program.TexValid = true;
     }
 
     private void PackVertices(in PgraphDrawInfo info, out int vertexCount)

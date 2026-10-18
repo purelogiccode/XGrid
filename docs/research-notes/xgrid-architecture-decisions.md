@@ -10070,3 +10070,22 @@ clean.
 handling, vertex upload. Then RAM writeback for content that reads the
 framebuffer back (required before real-game use; the sample corpus does
 not read it).
+
+**Amendment (B2b, same day): per-draw overhead pass = semantically
+transparent, wall-neutral — the draw cost is driver-side.** Landed:
+`ApplyState` GL-state shadowing (blend/color-mask/depth/stencil groups are
+re-issued only when the resolved values change; only the ctor and
+ApplyState touch those states), per-program uniform caches (scalar 14 +
+texture 32 + consts 72 floats; GL uniform state lives on the program
+object so unchanged uploads are skipped), and a non-allocating
+`PshCombiner.FillConsts` replacing the 19-array `BuildConsts` allocation
+per draw (2.76M draws -> 52M allocations removed; GC pressure gone for
+sustained play). Evidence: the refactored replace run is **pixel-identical
+to the pre-refactor run** (BMP byte-equal) and still within policy vs the
+sw golden (maxDelta 1, violations 0); drawMs 7.07 -> 6.96 s and wall
+48.3 -> 50.2 s across single runs = neutral within host noise. Conclusion:
+the remaining ~2.5 us/draw is NVIDIA driver draw-call cost (per-draw
+BufferData orphan + DrawArrays + validation), not redundant state or
+allocations — the next GPU-path lever is **B2c: draw batching** (move the
+per-draw uniforms to attributes/UBO and issue one call per state run),
+which is a shader/backend redesign slice, not a micro-optimization.
