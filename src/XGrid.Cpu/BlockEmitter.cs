@@ -481,13 +481,13 @@ internal static class BlockEmitter
             il.Emit(OpCodes.Bgt_Un, slow);
         }
 
-        // vpn = addr >> 12; slot = vpn & 3; cache tag must match.
+        // vpn = addr >> 12; slot = vpn & DataXlatMask; cache tag must match.
         il.Emit(OpCodes.Ldloc, addr);
         il.Emit(OpCodes.Ldc_I4, 12);
         il.Emit(OpCodes.Shr_Un);
         il.Emit(OpCodes.Stloc, vpn);
         il.Emit(OpCodes.Ldloc, vpn);
-        il.Emit(OpCodes.Ldc_I4_3);
+        il.Emit(OpCodes.Ldc_I4, (int)XboxCpu.DataXlatMask);
         il.Emit(OpCodes.And);
         il.Emit(OpCodes.Stloc, slot);
         il.Emit(OpCodes.Ldarg_0);
