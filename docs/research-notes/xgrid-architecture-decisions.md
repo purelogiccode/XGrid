@@ -9518,3 +9518,26 @@ rasterizer speedup and measured different workloads; the honest current
 shape is that GL mode is SW + ~9-16 s of submission/readback on the menu at
 1B. This does not touch the default (`--gpu sw`) or any gate; `--window`
 carries the same cost plus one blit+swap per presented frame.
+
+## 185. Flag/tuning measurements at session close: idle-skip inverted, TLB capacity neutral (2026-10-17, direct)
+
+**`--idle-skip` is now a REGRESSION on both goldens** (SHA-exact every leg;
+the flag only changes host-side scheduling):
+- menu 1B `--spec-exec`: 112.4 s with the flag vs 77.6 s without (0.69x).
+- triangle 1B `--spec-exec`: 82.2 s vs 35.5 s (0.43x).
+- triangle 1B cache-only: 56.5 s with the flag vs ~41.3 s without (0.73x;
+  the skip fired hard here: 447.8M of 1B steps skipped, 7561 triggers).
+Diagnosis: the skip machinery's per-iteration bookkeeping (structural aborts
+5.6M menu / 4.0M triangle, iters 16M / 54M, static rejects, trigger drops)
+is unchanged since §119, while the JIT slices (default decode cache, block
+exec, spec slices 1-20, memory-path 1-4) made base execution 2-3x faster -
+the skipped idle steps were the CHEAP ones, so the fixed overhead now dwarfs
+the saving and the §119 "1.10x / 1.66x" win inverted. Recommendation: retire
+or rework the flag (operator decision); do not use it on the goldens. The
+flag remains functional and SHA-exact.
+
+**SoftTlb capacity**: 256 -> 4096 entries measured 77.9 s vs 77.6 s on the
+menu 1B (neutral-to-negative; the boot's 9.5% TLB miss rate is driven by the
+frequent full flushes (PTE-store bursts, per the decode-flush audit), not by
+table capacity - a bigger table only makes each flush more expensive).
+Reverted.
