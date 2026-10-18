@@ -1747,6 +1747,9 @@ internal static class Program
         if (machine.Cpu.JitEnabled)
         {
             Console.WriteLine(
+                $"Host timing executeMs={machine.RunExecuteMs:F0} advanceMs={machine.RunAdvanceMs:F0} " +
+                "(machine.Run: Cpu.Execute vs device Advance; the rest of the wall is CLI/bookkeeping)");
+            Console.WriteLine(
                 $"Jit stats blocks={machine.Cpu.JitBlocksBuilt} served={machine.Cpu.JitServedTotal} " +
                 $"invocations={machine.Cpu.JitInvocations} calls={machine.Cpu.JitCallCount} faults={machine.Cpu.JitFaults} " +
                 $"runnerMs={machine.Cpu.JitRunnerTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +

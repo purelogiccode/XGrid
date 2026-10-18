@@ -475,10 +475,14 @@ public sealed class XboxMachine : IIdleSkipHost
         while (executed < maxInstructions && !Cpu.Context.Halted)
         {
             int batch = Math.Min(maxInstructions - executed, batchSize);
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
             int done = Cpu.Execute(batch);
+            long afterExecute = System.Diagnostics.Stopwatch.GetTimestamp();
             int hostAdvanced = Cpu.TakeIdleAdvanced();
             executed += done;
             Advance((ulong)(done - hostAdvanced));
+            _runExecuteTicks += afterExecute - start;
+            _runAdvanceTicks += System.Diagnostics.Stopwatch.GetTimestamp() - afterExecute;
             if (done < batch)
             {
                 break;
@@ -487,6 +491,15 @@ public sealed class XboxMachine : IIdleSkipHost
 
         return executed;
     }
+
+    private long _runExecuteTicks;
+    private long _runAdvanceTicks;
+
+    /// <summary>Gets the time spent inside <c>Cpu.Execute</c> across Run calls (diagnostic).</summary>
+    public double RunExecuteMs => _runExecuteTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>Gets the time spent inside device <c>Advance</c> across Run calls (diagnostic).</summary>
+    public double RunAdvanceMs => _runAdvanceTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
     /// <summary>Registers a tagged snapshot section (V1 snapshot).</summary>
     /// <remarks>Tags must be unique; sections are written in registration order.</remarks>
