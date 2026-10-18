@@ -30,13 +30,20 @@ internal enum JitKind : byte
     PushI,
     PopR,
     CallRel,
+    CallReg,
+    CallMem,
     RetNear,
     JmpReg,
+    JmpMem,
     JmpRel,
     JccRel,
     Cli,
     Sti,
+    Cld,
+    Std,
     CallSpec,
+    CallInterpreter,
+    Invlpg,
     Nop,
 }
 
@@ -88,6 +95,12 @@ internal readonly struct JitMemberPlan
 
     /// <summary>Immediate operand (or branch displacement / shift count, as raw uint bits).</summary>
     public uint Immediate { get; init; }
+
+    /// <summary>True when the member can enable interrupts (POPF) and must be followed by an IRQ poll.</summary>
+    public bool PollAfter { get; init; }
+
+    /// <summary>True when the interpreter entry point takes the (size, addressSize) pair (string ops).</summary>
+    public bool PassSizes { get; init; }
 
     public JitAluOp AluOp { get; init; }
 
@@ -177,23 +190,24 @@ internal static class JitPlanner
             Kind = JitKind.CallSpec,
             Length = instruction.Length,
             SpecHandler = method,
+
+            // POPF can turn interrupts on; the emitted member is followed by
+            // the post-member IRQ poll (mirroring the interpreter's next
+            // instruction boundary).
+            PollAfter = instruction.Mnemonic == Mnemonic.Popf,
         };
     }
 
     private static bool IsControlTransfer(Mnemonic mnemonic)
     {
         // Control transfers and CS-affecting ops must end the block (they
-        // re-target execution or change the fetch basis), and POPF is
-        // boundary-sensitive: it can turn interrupts on mid-block with no
-        // poll behind it, so it stays a block-ender (the entry poll that
-        // follows it then sees the restored IF, exactly like the
-        // interpreter's next-instruction poll).
+        // re-target execution or change the fetch basis).
         return mnemonic switch
         {
             Mnemonic.Jcc or Mnemonic.Jmp or Mnemonic.JmpFar or Mnemonic.Call or Mnemonic.CallFar
                 or Mnemonic.Ret or Mnemonic.Retf or Mnemonic.Iret or Mnemonic.Loop or Mnemonic.LoopE
                 or Mnemonic.LoopNe or Mnemonic.Jecxz or Mnemonic.Int3 or Mnemonic.Interrupt
-                or Mnemonic.Hlt or Mnemonic.MovSreg or Mnemonic.PopSegment or Mnemonic.Popf => true,
+                or Mnemonic.Hlt or Mnemonic.MovSreg or Mnemonic.PopSegment => true,
             _ => false,
         };
     }
@@ -232,6 +246,11 @@ internal static class JitPlanner
             Mnemonic.Jcc => PlanJcc(instruction),
             Mnemonic.Cli => new JitMemberPlan { Kind = JitKind.Cli, Length = instruction.Length },
             Mnemonic.Sti => new JitMemberPlan { Kind = JitKind.Sti, Length = instruction.Length },
+            Mnemonic.Cld => new JitMemberPlan { Kind = JitKind.Cld, Length = instruction.Length },
+            Mnemonic.Std => new JitMemberPlan { Kind = JitKind.Std, Length = instruction.Length },
+            Mnemonic.Movs => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Stos => PlanString(instruction, JitKind.CallInterpreter),
+            Mnemonic.Invlpg => PlanInvlpg(instruction),
             Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
             _ => default,
         };
@@ -596,10 +615,66 @@ internal static class JitPlanner
         return default;
     }
 
+    /// <summary>
+    /// The interpreter's exact single-iteration string body. Calling it from a
+    /// member keeps Movs/Stos from ending blocks (they used to reject heads
+    /// outright): the region around them now stays served, at interpreter
+    /// cost for the one instruction. Non-rep forms only — the rep loop and its
+    /// ZF exits stay on the interpreter member path, as does 16-bit addressing.
+    /// </summary>
+    private static readonly MethodInfo ExecuteStringIterationMethod =
+        typeof(XboxCpu).GetMethod(
+            "ExecuteStringIteration",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static JitMemberPlan PlanString(in DecodedInstruction instruction, JitKind kind)
+    {
+        if (instruction.AddressSize != 32 || instruction.Rep != RepPrefix.None
+            || instruction.OperandSize is not (8 or 16 or 32))
+        {
+            return default;
+        }
+
+        return new JitMemberPlan
+        {
+            Kind = kind,
+            Length = instruction.Length,
+            Size = instruction.OperandSize,
+            SpecHandler = ExecuteStringIterationMethod,
+            PassSizes = true,
+        };
+    }
+
+    /// <summary>
+    /// INVLPG: compute the operand address and drive the interpreter's exact
+    /// page flush (decode cache + data-xlat invalidation through the MMU
+    /// hook). It does not end the block: the flush only affects caches, and
+    /// the running block's baked members stay semantically valid (every
+    /// memory access re-translates; the next lookup revalidates or re-forms).
+    /// </summary>
+    private static JitMemberPlan PlanInvlpg(in DecodedInstruction instruction)
+    {
+        if (instruction.AddressSize != 32 || instruction.Operand1.Kind != OperandKind.Memory)
+        {
+            return default;
+        }
+
+        var plan = new JitMemberPlan
+        {
+            Kind = JitKind.Invlpg,
+            Length = instruction.Length,
+        };
+        return WithMemory(plan, instruction.Operand1.Memory);
+    }
+
     private static JitMemberPlan PlanCall(in DecodedInstruction instruction)
     {
-        if (instruction.AddressSize == 32 && instruction.OperandSize == 32
-            && instruction.Operand1.Kind == OperandKind.Immediate)
+        if (instruction.AddressSize != 32 || instruction.OperandSize != 32)
+        {
+            return default;
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Immediate)
         {
             return new JitMemberPlan
             {
@@ -609,6 +684,30 @@ internal static class JitPlanner
                 Immediate = instruction.Operand1.Immediate,
                 IsTerminator = true,
             };
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Register && instruction.Operand1.Size == 32)
+        {
+            return new JitMemberPlan
+            {
+                Kind = JitKind.CallReg,
+                Length = instruction.Length,
+                Size = 32,
+                RegIndex = instruction.Operand1.RegisterIndex,
+                IsTerminator = true,
+            };
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand1.Size == 32)
+        {
+            var plan = new JitMemberPlan
+            {
+                Kind = JitKind.CallMem,
+                Length = instruction.Length,
+                Size = 32,
+                IsTerminator = true,
+            };
+            return WithMemory(plan, instruction.Operand1.Memory);
         }
 
         return default;
@@ -661,6 +760,18 @@ internal static class JitPlanner
                 RegIndex = instruction.Operand1.RegisterIndex,
                 IsTerminator = true,
             };
+        }
+
+        if (instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand1.Size == 32)
+        {
+            var plan = new JitMemberPlan
+            {
+                Kind = JitKind.JmpMem,
+                Length = instruction.Length,
+                Size = 32,
+                IsTerminator = true,
+            };
+            return WithMemory(plan, instruction.Operand1.Memory);
         }
 
         return default;

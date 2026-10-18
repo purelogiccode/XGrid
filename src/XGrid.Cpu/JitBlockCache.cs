@@ -138,21 +138,47 @@ internal sealed class JitBlockCache
 
         /// <summary>A built block is cached.</summary>
         Hit,
+
+        /// <summary>
+        /// A built block survived a generation change; it is offered to the
+        /// caller for lazy revalidation (byte re-check against the current
+        /// mapping). The verdict itself is untouched until Refresh/NoteStale.
+        /// </summary>
+        Stale,
     }
 
     /// <summary>
-    /// Looks up a head. Stale-generation entries are dropped; unseen heads are
-    /// recorded as pending; pending heads become eligible at
-    /// <paramref name="buildThreshold"/> visits.
+    /// Looks up a head. Unseen heads are recorded as pending; pending heads
+    /// become eligible at <paramref name="buildThreshold"/> visits. A
+    /// generation change (decode-cache flush / remap) hands a stale block to
+    /// the caller for lazy revalidation and otherwise keeps the visit
+    /// history: hot code re-forms promptly instead of re-warming from zero,
+    /// which matters because the guest rewrites page tables thousands of
+    /// times per 100M steps.
     /// </summary>
     public Verdict Lookup(uint headLinear, ulong generation, int buildThreshold, out JitBlock? block)
     {
         block = null;
-        if (!_heads.TryGetValue(headLinear, out Entry entry) || entry.Generation != generation)
+        if (!_heads.TryGetValue(headLinear, out Entry entry))
         {
             _heads[headLinear] = new Entry { Generation = generation, Visits = 1 };
             PendingVisits++;
             return Verdict.Pending;
+        }
+
+        if (entry.Generation != generation)
+        {
+            if (entry.Block is not null)
+            {
+                block = entry.Block;
+                return Verdict.Stale;
+            }
+
+            // Pending/rejected verdicts carry no decoded state; only the
+            // rejection outcome is generation-bound. Keep the visit count.
+            entry.Generation = generation;
+            entry.Rejected = false;
+            entry.RetryAtVisits = 0;
         }
 
         if (entry.Block is not null)
@@ -169,14 +195,33 @@ internal sealed class JitBlockCache
 
         int visits = entry.Visits + 1;
         entry.Visits = visits;
+        _heads[headLinear] = entry;
         if (visits >= buildThreshold && visits >= entry.RetryAtVisits)
         {
             return Verdict.Absent;
         }
 
-        _heads[headLinear] = entry;
         PendingVisits++;
         return Verdict.Pending;
+    }
+
+    /// <summary>Stamps a lazily-revalidated block as current-generation.</summary>
+    public void Refresh(uint headLinear, ulong generation, JitBlock block)
+    {
+        _heads[headLinear] = new Entry { Generation = generation, Block = block };
+        Memoize(headLinear, generation, block);
+    }
+
+    /// <summary>Clears a stale verdict (block or rejection), keeping the visit history.</summary>
+    public void NoteStale(uint headLinear)
+    {
+        if (_heads.TryGetValue(headLinear, out Entry entry))
+        {
+            entry.Block = null;
+            entry.Rejected = false;
+            entry.RetryAtVisits = 0;
+            _heads[headLinear] = entry;
+        }
     }
 
     /// <summary>Stores a built block (or a permanent rejection when <paramref name="block"/> is null).</summary>
@@ -252,9 +297,24 @@ internal sealed class JitBlockCache
         }
     }
 
+    /// <summary>Counts heads that are neither built nor rejected (diagnostic).</summary>
+    public int CountPendingHeads()
+    {
+        int pending = 0;
+        foreach (Entry entry in _heads.Values)
+        {
+            if (entry.Block is null && !entry.Rejected)
+            {
+                pending++;
+            }
+        }
+
+        return pending;
+    }
+
     private struct Entry
     {
-        public ulong Generation { get; init; }
+        public ulong Generation { get; set; }
 
         public JitBlock? Block { get; set; }
 

@@ -248,6 +248,18 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of full decode-cache flushes (mapping changes, PT-page stores, cap).</summary>
     public ulong DecodeCacheFullFlushes => _decodeCache?.FullFlushes ?? 0;
 
+    /// <summary>Gets flushes triggered by guest stores to page-table pages (diagnostic).</summary>
+    public ulong FlushFromPtStore { get; private set; }
+
+    /// <summary>Gets flushes triggered by MMU mapping changes (CR3/PG/INVD, diagnostic).</summary>
+    public ulong FlushFromMmu { get; private set; }
+
+    /// <summary>Gets flushes triggered by INVLPG (diagnostic).</summary>
+    public ulong FlushFromFlushPage { get; private set; }
+
+    /// <summary>Gets flushes triggered by the host-side API (diagnostic).</summary>
+    public ulong FlushFromHost { get; private set; }
+
     /// <summary>Gets the number of fetch windows skipped because they crossed a page.</summary>
     public ulong DecodeCacheSkippedCrossPage => _decodeCache?.SkippedCrossPage ?? 0;
 
@@ -264,6 +276,7 @@ public sealed partial class XboxCpu
     /// </summary>
     public void InvalidateDecodeCache()
     {
+        FlushFromHost++;
         _decodeCache?.Flush();
     }
 
@@ -415,6 +428,11 @@ public sealed partial class XboxCpu
 
             DecodedInstruction instruction = entry.Instruction;
             SpecHandler? spec = blocks.CurrentHandler;
+
+            if (JitTally)
+            {
+                NoteNonJitMnemonic(instruction.Mnemonic);
+            }
 
             _hotspot?.NoteFetch(false);
 
@@ -732,6 +750,7 @@ public sealed partial class XboxCpu
             // SoftTLB entry also evicts this coarser slot), and every
             // SoftTLB flush clears this cache — but the hook keeps the two
             // disciplines aligned if either side ever changes.
+            FlushFromPtStore++;
             cache?.Flush();
             InvalidateDataXlat();
             return;
@@ -751,6 +770,7 @@ public sealed partial class XboxCpu
     /// </summary>
     private void OnMmuFlush()
     {
+        FlushFromMmu++;
         _decodeCache?.Flush();
         InvalidateDataXlat();
     }
@@ -761,6 +781,7 @@ public sealed partial class XboxCpu
     /// </summary>
     private void OnMmuFlushPage(uint virtualAddress)
     {
+        FlushFromFlushPage++;
         _decodeCache?.Flush();
         InvalidateDataXlat();
     }

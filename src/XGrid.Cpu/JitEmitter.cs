@@ -96,6 +96,12 @@ internal static class JitEmitter
     private static readonly MethodInfo Acknowledge =
         typeof(IInterruptSource).GetMethod("Acknowledge")!;
 
+    private static readonly MethodInfo GetMmu =
+        typeof(XboxCpu).GetProperty("Mmu")!.GetMethod!;
+
+    private static readonly MethodInfo FlushPage =
+        typeof(Mmu).GetMethod("FlushPage")!;
+
     private static readonly MethodInfo IsWatched =
         typeof(XboxCpu).GetMethod("IsWatched", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
@@ -231,16 +237,19 @@ internal static class JitEmitter
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
                 a1, a2, res, addr, vpn, phys, slot, ram);
 
-            if (!exactBoundaries && plan.Kind == JitKind.Sti)
+            if (!exactBoundaries && (plan.Kind == JitKind.Sti || plan.PollAfter))
             {
-                // STI enables interrupts for the rest of the block. The
-                // per-block entry poll cannot see that window when a block's
-                // entry runs with IF cleared (the kernel idle thread's
+                // STI (and POPF) can leave the block with interrupts enabled:
+                // the per-block entry poll cannot see that window when a
+                // block's entry runs with IF cleared (the kernel idle thread's
                 // sti/nop/nop/cli spin is exactly this shape), so poll at the
-                // STI member's boundary — the interpreter would deliver at
-                // the very next instruction boundary.
-                EmitPostStiPoll(il, context, gprs, eip, flags, tsc, served,
-                    interruptSource, vector, plan.Length);
+                // member's boundary — the interpreter would deliver at the
+                // very next instruction boundary. STI advances EIP itself
+                // here; a CallSpec member (POPF) already owns EIP.
+                EmitPostPoll(il, context, gprs, eip, flags, tsc, served,
+                    interruptSource, vector,
+                    advanceEip: plan.Kind == JitKind.Sti,
+                    length: plan.Length);
             }
 
             if (!plan.IsTerminator && plan.Kind != JitKind.CallSpec)
@@ -316,19 +325,18 @@ internal static class JitEmitter
     }
 
     /// <summary>
-    /// Fast mode's post-STI poll. STI turns interrupts on, and the
-    /// interpreter's per-instruction poll would deliver a pending vector at
-    /// the very next instruction boundary. A block whose entry runs with IF
-    /// cleared and whose only IF=1 window sits between STI and its CLI/end —
-    /// the kernel idle thread's sti/nop/nop/cli spin — would otherwise never
-    /// poll with IF=1 and every wakeup would starve (the guest wedges in its
-    /// idle loop). This poll runs at the STI member's boundary and exits
-    /// like the exact mode's pending path: STI counts as served, the
+    /// Fast mode's post-member IRQ poll (STI and POPF). Both can leave the
+    /// member with interrupts enabled; the interpreter's per-instruction poll
+    /// would deliver a pending vector at the very next instruction boundary,
+    /// and a block whose only IF=1 window sits inside it would otherwise
+    /// starve every wakeup. This poll runs at the member's boundary and exits
+    /// like the exact mode's pending path: the member counts as served, the
     /// delivery boundary counts one extra instruction (the caller adds it),
     /// TSC gets the boundary increment, and the saved return address is the
-    /// instruction after STI.
+    /// next instruction (<paramref name="advanceEip"/> advances it here for
+    /// native members that do not own EIP).
     /// </summary>
-    private static void EmitPostStiPoll(
+    private static void EmitPostPoll(
         ILGenerator il,
         LocalBuilder context,
         LocalBuilder[] gprs,
@@ -338,13 +346,18 @@ internal static class JitEmitter
         LocalBuilder served,
         LocalBuilder interruptSource,
         LocalBuilder vector,
-        int stiLength)
+        bool advanceEip,
+        int length)
     {
         Label done = il.DefineLabel();
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Callvirt, GetInterruptSource);
         il.Emit(OpCodes.Stloc, interruptSource);
         il.Emit(OpCodes.Ldloc, interruptSource);
+        il.Emit(OpCodes.Brfalse, done);
+        il.Emit(OpCodes.Ldloc, flags);
+        il.Emit(OpCodes.Ldc_I4, (int)FlagBits.If);
+        il.Emit(OpCodes.And);
         il.Emit(OpCodes.Brfalse, done);
         il.Emit(OpCodes.Ldloc, interruptSource);
         il.Emit(OpCodes.Callvirt, Acknowledge);
@@ -353,15 +366,19 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldc_I4_0);
         il.Emit(OpCodes.Blt, done);
 
-        // Pending: record the vector, complete STI (EIP advance, boundary
-        // TSC++, served++), sync the full state and exit.
+        // Pending: record the vector, complete the member (EIP advance when
+        // native, boundary TSC++, served++), sync the full state and exit.
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Ldloc, vector);
         il.Emit(OpCodes.Stfld, JitPending);
-        il.Emit(OpCodes.Ldloc, eip);
-        il.Emit(OpCodes.Ldc_I4, stiLength);
-        il.Emit(OpCodes.Add);
-        il.Emit(OpCodes.Stloc, eip);
+        if (advanceEip)
+        {
+            il.Emit(OpCodes.Ldloc, eip);
+            il.Emit(OpCodes.Ldc_I4, length);
+            il.Emit(OpCodes.Add);
+            il.Emit(OpCodes.Stloc, eip);
+        }
+
         il.Emit(OpCodes.Ldloc, tsc);
         il.Emit(OpCodes.Ldc_I4_1);
         il.Emit(OpCodes.Conv_I8);
@@ -587,8 +604,17 @@ internal static class JitEmitter
                 EmitPop(il, plan, context, gprs, eip, flags, tsc, served, a1, addr, vpn, phys, slot, ram);
                 break;
 
+            case JitKind.CallReg:
+            case JitKind.CallMem:
+                EmitCallIndirect(il, plan, context, gprs, eip, flags, tsc, served, a1, a2, addr, vpn, phys, slot, ram);
+                break;
+
             case JitKind.CallRel:
                 EmitCallRel(il, plan, context, gprs, eip, flags, tsc, served, a2, addr, vpn, phys, slot, ram);
+                break;
+
+            case JitKind.JmpMem:
+                EmitJmpMem(il, plan, context, gprs, eip, flags, tsc, served, a2, addr, vpn, phys, slot, ram);
                 break;
 
             case JitKind.RetNear:
@@ -632,11 +658,15 @@ internal static class JitEmitter
                 }
 
             case JitKind.CallSpec:
+            case JitKind.CallInterpreter:
                 {
-                    // Spec-handler fallback: sync the full context, run the
-                    // exact handler (the same static body the member path
-                    // calls), then reload the locals. Faults unwind with the
-                    // context already at this member's boundary.
+                    // Spec-handler / interpreter fallback: sync the full
+                    // context, run the exact handler (the same body the member
+                    // path calls), then reload the locals. Faults unwind with
+                    // the context already at this member's boundary. CallSpec
+                    // handlers own EIP (they advance it); interpreter entry
+                    // points do not (the outer loop advances after the
+                    // member).
                     EmitEipStore(il, context, eip);
                     EmitSync(il, context, gprs, eip, flags, tsc, served);
                     il.Emit(OpCodes.Ldarg_0);
@@ -644,10 +674,45 @@ internal static class JitEmitter
                     il.Emit(OpCodes.Ldc_I4, plan.EntryIndex);
                     il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
                     il.Emit(OpCodes.Ldflda, EntryInstruction);
+                    if (plan.PassSizes)
+                    {
+                        il.Emit(OpCodes.Ldc_I4, plan.Size);
+                        il.Emit(OpCodes.Ldc_I4, 32);
+                    }
+
                     il.Emit(OpCodes.Call, plan.SpecHandler!);
                     EmitLoadState(il, context, gprs, eip, flags, tsc);
                     break;
                 }
+
+            case JitKind.Invlpg:
+                {
+                    // Compute the operand address, sync, drive the interpreter
+                    // page flush, reload. The flush only clears caches; the
+                    // block stays valid and simply advances.
+                    EmitAddress(il, plan, context, gprs, addr);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    il.Emit(OpCodes.Ldarg_0);
+                    il.Emit(OpCodes.Callvirt, GetMmu);
+                    il.Emit(OpCodes.Ldloc, addr);
+                    il.Emit(OpCodes.Callvirt, FlushPage);
+                    EmitLoadState(il, context, gprs, eip, flags, tsc);
+                    break;
+                }
+
+            case JitKind.Cld:
+                il.Emit(OpCodes.Ldloc, flags);
+                il.Emit(OpCodes.Ldc_I4, ~(int)FlagBits.Df);
+                il.Emit(OpCodes.And);
+                il.Emit(OpCodes.Stloc, flags);
+                break;
+
+            case JitKind.Std:
+                il.Emit(OpCodes.Ldloc, flags);
+                il.Emit(OpCodes.Ldc_I4, (int)FlagBits.Df);
+                il.Emit(OpCodes.Or);
+                il.Emit(OpCodes.Stloc, flags);
+                break;
 
             case JitKind.Cli:
                 il.Emit(OpCodes.Ldloc, flags);
@@ -1088,6 +1153,137 @@ internal static class JitEmitter
         il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
         EmitJumpTarget(il, plan, eip);
         il.MarkLabel(done);
+    }
+
+    /// <summary>
+    /// Indirect call (register or memory target): reads the target first
+    /// (the interpreter reads the operand before pushing, so a read fault
+    /// leaves ESP untouched), then pushes the return address, then sets EIP
+    /// — each stage with its own fast/slow pair and exact fault ordering.
+    /// </summary>
+    private static void EmitCallIndirect(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder scratch,
+        LocalBuilder target,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        Label pushDone = il.DefineLabel();
+        Label slowPush = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+
+        if (plan.Kind == JitKind.CallMem)
+        {
+            Label loadDone = il.DefineLabel();
+            Label slowLoad = il.DefineLabel();
+            EmitAddress(il, plan, context, gprs, addr);
+            EmitProbe(il, context, isStore: false, 4, addr, vpn, slot, phys, ram, slowLoad);
+            EmitRamRead(il, 32, ram, phys);
+            il.Emit(OpCodes.Stloc, target);
+            il.Emit(OpCodes.Br, loadDone);
+            il.MarkLabel(slowLoad);
+            EmitSync(il, context, gprs, eip, flags, tsc, served);
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldloc, addr);
+            il.Emit(OpCodes.Ldc_I4, 32);
+            il.Emit(OpCodes.Call, ReadMemory);
+            il.Emit(OpCodes.Stloc, target);
+            il.MarkLabel(loadDone);
+        }
+        else
+        {
+            il.Emit(OpCodes.Ldloc, gprs[plan.RegIndex]);
+            il.Emit(OpCodes.Stloc, target);
+        }
+
+        // newEsp = ESP - 4; addr = SS.base + newEsp (CallRel's push sequence).
+        il.Emit(OpCodes.Ldloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Ldc_I4_4);
+        il.Emit(OpCodes.Sub);
+        il.Emit(OpCodes.Stloc, scratch);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldc_I4, (int)SegmentRegister.Ss);
+        il.Emit(OpCodes.Call, GetSegmentBase);
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, addr);
+
+        EmitProbe(il, context, isStore: true, 4, addr, vpn, slot, phys, ram, slowPush);
+        EmitWatchGuard(il, 4, phys, slowPush);
+        EmitNoteStore(il, 32, phys);
+        EmitRamWrite(il, 32, ram, phys, () =>
+        {
+            il.Emit(OpCodes.Ldloc, eip);
+            il.Emit(OpCodes.Ldc_I4, plan.Length);
+            il.Emit(OpCodes.Add);
+        });
+        il.Emit(OpCodes.Ldloc, scratch);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.Emit(OpCodes.Br, pushDone);
+
+        il.MarkLabel(slowPush);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, eip);
+        il.Emit(OpCodes.Ldc_I4, plan.Length);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, Push);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEsp);
+        il.Emit(OpCodes.Stloc, gprs[(int)Gpr.Esp]);
+        il.MarkLabel(pushDone);
+
+        il.Emit(OpCodes.Ldloc, target);
+        il.Emit(OpCodes.Stloc, eip);
+    }
+
+    /// <summary>Indirect jump through memory (`jmp m32`): load the target, then set EIP.</summary>
+    private static void EmitJmpMem(
+        ILGenerator il,
+        JitMemberPlan plan,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder target,
+        LocalBuilder addr,
+        LocalBuilder vpn,
+        LocalBuilder phys,
+        LocalBuilder slot,
+        LocalBuilder ram)
+    {
+        Label done = il.DefineLabel();
+        Label slow = il.DefineLabel();
+        EmitEipStore(il, context, eip);
+        EmitAddress(il, plan, context, gprs, addr);
+        EmitProbe(il, context, isStore: false, 4, addr, vpn, slot, phys, ram, slow);
+        EmitRamRead(il, 32, ram, phys);
+        il.Emit(OpCodes.Stloc, target);
+        il.Emit(OpCodes.Br, done);
+        il.MarkLabel(slow);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, addr);
+        il.Emit(OpCodes.Ldc_I4, 32);
+        il.Emit(OpCodes.Call, ReadMemory);
+        il.Emit(OpCodes.Stloc, target);
+        il.MarkLabel(done);
+        il.Emit(OpCodes.Ldloc, target);
+        il.Emit(OpCodes.Stloc, eip);
     }
 
     private static void EmitJumpTarget(ILGenerator il, JitMemberPlan plan, LocalBuilder eip)

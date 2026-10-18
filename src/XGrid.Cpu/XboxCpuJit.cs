@@ -65,6 +65,93 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of emitted members that took the interpreter slow path (diagnostic).</summary>
     public long JitSlowMembers => _jitSlowMembers;
 
+    /// <summary>
+    /// Gets or sets the coverage tally (opt-in diagnostic): why RunJitBlock
+    /// yields without serving, how long the non-JIT runs are, and which
+    /// mnemonics flow through the non-JIT path.
+    /// </summary>
+    public bool JitTally { get; set; }
+
+    private readonly long[] _jitYieldReasons = new long[5];
+
+    private readonly long[] _nonJitRunBuckets = new long[7];
+
+    private readonly long[] _nonJitMnemonics = new long[512];
+
+    /// <summary>Gets the RunJitBlock yield reasons (pending, rejected, formBail, mismatch, noProgress).</summary>
+    public long[] JitYieldReasons => _jitYieldReasons;
+
+    /// <summary>Gets the non-JIT run-size buckets (1, 2-4, 5-16, 17-64, 65-256, 257-1024, 1025+).</summary>
+    public long[] NonJitRunBuckets => _nonJitRunBuckets;
+
+    /// <summary>Gets the per-mnemonic counts of instructions served through the non-JIT path.</summary>
+    public long[] NonJitMnemonics => _nonJitMnemonics;
+
+    /// <summary>Gets the number of non-JIT runs (diagnostic).</summary>
+    public ulong NonJitCalls { get; private set; }
+
+    /// <summary>Gets the number of instructions served through the non-JIT path (diagnostic).</summary>
+    public ulong NonJitInstructions { get; private set; }
+
+    /// <summary>Tallies one non-JIT run (called by <c>Execute</c> while the JIT is on).</summary>
+    internal void NoteNonJitRun(int ran)
+    {
+        if (!JitTally)
+        {
+            return;
+        }
+
+        NonJitCalls++;
+        NonJitInstructions += (ulong)ran;
+        int bucket = ran <= 1 ? 0 : ran <= 4 ? 1 : ran <= 16 ? 2 : ran <= 64 ? 3 : ran <= 256 ? 4 : ran <= 1024 ? 5 : 6;
+        _nonJitRunBuckets[bucket]++;
+    }
+
+    /// <summary>Tallies one non-JIT member mnemonic (called by the spec runner while the JIT is on).</summary>
+    internal void NoteNonJitMnemonic(Mnemonic mnemonic)
+    {
+        int index = (int)mnemonic;
+        if ((uint)index < 512u)
+        {
+            _nonJitMnemonics[index]++;
+        }
+    }
+
+    /// <summary>Gets the number of heads neither built nor rejected (diagnostic).</summary>
+    public int JitPendingHeadCount => _jitBlocks?.CountPendingHeads() ?? 0;
+
+    private long _jitRevalidations;
+
+    /// <summary>Gets the number of stale blocks kept alive by byte revalidation (diagnostic).</summary>
+    public long JitRevalidations => _jitRevalidations;
+
+    /// <summary>Gets the decode/block generation the JIT cache is operating under (diagnostic).</summary>
+    public ulong JitBlockGeneration => _blocks?.Generation ?? 0;
+
+    /// <summary>
+    /// Gets or sets the maximum instructions one non-JIT (spec) run serves
+    /// before the fast-mode engine gets another chance at the head. Without
+    /// a cap, a single spec run can swallow a whole ~20K-instruction region
+    /// and every buildable head inside it (the menu's rendering regions at
+    /// 1B: 93% of the unserved mass sat in such runs).
+    /// </summary>
+    public int JitSpecSlice { get; set; } = 256;
+
+    private readonly long[] _jitRejectedMnemonics = new long[512];
+
+    /// <summary>Gets the first-member mnemonics of permanently rejected heads (diagnostic).</summary>
+    public long[] JitRejectedMnemonics => _jitRejectedMnemonics;
+
+    /// <summary>Tallies the mnemonic of a head whose first member has no native shape (diagnostic).</summary>
+    private void NoteRejectedMnemonic(Mnemonic mnemonic)
+    {
+        int index = (int)mnemonic;
+        if ((uint)index < 512u)
+        {
+            _jitRejectedMnemonics[index]++;
+        }
+    }
+
     private readonly long[] _jitBucketTicks = new long[5];
 
     private readonly long[] _jitBucketCounts = new long[5];
@@ -198,13 +285,53 @@ public sealed partial class XboxCpu
             {
                 switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
                 {
-                    case JitBlockCache.Verdict.Rejected:
                     case JitBlockCache.Verdict.Pending:
+                        if (JitTally)
+                        {
+                            _jitYieldReasons[0]++;
+                        }
+
                         return total;
+                    case JitBlockCache.Verdict.Rejected:
+                        if (JitTally)
+                        {
+                            _jitYieldReasons[1]++;
+                        }
+
+                        return total;
+                    case JitBlockCache.Verdict.Stale:
+                        if (block is not null && RevalidateJitBlock(block))
+                        {
+                            // The bytes under this linear are unchanged: the
+                            // baked block is still exact — keep it and skip
+                            // the rebuild entirely.
+                            jit.Refresh(fetchLinear, generation, block);
+                            _jitRevalidations++;
+                            break;
+                        }
+
+                        jit.NoteStale(fetchLinear);
+                        block = FormJitBlock(cache, jit, fetchLinear, generation);
+                        if (block is null)
+                        {
+                            if (JitTally)
+                            {
+                                _jitYieldReasons[2]++;
+                            }
+
+                            return total;
+                        }
+
+                        break;
                     case JitBlockCache.Verdict.Absent:
                         block = FormJitBlock(cache, jit, fetchLinear, generation);
                         if (block is null)
                         {
+                            if (JitTally)
+                            {
+                                _jitYieldReasons[2]++;
+                            }
+
                             return total;
                         }
 
@@ -214,10 +341,14 @@ public sealed partial class XboxCpu
 
             if (block is null
                 || block.HeadEip != Context.Eip
-                || block.Generation != generation
                 || block.OperandSize != operandSize
                 || block.AddressSize != addressSize)
             {
+                if (JitTally)
+                {
+                    _jitYieldReasons[3]++;
+                }
+
                 return total;
             }
 
@@ -297,11 +428,95 @@ public sealed partial class XboxCpu
             total += served;
             if (served == 0)
             {
+                if (JitTally)
+                {
+                    _jitYieldReasons[4]++;
+                }
+
                 return total;
             }
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// Lazily revalidates a block whose generation went stale: every member's
+    /// 15-byte source window must still match what its linear address yields
+    /// through the current mapping. The baked code depends only on the decoded
+    /// instruction bytes (the operand/address-size defaults are checked
+    /// separately), so a byte-identical window means the block is still exact
+    /// and can be kept; any mismatch or fault drops it for a fresh formation.
+    /// This is what keeps the guest's page-table churn (thousands of decode
+    /// flushes per 100M steps) from rebuilding every hot block from scratch.
+    /// </summary>
+    private bool RevalidateJitBlock(JitBlock block)
+    {
+        Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
+        uint linear = block.HeadLinear;
+        foreach (DecodeCacheEntry entry in block.Entries)
+        {
+            uint physical = Mmu.Translate(linear, isWrite: false, isInstruction: true, out bool faulted, out _);
+            if (faulted)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < window.Length; i++)
+            {
+                window[i] = Memory.Read8(physical + (uint)i);
+            }
+
+            if (!entry.SourceMatches(window))
+            {
+                return false;
+            }
+
+            linear += (uint)entry.Instruction.Length;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Fills one decode-cache entry on demand by translating and decoding the
+    /// current bytes at <paramref name="fetchLinear"/>. Formation must not
+    /// depend on the member path having warmed the cache ahead of the head:
+    /// after a code-page drop (any store to a page holding cached code) the
+    /// page's entries are gone, and a formation walk would otherwise bail
+    /// transiently, get retry-suppressed, and lose its build window.
+    /// Returns false when the window is uncacheable (page edge, non-RAM,
+    /// fetch fault) — the walk then ends transiently as before.
+    /// </summary>
+    private bool TryFillDecodeEntry(
+        DecodeCache cache,
+        uint fetchLinear,
+        int operandSize,
+        int addressSize,
+        out DecodeCacheEntry entry)
+    {
+        entry = default;
+        if ((fetchLinear & 0xFFFu) + (uint)Decoder.MaxInstructionLength > 0x1000u)
+        {
+            return false;
+        }
+
+        Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
+        try
+        {
+            FetchFast(fetchLinear, window);
+        }
+        catch (PageFaultSignal)
+        {
+            return false;
+        }
+        catch (XGrid.Memory.MemoryAccessException)
+        {
+            return false;
+        }
+
+        DecodeFresh(cache, window, fetchLinear, crossesPage: false);
+        return cache.TryGet(fetchLinear, operandSize, addressSize, out entry);
     }
 
     /// <summary>
@@ -332,7 +547,8 @@ public sealed partial class XboxCpu
                 break;
             }
 
-            if (!cache.TryGet(linear, operandSize, addressSize, out DecodeCacheEntry entry))
+            if (!cache.TryGet(linear, operandSize, addressSize, out DecodeCacheEntry entry)
+                && !TryFillDecodeEntry(cache, linear, operandSize, addressSize, out entry))
             {
                 break;
             }
@@ -340,6 +556,11 @@ public sealed partial class XboxCpu
             JitMemberPlan plan = JitPlanner.Plan(entry.Instruction);
             if (plan.Kind == JitKind.None)
             {
+                if (count == 0 && JitTally)
+                {
+                    NoteRejectedMnemonic(entry.Instruction.Mnemonic);
+                }
+
                 covered = true;
                 break;
             }
