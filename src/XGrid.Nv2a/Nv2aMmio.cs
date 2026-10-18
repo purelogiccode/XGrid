@@ -366,6 +366,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private float _blendConstG;
     private float _blendConstB;
     private float _blendConstA;
+    private bool _blendFastSrcAlpha;
     private float _zclipRange;
     // Reused PSH fill scratch (bit-identical to the previous per-triangle
     // allocations; fully re-initialized at the start of every fill).
@@ -3718,6 +3719,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         };
     }
 
+    /// <summary>
+    /// Bit-exact specialization of the blend configuration the goldens run
+    /// for ~all blended fragments (SrcAlpha / InvSrcAlpha / ADD, measured:
+    /// 211,696,842 of 211,696,978 blended fragments on the menu 1B):
+    /// fs = (src.A, src.A, src.A, src.A), fd = (1 - src.A, ...),
+    /// result = src * fs + dst * fd, clamped per channel. The generic path
+    /// computes the identical operations (one subtraction reused, same
+    /// multiply/add order, same clamps); the engagement is per-fill
+    /// (<see cref="PrepareFragmentConstants"/>) and pinned by the goldens
+    /// plus the blend tests.
+    /// </summary>
+    private static (float R, float G, float B, float A) BlendSrcAlphaAdd(
+        (float R, float G, float B, float A) src,
+        (float R, float G, float B, float A) dst)
+    {
+        float sa = src.A;
+        float ia = 1f - sa;
+        return (
+            Math.Clamp((src.R * sa) + (dst.R * ia), 0f, 1f),
+            Math.Clamp((src.G * sa) + (dst.G * ia), 0f, 1f),
+            Math.Clamp((src.B * sa) + (dst.B * ia), 0f, 1f),
+            Math.Clamp((src.A * sa) + (dst.A * ia), 0f, 1f));
+    }
+
     private static uint PackPixel(uint bytes, float r, float g, float b, float a)
     {
         return bytes == 4
@@ -5605,28 +5630,36 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
             if (_blendEnable)
             {
-                (float R, float G, float B, float A) constant = (
-                    _blendConstR, _blendConstG, _blendConstB, _blendConstA);
-                (float R, float G, float B, float A) fs = BlendFactor(_blendSrcFactor, src, dst, constant);
-                (float R, float G, float B, float A) fd = BlendFactor(_blendDstFactor, src, dst, constant);
-                result = _blendEquation switch
+                if (_blendFastSrcAlpha)
                 {
-                    0u => ((src.R * fs.R) - (dst.R * fd.R), (src.G * fs.G) - (dst.G * fd.G),
-                        (src.B * fs.B) - (dst.B * fd.B), (src.A * fs.A) - (dst.A * fd.A)),
-                    1u or 5u => ((dst.R * fd.R) - (src.R * fs.R), (dst.G * fd.G) - (src.G * fs.G),
-                        (dst.B * fd.B) - (src.B * fs.B), (dst.A * fd.A) - (src.A * fs.A)),
-                    3u => (Math.Min(src.R, dst.R), Math.Min(src.G, dst.G),
-                        Math.Min(src.B, dst.B), Math.Min(src.A, dst.A)),
-                    4u => (Math.Max(src.R, dst.R), Math.Max(src.G, dst.G),
-                        Math.Max(src.B, dst.B), Math.Max(src.A, dst.A)),
-                    _ => ((src.R * fs.R) + (dst.R * fd.R), (src.G * fs.G) + (dst.G * fd.G),
-                        (src.B * fs.B) + (dst.B * fd.B), (src.A * fs.A) + (dst.A * fd.A)),
-                };
-                result = (
-                    Math.Clamp(result.R, 0f, 1f),
-                    Math.Clamp(result.G, 0f, 1f),
-                    Math.Clamp(result.B, 0f, 1f),
-                    Math.Clamp(result.A, 0f, 1f));
+                    result = BlendSrcAlphaAdd(src, dst);
+                }
+                else
+                {
+                    (float R, float G, float B, float A) constant = (
+                        _blendConstR, _blendConstG, _blendConstB, _blendConstA);
+                    (float R, float G, float B, float A) fs = BlendFactor(_blendSrcFactor, src, dst, constant);
+                    (float R, float G, float B, float A) fd = BlendFactor(_blendDstFactor, src, dst, constant);
+                    result = _blendEquation switch
+                    {
+                        0u => ((src.R * fs.R) - (dst.R * fd.R), (src.G * fs.G) - (dst.G * fd.G),
+                            (src.B * fs.B) - (dst.B * fd.B), (src.A * fs.A) - (dst.A * fd.A)),
+                        1u or 5u => ((dst.R * fd.R) - (src.R * fs.R), (dst.G * fd.G) - (src.G * fs.G),
+                            (dst.B * fd.B) - (src.B * fs.B), (dst.A * fd.A) - (src.A * fs.A)),
+                        3u => (Math.Min(src.R, dst.R), Math.Min(src.G, dst.G),
+                            Math.Min(src.B, dst.B), Math.Min(src.A, dst.A)),
+                        4u => (Math.Max(src.R, dst.R), Math.Max(src.G, dst.G),
+                            Math.Max(src.B, dst.B), Math.Max(src.A, dst.A)),
+                        _ => ((src.R * fs.R) + (dst.R * fd.R), (src.G * fs.G) + (dst.G * fd.G),
+                            (src.B * fs.B) + (dst.B * fd.B), (src.A * fs.A) + (dst.A * fd.A)),
+                    };
+                    result = (
+                        Math.Clamp(result.R, 0f, 1f),
+                        Math.Clamp(result.G, 0f, 1f),
+                        Math.Clamp(result.B, 0f, 1f),
+                        Math.Clamp(result.A, 0f, 1f));
+                }
+
                 BlendedPixels++;
             }
 
@@ -5740,6 +5773,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _ => 0u,
         };
         _zclipRange = ZetaDepthRange(zetaFormat, _zFormatFloat);
+        _blendFastSrcAlpha = _blendEnable && _blendSrcFactor == 4u && _blendDstFactor == 5u &&
+                             _blendEquation is not (0u or 1u or 3u or 4u or 5u);
     }
 
     private void FillTriangle(

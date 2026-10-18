@@ -9541,3 +9541,23 @@ menu 1B (neutral-to-negative; the boot's 9.5% TLB miss rate is driven by the
 frequent full flushes (PTE-store bursts, per the decode-flush audit), not by
 table capacity - a bigger table only makes each flush more expensive).
 Reverted.
+
+## 186. Rasterizer slice R6: SrcAlpha/InvSrcAlpha/ADD blend specialization (2026-10-17, direct)
+
+Blend-config probe (temporary per-fragment histogram under `--gpu-time`):
+the menu's 211,696,978 blended fragments are 211,696,842x
+SrcAlpha/InvSrcAlpha/ADD (99.99993%); the triangle's 518 blended fragments
+are 382x the same config. `ProcessFragment` now takes a per-fill
+`_blendFastSrcAlpha` branch into `BlendSrcAlphaAdd` - the generic path's
+operations with the factor tuples folded (fs = src.A, fd = 1 - src.A, ADD,
+same multiply/add order and clamps); every other config keeps the generic
+path. Exactness: the existing `Blend_AlphaBlendsOverDestination` test uses
+exactly this config (0x0302/0x0303/0x8006) and pins the blended pixel;
+menu/triangle 1B SHAs exact, all counters exact, normalized stdout
+byte-identical to r7 (`D:\spec-soak\r9`). **Wall effect NOT yet claimed:**
+the measurement legs ran while the host was busy (Rider active, then
+Fortnite - the operator rule pauses timing for the game); the contended
+single-run raster seconds (36.5/13.3 s vs 30.2/9.9 s) are not evidence. The
+interleaved A/B (old-vs-new raster seconds) is pending a quiet window; the
+change is a strict op-count reduction for the dominant config and is
+reverted if the quiet measurement disagrees.
