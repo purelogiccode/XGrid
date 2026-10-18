@@ -222,6 +222,31 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool JitMmioFast { get; set; }
 
+    /// <summary>
+    /// Gets or sets the fast-mode idle-wait skip (<c>--jit-spin</c>, opt-in):
+    /// a store-free block cycle that keeps re-enabling interrupts with nothing
+    /// pending is the kernel idle loop (sti/nop/nop/cli/cmp/je at 0x8001B02E);
+    /// after enough consecutive such blocks the runner advances device time
+    /// (and the guest TSC) in chunks until an interrupt is pending instead of
+    /// executing the spin instruction by instruction. Fast mode only; runs
+    /// with it are not bit-exact by construction (time advances in lumps).
+    /// </summary>
+    public bool JitSpinSkip { get; set; }
+
+    /// <summary>Consecutive store-free STI blocks required before an idle-wait skip fires.</summary>
+    public const int JitSpinMinStreak = 32;
+
+    /// <summary>Cap on guest steps advanced per idle-wait skip (two PIT ticks).</summary>
+    public const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
+
+    private int _jitSpinStreak;
+
+    /// <summary>Gets the number of fast-mode idle-wait skips fired (diagnostic).</summary>
+    public long JitSpinSkips { get; private set; }
+
+    /// <summary>Gets the number of guest steps advanced by fast-mode idle-wait skips (diagnostic).</summary>
+    public long JitSpinSkippedSteps { get; private set; }
+
     /// <summary>Pending interrupt vector reported by an exact-mode runner (-1 none).</summary>
     private int _jitPending = -1;
 
@@ -390,6 +415,29 @@ public sealed partial class XboxCpu
 
             _jitProgress = 0;
             _jitPending = -1;
+
+            // Fast-mode idle-wait skip (--jit-spin): count consecutive
+            // store-free blocks that re-enable interrupts; after enough of
+            // them nothing is pending and the guest is idling, so advance
+            // device time until a wakeup can arrive instead of spinning.
+            if (JitSpinSkip)
+            {
+                if (block.HasStore)
+                {
+                    _jitSpinStreak = 0;
+                }
+                else if (block.HasSti)
+                {
+                    _jitSpinStreak++;
+                    if (_jitSpinStreak >= JitSpinMinStreak && TrySkipIdleWait(budget - total, out int skipSteps))
+                    {
+                        total += skipSteps;
+                        _jitSpinStreak = 0;
+                        continue;
+                    }
+                }
+            }
+
             int served;
             try
             {
@@ -492,6 +540,59 @@ public sealed partial class XboxCpu
             linear += (uint)entry.Instruction.Length;
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Advances device time (and the guest TSC) in <see cref="IdleSkipChunkSteps"/>
+    /// chunks until an interrupt is pending, the host's next deadline passes,
+    /// the budget runs out, or the skip cap is reached. The advanced count is
+    /// reported both to the outer budget and to the host's no-double-advance
+    /// counter (<c>TakeIdleAdvanced</c>).
+    /// </summary>
+    private bool TrySkipIdleWait(int budget, out int skipped)
+    {
+        skipped = 0;
+        IIdleSkipHost? host = IdleSkipHost;
+        if (host is null || budget <= 0)
+        {
+            return false;
+        }
+
+        int cap = Math.Min(budget, JitSpinMaxSkipSteps);
+        int advanced = 0;
+        long? until = host.StepsUntilNextDeadline;
+        while (advanced < cap && !host.IrqPendingAndEnabled)
+        {
+            int chunk = Math.Min(IdleSkipChunkSteps, cap - advanced);
+            if (until is { } remaining)
+            {
+                if (remaining <= 0)
+                {
+                    break;
+                }
+
+                chunk = (int)Math.Min(chunk, remaining);
+            }
+
+            host.AdvanceIdle((ulong)chunk);
+            advanced += chunk;
+            if (until is { } deadline)
+            {
+                until = deadline - chunk;
+            }
+        }
+
+        if (advanced == 0)
+        {
+            return false;
+        }
+
+        Context.Tsc += (ulong)advanced;
+        _idleAdvanced += advanced;
+        JitSpinSkips++;
+        JitSpinSkippedSteps += advanced;
+        skipped = advanced;
         return true;
     }
 
@@ -614,9 +715,27 @@ public sealed partial class XboxCpu
             return null;
         }
 
+        bool hasSti = false;
+        bool hasStore = false;
+        for (int i = 0; i < count; i++)
+        {
+            JitKind kind = plans[i].Kind;
+            hasSti |= kind == JitKind.Sti;
+            hasStore |= kind is JitKind.MovStore or JitKind.MovStoreImm or JitKind.IncM or JitKind.DecM
+                or JitKind.PushR or JitKind.PushI or JitKind.PopR
+                or JitKind.CallRel or JitKind.CallReg or JitKind.CallMem or JitKind.CallSpec
+                or JitKind.CallInterpreter or JitKind.Invlpg;
+            if ((kind == JitKind.AluMR || kind == JitKind.AluMI) && plans[i].AluOp != JitAluOp.Cmp)
+            {
+                // AluMR/AluMI are read-modify-writes except the compare forms,
+                // which the emitter itself runs as pure reads.
+                hasStore = true;
+            }
+        }
+
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            entries.AsSpan(0, count).ToArray(), runner);
+            entries.AsSpan(0, count).ToArray(), runner, hasSti, hasStore);
         jit.Store(headLinear, generation, block);
         return block;
     }

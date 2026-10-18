@@ -23,7 +23,9 @@ internal sealed class JitBlock
         ulong generation,
         int memberCount,
         DecodeCacheEntry[] entries,
-        JitRun runner)
+        JitRun runner,
+        bool hasSti,
+        bool hasStore)
     {
         HeadLinear = headLinear;
         HeadEip = headEip;
@@ -33,6 +35,8 @@ internal sealed class JitBlock
         MemberCount = memberCount;
         Entries = entries;
         Runner = runner;
+        HasSti = hasSti;
+        HasStore = hasStore;
     }
 
     /// <summary>Gets the linear fetch address of the block head (the cache key).</summary>
@@ -58,6 +62,12 @@ internal sealed class JitBlock
 
     /// <summary>Gets the emitted runner.</summary>
     public JitRun Runner { get; }
+
+    /// <summary>Gets whether the block contains an STI member (fast-mode idle-wait detection).</summary>
+    public bool HasSti { get; }
+
+    /// <summary>Gets whether the block contains a member with a memory/side-effect write (fast-mode idle-wait detection).</summary>
+    public bool HasStore { get; }
 }
 
 /// <summary>
