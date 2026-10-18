@@ -128,6 +128,7 @@ public sealed partial class XboxCpu
     {
         Context.Reset();
         Mmu.Flush();
+        _jitBlocks?.Invalidate();
         LastFaultVector = 0;
         LastFaultEip = 0;
         LastFaultErrorCode = 0;
@@ -246,6 +247,19 @@ public sealed partial class XboxCpu
                     }
 
                     executed += skipped;
+                    continue;
+                }
+            }
+
+            if (_jitEnabled)
+            {
+                // Fast-mode JIT (opt-in): serve whole blocks natively. A zero
+                // return means no block covers this head; the member paths
+                // below own the miss (and the bootstrap fills the cache).
+                int jitRan = RunJitBlock(maxInstructions - executed);
+                if (jitRan > 0)
+                {
+                    executed += jitRan;
                     continue;
                 }
             }
