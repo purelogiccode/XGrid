@@ -10274,3 +10274,40 @@ checks) inside `Cpu.Execute`. Plan consequence: drop the separate
 "bookkeeping profiling/optimization" item; the outer-loop overhead is part
 of C2 (traces remove per-block dispatch) and is measured by
 `Host timing executeMs/advanceMs` from now on.
+
+## 199a. D3b landed: page-edge heads form (fast mode); the non-JIT tail is now the spec runner's job (2026-10-19 evening)
+
+**Change.** `FormJitBlock` drops its page-edge guard (the decode cache has
+carried cross-page entries since D3a); `TryFillDecodeEntry` fills cross-page
+windows via `FetchFastCrossPage`; `RevalidateJitBlock` reads a page-aware
+15-byte window (one translate per page touched); `DecodedBlockCache.Form`
+forms *spec* blocks across page boundaries (invalidation is already the
+conservative all-block eviction, and the idle-window replay / verify paths
+already go through `entry.PhysicalOf(i)`), with the spec verify re-decode
+passing the entry's `CrossSplit`. Tests updated to pin the new contract plus
+a cross-page formation test.
+
+**Evidence (deterministic, load-independent).** Triangle 1B fast:
+`nonJitCalls` 1,281,644 → **522,460 (−59%)**, `rejectedHeads` 431 → **113
+(−74%)**, `specRan` now 4.9M (page-edge and cold heads are served by the
+~10–20 ns spec runner instead of the ~500 ns interpreter `Step`).
+Bit-exactness: triangle 200M **accurate interpreter = `--spec-exec` =
+`--block-exec` = `--jit --jit-exact` = `29A00539/B4482225`**; menu 1B fast
+anchor `660CA11B/F5D61C94` exact; triangle 1B fast `4F1FCBC0/7DAB63EB`
+exact. Suite 1481 green, format clean. Walls not claimed (host loaded —
+quiet-host medians pending, ask the operator for an idle window).
+
+**Also landed:** JIT yield-reason counters and the non-JIT mnemonic tally are
+always-on diagnostics (the env-gated `XGRID_JIT_TAIL=1` report now works in
+ordinary runs; `--jit-tally` stays inert by design); the top yield reason is
+`pending` (cold heads below the 16-visit build threshold — by design).
+
+**Next slice: C2 trace emitter** (charter Phase 2.5) — the measured
+per-block fixed cost is the target: one `DynamicMethod` per multi-block
+trace, guest state in locals across the trace, inline RAM fast paths, the
+§193 interrupt poll at every block boundary, side exits to the block JIT.
+First contained step: lazy GPR state sync (load only the GPRs a block reads,
+store only those it writes; the plan struct already exposes `RegIndex` /
+`SecondRegIndex` / `BaseRegister` / `IndexRegister` per member, so the sets
+are derivable from the plans — validate with the 200M four-engine
+differential and the 1B fast anchors).
