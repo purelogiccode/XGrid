@@ -10089,3 +10089,55 @@ BufferData orphan + DrawArrays + validation), not redundant state or
 allocations — the next GPU-path lever is **B2c: draw batching** (move the
 per-draw uniforms to attributes/UBO and issue one call per state run),
 which is a shader/backend redesign slice, not a micro-optimization.
+
+## 197. D3a: cross-page decode-cache entries; the triangle's real bottleneck is a page-end spin loop (2026-10-19, direct)
+
+**Diagnosis first (measured, not guessed).** The triangle 1B fast run showed
+nonJitMs 10.8 s of a 32 s wall with exactly 1,281,917 non-JIT calls /
+6,152,091 instructions, and the decode-cache skip counters matched the call
+count 1:1 (crossPageSkips 761,045 + nonRamSkips 359,476 = 1.12M events). A
+temporary split showed nonJitSpecMs 8.4 s vs nonJitStepMs 2.0 s; a temporary
+non-JIT EIP histogram pinned the single largest contributor at the kernel's
+vblank-wait spin: EIPs 0x80060FF3/FF6/FF9/FFB/FFE — **the last 13 bytes of a
+4 KB page** — each ~131,070 entries. A fetch window is 15 bytes, so any
+instruction whose EIP sits in the last 14 bytes of a page can never enter the
+decode cache; the JIT block builder (`FormJitBlock` page-edge guard) and the
+spec runner both reject such heads, and every iteration falls to `Step()`
+plus a 15-translate legacy fetch. The vblank spin is thus executed at
+interpreter-ish speed for the whole run.
+
+**D3a (landed).** `DecodeCacheEntry` carries a second physical base + split
+offset for cross-page windows; `FetchFastCrossPage` (XboxCpu) does one
+translate per page with fault/note semantics identical to the per-byte loop
+(profiler runs keep `FetchCounted`); `DecodeFresh` fills cross-page entries
+when both pages are cacheable; the reverse map registers BOTH pages so a
+store to either drops the entry; the idle-note and verify readers use
+`PhysicalOf(i)`; block formation stays single-page-bounded (relaxing that is
+D3b). Evidence: menu 1B fast ram/cpu `D9C99A58…`/`3D2740B8…`, triangle
+`BD2DD021…`/`9AC069E6…` (exact anchors), exact-mode 200M identical
+(`F91A9D1E…`/`4135499D…`), a full `--decode-verify` triangle run reports
+verifyFailures=0 and reproduces the accurate SHA `5E6A6741…`, crossPageSkips
+761,045 -> 0 (documented counter change), suite 1479 green, format clean.
+Wall effect in-window: triangle nonJitMs 10.8 -> ~9.0 s, wall ~27.6-30 s
+(within host drift); the fetch was only part of the per-event cost — the
+remaining cost is the page-end spin's per-iteration Step()+spec pipeline,
+which the next slice targets (fast-mode spin skip).
+
+**Real-content policy (operator-delegated 2026-10-19).** The operator offered
+real ISOs at `H:\Tests\XBOXTest` and delegated the rule decision. Decision
+(recorded in `development-direction.md` §4 and `AGENTS.md` rule 3):
+`data/test-samples/` stays gate currency; real ISOs are authorized for
+fast-mode **benchmark-only** use (wall/throughput and xemu-class
+comparisons) — never golden gates, never accurate-mode acceptance, never
+NV2A/APU fidelity work. Rationale: the samples (including the real dashboard
+menu) cover the hot paths, but the xemu-class target needs at least one
+real-title throughput point; the guardrails keep gate discipline intact.
+
+**xemu baseline (measured, same host).** ktest smoke workload: xemu completes
+the 7-test subset in 15 s; XGrid fast mode needs ~9-10 s for the same guest
+work (793M steps to the park) — CPU-bound work is already ahead of xemu. The
+nxdk triangle (guest-side counter read from xemu screenshots, framebuffer
+pmemsave + PNG): xemu renders 2,093 frames in 30 wall-seconds (~70 fps,
+guest FPS 61-62 = real-time); XGrid fast presents 68 frames in 27.9 s (sw) /
+17.8 s (gl-replace) = 2.4 / 3.8 fps. **The xemu-class gap on GPU/vblank-bound
+content is 18-29x; on CPU-bound content it is closed.**

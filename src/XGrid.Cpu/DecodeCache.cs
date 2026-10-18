@@ -27,6 +27,8 @@ public readonly struct DecodeCacheEntry
     public DecodeCacheEntry(
         DecodedInstruction instruction,
         uint physicalBase,
+        uint secondPhysicalBase,
+        int crossSplit,
         int operandSize,
         int addressSize,
         ulong source0,
@@ -36,6 +38,8 @@ public readonly struct DecodeCacheEntry
     {
         Instruction = instruction;
         PhysicalBase = physicalBase;
+        SecondPhysicalBase = secondPhysicalBase;
+        CrossSplit = crossSplit;
         OperandSize = operandSize;
         AddressSize = addressSize;
         Source0 = source0;
@@ -46,6 +50,27 @@ public readonly struct DecodeCacheEntry
 
     /// <summary>Gets the physical address of fetch-window byte 0 at fill time.</summary>
     public uint PhysicalBase { get; init; }
+
+    /// <summary>
+    /// Gets the physical address of fetch-window byte <see cref="CrossSplit"/>
+    /// (the first byte of the second page) for a cross-page window; 0 for
+    /// single-page windows.
+    /// </summary>
+    public uint SecondPhysicalBase { get; init; }
+
+    /// <summary>
+    /// Gets the fetch-window offset where the second page starts (0 for
+    /// single-page windows; 1..14 for cross-page windows, D3).
+    /// </summary>
+    public int CrossSplit { get; init; }
+
+    /// <summary>Gets the physical address of fetch-window byte <paramref name="offset"/> (split-aware).</summary>
+    public uint PhysicalOf(int offset)
+    {
+        return CrossSplit != 0 && offset >= CrossSplit
+            ? SecondPhysicalBase + (uint)(offset - CrossSplit)
+            : PhysicalBase + (uint)offset;
+    }
 
     /// <summary>Gets the operand-size default the decode was produced with.</summary>
     public int OperandSize { get; init; }
@@ -176,6 +201,8 @@ public sealed class DecodeCache
         uint fetchLinear,
         in DecodedInstruction instruction,
         uint physicalBase,
+        uint secondPhysicalBase,
+        int crossSplit,
         ReadOnlySpan<byte> sourceWindow,
         int operandSize,
         int addressSize)
@@ -201,6 +228,13 @@ public sealed class DecodeCache
             return;
         }
 
+        uint secondPage = secondPhysicalBase >> 12;
+        if (crossSplit != 0 && secondPage >= TrackedPages)
+        {
+            SkippedNonRam++;
+            return;
+        }
+
         // Replacement may follow verify failure or a changed decode default.
         // Derived arrays must not retain the old entry (including aliases).
         if (_entries.TryGetValue(fetchLinear, out DecodeCacheEntry previous))
@@ -209,6 +243,11 @@ public sealed class DecodeCache
             if ((previous.PhysicalBase >> 12) != physicalPage)
             {
                 DropPhysicalPage(previous.PhysicalBase >> 12);
+            }
+
+            if (previous.CrossSplit != 0 && (previous.SecondPhysicalBase >> 12) != physicalPage)
+            {
+                DropPhysicalPage(previous.SecondPhysicalBase >> 12);
             }
         }
 
@@ -222,11 +261,24 @@ public sealed class DecodeCache
 
             keys.Add(fetchLinear);
             MarkActive(physicalPage);
+            if (crossSplit != 0 && secondPage != physicalPage)
+            {
+                if (!_byPhysicalPage.TryGetValue(secondPage, out List<uint>? secondKeys))
+                {
+                    secondKeys = new List<uint>();
+                    _byPhysicalPage.Add(secondPage, secondKeys);
+                }
+
+                secondKeys.Add(fetchLinear);
+                MarkActive(secondPage);
+            }
         }
 
         _entries[fetchLinear] = new DecodeCacheEntry(
             instruction,
             physicalBase,
+            secondPhysicalBase,
+            crossSplit,
             operandSize,
             addressSize,
             BinaryPrimitives.ReadUInt64LittleEndian(sourceWindow),

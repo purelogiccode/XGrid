@@ -304,9 +304,10 @@ public sealed class DecodeCacheTests
     }
 
     [Fact]
-    public void CrossPageAndNonRam_Windows_AreNotCached()
+    public void CrossPageWindows_AreCached_NonRamWindows_AreNot()
     {
-        // Cross-page: code straddling 0x2000 (§131 gotcha iv).
+        // Cross-page: code straddling 0x2000 (D3 caches these entries with a
+        // second physical base; both pages are RAM, so both fills land).
         XboxCpu cross = CpuHarness.Create();
         cross.Bus().Write8(0x1FFB, 0x90);
         cross.Bus().Write8(0x1FFC, 0xF4);
@@ -317,10 +318,10 @@ public sealed class DecodeCacheTests
         cross.Execute(2);
 
         Assert.True(cross.Context.Halted);
-        Assert.Equal(2UL, cross.DecodeCacheSkippedCrossPage);
+        Assert.Equal(0UL, cross.DecodeCacheSkippedCrossPage);
         Assert.Equal(2UL, cross.DecodeCacheMisses);
         Assert.Equal(0UL, cross.DecodeCacheHits);
-        Assert.Equal(0, cross.DecodeCacheEntries);
+        Assert.Equal(2, cross.DecodeCacheEntries);
 
         // Non-RAM: the idle-skip host classifies the code page as MMIO
         // (flash/BIOS-style fetches are never cached, gotcha iii).
@@ -335,6 +336,67 @@ public sealed class DecodeCacheTests
         Assert.Equal(4UL, mmio.DecodeCacheSkippedNonRam);
         Assert.Equal(4UL, mmio.DecodeCacheMisses);
         Assert.Equal(0, mmio.DecodeCacheEntries);
+    }
+
+    [Fact]
+    public void CrossPageEntries_ServeFromCache_AndDropOnSecondPageStore()
+    {
+        // Loop body in the 0x1FF5..0x1FFF boundary zone: every instruction
+        // there has a 15-byte window that crosses into page 0x2000.
+        XboxCpu cpu = CpuHarness.Create();
+        MapIdentity(cpu.Bus(), 0, 16);
+        EnablePaging(cpu);
+        PhysicalMemory ram = cpu.Ram();
+        ram.Write8(0x1FF0, 0xB9); // mov ecx,3
+        ram.Write8(0x1FF1, 0x03);
+        ram.Write8(0x1FF5, 0x49); // dec ecx
+        for (uint i = 0x1FF6; i <= 0x1FFF; i++)
+        {
+            ram.Write8(i, 0x90); // nops
+        }
+
+        ram.Write8(0x2000, 0x75); // jne 0x1FF5
+        ram.Write8(0x2001, 0xF3);
+        ram.Write8(0x2002, 0xF4); // hlt
+        cpu.Context.Eip = 0x1FF0;
+        cpu.DecodeCacheEnabled = true;
+
+        XboxCpu off = CpuHarness.Create();
+        MapIdentity(off.Bus(), 0, 16);
+        EnablePaging(off);
+        PhysicalMemory offRam = off.Ram();
+        for (uint i = 0x1FF0; i <= 0x2002; i++)
+        {
+            offRam.Write8(i, ram.Read8(i));
+        }
+
+        off.Context.Eip = 0x1FF0;
+
+        cpu.Execute(200);
+        off.Execute(200);
+        Assert.True(cpu.Context.Halted);
+        Assert.Equal(off.Context.Eip, cpu.Context.Eip);
+        Assert.Equal(off.Context.Ecx, cpu.Context.Ecx);
+        Assert.Equal(0UL, cpu.DecodeCacheSkippedCrossPage);
+        Assert.True(cpu.DecodeCacheHits > 0, $"hits={cpu.DecodeCacheHits}");
+        Assert.True(cpu.DecodeCacheEntries > 0, $"entries={cpu.DecodeCacheEntries}");
+        int entriesAfterLoop = cpu.DecodeCacheEntries;
+
+        // A data store into the second page (0x2000) must drop the cross-page
+        // entries through the reverse-map registration of both pages.
+        cpu.Context.Halted = false;
+        cpu.Context.Eip = 0x3000;
+        ram.Write8(0x3000, 0xA3); // mov [0x2F00],eax
+        ram.Write8(0x3001, 0x00);
+        ram.Write8(0x3002, 0x2F);
+        ram.Write8(0x3003, 0x00);
+        ram.Write8(0x3004, 0x00);
+        ram.Write8(0x3005, 0xF4); // hlt
+        cpu.Execute(3);
+
+        Assert.True(cpu.Context.Halted);
+        Assert.True(cpu.DecodeCacheEntries < entriesAfterLoop,
+            $"entries after store={cpu.DecodeCacheEntries} (before={entriesAfterLoop})");
     }
 
     [Fact]
@@ -487,9 +549,8 @@ public sealed class DecodeCacheTests
         cpu.Context.Esp = 0x3F000;
 
         // 196608 nops (0x1000..0x30FFF) then hlt (0x31000). Fetch windows
-        // within 14 bytes of a page boundary cross it and are skipped, so
-        // the fill count lags the step count slightly; the cap still trips
-        // once mid-stream and the table stays bounded.
+        // within 14 bytes of a page boundary cross it; since D3 those windows
+        // are cached too (both pages are RAM here), so every step fills.
         memory.GetSpan(0x1000, 0x30000).Fill(0x90);
         memory.Write8(0x31000, 0xF4);
         cpu.Context.Eip = 0x1000;
@@ -508,7 +569,7 @@ public sealed class DecodeCacheTests
         Assert.Equal(DecodeCache.MaxEntries, cpu.DecodeCachePeakEntries);
         Assert.True(cpu.DecodeCacheEntries > 0);
         Assert.True(cpu.DecodeCacheEntries < DecodeCache.MaxEntries);
-        Assert.True(cpu.DecodeCacheSkippedCrossPage > 0);
+        Assert.Equal(0UL, cpu.DecodeCacheSkippedCrossPage);
     }
 
     [Fact]

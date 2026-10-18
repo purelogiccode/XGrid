@@ -1740,6 +1740,7 @@ internal static class Program
                 $"runnerMs={machine.Cpu.JitRunnerTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"outerMs={machine.Cpu.JitOuterTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"nonJitMs={machine.Cpu.NonJitTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
+                $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
@@ -1751,7 +1752,8 @@ internal static class Program
                 $"flushSrc(pt={machine.Cpu.FlushFromPtStore} mmu={machine.Cpu.FlushFromMmu} " +
                 $"invlpg={machine.Cpu.FlushFromFlushPage} host={machine.Cpu.FlushFromHost})");
 
-            if (machine.Cpu.JitTally)
+            if (machine.Cpu.JitTally
+                || string.Equals(Environment.GetEnvironmentVariable("XGRID_JIT_TAIL"), "1", StringComparison.Ordinal))
             {
                 long[] yield = machine.Cpu.JitYieldReasons;
                 Console.WriteLine(

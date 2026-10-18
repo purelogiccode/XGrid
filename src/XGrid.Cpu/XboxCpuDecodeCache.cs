@@ -312,12 +312,11 @@ public sealed partial class XboxCpu
         bool crossesPage = (fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u;
 
         DecodeCacheEntry entry = default;
-        bool blockHit = _blocks is not null && !crossesPage
-                                            && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize,
-                                                Context.DefaultAddressSize, out entry);
-        if (blockHit || (!crossesPage
-                         && cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize,
-                             out entry)))
+        bool blockHit = _blocks is not null
+                        && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize,
+                            Context.DefaultAddressSize, out entry);
+        if (blockHit || cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize,
+                out entry))
         {
             _hotspot?.NoteFetch(false);
 
@@ -328,7 +327,7 @@ public sealed partial class XboxCpu
             {
                 for (int i = 0; i < buffer.Length; i++)
                 {
-                    idle.NoteAccess(entry.PhysicalBase + (uint)i, isWrite: false, isInstruction: true);
+                    idle.NoteAccess(entry.PhysicalOf(i), isWrite: false, isInstruction: true);
                 }
             }
 
@@ -336,7 +335,7 @@ public sealed partial class XboxCpu
             {
                 for (int i = 0; i < buffer.Length; i++)
                 {
-                    buffer[i] = Memory.Read8(entry.PhysicalBase + (uint)i);
+                    buffer[i] = Memory.Read8(entry.PhysicalOf(i));
                 }
 
                 if (!entry.SourceMatches(buffer))
@@ -348,9 +347,14 @@ public sealed partial class XboxCpu
                     {
                         _blocks.NoteVerifyFailure();
                         cache.DropPhysicalPage(entry.PhysicalBase >> 12);
+                        if (entry.CrossSplit != 0 &&
+                            (entry.SecondPhysicalBase >> 12) != (entry.PhysicalBase >> 12))
+                        {
+                            cache.DropPhysicalPage(entry.SecondPhysicalBase >> 12);
+                        }
                     }
 
-                    return DecodeFresh(cache, buffer, fetchLinear, crossesPage: false);
+                    return DecodeFresh(cache, buffer, fetchLinear, crossesPage);
                 }
             }
 
@@ -441,7 +445,7 @@ public sealed partial class XboxCpu
             {
                 for (int i = 0; i < window.Length; i++)
                 {
-                    idle.NoteAccess(entry.PhysicalBase + (uint)i, isWrite: false, isInstruction: true);
+                    idle.NoteAccess(entry.PhysicalOf(i), isWrite: false, isInstruction: true);
                 }
             }
 
@@ -450,7 +454,7 @@ public sealed partial class XboxCpu
             {
                 for (int i = 0; i < window.Length; i++)
                 {
-                    window[i] = Memory.Read8(entry.PhysicalBase + (uint)i);
+                    window[i] = Memory.Read8(entry.PhysicalOf(i));
                 }
 
                 if (!entry.SourceMatches(window))
@@ -463,6 +467,11 @@ public sealed partial class XboxCpu
                     {
                         blocks.NoteVerifyFailure();
                         cache.DropPhysicalPage(entry.PhysicalBase >> 12);
+                        if (entry.CrossSplit != 0 &&
+                            (entry.SecondPhysicalBase >> 12) != (entry.PhysicalBase >> 12))
+                        {
+                            cache.DropPhysicalPage(entry.SecondPhysicalBase >> 12);
+                        }
                     }
 
                     try
@@ -656,22 +665,26 @@ public sealed partial class XboxCpu
     private DecodedInstruction DecodeFresh(DecodeCache cache, Span<byte> buffer, uint fetchLinear, bool crossesPage)
     {
         uint basePhysical = 0;
+        uint secondPhysicalBase = 0;
+        int crossSplit = 0;
         if (!crossesPage)
         {
             basePhysical = FetchFast(fetchLinear, buffer);
         }
         else
         {
-            uint segmentBase = Context.GetSegmentBase(SegmentRegister.Cs);
+            // D3: one translate per page (the legacy per-byte loop stays for
+            // profiler runs, whose per-byte TLB tallies own the fetch).
+            crossSplit = 0x1000 - (int)(fetchLinear & 0xFFFu);
             IHotspotObserver? observer = _hotspot;
             if (observer is not null)
             {
                 observer.NoteFetchSlow();
-                FetchCounted(observer, segmentBase, buffer, crossesPage: true);
+                FetchCounted(observer, Context.GetSegmentBase(SegmentRegister.Cs), buffer, crossesPage: true);
             }
             else
             {
-                FetchLegacy(segmentBase, buffer);
+                basePhysical = FetchFastCrossPage(fetchLinear, buffer, out secondPhysicalBase);
             }
         }
 
@@ -685,7 +698,25 @@ public sealed partial class XboxCpu
 
         if (crossesPage)
         {
-            cache.NoteSkippedCrossPage();
+            // Cross-page windows are cacheable when both pages are (the entry
+            // carries the second base + split); the skip counter keeps the
+            // uncacheable cases (profiler runs, non-RAM pages).
+            if (_hotspot is null && IsCacheableFetch(basePhysical) && IsCacheableFetch(secondPhysicalBase))
+            {
+                cache.Insert(
+                    fetchLinear,
+                    instruction,
+                    basePhysical,
+                    secondPhysicalBase,
+                    crossSplit,
+                    buffer,
+                    Context.DefaultOperandSize,
+                    Context.DefaultAddressSize);
+            }
+            else
+            {
+                cache.NoteSkippedCrossPage();
+            }
         }
         else if (IsCacheableFetch(basePhysical))
         {
@@ -693,6 +724,8 @@ public sealed partial class XboxCpu
                 fetchLinear,
                 instruction,
                 basePhysical,
+                0,
+                0,
                 buffer,
                 Context.DefaultOperandSize,
                 Context.DefaultAddressSize);
