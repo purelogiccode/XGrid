@@ -1,25 +1,23 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
-> **STATUS 2026-10-19 (quiet host): PHASE 0 + 1 LANDED; CPU-SIDE TARGETS MET
-> ON CPU-BOUND WORK; END-TO-END WALLS NOW GPU/MMIO-BOUND (see §§191–194).**
-> J1a–J1d + the coverage campaign: `boot --bench`, `--jit` whole-block engine
-> (visit-threshold builds, sliced non-JIT runs, lazy block revalidation,
-> fill-on-demand formation, indirect call/jmp, all string ops incl. rep,
-> In/Out, Popf, Cld/Std, Invlpg as members), `--jit-exact` per-member poll,
-> `--jit-tally` diagnostics. **Fidelity: 1B exact-mode runs are bit-identical
-> to the accurate control on both titles with golden frames; fast mode is
-> bit-exact on the menu (686/686) and has a 3-dword context-save residual on
-> the triangle (documented delivery shift); ktest smoke 7/7 and the 2B suite
-> log match (one 5 ms timing row).** Quiet-host 1B medians: triangle fast
-> 27.91 s (1.33× spec-ctl, 1.84× plain), menu fast 64.02 s (1.15×/1.28×);
-> ktest 2B CPU-bound **3.76×**. The Phase-1 "≥2.5–3× CPU-side" bar is met on
-> CPU-bound code; the golden workloads' walls are now 36–38% software
-> rasterizer plus MMIO device dispatch inside the runner — end-to-end gains
-> there need Track B (GPU) + MMIO work, not more CPU-side JIT. Phase 2
-> leftovers: IL-level chaining (the outer dispatch is ~4.5 s/1B), threshold
-> auto-tune. Phase 3 not indicated (DynamicMethod path is well inside the
-> CPU-side band). Fast mode is never gate currency; runs are deterministic
-> per binary+flags.
+> **STATUS 2026-10-19 (evening, quiet host): PHASE 0 + 1 LANDED; PHASE 3
+> ENTRY CONDITION MET — CPU ENGINE IS THE LEAD TRACK AGAIN (§199).**
+> J1a–J1d + the coverage campaign + the day's fast-mode work (`--jit-spin`
+> idle-wait skip, `--jit-timing` gate, `--jit-mmio`, 256-slot data-translate
+> cache, cross-page decode entries) brought the 1B goldens to **triangle
+> 20.28 s sw / 10.68 s gl+replace, menu 56.82 s / 41.39 s**. The structure
+> inverted again: the **CPU engine is 57% of the triangle wall and ≈45% of the
+> menu wall**, and the `DynamicMethod` block JIT has hit its structural
+> ceiling — ~18 ns fixed per block (context load/store + dispatch + memo) ×
+> 125M invocations plus ~7 ns per member × 543M, with the remaining Phase-2
+> leftovers worth only ~1.5–2×. Measured xemu: **triangle ≈830 Msteps/s
+> (1.13× real-time)** vs XGrid 94M (triangle) / 24M (menu) — a **~9× / ~30×**
+> plateau, i.e. >3× short, which is exactly this charter's Phase-3 entry
+> condition. **Decision (§199): C2 trace emitter next (DynamicMethod,
+> multi-block traces, ≥2× CPU), then C3 raw emitter (Iced, now unblocked).**
+> Fast mode is never gate currency; runs are deterministic per binary+flags.
+> Cheap Track-D wins (D3b, bookkeeping) and Track B (B2c draw batching, the
+> window present path) run behind the CPU track.
 
 > **STATUS: AUTHORIZED 2026-10-18 by the operator.** Long-run goal: *at least
 > xemu-class performance*. This file is the governing document for the track —
@@ -38,16 +36,19 @@
 **10²–10³ Msteps/s**, i.e. the 733 MHz Pentium III executed in the real-time
 band — on top of the existing LLE core (real MCPX ROM → kernel → XBE).
 
-**Current measured position (post-R7, median-of-3, §§186a/187):**
+**Measured position (2026-10-19 evening, §199; 1B, fast mode, single runs —
+the pre-§198a figures in parentheses):**
 
-| Workload | 1B-step wall | End-to-end | CPU-side (derived*) |
+| Workload | 1B-step wall (sw) | 1B-step wall (gl+replace+spin) | End-to-end |
 |---|---:|---:|---:|
-| menu (dashboard) | 70.8 s | ≈14 Msteps/s | ≈22 Msteps/s |
-| triangle | 36.6 s | ≈27 Msteps/s | ≈37 Msteps/s |
+| menu (dashboard) | 56.8 s (64.0) | 41.4 s (48.3) | ≈24 Msteps/s |
+| triangle | 20.3 s (27.9) | 10.7 s (17.8) | ≈94 Msteps/s |
 
-\* raster `--gpu-time` seconds subtracted from the median wall — an estimate,
-not a separate measurement. Gap to the real-time band: 1–2 orders of
-magnitude (≈3–45× per title; `gpu-swapchain-brief.md` §5).
+xemu on the triangle: ≈830 Msteps/s (1.13× real-time, 70 fps) → the triangle
+gap is ~9× and the menu ~30× from the real-time band (733 Msteps/s). The menu
+has no xemu oracle (xemu deadlocks at the dashboard animation wait, §32). The
+structural remainder is the CPU engine — runner 57% of the triangle wall,
+≈45% of the menu — see the status header and Phase 2.5/3.
 
 **Why the current track has asymptoted:**
 
@@ -150,13 +151,33 @@ repeat the E-series pattern of landing wall-neutral slices for weeks.
 Reuse the §131/§134 invalidation inventory; tiering thresholds informed by
 §§172–174. *Target:* cumulative CPU-side **5–10×** (≥100–370 Msteps/s);
 integration triangle 1B ≤ 12 s / menu ≤ 30 s.
+*Status 2026-10-19 evening (§199):* partially landed (outer-loop chaining +
+32-entry memo + lazy revalidation + fill-on-demand formation); the measured
+plateau is ~94 Msteps/s (triangle) / ~24 Msteps/s (menu), and the remaining
+items are worth ~1.5–2×. The fixed per-block cost (~18 ns: context
+load/store + dispatch + memo) is the structural remainder — hence Phase 2.5.
 
-**Phase 3 — raw emitter (entry condition, not an assumption).**
-Iced (or own) encoding; guest context pinned in a host register; direct block
-chaining; reuses the Phase-1 translator. *Entry:* Phase 1–2 plateau >3×
-short of the xemu-class target — otherwise the DynamicMethod path is
-sufficient and cheaper to maintain. *Target:* xemu-class — triangle 1B ≤10 s
-end-to-end, menu 1B ≤25 s, live window ≥30 guest-fps-equivalent on the menu
+**Phase 2.5 — trace emitter (C2; the immediate next slice, §199).**
+Emit *multi-block traces* in one `DynamicMethod`: follow the planned
+successor at build time (unconditional jumps first, then hot conditional
+paths), keep guest GPR/EFLAGS/EIP/TSC in locals **across the whole trace**
+(no per-block context load/store), inline the RAM fast paths already proven
+in `--emit-inline`, keep the interrupt poll at every block boundary (the
+§193 wakeup contract), and exit to the existing block JIT on any trace miss
+(state stored once per exit). *Target:* CPU-side ≥2× — triangle runner
+6.1 s → ≤3 s, menu CPU ≈18 s → ≤11 s; end-to-end triangle ≤6 s / menu ≤20 s
+with D3b + bookkeeping. *Kill:* <1.4× CPU-side after 3 structural iterations
+→ skip straight to C3.
+
+**Phase 3 — raw emitter (entry condition: MET, §199).**
+Iced (MIT; approved, now authorized) or own encoding; guest context pinned in
+a host register (or a register-allocated subset); direct block chaining
+(patch-on-link); inline softmmu-style TLB probes; helper calls only for
+complex ops; reuses the Phase-1/2.5 planner, decode cache and boundary
+contract. *Entry:* Phase 1–2 plateau >3× short of the xemu-class target —
+**met** (measured ~9× triangle / ~30× menu vs the real-time band; §199).
+*Target:* another ≥2× CPU-side — triangle 1B ≤3 s end-to-end, menu ≤12 s
+(headless gl+replace+spin), live window ≥60 guest-fps-equivalent on the menu
 animation.
 
 **Phase 4 — fast-mode playability (parallel-capable after Phase 2 passes).**

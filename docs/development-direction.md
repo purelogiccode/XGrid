@@ -4,33 +4,57 @@ Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 1. Priority stack (in order)
+## 1. Priority stack (in order; re-aimed again 2026-10-19 evening, §199)
 
-1. **Track B GPU backend — the binding constraint (re-aimed 2026-10-19).**
-   The fast-mode campaign (§§191–194) moved the wall. Measured on the 1B
-   goldens, quiet host: the **software rasterizer is 24.3 s of the 64.0 s menu
-   wall (38%) and 10.1 s of the 27.9 s triangle wall (36%)** (present in every
-   CPU mode); MMIO slow-path device dispatch (118.9M / 21.3M member accesses)
-   dominates the runner's remaining non-raster time; the pure CPU-JIT portion
-   is only ~23 s / ~4 s. The GL backend is functional (slices 1–3 goldens,
-   `--gpu gl`) but **measured parity-to-worse** on these workloads (menu
-   +7–10 s, triangle ±0; §194 am.3) — its per-draw/per-method CPU cost cancels
-   the raster savings. xemu-class needs a hardware GPU path with amortized
-   per-draw cost, so the GPU backend performance pass is the lead track
-   (§2c, slices B1–B4).
-2. **Track D MMIO fast dispatch.** Device-window accesses must stop paying
-   generic translate+sync overhead (target −50% slow-member overhead,
-   bit-exact SHAs). 119M slow members at 1B menu is now the largest single
-   CPU-side line item after the rasterizer.
-3. **Track C JIT — leftovers only.** Fast mode is at 99% served, bit-exact on
-   the menu, 3.76× on CPU-bound work; the remaining Phase-2 items (IL chaining
-   ~4.5 s/1B, threshold auto-tune) are worth ~5–8% on the goldens — do them
-   after B/D, not as the lead track. Phase 3 (raw emitter) stays not indicated.
+**Measured position (1B goldens, fast mode, quiet host, single runs — §198/§198a).**
+Triangle **10.68 s** (gl+replace+spin; 20.28 s sw), menu **41.39 s** (56.82 s sw).
+xemu on the triangle: ~70 fps ≈ 1.13× real-time ≈ **830 Msteps/s** → the
+triangle gap is **~9×** (94 vs 830 Msteps/s) and the menu is **~30×** from the
+real-time band (24 Msteps/s; no xemu oracle — xemu deadlocks at the dashboard
+animation wait, §32).
+
+**Cost structure (measured/derived):**
+- triangle: runner **6.1 s (57%)** — 125M block invocations ≈ 18 ns fixed +
+  543M members ≈ 7 ns — plus nonJit 1.9 s (18%, page-end spin), GL 0.5 s,
+  bookkeeping ~2.2 s.
+- menu: CPU-JIT **≈17–19 s (~45%)** + GL draw 7.0 s (17%) + bookkeeping 4.8 s
+  (12%) + nonJit 3.6 s (9%).
+
+1. **Track C CPU engine — the lead track again (§199).** The `DynamicMethod`
+   block JIT is at its structural ceiling: per-block fixed cost (context
+   load/store + dispatch + memo lookup) ≈ 18 ns, per-member helper calls
+   ≈ 7 ns; the remaining Phase-2 leftovers are worth ~1.5–2× at most. The
+   charter's Phase-3 entry condition is **met** (plateau >3× short of
+   xemu-class). Order:
+   **C2 trace emitter** — multi-block traces with guest state in locals across
+   the whole trace, inline RAM fast paths for the hot member shapes, interrupt
+   polls at the same boundaries, side exits to the existing block JIT;
+   target CPU-side ≥2× (triangle runner ≤3 s, menu CPU ≤11 s).
+   **C3 raw emitter** — Iced (MIT, now unblocked), register allocation, direct
+   block chaining (patch-on-link), inline softmmu-style TLB probes, helpers
+   only for complex ops; target another ≥2× (triangle end-to-end ≤3 s, menu
+   ≤12 s). Accurate mode untouched; fast mode is never gate currency.
+2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
+   loop's shape (trace it) and remove the nonJit residue by cross-page block
+   formation **or** (preferred) a generalized wait-skip that fast-forwards to
+   the device event (same principle as `--jit-spin`, §198) — 1.9 s triangle /
+   3.6 s menu. Bookkeeping: profile the machine/CLI advance path (2.2 s /
+   4.8 s) with a measured breakdown before optimizing.
+3. **Track B GPU** — B2c draw batching (menu drawMs 7.0 s → ≤2 s target);
+   B3 coverage after. With `--gpu-replace` the rasterizer is no longer a cost;
+   per-draw CPU submission is.
 4. **Correctness gates before speed** — unchanged for the accurate mode
    (golden SHAs + counters exact, then walls); the fast mode has its own
    two-tier validation (charter §5) and is never gate currency.
 5. **Unblock the sample matrix.** NXDK toolchain (operator/host) is the mesh
    blocker — not more dashboard runs.
+
+**Milestone ladder (1B goldens, fast mode, gl+replace+spin unless noted).**
+M1 (C2 + D3b + bookkeeping): triangle ≤6 s, menu ≤20 s. M2 (C3): triangle
+≤3 s, menu ≤12 s. M3 (xemu-class): triangle ≤1.5 s, menu ≤4 s — i.e. within
+~1.3–3× of the real-time band. Every milestone records a measured xemu
+comparison where an oracle exists (triangle, ktest) and the real-time band
+otherwise (menu).
 
 ## 2. JIT rules — accurate mode (unchanged; §§136–140, `jit-codegen-scope.md`)
 
@@ -57,8 +81,11 @@ day-to-day agent entry point; this file is the priority order every agent follow
   granularity; deterministic per binary+script; never gate currency; one
   engine per run (no mixing). `--jit-exact` is the bit-exact debug variant.
 - `DynamicMethod` block JIT is AUTHORIZED for the fast mode (Phase 1); the
-  raw emitter (Iced, MIT — approved for Phase 3, not yet referenced) only
-  under the charter's Phase-3 entry condition.
+  raw emitter (Iced, MIT) is **authorized and unblocked** — the charter's
+  Phase-3 entry condition is met (§199: the DynamicMethod plateau is ~9–30×
+  short of the real-time band). Order: C2 trace emission (Phase 2.5, same
+  planner, multi-block traces) → C3 raw emitter (register allocation, direct
+  chaining, inline TLB).
 - Exploration slices: bench + unit differentials + build/format (no golden
   obligation). Promotion: charter §5 (accurate-mode ceremony + sync-point
   differential + ktest outcome). The project stays non-GPL — no QEMU/xemu
@@ -67,13 +94,15 @@ day-to-day agent entry point; this file is the priority order every agent follow
 ## 2c. xemu-class performance campaign (chartered 2026-10-19)
 
 **Target, defined as a number.** 1 guest-second ≈ 733M steps (PIT
-cross-check, §68). Today the fast mode runs the goldens at ~2.1% (menu) and
-~4.9% (triangle) of real-time. "xemu-class" means the same content runs at
-wall ≤ guest-time on a quiet host. The bar is **measured against xemu on the
-same samples**, not asserted: run xemu on `data/test-samples/` content
-(triangle ISO and the ktest smoke workload) and record wall, frames, and
-frames-per-wall-second as the baseline row. Perf work is measured in fast
-mode with verified guest-work equivalence (SHAs/counters); fast mode is never
+cross-check, §68). Post-§198a the fast mode runs the goldens at **~3.3%
+(menu) and ~12.7% (triangle)** of real-time (gl+replace+spin). "xemu-class"
+means the same content runs at wall ≤ guest-time on a quiet host. The bar is
+**measured against xemu on the same samples**, not asserted — measured rows:
+triangle ISO **xemu ≈830 Msteps/s (1.13× real-time, 70 fps)**, ktest smoke
+**xemu 15 s vs XGrid fast 9–10 s** (XGrid ahead on CPU-bound work). The menu
+has **no xemu oracle** (xemu deadlocks at the dashboard animation wait, §32);
+its target is the real-time band. Perf work is measured in fast mode with
+verified guest-work equivalence (SHAs/counters); fast mode is never
 correctness currency and exact mode stays the bit-exact oracle.
 
 **Slices (B = GPU backend, D = MMIO, C = JIT leftovers).**
@@ -99,8 +128,8 @@ correctness currency and exact mode stays the bit-exact oracle.
 
 Rules unchanged: headless `--gpu sw` stays the default and gate currency;
 never mix backends; no async; wall claims require quiet-host medians — when
-the operator is running Fortnite, pause and ask for an idle window; no real
-Xbox games; non-GPL.
+the operator is running Fortnite, pause and ask for an idle window; real ISOs
+are benchmark-only per §4 (no gates, no fidelity work); non-GPL.
 
 ## 3. GPU / present rules (`gpu-backend-design.md`, `gpu-swapchain-brief.md`)
 

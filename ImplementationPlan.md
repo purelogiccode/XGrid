@@ -3166,6 +3166,31 @@ page-end heads), the runner's per-block state sync (~18 ns/invocation ×
 125M), and the RAM writeback. Real-content policy: benchmark-only real ISOs
 authorized (§197).
 
+**Re-aim (2026-10-19 evening, §199) — Track C leads again.** The structure
+inverted once more: with `--gpu-replace` the rasterizer is gone, and the CPU
+engine is now 57% of the triangle wall (runner 6.1 s of 10.68 s) and ≈45% of
+the menu wall. The `DynamicMethod` block JIT is at its measured structural
+ceiling (~18 ns fixed per block × 125M + ~7 ns per member × 543M); the
+charter's Phase-3 entry condition is met (xemu ≈830 Msteps/s on the triangle
+vs 94M/24M → ~9×/30×). A 4B-step window-mode dashboard run (single, window
+overhead included) profiled the *real* workload: **53.1M GL draws at ~2 µs
+(drawMs 106 s, 22%)**, 12,675 flips each paying a **1.6 ms readback
+(readbackMs 20.7 s)** that the window path does not need, 736M slow members,
+349M NV2A methods. Execution order now:
+1. **D3b + bookkeeping** (cheap, days): page-end wait/residue (1.9 s
+   triangle / 3.6 s menu) and the machine/CLI advance path (2.2 s / 4.8 s).
+2. **C2 trace emitter** (charter Phase 2.5): multi-block traces, state in
+   locals across the trace, inline RAM fast paths, boundary polls preserved;
+   target ≥2× CPU (triangle runner ≤3 s, menu CPU ≤11 s).
+3. **C3 raw emitter** (charter Phase 3, Iced now authorized): register
+   allocation, direct chaining, inline TLB; another ≥2× (triangle ≤3 s
+   end-to-end, menu ≤12 s).
+4. **B2c draw batching** (2 µs/draw → ≤0.5 µs) and the **window present
+   path** (drop the redundant per-flip readback in window mode; batch the
+   message pump).
+Milestones: M1 triangle ≤6 s / menu ≤20 s; M2 triangle ≤3 s / menu ≤12 s;
+M3 triangle ≤1.5 s / menu ≤4 s (xemu-class band).
+
 **Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
 uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
 Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;
