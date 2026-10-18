@@ -7,41 +7,28 @@ namespace XGrid.Cpu;
 /// <summary>
 /// Entry points the C3 raw blocks call for members they do not encode natively.
 ///
-/// <para>These are reverse-P/Invoke stubs (delegate function pointers) rather
-/// than <c>[UnmanagedCallersOnly]</c>: the raw function itself is entered from
-/// managed code through a function pointer, so the runtime does not consider
-/// its calls unmanaged, and <c>[UnmanagedCallersOnly]</c> targets would reject
-/// them. The stub establishes the transition; exceptions (page faults,
+/// <para>The raw runner is entered through a delegate over its function pointer
+/// (a real managed-to-native transition), so these entries can be plain
+/// <c>[UnmanagedCallersOnly]</c> methods: the runtime sees the raw frame as
+/// unmanaged and permits the reverse call. Exceptions (page faults,
 /// unsupported instructions) propagate back through the native frame to
 /// <c>RunJitBlock</c> exactly like the IL runner's.</para>
 /// </summary>
 internal static unsafe class RawHelpers
 {
-    /// <summary>Runs one member through the resolved spec handler or interpreter body.</summary>
-    public delegate void ExecuteSpecCallback(IntPtr cpuPointer, IntPtr entriesPointer, int index);
-
-    /// <summary>Reads guest memory through the exact interpreter path.</summary>
-    public delegate uint ReadMemoryCallback(IntPtr cpuPointer, uint address, int size);
-
-    /// <summary>Writes guest memory through the exact interpreter path.</summary>
-    public delegate void WriteMemoryCallback(IntPtr cpuPointer, uint address, int size, uint value);
-
-    private static readonly ExecuteSpecCallback ExecuteSpecTarget = ExecuteSpec;
-    private static readonly ReadMemoryCallback ReadMemoryTarget = ReadMemory;
-    private static readonly WriteMemoryCallback WriteMemoryTarget = WriteMemory;
-
-    /// <summary>Address of the spec-handler trampoline for the emitted code.</summary>
+    /// <summary>Address of the spec-handler entry for the emitted code.</summary>
     public static readonly ulong ExecuteSpecAddress =
-        (ulong)(nint)Marshal.GetFunctionPointerForDelegate(ExecuteSpecTarget);
+        (ulong)(nint)(delegate* unmanaged<IntPtr, IntPtr, int, void>)&ExecuteSpec;
 
-    /// <summary>Address of the memory-read trampoline for the emitted code.</summary>
+    /// <summary>Address of the memory-read entry for the emitted code.</summary>
     public static readonly ulong ReadMemoryAddress =
-        (ulong)(nint)Marshal.GetFunctionPointerForDelegate(ReadMemoryTarget);
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint>)&ReadMemory;
 
-    /// <summary>Address of the memory-write trampoline for the emitted code.</summary>
+    /// <summary>Address of the memory-write entry for the emitted code.</summary>
     public static readonly ulong WriteMemoryAddress =
-        (ulong)(nint)Marshal.GetFunctionPointerForDelegate(WriteMemoryTarget);
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint, void>)&WriteMemory;
 
+    [UnmanagedCallersOnly]
     private static void ExecuteSpec(IntPtr cpuPointer, IntPtr entriesPointer, int index)
     {
         XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
@@ -58,12 +45,14 @@ internal static unsafe class RawHelpers
         }
     }
 
+    [UnmanagedCallersOnly]
     private static uint ReadMemory(IntPtr cpuPointer, uint address, int size)
     {
         XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
         return cpu.RawReadMemory(address, size);
     }
 
+    [UnmanagedCallersOnly]
     private static void WriteMemory(IntPtr cpuPointer, uint address, int size, uint value)
     {
         XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);

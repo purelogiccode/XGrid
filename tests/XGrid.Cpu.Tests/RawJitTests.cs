@@ -170,6 +170,65 @@ public sealed class RawJitTests
     }
 
     [Fact]
+    public void MemoryImmediateForms_MatchesInterpreter()
+    {
+        // add dword [0x2010],3; and byte [0x2014],0x0F; dec byte [0x2015];
+        // test dword [0x2018],1; hlt
+        byte[] code =
+        [
+            0x81, 0x05, 0x10, 0x20, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+            0x80, 0x25, 0x14, 0x20, 0x00, 0x00, 0x0F,
+            0xFE, 0x0D, 0x15, 0x20, 0x00, 0x00,
+            0xF7, 0x05, 0x18, 0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2010, 0x7FFFFFFF);
+            cpu.Ram().Write16(0x2014, 0xAAFF);
+            cpu.Ram().Write32(0x2018, 0x00000003);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(plain.Ram().Read32(0x2010), raw.Ram().Read32(0x2010));
+        Assert.Equal(plain.Ram().Read16(0x2014), raw.Ram().Read16(0x2014));
+        Assert.Equal(plain.Ram().Read32(0x2018), raw.Ram().Read32(0x2018));
+    }
+
+    [Fact]
+    public void CmpMemoryImmediate_MatchesInterpreter()
+    {
+        // mov ecx,4; cmp dword [0x200C],5; jne +1; nop; dec ecx; jne loop; hlt
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00,
+            0x83, 0x3D, 0x0C, 0x20, 0x00, 0x00, 0x05,
+            0x75, 0x01,
+            0x90,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x200C, 0x00000005);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+    }
+    [Fact]
     public void FallbackMembers_StillExact()
     {
         // mov ecx,2; fld dword [0x2000]; fmul dword [0x2004]; fstp dword [0x2008];

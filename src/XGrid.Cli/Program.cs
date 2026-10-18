@@ -543,7 +543,7 @@ internal static class Program
                 machine.Cpu.JitTally = jitTally;
                 machine.Cpu.JitMmioFast = jitMmio;
                 machine.Cpu.JitSpinSkip = jitSpin;
-        machine.Cpu.JitRawBlocks = jitRaw;
+                machine.Cpu.JitRawBlocks = jitRaw;
                 machine.Cpu.JitTiming = jitTiming;
                 machine.Cpu.JitSpecSlice = jitSlice;
                 machine.Cpu.JitEnabled = true;

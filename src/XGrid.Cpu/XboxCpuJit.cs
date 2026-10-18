@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
 
@@ -438,7 +439,7 @@ public sealed unsafe partial class XboxCpu
             long runnerStart = JitTiming ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             try
             {
-                if (block.RawRunner != 0 && budget - total >= block.MemberCount)
+                if (block.RawRunner is not null && budget - total >= block.MemberCount)
                 {
                     // The raw runner keeps guest state in host registers for the
                     // whole block, so it needs the full member budget up front
@@ -447,8 +448,7 @@ public sealed unsafe partial class XboxCpu
                     RawEnter();
                     try
                     {
-                        served = ((delegate*<XboxCpu, RawState*, DecodeCacheEntry[], int, int>)block.RawRunner)(
-                            this, &rawState, block.Entries, budget - total);
+                        served = block.RawRunner(this, &rawState, block.Entries, budget - total);
                     }
                     finally
                     {
@@ -763,18 +763,19 @@ public sealed unsafe partial class XboxCpu
         // C3: fast mode prefers a native runner. Exact mode keeps the IL
         // runner (per-member polls and the debugging contract), and any host
         // that cannot execute raw code falls back to it too.
-        nint rawRunner = 0;
+        RawRun? rawRunner = null;
         JitRun? runner = null;
         if (JitRawBlocks && !JitExact)
         {
-            rawRunner = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count));
-            if (rawRunner != 0)
+            nint rawPointer = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count));
+            if (rawPointer != 0)
             {
+                rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
                 NoteRawBlockBuilt();
             }
         }
 
-        if (rawRunner == 0)
+        if (rawRunner is null)
         {
             runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
             if (runner is null)
