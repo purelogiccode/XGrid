@@ -1755,7 +1755,7 @@ internal static class Program
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
-                (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) +
+                (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) + $"yieldReasons={string.Join('/', machine.Cpu.JitYieldReasons)} " +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
                 $"rejectedHeads={machine.Cpu.JitRejectedHeads} transientBails={machine.Cpu.JitTransientBails} " +
                 $"pendingVisits={machine.Cpu.JitPendingVisits} " +
