@@ -256,12 +256,21 @@ public sealed partial class XboxCpu
                 // Fast-mode JIT (opt-in): serve whole blocks natively. A zero
                 // return means no block covers this head; the member paths
                 // below own the miss (and the bootstrap fills the cache).
+                long jitStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 int jitRan = RunJitBlock(maxInstructions - executed);
                 if (jitRan > 0)
                 {
+                    AddJitOuterTicks(System.Diagnostics.Stopwatch.GetTimestamp() - jitStart);
                     executed += jitRan;
                     continue;
                 }
+
+                AddJitOuterTicks(System.Diagnostics.Stopwatch.GetTimestamp() - jitStart);
+                long nonJitStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                int nonJitRan = RunNonJit(maxInstructions - executed);
+                AddNonJitTicks(System.Diagnostics.Stopwatch.GetTimestamp() - nonJitStart);
+                executed += nonJitRan;
+                continue;
             }
 
             if (_blocks is { SpecEnabled: true })
@@ -282,6 +291,26 @@ public sealed partial class XboxCpu
         }
 
         return executed;
+    }
+
+    /// <summary>
+    /// The non-JIT fallback inside <see cref="Execute"/> while the fast-mode
+    /// engine is enabled: the spec-block runner, else one stepped
+    /// instruction. Always makes progress.
+    /// </summary>
+    private int RunNonJit(int budget)
+    {
+        if (_blocks is { SpecEnabled: true })
+        {
+            int specRan = RunSpecBlock(budget);
+            if (specRan > 0)
+            {
+                return specRan;
+            }
+        }
+
+        Step();
+        return 1;
     }
 
     private void Fetch(Span<byte> buffer)

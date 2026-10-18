@@ -582,6 +582,48 @@ public sealed class JitTests
         }
     }
 
+    [Fact]
+    public void SpecFallbackMembers_X87SseExotic_MatchInterpreter()
+    {
+        // x87 (fld/fmul/fstp), scalar SSE (movss/mulss), not/neg, shift-by-CL,
+        // and rdtsc all run through spec-handler fallback members inside JIT
+        // blocks; full state (including FPU/XMM via SaveState) must match.
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00,             // mov ecx,3
+            0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,       // fld dword [0x2000]
+            0xD8, 0x0D, 0x04, 0x20, 0x00, 0x00,       // fmul dword [0x2004]
+            0xD9, 0x1D, 0x08, 0x20, 0x00, 0x00,       // fstp dword [0x2008]
+            0xF3, 0x0F, 0x10, 0x05, 0x00, 0x20, 0x00, 0x00, // movss xmm0,[0x2000]
+            0xF3, 0x0F, 0x59, 0x05, 0x04, 0x20, 0x00, 0x00, // mulss xmm0,[0x2004]
+            0xF3, 0x0F, 0x11, 0x05, 0x0C, 0x20, 0x00, 0x00, // movss [0x200C],xmm0
+            0xF7, 0xD0,                               // not eax
+            0xF7, 0xD8,                               // neg eax
+            0xD3, 0xE0,                               // shl eax,cl
+            0xD3, 0xE8,                               // shr eax,cl
+            0x0F, 0x31,                               // rdtsc
+            0x01, 0xD0,                               // add eax,edx
+            0x49,
+            0x75, 0xC7,
+            0xF4,
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+        plain.Ram().Write32(0x2000, 0x40000000); // 2.0f
+        jit.Ram().Write32(0x2000, 0x40000000);
+        plain.Ram().Write32(0x2004, 0x40400000); // 3.0f
+        jit.Ram().Write32(0x2004, 0x40400000);
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
     private static XboxCpu CreateJit(byte[] code)
     {
         XboxCpu cpu = CpuHarness.Create(code);

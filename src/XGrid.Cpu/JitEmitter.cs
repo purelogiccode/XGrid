@@ -87,6 +87,9 @@ internal static class JitEmitter
     private static readonly FieldInfo JitPending =
         typeof(XboxCpu).GetField("_jitPending", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
+    private static readonly FieldInfo EntryInstruction =
+        typeof(DecodeCacheEntry).GetField("Instruction")!;
+
     private static readonly MethodInfo GetInterruptSource =
         typeof(XboxCpu).GetProperty("InterruptSource")!.GetMethod!;
 
@@ -170,7 +173,7 @@ internal static class JitEmitter
         var method = new DynamicMethod(
             $"JitBlock_{headLinear:X8}_{plans.Length}",
             typeof(int),
-            new[] { typeof(XboxCpu), typeof(int) },
+            new[] { typeof(XboxCpu), typeof(DecodeCacheEntry[]), typeof(int) },
             typeof(XboxCpu),
             skipVisibility: true);
         ILGenerator il = method.GetILGenerator();
@@ -202,26 +205,7 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Callvirt, GetContext);
         il.Emit(OpCodes.Stloc, context);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Ldfld, ContextRegisters);
-        for (int i = 0; i < gprs.Length; i++)
-        {
-            il.Emit(OpCodes.Dup);
-            il.Emit(OpCodes.Ldc_I4, i);
-            il.Emit(OpCodes.Ldelem_I4);
-            il.Emit(OpCodes.Stloc, gprs[i]);
-        }
-
-        il.Emit(OpCodes.Pop);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetEip);
-        il.Emit(OpCodes.Stloc, eip);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetEflags);
-        il.Emit(OpCodes.Stloc, flags);
-        il.Emit(OpCodes.Ldloc, context);
-        il.Emit(OpCodes.Callvirt, GetTsc);
-        il.Emit(OpCodes.Stloc, tsc);
+        EmitLoadState(il, context, gprs, eip, flags, tsc);
 
         for (int m = 0; m < plans.Length; m++)
         {
@@ -229,7 +213,7 @@ internal static class JitEmitter
 
             // Budget cap: served >= budget -> exit.
             il.Emit(OpCodes.Ldloc, served);
-            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Ldarg_2);
             il.Emit(OpCodes.Bge, exit);
 
             // TSC++ precedes the member body, exactly as the member path.
@@ -247,10 +231,11 @@ internal static class JitEmitter
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
                 a1, a2, res, addr, vpn, phys, slot, ram);
 
-            if (!plan.IsTerminator)
+            if (!plan.IsTerminator && plan.Kind != JitKind.CallSpec)
             {
                 // Non-terminator members advance EIP after completion
-                // (handlers and the emitted bodies advance only on success).
+                // (handlers and the emitted bodies advance only on success);
+                // CallSpec handlers already advanced Context.Eip themselves.
                 il.Emit(OpCodes.Ldloc, eip);
                 il.Emit(OpCodes.Ldc_I4, plan.Length);
                 il.Emit(OpCodes.Add);
@@ -569,6 +554,24 @@ internal static class JitEmitter
                     il.Emit(OpCodes.Add);
                     il.Emit(OpCodes.Stloc, eip);
                     il.MarkLabel(done);
+                    break;
+                }
+
+            case JitKind.CallSpec:
+                {
+                    // Spec-handler fallback: sync the full context, run the
+                    // exact handler (the same static body the member path
+                    // calls), then reload the locals. Faults unwind with the
+                    // context already at this member's boundary.
+                    EmitEipStore(il, context, eip);
+                    EmitSync(il, context, gprs, eip, flags, tsc, served);
+                    il.Emit(OpCodes.Ldarg_0);
+                    il.Emit(OpCodes.Ldarg_1);
+                    il.Emit(OpCodes.Ldc_I4, plan.EntryIndex);
+                    il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
+                    il.Emit(OpCodes.Ldflda, EntryInstruction);
+                    il.Emit(OpCodes.Call, plan.SpecHandler!);
+                    EmitLoadState(il, context, gprs, eip, flags, tsc);
                     break;
                 }
 
@@ -1399,6 +1402,36 @@ internal static class JitEmitter
         il.Emit(OpCodes.Add);
         il.Emit(OpCodes.Stfld, JitSlowMembers);
         EmitStoreState(il, context, gprs, eip, flags, tsc);
+    }
+
+    private static void EmitLoadState(
+        ILGenerator il,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc)
+    {
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Ldfld, ContextRegisters);
+        for (int i = 0; i < gprs.Length; i++)
+        {
+            il.Emit(OpCodes.Dup);
+            il.Emit(OpCodes.Ldc_I4, i);
+            il.Emit(OpCodes.Ldelem_I4);
+            il.Emit(OpCodes.Stloc, gprs[i]);
+        }
+
+        il.Emit(OpCodes.Pop);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEip);
+        il.Emit(OpCodes.Stloc, eip);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetEflags);
+        il.Emit(OpCodes.Stloc, flags);
+        il.Emit(OpCodes.Ldloc, context);
+        il.Emit(OpCodes.Callvirt, GetTsc);
+        il.Emit(OpCodes.Stloc, tsc);
     }
 
     private static void EmitStoreState(

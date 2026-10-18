@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace XGrid.Cpu;
 
 /// <summary>Native member shapes the fast-mode emitter can bake (J1b slice).</summary>
@@ -34,6 +36,7 @@ internal enum JitKind : byte
     JccRel,
     Cli,
     Sti,
+    CallSpec,
     Nop,
 }
 
@@ -94,6 +97,12 @@ internal readonly struct JitMemberPlan
 
     public ConditionCode Condition { get; init; }
 
+    /// <summary>Member index in the block's entry array (CallSpec fallback).</summary>
+    public int EntryIndex { get; init; }
+
+    /// <summary>Resolved static spec handler (CallSpec fallback).</summary>
+    public MethodInfo? SpecHandler { get; init; }
+
     public bool HasMemory { get; init; }
 
     public int BaseRegister { get; init; }
@@ -126,6 +135,64 @@ internal readonly struct JitMemberPlan
 internal static class JitPlanner
 {
     public static JitMemberPlan Plan(in DecodedInstruction instruction)
+    {
+        JitMemberPlan plan = PlanNative(instruction);
+        if (plan.Kind != JitKind.None)
+        {
+            return plan;
+        }
+
+        return PlanSpecFallback(instruction);
+    }
+
+    /// <summary>
+    /// Fallback member: any valid non-control-transfer instruction with a
+    /// static spec handler runs through that handler inside the runner after
+    /// a full context sync (and a state reload after), so blocks are not
+    /// shattered by FP/SSE/exotic data ops. Control transfers (including
+    /// everything that can change CS or halt) are deliberately excluded —
+    /// they must end the block, not become members.
+    /// </summary>
+    private static JitMemberPlan PlanSpecFallback(in DecodedInstruction instruction)
+    {
+        if (!instruction.IsValid || IsControlTransfer(instruction.Mnemonic))
+        {
+            return default;
+        }
+
+        XboxCpu.SpecHandler? handler = XboxCpu.ResolveSpec(instruction);
+        if (handler is null || handler.Target is not null)
+        {
+            return default;
+        }
+
+        MethodInfo method = handler.Method;
+        if (!method.IsStatic || method.ReturnType != typeof(void) || method.GetParameters().Length != 2)
+        {
+            return default;
+        }
+
+        return new JitMemberPlan
+        {
+            Kind = JitKind.CallSpec,
+            Length = instruction.Length,
+            SpecHandler = method,
+        };
+    }
+
+    private static bool IsControlTransfer(Mnemonic mnemonic)
+    {
+        return mnemonic switch
+        {
+            Mnemonic.Jcc or Mnemonic.Jmp or Mnemonic.JmpFar or Mnemonic.Call or Mnemonic.CallFar
+                or Mnemonic.Ret or Mnemonic.Retf or Mnemonic.Iret or Mnemonic.Loop or Mnemonic.LoopE
+                or Mnemonic.LoopNe or Mnemonic.Jecxz or Mnemonic.Int3 or Mnemonic.Interrupt
+                or Mnemonic.Hlt or Mnemonic.MovSreg or Mnemonic.PopSegment => true,
+            _ => false,
+        };
+    }
+
+    private static JitMemberPlan PlanNative(in DecodedInstruction instruction)
     {
         return instruction.Mnemonic switch
         {

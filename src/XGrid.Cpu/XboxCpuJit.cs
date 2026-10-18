@@ -38,6 +38,28 @@ public sealed partial class XboxCpu
     /// <summary>Gets the accumulated time inside emitted runners, in Stopwatch ticks (diagnostic).</summary>
     public long JitRunnerTicks => _jitRunnerTicks;
 
+    private long _jitOuterTicks;
+
+    /// <summary>Gets the accumulated RunJitBlock call time, in Stopwatch ticks (diagnostic).</summary>
+    public long JitOuterTicks => _jitOuterTicks;
+
+    private long _nonJitTicks;
+
+    /// <summary>Gets the accumulated non-JIT execution time in <c>Execute</c>, in Stopwatch ticks (diagnostic).</summary>
+    public long NonJitTicks => _nonJitTicks;
+
+    /// <summary>Accumulates outer-loop timing while <c>--jit</c> is on (diagnostic).</summary>
+    internal void AddJitOuterTicks(long ticks)
+    {
+        _jitOuterTicks += ticks;
+    }
+
+    /// <summary>Accumulates outer-loop non-JIT timing while <c>--jit</c> is on (diagnostic).</summary>
+    internal void AddNonJitTicks(long ticks)
+    {
+        _nonJitTicks += ticks;
+    }
+
     private long _jitSlowMembers;
 
     /// <summary>Gets the number of emitted members that took the interpreter slow path (diagnostic).</summary>
@@ -130,13 +152,15 @@ public sealed partial class XboxCpu
     }
 
     /// <summary>
-    /// Serves the block at the current EIP through its emitted runner.
+    /// Serves instructions at the current EIP through built blocks, chaining
+    /// block to block inside one call until the budget runs out, control
+    /// leaves the built set, or a boundary (IRQ delivery, fault) fires.
     /// Returns the number of instructions served (0 when no block covers the
     /// head, in which case the caller falls through to the member path).
     /// Mirrors the member path's boundary treatment: one TSC increment per
     /// member, the per-block IRQ poll (a delivered vector consumes one budget
-    /// unit exactly as <c>Step</c>), exact fault delivery (CR2/vector/error/
-    /// EIP) and decode-cache boundary resets.
+    /// unit exactly as <c>Step</c>), exact fault delivery, and decode-cache
+    /// boundary resets.
     /// </summary>
     private int RunJitBlock(int budget)
     {
@@ -158,103 +182,126 @@ public sealed partial class XboxCpu
         }
 
         ulong generation = blocks.Generation;
-        uint fetchLinear = Context.GetSegmentBase(SegmentRegister.Cs) + Context.Eip;
-        JitBlock? block;
-        switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
+
+        // Loop invariants: nothing servable inside RunJitBlock can change CS
+        // (segment loads are excluded from planned members and CallSpec), so
+        // the fetch base and decode sizes are stable across the whole call.
+        uint csBase = Context.GetSegmentBase(SegmentRegister.Cs);
+        int operandSize = Context.DefaultOperandSize;
+        int addressSize = Context.DefaultAddressSize;
+        int total = 0;
+        while (total < budget && !Context.Halted)
         {
-            case JitBlockCache.Verdict.Rejected:
-            case JitBlockCache.Verdict.Pending:
-                return 0;
-            case JitBlockCache.Verdict.Absent:
-                block = FormJitBlock(cache, jit, fetchLinear, generation);
-                if (block is null)
+            uint fetchLinear = csBase + Context.Eip;
+            JitBlock? block = jit.TryMemo(fetchLinear, generation);
+            if (block is null)
+            {
+                switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
                 {
-                    return 0;
+                    case JitBlockCache.Verdict.Rejected:
+                    case JitBlockCache.Verdict.Pending:
+                        return total;
+                    case JitBlockCache.Verdict.Absent:
+                        block = FormJitBlock(cache, jit, fetchLinear, generation);
+                        if (block is null)
+                        {
+                            return total;
+                        }
+
+                        break;
+                }
+            }
+
+            if (block is null
+                || block.HeadEip != Context.Eip
+                || block.Generation != generation
+                || block.OperandSize != operandSize
+                || block.AddressSize != addressSize)
+            {
+                return total;
+            }
+
+            // Fast mode's boundary: one IRQ poll per block; exact mode polls
+            // per member inside the runner instead (mirroring Step's order).
+            if (!JitExact && InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
+            {
+                int vector = InterruptSource.Acknowledge();
+                if (vector >= 0)
+                {
+                    Context.Tsc++;
+                    Context.Halted = false;
+                    if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
+                    {
+                        InterruptCount++;
+                        blocks.EndBoundary();
+                        total++;
+                        continue;
+                    }
+                }
+            }
+
+            _jitProgress = 0;
+            _jitPending = -1;
+            int served;
+            try
+            {
+                long runnerStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                served = block.Runner(this, block.Entries, budget - total);
+                long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
+                _jitRunnerTicks += runnerTicks;
+                int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
+                _jitBucketTicks[bucket] += runnerTicks;
+                _jitBucketCounts[bucket]++;
+            }
+            catch (PageFaultSignal fault)
+            {
+                int done = _jitProgress;
+                blocks.EndBoundary();
+                JitFaults++;
+                Context.Cr2 = fault.LinearAddress;
+                LastFaultVector = 14;
+                LastFaultEip = Context.Eip;
+                LastFaultErrorCode = fault.ErrorCode;
+                if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
+                {
+                    throw new UnhandledGuestException(14, Context.Eip);
                 }
 
-                break;
-        }
+                // The faulting member consumes its boundary unit (RunSpecBlock
+                // parity: the caller counts it), so mirror the returned count.
+                JitServedTotal += (ulong)(done + 1);
+                JitInvocations++;
+                return total + done + 1;
+            }
 
-        if (block is null
-            || block.HeadEip != Context.Eip
-            || block.Generation != generation
-            || block.OperandSize != Context.DefaultOperandSize
-            || block.AddressSize != Context.DefaultAddressSize)
-        {
-            return 0;
-        }
-
-        // Fast mode's boundary: one IRQ poll per block; exact mode polls per
-        // member inside the runner instead (mirroring Step's order).
-        if (!JitExact && InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
-        {
-            int vector = InterruptSource.Acknowledge();
-            if (vector >= 0)
+            // Exact mode: a runner reported a pending vector at a member
+            // boundary. Deliver it exactly as RunSpecBlock does (the member
+            // was not served), then keep serving.
+            if (_jitPending >= 0)
             {
-                Context.Tsc++;
+                int vector = _jitPending;
                 Context.Halted = false;
                 if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
                 {
                     InterruptCount++;
                     blocks.EndBoundary();
-                    return 1;
+                    JitServedTotal += (ulong)(served + 1);
+                    JitInvocations++;
+                    total += served + 1;
+                    continue;
                 }
             }
-        }
 
-        _jitProgress = 0;
-        _jitPending = -1;
-        int served;
-        try
-        {
-            long runnerStart = System.Diagnostics.Stopwatch.GetTimestamp();
-            served = block.Runner(this, budget);
-            long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
-            _jitRunnerTicks += runnerTicks;
-            int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
-            _jitBucketTicks[bucket] += runnerTicks;
-            _jitBucketCounts[bucket]++;
-        }
-        catch (PageFaultSignal fault)
-        {
-            int done = _jitProgress;
-            blocks.EndBoundary();
-            JitFaults++;
-            Context.Cr2 = fault.LinearAddress;
-            LastFaultVector = 14;
-            LastFaultEip = Context.Eip;
-            LastFaultErrorCode = fault.ErrorCode;
-            if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
-            {
-                throw new UnhandledGuestException(14, Context.Eip);
-            }
-
-            // The faulting member consumes its boundary unit (RunSpecBlock
-            // parity: the caller counts it), so mirror the returned count.
-            JitServedTotal += (ulong)(done + 1);
+            JitServedTotal += (ulong)served;
             JitInvocations++;
-            return done + 1;
-        }
-
-        // Exact mode: a runner reported a pending vector at a member boundary.
-        // Deliver it exactly as RunSpecBlock does (the member was not served).
-        if (_jitPending >= 0)
-        {
-            int vector = _jitPending;
-            Context.Halted = false;
-            if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
+            total += served;
+            if (served == 0)
             {
-                InterruptCount++;
-                blocks.EndBoundary();
-                JitServedTotal += (ulong)(served + 1);
-                JitInvocations++;
-                return served + 1;
+                return total;
             }
         }
 
-        JitServedTotal += (ulong)served;
-        JitInvocations++;
-        return served;
+        return total;
     }
 
     /// <summary>
@@ -272,7 +319,8 @@ public sealed partial class XboxCpu
         int operandSize = Context.DefaultOperandSize;
         int addressSize = Context.DefaultAddressSize;
         uint headEip = Context.Eip;
-        Span<JitMemberPlan> plans = stackalloc JitMemberPlan[JitEmitter.MaxMembers];
+        var plans = new JitMemberPlan[JitEmitter.MaxMembers];
+        var entries = new DecodeCacheEntry[JitEmitter.MaxMembers];
         int count = 0;
         uint linear = headLinear;
         bool covered = false;
@@ -296,7 +344,8 @@ public sealed partial class XboxCpu
                 break;
             }
 
-            plans[count] = plan;
+            plans[count] = plan with { EntryIndex = count };
+            entries[count] = entry;
             count++;
             linear += (uint)entry.Instruction.Length;
             if (plan.IsTerminator || count == JitEmitter.MaxMembers)
@@ -320,14 +369,16 @@ public sealed partial class XboxCpu
             return null;
         }
 
-        JitRun? runner = JitEmitter.Build(headLinear, plans.Slice(0, count), JitExact);
+        JitRun? runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact);
         if (runner is null)
         {
             jit.Store(headLinear, generation, null);
             return null;
         }
 
-        var block = new JitBlock(headLinear, headEip, operandSize, addressSize, generation, count, runner);
+        var block = new JitBlock(
+            headLinear, headEip, operandSize, addressSize, generation, count,
+            entries.AsSpan(0, count).ToArray(), runner);
         jit.Store(headLinear, generation, block);
         return block;
     }
