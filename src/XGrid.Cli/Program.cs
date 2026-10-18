@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using XGrid.Bus.Net;
 using XGrid.Bus.Usb;
 using XGrid.Core.Diagnostics;
@@ -101,6 +102,8 @@ internal static class Program
         bool emitInline = false;
         bool emitDiag = false;
         bool shapeTally = false;
+        bool bench = false;
+        string? benchName = null;
         string gpuBackend = "sw";
         bool gpuTime = false;
         bool windowMode = false;
@@ -269,6 +272,12 @@ internal static class Program
                     break;
                 case "--shape-tally":
                     shapeTally = true;
+                    break;
+                case "--bench":
+                    bench = true;
+                    break;
+                case "--bench-name":
+                    benchName = NextValue(args, ref i);
                     break;
                 case "--decode-cache":
                     decodeCache = true;
@@ -582,6 +591,8 @@ internal static class Program
 
             ulong executed = 0;
             bool breakHit = false;
+            System.Diagnostics.Stopwatch? benchWatch =
+                bench ? System.Diagnostics.Stopwatch.StartNew() : null;
             if (breakAddress is null && breakLogAddresses.Count > 0)
             {
                 int logAdvance = 0;
@@ -757,6 +768,32 @@ internal static class Program
                         $"Progress {executed} instruction(s) EIP=0x{machine.Cpu.Context.Eip:X8}");
                     nextProgress += progressInterval;
                 }
+            }
+
+            if (benchWatch is not null)
+            {
+                benchWatch.Stop();
+                double benchWall = benchWatch.Elapsed.TotalSeconds;
+                double benchMsps = benchWall > 0
+                    ? executed / benchWall / 1_000_000.0
+                    : 0;
+                string benchRamSha = Convert.ToHexString(SHA256.HashData(
+                    machine.Ram.GetReadOnlySpan(0, (int)machine.Ram.Size)));
+                string benchCpuSha;
+                using (var benchState = new MemoryStream())
+                {
+                    using (var benchWriter = new BinaryWriter(benchState, System.Text.Encoding.UTF8, leaveOpen: true))
+                    {
+                        machine.Cpu.SaveState(benchWriter);
+                    }
+
+                    benchCpuSha = Convert.ToHexString(SHA256.HashData(
+                        benchState.GetBuffer().AsSpan(0, (int)benchState.Length)));
+                }
+
+                Console.WriteLine(
+                    $"BENCH name={benchName ?? "boot"} steps={executed} wall={benchWall:F3} msps={benchMsps:F2} " +
+                    $"ramSha256={benchRamSha} cpuSha256={benchCpuSha}");
             }
 
             if (saveStatePath is not null)
@@ -2394,7 +2431,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
@@ -2408,6 +2445,8 @@ internal static class Program
             "                   --emit-inline implies --emit and serves E3-1 lean bodies for covered memory shapes.");
         Console.WriteLine(
             "                   --emit-diag implies --emit-inline and prints baked fast-path counters (diagnostic).");
+        Console.WriteLine(
+            "                   --bench prints BENCH steps/wall/msps + RAM/CPU SHA-256 after the run (host-only diagnostic).");
         Console.WriteLine(
             "  testrom --bin <file> [--base <hex>] [--entry <hex>] [--stack <hex>] [--steps N] [--ram MB] [--hdd <path>] [--dvd <path>] [--pad-buttons <set>] [--pad-script <spec>] [--frame <path>] [--pgraph <path>] [--dump addr[,len]] [--break addr]");
         Console.WriteLine("                   Run a flat-binary test ROM without firmware (EAX=0+HLT=pass)");
