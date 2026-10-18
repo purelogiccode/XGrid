@@ -178,16 +178,14 @@ public sealed class JitTests
     [Fact]
     public void NonEmittableHead_RejectedAndFallsBack()
     {
-        // rep movsb (unplanned) looped: the second visit finds a cached entry
-        // and records a permanent rejection; ECX=0 keeps the rep a no-op.
-        byte[] code = [0xF3, 0xA4, 0xEB, 0xFC];
+        // bsr eax,eax (unplanned) looped: the second visit finds a cached
+        // entry and records a permanent rejection; the member path serves it.
+        byte[] code = [0x0F, 0xBD, 0xC0, 0xEB, 0xFB];
 
         XboxCpu plain = CpuHarness.Create(code);
         XboxCpu jit = CreateJit(code);
         Preset(plain);
         Preset(jit);
-        plain.Context.Ecx = 0;
-        jit.Context.Ecx = 0;
 
         plain.Execute(50);
         jit.Execute(50);
@@ -949,6 +947,47 @@ public sealed class JitTests
         AssertSameState(plain, jit);
         Assert.True(jit.Context.Halted);
         Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
+    public void RepStrings_MatchesInterpreter()
+    {
+        // rep movsb + rep stosd run through the interpreter's exact string
+        // handler as single-retirement members (the whole rep is one step,
+        // mirroring ExecuteString).
+        byte[] code =
+        [
+            0xBE, 0x00, 0x20, 0x00, 0x00, // mov esi,0x2000
+            0xBF, 0x00, 0x21, 0x00, 0x00, // mov edi,0x2100
+            0xB8, 0x55, 0x55, 0x55, 0x55, // mov eax,0x55555555
+            0xB9, 0x08, 0x00, 0x00, 0x00, // mov ecx,8
+            0xF3, 0xA4,                   // rep movsb
+            0xB9, 0x04, 0x00, 0x00, 0x00, // mov ecx,4
+            0xF3, 0xAB,                   // rep stosd
+            0xB9, 0x02, 0x00, 0x00, 0x00, // mov ecx,2
+            0xF3, 0xA4,                   // rep movsb
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+        for (uint i = 0; i < 0x40; i++)
+        {
+            plain.Ram().Write8(0x2000 + i, (byte)(i + 1));
+            jit.Ram().Write8(0x2000 + i, (byte)(i + 1));
+        }
+
+        plain.Execute(400);
+        jit.Execute(400);
+
+        AssertSameState(plain, jit);
+        Assert.True(
+            jit.Context.Halted,
+            $"eip={jit.Context.Eip:X8} tsc={jit.Context.Tsc} ecx={jit.Context.Ecx:X8} " +
+            $"esi={jit.Context.Esi:X8} edi={jit.Context.Edi:X8} eax={jit.Context.Eax:X8} " +
+            $"fault={jit.LastFaultVector} cr2={jit.Context.Cr2:X8}");
     }
 
     private static XboxCpu CreateJit(byte[] code)
