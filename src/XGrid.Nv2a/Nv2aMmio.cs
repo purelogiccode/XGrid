@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
@@ -354,6 +355,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint UserRef = 0x48u;
 
     private readonly IGpuMemory? _memory;
+    // Diagnostic (`--gpu-time`): distinct combiner-configuration histogram.
+    private string _diagCombinerConfig = "none";
+    private bool _combinerFastModulate;
+
+    /// <summary>TEMP-DIAG (not for commit): pixels/fills per combiner configuration.</summary>
+    public Dictionary<string, (long Draws, long Pixels)> CombinerConfigStats { get; } = new(StringComparer.Ordinal);
+    private long _rasterLegacyTicks;
+    private long _rasterPshTicks;
+    private long _rasterLegacyCalls;
+    private long _rasterPshCalls;
     private readonly uint[] _boundEngine = new uint[8];
     private readonly uint[] _boundInstance = new uint[8];
     private readonly uint[] _pfifo = new uint[PfifoSize / 4];
@@ -579,6 +590,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the number of draws that ran the register-combiner stage. Diagnostics.</summary>
     public ulong CombinerDraws { get; private set; }
+
+    /// <summary>
+    /// When set, both software fill paths accumulate host wall time per draw
+    /// for the <c>--gpu-time</c> diagnostic. Host-only: never snapshotted,
+    /// never affects guest state, and the pixel math is untouched.
+    /// </summary>
+    public bool RasterTimingEnabled { get; set; }
+
+    /// <summary>Gets the number of timed legacy fill-path invocations. Diagnostics.</summary>
+    public long RasterLegacyCalls => _rasterLegacyCalls;
+
+    /// <summary>Gets the number of timed combiner fill-path invocations. Diagnostics.</summary>
+    public long RasterPshCalls => _rasterPshCalls;
+
+    /// <summary>Gets the accumulated legacy fill-path wall time (seconds). Diagnostics.</summary>
+    public double RasterLegacySeconds => _rasterLegacyTicks / (double)Stopwatch.Frequency;
+
+    /// <summary>Gets the accumulated combiner fill-path wall time (seconds). Diagnostics.</summary>
+    public double RasterPshSeconds => _rasterPshTicks / (double)Stopwatch.Frequency;
 
     /// <summary>Gets the register-combiner state summary. Diagnostics.</summary>
     public string CombinerStateDebug =>
@@ -4079,6 +4109,26 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (combinerActive)
         {
             CombinerDraws++;
+            _combinerFastModulate = _combiner.IsModulateT0V0Passthrough();
+            if (RasterTimingEnabled)
+            {
+                // Diagnostic: capture the distinct combiner configuration.
+                var cfg = new System.Text.StringBuilder();
+                cfg.Append(CultureInfo.InvariantCulture,
+                    $"stages={_combiner.StageCount} c={_combiner.Control:X8} f0={_combiner.Final0:X8} f1={_combiner.Final1:X8}");
+                for (int i = 0; i < _combiner.StageCount; i++)
+                {
+                    cfg.Append(CultureInfo.InvariantCulture,
+                        $" ri{i}={_combiner.RgbInputs[i]:X8} ai{i}={_combiner.AlphaInputs[i]:X8}" +
+                        $" ro{i}={_combiner.RgbOutputs[i]:X8} ao{i}={_combiner.AlphaOutputs[i]:X8}");
+                }
+
+                _diagCombinerConfig = cfg.ToString();
+            }
+        }
+        else
+        {
+            _combinerFastModulate = false;
         }
 
         if (_transformExecutionMode != TransformModeProgrammable)
@@ -5578,6 +5628,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float invBw = bw != 0f ? 1f / bw : 0f;
         float invCw = cw != 0f ? 1f / cw : 0f;
         bool perspective = invAw != 0f && invBw != 0f && invCw != 0f && (aw != bw || bw != cw);
+        long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
         for (uint y = y0; y <= y1; y++)
         {
             for (uint x = x0; x <= x1; x++)
@@ -5630,6 +5681,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 ProcessFragment(x, y, bytes, pitch, r, g, bl, al, depth, zetaBytes, zetaPitch);
             }
+        }
+
+        if (RasterTimingEnabled)
+        {
+            _rasterLegacyTicks += Stopwatch.GetTimestamp() - rasterStart;
+            _rasterLegacyCalls++;
         }
     }
 
@@ -6279,6 +6336,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
         float[][] consts)
     {
+        long diagPixels = 0;
         float area = ((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y));
         if (area == 0f)
         {
@@ -6330,6 +6388,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _combiner.DecodeTexMode(3),
         };
 
+        long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
         for (uint y = y0; y <= y1; y++)
         {
             for (uint x = x0; x <= x1; x++)
@@ -6364,6 +6423,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     }
                 }
 
+                diagPixels++;
                 diffuse[0] = (p1 * a.DiffuseR) + (p2 * b.DiffuseR) + (p0 * c.DiffuseR);
                 diffuse[1] = (p1 * a.DiffuseG) + (p2 * b.DiffuseG) + (p0 * c.DiffuseG);
                 diffuse[2] = (p1 * a.DiffuseB) + (p2 * b.DiffuseB) + (p0 * c.DiffuseB);
@@ -6436,7 +6496,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float fg;
                 float fb;
                 float fa;
-                if (_fogEnable)
+                if (_combinerFastModulate)
+                {
+                    PshCombiner.EvaluateModulateT0V0(diffuse, texels, out fr, out fg, out fb, out fa);
+                }
+                else if (_fogEnable)
                 {
                     fog[3] = Math.Clamp(fogFactor, 0f, 1f);
                     _combiner.Evaluate(diffuse, specular, fog, texels, consts, out fr, out fg, out fb, out fa);
@@ -6462,6 +6526,21 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
 
                 ProcessFragment(x, y, bytes, pitch, fr, fg, fb, fa, depth, zetaBytes, zetaPitch);
+            }
+        }
+
+        if (RasterTimingEnabled)
+        {
+            _rasterPshTicks += Stopwatch.GetTimestamp() - rasterStart;
+            _rasterPshCalls++;
+
+            // Diagnostic: accumulate pixels per combiner configuration (per fill).
+            if (diagPixels > 0)
+            {
+                (long Draws, long Pixels) entry = CombinerConfigStats.TryGetValue(_diagCombinerConfig, out var existing)
+                    ? existing
+                    : (0L, 0L);
+                CombinerConfigStats[_diagCombinerConfig] = (entry.Draws + 1, entry.Pixels + diagPixels);
             }
         }
     }

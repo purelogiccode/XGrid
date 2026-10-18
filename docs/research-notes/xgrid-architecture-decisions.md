@@ -9292,3 +9292,58 @@ Paired emit-vs-inline signs: inline wins 5 of 7 rounds (losses r8/r10 at
 pairs) and 1.137x over spec** -- softer than the n=3 reading (2.9%, 3/3)
 but consistent in direction. The spec-vs-emitter gap (1.113x) is far
 beyond noise and is the dominant, robust emitter win on this title.
+
+## 180. Rasterizer slice R1: bit-exact combiner fast path for the dashboard's dominant config (2026-10-17, direct)
+
+Measurement first (new opt-in `--gpu-time` host-only rasterizer wall
+accounting; `D:\spec-soak\probe2`): the software rasterizer's combiner fill
+path (`FillTrianglePsh`) is **119.2 s of the menu's 175 s wall (68%)** and
+**54.7 s of triangle's 83.4 s (66%)**; the legacy path is ~0.5 s on both.
+Segment timestamps (`D:\spec-soak\probe1`) show the menu's first 750M steps
+run at ~30M steps/s (~26 s) and the dashboard phase (last 250M steps, 686
+flips, 285M px) owns the rest. `--gpu sw` vs `--gpu gl` walls are identical
+(163.3 / 162.9 s): the GL backend coexists with (does not replace) the
+software rasterizer, by design (`IPgraphBackend` contract).
+
+Ablation (temporary switch, removed after use; `D:\spec-soak\probe3`, menu):
+skipping the combiner `Evaluate` alone cuts the rasterizer 119.2 -> 36.0 s
+(**Evaluate = 83.2 s = ~47% of the whole menu wall**, ~291 ns/call over
+~285M fragments); skipping `ProcessFragment` 119.2 -> 104.4 s (14.8 s);
+skipping the texel resolve loop 119.2 -> 96.0 s (23.2 s).
+
+Config histogram (rides `--gpu-time`; `D:\spec-soak\probe4`): the menu runs
+86% of its fragments (245.5M) through ONE single-stage combiner config -
+rgb = T0*V0, alpha = T0.a*V0.a (all unsigned-identity mapped), stage written
+to R0 (AB/CD dest 0 = no-op slots), final combiner passing R0 through
+(E=F=A=B=C=0, D=R0, G=R0.a) - i.e.
+`PshCombiner.IsModulateT0V0Passthrough()`. The rest are two multi-stage
+configs (stages=8 c=00011108, stages=7 c=00011107; 62.4M fragments) shared
+with the triangle, which uses those two for 70% of its pixels.
+
+Slice R1 (landed): `PshCombiner.EvaluateModulateT0V0` - a literal
+transcription of the generic path with the configuration constants folded
+(same `Math.Max`/`Math.Clamp` calls, same operation order), selected once per
+draw; `Nv2aMmio` branches on it in the fill loop. Exactness pinned by a
+4000-vector differential test (random floats including NaN/+/-0/+/-1/+/-inf,
+per-component bit compare vs the generic `Evaluate`) plus the end-to-end
+goldens: menu/triangle 1B SHAs exact, all counter anchors exact,
+`LastFault vec=0`, `verifyFailures=0`, and the full normalized stdout
+byte-identical to the pre-change baseline (`D:\spec-soak\r1` vs `probe4`).
+
+Measured effect (single runs, no median claim): menu rasterizer
+113.2-119.2 s -> **80.1 s** (~35 s saved; the fast path covers 245.5M
+fragments at roughly 135-160 ns each); menu leg wall 164.9 -> 150.3 s (host
+was ~15% slower than the quiet1 campaign; the raster delta is the signal).
+Triangle unchanged (does not use this config; SHA/counters exact). No flag -
+the recognizer is per-draw and exact by construction + differential.
+
+Also landed: `--gpu-time` diagnostics (raster seconds per fill path + the
+combiner config histogram) with tests; decode-flush audit filed
+(`D:\spec-soak\analysis\decode-flush-audit.md`: steady-state page-drop
+churn ~2-5% of menu wall via whole-block-table wipes; per-page block
+versioning is the narrowing candidate) and rasterizer inventory filed
+(`D:\spec-soak\analysis\rasterizer-inventory.md`, O1-O10).
+
+Next: the two multi-stage configs (62.4M menu + 62.4M triangle fragments) are
+the largest remaining rasterizer cost; then sampler (~23 s menu) and
+ProcessFragment (~15 s menu) hoists.

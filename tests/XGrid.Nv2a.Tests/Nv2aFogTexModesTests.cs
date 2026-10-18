@@ -364,6 +364,40 @@ public sealed class Nv2AFogTexModesTests
     }
 
     [Fact]
+    public void RasterTiming_AccountsCombinerFillPath()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangle(memory, 0.25f);
+
+        uint[] position = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0);
+        uint[] fogOut = Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true);
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, position, 0x0B00u);
+        MethodPush(pushes, fogOut, 0x0B10u);
+        pushes.Add((0x1E60u, 0x01u));
+        pushes.Add((0x0AC0u, 0x03200000u));
+        pushes.Add((0x1E40u, 0x000000C0u));
+        PushPassR0(pushes);
+        pushes.Add((0x029Cu, 0x2601u));
+        pushes.Add((0x02A4u, 0u));
+        pushes.Add((0x02A8u, 0xFF0000FFu));
+        pushes.Add((0x09C0u, F(1.25f)));
+        pushes.Add((0x09C4u, F(0f)));
+        PushDraw(pushes);
+        nv2A.RasterTimingEnabled = true;
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(1uL, nv2A.CombinerDraws);
+        Assert.Equal(1L, nv2A.RasterPshCalls);
+        Assert.Equal(0L, nv2A.RasterLegacyCalls);
+        Assert.True(nv2A.RasterPshSeconds > 0.0);
+        Assert.True(nv2A.CombinerConfigStats.Count >= 1);
+    }
+
+    [Fact]
     public void Draw_FogEnabledBlendsTowardFogColor()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
