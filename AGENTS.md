@@ -541,6 +541,18 @@ decode-flush narrowing candidates are filed in
   Headless `--gpu sw` stays the default and gate currency; `--window` is an
   observation sink (no input, no vsync).
 
+### Flag status at session close (2026-10-17; §185) — idle-skip is now a REGRESSION
+
+`--idle-skip` measured on the current binary: menu 112.4 s vs 77.6 s (0.69x),
+triangle 82.2 s vs 35.5 s (0.43x) with `--spec-exec`; triangle cache-only
+56.5 s vs ~41.3 s. The skip machinery's fixed per-iteration cost did not
+shrink while the JIT slices made base execution 2-3x faster, so the §119
+1.10x/1.66x win inverted. SHA-exact every leg; flag stays functional.
+Recommendation: retire or rework (operator decision) — do not use on the
+goldens. SoftTlb 256->4096 entries also measured neutral (77.9 vs 77.6 s;
+the boot's TLB misses are flush-driven, not capacity-driven) and was
+reverted.
+
 1. **SLICES 5–11 DONE (§§142–148, direct development).** After wave-15
    (slices 1+2, 1340 tests) came the §141 median-of-3 (flag stays
    opt-in: menu 1.035x, triangle 1.130x), then slices 5–8 (ALU-mem,
