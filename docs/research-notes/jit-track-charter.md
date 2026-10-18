@@ -158,6 +158,8 @@ items are worth ~1.5–2×. The fixed per-block cost (~18 ns: context
 load/store + dispatch + memo) is the structural remainder — hence Phase 2.5.
 
 **Phase 2.5 — trace emitter (C2; the immediate next slice, §199).**
+Design: docs/research-notes/jit-trace-emitter-design.md (formation rules,
+runner contract, lazy-sync mask table, validation order, kill criteria).
 Emit *multi-block traces* in one `DynamicMethod`: follow the planned
 successor at build time (unconditional jumps first, then hot conditional
 paths), keep guest GPR/EFLAGS/EIP/TSC in locals **across the whole trace**
