@@ -10185,3 +10185,17 @@ software raster (sw) or the GL draw path. The next levers are the JIT's
 per-block overhead (237M block invocations at ~4.2 instructions each) and
 the non-JIT residue (page-end instructions). Suite 1480 green, format
 clean, ktest smoke PASS (1:06).
+
+**Amendment (§198a, same day): the per-invocation runner timing was itself a
+top cost.** `RunJitBlock` took two `Stopwatch.GetTimestamp()` calls plus
+bucket accounting per block invocation — always on — which on call-heavy
+code (237M invocations at ~4.2 members each) cost ~15-25 ns each. Gated
+behind the new opt-in `--jit-timing` (default off; bucket *counts* stay
+exact, ms fields read 0 without it). Same SHAs, pure diagnostic removal:
+**triangle fast gl+replace 13.99 -> 10.68 s (-24%), menu 44.96 -> 41.39 s
+(-8%); sw legs triangle 22.95 -> 20.28 s, menu 60.65 -> 56.82 s.** Best-ever
+1B table: triangle fast sw **20.28 s** (1.38x vs the 27.9 s baseline),
+triangle gl+replace **10.68 s** (1.67x), menu sw **56.82 s** (1.13x),
+menu gl+replace **41.39 s** (1.17x). Triangle now runs at 12.7% of
+real-time (6.4 fps vs xemu ~70 fps: the xemu-class gap is ~11x, from
+18-29x this morning).

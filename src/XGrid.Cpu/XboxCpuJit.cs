@@ -236,6 +236,14 @@ public sealed partial class XboxCpu
     /// <summary>Consecutive store-free STI blocks required before an idle-wait skip fires.</summary>
     public const int JitSpinMinStreak = 32;
 
+    /// <summary>
+    /// Gets or sets the per-invocation runner timing (opt-in diagnostic): two
+    /// timestamp calls plus bucket accounting per block invocation cost
+    /// ~15-25 ns each, which is a large fraction of the fixed per-block cost
+    /// on call-heavy code. Default off; the bucket counts stay exact.
+    /// </summary>
+    public bool JitTiming { get; set; }
+
     /// <summary>Cap on guest steps advanced per idle-wait skip (two PIT ticks).</summary>
     public const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
 
@@ -439,15 +447,10 @@ public sealed partial class XboxCpu
             }
 
             int served;
+            long runnerStart = JitTiming ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             try
             {
-                long runnerStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 served = block.Runner(this, block.Entries, budget - total);
-                long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
-                _jitRunnerTicks += runnerTicks;
-                int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
-                _jitBucketTicks[bucket] += runnerTicks;
-                _jitBucketCounts[bucket]++;
             }
             catch (PageFaultSignal fault)
             {
@@ -468,6 +471,15 @@ public sealed partial class XboxCpu
                 JitServedTotal += (ulong)(done + 1);
                 JitInvocations++;
                 return total + done + 1;
+            }
+
+            if (JitTiming)
+            {
+                long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
+                _jitRunnerTicks += runnerTicks;
+                int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
+                _jitBucketTicks[bucket] += runnerTicks;
+                _jitBucketCounts[bucket]++;
             }
 
             // Exact mode: a runner reported a pending vector at a member
