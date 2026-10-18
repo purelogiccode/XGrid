@@ -38,13 +38,13 @@ internal static class JitEmitter
     // The six property callvirts per block (plus one per memory member for
     // the fault-precise Eip store) were pure call overhead.
     private static readonly FieldInfo ContextEip =
-        typeof(XboxContext).GetField("<Eip>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        typeof(XboxContext).GetField("_eip", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static readonly FieldInfo ContextEflags =
-        typeof(XboxContext).GetField("<Eflags>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        typeof(XboxContext).GetField("_eflags", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static readonly FieldInfo ContextTsc =
-        typeof(XboxContext).GetField("<Tsc>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        typeof(XboxContext).GetField("_tsc", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private static readonly MethodInfo GetEsp =
         typeof(XboxContext).GetProperty("Esp")!.GetMethod!;

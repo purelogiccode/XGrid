@@ -23,7 +23,8 @@ internal sealed class JitBlock
         ulong generation,
         int memberCount,
         DecodeCacheEntry[] entries,
-        JitRun runner,
+        JitRun? runner,
+        nint rawRunner,
         bool hasSti,
         bool hasStore)
     {
@@ -35,6 +36,7 @@ internal sealed class JitBlock
         MemberCount = memberCount;
         Entries = entries;
         Runner = runner;
+        RawRunner = rawRunner;
         HasSti = hasSti;
         HasStore = hasStore;
     }
@@ -60,8 +62,11 @@ internal sealed class JitBlock
     /// <summary>Gets the member decode entries (CallSpec fallback instructions).</summary>
     public DecodeCacheEntry[] Entries { get; }
 
-    /// <summary>Gets the emitted runner.</summary>
-    public JitRun Runner { get; }
+    /// <summary>Gets the IL runner (null when the block is raw-only).</summary>
+    public JitRun? Runner { get; }
+
+    /// <summary>Gets the C3 raw runner function pointer (0 when absent).</summary>
+    public nint RawRunner { get; }
 
     /// <summary>Gets whether the block contains an STI member (fast-mode idle-wait detection).</summary>
     public bool HasSti { get; }

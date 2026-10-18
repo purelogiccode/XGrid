@@ -1165,6 +1165,27 @@ public sealed class JitTests
 
     private static void AssertSameState(XboxCpu expected, XboxCpu actual)
     {
+        if (expected.Context.Eax != actual.Context.Eax
+            || expected.Context.Ebx != actual.Context.Ebx
+            || expected.Context.Ecx != actual.Context.Ecx
+            || expected.Context.Edx != actual.Context.Edx
+            || expected.Context.Esi != actual.Context.Esi
+            || expected.Context.Edi != actual.Context.Edi
+            || expected.Context.Ebp != actual.Context.Ebp
+            || expected.Context.Eip != actual.Context.Eip)
+        {
+            Console.WriteLine(
+                $"STATE eax={expected.Context.Eax:X}/{actual.Context.Eax:X} " +
+                $"ebx={expected.Context.Ebx:X}/{actual.Context.Ebx:X} " +
+                $"ecx={expected.Context.Ecx:X}/{actual.Context.Ecx:X} " +
+                $"edx={expected.Context.Edx:X}/{actual.Context.Edx:X} " +
+                $"esi={expected.Context.Esi:X}/{actual.Context.Esi:X} " +
+                $"edi={expected.Context.Edi:X}/{actual.Context.Edi:X} " +
+                $"ebp={expected.Context.Ebp:X}/{actual.Context.Ebp:X} " +
+                $"eip={expected.Context.Eip:X}/{actual.Context.Eip:X} " +
+                $"eflags={expected.Context.Eflags:X}/{actual.Context.Eflags:X}");
+        }
+
         Assert.Equal(expected.Context.Eip, actual.Context.Eip);
         Assert.Equal(expected.Context.Eflags, actual.Context.Eflags);
         Assert.Equal(expected.Context.Eax, actual.Context.Eax);

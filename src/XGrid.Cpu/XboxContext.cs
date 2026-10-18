@@ -11,11 +11,41 @@ public sealed class XboxContext
     private readonly uint[] _debugRegisters = new uint[8];
     private readonly uint[] _xmm = new uint[32];
 
+    // Eip/Eflags/Tsc keep explicit backing fields (rather than auto-property
+    // backing fields) so the C3 raw emitter can address them directly once the
+    // context is pinned: RawEipAddress/RawEflagsAddress/RawTscAddress. Property
+    // semantics are unchanged.
+    private uint _eip;
+    private uint _eflags = FlagBits.Reserved1;
+
     /// <summary>Gets or sets the instruction pointer.</summary>
-    public uint Eip { get; set; }
+    public uint Eip
+    {
+        get => _eip;
+        set => _eip = value;
+    }
 
     /// <summary>Gets or sets the flags register.</summary>
-    public uint Eflags { get; set; } = FlagBits.Reserved1;
+    public uint Eflags
+    {
+        get => _eflags;
+        set => _eflags = value;
+    }
+
+    /// <summary>Gets the address of the Eip field (C3 raw emitter; context must be pinned).</summary>
+    internal unsafe uint* RawEipAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _eip);
+
+    /// <summary>Gets the address of the Eflags field (C3 raw emitter; context must be pinned).</summary>
+    internal unsafe uint* RawEflagsAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _eflags);
+
+    /// <summary>Gets the address of the Tsc field (C3 raw emitter; context must be pinned).</summary>
+    internal unsafe ulong* RawTscAddress() => (ulong*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _tsc);
+
+    /// <summary>Gets the address of the register file (C3 raw emitter; array must be pinned).</summary>
+    internal unsafe uint* RawRegistersAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _registers[0]);
+
+    /// <summary>Gets the raw register array (C3 raw emitter pins it).</summary>
+    internal uint[] RawRegisterArray => _registers;
 
     /// <summary>Gets or sets CR0.</summary>
     public uint Cr0 { get; set; }
@@ -35,8 +65,14 @@ public sealed class XboxContext
     /// <summary>Gets or sets whether the current code segment defaults to 32-bit (CS.D).</summary>
     public bool CodeSegment32 { get; set; }
 
+    private ulong _tsc;
+
     /// <summary>Gets or sets the time-stamp counter.</summary>
-    public ulong Tsc { get; set; }
+    public ulong Tsc
+    {
+        get => _tsc;
+        set => _tsc = value;
+    }
 
     /// <summary>Gets the x87/MMX floating-point state.</summary>
     public FpuState Fpu { get; } = new();

@@ -44,6 +44,9 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     /// <summary>Gets the RAM size in bytes.</summary>
     public uint Size { get; }
 
+    /// <summary>Gets the backing byte array (C3 raw emitter pins it for direct access).</summary>
+    public byte[] RawBytes => _bytes;
+
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {
