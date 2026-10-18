@@ -103,6 +103,7 @@ internal static class Program
         bool shapeTally = false;
         string gpuBackend = "sw";
         bool gpuTime = false;
+        bool windowMode = false;
         string? hotspotPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
@@ -281,6 +282,9 @@ internal static class Program
                 case "--gpu":
                     gpuBackend = NextValue(args, ref i);
                     break;
+                case "--window":
+                    windowMode = true;
+                    break;
                 case "--gpu-time":
                     gpuTime = true;
                     break;
@@ -356,12 +360,18 @@ internal static class Program
                 return 1;
             }
 
+            if (windowMode && !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
+            {
+                Console.WriteLine("Window mode implies the GL backend (--window => --gpu gl)");
+                gpuBackend = "gl";
+            }
+
             if (string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
             {
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null).
                 var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, out Nv2a.IPgraphBackend? gpuBackendInstance,
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, out Nv2a.IPgraphBackend? gpuBackendInstance,
                         out string gpuWhy))
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
@@ -703,6 +713,14 @@ internal static class Program
                     target = Math.Min(target, saveAt - executed);
                 }
 
+                if (windowMode)
+                {
+                    // Live window: keep batches short so the message pump runs
+                    // at ~100 ms granularity (host-side scheduling only; guest
+                    // instruction boundaries are unchanged).
+                    target = Math.Min(target, 2_000_000);
+                }
+
                 ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
@@ -712,6 +730,10 @@ internal static class Program
                 executed += ran;
                 ApplyPadIfDue(executed);
                 ApplyScriptIfDue(executed);
+                if (windowMode)
+                {
+                    machine.Nv2A.Backend?.Pump();
+                }
                 if (machine.SevenEosQuirkFires != prevEosFires)
                 {
                     prevEosFires = machine.SevenEosQuirkFires;
@@ -1793,6 +1815,12 @@ internal static class Program
         {
             Console.WriteLine(
                 $"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported}");
+            if (machine.Nv2A.Backend is GpuGl.GlPgraphBackend windowBackend &&
+                !string.Equals(windowBackend.WindowStatus, "off", StringComparison.Ordinal))
+            {
+                Console.WriteLine(
+                    $"GL window presents={windowBackend.WindowPresents} status={windowBackend.WindowStatus}");
+            }
         }
 
         var pmcEnLogText = new System.Text.StringBuilder();
@@ -2366,7 +2394,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

@@ -117,6 +117,112 @@ internal sealed partial class WglContext : IDisposable
         return address;
     }
 
+    /// <summary>Gets whether the window has been made visible (window mode).</summary>
+    public bool IsVisible { get; private set; }
+
+    /// <summary>
+    /// Makes the hidden window visible for live presentation (opt-in
+    /// <c>--window</c>): restyles it to a resizable overlapped window (the
+    /// pixel format is set once and is kept), sizes the client area to the
+    /// frame, centers it, shows it, and disables vsync
+    /// (<c>wglSwapIntervalEXT(0)</c>; guest pacing is PIT/flip-stall, never
+    /// host vsync). Never throws; returns false with a why when the desktop
+    /// refuses (headless/session-0 degrades like a probe failure and the
+    /// caller continues headless).
+    /// </summary>
+    public bool TryShowWindow(uint clientWidth, uint clientHeight, out string why)
+    {
+        why = "ok";
+        if (IsVisible)
+        {
+            return true;
+        }
+
+        const int gwlStyle = -16;
+        const uint wsOverlappedWindow = 0x00CF0000u;
+        const uint swpNoZOrder = 0x0004u;
+        const uint swpNoActivate = 0x0010u;
+        const int swShow = 5;
+        _ = SetWindowLongPtrW(_hwnd, gwlStyle, new IntPtr(unchecked((long)wsOverlappedWindow)));
+        var rect = default(Rect);
+        rect.Right = (int)clientWidth;
+        rect.Bottom = (int)clientHeight;
+        if (AdjustWindowRect(ref rect, wsOverlappedWindow, 0) == 0)
+        {
+            why = "AdjustWindowRect failed";
+            return false;
+        }
+
+        int outerWidth = rect.Right - rect.Left;
+        int outerHeight = rect.Bottom - rect.Top;
+        int screenWidth = GetSystemMetrics(0);
+        int screenHeight = GetSystemMetrics(1);
+        int x = Math.Max(0, (screenWidth - outerWidth) / 2);
+        int y = Math.Max(0, (screenHeight - outerHeight) / 2);
+        if (SetWindowPos(_hwnd, IntPtr.Zero, x, y, outerWidth, outerHeight, swpNoZOrder | swpNoActivate) == 0)
+        {
+            why = "SetWindowPos failed";
+            return false;
+        }
+
+        _ = ShowWindow(_hwnd, swShow);
+        _ = UpdateWindow(_hwnd);
+
+        IntPtr swapInterval = GetProcAddress("wglSwapIntervalEXT");
+        if (swapInterval != IntPtr.Zero)
+        {
+            unsafe
+            {
+                ((delegate* unmanaged[Stdcall]<int, int>)swapInterval)(0);
+            }
+        }
+
+        IsVisible = true;
+        return true;
+    }
+
+    /// <summary>Presents the window's back buffer (window mode only).</summary>
+    public void SwapBuffers()
+    {
+        _ = SwapBuffersNative(_dc);
+    }
+
+    /// <summary>Drains the window message queue so the window stays responsive (window mode only).</summary>
+    public void PumpMessages()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        while (PeekMessageW(out Msg msg, IntPtr.Zero, 0u, 0u, PmRemove) != 0)
+        {
+            _ = TranslateMessage(ref msg);
+            _ = DispatchMessageW(ref msg);
+        }
+    }
+
+    /// <summary>Sets the window title (window mode only).</summary>
+    public void SetTitle(string title)
+    {
+        _ = SetWindowTextW(_hwnd, title);
+    }
+
+    /// <summary>Gets the current client-area size in pixels (window mode only).</summary>
+    public bool TryGetClientSize(out uint width, out uint height)
+    {
+        if (GetClientRect(_hwnd, out Rect rect) != 0)
+        {
+            width = (uint)Math.Max(0, rect.Right - rect.Left);
+            height = (uint)Math.Max(0, rect.Bottom - rect.Top);
+            return true;
+        }
+
+        width = 0;
+        height = 0;
+        return false;
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -195,11 +301,71 @@ internal sealed partial class WglContext : IDisposable
     [DllImport("opengl32.dll")]
     private static extern bool wglDeleteContext(IntPtr hglrc);
 
-    [LibraryImport("opengl32.dll", StringMarshalling = StringMarshalling.Custom,
+    [LibraryImport("opengl32.dll", EntryPoint = "wglGetProcAddress", StringMarshalling = StringMarshalling.Custom,
         StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
     private static partial IntPtr WglGetProcAddress(string name);
 
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Custom,
         StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
     private static partial IntPtr GetProcAddress(IntPtr module, string name);
+
+    private const uint PmRemove = 0x0001u;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Msg
+    {
+        public IntPtr Hwnd;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public int PtX;
+        public int PtY;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static partial IntPtr SetWindowLongPtrW(IntPtr hwnd, int index, IntPtr value);
+
+    [LibraryImport("user32.dll")]
+    private static partial int AdjustWindowRect(ref Rect rect, uint style, int menu);
+
+    [LibraryImport("user32.dll")]
+    private static partial int SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height,
+        uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial int ShowWindow(IntPtr hwnd, int cmdShow);
+
+    [LibraryImport("user32.dll")]
+    private static partial int UpdateWindow(IntPtr hwnd);
+
+    [LibraryImport("user32.dll")]
+    private static partial int GetSystemMetrics(int index);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "SwapBuffers")]
+    private static partial int SwapBuffersNative(IntPtr dc);
+
+    [LibraryImport("user32.dll", EntryPoint = "PeekMessageW")]
+    private static partial int PeekMessageW(out Msg msg, IntPtr hwnd, uint filterMin, uint filterMax, uint removeMsg);
+
+    [LibraryImport("user32.dll", EntryPoint = "TranslateMessage")]
+    private static partial int TranslateMessage(ref Msg msg);
+
+    [LibraryImport("user32.dll", EntryPoint = "DispatchMessageW")]
+    private static partial IntPtr DispatchMessageW(ref Msg msg);
+
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SetWindowTextW(IntPtr hwnd, string text);
+
+    [LibraryImport("user32.dll")]
+    private static partial int GetClientRect(IntPtr hwnd, out Rect rect);
 }

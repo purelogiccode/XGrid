@@ -39,6 +39,16 @@ public interface IPgraphBackend
 
     /// <summary>Drops host-side backend state (snapshot load / machine reset). Guest state is unaffected.</summary>
     void ResetState();
+
+    /// <summary>
+    /// Optional host-side pump hook: called by the CLI between emulation
+    /// batches so a live window stays responsive. The default implementation
+    /// does nothing; only the window-mode GL backend acts on it, and only
+    /// when the opt-in window is enabled.
+    /// </summary>
+    void Pump()
+    {
+    }
 }
 
 /// <summary>One screen-space transformed vertex (outputs of the CPU VshProgram path).</summary>

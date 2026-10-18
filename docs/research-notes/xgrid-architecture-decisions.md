@@ -9463,3 +9463,58 @@ Standing gates at session close: full suite 1427 tests, format clean, ktest
 smoke PASS 7/7, menu/triangle 1B SHAs and every counter exact across all
 gated legs (r1-r7 + final median campaign), normalized stdout byte-identical
 at every slice.
+
+## 184. GL backend latent regression fixed + opt-in live window (--window, brief O2) (2026-10-17, direct)
+
+**Latent regression found and fixed.** The docs-cleanup commit `4b5af0d`
+("concrete summaries replace interface <inheritdoc/>") renamed the
+`wglGetProcAddress` P/Invoke to `WglGetProcAddress` while converting it to
+`[LibraryImport]` WITHOUT an `EntryPoint`, so the opengl32 export lookup has
+been case-mismatched ever since: `GlBackendFactory.TryCreate` threw
+`EntryPointNotFoundException`, caught it, and `--gpu gl` silently fell back
+to software ("GPU backend=sw (gl probe failed: ...)"). Consequence: the
+§180-era probe that measured `--gpu gl` wall == `--gpu sw` wall was
+sw-vs-sw (both legs fell back); the GL-coexistence finding itself stands on
+the code evidence (the backend contract + unconditional SW loop) and the
+historical §§113-122 gates. Fix: `EntryPoint = "wglGetProcAddress"`.
+Verified: `GPU backend=gl probe ok; GL_VERSION=4.6.0 NVIDIA 610.88` and the
+slice-1 golden script passes again.
+
+**Opt-in live window (swapchain brief O2; T1 conditions met: §132 (a*)
+dirty-bit merged + free build slot; no new dependency — user32/gdi32/
+opengl32 interop only).**
+- `WglContext`: `TryShowWindow` (restyle WS_OVERLAPPEDWINDOW via
+  SetWindowLongPtrW — the pixel format is set once and kept — client area
+  sized to the frame via AdjustWindowRect + SetWindowPos, centered,
+  ShowWindow, `wglSwapIntervalEXT(0)`), `SwapBuffers`, `PumpMessages`
+  (PeekMessageW loop), `SetTitle`, `TryGetClientSize`.
+- `GlPgraphBackend`: `PresentToWindow` at the end of `FlipCore` (after the
+  readback — a sink only, never mixed): NEAREST blit FBO -> default
+  framebuffer scaled to the client area, SwapBuffers, pump, title counters;
+  `WindowPresents`/`WindowStatus` diagnostics; any show failure degrades to
+  headless. `IPgraphBackend.Pump()` default no-op;
+  `GlPgraphBackend.Pump` pumps between batches.
+- CLI: `--window` (implies `--gpu gl`), 2M-step batch cap in window mode so
+  the pump runs at ~100 ms granularity (host scheduling only — guest
+  boundaries unchanged), exit diagnostic `GL window presents=N status=...`.
+
+Acceptance evidence: WGL-guarded `WindowPresentLiveTests` (disabled => "off"
++ 0 presents; enabled => presents increment and the readback bytes are
+unchanged, else the degradation is recorded); live run
+`--steps 820000000 --spec-exec --window` reports `GPU backend=gl probe ok;
+GL_VERSION=4.6.0 NVIDIA 610.88` and `GL window presents=35 status=window
+640x480 vsync=off`, `BackendUnsupported=0`; guest counters at the same step
+count are IDENTICAL to a `--gpu sw` control run (2720 draws / 73792923
+pixels / 35 frames / all counters), i.e. the window path does not perturb
+guest state; SW goldens flag-off byte-identical (`D:\spec-soak\r8`); suite
+1432 tests; format clean. Headless (`--gpu sw`) remains the default and the
+gate currency; `--window` is an observation sink only (no input, no vsync).
+
+GL-mode cost observation (live backend, 1B menu, `D:\spec-soak\slice1-golden`):
+with the backend actually running, `--gpu gl` costs sw 91.8 s -> gl 107.8 s
+(+16 s: drawMs=8029.8 for 2,760,841 triangle submissions + readbackMs=1326.6
+for 686 flips). The §122 "0-2.9% of wall" figure predates this session's
+rasterizer speedup and measured different workloads; the honest current
+shape is that GL mode is SW + ~9-16 s of submission/readback on the menu at
+1B. This does not touch the default (`--gpu sw`) or any gate; `--window`
+carries the same cost plus one blit+swap per presented frame.
