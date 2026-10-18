@@ -9973,3 +9973,50 @@ for these tests the software rasterizer is the better default; GL wins
 would need batched/bigger draws or per-draw overhead work, and that track
 stays gated as chartered. The end-to-end fast-mode story is therefore
 CPU+MMIO-bound: 27.9 s triangle / 64.0 s menu (1.33x / 1.15x vs spec-ctl).
+
+## 195. Performance re-aim: GPU backend + MMIO lead the xemu-class campaign (2026-10-19, operator-directed)
+
+**Decision.** The operator asked whether the plan needs changing to reach
+xemu-class performance long-run. Answer: the architecture and the
+correctness strategy stay; the *performance priority order* changes. Track C
+(fast-mode JIT) is retired as lead track after reaching 99% served / 3.76x
+CPU-bound / bit-exact menu 1B (§§191-194). The lead tracks are now:
+**B — GPU backend performance** (the software rasterizer is the largest wall
+item), **D — MMIO fast dispatch** (119M slow members at 1B menu), then
+**C — JIT Phase-2 leftovers** (chaining, threshold; ~5-8%).
+
+**Evidence (quiet host, all SHAs verified; §194 am.2/am.3).**
+- 1B menu fast 64.0 s = CPU-JIT ~23.4 s + bookkeeping 4.8 s + non-JIT
+  10.8 s + software raster 24.3 s (38%). Triangle fast 27.9 s = CPU-JIT
+  ~4.3 s + bookkeeping 4.5 s + non-JIT 8.8 s + raster 10.1 s (36%).
+- MMIO slow-path members: 118.9M (menu) / 21.3M (triangle) — the largest
+  CPU-side line item after the rasterizer; each pays a full context sync plus
+  device dispatch (real device work cannot be removed, the generic overhead
+  can).
+- CPU-bound ktest 2B: 3.76x (23.6 s vs 88.9 s accurate) — the CPU-side target
+  is met; further CPU-only tuning cannot move the golden walls much.
+- GL backend pairing: menu fast sw 64.0 s vs gl 71.2-72.5 s (worse);
+  menu spec-ctl sw 73.6 s vs gl 83.7 s (worse, so the cost is mode
+  independent and CPU-side); triangle fast sw 27.9 s vs gl 27.5 s (parity).
+  Its drawMs (6.85 s menu) beats the sw raster (24.3 s) but per-draw /
+  per-method CPU cost cancels the win — this is B2's target.
+
+**Target definition (new gate class).** 1 guest-second = 733M steps (PIT
+cross-check §68). xemu-class = content runs at wall <= guest-time, with the
+bar measured against xemu on the same `data/test-samples/` workloads
+(triangle ISO, ktest smoke): wall, frames, frames-per-wall-second.
+Today's fast mode is ~2.1% (menu) / ~4.9% (triangle) of real-time — the
+campaign is a multi-slice effort, not a tuning pass.
+
+**Slices + acceptance tests** are recorded in `ImplementationPlan.md`
+("Performance campaign — xemu-class re-aim (2026-10-19)"): B1 GL per-phase
+profiling, B2 per-draw overhead elimination (menu fast+gl <=45 s, triangle
+<=20 s, golden policy), B3 method-stream coverage (zero unsup, counters
+identical), B4 present polish on need, D1 MMIO fast dispatch (-50% slow
+members, bit-exact), C1 JIT leftovers (>=5% both goldens).
+
+**Unchanged.** LLE-first + reference-first; accurate mode is gate currency;
+fast mode never is; headless `--gpu sw` default + no mixing + no async;
+quiet-host medians for wall claims (pause and ask the operator when Fortnite
+is running); no real Xbox games in the sample corpus; non-GPL; Phase 3 raw
+emitter stays not indicated.
