@@ -1,6 +1,6 @@
 {
-  "generated": "2026-10-17",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-17)",
+  "generated": "2026-10-19",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19)",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -26,13 +26,13 @@
     {
       "name": "Performance & finish",
       "phases": [
-        { "p": 15, "name": "CPU JIT", "weight": 11, "done": 50 },
-        { "p": 16, "name": "CPU Optimization", "weight": 3, "done": 25 },
+        { "p": 15, "name": "CPU JIT", "weight": 11, "done": 72 },
+        { "p": 16, "name": "CPU Optimization", "weight": 3, "done": 35 },
         { "p": 17, "name": "Memory Optimization", "weight": 2, "done": 40 },
-        { "p": 18, "name": "GPU Optimization", "weight": 4, "done": 34 },
+        { "p": 18, "name": "GPU Optimization", "weight": 4, "done": 35 },
         { "p": 19, "name": "Debugger", "weight": 3, "done": 30 },
-        { "p": 20, "name": "Automated Testing", "weight": 3, "done": 60 },
-        { "p": 21, "name": "CLI & Frontend", "weight": 3, "done": 50 },
+        { "p": 20, "name": "Automated Testing", "weight": 3, "done": 65 },
+        { "p": 21, "name": "CLI & Frontend", "weight": 3, "done": 52 },
         { "p": 22, "name": "Save States & Replay", "weight": 2, "done": 5 },
         { "p": 23, "name": "Release", "weight": 3, "done": 10 }
       ]
