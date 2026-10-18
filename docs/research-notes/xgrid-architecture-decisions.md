@@ -9803,3 +9803,57 @@ insensitive within ~3% (8→13.33, 16→~13.0, 24→13.19). vs the §186 recorde
 medians from a different day/host state (menu 70.8, triangle 36.6 plain-
 default): 5.4× / 2.8× — cross-day numbers, quoted with the §176 caveat;
 same-window controls: menu 88.05 s, triangle 44.65–44.9 s.
+
+## 193. Fast-mode lost-wakeup fixed: the post-STI poll (2026-10-19 early, direct)
+
+**Symptom.** While auditing the 192 fast-mode runs' frame counts: both 1B
+fast runs presented 1 frame vs the control's 686 (menu) / 68 (triangle) —
+the "76 Msteps/s" numbers were a *wedged* guest spinning in the kernel idle
+loop, not the workload. Triangle bisect: EIP and interrupt counts identical
+to the control through 32M; between 32M and 35M the fast run's "Interrupts
+delivered" froze at 267 (control went 270 -> 292 -> 365) and the guest
+wedged at 0x8001B047 forever.
+
+**Root cause.** The kernel idle thread's loop (0x8001B031):
+`sti; nop; nop; cli; cmp ebp,[ebp]; je spin` — its only IF=1 window is
+between STI and CLI *inside one block*, and the block entry always runs
+with IF cleared (the previous iteration's CLI executed last). The
+once-per-block entry poll therefore never ran with IF=1: the pending
+interrupt was never acknowledged and every wakeup starved. That is not the
+charter's tolerated "<block-length delivery shift" — it is a systematic
+lost wakeup that invalidated the 192 fast-mode rate claims.
+
+**Fix (3211788).** STI members poll at their own boundary in fast mode
+(the interpreter delivers at the very next instruction boundary): the poll
+acknowledges, records `_jitPending`, and exits with exact boundary
+accounting (STI counts as served, the delivery consumes one unit, TSC gets
+the boundary increment, return address = instruction after STI). POPF —
+the only other instruction that can enable IF — leaves the member set
+(block ends before it; the next entry poll handles the restored IF).
+Exact mode is unchanged (its per-member poll already covered both).
+
+**Evidence (deterministic; wall clocks ignored — Fortnite was running).**
+- Triangle 1B fast: ram/cpu SHA = the control's (5E6A6741... / 9AC069E6...),
+  frame A1740DE0... = golden, 68/34 frames — **bit-exact**.
+- Menu 1B fast: D9C99A58... / 3D2740B8..., frame 4EF1FBF6... = golden,
+  686/686 — **bit-exact**.
+- ktest 2B fast: cpuSha = accurate's; RAM identical through 1.2B; at 2B the
+  only difference in the whole suite log is one measured duration
+  (NtResumeThread: completed in 1.359 s vs 1.354 s) — every test row
+  identical.
+- Triangle trajectory: EIP + interrupt counts identical to the control at
+  35M/50M/100M; at 200M the guest is rendering (2622 draws, 65.8M pixels).
+- +4 regression tests (STI-window starvation sweep); suite 1466 green.
+
+**What it changes.** The 192 caveat "fast mode renders 1 frame vs 686; work
+composition differs" is obsolete: fast mode now executes the same workload
+bit-for-bit on both titles at 1B. One residual relaxation remains on paper
+(a device raising an IRQ from a guest MMIO action mid-block is delivered at
+the next block boundary — the ktest 5 ms measurement is that allowance seen
+in the wild). The dual-mode contract stands unchanged procedurally.
+
+**Next frontier (filed).** With the guest no longer spinning, the JIT-served
+share of the *real* workloads is 26.6% (menu) / 35.5% (triangle) at 1B; the
+unserved tail now dominates the fast-mode wall. Next performance work:
+coverage of that tail (RunJitBlock zero-return reasons + non-JIT
+instruction mix), then quiet-host medians of the post-fix fast mode.

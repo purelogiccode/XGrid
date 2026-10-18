@@ -528,6 +528,18 @@ Fast mode is never gate currency; exact mode is the bit-exact variant.
 Suite 1461 green, format clean. Next: block chaining (direct jumps),
 shape tail, medians-on-quiet-host, 1B threshold re-tune.
 
+### Fast-mode lost-wakeup fixed (§193, `3211788`) — the rates above were a wedged guest
+
+The §192 fast-mode runs presented 1 frame vs the control's 686/68: the
+kernel idle loop's `sti/nop/nop/cli` spin has IF=1 only inside one block,
+so the once-per-block poll starved every wakeup (interrupt count froze at
+267; guest wedged). STI members now poll at their own boundary; POPF left
+the member set. **Post-fix, fast mode is bit-exact on triangle+menu 1B
+(SHAs + golden frames) and ktest 2B cpuSha** (suite log differs only in
+one 5 ms measured duration). Real-workload served share at 1B: 26.6%
+(menu) / 35.5% (triangle) — the unserved tail is the next coverage lever,
+with quiet-host medians still pending.
+
 ### Fast-mode JIT track chartered (2026-10-18) — operator decision
 
 Long-run goal: at least xemu-class performance. Governing doc:
