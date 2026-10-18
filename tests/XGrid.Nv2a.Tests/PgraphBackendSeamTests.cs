@@ -100,6 +100,63 @@ public sealed class PgraphBackendSeamTests
         }
     }
 
+    private sealed class ReplacingBackend : IPgraphBackend
+    {
+        public bool ReplaceMode => true;
+
+        public long BackendUnsupported => 0;
+
+        public string DebugSummary => $"replacing draws={Draws} mirrorDraws={MirrorDrawCalls}";
+
+        public long Draws { get; private set; }
+
+        public long MirrorDrawCalls { get; private set; }
+
+        public void Method(uint subchannel, uint method, uint parameter)
+        {
+            _ = subchannel;
+            _ = method;
+            _ = parameter;
+        }
+
+        public bool TryDraw(in PgraphDrawInfo info)
+        {
+            _ = info;
+            Draws++;
+            return true;
+        }
+
+        public void Draw(in PgraphDrawInfo info)
+        {
+            // Replacement mode must never mirror: the seam contract routes
+            // every draw through TryDraw.
+            _ = info;
+            MirrorDrawCalls++;
+        }
+
+        public void Clear(in PgraphClearInfo info)
+        {
+            _ = info;
+        }
+
+        public void Flip(in PgraphSurfaceRecord record)
+        {
+            _ = record;
+        }
+
+        public bool ReadbackPresented(out uint width, out uint height, out byte[] bgra)
+        {
+            width = 0;
+            height = 0;
+            bgra = Array.Empty<byte>();
+            return false;
+        }
+
+        public void ResetState()
+        {
+        }
+    }
+
     private static (Nv2AMmio Nv2a, ArrayMemory Memory) CreateChannel()
     {
         var memory = new ArrayMemory();
@@ -244,6 +301,23 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(0, backend.Clears);
         Assert.Equal(0, backend.Flips);
         Assert.Equal(0, backend.BackendUnsupported);
+    }
+
+    [Fact]
+    public void ReplaceMode_SkipsSoftwareRasterizerAndNeverMirrors()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new ReplacingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        PushMethods(nv2A, memory, ElementDrawStream());
+
+        // The backend drew it; the software rasterizer was skipped entirely.
+        Assert.Equal(1, backend.Draws);
+        Assert.Equal(0, backend.MirrorDrawCalls);
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(0uL, nv2A.DrawnPixels);
+        Assert.Equal(0u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
     }
 
     [Fact]

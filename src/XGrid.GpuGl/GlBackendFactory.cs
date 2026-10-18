@@ -22,6 +22,13 @@ public static class GlBackendFactory
     /// <summary>Creates the GL backend with the opt-in live window (<c>--window</c>).</summary>
     public static bool TryCreate(IGpuMemory memory, bool windowEnabled, out IPgraphBackend? backend, out string why)
     {
+        return TryCreate(memory, windowEnabled, replaceSoftware: false, out backend, out why);
+    }
+
+    /// <summary>Creates the GL backend; <paramref name="replaceSoftware"/> selects replacement mode (<c>--gpu-replace</c>), where the backend renders instead of mirroring and the software rasterizer skips honored draws.</summary>
+    public static bool TryCreate(IGpuMemory memory, bool windowEnabled, bool replaceSoftware, out IPgraphBackend? backend,
+        out string why)
+    {
         ArgumentNullException.ThrowIfNull(memory);
         backend = null;
         if (!WglContext.TryCreate(out WglContext? context, out why) || context is null)
@@ -42,7 +49,7 @@ public static class GlBackendFactory
                 return false;
             }
 
-            backend = new GlPgraphBackend(context, created, gl, memory, windowEnabled);
+            backend = new GlPgraphBackend(context, created, gl, memory, windowEnabled, replaceSoftware);
             unsafe
             {
                 byte* version = gl.GetString(StringName.Version);

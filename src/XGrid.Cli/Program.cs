@@ -112,6 +112,7 @@ internal static class Program
         string gpuBackend = "sw";
         bool gpuTime = false;
         bool windowMode = false;
+        bool gpuReplace = false;
         string? hotspotPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
@@ -314,6 +315,9 @@ internal static class Program
                 case "--window":
                     windowMode = true;
                     break;
+                case "--gpu-replace":
+                    gpuReplace = true;
+                    break;
                 case "--gpu-time":
                     gpuTime = true;
                     break;
@@ -395,16 +399,22 @@ internal static class Program
                 gpuBackend = "gl";
             }
 
+            if (gpuReplace && !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
+            {
+                Console.WriteLine("Replacement mode implies the GL backend (--gpu-replace => --gpu gl)");
+                gpuBackend = "gl";
+            }
+
             if (string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
             {
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null).
                 var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, out Nv2a.IPgraphBackend? gpuBackendInstance,
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, out Nv2a.IPgraphBackend? gpuBackendInstance,
                         out string gpuWhy))
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
-                    Console.WriteLine($"GPU backend=gl {gpuWhy}");
+                    Console.WriteLine($"GPU backend=gl {(gpuReplace ? "replace=on " : string.Empty)}{gpuWhy}");
                 }
                 else
                 {
@@ -2544,7 +2554,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

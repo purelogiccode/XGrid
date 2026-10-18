@@ -148,6 +148,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private float _invCw;
     private float _clipY;
     private readonly bool _windowRequested;
+    private readonly bool _replaceSoftware;
     private bool _windowShown;
     private long _windowPresents;
     private string _windowStatus;
@@ -193,7 +194,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     }
 
     internal GlPgraphBackend(WglContext context, INativeContext glContext, GL gl, IGpuMemory memory,
-        bool windowEnabled = false)
+        bool windowEnabled = false, bool replaceSoftware = false)
     {
         _context = context;
         _glContext = glContext;
@@ -201,6 +202,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _memory = memory;
         _dirtyWatch = memory as IPresentDirtyWatch;
         _windowRequested = windowEnabled;
+        _replaceSoftware = replaceSoftware;
         _windowStatus = windowEnabled ? "pending first frame" : "off";
 
         _vertexShader = CompileVertexShader();
@@ -279,19 +281,29 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         MethodsObserved++;
     }
 
-    /// <summary>Submits the triangle to GL via DrawCore, timing the call; a thrown GL exception increments <see cref="BackendUnsupported"/> and latches a fatal error that suppresses later work.</summary>
+    /// <summary>Gets whether this backend replaces the software rasterizer for the draws it honors (opt-in replacement mode).</summary>
+    public bool ReplaceMode => _replaceSoftware;
+
+    /// <summary>Mirrors one triangle into the FBO (mirror mode; the software rasterizer stays authoritative and runs as today).</summary>
     public void Draw(in PgraphDrawInfo info)
+    {
+        _ = TryDraw(info);
+    }
+
+    /// <summary>Attempts to render one triangle; true when the replacement-mode caller must skip the software rasterizer.</summary>
+    public bool TryDraw(in PgraphDrawInfo info)
     {
         if (_fatalError is not null)
         {
-            return;
+            return false;
         }
 
         try
         {
             long start = Stopwatch.GetTimestamp();
-            DrawCore(info);
+            bool drawn = TryDrawCore(info);
             _timings.AddDraw(Stopwatch.GetElapsedTime(start));
+            return drawn;
         }
         catch (Exception exception)
         {
@@ -299,6 +311,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             BackendUnsupported++;
             _fatalCount++;
             _fatalError = exception.GetType().Name + ": " + exception.Message;
+            return false;
         }
     }
 
@@ -456,7 +469,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _context.Dispose();
     }
 
-    private void DrawCore(in PgraphDrawInfo info)
+    private bool TryDrawCore(in PgraphDrawInfo info)
     {
         Draws++;
         if (info.ClipX != 0 || info.ClipY != 0)
@@ -468,14 +481,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             BackendUnsupported++;
             _unsupportedColorBytes++;
-            return;
+            return false;
         }
 
         if (info.ZFormatFloat && info.ZetaBytes != 0 && info.Fragment.DepthTestEnable)
         {
             BackendUnsupported++;
             _unsupportedZFormat++;
-            return;
+            return false;
         }
 
         bool legacy = !info.CombinerActive;
@@ -484,7 +497,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             BackendUnsupported++;
             _unsupportedModes++;
-            return;
+            return false;
         }
 
         if (!legacy && CheckModesUnsupported(info, combiner!, out bool cubeVolume))
@@ -498,13 +511,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             {
                 _unsupportedModes++;
             }
+
+            if (_replaceSoftware)
+            {
+                // Replacement mode: an unhonored draw must come from the
+                // software path, never from a partly-mapped state.
+                return false;
+            }
         }
 
         if (!EnsureFbo((int)info.ClipW, (int)info.ClipH, info.ZetaBytes))
         {
             BackendUnsupported++;
             _unsupportedFbo++;
-            return;
+            return false;
         }
 
         GlProgram program = EnsureProgram(legacy, combiner);
@@ -533,6 +553,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertexCount);
+        return true;
     }
 
     private void ClearCore(in PgraphClearInfo info)

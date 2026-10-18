@@ -10020,3 +10020,53 @@ fast mode never is; headless `--gpu sw` default + no mixing + no async;
 quiet-host medians for wall claims (pause and ask the operator when Fortnite
 is running); no real Xbox games in the sample corpus; non-GPL; Phase 3 raw
 emitter stays not indicated.
+
+## 196. B1+B2a: GL replacement mode landed — the GPU path now replaces the software rasterizer (2026-10-19, direct)
+
+**B1 finding (mechanism).** The GL backend was an observation *mirror* by
+design (interface contract: "the software path executes exactly as today,
+unconditionally") — `FillTriangle`/`FillTrianglePsh` called `Backend.Draw`
+and then rasterized in software anyway. That is exactly why the measured
+`--gpu gl` walls were `sw + drawMs` (menu 64.0 -> 71.2-72.5 s; triangle
+27.9 -> 27.5 s) rather than `sw - raster + drawMs`: the backend could only
+add its per-draw cost, never remove the 24.3 s / 10.1 s software raster.
+
+**B2a implementation.** `IPgraphBackend` gained `ReplaceMode` + `TryDraw`
+(default interface members; mirror backends unchanged). `--gpu-replace`
+(implies `--gpu gl`) selects replacement mode: the two fill sites skip the
+software rasterizer when `TryDraw` succeeds (unsupported draws fall back to
+software, never to a partly-mapped state); `GlPgraphBackend.TryDrawCore`
+returns success/failure per draw. Clears stay software+mirrored (cheap, and
+they keep the cleared surface coherent in guest RAM).
+
+**Measured (quiet host, 1B, fast mode, BackendUnsupported=0 everywhere):**
+
+| run | sw fast | gl mirror | gl replace | vs sw | vs spec-ctl | vs plain |
+|---|---|---|---|---|---|---|
+| menu | 64.02 s | 71.2-72.5 s | **48.29 s** | 1.33x | 1.52x | 1.70x |
+| triangle | 27.91 s | 27.5 s | **17.82 s** | 1.57x | 2.08x | 2.88x |
+
+Acceptance (campaign table): menu <= fast+sw - 15 s (= 49.0) PASS;
+triangle <= 20 s PASS. Software raster seconds 0.00/0.00 (0 calls) on both;
+drawMs 7.07 s / 0.38 s; readback 0.78 s / 0.14 s. The triangle run is the
+fastest end-to-end 1B result to date (56.1 Msteps/s; 7.6% of real-time).
+
+**Fidelity.** CPU SHA exact on both titles (the sample corpus never reads
+the framebuffer back). Presented-frame policy vs the sw goldens: menu 3193
+diff channels / triangle 34908, **maxDelta 1, violations 0** on both (same
+policy class as mirror mode). Guest-RAM divergence: triangle 1,531,742
+dwords (6.1 MB), first diff 0x32A4000, last 0x3F5AB40 — **zero divergence
+below the first rendered surface and above 0x4000000**: all of it is
+renderer-owned surface memory (flip-chain color + zeta + render targets)
+that software used to write; kernel/code/data are byte-identical. This is
+the documented replacement-mode RAM contract (fast mode / playability
+only; accurate mode keeps the software path as the pixel source).
+Mirror-mode golden re-verified after the change: sw SHA 4EF1FBF6...,
+diff violations=0 maxDelta=1 — GOLDEN: PASS. Suite 1477 green, format
+clean.
+
+**Remaining (B2b).** drawMs 7.07 s is now the largest GPU-path line item
+(~2.6 us/draw across 2.76M draws): per-draw state caching, uniform
+handling, vertex upload. Then RAM writeback for content that reads the
+framebuffer back (required before real-game use; the sample corpus does
+not read it).

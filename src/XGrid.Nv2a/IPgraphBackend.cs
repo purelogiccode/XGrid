@@ -49,6 +49,28 @@ public interface IPgraphBackend
     void Pump()
     {
     }
+
+    /// <summary>
+    /// Gets whether this backend replaces the software rasterizer for the
+    /// draws and clears it honors (replacement mode) instead of mirroring it.
+    /// Mirror mode (the default) keeps the software path authoritative: the
+    /// backend observes the same resolved state and the software pixels are
+    /// the guest-visible source. In replacement mode the backend becomes the
+    /// pixel source: the caller skips the software fill when
+    /// <see cref="TryDraw"/> succeeds, so the backends must never be mixed
+    /// within a run. Replacement mode is a GPU-accelerated (fast-mode
+    /// playability) contract; the software path stays the accurate-mode
+    /// source of truth.
+    /// </summary>
+    bool ReplaceMode => false;
+
+    /// <summary>
+    /// Attempts to render one triangle in replacement mode. Returns true when
+    /// the backend honored the draw and the caller must skip the software
+    /// rasterizer; false when the caller must fall back to the software path
+    /// for this draw (the backend counted it as unsupported).
+    /// </summary>
+    bool TryDraw(in PgraphDrawInfo info) => false;
 }
 
 /// <summary>One screen-space transformed vertex (outputs of the CPU VshProgram path).</summary>
