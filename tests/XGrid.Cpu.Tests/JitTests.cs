@@ -650,6 +650,51 @@ public sealed class JitTests
         AssertSameState(plain, jit);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void IrqFast_StiWindowPoll_NoStarvation(int fireAt)
+    {
+        // The kernel idle thread's shape: the only window with IF=1 sits
+        // between STI and CLI inside one block, and the block's entry always
+        // runs with IF cleared (the previous iteration's CLI executed last).
+        // A block-entry-only poll never sees IF=1 and the wakeup starves
+        // (regression: the fast run's interrupt count froze and the guest
+        // wedged in the idle loop); the post-STI poll must deliver it.
+        byte[] code =
+        [
+            0xB9, 0x40, 0x00, 0x00, 0x00, // mov ecx,0x40
+            0xFB,                         // sti          (loop head)
+            0x90,                         // nop
+            0x90,                         // nop
+            0xFA,                         // cli
+            0x49,                         // dec ecx
+            0x75, 0xF9,                   // jne loop (0x1005 - 0x100C = -7)
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        foreach (XboxCpu cpu in new[] { plain, jit })
+        {
+            cpu.Ram().Write8(0x3000, 0xCF); // iret
+            InstallIdt(cpu, 0x21, 0x3000);
+            cpu.Context.Eflags &= ~FlagBits.If; // start interrupt-disabled
+            cpu.InterruptSource = new CountedInterruptSource(0x21, fireAt);
+        }
+
+        plain.Execute(2000);
+        jit.Execute(2000);
+
+        Assert.True(plain.Context.Halted);
+        Assert.True(jit.Context.Halted);
+        Assert.Equal(1, plain.InterruptCount);
+        Assert.Equal(1, jit.InterruptCount);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
     private static XboxCpu CreateJit(byte[] code)
     {
         XboxCpu cpu = CpuHarness.Create(code);

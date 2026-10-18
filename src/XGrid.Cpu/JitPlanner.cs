@@ -182,12 +182,18 @@ internal static class JitPlanner
 
     private static bool IsControlTransfer(Mnemonic mnemonic)
     {
+        // Control transfers and CS-affecting ops must end the block (they
+        // re-target execution or change the fetch basis), and POPF is
+        // boundary-sensitive: it can turn interrupts on mid-block with no
+        // poll behind it, so it stays a block-ender (the entry poll that
+        // follows it then sees the restored IF, exactly like the
+        // interpreter's next-instruction poll).
         return mnemonic switch
         {
             Mnemonic.Jcc or Mnemonic.Jmp or Mnemonic.JmpFar or Mnemonic.Call or Mnemonic.CallFar
                 or Mnemonic.Ret or Mnemonic.Retf or Mnemonic.Iret or Mnemonic.Loop or Mnemonic.LoopE
                 or Mnemonic.LoopNe or Mnemonic.Jecxz or Mnemonic.Int3 or Mnemonic.Interrupt
-                or Mnemonic.Hlt or Mnemonic.MovSreg or Mnemonic.PopSegment => true,
+                or Mnemonic.Hlt or Mnemonic.MovSreg or Mnemonic.PopSegment or Mnemonic.Popf => true,
             _ => false,
         };
     }

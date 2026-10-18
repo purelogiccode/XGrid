@@ -231,6 +231,18 @@ internal static class JitEmitter
             EmitMember(il, plan, context, gprs, eip, flags, tsc, served,
                 a1, a2, res, addr, vpn, phys, slot, ram);
 
+            if (!exactBoundaries && plan.Kind == JitKind.Sti)
+            {
+                // STI enables interrupts for the rest of the block. The
+                // per-block entry poll cannot see that window when a block's
+                // entry runs with IF cleared (the kernel idle thread's
+                // sti/nop/nop/cli spin is exactly this shape), so poll at the
+                // STI member's boundary — the interpreter would deliver at
+                // the very next instruction boundary.
+                EmitPostStiPoll(il, context, gprs, eip, flags, tsc, served,
+                    interruptSource, vector, plan.Length);
+            }
+
             if (!plan.IsTerminator && plan.Kind != JitKind.CallSpec)
             {
                 // Non-terminator members advance EIP after completion
@@ -301,6 +313,68 @@ internal static class JitEmitter
         il.Emit(OpCodes.Ldloc, served);
         il.Emit(OpCodes.Ret);
         il.MarkLabel(body);
+    }
+
+    /// <summary>
+    /// Fast mode's post-STI poll. STI turns interrupts on, and the
+    /// interpreter's per-instruction poll would deliver a pending vector at
+    /// the very next instruction boundary. A block whose entry runs with IF
+    /// cleared and whose only IF=1 window sits between STI and its CLI/end —
+    /// the kernel idle thread's sti/nop/nop/cli spin — would otherwise never
+    /// poll with IF=1 and every wakeup would starve (the guest wedges in its
+    /// idle loop). This poll runs at the STI member's boundary and exits
+    /// like the exact mode's pending path: STI counts as served, the
+    /// delivery boundary counts one extra instruction (the caller adds it),
+    /// TSC gets the boundary increment, and the saved return address is the
+    /// instruction after STI.
+    /// </summary>
+    private static void EmitPostStiPoll(
+        ILGenerator il,
+        LocalBuilder context,
+        LocalBuilder[] gprs,
+        LocalBuilder eip,
+        LocalBuilder flags,
+        LocalBuilder tsc,
+        LocalBuilder served,
+        LocalBuilder interruptSource,
+        LocalBuilder vector,
+        int stiLength)
+    {
+        Label done = il.DefineLabel();
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Callvirt, GetInterruptSource);
+        il.Emit(OpCodes.Stloc, interruptSource);
+        il.Emit(OpCodes.Ldloc, interruptSource);
+        il.Emit(OpCodes.Brfalse, done);
+        il.Emit(OpCodes.Ldloc, interruptSource);
+        il.Emit(OpCodes.Callvirt, Acknowledge);
+        il.Emit(OpCodes.Stloc, vector);
+        il.Emit(OpCodes.Ldloc, vector);
+        il.Emit(OpCodes.Ldc_I4_0);
+        il.Emit(OpCodes.Blt, done);
+
+        // Pending: record the vector, complete STI (EIP advance, boundary
+        // TSC++, served++), sync the full state and exit.
+        il.Emit(OpCodes.Ldarg_0);
+        il.Emit(OpCodes.Ldloc, vector);
+        il.Emit(OpCodes.Stfld, JitPending);
+        il.Emit(OpCodes.Ldloc, eip);
+        il.Emit(OpCodes.Ldc_I4, stiLength);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, eip);
+        il.Emit(OpCodes.Ldloc, tsc);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Conv_I8);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, tsc);
+        il.Emit(OpCodes.Ldloc, served);
+        il.Emit(OpCodes.Ldc_I4_1);
+        il.Emit(OpCodes.Add);
+        il.Emit(OpCodes.Stloc, served);
+        EmitSync(il, context, gprs, eip, flags, tsc, served);
+        il.Emit(OpCodes.Ldloc, served);
+        il.Emit(OpCodes.Ret);
+        il.MarkLabel(done);
     }
 
     private static void EmitMember(
