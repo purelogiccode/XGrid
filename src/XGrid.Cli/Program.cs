@@ -1756,7 +1756,8 @@ internal static class Program
             Console.WriteLine(
                 $"NV2A raster seconds legacy={machine.Nv2A.RasterLegacySeconds:F2} " +
                 $"psh={machine.Nv2A.RasterPshSeconds:F2} " +
-                $"calls={machine.Nv2A.RasterLegacyCalls}/{machine.Nv2A.RasterPshCalls} (host-only diagnostic)");
+                $"calls={machine.Nv2A.RasterLegacyCalls}/{machine.Nv2A.RasterPshCalls} " +
+                $"fastfills={machine.Nv2A.FastKindDebug} (host-only diagnostic)");
             var configs = new List<KeyValuePair<string, (long Draws, long Pixels)>>(machine.Nv2A.CombinerConfigStats);
             configs.Sort((a, b) => b.Value.Pixels.CompareTo(a.Value.Pixels));
             for (int i = 0; i < configs.Count && i < 10; i++)
