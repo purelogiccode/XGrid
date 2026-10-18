@@ -3095,6 +3095,41 @@ the long tail is JIT/optimization, NV2A completion (texture modes,
 backends), APU DSP streaming and productization (frontend, save states,
 release).
 
+### Performance campaign — xemu-class re-aim (2026-10-19)
+
+**Why the plan changed.** The fast-mode JIT campaign (§§190–194) finished
+its coverage/speed work: 99% served, menu 1B bit-exact, ktest 2B 3.76×
+CPU-bound. The measured 1B decomposition then moved the bottleneck:
+the **software rasterizer is 24.3 s of the 64.0 s menu wall (38%) and
+10.1 s of the 27.9 s triangle wall (36%)**, MMIO slow-path device dispatch
+(118.9M / 21.3M accesses) dominates the runner's non-raster time, and the
+pure CPU-JIT portion is ~23 s / ~4 s. The GL backend's per-draw CPU cost
+currently cancels its raster savings (menu +7–10 s, triangle ±0; §194
+am.3). **"CPU JIT throughput first" is therefore retired as the lead track;
+the GPU backend (Track B) and MMIO dispatch (Track D) are the primary
+performance tracks, with JIT Phase-2 leftovers (Track C) after them.**
+
+**Target definition (measured, not asserted).** 1 guest-second ≈ 733M steps
+(PIT cross-check, §68); today's fast mode is ~2.1% (menu) / ~4.9% (triangle)
+of real-time. "xemu-class" = the same content runs at wall ≤ guest-time.
+The baseline row is xemu on the same `data/test-samples/` workloads
+(triangle ISO, ktest smoke): wall, frames, frames-per-wall-second. Perf
+slices are measured in fast mode with verified guest-work equivalence
+(SHAs/counters); fast mode is never correctness currency.
+
+| Slice | Work | Acceptance test |
+|---|---|---|
+| **B1** | GL backend per-phase timers (`--gpu-time`: state, vertex, program, uniform, draw, present/readback); explain the menu +7–10 s and triangle parity | measured split delivered; no guest change |
+| **B2** | Per-draw/per-method overhead: state-shadow caching, batched/UBO uploads, no redundant binds | menu 1B fast+gl ≤ fast+sw − 15 s (≤45 s); triangle ≤ sw − 8 s (≤20 s); golden policy violations=0 maxDelta≤1; SHAs unchanged |
+| **B3** | Method coverage: menu subset → triangle's 471 unique pairs + ktest stream | zero `unsup` rows; guest counters identical |
+| **B4** | Present/pacing polish only on playability need | Phase-4/swapchain rules |
+| **D1** | MMIO fast dispatch (device-span guard + fast device entry) | −50% slow-member overhead; menu+triangle SHAs bit-exact; flag-off byte-identical |
+| **C1** | JIT Phase-2 leftovers (IL chaining, threshold sweep) | ≥5% wall both goldens; bit-exact |
+
+Gate rules unchanged: accurate mode is gate currency; headless `--gpu sw`
+default; never mix; no async; quiet-host medians for wall claims (pause and
+ask the operator when Fortnite is running); no real Xbox games; non-GPL.
+
 **Decode-cache default-on soak complete (§137, 2026-10-15):** boot CLI now
 uses cache by default; `--no-decode-cache` restores legacy fetch/decode.
 Menu/triangle 1B exact SHAs and full counters on default/on/off/verify;
