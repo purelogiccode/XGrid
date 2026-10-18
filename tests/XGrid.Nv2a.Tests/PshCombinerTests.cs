@@ -1,3 +1,4 @@
+using System;
 using Xunit;
 
 namespace XGrid.Nv2a.Tests;
@@ -484,5 +485,91 @@ public sealed class PshCombinerTests
         Assert.True(nv2A.TexturedPixels > 0);
         Assert.Equal(0xFF202020u, memory.ReadPhysical(0x3000u + (2u * 0x40u) + (2u * 4u)));
         Assert.Equal(0xFF202020u, memory.ReadPhysical(0x3000u + (1u * 0x40u) + (1u * 4u)));
+    }
+
+    private static float[] RandomVec(Random rng)
+    {
+        float[] result = new float[4];
+        for (int i = 0; i < 4; i++)
+        {
+            result[i] = rng.Next(8) switch
+            {
+                0 => 0f,
+                1 => -0f,
+                2 => 1f,
+                3 => -1f,
+                4 => float.NaN,
+                5 => float.PositiveInfinity,
+                6 => (float)((rng.NextDouble() * 4.0) - 2.0),
+                _ => (float)(rng.NextDouble() * 4.0),
+            };
+        }
+
+        return result;
+    }
+
+    [Fact]
+    public void ModulateFastPath_MatchesGenericEvaluate_BitExact()
+    {
+        var combiner = new PshCombiner
+        {
+            Control = 0x00000001u,
+            Final0 = 0x0000000Cu,
+            Final1 = 0x00001C80u,
+        };
+        combiner.RgbInputs[0] = 0x08040000u;
+        combiner.AlphaInputs[0] = 0x18140000u;
+        combiner.RgbOutputs[0] = 0x00000C00u;
+        combiner.AlphaOutputs[0] = 0x00000C00u;
+        Assert.True(combiner.IsModulateT0V0Passthrough());
+
+        float[][] consts = PshCombiner.BuildConsts(combiner);
+        var rng = new Random(20261017);
+        for (int i = 0; i < 4000; i++)
+        {
+            float[] diffuse = RandomVec(rng);
+            float[] specular = RandomVec(rng);
+            float[] fog = RandomVec(rng);
+            var texels = new[] { RandomVec(rng), RandomVec(rng), RandomVec(rng), RandomVec(rng) };
+            combiner.Evaluate(diffuse, specular, fog, texels, consts,
+                out float r1, out float g1, out float b1, out float a1);
+            PshCombiner.EvaluateModulateT0V0(diffuse, texels,
+                out float r2, out float g2, out float b2, out float a2);
+            Assert.Equal(BitConverter.SingleToInt32Bits(r1), BitConverter.SingleToInt32Bits(r2));
+            Assert.Equal(BitConverter.SingleToInt32Bits(g1), BitConverter.SingleToInt32Bits(g2));
+            Assert.Equal(BitConverter.SingleToInt32Bits(b1), BitConverter.SingleToInt32Bits(b2));
+            Assert.Equal(BitConverter.SingleToInt32Bits(a1), BitConverter.SingleToInt32Bits(a2));
+        }
+    }
+
+    [Fact]
+    public void ModulateFastPath_RecognizerRequiresExactConfig()
+    {
+        var combiner = new PshCombiner
+        {
+            Control = 0x00000001u,
+            Final0 = 0x0000000Cu,
+            Final1 = 0x00001C80u,
+        };
+        combiner.RgbInputs[0] = 0x08040000u;
+        combiner.AlphaInputs[0] = 0x18140000u;
+        combiner.RgbOutputs[0] = 0x00000C00u;
+        combiner.AlphaOutputs[0] = 0x00000C00u;
+        Assert.True(combiner.IsModulateT0V0Passthrough());
+
+        combiner.RgbInputs[0] = 0x08040001u; // C0 instead of V0
+        Assert.False(combiner.IsModulateT0V0Passthrough());
+        combiner.RgbInputs[0] = 0x08040000u;
+
+        combiner.Final1 = 0x00001C81u; // one settings bit different
+        Assert.False(combiner.IsModulateT0V0Passthrough());
+        combiner.Final1 = 0x00001C80u;
+
+        combiner.Control = 0x00000002u; // two stages
+        Assert.False(combiner.IsModulateT0V0Passthrough());
+        combiner.Control = 0x00000001u;
+
+        combiner.Final0 = 0x0000000Du; // D = R1
+        Assert.False(combiner.IsModulateT0V0Passthrough());
     }
 }

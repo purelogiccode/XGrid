@@ -783,6 +783,62 @@ public sealed class PshCombiner : ISnapshotable
         a = MapComponent(ReadFinalAlpha(regs, efx, efy, efz, fog, consts, gReg, gChan), gMod);
     }
 
+    /// <summary>
+    /// Recognizes the single-stage configuration the dashboard uses for the
+    /// vast majority of its menu pixels, EXACTLY: stage 0 rgb = T0.rgb *
+    /// V0.rgb and alpha = T0.a * V0.a (all inputs unsigned-identity mapped,
+    /// no dots, no mux), the stage written to R0 (AB/CD destinations 0 are
+    /// no-op register slots), and the final combiner passing R0 through
+    /// (E = F = A = B = C = 0, D = R0, G = R0.a, identity mappings, no
+    /// flags). When this returns true, <see cref="EvaluateModulateT0V0"/> is
+    /// bit-identical to <see cref="Evaluate"/> for the same inputs (pinned by
+    /// the PshCombiner differential test). The check is per-draw cheap.
+    /// </summary>
+    public bool IsModulateT0V0Passthrough()
+    {
+        return StageCount == 1 &&
+               Control == 0x00000001u &&
+               RgbInputs[0] == 0x08040000u &&
+               AlphaInputs[0] == 0x18140000u &&
+               RgbOutputs[0] == 0x00000C00u &&
+               AlphaOutputs[0] == 0x00000C00u &&
+               Final0 == 0x0000000Cu &&
+               Final1 == 0x00001C80u;
+    }
+
+    /// <summary>
+    /// Bit-exact specialized evaluator for
+    /// <see cref="IsModulateT0V0Passthrough"/>. Mirrors the generic path
+    /// operation for operation with the configuration constants folded:
+    /// stage rgb/alpha multiply, the -1..1 clamps, the CD = 0 term, the
+    /// A=B=C=E=F=0 final terms, and the final D/G reads of R0. Uses the same
+    /// <see cref="Math.Max(float, float)"/>/<see cref="Math.Clamp(float, float, float)"/>
+    /// calls as the generic path so NaN/±0 behavior is identical.
+    /// </summary>
+    public static void EvaluateModulateT0V0(
+        float[] diffuse,
+        float[][] texels,
+        out float r,
+        out float g,
+        out float b,
+        out float a)
+    {
+        r = ModulatePass(Math.Max(texels[0][0], 0f), Math.Max(diffuse[0], 0f));
+        g = ModulatePass(Math.Max(texels[0][1], 0f), Math.Max(diffuse[1], 0f));
+        b = ModulatePass(Math.Max(texels[0][2], 0f), Math.Max(diffuse[2], 0f));
+        a = ModulatePass(Math.Max(texels[0][3], 0f), Math.Max(diffuse[3], 0f));
+    }
+
+    private static float ModulatePass(float t0, float v0)
+    {
+        // Stage: ab = clamp(-1..1) of the product; cd = clamp(0 * 0) = +0;
+        // mux = ab + cd (no FlagMux) re-clamped. Final: D = max(mux, 0);
+        // r = D + (C + (B - C) * A) with A = B = C = 0.
+        float ab = Math.Clamp(t0 * v0, -1f, 1f);
+        float mux = Math.Clamp(ab + 0f, -1f, 1f);
+        return Math.Max(mux, 0f) + 0f;
+    }
+
     private static void CopyVec(Span<float> destination, float[] source)
     {
         destination[0] = source[0];

@@ -208,6 +208,22 @@ public sealed class PgraphBackendSeamTests
     }
 
     [Fact]
+    public void RasterTiming_DefaultOffThenAccountsOneFill()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        Assert.False(nv2A.RasterTimingEnabled);
+        Assert.Equal(0L, nv2A.RasterLegacyCalls + nv2A.RasterPshCalls);
+        Assert.Equal(0.0, nv2A.RasterLegacySeconds + nv2A.RasterPshSeconds);
+
+        WriteVertices(memory);
+        nv2A.RasterTimingEnabled = true;
+        PushMethods(nv2A, memory, ElementDrawStream());
+
+        Assert.Equal(1L, nv2A.RasterLegacyCalls + nv2A.RasterPshCalls);
+        Assert.True(nv2A.RasterLegacySeconds + nv2A.RasterPshSeconds > 0.0);
+    }
+
+    [Fact]
     public void BackendAttached_SoftwarePathIdenticalAndBackendObserves()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();

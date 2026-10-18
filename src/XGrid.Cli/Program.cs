@@ -102,6 +102,7 @@ internal static class Program
         bool emitDiag = false;
         bool shapeTally = false;
         string gpuBackend = "sw";
+        bool gpuTime = false;
         string? hotspotPath = null;
         List<string> scans = new();
         uint machineWatchStart = 0x35B00;
@@ -280,6 +281,9 @@ internal static class Program
                 case "--gpu":
                     gpuBackend = NextValue(args, ref i);
                     break;
+                case "--gpu-time":
+                    gpuTime = true;
+                    break;
                 case "--hotspot":
                     hotspotPath = NextValue(args, ref i);
                     break;
@@ -377,6 +381,12 @@ internal static class Program
                     $"Idle-skip={(machine.Cpu.IdleSkipMeasureOnly ? "probe" : "on")} " +
                     $"minIterations={machine.Cpu.IdleSkipMinIterations} chunk={machine.Cpu.IdleSkipChunkSteps} " +
                     "(absolute-step recipes: use flag-off runs)");
+            }
+
+            if (gpuTime)
+            {
+                machine.Nv2A.RasterTimingEnabled = true;
+                Console.WriteLine("GPU raster timing=on (host-only diagnostic; no guest state change)");
             }
 
             HotspotProfiler? hotspot = null;
@@ -1741,6 +1751,19 @@ internal static class Program
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount}");
+        if (machine.Nv2A.RasterTimingEnabled)
+        {
+            Console.WriteLine(
+                $"NV2A raster seconds legacy={machine.Nv2A.RasterLegacySeconds:F2} " +
+                $"psh={machine.Nv2A.RasterPshSeconds:F2} " +
+                $"calls={machine.Nv2A.RasterLegacyCalls}/{machine.Nv2A.RasterPshCalls} (host-only diagnostic)");
+            var configs = new List<KeyValuePair<string, (long Draws, long Pixels)>>(machine.Nv2A.CombinerConfigStats);
+            configs.Sort((a, b) => b.Value.Pixels.CompareTo(a.Value.Pixels));
+            for (int i = 0; i < configs.Count && i < 10; i++)
+            {
+                Console.WriteLine($"NV2A combiner cfg n={configs[i].Value.Pixels} fills={configs[i].Value.Draws} {configs[i].Key}");
+            }
+        }
         Console.WriteLine(
             $"NV2A tex ok={machine.Nv2A.TextureSampleSuccesses} rgb0={machine.Nv2A.TextureSampleRgbZero} " +
             $"disabled={machine.Nv2A.TextureSampleDisabled} badsize={machine.Nv2A.TextureSampleBadSize} " +
@@ -2342,7 +2365,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--hotspot <csv>] [--gpu sw|gl] [--gpu-time]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
