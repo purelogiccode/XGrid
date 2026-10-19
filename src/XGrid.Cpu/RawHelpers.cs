@@ -68,7 +68,10 @@ internal static unsafe class RawHelpers
         cpu.Context.Tsc = *state->Tsc;
 
         XboxCpu.SpecHandler? handler = XboxCpu.ResolveSpec(in instruction);
-        XboxCpu.RawTrace($"  spec idx={index} {instruction.Mnemonic} handler={handler is not null}");
+        if (XboxCpu.RawTraceEnabled)
+        {
+            XboxCpu.RawTrace($"  spec idx={index} {instruction.Mnemonic} handler={handler is not null}");
+        }
         if (handler is not null)
         {
             handler(cpu, in instruction);
@@ -108,7 +111,11 @@ internal static unsafe class RawHelpers
         _ = statePointer;
         XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
         int result = cpu.RawPollInterrupt();
-        XboxCpu.RawTrace($"  poll ctrl={ctrl:X} -> {result}");
+        if (XboxCpu.RawTraceEnabled)
+        {
+            XboxCpu.RawTrace($"  poll ctrl={ctrl:X} -> {result}");
+        }
+
         return result;
     }
 

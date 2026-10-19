@@ -813,6 +813,175 @@ public sealed class JitTests
     }
 
     [Fact]
+    public void IrqFast_DeliveredFlags_MatchBetweenRunners()
+    {
+        // Delivery into a block whose *emission* ends with live host
+        // arithmetic flags (the ALU member after the STI): the epilogue merge
+        // must use the frame on every incoming edge, including the poll's
+        // pending path, where the helper call has clobbered the host FLAGS.
+        // Regression: the raw epilogue was compiled in the live state, the
+        // pending path took it with the helper's leftovers, and the delivered
+        // EFLAGS lost CF/PF (kernel idle delivery: 0x202 instead of 0x246).
+        //
+        // The kernel idle shape (sti..cli) keeps the only IF=1 poll inside the
+        // block, so the delivery provably comes from the STI's post-poll. The
+        // JIT is warmed first with a never-firing source so the raw runner is
+        // already serving when the fresh source fires.
+        byte[] code =
+        [
+            0xB9, 0x20, 0x00, 0x00, 0x00,              // mov ecx,0x20
+            0x31, 0xD2,                                // xor edx,edx       (0x1005, loop head)
+            0xFB,                                      // sti               (0x1007)
+            0x01, 0x05, 0x10, 0x20, 0x00, 0x00,        // add [0x2010],eax  (0x1008)
+            0xFA,                                      // cli               (0x100E)
+            0x49,                                      // dec ecx           (0x100F)
+            0x75, 0xF3,                                // jne 0x1005        (0x1010)
+            0xF4,                                      // hlt               (0x1012)
+        ];
+        byte[] isr =
+        [
+            0x8B, 0x44, 0x24, 0x08,                    // mov eax,[esp+8]   (delivered EFLAGS)
+            0xA3, 0x20, 0x20, 0x00, 0x00,              // mov [0x2020],eax
+            0xF4,                                      // hlt
+        ];
+
+        XboxCpu il = CreateJit(code);
+        il.JitRawBlocks = false;
+        XboxCpu raw = CreateJit(code);
+        foreach (XboxCpu cpu in new[] { il, raw })
+        {
+            Preset(cpu);
+            for (int i = 0; i < isr.Length; i++)
+            {
+                cpu.Ram().Write8(0x3000 + (uint)i, isr[i]);
+            }
+
+            InstallIdt(cpu, 0x21, 0x3000);
+            cpu.Context.Eflags &= ~FlagBits.If;
+            cpu.InterruptSource = new CountedInterruptSource(0x21, int.MaxValue);
+            cpu.Execute(40); // warm the block + raw runner; the loop outlives it
+        }
+
+        Assert.True(raw.JitRawServedMembers > 0);
+
+        foreach (XboxCpu cpu in new[] { il, raw })
+        {
+            // Land the delivery on the STI's post-poll: clear IF so the next
+            // acknowledge happens inside the block (the kernel idle shape),
+            // not at a block-entry poll.
+            cpu.Context.Eflags &= ~FlagBits.If;
+            cpu.InterruptSource = new CountedInterruptSource(0x21, 1);
+            cpu.Execute(400);
+        }
+
+        Assert.True(il.Context.Halted);
+        Assert.True(raw.Context.Halted);
+        Assert.Equal(1, il.InterruptCount);
+        Assert.Equal(1, raw.InterruptCount);
+        Assert.Equal(il.Ram().Read32(0x2020), raw.Ram().Read32(0x2020));
+    }
+
+    [Fact]
+    public void StoreToPageTablePage_WithWatchArmed_MatchesInterpreter()
+    {
+        // A store whose physical target is a page-table page, with a bus write
+        // watch covering it: the exact bus path must run (CheckWatch +
+        // NoteStorePhysical + the write), on both runners. Regression: the raw
+        // guard ran the note helper first, the call clobbered R9 (the linear),
+        // and the watch branch then sent the store down the slow path with
+        // that garbage address (triangle: a #PF at CR2=0x0D at step ~25.05M).
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00,              // mov ecx,4
+            0xB8, 0x11, 0x22, 0x33, 0x44,              // mov eax,0x44332211 (0x1005)
+            0x40,                                      // inc eax            (0x100A, loop head)
+            0x89, 0x05, 0x00, 0x50, 0x00, 0x00,        // mov [0x5000],eax   (0x100B, page-table page)
+            0x49,                                      // dec ecx            (0x1011)
+            0x75, 0xF6,                                // jne 0x100A         (0x1012)
+            0xF4,                                      // hlt                (0x1014)
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        var plainHits = new List<(uint Address, int Size, uint Value)>();
+        var jitHits = new List<(uint Address, int Size, uint Value)>();
+        foreach ((XboxCpu cpu, List<(uint, int, uint)> hits) in new[] { (plain, plainHits), (jit, jitHits) })
+        {
+            MapIdentity(cpu.Bus(), 0, 0x10);
+            EnablePaging(cpu);
+            cpu.Bus().WatchStart = 0x2000;
+            cpu.Bus().WatchEnd = 0x10000;
+            cpu.Bus().WatchHit += (address, size, value) => hits.Add((address, size, value));
+        }
+
+        plain.Execute(100);
+        jit.Execute(100);
+
+        Assert.True(jit.JitRawServedMembers > 0);
+
+        // Every iteration's store must go down the exact bus path on both
+        // engines (the page-table walk reads hit the watch too, so the store
+        // hits are matched by their distinct stored values). A junk-linear
+        // slow path (the old note-then-watch order) raises hits at the wrong
+        // address or none at all; the pre-fix failure is also pinned by the
+        // title differential (a #PF at CR2=0x0D at triangle step ~25.05M).
+        Assert.Equal(plainHits, jitHits);
+        foreach (uint value in new[] { 0x44332212u, 0x44332213u, 0x44332214u, 0x44332215u })
+        {
+            Assert.Contains((0x5000u, 4, value), jitHits);
+        }
+
+        // Each iteration stores a distinct value, so the final word at the
+        // page-table page proves the last store ran.
+        Assert.Equal(0x44332215u, jit.Bus().Read32(0x5000));
+        AssertSameState(plain, jit);
+    }
+
+    [Fact]
+    public void StoreToWatchedRange_RaisesHitOnBothRunners()
+    {
+        // The precise watch range test: a store inside [WatchStart, WatchEnd)
+        // takes the exact bus path on every runner and raises WatchHit with
+        // the physical address, the size and the value; a store outside the
+        // range writes inline and raises nothing (the range check is exact,
+        // not a conservative "any watch armed" bail).
+        byte[] code =
+        [
+            0xB9, 0x02, 0x00, 0x00, 0x00,              // mov ecx,2
+            0x89, 0x03,                                // mov [ebx],eax      (0x1005, watched)
+            0x89, 0x83, 0x00, 0x01, 0x00, 0x00,        // mov [ebx+0x100],eax (0x1007, not watched)
+            0x49,                                      // dec ecx            (0x100D)
+            0x75, 0xF5,                                // jne 0x1005         (0x100E)
+            0xF4,                                      // hlt                (0x1010)
+        ];
+
+        XboxCpu il = CreateJit(code);
+        il.JitRawBlocks = false;
+        XboxCpu raw = CreateJit(code);
+        var ilHits = new List<(uint Address, int Size, uint Value)>();
+        var rawHits = new List<(uint Address, int Size, uint Value)>();
+        foreach ((XboxCpu cpu, List<(uint, int, uint)> hits) in new[] { (il, ilHits), (raw, rawHits) })
+        {
+            Preset(cpu);
+            cpu.Context.Ebx = 0x2004;
+            cpu.Bus().WatchStart = 0x2000;
+            cpu.Bus().WatchEnd = 0x2010;
+            cpu.Bus().WatchHit += (address, size, value) => hits.Add((address, size, value));
+        }
+
+        il.Execute(10);
+        raw.Execute(10);
+
+        Assert.True(raw.JitRawServedMembers > 0);
+        Assert.Equal(2, rawHits.Count);
+        Assert.Equal(ilHits, rawHits);
+        Assert.Equal(
+            new[] { (0x2004u, 4, 0x11111111u), (0x2004u, 4, 0x11111111u) },
+            rawHits);
+        Assert.Equal(0x11111111u, raw.Bus().Read32(0x2104));
+    }
+
+    [Fact]
     public void FlushMidRun_RevalidatesAndStaysExact()
     {
         // A decode-cache flush (what every guest page-table store triggers)

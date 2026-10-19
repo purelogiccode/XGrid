@@ -1762,6 +1762,7 @@ internal static class Program
                 $"nonJitMs={machine.Cpu.NonJitTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
+                (machine.Cpu.JitRawBlocks ? $"rawBuilt={machine.Cpu.JitRawBlocksBuilt} rawInv={machine.Cpu.JitRawInvocations} rawServed={machine.Cpu.JitRawServedMembers} " : string.Empty) +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
                 (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) + $"yieldReasons={string.Join('/', machine.Cpu.JitYieldReasons)} " +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +

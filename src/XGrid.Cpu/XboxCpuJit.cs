@@ -464,6 +464,7 @@ public sealed unsafe partial class XboxCpu
                     }
 
                     NoteRawInvocation();
+                    NoteRawServed(served);
                     if (_rawTrace)
                     {
                         System.IO.File.AppendAllText(
