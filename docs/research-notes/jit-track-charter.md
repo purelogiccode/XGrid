@@ -1,5 +1,22 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (third session — C3 correctness campaign, §199g):
+> GATE 1 CLOSED, GATE 2 AT 25.05M/1B.** `JitRawBlocks` forced on now runs the
+> whole `JitTests` suite green — **12 → 0 failures, 56/56 JitTests +
+> RawJitTests, suite 1492 green** — after fourteen latent raw-emitter fixes
+> (non-terminator EIP advance, stale EIP for helpers, CLI/STI EAX clobber, the
+> missing post-STI/POPF poll, the VPN-vs-slot xlat probe bug, unguarded inline
+> stores, the poll's shadow-space overlap, host DF across helper calls — a
+> Win64 ABI violation, flag-liveness leaking across merge points, the store
+> guard clobbering guest EAX/ECX/EDX, GC-stale CPU/entries pointers, memory
+> MovExtend, disp32 ≥ 0x80000000 encoding, WP/A-D parity). The **IL-fast vs
+> raw-fast title differential matches bit-exactly through 25,053,067 triangle
+> steps**, then diverges inside a raw block at `0x8001F9EB` (a 16-bit store to
+> a page-table page; raw takes a #PF the IL run does not) — that is the gate
+> before any measurement or default flip. The JitTests harness now forces
+> `JitRawBlocks` on Windows so the native runner stays under the differential
+> net; other hosts fall back to the IL runner automatically.
+>
 > **STATUS 2026-10-20 (second 12-hour window): PHASE 3 STARTED — the raw
 > emitter executes real blocks.** C2 (DynamicMethod, state sync + native
 > Fld/Fst/Fstp m32) and D3b landed first and took the fast-mode 1B goldens to
@@ -9,13 +26,10 @@
 > register, memory members running the data translate-cache probe inline
 > against pinned pointers, and a reverse-P/Invoke trampoline to the existing
 > spec handlers for every unencoded shape, so every block is emittable
-> (§§199e/199f). Four bring-up blockers were found by differential testing and
-> fixed (Win64 shadow space, delegate parameter marshalling, a probe that used
-> guest registers, and helper state not published back to the block).
-> **Validation: 11/11 raw differentials green, suite 1492 green, build and
-> format clean.** The Phase-3 exit criterion is *not* met yet: with the raw
-> path forced on a dozen `JitTests` still fail, and **no 1B wall measurement
-> exists** — those two gates come before any default flip.
+> (§§199e/199f; the bring-up blockers and the TSC gap are recorded there).
+> Validation at that point: 11/11 raw differentials green, suite 1492 green;
+> the Phase-3 exit criterion was *not* met (a dozen `JitTests` failed with the
+> path forced on and no 1B measurement existed).
 >
 > **STATUS 2026-10-19 (evening, quiet host): PHASE 0 + 1 LANDED; PHASE 3
 > ENTRY CONDITION MET — CPU ENGINE IS THE LEAD TRACK AGAIN (§199).**

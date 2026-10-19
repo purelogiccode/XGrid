@@ -145,6 +145,9 @@ public sealed class DecodeCache
     private readonly Dictionary<uint, List<uint>> _byPhysicalPage = new();
     private readonly ulong[] _activePages = new ulong[ActivePageWords];
 
+    /// <summary>Gets the active-physical-page bitset (C3 raw store guard pins it).</summary>
+    internal ulong[] ActivePageBits => _activePages;
+
     /// <summary>Gets or sets optional derived blocks; null leaves the legacy cache unchanged.</summary>
     public DecodedBlockCache? Blocks { get; set; }
 

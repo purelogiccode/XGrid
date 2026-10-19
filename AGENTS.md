@@ -514,16 +514,25 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   bit-reproducible). Also landed during the wave: `tools/wave` fixes
   (terminal-finish turn detection, state-save retry on Windows file locks)
   and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
-- **C3 raw emitter (2026-10-20, §§199e/199f; opt-in `--jit-raw`).** One
-  native x86-64 function per block (Iced 1.21.0, MIT): guest GPRs in fixed host
-  registers, arithmetic flags in the host FLAGS register, memory members
-  running the data translate-cache probe inline against pinned pointers, and a
-  reverse-P/Invoke trampoline to the existing spec handlers for every unencoded
-  shape. Four bring-up blockers fixed (Win64 shadow space, delegate parameter
-  marshalling, a probe using guest registers, helper state not published back)
-  plus six correctness fixes. **11/11 raw differentials green, suite 1492
-  green**; still opt-in — a dozen `JitTests` fail with the path forced on and
-  there is no wall measurement yet.
+- **C3 raw emitter (2026-10-20, §§199e/199f; correctness campaign 2026-10-19→20, §199g; opt-in
+  `--jit-raw`).** One native x86-64 function per block (Iced 1.21.0, MIT): guest GPRs in fixed host
+  registers, arithmetic flags in the host FLAGS register, memory members running the data
+  translate-cache probe inline against pinned pointers, and a reverse-P/Invoke trampoline to the
+  existing spec handlers for every unencoded shape. **The correctness campaign closed the JitTests
+  gate: 12 → 0 failures with `JitRawBlocks` forced on (56/56 JitTests+RawJitTests, suite 1492
+  green)** and fixed fourteen latent bugs (decisions §199g): missing non-terminator EIP advance,
+  helpers seeing a stale EIP, CLI/STI clobbering guest EAX, the missing fast-mode post-STI/POPF
+  poll, the translate-cache probe indexing by raw VPN (out-of-bounds ≥ 1 MB), unguarded inline
+  stores (NoteStore/watch), the poll's shadow-space overlap, host DF left set across helper calls
+  (Win64 ABI — runtime `rep movs` corruption), flag-liveness leaking from slow paths into merge
+  points, the store guard's helper call clobbering guest EAX/ECX/EDX, GC-stale CPU/entries
+  pointers (weak GCHandle + pinned entries array), memory-source MovExtend emitted as a register
+  move, disp32 ≥ 0x80000000 failing to encode, and WP/A-D parity with the IL probe. **Open: the
+  IL-fast vs raw-fast differential matches bit-exactly through 25,053,067 triangle steps, then
+  diverges inside a raw block at `0x8001F9EB` (16-bit store to a page-table page; raw takes a #PF
+  at EIP=0x8001F9F3 CR2=0x0D that the IL run does not) — fix, then 1B menu+triangle + quiet-host
+  measurements before any default flip.** No performance claim yet (loaded-host single runs show
+  ~2-5× msps informational only).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
    once; conflicts were purged 2026-10-09). Baseline: **1492 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
@@ -565,12 +574,39 @@ publishes them back. Also fixed: `cmp [mem],reg/imm` is a read (it was routed
 through the write path), CLI/STI/CLD/STD materialize the flags before their
 `and`/`or`, ADC/SBB load CF when it is not live, addressing uses the 64-bit
 register forms, the memory slow path parks its address in RDI, and any emit
-failure falls back to the IL runner. **All 11 raw differentials green; suite
-1492 green; build and format clean.** The raw path stays **opt-in**: with
-`JitRawBlocks` forced on, a dozen `JitTests` (MMIO, strings, indirect jumps,
-self-modifying code, popf/STI IRQ windows, condition sweep) still fail, and
-**no performance measurement exists yet** — both must be closed before any
-default flip.
+failure falls back to the IL runner. **The 2026-10-19→20 correctness campaign
+(decisions §199g) closed both correctness gaps:** the post-member IRQ poll for
+STI/POPF/string/port members (the §193 wakeup contract), the data translate
+cache probe indexing by raw VPN instead of `vpn & DataXlatMask` (anything
+≥ 1 MB read out of the 256-entry tables — the original triangle crash), the
+non-terminator EIP advance, forward-publishing Eip/Eflags/Tsc to helpers, the
+unguarded inline stores (PT/active-page bitset guard calling
+`NoteStorePhysical` inline like the IL path, plus the watch-armed flag), the
+poll's parked registers landing in the callee's shadow space, host DF left set
+across helper calls (a Win64 ABI violation that corrupted the runtime's
+`rep movs`), flag liveness leaking from slow-path branches into merge points,
+the store guard's helper call clobbering guest EAX/ECX/EDX, GC-stale CPU and
+entries pointers (the CPU now travels as a weak `GCHandle`, the entries array
+is pinned with `GC.AllocateArray(pinned: true)`), memory-source MovExtend
+emitted as a register move, disp32 ≥ 0x80000000 failing to encode, WP parity
+(`Cr0Wp` flag) and A/D parity with the IL probe. **All 56 JitTests +
+RawJitTests pass with the raw path forced on; suite 1492 green; build and
+format clean.** The raw path stays **opt-in**; the remaining gate is the
+IL-fast vs raw-fast title differential — it matches bit-exactly through
+**25,053,067 triangle steps**, then diverges inside a raw block at
+`0x8001F9EB` (16-bit store to a page-table page; raw takes a #PF at
+EIP=0x8001F9F3 CR2=0x0D the IL run does not) — fix that, then 1B menu+triangle
+plus quiet-host measurements before any default flip.
+
+Recipe for the open divergence: `boot … --jit --jit-threshold 16 --jit-spin
+--jit-raw --steps 25053130 --gpu sw` vs the same without `--jit-raw`; RAM SHA
+bisect bounds it to steps [25,053,067, 25,053,130]; the raw block at head
+`0x8001F9EB` is `movzx edi,di; shl edi,4; add edi,ecx;
+mov [0x83FF0002+edi*4],bx; jmp` and its dump was read end-to-end (address
+computation, guard and note path all match the IL semantics) — the fault is
+`err=2 CR2=0x0D`, so the next step is comparing the faulting store's linear
+address and the pre-fault registers (a `--save-state` at 25,053,124 does not
+land mid-raw-block, so instrument the emitter or the helper).
 
 Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix), XGRID_NONRAM=1
 (non-cacheable fetch pages), --jit-timing (runner vs chain split), Host timing

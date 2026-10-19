@@ -24,6 +24,28 @@ internal unsafe struct RawState
     /// <summary>Data translate-cache writability flags, pinned.</summary>
     public byte* XlatWritable;
 
+    /// <summary>
+    /// Decode-cache active physical pages (ulong bitset words, pinned): a
+    /// store to an active page must run the decode-cache invalidation, so the
+    /// emitted store guard routes it to the exact slow path.
+    /// </summary>
+    public ulong* ActiveBits;
+
+    /// <summary>
+    /// MMU page-table physical pages (ulong bitset words, pinned; null when
+    /// tracking is off): a store to one of these full-flushes the caches.
+    /// </summary>
+    public ulong* PtBits;
+
+    /// <summary>1 when a bus write watch is armed: inline stores go slow.</summary>
+    public uint WatchArmed;
+
+    /// <summary>1 when CR0.WP is set: a non-writable page takes the slow path (IL parity).</summary>
+    public uint Cr0Wp;
+
+    /// <summary>1 when the inline store guard cannot be evaluated (no decode cache): stores go slow.</summary>
+    public uint StoreGuardBail;
+
     /// <summary>Base RAM bytes, pinned (null when no RAM device is attached).</summary>
     public byte* Ram;
 

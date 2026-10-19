@@ -446,15 +446,17 @@ public sealed unsafe partial class XboxCpu
                     // The raw runner keeps guest state in host registers for the
                     // whole block, so it needs the full member budget up front
                     // (otherwise it yields and the caller serves the tail).
+                    // The CPU is passed as a GC handle and the entries array is
+                    // pinned at formation: both stay valid across the helper
+                    // calls a raw block makes (a GC may move objects there).
                     RawState rawState = BuildRawState();
-                    XboxCpu self = this;
+                    IntPtr selfHandle = RawSelfHandle;
                     DecodeCacheEntry[] entryArray = block.Entries;
-                    IntPtr selfPointer = Unsafe.As<XboxCpu, IntPtr>(ref self);
                     IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref entryArray);
                     RawEnter();
                     try
                     {
-                        served = block.RawRunner(selfPointer, &rawState, entriesPointer, budget - total);
+                        served = block.RawRunner(selfHandle, &rawState, entriesPointer, budget - total);
                     }
                     finally
                     {
@@ -781,7 +783,7 @@ public sealed unsafe partial class XboxCpu
         JitRun? runner = null;
         if (JitRawBlocks && !JitExact)
         {
-            nint rawPointer = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count));
+            nint rawPointer = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count), JitMmioFast);
             if (rawPointer != 0)
             {
                 rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
@@ -794,6 +796,11 @@ public sealed unsafe partial class XboxCpu
         // something to serve the tail with (a yield would desynchronise the
         // step and TSC accounting).
         runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+        if (runner is null)
+        {
+            jit.Store(headLinear, generation, null);
+            return null;
+        }
         if (runner is null)
         {
             jit.Store(headLinear, generation, null);
@@ -819,9 +826,14 @@ public sealed unsafe partial class XboxCpu
             }
         }
 
+        // The entries array is pinned for the block's lifetime: the raw runner
+        // receives its address and a GC during a helper call must not move it.
+        DecodeCacheEntry[] pinnedEntries = GC.AllocateArray<DecodeCacheEntry>(count, pinned: true);
+        entries.AsSpan(0, count).CopyTo(pinnedEntries);
+
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            entries.AsSpan(0, count).ToArray(), runner, rawRunner, hasSti, hasStore);
+            pinnedEntries, runner, rawRunner, hasSti, hasStore);
         jit.Store(headLinear, generation, block);
         return block;
     }

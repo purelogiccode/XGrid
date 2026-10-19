@@ -49,6 +49,7 @@ internal static unsafe class RawBlockEmitter
     private const int F_EIP = ShadowSpace + 0x28;
     private const int F_TSC = ShadowSpace + 0x30;
     private const int F_VALUE = ShadowSpace + 0x38;
+    private const int F_PHYS = ShadowSpace + 0x40;
 
     // 8 callee-saved pushes (64) + this size keeps rsp 16-byte aligned at a call.
     private const int FrameSize = ShadowSpace + 0x108;
@@ -62,6 +63,11 @@ internal static unsafe class RawBlockEmitter
     private static readonly int OffXlatTag = (int)Marshal.OffsetOf<RawState>(nameof(RawState.XlatTag));
     private static readonly int OffXlatPhys = (int)Marshal.OffsetOf<RawState>(nameof(RawState.XlatPhys));
     private static readonly int OffXlatWritable = (int)Marshal.OffsetOf<RawState>(nameof(RawState.XlatWritable));
+    private static readonly int OffActiveBits = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ActiveBits));
+    private static readonly int OffPtBits = (int)Marshal.OffsetOf<RawState>(nameof(RawState.PtBits));
+    private static readonly int OffWatchArmed = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WatchArmed));
+    private static readonly int OffCr0Wp = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Cr0Wp));
+    private static readonly int OffStoreGuardBail = (int)Marshal.OffsetOf<RawState>(nameof(RawState.StoreGuardBail));
     private static readonly int OffRam = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Ram));
     private static readonly int OffRamSize = (int)Marshal.OffsetOf<RawState>(nameof(RawState.RamSize));
     private static readonly int OffEip = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Eip));
@@ -104,7 +110,7 @@ internal static unsafe class RawBlockEmitter
     /// Tries to build a raw runner for the planned members. Returns 0 when the
     /// host cannot run raw code.
     /// </summary>
-    public static nint TryBuild(uint headEip, ReadOnlySpan<JitMemberPlan> plans)
+    public static nint TryBuild(uint headEip, ReadOnlySpan<JitMemberPlan> plans, bool mmioFast)
     {
         if (!RawCodeMemory.IsSupported || plans.Length == 0)
         {
@@ -113,13 +119,14 @@ internal static unsafe class RawBlockEmitter
 
         try
         {
-            var ctx = new EmitContext(headEip, plans.ToArray());
+            var ctx = new EmitContext(headEip, plans.ToArray(), mmioFast);
             return ctx.Build();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // A shape the assembler cannot encode: keep the IL runner for this
             // block (correctness first, the raw path is an optimization).
+            XboxCpu.RawTrace($"  build failed head={headEip:X5}: {ex.GetType().Name}: {ex.Message}");
             return 0;
         }
     }
@@ -129,13 +136,16 @@ internal static unsafe class RawBlockEmitter
         private readonly Assembler _a = new(64);
         private readonly uint _headEip;
         private readonly JitMemberPlan[] _plans;
+        private readonly bool _mmioFast;
         private Label _exit;
         private bool _flagsLive;
+        private bool _memberHelper;
 
-        public EmitContext(uint headEip, JitMemberPlan[] plans)
+        public EmitContext(uint headEip, JitMemberPlan[] plans, bool mmioFast)
         {
             _headEip = headEip;
             _plans = plans;
+            _mmioFast = mmioFast;
         }
 
         public nint Build()
@@ -264,7 +274,7 @@ internal static unsafe class RawBlockEmitter
 
             // popfq must never see IOPL/TF/NT (they fault in user mode): only
             // the arithmetic flags and DF are loaded into the host FLAGS.
-            a.and(R32(Register.EAX), unchecked((int)(ArithmeticMask | 0x400u)));
+            a.and(R32(Register.EAX), unchecked((int)ArithmeticMask));
             a.push(R64(Register.RAX));
             a.popfq();
 
@@ -278,6 +288,11 @@ internal static unsafe class RawBlockEmitter
 
             a.mov(R64(Register.R9), Field(Register.R11, OffRegisters));
             LoadGuestRegisters(a, Register.R9);
+
+            // The host FLAGS register now carries the guest's arithmetic flags
+            // (plus DF): every following member may rely on them staying live
+            // until something materializes them.
+            _flagsLive = true;
         }
 
         private static void LoadGuestRegisters(Assembler a, Register baseRegister)
@@ -324,19 +339,31 @@ internal static unsafe class RawBlockEmitter
             a.ret();
         }
 
+        /// <summary>
+        /// Merges the authoritative flag sources into the frame's EFLAGS slot:
+        /// the host FLAGS register when the arithmetic bits are live,
+        /// otherwise the slot's own (already merged) value, plus the control
+        /// bits (IF/DF/...) tracked in <see cref="F_CTRL"/>. Always runs, so a
+        /// CLI/STI/CLD/STD member followed by a flag-consuming one sees the
+        /// updated control bits even when no arithmetic flag was written.
+        /// </summary>
         private void EmitMaterializeFlags()
         {
-            if (!_flagsLive)
-            {
-                return;
-            }
-
             // R10D, never a guest register: the guest GPRs must survive until
             // the epilogue stores them.
             Assembler a = _a;
-            a.pushfq();
-            a.pop(R64(Register.R10));
-            a.and(R32(Register.R10D), unchecked((int)ArithmeticMask));
+            if (_flagsLive)
+            {
+                a.pushfq();
+                a.pop(R64(Register.R10));
+                a.and(R32(Register.R10D), unchecked((int)ArithmeticMask));
+            }
+            else
+            {
+                a.mov(R32(Register.R10D), Slot(F_EFLAGS));
+                a.and(R32(Register.R10D), unchecked((int)ArithmeticMask));
+            }
+
             a.or(R32(Register.R10D), Slot(F_CTRL));
             a.mov(Slot(F_EFLAGS), R32(Register.R10D));
             _flagsLive = false;
@@ -349,12 +376,28 @@ internal static unsafe class RawBlockEmitter
                 return;
             }
 
+            // R10D, never a guest register: the guest GPRs must survive.
             Assembler a = _a;
-            a.mov(R32(Register.EAX), Slot(F_EFLAGS));
-            a.and(R32(Register.EAX), unchecked((int)(ArithmeticMask | 0x400u)));
-            a.push(R64(Register.RAX));
+            a.mov(R32(Register.R10D), Slot(F_EFLAGS));
+            a.and(R32(Register.R10D), unchecked((int)ArithmeticMask));
+            a.push(R64(Register.R10));
             a.popfq();
             _flagsLive = true;
+        }
+
+        /// <summary>
+        /// Reloads the host FLAGS register when the arithmetic flags are dead
+        /// (a probe, a poll or a control-flag update clobbered them) and the
+        /// next operation only partially rewrites them: Inc/Dec preserve CF,
+        /// ADC/SBB read it. Full-setters (add/sub/and/or/xor/cmp/test) compute
+        /// every arithmetic bit and need no reload.
+        /// </summary>
+        private void EmitEnsureHostFlags()
+        {
+            if (!_flagsLive)
+            {
+                EmitLoadFlags();
+            }
         }
 
         private void EmitStoreGuestState()
@@ -401,7 +444,7 @@ internal static unsafe class RawBlockEmitter
 
             // popfq must never see IOPL/TF/NT (they fault in user mode): only
             // the arithmetic flags and DF are loaded into the host FLAGS.
-            a.and(R32(Register.EAX), unchecked((int)(ArithmeticMask | 0x400u)));
+            a.and(R32(Register.EAX), unchecked((int)ArithmeticMask));
             a.push(R64(Register.RAX));
             a.popfq();
             _flagsLive = true;
@@ -441,26 +484,96 @@ internal static unsafe class RawBlockEmitter
             _a.mov(Slot(F_EIP), R32(Register.R10D));
         }
 
-        /// <summary>Updates the control-flag slot (memory immediates need a register source).</summary>
+        /// <summary>
+        /// Updates the control-flag slot (CLI/STI/CLD/STD). Materializes the
+        /// arithmetic flags first (the register moves below clobber the host
+        /// FLAGS) and uses R10D, never a guest register.
+        /// </summary>
         private void EmitUpdateControl(int andMask, int orMask)
         {
+            EmitMaterializeFlags();
             Assembler a = _a;
-            a.mov(R32(Register.EAX), Slot(F_CTRL));
+            a.mov(R32(Register.R10D), Slot(F_CTRL));
             if (andMask != -1)
             {
-                a.and(R32(Register.EAX), andMask);
+                a.and(R32(Register.R10D), andMask);
             }
 
             if (orMask != 0)
             {
-                a.or(R32(Register.EAX), orMask);
+                a.or(R32(Register.R10D), orMask);
             }
 
-            a.mov(Slot(F_CTRL), R32(Register.EAX));
+            a.mov(Slot(F_CTRL), R32(Register.R10D));
+        }
+
+        /// <summary>Advances the frame EIP by the member length (lea: no host-flag clobber).</summary>
+        private void EmitAdvanceEip(int length)
+        {
+            Assembler a = _a;
+            a.mov(R32(Register.R10D), Slot(F_EIP));
+            a.lea(R32(Register.R10D), MemOp(Register.R10, null, 1, length));
+            a.mov(Slot(F_EIP), R32(Register.R10D));
+        }
+
+        /// <summary>
+        /// Fast-mode post-member interrupt poll (STI/POPF/strings/port I/O),
+        /// mirroring the IL runner's <c>EmitPostPoll</c>: when IF is set,
+        /// acknowledge once; a delivered vector is recorded on the CPU, the
+        /// member counts as served, the delivery boundary ticks TSC once more,
+        /// and the block exits at the next instruction's EIP for
+        /// <c>RunJitBlock</c> to transfer (it adds the delivery's own step).
+        /// </summary>
+        private void EmitPostPoll(int length, bool advanceEip)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            Label done = a.CreateLabel(string.Empty);
+            a.mov(R32(Register.R10D), Slot(F_CTRL));
+            a.test(R32(Register.R10D), (int)FlagBits.If);
+            a.je(done);
+
+            // The helper is a managed call: it clobbers the caller-saved
+            // registers, which hold guest eax/ecx/edx/ebx. Park them and keep
+            // the Win64 shadow space clear of the parked values (the callee
+            // may spill its arguments there), and keep RSP 16-byte aligned at
+            // the call; R8/R9/R10/R11/RDI/RSI are raw scratch and may die.
+            a.mov(R64(Register.RSI), RawHelpers.PollInterruptAddress);
+            a.mov(R32(Register.R8D), Slot(F_CTRL));
+            a.mov(R64(Register.R9), Slot(F_STATE));
+            a.mov(R64(Register.R10), Slot(F_CPU));
+            a.push(R64(Register.RAX));
+            a.push(R64(Register.RCX));
+            a.push(R64(Register.RDX));
+            a.push(R64(Register.RBX));
+            a.sub(R64(Register.RSP), 0x20);
+            a.mov(R64(Register.RCX), R64(Register.R10));
+            a.mov(R64(Register.RDX), R64(Register.R9));
+            a.call(R64(Register.RSI));
+            a.add(R64(Register.RSP), 0x20);
+            a.mov(R32(Register.R8D), R32(Register.EAX));
+            a.pop(R64(Register.RBX));
+            a.pop(R64(Register.RDX));
+            a.pop(R64(Register.RCX));
+            a.pop(R64(Register.RAX));
+            a.mov(R64(Register.R11), Slot(F_STATE));
+            a.test(R32(Register.R8D), R32(Register.R8D));
+            a.je(done);
+
+            if (advanceEip)
+            {
+                EmitAdvanceEip(length);
+            }
+
+            EmitTscTick();
+            EmitServedIncrement();
+            a.jmp(_exit);
+            a.Label(ref done);
         }
 
         private void EmitMember(in JitMemberPlan plan, uint eip, int index)
         {
+            _memberHelper = false;
             EmitSetEip(eip);
             EmitTscTick();
 
@@ -503,7 +616,7 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.MovExtend:
-                    EmitMovExtend(plan);
+                    EmitMovExtend(plan, index);
                     break;
 
                 case JitKind.ShiftRI:
@@ -519,13 +632,14 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.Cld:
+                    // DF lives only in the control slot: the host DF must stay
+                    // clear (the Win64 ABI requires DF=0 at every call, and a
+                    // helper may use string instructions internally).
                     EmitUpdateControl(unchecked((int)~FlagBits.Df), 0);
-                    _a.cld();
                     break;
 
                 case JitKind.Std:
                     EmitUpdateControl(-1, (int)FlagBits.Df);
-                    _a.std();
                     break;
 
                 case JitKind.MovLoad:
@@ -577,6 +691,26 @@ internal static unsafe class RawBlockEmitter
                     break;
             }
 
+            // Fast-mode post-member IRQ poll: STI (and POPF/string/port
+            // members) can leave the block with interrupts newly enabled, and
+            // the interpreter would deliver a pending vector at the very next
+            // instruction boundary — the per-block entry poll alone starves
+            // that window (the §193 kernel-idle shape). Helper members
+            // advance EIP themselves; a native STI takes its boundary advance
+            // on the pending path.
+            if (plan.Kind == JitKind.Sti || plan.PollAfter)
+            {
+                EmitPostPoll(plan.Length, advanceEip: !_memberHelper);
+            }
+
+            // Non-terminator native members advance EIP after completion (the
+            // interpreter's boundary); helpers and spec handlers advance it
+            // themselves, exactly like the IL runner's convention.
+            if (!plan.IsTerminator && !_memberHelper)
+            {
+                EmitAdvanceEip(plan.Length);
+            }
+
             EmitServedIncrement();
         }
 
@@ -615,6 +749,11 @@ internal static unsafe class RawBlockEmitter
 
         private void EmitAluReg(in JitMemberPlan plan)
         {
+            if (plan.AluOp is JitAluOp.Adc or JitAluOp.Sbb)
+            {
+                EmitEnsureHostFlags();
+            }
+
             switch (plan.Size)
             {
                 case 8:
@@ -633,6 +772,11 @@ internal static unsafe class RawBlockEmitter
 
         private void EmitAluImmediate(in JitMemberPlan plan)
         {
+            if (plan.AluOp is JitAluOp.Adc or JitAluOp.Sbb)
+            {
+                EmitEnsureHostFlags();
+            }
+
             int immediate = unchecked((int)plan.Immediate);
             switch (plan.Size)
             {
@@ -785,6 +929,7 @@ internal static unsafe class RawBlockEmitter
 
         private void EmitIncDecReg(in JitMemberPlan plan)
         {
+            EmitEnsureHostFlags();
             bool inc = plan.Kind == JitKind.IncR;
             switch (plan.Size)
             {
@@ -802,14 +947,23 @@ internal static unsafe class RawBlockEmitter
             _flagsLive = true;
         }
 
-        private void EmitMovExtend(in JitMemberPlan plan)
+        private void EmitMovExtend(in JitMemberPlan plan, int index)
         {
+            if (plan.HasMemory)
+            {
+                // Memory-source movzx/movsx runs through the exact handler (a
+                // native probe+extend form is a pure optimization; register
+                // sources keep the baked shape).
+                EmitHelperMember(index);
+                return;
+            }
+
             Register source = plan.SourceSize == 8 && plan.SecondRegIndex >= 4
                 ? Gpr8High[plan.SecondRegIndex]
                 : plan.SourceSize == 8 ? Gpr8[plan.SecondRegIndex] : Gpr16[plan.SecondRegIndex];
             if (IsHighByte(source))
             {
-                EmitHelperMember(plan.EntryIndex);
+                EmitHelperMember(index);
                 return;
             }
 
@@ -936,6 +1090,7 @@ internal static unsafe class RawBlockEmitter
         /// </summary>
         private void EmitHelperMember(int index)
         {
+            _memberHelper = true;
             Assembler a = _a;
             EmitSyncForHelper();
             a.mov(R64(Register.RCX), Slot(F_CPU));
@@ -955,11 +1110,11 @@ internal static unsafe class RawBlockEmitter
             Register? indexRegister = plan.HasIndex ? Gpr64[plan.IndexRegister] : null;
             if (baseRegister is not null && indexRegister is not null)
             {
-                a.lea(R32(Register.R9D), MemOp(baseRegister, indexRegister, plan.Scale, plan.Displacement));
+                a.lea(R32(Register.R9D), MemOp(baseRegister, indexRegister, plan.Scale, unchecked((int)plan.Displacement)));
             }
             else if (baseRegister is not null)
             {
-                a.lea(R32(Register.R9D), MemOp(baseRegister, null, 1, plan.Displacement));
+                a.lea(R32(Register.R9D), MemOp(baseRegister, null, 1, unchecked((int)plan.Displacement)));
             }
             else if (indexRegister is not null)
             {
@@ -981,43 +1136,151 @@ internal static unsafe class RawBlockEmitter
         /// <summary>
         /// Emits the inline translate-cache probe: R9D holds the guest linear
         /// address; on success RDI holds the physical byte offset and RBP the
-        /// pinned RAM base, so the access is <c>[rbp+rdi]</c>.
+        /// pinned RAM base, so the access is <c>[rbp+rdi]</c>. A single-page
+        /// access whose physical address leaves RAM branches to
+        /// <paramref name="device"/> (device fast path) when given, else to
+        /// <paramref name="slow"/>.
         ///
         /// <para>Only non-guest scratch registers may be touched here (R8, R10,
         /// RDI, RBP, plus R9/R11): EAX/ECX/EDX/EBX/R12D-R15D hold guest state
-        /// that the slow path must be able to sync intact. An earlier version
-        /// used RAX/RCX/RDX and silently corrupted the guest on every probe
-        /// miss.</para>
+        /// that the slow path must be able to sync intact, and the slow path
+        /// still needs R9D as the linear address on every branch out.</para>
+        ///
+        /// <para>Multi-byte accesses never cross a page inline (the second
+        /// page may map differently) and stores run the decode-cache guard:
+        /// a store to an active code page or a tracked page-table page takes
+        /// the exact interpreter path, where <c>NoteStorePhysical</c> drops or
+        /// flushes the decodes; an armed bus write watch also goes slow
+        /// (CheckWatch/WatchHit).</para>
         /// </summary>
-        private void EmitProbe(int sizeBytes, bool isStore, Label slow)
+        private void EmitProbe(int sizeBytes, bool isStore, Label slow, Label? device)
         {
             Assembler a = _a;
+            if (sizeBytes > 1)
+            {
+                a.mov(R32(Register.R8D), R32(Register.R9D));
+                a.and(R32(Register.R8D), 0xFFF);
+                a.cmp(R32(Register.R8D), 0x1000 - sizeBytes);
+                a.ja(slow);
+            }
+
             a.mov(R32(Register.R8D), R32(Register.R9D));
             a.shr(R32(Register.R8D), 12);
+            a.mov(R32(Register.R10D), R32(Register.R8D));
+            a.and(R32(Register.R10D), (int)XboxCpu.DataXlatMask);
             a.mov(R64(Register.RDI), Field(Register.R11, OffXlatTag));
-            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R8, 4, 0));
+            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R10, 4, 0));
             a.cmp(R32(Register.EDI), R32(Register.R8D));
             a.jne(slow);
 
             if (isStore)
             {
+                // WP parity with the IL probe: a non-writable page only takes
+                // the slow path when CR0.WP is set (otherwise the direct
+                // write is legal and must not re-translate — A/D bits would
+                // become observable in the guest page tables).
+                Label writable = a.CreateLabel(string.Empty);
                 a.mov(R64(Register.RBP), Field(Register.R11, OffXlatWritable));
-                a.mov(new AssemblerRegister8(Register.DIL), Indexed(Register.RBP, Register.R8, 1, 0));
+                a.mov(new AssemblerRegister8(Register.DIL), Indexed(Register.RBP, Register.R10, 1, 0));
                 a.test(new AssemblerRegister8(Register.DIL), new AssemblerRegister8(Register.DIL));
-                a.je(slow);
+                a.jne(writable);
+                a.mov(R32(Register.R10D), Field(Register.R11, OffCr0Wp));
+                a.test(R32(Register.R10D), R32(Register.R10D));
+                a.jne(slow);
+                a.Label(ref writable);
             }
 
             a.mov(R64(Register.RDI), Field(Register.R11, OffXlatPhys));
-            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R8, 4, 0));
+            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R10, 4, 0));
             a.mov(R32(Register.R10D), R32(Register.R9D));
             a.and(R32(Register.R10D), 0xFFF);
             a.add(R32(Register.EDI), R32(Register.R10D));
 
+            // phys + size <= RamSize, 64-bit (a near-4G physical must not wrap).
+            a.mov(R32(Register.EBP), R32(Register.EDI));
             a.mov(R32(Register.R10D), Field(Register.R11, OffRamSize));
-            a.lea(R32(Register.EBP), MemOp(Register.RDI, null, 1, sizeBytes));
-            a.cmp(R32(Register.EBP), R32(Register.R10D));
-            a.ja(slow);
+            a.lea(R64(Register.RBP), MemOp(Register.RBP, null, 1, sizeBytes));
+            a.cmp(R64(Register.RBP), R64(Register.R10));
+            a.ja(device ?? slow);
             a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
+
+            if (isStore)
+            {
+                EmitStoreGuard(sizeBytes * 8, slow);
+            }
+        }
+
+        /// <summary>
+        /// Inline decode-cache store guard: a store to an active code page or
+        /// a tracked page-table page must run <c>NoteStorePhysical</c> (page
+        /// drop / full flush), and an armed bus watch must run CheckWatch —
+        /// both take the exact slow path. The bitset reads are single
+        /// <c>bt</c> instructions against the pinned tables (page &gt;= the
+        /// tracked limit can appear in neither table).
+        /// </summary>
+        private void EmitStoreGuard(int sizeBits, Label slow)
+        {
+            Assembler a = _a;
+            int trackedPages = (int)(DecodeCache.MaxTrackedPhysical >> 12);
+            Label armCheck = a.CreateLabel(string.Empty);
+            Label needNote = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            a.mov(R32(Register.R8D), Field(Register.R11, OffStoreGuardBail));
+            a.test(R32(Register.R8D), R32(Register.R8D));
+            a.jne(slow);
+
+            // EDI holds the physical address here; R8D is free again.
+            a.mov(R32(Register.R8D), R32(Register.EDI));
+            a.shr(R32(Register.R8D), 12);
+            a.cmp(R32(Register.R8D), trackedPages);
+            a.jae(done);
+            a.mov(R64(Register.R10), Field(Register.R11, OffPtBits));
+            a.test(R64(Register.R10), R64(Register.R10));
+            a.je(armCheck);
+            a.bt(MemOp(Register.R10, null, 1, 0), R64(Register.R8));
+            a.jc(needNote);
+            a.Label(ref armCheck);
+            a.mov(R64(Register.R10), Field(Register.R11, OffActiveBits));
+            a.bt(MemOp(Register.R10, null, 1, 0), R64(Register.R8));
+            a.jc(needNote);
+            a.jmp(done);
+
+            // A store to an active code page or a tracked page-table page
+            // runs the decode-cache invalidation and then continues with the
+            // direct write — exactly what the IL store path does (the slow
+            // path would additionally re-translate, making A/D bits visible).
+            // The helper call clobbers the caller-saved host registers, which
+            // hold guest eax/ecx/edx/ebx: park them (with the Win64 shadow
+            // space kept clear) and restore after.
+            a.Label(ref needNote);
+            a.mov(Slot(F_VALUE), R32(Register.ESI));
+            a.mov(Slot(F_PHYS), R32(Register.EDI));
+            a.mov(R32(Register.R8D), sizeBits);
+            a.mov(R64(Register.R9), Slot(F_CPU));
+            a.mov(R64(Register.R10), Slot(F_PHYS));
+            a.mov(R64(Register.RSI), RawHelpers.NoteStoreAddress);
+            a.push(R64(Register.RAX));
+            a.push(R64(Register.RCX));
+            a.push(R64(Register.RDX));
+            a.push(R64(Register.RBX));
+            a.sub(R64(Register.RSP), 0x20);
+            a.mov(R64(Register.RCX), R64(Register.R9));
+            a.mov(R64(Register.RDX), R64(Register.R10));
+            a.call(R64(Register.RSI));
+            a.add(R64(Register.RSP), 0x20);
+            a.pop(R64(Register.RBX));
+            a.pop(R64(Register.RDX));
+            a.pop(R64(Register.RCX));
+            a.pop(R64(Register.RAX));
+            a.mov(R64(Register.R11), Slot(F_STATE));
+            a.mov(R32(Register.ESI), Slot(F_VALUE));
+            a.mov(R32(Register.EDI), Slot(F_PHYS));
+            a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
+
+            a.Label(ref done);
+            a.mov(R32(Register.R10D), Field(Register.R11, OffWatchArmed));
+            a.test(R32(Register.R10D), R32(Register.R10D));
+            a.jne(slow);
         }
 
         /// <summary>The probed RAM access: <c>[rbp+rdi]</c> (RBP base, RDI offset).</summary>
@@ -1032,19 +1295,57 @@ internal static unsafe class RawBlockEmitter
             }
 
             Assembler a = _a;
-            EmitAddress(plan);
             EmitMaterializeFlags();
+            EmitAddress(plan);
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: false, slow);
+            Label? device = _mmioFast ? a.CreateLabel(string.Empty) : null;
+            EmitProbe(plan.Size / 8, isStore: false, slow, device);
             EmitMoveFromMemory(plan.Size, plan.RegIndex, RamAt());
             a.jmp(done);
+
+            if (device is not null)
+            {
+                EmitDeviceLoad(plan.Size, plan.RegIndex, device.Value, done);
+            }
 
             a.Label(ref slow);
             EmitMemoryHelper(plan, index, isStore: false);
             EmitMoveFromScratch(plan.Size, plan.RegIndex);
 
+            // Merge point: the fast path arrives with the host flags dead
+            // (materialized before the probe, then clobbered), the slow path
+            // with them live (the reload). F_EFLAGS is authoritative on both,
+            // so the continuation must not trust the host FLAGS: reloading on
+            // demand (EmitLoadFlags) is exact on either path.
+            _flagsLive = false;
+
             a.Label(ref done);
+        }
+
+        /// <summary>
+        /// Device fast path (<c>--jit-mmio</c>): the probe translated the
+        /// single-page access and left the physical address in EDI; the read
+        /// goes through the same <c>RawRead</c> the interpreter would reach,
+        /// so no re-translate is needed. The helper call clobbers the guest
+        /// registers held in host registers, so the state is synced and
+        /// reloaded around it exactly like any other interpreter-path call.
+        /// </summary>
+        private void EmitDeviceLoad(int size, int regIndex, Label device, Label done)
+        {
+            Assembler a = _a;
+            Label target = device;
+            a.Label(ref target);
+            EmitSyncForHelper();
+            a.mov(R64(Register.RCX), Slot(F_CPU));
+            a.mov(R32(Register.EDX), R32(Register.EDI));
+            a.mov(R32(Register.R8D), size);
+            a.mov(R64(Register.RSI), RawHelpers.ReadPhysicalAddress);
+            a.call(R64(Register.RSI));
+            a.mov(R32(Register.R8D), R32(Register.EAX));
+            EmitReloadAfterHelper();
+            EmitMoveFromScratch(size, regIndex);
+            a.jmp(done);
         }
 
         private void EmitStore(in JitMemberPlan plan, int index)
@@ -1057,6 +1358,7 @@ internal static unsafe class RawBlockEmitter
             }
 
             Assembler a = _a;
+            EmitMaterializeFlags();
             EmitAddress(plan);
             if (immediate)
             {
@@ -1067,15 +1369,34 @@ internal static unsafe class RawBlockEmitter
                 EmitMoveToValueScratch(plan.Size, plan.RegIndex);
             }
 
-            EmitMaterializeFlags();
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: true, slow);
+            Label? device = _mmioFast ? a.CreateLabel(string.Empty) : null;
+            EmitProbe(plan.Size / 8, isStore: true, slow, device);
             EmitMoveValueScratchToMemory(plan.Size, RamAt());
             a.jmp(done);
 
+            if (device is not null)
+            {
+                Label deviceLabel = device.Value;
+                a.Label(ref deviceLabel);
+                EmitSyncForHelper();
+                a.mov(R32(Register.R9D), R32(Register.ESI));
+                a.mov(R64(Register.RCX), Slot(F_CPU));
+                a.mov(R32(Register.EDX), R32(Register.EDI));
+                a.mov(R32(Register.R8D), plan.Size);
+                a.mov(R64(Register.RSI), RawHelpers.WritePhysicalAddress);
+                a.call(R64(Register.RSI));
+                EmitReloadAfterHelper();
+                a.jmp(done);
+            }
+
             a.Label(ref slow);
             EmitMemoryHelper(plan, index, isStore: true);
+
+            // Merge point (see EmitLoad): F_EFLAGS is authoritative on both
+            // the fast and slow paths; the host FLAGS must not be trusted.
+            _flagsLive = false;
 
             a.Label(ref done);
         }
@@ -1084,11 +1405,11 @@ internal static unsafe class RawBlockEmitter
         private void EmitAluMemorySource(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
-            EmitAddress(plan);
             EmitMaterializeFlags();
+            EmitAddress(plan);
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: false, slow);
+            EmitProbe(plan.Size / 8, isStore: false, slow, null);
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitAluScratch(plan);
             a.jmp(done);
@@ -1107,6 +1428,7 @@ internal static unsafe class RawBlockEmitter
         private void EmitCmpMemorySource(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
+            EmitMaterializeFlags();
             EmitAddress(plan);
             if (plan.Kind == JitKind.AluMI)
             {
@@ -1122,10 +1444,9 @@ internal static unsafe class RawBlockEmitter
                 EmitMoveToValueScratch(plan.Size, plan.RegIndex);
             }
 
-            EmitMaterializeFlags();
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: false, slow);
+            EmitProbe(plan.Size / 8, isStore: false, slow, null);
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitCmpScratch(plan);
             a.jmp(done);
@@ -1147,6 +1468,7 @@ internal static unsafe class RawBlockEmitter
             }
 
             Assembler a = _a;
+            EmitMaterializeFlags();
             EmitAddress(plan);
             if (plan.Kind == JitKind.AluMI)
             {
@@ -1162,10 +1484,9 @@ internal static unsafe class RawBlockEmitter
                 EmitMoveToValueScratch(plan.Size, plan.RegIndex);
             }
 
-            EmitMaterializeFlags();
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: true, slow);
+            EmitProbe(plan.Size / 8, isStore: true, slow, null);
             EmitAluMemoryOp(plan, RamAt());
             a.jmp(done);
 
@@ -1178,11 +1499,11 @@ internal static unsafe class RawBlockEmitter
         private void EmitTestMemory(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
-            EmitAddress(plan);
             EmitMaterializeFlags();
+            EmitAddress(plan);
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: false, slow);
+            EmitProbe(plan.Size / 8, isStore: false, slow, null);
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitTestScratch(plan);
             a.jmp(done);
@@ -1196,11 +1517,11 @@ internal static unsafe class RawBlockEmitter
         private void EmitIncDecMemory(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
-            EmitAddress(plan);
             EmitMaterializeFlags();
+            EmitAddress(plan);
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: true, slow);
+            EmitProbe(plan.Size / 8, isStore: true, slow, null);
             EmitIncDecMemoryOp(plan, RamAt());
             a.jmp(done);
 
@@ -1293,6 +1614,11 @@ internal static unsafe class RawBlockEmitter
         /// <summary><c>op reg, scratch</c> for the source form.</summary>
         private void EmitAluScratch(in JitMemberPlan plan)
         {
+            if (plan.AluOp is JitAluOp.Adc or JitAluOp.Sbb)
+            {
+                EmitEnsureHostFlags();
+            }
+
             switch (plan.Size)
             {
                 case 8:
@@ -1350,6 +1676,11 @@ internal static unsafe class RawBlockEmitter
 
         private void EmitAluMemoryOp(in JitMemberPlan plan, AssemblerMemoryOperand destination)
         {
+            if (plan.AluOp is JitAluOp.Adc or JitAluOp.Sbb)
+            {
+                EmitEnsureHostFlags();
+            }
+
             switch (plan.Size)
             {
                 case 8:
@@ -1417,6 +1748,7 @@ internal static unsafe class RawBlockEmitter
         /// <summary>Read-modify-write <c>inc/dec [mem]</c> through the scratch.</summary>
         private void EmitIncDecMemoryOp(in JitMemberPlan plan, AssemblerMemoryOperand destination)
         {
+            EmitEnsureHostFlags();
             bool inc = plan.Kind == JitKind.IncM;
             switch (plan.Size)
             {
@@ -1494,7 +1826,7 @@ internal static unsafe class RawBlockEmitter
         {
             Register? baseRegister = plan.HasBase ? Gpr64[plan.BaseRegister] : null;
             Register? indexRegister = plan.HasIndex ? Gpr64[plan.IndexRegister] : null;
-            return MemOp(baseRegister, indexRegister, plan.Scale, plan.Displacement);
+            return MemOp(baseRegister, indexRegister, plan.Scale, unchecked((int)plan.Displacement));
         }
     }
 

@@ -1112,6 +1112,13 @@ public sealed class JitTests
         cpu.JitSpecSlice = int.MaxValue;
         cpu.JitBuildThreshold = 1;
         cpu.JitEnabled = true;
+
+        // Prefer the native runner where the host supports it (Windows x64):
+        // these differentials then hold the C3 raw path to the same contract
+        // as the IL runner. Hosts without raw support fall back to the IL
+        // runner automatically (RawCodeMemory.IsSupported), so the IL path
+        // keeps its coverage on the other CI legs.
+        cpu.JitRawBlocks = true;
         return cpu;
     }
 
