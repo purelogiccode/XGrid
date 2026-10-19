@@ -539,13 +539,15 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   (RAM `660CA11B…`, CPU `F5D61C94…`, every counter identical); triangle 1B RAM `A2DCA55F…`, CPU
   `7DAB63EB…` on both engines. Regression test
   `BlockEndingInMemoryRmw_AdvancesEipOnce` (fail-pre-fix: TSC 71 vs 70, double inc). Suite
-  **1497** green, ktest smoke PASS 7/7 at 792,800,535 steps. Performance: the raw path is now
+  **1499** green (1497 at that session close), ktest XGrid leg at 792,800,535 steps with a
+  byte-identical suite log. Performance: the raw path is now
   **ahead of IL on CPU serving time** after the §199k state hoist (`BuildRawState` once per
   `RunJitBlock` call instead of once per block invocation; the state lives in an unmanaged
   per-CPU block): 100M A/B 9.0% menu / 2.4% triangle faster, 1B `outerMs` -3.7% menu / -2.3%
-  triangle with both title differentials bit-exact; end-to-end walls were host-noise-bound, so
-  no end-to-end claim yet (structural lever remaining: chaining, constrained by the per-block
-  IRQ poll contract). Quiet-host calibration this session:
+  triangle with both title differentials bit-exact. **Direct raw block chaining landed in the
+  sixth session (§199l, after the §199m fault-contract fix): 1B medians of 3 interleaved pairs
+  triangle wall -12.0% / `outerMs` -28.6%, menu wall -13.1% / `outerMs` -14.2%**, SHAs and every
+  counter identical to the IL control. Quiet-host calibration this session:
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
@@ -553,6 +555,37 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
+
+**Session close 2026-10-20 (sixth).** **Direct raw block chaining is LANDED
+(`21b0f8a`, opt-in `--jit-raw`)** and the fault-path crash that forced its
+revert is root-caused and fixed. The blocker was never the chain tail: **a
+managed exception could not legally unwind out of a raw helper through the
+hand-emitted native frame** (no unwind data, so CoreCLR cannot walk it) —
+delivery depended on stack-layout luck, and the chaining diff changed the
+layout. Chain-off crashed too, `XGRID_RAW_SKIP_HEADS=100F` hid it, and a
+minimal RWX-frame harness reproduced the abort independently. Fix: **raw
+helpers never throw across the native frame** — each entry catches, records the
+exception (`RawCaptureFault`, which sets `RawState.Fault`) and returns; the
+emitted block tests that word after every helper call and exits with the `-1`
+sentinel; `RunJitBlock` rethrows the original exception (`ExceptionDispatchInfo`)
+after `RawExit` published the context, so fault delivery and `_jitProgress`
+accounting are byte-for-byte the IL runner's. Invariant recorded in decisions
+§199m (new `EmitFaultCheck()` + try/catch for any new helper). Gates: the
+`AluLoop`+`PagedCrossVisitFault` pair clean **10/10**, CPU suite **625/625
+green ×10**, full solution suite green, format clean, ktest XGrid leg stops at
+the 4E03A park after **792,800,535** steps with its 739-line suite log
+**byte-identical** to the accepted baseline. 1B: menu IL == raw ==
+`660CA11B…/F5D61C94…` with every counter identical (the §199i anchor);
+triangle IL == raw `F57934BF…/CF79FC17…` on this host (the older `A2DCA55F…`
+anchor no longer reproduces even on pre-patch `025d20d` — environment moved,
+recorded in §199l). Medians of 3 interleaved pairs: **triangle wall 26.97 →
+23.72 s (-12.0%, 3/3), `outerMs` -28.6%; menu wall 109.39 → 95.06 s (-13.1%,
+3/3), `outerMs` -14.2%**; 100M A/B menu wall 0.9315 (5/5) / outer 0.9019,
+triangle outer 0.9670 (wall noise). Fixed-section gates:
+`scripts/chain-199l-gate.ps1`, `scripts/chain-199l-ab.ps1`. Baseline **1499
+tests green**. Note: `Directory.Packages.props` still carries its pre-existing
+uncommitted version bump (Meziantou 3.0.312, XISOSharp 1.4.3, CHDSharp 1.5.0)
+and was left untouched.
 
 **Session close 2026-10-20 (fifth).** The C3 raw-emitter correctness story is
 closed: the §199h menu divergence was the split-member fast-path EIP advance
@@ -564,21 +597,10 @@ serving time** (100M A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% /
 -2.3%; end-to-end walls host-noise bound). Two negative results recorded:
 mask-driven register sync (§199j) and static served/EIP bookkeeping (§199k) —
 both ~1%, below the sub-2% resolution standard. **Direct raw block chaining
-was implemented and produced the largest win yet (100M menu -4.9% wall /
--5.3% outer, 1B menu -10.1% wall, triangle -15.3% wall, SHAs exact) but is
-NOT landed:** it triggers a deterministic CLR `ExecutionEngineException` in
-`JitTests.PagedCrossVisitFault` when preceded by `AluLoop` (the pair also
-crashes with chaining disabled, while HEAD runs it clean; `XGRID_RAW_SKIP_HEADS=100F`
-clears it). The full design, measurements, reproducer and bisect plan are in
-decisions §199l; the working tree was reverted so the suite stays green. The reverted implementation is preserved at
-wt-data/raw-chain/chain-199l.patch (gitignored, applies cleanly to this HEAD). The
-next session should (1) bisect the §199l diff against that pair - PIC pending
-word, pinned generation slot, `RawState` layout, table allocation - and audit
-the raw fault-unwind contract, then (2) re-land chaining and run the
-quiet-host raw-vs-IL end-to-end medians before any default-flip discussion.
-Note: `Directory.Packages.props` has an uncommitted version bump
-(Meziantou 3.0.312, XISOSharp 1.4.3, CHDSharp 1.5.0) that predates this
-session's work and was left untouched.
+was implemented and produced the largest win yet but is NOT landed in that
+session:** it triggered a deterministic CLR `ExecutionEngineException` in
+`JitTests.PagedCrossVisitFault` when preceded by `AluLoop`; resolved by the
+sixth session above (§199m).
 
 **2026-10-20 status (direct development, two 12-hour windows).** Fast-mode
 medians on the quiet host: **triangle 1B 10.63 s, menu 1B 45.62 s**
@@ -656,9 +678,10 @@ Regression test `BlockEndingInMemoryRmw_AdvancesEipOnce`; menu 1B matches the
 IL anchor exactly (`660CA11B…/F5D61C94…`, every counter identical), triangle
 1B `A2DCA55F…/7DAB63EB…` on both engines. The raw path stays **opt-in**;
 after the §199k state hoist it is **ahead of IL on CPU serving time** (100M
-A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% / -2.3%), and the §199l
-chaining experiment measured up to -15% wall before being reverted pending
-its fault-path diagnosis. Suite **1497** green.
+A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% / -2.3%), and **direct raw
+chaining (§199l) is landed on top of the §199m fault contract** for another
+-12% (triangle) / -13% (menu) wall and -29% / -14% `outerMs` at 1B, SHAs and
+counters identical to IL. Suite **1499** green.
 
 **Menu divergence recipe (historical, CLOSED by §199i).** `boot … --jit
 --jit-threshold 16 --jit-spin --jit-raw --pad-script "down@950000000+hold,
