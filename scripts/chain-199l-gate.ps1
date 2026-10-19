@@ -21,6 +21,11 @@ $firmware = @(
 )
 $padScript = "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"
 
+# The guest may write to the HDD: boot a private copy, never the shared image.
+if (-not (Test-Path $hdd)) {
+    Copy-Item (Join-Path $media "xbox_hdd.qcow2") $hdd -Force
+}
+
 foreach ($leg in $Legs) {
     $isMenu = $leg.StartsWith("menu")
     $isRaw = $leg.EndsWith("raw")
