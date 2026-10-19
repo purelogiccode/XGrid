@@ -610,11 +610,13 @@ land mid-raw-block, so instrument the emitter or the helper).
 
 Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix), XGRID_NONRAM=1
 (non-cacheable fetch pages), --jit-timing (runner vs chain split), Host timing
-(execute vs advance), **XGRID_RAW_DUMP=1** (per-block Iced disassembly to
+(execute vs advance), `XGRID_RAW_DUMP=1` (per-block Iced disassembly to
 `%TEMP%\xgrid-raw-<head>.txt`), **XGRID_RAW_TRACE=1** (per-invocation
 enter/exit + spec-handler trace to `%TEMP%\xgrid-raw-trace.txt`; file-based on
 purpose — a hard crash loses buffered stderr), XGRID_RAW_THRESHOLD (test-side
-build-threshold override for bisecting).
+build-threshold override for bisecting), **XGRID_RAW_SKIP_HEADS=hex[,hex…]**
+(forces the listed raw heads to the IL runner — used to confirm the
+`0x8001F9EB` block as the source of the 25.05M divergence).
 
 ### Fast-mode JIT J1a–J1d LANDED (2026-10-18 night, direct; §§191–192) — the real-time band is reached
 

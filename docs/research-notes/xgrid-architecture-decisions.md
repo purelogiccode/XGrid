@@ -10658,9 +10658,18 @@ new PT guard + `NoteStorePhysical` path runs. The raw run takes
 does not fault. The block's emitted code was read end-to-end (dump via
 `XGRID_RAW_DUMP=1`): address computation, slot mask, WP check, guard, note
 call (with the register park/restore) and the final `[rbp+rdi]` write all
-match the IL semantics — so the fault source is still unidentified. Note the
-pre-25M fixes were validated *after* this reading: the differential now
-matches 14× further than the session's start (1.6 s crash → 25 Msteps clean).
+match the IL semantics.
+
+**The block is confirmed as the source.** A temporary env-gated hook
+(`XGRID_RAW_SKIP_HEADS=8001F9EB`, kept in `RawBlockEmitter.TryBuild` as a
+bisection diagnostic) forces that head to the IL runner, and the raw run then
+produces the **IL SHA `E11E7536B754BC3C` exactly with no fault** at the same
+step count. So the bug is inside this block's raw execution (or its handoff),
+not in an earlier block. Next diagnostic step: instrument this store's linear
+address and staged value in the emitter (or add a per-store trace helper), and
+compare against the IL values at the same step — the fault's `CR2=0x0D`
+cannot come from the store's own linear (≈`0x83FF33FE`) as currently
+understood.
 
 Diagnostics added (all trace-only, `XGRID_RAW_TRACE=1`): raw enter/exit with
 GPRs and pinned-array pointers, the resolved spec member (index/mnemonic/
