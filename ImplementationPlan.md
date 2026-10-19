@@ -1585,8 +1585,15 @@ This should begin only after the interpreter is stable.
 > an unmanaged per-CPU block): 100M A/B 9.0% menu / 2.4% triangle faster and
 > 1B `outerMs` -3.7% menu / -2.3% triangle, both title differentials still
 > bit-exact. End-to-end walls were host-noise bound, so no end-to-end claim
-> yet; the next structural lever (chaining) is constrained by the per-block
-> IRQ poll contract, and no default flip is proposed.
+> yet. **Direct block chaining was then implemented and measured (§199l): a
+> per-CPU target table with tail-jumps into raw entries, chained
+> served/budget accounting, live-generation validation, a cheap PIC pending
+> word and an STI gate for `--jit-spin` gave 100M menu -4.9% wall / -5.3%
+> outer (5/5 paired) and 1B menu -10.1% wall / triangle -15.3% wall with
+> exact SHAs — but it triggers a deterministic CLR ExecutionEngineException
+> in `JitTests.PagedCrossVisitFault` after `AluLoop`, so it was reverted
+> pending that fault-path diagnosis (§199l has the reproducer and bisect
+> plan). No default flip is proposed.
 
 ## 20.1 JIT architecture
 
@@ -2800,8 +2807,10 @@ Shaders
 > ahead of IL on CPU serving time (§199k state hoist: 9.0% menu / 2.4%
 > triangle at 100M, 1B `outerMs` -3.7% / -2.3%, differentials bit-exact);
 > end-to-end walls remain host-noise bound. The next gates are (a) the
-> quiet-host raw-vs-IL end-to-end medians, then (b) the structural chaining
-> slice and the default-flip decision.
+> §199l chaining fault-path diagnosis and re-land (measured 1B menu -10.1%
+> wall / triangle -15.3% wall with exact SHAs before the revert), then
+> (b) the quiet-host raw-vs-IL end-to-end medians and the default-flip
+> decision.
 
 ```text
 Interpreter
@@ -3083,7 +3092,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-19; refreshed 2026-10-20 for the fast-mode JIT track §§190–199f, the C3 raw emitter §§199e/199f, the GL window §184 and the idle-skip measurement §185)
+## Project completion assessment (2026-10-19; refreshed 2026-10-20 for the fast-mode JIT track §§190–199f, the C3 raw-emitter correctness campaigns §§199g–§199i, the §199k state hoist and the §199l chaining experiment, the GL window §184 and the idle-skip measurement §185)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3107,7 +3116,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 83% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); at parity with IL (76% of members raw-served)**; remaining: the quiet-host raw-vs-IL medians, structural slices (chaining / register-resident state), the `--jit` default-flip decision, threshold auto-tune, E3-2 |
+| 15 CPU JIT | 11 | 83% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); ahead of IL on CPU serving time after the §199k state hoist; §199l direct chaining measured up to -15% wall with exact SHAs but reverted pending a fault-path crash**; remaining: the §199l chaining diagnosis/re-land, the quiet-host raw-vs-IL medians, the `--jit` default-flip decision, threshold auto-tune, E3-2 |
 | 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); remaining: fundamental per-pixel work, backend performance |
@@ -3128,19 +3137,23 @@ By track:
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
 - **Performance/finish track (phases 15–23): ~50%.** Dominated by the CPU
-  JIT (82% — interpreter with default-on decode cache, opt-in spec/block/
+  JIT (83% — interpreter with default-on decode cache, opt-in spec/block/
   emit layers, and the chartered fast-mode engine: `--jit` whole-block
-  DynamicMethod runners at 99% served, bit-exact on the menu at 1B, ktest
+  DynamicMethod runners at 99% served, bit-exact on both titles at 1B, ktest
   2B 3.76× CPU-bound; quiet-host fast medians triangle 10.63 s / menu
-  45.62 s after C2+D3b, §199d; the C3 raw emitter is correctness-validated —
-  triangle 1B bit-exact vs IL, one open menu byte-divergence — and sits at
-  parity, §§199e–199h) and the optimization phases. The software
+  45.62 s after C2+D3b, §199d; the C3 raw emitter is correctness-validated on
+  both titles at 1B and ahead of IL on CPU serving time after the §199k state
+  hoist, and the §199l direct-chaining slice measured 100M menu -4.9% wall /
+  1B menu -10.1% and triangle -15.3% wall with exact SHAs before a
+  deterministic fault-path crash forced a revert pending diagnosis) and the
+  optimization phases. The software
   rasterizer was the largest single wall item on both 1B goldens and is now
   4.9×/5.5× faster bit-exactly (§§180–187; menu 1B leg 143.7 → 70.8 s,
   triangle 71.6 → 36.6 s, closing medians); under `--gpu-replace` the CPU
   engine is again the largest line item (57% of the triangle wall, §199),
-  so Track C (C2 trace → C3 raw emitters, §§199d–199h) leads the re-aimed
-  campaign.
+   so Track C (C2 trace → C3 raw emitters, §§199d–§199l) leads the re-aimed
+   campaign; the immediate next step is the §199l chaining fault-path diagnosis and
+   re-land.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
   polling -> menu navigation -> activation) all work; a readable colored
@@ -3240,13 +3253,16 @@ overhead included) profiled the *real* workload: **53.1M GL draws at ~2 µs
    target ≥2× CPU (triangle runner ≤3 s, menu CPU ≤11 s).
 3. **C3 raw emitter** (charter Phase 3, Iced authorized): register
    allocation, direct chaining, inline TLB; another ≥2× (triangle ≤3 s
-   end-to-end, menu ≤12 s). **Started and correctness-validated (§§199e–199h):
-   the raw path is bit-exact with IL on the triangle at 1B and serves 76% of
-   members, but sits at parity (the per-invocation cost and the frame-slot
-   bookkeeping offset its leaner members); the remaining structural work is
-   chaining and register-resident state, both of which must preserve the
-   per-block IRQ poll contract that keeps the IL/raw differential exact. One
-   open byte-level menu divergence is filed at step 968,380,640 (§199h).**
+   end-to-end, menu ≤12 s). **Correctness-validated (§§199e–§199i): both titles are bit-exact with
+   IL at 1B and the §199k state hoist puts the raw path ahead on CPU serving
+   time (100M A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% / -2.3%).
+   Direct chaining was implemented and measured (§199l): 100M menu -4.9%
+   wall / -5.3% outer, 1B menu -10.1% wall / triangle -15.3% wall with exact
+   SHAs, using a per-CPU tail-jump table, chained served/budget accounting,
+   live-generation validation and a PIC pending-word poll; it is reverted
+   pending a deterministic CLR fault-unwind crash in the AluLoop→Paged test
+   pair, so chaining and register-resident state remain the open structural
+   work (the full reproducer and bisect plan are in §199l).**
 4. **B2c draw batching** (2 µs/draw → ≤0.5 µs) and the **window present
    path** (drop the redundant per-flip readback in window mode; batch the
    message pump).

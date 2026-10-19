@@ -653,8 +653,11 @@ first byte and the member path re-executed it, leaving the engine one guest
 instruction behind (visible at the trace level as the MMX-loop byte).
 Regression test `BlockEndingInMemoryRmw_AdvancesEipOnce`; menu 1B matches the
 IL anchor exactly (`660CA11B…/F5D61C94…`, every counter identical), triangle
-1B `A2DCA55F…/7DAB63EB…` on both engines. The raw path stays **opt-in** and
-is at parity with IL (no advantage claim yet). Suite **1497** green.
+1B `A2DCA55F…/7DAB63EB…` on both engines. The raw path stays **opt-in**;
+after the §199k state hoist it is **ahead of IL on CPU serving time** (100M
+A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% / -2.3%), and the §199l
+chaining experiment measured up to -15% wall before being reverted pending
+its fault-path diagnosis. Suite **1497** green.
 
 **Menu divergence recipe (historical, CLOSED by §199i).** `boot … --jit
 --jit-threshold 16 --jit-spin --jit-raw --pad-script "down@950000000+hold,

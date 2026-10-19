@@ -48,8 +48,12 @@ animation wait, §32).
    **ahead of IL on CPU serving time** (the §199k state hoist: 100M A/B
    9.0% menu / 2.4% triangle, 1B `outerMs` -3.7% / -2.3%, both title
    differentials bit-exact; no end-to-end claim - walls were host-noise
-   bound). The next structural lever is chaining under the per-block IRQ poll
-   contract. No default flip yet.
+   bound). **Direct chaining was implemented and measured (§199l): 100M menu
+   -4.9% wall / -5.3% outer, 1B menu -10.1% wall / triangle -15.3% wall with
+   exact SHAs, but reverted pending the deterministic CLR fault-unwind crash
+   in the AluLoop→Paged test pair.** The immediate next step is that
+   diagnosis and the chaining re-land under the per-block IRQ poll contract;
+   no default flip yet.
 2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
    loop's shape (trace it) and remove the nonJit residue by cross-page block
    formation **or** (preferred) a generalized wait-skip that fast-forwards to
