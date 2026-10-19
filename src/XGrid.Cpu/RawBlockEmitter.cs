@@ -410,11 +410,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
             a.mov(Slot(F_EIP), R32(Register.EAX));
 
-            // Re-base the TSC on what the helper left in the scratch block (it
-            // may have advanced it, e.g. RDTSC or a TSC-touching handler).
-            a.mov(R64(Register.R9), Field(Register.R11, OffTsc));
-            a.mov(R64(Register.RAX), MemOp(Register.R9, null, 1, 0));
-            a.mov(Slot(F_TSC), R64(Register.RAX));
+            // Diagnostic: keep the frame TSC (the helper does not tick it).
 
             a.mov(R64(Register.R9), Field(Register.R11, OffRegisters));
             LoadGuestRegisters(a, Register.R9);

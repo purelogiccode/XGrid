@@ -10527,13 +10527,11 @@ loads/stores/RMW, `cmp [mem],imm`, stack push/pop, flags across conditionals and
 the x87 fallback trampoline. Suite green (616 CPU tests, 2 skipped), build and
 format clean. The raw path stays **opt-in** (`--jit-raw`).
 
-**Known gap (documented, test skipped with this reason):** in a loop whose block
-contains a helper-served memory member, the TSC under-counts by one tick per
-block (registers, EIP and flags all match). Traced to the TSC write that follows
-a helper reload; the per-member tick itself is emitted correctly. Until it is
-fixed the raw path cannot be default-on, and no performance measurement is
-meaningful (a fast path that skips the helper-served members would measure the
-wrong thing).
+**The TSC gap is closed.** A loop whose block contains a helper-served
+memory member under-counted the TSC by one tick per block because the reload
+after the helper re-based the frame TSC on the scratch copy; the frame slot is
+the authoritative one (the helper never ticks it), so the rebase was removed and
+all 11 raw differentials now pass, including the two loop cases.
 
 **Next steps:** fix the TSC accounting across a helper-served member, then
 measure `--jit-raw` on the triangle/menu 1B goldens against the 10.63 s /
