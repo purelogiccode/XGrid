@@ -3098,7 +3098,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~72% complete overall** (weighted: 77.9 of 108 weight-points, recomputed 2026-10-19 after the fast-mode JIT campaign §§190–194; was 74.8 after §§180–187).
+**Result: ~73% complete overall** (weighted: 78.6 of 108 weight-points, recomputed 2026-10-20 after the C3 raw emitter §§199e/199f; was 77.9 after the fast-mode JIT campaign §§190–194, 74.8 after §§180–187).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:
@@ -3108,16 +3108,18 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15–23): ~47%.** Dominated by the CPU
-  JIT (72% — interpreter with default-on decode cache, opt-in spec/block/
+- **Performance/finish track (phases 15–23): ~49%.** Dominated by the CPU
+  JIT (78% — interpreter with default-on decode cache, opt-in spec/block/
   emit layers, and the chartered fast-mode engine: `--jit` whole-block
   DynamicMethod runners at 99% served, bit-exact on the menu at 1B, ktest
-  2B 3.76× CPU-bound; quiet-host fast medians triangle 27.9 s / menu
-  64.0 s) and the optimization phases; the remaining wall is GPU/MMIO-bound
-  (the software rasterizer is 36–38% of both 1B walls) rather than
-  CPU-side. The software rasterizer was the largest single wall item on
-  both goldens and is now 4.9×/5.5× faster bit-exactly (§§180–187; menu 1B
-  leg 143.7 → 70.8 s, triangle 71.6 → 36.6 s, closing medians).
+  2B 3.76× CPU-bound; quiet-host fast medians triangle 10.63 s / menu
+  45.62 s after C2+D3b, §199d) and the optimization phases. The software
+  rasterizer was the largest single wall item on both 1B goldens and is now
+  4.9×/5.5× faster bit-exactly (§§180–187; menu 1B leg 143.7 → 70.8 s,
+  triangle 71.6 → 36.6 s, closing medians); under `--gpu-replace` the CPU
+  engine is again the largest line item (57% of the triangle wall, §199),
+  so Track C (C2 trace → C3 raw emitters, §§199d–199f) leads the re-aimed
+  campaign.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
   polling -> menu navigation -> activation) all work; a readable colored
