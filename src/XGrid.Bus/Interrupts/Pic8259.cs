@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using XGrid.Bus.Io;
 using XGrid.Core.Devices;
 using XGrid.Core.Snapshots;
@@ -11,14 +12,29 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
 {
     private readonly Pic _master = new();
     private readonly Pic _slave = new();
+    private readonly uint[] _pendingFlag = new uint[1];
+    private readonly GCHandle _pendingPin;
+    private readonly nint _pendingAddress;
 
     /// <summary>Creates the PIC pair and registers its command/data ports.</summary>
     public Pic8259(IoSpace io)
     {
         ArgumentNullException.ThrowIfNull(io);
-        io.Register(0x20, 2, new PortWindow(_master));
-        io.Register(0xA0, 2, new PortWindow(_slave));
+        _pendingPin = GCHandle.Alloc(
+            _pendingFlag,
+            GCHandleType.Pinned);
+        _pendingAddress = _pendingPin.AddrOfPinnedObject();
+        io.Register(0x20, 2, new PortWindow(_master, UpdatePendingFlag));
+        io.Register(0xA0, 2, new PortWindow(_slave, UpdatePendingFlag));
         Reset();
+    }
+
+    /// <summary>Gets the address of the 0/1 pending word emitted code polls (see <see cref="IInterruptSource.PendingFlagAddress"/>).</summary>
+    public nint PendingFlagAddress => _pendingAddress;
+
+    private void UpdatePendingFlag()
+    {
+        _pendingFlag[0] = _master.HighestPending() >= 0 ? 1u : 0u;
     }
 
     /// <summary>Gets the device name used in traces and diagnostics.</summary>
@@ -59,10 +75,19 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
             _slave.SetIrq(line - 8, level);
             _master.SetIrq(2, _slave.HighestPending() >= 0);
         }
+
+        UpdatePendingFlag();
     }
 
     /// <summary>Acknowledges the highest-priority pending interrupt, or returns -1.</summary>
     public int Acknowledge()
+    {
+        int vector = AcknowledgeCore();
+        UpdatePendingFlag();
+        return vector;
+    }
+
+    private int AcknowledgeCore()
     {
         int masterLine = _master.HighestPending();
         if (masterLine < 0)
@@ -94,6 +119,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     {
         _master.Reset(0x20);
         _slave.Reset(0x28);
+        UpdatePendingFlag();
     }
 
     /// <summary>Saves masks, request/in-service latches, vector bases, and init state (quiesce: any point).</summary>
@@ -117,6 +143,7 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
 
         _master.LoadState(reader);
         _slave.LoadState(reader);
+        UpdatePendingFlag();
     }
 
     private const int SnapshotVersion = 1;
@@ -124,10 +151,12 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     private sealed class PortWindow : IIoPortDevice
     {
         private readonly Pic _pic;
+        private readonly Action _changed;
 
-        public PortWindow(Pic pic)
+        public PortWindow(Pic pic, Action changed)
         {
             _pic = pic;
+            _changed = changed;
         }
 
         public uint Read(ushort offset, int size)
@@ -145,6 +174,8 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
             {
                 _pic.WriteData((byte)value);
             }
+
+            _changed();
         }
     }
 

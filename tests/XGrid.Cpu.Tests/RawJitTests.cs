@@ -1,6 +1,6 @@
 using System;
+using XGrid.Memory;
 using Xunit;
-
 namespace XGrid.Cpu.Tests;
 
 /// <summary>
@@ -365,6 +365,34 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
     }
 
+    [Fact]
+    public void ChainedBlocks_MatchInterpreter_AndCountChains()
+    {
+        // 0x1000: jmp 0x1003 ; 0x1003: inc eax ; jmp 0x1000.
+        // Both blocks are store-free, so once formed they chain into each
+        // other (the chain edge validates generation/budget/pending IRQ).
+        byte[] code =
+        [
+            0xEB, 0x01,
+            0x90,
+            0x40,
+            0xEB, 0xFA,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(5000);
+        raw.Execute(5000);
+        AssertSame(plain, raw);
+        Assert.True(raw.JitRawChainedBlocks > 0, "no block chains fired");
+        Assert.True(
+            raw.JitRawInvocations < 100,
+            $"too many runner invocations: chained={raw.JitRawChainedBlocks} inv={raw.JitRawInvocations} " +
+            $"served={raw.JitRawServedMembers} built={raw.JitRawBlocksBuilt}");
+    }
+
     private static void RunLoop(byte[] code)
     {
         XboxCpu plain = CreatePlain(code);
@@ -446,5 +474,92 @@ public sealed class RawJitTests
         raw.Execute(10_000);
         Assert.Equal(plain.Ram().Read32(0x2008), raw.Ram().Read32(0x2008));
         Assert.Equal(plain.Context.Eip, raw.Context.Eip);
+    }
+
+    [Fact]
+    public void FaultingMember_DeliveredFromRawHelper_MatchesInterpreter()
+    {
+        // Regression for the §199l crash: a managed exception must never unwind
+        // out of a raw helper through the hand-emitted frame (CoreCLR cannot
+        // walk it - no unwind data - so delivery depended on stack layout luck
+        // and aborted the process with 0x80131506). The helpers catch, record
+        // and report; RunJitBlock rethrows in managed code.
+        //
+        // mov esi,0x2000; mov ecx,6; loop: mov eax,[esi]; add esi,0x1000;
+        // dec ecx; jne loop; hlt. Four pages (0x2000-0x5FFF) are mapped, so the
+        // load faults on the fifth iteration - by then the raw block has
+        // chained into itself several times, so the faulting invocation is a
+        // chain target (the shape that used to abort the test host).
+        byte[] code =
+        [
+            0xBE, 0x00, 0x20, 0x00, 0x00,
+            0xB9, 0x06, 0x00, 0x00, 0x00,
+            0x8B, 0x06,
+            0x81, 0xC6, 0x00, 0x10, 0x00, 0x00,
+            0x49,
+            0x75, 0xF5,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            MapIdentity(cpu.Bus(), 1, 5);
+            EnablePaging(cpu);
+            cpu.Ram().Write32(0x2000, 0xAABBCCDD);
+            cpu.Ram().Write8(0x1500, 0xF4);
+            InstallIdt(cpu, 14, 0x1500);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Context.Esp = 0x2F00;
+        raw.Context.Esp = 0x2F00;
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+
+        AssertSame(plain, raw);
+        Assert.Equal(14, raw.LastFaultVector);
+        Assert.Equal(0x100Au, raw.LastFaultEip);
+        Assert.Equal(0x6000u, raw.Context.Cr2);
+        Assert.Equal(1ul, raw.JitFaults);
+        Assert.True(
+            raw.JitRawFaults == 1,
+            $"rawFaults={raw.JitRawFaults} rawInv={raw.JitRawInvocations} built={raw.JitRawBlocksBuilt} " +
+            $"chained={raw.JitRawChainedBlocks} served={raw.JitRawServedMembers} faults={raw.JitFaults}");
+        Assert.True(raw.JitRawBlocksBuilt > 0, "no raw block was built");
+        Assert.True(raw.JitRawChainedBlocks > 0, "the loop did not chain before the fault");
+    }
+
+    private const uint PageDirectory = 0x4000;
+    private const uint PageTable = 0x5000;
+
+    private static void MapIdentity(AddressSpace bus, uint firstVpn, uint count)
+    {
+        bus.Write32(PageDirectory, PageTable | 3u);
+        for (uint vpn = firstVpn; vpn < firstVpn + count; vpn++)
+        {
+            bus.Write32(PageTable + (vpn * 4), (vpn << 12) | 3u);
+        }
+    }
+
+    private static void EnablePaging(XboxCpu cpu)
+    {
+        cpu.Context.Cr3 = PageDirectory;
+        cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
+        cpu.Mmu.Flush();
+    }
+
+    private static void InstallIdt(XboxCpu cpu, int vector, uint handler)
+    {
+        const uint idt = 0x4000;
+        uint gate = idt + ((uint)vector * 8);
+        cpu.Bus().Write16(gate, (ushort)(handler & 0xFFFF));
+        cpu.Bus().Write16(gate + 2, 0x08);
+        cpu.Bus().Write16(gate + 4, 0x8E00);
+        cpu.Bus().Write16(gate + 6, (ushort)(handler >> 16));
+        cpu.Context.Idtr.Base = idt;
+        cpu.Context.Idtr.Limit = 0x7FF;
     }
 }

@@ -29,6 +29,7 @@ public sealed unsafe partial class XboxCpu
     private byte* _rawRam;
     private ulong* _rawScratch;
     private RawState* _rawStateBlock;
+    private RawChainEntry* _rawChainTable;
     private ulong* _rawActiveBits;
     private ulong* _rawPtBits;
     private ulong[]? _rawActiveSource;
@@ -38,10 +39,20 @@ public sealed unsafe partial class XboxCpu
     private const int ScratchEflags = 1;
     private const int ScratchTsc = 2;
     private const int ScratchProgress = 3;
+    private const int ScratchChain = 4;
+    private const int ScratchChainCount = 5;
+    private const int ScratchFault = 6;
     private const int ScratchWords = 8;
 
     internal static readonly bool RawTraceEnabled =
         string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_TRACE"), "1", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Gets whether direct raw-to-raw chaining is enabled. <c>XGRID_RAW_CHAIN=0</c>
+    /// disables the chain tails and publications (A/B switch, diagnostics only).
+    /// </summary>
+    internal static readonly bool RawChainEnabled =
+        !string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_CHAIN"), "0", StringComparison.Ordinal);
 
     /// <summary>Gets or sets whether fast mode may use the C3 raw block emitter.</summary>
     public bool JitRawBlocks { get; set; }
@@ -54,6 +65,18 @@ public sealed unsafe partial class XboxCpu
 
     /// <summary>Gets the number of members served by raw runners (diagnostic).</summary>
     public ulong JitRawServedMembers { get; private set; }
+
+    /// <summary>Gets the number of direct raw-to-raw chain jumps (diagnostic).</summary>
+    public ulong JitRawChainedBlocks { get; private set; }
+
+    /// <summary>Gets the number of raw runner invocations that ended on a captured fault (diagnostic).</summary>
+    public ulong JitRawFaults { get; private set; }
+
+    /// <summary>Gets the number of chain-target publications (diagnostic).</summary>
+    public ulong RawChainPublishes { get; private set; }
+
+    /// <summary>Gets the number of chain-table clears (diagnostic).</summary>
+    public ulong RawChainClears { get; private set; }
 
     /// <summary>
     /// Builds the raw machine view for the current call. Segment bases and the
@@ -80,11 +103,16 @@ public sealed unsafe partial class XboxCpu
             _rawStateTemplate.Eflags = (uint*)(_rawScratch + ScratchEflags);
             _rawStateTemplate.Tsc = (ulong*)(_rawScratch + ScratchTsc);
             _rawStateTemplate.Progress = (int*)(_rawScratch + ScratchProgress);
+            _rawStateTemplate.ChainTable = _rawChainTable;
+            _rawStateTemplate.ChainServed = (int*)(_rawScratch + ScratchChain);
+            _rawStateTemplate.ChainCount = (int*)(_rawScratch + ScratchChainCount);
+            _rawStateTemplate.Fault = (int*)(_rawScratch + ScratchFault);
         }
 
         RawState* state = _rawStateBlock;
         *state = _rawStateTemplate;
         state->RamSize = _ramSize;
+        state->Generation = _blocks is null ? null : _blocks.GenerationPointer;
         RefreshRawState(state);
 
         // Across a RunJitBlock call these are invariant: the watch range is
@@ -134,9 +162,62 @@ public sealed unsafe partial class XboxCpu
         state->PtBits = pt is null ? null : _rawPtBits;
         state->StoreGuardBail = active is null ? 1u : 0u;
         state->Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
+
+        // Chaining: the interrupt-pending word can change between block
+        // invocations of one call (the source tests it at its chain edge). A
+        // source with no cheap pending flag never chains while IF=1 (it
+        // returns to RunJitBlock, which acknowledges). The generation is read
+        // live from the pinned slot at the chain edge.
+        IInterruptSource? source = InterruptSource;
+        nint pendingAddress = source?.PendingFlagAddress ?? 0;
+        state->IrqPending = (uint*)pendingAddress;
+        state->IrqArmed = pendingAddress != 0 ? 1u : 0u;
     }
 
-    /// <summary>Copies the live context fields into the raw scratch block.</summary>
+    /// <summary>Publishes a raw block as a chaining target.</summary>
+    internal void PublishRawChainBlock(uint headEip, ulong generation, int members, nint target, nint entries)
+    {
+        // The table is allocated with the other pinned raw arrays; publishing
+        // happens at block formation, which can precede the first raw
+        // invocation, so ensure the allocation here.
+        EnsureRawArraysPinned();
+        if (_rawChainTable is null)
+        {
+            return;
+        }
+
+        uint index = (headEip * RawChainHash.Multiplier) >> RawChainHash.IndexShift;
+        RawChainEntry* entry = &_rawChainTable[index];
+        RawChainPublishes++;
+        if (XboxCpu.RawTraceEnabled)
+        {
+            XboxCpu.RawTrace($"  chain publish head={headEip:X5} gen={generation} members={members}");
+        }
+        entry->Valid = 1;
+        entry->Eip = headEip;
+        entry->Generation = (uint)generation;
+        entry->Members = (uint)members;
+        entry->Target = target;
+        entry->Entries = entries;
+    }
+
+    /// <summary>
+    /// Clears every chaining target. Called whenever the JIT block cache is
+    /// invalidated without a decode-generation bump, so no chain edge can
+    /// reach a block whose pinned entries array may be collected.
+    /// </summary>
+    internal void ClearRawChainTable()
+    {
+        RawChainClears++;
+        if (_rawChainTable is not null)
+        {
+            new Span<byte>(_rawChainTable, RawChainHash.TableSize * sizeof(RawChainEntry)).Clear();
+        }
+    }
+
+    /// <summary>
+    /// Copies the live context fields into the raw scratch block.
+    /// </summary>
     internal void RawEnter()
     {
         // Guard the interpolation: this runs once per raw invocation (millions
@@ -154,6 +235,10 @@ public sealed unsafe partial class XboxCpu
         _rawScratch[ScratchEflags] = Context.Eflags;
         _rawScratch[ScratchTsc] = Context.Tsc;
         _rawScratch[ScratchProgress] = 0;
+        _rawScratch[ScratchChain] = 0;
+        _rawScratch[ScratchChainCount] = 0;
+        _rawScratch[ScratchFault] = 0;
+        _rawPendingFault = null;
     }
 
     /// <summary>Copies the raw scratch block back into the live context.</summary>
@@ -168,6 +253,12 @@ public sealed unsafe partial class XboxCpu
         Context.Eflags = (uint)_rawScratch[ScratchEflags];
         Context.Tsc = _rawScratch[ScratchTsc];
         _jitProgress = (int)_rawScratch[ScratchProgress];
+
+        // A fault unwinds without the chained epilogue's reset; never let a
+        // carry leak into the next invocation.
+        _rawScratch[ScratchChain] = 0;
+        JitRawChainedBlocks += (ulong)(int)_rawScratch[ScratchChainCount];
+        _rawScratch[ScratchChainCount] = 0;
     }
 
     private bool _rawTrace => RawTraceEnabled;
@@ -229,6 +320,9 @@ public sealed unsafe partial class XboxCpu
 
         _rawScratch = (ulong*)NativeMemory.Alloc(ScratchWords * sizeof(ulong));
         _rawStateBlock = (RawState*)NativeMemory.Alloc((nuint)sizeof(RawState));
+        _rawChainTable = (RawChainEntry*)NativeMemory.Alloc(
+            (nuint)(RawChainHash.TableSize * sizeof(RawChainEntry)));
+        new Span<byte>(_rawChainTable, RawChainHash.TableSize * sizeof(RawChainEntry)).Clear();
         _rawSelfHandle = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 
@@ -254,9 +348,71 @@ public sealed unsafe partial class XboxCpu
     private RawState _rawStateTemplate;
     private bool _rawStateReady;
 
+    /// <summary>
+    /// Exception a raw helper captured (never thrown through the native frame).
+    /// The emitted code sees <see cref="RawState.Fault"/> set, exits with the
+    /// fault sentinel, and <c>RunJitBlock</c> rethrows this in managed code.
+    /// </summary>
+    private Exception? _rawPendingFault;
+
+    /// <summary>
+    /// Records an exception a live raw helper caught: sets the emitted code's
+    /// fault word and remembers the exception for the managed rethrow. Called
+    /// inside the helper's catch, where propagating would unwind through a
+    /// hand-emitted frame that CoreCLR cannot walk.
+    /// </summary>
+    internal void RawCaptureFault(Exception exception)
+    {
+        if (_rawScratch is not null)
+        {
+            _rawScratch[ScratchFault] = 1;
+        }
+
+        if (RawTraceEnabled)
+        {
+            RawTrace($"  capture {exception.GetType().Name}: {exception.Message}");
+        }
+
+        _rawPendingFault ??= exception;
+    }
+
+    /// <summary>
+    /// Rethrows the exception a raw helper captured. Called by
+    /// <c>RunJitBlock</c> after the raw frame has returned and
+    /// <see cref="RawExit"/> published the context, so ordinary managed
+    /// exception handling (fault delivery, diagnostics) sees it exactly as the
+    /// IL runner's.
+    /// </summary>
+    internal void ThrowRawFault()
+    {
+        Exception? pending = _rawPendingFault;
+        _rawPendingFault = null;
+        if (pending is null)
+        {
+            throw new InvalidOperationException("raw runner reported a fault without a captured exception");
+        }
+
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(pending).Throw();
+    }
+
     /// <summary>Resolves the CPU from <see cref="RawSelfHandle"/> (weak handle; never null inside a run).</summary>
     internal static XboxCpu RawFromHandle(IntPtr handle) =>
         (XboxCpu)GCHandle.FromIntPtr(handle).Target!;
+
+    /// <summary>
+    /// Resolves the CPU from a raw handle without assuming the target is alive
+    /// (a helper's capture path must never throw out of the native frame).
+    /// </summary>
+    internal static XboxCpu? RawFromHandleOrNull(IntPtr handle)
+    {
+        GCHandle gcHandle = GCHandle.FromIntPtr(handle);
+        if (!gcHandle.IsAllocated)
+        {
+            return null;
+        }
+
+        return gcHandle.Target as XboxCpu;
+    }
 
     /// <summary>Gets the data translate-cache tag table (raw emitter pin target).</summary>
     internal uint[] DataXlatTagArray => _dataXlatTag;

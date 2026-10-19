@@ -124,6 +124,29 @@ public sealed class DecodedBlockCache
     /// <summary>Gets the invalidation generation (bumped on every <see cref="Invalidate"/>).</summary>
     public ulong Generation { get; private set; }
 
+    // C3 raw chaining: a pinned copy of Generation readable from emitted code,
+    // so a chain edge can validate its target against the live generation even
+    // when a store inside the current block invalidated decodes.
+    private readonly ulong[] _generationSlot = GC.AllocateArray<ulong>(1, pinned: true);
+    private unsafe ulong* _generationPointer;
+
+    /// <summary>Gets the pinned live-generation word (stable address).</summary>
+    internal unsafe ulong* GenerationPointer
+    {
+        get
+        {
+            if (_generationPointer is null)
+            {
+                fixed (ulong* slot = _generationSlot)
+                {
+                    _generationPointer = slot;
+                }
+            }
+
+            return _generationPointer;
+        }
+    }
+
     /// <summary>Gets emitted tail runners built (DynamicMethod construction).</summary>
     public ulong EmitBuilds { get; private set; }
 
@@ -175,6 +198,7 @@ public sealed class DecodedBlockCache
         }
 
         Generation++;
+        _generationSlot[0] = Generation;
         _blocks.Clear();
         _current = null;
         _currentHandler = null;
