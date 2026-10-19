@@ -230,10 +230,76 @@ public sealed class RawJitTests
         raw.Execute(10_000);
         AssertSame(plain, raw);
     }
-    // Known gap (S199f): a loop whose block contains a helper-served memory
-    // member under-counts the TSC by one tick per block, so the differential
-    // fails on Context.Tsc only (registers, EIP and flags match). The raw path
-    // is opt-in, so this does not affect any default-mode gate.
+    [Fact]
+    public void BlockEndingInMemoryRmw_AdvancesEipOnce()
+    {
+        // A full 32-member block whose last member is a memory read-modify-write.
+        // The RMW's slow path runs the spec handler (which advances EIP); the
+        // fast path must advance EIP itself. If it does not, the block exits on
+        // the RMW's first byte and the member path re-executes it: the inc
+        // doubles and the step/TSC count drifts by one per block. The loop
+        // makes the head reach the build threshold so the raw block exists, and
+        // the head sits exactly on the xor so the 32-member cap lands on the RMW.
+        byte[] code = new byte[5 + 2 + 30 + 6 + 3 + 1];
+        code[0] = 0xB9; // mov ecx,2
+        code[1] = 0x02;
+        code[2] = 0x00;
+        code[3] = 0x00;
+        code[4] = 0x00;
+        code[5] = 0x31; // start: xor eax,eax
+        code[6] = 0xC0;
+        for (int i = 0; i < 30; i++)
+        {
+            code[7 + i] = 0x40; // inc eax
+        }
+
+        int at = 37;
+        code[at++] = 0xFF; // inc dword [0x2000]
+        code[at++] = 0x05;
+        code[at++] = 0x00;
+        code[at++] = 0x20;
+        code[at++] = 0x00;
+        code[at++] = 0x00;
+        code[at++] = 0x49; // dec ecx
+        code[at++] = 0x75; // jne start
+        code[at++] = 0xD7;
+        code[at] = 0xF4; // hlt
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            // Paging on (the fast probe's data translate cache only arms on
+            // the paged path): identity-map the first 16 pages.
+            cpu.Bus().Write32(0x4000, 0x5000u | 3u);
+            for (uint vpn = 0; vpn < 16; vpn++)
+            {
+                cpu.Bus().Write32(0x5000 + vpn * 4, (vpn << 12) | 3u);
+            }
+
+            cpu.Context.Cr3 = 0x4000;
+            cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
+            cpu.Mmu.Flush();
+            cpu.Ram().Write32(0x2000, 5);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+        Assert.Equal(7u, raw.Ram().Read32(0x2000));
+        Assert.True(
+            raw.JitRawBlocksBuilt > 0,
+            $"no raw blocks were built (jitBlocks={raw.JitBlocksBuilt} calls={raw.JitCallCount} " +
+            $"inv={raw.JitInvocations} rejected={raw.JitRejectedHeads} transient={raw.JitTransientBails} " +
+            $"served={raw.JitServedTotal})");
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    // The post-helper TSC rebase was removed in S199f (the frame slot is
+    // authoritative; helpers never tick TSC), so this loop is a full
+    // differential including Context.Tsc.
     [Fact]
     public void CmpMemoryImmediateLoop_MatchesInterpreter()
     {
@@ -262,6 +328,43 @@ public sealed class RawJitTests
         raw.Execute(10_000);
         AssertSame(plain, raw);
     }
+    [Fact]
+    public void HelperClobberedCallerSavedRegisters_AreReloaded()
+    {
+        // mov esi,2
+        // loop: mov ecx,5; mov edx,7; movq mm0,[0x2000]  (helper call: the
+        // Win64 ABI clobbers host RAX/RCX/RDX, which hold guest eax/ecx/edx);
+        // add edx,ecx; mov [0x2004],edx; dec esi; jne loop; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xB9, 0x05, 0x00, 0x00, 0x00,
+            0xBA, 0x07, 0x00, 0x00, 0x00,
+            0x0F, 0x6F, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0x01, 0xCA,
+            0x89, 0x15, 0x04, 0x20, 0x00, 0x00,
+            0x4E,
+            0x75, 0xE4,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, 0x11223344);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+        Assert.Equal(plain.Ram().Read32(0x2004), raw.Ram().Read32(0x2004));
+        Assert.Equal(12u, raw.Ram().Read32(0x2004));
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
     private static void RunLoop(byte[] code)
     {
         XboxCpu plain = CreatePlain(code);

@@ -10808,3 +10808,102 @@ gathered:
 **Status: triangle 1B fast-IL vs fast-raw bit-exact (RAM SHA, CPU SHA and
 every NV2A counter identical); menu exact through 968,380,639 and open
 beyond; suite 1495 green; format clean; the raw path stays opt-in.**
+
+## 199i. C3 correctness, third campaign: the split-member EIP advance (menu 1B now exact) (2026-10-20, fifth session)
+
+The §199h open item is CLOSED: the menu 1B IL-vs-raw differential is now
+bit-exact, and the root cause was not a store helper at all - it was a
+block-exit EIP bug in the split fast/slow members.
+
+**Root cause.** Four member forms emit a native fast path and a
+spec-handler slow path in the same `EmitMember`: the RMW destination
+(`AluMR`/`AluMI` non-cmp), the cmp-memory forms (`AluRM`/`AluMI` cmp via
+`EmitCmpMemorySource`), `TestMI`, and `IncM`/`DecM`. The slow path calls
+`EmitHelperMember`, whose exact handler advances EIP itself and sets the
+emitter's compile-time `_memberHelper` flag. `EmitMember` uses that flag to
+skip its own per-member EIP advance - correct for the slow path, but the flag
+is compile-time state, so the fast path also lost its advance. Mid-block this
+is invisible because the next member's `EmitSetEip` rewrites F_EIP; only when
+such a member is the block's LAST member does the missing advance survive to
+the exit. The raw runner then returned with EIP on the member's first byte
+(while counting it as served), the member path re-executed the instruction,
+and the guest step/TSC accounting drifted by one.
+
+**Evidence chain (block-level trace, new diagnostics).** `XGRID_BLOCK_TRACE`
+(window + head dump) showed identical block streams until one invocation:
+head=0x1E010, entry=0x1E010, members=32, served=32, tsc=968,380,477 - but
+exit=0x1E08B in IL vs 0x1E088 in raw. The block's 32nd member (M31, dumped by
+`XGRID_BLOCK_TRACE_HEAD=1E010`) is `or [eax+0x2C],edx` at 0x1E088, and
+`MaxMembers=32`; 0x1E088 is exactly where the raw run stopped. The raw trace
+then resumed at 0x1E088 (the re-execution), leaving the engine exactly one
+guest instruction behind: at step 968,380,640 IL was at EIP 0x1E164 (after
+`push eax` at 0x1E163) and raw at 0x1E163, with ESP 4 bytes apart. Every later
+boundary kept the same one-instruction lag (step 968,380,700: IL 0x1D13B vs
+raw 0x1D136; step 968,400,000: IL 0x39FB9 vs raw 0x39FB8 - two consecutive
+1-byte `nop`s). The §199h "missing 0xD003B4B8 store" is a consequence: the raw
+run simply had not reached the `push eax` that writes it.
+
+**Fix.** The fast path of the four forms now emits `EmitAdvanceEip(plan.Length)`
+before its merge jump; the slow path's spec handler keeps owning its own
+advance, and the outer `EmitMember` skip stays as-is (the flag is only an
+optimization boundary now). Regression test
+`BlockEndingInMemoryRmw_AdvancesEipOnce` builds a 32-member block whose last
+member is `inc dword [0x2000]` (paging on so the inline probe is taken);
+fail-pre-fix it reports TSC 71 vs 70 and the inc applied twice, with the fix
+it is a full differential.
+
+**Validation.** Suite 1497 green (1495 + the two new differentials), format
+clean.
+Menu 1B IL vs raw: identical RAM SHA `660CA11B...`, CPU SHA `F5D61C94...`
+(= the recorded IL anchor) and every JIT counter identical. Triangle 1B IL vs
+raw: identical RAM SHA `A2DCA55F...` and CPU SHA `7DAB63EB...`. ktest smoke
+PASS 7/7 known deltas at the bit-reproducible 792,800,535 steps (xemu's leg
+could not bind its monitor socket on this host - `Failed to bind socket:
+Input/output error` on any port - so the XGrid rows were diffed against the
+known-delta table via `-SkipXemu`).
+
+**Diagnostics added for the next differential.** `XGRID_WATCH_START` /
+`XGRID_WATCH_END` (hex) retarget the CLI bus watch; `XGRID_WATCH_TRACE=1`
+prints every hit as `WHIT tsc=... eip=... addr=... size=... value=...`.
+`XGRID_BLOCK_TRACE=1` with `XGRID_BLOCK_TRACE_FROM/TO` (TSC window) logs
+`head/entry/members/served/exit/tsc/raw` per block invocation and
+`XGRID_BLOCK_TRACE_HEAD=hex` dumps that block member list (EIP/length/mnemonic).
+Together they localize any IL-vs-raw divergence to a single block invocation.
+
+## 199j. C3 negative result: mask-driven register sync is below resolution, and the helper ABI rule it exposed (2026-10-20)
+
+With the raw path finally bit-exact, the first performance experiment after
+the correctness campaign was the IL runner's C2 slice-1 register-mask
+contract applied to the raw emitter: the prologue loads only the union of
+the block's read and write masks, the epilogue/sync sites store only the
+write union, and helper reloads cover the member's write mask instead of all
+eight registers. It was implemented end-to-end and validated bit-exactly
+(triangle and menu SHAs + counters at 100M, both title 1B differentials
+exact).
+
+**Negative result.** Interleaved 100M runs (3 per leg, same binary, raw-only):
+menu pre 5.236/5.500/5.098 s (median 5.236) vs mask 5.034/5.348/5.195
+(median 5.195) - 0.8%; triangle pre 5.643/5.466/5.180 (5.466) vs mask
+5.621/5.404/5.192 (5.404) - 1.1%. Both below the project's sub-2% resolution
+standard (n>=7 medians), i.e. host noise. Reverted; the raw emitter keeps
+the all-eight load/store contract, which is also the obviously safe one.
+
+**The ABI rule it exposed (keep for any future sync/chaining slice).** Every
+raw helper is a managed call, and the Win64 ABI lets it clobber RAX/RCX/RDX -
+which are exactly the host registers holding guest eax/ecx/edx (guest
+EBX/R12D-R15D ride in callee-saved host registers). The mask slice reloaded
+only the member's write mask after helpers, so a helper whose mask excludes
+eax/ecx/edx (MMX moves, x87/SSE, memory read/write helpers) left the caller's
+values replaced by ABI garbage. It crashed the early boot at EIP=0x402D42
+with CR2=0x5315828B: the caller's `rep movsd`/call block had EAX/EDX equal to
+the call target instead of the caller values, and the callee's saved ESI/EDI
+were the callee's internals. Fix (whenever reload masks are introduced):
+always include bits 0-2 (`{eax,ecx,edx}`) in the post-helper reload, in
+addition to the handler's write mask. Regression test
+`HelperClobberedCallerSavedRegisters_AreReloaded` (`mov ecx,5; mov edx,7;
+movq mm0,[mem]` helper; `add edx,ecx; mov [mem],edx`) fails pre-fix with
+garbage in the stored sum and passes with the full reload.
+
+Lesson for the structural levers: per-invocation sync is only worth touching
+once chaining removes the block boundary itself; slicing it alone does not
+move the wall, and every slice must carry the ABI-clobber rule.

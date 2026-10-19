@@ -1,5 +1,28 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (fifth session — C3 third correctness campaign, §199i):
+> BOTH TITLES 1B BIT-EXACT; THE OPEN MENU GAP IS CLOSED.** The §199h menu
+> divergence was not a store helper: the four split fast/slow members (RMW
+> destination, cmp-memory, test-memory, inc/dec-memory) skipped the **fast
+> path's EIP advance** because the slow path's `EmitHelperMember` sets the
+> emitter's compile-time `_memberHelper` flag for the whole member. Mid-block
+> the next member's `EmitSetEip` hides it; when such a member is the block's
+> LAST member the block exits on the member's first byte, the member path
+> re-executes the instruction, and the guest step/TSC accounting drifts by
+> one (the recorded MMX-loop byte was the symptom). A new block-level trace
+> (`XGRID_BLOCK_TRACE`, plus retargetable `XGRID_WATCH_START/END` +
+> `XGRID_WATCH_TRACE`) localized the first differing invocation to head
+> 0x1E010: 32 members, exit 0x1E08B (IL) vs 0x1E088 (raw), last member
+> `or [eax+0x2C],edx`. Both title 1B differentials now match exactly (menu
+> `660CA11B…/F5D61C94…` with every JIT counter identical, triangle
+> `A2DCA55F…/7DAB63EB…`); regression test
+> `BlockEndingInMemoryRmw_AdvancesEipOnce` fails pre-fix (TSC 71 vs 70,
+> doubled inc). Suite **1497** green; ktest smoke PASS 7/7 at the
+> bit-reproducible 792,800,535 steps. The raw path stays opt-in and at parity
+> with IL; the next levers are structural (chaining / register-resident
+> state) under the per-block IRQ poll contract. Quiet-host calibration:
+> triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin).
+>
 > **STATUS 2026-10-20 (fourth session — C3 second correctness campaign, §199h):
 > TRIANGLE 1B BIT-EXACT; MENU OPEN AT 968.38M.** Two more raw-emitter bugs
 > closed, both found by the title differentials: the **store guard's note path

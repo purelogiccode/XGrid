@@ -1559,7 +1559,7 @@ This should begin only after the interpreter is stable.
 > 88.05/44.65 s spec-controls; fast mode is never gate currency).
 >
 > **C3 (Phase 3, raw emitter) started 2026-10-20 (§§199e/199f); correctness
-> campaigns closed 2026-10-19→20 (§§199g/§199h).** The `DynamicMethod` block
+> campaigns closed 2026-10-19→20 (§§199g/§199h/§199i).** The `DynamicMethod` block
 > JIT reached its structural floor (~14 ns/ordinary member, ~8 ns/block
 > chain, ~15-20 ns/block state sync), so the charter's Phase-3 entry
 > condition was met and Iced 1.21.0 (MIT) was added. `RawBlockEmitter` emits
@@ -1570,18 +1570,19 @@ This should begin only after the interpreter is stable.
 > pointers (`[rbp+rdi]`) with an exact-helper slow path, and a reverse-P/Invoke
 > trampoline to the spec handlers for every unencoded shape — so every block
 > is emittable. **Status: opt-in `--jit-raw`; all JitTests green with the
-> path forced on (59/59; suite 1495 green); the triangle 1B IL-vs-raw
-> differential is bit-exact (RAM SHA + CPU SHA + every NV2A counter); the
-> menu is exact through step 968,380,639 with one open byte-level divergence
-> in the dashboard's MMX copy loop (§199h).** Sixteen latent emitter bugs
-> were fixed across the two campaigns (shadow space, marshalled delegate
+> path forced on (59/59; suite 1497 green); BOTH title 1B differentials are
+> bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every
+> JIT counter identical).** The §199h menu gap was the split-member fast-path
+> EIP advance (§199i), not a store helper. Seventeen latent emitter bugs
+> were fixed across the three campaigns (shadow space, marshalled delegate
 > parameters, probe register reuse, stale helper EIP, the translate-cache
 > VPN/slot mask, the post-STI/POPF poll, host DF across helper calls, the
 > store guard's R9 clobber + exact watch-range test, the exit-edge flag
-> merge, GC-stale CPU/entries pointers, and more — §199g/§199h). The raw path
-> is at parity with IL (it serves 76% of triangle members); the next
-> structural levers (chaining / register-resident state) are constrained by
-> the per-block IRQ poll contract, and no default flip is proposed yet.
+> merge, the split-member fast-path EIP advance, GC-stale CPU/entries
+> pointers, and more — §199g/§199h/§199i). The raw path is at parity with IL
+> (it serves 76% of triangle members); the next structural levers (chaining /
+> register-resident state) are constrained by the per-block IRQ poll
+> contract, and no default flip is proposed yet.
 
 ## 20.1 JIT architecture
 
@@ -2789,12 +2790,11 @@ Shaders
 > running.** `--jit` (whole-block `DynamicMethod`, Phase 1) is at its
 > structural floor; C3 (Phase 3, native x86-64 via Iced) is implemented behind
 > opt-in `--jit-raw` and validated: all JitTests green with the path forced
-> on, the **triangle 1B differential bit-exact**, the menu exact through
-> 968,380,639 (§§199g/§199h). Baseline to beat: fast-mode 1B **triangle
-> 10.63 s / menu 45.62 s** (this session's quiet-host calibration: triangle
-> 10.20 s, menu ~40 s). The raw path is at parity with IL today; the next
-> gates are (a) the open menu divergence, then (b) the quiet-host raw-vs-IL
-> medians, then (c) the structural slices (chaining / register-resident
+> on, **both 1B differentials bit-exact** (triangle and menu, §199i). Baseline
+> to beat: fast-mode 1B **triangle 10.63 s / menu 45.62 s** (this session's
+> quiet-host calibration: triangle 10.20 s, menu ~40 s). The raw path is at
+> parity with IL today; the next gates are (a) the quiet-host raw-vs-IL
+> medians, then (b) the structural slices (chaining / register-resident
 > state) and the default-flip decision.
 
 ```text
@@ -3101,12 +3101,12 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 82% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–199h: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 16 latent bugs fixed across two correctness campaigns; 59/59 JitTests with the raw path forced on; triangle 1B IL-vs-raw bit-exact; menu exact to 968,380,639 with one open byte-level divergence; at parity with IL (76% of members raw-served)**; remaining: the open menu divergence, the quiet-host raw-vs-IL medians, structural slices (chaining / register-resident state), the `--jit` default-flip decision, threshold auto-tune, E3-2 |
+| 15 CPU JIT | 11 | 82% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); at parity with IL (76% of members raw-served)**; remaining: the quiet-host raw-vs-IL medians, structural slices (chaining / register-resident state), the `--jit` default-flip decision, threshold auto-tune, E3-2 |
 | 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); remaining: fundamental per-pixel work, backend performance |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 69% | 1495 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch and exact watch-range-hit tests; 59/59 with the raw path forced on) + ktest smoke; fuzzing, wider compatibility corpus |
+| 20 Automated Testing | 3 | 69% | 1497 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests; 59/59 with the raw path forced on) + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 52% | opt-in `--window` live present sink (§184); GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |

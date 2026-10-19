@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -263,6 +264,38 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Pending interrupt vector reported by an exact-mode runner (-1 none).</summary>
     private int _jitPending = -1;
 
+    // TEMP-DIAG: block-level trace of (head, entry, members, served, exit) for
+    // the fast-IL vs raw differential. Bounded to a TSC window so long runs
+    // produce a few hundred lines instead of hundreds of millions.
+    private static readonly bool BlockTraceEnabled = string.Equals(
+        Environment.GetEnvironmentVariable("XGRID_BLOCK_TRACE"),
+        "1",
+        StringComparison.Ordinal);
+
+    private static readonly long BlockTraceFrom = long.TryParse(
+        Environment.GetEnvironmentVariable("XGRID_BLOCK_TRACE_FROM"),
+        NumberStyles.Integer,
+        CultureInfo.InvariantCulture,
+        out long blockTraceFrom)
+        ? blockTraceFrom
+        : 0;
+
+    private static readonly long BlockTraceTo = long.TryParse(
+        Environment.GetEnvironmentVariable("XGRID_BLOCK_TRACE_TO"),
+        NumberStyles.Integer,
+        CultureInfo.InvariantCulture,
+        out long blockTraceTo)
+        ? blockTraceTo
+        : long.MaxValue;
+
+    private static readonly uint BlockTraceHead = uint.TryParse(
+        Environment.GetEnvironmentVariable("XGRID_BLOCK_TRACE_HEAD"),
+        NumberStyles.HexNumber,
+        CultureInfo.InvariantCulture,
+        out uint blockTraceHead)
+        ? blockTraceHead
+        : uint.MaxValue;
+
     /// <summary>
     /// Gets or sets opt-in fast-mode block execution (<c>--jit</c>). Default
     /// off. Enabling implies <see cref="SpecExecutionEnabled"/> (and hence
@@ -438,6 +471,7 @@ public sealed unsafe partial class XboxCpu
             }
 
             int served;
+            uint blockEntryEip = Context.Eip;
             long runnerStart = JitTiming ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             try
             {
@@ -502,6 +536,38 @@ public sealed unsafe partial class XboxCpu
                 JitServedTotal += (ulong)(done + 1);
                 JitInvocations++;
                 return total + done + 1;
+            }
+
+            if (BlockTraceEnabled)
+            {
+                long blockTsc = (long)Context.Tsc;
+                if (blockTsc >= BlockTraceFrom && blockTsc <= BlockTraceTo)
+                {
+                    string tracePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xgrid-block-trace.txt");
+                    System.IO.File.AppendAllText(
+                        tracePath,
+                        $"B head={block.HeadEip:X5} entry={blockEntryEip:X5} members={block.MemberCount} " +
+                        $"served={served} exit={Context.Eip:X5} tsc={blockTsc} raw={block.RawRunner is not null}" +
+                        Environment.NewLine);
+
+                    if (block.HeadEip == BlockTraceHead)
+                    {
+                        var members = new System.Text.StringBuilder();
+                        uint memberEip = block.HeadEip;
+                        for (int m = 0; m < block.MemberCount; m++)
+                        {
+                            DecodedInstruction member = block.Entries[m].Instruction;
+                            members.Append("  M").Append(m)
+                                .Append(" eip=").Append(memberEip.ToString("X5", CultureInfo.InvariantCulture))
+                                .Append(" len=").Append(member.Length.ToString(CultureInfo.InvariantCulture))
+                                .Append(' ').Append(member.Mnemonic)
+                                .AppendLine();
+                            memberEip += (uint)member.Length;
+                        }
+
+                        System.IO.File.AppendAllText(tracePath, members.ToString());
+                    }
+                }
             }
 
             if (JitTiming)

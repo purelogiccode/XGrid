@@ -528,17 +528,25 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   pending delivery (0x202 instead of 0x246) — the triangle's 30.92M divergence**. Both fixed;
   the guard now runs the exact IsWatched range test before the note path (which also restored
   inline stores: previously every store went slow while any watch was armed). **Differential
-  status: the triangle is bit-exact at 1B (RAM SHA + CPU SHA + every NV2A counter identical);
-  the menu is exact through step 968,380,639 and then differs by one byte in the dashboard's
-  MMX copy loop (`movq`/`movntq`, physical 0x7534B8/0x7534C8, E3 vs E4) — open, with the full
-  evidence trail in §199h.** Performance: the raw path is at **parity** with IL after the
-  per-invocation overhead cuts (RawEnter/RawExit trace interpolations guarded, RawState
-  invariant template) — raw serves 76% of triangle members; no raw-advantage claim yet
-  (structural levers: chaining/register-resident state, both constrained by the per-block IRQ
-  poll contract). Quiet-host calibration this session: triangle IL 1B **10.20 s**, menu IL 1B
-  **~40 s** (gl+replace+spin) — both faster than the §199d baselines (10.63 / 45.62).
+  status: BOTH titles are now bit-exact at 1B** — the §199h menu gap was closed by the third
+  campaign (§199i): the four split fast/slow members (RMW destination, cmp-memory, test-memory,
+  inc/dec-memory) skipped the fast path's EIP advance because the slow path's `EmitHelperMember`
+  sets the emitter's compile-time `_memberHelper` flag, so a block whose LAST member was one of
+  them exited on the member's first byte and the member path re-executed it (one-instruction
+  drift, visible as the MMX-loop byte). Found with the new block-level trace
+  (`XGRID_BLOCK_TRACE`): first differing invocation head=0x1E010, 32 members, exit 0x1E08B (IL)
+  vs 0x1E088 (raw), M31=`or [eax+0x2C],edx`. Menu 1B now matches the IL anchor exactly
+  (RAM `660CA11B…`, CPU `F5D61C94…`, every counter identical); triangle 1B RAM `A2DCA55F…`, CPU
+  `7DAB63EB…` on both engines. Regression test
+  `BlockEndingInMemoryRmw_AdvancesEipOnce` (fail-pre-fix: TSC 71 vs 70, double inc). Suite
+  **1497** green, ktest smoke PASS 7/7 at 792,800,535 steps. Performance: the raw path is at
+  **parity** with IL after the per-invocation overhead cuts — raw serves 76% of triangle
+  members; no raw-advantage claim yet (structural levers: chaining/register-resident state,
+  both constrained by the per-block IRQ poll contract). Quiet-host calibration this session:
+  triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
+  §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1495 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1497 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
@@ -594,7 +602,7 @@ entries pointers (the CPU now travels as a weak `GCHandle`, the entries array
 is pinned with `GC.AllocateArray(pinned: true)`), memory-source MovExtend
 emitted as a register move, disp32 ≥ 0x80000000 failing to encode, WP parity
 (`Cr0Wp` flag) and A/D parity with the IL probe. **All 56 JitTests +
-RawJitTests pass with the raw path forced on; suite 1495 green; build and
+RawJitTests pass with the raw path forced on; suite 1497 green; build and
 format clean.** The second campaign (§199h) then closed the two title
 differential bugs: **the store guard's note path clobbered R9 (the linear
 address) — every page-table store took the slow path with a garbage address
@@ -607,25 +615,40 @@ frame flags with the emitter's compile-time liveness, but `_exit` is also
 the target of the poll's pending path, the `Jcc` arms and the terminator
 jumps — the kernel idle delivery pushed EFLAGS 0x202 instead of 0x246, the
 triangle's 30.92M divergence**; every exit edge now normalizes the frame
-flags on its own path. **Differential status: the triangle is bit-exact at
-1B; the menu is exact through step 968,380,639, then differs by one byte in
-the dashboard's MMX copy loop — open, evidence in §199h.** The raw path
-stays **opt-in** and is at parity with IL (no advantage claim yet).
+flags on its own path. **Differential status: BOTH titles are bit-exact at
+1B** — §199h's menu gap was a split-member EIP advance bug, not a store
+helper (decisions §199i): the four fast/slow members (RMW destination,
+cmp-memory, test-memory, inc/dec-memory) lost the fast path's EIP advance
+because the slow path's `EmitHelperMember` sets the compile-time
+`_memberHelper` flag. A block ending on such a member exited on the member's
+first byte and the member path re-executed it, leaving the engine one guest
+instruction behind (visible at the trace level as the MMX-loop byte).
+Regression test `BlockEndingInMemoryRmw_AdvancesEipOnce`; menu 1B matches the
+IL anchor exactly (`660CA11B…/F5D61C94…`, every counter identical), triangle
+1B `A2DCA55F…/7DAB63EB…` on both engines. The raw path stays **opt-in** and
+is at parity with IL (no advantage claim yet). Suite **1497** green.
 
-Recipe for the open menu divergence: `boot … --jit --jit-threshold 16
---jit-spin --jit-raw --pad-script "down@950000000+hold,none@962000000,
-a@970000000+hold,none@976000000" --steps 968380640 --gpu sw` vs the same
-without `--jit-raw`; RAM SHA bisect bounds it to steps [968,380,583,
-968,380,659]; the first differing bytes are physical 0x7534B8 and 0x7534C8
-(`E3` vs `E4`), written inside the copy loop at 0x39F90 (`prefetch ×2;
-movq mm0-7,[esi+8N]; nop ×2; movntq [edi+8N],mm0-7; add esi,0x40; add
-edi,0x40; dec ecx; jne`). `XGRID_RAW_SKIP_HEADS=39F8E,39F90` (and four more
-loop heads) did not clear it; the shared `SpecMovqRegMem`/`SpecMovntqMemReg`
-handlers log identical events at the loop's earlier occurrences. Next:
-instrument the emitted store path for the loop block (head 0x39F90 exists,
-len=5130) and compare its exit state against the IL runner's. Note for
-`--save-state` work: in the `.xgs` CPU block, offset 170 is the TSC and
-equals the step count.
+**Menu divergence recipe (historical, CLOSED by §199i).** `boot … --jit
+--jit-threshold 16 --jit-spin --jit-raw --pad-script "down@950000000+hold,
+none@962000000,a@970000000+hold,none@976000000" --steps 968380640 --gpu sw`
+vs the same without `--jit-raw` used to differ by bytes at physical
+0x7534B8/0x7534C8. The block-level trace (`XGRID_BLOCK_TRACE=1` +
+`XGRID_BLOCK_TRACE_FROM/TO` + `XGRID_BLOCK_TRACE_HEAD`) localizes it to head
+0x1E010: the raw block exited at 0x1E088 (M31 `or [eax+0x2C],edx`) instead of
+0x1E08B and re-executed M31. Fixed by emitting the fast-path EIP advance for
+the four split members (decisions §199i). Both titles are bit-exact at 1B now;
+keep the recipe only as the differential harness for future raw changes.
+Note for `--save-state` work: in the `.xgs` CPU block, the TSC is at byte
+offset 146 (the §199h "offset 170" note was wrong) and equals the step count.
+
+Differential harness for raw changes: `XGRID_WATCH_START`/`XGRID_WATCH_END`
+(hex) retarget the bus watch; `XGRID_WATCH_TRACE=1` prints each hit as
+`WHIT tsc=… eip=… addr=… size=… value=…`; `XGRID_BLOCK_TRACE=1` with
+`XGRID_BLOCK_TRACE_FROM/TO` (TSC window) logs
+`head/entry/members/served/exit/tsc/raw` per block invocation and
+`XGRID_BLOCK_TRACE_HEAD=hex` dumps that block's member list
+(EIP/length/mnemonic). The first differing invocation is the root cause; the
+RAM SHA alone is only the symptom.
 
 Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix), XGRID_NONRAM=1
 (non-cacheable fetch pages), --jit-timing (runner vs chain split), Host timing
