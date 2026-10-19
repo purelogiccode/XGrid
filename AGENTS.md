@@ -570,7 +570,8 @@ NOT landed:** it triggers a deterministic CLR `ExecutionEngineException` in
 `JitTests.PagedCrossVisitFault` when preceded by `AluLoop` (the pair also
 crashes with chaining disabled, while HEAD runs it clean; `XGRID_RAW_SKIP_HEADS=100F`
 clears it). The full design, measurements, reproducer and bisect plan are in
-decisions §199l; the working tree was reverted so the suite stays green. The
+decisions §199l; the working tree was reverted so the suite stays green. The reverted implementation is preserved at
+wt-data/raw-chain/chain-199l.patch (gitignored, applies cleanly to this HEAD). The
 next session should (1) bisect the §199l diff against that pair - PIC pending
 word, pinned generation slot, `RawState` layout, table allocation - and audit
 the raw fault-unwind contract, then (2) re-land chaining and run the

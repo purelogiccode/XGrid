@@ -10957,7 +10957,12 @@ chartered structural lever was implemented end-to-end and produced the
 largest raw-path win so far, but it also produces a deterministic CLR
 ExecutionEngineException (exit 0x80131506) in the CPU test suite that is not
 yet root-caused. The working tree was returned to the §199i/§199k state; this
-section is the handoff.
+section is the handoff. The complete reverted implementation is preserved as
+wt-data/raw-chain/chain-199l.patch (gitignored; verified to apply cleanly
+to the session-close HEAD) - git apply wt-data/raw-chain/chain-199l.patch
+restores the experiment, together with its
+ChainedBlocks_MatchInterpreter_AndCountChains test and the
+XGRID_RAW_CHAIN=0 A/B switch.
 
 **Design (as implemented).** A raw block's epilogue looks up its next guest
 EIP in a per-CPU direct-mapped table (16384 slots x 32 bytes, unmanaged) and
