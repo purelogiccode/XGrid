@@ -35,16 +35,23 @@ namespace XGrid.Cpu;
 /// </summary>
 internal static unsafe class RawBlockEmitter
 {
-    private const int F_CPU = 0x00;
-    private const int F_ENTRIES = 0x08;
-    private const int F_STATE = 0x10;
-    private const int F_BUDGET = 0x18;
-    private const int F_SERVED = 0x1C;
-    private const int F_CTRL = 0x20;
-    private const int F_EFLAGS = 0x24;
-    private const int F_EIP = 0x28;
-    private const int F_TSC = 0x30;
-    private const int FrameSize = 0x108;
+    // Frame layout. The first 32 bytes are the Win64 shadow space every call
+    // site must reserve for its callee - the helper trampolines write their
+    // register arguments there, so no live slot may live below 0x20.
+    private const int ShadowSpace = 0x20;
+    private const int F_CPU = ShadowSpace + 0x00;
+    private const int F_ENTRIES = ShadowSpace + 0x08;
+    private const int F_STATE = ShadowSpace + 0x10;
+    private const int F_BUDGET = ShadowSpace + 0x18;
+    private const int F_SERVED = ShadowSpace + 0x1C;
+    private const int F_CTRL = ShadowSpace + 0x20;
+    private const int F_EFLAGS = ShadowSpace + 0x24;
+    private const int F_EIP = ShadowSpace + 0x28;
+    private const int F_TSC = ShadowSpace + 0x30;
+    private const int F_VALUE = ShadowSpace + 0x38;
+
+    // 8 callee-saved pushes (64) + this size keeps rsp 16-byte aligned at a call.
+    private const int FrameSize = ShadowSpace + 0x108;
 
     /// <summary>Arithmetic flags the host FLAGS register carries for the guest (plus reserved bit 1).</summary>
     private const uint ArithmeticMask = 0x8D5;
@@ -67,6 +74,12 @@ internal static unsafe class RawBlockEmitter
     [
         Register.EAX, Register.ECX, Register.EDX, Register.EBX,
         Register.R12D, Register.R13D, Register.R14D, Register.R15D,
+    ];
+
+    private static readonly Register[] Gpr64 =
+    [
+        Register.RAX, Register.RCX, Register.RDX, Register.RBX,
+        Register.R12, Register.R13, Register.R14, Register.R15,
     ];
 
     private static readonly Register[] Gpr16 =
@@ -103,7 +116,7 @@ internal static unsafe class RawBlockEmitter
             var ctx = new EmitContext(headEip, plans.ToArray());
             return ctx.Build();
         }
-        catch (InvalidOperationException)
+        catch (Exception)
         {
             // A shape the assembler cannot encode: keep the IL runner for this
             // block (correctness first, the raw path is an optimization).
@@ -358,9 +371,11 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.R9), Field(Register.R11, OffEip));
             a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.EAX));
 
+            // TSC is ticked once per member before its body (the interpreter's rule),
+            // so the frame slot already holds the exact value.
+            a.mov(R64(Register.R10), Slot(F_TSC));
             a.mov(R64(Register.R9), Field(Register.R11, OffTsc));
-            a.mov(R32(Register.EAX), Slot(F_SERVED));
-            a.add(MemOp(Register.R9, null, 1, 0), R32(Register.EAX));
+            a.mov(MemOp(Register.R9, null, 1, 0), R64(Register.R10));
         }
 
         private void EmitSyncForHelper()
@@ -395,8 +410,22 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
             a.mov(Slot(F_EIP), R32(Register.EAX));
 
+            // Re-base the TSC on what the helper left in the scratch block (it
+            // may have advanced it, e.g. RDTSC or a TSC-touching handler).
+            a.mov(R64(Register.R9), Field(Register.R11, OffTsc));
+            a.mov(R64(Register.RAX), MemOp(Register.R9, null, 1, 0));
+            a.mov(Slot(F_TSC), R64(Register.RAX));
+
             a.mov(R64(Register.R9), Field(Register.R11, OffRegisters));
             LoadGuestRegisters(a, Register.R9);
+        }
+
+        /// <summary>One TSC tick per member, before the body (interpreter parity).</summary>
+        private void EmitTscTick()
+        {
+            _a.mov(R64(Register.R10), Slot(F_TSC));
+            _a.lea(R64(Register.R10), MemOp(Register.R10, null, 1, 1));
+            _a.mov(Slot(F_TSC), R64(Register.R10));
         }
 
         private void EmitServedIncrement()
@@ -437,6 +466,7 @@ internal static unsafe class RawBlockEmitter
         private void EmitMember(in JitMemberPlan plan, uint eip, int index)
         {
             EmitSetEip(eip);
+            EmitTscTick();
 
             switch (plan.Kind)
             {
@@ -915,6 +945,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.RCX), Slot(F_CPU));
             a.mov(R64(Register.RDX), Slot(F_ENTRIES));
             a.mov(R32(Register.R8D), index);
+            a.mov(R64(Register.R9), R64(Register.R11));
             a.mov(R64(Register.RSI), RawHelpers.ExecuteSpecAddress);
             a.call(R64(Register.RSI));
             EmitReloadAfterHelper();
@@ -924,8 +955,8 @@ internal static unsafe class RawBlockEmitter
         private void EmitAddress(in JitMemberPlan plan)
         {
             Assembler a = _a;
-            Register? baseRegister = plan.HasBase ? Gpr32[plan.BaseRegister] : null;
-            Register? indexRegister = plan.HasIndex ? Gpr32[plan.IndexRegister] : null;
+            Register? baseRegister = plan.HasBase ? Gpr64[plan.BaseRegister] : null;
+            Register? indexRegister = plan.HasIndex ? Gpr64[plan.IndexRegister] : null;
             if (baseRegister is not null && indexRegister is not null)
             {
                 a.lea(R32(Register.R9D), MemOp(baseRegister, indexRegister, plan.Scale, plan.Displacement));
@@ -951,36 +982,50 @@ internal static unsafe class RawBlockEmitter
         /// Emits the inline probe: R9D holds the guest linear address; on success
         /// RAX holds the physical offset and RDX the RAM base.
         /// </summary>
+        /// <summary>
+        /// Emits the inline translate-cache probe: R9D holds the guest linear
+        /// address; on success RDI holds the physical byte offset and RBP the
+        /// pinned RAM base, so the access is <c>[rbp+rdi]</c>.
+        ///
+        /// <para>Only non-guest scratch registers may be touched here (R8, R10,
+        /// RDI, RBP, plus R9/R11): EAX/ECX/EDX/EBX/R12D-R15D hold guest state
+        /// that the slow path must be able to sync intact. An earlier version
+        /// used RAX/RCX/RDX and silently corrupted the guest on every probe
+        /// miss.</para>
+        /// </summary>
         private void EmitProbe(int sizeBytes, bool isStore, Label slow)
         {
             Assembler a = _a;
             a.mov(R32(Register.R8D), R32(Register.R9D));
             a.shr(R32(Register.R8D), 12);
-            a.mov(R64(Register.RAX), Field(Register.R11, OffXlatTag));
-            a.mov(R32(Register.EAX), Indexed(Register.RAX, Register.R8, 4, 0));
-            a.cmp(R32(Register.EAX), R32(Register.R8D));
+            a.mov(R64(Register.RDI), Field(Register.R11, OffXlatTag));
+            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R8, 4, 0));
+            a.cmp(R32(Register.EDI), R32(Register.R8D));
             a.jne(slow);
 
             if (isStore)
             {
-                a.mov(R64(Register.RCX), Field(Register.R11, OffXlatWritable));
-                a.mov(new AssemblerRegister8(Register.R10L), Indexed(Register.RCX, Register.R8, 1, 0));
-                a.test(new AssemblerRegister8(Register.R10L), new AssemblerRegister8(Register.R10L));
+                a.mov(R64(Register.RBP), Field(Register.R11, OffXlatWritable));
+                a.mov(new AssemblerRegister8(Register.DIL), Indexed(Register.RBP, Register.R8, 1, 0));
+                a.test(new AssemblerRegister8(Register.DIL), new AssemblerRegister8(Register.DIL));
                 a.je(slow);
             }
 
-            a.mov(R64(Register.RAX), Field(Register.R11, OffXlatPhys));
-            a.mov(R32(Register.EAX), Indexed(Register.RAX, Register.R8, 4, 0));
+            a.mov(R64(Register.RDI), Field(Register.R11, OffXlatPhys));
+            a.mov(R32(Register.EDI), Indexed(Register.RDI, Register.R8, 4, 0));
             a.mov(R32(Register.R10D), R32(Register.R9D));
             a.and(R32(Register.R10D), 0xFFF);
-            a.add(R32(Register.EAX), R32(Register.R10D));
+            a.add(R32(Register.EDI), R32(Register.R10D));
 
-            a.mov(R32(Register.ECX), Field(Register.R11, OffRamSize));
-            a.lea(R32(Register.EDX), MemOp(Register.RAX, null, 1, sizeBytes));
-            a.cmp(R32(Register.EDX), R32(Register.ECX));
+            a.mov(R32(Register.R10D), Field(Register.R11, OffRamSize));
+            a.lea(R32(Register.EBP), MemOp(Register.RDI, null, 1, sizeBytes));
+            a.cmp(R32(Register.EBP), R32(Register.R10D));
             a.ja(slow);
-            a.mov(R64(Register.RDX), Field(Register.R11, OffRam));
+            a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
         }
+
+        /// <summary>The probed RAM access: <c>[rbp+rdi]</c> (RBP base, RDI offset).</summary>
+        private static AssemblerMemoryOperand RamAt() => Indexed(Register.RBP, Register.RDI, 1, 0);
 
         private void EmitLoad(in JitMemberPlan plan, int index)
         {
@@ -996,7 +1041,7 @@ internal static unsafe class RawBlockEmitter
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: false, slow);
-            EmitMoveFromMemory(plan.Size, plan.RegIndex, Indexed(Register.RDX, Register.RAX, 1, 0));
+            EmitMoveFromMemory(plan.Size, plan.RegIndex, RamAt());
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1030,7 +1075,7 @@ internal static unsafe class RawBlockEmitter
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: true, slow);
-            EmitMoveValueScratchToMemory(plan.Size, Indexed(Register.RDX, Register.RAX, 1, 0));
+            EmitMoveValueScratchToMemory(plan.Size, RamAt());
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1039,6 +1084,7 @@ internal static unsafe class RawBlockEmitter
             a.Label(ref done);
         }
 
+        /// <summary>Read-modify-write source form: <c>op reg, [mem]</c>.</summary>
         private void EmitAluMemorySource(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
@@ -1047,7 +1093,7 @@ internal static unsafe class RawBlockEmitter
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: false, slow);
-            EmitMoveFromMemory(plan.Size, 0, Indexed(Register.RDX, Register.RAX, 1, 0), scratchOnly: true);
+            EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitAluScratch(plan);
             a.jmp(done);
 
@@ -1058,7 +1104,11 @@ internal static unsafe class RawBlockEmitter
             a.Label(ref done);
         }
 
-        private void EmitAluMemoryDestination(in JitMemberPlan plan, int index)
+        /// <summary>
+        /// <c>cmp [mem], reg/imm</c>: a pure read whose flags are
+        /// <c>mem - value</c>, so the memory operand must stay on the left.
+        /// </summary>
+        private void EmitCmpMemorySource(in JitMemberPlan plan, int index)
         {
             Assembler a = _a;
             EmitAddress(plan);
@@ -1079,12 +1129,52 @@ internal static unsafe class RawBlockEmitter
             EmitMaterializeFlags();
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            EmitProbe(plan.Size / 8, isStore: true, slow);
-            EmitAluMemoryOp(plan, Indexed(Register.RDX, Register.RAX, 1, 0));
+            EmitProbe(plan.Size / 8, isStore: false, slow);
+            EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
+            EmitCmpScratch(plan);
             a.jmp(done);
 
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: true);
+            EmitHelperMember(index);
+
+            a.Label(ref done);
+        }
+
+        /// <summary>Read-modify-write destination form: <c>op [mem], reg/imm</c>.</summary>
+        private void EmitAluMemoryDestination(in JitMemberPlan plan, int index)
+        {
+            if (plan.AluOp == JitAluOp.Cmp)
+            {
+                // Cmp never writes: same shape as the source form.
+                EmitCmpMemorySource(plan, index);
+                return;
+            }
+
+            Assembler a = _a;
+            EmitAddress(plan);
+            if (plan.Kind == JitKind.AluMI)
+            {
+                EmitImmediateToValueScratch(plan.Size, unchecked((int)plan.Immediate));
+            }
+            else if (IsHighByte(Reg(plan.Size, plan.RegIndex)))
+            {
+                EmitHelperMember(index);
+                return;
+            }
+            else
+            {
+                EmitMoveToValueScratch(plan.Size, plan.RegIndex);
+            }
+
+            EmitMaterializeFlags();
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(plan.Size / 8, isStore: true, slow);
+            EmitAluMemoryOp(plan, RamAt());
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
 
             a.Label(ref done);
         }
@@ -1097,12 +1187,12 @@ internal static unsafe class RawBlockEmitter
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: false, slow);
-            EmitTestMemoryOp(plan, Indexed(Register.RDX, Register.RAX, 1, 0));
-            _flagsLive = true;
+            EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
+            EmitTestScratch(plan);
             a.jmp(done);
 
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: false);
+            EmitHelperMember(index);
 
             a.Label(ref done);
         }
@@ -1115,12 +1205,11 @@ internal static unsafe class RawBlockEmitter
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: true, slow);
-            EmitIncDecMemoryOp(plan, Indexed(Register.RDX, Register.RAX, 1, 0));
-            _flagsLive = true;
+            EmitIncDecMemoryOp(plan, RamAt());
             a.jmp(done);
 
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: true);
+            EmitHelperMember(index);
 
             a.Label(ref done);
         }
@@ -1130,19 +1219,13 @@ internal static unsafe class RawBlockEmitter
             switch (size)
             {
                 case 8:
-                    if (scratchOnly) { _a.mov(new AssemblerRegister8(Register.R8L), source); }
-                    else { _a.mov(new AssemblerRegister8(Reg(8, regIndex)), source); }
-
+                    _a.mov(scratchOnly ? new AssemblerRegister8(Register.R8L) : new AssemblerRegister8(Reg(8, regIndex)), source);
                     break;
                 case 16:
-                    if (scratchOnly) { _a.mov(new AssemblerRegister16(Register.R8W), source); }
-                    else { _a.mov(new AssemblerRegister16(Reg(16, regIndex)), source); }
-
+                    _a.mov(scratchOnly ? new AssemblerRegister16(Register.R8W) : new AssemblerRegister16(Reg(16, regIndex)), source);
                     break;
                 default:
-                    if (scratchOnly) { _a.mov(R32(Register.R8D), source); }
-                    else { _a.mov(R32(Gpr32[regIndex]), source); }
-
+                    _a.mov(scratchOnly ? R32(Register.R8D) : R32(Gpr32[regIndex]), source);
                     break;
             }
         }
@@ -1211,6 +1294,7 @@ internal static unsafe class RawBlockEmitter
             }
         }
 
+        /// <summary><c>op reg, scratch</c> for the source form.</summary>
         private void EmitAluScratch(in JitMemberPlan plan)
         {
             switch (plan.Size)
@@ -1223,6 +1307,45 @@ internal static unsafe class RawBlockEmitter
                     break;
                 default:
                     EmitAlu32(R32(Gpr32[plan.RegIndex]), R32(Register.R8D), plan.AluOp);
+                    break;
+            }
+
+            _flagsLive = true;
+        }
+
+        /// <summary><c>cmp scratch, value</c> (memory operand on the left).</summary>
+        private void EmitCmpScratch(in JitMemberPlan plan)
+        {
+            switch (plan.Size)
+            {
+                case 8:
+                    _a.cmp(new AssemblerRegister8(Register.R8L), new AssemblerRegister8(Register.SIL));
+                    break;
+                case 16:
+                    _a.cmp(new AssemblerRegister16(Register.R8W), new AssemblerRegister16(Register.SI));
+                    break;
+                default:
+                    _a.cmp(R32(Register.R8D), R32(Register.ESI));
+                    break;
+            }
+
+            _flagsLive = true;
+        }
+
+        /// <summary><c>test scratch, imm</c>.</summary>
+        private void EmitTestScratch(in JitMemberPlan plan)
+        {
+            int immediate = unchecked((int)plan.Immediate);
+            switch (plan.Size)
+            {
+                case 8:
+                    _a.test(new AssemblerRegister8(Register.R8L), (byte)immediate);
+                    break;
+                case 16:
+                    _a.test(new AssemblerRegister16(Register.R8W), (ushort)immediate);
+                    break;
+                default:
+                    _a.test(R32(Register.R8D), immediate);
                     break;
             }
 
@@ -1295,33 +1418,9 @@ internal static unsafe class RawBlockEmitter
             }
         }
 
-        private void EmitTestMemoryOp(in JitMemberPlan plan, AssemblerMemoryOperand destination)
-        {
-            // Memory+immediate forms have no inferable size in the assembler
-            // API, so stage the value through the scratch register.
-            int immediate = unchecked((int)plan.Immediate);
-            switch (plan.Size)
-            {
-                case 8:
-                    _a.mov(new AssemblerRegister8(Register.R8L), destination);
-                    _a.test(new AssemblerRegister8(Register.R8L), (byte)immediate);
-                    break;
-                case 16:
-                    _a.mov(new AssemblerRegister16(Register.R8W), destination);
-                    _a.test(new AssemblerRegister16(Register.R8W), (ushort)immediate);
-                    break;
-                default:
-                    _a.mov(R32(Register.R8D), destination);
-                    _a.test(R32(Register.R8D), immediate);
-                    break;
-            }
-        }
-
+        /// <summary>Read-modify-write <c>inc/dec [mem]</c> through the scratch.</summary>
         private void EmitIncDecMemoryOp(in JitMemberPlan plan, AssemblerMemoryOperand destination)
         {
-            // Read-modify-write through the scratch register (the memory form
-            // has no inferable size in the assembler API); the flags come from
-            // the inc/dec exactly as the memory form's would.
             bool inc = plan.Kind == JitKind.IncM;
             switch (plan.Size)
             {
@@ -1341,29 +1440,33 @@ internal static unsafe class RawBlockEmitter
                     _a.mov(destination, R32(Register.R8D));
                     break;
             }
+
+            _flagsLive = true;
         }
 
         /// <summary>
-        /// Slow memory path: sync the context, call the exact read/write helper
-        /// (which faults precisely), reload. Leaves a load result in R8D.
+        /// Simple read/write slow path: sync the context, call the exact
+        /// read/write helper (which faults precisely), reload. Leaves a load
+        /// result in R8D and consumes a staged store value from RSI.
         /// </summary>
         private void EmitMemoryHelper(in JitMemberPlan plan, int index, bool isStore)
         {
             Assembler a = _a;
-            a.mov(R32(Register.R10D), R32(Register.R9D));
+            // RDI, not R10: the flag materializer and the TSC bookkeeping in
+            // the sync both use R10.
+            a.mov(R32(Register.EDI), R32(Register.R9D));
             if (isStore)
             {
-                // The value was staged in RSI (free during the probe).
-                a.mov(Slot(F_TSC + 8), R32(Register.ESI));
+                a.mov(Slot(F_VALUE), R32(Register.ESI));
             }
 
             EmitSyncForHelper();
             a.mov(R64(Register.RCX), Slot(F_CPU));
-            a.mov(R32(Register.EDX), R32(Register.R10D));
+            a.mov(R32(Register.EDX), R32(Register.EDI));
             a.mov(R32(Register.R8D), plan.Size);
             if (isStore)
             {
-                a.mov(R32(Register.R9D), Slot(F_TSC + 8));
+                a.mov(R32(Register.R9D), Slot(F_VALUE));
                 a.mov(R64(Register.RSI), RawHelpers.WriteMemoryAddress);
             }
             else
@@ -1393,8 +1496,8 @@ internal static unsafe class RawBlockEmitter
 
         private static AssemblerMemoryOperand AddressOf(in JitMemberPlan plan)
         {
-            Register? baseRegister = plan.HasBase ? Gpr32[plan.BaseRegister] : null;
-            Register? indexRegister = plan.HasIndex ? Gpr32[plan.IndexRegister] : null;
+            Register? baseRegister = plan.HasBase ? Gpr64[plan.BaseRegister] : null;
+            Register? indexRegister = plan.HasIndex ? Gpr64[plan.IndexRegister] : null;
             return MemOp(baseRegister, indexRegister, plan.Scale, plan.Displacement);
         }
     }

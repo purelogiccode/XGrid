@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace XGrid.Cpu;
@@ -323,6 +324,7 @@ public sealed unsafe partial class XboxCpu
         }
 
         ulong generation = blocks.Generation;
+        bool rawTrace = _rawTrace;
 
         // Loop invariants: nothing servable inside RunJitBlock can change CS
         // (segment loads are excluded from planned members and CallSpec), so
@@ -445,10 +447,14 @@ public sealed unsafe partial class XboxCpu
                     // whole block, so it needs the full member budget up front
                     // (otherwise it yields and the caller serves the tail).
                     RawState rawState = BuildRawState();
+                    XboxCpu self = this;
+                    DecodeCacheEntry[] entryArray = block.Entries;
+                    IntPtr selfPointer = Unsafe.As<XboxCpu, IntPtr>(ref self);
+                    IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref entryArray);
                     RawEnter();
                     try
                     {
-                        served = block.RawRunner(this, &rawState, block.Entries, budget - total);
+                        served = block.RawRunner(selfPointer, &rawState, entriesPointer, budget - total);
                     }
                     finally
                     {
@@ -456,6 +462,14 @@ public sealed unsafe partial class XboxCpu
                     }
 
                     NoteRawInvocation();
+                    if (_rawTrace)
+                    {
+                        System.IO.File.AppendAllText(
+                            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xgrid-raw-trace.txt"),
+                            $"head={block.HeadEip:X5} served={served} eip={Context.Eip:X5} " +
+                            $"eax={Context.Eax:X} ecx={Context.Ecx:X} edx={Context.Edx:X} " +
+                            $"eflags={Context.Eflags:X} tsc={Context.Tsc} built={JitRawBlocksBuilt} inv={JitRawInvocations}" + Environment.NewLine);
+                    }
                 }
                 else if (block.Runner is not null)
                 {
@@ -775,14 +789,15 @@ public sealed unsafe partial class XboxCpu
             }
         }
 
-        if (rawRunner is null)
+        // The IL runner is also built: a raw block is only usable when the
+        // remaining budget covers every member, and the caller must have
+        // something to serve the tail with (a yield would desynchronise the
+        // step and TSC accounting).
+        runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+        if (runner is null)
         {
-            runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
-            if (runner is null)
-            {
-                jit.Store(headLinear, generation, null);
-                return null;
-            }
+            jit.Store(headLinear, generation, null);
+            return null;
         }
 
         bool hasSti = false;

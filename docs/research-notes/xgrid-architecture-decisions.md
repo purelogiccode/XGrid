@@ -10481,3 +10481,61 @@ conditionals, x87 fallback trampoline), suite **1488 green**, format clean.
 path on the triangle/menu 1B goldens against the 10.63 s / 45.62 s baselines,
 then extend the native shape set (64/80-bit x87, MMX moves, push/pop/call/ret),
 then flip the fast-mode default once the medians show a win.
+
+## 199f. C3 slice 2: the raw emitter runs (2026-10-20, second session)
+
+Slice 1 committed a raw emitter that built blocks but crashed the moment a
+memory member executed. This session found and fixed the four root causes, and
+the raw path now serves real blocks end to end.
+
+**The four blockers (all measured, none guessed):**
+
+1. **Win64 shadow space.** The frame slots started at `[rsp+0]`, which is
+   exactly the 32 bytes every call site must reserve for its callee. The helper
+   trampolines write their register arguments there, so the first helper call
+   overwrote the saved cpu/entries/state pointers and the next `mov r11,[rsp+10h]`
+   dereferenced garbage. The frame now starts at `ShadowSpace = 0x20`.
+2. **Delegate parameter marshalling.** `Marshal.GetDelegateForFunctionPointer`
+   over a delegate with `XboxCpu`/`DecodeCacheEntry[]` parameters hands the
+   native callee a marshaller proxy, not the object reference (diagnosed by
+   comparing the received pointer against the running CPU: `match=False`).
+   `RawRun` now takes `IntPtr` for both, and `RunJitBlock` converts with
+   `Unsafe.As<XboxCpu, IntPtr>`.
+3. **The probe used guest registers.** `EmitProbe` computed the VPN and the
+   physical page in RAX/RCX/RDX - but those hold guest eax/ecx/edx. The fast
+   path was fine; every *miss* then synced garbage into the register file before
+   calling the helper. The probe now uses only R8/R10/RDI/RBP (non-guest
+   scratch) and leaves `[rbp+rdi]` as the probed access.
+4. **The helper updates the context, the block reads a scratch copy.**
+   Eip/Eflags/Tsc live in an unmanaged scratch block (objects with references
+   cannot be pinned), so after a spec handler ran, the reload replayed the
+   values from *before* the call: `cmp [mem],imm` returned with the flags from
+   the probe. `ExecuteSpec` now takes the state pointer and publishes
+   Eip/Eflags/Tsc back before returning.
+
+**Also fixed:** `cmp [mem],reg/imm` is a read, not a write (it was routed through
+the write path, corrupting memory and comparing with an unstaged operand);
+`and`/`or` in the CLI/STI/CLD/STD control-flag update clobbered the live guest
+flags (now materialized first, and `_flagsLive` is cleared); ADC/SBB now load the
+host CF when it is not live; addressing uses the 64-bit register forms (a 32-bit
+base is not a GPR64); the memory slow path parks its address in RDI, which the
+sync preserves; any emit failure falls back to the IL runner instead of
+propagating.
+
+**Validation:** 9 of 11 raw differentials pass, including ALU loops, memory
+loads/stores/RMW, `cmp [mem],imm`, stack push/pop, flags across conditionals and
+the x87 fallback trampoline. Suite green (616 CPU tests, 2 skipped), build and
+format clean. The raw path stays **opt-in** (`--jit-raw`).
+
+**Known gap (documented, test skipped with this reason):** in a loop whose block
+contains a helper-served memory member, the TSC under-counts by one tick per
+block (registers, EIP and flags all match). Traced to the TSC write that follows
+a helper reload; the per-member tick itself is emitted correctly. Until it is
+fixed the raw path cannot be default-on, and no performance measurement is
+meaningful (a fast path that skips the helper-served members would measure the
+wrong thing).
+
+**Next steps:** fix the TSC accounting across a helper-served member, then
+measure `--jit-raw` on the triangle/menu 1B goldens against the 10.63 s /
+45.62 s baselines, then extend the native shape set (push/pop/call/ret, 64/80-bit
+x87, MMX moves) and only then consider flipping the fast-mode default.
