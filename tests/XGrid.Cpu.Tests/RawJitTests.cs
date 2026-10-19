@@ -234,7 +234,7 @@ public sealed class RawJitTests
     // member under-counts the TSC by one tick per block, so the differential
     // fails on Context.Tsc only (registers, EIP and flags match). The raw path
     // is opt-in, so this does not affect any default-mode gate.
-    [Fact(Skip = "raw TSC accounting across a helper-served member (S199f)")]
+    [Fact]
     public void CmpMemoryImmediateLoop_MatchesInterpreter()
     {
         // mov ecx,4; loop: cmp dword [0x200C],5; jne +1; nop; dec ecx; jne loop; hlt
@@ -287,7 +287,7 @@ public sealed class RawJitTests
         RunLoop(code);
     }
 
-    [Fact(Skip = "raw TSC accounting across a helper-served member (S199f)")]
+    [Fact]
     public void Loop_CmpMember_MatchesInterpreter()
     {
         // 0x1000: jmp 0x1005 ; 0x1005: cmp dword [0x200C],5 ; 0x100C: jmp 0x1000
