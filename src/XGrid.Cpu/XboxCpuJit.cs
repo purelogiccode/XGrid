@@ -312,6 +312,7 @@ public sealed unsafe partial class XboxCpu
             {
                 SpecExecutionEnabled = true;
                 _jitBlocks ??= new JitBlockCache();
+                _jitBlocks.Cleared = ClearRawChainTable;
                 _jitSlowMembers = 0;
                 _jitMmioMembers = 0;
             }
@@ -324,6 +325,7 @@ public sealed unsafe partial class XboxCpu
     public void InvalidateJitBlocks()
     {
         _jitBlocks?.Invalidate();
+        ClearRawChainTable();
     }
 
     /// <summary>
@@ -395,9 +397,12 @@ public sealed unsafe partial class XboxCpu
                         {
                             // The bytes under this linear are unchanged: the
                             // baked block is still exact — keep it and skip
-                            // the rebuild entirely.
+                            // the rebuild entirely. Its chain entry was
+                            // dropped by the invalidation clear, so republish
+                            // it under the new generation.
                             jit.Refresh(fetchLinear, generation, block);
                             _jitRevalidations++;
+                            RepublishRawChainBlock(block, generation);
                             break;
                         }
 
@@ -514,6 +519,16 @@ public sealed unsafe partial class XboxCpu
                         RawExit();
                     }
 
+                    if (served < 0)
+                    {
+                        // A helper caught a fault instead of unwinding through
+                        // the native frame (which CoreCLR cannot walk); the
+                        // context and progress are published, so rethrowing here
+                        // is exactly the IL runner's behavior.
+                        JitRawFaults++;
+                        ThrowRawFault();
+                    }
+
                     NoteRawInvocation();
                     NoteRawServed(served);
                     if (_rawTrace)
@@ -626,6 +641,23 @@ public sealed unsafe partial class XboxCpu
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// Re-publishes a revalidated block as a chaining target. An invalidation
+    /// clears the chain table, but a block whose bytes still revalidate is
+    /// kept (not re-formed), so its target entry must be restored explicitly.
+    /// </summary>
+    private void RepublishRawChainBlock(JitBlock block, ulong generation)
+    {
+        if (!RawChainEnabled || block.RawRunner is null || block.RawEntry == 0 || block.HasSti)
+        {
+            return;
+        }
+
+        DecodeCacheEntry[] entries = block.Entries;
+        IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref entries);
+        PublishRawChainBlock(block.HeadEip, generation, block.MemberCount, block.RawEntry, entriesPointer);
     }
 
     /// <summary>
@@ -862,35 +894,10 @@ public sealed unsafe partial class XboxCpu
 
         // C3: fast mode prefers a native runner. Exact mode keeps the IL
         // runner (per-member polls and the debugging contract), and any host
-        // that cannot execute raw code falls back to it too.
-        RawRun? rawRunner = null;
-        JitRun? runner = null;
-        if (JitRawBlocks && !JitExact)
-        {
-            nint rawPointer = RawBlockEmitter.TryBuild(headEip, plans.AsSpan(0, count), JitMmioFast);
-            if (rawPointer != 0)
-            {
-                rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
-                NoteRawBlockBuilt();
-            }
-        }
-
-        // The IL runner is also built: a raw block is only usable when the
-        // remaining budget covers every member, and the caller must have
-        // something to serve the tail with (a yield would desynchronise the
-        // step and TSC accounting).
-        runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
-        if (runner is null)
-        {
-            jit.Store(headLinear, generation, null);
-            return null;
-        }
-        if (runner is null)
-        {
-            jit.Store(headLinear, generation, null);
-            return null;
-        }
-
+        // that cannot execute raw code falls back to it too. Every raw block
+        // is a chain source and target: a store inside a block that
+        // invalidates decodes bumps the live generation, which the chain edge
+        // re-reads before jumping.
         bool hasSti = false;
         bool hasStore = false;
         for (int i = 0; i < count; i++)
@@ -910,15 +917,63 @@ public sealed unsafe partial class XboxCpu
             }
         }
 
+        RawRun? rawRunner = null;
+        nint rawPointer = 0;
+        JitRun? runner = null;
+        if (JitRawBlocks && !JitExact)
+        {
+            rawPointer = RawBlockEmitter.TryBuild(
+                headEip,
+                plans.AsSpan(0, count),
+                JitMmioFast,
+                chainable: RawChainEnabled && !hasSti);
+            if (rawPointer != 0)
+            {
+                rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
+                NoteRawBlockBuilt();
+            }
+        }
+
+        // The IL runner is also built: a raw block is only usable when the
+        // remaining budget covers every member, and the caller must have
+        // something to serve the tail with (a yield would desynchronise the
+        // step and TSC accounting).
+        runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+        if (runner is null)
+        {
+            jit.Store(headLinear, generation, null);
+            return null;
+        }
+
         // The entries array is pinned for the block's lifetime: the raw runner
         // receives its address and a GC during a helper call must not move it.
         DecodeCacheEntry[] pinnedEntries = GC.AllocateArray<DecodeCacheEntry>(count, pinned: true);
         entries.AsSpan(0, count).CopyTo(pinnedEntries);
+        IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref pinnedEntries);
 
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            pinnedEntries, runner, rawRunner, hasSti, hasStore);
+            pinnedEntries, runner, rawRunner, rawPointer, hasSti, hasStore);
+        if (RawTraceEnabled)
+        {
+            RawTrace($"  form head={headEip:X5} raw={rawPointer != 0} count={count} hasStore={hasStore} chainEnabled={RawChainEnabled} runnerNull={rawRunner is null}");
+        }
         jit.Store(headLinear, generation, block);
+
+        if (rawRunner is not null && RawChainEnabled && !hasSti)
+        {
+            // The entry carries the target's native entry, pinned entries and
+            // member count; the source resolves it by the next guest EIP.
+            // STI blocks are never targets: the fast-mode idle-wait skip lives
+            // in RunJitBlock's per-block logic, so the chain must break there.
+            PublishRawChainBlock(
+                headEip,
+                generation,
+                count,
+                rawPointer,
+                entriesPointer);
+        }
+
         return block;
     }
 }

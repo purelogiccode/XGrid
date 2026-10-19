@@ -35,6 +35,7 @@ internal sealed class JitBlock
         DecodeCacheEntry[] entries,
         JitRun? runner,
         RawRun? rawRunner,
+        nint rawEntry,
         bool hasSti,
         bool hasStore)
     {
@@ -47,6 +48,7 @@ internal sealed class JitBlock
         Entries = entries;
         Runner = runner;
         RawRunner = rawRunner;
+        RawEntry = rawEntry;
         HasSti = hasSti;
         HasStore = hasStore;
     }
@@ -77,6 +79,9 @@ internal sealed class JitBlock
 
     /// <summary>Gets the C3 raw runner function pointer (0 when absent).</summary>
     public RawRun? RawRunner { get; }
+
+    /// <summary>Gets the native raw entry point (0 when absent; chain target).</summary>
+    public nint RawEntry { get; }
 
     /// <summary>Gets whether the block contains an STI member (fast-mode idle-wait detection).</summary>
     public bool HasSti { get; }
@@ -171,6 +176,9 @@ internal sealed class JitBlockCache
         /// </summary>
         Stale,
     }
+
+    /// <summary>Gets or sets the callback fired whenever the cache drops every block (raw chaining clears its target table).</summary>
+    public Action? Cleared { get; set; }
 
     /// <summary>
     /// Looks up a head. Unseen heads are recorded as pending; pending heads
@@ -293,6 +301,7 @@ internal sealed class JitBlockCache
         System.Array.Clear(_memoBlock);
         System.Array.Clear(_memoHead);
         System.Array.Clear(_memoGeneration);
+        Cleared?.Invoke();
     }
 
     /// <summary>
@@ -313,6 +322,7 @@ internal sealed class JitBlockCache
         if (drop is null || drop.Count == 0)
         {
             _heads.Clear();
+            Cleared?.Invoke();
             return;
         }
 

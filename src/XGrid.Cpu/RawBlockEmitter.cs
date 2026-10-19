@@ -76,6 +76,13 @@ internal static unsafe class RawBlockEmitter
     private static readonly int OffEflags = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Eflags));
     private static readonly int OffTsc = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Tsc));
     private static readonly int OffProgress = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Progress));
+    private static readonly int OffChainTable = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ChainTable));
+    private static readonly int OffGeneration = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Generation));
+    private static readonly int OffIrqArmed = (int)Marshal.OffsetOf<RawState>(nameof(RawState.IrqArmed));
+    private static readonly int OffIrqPending = (int)Marshal.OffsetOf<RawState>(nameof(RawState.IrqPending));
+    private static readonly int OffChainServed = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ChainServed));
+    private static readonly int OffChainCount = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ChainCount));
+    private static readonly int OffFault = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Fault));
     private static readonly int OffSegments = (int)Marshal.OffsetOf<RawState>(nameof(RawState.SegmentBases));
 
     private static readonly Register[] Gpr32 =
@@ -112,7 +119,7 @@ internal static unsafe class RawBlockEmitter
     /// Tries to build a raw runner for the planned members. Returns 0 when the
     /// host cannot run raw code.
     /// </summary>
-    public static nint TryBuild(uint headEip, ReadOnlySpan<JitMemberPlan> plans, bool mmioFast)
+    public static nint TryBuild(uint headEip, ReadOnlySpan<JitMemberPlan> plans, bool mmioFast, bool chainable)
     {
         if (!RawCodeMemory.IsSupported || plans.Length == 0)
         {
@@ -140,7 +147,7 @@ internal static unsafe class RawBlockEmitter
                 }
             }
 
-            var ctx = new EmitContext(headEip, plans.ToArray(), mmioFast);
+            var ctx = new EmitContext(headEip, plans.ToArray(), mmioFast, chainable);
             return ctx.Build();
         }
         catch (Exception ex)
@@ -161,20 +168,28 @@ internal static unsafe class RawBlockEmitter
         private readonly uint _headEip;
         private readonly JitMemberPlan[] _plans;
         private readonly bool _mmioFast;
+        private readonly bool _chainable;
         private Label _exit;
+        private Label _ret;
+        private Label _leave;
+        private Label _faultRet;
         private bool _flagsLive;
         private bool _memberHelper;
 
-        public EmitContext(uint headEip, JitMemberPlan[] plans, bool mmioFast)
+        public EmitContext(uint headEip, JitMemberPlan[] plans, bool mmioFast, bool chainable)
         {
             _headEip = headEip;
             _plans = plans;
             _mmioFast = mmioFast;
+            _chainable = chainable;
         }
 
         public nint Build()
         {
             _exit = _a.CreateLabel(string.Empty);
+            _ret = _a.CreateLabel(string.Empty);
+            _leave = _a.CreateLabel(string.Empty);
+            _faultRet = _a.CreateLabel(string.Empty);
             EmitPrologue();
 
             uint eip = _headEip;
@@ -347,28 +362,35 @@ internal static unsafe class RawBlockEmitter
         {
             Assembler a = _a;
 
-            // The linear fall-through (the last member completed normally)
+            // The linear fall-through (every member completed normally)
             // normalizes the frame flags here, because `_exit` is also a jump
-            // target from edges that cannot know this emission point's
-            // compile-time liveness (the poll's pending path, the Jcc arms,
-            // the terminator jumps) — each of those normalizes on its own
-            // edge. After this point F_EFLAGS is authoritative on every path,
-            // so the epilogue must not re-materialize from the host FLAGS
-            // (they are dead or stale on the early-exit edges).
-            // The linear fall-through (the last member completed normally)
-            // normalizes the frame flags here, because `_exit` is also a jump
-            // target from edges that cannot know this emission point's
-            // compile-time liveness (the poll's pending path, the Jcc arms,
-            // the terminator jumps) — each of those normalizes on its own
-            // edge. After this point F_EFLAGS is authoritative on every path,
-            // so the epilogue must not re-materialize from the host FLAGS
-            // (they are dead or stale on the early-exit edges).
+            // target of edges that cannot know this emission point's
+            // compile-time liveness (the Jcc arms, the terminator jumps) —
+            // each of those normalizes on its own edge. After this point
+            // F_EFLAGS is authoritative on every path, so the epilogue must
+            // not re-materialize from the host FLAGS.
             EmitMaterializeFlags();
 
             a.Label(ref _exit);
             EmitStoreGuestState();
 
+            if (_chainable)
+            {
+                EmitChainAttempt();
+            }
+
+            a.Label(ref _ret);
+
+            // Return the total served (this block plus every chained block)
+            // and clear the carry for the next runner invocation.
+            a.mov(R64(Register.R11), Slot(F_STATE));
+            a.mov(R64(Register.R9), Field(Register.R11, OffChainServed));
             a.mov(R32(Register.EAX), Slot(F_SERVED));
+            a.add(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
+            a.xor(R32(Register.R10D), R32(Register.R10D));
+            a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.R10D));
+
+            a.Label(ref _leave);
             a.add(R64(Register.RSP), FrameSize);
             a.pop(R64(Register.R15));
             a.pop(R64(Register.R14));
@@ -379,6 +401,131 @@ internal static unsafe class RawBlockEmitter
             a.pop(R64(Register.RBP));
             a.pop(R64(Register.RBX));
             a.ret();
+
+            // Fault exit: a helper caught an exception (RawCaptureFault) instead
+            // of unwinding through this frame, which CoreCLR cannot walk. The
+            // failing call site published the guest state and the progress slot
+            // before the call, so only the carry needs clearing; the sentinel
+            // makes RunJitBlock rethrow the captured exception in managed code.
+            a.Label(ref _faultRet);
+            a.mov(R64(Register.R11), Slot(F_STATE));
+            a.mov(R64(Register.R9), Field(Register.R11, OffChainServed));
+            a.xor(R32(Register.R10D), R32(Register.R10D));
+            a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.R10D));
+            a.mov(R32(Register.EAX), -1);
+            a.jmp(_leave);
+        }
+
+        /// <summary>
+        /// Tests the fault word a helper sets when it captured an exception and
+        /// branches to the fault exit. Emitted after every helper call: a
+        /// managed exception must never unwind through this frame (it has no
+        /// unwind data, so CoreCLR cannot walk it and the fault would abort the
+        /// process instead of reaching <c>RunJitBlock</c>'s catch).
+        /// </summary>
+        private void EmitFaultCheck()
+        {
+            Assembler a = _a;
+            a.mov(R64(Register.R11), Slot(F_STATE));
+            a.mov(R64(Register.R9), Field(Register.R11, OffFault));
+            a.mov(R32(Register.R10D), MemOp(Register.R9, null, 1, 0));
+            a.test(R32(Register.R10D), R32(Register.R10D));
+            a.jne(_faultRet);
+        }
+
+        /// <summary>
+        /// Direct block chaining: the source has already published its guest
+        /// state and EIP, so a matching table entry lets it tail-jump to the
+        /// target's native entry with the target's arguments in the Win64
+        /// registers. The target's epilogue returns to the original
+        /// <c>RunJitBlock</c> caller; the served carry keeps the accounting
+        /// exact across the chain. Any failed check falls through to the
+        /// normal return path (the caller serves the next block itself).
+        ///
+        /// <para>The entry poll contract is preserved: with IF set the block
+        /// only chains when the interrupt source exposes a cheap 0/1 pending
+        /// word and that word is clear. Otherwise it returns so
+        /// <c>RunJitBlock</c> acknowledges (and delivers) at the boundary.
+        /// Store-bearing blocks are never chainable (they can invalidate the
+        /// table and the generation mid-path).</para>
+        /// </summary>
+        private void EmitChainAttempt()
+        {
+            Assembler a = _a;
+            a.mov(R64(Register.R11), Slot(F_STATE));
+
+            Label ifClear = a.CreateLabel(string.Empty);
+            a.mov(R32(Register.R10D), Slot(F_CTRL));
+            a.test(R32(Register.R10D), (int)FlagBits.If);
+            a.je(ifClear);
+            a.mov(R32(Register.R10D), Field(Register.R11, OffIrqArmed));
+            a.test(R32(Register.R10D), R32(Register.R10D));
+            a.je(_ret);
+            a.mov(R64(Register.R9), Field(Register.R11, OffIrqPending));
+            a.mov(R32(Register.R10D), MemOp(Register.R9, null, 1, 0));
+            a.test(R32(Register.R10D), R32(Register.R10D));
+            a.jne(_ret);
+
+            a.Label(ref ifClear);
+
+            // Direct-mapped lookup by the next guest EIP.
+            a.mov(R32(Register.R10D), Slot(F_EIP));
+            a.mov(R32(Register.EAX), R32(Register.R10D));
+            a.imul(R32(Register.EAX), R32(Register.EAX), unchecked((int)RawChainHash.Multiplier));
+            a.shr(R32(Register.EAX), RawChainHash.IndexShift);
+            a.shl(R32(Register.EAX), 5); // sizeof(RawChainEntry) = 32
+            a.mov(R64(Register.RDI), Field(Register.R11, OffChainTable));
+            a.add(R64(Register.RDI), R64(Register.RAX));
+
+            a.mov(R32(Register.EAX), MemOp(Register.RDI, null, 1, 0)); // Valid
+            a.test(R32(Register.EAX), R32(Register.EAX));
+            a.je(_ret);
+            a.cmp(MemOp(Register.RDI, null, 1, 4), R32(Register.R10D)); // Eip
+            a.jne(_ret);
+            a.mov(R64(Register.R9), Field(Register.R11, OffGeneration)); // live generation pointer
+            a.test(R64(Register.R9), R64(Register.R9));
+            a.je(_ret);
+            a.mov(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
+            a.cmp(R32(Register.EAX), MemOp(Register.RDI, null, 1, 8)); // entry Generation
+            a.jne(_ret);
+
+            // remaining = F_BUDGET - F_SERVED (the budget is already net of
+            // every prior chained block; the served carry is accounting only).
+            // Signed compare: a negative remainder must return, not read as a
+            // huge unsigned budget.
+            a.mov(R32(Register.EAX), Slot(F_BUDGET));
+            a.sub(R32(Register.EAX), Slot(F_SERVED));
+            a.cmp(R32(Register.EAX), MemOp(Register.RDI, null, 1, 12)); // Members
+            a.jl(_ret);
+
+            // The source's served members move into the carry.
+            a.mov(R64(Register.R9), Field(Register.R11, OffChainServed));
+            a.mov(R32(Register.ECX), Slot(F_SERVED));
+            a.add(MemOp(Register.R9, null, 1, 0), R32(Register.ECX));
+
+            // Diagnostic: count the chain jump (R10 is free after the EIP
+            // compare; the budget stays in EAX until the argument load).
+            a.mov(R64(Register.R9), Field(Register.R11, OffChainCount));
+            a.mov(R32(Register.R10D), MemOp(Register.R9, null, 1, 0));
+            a.lea(R32(Register.R10D), MemOp(Register.R10, null, 1, 1));
+            a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.R10D));
+
+            // Target arguments, then a tail-jump into its prologue.
+            a.mov(R32(Register.R9D), R32(Register.EAX));
+            a.mov(R64(Register.RCX), Slot(F_CPU));
+            a.mov(R64(Register.RDX), Slot(F_STATE));
+            a.mov(R64(Register.R8), MemOp(Register.RDI, null, 1, 24)); // Entries
+            a.mov(R64(Register.R10), MemOp(Register.RDI, null, 1, 16)); // Target
+            a.add(R64(Register.RSP), FrameSize);
+            a.pop(R64(Register.R15));
+            a.pop(R64(Register.R14));
+            a.pop(R64(Register.R13));
+            a.pop(R64(Register.R12));
+            a.pop(R64(Register.RDI));
+            a.pop(R64(Register.RSI));
+            a.pop(R64(Register.RBP));
+            a.pop(R64(Register.RBX));
+            a.jmp(R64(Register.R10));
         }
 
         /// <summary>
@@ -468,7 +615,11 @@ internal static unsafe class RawBlockEmitter
             EmitMaterializeFlags();
             EmitStoreGuestState();
             Assembler a = _a;
+            // Fault progress includes every block already chained into this
+            // runner call; RunJitBlock adds the faulting member itself.
+            a.mov(R64(Register.R10), Field(Register.R11, OffChainServed));
             a.mov(R32(Register.EAX), Slot(F_SERVED));
+            a.add(R32(Register.EAX), MemOp(Register.R10, null, 1, 0));
             a.mov(R64(Register.R9), Field(Register.R11, OffProgress));
             a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.EAX));
         }
@@ -598,7 +749,7 @@ internal static unsafe class RawBlockEmitter
             a.pop(R64(Register.RDX));
             a.pop(R64(Register.RCX));
             a.pop(R64(Register.RAX));
-            a.mov(R64(Register.R11), Slot(F_STATE));
+            EmitFaultCheck();
             a.test(R32(Register.R8D), R32(Register.R8D));
             a.je(done);
 
@@ -609,7 +760,12 @@ internal static unsafe class RawBlockEmitter
 
             EmitTscTick();
             EmitServedIncrement();
-            a.jmp(_exit);
+            // A pending delivery must return to RunJitBlock (it adds the
+            // delivery's own step); publish the boundary state and skip the
+            // chain attempt.
+            EmitMaterializeFlags();
+            EmitStoreGuestState();
+            a.jmp(_ret);
             a.Label(ref done);
         }
 
@@ -1154,6 +1310,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.R9), R64(Register.R11));
             a.mov(R64(Register.RSI), RawHelpers.ExecuteSpecAddress);
             a.call(R64(Register.RSI));
+            EmitFaultCheck();
             EmitReloadAfterHelper();
         }
 
@@ -1351,7 +1508,7 @@ internal static unsafe class RawBlockEmitter
             a.pop(R64(Register.RDX));
             a.pop(R64(Register.RCX));
             a.pop(R64(Register.RAX));
-            a.mov(R64(Register.R11), Slot(F_STATE));
+            EmitFaultCheck();
             a.mov(R32(Register.ESI), Slot(F_VALUE));
             a.mov(R32(Register.EDI), Slot(F_PHYS));
             a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
@@ -1418,6 +1575,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), size);
             a.mov(R64(Register.RSI), RawHelpers.ReadPhysicalAddress);
             a.call(R64(Register.RSI));
+            EmitFaultCheck();
             a.mov(R32(Register.R8D), R32(Register.EAX));
             EmitReloadAfterHelper();
             EmitMoveFromScratch(size, regIndex);
@@ -1463,6 +1621,7 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R32(Register.R8D), plan.Size);
                 a.mov(R64(Register.RSI), RawHelpers.WritePhysicalAddress);
                 a.call(R64(Register.RSI));
+                EmitFaultCheck();
                 EmitReloadAfterHelper();
                 a.jmp(done);
             }
@@ -1892,6 +2051,7 @@ internal static unsafe class RawBlockEmitter
             }
 
             a.call(R64(Register.RSI));
+            EmitFaultCheck();
             a.mov(R32(Register.R8D), R32(Register.EAX));
             EmitReloadAfterHelper();
         }

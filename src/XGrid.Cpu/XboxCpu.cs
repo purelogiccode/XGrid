@@ -144,6 +144,7 @@ public sealed partial class XboxCpu
         Context.Reset();
         Mmu.Flush();
         _jitBlocks?.Invalidate();
+        ClearRawChainTable();
         LastFaultVector = 0;
         LastFaultEip = 0;
         LastFaultErrorCode = 0;
