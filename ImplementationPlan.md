@@ -1557,6 +1557,22 @@ This should begin only after the interpreter is stable.
 > the accurate control on both titles and reproduce the golden frames;
 > fast mode reaches ~76 Msteps/s at 1B (menu 13.07 s / triangle 13.14 s vs
 > 88.05/44.65 s spec-controls; fast mode is never gate currency).
+>
+> **C3 (Phase 3, raw emitter) started 2026-10-20 (§§199e/199f).** The
+> `DynamicMethod` block JIT reached its structural floor (~14 ns/ordinary
+> member, ~8 ns/block chain, ~15-20 ns/block state sync), so the charter's
+> Phase-3 entry condition was met and Iced 1.21.0 (MIT) was added.
+> `RawBlockEmitter` now emits one native x86-64 function per block: guest GPRs
+> in fixed host registers (EAX/ECX/EDX/EBX + R12D-R15D, keeping AH..BH
+> addressable), arithmetic flags in the host FLAGS register with IF/DF/IOPL in
+> a control slot, memory members running the data translate-cache probe inline
+> against pinned pointers (`[rbp+rdi]`) with an exact-helper slow path, and a
+> reverse-P/Invoke trampoline to the spec handlers for every unencoded shape —
+> so every block is emittable. **Status: opt-in `--jit-raw`; 11/11 raw
+> differentials green, suite 1492 green, no wall measurement yet.** With the
+> path forced on, a dozen `JitTests` (MMIO, strings, indirect jumps,
+> self-modifying code, popf/STI IRQ windows, condition sweep) still fail —
+> that list is the next gate, followed by the 1B measurement.
 
 ## 20.1 JIT architecture
 
@@ -1634,6 +1650,15 @@ Evaluate in this order:
 6. platform-specific executable memory
 
 The final choice must be benchmark-driven.
+
+> **Outcome (2026-10-20).** Option 1/2 is what the fast-mode block JIT uses
+> (`--jit`, `DynamicMethod`); options 3 and 5 were not needed. Option 4 was
+> taken for C3 with **Iced 1.21.0 (MIT)** for encoding plus a `VirtualAlloc`
+> `PAGE_EXECUTE_READWRITE` region per block (option 6, Windows x64 only; every
+> other platform keeps the IL runner). Measured negatives that decided this:
+> the `DynamicMethod` tier plateaus at ~14 ns per ordinary member, and relay
+> emission (E1-E3) was wall-neutral. See
+> `docs/research-notes/xgrid-architecture-decisions.md` §§199d-199f.
 
 ---
 
@@ -2750,6 +2775,14 @@ Shaders
 > phases 0–4, kill criteria). Interpreter-track wins are captured
 > (decode-cache frontier §§131/134/137; shape slices §§139–170; rasterizer
 > campaign §§180–187); the codegen tier is the authorized next step.
+>
+> **Status 2026-10-20: the codegen tier is live and the raw emitter is
+> running.** `--jit` (whole-block `DynamicMethod`, Phase 1) is at its
+> structural floor; C3 (Phase 3, native x86-64 via Iced) is implemented behind
+> opt-in `--jit-raw` with 11/11 differentials green (§§199e/199f). Baseline to
+> beat: fast-mode 1B **triangle 10.63 s / menu 45.62 s**. The next gates are
+> (a) the dozen `JitTests` that fail with the raw path forced on, then (b) the
+> 1B measurement, then (c) the default-flip decision.
 
 ```text
 Interpreter
@@ -3031,7 +3064,7 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-19; refreshed for the fast-mode JIT track §§190–194, the GL window §184 and the idle-skip measurement §185)
+## Project completion assessment (2026-10-19; refreshed 2026-10-20 for the fast-mode JIT track §§190–199f, the C3 raw emitter §§199e/199f, the GL window §184 and the idle-skip measurement §185)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3055,12 +3088,12 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 72% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact (triangle keeps a documented 3-dword residual), ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 27.9 s / menu 64.0 s**; remaining: `--jit` default-flip decision, IL chaining (~4.5 s/1B bookkeeping), threshold auto-tune, E3-2, Phase-3 gate (not indicated) |
+| 15 CPU JIT | 11 | 78% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact (triangle keeps a documented 3-dword residual), ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 27.9 s → 10.63 s / menu 64.0 s → 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e/199f: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline), 11/11 raw differentials green, suite 1492 green**; remaining: the dozen `JitTests` that fail with the raw path forced on, the 1B wall measurement, the `--jit` default-flip decision, patch-on-link chaining, threshold auto-tune, E3-2 |
 | 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
 | 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); remaining: fundamental per-pixel work, backend performance |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 65% | 1476 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + ktest smoke; fuzzing, wider compatibility corpus |
+| 20 Automated Testing | 3 | 68% | 1492 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + 11 raw-emitter differentials (`RawJitTests`: ALU loop, memory forms, memory-immediate, `cmp [mem],imm`, both loop cases, stack, flags, x87 fallback) + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 52% | opt-in `--window` live present sink (§184); GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |

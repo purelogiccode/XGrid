@@ -514,29 +514,71 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   bit-reproducible). Also landed during the wave: `tools/wave` fixes
   (terminal-finish turn detection, state-save retry on Windows file locks)
   and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
+- **C3 raw emitter (2026-10-20, §§199e/199f; opt-in `--jit-raw`).** One
+  native x86-64 function per block (Iced 1.21.0, MIT): guest GPRs in fixed host
+  registers, arithmetic flags in the host FLAGS register, memory members
+  running the data translate-cache probe inline against pinned pointers, and a
+  reverse-P/Invoke trampoline to the existing spec handlers for every unencoded
+  shape. Four bring-up blockers fixed (Win64 shadow space, delegate parameter
+  marshalling, a probe using guest registers, helper state not published back)
+  plus six correctness fixes. **11/11 raw differentials green, suite 1492
+  green**; still opt-in — a dozen `JitTests` fail with the path forced on and
+  there is no wall measurement yet.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: 1410 tests green,
+   once; conflicts were purged 2026-10-09). Baseline: **1492 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
-**2026-10-20 status (direct development, 12-hour window).** Fast-mode medians
-on the quiet host: **triangle 1B 10.63 s, menu 1B 45.62 s** (gl+replace+spin,
-SHAs exact 4F1FCBC0/7DAB63EB, DD023100/F5D61C94). Landed: D3b page-edge
-block formation (nonJitCalls -59%), C2 slice 1 lazy GPR state sync +
-direct context backing-field access, C2 slice 3 native Fld/Fst/Fstp m32.
-Measured cost structure (decisions §199d): chain ~1 s, state sync ~1.5-2 s,
-ordinary members ~5-6 s (~14 ns each, memory probe ~25 ns), slow members
-~1 s, cold non-JIT ~1.9 s, GL ~0.5 s. **Two negative results recorded:**
+**2026-10-20 status (direct development, two 12-hour windows).** Fast-mode
+medians on the quiet host: **triangle 1B 10.63 s, menu 1B 45.62 s**
+(gl+replace+spin, SHAs exact 4F1FCBC0/7DAB63EB, DD023100/F5D61C94). Landed:
+D3b page-edge block formation (nonJitCalls -59%), C2 slice 1 lazy GPR state
+sync + direct context backing-field access, C2 slice 3 native Fld/Fst/Fstp m32,
+then **C3 slices 1-2b: the raw x86-64 block emitter** (`--jit-raw`, opt-in;
+Iced 1.21.0, MIT). Measured cost structure (decisions §199d): chain ~1 s, state
+sync ~1.5-2 s, ordinary members ~5-6 s (~14 ns each, memory probe ~25 ns), slow
+members ~1 s, cold non-JIT ~1.9 s, GL ~0.5 s. **Two negative results recorded:**
 block fusion (-82% invocations but +40% wall from codegen/I-cache and the
 emitted boundary poll; it also silently disabled the spin skip) and a
-1024-slot data translate cache (L1 pressure). The block JIT is at its
-structural floor - the next real lever is **C3 (raw emitter: fixed host
-registers, flags in a register, inline TLB, patch-on-link)**, with a cheap
-IInterruptSource.Pending field as the prerequisite for any future fused
-poll. Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix),
-XGRID_NONRAM=1 (non-cacheable fetch pages), --jit-timing (runner vs
-chain split), Host timing (execute vs advance).
+1024-slot data translate cache (L1 pressure).
+
+**C3 raw emitter — state after §§199e/199f.** One native function per block
+with guest GPRs pinned in fixed host registers (EAX/ECX/EDX/EBX + R12D-R15D so
+AH..BH stay addressable), arithmetic flags live in the host FLAGS register
+(materialized to a frame slot only when a probe or helper needs them; IF/DF/IOPL
+ride in a control slot), memory members running the data translate-cache probe
+inline against pinned pointers with a `[rbp+rdi]` access and an exact-helper
+slow path (state synced first, so fault precision is unchanged), and every
+unencoded shape (x87/SSE, strings, calls, indirect jumps) routed through a
+reverse-P/Invoke trampoline to the same spec handler the IL emitter uses — so
+**every block is emittable**. Four bring-up blockers, all found by differential
+testing and fixed: (1) the frame slots sat in the **Win64 shadow space**, so the
+first helper call overwrote the saved cpu/entries/state pointers (frame now
+starts at 0x20); (2) the entry delegate **marshalled** `XboxCpu` and
+`DecodeCacheEntry[]` — the callee received a proxy, proven by comparing the
+received pointer with the running CPU — so `RawRun` takes `IntPtr` for both;
+(3) `EmitProbe` used **guest registers** (RAX/RCX/RDX hold eax/ecx/edx), so every
+probe miss synced garbage; (4) the helper updates the **context** while the
+block reads its own scratch copy of Eip/Eflags/Tsc, so `ExecuteSpec` now
+publishes them back. Also fixed: `cmp [mem],reg/imm` is a read (it was routed
+through the write path), CLI/STI/CLD/STD materialize the flags before their
+`and`/`or`, ADC/SBB load CF when it is not live, addressing uses the 64-bit
+register forms, the memory slow path parks its address in RDI, and any emit
+failure falls back to the IL runner. **All 11 raw differentials green; suite
+1492 green; build and format clean.** The raw path stays **opt-in**: with
+`JitRawBlocks` forced on, a dozen `JitTests` (MMIO, strings, indirect jumps,
+self-modifying code, popf/STI IRQ windows, condition sweep) still fail, and
+**no performance measurement exists yet** — both must be closed before any
+default flip.
+
+Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix), XGRID_NONRAM=1
+(non-cacheable fetch pages), --jit-timing (runner vs chain split), Host timing
+(execute vs advance), **XGRID_RAW_DUMP=1** (per-block Iced disassembly to
+`%TEMP%\xgrid-raw-<head>.txt`), **XGRID_RAW_TRACE=1** (per-invocation
+enter/exit + spec-handler trace to `%TEMP%\xgrid-raw-trace.txt`; file-based on
+purpose — a hard crash loses buffered stderr), XGRID_RAW_THRESHOLD (test-side
+build-threshold override for bisecting).
 
 ### Fast-mode JIT J1a–J1d LANDED (2026-10-18 night, direct; §§191–192) — the real-time band is reached
 

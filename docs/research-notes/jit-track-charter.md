@@ -1,5 +1,22 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (second 12-hour window): PHASE 3 STARTED — the raw
+> emitter executes real blocks.** C2 (DynamicMethod, state sync + native
+> Fld/Fst/Fstp m32) and D3b landed first and took the fast-mode 1B goldens to
+> **triangle 10.63 s / menu 45.62 s** (gl+replace+spin, SHAs exact; §199d).
+> **C3 (`--jit-raw`, opt-in) now emits one native x86-64 function per block**
+> — guest GPRs in fixed host registers, arithmetic flags in the host FLAGS
+> register, memory members running the data translate-cache probe inline
+> against pinned pointers, and a reverse-P/Invoke trampoline to the existing
+> spec handlers for every unencoded shape, so every block is emittable
+> (§§199e/199f). Four bring-up blockers were found by differential testing and
+> fixed (Win64 shadow space, delegate parameter marshalling, a probe that used
+> guest registers, and helper state not published back to the block).
+> **Validation: 11/11 raw differentials green, suite 1492 green, build and
+> format clean.** The Phase-3 exit criterion is *not* met yet: with the raw
+> path forced on a dozen `JitTests` still fail, and **no 1B wall measurement
+> exists** — those two gates come before any default flip.
+>
 > **STATUS 2026-10-19 (evening, quiet host): PHASE 0 + 1 LANDED; PHASE 3
 > ENTRY CONDITION MET — CPU ENGINE IS THE LEAD TRACK AGAIN (§199).**
 > J1a–J1d + the coverage campaign + the day's fast-mode work (`--jit-spin`
