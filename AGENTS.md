@@ -554,6 +554,25 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
 
+**Session close 2026-10-20 (fifth).** The C3 raw-emitter correctness story is
+closed: the §199h menu divergence was the split-member fast-path EIP advance
+(§199i), and **both titles are bit-exact at 1B** (menu
+`660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter
+identical). Suite **1497** green; ktest smoke PASS 7/7 at 792,800,535 steps;
+format clean. The §199k state hoist makes the raw path **ahead of IL on CPU
+serving time** (100M A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% /
+-2.3%; end-to-end walls host-noise bound). Two negative results recorded:
+mask-driven register sync (§199j) and static served/EIP bookkeeping (§199k) —
+both ~1%, below the sub-2% resolution standard; raw blocks average ~5 members,
+so **chaining is the next structural lever**, not per-member shaving. The
+next session should (1) design chaining under the per-block IRQ poll
+(served/TSC accumulation across chained blocks, generation-stamped target
+table, budget check inline) with a unit differential first, (2) then run the
+quiet-host raw-vs-IL end-to-end medians before any default-flip discussion.
+Note: `Directory.Packages.props` has an uncommitted version bump
+(Meziantou 3.0.312, XISOSharp 1.4.3, CHDSharp 1.5.0) that predates this
+session's work and was left untouched.
+
 **2026-10-20 status (direct development, two 12-hour windows).** Fast-mode
 medians on the quiet host: **triangle 1B 10.63 s, menu 1B 45.62 s**
 (gl+replace+spin, SHAs exact 4F1FCBC0/7DAB63EB, DD023100/F5D61C94). Landed:
