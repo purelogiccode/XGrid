@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace XGrid.Cpu;
@@ -12,8 +13,14 @@ namespace XGrid.Cpu;
 /// </summary>
 internal delegate int JitRun(XboxCpu cpu, DecodeCacheEntry[] entries, int budget);
 
-/// <summary>C3 raw runner: the native block entered through a managed-to-native transition.</summary>
-internal unsafe delegate int RawRun(XboxCpu cpu, RawState* state, DecodeCacheEntry[] entries, int budget);
+/// <summary>
+/// C3 raw runner: the native block entered through a managed-to-native
+/// transition. Every parameter is blittable on purpose - a class or array
+/// parameter would be marshalled (the callee would see a marshaller proxy, not
+/// the object reference), which is how the first bring-up handed the raw code a
+/// bogus CPU pointer.
+/// </summary>
+internal unsafe delegate int RawRun(IntPtr cpu, RawState* state, IntPtr entries, int budget);
 
 /// <summary>One built fast-mode block (a run of natively emittable members).</summary>
 internal sealed class JitBlock

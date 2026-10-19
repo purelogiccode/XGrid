@@ -18,7 +18,7 @@ internal static unsafe class RawHelpers
 {
     /// <summary>Address of the spec-handler entry for the emitted code.</summary>
     public static readonly ulong ExecuteSpecAddress =
-        (ulong)(nint)(delegate* unmanaged<IntPtr, IntPtr, int, void>)&ExecuteSpec;
+        (ulong)(nint)(delegate* unmanaged<IntPtr, IntPtr, int, IntPtr, void>)&ExecuteSpec;
 
     /// <summary>Address of the memory-read entry for the emitted code.</summary>
     public static readonly ulong ReadMemoryAddress =
@@ -29,7 +29,7 @@ internal static unsafe class RawHelpers
         (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint, void>)&WriteMemory;
 
     [UnmanagedCallersOnly]
-    private static void ExecuteSpec(IntPtr cpuPointer, IntPtr entriesPointer, int index)
+    private static void ExecuteSpec(IntPtr cpuPointer, IntPtr entriesPointer, int index, IntPtr statePointer)
     {
         XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
         DecodeCacheEntry[] entries = Unsafe.As<IntPtr, DecodeCacheEntry[]>(ref entriesPointer);
@@ -43,7 +43,16 @@ internal static unsafe class RawHelpers
         {
             cpu.RawExecuteInstruction(in instruction);
         }
+
+        // The handler runs against the context, but the raw block keeps Eip,
+        // Eflags and Tsc in its own scratch block: publish them back or the
+        // reload would replay the values from before the call.
+        RawState* state = (RawState*)statePointer;
+        *state->Eip = (uint)cpu.Context.Eip;
+        *state->Eflags = cpu.Context.Eflags;
+        *state->Tsc = cpu.Context.Tsc;
     }
+
 
     [UnmanagedCallersOnly]
     private static uint ReadMemory(IntPtr cpuPointer, uint address, int size)

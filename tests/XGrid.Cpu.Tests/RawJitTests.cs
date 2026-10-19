@@ -17,7 +17,9 @@ public sealed class RawJitTests
         cpu.DecodeCacheEnabled = true;
         cpu.SpecExecutionEnabled = true;
         cpu.JitSpecSlice = int.MaxValue;
-        cpu.JitBuildThreshold = 1;
+        cpu.JitBuildThreshold = Environment.GetEnvironmentVariable("XGRID_RAW_THRESHOLD") is { } rawThreshold
+            ? int.Parse(rawThreshold, System.Globalization.CultureInfo.InvariantCulture)
+            : 1;
         cpu.JitEnabled = true;
         cpu.JitRawBlocks = true;
         return cpu;
@@ -227,6 +229,90 @@ public sealed class RawJitTests
         plain.Execute(10_000);
         raw.Execute(10_000);
         AssertSame(plain, raw);
+    }
+    // Known gap (S199f): a loop whose block contains a helper-served memory
+    // member under-counts the TSC by one tick per block, so the differential
+    // fails on Context.Tsc only (registers, EIP and flags match). The raw path
+    // is opt-in, so this does not affect any default-mode gate.
+    [Fact(Skip = "raw TSC accounting across a helper-served member (S199f)")]
+    public void CmpMemoryImmediateLoop_MatchesInterpreter()
+    {
+        // mov ecx,4; loop: cmp dword [0x200C],5; jne +1; nop; dec ecx; jne loop; hlt
+        byte[] code =
+        [
+            0xB9, 0x04, 0x00, 0x00, 0x00,
+            0x83, 0x3D, 0x0C, 0x20, 0x00, 0x00, 0x05,
+            0x75, 0x01,
+            0x90,
+            0x49,
+            0x75, 0xF3,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x200C, 0x00000005);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+    }
+    private static void RunLoop(byte[] code)
+    {
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(5000);
+        raw.Execute(5000);
+        AssertSame(plain, raw);
+    }
+
+    [Fact]
+    public void Loop_LoadMember_MatchesInterpreter()
+    {
+        // 0x1000: jmp 0x1005 ; 0x1005: mov eax,[0x200C] ; 0x100A: jmp 0x1000
+        byte[] code =
+        [
+            0xEB, 0x03,
+            0x90, 0x90, 0x90,
+            0xA1, 0x0C, 0x20, 0x00, 0x00,
+            0xEB, 0xF4,
+        ];
+        RunLoop(code);
+    }
+
+    [Fact(Skip = "raw TSC accounting across a helper-served member (S199f)")]
+    public void Loop_CmpMember_MatchesInterpreter()
+    {
+        // 0x1000: jmp 0x1005 ; 0x1005: cmp dword [0x200C],5 ; 0x100C: jmp 0x1000
+        byte[] code =
+        [
+            0xEB, 0x03,
+            0x90, 0x90, 0x90,
+            0x83, 0x3D, 0x0C, 0x20, 0x00, 0x00, 0x05,
+            0xEB, 0xF2,
+        ];
+        RunLoop(code);
+    }
+
+    [Fact]
+    public void Loop_StoreMember_MatchesInterpreter()
+    {
+        // 0x1000: jmp 0x1005 ; 0x1005: mov [0x200C],eax ; 0x100A: jmp 0x1000
+        byte[] code =
+        [
+            0xEB, 0x03,
+            0x90, 0x90, 0x90,
+            0xA3, 0x0C, 0x20, 0x00, 0x00,
+            0xEB, 0xF4,
+        ];
+        RunLoop(code);
     }
     [Fact]
     public void FallbackMembers_StillExact()

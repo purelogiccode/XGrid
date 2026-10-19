@@ -34,6 +34,9 @@ public sealed unsafe partial class XboxCpu
     private const int ScratchProgress = 3;
     private const int ScratchWords = 8;
 
+    private static readonly bool RawTraceEnabled =
+        string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_TRACE"), "1", StringComparison.Ordinal);
+
     /// <summary>Gets or sets whether fast mode may use the C3 raw block emitter.</summary>
     public bool JitRawBlocks { get; set; }
 
@@ -75,10 +78,7 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Copies the live context fields into the raw scratch block.</summary>
     internal void RawEnter()
     {
-        if (string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_TRACE"), "1", StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine($"raw enter eip={Context.Eip:X} eflags={Context.Eflags:X}");
-        }
+        RawTrace($"  enter eip={Context.Eip:X} eflags={Context.Eflags:X} tsc={Context.Tsc}");
 
         _rawScratch[ScratchEip] = Context.Eip;
         _rawScratch[ScratchEflags] = Context.Eflags;
@@ -89,15 +89,34 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Copies the raw scratch block back into the live context.</summary>
     internal void RawExit()
     {
-        if (string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_TRACE"), "1", StringComparison.Ordinal))
-        {
-            Console.Error.WriteLine($"raw exit eip={_rawScratch[ScratchEip]:X} eflags={_rawScratch[ScratchEflags]:X} eax={_rawRegisters[0]:X} ebx={_rawRegisters[3]:X} ecx={_rawRegisters[1]:X} edx={_rawRegisters[2]:X} progress={_rawScratch[ScratchProgress]}");
-        }
+        RawTrace($"  exit eip={_rawScratch[ScratchEip]:X} eflags={_rawScratch[ScratchEflags]:X}");
 
         Context.Eip = (uint)_rawScratch[ScratchEip];
         Context.Eflags = (uint)_rawScratch[ScratchEflags];
         Context.Tsc = _rawScratch[ScratchTsc];
         _jitProgress = (int)_rawScratch[ScratchProgress];
+    }
+
+    private bool _rawTrace => RawTraceEnabled;
+
+    /// <summary>Appends one diagnostic line (file, not stderr: a hard crash loses buffered output).</summary>
+    internal static void RawTrace(string line)
+    {
+        if (!RawTraceEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xgrid-raw-trace.txt"),
+                line + Environment.NewLine);
+        }
+        catch (System.IO.IOException)
+        {
+            // Diagnostics only.
+        }
     }
 
     /// <summary>Records one built raw runner (called by block formation).</summary>
