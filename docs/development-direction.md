@@ -34,6 +34,14 @@ animation wait, §32).
    block chaining (patch-on-link), inline softmmu-style TLB probes, helpers
    only for complex ops; target another ≥2× (triangle end-to-end ≤3 s, menu
    ≤12 s). Accurate mode untouched; fast mode is never gate currency.
+   **Started (§§199e/199f): slices 1-2b landed behind opt-in `--jit-raw`** —
+   per-block native x86-64 with fixed host registers, flags in the host FLAGS
+   register, inline translate-cache probe against pinned pointers, and a
+   reverse-P/Invoke trampoline for every unencoded shape. All 11 raw
+   differentials green, suite 1492 green. **Still open before any default
+   flip: a dozen `JitTests` fail with the raw path forced on, and there is no
+   performance measurement yet** — close both, then measure against the
+   10.63 s / 45.62 s baselines.
 2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
    loop's shape (trace it) and remove the nonJit residue by cross-page block
    formation **or** (preferred) a generalized wait-skip that fast-forwards to

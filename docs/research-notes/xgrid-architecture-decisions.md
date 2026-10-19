@@ -10522,10 +10522,11 @@ base is not a GPR64); the memory slow path parks its address in RDI, which the
 sync preserves; any emit failure falls back to the IL runner instead of
 propagating.
 
-**Validation:** 9 of 11 raw differentials pass, including ALU loops, memory
-loads/stores/RMW, `cmp [mem],imm`, stack push/pop, flags across conditionals and
-the x87 fallback trampoline. Suite green (616 CPU tests, 2 skipped), build and
-format clean. The raw path stays **opt-in** (`--jit-raw`).
+**Validation:** **all 11 raw differentials pass** (ALU loops, memory
+loads/stores/RMW, memory-immediate forms, `cmp [mem],imm`, both loop cases,
+stack push/pop, flags across conditionals, and the x87 fallback trampoline).
+Suite **1492 green** (0 skipped), build and format clean. The raw path stays
+**opt-in** (`--jit-raw`).
 
 **The TSC gap is closed.** A loop whose block contains a helper-served
 memory member under-counted the TSC by one tick per block because the reload
@@ -10533,7 +10534,16 @@ after the helper re-based the frame TSC on the scratch copy; the frame slot is
 the authoritative one (the helper never ticks it), so the rebase was removed and
 all 11 raw differentials now pass, including the two loop cases.
 
-**Next steps:** fix the TSC accounting across a helper-served member, then
-measure `--jit-raw` on the triangle/menu 1B goldens against the 10.63 s /
-45.62 s baselines, then extend the native shape set (push/pop/call/ret, 64/80-bit
-x87, MMX moves) and only then consider flipping the fast-mode default.
+**Next steps (in order):**
+1. With `JitRawBlocks` forced on, a dozen `JitTests` still fail (MMIO fast path,
+   string ops, indirect call/jmp, self-modifying code, `popf`/STI IRQ windows,
+   the Jcc condition sweep, x87/SSE exotic). That suite is the broadest
+   validation net the CPU has, so driving it green is the gate before anything
+   else — no default flip, no measurement claim until it is clean.
+2. Then measure `--jit-raw` on the triangle/menu 1B goldens against the
+   10.63 s / 45.62 s baselines (median-of-3, SHAs + counters exact, and a
+   `--jit-raw`-off control leg).
+3. Then extend the native shape set (push/pop/call/ret, 64/80-bit x87, MMX
+   moves, patch-on-link chaining) and re-measure.
+4. Only then consider flipping the fast-mode default; the accurate mode and
+   every standing gate are untouched throughout.
