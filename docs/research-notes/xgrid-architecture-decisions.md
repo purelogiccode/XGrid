@@ -10949,3 +10949,93 @@ below the sub-2% resolution standard - and was reverted. The reason is now
 clear: raw blocks average ~5 members on the menu, so per-invocation work
 dominates per-member work; chaining (removing the block boundary) is the next
 lever, not per-member shaving.
+
+## 199l. C3 structural experiment: direct raw block chaining (2026-10-20, reverted pending a fault-path crash)
+
+**Status: measured win, NOT landed; reverted so the tree stays green.** The
+chartered structural lever was implemented end-to-end and produced the
+largest raw-path win so far, but it also produces a deterministic CLR
+ExecutionEngineException (exit 0x80131506) in the CPU test suite that is not
+yet root-caused. The working tree was returned to the §199i/§199k state; this
+section is the handoff.
+
+**Design (as implemented).** A raw block's epilogue looks up its next guest
+EIP in a per-CPU direct-mapped table (16384 slots x 32 bytes, unmanaged) and
+tail-jumps into the target block's native entry, passing the target's
+arguments in the Win64 registers; the target returns to the original
+RunJitBlock caller. The entry carries the target EIP, generation (low 32),
+member count, native entry and pinned decode-entry pointer.
+- Budget: 
+emaining = F_BUDGET - F_SERVED (the budget is already net of
+  prior chained blocks), signed compare (an unsigned compare let a negative
+  remainder look huge and ran a 100M probe to 739M - fixed before measuring).
+- Served accounting: a per-invocation carry; the final return is
+  F_SERVED + carry, reset for the next invocation; the fault path publishes
+  Progress = F_SERVED + carry; RawExit resets the carry on unwind.
+- IRQ boundary: with IF set the source chains only when
+  IInterruptSource.PendingFlagAddress (new default interface member) points
+  at a clear 0/1 word; the 8259 PIC keeps that word current on SetIrq,
+  Acknowledge, PIC port writes, reset and load. **STI blocks are never chain
+  sources or targets** - the --jit-spin idle-wait skip lives in
+  RunJitBlock's per-block logic, and chaining through the kernel idle loop
+  bypassed it (the 100M menu SHA changed and 37M skip steps disappeared until
+  the STI gate was added).
+- Invalidation: the chain edge re-reads the **live pinned generation word**
+  (DecodedBlockCache.GenerationPointer); the table is cleared whenever the
+  JIT block cache is cleared without a generation bump (a Cleared hook +
+  Reset/InvalidateJitBlocks), and revalidated blocks are republished with
+  their new generation (they keep their runner but lose the table entry when
+  the table is cleared).
+- The chain table is allocated on first publication (not first invocation):
+  blocks formed before the first raw invocation otherwise could not publish,
+  which silently disabled chains in small tests.
+- Diagnostic: 
+awChained in Jit stats; XGRID_RAW_CHAIN=0 disabled the
+  chain tails and publications for A/B.
+
+**Measured win (all SHAs exact; step counters identical to IL).**
+- 100M menu, 5 interleaved pairs (60.5M invocations before chaining):
+  wall median 5.167 s -> 4.915 s (**4.9%**, chain on won 5/5), outerMs
+  3788 -> 3587 (**5.3%**, 5/5).
+- 1B menu: raw outerMs 82,412 vs IL 93,766 (**-12.1%**), wall 105.48 vs
+  117.33 s (-10.1%); RAM/CPU 660CA11B.../F5D61C94... identical; raw
+  invocations 3.27M vs IL 162.5M; 157.9M chain jumps.
+- 1B triangle: raw outerMs 17,099 vs IL 22,863 (**-25.2%**), wall 35.21 vs
+  41.57 s (-15.3%); A2DCA55F.../7DAB63EB... identical; raw invocations
+  1.01M vs IL 125.0M; 123.2M chain jumps.
+- The RawJitTests chaining differential (a two-block store-free loop) passed
+  with chaining on.
+
+**The blocker.** Running JitTests.AluLoop_MatchesInterpreter_AndServesBlocks
+followed by JitTests.PagedCrossVisitFault_DeliveredFromJit (same test class)
+crashes the test host with a CLR ExecutionEngineException during the Paged
+test's guest page fault; the fault is thrown inside a raw helper and unwinds
+through the raw native frame. Evidence gathered:
+- The Paged test passes alone; the pair crashes 2/2.
+- XGRID_RAW_CHAIN=0 (chain tails and publications disabled) **still
+  crashes the pair** - so it is not the tail jump itself; something else in
+  the chaining diff's fault path is implicated (candidates: the enlarged
+  RawState layout and its offsets, the per-invocation InterruptSource
+  pending-word refresh, the pinned-generation slot, the PIC pending flag, or
+  the chain table allocation/clear).
+- XGRID_RAW_SKIP_HEADS=100F (force the AluLoop block to the IL runner)
+  clears the crash, so the AluLoop raw block (or its CPU) is part of the
+  trigger.
+- The committed HEAD (before any chaining change) runs the pair 2/2 clean.
+- The older stack-local state hoist crashed the *same* Paged test under the
+  same class sequence (fixed then by moving RawState to the unmanaged
+  block), which suggests a latent fragility in the raw fault-unwind path
+  rather than a single obvious clobber.
+- Full-suite runs with the chaining build: 1-3 testhost crashes per 5 runs;
+  the chain-off build also crashed the full solution occasionally (the known
+  §189 test-host flake), so the full-suite signal alone is not decisive - the
+  deterministic pair is.
+
+**Next session.** Bisect the reverted diff against the pair reproducer,
+starting with the smallest independent pieces (PIC/pending word; pinned
+generation slot; RawState layout alone; EnsureRawArraysPinned table
+allocation). Add a startup assertion comparing Marshal.OffsetOf<RawState>
+with the runtime field offsets (unsafe pointer differences) to rule out a
+layout mismatch, and audit the fault-unwind contract for a raw helper throw
+(the reverse-P/Invoke frame plus RawExit). Once the pair is clean, resume
+from the measurements above; the win is real and worth the diagnosis.
