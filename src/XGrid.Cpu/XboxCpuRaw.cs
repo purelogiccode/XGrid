@@ -28,6 +28,7 @@ public sealed unsafe partial class XboxCpu
     private byte* _rawXlatWritable;
     private byte* _rawRam;
     private ulong* _rawScratch;
+    private RawState* _rawStateBlock;
     private ulong* _rawActiveBits;
     private ulong* _rawPtBits;
     private ulong[]? _rawActiveSource;
@@ -59,14 +60,12 @@ public sealed unsafe partial class XboxCpu
     /// RAM size are refreshed because they can change between calls; the
     /// pointers themselves are stable once pinned.
     /// </summary>
-    internal RawState BuildRawState()
+    internal RawState* BuildRawState()
     {
         EnsureRawArraysPinned();
 
         // Invariant half (pinned pointers, mask, scratch addresses): filled
-        // once; this runs per raw invocation, so the hot part only refreshes
-        // what can change between invocations (RAM size, CR0.WP, the watch
-        // range and the six segment bases).
+        // once.
         if (!_rawStateReady)
         {
             _rawStateReady = true;
@@ -83,9 +82,37 @@ public sealed unsafe partial class XboxCpu
             _rawStateTemplate.Progress = (int*)(_rawScratch + ScratchProgress);
         }
 
-        RawState state = _rawStateTemplate;
-        state.RamSize = _ramSize;
+        RawState* state = _rawStateBlock;
+        *state = _rawStateTemplate;
+        state->RamSize = _ramSize;
+        RefreshRawState(state);
 
+        // Across a RunJitBlock call these are invariant: the watch range is
+        // host-side configuration and segment loads are excluded from planned
+        // members, so no servable block can change a segment base.
+        AddressSpace? space = _ramSpace;
+        state->WatchArmed = space is not null && space.WatchEnd > space.WatchStart ? 1u : 0u;
+        state->WatchStart = space?.WatchStart ?? 0;
+        state->WatchEnd = space?.WatchEnd ?? 0;
+
+        state->SegmentBases[(int)SegmentRegister.Es] = Context.GetSegmentBase(SegmentRegister.Es);
+        state->SegmentBases[(int)SegmentRegister.Cs] = Context.GetSegmentBase(SegmentRegister.Cs);
+        state->SegmentBases[(int)SegmentRegister.Ss] = Context.GetSegmentBase(SegmentRegister.Ss);
+        state->SegmentBases[(int)SegmentRegister.Ds] = Context.GetSegmentBase(SegmentRegister.Ds);
+        state->SegmentBases[(int)SegmentRegister.Fs] = Context.GetSegmentBase(SegmentRegister.Fs);
+        state->SegmentBases[(int)SegmentRegister.Gs] = Context.GetSegmentBase(SegmentRegister.Gs);
+        return state;
+    }
+
+    /// <summary>
+    /// Refreshes the raw-state fields a servable block can still change
+    /// between two raw invocations of one <c>RunJitBlock</c> call: CR0.WP (a
+    /// MovCr0 helper) and the decode-cache guard tables (paging may be
+    /// enabled). Everything else in <see cref="BuildRawState"/> is invariant
+    /// across the call.
+    /// </summary>
+    internal void RefreshRawState(RawState* state)
+    {
         // Store guard tables (pinned on first sight; the instances are
         // effectively permanent, the reference check is belt and braces).
         DecodeCache? cache = _decodeCache;
@@ -103,22 +130,10 @@ public sealed unsafe partial class XboxCpu
             _rawPtBits = PinArray(pt);
         }
 
-        state.ActiveBits = _rawActiveBits;
-        state.PtBits = pt is null ? null : _rawPtBits;
-        state.StoreGuardBail = active is null ? 1u : 0u;
-        state.Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
-        AddressSpace? space = _ramSpace;
-        state.WatchArmed = space is not null && space.WatchEnd > space.WatchStart ? 1u : 0u;
-        state.WatchStart = space?.WatchStart ?? 0;
-        state.WatchEnd = space?.WatchEnd ?? 0;
-
-        state.SegmentBases[(int)SegmentRegister.Es] = Context.GetSegmentBase(SegmentRegister.Es);
-        state.SegmentBases[(int)SegmentRegister.Cs] = Context.GetSegmentBase(SegmentRegister.Cs);
-        state.SegmentBases[(int)SegmentRegister.Ss] = Context.GetSegmentBase(SegmentRegister.Ss);
-        state.SegmentBases[(int)SegmentRegister.Ds] = Context.GetSegmentBase(SegmentRegister.Ds);
-        state.SegmentBases[(int)SegmentRegister.Fs] = Context.GetSegmentBase(SegmentRegister.Fs);
-        state.SegmentBases[(int)SegmentRegister.Gs] = Context.GetSegmentBase(SegmentRegister.Gs);
-        return state;
+        state->ActiveBits = _rawActiveBits;
+        state->PtBits = pt is null ? null : _rawPtBits;
+        state->StoreGuardBail = active is null ? 1u : 0u;
+        state->Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
     }
 
     /// <summary>Copies the live context fields into the raw scratch block.</summary>
@@ -213,6 +228,7 @@ public sealed unsafe partial class XboxCpu
         }
 
         _rawScratch = (ulong*)NativeMemory.Alloc(ScratchWords * sizeof(ulong));
+        _rawStateBlock = (RawState*)NativeMemory.Alloc((nuint)sizeof(RawState));
         _rawSelfHandle = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 

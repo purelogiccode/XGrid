@@ -1579,10 +1579,14 @@ This should begin only after the interpreter is stable.
 > VPN/slot mask, the post-STI/POPF poll, host DF across helper calls, the
 > store guard's R9 clobber + exact watch-range test, the exit-edge flag
 > merge, the split-member fast-path EIP advance, GC-stale CPU/entries
-> pointers, and more — §199g/§199h/§199i). The raw path is at parity with IL
-> (it serves 76% of triangle members); the next structural levers (chaining /
-> register-resident state) are constrained by the per-block IRQ poll
-> contract, and no default flip is proposed yet.
+> pointers, and more — §199g/§199h/§199i). The raw path is now **ahead of IL
+> on CPU serving time** after the §199k state hoist (`BuildRawState` once per
+> `RunJitBlock` call instead of once per block invocation; the state lives in
+> an unmanaged per-CPU block): 100M A/B 9.0% menu / 2.4% triangle faster and
+> 1B `outerMs` -3.7% menu / -2.3% triangle, both title differentials still
+> bit-exact. End-to-end walls were host-noise bound, so no end-to-end claim
+> yet; the next structural lever (chaining) is constrained by the per-block
+> IRQ poll contract, and no default flip is proposed.
 
 ## 20.1 JIT architecture
 
@@ -2792,10 +2796,12 @@ Shaders
 > opt-in `--jit-raw` and validated: all JitTests green with the path forced
 > on, **both 1B differentials bit-exact** (triangle and menu, §199i). Baseline
 > to beat: fast-mode 1B **triangle 10.63 s / menu 45.62 s** (this session's
-> quiet-host calibration: triangle 10.20 s, menu ~40 s). The raw path is at
-> parity with IL today; the next gates are (a) the quiet-host raw-vs-IL
-> medians, then (b) the structural slices (chaining / register-resident
-> state) and the default-flip decision.
+> quiet-host calibration: triangle 10.20 s, menu ~40 s). The raw path is now
+> ahead of IL on CPU serving time (§199k state hoist: 9.0% menu / 2.4%
+> triangle at 100M, 1B `outerMs` -3.7% / -2.3%, differentials bit-exact);
+> end-to-end walls remain host-noise bound. The next gates are (a) the
+> quiet-host raw-vs-IL end-to-end medians, then (b) the structural chaining
+> slice and the default-flip decision.
 
 ```text
 Interpreter

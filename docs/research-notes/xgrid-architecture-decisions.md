@@ -10907,3 +10907,45 @@ garbage in the stored sum and passes with the full reload.
 Lesson for the structural levers: per-invocation sync is only worth touching
 once chaining removes the block boundary itself; slicing it alone does not
 move the wall, and every slice must carry the ABI-clobber rule.
+
+## 199k. C3 performance slice: hoist the raw machine state out of the block loop (2026-10-20)
+
+With correctness closed, the first measured raw-emitter win. `BuildRawState`
+ran once per *block invocation* (161,161,668 times on the 1B menu; 124M on
+the triangle) although `RunJitBlock` serves ~166 blocks per call (970,543
+calls on the menu). Its expensive half - six `GetSegmentBase` lookups plus the
+watch range - is invariant across a call: segment loads are excluded from
+planned members (the same invariant the loop already uses for CS/fetch), the
+watch range is host-side configuration, RAM size and the pinned pointers do
+not change mid-call. The state is now built once per `RunJitBlock` call and
+only `Cr0Wp` (a MovCr0 helper can change it) and the decode-cache guard
+tables (paging may be enabled) refresh per block invocation
+(`RefreshRawState`).
+
+**State storage matters.** The first version hoisted the state as a
+`RunJitBlock` stack local; the CPU suite then crashed the test host with an
+access violation in `JitTests.PagedCrossVisitFault_DeliveredFromJit` (every
+JitTests CPU runs with `JitRawBlocks` on), while the same test passed alone -
+the stack-local lifetime across the helper calls and exception unwinds was
+unsafe in practice. The state now lives in an unmanaged block allocated once
+per CPU (`_rawStateBlock`, `NativeMemory.Alloc`), which is also cheaper (no
+96-byte struct copy per call) and gives the runner a stable pointer. Suite
+1497 green, format clean.
+
+**Measurements.** 100M interleaved raw-only A/B (3 reps per leg, same
+binary/flags, SHAs identical): menu baseline 5.458 s median vs hoisted
+4.966 s (**9.0% faster**); triangle 5.406 s vs 5.277 s (**2.4% faster**).
+One-shot 1B A/B (bit-exact on both title differentials, RAM/CPU SHAs and
+every counter identical): menu raw `outerMs` 94,827 vs IL 98,492 (-3.7%),
+triangle 22,789 vs 23,333 (-2.3%); end-to-end walls were within host noise on
+the loaded host (menu 135.5 vs 134.3 s, triangle 45.0 vs 44.8 s), so no
+end-to-end claim - the CPU-serving time is the honest metric for this slice.
+
+**Second negative result (bookkeeping).** Removing the per-member served
+increment (static served counts on each exit edge) and the per-member entry
+EIP store (one end store for pure-native members) was implemented and
+validated bit-exactly, but a 100M A/B showed 0.9% (menu) / 1.6% (triangle) -
+below the sub-2% resolution standard - and was reverted. The reason is now
+clear: raw blocks average ~5 members on the menu, so per-invocation work
+dominates per-member work; chaining (removing the block boundary) is the next
+lever, not per-member shaving.
