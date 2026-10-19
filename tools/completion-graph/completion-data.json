@@ -1,6 +1,6 @@
 {
   "generated": "2026-10-20",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i and the \u00a7199k state-hoist slice)",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist and the \u00a7199l/\u00a7199m raw-chaining re-land)",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -105,7 +105,7 @@
           "p": 15,
           "name": "CPU JIT",
           "weight": 11,
-          "done": 83
+          "done": 86
         },
         {
           "p": 16,
