@@ -11035,6 +11035,14 @@ Evidence chain (each step reproducible):
   still crashed (so the tail jump was innocent); `XGRID_RAW_SKIP_HEADS=100F`
   (AluLoop's raw block forced to IL) cleared it - i.e. *any* raw block ahead of
   the faulting one changed the layout enough;
+- the four bisect candidates from the §199l handoff were all eliminated: the
+  PIC pending word (no PIC in the CPU tests; unit-tested separately), the
+  pinned generation slot (removing it kept the crash and moved it *earlier*),
+  the `RawState` layout (a startup trace confirmed `Marshal.SizeOf`/`OffsetOf`
+  agree with the runtime field addresses, `sizeof(RawState)=200`, `Fault` at
+  160, and `state->Fault` equal to the scratch slot the helpers write), and the
+  chain table allocation/clear (the crash also reproduced with the table never
+  published);
 - a standalone harness (`[UnmanagedCallersOnly]` thrower called from a
   RWX-emitted frame) reproduced it independently of XGrid: the throw aborted
   the process as soon as a managed `try/finally` sat above the raw call, and
