@@ -23,14 +23,24 @@
 > path **ahead of IL on CPU serving time**: 100M A/B 9.0% menu / 2.4%
 > triangle, 1B `outerMs` -3.7% menu / -2.3% triangle, differentials still
 > bit-exact; end-to-end walls were host-noise bound, so no end-to-end claim
-> yet. **Direct chaining was then implemented and measured (§199l): 100M menu
-> -4.9% wall / -5.3% outer (5/5 paired), 1B menu -10.1% wall / triangle
-> -15.3% wall with exact SHAs, using a per-CPU tail-jump table, chained
-> served/budget accounting, live-generation validation and a cheap PIC
-> pending word. It is reverted pending a deterministic CLR fault-unwind crash
-> in the `AluLoop`→`PagedCrossVisitFault` test pair** (chain-disabled still
-> crashes it; HEAD is clean; §199l has the reproducer and bisect plan). The
-> raw path stays opt-in. Quiet-host calibration:
+> yet. **Direct chaining was then implemented (§199l) and is now LANDED**
+> (sixth session, commit `21b0f8a`) after the fault contract was fixed
+> (§199m): a managed exception may not unwind out of a raw helper through the
+> hand-emitted frame (no unwind data, so CoreCLR cannot walk it - delivery was
+> stack-layout luck, which the `AluLoop`→`PagedCrossVisitFault` pair exposed).
+> Helpers now catch, record (`RawState.Fault`) and return; the emitted block
+> tests the word after every helper call and exits with a sentinel that
+> `RunJitBlock` rethrows in managed code after `RawExit`, so fault delivery and
+> `_jitProgress` are exactly the IL runner's. Chaining design as measured:
+> per-CPU tail-jump table, chained served/budget accounting, live-generation
+> validation and a cheap PIC pending word; STI blocks never chain. **1B medians
+> of 3 interleaved pairs: triangle wall 26.97 → 23.72 s (-12.0%, 3/3) /
+> `outerMs` -28.6%; menu wall 109.39 → 95.06 s (-13.1%, 3/3) / `outerMs`
+> -14.2%**, menu SHAs the §199i anchor exactly (`660CA11B…/F5D61C94…`) with
+> every counter identical, triangle IL == raw on this host
+> (`F57934BF…/CF79FC17…`; the older `A2DCA55F…` anchor no longer reproduces
+> even on pre-patch HEAD). Pair reproducer clean 10/10, CPU suite 625/625 x10,
+> full suite 1499 green. The raw path stays opt-in. Quiet-host calibration:
 > triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin).
 >
 > **STATUS 2026-10-20 (fourth session — C3 second correctness campaign, §199h):
