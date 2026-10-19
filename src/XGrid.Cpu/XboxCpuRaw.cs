@@ -39,7 +39,7 @@ public sealed unsafe partial class XboxCpu
     private const int ScratchProgress = 3;
     private const int ScratchWords = 8;
 
-    private static readonly bool RawTraceEnabled =
+    internal static readonly bool RawTraceEnabled =
         string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_TRACE"), "1", StringComparison.Ordinal);
 
     /// <summary>Gets or sets whether fast mode may use the C3 raw block emitter.</summary>
@@ -51,6 +51,9 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Gets the number of raw runner invocations (diagnostic).</summary>
     public ulong JitRawInvocations { get; private set; }
 
+    /// <summary>Gets the number of members served by raw runners (diagnostic).</summary>
+    public ulong JitRawServedMembers { get; private set; }
+
     /// <summary>
     /// Builds the raw machine view for the current call. Segment bases and the
     /// RAM size are refreshed because they can change between calls; the
@@ -59,18 +62,29 @@ public sealed unsafe partial class XboxCpu
     internal RawState BuildRawState()
     {
         EnsureRawArraysPinned();
-        RawState state = default;
-        state.Registers = _rawRegisters;
-        state.XlatTag = _rawXlatTag;
-        state.XlatPhys = _rawXlatPhys;
-        state.XlatWritable = _rawXlatWritable;
-        state.Ram = _rawRam;
+
+        // Invariant half (pinned pointers, mask, scratch addresses): filled
+        // once; this runs per raw invocation, so the hot part only refreshes
+        // what can change between invocations (RAM size, CR0.WP, the watch
+        // range and the six segment bases).
+        if (!_rawStateReady)
+        {
+            _rawStateReady = true;
+            _rawStateTemplate = default;
+            _rawStateTemplate.Registers = _rawRegisters;
+            _rawStateTemplate.XlatTag = _rawXlatTag;
+            _rawStateTemplate.XlatPhys = _rawXlatPhys;
+            _rawStateTemplate.XlatWritable = _rawXlatWritable;
+            _rawStateTemplate.Ram = _rawRam;
+            _rawStateTemplate.XlatMask = DataXlatMask;
+            _rawStateTemplate.Eip = (uint*)(_rawScratch + ScratchEip);
+            _rawStateTemplate.Eflags = (uint*)(_rawScratch + ScratchEflags);
+            _rawStateTemplate.Tsc = (ulong*)(_rawScratch + ScratchTsc);
+            _rawStateTemplate.Progress = (int*)(_rawScratch + ScratchProgress);
+        }
+
+        RawState state = _rawStateTemplate;
         state.RamSize = _ramSize;
-        state.XlatMask = DataXlatMask;
-        state.Eip = (uint*)(_rawScratch + ScratchEip);
-        state.Eflags = (uint*)(_rawScratch + ScratchEflags);
-        state.Tsc = (ulong*)(_rawScratch + ScratchTsc);
-        state.Progress = (int*)(_rawScratch + ScratchProgress);
 
         // Store guard tables (pinned on first sight; the instances are
         // effectively permanent, the reference check is belt and braces).
@@ -95,6 +109,8 @@ public sealed unsafe partial class XboxCpu
         state.Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
         AddressSpace? space = _ramSpace;
         state.WatchArmed = space is not null && space.WatchEnd > space.WatchStart ? 1u : 0u;
+        state.WatchStart = space?.WatchStart ?? 0;
+        state.WatchEnd = space?.WatchEnd ?? 0;
 
         state.SegmentBases[(int)SegmentRegister.Es] = Context.GetSegmentBase(SegmentRegister.Es);
         state.SegmentBases[(int)SegmentRegister.Cs] = Context.GetSegmentBase(SegmentRegister.Cs);
@@ -108,10 +124,16 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Copies the live context fields into the raw scratch block.</summary>
     internal void RawEnter()
     {
-        RawTrace(
-            $"  enter eip={Context.Eip:X} eflags={Context.Eflags:X} tsc={Context.Tsc} " +
-            $"eax={Context.Eax:X} ecx={Context.Ecx:X} " +
-            $"regs={(ulong)(nint)_rawRegisters:X} live={(ulong)(nint)Context.RawRegistersAddress():X}");
+        // Guard the interpolation: this runs once per raw invocation (millions
+        // per run), and an unguarded interpolated string allocates on every
+        // call even when tracing is off.
+        if (RawTraceEnabled)
+        {
+            RawTrace(
+                $"  enter eip={Context.Eip:X} eflags={Context.Eflags:X} tsc={Context.Tsc} " +
+                $"eax={Context.Eax:X} ecx={Context.Ecx:X} " +
+                $"regs={(ulong)(nint)_rawRegisters:X} live={(ulong)(nint)Context.RawRegistersAddress():X}");
+        }
 
         _rawScratch[ScratchEip] = Context.Eip;
         _rawScratch[ScratchEflags] = Context.Eflags;
@@ -122,7 +144,10 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Copies the raw scratch block back into the live context.</summary>
     internal void RawExit()
     {
-        RawTrace($"  exit eip={_rawScratch[ScratchEip]:X} eflags={_rawScratch[ScratchEflags]:X}");
+        if (RawTraceEnabled)
+        {
+            RawTrace($"  exit eip={_rawScratch[ScratchEip]:X} eflags={_rawScratch[ScratchEflags]:X}");
+        }
 
         Context.Eip = (uint)_rawScratch[ScratchEip];
         Context.Eflags = (uint)_rawScratch[ScratchEflags];
@@ -157,6 +182,9 @@ public sealed unsafe partial class XboxCpu
 
     /// <summary>Records one raw runner invocation (called by the block loop).</summary>
     internal void NoteRawInvocation() => JitRawInvocations++;
+
+    /// <summary>Records members served by a raw runner (called by the block loop).</summary>
+    internal void NoteRawServed(int members) => JitRawServedMembers += (ulong)members;
 
     private void EnsureRawArraysPinned()
     {
@@ -204,6 +232,8 @@ public sealed unsafe partial class XboxCpu
     internal IntPtr RawSelfHandle => GCHandle.ToIntPtr(_rawSelfHandle);
 
     private GCHandle _rawSelfHandle;
+    private RawState _rawStateTemplate;
+    private bool _rawStateReady;
 
     /// <summary>Resolves the CPU from <see cref="RawSelfHandle"/> (weak handle; never null inside a run).</summary>
     internal static XboxCpu RawFromHandle(IntPtr handle) =>

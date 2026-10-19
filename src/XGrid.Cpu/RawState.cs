@@ -37,8 +37,14 @@ internal unsafe struct RawState
     /// </summary>
     public ulong* PtBits;
 
-    /// <summary>1 when a bus write watch is armed: inline stores go slow.</summary>
+    /// <summary>1 when a bus write watch is armed: inline stores test the watch range.</summary>
     public uint WatchArmed;
+
+    /// <summary>Bus write watch range, physical (valid when <see cref="WatchArmed"/> is 1).</summary>
+    public uint WatchStart;
+
+    /// <summary>Exclusive end of the bus write watch range.</summary>
+    public uint WatchEnd;
 
     /// <summary>1 when CR0.WP is set: a non-writable page takes the slow path (IL parity).</summary>
     public uint Cr0Wp;

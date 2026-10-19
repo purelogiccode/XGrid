@@ -66,6 +66,8 @@ internal static unsafe class RawBlockEmitter
     private static readonly int OffActiveBits = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ActiveBits));
     private static readonly int OffPtBits = (int)Marshal.OffsetOf<RawState>(nameof(RawState.PtBits));
     private static readonly int OffWatchArmed = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WatchArmed));
+    private static readonly int OffWatchStart = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WatchStart));
+    private static readonly int OffWatchEnd = (int)Marshal.OffsetOf<RawState>(nameof(RawState.WatchEnd));
     private static readonly int OffCr0Wp = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Cr0Wp));
     private static readonly int OffStoreGuardBail = (int)Marshal.OffsetOf<RawState>(nameof(RawState.StoreGuardBail));
     private static readonly int OffRam = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Ram));
@@ -129,7 +131,10 @@ internal static unsafe class RawBlockEmitter
                     if (uint.TryParse(part, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint skipped)
                         && skipped == headEip)
                     {
-                        XboxCpu.RawTrace($"  skip head={headEip:X5} (XGRID_RAW_SKIP_HEADS)");
+                        if (XboxCpu.RawTraceEnabled)
+                        {
+                            XboxCpu.RawTrace($"  skip head={headEip:X5} (XGRID_RAW_SKIP_HEADS)");
+                        }
                         return 0;
                     }
                 }
@@ -142,7 +147,10 @@ internal static unsafe class RawBlockEmitter
         {
             // A shape the assembler cannot encode: keep the IL runner for this
             // block (correctness first, the raw path is an optimization).
-            XboxCpu.RawTrace($"  build failed head={headEip:X5}: {ex.GetType().Name}: {ex.Message}");
+            if (XboxCpu.RawTraceEnabled)
+            {
+                XboxCpu.RawTrace($"  build failed head={headEip:X5}: {ex.GetType().Name}: {ex.Message}");
+            }
             return 0;
         }
     }
@@ -338,8 +346,26 @@ internal static unsafe class RawBlockEmitter
         private void EmitEpilogue()
         {
             Assembler a = _a;
-            a.Label(ref _exit);
+
+            // The linear fall-through (the last member completed normally)
+            // normalizes the frame flags here, because `_exit` is also a jump
+            // target from edges that cannot know this emission point's
+            // compile-time liveness (the poll's pending path, the Jcc arms,
+            // the terminator jumps) — each of those normalizes on its own
+            // edge. After this point F_EFLAGS is authoritative on every path,
+            // so the epilogue must not re-materialize from the host FLAGS
+            // (they are dead or stale on the early-exit edges).
+            // The linear fall-through (the last member completed normally)
+            // normalizes the frame flags here, because `_exit` is also a jump
+            // target from edges that cannot know this emission point's
+            // compile-time liveness (the poll's pending path, the Jcc arms,
+            // the terminator jumps) — each of those normalizes on its own
+            // edge. After this point F_EFLAGS is authoritative on every path,
+            // so the epilogue must not re-materialize from the host FLAGS
+            // (they are dead or stale on the early-exit edges).
             EmitMaterializeFlags();
+
+            a.Label(ref _exit);
             EmitStoreGuestState();
 
             a.mov(R32(Register.EAX), Slot(F_SERVED));
@@ -688,6 +714,9 @@ internal static unsafe class RawBlockEmitter
                 case JitKind.JmpRel:
                     EmitSetEip(unchecked(eip + (uint)plan.Length + (uint)plan.Immediate));
                     EmitServedIncrement();
+                    // Normalize the frame flags on this exit edge (the
+                    // epilogue does not re-materialize).
+                    EmitMaterializeFlags();
                     _a.jmp(_exit);
                     return;
 
@@ -700,6 +729,7 @@ internal static unsafe class RawBlockEmitter
                     if (plan.IsTerminator)
                     {
                         EmitServedIncrement();
+                        EmitMaterializeFlags();
                         _a.jmp(_exit);
                         return;
                     }
@@ -1070,10 +1100,19 @@ internal static unsafe class RawBlockEmitter
             EmitJccOp(plan.Condition, taken);
             EmitSetEip(fallThrough);
             EmitServedIncrement();
+            // Both arms normalize the frame flags before exiting (the
+            // epilogue does not re-materialize). EmitLoadFlags above left the
+            // host FLAGS live with the branch condition's values, and both
+            // arms enter with them live: the compile-time state must be reset
+            // for the taken arm, which the fall-through arm's materialize
+            // would otherwise leave "dead" (the frame slot is stale there).
+            EmitMaterializeFlags();
             a.jmp(_exit);
             a.Label(ref taken);
+            _flagsLive = true;
             EmitSetEip(target);
             EmitServedIncrement();
+            EmitMaterializeFlags();
             a.jmp(_exit);
         }
 
@@ -1238,9 +1277,31 @@ internal static unsafe class RawBlockEmitter
         {
             Assembler a = _a;
             int trackedPages = (int)(DecodeCache.MaxTrackedPhysical >> 12);
+            Label noWatch = a.CreateLabel(string.Empty);
             Label armCheck = a.CreateLabel(string.Empty);
             Label needNote = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
+
+            // Bus write watch (IsWatched/CheckWatch parity): an armed watch
+            // whose range overlaps [phys, phys + size) takes the exact bus
+            // path. EDI holds the probe's physical address; R8D/R10D are free
+            // here. This runs before the note path on purpose: the note helper
+            // clobbers R9 (the linear address) and the slow path consumes it,
+            // so a watched store must diverge while R9 is still intact.
+            a.mov(R32(Register.R10D), Field(Register.R11, OffWatchArmed));
+            a.test(R32(Register.R10D), R32(Register.R10D));
+            a.je(noWatch);
+            a.mov(R32(Register.R8D), R32(Register.EDI));
+            a.add(R32(Register.R8D), sizeBits / 8);
+            a.mov(R32(Register.R10D), Field(Register.R11, OffWatchStart));
+            a.cmp(R32(Register.R10D), R32(Register.R8D));
+            a.jae(noWatch);
+            a.mov(R32(Register.R10D), Field(Register.R11, OffWatchEnd));
+            a.cmp(R32(Register.EDI), R32(Register.R10D));
+            a.jae(noWatch);
+            a.jmp(slow);
+            a.Label(ref noWatch);
+
             a.mov(R32(Register.R8D), Field(Register.R11, OffStoreGuardBail));
             a.test(R32(Register.R8D), R32(Register.R8D));
             a.jne(slow);
@@ -1267,7 +1328,9 @@ internal static unsafe class RawBlockEmitter
             // path would additionally re-translate, making A/D bits visible).
             // The helper call clobbers the caller-saved host registers, which
             // hold guest eax/ecx/edx/ebx: park them (with the Win64 shadow
-            // space kept clear) and restore after.
+            // space kept clear) and restore after. R9 is dead on this path:
+            // nothing after the note consumes it (the watch divergence above
+            // happens before the note).
             a.Label(ref needNote);
             a.mov(Slot(F_VALUE), R32(Register.ESI));
             a.mov(Slot(F_PHYS), R32(Register.EDI));
@@ -1294,9 +1357,6 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.RBP), Field(Register.R11, OffRam));
 
             a.Label(ref done);
-            a.mov(R32(Register.R10D), Field(Register.R11, OffWatchArmed));
-            a.test(R32(Register.R10D), R32(Register.R10D));
-            a.jne(slow);
         }
 
         /// <summary>The probed RAM access: <c>[rbp+rdi]</c> (RBP base, RDI offset).</summary>
