@@ -23,7 +23,13 @@
 > path **ahead of IL on CPU serving time**: 100M A/B 9.0% menu / 2.4%
 > triangle, 1B `outerMs` -3.7% menu / -2.3% triangle, differentials still
 > bit-exact; end-to-end walls were host-noise bound, so no end-to-end claim
-> yet. The next lever is chaining under the per-block IRQ poll contract; the
+> yet. **Direct chaining was then implemented and measured (§199l): 100M menu
+> -4.9% wall / -5.3% outer (5/5 paired), 1B menu -10.1% wall / triangle
+> -15.3% wall with exact SHAs, using a per-CPU tail-jump table, chained
+> served/budget accounting, live-generation validation and a cheap PIC
+> pending word. It is reverted pending a deterministic CLR fault-unwind crash
+> in the `AluLoop`→`PagedCrossVisitFault` test pair** (chain-disabled still
+> crashes it; HEAD is clean; §199l has the reproducer and bisect plan). The
 > raw path stays opt-in. Quiet-host calibration:
 > triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin).
 >
