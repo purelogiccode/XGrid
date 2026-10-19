@@ -3276,19 +3276,21 @@ overhead included) profiled the *real* workload: **53.1M GL draws at ~2 µs
    triangle / 3.6 s menu) and the machine/CLI advance path (2.2 s / 4.8 s).
 2. **C2 trace emitter** (charter Phase 2.5): multi-block traces, state in
    locals across the trace, inline RAM fast paths, boundary polls preserved;
-   target ≥2× CPU (triangle runner ≤3 s, menu CPU ≤11 s).
+   target ≥2× CPU (triangle runner ≤3 s, menu CPU ≤11 s). **Absorbed by C3:**
+   direct block chaining already removes the per-block state reload without a
+   second emitter (decisions §199l/§199n).
 3. **C3 raw emitter** (charter Phase 3, Iced authorized): register
    allocation, direct chaining, inline TLB; another ≥2× (triangle ≤3 s
-   end-to-end, menu ≤12 s). **Correctness-validated (§§199e–§199i): both titles are bit-exact with
-   IL at 1B and the §199k state hoist puts the raw path ahead on CPU serving
-   time (100M A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% / -2.3%).
-   Direct chaining was implemented and measured (§199l): 100M menu -4.9%
-   wall / -5.3% outer, 1B menu -10.1% wall / triangle -15.3% wall with exact
-   SHAs, using a per-CPU tail-jump table, chained served/budget accounting,
-   live-generation validation and a PIC pending-word poll; it is reverted
-   pending a deterministic CLR fault-unwind crash in the AluLoop→Paged test
-   pair, so chaining and register-resident state remain the open structural
-   work (the full reproducer and bisect plan are in §199l).**
+   end-to-end, menu ≤12 s). **Landed (§§199e–§199n): both titles are bit-exact
+   with IL at 1B, the §199k state hoist put the raw path ahead on CPU serving
+   time, and direct chaining (§199l) behind the §199m fault contract adds
+   -12.0% / -13.1% wall and -28.6% / -14.2% `outerMs` (1B medians of 3
+   interleaved pairs).** The §199n breakdown then moved the remainder: the
+   software rasterizer is the largest single item (48% menu / 39% triangle of
+   the sw wall) and the CPU cost is 18.5 / 61 ns per served member, so the open
+   structural work is **C3-x hot-shape native encoding (menu 61 → ~30 ns) →
+   C3-y per-member bookkeeping trim → C3-z inline TLB/RAM page pair**, then
+   Track B.
 4. **B2c draw batching** (2 µs/draw → ≤0.5 µs) and the **window present
    path** (drop the redundant per-flip readback in window mode; batch the
    message pump).
