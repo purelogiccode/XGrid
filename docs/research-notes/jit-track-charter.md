@@ -1,6 +1,53 @@
-# Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
+# Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
-> **STATUS 2026-10-20 (fifth session — C3 third correctness campaign, §199i):
+> **STATUS 2026-10-20 (sixth session - C3 chaining landed behind the §199l/§199m
+> fault contract; measured position re-aimed).** C3 is complete for the two
+> goldens: raw emitter + direct block chaining, both 1B bit-exact against the
+> IL control (menu `660CA11B…/F5D61C94…`, triangle IL == raw on this host),
+> 1B medians of 3 interleaved pairs -12.0% (triangle) / -13.1% (menu) wall,
+> -28.6% / -14.2% `outerMs`. **The breakdown now says the engine is no longer
+> the binding constraint on either golden** (§199n; same host/window, 1B,
+> `--jit-raw --jit-threshold 16 --jit-spin`; gl legs `--gpu gl --gpu-replace`):
+>
+> | 1B, raw+chain | menu | triangle |
+> |---|---:|---:|
+> | wall `--gpu sw` | 112.5 s | 22.2 s |
+> | wall `--gpu gl --gpu-replace` | 58.9 s | 13.5 s |
+> | software-rasterizer cost (sw-gl) | 53.6 s (48%) | 8.7 s (39%) |
+> | raw members served | 828.8M | 452.5M |
+> | raw runner time (gl leg) | 50.5 s | 8.35 s |
+> | ns per served member (gl leg) | 61 ns | 18.5 ns |
+> | chain jumps / invocations | 157.9M / 4.63M | 109.0M / 1.62M |
+> | idle-skipped steps | 128.6M | 530.2M |
+>
+> Block mechanics are cheap now (1.6-4.6M invocations and 109-158M chain jumps
+> over 450-830M members), so further block/trace work is **not** the lever.
+> The remaining CPU-side cost is concentrated in the **helper-routed shapes**
+> (a managed `ExecuteSpec` call per unencoded member - the dashboard's MMX
+> copy/string/x87 loops; rank them first with a raw-leg shape tally) and in
+> **per-member bookkeeping** (EIP store, TSC
+> tick, store-guard tests). Against xemu's measured triangle ~830 Msteps/s we
+> are at 74 Msteps/s with a hardware backend (~11x) and 18.5 ns/member
+> (~2-4x off TCG-class on simple code; the dashboard's 61 ns is ~6-12x but
+> includes its NV2A/device traffic).
+> **Re-weighted order (supersedes the Phase 2.5/3 sequence below):**
+> (1) C3-x hot-shape native encoding (MMX `movq`/`movntq`, non-faulting
+> `movs`/`stos`, dashboard x87) - target menu average 61 -> ~30 ns/member;
+> (2) C3-y per-member bookkeeping trim (EIP per block exit, hoisted store
+> guard) - ~10-20% of the CPU path; (3) C3-z inline TLB/RAM page pair - the
+> last softmmu-style item; then **Track B leads**: the software rasterizer is
+> 48% (menu) / 39% (triangle) of the sw wall, and present pacing gates
+> playability (686 flips/1B = 11.7 fps with GL today). **Metric change:**
+> report ns per served member, the `gl+replace` 1B wall and wall per rendered
+> frame - not 1B-step walls, which mix in 530M idle-spin steps on the
+> triangle. **Redirect criterion:** if after C3-x/y/z the dashboard is still
+> >15x from real time with GL, the remainder is Track B/D (rasterizer
+> structure, device paths, present pacing) and further codegen work stops.
+> One fidelity probe queued: we emit 35 triangle flips per 1B steps where
+> xemu's rate implies ~84 - the guest may be waiting on vblank/flip semantics
+> we delay (§199n).
+
+> **STATUS 2026-10-20 (fifth session - C3 third correctness campaign, §199i):
 > BOTH TITLES 1B BIT-EXACT; THE OPEN MENU GAP IS CLOSED.** The §199h menu
 > divergence was not a store helper: the four split fast/slow members (RMW
 > destination, cmp-memory, test-memory, inc/dec-memory) skipped the **fast
@@ -279,11 +326,29 @@ contract. *Entry:* Phase 1–2 plateau >3× short of the xemu-class target —
 *Target:* another ≥2× CPU-side — triangle 1B ≤3 s end-to-end, menu ≤12 s
 (headless gl+replace+spin), live window ≥60 guest-fps-equivalent on the menu
 animation.
+*Status 2026-10-20 (§§199e-199n):* **landed and validated** — per-block native
+x86-64 with pinned guest GPRs/host FLAGS, inline translate-cache probe,
+spec-handler trampoline, then direct block chaining (§199l) behind the raw
+fault contract (§199m: helpers catch/record/report, `RunJitBlock` rethrows in
+managed code). Both 1B title differentials are bit-exact against IL; the raw
+path is ahead of IL on CPU serving time and 12–13% ahead end-to-end. Phase 2.5
+(trace emitter) was **absorbed** by C3: chaining already removes the per-block
+state reload without a second emitter. The measured remainder (§199n) is the
+helper-routed shape mix, per-member bookkeeping and the data-translate probe —
+see the re-weighted order in the status block. The Phase-3 *target* is
+re-stated as **ns per served member** (triangle 18.5 → ~8–10 ns, menu 61 →
+~30 ns on `gl+replace`) rather than 1B walls.
 
 **Phase 4 — fast-mode playability (parallel-capable after Phase 2 passes).**
 GPU offload coverage, presentation pacing, audio sync (APU mixer/host
 output), input. Gate runs and the accurate mode are unaffected (no-mix binds
 all gate runs). Scope detail filed when Phase 2 meets its bar.
+*Status 2026-10-20 (§199n):* the GPU side is now the **largest** single item on
+the sw wall (menu 48% / triangle 39%), and present pacing is the playability
+gate (686 flips/1B = 11.7 fps with GL). So Phase 4's first slice is the
+`--gpu gl --gpu-replace` per-frame path (submission batching, present/readback
+pacing) plus the rasterizer's structural per-pixel cost — not more CPU
+codegen.
 
 ## 5. Validation and gates (two-tier)
 
