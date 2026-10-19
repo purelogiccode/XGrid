@@ -1,5 +1,29 @@
 # Fast-mode execution engine (JIT track) — charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (fourth session — C3 second correctness campaign, §199h):
+> TRIANGLE 1B BIT-EXACT; MENU OPEN AT 968.38M.** Two more raw-emitter bugs
+> closed, both found by the title differentials: the **store guard's note path
+> clobbered R9** (the linear address) so page-table stores took the slow path
+> with a garbage address whenever a bus watch was armed (the CLI arms one by
+> default — the triangle's 25.05M #PF at CR2=0x0D, and every store went slow
+> under an armed watch); the guard now runs the exact `IsWatched` range test
+> before the note path. And the **exit-edge flag merge**: the epilogue
+> materialized the frame flags with the emitter's compile-time liveness while
+> `_exit` is also the target of the poll's pending path / Jcc arms / terminator
+> jumps, so the kernel idle delivery pushed EFLAGS 0x202 instead of 0x246 (the
+> triangle's 30.92M divergence). **The triangle now matches IL bit-exactly at
+> 1B steps** (RAM SHA + CPU SHA + every NV2A counter identical). The menu is
+> exact through step 968,380,639 and then differs by one byte in the
+> dashboard's MMX copy loop (`movq`/`movntq`) — open, full evidence trail in
+> §199h. Three regression tests added (delivered-EFLAGS parity, page-table
+> store under a covering watch, exact watch-range hits); suite 1495 green.
+> The raw path is now at **parity** with IL after the per-invocation overhead
+> cuts (guarded trace interpolations, RawState invariant template) — it serves
+> 76% of triangle members; the next levers are structural (chaining /
+> register-resident state) and constrained by the per-block IRQ poll contract
+> that keeps the IL/raw differential meaningful. Quiet-host calibration:
+> triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin).
+>
 > **STATUS 2026-10-20 (third session — C3 correctness campaign, §199g):
 > GATE 1 CLOSED, GATE 2 AT 25.05M/1B.** `JitRawBlocks` forced on now runs the
 > whole `JitTests` suite green — **12 → 0 failures, 56/56 JitTests +

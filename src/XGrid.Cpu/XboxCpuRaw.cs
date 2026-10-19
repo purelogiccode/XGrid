@@ -177,6 +177,9 @@ public sealed unsafe partial class XboxCpu
         }
     }
 
+    // TEMP-DIAG removed: bounded MMX load/store trace (menu divergence 968.38M).
+
+
     /// <summary>Records one built raw runner (called by block formation).</summary>
     internal void NoteRawBlockBuilt() => JitRawBlocksBuilt++;
 

@@ -10693,8 +10693,118 @@ waits for a differential-clean build.
    (SHAs + counters exact, `--jit-raw`-off control legs) — with the operator's
    idle window.
 4. Then C3 performance slices: patch-on-link block chaining (raw→raw direct
-   jumps), native ROL/ROR/RCL/RCR (currently rejects the whole block — the
+   jumps), native ROL/ROR/RCL/RCR (currently rejects the whole block - the
    key-schedule loops are IL-served), native x87 m64/m80, MMX, push/pop/call/
    ret emission, and the remaining probe/entry overhead.
 5. Only then consider a fast-mode default flip; the accurate mode and every
    standing gate are untouched throughout.
+
+## 199h. C3 correctness, second campaign: the store-guard linear clobber and the exit-edge flag merge; triangle 1B exact, menu open at 968.38M (2026-10-20, fourth session)
+
+Two raw-emitter bugs closed, both found by the title differentials (the
+"JitTests green" state from §199g still had them - the suite never arms a bus
+watch and never delivers an interrupt into a block whose emission ends with
+live flags).
+
+**Bug 1: the store guard's note path clobbered R9 (the linear address).**
+`EmitStoreGuard` ran the PT/active-page bitset check first; a hit called the
+`NoteStorePhysical` helper (which clobbers R9 for its arguments) and then
+fell into the tail "any watch armed → slow" check. The CLI arms a bus watch
+by default (`WatchStart/WatchEnd = 0x35B00/0x35D00`), so this fired on every
+PT-page store: the slow path received the helper call's leftovers as the
+linear address. On the triangle that was a #PF at EIP=0x8001F9F3 with
+CR2=0x0D at step 25,053,213 (the previous session's open item). The fix:
+- `RawState` gains `WatchStart`/`WatchEnd` (filled per call from
+  `AddressSpace`), and the guard runs the exact `IsWatched` overlap test
+  (`phys < WatchEnd && WatchStart < phys + size`) *before* the note path,
+  matching the IL emitter's order (probe → watch guard → note → write).
+- Watched stores now diverge to the exact bus path with the linear intact;
+  stores outside the range stay inline. That also removed a large hidden
+  cost: with the old conservative check, *every* store went slow whenever a
+  watch was armed (all CLI runs).
+- Fail-pre-fix evidence: `StoreToPageTablePage_WithWatchArmed_MatchesInterpreter`
+  (the store's distinct per-iteration values land at 0x44332212 instead of
+  0x44332215) and the triangle 1B differential (25.05M #PF → bit-exact 1B).
+
+**Bug 2: the exit-edge flag merge.** `EmitEpilogue` materialized the frame
+EFLAGS using the emitter's *compile-time* `_flagsLive` state, but `_exit` is
+also the target of the poll's pending path, the `Jcc` arms and the
+terminator jumps - edges where the host FLAGS are dead or clobbered (the
+poll's helper call leaves `test r8d,r8d` results). The kernel idle delivery
+pushed EFLAGS 0x202 (control bits only: IF|bit1) instead of 0x246
+(CF|PF|IF) and the triangle diverged at step 30,916,862. The fix:
+- Every `jmp _exit` edge normalizes the frame flags on its own path
+  (`EmitMaterializeFlags()` before the jump in `JmpRel`, the helper
+  terminator and both `Jcc` arms), and the epilogue only stores the frame.
+- The `Jcc` taken arm needs the compile-time state reset (`_flagsLive =
+  true`) because the fall-through arm's materialize otherwise leaves the
+  emitter believing the frame is authoritative while it is stale on the
+  taken path (that variant regressed `RandomPrograms_MatchInterpreter(seed:
+  6)` during development).
+- Fail-pre-fix evidence: `IrqFast_DeliveredFlags_MatchBetweenRunners`
+  delivers 0x202 on the raw runner vs 0x246 on IL; after the fix both push
+  the same EFLAGS and the triangle matches to 1B.
+
+**Regression tests (3 new, suite 1495 green):**
+- `IrqFast_DeliveredFlags_MatchBetweenRunners` - the kernel idle shape
+  (`xor edx,edx; sti; add [mem],eax; cli; dec; jne`) warmed with a
+  never-firing source, then a fresh source whose first acknowledge lands on
+  the STI's post-poll (IF forced clear first). Asserts both engines record
+  the same delivered EFLAGS (the ISR reads `[esp+8]`) and the raw served.
+- `StoreToPageTablePage_WithWatchArmed_MatchesInterpreter` - paging on
+  (PD 0x4000 / PT 0x5000), a covering watch, per-iteration store values; the
+  final word at the page-table page and the watch-hit sequences must match
+  the interpreter.
+- `StoreToWatchedRange_RaisesHitOnBothRunners` - the exact range semantics:
+  a store inside `[WatchStart, WatchEnd)` raises `WatchHit` on both runners
+  with the physical address/size/value, a store outside writes inline.
+
+**Performance work (same session; loaded-host numbers informational only).**
+The raw path was 1.9 s per 100M steps *behind* IL; it is now at parity:
+- `RawEnter`/`RawExit` built their interpolated trace strings on every
+  invocation (13M allocations per 100M steps). Guarded; triangle outerMs
+  4741 → 3081 (IL 2737).
+- `BuildRawState` caches the invariant half of `RawState` (pinned pointers,
+  xlat mask, scratch addresses) and refreshes only RAM size, CR0.WP, the
+  watch range and the six segment bases per call; outerMs 3081 → 2905.
+- `Jit stats` now prints `rawBuilt/rawInv/rawServed`: the raw runner serves
+  76% of members on the triangle (40.8M of 53.5M at 100M steps) with 5.9M
+  invocations.
+- Measured on the quiet host before the session's later edits: triangle IL
+  1B 10.20 s (baseline 10.63), menu IL 1B 39.6-40.4 s (baseline 45.62);
+  after the fixes the raw legs were at parity on the loaded host (tri 20.55
+  vs 19.08, menu 55.23 vs 54.77). No raw-advantage claim yet: the remaining
+  per-invocation cost (~35 ns × 5.9M/100M) and the frame-slot bookkeeping
+  are the structural levers (chaining / register-resident state), and both
+  must preserve the per-block IRQ poll contract to keep the IL/raw
+  differential meaningful.
+
+**Open item: the menu diverges at step 968,380,640 (after 968,380,639 the
+RAM differs by two bytes).** The guest is in the dashboard's MMX copy loop
+(0x39F90-0x39FDF: `prefetch ×2; movq mm0-7,[esi+8N]; nop ×2;
+movntq [edi+8N],mm0-7; add esi,0x40; add edi,0x40; dec ecx; jne`). Evidence
+gathered:
+- The differing bytes are at physical 0x7534B8 and 0x7534C8: `E3` vs `E4`
+  in the low byte of two 8-byte values (IL wrote 0x39B850E3, raw 0x39B850E4
+  - a one-byte difference in what the copy stored).
+- RAM SHA bisect: match at 968,380,639, differ at 968,380,640; the window
+  [968,380,583, 968,380,659) is entirely inside the copy loop.
+- The IL and raw traces of the loop (interpretive replay) show identical
+  register states at the same steps.
+- `XGRID_RAW_SKIP_HEADS` with 39F8E/39F90 (and four more loop heads) did
+  *not* clear it - the serving block has not been isolated yet.
+- A temporary bounded trace in the shared `SpecMovqRegMem`/`SpecMovntqMemReg`
+  handlers logged 400 identical events at the loop's first occurrences
+  (TSC 746M) but never fired inside the TSC window [968,380,560,
+  968,380,700) - so the divergent store either is not one of those handler
+  calls or the handler's TSC/EIP view differs there (the instrumentation was
+  removed; the save-state layout fact `offset 170 = Tsc = step count` is
+  recorded for the next attempt).
+- Next steps for the next session: instrument the *emitted* store path for
+  the loop block (the raw block at head 0x39F90 exists, len=5130), compare
+  the block's exit state against the IL runner's, and check whether the
+  block's `Entries`/member mapping is the one the handlers see.
+
+**Status: triangle 1B fast-IL vs fast-raw bit-exact (RAM SHA, CPU SHA and
+every NV2A counter identical); menu exact through 968,380,639 and open
+beyond; suite 1495 green; format clean; the raw path stays opt-in.**

@@ -514,27 +514,31 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   bit-reproducible). Also landed during the wave: `tools/wave` fixes
   (terminal-finish turn detection, state-save retry on Windows file locks)
   and a `wave dashboard` command (127.0.0.1:4181 live task/log view).
-- **C3 raw emitter (2026-10-20, §§199e/199f; correctness campaign 2026-10-19→20, §199g; opt-in
+- **C3 raw emitter (2026-10-20, §§199e/199f + correctness campaigns §199g/§199h; opt-in
   `--jit-raw`).** One native x86-64 function per block (Iced 1.21.0, MIT): guest GPRs in fixed host
   registers, arithmetic flags in the host FLAGS register, memory members running the data
   translate-cache probe inline against pinned pointers, and a reverse-P/Invoke trampoline to the
-  existing spec handlers for every unencoded shape. **The correctness campaign closed the JitTests
-  gate: 12 → 0 failures with `JitRawBlocks` forced on (56/56 JitTests+RawJitTests, suite 1492
-  green)** and fixed fourteen latent bugs (decisions §199g): missing non-terminator EIP advance,
-  helpers seeing a stale EIP, CLI/STI clobbering guest EAX, the missing fast-mode post-STI/POPF
-  poll, the translate-cache probe indexing by raw VPN (out-of-bounds ≥ 1 MB), unguarded inline
-  stores (NoteStore/watch), the poll's shadow-space overlap, host DF left set across helper calls
-  (Win64 ABI — runtime `rep movs` corruption), flag-liveness leaking from slow paths into merge
-  points, the store guard's helper call clobbering guest EAX/ECX/EDX, GC-stale CPU/entries
-  pointers (weak GCHandle + pinned entries array), memory-source MovExtend emitted as a register
-  move, disp32 ≥ 0x80000000 failing to encode, and WP/A-D parity with the IL probe. **Open: the
-  IL-fast vs raw-fast differential matches bit-exactly through 25,053,067 triangle steps, then
-  diverges inside a raw block at `0x8001F9EB` (16-bit store to a page-table page; raw takes a #PF
-  at EIP=0x8001F9F3 CR2=0x0D that the IL run does not) — fix, then 1B menu+triangle + quiet-host
-  measurements before any default flip.** No performance claim yet (loaded-host single runs show
-  ~2-5× msps informational only).
+  existing spec handlers for every unencoded shape. **Two correctness campaigns closed the
+  JitTests gate (12 → 0 failures with `JitRawBlocks` forced on; suite 1495 green)** and fixed
+  sixteen latent bugs (decisions §199g/§199h) — the second campaign's two headline items:
+  **the store guard's note path clobbered R9 (the linear address), so every page-table store
+  took the slow path with a garbage address whenever a watch was armed (the CLI arms one by
+  default) — the triangle's 25.05M #PF at CR2=0x0D**; and **the epilogue materialized the frame
+  flags with the emitter's compile-time liveness, corrupting the EFLAGS pushed by the poll's
+  pending delivery (0x202 instead of 0x246) — the triangle's 30.92M divergence**. Both fixed;
+  the guard now runs the exact IsWatched range test before the note path (which also restored
+  inline stores: previously every store went slow while any watch was armed). **Differential
+  status: the triangle is bit-exact at 1B (RAM SHA + CPU SHA + every NV2A counter identical);
+  the menu is exact through step 968,380,639 and then differs by one byte in the dashboard's
+  MMX copy loop (`movq`/`movntq`, physical 0x7534B8/0x7534C8, E3 vs E4) — open, with the full
+  evidence trail in §199h.** Performance: the raw path is at **parity** with IL after the
+  per-invocation overhead cuts (RawEnter/RawExit trace interpolations guarded, RawState
+  invariant template) — raw serves 76% of triangle members; no raw-advantage claim yet
+  (structural levers: chaining/register-resident state, both constrained by the per-block IRQ
+  poll contract). Quiet-host calibration this session: triangle IL 1B **10.20 s**, menu IL 1B
+  **~40 s** (gl+replace+spin) — both faster than the §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1492 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1495 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
@@ -590,23 +594,38 @@ entries pointers (the CPU now travels as a weak `GCHandle`, the entries array
 is pinned with `GC.AllocateArray(pinned: true)`), memory-source MovExtend
 emitted as a register move, disp32 ≥ 0x80000000 failing to encode, WP parity
 (`Cr0Wp` flag) and A/D parity with the IL probe. **All 56 JitTests +
-RawJitTests pass with the raw path forced on; suite 1492 green; build and
-format clean.** The raw path stays **opt-in**; the remaining gate is the
-IL-fast vs raw-fast title differential — it matches bit-exactly through
-**25,053,067 triangle steps**, then diverges inside a raw block at
-`0x8001F9EB` (16-bit store to a page-table page; raw takes a #PF at
-EIP=0x8001F9F3 CR2=0x0D the IL run does not) — fix that, then 1B menu+triangle
-plus quiet-host measurements before any default flip.
+RawJitTests pass with the raw path forced on; suite 1495 green; build and
+format clean.** The second campaign (§199h) then closed the two title
+differential bugs: **the store guard's note path clobbered R9 (the linear
+address) — every page-table store took the slow path with a garbage address
+while a watch was armed (the CLI arms one by default), the triangle's
+25.05M #PF at CR2=0x0D**; the guard now runs the exact `IsWatched` range test
+(`WatchStart/WatchEnd` in `RawState`) before the note path, which also
+restored inline stores (previously *every* store went slow while any watch
+was armed). **And the exit-edge flag merge: the epilogue materialized the
+frame flags with the emitter's compile-time liveness, but `_exit` is also
+the target of the poll's pending path, the `Jcc` arms and the terminator
+jumps — the kernel idle delivery pushed EFLAGS 0x202 instead of 0x246, the
+triangle's 30.92M divergence**; every exit edge now normalizes the frame
+flags on its own path. **Differential status: the triangle is bit-exact at
+1B; the menu is exact through step 968,380,639, then differs by one byte in
+the dashboard's MMX copy loop — open, evidence in §199h.** The raw path
+stays **opt-in** and is at parity with IL (no advantage claim yet).
 
-Recipe for the open divergence: `boot … --jit --jit-threshold 16 --jit-spin
---jit-raw --steps 25053130 --gpu sw` vs the same without `--jit-raw`; RAM SHA
-bisect bounds it to steps [25,053,067, 25,053,130]; the raw block at head
-`0x8001F9EB` is `movzx edi,di; shl edi,4; add edi,ecx;
-mov [0x83FF0002+edi*4],bx; jmp` and its dump was read end-to-end (address
-computation, guard and note path all match the IL semantics) — the fault is
-`err=2 CR2=0x0D`, so the next step is comparing the faulting store's linear
-address and the pre-fault registers (a `--save-state` at 25,053,124 does not
-land mid-raw-block, so instrument the emitter or the helper).
+Recipe for the open menu divergence: `boot … --jit --jit-threshold 16
+--jit-spin --jit-raw --pad-script "down@950000000+hold,none@962000000,
+a@970000000+hold,none@976000000" --steps 968380640 --gpu sw` vs the same
+without `--jit-raw`; RAM SHA bisect bounds it to steps [968,380,583,
+968,380,659]; the first differing bytes are physical 0x7534B8 and 0x7534C8
+(`E3` vs `E4`), written inside the copy loop at 0x39F90 (`prefetch ×2;
+movq mm0-7,[esi+8N]; nop ×2; movntq [edi+8N],mm0-7; add esi,0x40; add
+edi,0x40; dec ecx; jne`). `XGRID_RAW_SKIP_HEADS=39F8E,39F90` (and four more
+loop heads) did not clear it; the shared `SpecMovqRegMem`/`SpecMovntqMemReg`
+handlers log identical events at the loop's earlier occurrences. Next:
+instrument the emitted store path for the loop block (head 0x39F90 exists,
+len=5130) and compare its exit state against the IL runner's. Note for
+`--save-state` work: in the `.xgs` CPU block, offset 170 is the TSC and
+equals the step count.
 
 Diagnostics to keep: XGRID_SLOW=1 (slow-member mnemonic mix), XGRID_NONRAM=1
 (non-cacheable fetch pages), --jit-timing (runner vs chain split), Host timing
