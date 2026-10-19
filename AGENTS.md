@@ -563,11 +563,17 @@ format clean. The §199k state hoist makes the raw path **ahead of IL on CPU
 serving time** (100M A/B 9.0% menu / 2.4% triangle; 1B `outerMs` -3.7% /
 -2.3%; end-to-end walls host-noise bound). Two negative results recorded:
 mask-driven register sync (§199j) and static served/EIP bookkeeping (§199k) —
-both ~1%, below the sub-2% resolution standard; raw blocks average ~5 members,
-so **chaining is the next structural lever**, not per-member shaving. The
-next session should (1) design chaining under the per-block IRQ poll
-(served/TSC accumulation across chained blocks, generation-stamped target
-table, budget check inline) with a unit differential first, (2) then run the
+both ~1%, below the sub-2% resolution standard. **Direct raw block chaining
+was implemented and produced the largest win yet (100M menu -4.9% wall /
+-5.3% outer, 1B menu -10.1% wall, triangle -15.3% wall, SHAs exact) but is
+NOT landed:** it triggers a deterministic CLR `ExecutionEngineException` in
+`JitTests.PagedCrossVisitFault` when preceded by `AluLoop` (the pair also
+crashes with chaining disabled, while HEAD runs it clean; `XGRID_RAW_SKIP_HEADS=100F`
+clears it). The full design, measurements, reproducer and bisect plan are in
+decisions §199l; the working tree was reverted so the suite stays green. The
+next session should (1) bisect the §199l diff against that pair - PIC pending
+word, pinned generation slot, `RawState` layout, table allocation - and audit
+the raw fault-unwind contract, then (2) re-land chaining and run the
 quiet-host raw-vs-IL end-to-end medians before any default-flip discussion.
 Note: `Directory.Packages.props` has an uncommitted version bump
 (Meziantou 3.0.312, XISOSharp 1.4.3, CHDSharp 1.5.0) that predates this
