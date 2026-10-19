@@ -10547,3 +10547,145 @@ all 11 raw differentials now pass, including the two loop cases.
    moves, patch-on-link chaining) and re-measure.
 4. Only then consider flipping the fast-mode default; the accurate mode and
    every standing gate are untouched throughout.
+
+## 199g. C3 correctness campaign: JitTests closed (12 → 0); fourteen latent raw-emitter bugs fixed; the title differential matches to 25.05M steps (2026-10-19→20, third session)
+
+**Gate 1 closed: `JitRawBlocks` forced on runs the whole JitTests suite green**
+(56/56 JitTests + RawJitTests; full suite **1492 green**, build + format
+clean). The harness change: `JitTests.CreateJit` now sets `JitRawBlocks = true`
+— on Windows x64 the suite exercises the native runner, on other hosts
+`RawCodeMemory.IsSupported` makes `TryBuild` return 0 and the same tests
+exercise the IL runner, so both engines keep coverage across CI.
+
+**Fourteen bugs found and fixed, in discovery order** (all found by
+differential testing; every fix has a reproducer in the suite):
+
+1. **Non-terminator members never advanced EIP.** `EmitMember` set F_EIP to
+   the member's address but nothing advanced it, so a raw block whose last
+   member was not a terminator re-executed that member forever
+   (`MemoryShapes`, `JccConditions` hung at one EIP). Terminator members and
+   helper members (which advance EIP themselves) are excluded.
+2. **Helpers ran against a stale `Context.Eip`.** The block keeps EIP in its
+   frame; the interpreter bodies read `Context.Eip` for return addresses and
+   relative targets, so `call eax` pushed the wrong return address
+   (`IndirectCallReg` divide-error crash) and `rep movs` used stale direction.
+   `ExecuteSpec` now publishes Eip/Eflags/Tsc *forward* before the handler,
+   then copies the result back (was write-back only).
+3. **CLI/STI/CLD/STD clobbered guest EAX** (`EmitUpdateControl` used EAX for
+   the control word) and, while the host flags were live, clobbered CF/ZF/etc.
+   via its `and`/`or` (`CliStiMembers` lost CF). Now materializes first and
+   uses R10D. `EmitLoadFlags` likewise moved EAX→R10D.
+4. **Missing fast-mode post-member IRQ poll** for STI/POPF/string/port members
+   (`IrqFast_*_NoStarvation`): the §193 wakeup contract — the raw path polled
+   only at block entry. `EmitPostPoll` mirrors the IL emitter's post-poll
+   (IF check, `Acknowledge` once, pending → record vector, advance EIP for
+   native STI, TSC++/served++, exit).
+5. **DF in the host FLAGS across helper calls** — a **Win64 ABI violation**.
+   The raw block loaded the guest's DF into the host FLAGS (popfq) and left it
+   set while calling runtime helpers, whose `rep movs` then ran *backwards* —
+   GC heap corruption (crashes in `AssertSameState`,
+   "Internal CLR error 0x80131506"). DF now lives only in the control slot;
+   masking the load/exit paths with `ArithmeticMask` (DF never enters host
+   FLAGS) is the whole fix.
+6. **Flag liveness leaked from slow-path branches into merge points.** The
+   emitter's compile-time `_flagsLive` was set by `EmitReloadAfterHelper` in
+   the *slow-path* emission, so code after the merge label (fast path, flags
+   dead) skipped its `EmitLoadFlags` reload: at triangle step ~6.47M a `jne`
+   after [load / store / load] used the probe's stale flags with the *same
+   architectural state* (`save-state` match at step 6,473,481, full separation
+   at 6,473,482; the JNE fell through in raw and looped in IL). `EmitLoad`/
+   `EmitStore` now reset `_flagsLive = false` at the merge point.
+7. **The translate-cache probe indexed by raw VPN** instead of
+   `vpn & DataXlatMask` → tag/phys/writable reads out of bounds for every
+   address ≥ 1 MB (the original triangle crash at 1.6 s and every
+   high-address miss; `MmioFastPath` documented it: the device page never
+   hit). One-line fix; the IL probe always masked.
+8. **Inline stores skipped `NoteStorePhysical` and the watch guard.**
+   Self-modifying code kept stale decodes (`SelfModifyingCode`); watched
+   stores bypassed `CheckWatch`. The store probe now ends with an inline guard:
+   a `bt` against the pinned PT-page bitset and the decode-cache active-page
+   bitset; a hit calls the new `RawNoteStorePhysical` helper and continues
+   with the direct write (exactly the IL path: no re-translate, so A/D bits
+   stay invisible to the guest), and the `WatchArmed` flag routes watched
+   stores to the exact bus path.
+9. **The poll's parked registers landed in the callee's shadow space.** The
+   poll saves guest eax/ecx/edx/ebx with four pushes and then calls a managed
+   helper; the callee's argument spills overwrote the parked values (all
+   guest registers trashed after the first poll). Fixed by reserving the
+   32-byte shadow area below the pushes (`sub rsp,0x20`).
+10. **The store guard's `NoteStorePhysical` call clobbered guest
+    EAX/ECX/EDX** (host registers) — the next `dec edx`/`jne` diverged
+    (the 6,473,481 divergence's *first* cause). Park/restore like the poll.
+11. **GC-stale object pointers.** The raw runner received the CPU and the
+    block's `DecodeCacheEntry[]` as bare `IntPtr`s; a GC during a helper call
+    moves the objects and every later helper call wrote into freed memory
+    (diagnosed by `plans.Length == 0` on a freshly allocated array — heap
+    corruption). The CPU now travels as a **weak `GCHandle`** resolved by each
+    helper (`RawFromHandle`), and the block's entries array is allocated with
+    `GC.AllocateArray<DecodeCacheEntry>(count, pinned: true)` so its address is
+    stable for the block's lifetime.
+12. **Memory-source `movzx/movsx`** was emitted as a register move
+    (`SecondRegIndex` is 0 for memory sources) — routed to the exact handler.
+13. **disp32 ≥ 0x80000000 failed to encode** (`AssemblerMemoryOperand + long`
+    rejects values that do not fit an `int`), silently dropping every block
+    containing such an addressing form to the IL runner. Sign-extend the
+    `uint` displacement (`unchecked((int)`) at the emission sites.
+14. **WP and A/D parity with the IL probe.** (a) The raw writability check
+    took the slow path for every non-writable page even when CR0.WP was
+    clear; now a `Cr0Wp` state flag gates it like the IL probe. (b) Stores to
+    active code pages / tracked PT pages re-translate via the slow path in
+    the first guard cut, making guest-visible A/D bits diverge; now the guard
+    calls `NoteStorePhysical` and writes inline (7's design).
+
+**Gate 2 (title differential) — reached 25,053,067 of 1B triangle steps.**
+The IL-fast vs raw-fast 1B differential (`--jit --jit-threshold 16
+--jit-spin` ± `--jit-raw`, `--gpu sw`, triangle ISO) matches **bit-exactly
+through step 25,053,067** (RAM SHA bisect: same at 25,053,067, RAM differs in
+[25,053,067, 25,053,130]). The first divergent block is raw head
+`0x8001F9EB`:
+
+```
+0x8001F9EB  movzx edi,di        ; 0F B7 FF
+0x8001F9EE  shl   edi,4         ; C1 E7 04
+0x8001F9F1  add   edi,ecx       ; 03 F9
+0x8001F9F3  mov   [0x83FF0002+edi*4],bx   ; 66 89 1C BD 02 00 FF 83
+0x8001F9FB  jmp   +4
+```
+
+The store targets a page-table page (the guest writes PTE high words), so the
+new PT guard + `NoteStorePhysical` path runs. The raw run takes
+`LastFault vec=14 EIP=0x8001F9F3 err=0x00000002 CR2=0x0000000D`; the IL run
+does not fault. The block's emitted code was read end-to-end (dump via
+`XGRID_RAW_DUMP=1`): address computation, slot mask, WP check, guard, note
+call (with the register park/restore) and the final `[rbp+rdi]` write all
+match the IL semantics — so the fault source is still unidentified. Note the
+pre-25M fixes were validated *after* this reading: the differential now
+matches 14× further than the session's start (1.6 s crash → 25 Msteps clean).
+
+Diagnostics added (all trace-only, `XGRID_RAW_TRACE=1`): raw enter/exit with
+GPRs and pinned-array pointers, the resolved spec member (index/mnemonic/
+handler), the poll's control word + result, and the `TryBuild` failure reason
+(which is how bugs 12–14 were found: "unknown shift op", "Displacement must
+fit in an int").
+
+**No performance claim.** Single runs on a Fortnite-loaded host showed the raw
+path at 2–5× the IL fast mode's msps on the triangle (e.g., 48.9 vs 9.8
+Msteps/s at 200M steps) — informational only; the quiet-host median campaign
+waits for a differential-clean build.
+
+**Next steps (in order):**
+1. Identify and fix the 25,053,067-step divergence (raw block `0x8001F9EB`:
+   the faulting store's linear address and pre-fault registers — instrument
+   the emitter/helper, since `--save-state` cannot land mid-raw-block).
+2. Then run the full 1B IL/raw differential on triangle **and** menu (the
+   menu's animation path exercises strings/MMIO/DVD and may expose further
+   gaps; the triangle's 1B also covers the GL-replace path).
+3. Then the quiet-host median-of-3 against the 10.63 s / 45.62 s baselines
+   (SHAs + counters exact, `--jit-raw`-off control legs) — with the operator's
+   idle window.
+4. Then C3 performance slices: patch-on-link block chaining (raw→raw direct
+   jumps), native ROL/ROR/RCL/RCR (currently rejects the whole block — the
+   key-schedule loops are IL-served), native x87 m64/m80, MMX, push/pop/call/
+   ret emission, and the remaining probe/entry overhead.
+5. Only then consider a fast-mode default flip; the accurate mode and every
+   standing gate are untouched throughout.

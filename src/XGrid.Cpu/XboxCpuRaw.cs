@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using XGrid.Core.Devices;
 using XGrid.Memory;
 
 namespace XGrid.Cpu;
@@ -27,6 +28,10 @@ public sealed unsafe partial class XboxCpu
     private byte* _rawXlatWritable;
     private byte* _rawRam;
     private ulong* _rawScratch;
+    private ulong* _rawActiveBits;
+    private ulong* _rawPtBits;
+    private ulong[]? _rawActiveSource;
+    private ulong[]? _rawPtSource;
 
     private const int ScratchEip = 0;
     private const int ScratchEflags = 1;
@@ -66,6 +71,31 @@ public sealed unsafe partial class XboxCpu
         state.Eflags = (uint*)(_rawScratch + ScratchEflags);
         state.Tsc = (ulong*)(_rawScratch + ScratchTsc);
         state.Progress = (int*)(_rawScratch + ScratchProgress);
+
+        // Store guard tables (pinned on first sight; the instances are
+        // effectively permanent, the reference check is belt and braces).
+        DecodeCache? cache = _decodeCache;
+        ulong[]? active = cache?.ActivePageBits;
+        if (active is not null && !ReferenceEquals(active, _rawActiveSource))
+        {
+            _rawActiveSource = active;
+            _rawActiveBits = PinArray(active);
+        }
+
+        ulong[]? pt = Mmu.PageTablePageBits;
+        if (pt is not null && !ReferenceEquals(pt, _rawPtSource))
+        {
+            _rawPtSource = pt;
+            _rawPtBits = PinArray(pt);
+        }
+
+        state.ActiveBits = _rawActiveBits;
+        state.PtBits = pt is null ? null : _rawPtBits;
+        state.StoreGuardBail = active is null ? 1u : 0u;
+        state.Cr0Wp = (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0 ? 1u : 0u;
+        AddressSpace? space = _ramSpace;
+        state.WatchArmed = space is not null && space.WatchEnd > space.WatchStart ? 1u : 0u;
+
         state.SegmentBases[(int)SegmentRegister.Es] = Context.GetSegmentBase(SegmentRegister.Es);
         state.SegmentBases[(int)SegmentRegister.Cs] = Context.GetSegmentBase(SegmentRegister.Cs);
         state.SegmentBases[(int)SegmentRegister.Ss] = Context.GetSegmentBase(SegmentRegister.Ss);
@@ -78,7 +108,10 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Copies the live context fields into the raw scratch block.</summary>
     internal void RawEnter()
     {
-        RawTrace($"  enter eip={Context.Eip:X} eflags={Context.Eflags:X} tsc={Context.Tsc}");
+        RawTrace(
+            $"  enter eip={Context.Eip:X} eflags={Context.Eflags:X} tsc={Context.Tsc} " +
+            $"eax={Context.Eax:X} ecx={Context.Ecx:X} " +
+            $"regs={(ulong)(nint)_rawRegisters:X} live={(ulong)(nint)Context.RawRegistersAddress():X}");
 
         _rawScratch[ScratchEip] = Context.Eip;
         _rawScratch[ScratchEflags] = Context.Eflags;
@@ -149,6 +182,7 @@ public sealed unsafe partial class XboxCpu
         }
 
         _rawScratch = (ulong*)NativeMemory.Alloc(ScratchWords * sizeof(ulong));
+        _rawSelfHandle = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 
     private T* PinArray<T>(T[] array)
@@ -158,6 +192,22 @@ public sealed unsafe partial class XboxCpu
         _rawPins.Add(pin);
         return (T*)pin.AddrOfPinnedObject();
     }
+
+    /// <summary>
+    /// Gets a GC-stable representation of this CPU for the emitted code: a
+    /// weak <see cref="GCHandle"/> whose <see cref="GCHandle.ToIntPtr"/> value
+    /// never changes, so a helper call can resolve the live (possibly moved)
+    /// object reference. Passing a raw object pointer across helper calls is
+    /// unsound: a GC during a helper moves the object and every later call
+    /// would write into freed memory.
+    /// </summary>
+    internal IntPtr RawSelfHandle => GCHandle.ToIntPtr(_rawSelfHandle);
+
+    private GCHandle _rawSelfHandle;
+
+    /// <summary>Resolves the CPU from <see cref="RawSelfHandle"/> (weak handle; never null inside a run).</summary>
+    internal static XboxCpu RawFromHandle(IntPtr handle) =>
+        (XboxCpu)GCHandle.FromIntPtr(handle).Target!;
 
     /// <summary>Gets the data translate-cache tag table (raw emitter pin target).</summary>
     internal uint[] DataXlatTagArray => _dataXlatTag;
@@ -173,6 +223,41 @@ public sealed unsafe partial class XboxCpu
 
     /// <summary>Runs one instruction through the interpreter body (raw helper).</summary>
     internal void RawExecuteInstruction(in DecodedInstruction instruction) => ExecuteInstruction(in instruction);
+
+    /// <summary>
+    /// Fast-mode post-member IRQ poll (raw STI/POPF/string/port members):
+    /// acknowledges once and records a delivered vector for
+    /// <c>RunJitBlock</c> to transfer at the member's boundary, exactly like
+    /// the IL runner's post-poll. Returns 1 when a vector was recorded.
+    /// </summary>
+    internal int RawPollInterrupt()
+    {
+        IInterruptSource? source = InterruptSource;
+        if (source is null)
+        {
+            return 0;
+        }
+
+        int vector = source.Acknowledge();
+        if (vector < 0)
+        {
+            return 0;
+        }
+
+        _jitPending = vector;
+        return 1;
+    }
+
+    /// <summary>Raw device fast path: read through an already-translated physical address.</summary>
+    internal uint RawReadPhysicalJit(uint physical, int size) => ReadPhysicalJit(physical, size);
+
+    /// <summary>Raw device fast path: write through an already-translated physical address.</summary>
+    internal void RawWritePhysicalJit(uint physical, int size, uint value) =>
+        WritePhysicalJit(physical, size, value);
+
+    /// <summary>Raw inline-store guard: run the decode-cache invalidation for a store's physical range.</summary>
+    internal void RawNoteStorePhysical(uint physical, int sizeInBits) =>
+        NoteStorePhysical(physical, sizeInBits);
 
     /// <summary>Reads guest memory through the exact interpreter path (raw helper).</summary>
     internal uint RawReadMemory(uint address, int size) => ReadMemory(address, size);

@@ -28,13 +28,47 @@ internal static unsafe class RawHelpers
     public static readonly ulong WriteMemoryAddress =
         (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint, void>)&WriteMemory;
 
+    /// <summary>Address of the post-member interrupt poll for the emitted code.</summary>
+    public static readonly ulong PollInterruptAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, IntPtr, uint, int>)&PollInterrupt;
+
+    /// <summary>Address of the device read fast path for the emitted code.</summary>
+    public static readonly ulong ReadPhysicalAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint>)&ReadPhysical;
+
+    /// <summary>Address of the device write fast path for the emitted code.</summary>
+    public static readonly ulong WritePhysicalAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, uint, void>)&WritePhysical;
+
+    /// <summary>Address of the decode-cache store note for the emitted code.</summary>
+    public static readonly ulong NoteStoreAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&NoteStore;
+
+    [UnmanagedCallersOnly]
+    private static void NoteStore(IntPtr cpuPointer, uint physical, int sizeBits)
+    {
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
+        cpu.RawNoteStorePhysical(physical, sizeBits);
+    }
+
     [UnmanagedCallersOnly]
     private static void ExecuteSpec(IntPtr cpuPointer, IntPtr entriesPointer, int index, IntPtr statePointer)
     {
-        XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
         DecodeCacheEntry[] entries = Unsafe.As<IntPtr, DecodeCacheEntry[]>(ref entriesPointer);
         ref readonly DecodedInstruction instruction = ref entries[index].Instruction;
+
+        // The raw block keeps Eip/Eflags/Tsc in its scratch block while the
+        // handler runs against the context: publish the member's boundary
+        // state forward (handlers read Eip for return addresses and relative
+        // targets and Eflags for string direction) and copy the result back.
+        RawState* state = (RawState*)statePointer;
+        cpu.Context.Eip = (uint)*state->Eip;
+        cpu.Context.Eflags = *state->Eflags;
+        cpu.Context.Tsc = *state->Tsc;
+
         XboxCpu.SpecHandler? handler = XboxCpu.ResolveSpec(in instruction);
+        XboxCpu.RawTrace($"  spec idx={index} {instruction.Mnemonic} handler={handler is not null}");
         if (handler is not null)
         {
             handler(cpu, in instruction);
@@ -44,27 +78,51 @@ internal static unsafe class RawHelpers
             cpu.RawExecuteInstruction(in instruction);
         }
 
-        // The handler runs against the context, but the raw block keeps Eip,
-        // Eflags and Tsc in its own scratch block: publish them back or the
-        // reload would replay the values from before the call.
-        RawState* state = (RawState*)statePointer;
         *state->Eip = (uint)cpu.Context.Eip;
         *state->Eflags = cpu.Context.Eflags;
         *state->Tsc = cpu.Context.Tsc;
     }
 
-
     [UnmanagedCallersOnly]
     private static uint ReadMemory(IntPtr cpuPointer, uint address, int size)
     {
-        XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
         return cpu.RawReadMemory(address, size);
     }
 
     [UnmanagedCallersOnly]
     private static void WriteMemory(IntPtr cpuPointer, uint address, int size, uint value)
     {
-        XboxCpu cpu = Unsafe.As<IntPtr, XboxCpu>(ref cpuPointer);
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
         cpu.RawWriteMemory(address, size, value);
+    }
+
+    /// <summary>
+    /// Fast-mode post-member poll (STI/POPF/string/port members): acknowledges
+    /// at the member boundary; a delivered vector is recorded on the CPU for
+    /// <c>RunJitBlock</c> to transfer, exactly like the IL runner's post-poll.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    private static int PollInterrupt(IntPtr cpuPointer, IntPtr statePointer, uint ctrl)
+    {
+        _ = statePointer;
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
+        int result = cpu.RawPollInterrupt();
+        XboxCpu.RawTrace($"  poll ctrl={ctrl:X} -> {result}");
+        return result;
+    }
+
+    [UnmanagedCallersOnly]
+    private static uint ReadPhysical(IntPtr cpuPointer, uint physical, int size)
+    {
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
+        return cpu.RawReadPhysicalJit(physical, size);
+    }
+
+    [UnmanagedCallersOnly]
+    private static void WritePhysical(IntPtr cpuPointer, uint physical, int size, uint value)
+    {
+        XboxCpu cpu = XboxCpu.RawFromHandle(cpuPointer);
+        cpu.RawWritePhysicalJit(physical, size, value);
     }
 }

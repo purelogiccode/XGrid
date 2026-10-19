@@ -114,6 +114,12 @@ public sealed class Mmu
                && (pages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
     }
 
+    /// <summary>Gets the page-table-page bitset (C3 raw store guard pins it; null when tracking is off).</summary>
+    internal ulong[]? PageTablePageBits => _pageTablePages;
+
+    /// <summary>Gets the last physical page tracked by <see cref="IsPageTablePage"/> (exclusive).</summary>
+    internal static int TrackedPageLimit => TrackedPages;
+
     private void TrackPageTablePage(uint physicalPage)
     {
         ulong[]? pages = _pageTablePages;
