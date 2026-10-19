@@ -119,6 +119,22 @@ internal static unsafe class RawBlockEmitter
 
         try
         {
+            // TEMPORARY diagnostic: XGRID_RAW_SKIP_HEADS=hex[,hex...] forces the
+            // listed heads to the IL runner (bisecting raw-block divergences).
+            string? skip = Environment.GetEnvironmentVariable("XGRID_RAW_SKIP_HEADS");
+            if (!string.IsNullOrEmpty(skip))
+            {
+                foreach (string part in skip.Split(','))
+                {
+                    if (uint.TryParse(part, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out uint skipped)
+                        && skipped == headEip)
+                    {
+                        XboxCpu.RawTrace($"  skip head={headEip:X5} (XGRID_RAW_SKIP_HEADS)");
+                        return 0;
+                    }
+                }
+            }
+
             var ctx = new EmitContext(headEip, plans.ToArray(), mmioFast);
             return ctx.Build();
         }
