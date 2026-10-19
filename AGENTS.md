@@ -551,10 +551,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1497 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1499 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Next session — slices 14–20 + median-of-3 landed (2026-10-17 early morning); wave runner retired.
+## Session notes — newest first (wave runner retired 2026-10-15).
 
 **Session close 2026-10-20 (sixth).** **Direct raw block chaining is LANDED
 (`21b0f8a`, opt-in `--jit-raw`)** and the fault-path crash that forced its
@@ -714,6 +714,10 @@ purpose — a hard crash loses buffered stderr), XGRID_RAW_THRESHOLD (test-side
 build-threshold override for bisecting), **XGRID_RAW_SKIP_HEADS=hex[,hex…]**
 (forces the listed raw heads to the IL runner — used to confirm the
 `0x8001F9EB` block as the source of the 25.05M divergence).
+Also: `XGRID_RAW_CHAIN=0` (disables raw chaining for A/B), the `rawChained` /
+`JitRawFaults` / `RawChainPublishes` counters in the JIT stats line, and the two
+§199l/§199m gate scripts: `scripts/chain-199l-gate.ps1` (1B IL-vs-raw legs) and
+`scripts/chain-199l-ab.ps1` (interleaved pair medians).
 
 ### Fast-mode JIT J1a–J1d LANDED (2026-10-18 night, direct; §§191–192) — the real-time band is reached
 
