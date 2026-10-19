@@ -94,6 +94,17 @@ Canonical order: `docs/development-direction.md`; fast-mode JIT track:
    readback per flip in window mode). Accurate-mode rules unchanged
    (specialize semantics; boundary-preserving; `DynamicMethod` stays opt-in
    via `--jit`; the raw emitter is now authorized by charter §4 Phase 3).
+   **Addendum 2026-10-20 (§199n, after C3 landed):** the measured breakdown
+   moved the target - the software rasterizer is now the largest single item
+   (48% menu / 39% triangle of the sw wall), block mechanics are cheap
+   (1.6-4.6M invocations over 450-830M members), and the CPU path costs
+   18.5 ns/member (triangle) / 61 ns (dashboard) on `gl+replace`. So: finish
+   **C3-x hot-shape native encoding → C3-y bookkeeping trim → C3-z inline
+   TLB**, then **Track B leads** (rasterizer structure, `gl+replace` per-frame
+   path, present pacing). Report ns/served member + `gl+replace` 1B wall +
+   wall per frame, not 1B-step walls (530M of the triangle's steps are
+   idle-spin). Redirect criterion: dashboard still >15× from real time with GL
+   after C3-x/y/z → codegen stops, Track B/D owns the remainder.
 2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
    and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
    (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).
@@ -586,6 +597,29 @@ triangle outer 0.9670 (wall noise). Fixed-section gates:
 tests green**. Note: `Directory.Packages.props` still carries its pre-existing
 uncommitted version bump (Meziantou 3.0.312, XISOSharp 1.4.3, CHDSharp 1.5.0)
 and was left untouched.
+
+**Perf position after the re-land (§199n, same session).** The breakdown moved
+the target: with `--jit-timing --gpu-time` at 1B, the **software rasterizer is
+the largest single item on both goldens** (menu 112.5 s sw vs 58.9 s gl →
+48%; triangle 22.2 vs 13.5 → 39%), block mechanics are no longer material
+(1.6–4.6M invocations and 109–158M chain jumps over 450–830M members), and the
+CPU path costs **18.5 ns per served member (triangle) / 61 ns (dashboard)** on
+the `gl+replace` legs. The dashboard premium is the **helper-routed shape
+mix** (MMX `movq`/`movntq`, strings, x87 → one `ExecuteSpec` managed call per
+member) plus per-member bookkeeping (EIP store, TSC tick, store-guard tests).
+Against xemu's ~830 Msteps/s we are at 74 Msteps/s with GL (~11×),
+i.e. the engine gap is a small multiple and the end-to-end gap is GPU/helper
+bound. **Re-weighted fast-mode order (charter status block + §199n):**
+(1) C3-x hot-shape native encoding (target menu 61 → ~30 ns/member),
+(2) C3-y bookkeeping trim (EIP per block exit, hoisted store guard),
+(3) C3-z inline TLB/RAM page pair, then **Track B leads**: rasterizer
+structure, `gl+replace` per-frame path, present pacing. **Reporting changes**
+to ns/served member + `gl+replace` 1B wall + wall per rendered frame; 1B-step
+walls stay as continuity anchors only (530M of the triangle's steps are
+idle-spin). Redirect criterion: if the dashboard is still >15× from real time
+with GL after C3-x/y/z, further codegen stops and the remainder is Track B/D.
+Queued probe: 35 triangle flips per 1B here vs ~84 implied by xemu's rate —
+check the vblank/flip wait before any present-path work.
 
 **Session close 2026-10-20 (fifth).** The C3 raw-emitter correctness story is
 closed: the §199h menu divergence was the split-member fast-path EIP advance

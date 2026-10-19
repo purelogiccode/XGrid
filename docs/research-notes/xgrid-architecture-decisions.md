@@ -11074,3 +11074,87 @@ the frame is balanced when the fault exit runs). Regression test
 `RawJitTests.FaultingMember_DeliveredFromRawHelper_MatchesInterpreter` faults
 from a chained invocation and fails pre-fix (`JitRawFaults=0`).
 
+## 199n. Fast-mode position after C3 chaining: the wall is GPU- and helper-bound, not block-bound (2026-10-20, sixth session)
+
+**Why this section exists.** §199l's chaining win was measured as a wall delta;
+this section records *where the remaining wall actually is*, so the next slices
+are chosen from evidence rather than from the previous plan's order.
+
+**Method.** Same host/window, 1B steps, `--jit --jit-threshold 16 --jit-spin
+--jit-raw --jit-timing --gpu-time`, `--gpu sw`; the hardware legs add
+`--gpu gl --gpu-replace`. Raster seconds come from the rasterizer's own timer
+(`NV2A raster seconds legacy/psh`), so they are a subset of the runner/member
+time, not additive. Logs: `wt-data/chain-199l/{tri,menu}-breakdown.log` and
+`{tri,menu}-glraw.log`; median harness `scripts/chain-199l-ab.ps1`.
+
+| 1B, raw+chain | menu | triangle |
+|---|---:|---:|
+| wall `--gpu sw` | 112.5 s | 22.2 s |
+| wall `--gpu gl --gpu-replace` | 58.9 s | 13.5 s |
+| software-rasterizer cost (sw − gl) | 53.6 s (**48%**) | 8.7 s (**39%**) |
+| raster timer (legacy + psh) | 0.89 + 54.08 s | 0.63 + 12.03 s |
+| raw members served | 828,779,766 | 452,469,056 |
+| raw runner time (`runnerMs`) | 83.8 s sw / 50.5 s gl | 6.5 s sw / 8.35 s gl |
+| `ns` per served member (gl leg) | **61 ns** | **18.5 ns** |
+| chain jumps / block invocations | 157.9M / 4.63M | 109.0M / 1.62M |
+| idle-skipped steps | 128.6M | 530.2M |
+| flips per 1B | 686 | 35 |
+
+Caveat: this window was noisier than the median run (sw walls 112.5/22.2 s vs
+the median 95.1/23.7 s), so the sw−gl deltas, the member counts and ns/member
+are the robust readings; the absolute walls are host-drifted. The gl leg's
+`runnerMs` is *higher* than the sw leg's on the triangle (8.35 vs 6.5 s)
+because the GL submission happens inside the block that triggers the draw.
+
+**Findings.**
+
+1. **The software rasterizer is the largest single item on both goldens**
+   (48% menu / 39% triangle of the sw wall). Whatever else improves, the sw
+   wall cannot fall below the raster cost; xemu renders on the hardware GPU,
+   so the like-for-like comparison is our `--gpu gl --gpu-replace` leg.
+2. **Block mechanics are no longer material.** 1.6–4.6M invocations and
+   109–158M chain jumps carry 450–830M members: the entry/epilogue and the
+   chain edge are a few percent of the CPU path. The b4 bucket (long blocks)
+   is 5.6 s of the triangle's 7.5 s outer time - i.e. the time is *inside*
+   members, not at boundaries. Further block/trace work (the old Phase 2.5
+   trace emitter) would not move the wall; that phase is absorbed by chaining.
+3. **The dashboard's CPU premium is the helper-routed shape mix (plus device
+   work).** With GL, the menu pays 61 ns/member vs the triangle's 18.5 ns. Both
+   legs execute the same raw emitter; the difference is the dashboard's MMX
+   copy loops (`movq`/`movntq`), string ops and x87, which still take an
+   `ExecuteSpec` managed call per member, on top of its NV2A method-write
+   traffic. Note the raw leg's `slowMembers` counter (653k) is *not* evidence
+   that the mix is cheap: it is incremented by the IL emitter only - a
+   helper-routed raw member is counted in `rawServed`. Ranking the raw helper
+   shapes needs `XGRID_SLOW`/`--shape-tally` on the raw leg (or a
+   raw-specific tally). That is the biggest remaining CPU-side item and it is
+   bounded, diagnosable work with an existing histogram.
+4. **Per-member bookkeeping is still per member**: an EIP store, a TSC tick and
+   the store-guard (WP/PT/active-page/watch) tests on every member. The
+   boundary contract only needs the EIP at exits and polls, so this can be
+   compressed to a per-block exit plus a per-member counter.
+5. **Against xemu**: xemu's measured triangle rate is ~830 Msteps/s (charter
+   §1, §199). Our `gl+replace` triangle leg is 74 Msteps/s → **~11×**
+   end-to-end. Per member we pay 18.5 ns (triangle) against a realistic
+   TCG-class 5–10 ns per guest instruction → **~2–4×**; the dashboard's 61 ns is
+   **~6–12×**, but that number includes its NV2A/device traffic, so the
+   pure-emulation part is smaller. Net: the engine is a small multiple off, and
+   the end-to-end gap is dominated by the GPU backend (xemu renders on
+   hardware) and the helper mix - not by codegen structure.
+6. **Flip density differs from xemu's** (35 flips per 1B steps here vs the ~84
+   implied by 70 fps at 830 Msteps/s). Either the guest's vblank/flip wait is
+   being extended by something we delay, or the two workloads pace
+   differently. Worth one probe before any present-path work: it is both a
+   fidelity question and a frame-rate loss.
+
+**Consequences recorded in the governing docs** (charter status block, plan,
+direction, AGENTS): the next fast-mode order is **C3-x hot-shape native
+encoding** (target: menu 61 → ~30 ns/member) → **C3-y bookkeeping trim**
+(EIP per exit, hoisted guard) → **C3-z inline TLB/RAM page pair**, then
+**Track B leads** (rasterizer structure, `gl+replace` per-frame path, present
+pacing). Reporting moves to **ns per served member + `gl+replace` 1B wall +
+wall per rendered frame**; 1B-step walls are kept only as continuity anchors
+because 530M of the triangle's steps are idle-spin. **Redirect criterion:** if
+the dashboard is still >15× from real time with GL after C3-x/y/z, further
+codegen stops and the remainder is Track B/D.
+

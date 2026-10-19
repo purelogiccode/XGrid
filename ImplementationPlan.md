@@ -2823,9 +2823,19 @@ Shaders
 > interleaved pairs are **triangle wall 26.97 -> 23.72 s (-12.0%, 3/3) /
 > `outerMs` -28.6% and menu wall 109.39 -> 95.06 s (-13.1%, 3/3) /
 > `outerMs` -14.2%** with both title SHAs and every counter identical to
-> the IL control. The remaining gates are (a) the quiet-host raw-vs-IL
-> comparison against xemu-class throughput and (b) the `--jit`/`--jit-raw`
-> default-flip decision (operator).
+> the IL control. **The post-landing breakdown (§199n) re-aimed the target:**
+> the software rasterizer is now the largest single item (48% menu / 39%
+> triangle of the sw wall; `gl+replace` legs 58.9 s / 13.5 s), block mechanics
+> are cheap (1.6-4.6M invocations, 109-158M chain jumps over 450-830M
+> members), and the CPU path costs 18.5 ns/member (triangle) / 61 ns
+> (dashboard) - the dashboard premium is the helper-routed shape mix plus
+> per-member bookkeeping. Remaining fast-mode order: **C3-x hot-shape native
+> encoding (menu 61 -> ~30 ns/member) -> C3-y bookkeeping trim -> C3-z inline
+> TLB/RAM page pair**, then Track B leads (rasterizer structure, `gl+replace`
+> per-frame path, present pacing). Reporting moves to ns/served member +
+> `gl+replace` 1B wall + wall per frame; the outstanding operator decision
+> stays the `--jit`/`--jit-raw` default flip. Redirect criterion: dashboard
+> still >15x from real time with GL after C3-x/y/z -> codegen stops.
 
 ```text
 Interpreter
@@ -3131,10 +3141,10 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 86% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); ahead of IL on CPU serving time after the §199k state hoist; §199l direct chaining LANDED after the §199m fault-contract fix (helpers catch/record/report instead of unwinding through the hand-emitted frame): 1B medians of 3 interleaved pairs triangle wall -12.0% / `outerMs` -28.6%, menu wall -13.1% / `outerMs` -14.2%, SHAs and every counter identical to IL; 625/625 CPU tests x10, ktest XGrid leg byte-identical at 792,800,535 steps**; remaining: the quiet-host raw-vs-IL comparison against xemu-class throughput, the `--jit`/`--jit-raw` default-flip decision, threshold auto-tune, E3-2 |
+| 15 CPU JIT | 11 | 86% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); ahead of IL on CPU serving time after the §199k state hoist; §199l direct chaining LANDED after the §199m fault-contract fix (helpers catch/record/report instead of unwinding through the hand-emitted frame): 1B medians of 3 interleaved pairs triangle wall -12.0% / `outerMs` -28.6%, menu wall -13.1% / `outerMs` -14.2%, SHAs and every counter identical to IL; 625/625 CPU tests x10, ktest XGrid leg byte-identical at 792,800,535 steps**; remaining, in order per §199n: C3-x hot-shape native encoding (menu 61 -> ~30 ns per served member), C3-y per-member bookkeeping trim (EIP per block exit, hoisted store guard), C3-z inline TLB/RAM page pair, then Track B leads; plus the `--jit`/`--jit-raw` default-flip decision (operator), threshold auto-tune, E3-2 |
 | 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
-| 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); remaining: fundamental per-pixel work, backend performance |
+| 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); measured at 48% (menu) / 39% (triangle) of the 1B sw wall (§199n) - the largest single item; remaining: row-span/structural per-pixel work, the `gl+replace` per-frame path, present pacing |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
 | 20 Automated Testing | 3 | 70% | 1499 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests; 59/59 with the raw path forced on) + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 52% | opt-in `--window` live present sink (§184); GUI frontend |

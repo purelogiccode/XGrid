@@ -57,6 +57,21 @@ animation wait, §32).
    23.72 s (-12.0%, 3/3) / outerMs -28.6%, menu 109.39 -> 95.06 s (-13.1%,
    3/3) / outerMs -14.2%, both title SHAs and every counter identical to IL.
    No default flip yet.
+   **Re-aimed again 2026-10-20 by the post-landing breakdown (§199n):** the
+   software rasterizer is the largest single item on both goldens (48% menu /
+   39% triangle of the sw wall; the `gl+replace` legs are 58.9 s / 13.5 s),
+   block mechanics are cheap (1.6-4.6M invocations, 109-158M chain jumps over
+   450-830M members), and the remaining CPU cost is 18.5 ns/member on the
+   triangle vs 61 ns on the dashboard - the premium is the **helper-routed
+   shape mix** (MMX copy, strings, x87) plus per-member bookkeeping. So the
+   order becomes **C3-x hot-shape native encoding (menu 61 -> ~30 ns/member)
+   -> C3-y bookkeeping trim (EIP per block exit, hoisted store guard) ->
+   C3-z inline TLB/RAM page pair**, and then **Track B leads** (rasterizer
+   structure, `gl+replace` per-frame path, present pacing). Phase 2.5 (C2
+   trace emitter) is absorbed by C3 chaining. Report ns/served member +
+   `gl+replace` 1B wall + wall per frame; 1B-step walls are continuity anchors
+   only. Redirect criterion: dashboard still >15x from real time with GL after
+   C3-x/y/z -> codegen stops and Track B/D owns the remainder.
 2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
    loop's shape (trace it) and remove the nonJit residue by cross-page block
    formation **or** (preferred) a generalized wait-skip that fast-forwards to
