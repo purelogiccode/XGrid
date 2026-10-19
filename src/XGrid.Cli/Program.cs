@@ -640,12 +640,45 @@ internal static class Program
                 Console.WriteLine($"Pad script events={padScript.Count}");
             }
 
+            // Diagnostic override for bus-watch bisection (XGRID_WATCH_START/END hex):
+            // the default watch is the kernel's debug-buffer range, but a differential
+            // investigation needs to point it at the diverging address instead.
+            if (uint.TryParse(
+                    Environment.GetEnvironmentVariable("XGRID_WATCH_START"),
+                    NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture,
+                    out uint watchStartOverride))
+            {
+                machineWatchStart = watchStartOverride;
+            }
+
+            if (uint.TryParse(
+                    Environment.GetEnvironmentVariable("XGRID_WATCH_END"),
+                    NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture,
+                    out uint watchEndOverride))
+            {
+                machineWatchEnd = watchEndOverride;
+            }
+
+            bool watchTrace = string.Equals(
+                Environment.GetEnvironmentVariable("XGRID_WATCH_TRACE"),
+                "1",
+                StringComparison.Ordinal);
+
             machine.Memory.WatchStart = machineWatchStart;
             machine.Memory.WatchEnd = machineWatchEnd;
             var watchHits = new Dictionary<uint, (int Count, string First, string Last)>();
             machine.Memory.WatchHit += (address, size, value) =>
             {
                 string mark = $"{machine.Cpu.Context.Eip:X8}:{size}={value:X}";
+                if (watchTrace)
+                {
+                    Console.WriteLine(
+                        $"WHIT tsc={machine.Cpu.Context.Tsc} eip={machine.Cpu.Context.Eip:X8} " +
+                        $"addr={address:X8} size={size} value={value:X8}");
+                }
+
                 if (watchHits.TryGetValue(address, out var entry))
                 {
                     watchHits[address] = (entry.Count + 1, entry.First, mark);

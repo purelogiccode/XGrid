@@ -34,20 +34,21 @@ animation wait, §32).
    block chaining (patch-on-link), inline softmmu-style TLB probes, helpers
    only for complex ops; target another ≥2× (triangle end-to-end ≤3 s, menu
    ≤12 s). Accurate mode untouched; fast mode is never gate currency.
-   **Started (§§199e/199f); correctness campaigns 2026-10-19→20 (§§199g/199h).**
+   **Started (§§199e/199f); correctness campaigns 2026-10-19→20 (§§199g/199h/199i).**
    Per-block native x86-64 with fixed host registers, flags in the host FLAGS
    register, inline translate-cache probe against pinned pointers, WP/A-D
    parity with the IL probe, a decode-cache store guard (exact watch-range
    test before the note path), the post-STI/POPF/string/port IRQ poll,
    path-normalized exit flags, and a reverse-P/Invoke trampoline for every
    unencoded shape. **`JitRawBlocks` forced on runs the whole JitTests suite
-   green (59/59; suite 1495 green)**; **the triangle 1B IL-vs-raw
-   differential is bit-exact** (RAM + CPU SHA + all NV2A counters), the menu
-   is exact through step 968,380,639 with one open byte-level divergence in
-   the dashboard's MMX copy loop (§199h). The raw path is at parity with IL
-   (it serves 76% of triangle members); the next levers are structural
-   (chaining / register-resident state, both constrained by the per-block IRQ
-   poll contract). No raw-advantage claim and no default flip yet.
+   green (59/59; suite 1497 green)**; **both titles are bit-exact at 1B**
+   (menu RAM `660CA11B…` / CPU `F5D61C94…` and triangle `A2DCA55F…` /
+   `7DAB63EB…`, every JIT counter identical to the IL engine; the §199h menu
+   gap was the split-member fast-path EIP advance, §199i). The raw path is at
+   parity with IL (it serves 76% of triangle members); the next levers are
+   structural (chaining / register-resident state, both constrained by the
+   per-block IRQ poll contract). No raw-advantage claim and no default flip
+   yet.
 2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
    loop's shape (trace it) and remove the nonJit residue by cross-page block
    formation **or** (preferred) a generalized wait-skip that fast-forwards to

@@ -1525,6 +1525,12 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(plan.Size / 8, isStore: false, slow, null);
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitCmpScratch(plan);
+            // The slow path below runs the full spec handler, which advances
+            // EIP itself; the fast path owns its own advance (without this the
+            // outer EmitMember would skip it for both paths because
+            // EmitHelperMember sets _memberHelper, and a member that ends the
+            // block would leave EIP on its own first byte).
+            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1564,6 +1570,9 @@ internal static unsafe class RawBlockEmitter
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: true, slow, null);
             EmitAluMemoryOp(plan, RamAt());
+            // Fast-path EIP advance (see EmitCmpMemorySource): the slow path's
+            // helper owns the advance there.
+            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1582,6 +1591,8 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(plan.Size / 8, isStore: false, slow, null);
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitTestScratch(plan);
+            // Fast-path EIP advance (see EmitCmpMemorySource).
+            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1599,6 +1610,8 @@ internal static unsafe class RawBlockEmitter
             Label done = a.CreateLabel(string.Empty);
             EmitProbe(plan.Size / 8, isStore: true, slow, null);
             EmitIncDecMemoryOp(plan, RamAt());
+            // Fast-path EIP advance (see EmitCmpMemorySource).
+            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
