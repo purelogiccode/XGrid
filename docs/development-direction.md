@@ -44,11 +44,12 @@ animation wait, §32).
    green (59/59; suite 1497 green)**; **both titles are bit-exact at 1B**
    (menu RAM `660CA11B…` / CPU `F5D61C94…` and triangle `A2DCA55F…` /
    `7DAB63EB…`, every JIT counter identical to the IL engine; the §199h menu
-   gap was the split-member fast-path EIP advance, §199i). The raw path is at
-   parity with IL (it serves 76% of triangle members); the next levers are
-   structural (chaining / register-resident state, both constrained by the
-   per-block IRQ poll contract). No raw-advantage claim and no default flip
-   yet.
+   gap was the split-member fast-path EIP advance, §199i). The raw path is now
+   **ahead of IL on CPU serving time** (the §199k state hoist: 100M A/B
+   9.0% menu / 2.4% triangle, 1B `outerMs` -3.7% / -2.3%, both title
+   differentials bit-exact; no end-to-end claim - walls were host-noise
+   bound). The next structural lever is chaining under the per-block IRQ poll
+   contract. No default flip yet.
 2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
    loop's shape (trace it) and remove the nonJit residue by cross-page block
    formation **or** (preferred) a generalized wait-skip that fast-forwards to

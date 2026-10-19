@@ -18,9 +18,13 @@
 > `A2DCA55F…/7DAB63EB…`); regression test
 > `BlockEndingInMemoryRmw_AdvancesEipOnce` fails pre-fix (TSC 71 vs 70,
 > doubled inc). Suite **1497** green; ktest smoke PASS 7/7 at the
-> bit-reproducible 792,800,535 steps. The raw path stays opt-in and at parity
-> with IL; the next levers are structural (chaining / register-resident
-> state) under the per-block IRQ poll contract. Quiet-host calibration:
+> bit-reproducible 792,800,535 steps. The §199k state hoist (`BuildRawState`
+> once per `RunJitBlock` call; unmanaged per-CPU state block) then put the raw
+> path **ahead of IL on CPU serving time**: 100M A/B 9.0% menu / 2.4%
+> triangle, 1B `outerMs` -3.7% menu / -2.3% triangle, differentials still
+> bit-exact; end-to-end walls were host-noise bound, so no end-to-end claim
+> yet. The next lever is chaining under the per-block IRQ poll contract; the
+> raw path stays opt-in. Quiet-host calibration:
 > triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin).
 >
 > **STATUS 2026-10-20 (fourth session — C3 second correctness campaign, §199h):

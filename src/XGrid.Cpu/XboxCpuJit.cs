@@ -366,6 +366,14 @@ public sealed unsafe partial class XboxCpu
         int operandSize = Context.DefaultOperandSize;
         int addressSize = Context.DefaultAddressSize;
         int total = 0;
+
+        // C3: the raw machine view is invariant across this call (pinned
+        // pointers, segments, RAM size, watch range); only the guard tables
+        // and CR0.WP refresh between raw invocations. Runs inside the block
+        // loop it would cost ~20 ns x 166 invocations per call.
+        RawState* rawState = null;
+        bool rawStateBuilt = false;
+
         while (total < budget && !Context.Halted)
         {
             uint fetchLinear = csBase + Context.Eip;
@@ -483,14 +491,23 @@ public sealed unsafe partial class XboxCpu
                     // The CPU is passed as a GC handle and the entries array is
                     // pinned at formation: both stay valid across the helper
                     // calls a raw block makes (a GC may move objects there).
-                    RawState rawState = BuildRawState();
+                    if (rawStateBuilt)
+                    {
+                        RefreshRawState(rawState);
+                    }
+                    else
+                    {
+                        rawState = BuildRawState();
+                        rawStateBuilt = true;
+                    }
+
                     IntPtr selfHandle = RawSelfHandle;
                     DecodeCacheEntry[] entryArray = block.Entries;
                     IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref entryArray);
                     RawEnter();
                     try
                     {
-                        served = block.RawRunner(selfHandle, &rawState, entriesPointer, budget - total);
+                        served = block.RawRunner(selfHandle, rawState, entriesPointer, budget - total);
                     }
                     finally
                     {

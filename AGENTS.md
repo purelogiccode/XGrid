@@ -539,10 +539,13 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   (RAM `660CA11B…`, CPU `F5D61C94…`, every counter identical); triangle 1B RAM `A2DCA55F…`, CPU
   `7DAB63EB…` on both engines. Regression test
   `BlockEndingInMemoryRmw_AdvancesEipOnce` (fail-pre-fix: TSC 71 vs 70, double inc). Suite
-  **1497** green, ktest smoke PASS 7/7 at 792,800,535 steps. Performance: the raw path is at
-  **parity** with IL after the per-invocation overhead cuts — raw serves 76% of triangle
-  members; no raw-advantage claim yet (structural levers: chaining/register-resident state,
-  both constrained by the per-block IRQ poll contract). Quiet-host calibration this session:
+  **1497** green, ktest smoke PASS 7/7 at 792,800,535 steps. Performance: the raw path is now
+  **ahead of IL on CPU serving time** after the §199k state hoist (`BuildRawState` once per
+  `RunJitBlock` call instead of once per block invocation; the state lives in an unmanaged
+  per-CPU block): 100M A/B 9.0% menu / 2.4% triangle faster, 1B `outerMs` -3.7% menu / -2.3%
+  triangle with both title differentials bit-exact; end-to-end walls were host-noise-bound, so
+  no end-to-end claim yet (structural lever remaining: chaining, constrained by the per-block
+  IRQ poll contract). Quiet-host calibration this session:
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
