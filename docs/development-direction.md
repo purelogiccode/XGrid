@@ -1,100 +1,144 @@
-# XGrid — Development Direction (canonical, 2026-10-19)
+# XGrid — Development Direction (canonical, revised 2026-10-20)
 
 Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 1. Priority stack (in order; re-aimed again 2026-10-19 evening, §199)
+## 0. Course correction (2026-10-20)
 
-**Measured position (1B goldens, fast mode, quiet host, single runs — §198/§198a).**
-Triangle **10.68 s** (gl+replace+spin; 20.28 s sw), menu **41.39 s** (56.82 s sw).
-xemu on the triangle: ~70 fps ≈ 1.13× real-time ≈ **830 Msteps/s** → the
-triangle gap is **~9×** (94 vs 830 Msteps/s) and the menu is **~30×** from the
-real-time band (24 Msteps/s; no xemu oracle — xemu deadlocks at the dashboard
-animation wait, §32).
+**The goal, restated.** A "xemu-like emulator" is four things, in user-value
+order: (1) **breadth** — a growing set of real titles boots, renders, and stays
+up; (2) **fidelity** — hardware behavior matches the console where titles depend
+on it; (3) **playability** — speed, audio, input, save states; (4) **performance**
+— the same content in the real-time band. XGrid is strong on (2) as *methodology*
+(LLE, exact gates, independent differentials) and on (4) as *engineering* (native
+CPU blocks, direct chaining). But its fidelity is steered by three programs, and
+its product renderer is a CPU rasterizer. The previous order — Track C leads,
+then Track B optimizes the software rasterizer — optimizes two synthetic
+workloads and leaves the corpus and product surface frozen. That is the classic
+emulator plateau: a very accurate, very well-tested demo.
 
-**Cost structure (measured/derived):**
-- triangle: runner **6.1 s (57%)** — 125M block invocations ≈ 18 ns fixed +
-  543M members ≈ 7 ns — plus nonJit 1.9 s (18%, page-end spin), GL 0.5 s,
-  bookkeeping ~2.2 s.
-- menu: CPU-JIT **≈17–19 s (~45%)** + GL draw 7.0 s (17%) + bookkeeping 4.8 s
-  (12%) + nonJit 3.6 s (9%).
+**What is right and must not change.**
 
-1. **Track C CPU engine — the lead track again (§199).** The `DynamicMethod`
-   block JIT is at its structural ceiling: per-block fixed cost (context
-   load/store + dispatch + memo lookup) ≈ 18 ns, per-member helper calls
-   ≈ 7 ns; the remaining Phase-2 leftovers are worth ~1.5–2× at most. The
-   charter's Phase-3 entry condition is **met** (plateau >3× short of
-   xemu-class). Order:
-   **C2 trace emitter** (design: jit-trace-emitter-design.md) — multi-block traces with guest state in locals across
-   the whole trace, inline RAM fast paths for the hot member shapes, interrupt
-   polls at the same boundaries, side exits to the existing block JIT;
-   target CPU-side ≥2× (triangle runner ≤3 s, menu CPU ≤11 s).
-   **C3 raw emitter** — Iced (MIT, now unblocked), register allocation, direct
-   block chaining (patch-on-link), inline softmmu-style TLB probes, helpers
-   only for complex ops; target another ≥2× (triangle end-to-end ≤3 s, menu
-   ≤12 s). Accurate mode untouched; fast mode is never gate currency.
-   **Started (§§199e/199f); correctness campaigns 2026-10-19→20 (§§199g/199h/199i).**
-   Per-block native x86-64 with fixed host registers, flags in the host FLAGS
-   register, inline translate-cache probe against pinned pointers, WP/A-D
-   parity with the IL probe, a decode-cache store guard (exact watch-range
-   test before the note path), the post-STI/POPF/string/port IRQ poll,
-   path-normalized exit flags, and a reverse-P/Invoke trampoline for every
-   unencoded shape. **`JitRawBlocks` forced on runs the whole JitTests suite
-   green (59/59; suite 1497 green)**; **both titles are bit-exact at 1B**
-   (menu RAM `660CA11B…` / CPU `F5D61C94…` and triangle `A2DCA55F…` /
-   `7DAB63EB…`, every JIT counter identical to the IL engine; the §199h menu
-   gap was the split-member fast-path EIP advance, §199i). The raw path is now
-   **ahead of IL on CPU serving time** (the §199k state hoist: 100M A/B
-   9.0% menu / 2.4% triangle, 1B `outerMs` -3.7% / -2.3%, both title
-   differentials bit-exact; no end-to-end claim - walls were host-noise
-   bound). **Direct chaining was implemented, measured and is now LANDED
-   (§199l) after the §199m fault-contract fix** - a managed exception may not
-   unwind out of a raw helper through the hand-emitted frame (no unwind
-   data; delivery was stack-layout luck, which is what the AluLoop+Paged
-   crash exposed), so helpers catch/record/report and RunJitBlock rethrows in
-   managed code. 1B medians of 3 interleaved pairs: triangle wall 26.97 ->
-   23.72 s (-12.0%, 3/3) / outerMs -28.6%, menu 109.39 -> 95.06 s (-13.1%,
-   3/3) / outerMs -14.2%, both title SHAs and every counter identical to IL.
-   No default flip yet.
-   **Re-aimed again 2026-10-20 by the post-landing breakdown (§199n):** the
-   software rasterizer is the largest single item on both goldens (48% menu /
-   39% triangle of the sw wall; the `gl+replace` legs are 58.9 s / 13.5 s),
-   block mechanics are cheap (1.6-4.6M invocations, 109-158M chain jumps over
-   450-830M members), and the remaining CPU cost is 18.5 ns/member on the
-   triangle vs 61 ns on the dashboard - the premium is the **helper-routed
-   shape mix** (MMX copy, strings, x87) plus per-member bookkeeping. So the
-   order becomes **C3-x hot-shape native encoding (menu 61 -> ~30 ns/member)
-   -> C3-y bookkeeping trim (EIP per block exit, hoisted store guard) ->
-   C3-z inline TLB/RAM page pair**, and then **Track B leads** (rasterizer
-   structure, `gl+replace` per-frame path, present pacing). Phase 2.5 (C2
-   trace emitter) is absorbed by C3 chaining. Report ns/served member +
-   `gl+replace` 1B wall + wall per frame; 1B-step walls are continuity anchors
-   only. Redirect criterion: dashboard still >15x from real time with GL after
-   C3-x/y/z -> codegen stops and Track B/D owns the remainder.
-2. **Track D cheap wins — do first (days).** D3b: identify the page-end wait
-   loop's shape (trace it) and remove the nonJit residue by cross-page block
-   formation **or** (preferred) a generalized wait-skip that fast-forwards to
-   the device event (same principle as `--jit-spin`, §198) — 1.9 s triangle /
-   3.6 s menu. Bookkeeping: profile the machine/CLI advance path (2.2 s /
-   4.8 s) with a measured breakdown before optimizing.
-3. **Track B GPU** — B2c draw batching (menu drawMs 7.0 s → ≤2 s target);
-   B3 coverage after. With `--gpu-replace` the rasterizer is no longer a cost;
-   per-draw CPU submission is.
-4. **Correctness gates before speed** — unchanged for the accurate mode
-   (golden SHAs + counters exact, then walls); the fast mode has its own
-   two-tier validation (charter §5) and is never gate currency.
-5. **Unblock the sample matrix.** NXDK toolchain (operator/host) is the mesh
-   blocker — not more dashboard runs.
+- LLE, no HLE: MCPX ROM → 1BL → 2BL → kernel → XBE. This is the only
+  architecture that scales to a compatibility list.
+- Accurate mode is gate currency; fast mode is a separate engine validated by
+  bit-exact 1B differentials (charter §5). Every default flip keeps the
+  median-of-3 + exact SHA/counter ceremony.
+- Reference-first: xemu 0.8.137 primary; independent CPU oracle
+  (`tools/cpu-oracle`, Unicorn/TCG); non-GPL clean-room.
+- The device *set* is complete (MCPX, PCI, IDE/ATAPI, USB-OHCI + XID, SMC,
+  SMBus, EEPROM, PIC/PIT/RTC, APU, nvnet, NV2A). Only depth remains.
+- The CPU engine (raw emitter, chaining, fault contract) stays landed and
+  opt-in. Do not spend more sessions on it until the tracks below clear.
 
-**Milestone ladder (1B goldens, fast mode, gl+replace+spin unless noted).**
-M1 (C2 + D3b + bookkeeping): triangle ≤6 s, menu ≤20 s. M2 (C3): triangle
-≤3 s, menu ≤12 s. M3 (xemu-class): triangle ≤1.5 s, menu ≤4 s — i.e. within
-~1.3–3× of the real-time band. Every milestone records a measured xemu
-comparison where an oracle exists (triangle, ktest) and the real-time band
-otherwise (menu).
+**What changes.**
 
-## 2. JIT rules — accurate mode (unchanged; §§136–140, `jit-codegen-scope.md`)
+1. **Track B leads; its first slice is the present path, not the fill loop.**
+   The product surface (`XGrid.Frontend.Avalonia`) renders on `--gpu sw` and is
+   therefore GPU-bound. `--gpu gl --gpu-replace` exists but nets only 2.2 s on
+   the menu (31.1 vs 33.3 s): ~9.9 s of GL draw/readback/present. The
+   window-mode 4B run measured 12,675 flips at 1.6 ms readback each (20.7 s/4B,
+   ≈1.1 s/1B) — real, but not the whole 9.9 s. **Measure the split first**
+   (submission / readback / present), then remove the readback from
+   fast-mode/window present (keep it for gates, screenshots, `--frame`). The
+   ceiling is ~10 s, larger than any remaining CPU slice; the unexplained part
+   is why the measurement is the first deliverable.
+   The 2-pixel k1 interleave is demoted (≥2% acceptance, bounded ceiling); take
+   it only if the present path stalls.
+2. **Track E opens the corpus — the exit from sample-only fidelity.** Gate
+   currency stays `data/test-samples/` (triangle, ktest, dashboard), but
+   fidelity work gets a steering signal: `docs/compatibility.md` (boot stage,
+   first frame, known gap, step anchor) plus a boot-to-first-frame harness;
+   widen the sample set with legal homebrew/demos (nxdk samples once the
+   toolchain exists, xgu examples, nxdk_vsh_tests goldens, OpenXDK) so
+   NV097/APU/XBE work is driven by observed usage. Real ISOs stay benchmark-only
+   (no gates, no fidelity work) until the operator changes the policy.
+3. **Track P makes it feel like an emulator.** The frontend landed (`ea8b38f`)
+   but is sw-only, keyboard-only, silent, and stateless. In parallel: host
+   audio sink (APU output), physical gamepad binding, save-state V1, per-title
+   config. Cheap relative to their product value; they do not block Track B.
+4. **Track C is frozen after the landed slices.** C3-x hit its target
+   (8.8 ns/served member triangle, 31.6 ns menu); C3-y and the 1024-slot xlat
+   cache measured neutral and were reverted; C3-z is deferred (2–3% estimate).
+   The only remaining CPU action is the operator's `--jit`/`--jit-raw`
+   default-flip decision (the frontend already defaults both on; the CLI does
+   not). Report ns/served member and wall per presented frame, not 1B-step
+   walls (530M of the triangle's steps are idle-spin).
+5. **Track D only with a measured >2% ceiling.** D3b page-end wait and
+   bookkeeping remain candidates, not commitments.
+
+**Steering rule.** Every proposal states which track it serves and the measured
+ceiling behind its acceptance. A task that serves none of B/E/P is rejected even
+if it is interesting.
+
+## 1. Priority stack (in order)
+
+1. **B — host GPU present path (lead).** Measure the split first (draw
+   submission / readback / present) with `--gpu-time`; then fast-mode present
+   must blit to the window/surface without a CPU readback. Readback stays only
+   for gate runs, `--frame`, and screenshots. Acceptance: menu fast+gl ≤ 24 s,
+   triangle fast+gl ≤ 6 s at 1B, `BackendUnsupported=0`, guest SHAs and every
+   counter identical to the sw run. Then B3 method coverage on the corpus
+   (zero `unsup` rows, guest counters identical). Keep the software rasterizer:
+   it is the exact-mode gate renderer and the differential oracle.
+2. **E — compatibility corpus.** `docs/compatibility.md` + the harness +
+   ≥8 samples (section 3, M-B) or no fidelity work. Acceptance: every row has a
+   reproducible run command and a step anchor; a fidelity landing cites the row
+   it fixes and the histogram that proves usage.
+3. **P — product completeness (parallel).** Host audio output, gamepad
+   binding, save-state V1 (the `.xgs` format is versioned), per-title config,
+   pause/step UI. Acceptance: the Avalonia app plays a sample with sound, a
+   physical pad, and save/load, without the CLI.
+4. **C — CPU engine: maintenance only.** The default-flip decision (operator)
+   and bug fixes only. No new codegen slices. Re-open only if Track B lands and
+   the engine is again >50% of a measured wall.
+5. **D — cheap wins with a measured ceiling.** Page-end wait, bookkeeping.
+6. **Gates — unchanged and non-negotiable.** Accurate mode is currency.
+
+## 2. Measured position (1B fast-mode legs, quiet host, 2026-10-20)
+
+1 guest-second ≈ 733M steps (§68), so 1B steps ≈ 1.364 guest-seconds.
+**"xemu-class" means the same content runs at wall ≤ guest-time**, measured
+against xemu where an oracle exists (triangle ≈830 Msteps/s; ktest smoke xemu
+15 s vs XGrid fast 9–10 s) and against the real-time band otherwise (menu).
+
+| leg | wall | raster | xemu reference | gap |
+|---|---:|---:|---|---:|
+| triangle `--gpu sw` | 8.69 s | 2.8 s | 830 Msteps/s (1.13× real time) | ~7× |
+| triangle `gl+replace` | 6.49 s | — | same | ~5.6× |
+| menu `--gpu sw` | 33.3 s | 12.0 s | no oracle (xemu deadlocks) | ~27× real time |
+| menu `gl+replace` | 31.1 s | — | same | ~25× real time |
+
+The menu GL overhead is ~9.9 s for 686 frames; the known per-flip readback is
+1.6 ms (≈1.1 s/1B), so ~8.8 s is unexplained and is exactly what the first
+measurement pass must split (submission / readback / present). The triangle's
+35 flips make the same readback only ~0.06 s. The sw rasterizer is the largest
+single item on the menu; the GL path replaces it but has not yet been made to
+pay off. That is the lead lever.
+
+Anchors (fast mode): menu RAM `660CA11B…` / CPU `F5D61C94…`; triangle
+`F57934BF…` / `CF79FC17…`. Accurate mode: menu `D9C99A58…`/`3D2740B8…`,
+triangle `F57934BF…`/`9B5AFC2A…`. 1B walls are continuity anchors only.
+
+## 3. Milestone ladder
+
+- **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
+  `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
+  by presents, not a per-frame readback.
+- **M-B (Track E, corpus):** ≥8 samples in `docs/compatibility.md`, at least
+  two beyond the dashboard/triangle/ktest (one textured 3D with mipmaps, one
+  audio/DVD-path sample), boot-to-first-frame harness green, every row
+  reproducible.
+- **M-C (Track P, playability):** audio output, physical pad, save/load in the
+  frontend; no CLI required.
+- **M-D (xemu-class):** triangle ≤ 1.5 s, menu ≤ 4 s at 1B with the fast engine;
+  measured against xemu where an oracle exists. M-D is *after* A/B/C, not
+  before.
+
+## 4. Rules
+
+**Accurate mode (unchanged; §§136–140, `jit-codegen-scope.md`).**
 
 - Specialize semantics (pre-specialized per-shape handlers + unrolled runner),
   not dispatch. The 354-case switch is NOT dominant — data-path helpers are.
@@ -110,104 +154,54 @@ otherwise (menu).
   exact, `verifyFailures=0`, vec=0, flag-off logs byte-identical, median-of-3
   walls before claiming a win.
 
-## 2b. Fast-mode execution engine (chartered 2026-10-18)
+**Fast mode.** Governing doc: `docs/research-notes/jit-track-charter.md`.
+Fast mode (`--jit`, opt-in) is a separate engine: MMIO program order and fault
+precision retained; TSC/step/IRQ observability relaxed to block granularity;
+deterministic per binary+script; never gate currency; one engine per run (no
+mixing). `--jit-exact` is the bit-exact debug variant. The raw emitter (Iced,
+MIT) is authorized and landed; it is frozen by section 0.4.
 
-- Governing doc: `docs/research-notes/jit-track-charter.md` — dual-mode
-  contract, phases 0–4, kill criteria, approved constraint deltas.
-- Fast mode (`--jit`, opt-in) is a separate engine: MMIO program order and
-  fault precision retained; TSC/step/IRQ observability relaxed to block
-  granularity; deterministic per binary+script; never gate currency; one
-  engine per run (no mixing). `--jit-exact` is the bit-exact debug variant.
-- `DynamicMethod` block JIT is AUTHORIZED for the fast mode (Phase 1); the
-  raw emitter (Iced, MIT) is **authorized and unblocked** — the charter's
-  Phase-3 entry condition is met (§199: the DynamicMethod plateau is ~9–30×
-  short of the real-time band). Order: C2 trace emission (Phase 2.5, same
-  planner, multi-block traces) → C3 raw emitter (register allocation, direct
-  chaining, inline TLB).
-- Exploration slices: bench + unit differentials + build/format (no golden
-  obligation). Promotion: charter §5 (accurate-mode ceremony + sync-point
-  differential + ktest outcome). The project stays non-GPL — no QEMU/xemu
-  code translation (charter §1/§6).
+**GPU / present.**
 
-## 2c. xemu-class performance campaign (chartered 2026-10-19)
-
-**Target, defined as a number.** 1 guest-second ≈ 733M steps (PIT
-cross-check, §68). Post-§198a the fast mode runs the goldens at **~3.3%
-(menu) and ~12.7% (triangle)** of real-time (gl+replace+spin). "xemu-class"
-means the same content runs at wall ≤ guest-time on a quiet host. The bar is
-**measured against xemu on the same samples**, not asserted — measured rows:
-triangle ISO **xemu ≈830 Msteps/s (1.13× real-time, 70 fps)**, ktest smoke
-**xemu 15 s vs XGrid fast 9–10 s** (XGrid ahead on CPU-bound work). The menu
-has **no xemu oracle** (xemu deadlocks at the dashboard animation wait, §32);
-its target is the real-time band. Perf work is measured in fast mode with
-verified guest-work equivalence (SHAs/counters); fast mode is never
-correctness currency and exact mode stays the bit-exact oracle.
-
-**Slices (B = GPU backend, D = MMIO, C = JIT leftovers).**
-
-- **B1 — GL backend CPU-side profiling (first slice).** Per-phase timers in
-  the GL draw/flip path (state translation, vertex upload, program bind,
-  uniform upload, draw call, present/readback) behind `--gpu-time`; deliver
-  the measured split of the menu +7–10 s and the triangle parity.
-- **B2 — per-draw/per-method overhead elimination.** State-shadow caching,
-  batched/UBO uploads, no redundant binds or program work. Acceptance: menu
-  1B fast+gl ≤ fast+sw − 15 s (≈ ≤45 s), triangle ≤ sw − 8 s (≈ ≤20 s),
-  golden policy (violations=0, maxDelta ≤ 1) and guest SHAs unchanged.
-- **B3 — method-stream coverage for the sample corpus.** Extend the backend
-  from the menu subset to the triangle stream's 471 unique method pairs and
-  the ktest stream. Acceptance: zero `unsup` rows, guest counters identical.
-- **B4 — present/pacing polish** only when playability needs it (Phase 4
-  and swapchain rules unchanged).
-- **D1 — MMIO fast dispatch.** Device-span guard in the emitted member path
-  plus a fast device entry; acceptance: −50% slow-member overhead, bit-exact
-  menu+triangle SHAs, flag-off byte-identical.
-- **C1 — JIT Phase-2 leftovers** (IL chaining, threshold sweep); acceptance:
-  ≥5% wall on both goldens, bit-exact.
-
-Rules unchanged: headless `--gpu sw` stays the default and gate currency;
-never mix backends; no async; wall claims require quiet-host medians — when
-the operator is running Fortnite, pause and ask for an idle window; real ISOs
-are benchmark-only per §4 (no gates, no fidelity work); non-GPL.
-
-## 3. GPU / present rules (`gpu-backend-design.md`, `gpu-swapchain-brief.md`)
-
-- Headless FBO (`--gpu sw` default) is the gate currency. Never mix
-  (full-frame replace or no frame), no async (emulation-thread only).
+- Headless FBO (`--gpu sw`) is the gate currency. Never mix (full-frame replace
+  or no frame), no async (emulation-thread only).
+- The GL backend is the fast-mode product renderer (Track B). Readback is a
+  gate/screenshot facility, not a per-frame cost.
 - Swapchain is latency, not throughput. O1 headless stays default; O2 opt-in
-  `--window` (pure interop, vsync off) only on the brief's triggers; O3 needs
-  an operator single-dependency override; O4 Vulkan is a non-goal (even xemu's
+  `--window` (pure interop, vsync off) only on the brief's triggers; O3 needs an
+  operator single-dependency override; O4 Vulkan is a non-goal (even xemu's
   Vulkan presents via GL/SDL).
-- No NV2A fidelity polish (exotics, DXT/BRDF/mipmaps, cost model, seeds,
-  writeback) until a title histogram in `data/test-samples/` proves usage.
-- **GPU backend performance is Track B (lead perf track, §2c).** The
-  rasterizer histogram (36–38% of both walls) satisfies the "prove need"
-  condition for backend *performance* work; the sw rasterizer remains the
-  default and gate renderer until B2's acceptance test is met. Backend
-  fidelity coverage beyond the sample corpus stays gated by B3 + Phase 4.
-- Fast-mode playability (GPU coverage, pacing, audio, input) is chartered as
-  Phase 4, parallel-capable only after Phase 2 meets its bar; the no-mix rule
-  keeps binding every gate run and the accurate mode regardless.
+- No NV2A fidelity polish beyond `docs/compatibility.md` + a sample histogram
+  (Track E gates it). Exotics, DXT/BRDF/mipmaps, cost model, seeds, writeback
+  stay gated on observed usage.
 
-## 4. Hard non-goals
+**Corpus.** `data/test-samples/` stays gate currency. Real Xbox ISOs at
+`H:\Tests\XBOXTest` are authorized for fast-mode **benchmark-only** use
+(wall/throughput, xemu-class comparisons) — never gates, never accurate-mode
+acceptance, never fidelity work. A title quirk is allowed only when isolated,
+documented, and not a substitute for the hardware behavior (the 007 EOS quirk is
+the historical precedent, not a pattern to extend).
 
-- **Real-content policy (operator-delegated 2026-10-19).** `data/test-samples/`
-  (`triangle.xbe`, `nxdk-hello/led/mesh/triangle/`, `kernel-test-suite-default.xbe`)
-  stays the **gate currency**: golden SHAs, ktest smoke, every acceptance test.
-  Real Xbox ISOs at `H:\Tests\XBOXTest` are authorized for **fast-mode
-  benchmark-only use** — wall/throughput measurement and xemu-class
-  comparisons. Not for golden gates, not for accurate-mode acceptance, not
-  for NV2A/APU fidelity work (that stays gated by the sample-usage rule).
-  Long real-title probes still need snapshots-first discipline (plan V1).
+## 5. Hard non-goals
+
 - **License stays non-GPL.** No QEMU/xemu code translation; GPL is not the
-  TCG-port vehicle (charter §1). New deps: only Iced (MIT, Phase 3) approved
+  TCG-port vehicle (charter §1/§6). New deps: only Iced (MIT, Phase 3) approved
   so far; otherwise the NuGet rule stands (precedent: `Xunit.SkippableFact`
   rejected; plain `[Fact]` + WGL-guard instead).
 - No `References2/` deletes/moves/rewrites ever (Dropbox sync root — restore
   from `D:\xgrid-refs-restore\`, never work around a missing reference).
+- No new codegen slices while Track C is frozen (section 0.4).
+- No micro-optimization below a measured 2% ceiling.
+- No "borrow" of xemu source; facts only, reimplemented clean-room.
 
-## 5. Standing gates
+## 6. Standing gates
 
 - `dotnet build XGrid.sln -c Release`, `dotnet test`, `dotnet format
   --verify-no-changes` clean; warnings are errors.
 - ktest smoke 7/7 (~5 min, 792,800,535 steps bit-reproducible) + menu/triangle
   1B golden pairs before any perf/default-flip merge.
+- Frontend changes: `dotnet build src/XGrid.Frontend.Avalonia -c Release` +
+  project format clean; UI-only work does not re-run core gates, but it must not
+  touch core/CLI/test files.
+- Every Track B/E/P landing updates `ImplementationPlan.md` status,
+  `docs/compatibility.md` (when it changes a sample row), and the session notes.

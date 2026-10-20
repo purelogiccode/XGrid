@@ -1,5 +1,12 @@
 # Software rasterizer per-pixel inventory - XGrid NV2A (`--gpu sw`, the default)
 
+> **Status 2026-10-20 (course correction, §203) - the next raster lever is the
+> present path, not the fill loop.** The product frontend renders on `--gpu sw`;
+> `--gpu gl --gpu-replace` replaces this raster but pays ~9.9 s / 686 frames in
+> per-flip readbacks (31.1 vs 33.3 s). Track B's first slice is that present
+> path. The 2-pixel interleave and O6/O7 are demoted; take them only if the
+> present slice stalls.
+
 > **Status 2026-10-20 (§202): the compiled loops own the sampler fast lane.**
 > Both compiled fills read texels (and the k1 blend destination) straight out of the
 > RAM array behind one per-fill `SamplerAddressBound` proof, and pick their exact

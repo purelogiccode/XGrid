@@ -1,5 +1,14 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (course correction, §203) - Track C is FROZEN.** The CPU
+> engine is no longer the lead: the product frontend (`ea8b38f`) made the
+> software rasterizer the product renderer, so Track B leads with the
+> `gl+replace` present path (remove the per-flip readback; ~9.9 s / 686 menu
+> frames), then Track E (corpus) and Track P (product: audio/pad/save states).
+> No new codegen slices; only the operator's `--jit`/`--jit-raw` default-flip
+> decision remains. Re-open only if Track B lands and the engine is again >50%
+> of a measured wall. Canonical order: `docs/development-direction.md` §0.
+
 > **STATUS 2026-10-20 (ninth session - Track B compiled-loop fast lanes, 202).**
 > The rasterizer is no longer just "compiled loops": both fills now carry per-fill
 > exploit lanes priced by ablation. `IGpuMemoryFast.TryGetRamBytes` plus
