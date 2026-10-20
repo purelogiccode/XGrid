@@ -5,15 +5,18 @@
 Before implementing or debugging hardware behavior, **consult the reference projects first**
 to confirm layout, IDs, registers, and semantics. Extract facts, never copy code.
 
-- `References2/xemu-0.8.136` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A). Primary source.
-  Key paths: `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
+- `References2/xemu-0.8.137` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
+  source, adopted 2026-10-20** (0.8.136 stays vendored as the prior snapshot). Key paths:
+  `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
+  `hw/xbox/mcpx/apu/dsp/` (GP/EP DSP interpreter + optional JIT),
   `hw/xbox/smbus_xbox_smc.c` (SMC protocol), `hw/xbox/xbox_pci.c` (PCI topology/IDs).
+  Delta vs 0.8.136: `docs/research-notes/xemu-0.8.137.md`.
 - `References2/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
   on a QEMU 10.2.0 base. Its NV2A is the *tuned GPU* (`pgraph/cost.c`, `seed.c`,
   `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the un-tuned baseline at
   `hw/xbox/nv2a-stock/` — `diff -ru` isolates the whole perf delta (GPU-backend
   performance-track facts). Full `chihiro/` subsystem, `xid-light-gun.c`, new SMBus
-  devices, 5 newer NV097 methods. Cross-check only; 0.8.136 stays the primary
+  devices, 5 newer NV097 methods. Cross-check only; 0.8.137 stays the primary
   (see `docs/research-notes/xemu-playtest-v2.md`).
 - `References2/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
 - `References2/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
@@ -22,7 +25,7 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
   `glsl/vsh-prog.c` are GPL-2+ and are the more complete oracle for the fragment/vertex stages.
 - ~~`References2/Xermu-main`~~ — **WITHDRAWN.** An earlier draft listed a standalone C#
   emulator that was never in the workspace. Operator confirmed 2026-10-13 the primary LLE
-  reference is `References2/xemu-0.8.136`. `docs/research-notes/xermu.md` was deleted; historical
+  reference is `References2/xemu-0.8.137`. `docs/research-notes/xermu.md` was deleted; historical
   citations to it (early plan text, `xgrid-architecture-decisions.md`) are unverified — do not
   use them as facts (see `sources.md` "Xermu - WITHDRAWN").
 - `CSharp_XISOSharp` — MIT XDVDFS library: sibling repo (`C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp`,
@@ -571,6 +574,43 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 > state, the compiled rasterizer loops and their measured shares, Track B/C
 > candidates with acceptance/kill criteria, commands, measurement recipes,
 > non-goals).
+
+**Session 2026-10-20 (ninth).** **Track B compiled-loop fast lanes: the sampler's
+descriptor work is gone (§202).** Priced by ablation on the 1B legs first (a probe
+switch that elided one block at a time: all sampler work 1.6 s, decode 1.0 s,
+destination read 0.5 s, pack 0.3 s, write 0.2 s, `TrackTextureCoords` ~0), then landed
+two exact slices:
+
+1. **Per-fill direct-RAM sampler + decode branch** (both compiled fills):
+   `IGpuMemoryFast.TryGetRamBytes` + `SamplerAddressBound` prove the highest address a
+   fill can sample, so the per-sample interface call and its span construction are
+   replaced by one direct little-endian word read (`MemoryMarshal.CreateReadOnlySpan`
+   over the RAM array; the adapter path stays as the fallback and still owns every
+   non-RAM or out-of-bound case). `SamplerPlan.DecodeKind` selects the fill's exact
+   `DecodeTextureTexel` branch (A8R8G8B8 default / A4R4G4B4 / generic). The k1 blend
+   destination read uses the same direct word when the fill's framebuffer span is in
+   RAM.
+2. **Lighting-loop provable clamp drops**: the `R1` power chain stays in [0,1], so its
+   -1..1 clamps are no-ops; the combine-stage products are no-ops when
+   `|c0c|,|c1c| <= 1` (a per-fill predicate that all 53,574 lighting fills pass, with
+   the generic loop as fallback); `addCd` is hoisted; both fills hoist the per-row
+   barycentric terms.
+
+**1B fast-mode A/B vs `65e136e` (3 interleaved pairs, SHAs + every counter
+identical):** triangle `rasterPsh` **3.39 -> 2.87 s (-14.2%, 3/3)**, wall 9.15 ->
+8.69 s (-4.0%, 3/3); menu **13.47 -> 12.49 s (-5.3%, 3/3)**, wall 35.45 -> 34.64 s
+(-0.3/-2.4/-4.2%). **Accurate mode is unchanged**: 1B SHAs reproduce the §200 anchors
+(menu `D9C99A58…`/`3D2740B8…`, triangle `F57934BF…`/`98039867…`) with every counter
+identical. Suite **1519**, ktest smoke **PASS 7/7**, format clean. **Measured
+negatives, do not re-try:** the k2 constant fold (-2-3% - the hoisted constants do not
+stay in registers), the alpha-1 blend skip (neutral; 93.5% of menu k1 fragments have
+`fa == 1` but the destination read is only 2.4 ns/px), `AggressiveInlining` on
+`SampleFast` (neutral). **CPU-side levers priced and dropped:** the non-JIT time is
+mostly the software raster inside an MMIO member (gl+replace takes the triangle's
+`nonJitMs` 5.35 -> 2.5 s), and block builds cost ~200 us raw + 20 us IL, with the
+16/64/256 threshold sweep trading build cost for interpreter time one-for-one.
+**Lesson:** probe instrumentation left in the candidate leg biases the wall by ~0.35 s
+- strip it before any A/B (that is what disguised the raster win as a wall regression).
 
 **Session 2026-10-20 (eighth).** **Track B rasterizer campaign: the software
 rasterizer is ~44% cheaper and is no longer the dominant wall (§200).** Three

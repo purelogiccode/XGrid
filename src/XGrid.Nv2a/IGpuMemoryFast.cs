@@ -27,6 +27,15 @@ public interface IGpuMemoryFast
     /// <summary>Tries a direct 32-bit RAM read; false means use the legacy adapter.</summary>
     bool TryReadPhysical(uint address, out uint value);
 
+    /// <summary>
+    /// Exposes the RAM backing store so a fill can index it directly
+    /// (<c>MemoryMarshal.GetArrayDataReference</c>) after one bounds check per
+    /// access instead of one interface dispatch. <paramref name="size"/> is the
+    /// same RAM size <see cref="TryReadPhysical"/> bounds-checks against, so a
+    /// caller can reproduce that check exactly. False means no direct view.
+    /// </summary>
+    bool TryGetRamBytes(out byte[] bytes, out uint size);
+
     /// <summary>Tries a direct 32-bit RAM write inside a batch; false means use the legacy adapter.</summary>
     bool TryWritePhysical(uint address, uint value);
 }

@@ -1,5 +1,21 @@
 # Software rasterizer per-pixel inventory - XGrid NV2A (`--gpu sw`, the default)
 
+> **Status 2026-10-20 (§202): the compiled loops own the sampler fast lane.**
+> Both compiled fills read texels (and the k1 blend destination) straight out of the
+> RAM array behind one per-fill `SamplerAddressBound` proof, and pick their exact
+> `DecodeTextureTexel` branch per fill (`SamplerPlan.DecodeKind`), so the per-sample
+> interface dispatch and decode switch are gone for the shapes the titles run; the
+> lighting loop also drops the clamps its own algebra proves are no-ops and hoists
+> the per-row barycentric terms. 1B A/B vs `65e136e`: **triangle `rasterPsh`
+> 3.39 -> 2.87 s (-14.2%) / wall -4.0%, menu 13.47 -> 12.49 s (-5.3%) / wall -2.3%**,
+> SHAs and every counter identical, accurate mode byte-identical. Measured negatives
+> (do not re-try): the k2 constant fold (-2-3%), the alpha-1 blend skip (neutral),
+> `AggressiveInlining` on `SampleFast` (neutral). The remaining sampler cost is the
+> dependent load chain (~4.5 s of the menu's 12 s), so the next structural lever is
+> 2-pixel interleaving for ILP, not more hoisting: the ablation table in §202 prices
+> each block (decode 1.0 s, destination read 0.5 s, pack 0.3 s, write 0.2 s,
+> `TrackTextureCoords` ~0).
+
 > **Status 2026-10-20 (§199p): O2 landed.** `IGpuMemoryFast` now provides a
 > draw-wide batch (one writer-suppression scope + a decode-page memo per fill)
 > and direct pinned-RAM word reads/writes with exact fallbacks (non-RAM, bus

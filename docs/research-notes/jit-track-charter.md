@@ -1,5 +1,28 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (ninth session - Track B compiled-loop fast lanes, 202).**
+> The rasterizer is no longer just "compiled loops": both fills now carry per-fill
+> exploit lanes priced by ablation. `IGpuMemoryFast.TryGetRamBytes` plus
+> `SamplerAddressBound` hoist the texel read's interface call behind one per-fill
+> bounds proof (direct `ReadUInt32LittleEndian` over the RAM span, adapter fallback
+> unchanged), `SamplerPlan.DecodeKind` folds the per-sample decode switch into the
+> fill's exact branch, the blend destination read uses the same direct word, and the
+> lighting loop drops the clamps its own algebra proves are no-ops (R1 stays in
+> [0,1]; the combine multipliers are gated by a per-fill `|c0c|,|c1c| <= 1` predicate
+> that all 53,574 fills pass) plus per-row hoists. **1B fast-mode A/B vs `65e136e`,
+> 3 interleaved pairs, SHAs and every counter identical: triangle `rasterPsh`
+> 3.39 -> 2.87 s (-14.2%) and wall 9.15 -> 8.69 s (-4.0%); menu `rasterPsh`
+> 13.47 -> 12.49 s (-5.3%) and wall 35.45 -> 34.64 s (-2.3%).** Accurate mode is
+> byte-identical to the 200 anchors. Two measured negatives are recorded and must
+> not be re-tried: the k2 constant fold (2-3% slower - the hoisted constants do not
+> stay in registers) and the alpha-1 blend skip (neutral; the destination read is
+> only 2.4 ns/px). CPU-side levers were priced and dropped: the non-JIT time is
+> mostly the software raster inside an MMIO member (gl+replace: 5.35 -> 2.5 s), and
+> block builds cost ~200 us raw + 20 us IL, with the threshold sweep showing 16 is
+> already optimal. Track B still owns the end-to-end gap; the sampler's remaining
+> ~4.5 s is load latency and the dependent chain, so the next lever there is
+> structural (2-pixel interleave), not more hoisting.
+
 > **STATUS 2026-10-20 (seventh session - C3-x hot-shape native encoding
 > LANDED, §199o).** The §199n re-weight's first item is done: the raw emitter
 > now encodes the shapes the new `--raw-shapes` tally showed, so helper-routed
