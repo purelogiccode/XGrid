@@ -625,11 +625,15 @@ byte-identical on every gate.
 - **Evidence (same-window, 3 interleaved pairs vs `4f0bd47`, SHAs identical):**
   menu `gl+replace` **63.09 → 45.25 s median (-20.5%, 3/3)**, `drawMs` 12.55 →
   2.41 s, readback → 0; triangle `gl+replace` 10.26 → 9.89 s (-0.9%, 3/3).
-  `scripts/present-path-acceptance.ps1` (new) automates the ceremony; its last
-  run projects **menu 24.8 s** (M-A target 24, over by 0.8) and **triangle
-  6.1 s** (target 6, over by 0.1) — the slice removes the ~7 s of GL overhead
-  but does not fully close M-A. Closing the menu needs per-triangle batching;
-  the triangle is CPU-bound.
+  `scripts/present-path-acceptance.ps1` (new) automates the ceremony. **M-A is
+  not decidable on this host:** at session close the *unmodified* baseline
+  build measured menu sw 62.6 s / triangle sw 14.0 s against the recorded
+  33.3 / 8.69 (idle CPU, base clock; raster inflated 1.67x), so today's absolute
+  walls do not convert to the reference session's. The durable evidence is the
+  same-window A/B (-20.5% / -0.9%, `drawMs` 12.55 → 2.1 s, readback → 0) plus
+  the exact goldens. Re-run the acceptance script on the reference state
+  (menu sw ~33 s) before recording M-A; per-triangle batching is the structural
+  step if the menu is still over.
 - **Gates:** 1532 tests green, format clean, 1B menu golden sw `4EF1FBF6…` vs gl
   `6BE6325F…` (diff 1852 px, maxDelta 1, 0 violations), 1B triangle golden sw
   `A1740DE0…` vs gl `3FC4B419…` (diff 16744, maxDelta 1, 0 violations),

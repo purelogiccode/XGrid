@@ -78,8 +78,10 @@ engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s. The menu's
 Track C (frozen) or draw batching.
 
 The automated acceptance run is `scripts/present-path-acceptance.ps1` (interleaved
-sw/gl pairs -> medians -> projection against the recorded quiet references). Run
-it on an idle host to settle M-A; the host was 1.6-2.0x slow all session.
+sw/gl pairs -> medians -> projection against the recorded quiet references). Its
+SUMMARY is only meaningful when its `sw` leg matches the reference (menu ~33 s,
+triangle ~8.7 s); on this host the *unmodified baseline* measures 62.6 / 14.0 s
+even with an idle CPU, so absolute M-A status is undecided (see §5).
 
 ## 2. Recommended next session - fixed order
 
@@ -155,13 +157,24 @@ save/load without the CLI.
   charter + inventory status headers, `AGENTS.md` session note, and a fresh copy
   of this file.
 
-## 5. Host-state warning (2026-10-20)
+## 5. Host-state warning (2026-10-20, measured at session close)
 
-The host was 1.6-2.0x slower than the quiet-host baselines all session (Rider
-sustained >100% CPU; `Get-Counter` total 10-40%). Absolutes in this session's
-notes are loaded-host numbers; compare same-window pairs only, and re-measure
-the quiet absolutes when the host is idle (the goldens' `sw` legs are the host
-reference: menu 33.3 s, triangle 8.69 s at 1B quiet).
+**Absolute walls are NOT comparable to the recorded references on this host.**
+At session close the *unmodified baseline* build (`4f0bd47`) measured menu sw
+**62.6 s** and triangle sw **14.0 s** at 1B, against the recorded 33.3 s / 8.69 s,
+**with an idle CPU** (0.7 cores of background; `Win32_Processor` reports its
+3.6 GHz base clock). The raster share is inflated unevenly (`rasterPsh` 20.0 s
+vs the recorded 12.0 s = 1.67x), so no single factor converts today's numbers
+into the reference session's. Consequences:
+
+- Trust same-window A/B pairs and `drawMs` (host-side GL timer), not absolute
+  walls or cross-session projections.
+- Before reading `present-path-acceptance.ps1`'s SUMMARY as M-A, check that its
+  `sw` leg is ~33 s (menu) / ~8.7 s (triangle); if not, the host is off the
+  reference state and only the ratio matters.
+- Suspects worth checking on a fresh boot: CPU boost/frequency state, power
+  plan (currently "AMD RyzenT Balanced"), memory clock, background I/O
+  (Dropbox/syncthing), and Rider indexing.
 
 ## 6. Commands
 
