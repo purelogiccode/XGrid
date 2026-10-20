@@ -11750,3 +11750,13 @@ rather than at the device code:
   emitted-path addition.
 
 Suite **1522** (Nv2a 255, Cpu 637).
+
+**§202 addendum 2 - where the raw runner's slow memory members go.** A temporary
+counter pair on the raw slow-path helpers (`RawReadMemory`/`RawWriteMemory`, kept as
+the `slowMem=`/`slowDev=` fields in the JIT stats line) measured 1B: **menu 1,996,335
+slow memory members of which 119,126 (6%) are device space** (linear >= 0xFD000000);
+triangle 76,104 / 14,732. So the `--jit-mmio` device lane can address at most ~36 ms of
+the menu, and the remaining 1.88M are translate-cache misses / cross-page / store-guard
+entries. Combined with the §199-era finding that a 1024-slot data translate cache was
+neutral, that closes the "cache the device translations / widen the probe" idea: the
+slow members are cold-page traffic, not capacity misses.

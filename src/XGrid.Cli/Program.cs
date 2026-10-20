@@ -1799,7 +1799,7 @@ internal static class Program
                 $"outerMs={machine.Cpu.JitOuterTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"nonJitMs={machine.Cpu.NonJitTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
-                $"slowMembers={machine.Cpu.JitSlowMembers} " +
+                $"slowMembers={machine.Cpu.JitSlowMembers} slowMem={machine.Cpu.RawSlowMemoryMembers} slowDev={machine.Cpu.RawSlowDeviceMembers} " +
                 (machine.Cpu.JitRawBlocks ? $"rawBuilt={machine.Cpu.JitRawBlocksBuilt} rawInv={machine.Cpu.JitRawInvocations} rawServed={machine.Cpu.JitRawServedMembers} rawChained={machine.Cpu.JitRawChainedBlocks} rawBuildFails={XboxCpu.RawBuildFailures} " : string.Empty) +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
                 (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) + $"yieldReasons={string.Join('/', machine.Cpu.JitYieldReasons)} " +
