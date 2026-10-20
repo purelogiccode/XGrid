@@ -590,7 +590,14 @@ did not treat the new handler-backed kinds as owning EIP
 value must capture it in **R8**: `EmitFaultCheck` clobbers R9/R10/R11 (the
 first version stored a fault-pointer fragment as the FPU result). Suite
 **1510** green (11 new raw differentials), ktest smoke **PASS 7/7** (01:10),
-format clean. Remaining helpers are dominated by `mul/imul` (~1.1M/1.5M),
+format clean. **Quiet-host 1B A/B vs the pre-C3-x commit (3 interleaved pairs
+per leg, old/new SHAs identical on every pair):** `--gpu sw` triangle
+14.74 -> 13.14 s (-10.8%, 3/3), menu 52.20 -> 48.43 s (-7.2%, 3/3);
+`--gpu gl --gpu-replace` triangle 7.56 -> 6.49 s (-14.1%, 3/3) with
+**11.9 -> 8.8 ns/served member**, menu 34.29 -> 31.56 s (-8.0%, 3/3) with
+**36.7 -> 31.6 ns** (the §199n target was menu 61 -> ~30 ns). The wall gain is
+smaller than the engine gain because the sw rasterizer is 39-48% of those
+walls. Remaining helpers are dominated by `mul/imul` (~1.1M/1.5M),
 string `movs` (1.0M menu), high-byte `mov` (0.8M menu), `fnstsw`,
 carry-rotates and a few SSE moves; the next CPU lever is **C3-y per-member
 bookkeeping trim** (EIP only at exits/polls, TSC in a register, no per-member

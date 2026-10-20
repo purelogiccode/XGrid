@@ -2847,9 +2847,13 @@ Shaders
 > SHAs and every counter exact against the IL anchors. Two bugs fixed en
 > route: register-form FPU members advanced EIP twice, and the IL runner
 > advanced EIP for handler-backed kinds (`JitPlanner.HandlerOwnsEip`).
-> Suite 1510 green, ktest smoke PASS 7/7, format clean. Next: **C3-y
-> per-member bookkeeping trim**, then C3-z; Track B still owns the end-to-end
-> lead.
+> Suite 1510 green, ktest smoke PASS 7/7, format clean. Quiet-host 1B A/B
+> vs the pre-C3-x commit (3 interleaved pairs, identical SHAs):
+> **`--gpu sw` triangle 14.74 -> 13.14 s (-10.8%), menu 52.20 -> 48.43 s
+> (-7.2%); `--gpu gl --gpu-replace` triangle 7.56 -> 6.49 s (-14.1%) at
+> 11.9 -> 8.8 ns/member, menu 34.29 -> 31.56 s (-8.0%) at 36.7 -> 31.6 ns.**
+> Next: **C3-y per-member bookkeeping trim**, then C3-z; Track B still owns
+> the end-to-end lead.
 
 ```text
 Interpreter
