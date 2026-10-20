@@ -11760,3 +11760,54 @@ the menu, and the remaining 1.88M are translate-cache misses / cross-page / stor
 entries. Combined with the §199-era finding that a 1024-slot data translate cache was
 neutral, that closes the "cache the device translations / widen the probe" idea: the
 slow members are cold-page traffic, not capacity misses.
+
+## §203 Course correction: product-path-first (2026-10-20) - docs-only
+
+**Decision.** The canonical priority order changes from "Track C (CPU engine)
+leads, then Track B optimizes the software rasterizer" to:
+
+1. **Track B - host GPU present path (lead).** The Avalonia frontend
+   (`ea8b38f`) renders on the software rasterizer, so the product is GPU-bound.
+   `--gpu gl --gpu-replace` replaces the 12.0 s menu raster yet nets only 2.2 s
+   (31.1 vs 33.3 s) because the GL draw/readback/present path costs ~9.9 s over
+   686 frames (~14 ms/frame). The 33.6K draws at ~2 us would be ~0.07 s and the
+   known readback is 1.6 ms/flip (~1.1 s/1B), so ~8.8 s is unmeasured; measure
+   the split before scoping. The per-flip `glReadPixels` sync is the prime
+   suspect. First slice: measure the split (submission / readback / present),
+   then remove the readback from fast-mode / window present (keep it for gates,
+   `--frame`, screenshots). Acceptance:
+   menu fast+gl <= 24 s, triangle <= 6 s at 1B, `BackendUnsupported=0`, guest
+   SHAs and every counter exact, `--gpu sw` goldens unchanged.
+2. **Track E - compatibility corpus.** `docs/compatibility.md` + a
+   boot-to-first-frame harness + >= 8 rows (M-B). Fidelity work must cite a row
+   and a usage histogram. Gates and the real-content policy are unchanged.
+3. **Track P - product completeness (parallel).** Host audio sink, physical
+   gamepad binding, save-state V1, per-title config. The frontend is sw-only,
+   keyboard-only, silent, stateless.
+4. **Track C - frozen.** C3-x hit its target (8.8 ns/served member triangle,
+   31.6 ns menu); C3-y and the 1024-slot xlat cache measured neutral and were
+   reverted; C3-z is deferred (2-3%). Only the operator's `--jit`/`--jit-raw`
+   default-flip decision remains. Re-open only if Track B lands and the engine
+   is again >50% of a measured wall.
+5. **Track D - measured >2% only.**
+
+**Evidence.** 1B fast mode, quiet host: triangle 8.69 s sw / 6.49 s
+gl+replace, menu 33.3 s sw / 31.1 s gl+replace; xemu ~830 Msteps/s on the
+triangle (~7x gap), menu ~27x real time. 1 guest-second ~= 733M steps. The
+software rasterizer is 12.0 s of the menu wall; the present readback is the
+larger remaining lever.
+
+**What this is not.** It is not a reversal of the JIT work: the raw emitter,
+chaining, and fault contract stay landed and opt-in, and the fast-mode contract
+is unchanged. It is a re-aim of where the next sessions go, because the engine
+is no longer the largest measured item and the product surface is now real.
+
+**Steering rule.** Every proposal states the track it serves (B/E/P/D) and the
+measured ceiling behind its acceptance. A task that serves none of them is
+rejected even if it is interesting.
+
+**Docs updated:** `docs/development-direction.md` (rewritten §0-§6),
+`AGENTS.md` (direction + next-session pointer + session note),
+`ImplementationPlan.md` (direction section, phase rows 12/15/18/20-23, milestone
+pointer, performance-campaign supersession note), `next-session.md` (§0c, §2-§5),
+`docs/compatibility.md` (new), `compatibility-corpus.md` (new). No code changed.

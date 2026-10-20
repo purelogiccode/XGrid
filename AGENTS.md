@@ -73,54 +73,50 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
-## Development direction (required, 2026-10-19)
+## Development direction (required; course-corrected 2026-10-20)
 
-Canonical order: `docs/development-direction.md`; fast-mode JIT track:
-`docs/research-notes/jit-track-charter.md`. Summary of hard rules:
+Canonical order: `docs/development-direction.md`; fast-mode charter:
+`docs/research-notes/jit-track-charter.md`; corpus plan:
+`docs/research-notes/compatibility-corpus.md`; sample matrix:
+`docs/compatibility.md`. Hard rules:
 
-1. **Track C (CPU engine) leads the xemu-class campaign again (re-aimed
-   2026-10-19 evening, §199).** Day result (1B, fast mode): triangle 27.9 →
-   **20.28 s sw / 10.68 s gl+replace**; menu 64.0 → **56.82 s sw / 41.39 s
-   gl+replace** — but the *structure* inverted: the CPU engine is again the
-   largest line item (triangle runner 6.1 s of 10.68 s = 57%; menu CPU ≈17–19 s
-   of 41.39 s ≈45%), and the `DynamicMethod` block JIT is at its structural
-   ceiling (~18 ns fixed per block × 125M invocations + ~7 ns per member ×
-   543M). The charter's Phase-3 entry condition is **met** (plateau >3× short
-   of xemu-class; xemu ≈830 Msteps/s on the triangle vs our 94M/24M).
-   Order: **C2 trace emitter** (multi-block traces, state in locals across the
-   trace, inline RAM fast paths, same boundary polls; ≥2× CPU) → **C3 raw
-   emitter** (Iced now unblocked: register allocation, direct block chaining,
-   inline TLB; another ≥2×). Cheap Track-D wins first (D3b page-end
-   wait/residue 1.9 s/3.6 s; bookkeeping 2.2 s/4.8 s profiling). Track B
-   follows: **B2c draw batching** (2 µs/draw × 53M draws on the real dashboard
-   = 106 s/4B steps) and the **window present path** (a redundant 1.6 ms
-   readback per flip in window mode). Accurate-mode rules unchanged
-   (specialize semantics; boundary-preserving; `DynamicMethod` stays opt-in
-   via `--jit`; the raw emitter is now authorized by charter §4 Phase 3).
-   **Addendum 2026-10-20 (§199n, after C3 landed):** the measured breakdown
-   moved the target - the software rasterizer is now the largest single item
-   (48% menu / 39% triangle of the sw wall), block mechanics are cheap
-   (1.6-4.6M invocations over 450-830M members), and the CPU path costs
-   18.5 ns/member (triangle) / 61 ns (dashboard) on `gl+replace`. So: finish
-   **C3-x hot-shape native encoding → C3-y bookkeeping trim → C3-z inline
-   TLB**, then **Track B leads** (rasterizer structure, `gl+replace` per-frame
-   path, present pacing). Report ns/served member + `gl+replace` 1B wall +
-   wall per frame, not 1B-step walls (530M of the triangle's steps are
-   idle-spin). Redirect criterion: dashboard still >15× from real time with GL
-   after C3-x/y/z → codegen stops, Track B/D owns the remainder.
-2. **Headless stays default** (`--gpu sw`); never mix, no async. No window/Vulkan
-   and no NV2A fidelity polish until a `data/test-samples/` histogram proves need
-   (fast-mode Phase-4 playability is chartered separately; gate runs unaffected).
-3. **Real-content policy (2026-10-19, operator-delegated).** `data/test-samples/`
-   stays gate currency (goldens, ktest smoke, acceptance). Real Xbox ISOs at
-   `H:\Tests\XBOXTest` are authorized for fast-mode **benchmark-only** use
-   (wall/throughput, xemu-class comparisons) — never gates, never accurate-mode
-   acceptance, never fidelity work.
-4. **Two-tier perf validation.** Accurate-mode promotion + every default flip:
-   median-of-3 + exact SHAs/counters + `verifyFailures=0` + flag-off
-   byte-identical. Fast-mode exploration: bench + unit differentials
-   (charter §5). ktest smoke 7/7 is the standing gate.
-5. **Direct development** — wave runner retired, no worktrees/detached servers.
+1. **Track B (host GPU present path) leads.** The product frontend
+   (`XGrid.Frontend.Avalonia`, `ea8b38f`) renders on the software rasterizer and
+   is GPU-bound. `--gpu gl --gpu-replace` exists but nets only 2.2 s on the menu
+   (31.1 vs 33.3 s): ~9.9 s of GL draw/readback/present. The per-flip readback is
+   1.6 ms (≈1.1 s/1B), so ~8.8 s is unexplained. **First slice: measure the split
+   (submission / readback / present), then remove the readback from
+   fast-mode/window present** (keep it for gates, screenshots, `--frame`).
+   Acceptance: menu fast+gl ≤ 24 s, triangle ≤ 6 s, `BackendUnsupported=0`,
+   guest SHAs/counters exact. The 2-pixel k1 interleave is demoted (≥2%
+   acceptance, bounded ceiling).
+2. **Track E (corpus) is the fidelity steering signal.** Gate currency stays
+   `data/test-samples/`, but fidelity work needs observed usage: maintain
+   `docs/compatibility.md` (boot stage, first frame, known gap, step anchor) and
+   a boot-to-first-frame harness; widen the sample set with legal
+   homebrew/demos (nxdk samples — toolchain is the host blocker, xgu examples,
+   nxdk_vsh_tests, OpenXDK). Real ISOs stay benchmark-only. **No NV2A/APU
+   fidelity polish beyond the matrix + a sample histogram.**
+3. **Track P (product completeness) runs in parallel:** host audio sink,
+   physical gamepad binding, save-state V1, per-title config. The frontend is
+   currently sw-only, keyboard-only, silent, stateless.
+4. **Track C (CPU engine) is frozen.** C3-x hit its target; C3-y/xlat measured
+   neutral and were reverted; C3-z is deferred (2–3%). Only action: the
+   operator's `--jit`/`--jit-raw` default-flip decision (the frontend already
+   defaults both on). Report ns/served member + wall per presented frame, not
+   1B-step walls (530M triangle steps are idle-spin).
+5. **Track D only with a measured >2% ceiling** (page-end wait, bookkeeping).
+6. **Gates unchanged.** Accurate mode is currency: median-of-3, exact
+   SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
+7. **Direct development** — wave runner retired, no worktrees/detached servers.
+
+**Position (2026-10-20, 1B fast mode, quiet host):** triangle 8.69 s sw /
+6.49 s gl+replace, menu 33.3 s sw / 31.1 s gl+replace; xemu ≈830 Msteps/s on
+the triangle (~7× gap), the menu is ~27× real time. 1 guest-second ≈ 733M
+steps. The software rasterizer is 12.0 s of the menu wall; the GL path replaces
+it but still has ~9.9 s of draw/readback/present overhead (readback alone is
+~1.6 ms/flip) — measure the split, then remove the readback. That is the lead
+lever.
 
 ## Build / test / format
 
@@ -580,15 +576,27 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
-> **Next session starts here:** `docs/research-notes/next-session.md` - verified start
-> state + 1B anchors, what §202 landed (do not redo), the remaining wall split, an
-> ordered plan with acceptance/kill criteria for the two open tracks (Track B: 2-pixel
-> interleave in the k1 fill; Track C: identity-window probe, higher risk), the measured
-> negatives, the rules (validation ceremony, strip probes before A/B), commands and
-> diagnostics.
+> **Next session starts here:** `docs/research-notes/next-session.md` — verified
+> start state + 1B anchors, what §203 changed (course correction: Track B present
+> path leads, Track E corpus, Track P product surface, Track C frozen), the
+> remaining wall split, ordered acceptance/kill criteria, measured negatives, the
+> validation ceremony, commands and diagnostics.
 >
-> Frontend follow-ups (independent of the core critical path):
-> `docs/research-notes/avalonia-frontend.md`.
+> Frontend follow-ups (Track P): `docs/research-notes/avalonia-frontend.md`.
+
+**Session 2026-10-20 (course correction; docs only).** The canonical direction
+now leads with the product path. The Avalonia frontend made the software
+rasterizer the product renderer, and `--gpu gl --gpu-replace` still has ~9.9 s of
+GL draw/readback/present overhead on the menu (31.1 vs 33.3 s); the known
+per-flip readback is only ~1.1 s/1B, so the split must be measured before the
+slice is scoped. Track C is frozen after C3-x hit its target
+(8.8 ns/served member triangle, 31.6 ns menu); C3-y and the 1024-slot xlat cache
+measured neutral and were reverted; C3-z is deferred (2–3%). New order: **Track B
+(GL present path) → Track E (corpus + `docs/compatibility.md`) → Track P
+(audio/pad/save states, parallel) → Track D (measured >2% only)**. No code
+changed; `docs/development-direction.md`, `ImplementationPlan.md`,
+`next-session.md`, the new `docs/compatibility.md` and
+`docs/research-notes/compatibility-corpus.md` carry it. See decisions §203.
 
 **Session 2026-10-20 (parallel frontend track).** **The Avalonia desktop frontend is
 LANDED (`ea8b38f`; only `src/XGrid.Frontend.Avalonia/` touched).** A separate session
@@ -750,7 +758,8 @@ quiet host the absolutes read **triangle 12.21 -> 9.13 s, menu 47.96 -> 36.01 s*
 **1519** (8 new differentials: sampler shapes plus both compiled fills, fail-pre-fix proven),
 ktest smoke PASS 7/7, format clean. Remaining wall is CPU engine + boot again
 (charter redirect criterion: Track C leads next, starting with the scoped C3-z
-inline page pair).
+inline page pair). *(Superseded 2026-10-20 by the course correction: Track C is
+frozen; Track B's present path leads. See the newest session note.)*
 
 **Session 2026-10-20 (seventh, cont.).** **Track B first slices: rasterizer O2
 memory fast lane + O4 swizzle spread LANDED (§199p).** `IGpuMemoryFast`

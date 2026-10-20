@@ -1,11 +1,13 @@
 ﻿# Next session instructions (updated 2026-10-20 after the oracle session)
 
-**Read in this order:** `AGENTS.md` (session notes + current state),
+**Read in this order:** `docs/development-direction.md` (course correction,
+2026-10-20), `AGENTS.md` (session notes + current state),
+`docs/research-notes/xgrid-architecture-decisions.md` §203 (+ §202 for the
+raster history), `docs/research-notes/compatibility-corpus.md`,
 `docs/research-notes/xemu-0.8.137.md` (verified 0.8.137 delta),
 `docs/research-notes/cpu-oracle.md` (independent x86 differential),
 `docs/research-notes/jit-track-charter.md` (status header),
-`docs/research-notes/xgrid-architecture-decisions.md` §202 (+ §200 for the loops'
-history), `docs/research-notes/rasterizer-inventory.md`, then this file.
+`docs/research-notes/rasterizer-inventory.md`, then this file.
 
 ## 0. Verify the start state before touching anything
 
@@ -59,6 +61,23 @@ status word started latching ZE on divide-by-zero; a byte diff of the two
    wrap, alarm pending latched on `INTR_0` read, PMC bit 20) with unit
    differentials and unchanged menu/triangle goldens.
 
+## 0c. What the 2026-10-20 course correction changed - do not redo
+
+Documentation/priority change only (decisions §203; no code). The canonical
+order is now **Track B (host GPU present path) → Track E (corpus) → Track P
+(product surface, parallel) → Track D (measured >2% only); Track C is frozen.**
+
+- **Do not start a new codegen slice.** C3-x hit its target; C3-y and the
+  1024-slot xlat cache measured neutral and were reverted; C3-z is deferred
+  (2–3%). Only the operator's `--jit`/`--jit-raw` default flip remains.
+- **Do not lead with the 2-pixel k1 interleave.** It is demoted to a ≥2%
+  acceptance with a bounded ceiling. The present path is the measured bigger
+  lever (~9.9 s / 686 menu frames).
+- **Do not treat the sample corpus as the fidelity universe.** Fidelity work
+  cites `docs/compatibility.md` rows + a usage histogram (Track E).
+- **The frontend is now the product surface.** Track P items (audio, pad, save
+  states) are first-class, not "future work".
+
 ## 1. What the ninth session landed (202) - do not redo it
 
 1. **Per-fill direct-RAM sampler in both compiled fills.** `IGpuMemoryFast.TryGetRamBytes
@@ -91,80 +110,74 @@ Accurate mode byte-identical.
 
 ## 2. Where the remaining wall is
 
-Menu (~33 s): **raster ~12.0 s**, CPU engine ~17 s, block builds ~1.4 s, interpreter
-~2.5 s. Triangle (~8.5 s): raster ~2.8 s, CPU engine ~4 s, interpreter ~1.5 s.
+Menu (~33 s sw / 31.1 s gl+replace): **raster ~12.0 s**, CPU engine ~17 s, block
+builds ~1.4 s, interpreter ~2.5 s. Triangle (~8.7 s sw / 6.5 s gl+replace):
+raster ~2.8 s, CPU engine ~4 s, interpreter ~1.5 s.
+
+**Course correction (2026-10-20): the GL path is not a side quest.** It replaces a
+12 s software raster yet nets only 2.2 s: ~9.9 s of GL draw/readback/present for 686
+frames (~14 ms/frame), while the 33.6K draws at the documented ~2 us would be
+~0.07 s. The known readback is 1.6 ms/flip (~1.1 s/1B), so ~8.8 s is unexplained —
+measure the split before scoping. It is the largest lever left.
 
 Inside the raster (§202 ablation of the k1 loop): **sampler ~4.5 s** (read latency and
 the dependent chain, *not* descriptor work), interpolation ~2.5 s, combiner/pack ~1 s,
 destination read 0.5 s, write 0.2 s, diagnostics ~0.
 
-## 3. Recommended next session - pick exactly one track
+## 3. Recommended next session - fixed order (2026-10-20 course correction)
 
-### Track B first: 2-pixel interleave in the k1 compiled fill (raster)
+Do these in order; each is one session-sized slice. Do not start a lower item while
+a higher one is unfinished, and do not re-open Track C codegen.
 
-Why: the sampler's 4.5 s is latency-bound (measured ~61 cycles per sample = no
-overlap between pixels); the loop body is ~150 instructions, so the OoO window covers
-only ~1.8 pixels. Interleaving two independent pixel chains is the only remaining
-sizeable raster lever.
+### Track B (lead): the `gl+replace` present path
 
-How:
-- Work in `FillTrianglePshModulate` only. Keep the generic loop and
-  `FillTrianglePshLighting` untouched.
-- Structure it as two pipeline stages: (a) for pixel x and x+1 compute barycentrics,
-  perspective, interpolate, and issue **both** texel loads / destination reads;
-  (b) run pixel x's combine/format/write, then pixel x+1's. Writes and the counter
-  commits stay in x order; `_textureStateFirstAddress`/`FirstTexel` must still record
-  the x-order first sample.
-- The three `continue`s (inside test, ZCLIP cull, alpha test) are the whole difficulty:
-  a naive unroll that `continue`s would skip the sibling pixel. Either guard each
-  pixel's stage-2 with its own `inside`/cull flags or fall back to the single-pixel
-  body for the tail.
-- `DiagnosticGenericFill` must keep forcing the reference loop (differentials).
-
-**Acceptance:** 1B `rasterPsh` >= 2% better on the menu, 3/3 interleaved pairs, exact
-SHAs and every NV2A counter on both titles, `CompiledModulateFill_*` differentials
-green (they compare compiled vs generic on the same draw), accurate mode unchanged.
-**Kill:** if the first complete implementation is < 2% on the menu, revert, record the
-measurement in §203 and stop raster work for the session.
-
-### Track C alternative: identity-window fast path in the raw memory probe (CPU)
-
-Why: the menu's engine serves 861M members at ~20 ns; ~50% are MovLoad/MovStore
-(raw-kind profile), so ~430M probes pay two dependent translate-cache loads. The Xbox
-kernel maps RAM 1:1, so a per-block identity window would test `addr - base < size` and
-read `[ramBase + addr]` directly (~8-12 cycles saved per memory member, ~1.2 s on the
-menu = -3.5%).
+Why: the product frontend renders on the software rasterizer, and the menu's GL path
+spends ~9.9 s on 686 frames. It is the largest single unexplained overhead after the
+rasterizer; the known readback alone (~1.1 s/1B) is not the whole story.
 
 How:
-- Add `IdBase`/`IdSize` to `RawState`, published by `BuildRawState`.
-- Probe order: identity window -> existing tag/phys cache -> slow. The identity test
-  must be no weaker than the per-page cache: it is valid only while (a) the same CR3,
-  (b) no PTE was written in the window, (c) the window was derived from the actual
-  page tables (walk it, or better: only trust it when every page in the window was
-  *observed* identity-mapped through the existing translate path).
-- Invalidate from the same choke points that bump the translate epoch: the PT-page
-  store guard, `invlpg`, CR3 writes, MMU flushes. **Any** doubt -> clear the window.
-- Do not ship without a raw-vs-IL-vs-interpreter differential over the paging/fault
-  tests and both 1B SHAs.
+- **Measure first, no code change.** Split the GL cost into draw submission,
+  readback, and present/blit (a temporary timer pair, stripped before any A/B leg).
+  If readback is < 2 s, stop and record the split — do not guess.
+- Then add a fast-mode present that blits the GL FBO to the default framebuffer (or
+  the window) **without a CPU readback**. Keep the readback for gate runs, `--frame`,
+  and screenshots. Full-frame replace or nothing; never mix backends.
+- Do not change the software rasterizer in this slice.
 
-**Acceptance:** `outerMs` >= 2% better on the menu, 3/3 pairs, exact SHAs, all paging
-tests green. **Kill:** any SHA difference that cannot be explained bit-exactly.
+**Acceptance:** menu fast+gl ≤ 24 s and triangle ≤ 6 s at 1B (3 interleaved pairs),
+`BackendUnsupported=0`, guest SHAs and every counter identical to the sw run,
+`--gpu sw` goldens unchanged.
+**Kill:** if the measured present-path overhead is < 2 s, revert and record the
+negative; if the readback is small but submission/present dominates, the slice becomes
+that item (not the raster).
 
-### Filed but lower value (only if the above stall)
+### Track E: open the corpus (one session, docs + harness only)
 
-3. **Pack/blend `Vector128`** for the k1 fragment: measured ceiling ~0.5 s (pack 0.3 s
-   + blend ~0.2 s). `cvttps2dq` + `packuswb` are exact for finite non-negative input;
-   write the NaN/signed-zero guard down first.
-4. **O6 row spans**: an x-interval superset per row for the inside test; never change
-   the float inside test itself. Ceiling is small for UI quads (bbox ~= triangle).
-5. **GL / `--gpu-replace` per-frame path** and `--window` present readback (charter
-   Phase 4). Measured on the quiet host at session close: menu sw **33.3 s** (raster
-   12.0 s) vs `--gpu gl --gpu-replace` **31.1 s**, i.e. the GL path *replaces* a 12 s
-   software raster yet nets only 2.2 s because the GL draw + readback costs **~9.9 s
-   for 686 frames (~14 ms/frame)** while the 33.6K draws at the documented ~2 us would
-   be ~0.07 s - the per-flip `glReadPixels` sync is the prime suspect. Worth a
-   measurement pass (split draw submission vs readback vs present) before any change;
-   not gate currency.
+Read `docs/research-notes/compatibility-corpus.md`. Deliver:
+- `docs/compatibility.md` rows for the current corpus (already seeded) with a
+  reproducible run command and a step anchor per row;
+- a boot-to-first-frame harness (script, not a new test project) that runs a sample
+  headless and records steps / frames / first-frame SHA;
+- the sample wish list and the nxdk-toolchain blocker stated as a dependency.
+
+**Acceptance:** the three current rows green (dashboard, triangle, ktest), every row
+has a command, and a fidelity task can cite "row X + histogram Y".
+**Kill:** none — this is the steering signal; do not let it slip past Track B.
+
+### Track P (parallel, one session each)
+
+Pick exactly one: host audio sink (APU output), physical gamepad binding, or
+save-state V1. Do not start with the debugger or per-title profiles.
+**Acceptance:** the Avalonia app plays a sample with sound, a physical pad, or
+save/load without the CLI (`docs/development-direction.md` §3, M-C).
+
+### Filed, lower value - do not start while B/E/P are open
+
+- **2-pixel interleave in the k1 fill**: acceptance ≥ 2% menu, 3/3 pairs. Its ceiling
+  is bounded (sampler ~4.5 s, loop ~150 instructions); demoted 2026-10-20.
+- **O6 row spans**, pack/blend `Vector128`: ceilings ~0.5 s and less.
+- **Track C identity-window probe**: frozen with Track C (§0.4 of the direction doc).
+  The measurement recipe is kept below for a future re-open, not for now.
 
 ## 4. Measured negatives - do NOT re-try without a new measurement
 
@@ -185,6 +198,11 @@ tests green. **Kill:** any SHA difference that cannot be explained bit-exactly.
 
 ## 5. Rules (non-negotiable)
 
+- **Steering rule (2026-10-20).** Every proposal states the track it serves
+  (B/E/P/D) and the measured ceiling behind its acceptance. A task that serves
+  none of them is rejected even if it is interesting.
+- **Track C is frozen.** No new codegen while Track B/E/P are open; re-open only
+  if Track B lands and the engine is again >50% of a measured wall.
 - **Two-tier validation.** Accurate mode is gate currency. Any shared-code or default
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` + flag-off
   byte-identical, plus the fast-mode gates. Fast-mode exploration needs interleaved
@@ -196,13 +214,13 @@ tests green. **Kill:** any SHA difference that cannot be explained bit-exactly.
 - **1B runs only from a full solution build**; if you `Copy-Item` a binary back, touch
   it (MSBuild compares timestamps).
 - Do **not** flip `--jit`/`--jit-raw` defaults without an operator decision.
-- No real Xbox games; `data/test-samples/` only. `References2/` is read-only -
-  never delete/move/clean it. Leave `Directory.Packages.props` alone.
+- No real Xbox games in gates; `data/test-samples/` is gate currency and real ISOs are
+  fast-mode benchmark-only. `References2/` is read-only - never delete/move/clean it.
+  Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
-- Commit only your own files; the other session's xemu-0.8.137 docs and
-  `tools/completion-graph` changes are not yours.
-- Write it up: decisions §203 with the measured table, charter + inventory status
-  headers, `AGENTS.md` session note, and a fresh copy of this file.
+- Commit only your own files; do not sweep unrelated working-tree edits.
+- Write it up: the next decisions section (§204+) with the measured table, charter +
+  inventory status headers, `AGENTS.md` session note, and a fresh copy of this file.
 
 ## 6. Commands
 
