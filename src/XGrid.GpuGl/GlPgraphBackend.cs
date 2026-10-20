@@ -23,9 +23,6 @@ namespace XGrid.GpuGl;
 /// </summary>
 public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 {
-    private const int VertexFloats = 2;
-    private const int VertexStrideBytes = VertexFloats * sizeof(float);
-
     private static readonly string[] UniformNames =
     {
         "uConsts[0]",
@@ -70,9 +67,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint _vao;
     private readonly Dictionary<string, GlProgram> _programs = new(StringComparer.Ordinal);
     private readonly Dictionary<TextureKey, GlTextureEntry> _textures = new();
-    private readonly float[] _vertexData = new float[VertexFloats * 3];
 
-    // Packed per-draw uniform block (uTri[24], see PshGlslGenerator) so a draw
+    // Packed per-draw uniform block (uTri[25], see PshGlslGenerator) so a draw
     // is ONE uniform upload instead of thirteen. Layout constants are the
     // shader contract; the fragment shader reads the same slots.
     private readonly float[] _uTri = new float[25 * 4];
@@ -95,7 +91,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint[] _boundTexture = new uint[PshCombiner.TextureSlots];
     private int _activeTextureUnit = -1;
 
-    // Direct RAM word reads for texture fingerprints (IGpuMemoryFast lane);
+    // Direct RAM word reads for texture fingerprints (IGpuMemoryRamView lane);
     // fall back to the adapter for non-RAM/out-of-range addresses.
     private readonly byte[]? _ramBytes;
     private readonly uint _ramSize;
