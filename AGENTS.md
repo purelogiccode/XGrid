@@ -562,7 +562,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1499 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1511 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
