@@ -4,8 +4,12 @@
 > draw-wide batch (one writer-suppression scope + a decode-page memo per fill)
 > and direct pinned-RAM word reads/writes with exact fallbacks (non-RAM, bus
 > watch, unbatched write). Measured -2.0% on both 1B SW walls, 3/3 interleaved
-> pairs, goldens/counters exact; suite 1511. O1/O3/O4/O5 (per-pixel fragment/
-> sampler work) are the next Track B levers; O6/O7 stay filed.
+> pairs, goldens/counters exact; suite 1511. **O4 also landed:** the swizzled
+> sampler path replaces the per-sample `InterleaveBits` loops with the
+> branchless Morton bit-spread when the plan masks are the standard
+> alternating ones (`MortonMasks`; non-standard masks keep the loop). 1B SW,
+> 3 pairs vs O2: triangle -5.9% (3/3), menu -1.2% (2/3). O1/O3/O5 (per-pixel
+> fragment/counter work) are the next Track B levers; O6/O7 stay filed.
 
 > **Revision note (line-number currency, 2026-10-17 evening).** `src/XGrid.Nv2a/Nv2aMmio.cs`
 > is being edited concurrently in the working tree (uncommitted `--gpu-time` rasterizer

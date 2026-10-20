@@ -11366,3 +11366,19 @@ suppression pair and the per-write decode-drop call. It is kept because it is
 consistent (3/3 on both titles), exact, and cheap. The remaining rasteriser
 cost is the per-pixel fragment/sampler work (inventory O1/O3/O4/O5), which is
 the next Track B slice; O6 (row spans) and O7 stay filed.
+
+**§199p amendment - rasterizer O4 swizzle bit-spread (same session) - LANDED.**
+`TrySampleTexture`'s swizzled path called `InterleaveBits` twice per sample
+(a per-set-bit mask loop, up to ~8-16 iterations each). The sampler plan's
+masks for POT dimensions are the standard alternating Morton masks, so the
+plan now checks that property once per draw (`MortonMasks`: maskX has no odd
+positions, maskY no even ones) and the sample uses the branchless 4-step bit
+spread (`SpreadMortonBits`) masked to the same positions; non-standard masks
+(width or height 1) keep the loop path. Exact by construction; SW goldens and
+every texture/blend counter unchanged.
+
+Quiet-host 1B `--gpu sw`, 3 interleaved pairs against the O2 commit (SHAs
+identical on every pair): **triangle 12.51 -> 11.76 s (-5.9%, 3/3); menu
+47.90 -> 47.33 s (-1.2%, 2/3)**. The triangle is the swizzle-heavy title
+(38.3M swizzled 32-bit samples), the menu is 76% linear textures, which is why
+the split looks like this. Suite 1511.

@@ -1740,8 +1740,12 @@ Benchmark every change.
 > most once (the CPU cannot run mid-draw). New Nv2a differential pins
 > fast-vs-legacy framebuffer equality and lane usage; SW goldens/counters
 > exact. Quiet-host 3 interleaved pairs: menu 50.01 → 48.99 s (-2.0%, 3/3),
-> triangle 12.95 → 12.69 s (-2.0%, 3/3). Next: inventory O1/O3/O4/O5
-> (per-pixel fragment/sampler work); O6/O7 stay filed.
+> triangle 12.95 → 12.69 s (-2.0%, 3/3). **O4 landed on top:** the swizzled
+> sampler replaces the per-sample `InterleaveBits` loops with the branchless
+> Morton spread when the plan masks are the standard alternating ones
+> (non-standard masks keep the loop); triangle 12.51 → 11.76 s (-5.9%, 3/3),
+> menu 47.90 → 47.33 s (-1.2%, 2/3). Next: inventory O1/O5 (per-pixel
+> fragment/counter work); O6/O7 stay filed.
 
 Measure:
 
