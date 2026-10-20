@@ -4551,6 +4551,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             address += (uint)((y * plan.Pitch) + (x * (int)bytesPerTexel));
         }
+        else if (plan.MortonMasks)
+        {
+            // O4: the plan masks are the standard alternating Morton masks
+            // (POT dimensions), so the loop-based InterleaveBits is the exact
+            // bit-spread below - masked to the same bit positions.
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            address += swizzled * bytesPerTexel;
+        }
         else
         {
             address += (InterleaveBits((uint)x, plan.SwizzleMaskX) |
@@ -4591,6 +4600,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         public uint Offset;
         public uint SwizzleMaskX;
         public uint SwizzleMaskY;
+        public bool MortonMasks;
     }
 
     private void BuildSamplerPlans()
@@ -4643,11 +4653,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 ComputeSwizzleMasks(width, height, out uint maskX, out uint maskY);
                 plan.SwizzleMaskX = maskX;
                 plan.SwizzleMaskY = maskY;
+                plan.MortonMasks = (maskX & 0xAAAAAAAAu) == 0 && (maskY & 0x55555555u) == 0;
             }
             else
             {
                 plan.SwizzleMaskX = 0u;
                 plan.SwizzleMaskY = 0u;
+                plan.MortonMasks = false;
             }
         }
     }
@@ -5148,6 +5160,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         } while (!done);
 
         return InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY) | InterleaveBits((uint)z, maskZ);
+    }
+
+    /// <summary>
+    /// Spreads the low 16 bits of <paramref name="value"/> into the even bit
+    /// positions (Morton interleave), the exact result of
+    /// <c>InterleaveBits(value, 0x55555555)</c>; the caller masks to the
+    /// plan's actual mask. Branchless, unlike the per-bit loop it replaces.
+    /// </summary>
+    private static uint SpreadMortonBits(uint value)
+    {
+        value &= 0xFFFFu;
+        value = (value | (value << 8)) & 0x00FF00FFu;
+        value = (value | (value << 4)) & 0x0F0F0F0Fu;
+        value = (value | (value << 2)) & 0x33333333u;
+        value = (value | (value << 1)) & 0x55555555u;
+        return value;
     }
 
     private static uint InterleaveBits(uint value, uint mask)
