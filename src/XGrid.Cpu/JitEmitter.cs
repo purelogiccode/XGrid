@@ -285,12 +285,12 @@ internal static class JitEmitter
                 // interpreter-call members have not.
                 EmitPostPoll(il, context, gprs, eip, flags, tsc, served,
                     interruptSource, vector,
-                    advanceEip: plan.Kind != JitKind.CallSpec,
+                    advanceEip: !JitPlanner.HandlerOwnsEip(plan.Kind),
                     length: plan.Length,
                     plan.BlockWriteMask);
             }
 
-            if (!plan.IsTerminator && plan.Kind != JitKind.CallSpec)
+            if (!plan.IsTerminator && !JitPlanner.HandlerOwnsEip(plan.Kind))
             {
                 // Non-terminator members advance EIP after completion
                 // (handlers and the emitted bodies advance only on success);
@@ -682,6 +682,22 @@ internal static class JitEmitter
                     break;
                 }
 
+            case JitKind.ShiftRC:
+                {
+                    EmitReadReg(il, gprs, plan.Size, plan.RegIndex);
+                    il.Emit(OpCodes.Stloc, a1);
+                    il.Emit(OpCodes.Ldloc, a1);
+                    EmitReadReg(il, gprs, 8, (int)Gpr.Ecx);
+                    il.Emit(OpCodes.Ldc_I4, plan.Size);
+                    il.Emit(OpCodes.Ldloc, flags);
+                    il.Emit(OpCodes.Ldloca, res);
+                    il.Emit(OpCodes.Call, ShiftMethod(plan.ShiftOp));
+                    il.Emit(OpCodes.Stloc, flags);
+                    il.Emit(OpCodes.Ldloc, res);
+                    EmitWriteRegFromStack(il, gprs, plan.Size, plan.RegIndex, a1);
+                    break;
+                }
+
             case JitKind.PushR:
             case JitKind.PushI:
                 EmitPush(il, plan, context, gprs, eip, flags, tsc, served, a1, addr, vpn, phys, slot, ram);
@@ -746,6 +762,38 @@ internal static class JitEmitter
 
             case JitKind.CallSpec:
             case JitKind.CallInterpreter:
+            case JitKind.FpuLoadRegister:
+            case JitKind.FpuStoreRegister:
+            case JitKind.FpuStoreRegisterPop:
+            case JitKind.FpuLoadInteger:
+            case JitKind.FpuStoreInteger:
+            case JitKind.FpuStoreIntegerPop:
+            case JitKind.FpuArithReg:
+            case JitKind.FpuArithPop:
+            case JitKind.FpuArithMem:
+            case JitKind.FpuExchange:
+            case JitKind.FpuPushOne:
+            case JitKind.FpuChangeSign:
+            case JitKind.FpuCompareReg:
+            case JitKind.FpuCompareMem:
+            case JitKind.PushM:
+            case JitKind.Cdq:
+            case JitKind.Setcc:
+            case JitKind.MmxLoad:
+            case JitKind.MmxStore:
+            case JitKind.SseArithReg:
+            case JitKind.SseArithMem:
+            case JitKind.SseUnaryReg:
+            case JitKind.SseMovssReg:
+            case JitKind.SseMovssMem:
+            case JitKind.SseMovssStore:
+            case JitKind.SseCvtReg:
+            case JitKind.SseCvtMem:
+            case JitKind.NegR:
+            case JitKind.NotR:
+            case JitKind.Bswap:
+            case JitKind.XchgRR:
+            case JitKind.Leave:
                 {
                     // Spec-handler / interpreter fallback: sync the full
                     // context, run the exact handler (the same body the member

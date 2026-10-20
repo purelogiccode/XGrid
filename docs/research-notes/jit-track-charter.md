@@ -1,5 +1,24 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (seventh session - C3-x hot-shape native encoding
+> LANDED, §199o).** The §199n re-weight's first item is done: the raw emitter
+> now encodes the shapes the new `--raw-shapes` tally showed, so helper-routed
+> members at 1B fell **24.65M -> 1.81M (triangle)** and **122.65M -> 5.57M
+> (menu)** with every SHA/counter exact against the IL anchor (triangle
+> `F57934BF.../CF79FC17...`, menu `660CA11B.../F5D61C94...`). Coverage: stack/
+> call/ret/leave, memory movzx/movsx, neg/not/bswap/xchg/cdq/setcc, shifts and
+> rotates (including by CL with the ShiftOps OF rule), x87 load/store/
+> arithmetic/compare/constants, MMX movq/movntq, scalar SSE (arith/movss/cvt),
+> and prefetch-as-nop. Two bugs were fixed: register-form FPU members advanced
+> EIP twice (block exits landed mid-instruction), and the IL runner advanced
+> EIP for the new handler-backed kinds (`JitPlanner.HandlerOwnsEip` now owns
+> that decision). Validation: suite 1510 green, ktest smoke PASS 7/7, format
+> clean. Remaining helpers are `mul/imul`, string `movs`, high-byte `mov`,
+> `fnstsw`, carry-rotates and a few SSE moves - no large structural item.
+> **Next: C3-y per-member bookkeeping trim** (EIP only at exits/polls, TSC in a
+> register, served/spill discipline), then C3-z; Track B remains the
+> end-to-end lead per §199n. Numbers: AGENTS session note + §199o.
+
 > **STATUS 2026-10-20 (sixth session - C3 chaining landed behind the §199l/§199m
 > fault contract; measured position re-aimed).** C3 is complete for the two
 > goldens: raw emitter + direct block chaining, both 1B bit-exact against the

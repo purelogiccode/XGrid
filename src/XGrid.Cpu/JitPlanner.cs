@@ -22,6 +22,38 @@ internal enum JitKind : byte
     FpuLoadReal,
     FpuStoreReal,
     FpuStoreRealPop,
+    FpuLoadRegister,
+    FpuStoreRegister,
+    FpuStoreRegisterPop,
+    FpuLoadInteger,
+    FpuStoreInteger,
+    FpuStoreIntegerPop,
+    FpuArithReg,
+    FpuArithPop,
+    FpuArithMem,
+    FpuExchange,
+    FpuPushOne,
+    FpuChangeSign,
+    FpuCompareReg,
+    FpuCompareMem,
+    MmxLoad,
+    MmxStore,
+    SseArithReg,
+    SseArithMem,
+    SseUnaryReg,
+    SseMovssReg,
+    SseMovssMem,
+    SseMovssStore,
+    SseCvtReg,
+    SseCvtMem,
+    NegR,
+    NotR,
+    Bswap,
+    XchgRR,
+    Leave,
+    PushM,
+    Cdq,
+    Setcc,
     IncR,
     DecR,
     IncM,
@@ -29,6 +61,7 @@ internal enum JitKind : byte
     Lea,
     MovExtend,
     ShiftRI,
+    ShiftRC,
     PushR,
     PushI,
     PopR,
@@ -159,6 +192,46 @@ internal readonly struct JitMemberPlan
 /// </summary>
 internal static class JitPlanner
 {
+
+    /// <summary>
+    /// True when the member runs a spec handler (or interpreter entry) that
+    /// advances EIP itself; the runners must not advance it again.
+    /// </summary>
+    public static bool HandlerOwnsEip(JitKind kind) => kind is
+        JitKind.CallSpec or
+        JitKind.FpuLoadRegister or
+        JitKind.FpuStoreRegister or
+        JitKind.FpuStoreRegisterPop or
+        JitKind.FpuLoadInteger or
+        JitKind.FpuStoreInteger or
+        JitKind.FpuStoreIntegerPop or
+        JitKind.FpuArithReg or
+        JitKind.FpuArithPop or
+        JitKind.FpuArithMem or
+        JitKind.FpuExchange or
+        JitKind.FpuPushOne or
+        JitKind.FpuChangeSign or
+        JitKind.FpuCompareReg or
+        JitKind.FpuCompareMem or
+        JitKind.PushM or
+        JitKind.Cdq or
+        JitKind.Setcc or
+        JitKind.MmxLoad or
+        JitKind.MmxStore or
+        JitKind.SseArithReg or
+        JitKind.SseArithMem or
+        JitKind.SseUnaryReg or
+        JitKind.SseMovssReg or
+        JitKind.SseMovssMem or
+        JitKind.SseMovssStore or
+        JitKind.SseCvtReg or
+        JitKind.SseCvtMem or
+        JitKind.NegR or
+        JitKind.NotR or
+        JitKind.Bswap or
+        JitKind.XchgRR or
+        JitKind.Leave;
+
     public static JitMemberPlan Plan(in DecodedInstruction instruction)
     {
         JitMemberPlan plan = PlanNative(instruction);
@@ -241,6 +314,58 @@ internal static class JitPlanner
             Mnemonic.Fld => PlanFpuReal(instruction, JitKind.FpuLoadReal),
             Mnemonic.Fst => PlanFpuReal(instruction, JitKind.FpuStoreReal),
             Mnemonic.Fstp => PlanFpuReal(instruction, JitKind.FpuStoreRealPop),
+            Mnemonic.Fild => PlanFpuInteger(instruction, JitKind.FpuLoadInteger),
+            Mnemonic.Fist => PlanFpuInteger(instruction, JitKind.FpuStoreInteger),
+            Mnemonic.Fistp => PlanFpuInteger(instruction, JitKind.FpuStoreIntegerPop),
+            Mnemonic.Fadd => PlanFpuArithmetic(instruction),
+            Mnemonic.Fmul => PlanFpuArithmetic(instruction),
+            Mnemonic.Fsub => PlanFpuArithmetic(instruction),
+            Mnemonic.Fsubr => PlanFpuArithmetic(instruction),
+            Mnemonic.Fdiv => PlanFpuArithmetic(instruction),
+            Mnemonic.Fdivr => PlanFpuArithmetic(instruction),
+            Mnemonic.Faddp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Fmulp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Fsubp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Fsubrp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Fdivp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Fdivrp => PlanFpuArithmeticPop(instruction),
+            Mnemonic.Movq => PlanMmx(instruction, store: false),
+            Mnemonic.Movntq => PlanMmx(instruction, store: true),
+            Mnemonic.Fxch => PlanFpuExchange(instruction),
+            Mnemonic.Fld1 => PlanFpuPushOne(instruction),
+            Mnemonic.Fchs => PlanFpuChangeSign(instruction),
+            Mnemonic.Fcom => PlanFpuCompare(instruction, pop: false),
+            Mnemonic.Fucom => PlanFpuCompare(instruction, pop: false),
+            Mnemonic.Fcomp => PlanFpuCompare(instruction, pop: true),
+            Mnemonic.Fucomp => PlanFpuCompare(instruction, pop: true),
+            Mnemonic.Fiadd => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Fimul => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Fisub => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Fisubr => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Fidiv => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Fidivr => PlanFpuIntegerArithmetic(instruction),
+            Mnemonic.Addss => PlanSseArithmetic(instruction, 0),
+            Mnemonic.Subss => PlanSseArithmetic(instruction, 1),
+            Mnemonic.Mulss => PlanSseArithmetic(instruction, 2),
+            Mnemonic.Divss => PlanSseArithmetic(instruction, 3),
+            Mnemonic.Minss => PlanSseArithmetic(instruction, 4),
+            Mnemonic.Maxss => PlanSseArithmetic(instruction, 5),
+            Mnemonic.Rsqrtss => PlanSseUnary(instruction),
+            Mnemonic.Movss => PlanSseMovss(instruction),
+            Mnemonic.Cvttss2Si => PlanSseCvt(instruction),
+            Mnemonic.Neg => PlanUnary(instruction, JitKind.NegR),
+            Mnemonic.Not => PlanUnary(instruction, JitKind.NotR),
+            Mnemonic.Bswap => PlanUnary(instruction, JitKind.Bswap),
+            Mnemonic.Xchg => PlanXchg(instruction),
+            Mnemonic.Leave => WithSpecHandler(
+                new JitMemberPlan { Kind = JitKind.Leave, Length = instruction.Length },
+                instruction),
+            Mnemonic.Cdq => instruction.OperandSize == 32
+                ? WithSpecHandler(
+                    new JitMemberPlan { Kind = JitKind.Cdq, Length = instruction.Length, Size = 32 },
+                    instruction)
+                : default,
+            Mnemonic.Setcc => PlanSetcc(instruction),
             Mnemonic.Inc => PlanIncDec(instruction, inc: true),
             Mnemonic.Dec => PlanIncDec(instruction, inc: false),
             Mnemonic.Lea => PlanLea(instruction),
@@ -274,6 +399,12 @@ internal static class JitPlanner
             Mnemonic.Out => PlanPortIo(instruction, ExecuteOutMethod),
             Mnemonic.Invlpg => PlanInvlpg(instruction),
             Mnemonic.Nop => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
+            // Prefetch is architecturally a hint: the interpreter's ExecuteSse
+            // treats it as a no-op (no fault, no memory access). Baking it as
+            // Nop keeps the strong memory ordering the guest could rely on
+            // (none - it is a hint) and removes the last common
+            // fence/prefetch helper member from the dashboard's copy loops.
+            Mnemonic.Prefetch => new JitMemberPlan { Kind = JitKind.Nop, Length = instruction.Length },
             _ => default,
         };
     }
@@ -288,15 +419,548 @@ internal static class JitPlanner
     private static JitMemberPlan PlanFpuReal(in DecodedInstruction instruction, JitKind kind)
     {
         Operand first = instruction.Operand1;
+        if (first.Kind == OperandKind.Register && first.Size == 80)
+        {
+            // C3-x: register forms (Fld/Fst/Fstp st(i)) are one tiny FPU
+            // helper call each - no memory probe, no full context sync.
+            JitKind registerKind = kind switch
+            {
+                JitKind.FpuLoadReal => JitKind.FpuLoadRegister,
+                JitKind.FpuStoreReal => JitKind.FpuStoreRegister,
+                JitKind.FpuStoreRealPop => JitKind.FpuStoreRegisterPop,
+                _ => JitKind.None,
+            };
+            if (registerKind == JitKind.None)
+            {
+                return default;
+            }
+
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = registerKind,
+                    Length = instruction.Length,
+                    Size = 80,
+                    RegIndex = first.RegisterIndex,
+                },
+                instruction);
+        }
+
         if (first.Kind != OperandKind.Memory || first.Size != 32)
         {
             return default;
         }
 
         MemoryOperand memory = first.Memory;
-        return WithMemory(
+        JitMemberPlan plan = WithMemory(
             new JitMemberPlan { Kind = kind, Length = instruction.Length, Size = 32 },
             in memory);
+        return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+    }
+
+    /// <summary>
+    /// C3-x: <c>Fild/Fist/Fistp m32</c> - the same RAM probe as a 32-bit load
+    /// or store; the FPU conversion is one tiny helper (the IL runner keeps
+    /// the exact spec handler, so both engines share one semantic source).
+    /// </summary>
+    private static JitMemberPlan PlanFpuInteger(in DecodedInstruction instruction, JitKind kind)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Memory || first.Size != 32)
+        {
+            return default;
+        }
+
+        JitMemberPlan plan = WithMemory(
+            new JitMemberPlan { Kind = kind, Length = instruction.Length, Size = 32 },
+            first.Memory);
+        return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+    }
+
+    /// <summary>
+    /// C3-x: <c>movq mm, m64</c> / <c>movq m64, mm</c> / <c>movntq m64, mm</c>
+    /// (MMX registers alias the x87 signature words). Register-to-register and
+    /// GPR forms stay on the exact spec handler.
+    /// </summary>
+    private static JitMemberPlan PlanMmx(in DecodedInstruction instruction, bool store)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (store)
+        {
+            if (first.Kind != OperandKind.Memory || first.Size != 64
+                || second.Kind != OperandKind.Register || second.Size != 64)
+            {
+                return default;
+            }
+
+            JitMemberPlan stored = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.MmxStore,
+                    Length = instruction.Length,
+                    Size = 64,
+                    RegIndex = second.RegisterIndex,
+                },
+                first.Memory);
+            return stored.HasMemory ? WithSpecHandler(stored, instruction) : default;
+        }
+
+        if (first.Kind == OperandKind.Register && first.Size == 64
+            && second.Kind == OperandKind.Memory && second.Size == 64)
+        {
+            JitMemberPlan loaded = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.MmxLoad,
+                    Length = instruction.Length,
+                    Size = 64,
+                    RegIndex = first.RegisterIndex,
+                },
+                second.Memory);
+            return loaded.HasMemory ? WithSpecHandler(loaded, instruction) : default;
+        }
+
+        if (first.Kind == OperandKind.Memory && first.Size == 64
+            && second.Kind == OperandKind.Register && second.Size == 64)
+        {
+            JitMemberPlan stored = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.MmxStore,
+                    Length = instruction.Length,
+                    Size = 64,
+                    RegIndex = second.RegisterIndex,
+                },
+                first.Memory);
+            return stored.HasMemory ? WithSpecHandler(stored, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>
+    /// Stamps the member's exact spec handler (the IL runner uses it for the
+    /// shapes only the raw emitter bakes natively); a shape with no handler
+    /// keeps the block boundary.
+    /// </summary>
+    private static JitMemberPlan WithSpecHandler(JitMemberPlan plan, in DecodedInstruction instruction)
+    {
+        MethodInfo? method = XboxCpu.ResolveSpec(instruction)?.Method;
+        return method is null ? default : plan with { SpecHandler = method };
+    }
+
+    /// <summary>
+    /// C3-x: <c>Fadd/Fmul/Fsub/Fsubr/Fdiv/Fdivr</c> in the register-register
+    /// and 32/64-bit memory forms. The arithmetic is one tiny helper call with
+    /// a packed operation descriptor, so the host x87 stack never leaves the
+    /// managed FpuState (and every IL/raw differential compares the same
+    /// bytes). Wider sources keep the exact interpreter path.
+    /// </summary>
+    private static JitMemberPlan PlanFpuArithmetic(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind != OperandKind.Register || first.Size != 80)
+        {
+            return default;
+        }
+
+        if (second.Kind == OperandKind.Register && second.Size == 80)
+        {
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.FpuArithReg,
+                    Length = instruction.Length,
+                    Size = 80,
+                    RegIndex = first.RegisterIndex,
+                    SecondRegIndex = second.RegisterIndex,
+                },
+                instruction);
+        }
+
+        if (second.Kind == OperandKind.Memory && second.Size is 32 or 64)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.FpuArithMem,
+                    Length = instruction.Length,
+                    Size = 80,
+                    SourceSize = second.Size,
+                    RegIndex = first.RegisterIndex,
+                },
+                second.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: the popping register forms (<c>Faddp</c> family).</summary>
+    private static JitMemberPlan PlanFpuArithmeticPop(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Register || first.Size != 80)
+        {
+            return default;
+        }
+
+        return WithSpecHandler(
+            new JitMemberPlan
+            {
+                Kind = JitKind.FpuArithPop,
+                Length = instruction.Length,
+                Size = 80,
+                RegIndex = first.RegisterIndex,
+            },
+            instruction);
+    }
+
+    /// <summary>C3-x: <c>Fxch st(i)</c> - swap ST(0) with ST(i).</summary>
+    private static JitMemberPlan PlanFpuExchange(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Register || first.Size != 80)
+        {
+            return default;
+        }
+
+        return WithSpecHandler(
+            new JitMemberPlan
+            {
+                Kind = JitKind.FpuExchange,
+                Length = instruction.Length,
+                Size = 80,
+                RegIndex = first.RegisterIndex,
+            },
+            instruction);
+    }
+
+    /// <summary>C3-x: <c>Fld1</c> - push the constant 1.0.</summary>
+    private static JitMemberPlan PlanFpuPushOne(in DecodedInstruction instruction)
+    {
+        return WithSpecHandler(
+            new JitMemberPlan { Kind = JitKind.FpuPushOne, Length = instruction.Length, Size = 80 },
+            instruction);
+    }
+
+    /// <summary>
+    /// C3-x: scalar SSE arithmetic (<c>Addss/Subss/Mulss/Divss/Minss/Maxss</c>)
+    /// in the register and m32 forms, evaluated by the same managed float
+    /// expressions the interpreter uses (one tiny helper call).
+    /// </summary>
+    private static JitMemberPlan PlanSseArithmetic(in DecodedInstruction instruction, int op)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind != OperandKind.Register || first.Size != 128)
+        {
+            return default;
+        }
+
+        if (second.Kind == OperandKind.Register && second.Size == 32)
+        {
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.SseArithReg,
+                    Length = instruction.Length,
+                    Size = 128,
+                    RegIndex = first.RegisterIndex,
+                    SecondRegIndex = second.RegisterIndex,
+                    Immediate = (uint)op,
+                },
+                instruction);
+        }
+
+        if (second.Kind == OperandKind.Memory && second.Size == 32)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.SseArithMem,
+                    Length = instruction.Length,
+                    Size = 128,
+                    RegIndex = first.RegisterIndex,
+                    Immediate = (uint)op,
+                },
+                second.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: scalar SSE unary (<c>Rsqrtss/Rcpss/Sqrtss</c>), register form.</summary>
+    private static JitMemberPlan PlanSseUnary(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind != OperandKind.Register || first.Size != 128
+            || second.Kind != OperandKind.Register || second.Size != 32)
+        {
+            return default;
+        }
+
+        int op = instruction.Mnemonic switch
+        {
+            Mnemonic.Sqrtss => 0,
+            Mnemonic.Rsqrtss => 1,
+            _ => 2,
+        };
+        return WithSpecHandler(
+            new JitMemberPlan
+            {
+                Kind = JitKind.SseUnaryReg,
+                Length = instruction.Length,
+                Size = 128,
+                RegIndex = first.RegisterIndex,
+                SecondRegIndex = second.RegisterIndex,
+                Immediate = (uint)op,
+            },
+            instruction);
+    }
+
+    /// <summary>C3-x: <c>Movss</c> register/load/store forms (element 0 only).</summary>
+    private static JitMemberPlan PlanSseMovss(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind == OperandKind.Register && first.Size == 128)
+        {
+            if (second.Kind == OperandKind.Register && second.Size == 32)
+            {
+                return WithSpecHandler(
+                    new JitMemberPlan
+                    {
+                        Kind = JitKind.SseMovssReg,
+                        Length = instruction.Length,
+                        Size = 128,
+                        RegIndex = first.RegisterIndex,
+                        SecondRegIndex = second.RegisterIndex,
+                    },
+                    instruction);
+            }
+
+            if (second.Kind == OperandKind.Memory && second.Size == 32)
+            {
+                JitMemberPlan plan = WithMemory(
+                    new JitMemberPlan
+                    {
+                        Kind = JitKind.SseMovssMem,
+                        Length = instruction.Length,
+                        Size = 128,
+                        RegIndex = first.RegisterIndex,
+                    },
+                    second.Memory);
+                return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+            }
+
+            return default;
+        }
+
+        if (first.Kind == OperandKind.Memory && first.Size == 32
+            && second.Kind == OperandKind.Register && second.Size == 128)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.SseMovssStore,
+                    Length = instruction.Length,
+                    Size = 32,
+                    RegIndex = second.RegisterIndex,
+                },
+                first.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: <c>Cvttss2Si r32, xmm/m32</c> (truncating conversion).</summary>
+    private static JitMemberPlan PlanSseCvt(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind != OperandKind.Register || first.Size != 32)
+        {
+            return default;
+        }
+
+        if (second.Kind == OperandKind.Register && second.Size == 32)
+        {
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.SseCvtReg,
+                    Length = instruction.Length,
+                    Size = 32,
+                    RegIndex = first.RegisterIndex,
+                    SecondRegIndex = second.RegisterIndex,
+                },
+                instruction);
+        }
+
+        if (second.Kind == OperandKind.Memory && second.Size == 32)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.SseCvtMem,
+                    Length = instruction.Length,
+                    Size = 32,
+                    RegIndex = first.RegisterIndex,
+                },
+                second.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: flag-free register unaries (<c>Neg/Not/Bswap</c>).</summary>
+    private static JitMemberPlan PlanUnary(in DecodedInstruction instruction, JitKind kind)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Register)
+        {
+            return default;
+        }
+
+        if (kind == JitKind.Bswap)
+        {
+            if (first.Size != 32)
+            {
+                return default;
+            }
+        }
+        else if (!IsSized(first.Size))
+        {
+            return default;
+        }
+
+        return new JitMemberPlan
+        {
+            Kind = kind,
+            Length = instruction.Length,
+            Size = first.Size,
+            RegIndex = first.RegisterIndex,
+            SpecHandler = XboxCpu.ResolveSpec(instruction)?.Method,
+        };
+    }
+
+    /// <summary>C3-x: <c>Xchg r32, r32</c> (the 32-bit register form only).</summary>
+    private static JitMemberPlan PlanXchg(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        Operand second = instruction.Operand2;
+        if (first.Kind == OperandKind.Register && first.Size == 32
+            && second.Kind == OperandKind.Register && second.Size == 32)
+        {
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.XchgRR,
+                    Length = instruction.Length,
+                    Size = 32,
+                    RegIndex = first.RegisterIndex,
+                    SecondRegIndex = second.RegisterIndex,
+                },
+                instruction);
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: <c>Fchs</c> - negate ST(0).</summary>
+    private static JitMemberPlan PlanFpuChangeSign(in DecodedInstruction instruction)
+    {
+        return WithSpecHandler(
+            new JitMemberPlan { Kind = JitKind.FpuChangeSign, Length = instruction.Length, Size = 80 },
+            instruction);
+    }
+
+    /// <summary>C3-x: <c>Fcom/Fcomp/Fucom/Fucomp</c> register and m32/m64 forms.</summary>
+    private static JitMemberPlan PlanFpuCompare(in DecodedInstruction instruction, bool pop)
+    {
+        Operand compared = instruction.Operand2.Kind == OperandKind.None
+            ? instruction.Operand1
+            : instruction.Operand2;
+        if (compared.Kind == OperandKind.Register && compared.Size == 80)
+        {
+            return WithSpecHandler(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.FpuCompareReg,
+                    Length = instruction.Length,
+                    Size = 80,
+                    RegIndex = compared.RegisterIndex,
+                    Immediate = pop ? 1u : 0u,
+                },
+                instruction);
+        }
+
+        if (compared.Kind == OperandKind.Memory && compared.Size is 32 or 64)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan
+                {
+                    Kind = JitKind.FpuCompareMem,
+                    Length = instruction.Length,
+                    Size = 80,
+                    SourceSize = compared.Size,
+                    Immediate = pop ? 1u : 0u,
+                },
+                compared.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+        }
+
+        return default;
+    }
+
+    /// <summary>C3-x: <c>Fiadd/Fimul/Fisub/Fisubr/Fidiv/Fidivr m16/m32</c>.</summary>
+    private static JitMemberPlan PlanFpuIntegerArithmetic(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Memory || first.Size is not (16 or 32))
+        {
+            return default;
+        }
+
+        JitMemberPlan plan = WithMemory(
+            new JitMemberPlan
+            {
+                Kind = JitKind.FpuArithMem,
+                Length = instruction.Length,
+                Size = 80,
+                SourceSize = first.Size,
+                RegIndex = 0,
+            },
+            first.Memory);
+        return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
+    }
+
+    /// <summary>C3-x: <c>Setcc r8</c> (register destination only).</summary>
+    private static JitMemberPlan PlanSetcc(in DecodedInstruction instruction)
+    {
+        Operand first = instruction.Operand1;
+        if (first.Kind != OperandKind.Register || first.Size != 8)
+        {
+            return default;
+        }
+
+        return WithSpecHandler(
+            new JitMemberPlan
+            {
+                Kind = JitKind.Setcc,
+                Length = instruction.Length,
+                Size = 8,
+                RegIndex = first.RegisterIndex,
+                Condition = instruction.Condition,
+            },
+            instruction);
     }
 
     private static JitMemberPlan PlanMov(in DecodedInstruction instruction)
@@ -600,6 +1264,19 @@ internal static class JitPlanner
             };
         }
 
+        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register
+            && second.Size == 8 && second.RegisterIndex == (int)Gpr.Ecx && IsSized(first.Size))
+        {
+            return new JitMemberPlan
+            {
+                Kind = JitKind.ShiftRC,
+                Length = instruction.Length,
+                Size = first.Size,
+                RegIndex = first.RegisterIndex,
+                ShiftOp = op,
+            };
+        }
+
         return default;
     }
 
@@ -631,6 +1308,14 @@ internal static class JitPlanner
                 Size = 32,
                 Immediate = first.Immediate,
             };
+        }
+
+        if (first.Kind == OperandKind.Memory && first.Size == 32)
+        {
+            JitMemberPlan plan = WithMemory(
+                new JitMemberPlan { Kind = JitKind.PushM, Length = instruction.Length, Size = 32 },
+                first.Memory);
+            return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;
         }
 
         return default;

@@ -579,7 +579,7 @@ public sealed unsafe partial class XboxCpu
                     System.IO.File.AppendAllText(
                         tracePath,
                         $"B head={block.HeadEip:X5} entry={blockEntryEip:X5} members={block.MemberCount} " +
-                        $"served={served} exit={Context.Eip:X5} tsc={blockTsc} raw={block.RawRunner is not null}" +
+                        $"served={served} exit={Context.Eip:X5} tsc={blockTsc} raw={block.RawRunner is not null} budget={budget}" +
                         Environment.NewLine);
 
                     if (block.HeadEip == BlockTraceHead)
@@ -906,7 +906,9 @@ public sealed unsafe partial class XboxCpu
             hasSti |= kind == JitKind.Sti;
             hasStore |= kind is JitKind.MovStore or JitKind.MovStoreImm or JitKind.IncM or JitKind.DecM
                 or JitKind.FpuStoreReal or JitKind.FpuStoreRealPop
-                or JitKind.PushR or JitKind.PushI or JitKind.PopR
+                or JitKind.FpuStoreInteger or JitKind.FpuStoreIntegerPop
+                or JitKind.MmxStore or JitKind.SseMovssStore
+                or JitKind.PushR or JitKind.PushI or JitKind.PushM or JitKind.PopR
                 or JitKind.CallRel or JitKind.CallReg or JitKind.CallMem or JitKind.CallSpec
                 or JitKind.CallInterpreter or JitKind.Invlpg;
             if ((kind == JitKind.AluMR || kind == JitKind.AluMI) && plans[i].AluOp != JitAluOp.Cmp)

@@ -1362,7 +1362,7 @@ public sealed partial class XboxCpu
     /// C2 slice 3: JIT fast path for <c>Fld m32</c> after the RAM probe - pushes
     /// the single-precision real exactly as <c>ReadFpuReal</c> does.
     /// </summary>
-    private void JitFpuPushSingle(uint bits)
+    internal void JitFpuPushSingle(uint bits)
     {
         Fpu.Push(Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(bits)));
     }
@@ -1371,16 +1371,212 @@ public sealed partial class XboxCpu
     /// JIT fast path for <c>Fst/Fstp m32</c>: ST(0) as single-precision bits,
     /// the same conversion <c>WriteFpuReal</c> applies.
     /// </summary>
-    private uint JitFpuSingleBits()
+    internal uint JitFpuSingleBits()
     {
         return BitConverter.SingleToUInt32Bits((float)Fpu.GetRegister(0).ToDouble());
     }
 
     /// <summary>JIT fast path for the pop half of <c>Fstp m32</c> (after the store succeeds).</summary>
-    private void JitFpuPop()
+    internal void JitFpuPop()
     {
         Fpu.Pop();
     }
+
+    /// <summary>C3: <c>Fld st(i)</c> - push a register copy.</summary>
+    internal void JitFpuPushRegister(int index) => Fpu.Push(Fpu.GetRegister(index));
+
+    /// <summary>C3: <c>Fst st(i)</c> - store ST(0) into a register (no pop).</summary>
+    internal void JitFpuStoreRegister(int index) => Fpu.SetRegister(index, Fpu.GetRegister(0));
+
+    /// <summary>C3: <c>Fstp st(i)</c> - store ST(0) into a register, then pop.</summary>
+    internal void JitFpuStoreRegisterPop(int index)
+    {
+        Fpu.SetRegister(index, Fpu.GetRegister(0));
+        Fpu.Pop();
+    }
+
+    /// <summary>C3: <c>Fild m32</c> - push the integer source.</summary>
+    internal void JitFpuPushInteger(uint bits) => Fpu.Push(Fpu80.FromInt64(unchecked((int)bits)));
+
+    /// <summary>
+    /// C3: <c>Fist/Fistp m32</c> - ST(0) as int32, with the interpreter's
+    /// exact out-of-range rule (indefinite value + precision exception).
+    /// </summary>
+    internal uint JitFpuIntegerBits()
+    {
+        int mode = Fpu.RoundingMode;
+        if (!Fpu.GetRegister(0).TryToInt32(mode, out int word))
+        {
+            word = unchecked((int)0x80000000u);
+            Fpu.SetException(0);
+        }
+
+        return (uint)word;
+    }
+
+    /// <summary>C3: MMX register read (movq/movd source operand).</summary>
+    internal ulong JitMmxRead(int index) => Context.ReadMmx(index);
+
+    /// <summary>C3: MMX register write (movq/movd destination operand).</summary>
+    internal void JitMmxWrite(int index, ulong value) => Context.WriteMmx(index, value);
+
+    // x87 arithmetic descriptors: the low byte is the operation
+    // (0=add,1=mul,2=sub,3=subr,4=div,5=divr), the next byte the destination
+    // ST index, and bit 16 marks a 64-bit memory source (else 32-bit).
+    private const uint FpuArithDouble = 1u << 16;
+
+    private const uint FpuArithInteger = 1u << 17;
+
+    /// <summary>C3: <c>Fadd/Fmul/Fsub/Fdiv rm</c> register-register form.</summary>
+    internal void JitFpuArithReg(uint descriptor, int sourceIndex)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        Fpu80 left = Fpu.GetRegister(destination);
+        Fpu80 right = Fpu.GetRegister(sourceIndex);
+        Fpu.SetRegister(destination, ApplyFpuArithOp(op, left, right));
+    }
+
+    /// <summary>C3: the popping register form (<c>Faddp</c> family).</summary>
+    internal void JitFpuArithPop(uint descriptor)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        Fpu80 left = Fpu.GetRegister(destination);
+        Fpu80 right = Fpu.GetRegister(0);
+        Fpu.SetRegister(destination, ApplyFpuArithOp(op, left, right));
+        Fpu.Pop();
+    }
+
+    /// <summary>C3: the memory form (<c>Fadd dword [mem]</c> et al).</summary>
+    internal void JitFpuArithMem(uint descriptor, ulong bits)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        bool wide = (descriptor & FpuArithDouble) != 0;
+        Fpu80 value;
+        if ((descriptor & FpuArithInteger) != 0)
+        {
+            value = wide
+                ? Fpu80.FromInt64(unchecked((short)bits))
+                : Fpu80.FromInt64(unchecked((int)bits));
+        }
+        else
+        {
+            value = wide
+                ? Fpu80.FromDouble(BitConverter.Int64BitsToDouble(unchecked((long)bits)))
+                : Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(unchecked((uint)bits)));
+        }
+
+        Fpu80 left = Fpu.GetRegister(destination);
+        Fpu.SetRegister(destination, ApplyFpuArithOp(op, left, value));
+    }
+
+    private static Fpu80 ApplyFpuArithOp(int op, Fpu80 left, Fpu80 right) => op switch
+    {
+        0 => Fpu80.Add(left, right),
+        1 => Fpu80.Multiply(left, right),
+        2 => Fpu80.Subtract(left, right),
+        3 => Fpu80.Subtract(right, left),
+        4 => Fpu80.Divide(left, right),
+        _ => Fpu80.Divide(right, left),
+    };
+
+    /// <summary>C3: <c>Fxch st(i)</c>.</summary>
+    internal void JitFpuExchange(int index) => Fpu.Exchange(index);
+
+    /// <summary>C3: <c>Fld1</c>.</summary>
+    internal void JitFpuPushOne() => Fpu.Push(Fpu80.One);
+
+    /// <summary>C3: <c>Fchs</c>.</summary>
+    internal void JitFpuChangeSign() => Fpu.SetRegister(0, Fpu.GetRegister(0).Negate());
+
+    /// <summary>C3: <c>Fcom/Fcomp/Fucom/Fucomp st(i)</c> (bit0 = pop).</summary>
+    internal void JitFpuCompareReg(uint descriptor, int index)
+    {
+        SetFpuCompare(Fpu.GetRegister(0), Fpu.GetRegister(index));
+        if ((descriptor & 1) != 0)
+        {
+            Fpu.Pop();
+        }
+    }
+
+    /// <summary>C3: <c>Fcom/Fcomp m32/m64</c> (bit0 = pop, bit1 = 64-bit source).</summary>
+    internal void JitFpuCompareMem(uint descriptor, ulong bits)
+    {
+        Fpu80 value = (descriptor & 2) != 0
+            ? Fpu80.FromDouble(BitConverter.Int64BitsToDouble(unchecked((long)bits)))
+            : Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(unchecked((uint)bits)));
+        SetFpuCompare(Fpu.GetRegister(0), value);
+        if ((descriptor & 1) != 0)
+        {
+            Fpu.Pop();
+        }
+    }
+
+    private static float JitSseOp(int op, float left, float right) => op switch
+    {
+        0 => left + right,
+        1 => left - right,
+        2 => left * right,
+        3 => left / right,
+        4 => float.IsNaN(left) || float.IsNaN(right) ? right : MathF.Min(left, right),
+        _ => float.IsNaN(left) || float.IsNaN(right) ? right : MathF.Max(left, right),
+    };
+
+    /// <summary>C3: scalar SSE arithmetic, register source.</summary>
+    internal void JitSseArithReg(uint descriptor, int sourceIndex)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        float left = BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(destination, 0));
+        float right = BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(sourceIndex, 0));
+        Context.WriteXmmElement(destination, 0, BitConverter.SingleToUInt32Bits(JitSseOp(op, left, right)));
+    }
+
+    /// <summary>C3: scalar SSE arithmetic, m32 source.</summary>
+    internal void JitSseArithMem(uint descriptor, uint bits)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        float left = BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(destination, 0));
+        float right = BitConverter.UInt32BitsToSingle(bits);
+        Context.WriteXmmElement(destination, 0, BitConverter.SingleToUInt32Bits(JitSseOp(op, left, right)));
+    }
+
+    /// <summary>C3: scalar SSE unary (<c>Sqrtss/Rsqrtss/Rcpss</c>), register source.</summary>
+    internal void JitSseUnaryReg(uint descriptor, int sourceIndex)
+    {
+        int op = (int)(descriptor & 0xFF);
+        int destination = (int)((descriptor >> 8) & 0xFF);
+        float value = BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(sourceIndex, 0));
+        float result = op switch
+        {
+            0 => MathF.Sqrt(value),
+            1 => 1f / MathF.Sqrt(value),
+            _ => 1f / value,
+        };
+        Context.WriteXmmElement(destination, 0, BitConverter.SingleToUInt32Bits(result));
+    }
+
+    /// <summary>C3: <c>Movss xmm, xmm</c> (element 0 only; upper lanes preserved).</summary>
+    internal void JitSseMovssReg(int destination, int sourceIndex) =>
+        Context.WriteXmmElement(destination, 0, Context.ReadXmmElement(sourceIndex, 0));
+
+    /// <summary>C3: <c>Movss xmm, m32</c>.</summary>
+    internal void JitSseMovssMem(int destination, uint bits) =>
+        Context.WriteXmmElement(destination, 0, bits);
+
+    /// <summary>C3: <c>Movss m32, xmm</c>.</summary>
+    internal uint JitSseMovssStore(int sourceIndex) => Context.ReadXmmElement(sourceIndex, 0);
+
+    /// <summary>C3: truncating <c>Cvttss2Si</c> conversion from memory bits.</summary>
+    internal int JitSseCvt(uint bits) =>
+        ConvertFloatToInt32(BitConverter.UInt32BitsToSingle(bits), truncate: true);
+
+    /// <summary>C3: truncating <c>Cvttss2Si</c> conversion from an XMM element.</summary>
+    internal int JitSseCvtReg(int sourceIndex) =>
+        ConvertFloatToInt32(BitConverter.UInt32BitsToSingle(Context.ReadXmmElement(sourceIndex, 0)), truncate: true);
 
     /// <summary>
     /// Slice-1 guard: true when the AddressSpace write watch could fire for

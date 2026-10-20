@@ -145,6 +145,392 @@ public sealed class RawJitTests
     }
 
     [Fact]
+    public void CallRetPushImmPop_MatchesInterpreter()
+    {
+        // mov esi,2
+        // loop: mov eax,0x1234; push 0x11223344; call func; nop; dec esi; jne loop
+        // hlt; nop
+        // func: mov eax,[esp+4]; push eax; pop edx; ret 4
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xB8, 0x34, 0x12, 0x00, 0x00,
+            0x68, 0x44, 0x33, 0x22, 0x11,
+            0xE8, 0x06, 0x00, 0x00, 0x00,
+            0x90,
+            0x4E,
+            0x75, 0xED,
+            0xF4,
+            0x90,
+            0x8B, 0x44, 0x24, 0x04,
+            0x50,
+            0x5A,
+            0xC2, 0x04, 0x00,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+        Assert.Equal(0x11223344u, raw.Context.Eax);
+        Assert.Equal(0x11223344u, raw.Context.Edx);
+        Assert.Equal(CpuHarness.StackAddress, raw.Context.Esp);
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    [Fact]
+    public void RetNear_MatchesInterpreter()
+    {
+        // push 0x100B; ret; nop x5; hlt
+        byte[] code =
+        [
+            0x68, 0x0B, 0x10, 0x00, 0x00,
+            0xC3,
+            0x90, 0x90, 0x90, 0x90, 0x90,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.True(raw.Context.Halted);
+        Assert.Equal(CpuHarness.StackAddress, raw.Context.Esp);
+    }
+
+    [Fact]
+    public void MovzxMovsxMemory_MatchesInterpreter()
+    {
+        // movzx eax,byte [0x2000]; movsx ebx,byte [0x2001];
+        // movzx ecx,word [0x2002]; movsx edx,word [0x2004]; hlt
+        byte[] code =
+        [
+            0x0F, 0xB6, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0x0F, 0xBE, 0x1D, 0x01, 0x20, 0x00, 0x00,
+            0x0F, 0xB7, 0x0D, 0x02, 0x20, 0x00, 0x00,
+            0x0F, 0xBF, 0x15, 0x04, 0x20, 0x00, 0x00,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write8(0x2000, 0xFE);
+            cpu.Ram().Write8(0x2001, 0x80);
+            cpu.Ram().Write16(0x2002, 0x8001);
+            cpu.Ram().Write16(0x2004, 0xFFF0);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(0xFEu, raw.Context.Eax);
+        Assert.Equal(0xFFFFFF80u, raw.Context.Ebx);
+        Assert.Equal(0x8001u, raw.Context.Ecx);
+        Assert.Equal(0xFFFFFFF0u, raw.Context.Edx);
+    }
+
+    [Fact]
+    public void Prefetch_IsANoop_MatchesInterpreter()
+    {
+        // prefetchnta [0x2000]; prefetch [0x2004]; hlt
+        byte[] code =
+        [
+            0x0F, 0x18, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0x0F, 0x18, 0x0D, 0x04, 0x20, 0x00, 0x00,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.True(raw.Context.Halted);
+    }
+
+    [Fact]
+    public void FpuMemoryArithmetic_MatchesInterpreter()
+    {
+        // loop 3x: fld [0x2000]; fadd [0x2004]; fmul [0x2008]; fsub [0x200C];
+        // fdiv [0x2010]; fstp [0x2014]; dec ecx; jne loop; hlt
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00,
+            0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0xD8, 0x05, 0x04, 0x20, 0x00, 0x00,
+            0xD8, 0x0D, 0x08, 0x20, 0x00, 0x00,
+            0xD8, 0x25, 0x0C, 0x20, 0x00, 0x00,
+            0xD8, 0x35, 0x10, 0x20, 0x00, 0x00,
+            0xD9, 0x1D, 0x14, 0x20, 0x00, 0x00,
+            0x49,
+            0x75, 0xD9,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, BitConverter.SingleToUInt32Bits(2.0f));
+            cpu.Ram().Write32(0x2004, BitConverter.SingleToUInt32Bits(3.0f));
+            cpu.Ram().Write32(0x2008, BitConverter.SingleToUInt32Bits(4.0f));
+            cpu.Ram().Write32(0x200C, BitConverter.SingleToUInt32Bits(1.0f));
+            cpu.Ram().Write32(0x2010, BitConverter.SingleToUInt32Bits(2.0f));
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(plain.Ram().Read32(0x2014), raw.Ram().Read32(0x2014));
+        Assert.Equal(BitConverter.SingleToUInt32Bits(9.5f), raw.Ram().Read32(0x2014));
+    }
+
+    [Fact]
+    public void FpuRegisterArithmetic_MatchesInterpreter()
+    {
+        // fld [0x2000] (2.0); fld [0x2004] (3.0); fadd st0,st1; fmul st0,st1;
+        // faddp st1,st0; fstp [0x2008]; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0xD9, 0x05, 0x04, 0x20, 0x00, 0x00,
+            0xD8, 0xC1,
+            0xD8, 0xC9,
+            0xDE, 0xC1,
+            0xD9, 0x1D, 0x08, 0x20, 0x00, 0x00,
+            0x4E,
+            0x75, 0xE5,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, BitConverter.SingleToUInt32Bits(2.0f));
+            cpu.Ram().Write32(0x2004, BitConverter.SingleToUInt32Bits(3.0f));
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(BitConverter.SingleToUInt32Bits(12.0f), raw.Ram().Read32(0x2008));
+        Assert.Equal(plain.Ram().Read32(0x2008), raw.Ram().Read32(0x2008));
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    [Fact]
+    public void FpuIntegerLoadStore_MatchesInterpreter()
+    {
+        // fild dword [0x2000]; fistp dword [0x2004]; fild dword [0x2008];
+        // fistp dword [0x200C]; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xDB, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0xDB, 0x1D, 0x04, 0x20, 0x00, 0x00,
+            0xDB, 0x05, 0x08, 0x20, 0x00, 0x00,
+            0xDB, 0x1D, 0x0C, 0x20, 0x00, 0x00,
+            0x4E,
+            0x75, 0xE5,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, 0x80000001);
+            cpu.Ram().Write32(0x2008, 0x7FFFFFFF);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(plain.Ram().Read32(0x2004), raw.Ram().Read32(0x2004));
+        Assert.Equal(plain.Ram().Read32(0x200C), raw.Ram().Read32(0x200C));
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    [Fact]
+    public void ShiftsAndRotates_MatchesInterpreter()
+    {
+        // mov esi,2; mov ecx,5;
+        // loop: rol eax,1; ror eax,2; rol eax,5; shl ebx,cl; shr ebx,cl;
+        // sar ebx,cl; rol edx,cl; ror edx,cl; dec esi; jne loop; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xB9, 0x05, 0x00, 0x00, 0x00,
+            0xB8, 0x01, 0x00, 0x00, 0x80,
+            0xC1, 0xC0, 0x01,
+            0xC1, 0xC8, 0x02,
+            0xC1, 0xC0, 0x05,
+            0xBB, 0x78, 0x56, 0x34, 0x12,
+            0xD3, 0xE3,
+            0xD3, 0xEB,
+            0xD3, 0xFB,
+            0xBA, 0xF0, 0xDE, 0xBC, 0x9A,
+            0xD3, 0xC2,
+            0xD3, 0xCA,
+            0x4E,
+            0x75, 0xDB,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.True(raw.Context.Halted);
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    [Fact]
+    public void ShiftByCl_AndRotate_DoNotUseHelperMembers()
+    {
+        // mov esi,2; mov ecx,3; mov eax,0x80000001; rol eax,1; ror eax,2;
+        // shl eax,cl; shr eax,cl; sar eax,cl; dec esi; jne; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xB9, 0x03, 0x00, 0x00, 0x00,
+            0xB8, 0x01, 0x00, 0x00, 0x80,
+            0xC1, 0xC0, 0x01,
+            0xC1, 0xC8, 0x02,
+            0xD3, 0xE0,
+            0xD3, 0xE8,
+            0xD3, 0xF8,
+            0x4E,
+            0x75, 0xEC,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        raw.RawShapeTally = true;
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Rol]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Ror]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Shl]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Shr]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Sar]);
+    }
+
+    [Fact]
+    public void SseScalarForms_DoNotUseHelperMembers()
+    {
+        // mov esi,2; movss xmm0,[0x2000]; mulss xmm0,xmm1; addss xmm0,[0x2004];
+        // subss xmm0,xmm2; movss [0x2008],xmm0; cvttss2si eax,xmm0;
+        // cvttss2si ebx,[0x2000]; dec esi; jne; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0xF3, 0x0F, 0x10, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0xF3, 0x0F, 0x59, 0xC1,
+            0xF3, 0x0F, 0x58, 0x05, 0x04, 0x20, 0x00, 0x00,
+            0xF3, 0x0F, 0x5C, 0xC2,
+            0xF3, 0x0F, 0x11, 0x05, 0x08, 0x20, 0x00, 0x00,
+            0xF3, 0x0F, 0x2C, 0xC0,
+            0xF3, 0x0F, 0x2C, 0x1D, 0x00, 0x20, 0x00, 0x00,
+            0x4E,
+            0x75, 0xD1,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        raw.RawShapeTally = true;
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, BitConverter.SingleToUInt32Bits(3.5f));
+            cpu.Ram().Write32(0x2004, BitConverter.SingleToUInt32Bits(1.5f));
+            cpu.Context.WriteXmmElement(1, 0, BitConverter.SingleToUInt32Bits(2.0f));
+            cpu.Context.WriteXmmElement(2, 0, BitConverter.SingleToUInt32Bits(0.5f));
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        Assert.Equal(plain.Ram().Read32(0x2008), raw.Ram().Read32(0x2008));
+        Assert.Equal(plain.Context.Eax, raw.Context.Eax);
+        Assert.Equal(plain.Context.Ebx, raw.Context.Ebx);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Mulss]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Addss]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Subss]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Movss]);
+        Assert.Equal(0, raw.RawHelperShapeCounts[(int)Mnemonic.Cvttss2Si]);
+    }
+
+    [Fact]
+    public void MmxMovqMovntq_MatchesInterpreter()
+    {
+        // mov esi,2; movq mm0,[0x2000]; movq [0x2008],mm0;
+        // movntq [0x2010],mm0; movq mm1,[0x2004]; movq [0x2020],mm1;
+        // dec esi; jne; hlt
+        byte[] code =
+        [
+            0xBE, 0x02, 0x00, 0x00, 0x00,
+            0x0F, 0x6F, 0x05, 0x00, 0x20, 0x00, 0x00,
+            0x0F, 0x7F, 0x05, 0x08, 0x20, 0x00, 0x00,
+            0x0F, 0xE7, 0x05, 0x10, 0x20, 0x00, 0x00,
+            0x0F, 0x6F, 0x0D, 0x04, 0x20, 0x00, 0x00,
+            0x0F, 0x7F, 0x0D, 0x20, 0x20, 0x00, 0x00,
+            0x4E,
+            0x75, 0xDA,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Ram().Write32(0x2000, 0x11223344);
+            cpu.Ram().Write32(0x2004, 0x55667788);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Execute(1000);
+        raw.Execute(1000);
+        AssertSame(plain, raw);
+        foreach (uint address in new uint[] { 0x2008, 0x2010, 0x2020 })
+        {
+            Assert.Equal(plain.Ram().Read32(address), raw.Ram().Read32(address));
+        }
+
+        Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    [Fact]
     public void FlagsAcrossConditionals_MatchesInterpreter()
     {
         // mov eax,0x80000000; mov ebx,1; add eax,ebx; jno skip; mov ecx,1;

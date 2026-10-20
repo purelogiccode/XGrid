@@ -72,6 +72,12 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Gets the number of raw runner invocations that ended on a captured fault (diagnostic).</summary>
     public ulong JitRawFaults { get; private set; }
 
+    /// <summary>Gets the number of raw block builds that fell back to the IL runner (diagnostic).</summary>
+    public static long RawBuildFailures { get; private set; }
+
+    /// <summary>Records one raw build rejected by an unencodable shape (diagnostic).</summary>
+    internal static void NoteRawBuildFailure() => RawBuildFailures++;
+
     /// <summary>Gets the number of chain-target publications (diagnostic).</summary>
     public ulong RawChainPublishes { get; private set; }
 
@@ -294,6 +300,49 @@ public sealed unsafe partial class XboxCpu
 
     /// <summary>Records members served by a raw runner (called by the block loop).</summary>
     internal void NoteRawServed(int members) => JitRawServedMembers += (ulong)members;
+
+    /// <summary>
+    /// Gets or sets whether helper-routed raw members are tallied by mnemonic
+    /// (diagnostic; <c>XGRID_RAW_SHAPES=1</c> or <c>--raw-shapes</c>). Off by
+    /// default: the tally is one array bump per helper member, which is noise
+    /// next to the helper call itself but must never be part of a timed leg.
+    /// </summary>
+    public bool RawShapeTally { get; set; }
+
+    /// <summary>Gets per-mnemonic execution counts of raw members that ran through the helper trampoline.</summary>
+    public long[] RawHelperShapeCounts { get; } = new long[512];
+
+    /// <summary>
+    /// Gets the detailed helper-shape histogram (mnemonic x operand kinds x
+    /// size) - the form split behind <see cref="RawHelperShapeCounts"/>, so the
+    /// next native slice targets forms the planner can actually bake.
+    /// Index: <c>((mnemonic * 4 + op1) * 4 + op2) * 8 + sizeCode</c>.
+    /// </summary>
+    public long[] RawHelperShapeDetail { get; } = new long[512 * 4 * 4 * 8];
+
+    /// <summary>Tallies one helper-routed raw member (called from the trampoline).</summary>
+    internal void NoteRawHelperShape(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
+    {
+        int index = (int)mnemonic;
+        if ((uint)index >= 512u)
+        {
+            return;
+        }
+
+        RawHelperShapeCounts[index]++;
+        int sizeCode = size switch
+        {
+            8 => 1,
+            16 => 2,
+            32 => 3,
+            64 => 4,
+            80 => 5,
+            128 => 6,
+            _ => 0,
+        };
+        int key = (((index * 4) + (int)first) * 4 + (int)second) * 8 + sizeCode;
+        RawHelperShapeDetail[key]++;
+    }
 
     private void EnsureRawArraysPinned()
     {

@@ -11158,3 +11158,88 @@ because 530M of the triangle's steps are idle-spin. **Redirect criterion:** if
 the dashboard is still >15× from real time with GL after C3-x/y/z, further
 codegen stops and the remainder is Track B/D.
 
+
+
+## §199o C3-x hot-shape native encoding (2026-10-20, seventh session) - LANDED
+
+**Scope.** The §199n re-weight put the raw path's helper-routed shape mix first:
+one managed `ExecuteSpec` call per unencoded member (full GPR/EIP/EFLAGS/TSC
+sync, dispatch, reload) on top of the pinned-register block. This session added
+native encodings for the shapes the `--raw-shapes` tally showed on the two
+goldens, leaving the block/chain structure untouched.
+
+**New instrumentation.** `--raw-shapes` (with `--jit-raw`) tallies every
+helper-routed raw member by mnemonic and by form
+(`RawHelperShapeCounts` / `RawHelperShapeDetail`, printed at exit). This closes
+the §199n note that the raw mix was invisible: the counters are execution
+counts from the helper trampoline, not build-time counts. `rawBuildFails` was
+also added to the Jit stats line (raw builds that fell back to the IL runner).
+
+**Shapes now native (raw path; IL keeps the exact spec handler).**
+
+- Stack/control: `push r32/imm32`, `push [m32]`, `pop r32`, `call rel32`,
+  `ret`/`ret imm16`, `leave`, `jmp [m32]`, `call [m32]`.
+- Integer: memory-source `movzx/movsx`, `neg`, `not`, `bswap`, `xchg r32,r32`,
+  `cdq`, `setcc r8`, `shl/shr/sar/rol/ror reg, cl` (host instruction + OF fixup
+  where ShiftOps clears it), `rol/ror reg, imm`.
+- x87: `Fld/Fst/Fstp m32` and `st(i)`, `Fild/Fist/Fistp m32`, `Fadd/Fmul/
+  Fsub/Fsubr/Fdiv/Fdivr` (reg and m32/m64), the `Faddp` family, `Fchs`,
+  `Fcom/Fcomp/Fucom/Fucomp` (reg and m32/m64), `Fld1`, `Fxch`, `Fiadd` family
+  (m16/m32). The FPU state stays in the managed `FpuState`; the emitted code
+  calls tiny `[UnmanagedCallersOnly]` entries that take/return the value bits,
+  so every IL/raw differential compares the same semantics.
+- MMX: `movq mm, m64`, `movq/movntq m64, mm`.
+- SSE scalar: `Addss/Subss/Mulss/Divss/Minss/Maxss` (reg and m32),
+  `Sqrtss/Rsqrtss/Rcpss`, `Movss` (reg/load/store), `Cvttss2Si` (reg/m32).
+- `prefetch` is a member-level Nop (the interpreter's SSE path is already a
+  no-op; it must not fault).
+
+Each new shape follows the existing contract: fast path advances EIP and the
+slow path (probe miss / device / watch / high-byte / unsupported form) runs the
+exact spec handler; helpers catch, record and report faults (the §199m
+contract). Tiny helpers that return a value capture it in **R8** because
+`EmitFaultCheck` clobbers R9/R10/R11 - the first version used R9 and stored a
+fault-pointer fragment into the FPU store (nondeterministic value, found by the
+IL/raw differential before any title run).
+
+**Two correctness bugs found and fixed en route.**
+
+1. **Register-form FPU members advanced EIP twice** (`EmitFpuRegister` emitted
+   its own advance although no slow-path helper marks `_memberHelper`), which
+   drove the block's EIP into the middle of the next instruction. The title
+   run then jumped through garbage and faulted at CR2=0xFFFFFFC2/EIP
+   0x80058191 - a mid-instruction EIP that the block trace (`served=6`,
+   `exit=0x8005818D`) and the emitted-code dump localized.
+2. **The IL runner advanced EIP for handler-backed new kinds.** `JitEmitter`'s
+   generic `!plan.IsTerminator && kind != CallSpec` advance assumed only
+   `CallSpec` owns EIP; the new FPU/MMX/SSE/`PushM`/`Cdq`/`Setcc` kinds run a
+   spec handler that already advanced it, so the IL runner (used for the tail
+   when the remaining budget is smaller than a block) walked off the
+   instruction stream by one member. Fixed by centralizing
+   `JitPlanner.HandlerOwnsEip(kind)` and using it for both the generic advance
+   and the post-poll `advanceEip`.
+
+**Coverage at 1B (1B-step runs, `--jit --jit-threshold 16 --jit-spin
+--jit-raw --raw-shapes --gpu sw`; SHAs exact, every counter identical).**
+
+| title | helper members before | after | rawServed |
+|---|---:|---:|---:|
+| triangle | 24,651,572 | 1,810,041 | 464.8M |
+| menu | 122,648,956 | 5,565,545 | 860.9M |
+
+Remaining helpers are now dominated by `mul/imul` (1.09M triangle / 1.53M
+menu), `movs` (string 1.0M menu), high-byte `mov` (0.8M menu), `fnstsw`,
+rotate-through-carry (exact ShiftOps loop), the unplanned `cmp [mem],imm`
+with a segment override, and SSE moves. None is a large structural item; the
+next lever is C3-y per-member bookkeeping (the §199n item 4), since every
+native member still pays EIP+TSC+served stores.
+
+**Validation.** `XGrid.Cpu.Tests` 636/636 (11 new raw differentials: call/ret +
+push/pop, ret near, movzx/movsx memory, prefetch, FPU memory/register
+arithmetic, FPU integer load/store, MMX movq/movntq, shifts/rotates by
+immediate and CL, SSE scalar cluster, shift helper-free pins); full solution
+1510/1510 green; format clean; ktest smoke **PASS 7/7** (known deltas, 01:10
+wall). Title differentials: triangle RAM `F57934BF...` / CPU `CF79FC17...`,
+menu RAM `660CA11B...` / CPU `F5D61C94...` at 1B - the established anchors.
+Performance A/B against the pre-C3-x commit is recorded in the session note
+(`AGENTS.md`); measurements are host-noise-bound while a game runs.
