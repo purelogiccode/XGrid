@@ -8,7 +8,7 @@ Read in this order: `AGENTS.md` (session notes + current state),
 ## Start state (verified at close)
 
 - `master` @ `6fb57b8`; working tree clean.
-- **1516 tests green**, `dotnet build -c Release` clean,
+- **1519 tests green**, `dotnet build -c Release` clean,
   `dotnet format --verify-no-changes` clean.
 - ktest smoke **PASS 7/7**.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.

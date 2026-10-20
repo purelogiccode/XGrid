@@ -73,12 +73,13 @@ public sealed class Nv2aSamplerFastTests
 
     private const int MacMov = 1;
     private const int MuxV = 2;
+    private const int MuxC = 3;
 
-    private static uint[] Insn(int outAddress, bool final = false, int v = 0)
+    private static uint[] Insn(int outAddress, bool final = false, int v = 0, int aMux = MuxV, int constIndex = 0)
     {
-        uint t1 = ((uint)MacMov << 21) | ((uint)v << 9);
+        uint t1 = ((uint)MacMov << 21) | ((uint)constIndex << 13) | ((uint)v << 9);
         t1 |= 0x1Bu;
-        uint t2 = (uint)MuxV << 26;
+        uint t2 = (uint)aMux << 26;
         t2 |= 0x1Bu << 17;
         t2 |= 1 << 11;
         t2 |= 0x1Bu << 2;
@@ -260,6 +261,265 @@ public sealed class Nv2aSamplerFastTests
         Assert.Equal(slow.RgbZero, fast.RgbZero);
         Assert.Equal(slow.Disabled, fast.Disabled);
         Assert.Equal(slow.BadSize, fast.BadSize);
+        Assert.True(string.Equals(slow.Formats, fast.Formats, StringComparison.Ordinal),
+            $"formats differ: generic={slow.Formats} fast={fast.Formats}");
+        Assert.True(string.Equals(slow.State, fast.State, StringComparison.Ordinal),
+            $"state differs:\n  generic={slow.State}\n  fast={fast.State}");
+    }
+
+    private sealed record FillResult(
+        uint[] Frame, ulong Drawn, ulong Blended, ulong Textured, ulong Samples, ulong RgbZero, long CombinerRgbZero,
+        string Formats, string State, bool Compiled);
+
+    /// <summary>
+    /// Renders the kind-1 modulate shape (single stage-0 Project2D texture,
+    /// SrcAlpha/InvSrcAlpha/Add blend, opaque mask, no zeta traffic) - the
+    /// compiled fill's shape - with the generic loop available as a reference.
+    /// </summary>
+    private static FillResult RenderModulateFill(bool generic)
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        nv2A.DiagnosticGenericFill = generic;
+        WriteTriangle(memory);
+        WriteUvs(memory, 0.5f, 0.5f);
+
+        // White diffuse through the transform constant c0.
+        for (uint i = 0; i < 4; i++)
+        {
+            memory.WritePhysical(0xB80u + (i * 4u), 0x3F800000u);
+        }
+
+        for (uint i = 0; i < 4; i++)
+        {
+            uint a = 0x20u + (i * 0x30u);
+            memory.WritePhysical(0x4000u + (i * 4u), 0xFF000000u | (a << 16) | (a << 8) | a);
+        }
+
+        var pushes = new List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1724u, 0x00002200u));
+        pushes.Add((0x1764u, 0x00000822u));
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, Insn(0, v: 0), 0x0B00u);
+        MethodPush(pushes, Insn(3, aMux: MuxC, constIndex: 0), 0x0B10u);
+        MethodPush(pushes, Insn(9, final: true, v: 1), 0x0B20u);
+        pushes.Add((0x1B00u, 0x4000u));
+        pushes.Add((0x1B04u, 0x00001200u));
+        pushes.Add((0x1B08u, 0x00010303u));
+        pushes.Add((0x1B0Cu, 0x40000000u));
+        pushes.Add((0x1B10u, 0x00000010u << 16));
+        pushes.Add((0x1B1Cu, 0x00040004u));
+        pushes.Add((0x1E70u, 0x01u));
+        pushes.Add((0x1E60u, 0x01u));
+        pushes.Add((0x0AC0u, 0x08040000u));
+        pushes.Add((0x0260u, 0x18140000u));
+        pushes.Add((0x1E40u, 0x00000C00u));
+        pushes.Add((0x0AA0u, 0x00000C00u));
+        pushes.Add((0x0288u, 0x0000000Cu));
+        pushes.Add((0x028Cu, 0x00001C80u));
+        pushes.Add((0x0304u, 1u));
+        pushes.Add((0x0344u, 0x0302u));
+        pushes.Add((0x0348u, 0x0303u));
+        pushes.Add((0x0350u, 0x8006u));
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        var frame = new uint[0x40 * 0x40];
+        for (uint y = 0; y < 0x40; y++)
+        {
+            for (uint x = 0; x < 0x40; x++)
+            {
+                frame[(y * 0x40) + x] = ReadPixel(memory, x, y);
+            }
+        }
+
+        return new FillResult(
+            frame,
+            nv2A.DrawnPixels,
+            nv2A.BlendedPixels,
+            nv2A.TexturedPixels,
+            nv2A.TextureSampleSuccesses,
+            nv2A.TextureSampleRgbZero,
+            (long)nv2A.CombinerRgbZeroFragments,
+            string.Join(";", nv2A.TextureFormatAttempts),
+            string.Join(";", nv2A.TextureStateStats),
+            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CompiledModulateFill_MatchesGenericLoop()
+    {
+        FillResult fast = RenderModulateFill(generic: false);
+        FillResult slow = RenderModulateFill(generic: true);
+
+        Assert.True(slow.Drawn > 0, "the draw must write pixels");
+        Assert.True(fast.Compiled, "the compiled modulate fill must engage");
+        Assert.False(slow.Compiled);
+        Assert.True(fast.Frame.AsSpan().SequenceEqual(slow.Frame), "framebuffer differs");
+        Assert.Equal(slow.Drawn, fast.Drawn);
+        Assert.Equal(slow.Blended, fast.Blended);
+        Assert.Equal(slow.Textured, fast.Textured);
+        Assert.Equal(slow.Samples, fast.Samples);
+        Assert.Equal(slow.RgbZero, fast.RgbZero);
+        Assert.Equal(slow.CombinerRgbZero, fast.CombinerRgbZero);
+        Assert.True(string.Equals(slow.Formats, fast.Formats, StringComparison.Ordinal),
+            $"formats differ: generic={slow.Formats} fast={fast.Formats}");
+        Assert.True(string.Equals(slow.State, fast.State, StringComparison.Ordinal),
+            $"state differs:\n  generic={slow.State}\n  fast={fast.State}");
+    }
+
+    /// <summary>
+    /// Renders one of the two "squared lighting" shapes (kind 2 with stage 0
+    /// unbound, or kind 3 with a Project2D stage 0) as the titles program it:
+    /// eight-stage combiner, cube-mode stages 1/2 on unconfigured 0x07
+    /// textures, a Project3D depth-format stage 3 whose shadow function is the
+    /// constant-zero one, no blend/alpha test and no zeta traffic.
+    /// </summary>
+    private static FillResult RenderLightingFill(int kind, bool generic)
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        nv2A.DiagnosticGenericFill = generic;
+        WriteTriangle(memory);
+        WriteUvs(memory, 0.5f, 0.5f);
+
+        // Shape constants: c0 (stage-0 A), c12/c13 (combine), c14 (add),
+        // c16 (specular fog factor).
+        WriteConstant(memory, 0, 0.5f, 0.25f, 0.75f, 1f);
+        WriteConstant(memory, 12, 1f, 1f, 1f, 0f);
+        WriteConstant(memory, 13, 0.5f, 0.5f, 0.5f, 0f);
+        WriteConstant(memory, 14, 0.25f, 0.5f, 0.75f, 0f);
+        WriteConstant(memory, 16, 1f, 1f, 1f, 1f);
+
+        // Stage-0 texture for kind 3: swizzled A8R8G8B8 4x4 in Morton order.
+        for (uint y = 0; y < 4; y++)
+        {
+            for (uint x = 0; x < 4; x++)
+            {
+                uint swizzled = SpreadMortonBits(x) | (SpreadMortonBits(y) << 1);
+                uint a = 0x20u + ((y * 4u + x) * 0x10u);
+                memory.WritePhysical(0x4000u + (swizzled * 4u), 0xFF000000u | (a << 16) | (a << 8) | a);
+            }
+        }
+
+        var pushes = new List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        pushes.Add((0x1724u, 0x00002200u));
+        pushes.Add((0x1764u, 0x00000822u));
+        pushes.Add((0x1E9Cu, 0u));
+        MethodPush(pushes, Insn(0, v: 0), 0x0B00u);
+        MethodPush(pushes, Insn(3, aMux: MuxC, constIndex: 0), 0x0B10u);
+        MethodPush(pushes, Insn(9, final: true, v: 1), 0x0B20u);
+
+        pushes.Add((0x1B00u, 0x4000u));
+        pushes.Add((0x1B04u, 0x00000600u | (2u << 20) | (2u << 24)));
+        pushes.Add((0x1B08u, 0x00010101u));
+        pushes.Add((0x1B0Cu, 0x40000000u));
+        pushes.Add((0x1B10u, 0x00000010u << 16));
+        pushes.Add((0x1B1Cu, 0x00040004u));
+        for (int slot = 1; slot <= 2; slot++)
+        {
+            uint slotBase = 0x1B00u + ((uint)slot * 0x40u);
+            pushes.Add((slotBase, 0x4100u));
+            pushes.Add((slotBase + 0x04u, (0x07u << 8) | (1u << 2) | (1u << 20) | (1u << 24)));
+            pushes.Add((slotBase + 0x08u, 0x00010101u));
+            pushes.Add((slotBase + 0x0Cu, 0x40000000u));
+            pushes.Add((slotBase + 0x10u, 0x00000004u << 16));
+            pushes.Add((slotBase + 0x1Cu, 0u));
+        }
+
+        const uint slot3 = 0x1B00u + (3u * 0x40u);
+        pushes.Add((slot3, 0x4200u));
+        pushes.Add((slot3 + 0x04u, (0x30u << 8) | (3u << 6) | (1u << 20) | (1u << 24)));
+        pushes.Add((slot3 + 0x08u, 0x00030303u));
+        pushes.Add((slot3 + 0x0Cu, 0x40000000u));
+        pushes.Add((slot3 + 0x10u, 0x00000200u << 16));
+        pushes.Add((slot3 + 0x1Cu, 0x02000200u));
+
+        pushes.Add((0x1E70u, kind == 2 ? 0x00010C60u : 0x00010C61u));
+        pushes.Add((0x1E60u, 0x00011108u));
+        pushes.Add((0x0288u, 0x0C0B000Fu));
+        pushes.Add((0x028Cu, 0x0C011180u));
+        uint[] rgbInputs =
+        {
+            0xC149C14Au, 0x0D0D0000u, 0xCDCD0000u, 0xCDCD0000u,
+            0xCDCD0000u, 0xCDCD0000u, 0xC10CC20Du, 0xC40520C1u,
+        };
+        uint[] rgbOutputs =
+        {
+            0x000C30CDu, 0x000000D0u, 0x000000D0u, 0x000000D0u,
+            0x000000D0u, 0x000000D0u, 0x000005CDu, 0x00000C00u,
+        };
+        for (uint stage = 0; stage < 8; stage++)
+        {
+            pushes.Add((0x0AC0u + (stage * 4u), rgbInputs[stage]));
+            pushes.Add((0x1E40u + (stage * 4u), rgbOutputs[stage]));
+            pushes.Add((0x0260u + (stage * 4u), stage == 0 ? 0xD159D15Au : 0u));
+            pushes.Add((0x0AA0u + (stage * 4u), 0u));
+        }
+
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        var frame = new uint[0x40 * 0x40];
+        for (uint y = 0; y < 0x40; y++)
+        {
+            for (uint x = 0; x < 0x40; x++)
+            {
+                frame[(y * 0x40) + x] = ReadPixel(memory, x, y);
+            }
+        }
+
+        return new FillResult(
+            frame,
+            nv2A.DrawnPixels,
+            nv2A.BlendedPixels,
+            nv2A.TexturedPixels,
+            nv2A.TextureSampleSuccesses,
+            nv2A.TextureSampleRgbZero,
+            (long)nv2A.CombinerRgbZeroFragments,
+            string.Join(";", nv2A.TextureFormatAttempts),
+            string.Join(";", nv2A.TextureStateStats),
+            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal));
+    }
+
+    private static void WriteConstant(ArrayMemory memory, int index, float x, float y, float z, float w)
+    {
+        uint baseAddress = 0xB80u + ((uint)index * 0x10u);
+        memory.WritePhysical(baseAddress, F(x));
+        memory.WritePhysical(baseAddress + 4u, F(y));
+        memory.WritePhysical(baseAddress + 8u, F(z));
+        memory.WritePhysical(baseAddress + 0xCu, F(w));
+    }
+
+    private static uint SpreadMortonBits(uint value)
+    {
+        uint result = 0u;
+        for (int bit = 0; bit < 8; bit++)
+        {
+            result |= ((value >> bit) & 1u) << (bit * 2);
+        }
+
+        return result;
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void CompiledLightingFill_MatchesGenericLoop(int kind)
+    {
+        FillResult fast = RenderLightingFill(kind, generic: false);
+        FillResult slow = RenderLightingFill(kind, generic: true);
+
+        Assert.True(slow.Drawn > 0, "the draw must write pixels");
+        Assert.True(fast.Compiled, "the compiled lighting fill must engage");
+        Assert.False(slow.Compiled);
+        Assert.True(fast.Frame.AsSpan().SequenceEqual(slow.Frame), "framebuffer differs");
+        Assert.Equal(slow.Drawn, fast.Drawn);
+        Assert.Equal(slow.Blended, fast.Blended);
+        Assert.Equal(slow.Textured, fast.Textured);
+        Assert.Equal(slow.Samples, fast.Samples);
+        Assert.Equal(slow.RgbZero, fast.RgbZero);
+        Assert.Equal(slow.CombinerRgbZero, fast.CombinerRgbZero);
         Assert.True(string.Equals(slow.Formats, fast.Formats, StringComparison.Ordinal),
             $"formats differ: generic={slow.Formats} fast={fast.Formats}");
         Assert.True(string.Equals(slow.State, fast.State, StringComparison.Ordinal),
