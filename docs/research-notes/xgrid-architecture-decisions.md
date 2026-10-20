@@ -11382,3 +11382,110 @@ identical on every pair): **triangle 12.51 -> 11.76 s (-5.9%, 3/3); menu
 47.90 -> 47.33 s (-1.2%, 2/3)**. The triangle is the swizzle-heavy title
 (38.3M swizzled 32-bit samples), the menu is 76% linear textures, which is why
 the split looks like this. Suite 1511.
+
+## §200 Rasterizer O5 measured-negative, then O3b fast sampler + O1 compiled modulate fill (2026-10-20, eighth session) - LANDED
+
+**O5 counter batching: measured negative, reverted.** The inventory estimated
+5-12 ns/fragment for the always-on per-pixel diagnostics (texstate min/max,
+first address/texel, per-format attempts, draw/blend counters). Before
+implementing the batch, the ceiling was measured: a temporary probe elided
+*every* hot diagnostic increment (the printed counters went to 0) and ran the
+1B goldens. Raster time moved 24.00 -> 23.34 s (menu) and 6.19 -> 6.20 s
+(triangle), i.e. the whole diagnostic body is ~2% of the menu raster and zero
+on the triangle - below the 2% wall standard. The batch implementation (per-fill
+`FillDiag` struct, flushed at fill end) was written, measured neutral
+(23.82 -> 24.03 s menu, within host noise), and reverted. The inventory's row
+10/17 cost estimates were wrong: these are predictable L1 increments, not the
+bottleneck. Do not re-attempt without a new measurement.
+
+**Ablation of the real pixel cost (raster seconds, `--gpu-time`, 1B).** Four
+temporary probes (skip sampler / skip fragment / skip combiner / skip
+interpolation) decomposed the two loops:
+
+| ablation | menu (baseline 24.0 s) | triangle (6.19 s) |
+|---|---:|---:|
+| texture sampling | 8.17 (34%) | 1.96 (32%) |
+| fragment stage (ProcessFragment) | 7.76 (32%) | 0.98 (16%) |
+| combiner evaluation | 4.04 (17%) | 1.72 (28%) |
+| interpolation | 4.02 (17%) | 1.05 (17%) |
+
+The per-pixel *descriptor/tap* work, not the counters, is the raster cost.
+Two more probes on the sampler: removing the texel decode was neutral, removing
+the texel **memory read** was worth ~4.8 s of the menu's 8.2 s (with a
+downstream confound, but it bounds the irreducible part).
+
+**Slice 1 - O3b per-fill fast sampler (`SamplerPlan.FastKind`).** The plan now
+classifies each slot once per draw as a *fast* shape when the layout is linear
+or Morton-swizzled, the texel is 2 or 4 bytes, no axis is BORDER, and each
+address mode folds to an integer op (`clean`: clamp, POT mirror, POT
+wrap-by-mask). `SampleFast` then runs the exact generic arithmetic (same
+`plan.Linear ? u : u * width` scale, same `MathF.Floor`, same fold, same
+address expression, same `DecodeTextureTexel`, same `TrackTextureCoords` /
+`CountSample`) with the per-sample invariant tests (enable, size, border,
+bytes-per-texel, layout branch, wrap switch) gone. Non-standard interleave
+masks keep `InterleaveBits`; only the descriptor checks are skipped.
+
+**Exact decode tables.** `DecodeTextureTexel` and `TryReadPixelFloat` replaced
+their per-channel float divisions with static tables built by the *same*
+expression (`i / 255f` etc., `ReadOnly` once at type init), so every decoded
+value is bit-identical and the sampler/blend-destination reads lose 3-4 `divss`
+per sample. This is the one change that also helps the generic path.
+
+**Slice 2 - O1 compiled modulate fill (`FillTrianglePshModulate`).** The menu
+spends 86% of its pixels (245.8M at 1B) in one shape: kind-1 modulate combiner,
+one Project2D stage, lean interpolation, no depth/stencil, opaque color mask,
+SrcAlpha/InvSrcAlpha/Add blend, 4-byte color. A per-fill predicate selects a
+dedicated loop for exactly that shape; the pixel body is the generic loop's
+arithmetic transcribed operation-for-operation (same barycentric expressions,
+same perspective renormalization, same interpolation order, same shared
+`SampleFast` / `PshCombiner.ModulatePass` / `CompareFunc` / `BlendSrcAlphaAdd`
+/ `PackPixel` / `WritePixel` helpers). Per-draw values travel as locals
+(color base, pitch, alpha ref, zclip bounds) and the ZCLIP block keeps its
+reference position *after* the stage resolve and before the alpha test, so
+culled fragments keep their sampler and combiner counters. Cubemap and
+depth-format stage-0 textures are excluded so the generic resolve's cube and
+shadow branches can never be bypassed; anything not matching falls back to the
+generic loop unchanged.
+
+**Diagnostics.** `FastKindDebug` (printed with `--gpu-time`) now reports
+`compiled=<fills>/<pixels>/<seconds>` and, when `RasterTimingEnabled`, a
+`rej=<reason>:<fills>` histogram of the per-fill rejection bits (this is how the
+2-byte and general-mask sampler shapes were found). Two diagnostic switches,
+`DiagnosticGenericSampler` / `DiagnosticGenericFill`, force the reference paths
+for differential tests.
+
+**Validation.** New `Nv2aSamplerFastTests` renders a two-stage modulate draw
+five ways (linear 4bpp clamp with out-of-range texel-unit coords, swizzled 4bpp
+mirror, swizzled 2bpp wrap-by-mask, and two non-standard-interleave shapes) and
+requires the fast and generic runs to agree on the framebuffer word, the sample
+counters, the per-format attempts and the whole `TextureStateStats` line
+(first address/texel, min/max U/V). Fail-pre-fix proven by breaking the clamp
+fold: the linear case then fails with the exact pixel difference
+(generic `FF381C10` vs broken `FF482410`). Suite 1516.
+
+**SW 1B goldens (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`,
+1B steps, `--bench`).** Both titles exact against the anchors on every run -
+menu RAM `660CA11B...` / CPU `F5D61C94...`, triangle RAM `F57934BF...` / CPU
+`CF79FC17...` - and every printed NV2A counter byte-identical (pixels,
+textured, blended, depth, zclip, clears, frames, stalls, formats, texstate
+min/max/first). `rasterPsh` (host-only, the exact loop time) is a low-noise
+metric (six baseline runs 23.82-24.07 s menu, 6.18-6.20 s triangle):
+
+| 1B `rasterPsh` | baseline | + fast sampler | + compiled fill |
+|---|---:|---:|---:|
+| menu | 24.00 s | 23.35 s | **16.37-17.02 s** |
+| triangle | 6.19 s | 5.97 s | 5.98 s |
+| menu compiled share | - | - | 10.25 s / 245.8M px (41.7 ns/px) |
+
+The compiled fill is 402,590 of 402,590 kind-1 fills on the menu
+(`compiled=402590/245797540`), i.e. the whole dominant shape. Menu wall moved
+47.96 -> ~39-40 s in single runs; the interleaved 3-pair wall claim is recorded
+in the session close note once the k2/k3 shape is also covered.
+
+**Remaining.** Menu `rasterPsh` 16.4 s = 10.25 s compiled k1 (245.8M px) + ~5.8 s
+generic k2/k3 lighting fills (62.4M px, ~93 ns/px) + 0.44 s legacy. The k2/k3
+8-stage / 7-stage "squared lighting" combiner fills are also the *entire*
+triangle raster (5.98 s), so they are the next and only remaining Track B
+lever of this size; they need an exact transcription of
+`EvaluateLightingSpecialized` plus the DotSt/DotStr3D/Project2D cube stage
+resolve.

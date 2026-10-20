@@ -1047,7 +1047,12 @@ public sealed class PshCombiner : ISnapshotable
         a = ModulatePass(Math.Max(texels[0][3], 0f), Math.Max(diffuse[3], 0f));
     }
 
-    private static float ModulatePass(float t0, float v0)
+    /// <summary>
+    /// One modulate-pass channel: <c>max(clamp(clamp(t0*v0, -1..1) + 0,
+    /// -1..1), 0) + 0</c>. Public so the rasterizer's compiled modulate fill
+    /// can run the identical expression without a per-fragment array walk.
+    /// </summary>
+    public static float ModulatePass(float t0, float v0)
     {
         // Stage: ab = clamp(-1..1) of the product; cd = clamp(0 * 0) = +0;
         // mux = ab + cd (no FlagMux) re-clamped. Final: D = max(mux, 0);
