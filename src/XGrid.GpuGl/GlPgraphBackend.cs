@@ -932,11 +932,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private void ArmPresentWatch(in PgraphSurfaceRecord record)
     {
-        if (_probeNoWatch)
-        {
-            return;
-        }
-
         if (_fbo != 0 && _dirtyWatch is not null)
         {
             ulong span = (ulong)record.Pitch * (ulong)record.Height;
@@ -1512,31 +1507,40 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
             bool linearFlag = linear;
             var key = new TextureKey(in texture, color, width, height, pitch, linearFlag);
-            GlTextureEntry? entry;
+            GlTextureEntry? entry = null;
+            bool created = false;
             if (_lastTextureValid[slot] && _lastTextureKey[slot].Equals(key))
             {
                 entry = _lastTextureEntry[slot]!;
             }
             else if (!_textures.TryGetValue(key, out entry))
             {
-                uint textureId = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
-                entry = new GlTextureEntry(textureId, 0, width, height);
+                entry = new GlTextureEntry(0, 0, width, height);
                 BuildSampleAddresses(entry, in texture, linear, bytes, width, height, pitch);
+                entry.Texture = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
                 _textures.Add(key, entry);
+                created = true;
             }
 
+            // A freshly uploaded entry stores the fingerprint of what was just
+            // sent to GL, so the change check below does not upload it twice
+            // (it used to: entry.Fingerprint started at 0).
             uint fingerprint = FingerprintEntry(entry);
             if (entry.Fingerprint != fingerprint)
             {
-                // Content change at the same guest address (the menu's atlas
-                // reuse): re-upload into the SAME entry and drop the old id so
-                // later draws bind the fresh texture, not a leaked one.
-                uint newId = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
-                uint oldId = entry.Texture;
-                entry.Texture = newId;
+                if (!created)
+                {
+                    // Content change at the same guest address (the menu's
+                    // atlas reuse): re-upload into the SAME entry and drop the
+                    // old id so later draws bind the fresh texture, not a
+                    // leaked one.
+                    uint oldId = entry.Texture;
+                    entry.Texture = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
+                    _gl.DeleteTextures(1, ref oldId);
+                    InvalidateTextureBinding();
+                }
+
                 entry.Fingerprint = fingerprint;
-                _gl.DeleteTextures(1, ref oldId);
-                InvalidateTextureBinding();
             }
 
             _lastTextureKey[slot] = key;
@@ -1559,9 +1563,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             }
         }
     }
-
-    private readonly bool _probeNoWatch = string.Equals(
-        Environment.GetEnvironmentVariable("XGRID_GL_NOWATCH"), "1", StringComparison.Ordinal);
 
     /// <summary>Binds a framebuffer through the binding shadow (the default framebuffer is 0 at context creation).</summary>
     private void BindFbo(uint fbo)
