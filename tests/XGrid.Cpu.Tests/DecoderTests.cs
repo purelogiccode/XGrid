@@ -240,4 +240,25 @@ public sealed class DecoderTests
         Assert.Equal(Mnemonic.Unsupported, instruction.Mnemonic);
         Assert.False(instruction.IsValid);
     }
+
+    [Fact]
+    public void BitTest_ImmediateForms()
+    {
+        DecodedInstruction bt = Decode(0x0F, 0xBA, 0xE0, 0x05);
+        DecodedInstruction bts = Decode(0x0F, 0xBA, 0xE8, 0x05);
+        DecodedInstruction btr = Decode(0x0F, 0xBA, 0xF0, 0x05);
+        DecodedInstruction btc = Decode(0x0F, 0xBA, 0xF8, 0x05);
+        DecodedInstruction memory = Decode(0x0F, 0xBA, 0x20, 0x05);
+        DecodedInstruction reserved = Decode(0x0F, 0xBA, 0xC0, 0x05);
+
+        Assert.Equal(Mnemonic.Bt, bt.Mnemonic);
+        Assert.Equal(Mnemonic.Bts, bts.Mnemonic);
+        Assert.Equal(Mnemonic.Btr, btr.Mnemonic);
+        Assert.Equal(Mnemonic.Btc, btc.Mnemonic);
+        Assert.Equal(4, bt.Length);
+        Assert.Equal(OperandKind.Immediate, bt.Operand2.Kind);
+        Assert.Equal(5u, bt.Operand2.Immediate);
+        Assert.Equal(OperandKind.Memory, memory.Operand1.Kind);
+        Assert.Equal(Mnemonic.Unsupported, reserved.Mnemonic);
+    }
 }

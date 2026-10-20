@@ -577,6 +577,46 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 > negatives, the rules (validation ceremony, strip probes before A/B), commands and
 > diagnostics.
 
+**Session 2026-10-20 (tenth, oracle/0.8.137 re-base). Two deliverables: the 0.8.137
+reference delta is now verified, and XGrid has an independent x86 differential.**
+
+**1. 0.8.137 re-base (`docs/research-notes/xemu-0.8.137.md` rewritten).** The 88/97
+differing NV2A files are **clang-format only** except four: `ptimer.c` (rewritten),
+`nv2a.c`/`nv2a_int.h`/`nv2a_regs.h` (PTIMER IRQ), `pgraph/vk/surface.c` (nearest
+filter) and `gl/shaders.c` (GL version in the shader-cache key). No new NV097
+methods, no PSH/VSH/vertex/texture semantic change; the 0.8.136 transcriptions stay
+valid. The real functional delta is **PTIMER**: 61-bit register time with a writable
+offset (TIME_0/TIME_1 are writable), ALARM_0 is a 27-bit-masked compare re-armed on
+each 2^32 wrap, the alarm is a QEMU timer, `INTR_0` read latches a reached alarm, and
+`NV_PMC_INTR_0_PTIMER` (bit 20) now feeds the PMC IRQ aggregate. `Nv2aMmio` still has
+the 0.8.136 counter-only model - landing the 0.8.137 model is the next fidelity item.
+The APU/DSP restructure is documented in the same note: the JIT is an external Rust
+crate (so `interp/` stays our semantics oracle), `dsp_emu.c.inc` is byte-identical
+after whitespace removal, and the real corrections are the 4-entry interrupt table
+(RESET 0x00, STACK_ERROR 0x02, ILLEGAL **0x04** not 0x3E, TRAP 0x08), SR bit names
+(SC/DM/LF/FV) and interrupt entry clearing LF+FV, DMA format 0 (8-bit) and the
+`DMA_CONTROL` **3-read -> STOPPED** completion protocol, and `NV_PAPU_XGSCNT` =
+`ep_frame_div * 32`.
+
+**2. CPU differential oracle (`tools/cpu-oracle/`, note `cpu-oracle.md`).** A
+333-case corpus (ALU/shift/mul/div/mov/lea/stack/bit/string/x87/MMX/SSE, defined-flag
+masks per instruction) runs identically on XGrid and on QEMU's TCG core (Unicorn
+2.1.4); both sides produce the same FXSAVE image plus a data-page dump. Found and
+fixed three real gaps: `0F BA` (BT/BTS/BTR/BTC r/m, imm8) was **not decoded at all**;
+`FPREM` mapped the quotient bits as C3=Q2/C0=Q0 instead of C0=Q2/C1=Q0/C3=Q1; and
+`FDIV`/`FDIVR` never latched ZE (`x/0`) or IE (`0/0`) in the FPU status word. 1B
+fast mode is bit-exact on both titles (anchors `660CA11B`/`F5D61C94` and
+`F57934BF`/`CF79FC17`); accurate-mode RAM SHAs are unchanged and the triangle CPU
+SHA moved `98039867 -> 9B5AFC2A` because a byte diff of the two 71 MB `.xgs` saves
+shows exactly one changed byte - the FSW ZE bit. Suite 1519 green (CPU project 643).
+`ktest-smoke` XGrid leg is bit-reproducible at **792,800,535** steps with only the
+known deltas (319 RtlWalkFrameChain, 344 XcVerifyPKCS1Signature); the xemu leg could
+not bind its monitor socket on this host (`Failed to bind socket: Input/output error`
+on ports 4455 and 4457), so the 7/7 pairwise diff did not run. The system-QEMU path
+(`boot.s` + `harness.s`) is staged but
+not validated end-to-end (the 197 MB installer download is incomplete on this host);
+Unicorn is the same TCG core.
+
 **Session 2026-10-20 (ninth).** **Track B compiled-loop fast lanes: the sampler's
 descriptor work is gone (§202).** Priced by ablation on the 1B legs first (a probe
 switch that elided one block at a time: all sampler work 1.6 s, decode 1.0 s,

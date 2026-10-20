@@ -641,4 +641,43 @@ public sealed class FpuTests
         cpu.Step();
         Assert.Equal(0, cpu.Context.Fpu.Top);
     }
+
+    [Fact]
+    public void Fdiv_ByZero_SetsZeroDivideFlag()
+    {
+        // fldz; fld1; fdiv st(0), st(1)  =>  1 / 0
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0xEE, 0xD9, 0xE8, 0xD8, 0xF1);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x04, cpu.Context.Fpu.StatusWord & 0x04);
+    }
+
+    [Fact]
+    public void Fdiv_ZeroByZero_SetsInvalidFlag()
+    {
+        // fldz; fldz; fdiv st(0), st(1)  =>  0 / 0
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0xEE, 0xD9, 0xEE, 0xD8, 0xF1);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x01, cpu.Context.Fpu.StatusWord & 0x01);
+    }
+
+    [Fact]
+    public void Fprem_MapsQuotientBitsToC0C1C3()
+    {
+        // fld1; fld1; fprem  =>  1 mod 1, quotient 1 => C1 (Q0) set.
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0xE8, 0xD9, 0xE8, 0xD9, 0xF8);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x0200, cpu.Context.Fpu.StatusWord & 0x4700);
+    }
 }

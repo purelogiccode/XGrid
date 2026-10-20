@@ -3707,8 +3707,18 @@ public sealed partial class XboxCpu
         }
     }
 
-    private static Fpu80 ApplyFpuArithmetic(Mnemonic mnemonic, Fpu80 left, Fpu80 right)
+    private Fpu80 ApplyFpuArithmetic(Mnemonic mnemonic, Fpu80 left, Fpu80 right)
     {
+        // Divide exceptions latch in the status word even when masked.
+        if (mnemonic is Mnemonic.Fdiv or Mnemonic.Fdivp or Mnemonic.Fidiv)
+        {
+            SetFpuDivideExceptions(left, right);
+        }
+        else if (mnemonic is Mnemonic.Fdivr or Mnemonic.Fdivrp or Mnemonic.Fidivr)
+        {
+            SetFpuDivideExceptions(right, left);
+        }
+
         return mnemonic switch
         {
             Mnemonic.Fadd or Mnemonic.Faddp or Mnemonic.Fiadd => Fpu80.Add(left, right),
@@ -3718,6 +3728,22 @@ public sealed partial class XboxCpu
             Mnemonic.Fdiv or Mnemonic.Fdivp or Mnemonic.Fidiv => Fpu80.Divide(left, right),
             _ => Fpu80.Divide(right, left),
         };
+    }
+
+    private void SetFpuDivideExceptions(Fpu80 dividend, Fpu80 divisor)
+    {
+        if (!divisor.IsZero)
+        {
+            if (divisor.IsInfinity && dividend.IsInfinity)
+            {
+                Fpu.SetException(0);
+            }
+
+            return;
+        }
+
+        // 0/0 is an invalid operation; finite/0 latches the zero-divide flag.
+        Fpu.SetException(dividend.IsZero ? 0 : 2);
     }
 
     private void SetFpuCompare(Fpu80 left, Fpu80 right)
@@ -4175,8 +4201,9 @@ public sealed partial class XboxCpu
 
         Fpu.SetRegister(0, Fpu80.FromDouble(remainder));
         long q = (long)quotient;
-        Fpu.SetConditionCodes((q & 4) != 0, false, (q & 1) != 0);
-        Fpu.SetC1((q & 2) != 0);
+        // Intel FPREM flag mapping: C0 = Q2, C1 = Q0, C3 = Q1, C2 = incomplete.
+        Fpu.SetConditionCodes((q & 2) != 0, false, (q & 4) != 0);
+        Fpu.SetC1((q & 1) != 0);
     }
 
     private static double RoundToInteger(double value, int roundingMode)

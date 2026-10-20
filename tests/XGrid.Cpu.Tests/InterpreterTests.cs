@@ -537,4 +537,28 @@ public sealed class InterpreterTests
         Assert.Equal(0x100u, cpu.Context.ReadRegister(Gpr.Eax));
         Assert.NotEqual(0u, (cpu.Context.Eflags & FlagBits.Cf));
     }
+
+    [Fact]
+    public void BitTest_Immediate_UpdatesCarryAndDestination()
+    {
+        XboxCpu bt = CpuHarness.Create(0x0F, 0xBA, 0xE0, 0x05);
+        bt.Context.WriteRegister(Gpr.Eax, 0x00000020);
+        bt.Step();
+        Assert.Equal(0x00000020u, bt.Context.ReadRegister(Gpr.Eax));
+        Assert.NotEqual(0u, bt.Context.Eflags & FlagBits.Cf);
+
+        XboxCpu bts = CpuHarness.Create(0x0F, 0xBA, 0xE8, 0x05);
+        bts.Step();
+        Assert.Equal(0x00000020u, bts.Context.ReadRegister(Gpr.Eax));
+
+        XboxCpu btr = CpuHarness.Create(0x0F, 0xBA, 0xF0, 0x05);
+        btr.Context.WriteRegister(Gpr.Eax, 0xFFFFFFFF);
+        btr.Step();
+        Assert.Equal(0xFFFFFFDFu, btr.Context.ReadRegister(Gpr.Eax));
+
+        XboxCpu btc = CpuHarness.Create(0x0F, 0xBA, 0xF8, 0x05);
+        btc.Context.WriteRegister(Gpr.Eax, 0x00000020);
+        btc.Step();
+        Assert.Equal(0x00000000u, btc.Context.ReadRegister(Gpr.Eax));
+    }
 }

@@ -755,6 +755,16 @@ Create a test format:
 }
 ```
 
+**Independent differential (2026-10-20).** `tools/cpu-oracle/` generates a
+333-case corpus and runs it on an independent x86 implementation (QEMU's TCG
+core through Unicorn; a system-QEMU harness is staged). The test
+`CpuOracleTests.InstructionCorpus_MatchesIndependentOracle` runs the checked-in
+`data/cpu-oracle/int.json` + `int.bin` in CI. It compares GPRs, defined EFLAGS
+bits, EIP, the architectural FXSAVE words (FCW/FSW/MXCSR) and the memory each
+case stores. It found the missing `0F BA` decode (BT/BTS/BTR/BTC r/m, imm8),
+the swapped `FPREM` quotient condition codes, and the missing `FDIV` ZE/IE
+latches. See `docs/research-notes/cpu-oracle.md`.
+
 ## Acceptance criteria
 
 The interpreter must pass an extensive instruction-level regression suite before Xbox boot development proceeds.

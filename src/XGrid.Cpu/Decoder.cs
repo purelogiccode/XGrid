@@ -712,6 +712,38 @@ public static class Decoder
                 opcode);
         }
 
+        if (opcode == 0xBA)
+        {
+            // Group 8: BT/BTS/BTR/BTC r/m, imm8.
+            if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int bitOp,
+                    out Operand bitDestination) || bitOp < 4)
+            {
+                return Unsupported(position, opcode, operandSize, addressSize);
+            }
+
+            if (!TryReadImmediate(code, ref position, 8, out uint bitImmediate))
+            {
+                return Unsupported(position, opcode, operandSize, addressSize);
+            }
+
+            Mnemonic bitMnemonic = bitOp switch
+            {
+                4 => Mnemonic.Bt,
+                5 => Mnemonic.Bts,
+                6 => Mnemonic.Btr,
+                _ => Mnemonic.Btc,
+            };
+
+            return Make(
+                bitMnemonic,
+                bitDestination,
+                Operand.ImmediateOperand(bitImmediate, 8),
+                position,
+                operandSize,
+                addressSize,
+                opcode);
+        }
+
         if (opcode is 0xA4 or 0xA5 or 0xAC or 0xAD)
         {
             if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int shiftReg,
