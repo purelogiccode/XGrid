@@ -1842,7 +1842,6 @@ internal static class Program
                 Console.WriteLine(
                     $"Raw helper shapes total={rawHelperTotal} " +
                     FormatJitMnemonicTop(machine.Cpu.RawHelperShapeCounts, 24));
-
                 long[] detail = machine.Cpu.RawHelperShapeDetail;
                 var top = new List<(int Key, long Count)>();
                 for (int key = 0; key < detail.Length; key++)
@@ -1884,6 +1883,11 @@ internal static class Program
                         $"  rawshape {((Mnemonic)mnemonic),-12} {Form((OperandKind)op1)}" +
                         $"{Form((OperandKind)op2)} size={sizeText,-3} count={top[i].Count}");
                 }
+            }
+
+            if (XboxCpu.RawProfileEnabled)
+            {
+                Console.WriteLine(machine.Cpu.FormatRawKindProfile());
             }
         }
 

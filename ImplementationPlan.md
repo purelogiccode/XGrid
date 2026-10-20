@@ -2852,8 +2852,14 @@ Shaders
 > **`--gpu sw` triangle 14.74 -> 13.14 s (-10.8%), menu 52.20 -> 48.43 s
 > (-7.2%); `--gpu gl --gpu-replace` triangle 7.56 -> 6.49 s (-14.1%) at
 > 11.9 -> 8.8 ns/member, menu 34.29 -> 31.56 s (-8.0%) at 36.7 -> 31.6 ns.**
-> Next: **C3-y per-member bookkeeping trim**, then C3-z; Track B still owns
-> the end-to-end lead.
+> **C3-y was implemented bit-exact, measured NEUTRAL and reverted** (5 pairs:
+> wall 7.048 -> 7.015, `outerMs` 4326 -> 4314); a 1024-slot data translate
+> cache was likewise neutral and reverted. The new `XGRID_RAW_PROFILE`
+> tally shows the menu is ~50% load/store + 14% loop dec/inc, so its premium
+> is the memory probe's dependent-load chain, not helper dispatch. The flip
+> probe is closed as no-bug. **Track B/D owns the end-to-end gap now**; the
+> remaining CPU helper tail (`mul/imul`, string `movs`, high-byte `mov`,
+> `fnstsw`, carry-rotates) is small.
 
 ```text
 Interpreter

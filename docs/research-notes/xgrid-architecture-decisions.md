@@ -11259,3 +11259,59 @@ dominates those walls (39-48%, §199n) and the `gl+replace` legs still include
 the dashboard's device work inside `RunJitBlock`; the pure per-member cost is
 now **8.8 ns (triangle) / 31.6 ns (dashboard)** on the GL legs, against the
 §199n 18.5 / 61 ns. That is the C3-x target hit (menu 61 -> ~30 ns).
+
+**§199o amendment - C3-y per-member bookkeeping trim: measured NEUTRAL, reverted.**
+Implemented the full trim in the working tree: EIP published only at
+helpers/exits/polls (the epilogue stores the fall-through once), served as a
+compile-time immediate at the same points, and TSC as `entry + compile-time
+count` with a per-helper rebase from the context (so a `wrmsr 0x10` handler
+stays exact). It was bit-exact at 1B on both titles (same anchors, every
+counter identical), but the A/B against `dd976db` was **neutral**: triangle
+`--gpu gl --gpu-replace`, 5 interleaved pairs - wall median 7.048 -> 7.015 s
+(+0.5%), `outerMs` 4326 -> 4314 (+0.3%); menu showed no win above host noise.
+**Diagnosis:** the per-member bookkeeping was off the critical path (store-to-
+load forwarding on the same slot, spare issue slots), so removing ~9
+instructions/member did not move the wall. This confirms the §199n read that
+the remaining engine cost is the *bodies* (probes, helper calls, device work),
+not bookkeeping. The change was reverted (no product code kept); the finding
+re-aims the next step at **C3-z (inline page pair) or Track B**, not more
+bookkeeping. The triangle engine is at 8.8 ns/served member, TCG-class; the
+menu's 31.6 ns is dominated by short blocks plus NV2A/device work, i.e., a
+Track B/D problem.
+
+**§199o amendment 2 - raw-kind profile, xlat sizing, and flip pacing (same session).**
+Added an env-gated raw-kind profiler (`XGRID_RAW_PROFILE=1`, run with
+`XGRID_RAW_CHAIN=0`): after each raw runner call the served prefix is
+re-planned and tallied by `JitKind` (exact, because an unchained runner cannot
+serve past its own members). The 1B menu mix (`--gpu gl --gpu-replace`, 706.6M
+profiled members of 860.9M served - the rest are IL-served budgets/tails):
+
+| kind | count | share |
+|---|---:|---:|
+| MovLoad | 171.6M | 24.3% |
+| MovStore | 139.4M | 19.7% |
+| DecR | 101.1M | 14.3% |
+| AluRR / IncR / AluRI | 96.6M | 13.7% |
+| MovRR / ShiftRI / TestRR | 42.6M | 6.0% |
+| FpuLoad / FpuArithMem / FpuStorePop | 36.1M | 5.1% |
+| MovExtend / PushR / Lea / AluRM | 34.1M | 4.8% |
+| MmxLoad + MmxStore | 15.1M | 2.1% |
+| RetNear / CallRel | 13.9M | 2.0% |
+
+So the dashboard is a **move/loop workload**, not a helper or x87 workload:
+~50% of members are memory operations and another ~20% are loop-counter
+inc/dec. Its 31.6 ns/member is the memory probe's dependent-load chain
+(tag -> physical -> RAM base), its store guard and branch costs, not helper
+dispatch. Two follow-ups measured and **rejected as neutral**:
+(1) a 1024-slot data translate cache (256 -> 1024; measured on both titles,
+3 interleaved pairs: menu `outerMs` +0.1%, triangle -0.5% - the raw probe's
+misses are not dominated by 256-slot conflicts); (2) C3-y (above).
+**Flip-pacing probe (closes the §199n queued item):** `FLIP_STALL` semantics
+match the reference (stall until `READ_3D == WRITE_3D`; the read index advances
+on vblank), so the triangle's 35 flips/1B is render work plus one vblank, not
+an extra-frame delay: 1B ticks = 1.36 s of guest time, 35 frames = 39 ms/frame
+= ~1 vblank (16.7 ms) + the demo's ~18-22 ms render. The "84 implied by xemu"
+number was not an apples-to-apples guest-step measure (xemu's 1B includes its
+idle loop and its rate is wall-clock-derived). Playability remains an engine
+speed problem (74 Msteps/s vs xemu ~830), i.e., Track B/D, not a pacing bug.
+The profiler is kept as an opt-in diagnostic; the xlat size stays 256.
