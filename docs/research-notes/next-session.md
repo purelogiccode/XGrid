@@ -55,8 +55,8 @@ the sw leg.
 3. **One uniform + one draw per triangle** (`uTri[25]`, positions by
    `gl_VertexID`; no VBO upload). Program-structure cache, `TextureKey` structs,
    per-entry sample addresses, prefetched fingerprints, GL binding shadows,
-   raw-tick timing. Do not re-add per-draw strings, per-draw `BufferData`, or
-   redundant binds.
+   raw-tick timing, no double-upload on texture creation. Do not re-add per-draw
+   strings, per-draw `BufferData`, or redundant binds.
 4. **Shared-path wins are in**: `Nv2aMmio.CollectMethodHistogram` off in the CLI
    (menu sw -6.2%), `IPgraphBackend.ObserveMethods` lets a backend decline the
    per-method callback (loaded menu gl -5.8 s). Do not re-add a virtual call per
