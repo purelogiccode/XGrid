@@ -423,13 +423,261 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(0u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
     }
 
+    /// <summary>
+    /// Records the draw-command batch bracket so the seam's ordering contract
+    /// can be asserted: every draw must arrive between one BeginDrawBatch and
+    /// its matching EndDrawBatch, batches must never nest, and no clear/flip
+    /// may arrive inside one (they change FBO content, so the backend must have
+    /// been flushed first).
+    /// </summary>
+    private sealed class BatchRecordingBackend : IPgraphBackend
+    {
+        public long BackendUnsupported => 0;
+
+        public string DebugSummary => $"batches={Begins} draws={Draws}";
+
+        public int Begins { get; private set; }
+
+        public int Ends { get; private set; }
+
+        public int Draws { get; private set; }
+
+        public int Clears { get; private set; }
+
+        public int Flips { get; private set; }
+
+        public int OrphanEnds { get; private set; }
+
+        public int NestedBegins { get; private set; }
+
+        public int DrawsOutsideBatch { get; private set; }
+
+        public int ClearInsideBatch { get; private set; }
+
+        public int FlipInsideBatch { get; private set; }
+
+        public List<int> RunLengths { get; } = new();
+
+        public int MaxRun { get; private set; }
+
+        private int _depth;
+        private int _run;
+
+        public void Method(uint subchannel, uint method, uint parameter)
+        {
+            _ = subchannel;
+            _ = method;
+            _ = parameter;
+        }
+
+        public void BeginDrawBatch()
+        {
+            Begins++;
+            _depth++;
+            if (_depth > 1)
+            {
+                NestedBegins++;
+            }
+        }
+
+        public void EndDrawBatch()
+        {
+            Ends++;
+            if (_depth == 0)
+            {
+                OrphanEnds++;
+                return;
+            }
+
+            _depth--;
+            if (_depth == 0)
+            {
+                RunLengths.Add(_run);
+                MaxRun = Math.Max(MaxRun, _run);
+                _run = 0;
+            }
+        }
+
+        public void Draw(in PgraphDrawInfo info)
+        {
+            _ = info;
+            Draws++;
+            if (_depth == 0)
+            {
+                DrawsOutsideBatch++;
+            }
+
+            _run++;
+        }
+
+        public void Clear(in PgraphClearInfo info)
+        {
+            _ = info;
+            Clears++;
+            if (_depth != 0)
+            {
+                ClearInsideBatch++;
+            }
+        }
+
+        public void Flip(in PgraphSurfaceRecord record)
+        {
+            _ = record;
+            Flips++;
+            if (_depth != 0)
+            {
+                FlipInsideBatch++;
+            }
+        }
+
+        public bool ReadbackPresented(out uint width, out uint height, out byte[] bgra)
+        {
+            width = 0;
+            height = 0;
+            bgra = Array.Empty<byte>();
+            return false;
+        }
+
+        public void ResetState()
+        {
+        }
+    }
+
+    /// <summary>An element-mode stream whose single draw command carries two triangles.</summary>
+    private static (uint Method, uint Parameter)[] TwoTriangleElementDrawStream()
+    {
+        var stream = new List<(uint Method, uint Parameter)>();
+        foreach ((uint method, uint parameter) in ElementDrawStream())
+        {
+            if (method == 0x17FCu && parameter == 0u)
+            {
+                // A second element inside the same SET_BEGIN_END block: one
+                // primitive flush, two triangles.
+                stream.Add((0x1800u, 0x00010000u));
+                stream.Add((0x1808u, 0x00000002u));
+            }
+
+            stream.Add((method, parameter));
+        }
+
+        return stream.ToArray();
+    }
+
+    [Fact]
+    public void DrawBatch_BracketsOneDrawCommandWithAllItsTriangles()
+    {
+        // Track B batching contract (205): one PGRAPH primitive flush is one
+        // batch, every triangle of it is submitted inside the bracket, and the
+        // bracket never nests. The GL backend collapses exactly this run into
+        // one instanced draw, so a broken bracket silently groups state across
+        // draw commands.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new BatchRecordingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        PushMethods(nv2A, memory, TwoTriangleElementDrawStream());
+
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.Equal(2, backend.Draws);
+        Assert.Equal(1, backend.Begins);
+        Assert.Equal(1, backend.Ends);
+        Assert.Equal(0, backend.NestedBegins);
+        Assert.Equal(0, backend.OrphanEnds);
+        Assert.Equal(0, backend.DrawsOutsideBatch);
+        Assert.Equal(2, backend.MaxRun);
+        Assert.Single(backend.RunLengths);
+        Assert.Equal(2, backend.RunLengths[0]);
+    }
+
+    [Fact]
+    public void DrawBatch_TwoDrawCommandsAreTwoBatches()
+    {
+        // Two SET_BEGIN_END blocks are two commands and must not merge: the
+        // guest can change any PGRAPH state between them.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new BatchRecordingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        (uint Method, uint Parameter)[] first = ElementDrawStream();
+        var twice = new List<(uint Method, uint Parameter)>(first.Length * 2);
+        twice.AddRange(first);
+        twice.AddRange(first);
+        PushMethods(nv2A, memory, twice.ToArray());
+
+        Assert.Equal(2uL, nv2A.DrawsExecuted);
+        Assert.Equal(2, backend.Draws);
+        Assert.Equal(2, backend.Begins);
+        Assert.Equal(2, backend.Ends);
+        Assert.Equal(2, backend.RunLengths.Count);
+        Assert.Equal(1, backend.RunLengths[0]);
+        Assert.Equal(1, backend.RunLengths[1]);
+        Assert.Equal(0, backend.DrawsOutsideBatch);
+    }
+
+    [Fact]
+    public void DrawBatch_SkippedCommandStillClosesItsBatch()
+    {
+        // The flush early-returns for an unsupported primitive mode; the
+        // bracket must still close (the seam uses try/finally), or the next
+        // command's triangles would be grouped with stale state.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new BatchRecordingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x17FCu, 1u), // points: not a triangle mode
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0u),
+            (0x17FCu, 0u));
+
+        Assert.Equal(0, backend.Draws);
+        Assert.Equal(1, backend.Begins);
+        Assert.Equal(1, backend.Ends);
+        Assert.Equal(0, backend.OrphanEnds);
+        Assert.True(nv2A.SkippedDraws > 0);
+    }
+
+    [Fact]
+    public void DrawBatch_ClearAndFlipArriveOutsideBatches()
+    {
+        // A clear or a flip changes/reports FBO content; the backend flushes
+        // its pending batch on them, so the seam must never deliver one inside
+        // an open bracket.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new BatchRecordingBackend();
+        nv2A.Backend = backend;
+        PushMethods(
+            nv2A,
+            memory,
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000100u),
+            (0x0200u, 0x00400000u),
+            (0x0204u, 0x00280000u),
+            (0x1D90u, 0xFF112233u),
+            (0x1D98u, 0x03FF0000u),
+            (0x1D9Cu, 0x03FF0000u),
+            (0x1D94u, 0x000000F0u),
+            (0x012Cu, 0u));
+
+        Assert.Equal(1, backend.Clears);
+        Assert.Equal(1, backend.Flips);
+        Assert.Equal(0, backend.ClearInsideBatch);
+        Assert.Equal(0, backend.FlipInsideBatch);
+        Assert.Equal(0, backend.DrawsOutsideBatch);
+    }
+
     [Fact]
     public void BackendAttached_ObservesFlipAndClear()
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         var backend = new RecordingBackend();
         nv2A.Backend = backend;
-
         PushMethods(
             nv2A,
             memory,
