@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Text;
 using Xunit;
 
@@ -14,6 +15,18 @@ public sealed class GlBackendTimingsTests
         Assert.Equal(0, timings.DrawMs);
         Assert.Equal(0, timings.ClearMs);
         Assert.Equal(0, timings.ReadbackMs);
+        Assert.Equal(0, timings.Readbacks);
+    }
+
+    [Fact]
+    public void AddDrawTicks_AccumulatesMilliseconds()
+    {
+        var timings = new GlBackendTimings();
+        long ticks = Stopwatch.Frequency / 1000; // one millisecond
+        timings.AddDrawTicks(ticks);
+        timings.AddDrawTicks(ticks * 2);
+        Assert.Equal(3.0, timings.DrawMs, 6);
+        Assert.Equal(0, timings.ClearMs);
         Assert.Equal(0, timings.Readbacks);
     }
 

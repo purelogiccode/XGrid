@@ -1,6 +1,24 @@
 namespace XGrid.Nv2a;
 
 /// <summary>
+/// Optional direct-RAM view for host-side consumers that read guest RAM
+/// outside the CPU (the GL backend's texture fingerprint and upload paths).
+/// The address space is the authority: a consumer must reproduce the same
+/// bounds check <see cref="IGpuMemoryRamView.TryGetRamBytes"/> describes and
+/// fall back to <see cref="IGpuMemory.ReadPhysical"/> for anything else.
+/// </summary>
+public interface IGpuMemoryRamView
+{
+    /// <summary>
+    /// Exposes the RAM backing store so a consumer can index it directly after
+    /// one bounds check per access instead of one interface dispatch.
+    /// <paramref name="size"/> is the same RAM size the adapter bounds-checks
+    /// against. False means no direct view.
+    /// </summary>
+    bool TryGetRamBytes(out byte[] bytes, out uint size);
+}
+
+/// <summary>
 /// Optional fast lane for the software rasterizer's per-pixel RAM traffic
 /// (rasterizer inventory O2). The plain <see cref="IGpuMemory"/> adapter path
 /// pays an interface dispatch, two address-space bounds layers, a region scan
@@ -16,7 +34,7 @@ namespace XGrid.Nv2a;
 /// page needs at most one decode-cache drop, and the suppression counter must
 /// not be re-balanced per pixel.</para>
 /// </summary>
-public interface IGpuMemoryFast
+public interface IGpuMemoryFast : IGpuMemoryRamView
 {
     /// <summary>Opens a draw-wide GPU-write batch (suppression + page memo).</summary>
     void BeginGpuBatch();
@@ -26,15 +44,6 @@ public interface IGpuMemoryFast
 
     /// <summary>Tries a direct 32-bit RAM read; false means use the legacy adapter.</summary>
     bool TryReadPhysical(uint address, out uint value);
-
-    /// <summary>
-    /// Exposes the RAM backing store so a fill can index it directly
-    /// (<c>MemoryMarshal.GetArrayDataReference</c>) after one bounds check per
-    /// access instead of one interface dispatch. <paramref name="size"/> is the
-    /// same RAM size <see cref="TryReadPhysical"/> bounds-checks against, so a
-    /// caller can reproduce that check exactly. False means no direct view.
-    /// </summary>
-    bool TryGetRamBytes(out byte[] bytes, out uint size);
 
     /// <summary>Tries a direct 32-bit RAM write inside a batch; false means use the legacy adapter.</summary>
     bool TryWritePhysical(uint address, uint value);

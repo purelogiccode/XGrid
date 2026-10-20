@@ -654,7 +654,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// unconditionally and the backend observes the same resolved state
     /// synchronously at the flush sites.
     /// </summary>
-    public IPgraphBackend? Backend { get; set; }
+    public IPgraphBackend? Backend
+    {
+        get => _backend;
+        set
+        {
+            _backend = value;
+            _observeMethods = value is { ObserveMethods: true };
+        }
+    }
+
+    private IPgraphBackend? _backend;
+    private bool _observeMethods;
+
+    /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
+    public long MethodTotal { get; private set; }
+
+    /// <summary>
+    /// Gets or sets whether the per-method histogram (<see cref="MethodCounts"/>
+    /// / <see cref="MethodParams"/>) is collected. Two dictionary updates per
+    /// PGRAPH method cost wall time on method-heavy workloads (18.1M methods
+    /// per 1B menu steps); the CLI turns it on only when a method dump is
+    /// requested (<c>--pgraph</c>). The step/method totals and the method
+    /// stream are unaffected.
+    /// </summary>
+    public bool CollectMethodHistogram { get; set; } = true;
 
     /// <summary>Gets the number of executed surface clears. Diagnostics.</summary>
     public uint ClearsExecuted { get; private set; }
@@ -2703,16 +2727,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private void RecordMethod(uint channel, uint subchannel, uint method, uint parameter)
     {
         _surfaceChannel = channel;
-        uint key = (subchannel << 16) | method;
-        _methodCounts.TryGetValue(key, out int count);
-        _methodCounts[key] = count + 1;
-        _methodParams[key] = parameter;
+        MethodTotal++;
+        if (CollectMethodHistogram)
+        {
+            uint key = (subchannel << 16) | method;
+            _methodCounts.TryGetValue(key, out int count);
+            _methodCounts[key] = count + 1;
+            _methodParams[key] = parameter;
+        }
+
         if (MethodStreamCap == 0 || (ulong)_methodStream.Count < MethodStreamCap)
         {
             _methodStream.Add((subchannel, method, parameter));
         }
 
-        Backend?.Method(subchannel, method, parameter);
+        if (_observeMethods)
+        {
+            _backend!.Method(subchannel, method, parameter);
+        }
 
         switch (method)
         {

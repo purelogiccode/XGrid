@@ -24,6 +24,15 @@ public interface IPgraphBackend
     /// <summary>Observes one (subchannel, method, parameter) triple at the top of RecordMethod.</summary>
     void Method(uint subchannel, uint method, uint parameter);
 
+    /// <summary>
+    /// Gets whether this backend consumes the per-method observation callback.
+    /// The software rasterizer's caller already counts every method
+    /// (<c>Nv2aMmio.MethodTotal</c>), so a backend that only wants a total can
+    /// decline the callback and save a virtual call per PGRAPH method on
+    /// method-heavy workloads (18M methods per 1B menu steps).
+    /// </summary>
+    bool ObserveMethods => true;
+
     /// <summary>Submits one transformed triangle with the resolved state the software rasterizer uses.</summary>
     void Draw(in PgraphDrawInfo info);
 

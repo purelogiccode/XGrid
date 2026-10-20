@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -12,11 +13,14 @@ namespace XGrid.GpuGl;
 /// formatting only (no GL context) so the fps table in research notes §122
 /// is backed by unit-tested counters rather than ad-hoc script timing.
 /// All values are host wall-clock milliseconds accumulated with
-/// <see cref="TimeSpan.TotalMilliseconds"/>.
+/// <see cref="TimeSpan.TotalMilliseconds"/> (draws use the raw-tick overload:
+/// a TimeSpan per draw is measurable on the menu's 2.76M-draw stream).
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
 public struct GlBackendTimings
 {
+    private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
+
     private double _drawMs;
     private double _clearMs;
     private double _readbackMs;
@@ -38,6 +42,12 @@ public struct GlBackendTimings
     public void AddDraw(TimeSpan elapsed)
     {
         _drawMs += elapsed.TotalMilliseconds;
+    }
+
+    /// <summary>Records one draw submission from a raw <see cref="Stopwatch.GetTimestamp"/> delta (no TimeSpan per draw).</summary>
+    public void AddDrawTicks(long elapsedTicks)
+    {
+        _drawMs += elapsedTicks * TicksToMs;
     }
 
     /// <summary>Records one clear submission.</summary>

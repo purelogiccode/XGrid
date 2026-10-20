@@ -137,6 +137,34 @@ public sealed class PshGlslGeneratorTests
         Assert.Contains("mod(floor(max(r0.a, 0.0) * 255.0), 2.0) >= 1.0", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PackedTriangleUniformBlock_ReplacesPerDrawUniformArrays()
+    {
+        // Track B: per-draw values travel as ONE packed vec4 block (uTri[24])
+        // so a draw is a single uniform upload. Pins the layout contract the
+        // backend's PackVertices/StoreVertex writes into and the per-draw
+        // submission optimization that came out of the 2026-10-20 present-path
+        // measurement (13 glUniform calls per draw -> 1).
+        PshCombiner state = MenuLikeCombiner();
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("uniform vec4 uTri[25];", source, StringComparison.Ordinal);
+        Assert.Contains("vec2 vA = uTri[0].xy;", source, StringComparison.Ordinal);
+        Assert.Contains("vec2 vB = uTri[0].zw;", source, StringComparison.Ordinal);
+        Assert.Contains("vec2 vC = uTri[1].xy;", source, StringComparison.Ordinal);
+        Assert.Contains("gl_FragCoord.y + uTri[2].z", source, StringComparison.Ordinal);
+        Assert.Contains("if (uTri[1].z == 1.0)", source, StringComparison.Ordinal);
+        Assert.Contains("(p1 * uTri[3]) + (p2 * uTri[4]) + (p0 * uTri[5])", source, StringComparison.Ordinal);
+        Assert.Contains("(p1 * uTri[21].z) + (p2 * uTri[22].z) + (p0 * uTri[23].z)", source, StringComparison.Ordinal);
+        foreach (string retired in new[]
+                 {
+                     "uniform vec2 uPx[3];", "uniform vec4 uColorV[3];", "uniform float uClipY;",
+                     "uniform int uPerspective;",
+                 })
+        {
+            Assert.DoesNotContain(retired, source, StringComparison.Ordinal);
+        }
+    }
+
     private static string Normalize(string text)
     {
         return text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n') + "\n";

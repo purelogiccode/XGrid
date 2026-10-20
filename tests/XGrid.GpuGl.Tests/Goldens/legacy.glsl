@@ -19,19 +19,7 @@ uniform int uTexWrapY[4];
 uniform int uTexCube[4];
 uniform int uTexDim[4];
 uniform uint uShaderClip;
-uniform vec2 uPx[3];
-uniform vec4 uColorV[3];
-uniform vec4 uSpecV[3];
-uniform vec4 uT0V[3];
-uniform vec4 uT1V[3];
-uniform vec4 uT2V[3];
-uniform vec4 uT3V[3];
-uniform vec4 uVtx[3];
-uniform int uPerspective;
-uniform float uInvAw;
-uniform float uInvBw;
-uniform float uInvCw;
-uniform float uClipY;
+uniform vec4 uTri[25];
 uniform sampler2D uTex0;
 uniform sampler2D uTex1;
 uniform sampler2D uTex2;
@@ -114,10 +102,10 @@ vec4 SampleSlot(int slot, vec2 uv) {
 
 void main() {
   float px = gl_FragCoord.x;
-  float py = gl_FragCoord.y + uClipY;
-  vec2 vA = uPx[0];
-  vec2 vB = uPx[1];
-  vec2 vC = uPx[2];
+  float py = gl_FragCoord.y + uTri[2].z;
+  vec2 vA = uTri[0].xy;
+  vec2 vB = uTri[0].zw;
+  vec2 vC = uTri[1].xy;
   float area = ((vB.x - vA.x) * (vC.y - vA.y)) - ((vC.x - vA.x) * (vB.y - vA.y));
   float invArea = 1.0 / area;
   float w0 = (((vB.x - vA.x) * (py - vA.y)) - ((vB.y - vA.y) * (px - vA.x))) * invArea;
@@ -127,10 +115,10 @@ void main() {
   float p0 = w0;
   float p1 = w1;
   float p2 = w2;
-  if (uPerspective == 1) {
-    float s0 = w0 * uInvCw;
-    float s1 = w1 * uInvAw;
-    float s2 = w2 * uInvBw;
+  if (uTri[1].z == 1.0) {
+    float s0 = w0 * uTri[2].y;
+    float s1 = w1 * uTri[1].w;
+    float s2 = w2 * uTri[2].x;
     float sum = s0 + s1 + s2;
     if (!isnan(sum) && !isinf(sum) && sum != 0.0) {
       float invSum = 1.0 / sum;
@@ -139,14 +127,14 @@ void main() {
       p2 = s2 * invSum;
     }
   }
-  vec4 color = (p1 * uColorV[0]) + (p2 * uColorV[1]) + (p0 * uColorV[2]);
-  vec4 spec = (p1 * uSpecV[0]) + (p2 * uSpecV[1]) + (p0 * uSpecV[2]);
-  vec4 c0 = (p1 * uT0V[0]) + (p2 * uT0V[1]) + (p0 * uT0V[2]);
-  vec4 c1 = (p1 * uT1V[0]) + (p2 * uT1V[1]) + (p0 * uT1V[2]);
-  vec4 c2 = (p1 * uT2V[0]) + (p2 * uT2V[1]) + (p0 * uT2V[2]);
-  vec4 c3 = (p1 * uT3V[0]) + (p2 * uT3V[1]) + (p0 * uT3V[2]);
-  float fogFactor = (p1 * uVtx[0].z) + (p2 * uVtx[1].z) + (p0 * uVtx[2].z);
-  float depthZ = (w1 * uVtx[0].x) + (w2 * uVtx[1].x) + (w0 * uVtx[2].x);
+  vec4 color = (p1 * uTri[3]) + (p2 * uTri[4]) + (p0 * uTri[5]);
+  vec4 spec = (p1 * uTri[6]) + (p2 * uTri[7]) + (p0 * uTri[8]);
+  vec4 c0 = (p1 * uTri[9]) + (p2 * uTri[10]) + (p0 * uTri[11]);
+  vec4 c1 = (p1 * uTri[12]) + (p2 * uTri[13]) + (p0 * uTri[14]);
+  vec4 c2 = (p1 * uTri[15]) + (p2 * uTri[16]) + (p0 * uTri[17]);
+  vec4 c3 = (p1 * uTri[18]) + (p2 * uTri[19]) + (p0 * uTri[20]);
+  float fogFactor = (p1 * uTri[21].z) + (p2 * uTri[22].z) + (p0 * uTri[23].z);
+  float depthZ = (w1 * uTri[21].x) + (w2 * uTri[22].x) + (w0 * uTri[23].x);
 
   vec4 outcColor = color;
   if (uTexOk[0] == 1) outcColor *= SampleSlot(0, c0.xy);
