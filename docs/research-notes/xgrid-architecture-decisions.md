@@ -11811,3 +11811,130 @@ rejected even if it is interesting.
 `ImplementationPlan.md` (direction section, phase rows 12/15/18/20-23, milestone
 pointer, performance-campaign supersession note), `next-session.md` (§0c, §2-§5),
 `docs/compatibility.md` (new), `compatibility-corpus.md` (new). No code changed.
+
+## §204 Track B slice 1: the GL present path measured, readback removed, per-draw submission cut (2026-10-20, eleventh session) - LANDED
+
+**The measurement (§203 asked for it first).** `GlBackendTimings` already
+split draw submission / clear / readback; a 1-in-64 sampled probe
+(`XGRID_GL_PROBE=1`, section "Diagnostics") added the intra-draw split. Menu
+1B `--gpu gl --gpu-replace`, quiet host, before any change:
+
+| item | seconds | note |
+|---|---:|---|
+| draw submission (`drawMs`) | 6.87 | 2,760,841 draws = 2.49 us/draw |
+| clear submission | 0.01 | 696 clears |
+| flip readback (`ReadPixels`) | 0.71 | 686 flips = 1.04 ms/flip |
+| BGRA swizzle + 2x 1.2 MB alloc per flip | ~0.3 | untimed (new array + per-pixel loop) |
+| **total GL path** | **~7.9** | of the ~9.9 s §203 attributed to GL |
+
+So the per-flip readback was **~1 s of the ~10 s**, not 8.8: the *per-draw
+submission* was the lever. The sampled probe (with an ablation build for the
+disputed items) put the submission split at ~60% `ApplyTextures`, ~25% the 13
+per-draw `glUniform` calls, ~10% `BufferData` + `DrawArrays`, ~5% program
+state. Root causes, each measured:
+
+1. `PshGlslGenerator.BuildKey` allocated a 500-char string per draw (structure
+   key, though the structure changes ~11 times per run).
+2. One `string.Create` texture cache key per slot per draw, and
+   `FingerprintTexture` recomputed the 16 sample addresses every draw: **two
+   integer divisions per texel** (32 divisions/draw) plus a load -> FNV ->
+   load chain that serialised 16 cold DRAM lines.
+3. Thirteen `glUniform*` calls per draw (`uPx`, `uColorV`, `uSpecV`, `uT0V`..
+   `uT3V`, `uVtx`, 5 scalars) for what is one per-draw block.
+4. Redundant `glBindFramebuffer`/`glViewport`/`glUseProgram`/
+   `glActiveTexture`/`glBindTexture` per draw.
+5. `glBufferData` per draw for 24 bytes of NDC vertex data (the vertex shader
+   only consumes positions, which are already in the uniform block).
+6. `Stopwatch.GetElapsedTime` (TimeSpan) per draw.
+7. Latent bug: a texture content re-upload created a **new** GL texture and
+   deleted neither the old id nor updated the entry, so later draws bound the
+   stale texture (the entry kept the old id). Fixed with the entry owning a
+   settable id and deleting the old texture.
+
+**Landed slices.**
+
+1. **Readback is opt-in.** `GlPgraphBackend.FlipReadbackEnabled` (default true
+   for API compatibility) is set by the CLI only when `--frame` or the new
+   `--frame-first` is given; a flip otherwise stays on the GPU (the window
+   present blits the FBO, never CPU pixels). `--frame` behavior is unchanged,
+   so the goldens keep the exact pre-slice path.
+2. **Packed per-draw uniform block.** All per-draw values travel as
+   `uniform vec4 uTri[25]`, uploaded with **one** `glUniform4` per draw
+   (slot layout is the shader contract, pinned by
+   `PackedTriangleUniformBlock_ReplacesPerDrawUniformArrays` and the two GLSL
+   string goldens).
+3. **Program structure cache.** The last draw's 37 combiner structure words are
+   compared (10 ns-ish) and the key string is only built when they change.
+4. **Texture cache.** `TextureKey` value struct + per-slot last-hit cache (no
+   per-draw string), per-entry sample-address table (divisions move to upload
+   time), 16 independent loads plus `Sse.Prefetch0` over the sample lines.
+5. **GL binding shadows**: FBO, program, viewport, active texture unit,
+   per-slot bound texture; invalidated on any out-of-band Gen/Delete.
+6. **Vertex positions by `gl_VertexID`.** The vertex shader derives
+   `gl_Position` from `uTri[0]`/`uTri[1]`/`uTri[2].zw`/`uTri[24].xy`; the per-draw
+   VBO upload is gone (2 GL calls per draw: one uniform, one draw). The NDC
+   mapping and the centroid inflate mirror the old C# math; the inflate only
+   widens GL coverage and the fragment shader's software-exact inside test still
+   decides every pixel (goldens byte-identical at 200M, policy-clean at 1B).
+7. **`GlBackendTimings.AddDrawTicks`** (raw tick delta, no TimeSpan per draw).
+8. **Track D bonus, measured on a shared path.** `Nv2aMmio.CollectMethodHistogram`
+   (default true for the tests) is turned off by the CLI: the two dictionary
+   updates per PGRAPH method cost **4 s of the 1B menu sw wall (64.2 -> 60.3 s,
+   -6.2%)** and no CLI path consumes the histogram (`--pgraph` dumps
+   `MethodStream`). `IPgraphBackend.ObserveMethods` (default true) lets a
+   backend decline the per-method callback; `GlPgraphBackend` declines it and
+   the CLI prints `methods=<Nv2aMmio.MethodTotal>` instead. That callback alone
+   was **5.8 s** of the loaded menu gl wall (18.1M virtual calls through a
+   per-method seam in the pushbuffer pump).
+
+**Evidence (same-window, 3 interleaved pairs, baseline `4f0bd47` vs this
+session, SHAs identical on every pair).**
+
+| leg | baseline | candidate | delta |
+|---|---:|---:|---:|
+| menu `gl+replace` 1B wall | 63.09 s (med) | **45.25 s (med)** | **-20.5%**, 3/3 |
+| menu `gl+replace` `drawMs` | 12.55 s | **2.41 s** | -81% |
+| menu `gl+replace` readback | 1.50 s (686) | **0** | removed |
+| triangle `gl+replace` 1B wall | 10.26 s (med) | 9.89 s (med) | -0.9%, 3/3 |
+
+Loaded-host absolutes; projections on §203's quiet references (ratio method)
+are **menu 24.7 s** (target 24) and **triangle 6.43 s** (target 6). The menu
+target is at the boundary (the host-factor projection gives 22-25 s across
+windows); the triangle leg is CPU-bound (`nonJitMs` 3.75 s of `outerMs` 6.3 s)
+and cannot reach 6 s from Track B alone.
+
+**Gates (all green).** 1530 tests; `dotnet format --verify-no-changes` clean;
+1B menu golden sw `4EF1FBF6…` (anchor) vs gl `6BE6325F…` (diff 1852 px,
+maxDelta 1, 0 violations); 1B triangle golden sw `A1740DE0…` (anchor) vs gl
+`3FC4B419…` (diff 16744, maxDelta 1, 0 violations); ktest smoke **7/7 rows
+green** with the XGrid leg at **792,800,535** steps (suite log 40,797 bytes,
+byte-identical to the accepted run). `BackendUnsupported=0`, every counter
+identical on both goldens. Accurate mode is untouched (every change is
+host-side; the sw anchors reproduce exactly).
+
+**What is left on the GL path (measured, not guessed).** Menu quiet draw
+submission is now ~1.2-1.5 s: the texture-content fingerprint is ~0.5-0.9 s
+(16 scattered cold lines per draw; the *exact* fix is guest-write span tracking
+in `PhysicalMemory`, not weaker sampling - see below), the two GL calls are
+~0.4 s, the rest is state compares and packing. Further reduction needs
+per-triangle batching (instanced draws with a texture-buffer-object for the
+per-triangle block), which is the structural next step if the 24 s/6 s targets
+must be met without Track C. **Rejected this session (measured):** weakening
+the fingerprint to a contiguous window or fewer samples (a silent fidelity
+regression), and a per-write texture-span watch (an extra compare on every
+guest write: ~0.2-0.4 s, net +0.5 s at best, and it touches the frozen CPU hot
+path).
+
+**Diagnostics added.** `XGRID_GL_PROBE=1` -> `probe[samples prep tex state uni
+vtx gl fpRam fpAdapter]` (1-in-64 sampled, only sampled draws pay), `--gpu gl`
+prints `readback=on|off` and the CLI prints `methods=` from `MethodTotal`,
+`--frame-first <bmp>` saves the first presented frame with its step anchor
+(`FrameFirst step=...`).
+
+**Docs updated:** `docs/compatibility.md` (harness rows + reproducible
+commands), `scripts/boot-to-first-frame.ps1` (new Track E harness),
+`docs/development-direction.md` (measured position), `AGENTS.md` (session note +
+current state), `next-session.md` (rewritten), `ImplementationPlan.md`
+(status), plus the two other-session reference notes
+(`gpu-reference-map.md`, `nv097-coverage.md`) that are indexed from
+`next-session.md`.

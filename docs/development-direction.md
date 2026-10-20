@@ -106,16 +106,21 @@ against xemu where an oracle exists (triangle ≈830 Msteps/s; ktest smoke xemu
 | leg | wall | raster | xemu reference | gap |
 |---|---:|---:|---|---:|
 | triangle `--gpu sw` | 8.69 s | 2.8 s | 830 Msteps/s (1.13× real time) | ~7× |
-| triangle `gl+replace` | 6.49 s | — | same | ~5.6× |
-| menu `--gpu sw` | 33.3 s | 12.0 s | no oracle (xemu deadlocks) | ~27× real time |
-| menu `gl+replace` | 31.1 s | — | same | ~25× real time |
+| triangle `gl+replace` | 6.49 s → **~6.4 s** | — | same | ~5.6× |
+| menu `--gpu sw` | 33.3 s → **~30 s** | 12.0 s | no oracle (xemu deadlocks) | ~25× real time |
+| menu `gl+replace` | 31.1 s → **~24.7 s** | — | same | ~21× real time |
 
-The menu GL overhead is ~9.9 s for 686 frames; the known per-flip readback is
-1.6 ms (≈1.1 s/1B), so ~8.8 s is unexplained and is exactly what the first
-measurement pass must split (submission / readback / present). The triangle's
-35 flips make the same readback only ~0.06 s. The sw rasterizer is the largest
-single item on the menu; the GL path replaces it but has not yet been made to
-pay off. That is the lead lever.
+**Track B slice 1 (§204) landed:** the GL path's overhead fell from ~7.9 s to
+~1.3 s (readback removed from fast-mode present, per-draw submission 2.49 →
+~0.5 µs/draw, `BackendUnsupported=0`, guest SHAs/counters identical). Same-window
+medians vs `4f0bd47`: menu `gl+replace` **63.09 → 45.25 s (-20.5%, 3/3)**,
+triangle 10.26 → 9.89 s (-0.9%, 3/3). The quiet-host projections above are the
+ratio method against the previous session's references; the menu is at the
+M-A boundary (22–25 s across windows) and the triangle is CPU-bound
+(`nonJitMs` 3.75 s of `outerMs` 6.3 s), so it cannot reach 6 s from Track B
+alone. Remaining menu GL submission ~1.2–1.5 s, dominated by the texture-content
+fingerprint; the exact fix is guest-write span tracking, not weaker sampling.
+The shared method-histogram cost (-6.2% menu sw) was also removed (§204 item 8).
 
 Anchors (fast mode): menu RAM `660CA11B…` / CPU `F5D61C94…`; triangle
 `F57934BF…` / `CF79FC17…`. Accurate mode: menu `D9C99A58…`/`3D2740B8…`,
@@ -125,7 +130,12 @@ triangle `F57934BF…`/`9B5AFC2A…`. 1B walls are continuity anchors only.
 
 - **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
   `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
-  by presents, not a per-frame readback.
+  by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
+  overhead (~7.9 s) is removed and the menu projects to ~24.7 s (boundary); the
+  triangle projects to ~6.4 s (CPU-bound, Track B cannot close it). The
+  remaining menu submission is per-triangle (2.76M draws); batching is the
+  structural next step. The in-app GL display is still deferred (the frontend
+  uses the software path, which never readbacks).
 - **M-B (Track E, corpus):** ≥8 samples in `docs/compatibility.md`, at least
   two beyond the dashboard/triangle/ktest (one textured 3D with mipmaps, one
   audio/DVD-path sample), boot-to-first-frame harness green, every row
