@@ -82,6 +82,7 @@ function Resolve-Sample([string]$name) {
 
 function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     $spec = Resolve-Sample $name
+    $expectNoFrame = $name -eq "ktest"
     $tag = "$name-$gpu$(if ($replace) { '-replace' } else { '' })"
     $log = Join-Path $OutDir "$tag.log"
     $firstBmp = Join-Path $OutDir "$tag-first.bmp"
@@ -133,7 +134,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
 
     $firstSha = Sha-Of $firstBmp
     $lastSha = Sha-Of $lastBmp
-    $verdict = if ($fault -match "vec=0" -and [int]$frames -gt 0) { "PASS" } else { "CHECK" }
+    $verdict = if ($fault -match "vec=0" -and ([int]$frames -gt 0 -or $expectNoFrame)) { "PASS" } else { "CHECK" }
 
     $record = [pscustomobject]@{
         sample         = $name
