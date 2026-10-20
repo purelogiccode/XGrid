@@ -313,9 +313,11 @@ complete.
 
 ## Caveats
 
-- Snapshot taken while `src/XGrid.Nv2a/Nv2aMmio.cs` was under active Track B
-  edit (present-path work). The counts are valid for the tree as read on
-  2026-10-20; regenerate after that work lands.
+- Verified against the final 2026-10-20 tree after §204 landed (`90abc9b`):
+  `Nv2aMmio.cs` still has 125 `Method*` constants, 70 exact sinks and 28
+  ranges, and the 108 handled / 93 recorded split is unchanged. The §204
+  present-path work changed submission and histogram plumbing, not method
+  coverage; regenerate only if a later change adds or removes a state sink.
 - The method table is from **xemu 0.8.137**; the Playtest fork has five newer
   NV097 methods and a tuned backend, so it can differ.
 - `handled` is not a fidelity claim. The XGrid test suite and the 1B goldens
