@@ -1,6 +1,7 @@
 # Reference Sources and Licensing Inventory
 
-Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace, xemu-Playtest-v2 added)
+Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace, xemu-Playtest-v2 added);
+2026-10-20 xemu 0.8.137 adopted as the primary snapshot (0.8.136 retained as the prior snapshot)
 Policy: XGrid is a clean-room reimplementation. These notes record factual hardware/format
 knowledge (addresses, register maps, struct layouts, protocol constants, algorithms). No source
 code from any reference project is copied into XGrid unless its license explicitly permits it and
@@ -10,7 +11,8 @@ the reuse is recorded below.
 
 | Project | Version/Snapshot | Upstream | License | Code copied? |
 |---|---|---|---|---|
-| xemu | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
+| xemu | **0.8.137 (primary since 2026-10-20)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
+| xemu (prior snapshot) | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
 | xemu-Playtest-v2 | local snapshot 2026-09 (QEMU 10.2.0 base) | xemu in-development fork (Sega Chihiro arcade bring-up); no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
 | Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | No — facts only |
 | xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
@@ -25,7 +27,8 @@ the reuse is recorded below.
 
 Downloaded 2026-10-12 (extract into `References2/`; GitHub zips carry these
 root folder names):
-- xemu 0.8.136 — https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip
+- xemu 0.8.137 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.137.zip (primary)
+- xemu 0.8.136 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip (prior snapshot)
 - xemu-Playtest-v2 — no upstream URL recorded (operator-supplied local snapshot); ask the operator.
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
@@ -49,7 +52,21 @@ root folder names):
 
 ## Per-project license detail
 
-### xemu 0.8.136
+### xemu 0.8.137 (primary snapshot, adopted 2026-10-20)
+- QEMU 10.2.0 base; recent upstream snapshot (11,352 files). The 0.8.136 tree stays vendored
+  as the prior snapshot for historical citations.
+- License split is unchanged: top-level `COPYING` = GPL-2.0; `hw/xbox/**` per-file LGPL-2+ /
+  MIT / GPL-2+; the `mcpx/apu/dsp/**` subtree (now including `dsp_jit.c` and `interp/`) is
+  GPL-2+, as are the GLSL shader generators. Verdict: read for facts only.
+- **Delta vs 0.8.136:** 150 of 167 `hw/xbox` files differ. The material addition is the APU
+  DSP: `mcpx/apu/dsp/` carries a full GP/EP interpreter (`interp/`, 1,176-line `dsp_cpu.c`),
+  an optional JIT (`dsp_jit.c`, selected by `g_config.audio.use_dsp_jit`), a 441-line
+  `gp_ep.c`, and the HRTF/ADPCM/SVF tables; `nv2a/` also differs (88/97 files).
+- See `docs/research-notes/xemu-0.8.137.md` for the catalogued delta and
+  `docs/research-notes/xemu.md` for the 0.8.136-era facts that remain valid where the file
+  is unchanged.
+
+### xemu 0.8.136 (prior snapshot, 2026-10-13 - 2026-10-20)
 - Top-level `COPYING` = GNU GPL v2; `LICENSE` states files without headers are GPL-2.0-or-later.
 - `hw/xbox/**` per-file:
   - **LGPL-2+**: `xbox.c/h`, `xbox_pci.c/h`, `acpi_xbox.c/h`, `lpc47m157.c`, `eeprom_generation.c/h`,
@@ -77,7 +94,7 @@ root folder names):
 - Older drafts of this inventory listed a "Xermu" standalone C# Xbox emulator
   (`References2/Xermu-main`). No such project exists in the workspace and the operator
   confirmed on 2026-10-13 that the correct (and only) primary LLE reference is
-  `References2/xemu-0.8.136`.
+  `References2/xemu-0.8.137` (0.8.136 until the 2026-10-20 adoption).
 - `docs/research-notes/xermu.md` was deleted. Historical citations to it (early plan text,
   `xgrid-architecture-decisions.md`) are unverified - do not use them as facts. Use xemu,
   xqemu, Cxbx, XboxDevWiki or envytools instead.
@@ -176,7 +193,7 @@ root folder names):
 | Flash | xemu `xbox.c` (ROM window/alias only) | - | AMD/SST CFI command set still pending; implement clean-room (Phase 6) |
 | APU | xemu `mcpx/apu/**` | xqemu `mcpx_apu.c` (single file) | DSP56300 semantics |
 | NV2A registers/PFIFO/PGRAPH | xemu `hw/xbox/nv2a/**` | Cxbx `nv2a_regs.h`, xqemu, xemu-Playtest-v2 | NV097 method map (+5 newer methods in Playtest-v2) |
-| GPU backend performance design | **xemu-Playtest-v2 `nv2a` vs `nv2a-stock` diff** (cost model, shader seeds, uniform cache, writeback, driver probe) | xemu 0.8.136 `pgraph/` | Facts for the future host-GPU backend; `diff -ru` isolates the perf delta |
+| GPU backend performance design | **xemu-Playtest-v2 `nv2a` vs `nv2a-stock` diff** (cost model, shader seeds, uniform cache, writeback, driver probe) | xemu 0.8.137 `pgraph/` | Facts for the future host-GPU backend; `diff -ru` isolates the perf delta |
 | Shaders (VSH/PSH) | Cxbx `nv2a_vsh/psh.cpp` | xemu `pgraph/glsl/**` (GPL) | Behavior only |
 | Texture swizzle | Cxbx `swizzle.cpp` (LGPL-2) | xemu `pgraph/swizzle.c` | Algorithm facts |
 | USB OHCI + XID | xemu `xid.c`, Cxbx `OHCI.cpp` | xqemu `xid.c` | Report formats |

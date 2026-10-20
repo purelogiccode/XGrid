@@ -54,8 +54,8 @@ What it is: a fork of xemu on a **QEMU 10.2.0 base** (`QEMU_VERSION`) with the x
 ## Caveats
 
 - In-development fork, not an official xemu release; behavior may be ahead of or diverge
-  from upstream. Use as a cross-check, not as the primary oracle — `xemu-0.8.136` remains
-  the operator-confirmed primary LLE reference.
-- QEMU base is not a dependency (same rule as 0.8.136).
+  from upstream. Use as a cross-check, not as the primary oracle - `xemu-0.8.137` (adopted
+  2026-10-20) remains the operator-confirmed primary LLE reference.
+- QEMU base is not a dependency (same rule as 0.8.137).
 - Local snapshot only: no recorded upstream URL; do not re-download from an unverified
   source.

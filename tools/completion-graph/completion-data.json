@@ -1,6 +1,6 @@
 {
   "generated": "2026-10-20",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist and the \u00a7199l/\u00a7199m raw-chaining re-land)",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist, the \u00a7199l/\u00a7199m raw-chaining re-land, \u00a7199o C3-x hot-shape native encoding, \u00a7199p rasterizer O2/O4 and \u00a7200 O3b/O1 compiled fills)",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -105,7 +105,7 @@
           "p": 15,
           "name": "CPU JIT",
           "weight": 11,
-          "done": 86
+          "done": 88
         },
         {
           "p": 16,
@@ -123,7 +123,7 @@
           "p": 18,
           "name": "GPU Optimization",
           "weight": 4,
-          "done": 35
+          "done": 40
         },
         {
           "p": 19,
@@ -135,7 +135,7 @@
           "p": 20,
           "name": "Automated Testing",
           "weight": 3,
-          "done": 70
+          "done": 71
         },
         {
           "p": 21,

@@ -28,8 +28,11 @@ The implementation uses existing projects as technical references (facts, regist
 algorithms) rather than performing a mechanical source translation. Full extracted findings are in
 `docs/research-notes/` (see the reference study deliverables below).
 
-1. **xemu** — `References2/xemu-0.8.136` — GPL-2.0 (per-file LGPL-2+/MIT/GPL-2+)
-   - Primary reference for Xbox hardware behavior and mature compatibility.
+1. **xemu** - `References2/xemu-0.8.137` - GPL-2.0 (per-file LGPL-2+/MIT/GPL-2+)
+   - Primary reference for Xbox hardware behavior and mature compatibility (adopted
+     2026-10-20; `xemu-0.8.136` stays vendored as the prior snapshot). The 0.8.137 delta is
+     catalogued in `docs/research-notes/xemu-0.8.137.md` (notably the GP/EP APU DSP
+     interpreter + optional JIT, `hw/xbox/mcpx/apu/dsp/`).
    - Xbox machine/memory map, PCI IDs and IRQ routing, PIII CPUID/MSR quirks, MCPX
      (SMBus/SMC/EEPROM/flash/ACPI/ACI), NV2A (PFIFO/PGRAPH/renderer), APU, USB/XID, nvnet.
    - Newer in-development fork: `References2/xemu-Playtest-v2` (QEMU 10.2 base, Sega Chihiro
@@ -72,7 +75,8 @@ algorithms) rather than performing a mechanical source translation. Full extract
 
 **Withdrawn reference.** Earlier drafts listed a standalone C# emulator "Xermu"
 (`References2/Xermu-main`). No such project exists in the workspace; the operator confirmed
-2026-10-13 that the correct primary LLE reference is `References2/xemu-0.8.136`. Do not add
+2026-10-13 that the correct primary LLE reference is `References2/xemu-0.8.137` (0.8.136 was
+the primary snapshot until the 0.8.137 adoption on 2026-10-20). Do not add
 Xermu to any list, and do not treat historical citations to it (including
 `xgrid-architecture-decisions.md`) as facts.
 
@@ -3150,12 +3154,12 @@ filtering, TEXADDRESS V bit, BRDF detail, Vulkan/OpenGL backends
 | 12 — APU | **Partial** | `XGrid.Audio/McpxApuDevice`: 512 KB window at 0xFE800000, xemu `apu.c`/`vp.c`-faithful register model (ISTS/IEN + `update_irq` gating, FECTL traps, FEDECMETH/FEDECPARAM FE messages, FEMEMADDR/FEMEMDATA magic write, VP PIO_FREE=0x80, VOICE_ON/OFF, voice-list regs), notifier/voice-state writes to guest RAM, frame-quantized `SE2FE_IDLE_VOICE` delivery (`Advance`, 256 samples @ 48 kHz), PCI IRQ wired to PIC; VP voice processor DONE (§107: PIO methods, guest-RAM voice state, SSL advance, notifiers + idle voice; 007's PlayMPC streams complete through the real advance callback — the `0x20FC1` drain gate PASSED). Remaining: DSP cores (register-only; not yet needed), mixing/resampling, host output |
 | 13 — USB & Controllers | **Partial** | OHCI schedule engine (control/bulk/periodic, done-queue/WDH, §54), xemu-faithful USB hub chain (4-port daughterboard hub -> 3-port controller hub -> XID, §69), `XidGamepad` with latched + step-timed `--pad` injection; **the guest's XPP stack now opens the pad and polls `GetState` every frame; D-pad navigates the menu, A-edge activation fires `0x1859D` (§§69–70)**; scripted `--pad-script` sequences (§74). Remaining: memory units/USB storage class, more device types |
 | 14 — Networking | Partial (MMIO + engine) | nvnet MMIO + per-reg histograms (§52–53, §62) + P0/P1 packet engine (§84: ring latches, IRQ4, TX walker + loopback backend, CLI counters) + P2/P3 (§88: RX filter/DMA + RX/RX_NOBUF IRQs, link toggle + 250 ms autoneg + MIIEVENT, socket user-mode backend behind `--net-backend` with loopback default, `--net-inject`/`--net-link`, 30 new tests); guest init-only steady state preserved, 986 tests |
-| 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices §§139–170, memory-path slices §§161–165, E1–E3 emission trial wall-neutral §§171–179b); rasterizer campaign §§180–187 (menu 2.03× / triangle 1.96×, all SHAs exact); **fast-mode JIT track chartered 2026-10-18** (`docs/research-notes/jit-track-charter.md` — dual-mode contract, phases 0–4, kill criteria; Phase 0 bench harness next); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); `--window` present (§184). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
+| 15–23 | Partial | JIT slices landed (profiler §128, fetch-fast §131, decode cache default-on §§134/137, block executor §136, semspec slices §§139–170, memory-path slices §§161–165, E1–E3 emission trial wall-neutral §§171–179b); **fast-mode JIT track §§190–199o** (`--jit` DynamicMethod engine 99% served, ktest 3.76×; C2/C3 raw emitter `--jit-raw` bit-exact on both titles at 1B, direct chaining, C3-x hot shapes — 8.8/31.6 ns per served member; C3-y/xlat/flip probes closed neutral); **rasterizer campaign §§180–187 and Track B §§199p/§200** (raster menu 24.0→13.3-15.1 s, triangle 6.19→3.31-3.45 s, no longer the dominant wall; all SHAs exact); V1 snapshot framework (§§99–101); GL backend slices 1–3 (§§113,117,122); `--window` present (§184). Codegen IR, DSP mixing/host output, debugger GUI, save-state v2, frontend, release packaging pending |
 
-Current test baseline: **1352 tests passing** (39 Core, 488 Cpu, 74 Memory, 261 Bus, 55 Integration, 236 Nv2a, 33 Audio, 54 Storage, 19 XboxFs, 6 Xbe, 10 Graphics, 77 GpuGl);
+Current test baseline: **1519 tests passing** (2026-10-20, `dotnet test XGrid.sln -c Release`; the previous per-project split predates the fast-mode JIT campaign and is not restated here);
 `dotnet build -c Release` clean; `dotnet format --verify-no-changes` clean (verified 2026-10-16).
 
-## Project completion assessment (2026-10-19; refreshed 2026-10-20 for the fast-mode JIT track §§190–199f, the C3 raw-emitter correctness campaigns §§199g–§199i, the §199k state hoist and the §199l/§199m chaining re-land, the GL window §184 and the idle-skip measurement §185)
+## Project completion assessment (2026-10-19; refreshed 2026-10-20 for the fast-mode JIT track §§190–199f, the C3 raw-emitter correctness campaigns §§199g–§199i, the §199k state hoist, the §199l/§199m chaining re-land and §199o C3-x, the Track B rasterizer slices §199p/§200, the GL window §184 and the idle-skip measurement §185)
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the
@@ -3176,20 +3180,20 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 9 XBE Loader | 3 | 90% | host-side relocation/launch paths |
 | 10 Kernel Interface | 2 | 5% | whole phase (HLE ordinals) — deferred, LLE-first |
 | 11 NV2A | 15 | 88% | mipmap LOD + DXT decode; PROJECT2D non-cube divide; DOT_STR_3D dim==3; border/mip/filtering; TEXADDRESS V bit; BRDF detail; Vulkan/OpenGL backends (16.6–16.7) |
-| 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output |
+| 12 APU | 4 | 55% | DSP, voice processing, mixing, resampling, host output. **The 0.8.137 reference now ships the full GP/EP DSP interpreter + optional JIT (`hw/xbox/mcpx/apu/dsp/`, facts only) — the primary oracle for the DSP/mixing work** |
 | 13 USB & Controllers | 4 | 70% | memory units/storage class, more device types |
 | 14 Networking | 4 | 70% | first-real-frame validation, TCP proxy |
-| 15 CPU JIT | 11 | 86% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); ahead of IL on CPU serving time after the §199k state hoist; §199l direct chaining LANDED after the §199m fault-contract fix (helpers catch/record/report instead of unwinding through the hand-emitted frame): 1B medians of 3 interleaved pairs triangle wall -12.0% / `outerMs` -28.6%, menu wall -13.1% / `outerMs` -14.2%, SHAs and every counter identical to IL; 625/625 CPU tests x10, ktest XGrid leg byte-identical at 792,800,535 steps**; remaining, in order per §199n: C3-x hot-shape native encoding (menu 61 -> ~30 ns per served member), C3-y per-member bookkeeping trim (EIP per block exit, hoisted store guard), C3-z inline TLB/RAM page pair, then Track B leads; plus the `--jit`/`--jit-raw` default-flip decision (operator), threshold auto-tune, E3-2 |
+| 15 CPU JIT | 11 | 88% | semspec slices 1–20+memory-path 1–4+dispatch 5–6+shape 7 opt-in `--spec-exec`; decode/TLB caches + block executor (§§131,134,136); codegen E1–E3 opt-in (§§171–179b); **fast-mode track §§190–194: `--jit` whole-block DynamicMethod engine (dual-mode contract), lost-wakeup fix, coverage campaign (99% served), menu 1B bit-exact, ktest 2B 3.76× CPU-bound, quiet-host fast medians triangle 10.63 s / menu 45.62 s after C2+D3b (§199d)**; **C3 raw emitter §§199e–§199i: `--jit-raw` opt-in, per-block native x86-64 (fixed host registers, flags in host FLAGS, inline translate-cache probe, spec-handler trampoline); 17 latent bugs fixed across three correctness campaigns; 59/59 JitTests with the raw path forced on; BOTH title 1B IL-vs-raw differentials bit-exact (menu `660CA11B…/F5D61C94…`, triangle `A2DCA55F…/7DAB63EB…`, every counter identical); ahead of IL on CPU serving time after the §199k state hoist; §199l direct chaining LANDED after the §199m fault-contract fix (helpers catch/record/report instead of unwinding through the hand-emitted frame): 1B medians of 3 interleaved pairs triangle wall -12.0% / `outerMs` -28.6%, menu wall -13.1% / `outerMs` -14.2%, SHAs and every counter identical to IL; 625/625 CPU tests x10, ktest XGrid leg byte-identical at 792,800,535 steps**; **§199o C3-x hot-shape native encoding LANDED (helper-routed members 24.65M -> 1.81M triangle, 122.65M -> 5.57M menu; 1B wall -10.8% triangle / -7.2% menu on sw, -14.1% / -8.0% on gl+replace; 8.8 ns/served member triangle / 31.6 ns menu — the §199n target hit); C3-y bookkeeping trim and the 1024-slot data xlat cache measured NEUTRAL and reverted, the flip-pacing probe closed as no-bug**; remaining: C3-z inline page pair (deferred with a 2-3% estimate, below the keep bar; acceptance criteria in `docs/research-notes/next-session.md`), Track B leads (row spans, the `gl+replace` per-frame path, present pacing); plus the `--jit`/`--jit-raw` default-flip decision (operator), threshold auto-tune, E3-2 |
 | 16 CPU Optimization | 3 | 35% | benchmark-driven tuning; `boot --bench` + `jit-bench.ps1` medians + `--jit-tally`/`--gpu-time` diagnostics and quiet-host accounting in place (§§191–194); profile-driven next |
 | 17 Memory Optimization | 2 | 40% | RAM-direct/wide-access (§161), Bytes bulk (§162), xlat cache (§163), rep-string span (§165); remaining RMW paths |
-| 18 GPU Optimization | 4 | 35% | rasterizer 4.9x/5.5x on the two 1B goldens via bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; raster menu 119→24.6 s, triangle 54.7→9.9 s; closing medians menu 70.8 s 2.03x / triangle 36.6 s 1.96x); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); measured at 48% (menu) / 39% (triangle) of the 1B sw wall (§199n) - the largest single item; remaining: compiled-loop micro-structure, row spans (O6), the `gl+replace` per-frame path, present pacing. **§200 (2026-10-20): per-fill fast sampler + compiled k1 modulate and k2/k3 lighting fills landed; 1B rasterPsh menu 24.0 → 13.9-15.1 s (-44%), triangle 6.19 → 3.31-3.45 s (-45%); interleaved wall -21.9% / -23.5%; all SHAs and counters exact; O5 counter batching measured negative and reverted; the raster is no longer the dominant wall** |
+| 18 GPU Optimization | 4 | 40% | rasterizer bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; menu 119→24.6 s, triangle 54.7→9.9 s); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); measured at 48% (menu) / 39% (triangle) of the 1B sw wall after C3 (§199n), then **§199p: O2 `IGpuMemoryFast` GPU-memory fast lane landed (-2.0% both titles, 3/3), then O4 branchless Morton spread (-5.9% triangle 3/3, -1.2% menu 2/3); §200: O3b per-fill fast sampler + O1 compiled k1 modulate (245.8M px) and k2/k3 lighting fills, 1B rasterPsh menu 24.0 → 13.3-15.1 s (-44%), triangle 6.19 → 3.31-3.45 s (-45%), interleaved wall -21.9% / -23.5%, quiet host 36.01 s / 9.13 s; accurate-mode raster triangle 6.90 → 3.63 s (-47%) with RAM/CPU SHAs and every counter exact; O5 counter batching and the cube-stride hoist measured neutral; the rasterizer is no longer the dominant wall**; remaining: row spans (O6), the `gl+replace` per-frame path, present pacing |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
-| 20 Automated Testing | 3 | 70% | 1499 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests; 59/59 with the raw path forced on) + ktest smoke; fuzzing, wider compatibility corpus |
+| 20 Automated Testing | 3 | 71% | 1519 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests, plus 11 §199o C3-x shape differentials; 59/59 with the raw path forced on) + §199p fast-vs-legacy GPU-memory-lane differential + 8 §200 fast-vs-generic sampler/compiled-fill differentials + ktest smoke; fuzzing, wider compatibility corpus |
 | 21 CLI & Frontend | 3 | 52% | opt-in `--window` live present sink (§184); GUI frontend |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay |
 | 23 Release | 3 | 10% | packaging, compatibility list, installer |
 
-**Result: ~74% complete overall** (weighted: 79.57 of 108 weight-points, recomputed 2026-10-20 after the C3 correctness campaigns §§199g–§199i, the §199k state hoist and the §199l/§199m chaining re-land; was 79.24 after §199k, 79.1 after §§199g/§199h, 78.6 after the raw emitter §§199e/§199f, 77.9 after the fast-mode JIT campaign §§190-194, 74.8 after §§180-187).
+**Result: ~74% complete overall** (weighted: 80.02 of 108 weight-points, recomputed 2026-10-20 after §199o C3-x and the Track B slices §199p/§200; was 79.57 after the §199l/§199m chaining re-land, 79.24 after §199k, 79.1 after §§199g/§199h, 78.6 after the raw emitter §§199e/§199f, 77.9 after the fast-mode JIT campaign §§190-194, 74.8 after §§180-187).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:
@@ -3199,25 +3203,23 @@ By track:
   content, saves files, and navigates with a real controller through the
   daughterboard hub topology (§§68–70, §95); the 007 title runs to its
   audio-drain gate (§98, APU VP/DSP next).
-- **Performance/finish track (phases 15-23): ~52%.** Dominated by the CPU
-  JIT (86% - interpreter with default-on decode cache, opt-in spec/block/
+- **Performance/finish track (phases 15-23): ~53%.** Dominated by the CPU
+  JIT (88% — interpreter with default-on decode cache, opt-in spec/block/
   emit layers, and the chartered fast-mode engine: `--jit` whole-block
   DynamicMethod runners at 99% served, bit-exact on both titles at 1B, ktest
-  2B 3.76× CPU-bound; quiet-host fast medians triangle 10.63 s / menu
-  45.62 s after C2+D3b, §199d; the C3 raw emitter is correctness-validated on
-  both titles at 1B and ahead of IL on CPU serving time after the §199k state
-  hoist, and the §199l direct-chaining slice is LANDED after the
-  §199m fault-contract fix for another -12.0% triangle / -13.1% menu wall
-  and -28.6% / -14.2% `outerMs` at 1B with SHAs and counters identical to
-  IL) and the
-  optimization phases. The software
-  rasterizer was the largest single wall item on both 1B goldens and is now
-  4.9×/5.5× faster bit-exactly (§§180–187; menu 1B leg 143.7 → 70.8 s,
-  triangle 71.6 → 36.6 s, closing medians); under `--gpu-replace` the CPU
-  engine is again the largest line item (57% of the triangle wall, §199),
-   so Track C (C2 trace → C3 raw emitters, §§199d–§199l) leads the re-aimed
-   campaign; the immediate next step is the §199l chaining fault-path diagnosis and
-   re-land.
+  2B 3.76× CPU-bound; the C3 raw emitter (`--jit-raw`, opt-in) is
+  correctness-validated on both titles at 1B, the §199l direct-chaining slice
+  is LANDED on the §199m fault contract (-12.0% triangle / -13.1% menu wall
+  at 1B), and §199o C3-x hot-shape native encoding cut helper-routed members
+  to 1.81M / 5.57M and per-member cost to 8.8 ns triangle / 31.6 ns menu —
+  the §199n target hit; C3-y and the xlat cache measured neutral and were
+  reverted) and by GPU optimization (40% — the software rasterizer is 44-45%
+  cheaper after §199p O2/O4 and the §200 compiled fills: menu 24.0 →
+  13.3-15.1 s, triangle 6.19 → 3.31-3.45 s, no longer the dominant wall,
+  with accurate-mode SHAs and every counter exact). Track B now leads the
+  remaining gap: row spans (O6), the `gl+replace` per-frame path and present
+  pacing; the C3-z inline page pair is deferred with a 2-3% estimate below
+  its keep bar.
 - **Flagship milestone M9 (dashboard boot): ~85%.** Boot, render pipeline
   (now colored, §95), and the full input path (XPP open -> `GetState`
   polling -> menu navigation -> activation) all work; a readable colored
@@ -4016,7 +4018,7 @@ Synthetic page-table tests and TLB invalidation tests; CPU executes code through
 
 ### PCI device topology (verified against xemu `hw/xbox/xbox.c`)
 
-Process directive: **consult the reference projects first** (`References2/xemu-0.8.136`,
+Process directive: **consult the reference projects first** (`References2/xemu-0.8.137`,
 `References2/xemu-Playtest-v2` (newer NV2A/perf cross-check), `References2/xqemu-master`,
 `References2/Cxbx-Reloaded-master`,
 `References2/envytools-master` for NV2A method/register/XF facts, `References2/nv2a-trace-master`
