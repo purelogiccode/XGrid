@@ -12037,7 +12037,7 @@ noise. Projected onto §204's quiet 24.8 s menu projection, -4.2% is ~23.8 s
 against the 24 s M-A target - **a projection, not an absolute** (this host
 still measures the reference sw legs ~1.9x slow; see `next-session.md` §5).
 
-**Gates (all green).** 1533 tests; `dotnet format --verify-no-changes` clean;
+**Gates (all green).** 1538 tests; `dotnet format --verify-no-changes` clean;
 1B menu golden sw `4EF1FBF6.` (anchor) vs gl `6BE6325F.` - **diff 1852 px,
 maxDelta 1, 0 violations** (byte-identical to the unbatched GL output, i.e. the
 batched fragment path is bit-exact); 1B triangle golden sw `A1740DE0.` (anchor)
@@ -12057,6 +12057,17 @@ The remaining 803 ms of menu submission is now 2.76M x ~290 ns of block packing
 (`PackVerticesInto`, 100 float stores), not GL calls - that is the next
 structural item if submission matters again; per §204's fingerprint note it is
 below the current noise floor of every other lever.
+
+**Seam regression tests (fail-pre-fix proven).** Four `PgraphBackendSeamTests`
+pin the contract the batching depends on, because a moved call would silently
+group state across draw commands: `DrawBatch_BracketsOneDrawCommandWithAllItsTriangles`
+(one element-draw stream with a second element = 1 begin, 2 draws, 1 end, no
+nesting), `DrawBatch_TwoDrawCommandsAreTwoBatches` (two `SET_BEGIN_END` blocks
+stay separate), `DrawBatch_SkippedCommandStillClosesItsBatch` (a non-triangle
+mode early-returns through the `finally`), and
+`DrawBatch_ClearAndFlipArriveOutsideBatches`. Removing the bracket from
+`FlushDraw` fails 3 of the 4 - the Clear/Flip test only asserts the negative
+invariant.
 
 **Diagnostics added.** `XGRID_GL_NO_BATCH=1` (force the single-triangle path),
 `diag[... batchCalls= batchTris= batchCap=]`, `timed[flushMs=]`, probe `vtxMs`

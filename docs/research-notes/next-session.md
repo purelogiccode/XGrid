@@ -37,7 +37,7 @@ software twin does not write the surfaces); CPU SHA and every counter must match
 the sw leg. Batching must never change either frame SHA: both were reproduced
 byte-identically in §205.
 
-- **1534 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1538 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical to the accepted
   run). The xemu leg still cannot bind its monitor socket on this host, and
   `scripts/ktest-smoke.ps1` still needs `-XisoSharp` (its default path has the

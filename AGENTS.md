@@ -595,7 +595,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   projection: ~23.8 s against the 24 s M-A target. What is left of submission is
   ~0.8 s of block packing, not GL calls.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1534 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1538 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
@@ -644,7 +644,7 @@ change is host-side except the batch-boundary seam in `Nv2aMmio.FlushDraw`.
   (-4.2%, 3/3)**; RAM/CPU SHAs `DD023100`/`F5D61C94` on every leg. Triangle:
   `batchCalls=2423`/54,492 triangles, `drawMs` 251.8 ms (flush 12.7 ms), wall
   CPU-bound so no claim.
-- **Gates:** 1534 tests green; format clean; 1B menu golden sw `4EF1FBF6…` vs gl
+- **Gates:** 1538 tests green; format clean; 1B menu golden sw `4EF1FBF6…` vs gl
   **`6BE6325F…`** — diff 1852 px, maxDelta 1, 0 violations (the batched fragment
   path is bit-exact); triangle sw `A1740DE0…` vs gl **`3FC4B419…`** — diff 16744,
   0 violations; counters identical (`draws=33632 frames=686 stalls=686`,
@@ -654,7 +654,10 @@ change is host-side except the batch-boundary seam in `Nv2aMmio.FlushDraw`.
   golden; the A/B covers replacement mode.
 - **New diagnostics/scripts:** `XGRID_GL_NO_BATCH=1`, `diag[... batchCalls=
   batchTris= batchCap=]`, `timed[flushMs=]`, `scripts/batch-205-ab.ps1`.
-  Remaining menu submission is ~0.8 s of block packing, not GL calls.
+  Remaining menu submission is ~0.8 s of block packing, not GL calls. Four new
+  `PgraphBackendSeamTests` pin the bracket contract (one batch per
+  `SET_BEGIN_END`, no nesting, no clear/flip inside, skipped commands still
+  close); removing the bracket fails 3 of the 4.
 
 **Session 2026-10-20 (eleventh; Track B present path + Track E corpus opening).**
 **The GL present path is measured and fixed, and the compatibility corpus has its
