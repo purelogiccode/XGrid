@@ -54,6 +54,110 @@ internal static unsafe class RawHelpers
     public static readonly ulong NoteStoreAddress =
         (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&NoteStore;
 
+    /// <summary>Address of the FPU push-single entry (Fld m32).</summary>
+    public static readonly ulong FpuPushSingleAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, void>)&FpuPushSingle;
+
+    /// <summary>Address of the FPU single-bits entry (Fst/Fstp m32).</summary>
+    public static readonly ulong FpuSingleBitsAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint>)&FpuSingleBits;
+
+    /// <summary>Address of the FPU pop entry (Fstp half).</summary>
+    public static readonly ulong FpuPopAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, void>)&FpuPop;
+
+    /// <summary>Address of the FPU register-push entry (Fld st(i)).</summary>
+    public static readonly ulong FpuPushRegisterAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, void>)&FpuPushRegister;
+
+    /// <summary>Address of the FPU register-store entry (Fst st(i)).</summary>
+    public static readonly ulong FpuStoreRegisterAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, void>)&FpuStoreRegister;
+
+    /// <summary>Address of the FPU register-store-and-pop entry (Fstp st(i)).</summary>
+    public static readonly ulong FpuStoreRegisterPopAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, void>)&FpuStoreRegisterPop;
+
+    /// <summary>Address of the FPU integer-push entry (Fild m32).</summary>
+    public static readonly ulong FpuPushIntegerAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, void>)&FpuPushInteger;
+
+    /// <summary>Address of the FPU integer-bits entry (Fist/Fistp m32).</summary>
+    public static readonly ulong FpuIntegerBitsAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint>)&FpuIntegerBits;
+
+    /// <summary>Address of the MMX register read entry (movq source).</summary>
+    public static readonly ulong MmxReadAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, ulong>)&MmxRead;
+
+    /// <summary>Address of the MMX register write entry (movq/movntq destination).</summary>
+    public static readonly ulong MmxWriteAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, ulong, void>)&MmxWrite;
+
+    /// <summary>Address of the x87 register-arithmetic entry.</summary>
+    public static readonly ulong FpuArithRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&FpuArithReg;
+
+    /// <summary>Address of the x87 popping register-arithmetic entry.</summary>
+    public static readonly ulong FpuArithPopAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, void>)&FpuArithPop;
+
+    /// <summary>Address of the x87 memory-arithmetic entry.</summary>
+    public static readonly ulong FpuArithMemAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, ulong, void>)&FpuArithMem;
+
+    /// <summary>Address of the x87 exchange entry (Fxch).</summary>
+    public static readonly ulong FpuExchangeAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, void>)&FpuExchange;
+
+    /// <summary>Address of the x87 constant-one push entry (Fld1).</summary>
+    public static readonly ulong FpuPushOneAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, void>)&FpuPushOne;
+
+    /// <summary>Address of the x87 sign-change entry (Fchs).</summary>
+    public static readonly ulong FpuChangeSignAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, void>)&FpuChangeSign;
+
+    /// <summary>Address of the x87 register-compare entry (Fcom st(i)).</summary>
+    public static readonly ulong FpuCompareRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&FpuCompareReg;
+
+    /// <summary>Address of the x87 memory-compare entry (Fcom m32/m64).</summary>
+    public static readonly ulong FpuCompareMemAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, ulong, void>)&FpuCompareMem;
+
+    /// <summary>Address of the scalar-SSE arithmetic register entry.</summary>
+    public static readonly ulong SseArithRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&SseArithReg;
+
+    /// <summary>Address of the scalar-SSE arithmetic memory entry.</summary>
+    public static readonly ulong SseArithMemAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, uint, void>)&SseArithMem;
+
+    /// <summary>Address of the scalar-SSE unary entry.</summary>
+    public static readonly ulong SseUnaryRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int, void>)&SseUnaryReg;
+
+    /// <summary>Address of the Movss register entry.</summary>
+    public static readonly ulong SseMovssRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, int, void>)&SseMovssReg;
+
+    /// <summary>Address of the Movss load entry.</summary>
+    public static readonly ulong SseMovssMemAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, uint, void>)&SseMovssMem;
+
+    /// <summary>Address of the Movss store entry.</summary>
+    public static readonly ulong SseMovssStoreAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, uint>)&SseMovssStore;
+
+    /// <summary>Address of the Cvttss2Si memory conversion entry.</summary>
+    public static readonly ulong SseCvtAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, uint, int>)&SseCvt;
+
+    /// <summary>Address of the Cvttss2Si register conversion entry.</summary>
+    public static readonly ulong SseCvtRegAddress =
+        (ulong)(nint)(delegate* unmanaged<IntPtr, int, int>)&SseCvtReg;
+
     [UnmanagedCallersOnly]
     private static void NoteStore(IntPtr cpuPointer, uint physical, int sizeBits)
     {
@@ -92,6 +196,15 @@ internal static unsafe class RawHelpers
                 XboxCpu.RawTrace($"  spec idx={index} {instruction.Mnemonic} handler={handler is not null}");
             }
 
+            if (cpu.RawShapeTally)
+            {
+                cpu.NoteRawHelperShape(
+                    instruction.Mnemonic,
+                    instruction.Operand1.Kind,
+                    instruction.Operand2.Kind,
+                    instruction.Operand1.Size);
+            }
+
             if (handler is not null)
             {
                 handler(cpu, in instruction);
@@ -111,6 +224,350 @@ internal static unsafe class RawHelpers
             // member's boundary state is already exact (the IL runner's
             // contract for a faulting member).
             Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuPushSingle(IntPtr cpuPointer, uint bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuPushSingle(bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static uint FpuSingleBits(IntPtr cpuPointer)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitFpuSingleBits();
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuPop(IntPtr cpuPointer)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuPop();
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuPushRegister(IntPtr cpuPointer, int index)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuPushRegister(index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuStoreRegister(IntPtr cpuPointer, int index)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuStoreRegister(index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuStoreRegisterPop(IntPtr cpuPointer, int index)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuStoreRegisterPop(index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuPushInteger(IntPtr cpuPointer, uint bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuPushInteger(bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static uint FpuIntegerBits(IntPtr cpuPointer)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitFpuIntegerBits();
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static ulong MmxRead(IntPtr cpuPointer, int index)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitMmxRead(index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void MmxWrite(IntPtr cpuPointer, int index, ulong value)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitMmxWrite(index, value);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuArithReg(IntPtr cpuPointer, uint descriptor, int sourceIndex)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuArithReg(descriptor, sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuArithPop(IntPtr cpuPointer, uint descriptor)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuArithPop(descriptor);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuArithMem(IntPtr cpuPointer, uint descriptor, ulong bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuArithMem(descriptor, bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuExchange(IntPtr cpuPointer, int index)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuExchange(index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuPushOne(IntPtr cpuPointer)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuPushOne();
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuChangeSign(IntPtr cpuPointer)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuChangeSign();
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuCompareReg(IntPtr cpuPointer, uint descriptor, int index)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuCompareReg(descriptor, index);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void FpuCompareMem(IntPtr cpuPointer, uint descriptor, ulong bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitFpuCompareMem(descriptor, bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void SseArithReg(IntPtr cpuPointer, uint descriptor, int sourceIndex)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitSseArithReg(descriptor, sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void SseArithMem(IntPtr cpuPointer, uint descriptor, uint bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitSseArithMem(descriptor, bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void SseUnaryReg(IntPtr cpuPointer, uint descriptor, int sourceIndex)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitSseUnaryReg(descriptor, sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void SseMovssReg(IntPtr cpuPointer, int destination, int sourceIndex)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitSseMovssReg(destination, sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void SseMovssMem(IntPtr cpuPointer, int destination, uint bits)
+    {
+        try
+        {
+            XboxCpu.RawFromHandle(cpuPointer).JitSseMovssMem(destination, bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static uint SseMovssStore(IntPtr cpuPointer, int sourceIndex)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitSseMovssStore(sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static int SseCvt(IntPtr cpuPointer, uint bits)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitSseCvt(bits);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static int SseCvtReg(IntPtr cpuPointer, int sourceIndex)
+    {
+        try
+        {
+            return XboxCpu.RawFromHandle(cpuPointer).JitSseCvtReg(sourceIndex);
+        }
+        catch (Exception ex)
+        {
+            Capture(cpuPointer, ex);
+            return 0;
         }
     }
 

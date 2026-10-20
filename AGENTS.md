@@ -567,6 +567,35 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-20 (seventh).** **C3-x hot-shape native encoding is LANDED
+(decisions §199o, opt-in `--jit-raw`).** A new `--raw-shapes` diagnostic
+(`RawHelperShapeCounts`/`RawHelperShapeDetail`, plus `rawBuildFails` in the
+Jit stats line) ranked every helper-routed raw member; the emitter then baked
+the hot shapes natively: `push/pop/call/ret/leave/jmp [m]/call [m]`, memory
+`movzx/movsx`, `neg/not/bswap/xchg/cdq/setcc`, `shl/shr/sar/rol/ror` by imm
+and by CL (host instruction plus the ShiftOps OF rule for counts > 1),
+`Fld/Fst/Fstp/Fild/Fist/Fistp`, the x87 arithmetic family (reg/m32/m64, the
+`Faddp` pops, `Fchs`, compares, `Fld1`, `Fxch`, `Fiadd` m16/m32), MMX
+`movq/movntq`, scalar SSE (`Addss/Subss/Mulss/Divss/Minss/Maxss`,
+`Sqrtss/Rsqrtss/Rcpss`, `Movss`, `Cvttss2Si`) and `prefetch` as a Nop. **At 1B
+the helper-routed members fell 24.65M -> 1.81M (triangle) and 122.65M ->
+5.57M (menu)**, with both title SHAs and every NV2A/JIT counter identical to
+the IL anchors (triangle `F57934BF.../CF79FC17...`, menu
+`660CA11B.../F5D61C94...`). Two real bugs were fixed: register-form FPU
+members advanced EIP twice (the block exited mid-instruction, then the guest
+jumped through garbage - diagnosed with the block trace `served=6
+exit=0x8005818D` and the raw dump), and the IL runner's generic EIP advance
+did not treat the new handler-backed kinds as owning EIP
+(`JitPlanner.HandlerOwnsEip` now centralizes it). Tiny helpers returning a
+value must capture it in **R8**: `EmitFaultCheck` clobbers R9/R10/R11 (the
+first version stored a fault-pointer fragment as the FPU result). Suite
+**1510** green (11 new raw differentials), ktest smoke **PASS 7/7** (01:10),
+format clean. Remaining helpers are dominated by `mul/imul` (~1.1M/1.5M),
+string `movs` (1.0M menu), high-byte `mov` (0.8M menu), `fnstsw`,
+carry-rotates and a few SSE moves; the next CPU lever is **C3-y per-member
+bookkeeping trim** (EIP only at exits/polls, TSC in a register, no per-member
+served stores), then C3-z, after which Track B owns the end-to-end gap.
+
 **Session close 2026-10-20 (sixth).** **Direct raw block chaining is LANDED
 (`21b0f8a`, opt-in `--jit-raw`)** and the fault-path crash that forced its
 revert is root-caused and fixed. The blocker was never the chain tail: **a

@@ -41,6 +41,56 @@ internal static class JitStateMask
             case JitKind.MovLoad:
                 return address;
             case JitKind.FpuLoadReal:
+            case JitKind.FpuLoadInteger:
+                return address;
+            case JitKind.FpuStoreReal:
+            case JitKind.FpuStoreRealPop:
+            case JitKind.FpuStoreInteger:
+            case JitKind.FpuStoreIntegerPop:
+                return address;
+            case JitKind.FpuLoadRegister:
+            case JitKind.FpuStoreRegister:
+            case JitKind.FpuStoreRegisterPop:
+                return 0;
+            case JitKind.FpuArithReg:
+            case JitKind.FpuArithPop:
+                return 0;
+            case JitKind.FpuArithMem:
+                return address;
+            case JitKind.FpuExchange:
+            case JitKind.FpuPushOne:
+                return 0;
+            case JitKind.FpuChangeSign:
+            case JitKind.FpuCompareReg:
+                return 0;
+            case JitKind.FpuCompareMem:
+                return address;
+            case JitKind.PushM:
+                return address | Bit(Esp);
+            case JitKind.Cdq:
+                return Bit((int)Gpr.Eax);
+            case JitKind.Setcc:
+                return 0;
+            case JitKind.SseArithReg:
+            case JitKind.SseUnaryReg:
+            case JitKind.SseMovssReg:
+            case JitKind.SseCvtReg:
+                return 0;
+            case JitKind.SseArithMem:
+            case JitKind.SseMovssMem:
+            case JitKind.SseMovssStore:
+            case JitKind.SseCvtMem:
+                return address;
+            case JitKind.NegR:
+            case JitKind.NotR:
+            case JitKind.Bswap:
+                return RegBit(plan, plan.RegIndex);
+            case JitKind.XchgRR:
+                return RegBit(plan, plan.RegIndex) | RegBit(plan, plan.SecondRegIndex);
+            case JitKind.Leave:
+                return Bit((int)Gpr.Ebp);
+            case JitKind.MmxLoad:
+            case JitKind.MmxStore:
                 return address;
             case JitKind.MovStore:
                 return RegBit(plan, plan.RegIndex) | address;
@@ -74,6 +124,8 @@ internal static class JitStateMask
                 return plan.HasMemory ? address : ExtendSourceBit(plan, plan.SecondRegIndex);
             case JitKind.ShiftRI:
                 return RegBit(plan, plan.RegIndex);
+            case JitKind.ShiftRC:
+                return RegBit(plan, plan.RegIndex) | Bit((int)Gpr.Ecx);
             case JitKind.PushR:
                 return RegBit(plan, plan.RegIndex) | Bit(Esp);
             case JitKind.PushI:
@@ -121,6 +173,7 @@ internal static class JitStateMask
             case JitKind.Lea:
             case JitKind.MovExtend:
             case JitKind.ShiftRI:
+            case JitKind.ShiftRC:
                 return RegBit(plan, plan.RegIndex);
             case JitKind.PushR:
             case JitKind.PushI:
@@ -131,10 +184,45 @@ internal static class JitStateMask
                 return Bit(Esp);
             case JitKind.PopR:
                 return RegBit(plan, plan.RegIndex) | Bit(Esp);
+            case JitKind.PushM:
+                return Bit(Esp);
+            case JitKind.Cdq:
+                return Bit((int)Gpr.Edx);
+            case JitKind.Setcc:
+                return RegBit(plan, plan.RegIndex);
+            case JitKind.NegR:
+            case JitKind.NotR:
+            case JitKind.Bswap:
+            case JitKind.SseCvtReg:
+            case JitKind.SseCvtMem:
+                return RegBit(plan, plan.RegIndex);
+            case JitKind.XchgRR:
+                return RegBit(plan, plan.RegIndex) | RegBit(plan, plan.SecondRegIndex);
+            case JitKind.Leave:
+                return Bit(Esp) | Bit((int)Gpr.Ebp);
             case JitKind.MovStore:
             case JitKind.MovStoreImm:
             case JitKind.FpuStoreReal:
             case JitKind.FpuStoreRealPop:
+            case JitKind.FpuLoadRegister:
+            case JitKind.FpuStoreRegister:
+            case JitKind.FpuStoreRegisterPop:
+            case JitKind.FpuLoadInteger:
+            case JitKind.FpuStoreInteger:
+            case JitKind.FpuStoreIntegerPop:
+            case JitKind.FpuArithReg:
+            case JitKind.FpuArithPop:
+            case JitKind.FpuArithMem:
+            case JitKind.FpuExchange:
+            case JitKind.FpuPushOne:
+            case JitKind.SseArithReg:
+            case JitKind.SseArithMem:
+            case JitKind.SseUnaryReg:
+            case JitKind.SseMovssReg:
+            case JitKind.SseMovssMem:
+            case JitKind.SseMovssStore:
+            case JitKind.MmxLoad:
+            case JitKind.MmxStore:
             case JitKind.AluMR:
             case JitKind.AluMI:
             case JitKind.TestRR:

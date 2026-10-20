@@ -50,6 +50,8 @@ internal static unsafe class RawBlockEmitter
     private const int F_TSC = ShadowSpace + 0x30;
     private const int F_VALUE = ShadowSpace + 0x38;
     private const int F_PHYS = ShadowSpace + 0x40;
+    private const int F_VALUE64 = ShadowSpace + 0x48;
+    private const int F_FPU = ShadowSpace + 0x50;
 
     // 8 callee-saved pushes (64) + this size keeps rsp 16-byte aligned at a call.
     private const int FrameSize = ShadowSpace + 0x108;
@@ -154,10 +156,12 @@ internal static unsafe class RawBlockEmitter
         {
             // A shape the assembler cannot encode: keep the IL runner for this
             // block (correctness first, the raw path is an optimization).
+            XboxCpu.NoteRawBuildFailure();
             if (XboxCpu.RawTraceEnabled)
             {
                 XboxCpu.RawTrace($"  build failed head={headEip:X5}: {ex.GetType().Name}: {ex.Message}");
             }
+
             return 0;
         }
     }
@@ -818,7 +822,29 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.ShiftRI:
-                    EmitShift(plan);
+                    if (plan.ShiftOp is JitShiftOp.Rcl or JitShiftOp.Rcr)
+                    {
+                        // Carry-through rotates keep the exact ShiftOps
+                        // contract as the member.
+                        EmitHelperMember(index);
+                    }
+                    else
+                    {
+                        EmitShift(plan);
+                    }
+
+                    break;
+
+                case JitKind.ShiftRC:
+                    if (plan.ShiftOp is JitShiftOp.Rcl or JitShiftOp.Rcr)
+                    {
+                        EmitHelperMember(index);
+                    }
+                    else
+                    {
+                        EmitShiftByCl(plan);
+                    }
+
                     break;
 
                 case JitKind.Cli:
@@ -849,6 +875,160 @@ internal static unsafe class RawBlockEmitter
                     EmitStore(plan, index);
                     break;
 
+                case JitKind.FpuLoadReal:
+                    EmitFpuMemoryLoad(plan, index, RawHelpers.FpuPushSingleAddress);
+                    break;
+
+                case JitKind.FpuStoreReal:
+                case JitKind.FpuStoreRealPop:
+                    EmitFpuMemoryStore(plan, index, pop: plan.Kind == JitKind.FpuStoreRealPop);
+                    break;
+
+                case JitKind.FpuLoadInteger:
+                    EmitFpuMemoryLoad(plan, index, RawHelpers.FpuPushIntegerAddress);
+                    break;
+
+                case JitKind.FpuStoreInteger:
+                case JitKind.FpuStoreIntegerPop:
+                    EmitFpuIntegerMemoryStore(plan, index, pop: plan.Kind == JitKind.FpuStoreIntegerPop);
+                    break;
+
+                case JitKind.FpuLoadRegister:
+                case JitKind.FpuStoreRegister:
+                case JitKind.FpuStoreRegisterPop:
+                    EmitFpuRegister(plan);
+                    break;
+
+                case JitKind.FpuArithReg:
+                case JitKind.FpuArithPop:
+                case JitKind.FpuArithMem:
+                    EmitFpuArithmetic(plan, index);
+                    break;
+
+                case JitKind.FpuExchange:
+                    EmitFpuExchange(plan);
+                    break;
+
+                case JitKind.FpuPushOne:
+                    EmitParkedHelper(
+                        RawHelpers.FpuPushOneAddress,
+                        () => _a.mov(R64(Register.RCX), R64(Register.R10)));
+                    _flagsLive = false;
+                    break;
+
+                case JitKind.FpuChangeSign:
+                    EmitParkedHelper(
+                        RawHelpers.FpuChangeSignAddress,
+                        () => _a.mov(R64(Register.RCX), R64(Register.R10)));
+                    _flagsLive = false;
+                    break;
+
+                case JitKind.FpuCompareReg:
+                    EmitFpuCompareReg(plan);
+                    break;
+
+                case JitKind.FpuCompareMem:
+                    EmitFpuCompareMem(plan, index);
+                    break;
+
+                case JitKind.PushM:
+                    EmitPushMemory(plan, index);
+                    break;
+
+                case JitKind.Cdq:
+                    _a.cdq();
+                    break;
+
+                case JitKind.Setcc:
+                    EmitSetcc(plan);
+                    break;
+
+                case JitKind.JmpMem:
+                    EmitJmpMem(plan, index);
+                    return;
+
+                case JitKind.CallMem:
+                    EmitCallMem(plan, eip, index);
+                    return;
+
+                case JitKind.SseArithReg:
+                case JitKind.SseArithMem:
+                    EmitSseArithmetic(plan, index);
+                    break;
+
+                case JitKind.SseUnaryReg:
+                    EmitSseUnary(plan);
+                    break;
+
+                case JitKind.SseMovssReg:
+                case JitKind.SseMovssMem:
+                case JitKind.SseMovssStore:
+                    EmitSseMovss(plan, index);
+                    break;
+
+                case JitKind.SseCvtReg:
+                case JitKind.SseCvtMem:
+                    EmitSseCvt(plan, index);
+                    break;
+
+                case JitKind.NegR:
+                    EmitEnsureHostFlags();
+                    if (plan.Size == 8)
+                    {
+                        _a.neg(R8(plan.RegIndex));
+                    }
+                    else if (plan.Size == 16)
+                    {
+                        _a.neg(R16(plan.RegIndex));
+                    }
+                    else
+                    {
+                        _a.neg(R32(Gpr32[plan.RegIndex]));
+                    }
+
+                    _flagsLive = true;
+                    break;
+
+                case JitKind.NotR:
+                    if (plan.Size == 8)
+                    {
+                        _a.not(R8(plan.RegIndex));
+                    }
+                    else if (plan.Size == 16)
+                    {
+                        _a.not(R16(plan.RegIndex));
+                    }
+                    else
+                    {
+                        _a.not(R32(Gpr32[plan.RegIndex]));
+                    }
+
+                    break;
+
+                case JitKind.Bswap:
+                    _a.bswap(R32(Gpr32[plan.RegIndex]));
+                    break;
+
+                case JitKind.XchgRR:
+                    if (plan.RegIndex != plan.SecondRegIndex)
+                    {
+                        _a.xchg(R32(Gpr32[plan.RegIndex]), R32(Gpr32[plan.SecondRegIndex]));
+                    }
+
+                    break;
+
+                case JitKind.Leave:
+                    EmitLeave(plan, index);
+                    break;
+
+                case JitKind.MmxLoad:
+                    EmitMmxLoad(plan, index);
+                    break;
+
+                case JitKind.MmxStore:
+                    EmitMmxStore(plan, index);
+                    break;
+
                 case JitKind.AluRM:
                     EmitAluMemorySource(plan, index);
                     break;
@@ -875,6 +1055,23 @@ internal static unsafe class RawBlockEmitter
                     EmitMaterializeFlags();
                     _a.jmp(_exit);
                     return;
+
+                case JitKind.CallRel:
+                    EmitCallRel(plan, eip, index);
+                    return;
+
+                case JitKind.RetNear:
+                    EmitRet(plan, index);
+                    return;
+
+                case JitKind.PushR:
+                case JitKind.PushI:
+                    EmitPush(plan, index);
+                    break;
+
+                case JitKind.PopR:
+                    EmitPop(plan, index);
+                    break;
 
                 case JitKind.JccRel:
                     EmitJcc(plan, eip);
@@ -1153,10 +1350,53 @@ internal static unsafe class RawBlockEmitter
         {
             if (plan.HasMemory)
             {
-                // Memory-source movzx/movsx runs through the exact handler (a
-                // native probe+extend form is a pure optimization; register
-                // sources keep the baked shape).
+                // Memory-source movzx/movsx: the same RAM probe as an integer
+                // load, then the extend in a scratch byte/word register. The
+                // slow path keeps the exact spec handler (fault precision is
+                // unchanged; the handler owns the EIP advance).
+                Assembler a = _a;
+                EmitMaterializeFlags();
+                EmitAddress(plan);
+                Label slow = a.CreateLabel(string.Empty);
+                Label done = a.CreateLabel(string.Empty);
+                EmitProbe(plan.SourceSize / 8, isStore: false, slow, null);
+                if (plan.SourceSize == 8)
+                {
+                    a.mov(new AssemblerRegister8(Register.R8L), RamAt());
+                    if (plan.SignExtend)
+                    {
+                        a.movsx(R32(Gpr32[plan.RegIndex]), new AssemblerRegister8(Register.R8L));
+                    }
+                    else
+                    {
+                        a.movzx(R32(Gpr32[plan.RegIndex]), new AssemblerRegister8(Register.R8L));
+                    }
+                }
+                else
+                {
+                    a.mov(new AssemblerRegister16(Register.R8W), RamAt());
+                    if (plan.SignExtend)
+                    {
+                        a.movsx(R32(Gpr32[plan.RegIndex]), new AssemblerRegister16(Register.R8W));
+                    }
+                    else
+                    {
+                        a.movzx(R32(Gpr32[plan.RegIndex]), new AssemblerRegister16(Register.R8W));
+                    }
+                }
+
+                // The fast path owns the EIP advance (the slow path's helper
+                // advances it; EmitHelperMember set _memberHelper, so the
+                // outer member epilogue skips it for both paths).
+                EmitAdvanceEip(plan.Length);
+                a.jmp(done);
+
+                a.Label(ref slow);
                 EmitHelperMember(index);
+
+                // F_EFLAGS is authoritative on both paths.
+                _flagsLive = false;
+                a.Label(ref done);
                 return;
             }
 
@@ -1191,25 +1431,995 @@ internal static unsafe class RawBlockEmitter
             }
         }
 
+        /// <summary>
+        /// <c>push r32/imm32</c>: the IL runner's exact push (SS base + ESP-4,
+        /// 4-byte store), with the stack write behind the same inline probe.
+        /// Any probe miss runs the exact spec handler; ESP only moves on the
+        /// fast path after the store succeeded, so a faulting push leaves the
+        /// architectural state exactly at the member's boundary.
+        /// </summary>
+        private void EmitPush(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.sub(R32(Register.R9D), 4);
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: true, slow, null);
+            if (plan.Kind == JitKind.PushR)
+            {
+                a.mov(RamAt(), R32(Gpr32[plan.RegIndex]));
+            }
+            else
+            {
+                // Iced cannot infer an immediate store's width from the
+                // memory operand; stage it through a scratch register.
+                a.mov(R32(Register.R8D), unchecked((int)plan.Immediate));
+                a.mov(RamAt(), R32(Register.R8D));
+            }
+
+            // ESP is untouched by the probe; the decrement is independent of
+            // the SS base. lea keeps every host-flag consumer irrelevant here
+            // (F_EFLAGS is authoritative after the materialize above).
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary>
+        /// <c>pop r32</c>: probe-read the 4-byte stack slot, advance ESP, then
+        /// write the destination (the order matters for <c>pop esp</c>: the
+        /// loaded value wins, matching the interpreter).
+        /// </summary>
+        private void EmitPop(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, 4));
+            a.mov(R32(Gpr32[plan.RegIndex]), R32(Register.R8D));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary>
+        /// <c>call rel32</c> (terminator): push the return address, then exit at
+        /// the compile-time target. The slow path runs the exact handler. The
+        /// block cannot chain (it stores), so the target is served by the next
+        /// RunJitBlock iteration - still far cheaper than a full state sync.
+        /// </summary>
+        private void EmitCallRel(in JitMemberPlan plan, uint eip, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.sub(R32(Register.R9D), 4);
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+
+            Label slow = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: true, slow, null);
+            a.mov(R32(Register.R8D), unchecked((int)(eip + (uint)plan.Length)));
+            a.mov(RamAt(), R32(Register.R8D));
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
+            EmitSetEip(unchecked(eip + (uint)plan.Length + (uint)plan.Immediate));
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+        }
+
+        /// <summary>
+        /// <c>ret [imm16]</c> (terminator): probe-read the return address, pop
+        /// it (plus the immediate release), exit at the loaded EIP.
+        /// </summary>
+        private void EmitRet(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+
+            Label slow = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, 4 + unchecked((int)plan.Immediate)));
+            a.mov(Slot(F_EIP), R32(Register.R8D));
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+        }
+
+        /// <summary>
+        /// Calls a tiny unmanaged FPU/MMX entry with the CPU handle while the
+        /// guest registers parked in caller-saved host registers are preserved.
+        /// <paramref name="setArgs"/> runs after the park and may only read
+        /// R8/R9 (scratch values prepared by the caller) and R10 (CPU); it must
+        /// write the Win64 argument registers. <paramref name="resultReg"/>,
+        /// when given, captures RAX before the parked registers are restored.
+        /// </summary>
+        private void EmitParkedHelper(ulong target, Action setArgs, Register? resultReg = null)
+        {
+            Assembler a = _a;
+            a.mov(R64(Register.R10), Slot(F_CPU));
+            a.mov(R64(Register.RSI), target);
+            a.push(R64(Register.RAX));
+            a.push(R64(Register.RCX));
+            a.push(R64(Register.RDX));
+            a.push(R64(Register.RBX));
+            a.sub(R64(Register.RSP), 0x20);
+            setArgs();
+            a.call(R64(Register.RSI));
+            a.add(R64(Register.RSP), 0x20);
+            if (resultReg is { } result)
+            {
+                a.mov(R64(result), R64(Register.RAX));
+            }
+
+            a.pop(R64(Register.RBX));
+            a.pop(R64(Register.RDX));
+            a.pop(R64(Register.RCX));
+            a.pop(R64(Register.RAX));
+            EmitFaultCheck();
+        }
+
+        /// <summary>
+        /// <c>Fld m32</c> / <c>Fild m32</c>: probe the 4-byte source, then push
+        /// it through the shared FPU conversion helper. The slow path is the
+        /// exact spec handler; F_EFLAGS is authoritative on both paths.
+        /// </summary>
+        private void EmitFpuMemoryLoad(in JitMemberPlan plan, int index, ulong pushAddress)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R9D), RamAt());
+            EmitParkedHelper(pushAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Fst/Fstp m32</c>: convert ST(0) first (exact conversion), then probe-store the bits.</summary>
+        private void EmitFpuMemoryStore(in JitMemberPlan plan, int index, bool pop)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitParkedHelper(
+                RawHelpers.FpuSingleBitsAddress,
+                () => a.mov(R64(Register.RCX), R64(Register.R10)),
+                resultReg: Register.R8);
+            a.mov(Slot(F_FPU), R32(Register.R8D));
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: true, slow, null);
+            a.mov(R32(Register.R8D), Slot(F_FPU));
+            a.mov(RamAt(), R32(Register.R8D));
+            if (pop)
+            {
+                EmitParkedHelper(
+                    RawHelpers.FpuPopAddress,
+                    () => a.mov(R64(Register.RCX), R64(Register.R10)));
+            }
+
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Fist/Fistp m32</c>: integer conversion first (exact rounding/exception rule), then the probe-store.</summary>
+        private void EmitFpuIntegerMemoryStore(in JitMemberPlan plan, int index, bool pop)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitParkedHelper(
+                RawHelpers.FpuIntegerBitsAddress,
+                () => a.mov(R64(Register.RCX), R64(Register.R10)),
+                resultReg: Register.R8);
+            a.mov(Slot(F_FPU), R32(Register.R8D));
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: true, slow, null);
+            a.mov(R32(Register.R8D), Slot(F_FPU));
+            a.mov(RamAt(), R32(Register.R8D));
+            if (pop)
+            {
+                EmitParkedHelper(
+                    RawHelpers.FpuPopAddress,
+                    () => a.mov(R64(Register.RCX), R64(Register.R10)));
+            }
+
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Fld/Fst/Fstp st(i)</c>: one tiny FPU register helper call, no memory probe.</summary>
+        private void EmitFpuRegister(in JitMemberPlan plan)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            ulong target = plan.Kind switch
+            {
+                JitKind.FpuLoadRegister => RawHelpers.FpuPushRegisterAddress,
+                JitKind.FpuStoreRegister => RawHelpers.FpuStoreRegisterAddress,
+                _ => RawHelpers.FpuStoreRegisterPopAddress,
+            };
+            a.mov(R32(Register.R9D), plan.RegIndex);
+            EmitParkedHelper(target, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            _flagsLive = false;
+        }
+
+        /// <summary>
+        /// x87 arithmetic: register-register and 32/64-bit memory forms. The
+        /// operation descriptor packs the operation, the destination ST index
+        /// and the memory width; the arithmetic itself stays in the shared
+        /// managed Fpu80 implementation.
+        /// </summary>
+        private void EmitFpuArithmetic(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            uint descriptor = FpuArithDescriptor(plan);
+            if (plan.Kind == JitKind.FpuArithReg)
+            {
+                a.mov(R32(Register.R9D), unchecked((int)descriptor));
+                a.mov(R32(Register.R8D), plan.SecondRegIndex);
+                EmitParkedHelper(RawHelpers.FpuArithRegAddress, () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                });
+                _flagsLive = false;
+                return;
+            }
+
+            if (plan.Kind == JitKind.FpuArithPop)
+            {
+                a.mov(R32(Register.R9D), unchecked((int)descriptor));
+                EmitParkedHelper(RawHelpers.FpuArithPopAddress, () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                });
+                _flagsLive = false;
+                return;
+            }
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(plan.SourceSize / 8, isStore: false, slow, null);
+            if (plan.SourceSize == 64)
+            {
+                a.mov(R64(Register.R8), RamAt());
+            }
+            else if (plan.SourceSize == 16)
+            {
+                a.mov(new AssemblerRegister16(Register.R8W), RamAt());
+            }
+            else
+            {
+                a.mov(R32(Register.R8D), RamAt());
+            }
+
+            a.mov(R32(Register.R9D), unchecked((int)descriptor));
+            EmitParkedHelper(RawHelpers.FpuArithMemAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary>Packs the x87 operation, destination ST index and source kind/width.</summary>
+        private static uint FpuArithDescriptor(in JitMemberPlan plan)
+        {
+            int code = plan.Mnemonic switch
+            {
+                Mnemonic.Fadd or Mnemonic.Faddp or Mnemonic.Fiadd => 0,
+                Mnemonic.Fmul or Mnemonic.Fmulp or Mnemonic.Fimul => 1,
+                Mnemonic.Fsub or Mnemonic.Fsubp or Mnemonic.Fisub => 2,
+                Mnemonic.Fsubr or Mnemonic.Fsubrp or Mnemonic.Fisubr => 3,
+                Mnemonic.Fdiv or Mnemonic.Fdivp or Mnemonic.Fidiv => 4,
+                _ => 5,
+            };
+            bool integer = plan.Mnemonic is
+                Mnemonic.Fiadd or Mnemonic.Fimul or Mnemonic.Fisub
+                or Mnemonic.Fisubr or Mnemonic.Fidiv or Mnemonic.Fidivr;
+            uint descriptor = (uint)code | ((uint)plan.RegIndex << 8);
+            if (integer)
+            {
+                descriptor |= 1u << 17;
+                if (plan.SourceSize == 16)
+                {
+                    descriptor |= 1u << 16;
+                }
+            }
+            else if (plan.Kind == JitKind.FpuArithMem && plan.SourceSize == 64)
+            {
+                descriptor |= 1u << 16;
+            }
+
+            return descriptor;
+        }
+
+        /// <summary><c>Fxch st(i)</c>: one exchange helper call.</summary>
+        private void EmitFpuExchange(in JitMemberPlan plan)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), plan.RegIndex);
+            EmitParkedHelper(RawHelpers.FpuExchangeAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            _flagsLive = false;
+        }
+
+        /// <summary>Scalar SSE arithmetic: register and m32 forms.</summary>
+        private void EmitSseArithmetic(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            uint descriptor = (plan.Immediate & 0xFF) | ((uint)plan.RegIndex << 8);
+            if (plan.Kind == JitKind.SseArithReg)
+            {
+                a.mov(R32(Register.R9D), unchecked((int)descriptor));
+                a.mov(R32(Register.R8D), plan.SecondRegIndex);
+                EmitParkedHelper(RawHelpers.SseArithRegAddress, () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                });
+                _flagsLive = false;
+                return;
+            }
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.mov(R32(Register.R9D), unchecked((int)descriptor));
+            EmitParkedHelper(RawHelpers.SseArithMemAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary>Scalar SSE unary (<c>Sqrtss/Rsqrtss/Rcpss</c>), register source.</summary>
+        private void EmitSseUnary(in JitMemberPlan plan)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            uint descriptor = (plan.Immediate & 0xFF) | ((uint)plan.RegIndex << 8);
+            a.mov(R32(Register.R9D), unchecked((int)descriptor));
+            a.mov(R32(Register.R8D), plan.SecondRegIndex);
+            EmitParkedHelper(RawHelpers.SseUnaryRegAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            _flagsLive = false;
+        }
+
+        /// <summary><c>Movss</c> register/load/store forms (element 0 only).</summary>
+        private void EmitSseMovss(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            if (plan.Kind == JitKind.SseMovssReg)
+            {
+                a.mov(R32(Register.R9D), plan.RegIndex);
+                a.mov(R32(Register.R8D), plan.SecondRegIndex);
+                EmitParkedHelper(RawHelpers.SseMovssRegAddress, () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                });
+                _flagsLive = false;
+                return;
+            }
+
+            if (plan.Kind == JitKind.SseMovssMem)
+            {
+                EmitAddress(plan);
+                Label slow = a.CreateLabel(string.Empty);
+                Label done = a.CreateLabel(string.Empty);
+                EmitProbe(4, isStore: false, slow, null);
+                a.mov(R32(Register.R8D), RamAt());
+                a.mov(R32(Register.R9D), plan.RegIndex);
+                EmitParkedHelper(RawHelpers.SseMovssMemAddress, () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                });
+                EmitAdvanceEip(plan.Length);
+                a.jmp(done);
+
+                a.Label(ref slow);
+                EmitHelperMember(index);
+
+                _flagsLive = false;
+                a.Label(ref done);
+                return;
+            }
+
+            a.mov(R32(Register.R9D), plan.RegIndex);
+            EmitParkedHelper(
+                RawHelpers.SseMovssStoreAddress,
+                () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                },
+                resultReg: Register.R8);
+            a.mov(Slot(F_FPU), R32(Register.R8D));
+
+            EmitAddress(plan);
+            Label slowStore = a.CreateLabel(string.Empty);
+            Label doneStore = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: true, slowStore, null);
+            a.mov(R32(Register.R8D), Slot(F_FPU));
+            a.mov(RamAt(), R32(Register.R8D));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(doneStore);
+
+            a.Label(ref slowStore);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref doneStore);
+        }
+
+        /// <summary><c>Cvttss2Si r32, xmm/m32</c>: tiny conversion helper, result into the guest GPR.</summary>
+        private void EmitSseCvt(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            if (plan.Kind == JitKind.SseCvtReg)
+            {
+                a.mov(R32(Register.R9D), plan.SecondRegIndex);
+                EmitParkedHelper(
+                    RawHelpers.SseCvtRegAddress,
+                    () =>
+                    {
+                        a.mov(R64(Register.RCX), R64(Register.R10));
+                        a.mov(R32(Register.EDX), R32(Register.R9D));
+                    },
+                    resultReg: Register.R8);
+                a.mov(R32(Gpr32[plan.RegIndex]), R32(Register.R8D));
+                _flagsLive = false;
+                return;
+            }
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R9D), RamAt());
+            EmitParkedHelper(
+                RawHelpers.SseCvtAddress,
+                () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), R32(Register.R9D));
+                },
+                resultReg: Register.R8);
+            a.mov(R32(Gpr32[plan.RegIndex]), R32(Register.R8D));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Leave</c>: ESP = EBP + 4; EBP = [SS:EBP].</summary>
+        private void EmitLeave(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Ebp]));
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Ebp], null, 1, 4));
+            a.mov(R32(Gpr32[(int)Gpr.Ebp]), R32(Register.R8D));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Fcom/Fcomp st(i)</c>.</summary>
+        private void EmitFpuCompareReg(in JitMemberPlan plan)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            uint descriptor = plan.Immediate & 1u;
+            a.mov(R32(Register.R9D), unchecked((int)descriptor));
+            a.mov(R32(Register.R8D), plan.RegIndex);
+            EmitParkedHelper(RawHelpers.FpuCompareRegAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            _flagsLive = false;
+        }
+
+        /// <summary><c>Fcom/Fcomp m32/m64</c>.</summary>
+        private void EmitFpuCompareMem(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(plan.SourceSize / 8, isStore: false, slow, null);
+            if (plan.SourceSize == 64)
+            {
+                a.mov(R64(Register.R8), RamAt());
+            }
+            else
+            {
+                a.mov(R32(Register.R8D), RamAt());
+            }
+
+            uint descriptor = plan.Immediate & 1u;
+            if (plan.SourceSize == 64)
+            {
+                descriptor |= 2u;
+            }
+
+            a.mov(R32(Register.R9D), unchecked((int)descriptor));
+            EmitParkedHelper(RawHelpers.FpuCompareMemAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), R32(Register.R9D));
+            });
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>push [mem]</c>: probe-read the 4-byte source, then the exact push store.</summary>
+        private void EmitPushMemory(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.mov(Slot(F_VALUE), R32(Register.R8D));
+
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.sub(R32(Register.R9D), 4);
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+            EmitProbe(4, isStore: true, slow, null);
+            a.mov(R32(Register.R8D), Slot(F_VALUE));
+            a.mov(RamAt(), R32(Register.R8D));
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>Setcc r8</c> (high-byte destinations deposit into the host register).</summary>
+        private void EmitSetcc(in JitMemberPlan plan)
+        {
+            Assembler a = _a;
+            EmitEnsureHostFlags();
+            AssemblerRegister8 scratch = new(Register.R8L);
+            EmitSetccOp(a, plan.Condition, scratch);
+            if (plan.RegIndex >= 4)
+            {
+                // AH/CH/DH/BH: deposit bits 8-15 of the host register.
+                int host = plan.RegIndex - 4;
+                a.movzx(R32(Register.R10D), scratch);
+                a.shl(R32(Register.R10D), 8);
+                a.and(R32(Gpr32[host]), unchecked((int)0xFFFF00FFu));
+                a.or(R32(Gpr32[host]), R32(Register.R10D));
+            }
+            else
+            {
+                a.mov(new AssemblerRegister8(Gpr8[plan.RegIndex]), scratch);
+            }
+
+            _flagsLive = true;
+        }
+
+        private static void EmitSetccOp(Assembler a, XGrid.Cpu.ConditionCode condition, AssemblerRegister8 destination)
+        {
+            switch (condition)
+            {
+                case XGrid.Cpu.ConditionCode.Overflow: a.seto(destination); break;
+                case XGrid.Cpu.ConditionCode.NotOverflow: a.setno(destination); break;
+                case XGrid.Cpu.ConditionCode.Below: a.setb(destination); break;
+                case XGrid.Cpu.ConditionCode.AboveOrEqual: a.setae(destination); break;
+                case XGrid.Cpu.ConditionCode.Equal: a.sete(destination); break;
+                case XGrid.Cpu.ConditionCode.NotEqual: a.setne(destination); break;
+                case XGrid.Cpu.ConditionCode.BelowOrEqual: a.setbe(destination); break;
+                case XGrid.Cpu.ConditionCode.Above: a.seta(destination); break;
+                case XGrid.Cpu.ConditionCode.Sign: a.sets(destination); break;
+                case XGrid.Cpu.ConditionCode.NotSign: a.setns(destination); break;
+                case XGrid.Cpu.ConditionCode.Parity: a.setp(destination); break;
+                case XGrid.Cpu.ConditionCode.NotParity: a.setnp(destination); break;
+                case XGrid.Cpu.ConditionCode.Less: a.setl(destination); break;
+                case XGrid.Cpu.ConditionCode.GreaterOrEqual: a.setge(destination); break;
+                case XGrid.Cpu.ConditionCode.LessOrEqual: a.setle(destination); break;
+                default: a.setg(destination); break;
+            }
+        }
+
+        /// <summary><c>jmp [mem]</c> (terminator).</summary>
+        private void EmitJmpMem(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.mov(Slot(F_EIP), R32(Register.R8D));
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+        }
+
+        /// <summary><c>call [mem]</c> (terminator): read the target, push the return address, exit there.</summary>
+        private void EmitCallMem(in JitMemberPlan plan, uint eip, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            EmitProbe(4, isStore: false, slow, null);
+            a.mov(R32(Register.R8D), RamAt());
+            a.mov(Slot(F_VALUE), R32(Register.R8D));
+
+            a.mov(R32(Register.R9D), R32(Gpr32[(int)Gpr.Esp]));
+            a.sub(R32(Register.R9D), 4);
+            a.add(R32(Register.R9D), Field(Register.R11, OffSegments + ((int)SegmentRegister.Ss * 4)));
+            EmitProbe(4, isStore: true, slow, null);
+            a.mov(R32(Register.R8D), unchecked((int)(eip + (uint)plan.Length)));
+            a.mov(RamAt(), R32(Register.R8D));
+            a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
+            a.mov(R32(Register.R8D), Slot(F_VALUE));
+            a.mov(Slot(F_EIP), R32(Register.R8D));
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+            EmitServedIncrement();
+            EmitMaterializeFlags();
+            a.jmp(_exit);
+        }
+
+        /// <summary><c>movq mm, m64</c>: probe-load 8 bytes, then write the MMX register.</summary>
+        private void EmitMmxLoad(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(8, isStore: false, slow, null);
+            a.mov(R64(Register.R9), RamAt());
+            int mmxIndex = plan.RegIndex;
+            EmitParkedHelper(RawHelpers.MmxWriteAddress, () =>
+            {
+                a.mov(R64(Register.RCX), R64(Register.R10));
+                a.mov(R32(Register.EDX), mmxIndex);
+                a.mov(R64(Register.R8), R64(Register.R9));
+            });
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
+        /// <summary><c>movq/movntq m64, mm</c>: read the MMX register, then the probe-store.</summary>
+        private void EmitMmxStore(in JitMemberPlan plan, int index)
+        {
+            Assembler a = _a;
+            EmitMaterializeFlags();
+            int mmxIndex = plan.RegIndex;
+            EmitParkedHelper(
+                RawHelpers.MmxReadAddress,
+                () =>
+                {
+                    a.mov(R64(Register.RCX), R64(Register.R10));
+                    a.mov(R32(Register.EDX), mmxIndex);
+                },
+                resultReg: Register.R8);
+            a.mov(Slot(F_VALUE64), R64(Register.R8));
+
+            EmitAddress(plan);
+            Label slow = a.CreateLabel(string.Empty);
+            Label done = a.CreateLabel(string.Empty);
+            EmitProbe(8, isStore: true, slow, null);
+            a.mov(R64(Register.R8), Slot(F_VALUE64));
+            a.mov(RamAt(), R64(Register.R8));
+            EmitAdvanceEip(plan.Length);
+            a.jmp(done);
+
+            a.Label(ref slow);
+            EmitHelperMember(index);
+
+            _flagsLive = false;
+            a.Label(ref done);
+        }
+
         private void EmitShift(in JitMemberPlan plan)
         {
+            EmitEnsureHostFlags();
+            bool rotate = plan.ShiftOp is JitShiftOp.Rol or JitShiftOp.Ror;
             byte count = (byte)(plan.Immediate & 0x1F);
             switch (plan.Size)
             {
                 case 8:
-                    EmitShift8(R8(plan.RegIndex), count, plan.ShiftOp);
+                    if (rotate)
+                    {
+                        EmitRotate8(R8(plan.RegIndex), count, plan.ShiftOp);
+                    }
+                    else
+                    {
+                        EmitShift8(R8(plan.RegIndex), count, plan.ShiftOp);
+                    }
+
                     break;
                 case 16:
-                    EmitShift16(R16(plan.RegIndex), count, plan.ShiftOp);
+                    if (rotate)
+                    {
+                        EmitRotate16(R16(plan.RegIndex), count, plan.ShiftOp);
+                    }
+                    else
+                    {
+                        EmitShift16(R16(plan.RegIndex), count, plan.ShiftOp);
+                    }
+
                     break;
                 default:
-                    EmitShift32(R32(Gpr32[plan.RegIndex]), count, plan.ShiftOp);
+                    if (rotate)
+                    {
+                        EmitRotate32(R32(Gpr32[plan.RegIndex]), count, plan.ShiftOp);
+                    }
+                    else
+                    {
+                        EmitShift32(R32(Gpr32[plan.RegIndex]), count, plan.ShiftOp);
+                    }
+
                     break;
             }
 
-            if (count != 0)
+            // ShiftOps clears OF for every count except 1; the host sets it for
+            // any non-zero count, so the >1 cases clear it explicitly (the
+            // C3-y flag contract keeps every arithmetic bit exact).
+            if (plan.ShiftOp is JitShiftOp.Shl or JitShiftOp.Shr or JitShiftOp.Rol or JitShiftOp.Ror
+                && count > 1)
             {
-                _flagsLive = true;
+                EmitClearOverflowFlag();
+            }
+
+            _flagsLive = true;
+        }
+
+        /// <summary><c>shl/shr/sar/rol/ror reg, cl</c>: the host instruction is
+        /// exact for every count except OF on count &gt; 1 (ShiftOps clears it).</summary>
+        private void EmitShiftByCl(in JitMemberPlan plan)
+        {
+            EmitEnsureHostFlags();
+            switch (plan.Size)
+            {
+                case 8:
+                    EmitShiftCl8(R8(plan.RegIndex), plan.ShiftOp);
+                    break;
+                case 16:
+                    EmitShiftCl16(R16(plan.RegIndex), plan.ShiftOp);
+                    break;
+                default:
+                    EmitShiftCl32(R32(Gpr32[plan.RegIndex]), plan.ShiftOp);
+                    break;
+            }
+
+            if (plan.ShiftOp is JitShiftOp.Shl or JitShiftOp.Shr or JitShiftOp.Rol or JitShiftOp.Ror)
+            {
+                EmitClearOverflowIfCountAboveOne();
+            }
+
+            _flagsLive = true;
+        }
+
+        /// <summary>Clears OF in the live host flags (the shift result is already there).</summary>
+        private void EmitClearOverflowFlag()
+        {
+            Assembler a = _a;
+            a.pushfq();
+            a.mov(R32(Register.R10D), unchecked((int)~(uint)FlagBits.Of));
+            a.and(MemOp(Register.RSP, null, 1, 0), R32(Register.R10D));
+            a.popfq();
+        }
+
+        /// <summary>Clears OF in the saved shift flags only when the masked CL count exceeds one.</summary>
+        private void EmitClearOverflowIfCountAboveOne()
+        {
+            Assembler a = _a;
+            Label skip = a.CreateLabel(string.Empty);
+            a.pushfq();
+            a.mov(R32(Register.R10D), R32(Register.ECX));
+            a.and(R32(Register.R10D), 0x1F);
+            a.cmp(R32(Register.R10D), 1);
+            a.jbe(skip);
+            a.mov(R32(Register.R10D), unchecked((int)~(uint)FlagBits.Of));
+            a.and(MemOp(Register.RSP, null, 1, 0), R32(Register.R10D));
+            a.Label(ref skip);
+            a.popfq();
+        }
+
+        private void EmitRotate8(AssemblerRegister8 dst, byte count, JitShiftOp op)
+        {
+            if (op == JitShiftOp.Rol) { _a.rol(dst, count); } else { _a.ror(dst, count); }
+        }
+
+        private void EmitRotate16(AssemblerRegister16 dst, byte count, JitShiftOp op)
+        {
+            if (op == JitShiftOp.Rol) { _a.rol(dst, count); } else { _a.ror(dst, count); }
+        }
+
+        private void EmitRotate32(AssemblerRegister32 dst, byte count, JitShiftOp op)
+        {
+            if (op == JitShiftOp.Rol) { _a.rol(dst, count); } else { _a.ror(dst, count); }
+        }
+
+        private void EmitShiftCl8(AssemblerRegister8 dst, JitShiftOp op)
+        {
+            AssemblerRegister8 cl = new(Register.CL);
+            switch (op)
+            {
+                case JitShiftOp.Shl: _a.shl(dst, cl); break;
+                case JitShiftOp.Shr: _a.shr(dst, cl); break;
+                case JitShiftOp.Sar: _a.sar(dst, cl); break;
+                case JitShiftOp.Rol: _a.rol(dst, cl); break;
+                default: _a.ror(dst, cl); break;
+            }
+        }
+
+        private void EmitShiftCl16(AssemblerRegister16 dst, JitShiftOp op)
+        {
+            AssemblerRegister8 cl = new(Register.CL);
+            switch (op)
+            {
+                case JitShiftOp.Shl: _a.shl(dst, cl); break;
+                case JitShiftOp.Shr: _a.shr(dst, cl); break;
+                case JitShiftOp.Sar: _a.sar(dst, cl); break;
+                case JitShiftOp.Rol: _a.rol(dst, cl); break;
+                default: _a.ror(dst, cl); break;
+            }
+        }
+
+        private void EmitShiftCl32(AssemblerRegister32 dst, JitShiftOp op)
+        {
+            AssemblerRegister8 cl = new(Register.CL);
+            switch (op)
+            {
+                case JitShiftOp.Shl: _a.shl(dst, cl); break;
+                case JitShiftOp.Shr: _a.shr(dst, cl); break;
+                case JitShiftOp.Sar: _a.sar(dst, cl); break;
+                case JitShiftOp.Rol: _a.rol(dst, cl); break;
+                default: _a.ror(dst, cl); break;
             }
         }
 

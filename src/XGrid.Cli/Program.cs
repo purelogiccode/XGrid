@@ -108,6 +108,7 @@ internal static class Program
         bool jitMmio = false;
         bool jitSpin = false;
         bool jitRaw = false;
+        bool rawShapes = false;
         bool jitTiming = false;
         int jitThreshold = 8;
         int jitSlice = 256;
@@ -297,6 +298,9 @@ internal static class Program
                     break;
                 case "--jit-raw":
                     jitRaw = true;
+                    break;
+                case "--raw-shapes":
+                    rawShapes = true;
                     break;
                 case "--jit-timing":
                     jitTiming = true;
@@ -544,6 +548,7 @@ internal static class Program
                 machine.Cpu.JitMmioFast = jitMmio;
                 machine.Cpu.JitSpinSkip = jitSpin;
                 machine.Cpu.JitRawBlocks = jitRaw;
+                machine.Cpu.RawShapeTally = rawShapes && jitRaw;
                 machine.Cpu.JitTiming = jitTiming;
                 machine.Cpu.JitSpecSlice = jitSlice;
                 machine.Cpu.JitEnabled = true;
@@ -1795,7 +1800,7 @@ internal static class Program
                 $"nonJitMs={machine.Cpu.NonJitTicks / (double)System.Diagnostics.Stopwatch.Frequency * 1000.0:F0} " +
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} " +
-                (machine.Cpu.JitRawBlocks ? $"rawBuilt={machine.Cpu.JitRawBlocksBuilt} rawInv={machine.Cpu.JitRawInvocations} rawServed={machine.Cpu.JitRawServedMembers} rawChained={machine.Cpu.JitRawChainedBlocks} " : string.Empty) +
+                (machine.Cpu.JitRawBlocks ? $"rawBuilt={machine.Cpu.JitRawBlocksBuilt} rawInv={machine.Cpu.JitRawInvocations} rawServed={machine.Cpu.JitRawServedMembers} rawChained={machine.Cpu.JitRawChainedBlocks} rawBuildFails={XboxCpu.RawBuildFailures} " : string.Empty) +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
                 (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) + $"yieldReasons={string.Join('/', machine.Cpu.JitYieldReasons)} " +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
@@ -1824,6 +1829,61 @@ internal static class Program
             if (string.Equals(Environment.GetEnvironmentVariable("XGRID_SLOW"), "1", StringComparison.Ordinal))
             {
                 Console.WriteLine("Slow members " + FormatJitMnemonicTop(machine.Cpu.SlowMemberCounts, 16));
+            }
+
+            if (machine.Cpu.RawShapeTally)
+            {
+                long rawHelperTotal = 0;
+                foreach (long count in machine.Cpu.RawHelperShapeCounts)
+                {
+                    rawHelperTotal += count;
+                }
+
+                Console.WriteLine(
+                    $"Raw helper shapes total={rawHelperTotal} " +
+                    FormatJitMnemonicTop(machine.Cpu.RawHelperShapeCounts, 24));
+
+                long[] detail = machine.Cpu.RawHelperShapeDetail;
+                var top = new List<(int Key, long Count)>();
+                for (int key = 0; key < detail.Length; key++)
+                {
+                    if (detail[key] != 0)
+                    {
+                        top.Add((key, detail[key]));
+                    }
+                }
+
+                top.Sort(static (left, right) => right.Count.CompareTo(left.Count));
+                for (int i = 0; i < top.Count && i < 24; i++)
+                {
+                    int key = top[i].Key;
+                    int sizeCode = key % 8;
+                    int rest = key / 8;
+                    int op2 = rest % 4;
+                    rest /= 4;
+                    int op1 = rest % 4;
+                    int mnemonic = rest / 4;
+                    string sizeText = sizeCode switch
+                    {
+                        1 => "8",
+                        2 => "16",
+                        3 => "32",
+                        4 => "64",
+                        5 => "80",
+                        6 => "128",
+                        _ => "?",
+                    };
+                    string Form(OperandKind kind) => kind switch
+                    {
+                        OperandKind.Register => "R",
+                        OperandKind.Memory => "M",
+                        OperandKind.Immediate => "I",
+                        _ => "-",
+                    };
+                    Console.WriteLine(
+                        $"  rawshape {((Mnemonic)mnemonic),-12} {Form((OperandKind)op1)}" +
+                        $"{Form((OperandKind)op2)} size={sizeText,-3} count={top[i].Count}");
+                }
             }
         }
 
@@ -2632,7 +2692,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

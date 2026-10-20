@@ -2836,6 +2836,20 @@ Shaders
 > `gl+replace` 1B wall + wall per frame; the outstanding operator decision
 > stays the `--jit`/`--jit-raw` default flip. Redirect criterion: dashboard
 > still >15x from real time with GL after C3-x/y/z -> codegen stops.
+>
+> **Status 2026-10-20 (seventh session): C3-x hot-shape native encoding
+> LANDED (§199o).** The new `--raw-shapes` tally ranked the raw mix and the
+> emitter now natively encodes stack/call/ret, memory movzx/movsx, integer
+> unaries/`cdq`/`setcc`, shifts/rotates (incl. CL with the ShiftOps OF rule),
+> x87 load/store/arithmetic/compare/constants, MMX movq/movntq, scalar SSE
+> (arith/movss/cvt) and prefetch-as-nop. **Helper-routed members at 1B fell
+> 24.65M -> 1.81M (triangle) and 122.65M -> 5.57M (menu)**, with both title
+> SHAs and every counter exact against the IL anchors. Two bugs fixed en
+> route: register-form FPU members advanced EIP twice, and the IL runner
+> advanced EIP for handler-backed kinds (`JitPlanner.HandlerOwnsEip`).
+> Suite 1510 green, ktest smoke PASS 7/7, format clean. Next: **C3-y
+> per-member bookkeeping trim**, then C3-z; Track B still owns the end-to-end
+> lead.
 
 ```text
 Interpreter
