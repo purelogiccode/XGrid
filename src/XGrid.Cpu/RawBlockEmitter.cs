@@ -35,6 +35,7 @@ namespace XGrid.Cpu;
 /// </summary>
 internal static unsafe class RawBlockEmitter
 {
+
     // Frame layout. The first 32 bytes are the Win64 shadow space every call
     // site must reserve for its callee - the helper trampolines write their
     // register arguments there, so no live slot may live below 0x20.
@@ -617,6 +618,21 @@ internal static unsafe class RawBlockEmitter
         private void EmitSyncForHelper()
         {
             EmitMaterializeFlags();
+            EmitSyncGuestStateForHelper();
+        }
+
+        /// <summary>
+        /// Guest-state publish + progress accounting for a helper call whose
+        /// site already materialized the flags. The memory probe materializes
+        /// F_EFLAGS before it runs and then clobbers the host FLAGS with its
+        /// own comparisons, so a device-path call must not materialize again:
+        /// doing so would overwrite the correct guest flags with the probe's
+        /// last <c>cmp</c>/<c>and</c> result, and the reload after the helper
+        /// would hand those to the next flag consumer (found by the
+        /// <c>--jit-mmio</c> boot divergence at 25.1M steps, decisions 202).
+        /// </summary>
+        private void EmitSyncGuestStateForHelper()
+        {
             EmitStoreGuestState();
             Assembler a = _a;
             // Fault progress includes every block already chained into this
@@ -2752,6 +2768,16 @@ internal static unsafe class RawBlockEmitter
                 EmitDeviceLoad(plan.Size, plan.RegIndex, device.Value, done);
             }
 
+            // Compile-time flag state does not flow along the emitted control
+            // flow: the device block above ends in EmitReloadAfterHelper,
+            // which sets _flagsLive = true for the code it falls into (done),
+            // but the slow block below is entered from the probe with the host
+            // FLAGS already clobbered and F_EFLAGS authoritative. Leaving the
+            // leaked true here made EmitSyncForHelper materialize the probe's
+            // own comparison results into F_EFLAGS, so the next flag consumer
+            // saw the probe's flags (the --jit-mmio boot divergence at 25.1M
+            // steps, decisions 202).
+            _flagsLive = false;
             a.Label(ref slow);
             EmitMemoryHelper(plan, index, isStore: false);
             EmitMoveFromScratch(plan.Size, plan.RegIndex);
@@ -2779,7 +2805,7 @@ internal static unsafe class RawBlockEmitter
             Assembler a = _a;
             Label target = device;
             a.Label(ref target);
-            EmitSyncForHelper();
+            EmitSyncGuestStateForHelper();
             a.mov(R64(Register.RCX), Slot(F_CPU));
             a.mov(R32(Register.EDX), R32(Register.EDI));
             a.mov(R32(Register.R8D), size);
@@ -2824,7 +2850,7 @@ internal static unsafe class RawBlockEmitter
             {
                 Label deviceLabel = device.Value;
                 a.Label(ref deviceLabel);
-                EmitSyncForHelper();
+                EmitSyncGuestStateForHelper();
                 a.mov(R32(Register.R9D), R32(Register.ESI));
                 a.mov(R64(Register.RCX), Slot(F_CPU));
                 a.mov(R32(Register.EDX), R32(Register.EDI));
@@ -2836,6 +2862,10 @@ internal static unsafe class RawBlockEmitter
                 a.jmp(done);
             }
 
+            // See EmitLoad: the slow block is entered from the probe with the
+            // host FLAGS dead, so the emitter state must not inherit the
+            // device block's reload.
+            _flagsLive = false;
             a.Label(ref slow);
             EmitMemoryHelper(plan, index, isStore: true);
 

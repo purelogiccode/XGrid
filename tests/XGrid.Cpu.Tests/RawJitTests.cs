@@ -11,7 +11,7 @@ namespace XGrid.Cpu.Tests;
 /// </summary>
 public sealed class RawJitTests
 {
-    private static XboxCpu CreateRaw(byte[] code)
+    private static XboxCpu CreateRaw(byte[] code, bool mmioFast = false)
     {
         XboxCpu cpu = CpuHarness.Create(code);
         cpu.DecodeCacheEnabled = true;
@@ -22,6 +22,7 @@ public sealed class RawJitTests
             : 1;
         cpu.JitEnabled = true;
         cpu.JitRawBlocks = true;
+        cpu.JitMmioFast = mmioFast;
         return cpu;
     }
 
@@ -85,6 +86,57 @@ public sealed class RawJitTests
         Assert.True(raw.Context.Halted);
         Assert.True(raw.JitRawBlocksBuilt > 0, "no raw blocks were built");
         Assert.True(raw.JitRawInvocations > 0, "no raw block ran");
+    }
+
+    /// <summary>
+    /// The device fast path (--jit-mmio) adds a never-taken device block to
+    /// every memory member. That block's EmitReloadAfterHelper sets the
+    /// emitter's compile-time _flagsLive, and before the fix that state leaked
+    /// into the slow block emitted after it, so a slow-path member (here a
+    /// watched store) materialized the probe's own comparison flags into
+    /// F_EFLAGS and the following Jcc consumed them (the 1B --jit-mmio boot
+    /// divergence at 25.1M steps, decisions 202). The program puts a flags
+    /// chain across a slow-path store and a Jcc; with mmioFast on it must
+    /// still match the interpreter exactly.
+    /// </summary>
+    [Fact]
+    public void MmioFast_FlagsAcrossSlowMemoryMember_MatchInterpreter()
+    {
+        // mov ecx,3
+        // loop: mov eax,7; cmp eax,7; mov [0x2400],eax (watched -> slow path);
+        //       jne fail; dec ecx; jne loop; mov ebx,1; jmp done
+        // fail: mov ebx,2
+        // done: hlt
+        byte[] code =
+        [
+            0xB9, 0x03, 0x00, 0x00, 0x00,
+            0xB8, 0x07, 0x00, 0x00, 0x00,
+            0x83, 0xF8, 0x07,
+            0xA3, 0x00, 0x24, 0x00, 0x00,
+            0x75, 0x0C,
+            0x49,
+            0x75, 0xEE,
+            0xBB, 0x01, 0x00, 0x00, 0x00,
+            0xEB, 0x07,
+            0x90, 0x90,
+            0xBB, 0x02, 0x00, 0x00, 0x00,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code, mmioFast: true);
+        Preset(plain);
+        Preset(raw);
+        plain.Bus().WatchStart = 0x2400u;
+        plain.Bus().WatchEnd = 0x2404u;
+        raw.Bus().WatchStart = 0x2400u;
+        raw.Bus().WatchEnd = 0x2404u;
+        plain.Execute(10_000);
+        raw.Execute(10_000);
+        AssertSame(plain, raw);
+        Assert.Equal(1u, raw.Context.Ebx);
+        Assert.True(raw.Context.Halted);
+        Assert.True(raw.JitRawBlocksBuilt > 0, $"no raw blocks were built (built={raw.JitRawBlocksBuilt} inv={raw.JitRawInvocations} served={raw.JitServedTotal})");
     }
 
     [Fact]

@@ -9,7 +9,7 @@ history), `docs/research-notes/rasterizer-inventory.md`, then this file.
 
 - `master` @ the commit titled *"gpu: rasterizer compiled-loop fast lanes"* (`git log --oneline -1`); working tree clean apart from
   other-session edits (do not commit those).
-- **1519 tests green**, `dotnet build -c Release` clean,
+- **1522 tests green**, `dotnet build -c Release` clean,
   `dotnet format --verify-no-changes` clean.
 - ktest smoke **PASS 7/7**.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
@@ -46,6 +46,21 @@ history), `docs/research-notes/rasterizer-inventory.md`, then this file.
 identical):** triangle `rasterPsh` 3.39 -> 2.87 s (-14.2%, 3/3), wall 9.15 ->
 8.69 s (-4.0%, 3/3); menu 13.47 -> 12.49 s (-5.3%, 3/3), wall 35.45 -> 34.64 s
 (-0.3/-2.4/-4.2%). Accurate mode byte-identical (see anchors above).
+
+## Also landed (§202 addendum)
+
+--jit-mmio (the opt-in device fast path) was **broken since it landed** - it halted
+the 1B menu leg at 25,146,493 steps. Root cause was emitter bookkeeping, not the
+device code: the device block is emitted *before* the member's slow block and ends in
+EmitReloadAfterHelper() (_flagsLive = true), so the slow block materialized the
+probe's own comparison flags into F_EFLAGS. Fixed by resetting _flagsLive = false
+before slow (EmitLoad/EmitStore) and adding
+EmitSyncGuestStateForHelper() (state + progress, no flag re-materialization) for the
+device blocks. MmioFast_FlagsAcrossSlowMemoryMember_MatchInterpreter pins it
+(fail-pre-fix EFLAGS 0x70 vs 0x130); both 1B goldens are exact with the flag on. It is
+**not** a perf win (mmioMembers=0: the probe already sends device pages to the slow
+path), so no recipe uses it - but the class of bug ("compile-time emitter state leaks
+across a never-taken branch") is worth remembering for any new emitted path.
 
 ## Measured negatives - do NOT re-try without a new measurement
 

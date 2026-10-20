@@ -612,6 +612,20 @@ mostly the software raster inside an MMIO member (gl+replace takes the triangle'
 **Lesson:** probe instrumentation left in the candidate leg biases the wall by ~0.35 s
 - strip it before any A/B (that is what disguised the raster win as a wall regression).
 
+**Also this session: `--jit-mmio` was broken and is fixed (§202 addendum).** The
+opt-in device fast path halted the 1B menu leg at 25,146,493 steps (pre-existing, also
+on the session-start build). Bisection to one raw block, then to the emitter's
+compile-time `_flagsLive`: the device block is emitted *before* the member's `slow`
+block and ends in `EmitReloadAfterHelper()` (which sets `_flagsLive = true`), so the
+`slow` code materialized the probe's own comparison flags into `F_EFLAGS` — a
+never-executed branch corrupting a reachable one. Fix: reset `_flagsLive = false`
+before `slow` in both `EmitLoad`/`EmitStore` plus
+`EmitSyncGuestStateForHelper()` (no flag re-materialization) for the device paths.
+Regression test `MmioFast_FlagsAcrossSlowMemoryMember_MatchInterpreter` (fail-pre-fix:
+EFLAGS 0x70 vs 0x130); both 1B goldens now pass with the flag on, exact SHAs. Not a
+perf win (`mmioMembers=0` — the probe already routes device pages to the slow path),
+so it stays opt-in. Suite **1522**.
+
 **Session 2026-10-20 (eighth).** **Track B rasterizer campaign: the software
 rasterizer is ~44% cheaper and is no longer the dominant wall (§200).** Three
 measured steps, each gated on both 1B SW goldens with exact SHAs and every
