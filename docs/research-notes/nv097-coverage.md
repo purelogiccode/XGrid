@@ -10,12 +10,15 @@ Status: generated reference checklist, 2026-10-20. Companion to
   `SET_TEXTURE_SET_BUMP_ENV_MAT` words).
 - **`handled`** means an XGrid `src/XGrid.Nv2a/Nv2aMmio.cs` case or range
   applies the method to core state.
-- **`recorded`** means the method is counted, stored in the method stream, and
-  forwarded to the backend, but **no core state sink exists**. "Recorded" is
-  not automatically a bug: fixed-function lighting/material/texgen state is
-  normally replaced by driver-generated vertex programs on the Xbox D3D path,
-  and `WAIT_FOR_IDLE` is effectively a no-op on XGrid's synchronous pusher.
-  It is a gap when a title actually depends on the state.
+- **`recorded`** means **no core state sink exists**. The method still
+  increments `MethodTotal` and is appended to the method stream when the cap
+  allows, but the histogram is opt-in (`CollectMethodHistogram`) and the
+  backend callback is opt-in (`ObserveMethods`), so "recorded" does not imply
+  the GL backend saw it. "Recorded" is not automatically a bug:
+  fixed-function lighting/material/texgen state is normally replaced by
+  driver-generated vertex programs on the Xbox D3D path, and `WAIT_FOR_IDLE`
+  is effectively a no-op on XGrid's synchronous pusher. It is a gap when a
+  title actually depends on the state.
 - **`Count`** is the number of method offsets in a range/case group, not the
   number of xemu table entries.
 - The table is a **method-presence** view. A handled method can still be
