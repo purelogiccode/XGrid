@@ -298,6 +298,71 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Records one raw runner invocation (called by the block loop).</summary>
     internal void NoteRawInvocation() => JitRawInvocations++;
 
+    /// <summary>
+    /// Gets whether the raw-kind profile is enabled (<c>XGRID_RAW_PROFILE=1</c>).
+    /// Diagnostic: after each raw runner call the served prefix of the block is
+    /// re-planned and tallied by <see cref="JitKind"/>. Run with
+    /// <c>XGRID_RAW_CHAIN=0</c> so <c>served</c> cannot exceed the block's own
+    /// member count.
+    /// </summary>
+    public static readonly bool RawProfileEnabled =
+        string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_PROFILE"), "1", StringComparison.Ordinal);
+
+    /// <summary>Per-kind executed member counts (valid when <see cref="RawProfileEnabled"/>).</summary>
+    internal long[] RawKindCounts { get; } = new long[64];
+
+    /// <summary>Tallies the served prefix of one raw block by planned kind.</summary>
+    internal void NoteRawProfile(JitBlock block, int served)
+    {
+        int count = Math.Min(served, block.MemberCount);
+        for (int i = 0; i < count; i++)
+        {
+            JitMemberPlan plan = JitPlanner.Plan(block.Entries[i].Instruction);
+            int kind = (int)plan.Kind;
+            if ((uint)kind < (uint)RawKindCounts.Length)
+            {
+                RawKindCounts[kind]++;
+            }
+        }
+    }
+
+    /// <summary>Formats the raw-kind profile for the CLI (empty when disabled).</summary>
+    public string FormatRawKindProfile()
+    {
+        if (!RawProfileEnabled)
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        long total = 0;
+        foreach (long value in RawKindCounts)
+        {
+            total += value;
+        }
+
+        builder.Append("Raw kinds total=").Append(total);
+        var order = new int[RawKindCounts.Length];
+        for (int i = 0; i < order.Length; i++)
+        {
+            order[i] = i;
+        }
+
+        Array.Sort(order, (left, right) => RawKindCounts[right].CompareTo(RawKindCounts[left]));
+        for (int i = 0; i < order.Length && i < 20; i++)
+        {
+            if (RawKindCounts[order[i]] == 0)
+            {
+                break;
+            }
+
+            builder.Append(' ').Append((JitKind)order[i]).Append(':').Append(RawKindCounts[order[i]]);
+        }
+
+        return builder.ToString();
+    }
+
+
     /// <summary>Records members served by a raw runner (called by the block loop).</summary>
     internal void NoteRawServed(int members) => JitRawServedMembers += (ulong)members;
 

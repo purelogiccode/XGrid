@@ -18,11 +18,17 @@
 > menu 52.20 -> 48.43 s (-7.2%); `--gpu gl --gpu-replace` triangle
 > 7.56 -> 6.49 s (-14.1%) at **11.9 -> 8.8 ns/served member**, menu
 > 34.29 -> 31.56 s (-8.0%) at **36.7 -> 31.6 ns** - the §199n C3-x target
-> (menu 61 -> ~30 ns) is met. Remaining helpers are `mul/imul`, string `movs`,
-> high-byte `mov`, `fnstsw`, carry-rotates and a few SSE moves - no large
-> structural item. **Next: C3-y per-member bookkeeping trim** (EIP only at
-> exits/polls, TSC in a register, served/spill discipline), then C3-z; Track B
-> remains the end-to-end lead per §199n.
+> (menu 61 -> ~30 ns) is met. **C3-y was implemented bit-exact, measured
+> NEUTRAL and reverted** (5 interleaved triangle pairs: wall 7.048 -> 7.015 s,
+> `outerMs` 4326 -> 4314); a 1024-slot data translate cache was likewise
+> neutral and reverted. The raw-kind profile (`XGRID_RAW_PROFILE=1`) shows the
+> 1B menu is ~50% load/store + 14% loop dec/inc, so its premium is the memory
+> probe's dependent-load chain, not helpers. The flip-pacing probe is closed
+> as no-bug (one vblank + render per frame, reference-matching stall
+> semantics). Remaining CPU work is structural (memory probe latency, device
+> mix); **Track B/D owns the end-to-end gap** per the redirect criterion. The
+> remaining helper-shape tail (`mul/imul`, string `movs`, high-byte `mov`,
+> `fnstsw`, carry-rotates) is small and low-value.
 
 > **STATUS 2026-10-20 (sixth session - C3 chaining landed behind the §199l/§199m
 > fault contract; measured position re-aimed).** C3 is complete for the two

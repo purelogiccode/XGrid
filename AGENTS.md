@@ -597,11 +597,23 @@ per leg, old/new SHAs identical on every pair):** `--gpu sw` triangle
 **11.9 -> 8.8 ns/served member**, menu 34.29 -> 31.56 s (-8.0%, 3/3) with
 **36.7 -> 31.6 ns** (the §199n target was menu 61 -> ~30 ns). The wall gain is
 smaller than the engine gain because the sw rasterizer is 39-48% of those
-walls. Remaining helpers are dominated by `mul/imul` (~1.1M/1.5M),
+walls. **C3-y (per-member EIP/served/TSC bookkeeping trim) was implemented
+bit-exact and then measured NEUTRAL, so it was reverted** (triangle gl, 5
+interleaved pairs: wall 7.048 -> 7.015 s, `outerMs` 4326 -> 4314): the
+bookkeeping is off the critical path. A 1024-slot data translate cache was
+also neutral (menu `outerMs` +0.1%, 3 pairs) and reverted. The new raw-kind
+profiler (`XGRID_RAW_PROFILE=1`, run with `XGRID_RAW_CHAIN=0`) shows the 1B
+menu mix is **~50% MovLoad/MovStore, 14% DecR, 14% AluRR/IncR/AluRI**, i.e., a
+move/loop workload whose cost is the memory probe's dependent-load chain and
+store guard - not helper dispatch. The queued flip-pacing probe is **closed as
+no-bug**: `FLIP_STALL` matches the reference (`READ_3D != WRITE_3D` until
+vblank), and the triangle's 35 flips/1B is render work + one vblank
+(~39 ms/frame guest time), not an extra-frame delay. Remaining helpers are
+dominated by `mul/imul` (~1.1M/1.5M),
 string `movs` (1.0M menu), high-byte `mov` (0.8M menu), `fnstsw`,
-carry-rotates and a few SSE moves; the next CPU lever is **C3-y per-member
-bookkeeping trim** (EIP only at exits/polls, TSC in a register, no per-member
-served stores), then C3-z, after which Track B owns the end-to-end gap.
+carry-rotates and a few SSE moves. **Track B/D now owns the end-to-end gap**
+per the charter's redirect criterion; further CPU work is structural
+(memory-probe latency, device mix), not bookkeeping or helper coverage.
 
 **Session close 2026-10-20 (sixth).** **Direct raw block chaining is LANDED
 (`21b0f8a`, opt-in `--jit-raw`)** and the fault-path crash that forced its
