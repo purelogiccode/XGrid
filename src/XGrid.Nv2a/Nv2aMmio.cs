@@ -387,9 +387,44 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the per-configuration fill/pixel counts (`--gpu-time` diagnostic).</summary>
     public Dictionary<string, (long Draws, long Pixels)> CombinerConfigStats { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Diagnostic switch for differential tests: forces the generic per-sample
+    /// sampler path (and with <see cref="DiagnosticGenericFill"/> the generic
+    /// pixel loop), so the specialized paths can be compared against the
+    /// reference path on an identical draw. Never set in production runs.
+    /// </summary>
+    public bool DiagnosticGenericSampler { get; set; }
+
+    /// <summary>Diagnostic switch for differential tests: disables the compiled modulate fill.</summary>
+    public bool DiagnosticGenericFill { get; set; }
+
     /// <summary>Gets the per-kind fast-path fill counts. Diagnostics.</summary>
-    public string FastKindDebug =>
-        $"k1={_diagFastKindFills[1]} k2={_diagFastKindFills[2]} k3={_diagFastKindFills[3]} lean={_diagLeanFills}";
+    public string FastKindDebug
+    {
+        get
+        {
+            string text =
+                $"k1={_diagFastKindFills[1]} k2={_diagFastKindFills[2]} k3={_diagFastKindFills[3]} lean={_diagLeanFills} " +
+                $"compiled={_diagCompiledFills}/{_diagCompiledPixels}/{_rasterCompiledTicks / (double)Stopwatch.Frequency:F2}s";
+            if (_diagRejects.Count > 0)
+            {
+                var list = new List<KeyValuePair<int, long>>(_diagRejects);
+                list.Sort((a, b) => b.Value.CompareTo(a.Value));
+                text += " rej=";
+                for (int i = 0; i < list.Count && i < 6; i++)
+                {
+                    text += $"{list[i].Key:X}:{list[i].Value},";
+                }
+            }
+
+            return text;
+        }
+    }
+
+    private readonly Dictionary<int, long> _diagRejects = new();
+    private long _diagCompiledFills;
+    private long _diagCompiledPixels;
+    private long _rasterCompiledTicks;
     private long _rasterLegacyTicks;
     private long _rasterPshTicks;
     private long _rasterLegacyCalls;
@@ -4514,6 +4549,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
+        if (plan.FastKind != 0)
+        {
+            return SampleFast(in plan, u, v, out r, out g, out b, out a);
+        }
+
         // Linear (LU_IMAGE_*) formats address texels directly: the guest supplies
         // texel-unit coordinates and the reference shader normalizes by the
         // texture size (psh.c rect_tex norm). Swizzled (SZ_*) formats use
@@ -4574,6 +4614,45 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Rasterizer slice: specialized sampler for the two per-fill shapes the
+    /// titles actually run (linear 4-byte and Morton-swizzled 4-byte texels,
+    /// clamp/mirror/wrap folds only, no border axis). Every step is the exact
+    /// expression the generic path uses - the width/height scale, floor,
+    /// coordinate fold, address arithmetic and decode - so results and
+    /// counters are identical; only loop-invariant tests (border axis, bytes
+    /// per texel, layout, wrap switch) are gone.
+    /// </summary>
+    private bool SampleFast(ref readonly SamplerPlan plan, float u, float v, out float r, out float g, out float b,
+        out float a)
+    {
+        int rawX = (int)MathF.Floor(plan.Linear ? u : u * plan.Width);
+        int rawY = (int)MathF.Floor(plan.Linear ? v : v * plan.Height);
+        int x = WrapFast(rawX, plan.Width, plan.FastWrapU, plan.WrapMaskU, plan.MirrorMaskU);
+        int y = WrapFast(rawY, plan.Height, plan.FastWrapV, plan.WrapMaskV, plan.MirrorMaskV);
+        uint address;
+        if (plan.Linear)
+        {
+            address = plan.Offset + (uint)((y * plan.Pitch) + (x * plan.FastBytes));
+        }
+        else if (plan.MortonMasks)
+        {
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            address = plan.Offset + (swizzled * (uint)plan.FastBytes);
+        }
+        else
+        {
+            address = plan.Offset + ((InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                                      InterleaveBits((uint)y, plan.SwizzleMaskY)) * (uint)plan.FastBytes);
+        }
+
+        uint texel = plan.FastBytes == 4 ? ReadGpu(address) : ReadGpu(address) & 0xFFFFu;
+        DecodeTextureTexel(plan.Color, texel, out r, out g, out b, out a);
+        TrackTextureCoords(x, y);
+        return CountSample(address, texel, r, g, b);
+    }
+
+    /// <summary>
     /// Per-draw texture sampler descriptor: the per-sample decode of format,
     /// shape, wrap modes, pitch and swizzle masks is loop-invariant, so it is
     /// resolved once per draw in <see cref="BuildSamplerPlans"/> (called from
@@ -4601,6 +4680,21 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         public uint SwizzleMaskX;
         public uint SwizzleMaskY;
         public bool MortonMasks;
+
+        /// <summary>
+        /// Rasterizer slice: non-zero when the sampler can bypass the generic
+        /// per-sample descriptor decode. 1 = linear 4-byte texels, 2 = swizzled
+        /// 4-byte texels with Morton masks (both only for clamp/mirror/wrap
+        /// modes that reduce to an integer fold and no border axis).
+        /// </summary>
+        public int FastKind;
+
+        /// <summary>Texel size in bytes for the fast sampler (2 or 4).</summary>
+        public int FastBytes;
+
+        /// <summary>Fast fold per axis: 0 = clamp, 1 = mirror (POT), 2 = wrap (POT).</summary>
+        public int FastWrapU;
+        public int FastWrapV;
     }
 
     private void BuildSamplerPlans()
@@ -4661,7 +4755,75 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 plan.SwizzleMaskY = 0u;
                 plan.MortonMasks = false;
             }
+
+            // Rasterizer slice: per-fill fast sampler eligibility. Only pure
+            // integer folds qualify (clamp, or POT mirror/wrap) with 4-byte
+            // texels and no border axis, so the fast path is a strict subset of
+            // the generic semantics.
+            plan.FastKind = 0;
+            plan.FastBytes = 0;
+            plan.FastWrapU = 0;
+            plan.FastWrapV = 0;
+            if (bytesPerTexel is 2 or 4 && width > 0 && height > 0 && !DiagnosticGenericSampler &&
+                plan.UAddr != (int)TextureAddressBorder && plan.VAddr != (int)TextureAddressBorder)
+            {
+                int fastU = FastWrapKind(plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
+                int fastV = FastWrapKind(plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
+                if (fastU >= 0 && fastV >= 0)
+                {
+                    plan.FastKind = linear ? 1 : 2;
+                    plan.FastBytes = (int)bytesPerTexel;
+                    plan.FastWrapU = fastU;
+                    plan.FastWrapV = fastV;
+                }
+            }
         }
+    }
+
+    /// <summary>
+    /// Folds an address mode into the fast-sampler kind: 0 clamps, 1 mirrors
+    /// (power-of-two extent required), 2 wraps by mask (power-of-two extent
+    /// required); -1 means the generic per-sample fold must be used.
+    /// </summary>
+    private static int FastWrapKind(int wrapMode, int wrapMask, int mirrorMask)
+    {
+        if (wrapMode == 2)
+        {
+            return 0;
+        }
+
+        if (wrapMode == 1)
+        {
+            return mirrorMask >= 0 ? 1 : -1;
+        }
+
+        return wrapMask >= 0 ? 2 : -1;
+    }
+
+    /// <summary>
+    /// Fast per-axis fold for the specialized sampler. Bit-identical to
+    /// <see cref="WrapCoordinatePlanned"/> for the three modes it accepts
+    /// (clamp, POT mirror, POT wrap) and never called otherwise.
+    /// </summary>
+    private static int WrapFast(int value, int size, int mode, int wrapMask, int mirrorMask)
+    {
+        if (mode == 0)
+        {
+            if (value < 0)
+            {
+                return 0;
+            }
+
+            return value >= size ? size - 1 : value;
+        }
+
+        if (mode == 1)
+        {
+            value &= mirrorMask;
+            return value < size ? value : (size * 2) - 1 - value;
+        }
+
+        return value & wrapMask;
     }
 
     /// <summary>
@@ -4770,10 +4932,34 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Exact unit-conversion tables for the texel/pixel decoders: entry i is
+    /// <c>i / divisor</c> evaluated with the same float division the per-pixel
+    /// expressions used, so every decoded value is bit-identical while the
+    /// samplers and the blend destination read avoid a per-channel divide.
+    /// </summary>
+    private static readonly float[] Unit31 = BuildUnitTable(32, 31f);
+    private static readonly float[] Unit63 = BuildUnitTable(64, 63f);
+    private static readonly float[] Unit15 = BuildUnitTable(16, 15f);
+    private static readonly float[] Unit255 = BuildUnitTable(256, 255f);
+
+    private static float[] BuildUnitTable(int count, float divisor)
+    {
+        var table = new float[count];
+        for (int i = 0; i < count; i++)
+        {
+            table[i] = i / divisor;
+        }
+
+        return table;
+    }
+
+    /// <summary>
     /// Decodes a raw texel for the supported color formats. Bit layouts follow
     /// the Vulkan format mapping in xemu's renderer (A1R5G5B5, A4R4G4B4,
     /// R5G6B5, A8R8G8B8 and the X8 alpha-ignored variants); SZ and LU variants
-    /// of a format share the layout.
+    /// of a format share the layout. Channel values come from exact unit
+    /// tables (<see cref="Unit255"/> etc.), so the results are bit-identical
+    /// to the previous per-channel divisions.
     /// </summary>
     public static void DecodeTextureTexel(uint color, uint texel, out float r, out float g, out float b, out float a)
     {
@@ -4781,44 +4967,44 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             case 0x02u:
             case 0x10u:
-                r = ((texel >> 10) & 0x1Fu) / 31f;
-                g = ((texel >> 5) & 0x1Fu) / 31f;
-                b = (texel & 0x1Fu) / 31f;
+                r = Unit31[(int)((texel >> 10) & 0x1Fu)];
+                g = Unit31[(int)((texel >> 5) & 0x1Fu)];
+                b = Unit31[(int)(texel & 0x1Fu)];
                 a = (texel >> 15) & 1u;
                 break;
             case 0x03u:
             case 0x1Cu:
-                r = ((texel >> 10) & 0x1Fu) / 31f;
-                g = ((texel >> 5) & 0x1Fu) / 31f;
-                b = (texel & 0x1Fu) / 31f;
+                r = Unit31[(int)((texel >> 10) & 0x1Fu)];
+                g = Unit31[(int)((texel >> 5) & 0x1Fu)];
+                b = Unit31[(int)(texel & 0x1Fu)];
                 a = 1f;
                 break;
             case 0x04u:
             case 0x1Du:
-                r = ((texel >> 8) & 0xFu) / 15f;
-                g = ((texel >> 4) & 0xFu) / 15f;
-                b = (texel & 0xFu) / 15f;
-                a = ((texel >> 12) & 0xFu) / 15f;
+                r = Unit15[(int)((texel >> 8) & 0xFu)];
+                g = Unit15[(int)((texel >> 4) & 0xFu)];
+                b = Unit15[(int)(texel & 0xFu)];
+                a = Unit15[(int)((texel >> 12) & 0xFu)];
                 break;
             case 0x05u:
             case 0x11u:
-                r = ((texel >> 11) & 0x1Fu) / 31f;
-                g = ((texel >> 5) & 0x3Fu) / 63f;
-                b = (texel & 0x1Fu) / 31f;
+                r = Unit31[(int)((texel >> 11) & 0x1Fu)];
+                g = Unit63[(int)((texel >> 5) & 0x3Fu)];
+                b = Unit31[(int)(texel & 0x1Fu)];
                 a = 1f;
                 break;
             case 0x07u:
             case 0x1Eu:
-                r = ((texel >> 16) & 0xFFu) / 255f;
-                g = ((texel >> 8) & 0xFFu) / 255f;
-                b = (texel & 0xFFu) / 255f;
+                r = Unit255[(int)((texel >> 16) & 0xFFu)];
+                g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                b = Unit255[(int)(texel & 0xFFu)];
                 a = 1f;
                 break;
             default:
-                a = ((texel >> 24) & 0xFFu) / 255f;
-                r = ((texel >> 16) & 0xFFu) / 255f;
-                g = ((texel >> 8) & 0xFFu) / 255f;
-                b = (texel & 0xFFu) / 255f;
+                a = Unit255[(int)((texel >> 24) & 0xFFu)];
+                r = Unit255[(int)((texel >> 16) & 0xFFu)];
+                g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                b = Unit255[(int)(texel & 0xFFu)];
                 break;
         }
     }
@@ -5542,18 +5728,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (bytes == 4)
         {
             uint pixel = ReadGpu(address);
-            a = ((pixel >> 24) & 0xFFu) / 255f;
-            r = ((pixel >> 16) & 0xFFu) / 255f;
-            g = ((pixel >> 8) & 0xFFu) / 255f;
-            b = (pixel & 0xFFu) / 255f;
+            a = Unit255[(int)((pixel >> 24) & 0xFFu)];
+            r = Unit255[(int)((pixel >> 16) & 0xFFu)];
+            g = Unit255[(int)((pixel >> 8) & 0xFFu)];
+            b = Unit255[(int)(pixel & 0xFFu)];
             return true;
         }
 
         uint word = ReadGpu(address & ~3u);
         uint half = ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
-        r = ((half >> 11) & 0x1Fu) / 31f;
-        g = ((half >> 5) & 0x3Fu) / 63f;
-        b = (half & 0x1Fu) / 31f;
+        r = Unit31[(int)((half >> 11) & 0x1Fu)];
+        g = Unit63[(int)((half >> 5) & 0x3Fu)];
+        b = Unit31[(int)(half & 0x1Fu)];
         return true;
     }
 
@@ -6609,6 +6795,134 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return true;
     }
 
+    /// <summary>
+    /// Rasterizer slice: compiled fill for the shape the menu spends 86% of
+    /// its pixels in - kind-1 modulate combiner, one Project2D texture stage,
+    /// no zclip/depth/stencil, opaque color mask, SrcAlpha/InvSrcAlpha/Add
+    /// blend and a fast-layout sampler. The pixel body is the generic loop's
+    /// arithmetic transcribed operation-for-operation (same barycentric
+    /// expressions, same perspective renormalization, same interpolation
+    /// order, same sampler and the same shared helpers for modulate, alpha
+    /// test, blend, pack and write), with per-draw values in locals instead of
+    /// fields and no combiner/tap/registry walks. Returns the inside-pixel
+    /// count for the per-fill diagnostics.
+    /// </summary>
+    private long FillTrianglePshModulate(
+        PshVertex a, PshVertex b, PshVertex c,
+        uint x0, uint x1, uint y0, uint y1,
+        float invArea, bool perspective, float invAw, float invBw, float invCw,
+        uint pitch, ref readonly SamplerPlan texturing,
+        bool alphaTest, uint alphaFunc, float alphaRefScaled, uint colorBase,
+        bool zclipActive, bool zclipCull, float zclipRange, float zclipMin, float zclipMax)
+    {
+        long pixels = 0;
+        uint color = texturing.Color;
+        for (uint y = y0; y <= y1; y++)
+        {
+            for (uint x = x0; x <= x1; x++)
+            {
+                float px = x + 0.5f;
+                float py = y + 0.5f;
+                float w0 = (((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X))) * invArea;
+                float w1 = (((c.X - b.X) * (py - b.Y)) - ((c.Y - b.Y) * (px - b.X))) * invArea;
+                float w2 = 1f - w0 - w1;
+                bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
+                              (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                if (!inside)
+                {
+                    continue;
+                }
+
+                float p0 = w0;
+                float p1 = w1;
+                float p2 = w2;
+                if (perspective)
+                {
+                    float s0 = w0 * invCw;
+                    float s1 = w1 * invAw;
+                    float s2 = w2 * invBw;
+                    float sum = s0 + s1 + s2;
+                    if (float.IsFinite(sum) && sum != 0f)
+                    {
+                        float invSum = 1f / sum;
+                        p0 = s0 * invSum;
+                        p1 = s1 * invSum;
+                        p2 = s2 * invSum;
+                    }
+                }
+
+                pixels++;
+                float dr = (p1 * a.DiffuseR) + (p2 * b.DiffuseR) + (p0 * c.DiffuseR);
+                float dg = (p1 * a.DiffuseG) + (p2 * b.DiffuseG) + (p0 * c.DiffuseG);
+                float db = (p1 * a.DiffuseB) + (p2 * b.DiffuseB) + (p0 * c.DiffuseB);
+                float da = (p1 * a.DiffuseA) + (p2 * b.DiffuseA) + (p0 * c.DiffuseA);
+                float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
+                float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
+                float tw0 = (p1 * a.T0W) + (p2 * b.T0W) + (p0 * c.T0W);
+                float su = tw0 != 0f ? tu0 / tw0 : tu0;
+                float sv = tw0 != 0f ? tv0 / tw0 : tv0;
+
+                _textureFormatAttempts[color]++;
+                SampleFast(in texturing, su, sv, out float tr, out float tg, out float tb, out float ta);
+
+                float fr = PshCombiner.ModulatePass(Math.Max(tr, 0f), Math.Max(dr, 0f));
+                float fg = PshCombiner.ModulatePass(Math.Max(tg, 0f), Math.Max(dg, 0f));
+                float fb = PshCombiner.ModulatePass(Math.Max(tb, 0f), Math.Max(db, 0f));
+                float fa = PshCombiner.ModulatePass(Math.Max(ta, 0f), Math.Max(da, 0f));
+                TexturedPixels++;
+                if (fr == 0f && fg == 0f && fb == 0f)
+                {
+                    _combinerRgbZeroFragments++;
+                    if (fa > 0f)
+                    {
+                        _combinerRgbZeroAlphaFragments++;
+                    }
+                }
+
+                // ZCLIP runs at the top of the reference fragment shader, after
+                // the stage resolve and before the alpha test (xemu psh.c); the
+                // clamped depth itself is dead here because no depth/stencil
+                // state is active. Culled fragments keep their sampler and
+                // combiner counters exactly as the generic path does.
+                if (zclipActive)
+                {
+                    float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
+                    float zvalue = depth * zclipRange;
+                    if (zvalue < zclipMin || zvalue > zclipMax)
+                    {
+                        if (zclipCull)
+                        {
+                            ZclipCulledPixels++;
+                            continue;
+                        }
+
+                        ZclipClampedPixels++;
+                    }
+                }
+
+                if (alphaTest && !CompareFunc(alphaFunc, fa, alphaRefScaled))
+                {
+                    continue;
+                }
+
+                uint address = colorBase + (y * pitch) + (x * 4u);
+                (float R, float G, float B, float A) src = (fr, fg, fb, fa);
+                (float R, float G, float B, float A) dst = (0f, 0f, 0f, 1f);
+                if (TryReadPixelFloat(address, 4, out float sr, out float sg, out float sb, out float sa))
+                {
+                    dst = (sr, sg, sb, sa);
+                }
+
+                (float R, float G, float B, float A) result = BlendSrcAlphaAdd(src, dst);
+                WritePixel(address, 4, PackPixel(4, result.R, result.G, result.B, result.A));
+                BlendedPixels++;
+                DrawnPixels++;
+            }
+        }
+
+        return pixels;
+    }
+
     private void FillTrianglePsh(
         PshVertex a, PshVertex b, PshVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
@@ -6704,7 +7018,123 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                           texModes[3] == PshCombiner.TexModeNone;
 
         long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
-        for (uint y = y0; y <= y1; y++)
+
+        // Compiled fill for the dominant modulate shape: when selected it owns
+        // every pixel and the generic loop below runs zero iterations.
+        bool compiledModulate = leanInterp &&
+                                !DiagnosticGenericFill &&
+                                texModes[0] == PshCombiner.TexModeProject2D &&
+                                bytes == 4 &&
+                                !_depthTestEnable &&
+                                !_stencilTestEnable &&
+                                _colorMask == ColorMaskAll &&
+                                _blendFastSrcAlpha &&
+                                _memory is not null &&
+                                _samplerPlans[0].FastKind != 0 &&
+                                (_textureControl0[0] & TextureControl0Enable) != 0 &&
+                                !IsTextureCubemap(0) &&
+                                !IsDepthTextureFormat(_samplerPlans[0].Color);
+        if (compiledModulate)
+        {
+            diagPixels = FillTrianglePshModulate(
+                a, b, c, x0, x1, y0, y1,
+                invArea, perspective, invAw, invBw, invCw,
+                pitch, in _samplerPlans[0],
+                _alphaTestEnable, _alphaFunc, _alphaRefScaled,
+                _colorSurfaceBase + PresentedColorOffset,
+                _zclipActive, _zclipCull, _zclipRange, _zclipMin, _zclipMax);
+            _diagCompiledFills++;
+            _diagCompiledPixels += diagPixels;
+            if (RasterTimingEnabled)
+            {
+                _rasterCompiledTicks += Stopwatch.GetTimestamp() - rasterStart;
+            }
+        }
+        else if (_combinerFastKind == 1 && RasterTimingEnabled)
+        {
+            int reason = 0;
+            if (texModes[0] != PshCombiner.TexModeProject2D)
+            {
+                reason |= 1;
+            }
+
+            if (!leanInterp)
+            {
+                reason |= 2;
+            }
+
+            if (bytes != 4)
+            {
+                reason |= 4;
+            }
+
+            if (_depthTestEnable)
+            {
+                reason |= 8;
+            }
+
+            if (_stencilTestEnable)
+            {
+                reason |= 0x10;
+            }
+
+            if (_colorMask != ColorMaskAll)
+            {
+                reason |= 0x20;
+            }
+
+            if (!_blendFastSrcAlpha)
+            {
+                reason |= 0x40;
+            }
+
+            if (_memory is null)
+            {
+                reason |= 0x80;
+            }
+
+            if (_samplerPlans[0].FastKind == 0)
+            {
+                reason |= 0x100;
+                ref readonly SamplerPlan rp = ref _samplerPlans[0];
+                uint bpt = TextureFormatBytesPerTexel(rp.Color);
+                if (bpt is not (2 or 4))
+                {
+                    reason |= 0x400;
+                }
+
+                if (rp.Width <= 0 || rp.Height <= 0)
+                {
+                    reason |= 0x800;
+                }
+
+                if (rp.UAddr == (int)TextureAddressBorder || rp.VAddr == (int)TextureAddressBorder)
+                {
+                    reason |= 0x1000;
+                }
+
+                if (!rp.Linear && !rp.MortonMasks)
+                {
+                    reason |= 0x2000;
+                }
+
+                if (FastWrapKind(rp.WrapModeU, rp.WrapMaskU, rp.MirrorMaskU) < 0 ||
+                    FastWrapKind(rp.WrapModeV, rp.WrapMaskV, rp.MirrorMaskV) < 0)
+                {
+                    reason |= 0x4000;
+                }
+            }
+
+            if ((_textureControl0[0] & TextureControl0Enable) == 0)
+            {
+                reason |= 0x200;
+            }
+
+            _diagRejects.TryGetValue(reason, out long rejectCount);
+            _diagRejects[reason] = rejectCount + 1;
+        }
+
+        for (uint y = y0; !compiledModulate && y <= y1; y++)
         {
             for (uint x = x0; x <= x1; x++)
             {
