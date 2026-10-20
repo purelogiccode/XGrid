@@ -1733,6 +1733,16 @@ Benchmark every change.
 
 # 23. Phase 18 — GPU Optimization
 
+> **Status 2026-10-20 (§199p): first Track B slice landed - rasterizer O2
+> memory fast lane.** `IGpuMemoryFast` adds a draw-wide GPU-writer batch and
+> direct pinned-RAM word reads/writes with exact fallbacks (non-RAM, bus
+> watch, unbatched writes); the per-fill decode-page memo drops each page at
+> most once (the CPU cannot run mid-draw). New Nv2a differential pins
+> fast-vs-legacy framebuffer equality and lane usage; SW goldens/counters
+> exact. Quiet-host 3 interleaved pairs: menu 50.01 → 48.99 s (-2.0%, 3/3),
+> triangle 12.95 → 12.69 s (-2.0%, 3/3). Next: inventory O1/O3/O4/O5
+> (per-pixel fragment/sampler work); O6/O7 stay filed.
+
 Measure:
 
 ```text

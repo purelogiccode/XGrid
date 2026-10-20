@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -854,10 +855,13 @@ public sealed class XboxMachine : IIdleSkipHost
     /// bit in the common case. Doubles as the present-upload dirty watch
     /// handle for a backend attached to this machine (§132 (a*), §135).
     /// </summary>
-    private sealed class PhysicalGpuMemory : IGpuMemory, IPresentDirtyWatch
+    private sealed class PhysicalGpuMemory : IGpuMemory, IGpuMemoryFast, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
         private readonly XboxCpu _cpu;
+        private bool _gpuBatch;
+        private bool _pageMemoValid;
+        private uint _pageMemo;
 
         public PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu)
         {
@@ -888,6 +892,67 @@ public sealed class XboxMachine : IIdleSkipHost
             }
 
             _cpu.InvalidateDecodeCachePage(address);
+        }
+
+        /// <summary>
+        /// Rasterizer O2: one suppression scope and one decode-page memo per
+        /// draw. Inside a batch the emitted pixel path writes the pinned RAM
+        /// bytes directly (the CPU cannot run mid-draw, so a page drop once
+        /// per draw is exact) and falls back for non-RAM, watched or
+        /// unbatched addresses.
+        /// </summary>
+        public void BeginGpuBatch()
+        {
+            _gpuBatch = true;
+            _pageMemoValid = false;
+            _memory.Ram.BeginGpuWriteSuppression();
+        }
+
+        public void EndGpuBatch()
+        {
+            _memory.Ram.EndGpuWriteSuppression();
+            _gpuBatch = false;
+        }
+
+        public bool TryReadPhysical(uint address, out uint value)
+        {
+            PhysicalMemory ram = _memory.Ram;
+            if (address < ram.Size && address <= ram.Size - 4u)
+            {
+                value = BinaryPrimitives.ReadUInt32LittleEndian(ram.RawBytes.AsSpan((int)address, 4));
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        public bool TryWritePhysical(uint address, uint value)
+        {
+            PhysicalMemory ram = _memory.Ram;
+            if (!_gpuBatch || address >= ram.Size || address > ram.Size - 4u)
+            {
+                return false;
+            }
+
+            // Bus-watch parity: the legacy AddressSpace path raises CheckWatch
+            // for every write, so any overlap must take that path.
+            if (_memory.WatchEnd > _memory.WatchStart
+                && address >= _memory.WatchStart && address < _memory.WatchEnd)
+            {
+                return false;
+            }
+
+            BinaryPrimitives.WriteUInt32LittleEndian(ram.RawBytes.AsSpan((int)address, 4), value);
+            uint page = address >> 12;
+            if (!_pageMemoValid || page != _pageMemo)
+            {
+                _cpu.InvalidateDecodeCachePage(address);
+                _pageMemo = page;
+                _pageMemoValid = true;
+            }
+
+            return true;
         }
 
         public void ArmPresentWatch(uint address, uint length)
