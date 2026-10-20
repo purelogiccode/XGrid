@@ -1,6 +1,6 @@
 {
   "generated": "2026-10-20",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist, the \u00a7199l/\u00a7199m raw-chaining re-land, \u00a7199o C3-x hot-shape native encoding, \u00a7199p rasterizer O2/O4, \u00a7200 O3b/O1 compiled fills, and \u00a7204 Track B present-path removal + Track E corpus harness + \u00a7205 draw-command batching)",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist, the \u00a7199l/\u00a7199m raw-chaining re-land, \u00a7199o C3-x hot-shape native encoding, \u00a7199p rasterizer O2/O4, \u00a7200 O3b/O1 compiled fills, and \u00a7204 Track B present-path removal + Track E corpus harness + \u00a7205 draw-command batching (phase 18 re-derived from its own checklist))",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -123,7 +123,7 @@
           "p": 18,
           "name": "GPU Optimization",
           "weight": 4,
-          "done": 48
+          "done": 72
         },
         {
           "p": 19,
