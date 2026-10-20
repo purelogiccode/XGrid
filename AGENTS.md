@@ -567,6 +567,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-20 (seventh, cont.).** **Track B first slice: rasterizer O2
+memory fast lane LANDED (§199p).** `IGpuMemoryFast` (optional; production
+`PhysicalGpuMemory` only) opens one GPU-writer suppression scope per fill and a
+decode-page memo, and gives `Nv2aMmio` direct pinned-RAM word reads/writes with
+exact fallbacks (non-RAM, diagnostic bus watch, unbatched write). New Nv2a
+differential pins the fast-vs-legacy framebuffer equality and the lane's use.
+SW 1B goldens exact (menu `660CA11B...`, triangle `F57934BF...`), counters
+unchanged; quiet-host 3 interleaved pairs: **menu 50.01 -> 48.99 s (-2.0%,
+3/3), triangle 12.95 -> 12.69 s (-2.0%, 3/3)**. The gain is smaller than the
+inventory estimate because the per-write chain was already partly
+devirtualized; the lane is kept (consistent, exact, cheap). Suite **1511**.
+Next Track B lever: O1/O3/O4/O5 per-pixel fragment/sampler work.
+
 **Session 2026-10-20 (seventh).** **C3-x hot-shape native encoding is LANDED
 (decisions §199o, opt-in `--jit-raw`).** A new `--raw-shapes` diagnostic
 (`RawHelperShapeCounts`/`RawHelperShapeDetail`, plus `rawBuildFails` in the

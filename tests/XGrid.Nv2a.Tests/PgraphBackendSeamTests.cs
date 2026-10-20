@@ -160,6 +160,11 @@ public sealed class PgraphBackendSeamTests
     private static (Nv2AMmio Nv2a, ArrayMemory Memory) CreateChannel()
     {
         var memory = new ArrayMemory();
+        return (CreateChannelWith(memory), memory);
+    }
+
+    private static Nv2AMmio CreateChannelWith(IGpuMemory memory)
+    {
         var nv2A = new Nv2AMmio(64u * 1024 * 1024, "NV2A", memory);
         nv2A.Write(Base + 0x2504u, 4, 1u);
         nv2A.Write(Base + 0x3200u, 4, 1u);
@@ -171,7 +176,7 @@ public sealed class PgraphBackendSeamTests
         nv2A.Write(Base + 0x7111C0u, 4, 0x00000002u);
         nv2A.Write(Base + 0x7111C4u, 4, 0x0000FFFFu);
         nv2A.Write(Base + 0x7111C8u, 4, 0x00000000u);
-        return (nv2A, memory);
+        return nv2A;
     }
 
     /// <summary>
@@ -186,7 +191,7 @@ public sealed class PgraphBackendSeamTests
     /// PUT kick is then a no-op) — per-stream counts are exact, but
     /// PusherError is nonzero and must not be asserted here.
     /// </summary>
-    private static void PushMethods(Nv2AMmio nv2A, ArrayMemory memory, params (uint Method, uint Parameter)[] methods)
+    private static void PushMethods(Nv2AMmio nv2A, IGpuMemory memory, params (uint Method, uint Parameter)[] methods)
     {
         const uint streamBase = 0x8000u;
         uint address = streamBase;
@@ -235,7 +240,7 @@ public sealed class PgraphBackendSeamTests
         };
     }
 
-    private static void WriteVertices(ArrayMemory memory)
+    private static void WriteVertices(IGpuMemory memory)
     {
         memory.WritePhysical(0x2000u, 0x40000000u);
         memory.WritePhysical(0x2004u, 0x40000000u);
@@ -249,6 +254,97 @@ public sealed class PgraphBackendSeamTests
         memory.WritePhysical(0x2024u, 0x41400000u);
         memory.WritePhysical(0x2028u, 0x00000000u);
         memory.WritePhysical(0x202Cu, 0x3F800000u);
+    }
+
+    private sealed class FastArrayMemory : IGpuMemory, IGpuMemoryFast
+    {
+        private readonly byte[] _data = new byte[0x10000];
+        private bool _batch;
+
+        public long BeginBatches { get; private set; }
+
+        public long EndBatches { get; private set; }
+
+        public long FastWrites { get; private set; }
+
+        public long FastReads { get; private set; }
+
+        public uint ReadPhysical(uint address) => Read32(address);
+
+        public void WritePhysical(uint address, uint value) => Write32(address, value);
+
+        public void BeginGpuBatch()
+        {
+            BeginBatches++;
+            _batch = true;
+        }
+
+        public void EndGpuBatch()
+        {
+            EndBatches++;
+            _batch = false;
+        }
+
+        public bool TryReadPhysical(uint address, out uint value)
+        {
+            if (address <= _data.Length - 4)
+            {
+                value = Read32(address);
+                FastReads++;
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        public bool TryWritePhysical(uint address, uint value)
+        {
+            if (!_batch || address > _data.Length - 4)
+            {
+                return false;
+            }
+
+            Write32(address, value);
+            FastWrites++;
+            return true;
+        }
+
+        private uint Read32(uint address) =>
+            (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) | (_data[address + 3] << 24));
+
+        private void Write32(uint address, uint value)
+        {
+            _data[address] = (byte)value;
+            _data[address + 1] = (byte)(value >> 8);
+            _data[address + 2] = (byte)(value >> 16);
+            _data[address + 3] = (byte)(value >> 24);
+        }
+    }
+
+    [Fact]
+    public void GpuMemoryFastLane_MatchesLegacyRasterizer_AndIsUsed()
+    {
+        (Nv2AMmio legacy, ArrayMemory legacyMemory) = CreateChannel();
+        WriteVertices(legacyMemory);
+        PushMethods(legacy, legacyMemory, ElementDrawStream());
+
+        var fastMemory = new FastArrayMemory();
+        Nv2AMmio fast = CreateChannelWith(fastMemory);
+        WriteVertices(fastMemory);
+        PushMethods(fast, fastMemory, ElementDrawStream());
+
+        Assert.Equal(legacy.DrawsExecuted, fast.DrawsExecuted);
+        Assert.Equal(legacy.DrawnPixels, fast.DrawnPixels);
+        for (uint address = 0x3000u; address < 0x3400u; address += 4u)
+        {
+            Assert.Equal(legacyMemory.ReadPhysical(address), fastMemory.ReadPhysical(address));
+        }
+
+        Assert.True(fastMemory.BeginBatches > 0, "no GPU write batch opened");
+        Assert.Equal(fastMemory.BeginBatches, fastMemory.EndBatches);
+        Assert.True(fastMemory.FastWrites > 0, "fast write lane not used");
+        Assert.True(fastMemory.FastReads > 0, "fast read lane not used");
     }
 
     [Fact]

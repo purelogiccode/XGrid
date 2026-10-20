@@ -355,6 +355,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint UserRef = 0x48u;
 
     private readonly IGpuMemory? _memory;
+
+    /// <summary>Optional O2 fast lane for per-pixel RAM traffic (null for test fakes).</summary>
+    private readonly IGpuMemoryFast? _memoryFast;
     // Diagnostic (`--gpu-time`): distinct combiner-configuration histogram.
     private string _diagCombinerConfig = "none";
     private int _combinerFastKind;
@@ -536,6 +539,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         RamSize = ramSize;
         Name = name;
         _memory = memory;
+        _memoryFast = memory as IGpuMemoryFast;
         for (int i = 0; i < MaxTransformProgramLength; i++)
         {
             _transformProgram[i] = new uint[4];
@@ -3420,7 +3424,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             $"dma={_dmaSemaphore:X} off={_semaphoreOffset:X} flags={flags:X8} frame={frame:X8} target={target:X8} value={value:X}";
         if (target + 4 <= RamSize)
         {
-            _memory.WritePhysical(target, value);
+            WriteGpu(target, value);
             SemaphoreReleases++;
         }
     }
@@ -3535,6 +3539,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private void FillSurface(uint offset, uint pitch, uint bytes, uint xmin, uint ymin, uint xmax, uint ymax,
         uint pixel)
     {
+        using GpuWriteBatch batch = new(_memoryFast);
         if (_memory is null || pitch == 0)
         {
             return;
@@ -3553,14 +3558,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
                 if (bytes == 4)
                 {
-                    _memory.WritePhysical(address, pixel);
+                    WriteGpu(address, pixel);
                 }
                 else
                 {
-                    uint current = _memory.ReadPhysical(address & ~3u);
+                    uint current = ReadGpu(address & ~3u);
                     uint shift = (address & 3u) * 8;
                     uint mask = bytes == 2 ? 0xFFFFu << (int)shift : 0xFFu << (int)shift;
-                    _memory.WritePhysical(address & ~3u, (current & ~mask) | ((pixel << (int)shift) & mask));
+                    WriteGpu(address & ~3u, (current & ~mask) | ((pixel << (int)shift) & mask));
                 }
             }
         }
@@ -3761,6 +3766,44 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return float.IsNaN(value) ? 1f : value;
     }
 
+    /// <summary>
+    /// O2 fast-lane 32-bit read: a direct pinned-RAM word when the adapter
+    /// supports it, otherwise the exact <see cref="IGpuMemory"/> path.
+    /// </summary>
+    private uint ReadGpu(uint address) =>
+        _memoryFast is not null && _memoryFast.TryReadPhysical(address, out uint value)
+            ? value
+            : _memory!.ReadPhysical(address);
+
+    /// <summary>
+    /// O2 fast-lane 32-bit write: direct inside an open draw batch, otherwise
+    /// the exact adapter path (suppression scope, decode drop, bus watch).
+    /// </summary>
+    private void WriteGpu(uint address, uint value)
+    {
+        if (_memoryFast is null || !_memoryFast.TryWritePhysical(address, value))
+        {
+            _memory!.WritePhysical(address, value);
+        }
+    }
+
+    /// <summary>
+    /// Draw-wide GPU write batch (rasterizer O2): opens the writer-suppression
+    /// scope and resets the adapter's decode-page memo for the whole fill.
+    /// </summary>
+    private readonly ref struct GpuWriteBatch
+    {
+        private readonly IGpuMemoryFast? _fast;
+
+        public GpuWriteBatch(IGpuMemoryFast? fast)
+        {
+            _fast = fast;
+            fast?.BeginGpuBatch();
+        }
+
+        public void Dispose() => _fast?.EndGpuBatch();
+    }
+
     private void WritePixel(uint address, uint bytes, uint pixel)
     {
         if (_memory is null || address + bytes > RamSize)
@@ -3770,15 +3813,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (bytes == 4)
         {
-            _memory.WritePhysical(address, pixel);
+            WriteGpu(address, pixel);
             return;
         }
 
         uint aligned = address & ~3u;
         uint shift = (address & 3u) * 8;
-        uint current = _memory.ReadPhysical(aligned);
+        uint current = ReadGpu(aligned);
         uint mask = bytes == 2 ? 0xFFFFu << (int)shift : 0xFFu << (int)shift;
-        _memory.WritePhysical(aligned, (current & ~mask) | ((pixel << (int)shift) & mask));
+        WriteGpu(aligned, (current & ~mask) | ((pixel << (int)shift) & mask));
     }
 
     private void FlushInlineDraw()
@@ -4399,7 +4442,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case 2:
                 for (int i = 0; i < count; i++)
                 {
-                    destination[i] = BitConverter.Int32BitsToSingle((int)_memory.ReadPhysical(address + (uint)(i * 4)));
+                    destination[i] = BitConverter.Int32BitsToSingle((int)ReadGpu(address + (uint)(i * 4)));
                 }
 
                 break;
@@ -4419,7 +4462,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case 6:
                 {
-                    int packed = (int)_memory.ReadPhysical(address);
+                    int packed = (int)ReadGpu(address);
                     int x = SignExtend(packed & 0x7FF, 11);
                     int y = SignExtend((packed >> 11) & 0x7FF, 11);
                     int z = SignExtend((packed >> 22) & 0x3FF, 10);
@@ -4515,8 +4558,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         uint texel = bytesPerTexel == 2
-            ? _memory.ReadPhysical(address) & 0xFFFFu
-            : _memory.ReadPhysical(address);
+            ? ReadGpu(address) & 0xFFFFu
+            : ReadGpu(address);
         DecodeTextureTexel(color, texel, out r, out g, out b, out a);
         return CountSample(address, texel, r, g, b);
     }
@@ -5397,7 +5440,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 uint alpha;
                 if (_presentedBytes == 4)
                 {
-                    uint pixel = _memory.ReadPhysical(address);
+                    uint pixel = ReadGpu(address);
                     blue = pixel & 0xFFu;
                     green = (pixel >> 8) & 0xFFu;
                     red = (pixel >> 16) & 0xFFu;
@@ -5435,7 +5478,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (bytes == 4)
         {
-            uint current = _memory.ReadPhysical(address);
+            uint current = ReadGpu(address);
             uint depthBits = writeDepth
                 ? EncodeDepth24(depth)
                 : (current >> 8) & 0xFFFFFFu;
@@ -5443,18 +5486,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             uint newStencil = writeStencil
                 ? (current & StencilByteMask & ~writeMask) | (stencil & writeMask)
                 : current & StencilByteMask;
-            _memory.WritePhysical(address, (depthBits << 8) | newStencil);
+            WriteGpu(address, (depthBits << 8) | newStencil);
             return;
         }
 
         uint wordAddress = address & ~3u;
         int shift = (int)((address & 2u) * 8);
-        uint currentWord = _memory.ReadPhysical(wordAddress);
+        uint currentWord = ReadGpu(wordAddress);
         uint half = writeDepth
             ? EncodeDepth16(depth)
             : (currentWord >> shift) & 0xFFFFu;
         uint halfMask = 0xFFFFu << shift;
-        _memory.WritePhysical(wordAddress, (currentWord & ~halfMask) | ((half << shift) & halfMask));
+        WriteGpu(wordAddress, (currentWord & ~halfMask) | ((half << shift) & halfMask));
     }
 
     private bool TryReadPixelFloat(uint address, uint bytes, out float r, out float g, out float b, out float a)
@@ -5470,7 +5513,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (bytes == 4)
         {
-            uint pixel = _memory.ReadPhysical(address);
+            uint pixel = ReadGpu(address);
             a = ((pixel >> 24) & 0xFFu) / 255f;
             r = ((pixel >> 16) & 0xFFu) / 255f;
             g = ((pixel >> 8) & 0xFFu) / 255f;
@@ -5478,7 +5521,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return true;
         }
 
-        uint word = _memory.ReadPhysical(address & ~3u);
+        uint word = ReadGpu(address & ~3u);
         uint half = ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
         r = ((half >> 11) & 0x1Fu) / 31f;
         g = ((half >> 5) & 0x3Fu) / 63f;
@@ -5524,7 +5567,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             zetaAddress = _zetaSurfaceBase + _surfaceZetaOffset + (y * zetaPitch) + (x * zetaBytes);
             if (zetaAddress + zetaBytes <= RamSize)
             {
-                storedZeta = zetaBytes == 4 ? _memory.ReadPhysical(zetaAddress) : ReadHalf(zetaAddress);
+                storedZeta = zetaBytes == 4 ? ReadGpu(zetaAddress) : ReadHalf(zetaAddress);
                 haveZeta = true;
             }
         }
@@ -5784,6 +5827,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float cx, float cy, float cz, float cw, float cr, float cg, float cb, float ca, float cu, float cv,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch)
     {
+        using GpuWriteBatch batch = new(_memoryFast);
         float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
         if (area == 0f)
         {
@@ -6542,6 +6586,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
         float[][] consts)
     {
+        using GpuWriteBatch batch = new(_memoryFast);
         long diagPixels = 0;
         float area = ((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y));
         if (area == 0f)

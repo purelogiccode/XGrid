@@ -11315,3 +11315,54 @@ number was not an apples-to-apples guest-step measure (xemu's 1B includes its
 idle loop and its rate is wall-clock-derived). Playability remains an engine
 speed problem (74 Msteps/s vs xemu ~830), i.e., Track B/D, not a pacing bug.
 The profiler is kept as an opt-in diagnostic; the xlat size stays 256.
+
+
+## §199p Rasterizer O2 memory fast lane (2026-10-20, seventh session) - LANDED
+
+**Scope.** The software rasterizer (the default `--gpu sw` path) writes every
+color/depth fragment and reads every texel/color destination through
+`IGpuMemory` -> `AddressSpace` -> `PhysicalMemory`: an interface call, a
+try/finally GPU-writer suppression pair, two bounds layers, a region scan
+fallback and a per-write decode-cache page drop. The rasterizer inventory
+(`rasterizer-inventory.md` O2) ranked a direct RAM lane as the biggest
+structural win; this session implemented it as an *optional* interface so the
+test fakes keep the legacy path.
+
+**Design (`IGpuMemoryFast`, `src/XGrid.Nv2a/IGpuMemoryFast.cs`).**
+`BeginGpuBatch`/`EndGpuBatch` open one GPU-writer suppression scope per fill
+(`FillSurface`, `FillTriangle`, `FillTrianglePsh` via a `GpuWriteBatch`
+`using` scope) and reset the adapter's decode-page memo. Inside a batch,
+`Nv2aMmio.ReadGpu`/`WriteGpu` use `TryReadPhysical`/`TryWritePhysical`
+directly on the pinned `PhysicalMemory.RawBytes` word; anything the adapter
+cannot serve exactly - non-RAM, an address overlapping the diagnostic bus
+watch (`AddressSpace.WatchStart/End`), or a write outside the batch - returns
+false and falls back to the legacy adapter call. The decode cache needs at
+most one drop per page per draw (the CPU cannot run mid-draw), and the
+present-dirty watch is suppressed for the whole batch exactly as before.
+
+The production adapter (`XboxMachine.PhysicalGpuMemory`, now `IGpuMemory,
+IGpuMemoryFast`) implements the lane; `ArrayMemory` test fakes stay legacy,
+and `MachineGpuMemory` (the GL backend's texture adapter) does not implement
+it (the sw rasterizer never sees it).
+
+**Validation.** New Nv2a differential `GpuMemoryFastLane_MatchesLegacyRasterizer_AndIsUsed`
+runs the element-draw golden stream on the fast and legacy adapters, compares
+every framebuffer word, and pins the batch/read/write counters (batches
+balanced, fast write and read lanes used). SW 1B goldens: triangle RAM
+`F57934BF...`, menu RAM `660CA11B...` (both anchors exact), pixel/textured/
+blended counters unchanged. Suite 1511.
+
+**Measured (quiet host, 3 interleaved pairs against `dd976db`, 1B, `--jit
+--jit-threshold 16 --jit-spin --jit-raw --gpu sw`):**
+
+| title | wall old | wall new | delta |
+|---|---:|---:|---:|
+| menu | 50.01 s | 48.99 s | **-2.0%** (3/3) |
+| triangle | 12.95 s | 12.69 s | **-2.0%** (3/3) |
+
+Smaller than the inventory's 5-12 s estimate: the per-write chain was partly
+devirtualized/inlined by the JIT already, so the lane mainly removes the
+suppression pair and the per-write decode-drop call. It is kept because it is
+consistent (3/3 on both titles), exact, and cheap. The remaining rasteriser
+cost is the per-pixel fragment/sampler work (inventory O1/O3/O4/O5), which is
+the next Track B slice; O6 (row spans) and O7 stay filed.
