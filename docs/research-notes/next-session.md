@@ -5,7 +5,7 @@ measured position), `AGENTS.md` (session notes + current state),
 `docs/research-notes/xgrid-architecture-decisions.md` §205 (draw-command
 batching: measurement, design, evidence, gates) + §204 (present-path split,
 readback removal) + §203 (course correction), `docs/compatibility.md` (matrix +
-harness), `docs/research-notes/nv097-coverage.md` (method-presence gap),
+harness, six measured rows across three samples), `docs/research-notes/nv097-coverage.md` (method-presence gap),
 `docs/research-notes/gpu-reference-map.md` (where to look for GPU facts),
 `docs/research-notes/jit-track-charter.md` (status),
 `docs/research-notes/rasterizer-inventory.md`, then this file.

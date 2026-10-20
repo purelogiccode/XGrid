@@ -1,6 +1,7 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **first measured rows, 2026-10-20.** This is the steering document for
+Status: **first measured rows, 2026-10-20; refreshed after §205 (draw-command
+batching) with both backends per sample.** This is the steering document for
 fidelity work, not a gate document. A row is evidence from a recorded run; gates
 stay in `docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
 
@@ -61,26 +62,33 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs nxdk | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - toolchain | - | raw framebuffer | - | candidate for non-D3D bring-up | - | - |
 
-## Measured rows (this session, loaded host)
+## Measured rows (2026-10-20, twelfth session, loaded host)
 
-Recorded with the harness at 1B steps; the host was ~1.6-1.9x slower than the
-quiet-host baselines, so compare rows within a session, not across.
+Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M);
+the host runs ~1.6-1.9x slower than the quiet-host baselines, so compare rows
+within a session, not across. These are the post-§205 rows (draw-command
+batching): the GL walls moved by ~1% here, while the same-binary A/B measured
+`drawMs` -47% and wall -4.2% on the §205 commit.
 
 | Row | wall | msps | frames | first frame | last frame | SHAs (ram/cpu) |
 |---|---:|---:|---:|---|---|---|
-| triangle, `sw` | 20.6 s | 48.6 | 68 | step 32M, `6F780A33` | `A1740DE0` | `777F4DEB` / `7DAB63EB` |
-| triangle, `gl+replace` | 10.6 s | 94.8 | 68 | step 32M, `6F780A33` | `3FC4B419` | `8AE82781` / `7DAB63EB` |
-| dashboard, `sw` | 62.7 s | 15.9 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `36B72FE1` / `F5D61C94` |
-| dashboard, `gl+replace` | 45.1 s | 22.2 | 686 | step 50M, `6F780A33` | `6BE6325F` | `CF151863` / `F5D61C94` |
-| ktest (600M, `disable-video=1`) | 15.5 s | 38.7 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | fast anchors only |
+| triangle, `sw` | 20.7 s | 48.3 | 68 | step 32M, `6F780A33` | `A1740DE0` | `777F4DEB` / `7DAB63EB` |
+| triangle, `gl+replace` | 10.5 s | 94.8 | 68 | step 32M, `6F780A33` | `3FC4B419` | `8AE82781` / `7DAB63EB` |
+| dashboard, `sw` | 62.0 s | 16.1 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `36B72FE1` / `F5D61C94` |
+| dashboard, `gl+replace` | 44.6 s | 22.4 | 686 | step 50M, `6F780A33` | `6BE6325F` | `CF151863` / `F5D61C94` |
+| ktest (600M, `disable-video=1`), `sw` | 14.9 s | 40.3 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `4D4849FA` / `76002239` |
+| ktest (600M, `disable-video=1`), `gl+replace` | 10.0 s | 59.8 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `42C9C960` / `76002239` |
 
 Reading: the first presented frame is the boot animation (`6F780A33`) in every
 row - a boot-chain anchor, not a title anchor. The title anchors are the
 last-frame SHAs, and the GL rows match their gate goldens
 (`3FC4B419`/`6BE6325F`), which is what makes these rows comparable to the gates.
-The ktest row is the smoke ISO staged by `scripts/ktest-smoke.ps1`; its suite
+The ktest rows are the smoke ISO staged by `scripts/ktest-smoke.ps1`; its suite
 log is the real evidence (`792,800,535` steps, 7/7 known deltas), the frames are
-just the boot animation because the suite config disables video.
+just the boot animation because the suite config disables video. The GL rows
+report `pixels=0` by design: `--gpu-replace` hands the fills to the backend, so
+the software raster counters are empty while the draw/flip counters stay
+identical to the `sw` row (`draws=33638` dashboard, `2706` triangle).
 
 ### Observation: the dashboard keeps presenting past 2B (no submenu reached)
 
