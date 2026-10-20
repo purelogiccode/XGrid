@@ -562,14 +562,45 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1511 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1516 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
 > **Next session starts here:** `docs/research-notes/next-session.md` (start
-> state, Track B O5/O1 tasks with acceptance/kill criteria, C3-z scoped
-> experiment, commands, measurement recipes, non-goals).
+> state, the compiled rasterizer loops and their measured shares, Track B/C
+> candidates with acceptance/kill criteria, commands, measurement recipes,
+> non-goals).
+
+**Session 2026-10-20 (eighth).** **Track B rasterizer campaign: the software
+rasterizer is ~44% cheaper and is no longer the dominant wall (§200).** Three
+measured steps, each gated on both 1B SW goldens with exact SHAs and every
+counter byte-identical:
+
+1. **O5 counter batching was measured NEGATIVE before implementing** (a probe
+   elided every per-pixel diagnostic: 24.00 -> 23.34 s menu raster, no triangle
+   change), the implementation measured neutral, and it was reverted. The
+   inventory's 5-12 ns/fragment estimate for the diagnostics is disproven.
+2. **O3b per-fill fast sampler** (`SamplerPlan.FastKind`): linear/Morton 2- and
+   4-byte texels with clamp/mirror/wrap folds skip the per-sample descriptor
+   tests; `DecodeTextureTexel`/`TryReadPixelFloat` use exact unit tables built
+   by the same `i / 255f` expression (bit-identical, removes 3-4 float divides
+   per sample/blend read).
+3. **O1 compiled fills** for the two shapes the titles actually run: the k1
+   modulate shape (**245.8M of the menu's 285M pixels**) and the k2/k3
+   "squared lighting" shapes (62.4M px on **both** titles = the whole triangle
+   raster). A per-fill predicate proves which stages can only produce a
+   constant texel with no counter updates, then runs a transcribed pixel loop
+   (same barycentric/interpolation/sampler/combiner/blend expressions) with the
+   generic loop as the untouched fallback.
+
+1B `rasterPsh`: menu **24.0 -> 13.9-15.1 s (-44%)**, triangle **6.19 -> 3.31-3.45 s
+(-45%)**. Interleaved wall medians vs the session-start commit (3/3 pairs):
+**triangle 12.44 -> 9.51 s (-23.5%), menu 53.78 -> 42.01 s (-21.9%)**. Suite
+**1516** (5 new fast-vs-generic sampler differentials, fail-pre-fix proven),
+ktest smoke PASS 7/7, format clean. Remaining wall is CPU engine + boot again
+(charter redirect criterion: Track C leads next, starting with the scoped C3-z
+inline page pair).
 
 **Session 2026-10-20 (seventh, cont.).** **Track B first slices: rasterizer O2
 memory fast lane + O4 swizzle spread LANDED (§199p).** `IGpuMemoryFast`
