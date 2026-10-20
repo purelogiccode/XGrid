@@ -239,6 +239,16 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info` /
   `xgrid sector` (raw LBA dump); identified the boot dashboard as softmod
   `xboxdash.xbe` (770048 B, `EvoX`, entry `0x12A17`) in partition at `0x465400`.
+- **Avalonia desktop frontend (2026-10-20, `ea8b38f`):** `XGrid.Frontend.Avalonia`
+  is a runnable cross-platform dark-theme GUI (Windows/Linux/macOS) over the public
+  `XGrid.Host` API: Home with live software-rasterizer frames, Library
+  (ISO/CHD/XBE scan), Settings (firmware/storage/RAM/JIT/network/library/accent),
+  Activity log, and About. In-process emulation on a background thread; frames via
+  `Nv2aMmio.TryCopyPresentedFrame` into a `WriteableBitmap`; no WGL dependency.
+  Verified live on the EvoX dashboard plus pause/resume/power cycles and settings
+  persistence. UI-only: no core/CLI/test changes. Design note:
+  `docs/research-notes/avalonia-frontend.md`; run
+  `dotnet run --project src/XGrid.Frontend.Avalonia`.
 - NV2A at `0xFD000000`: PFIFO pusher + PGRAPH software rasterizer (M4–M8
   done: inline draws, vertex-program interpreter, textures, zeta/blend
   fragment pipeline, flip present path). `XGrid.Graphics/DisplayFrame`
@@ -576,6 +586,49 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 > interleave in the k1 fill; Track C: identity-window probe, higher risk), the measured
 > negatives, the rules (validation ceremony, strip probes before A/B), commands and
 > diagnostics.
+>
+> Frontend follow-ups (independent of the core critical path):
+> `docs/research-notes/avalonia-frontend.md`.
+
+**Session 2026-10-20 (parallel frontend track).** **The Avalonia desktop frontend is
+LANDED (`ea8b38f`; only `src/XGrid.Frontend.Avalonia/` touched).** A separate session
+built the GUI while core work continued, so no emulator file, CLI path, test project,
+solution entry, or shared package file was modified.
+
+- **Shell:** Avalonia 11.3.22 (Desktop/Fluent/Inter) + CommunityToolkit.Mvvm 8.4.2,
+  all MIT, versions supplied via `VersionOverride` so `Directory.Packages.props` is
+  unchanged. `net10.0`; compiled bindings on with `x:DataType` everywhere; analyzers
+  and warnings-as-errors stay on (`NoWarn=MA0004` is project-local because UI
+  continuations must resume on the Avalonia dispatcher).
+- **Pages:** Home (power/pause/stop, disc picker, live 4:3 display, speed/steps/
+  frames/FPS/EIP, recent games, keyboard pad), Library (recursive ISO/CHD/XBE scan,
+  XBE title parsing, search, launch), Settings (BIOS/MCPX/EEPROM/HDD/default disc,
+  64/128 MB RAM, fast mode + raw emitter + spin skip + decode cache + JIT threshold,
+  EOS quirk, NVNET backend/link, library folders, accent), Activity (level filter,
+  auto-scroll, copy/clear), About (versions, runtime/OS, links, shortcuts).
+- **Emulator integration:** in-process `XboxMachine` on a dedicated background thread
+  in `XboxMachine.Run(65536)` batches; pause gate, cancellation-token stop, device
+  disposal, and UI-boundary fault capture. Presented frames are read on the emulation
+  thread only (`Nv2a.FramesPresented` change -> `TryCopyPresentedFrame`) and copied
+  into a `WriteableBitmap` by a 100 ms dispatcher timer. Portable software rasterizer
+  only: no WGL/GL backend reference and no window mixing.
+- **Input/settings:** keyboard-to-XID pad state is applied at batch boundaries; F5/F6/
+  F11/Esc/Ctrl+O/Ctrl+S shortcuts. JSON settings at `%APPDATA%\XGrid`,
+  `$XDG_CONFIG_HOME/XGrid`, or `~/Library/Application Support/XGrid` (override with
+  `XGRID_FRONTEND_DATA_DIR`); corrupt files are backed up and defaults restored.
+  Five runtime accent palettes update all custom styles through `DynamicResource`.
+- **Validation (Windows 11, repo test media):** Release build 0 warnings/0 errors and
+  `dotnet format --verify-no-changes` clean. The EvoX HDD dashboard booted through the
+  real firmware path and rendered in the app (861,995,008 steps / 138 frames in the
+  smoke run under concurrent test load); pause froze steps, resume, power-off and
+  restart all behaved; the library found the two sample XBEs and parsed titles; the
+  Aqua accent saved and restored across launches. No core/CLI/test file was touched;
+  the 1519-test baseline was not re-run by this UI-only track.
+- **Limitations:** software renderer only, keyboard pad only, no host audio sink, no
+  save states/debugger panes, loose XBE needs an ISO/CHD wrapper. The design note and
+  next-step list are in `docs/research-notes/avalonia-frontend.md`; run
+  `dotnet run --project src/XGrid.Frontend.Avalonia`. Project usage:
+  `src/XGrid.Frontend.Avalonia/README.md`.
 
 **Session 2026-10-20 (tenth, oracle/0.8.137 re-base). Two deliverables: the 0.8.137
 reference delta is now verified, and XGrid has an independent x86 differential.**
