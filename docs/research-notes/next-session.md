@@ -81,8 +81,8 @@ across a never-taken branch") is worth remembering for any new emitted path.
 
 ## Where the remaining 1B wall is
 
-Menu (~35 s): raster ~12.3 s + CPU engine ~18 s + block builds ~1.4 s +
-interpreter ~2.5 s. Triangle (~8.7 s): raster ~2.9 s, CPU engine ~4 s,
+Menu (~33 s): raster ~12.0 s + CPU engine ~17 s + block builds ~1.4 s +
+interpreter ~2.5 s. Triangle (~8.5 s): raster ~2.8 s, CPU engine ~4 s,
 interpreter ~1.5 s. Inside the raster, §202's ablation prices the k1 loop as:
 **sampler ~4.5 s** (read latency + the dependent chain, not descriptor work),
 interpolation ~2.5 s, combiner/pack ~1 s, destination read 0.5 s, write 0.2 s.
@@ -96,7 +96,23 @@ interpolation ~2.5 s, combiner/pack ~1 s, destination read 0.5 s, write 0.2 s.
    Two independent pixel bodies per iteration (writes and counter commits kept
    in x order) is the only remaining sizeable raster lever. Acceptance: 1B
    `rasterPsh` >= 2% better, 3/3 pairs, exact SHAs + every counter, and the
-   two compiled-fill differential tests still green.
+   two compiled-fill differential tests still green. Note the body's three
+   `continue`s (inside test, ZCLIP cull, alpha test) must each still let the
+   sibling pixel run, so a naive unroll is not enough - the pixel bodies have to
+   be interleaved as two pipeline stages.
+2. **Identity-window fast path in the raw memory probe (Track C, filed, higher
+   risk).** The menu's CPU engine serves 861M members at ~20 ns each, and the
+   raw-kind profile says ~50% are MovLoad/MovStore, i.e. ~430M probes whose cost
+   is the two dependent translate-cache loads. The Xbox kernel maps RAM 1:1, so a
+   per-fill "identity window" (base+size in `RawState`, invalidated by the same
+   events that bump the translate epoch, e.g. any page-table store or CR3 write)
+   would let the emitted probe test `addr - base < size` and read
+   `[ramBase + addr]` directly: ~8-12 cycles per memory member, ~1.2 s on the
+   menu (-3.5%). The correctness surface is the whole point: the window must be
+   provably equivalent to the per-page cache, so invalidation has to be driven by
+   the existing PT-page store guard, and a differential (raw vs IL vs interpreter
+   over the paging tests) is mandatory before any 1B leg. Do not start this
+   without a full session.
 2. **Pack/blend SIMD (`Vector128`)** for the k1 fragment: pack measured 0.3 s,
    blend similar; `cvttps2dq` + `packuswb` reproduce `(uint)(clamp(x,0,1)*255+0.5)`
    exactly for finite non-negative input, but the guard for NaN/signed-zero has
