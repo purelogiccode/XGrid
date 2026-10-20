@@ -11489,3 +11489,74 @@ triangle raster (5.98 s), so they are the next and only remaining Track B
 lever of this size; they need an exact transcription of
 `EvaluateLightingSpecialized` plus the DotSt/DotStr3D/Project2D cube stage
 resolve.
+
+## §200 amendment - compiled k2/k3 lighting fill (same session) - LANDED
+
+**What the shape actually is (measured, not inferred).** A per-fill histogram of
+`(texModes, texture-enable bits, combiner kind)` showed the two lighting
+shapes exactly: **k2** (39.9M px, 39,645 fills) runs modes `0,3,3,2` and **k3**
+(22.5M px, 13,929 fills) runs `1,3,3,2` (Project2D, Cubemap, Cubemap,
+Project3D) with all four slots enabled and no blend/alpha test, `zetaBytes==0`,
+opaque mask. Per-stage resolution counters then showed the decisive fact:
+stages 1-3 are resolved 3 x 62.4M times but produce **zero samples, zero
+format attempts and zero mode fallbacks** - they are per-fill constants:
+
+- Cubemap mode with CUBEMAPENABLE set and an **unconfigured face extent**
+  (`_textureImageRect` width or height 0): `TrySampleTextureCube` returns before
+  any counter, texel = `SetTexelNone` (0,0,0,1).
+- Project3D on a **depth-format** texture (color 0x30): `TryResolveShadow`
+  short-circuits on `ShadowDepthFuncNever` (zero texel) / `Always` (one texel)
+  with no counters.
+- Project3D on a 3D color texture with an unconfigured extent: `SampleInto3D`
+  takes the unconfigured branch with no counters.
+
+**Predicate (`FillTrianglePsh`).** The compiled lighting fill engages only when
+`_combinerFastKind` is 2/3, `bytes==4`, `zetaBytes==0`, mask all, no blend, no
+alpha test, no clip-plane stage, no dot-string stage, and every stage 1-3 is one
+of the constant cases above (verified per fill from the same registers the
+generic resolve reads, including `_shadowDepthFunc`). Stage 0 must be `None`
+(k2) or Project2D with a fast sampler plan, no cubemap, no depth format (k3).
+Otherwise the generic loop runs unchanged.
+
+**Loop.** Barycentric/perspective/interpolation are transcribed exactly; the
+diffuse RGB interpolation is kept (alpha is dead: `EvaluateLightingSpecialized`
+reads `diffuse[0..2]` only), specular and the stage 1-3 texcoords are not
+interpolated (dead for this shape; stage 0's texcoords are), stage 0 samples
+through the shared `SampleFast` with `_textureFormatAttempts`/`TexturedPixels`
+kept, and the combiner is `EvaluateLightingSpecialized` transcribed
+operation-for-operation with its per-draw constants (`consts[0]`,
+`consts[combineStage*2]`, `consts[combineStage*2+1]`, `consts[addStage*2]`,
+`consts[16]`) hoisted into locals. The fragment stage is the ProcessFragment
+color path for the proven state (no alpha test, no blend, needDst false), ZCLIP
+kept at its reference position (after the stage resolve, before the write).
+`DiagnosticGenericFill` forces the reference loop for differentials.
+
+**Measured (1B, `--gpu sw`, interleaved pairs against `8a7b94b`; SHAs and every
+counter identical on all 12 legs: menu `660CA11B…/F5D61C94…`, triangle
+`F57934BF…/CF79FC17…`).**
+
+| 1B `rasterPsh` | baseline | final | delta |
+|---|---:|---:|---:|
+| menu | 24.0-29.4 s* | 13.9-15.1 s | **-44%** |
+| triangle | 6.19-7.04 s* | 3.31-3.45 s | **-45%** |
+
+\*the baseline leg drifted upward during the session (host load); the ratios are
+interleaved. Wall, 3/3 pairs: **triangle 12.44 -> 9.51 s (-23.5%),
+menu 53.78 -> 42.01 s (-21.9%)** (medians; the shared host slowed ~15% between
+the session start and these pairs, so the session's own quiet-host anchors read
+47.96 -> ~39-40 s for the menu, 12.21 -> ~9.4-9.8 s for the triangle).
+
+Compiled shares at 1B: menu `compiled=456164/308242392/13.8s` (245.8M modulate +
+62.4M lighting), triangle `compiled=53574/62444852/3.2s`. Remaining raster:
+~0.45 s legacy on both titles plus the k1/k2/k3 compiled loops themselves
+(menu 14.1 s total = 13.8 s compiled, i.e. the rasterizer is now a single
+specialized path for 96% of menu pixels and 85% of triangle pixels).
+
+**Negative result kept for the record.** Hoisting the cube-map face stride and
+swizzle masks into the sampler plan (exact, removes a mip-level loop and two
+interleave loops per cube sample) measured **neutral**, interleaved A/B 0.02 s
+below resolution, because the titles' cube stages never reach the face math
+(unconfigured extents). Kept in the plan anyway: it is exact, removes real work
+on any cube-mapped content, and the plan already carries the fields.
+
+Suite 1516 (5 new sampler differentials), ktest smoke PASS 7/7.
