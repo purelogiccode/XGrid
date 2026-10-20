@@ -11904,16 +11904,33 @@ session, SHAs identical on every pair).**
 
 The same ceremony is now one command: `scripts/present-path-acceptance.ps1`
 (interleaved sw/gl pairs, medians, `drawMs`/readback, projection against the
-recorded quiet references, SHA check). Last measured run on the loaded host:
-**menu gl/sw 0.7450 -> quiet projection 24.8 s (target 24, over by 0.8 s)**;
-**triangle gl/sw 0.6965 -> 6.1 s (target 6, over by 0.1 s)**. Loaded-host
-absolutes; the projections use the ratio method and are biased *optimistic* for
-the raster-heavy sw leg on a contended host, so read them as "at the target,
-not comfortably under it". **Status: the slice delivers the measured ~7 s of GL
-overhead but does not fully close M-A.** The menu needs per-triangle batching
-(2.76M triangles x 2 GL calls is ~0.4 s, and the texture-content fingerprint
-~0.7 s; even removing the fingerprint entirely leaves ~24.1 s), and the triangle
-is CPU-bound (`nonJitMs` 3.75 s of `outerMs` 6.3 s).
+recorded quiet references, SHA check). **Host-state correction (measured at
+session close):** the recorded quiet references (menu sw 33.3 s, triangle sw
+8.69 s) are **not reproducible on this host today** — the *unmodified baseline
+build* (`4f0bd47`) measures menu sw **62.57 s** and triangle sw **14.01 s**
+(1.88x / 1.61x slower) with an idle CPU (0.7 cores background; the CPU reports
+its 3.6 GHz base clock), and its raster share is inflated unevenly (menu
+`rasterPsh` 20.0 s vs the recorded 12.0 s = 1.67x). Under that uneven inflation
+no single host factor converts today's walls into the reference session's, so:
+
+- **Durable evidence (host-independent):** the same-window A/B table above
+  (both builds measured back to back), `drawMs` 12.55 -> ~2.1-2.4 s, readback
+  1.5 s -> 0, `BackendUnsupported=0`, and the exact goldens.
+- **M-A status: not decidable on this host.** The acceptance run's projections
+  (menu 24.8-25.1 s, triangle 6.0-6.1 s, i.e. at the boundary) depend on which
+  leg is used as the host reference and move by >1 s under that choice. Re-run
+  `present-path-acceptance.ps1` on the reference host state (menu sw ~33 s
+  before trusting the SUMMARY lines) before recording M-A as met or missed.
+- **What is not in doubt:** the ~7 s of GL-path overhead that §203 measured is
+  gone, and the guest/counter/golden state is unchanged.
+
+**Status: the slice delivers the measured GL-overhead removal but M-A remains
+open (needs a reference-state measurement).** If the reference-state run still
+shows the menu over 24 s, the remaining items are per-triangle batching (2.76M
+triangles x 2 GL calls is ~0.4 s quiet) and the texture-content fingerprint
+(~0.7 s quiet) - even removing the fingerprint entirely would leave ~24.1 s, so
+batching is the structural step. The triangle is CPU-bound (`nonJitMs` 3.75 s of
+`outerMs` 6.3 s).
 
 **Gates (all green).** 1530 tests; `dotnet format --verify-no-changes` clean;
 1B menu golden sw `4EF1FBF6…` (anchor) vs gl `6BE6325F…` (diff 1852 px,
