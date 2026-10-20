@@ -53,7 +53,8 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `660CA11B` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `6BE6325F` | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `F57934BF` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `3FC4B419` | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
-| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `scripts/ktest-smoke.ps1 -SkipXemu` (needs `XISOSharp` + staged media) |
+| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
+| **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
 | **nxdk-mesh** (textured mesh, VS/PS shaders) | source in `data/test-samples/nxdk-mesh/` | **blocked** - nxdk toolchain not on host (MSYS2 base only: no clang/make; C: 247 MB free, must install on D:) | - | expected textured 3D + shaders | - | build dependency, not an emulator gap | - | - |
 | **nxdk-hello / nxdk-triangle / nxdk-led** | source in `data/test-samples/` | **blocked** - toolchain | - | text / triangle / SMC LED | - | build dependency | - | - |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs nxdk | - | textured 3D | - | fetch + toolchain | - | - |
@@ -71,11 +72,28 @@ quiet-host baselines, so compare rows within a session, not across.
 | triangle, `gl+replace` | 10.6 s | 94.8 | 68 | step 32M, `6F780A33` | `3FC4B419` | `8AE82781` / `7DAB63EB` |
 | dashboard, `sw` | 62.7 s | 15.9 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `36B72FE1` / `F5D61C94` |
 | dashboard, `gl+replace` | 45.1 s | 22.2 | 686 | step 50M, `6F780A33` | `6BE6325F` | `CF151863` / `F5D61C94` |
+| ktest (600M, `disable-video=1`) | 15.5 s | 38.7 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | fast anchors only |
 
 Reading: the first presented frame is the boot animation (`6F780A33`) in every
 row - a boot-chain anchor, not a title anchor. The title anchors are the
 last-frame SHAs, and the GL rows match their gate goldens
 (`3FC4B419`/`6BE6325F`), which is what makes these rows comparable to the gates.
+The ktest row is the smoke ISO staged by `scripts/ktest-smoke.ps1`; its suite
+log is the real evidence (`792,800,535` steps, 7/7 known deltas), the frames are
+just the boot animation because the suite config disables video.
+
+### Observation: the dashboard keeps presenting past 2B (no submenu reached)
+
+A 2B-step run with the gate's pad script (`down@950M+hold, none@962M,
+a@970M+hold, none@976M`) presents **4,867 flips** (686 at 1B) and ends on
+surface `0x3D00000` (`read=0 write=0`), but the frame is the **same menu
+content**: same 239 distinct colors and the same channel means (55.3/101.4/156.8)
+as the 1B menu frame, different SHA (animation/highlight state). It is also
+pixel-heavy - 217,622 draws, 1.64B pixels, `5.8 msps` (344 s for 2B) - i.e. the
+`-gpu sw` wall is dominated by full-screen animation, not by a new screen. So
+the "submenu state-100 pixel-negative" gap is still unfixed *and* the A-press
+script does not reach a submenu; a future corpus row needs the correct pad
+sequence (an operator-visible route), not more steps.
 
 ## Current coverage reading
 
