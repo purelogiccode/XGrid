@@ -12069,6 +12069,18 @@ mode early-returns through the `finally`), and
 `FlushDraw` fails 3 of the 4 - the Clear/Flip test only asserts the negative
 invariant.
 
+**Track E rows refreshed (same session).** `scripts/boot-to-first-frame.ps1 -All`
+re-ran all six rows (three samples x both backends) on the batched build and
+`docs/compatibility.md` now carries the post-§205 walls and SHAs: triangle
+20.7 s sw / 10.5 s gl+replace, dashboard 62.0 / 44.6 s, ktest-600M 14.9 / 10.0 s,
+with the GL last-frame SHAs still the gate goldens (`A1740DE0`/`777F4DEB`,
+`4EF1FBF6`/`36B72FE1` on sw; `3FC4B419`/`8AE82781`,
+`6BE6325F`/`CF151863` on gl) and identical draw/flip counters. The GL walls
+moved only ~1% here because this host's run-to-run spread is larger than the
+parked -4.2%; the durable number stays the same-binary A/B above. Row count is
+6 measured rows but still **3 samples**, so M-B's ">=8 rows / >=2 beyond the
+three" exit criterion is unchanged and still blocked on the nxdk toolchain.
+
 **Diagnostics added.** `XGRID_GL_NO_BATCH=1` (force the single-triangle path),
 `diag[... batchCalls= batchTris= batchCap=]`, `timed[flushMs=]`, probe `vtxMs`
 now measures the pack (the state fields measure per batch head).

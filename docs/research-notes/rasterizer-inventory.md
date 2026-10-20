@@ -1,5 +1,15 @@
 # Software rasterizer per-pixel inventory - XGrid NV2A (`--gpu sw`, the default)
 
+> **Status 2026-10-20 (§205) - the present path is closed; the fill loop is again
+> the raster lever.** §204 removed the `gl+replace` present-path overhead
+> (`drawMs` 12.55 -> 2.41 s) and §205 batched a whole draw command into one
+> instanced draw (`drawMs` 1971 -> 1045 ms, -47%), so Track B has no scoped slice
+> left: the remaining menu submission is ~0.8 s of per-triangle block packing and
+> the ~0.5-0.9 s texture fingerprint. What is left of the software rasterizer is
+> the per-pixel work this inventory prices (O6 row spans and the 2-pixel
+> interleave stay demoted at their bounded ceilings; nothing here is scheduled
+> while Track E/P are open).
+
 > **Status 2026-10-20 (course correction, §203) - the next raster lever is the
 > present path, not the fill loop.** The product frontend renders on `--gpu sw`;
 > `--gpu gl --gpu-replace` replaces this raster but pays ~9.9 s / 686 frames in

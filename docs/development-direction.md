@@ -108,7 +108,7 @@ against xemu where an oracle exists (triangle ≈830 Msteps/s; ktest smoke xemu
 | triangle `--gpu sw` | 8.69 s | 2.8 s | 830 Msteps/s (1.13× real time) | ~7× |
 | triangle `gl+replace` | 6.49 s → **~6.4 s** | — | same | ~5.6× |
 | menu `--gpu sw` | 33.3 s → **~30 s** | 12.0 s | no oracle (xemu deadlocks) | ~25× real time |
-| menu `gl+replace` | 31.1 s → **~24.7 s** | — | same | ~21× real time |
+| menu `gl+replace` | 31.1 s → **~23.7 s** | - | same | ~17.4× real time |
 
 **Track B slice 1 (§204) landed:** the GL path's overhead fell from ~7.9 s to
 ~1.3 s (readback removed from fast-mode present, per-draw submission 2.49 →

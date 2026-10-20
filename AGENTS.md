@@ -703,7 +703,8 @@ byte-identical on every gate.
   untouched.
 - **Track E:** `scripts/boot-to-first-frame.ps1` (new harness; prints one `BTFF`
   line + JSON per row), `docs/compatibility.md` rewritten with reproducible
-  commands and four measured rows, the new `--frame-first <bmp>` CLI facility
+  commands and four measured rows (six after the §205 refresh: every sample on
+  both backends), the new `--frame-first <bmp>` CLI facility
   (first presented frame + step anchor). The nxdk-toolchain blocker is recorded
   precisely (MSYS2 base has no clang/make; C: 247 MB free → install on D:).
   Two reference notes from a parallel session are indexed:

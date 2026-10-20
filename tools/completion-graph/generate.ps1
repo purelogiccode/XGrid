@@ -353,8 +353,15 @@ function Build-Svg([string]$style) {
         [void]$svg.AppendLine("<text x='$([int]($lx + 210))' y='$($legendY + 27)' font-size='11.5' fill='#94A3B8'>50%</text>")
         [void]$svg.AppendLine("<text x='$([int]($lx + 420) - 8)' y='$($legendY + 27)' font-size='11.5' fill='#94A3B8'>100%</text>")
     }
-    [void]$svg.AppendLine("<circle cx='$($W - $M - 96)' cy='$($legendY + 6)' r='9' fill='none' stroke='#F8FAFC' stroke-width='3' stroke-dasharray='26 34.5' transform='rotate(-90 $($W - $M - 96) $($legendY + 6))'/>")
-    [void]$svg.AppendLine("<text x='$($W - $M - 96)' y='$($legendY + 10)' font-size='10.5' font-weight='700' fill='#F8FAFC' text-anchor='middle'>$overall%</text>")
+    # overall readout: proportional arc + a legible right-aligned value
+    $ringR = 9.0
+    $ringCx = $W - $M - 80
+    $ringCy = $legendY + 10
+    $ringC = 2.0 * [Math]::PI * $ringR
+    $ringDash = $ringC * ($overall / 100.0)
+    $ringGap = [Math]::Max(0.0, $ringC - $ringDash)
+    [void]$svg.AppendLine("<circle cx='$ringCx' cy='$ringCy' r='$ringR' fill='none' stroke='#F8FAFC' stroke-width='3' stroke-dasharray='$($ringDash.ToString('0.#')) $($ringGap.ToString('0.#'))' transform='rotate(-90 $ringCx $ringCy)'/>")
+    [void]$svg.AppendLine("<text x='$($W - $M)' y='$($legendY + 15)' font-size='17' font-weight='700' fill='#F8FAFC' text-anchor='end'>$overall%</text>")
     [void]$svg.AppendLine("<text x='$($W - $M)' y='$($legendY + 27)' font-size='11.5' fill='#94A3B8' text-anchor='end'>weighted overall</text>")
     [void]$svg.AppendLine('</svg>')
     return $svg.ToString()
