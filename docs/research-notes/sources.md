@@ -22,6 +22,8 @@ the reuse is recorded below.
 | nv2a-trace | master snapshot | https://github.com/XboxDev/nv2a-trace | **MIT** | No — facts only |
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
 | Silk.NET | pinned when first added (GPU slice 1) | https://github.com/dotnet/Silk.NET | **MIT** | Approved for direct dependency (operator 2026-10-13; see below) |
+| Avalonia (Desktop/Fluent/Inter) | 11.3.22 (frontend) | https://github.com/AvaloniaUI/Avalonia | **MIT** | Approved for the desktop frontend (operator-requested 2026-10-20; see below) |
+| CommunityToolkit.Mvvm | 8.4.2 (frontend) | https://github.com/CommunityToolkit/dotnet | **MIT** | Approved for the desktop frontend (see below) |
 
 ## Restoring the vendored set (References2/)
 
@@ -181,6 +183,24 @@ root folder names):
   `ChdFile` API (`Open`/`Read`/`TotalBytes`) behind
   `XGrid.Storage/ChdDvdImage`.
 
+### Avalonia 11.3.22 (MIT) — approved 2026-10-20
+- Operator-requested desktop frontend track. UI-only dependency of
+  `XGrid.Frontend.Avalonia`: packages `Avalonia`, `Avalonia.Desktop`,
+  `Avalonia.Themes.Fluent`, and `Avalonia.Fonts.Inter`, all 11.3.22, plus the
+  transitive SkiaSharp/HarfBuzzSharp/MicroCom runtime. **MIT**
+  (https://github.com/AvaloniaUI/Avalonia).
+- No Avalonia source copied: application code, XAML, and the dark theme under
+  `src/XGrid.Frontend.Avalonia/` are original. XISOSharp's vendored Avalonia
+  sources remain off-limits (facts only).
+- Scope rule: core/CLI/test projects must never reference UI packages (plan §1.1).
+  Versions are supplied with `VersionOverride` in the frontend project so
+  `Directory.Packages.props` is not part of the frontend track.
+
+### CommunityToolkit.Mvvm 8.4.2 (MIT) — approved 2026-10-20
+- MVVM helpers (observable properties, relay commands, source generators) for the
+  frontend only. **MIT** (https://github.com/CommunityToolkit/dotnet). Not
+  referenced by the emulator core, CLI, or tests.
+
 ## Subsystem → reference map (facts)
 
 | XGrid subsystem | Primary reference | Secondary | Notes |
@@ -211,5 +231,6 @@ root folder names):
 ## Rule going forward
 1. Extract facts into notes like this one before implementing.
 2. Never copy code from GPL/LGPL/unlicensed references.
-3. XISOSharp and Silk.NET are the only approved direct dependencies; record any version change here.
+3. XISOSharp, Silk.NET, Avalonia, and CommunityToolkit.Mvvm are the approved direct
+   dependencies (the latter two are frontend-only); record any version change here.
 4. Maintain this file when a new reference is studied (plan §46).

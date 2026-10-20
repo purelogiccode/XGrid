@@ -42,6 +42,20 @@ dotnet test XGrid.sln -c Release
 dotnet format XGrid.sln --verify-no-changes
 ```
 
+## Desktop frontend
+
+The cross-platform Avalonia GUI lives in `src/XGrid.Frontend.Avalonia`:
+
+```powershell
+dotnet run --project src/XGrid.Frontend.Avalonia
+```
+
+It provides power/pause/stop with a live software-rendered display, a disc library,
+a settings surface (firmware, storage, memory, performance, network), an activity log,
+and runtime accent themes. Headless `XGrid.Cli` remains the default for gate and
+automation runs. See `src/XGrid.Frontend.Avalonia/README.md` and
+`docs/research-notes/avalonia-frontend.md`.
+
 ## Firmware
 
 XGrid does not ship copyrighted firmware, BIOS images, EEPROMs, or game data. Users must supply

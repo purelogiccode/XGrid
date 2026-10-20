@@ -2258,6 +2258,26 @@ The frontend should provide:
 
 The frontend must communicate with the emulator through an API, not internal fields.
 
+**Status (2026-10-20): LANDED** as `src/XGrid.Frontend.Avalonia` (commit `ea8b38f`),
+an Avalonia 11.3.22 desktop application (Windows/Linux/macOS, `net10.0`, MIT
+dependencies) that talks to the emulator only through the public `XGrid.Host`
+`XboxMachine` API.
+
+Delivered in this slice:
+
+- dark modern shell with Home, Library, Settings, Activity, and About pages;
+- power/pause/resume/stop with a live presented-frame display (portable software
+  rasterizer + `WriteableBitmap`, no WGL dependency);
+- game selection and recursive library scan (ISO/CHD/XBE, XBE title parsing);
+- firmware, storage, RAM, JIT/performance, network, library-folder, and accent
+  configuration persisted as JSON in the platform app-data folder;
+- keyboard-to-XID pad mapping, activity log, runtime accent themes.
+
+Deferred to later frontend slices: physical gamepad binding, host audio output,
+GPU-backend display, debugger panes, per-title profiles, and save-state UI. Design
+and validation record: `docs/research-notes/avalonia-frontend.md`; usage:
+`src/XGrid.Frontend.Avalonia/README.md`.
+
 ---
 
 # 37. Save States
