@@ -567,6 +567,10 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+> **Next session starts here:** `docs/research-notes/next-session.md` (start
+> state, Track B O5/O1 tasks with acceptance/kill criteria, C3-z scoped
+> experiment, commands, measurement recipes, non-goals).
+
 **Session 2026-10-20 (seventh, cont.).** **Track B first slices: rasterizer O2
 memory fast lane + O4 swizzle spread LANDED (§199p).** `IGpuMemoryFast`
 (optional; production `PhysicalGpuMemory` only) opens one GPU-writer
