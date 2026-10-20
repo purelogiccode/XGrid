@@ -11877,7 +11877,12 @@ state. Root causes, each measured:
    widens GL coverage and the fragment shader's software-exact inside test still
    decides every pixel (goldens byte-identical at 200M, policy-clean at 1B).
 7. **`GlBackendTimings.AddDrawTicks`** (raw tick delta, no TimeSpan per draw).
-8. **Track D bonus, measured on a shared path.** `Nv2aMmio.CollectMethodHistogram`
+8. **Texture-creation double-upload fixed**: a new cache entry started with
+   fingerprint 0 and was immediately re-uploaded, so every unique texture was
+   sent to GL twice (menu 25 uploads, triangle 19). The entry now stores the
+   fingerprint of the bytes just uploaded (13 and 10 respectively); frames are
+   byte-identical (`6BE6325F` / `3FC4B419`).
+9. **Track D bonus, measured on a shared path.** `Nv2aMmio.CollectMethodHistogram`
    (default true for the tests) is turned off by the CLI: the two dictionary
    updates per PGRAPH method cost **4 s of the 1B menu sw wall (64.2 -> 60.3 s,
    -6.2%)** and no CLI path consumes the histogram (`--pgraph` dumps

@@ -608,14 +608,15 @@ byte-identical on every gate.
   (2.49 µs × 2,760,841 draws)**, clear 0.01 s, **flip readback 0.71 s** (686 ×
   1.04 ms), BGRA swizzle+alloc ~0.3 s. The readback was ~1 s, not 8.8 — the
   per-draw submission was the lever.
-- **Eight slices landed:** readback opt-in (`--frame`/`--frame-first` only;
-  window present blits the FBO), one packed `uTri[25]` uniform upload per draw
-  (was 13 `glUniform` calls), program-structure cache (no per-draw key string),
+- **Nine slices landed:** readback opt-in (`--frame`/`--frame-first` only; window
+  present blits the FBO), one packed `uTri[25]` uniform upload per draw (was 13
+  `glUniform` calls), program-structure cache (no per-draw key string),
   `TextureKey` struct + per-entry sample addresses (removed 32 integer
   divisions/draw) + prefetched 16-load fingerprint, GL binding shadows
   (FBO/program/viewport/texture unit/texture), vertex positions by `gl_VertexID`
-  (no per-draw VBO upload: 2 GL calls/draw), raw-tick draw timing, and a latent
-  texture-reupload bug fix (stale id kept, new texture leaked).
+  (no per-draw VBO upload: 2 GL calls/draw), raw-tick draw timing, a latent
+  texture-reupload bug fix (stale id kept, new texture leaked), and no
+  double-upload on texture creation (25 → 13 uploads).
 - **Two shared-path wins (Track D, measured >2%):**
   `Nv2aMmio.CollectMethodHistogram` off in the CLI (2 dictionary updates ×
   18.1M methods) = **menu sw -6.2% (64.2 → 60.3 s)**; `IPgraphBackend
