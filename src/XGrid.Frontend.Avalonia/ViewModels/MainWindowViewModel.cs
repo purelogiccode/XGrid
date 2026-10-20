@@ -1,0 +1,764 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using XGrid.Frontend.Avalonia.Models;
+using XGrid.Frontend.Avalonia.Services;
+
+namespace XGrid.Frontend.Avalonia.ViewModels;
+
+/// <summary>Application shell: owns settings, the emulation session, navigation, and live status.</summary>
+public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
+{
+    private readonly SettingsStore _settingsStore;
+    private readonly EmulatorSession _session;
+    private readonly DispatcherTimer _uiTimer;
+    private readonly DispatcherTimer _toastTimer;
+    private readonly Lock _frameLock = new();
+    private FramePacket? _pendingFrame;
+    private long _lastSampleTicks;
+    private long _lastSampleSteps;
+    private long _lastSampleFrames;
+    private bool _shuttingDown;
+
+    [ObservableProperty]
+    private NavigationItem? _selectedNavigationItem;
+
+    [ObservableProperty]
+    private bool _isRunning;
+
+    [ObservableProperty]
+    private bool _isPaused;
+
+    [ObservableProperty]
+    private string _statusText = "Idle";
+
+    [ObservableProperty]
+    private string _statusDetail = "No console powered on";
+
+    [ObservableProperty]
+    private ulong _steps;
+
+    [ObservableProperty]
+    private ulong _frames;
+
+    [ObservableProperty]
+    private double _mips;
+
+    [ObservableProperty]
+    private double _fps;
+
+    [ObservableProperty]
+    private string _eip = "—";
+
+    [ObservableProperty]
+    private WriteableBitmap? _frameBitmap;
+
+    [ObservableProperty]
+    private bool _hasFrame;
+
+    [ObservableProperty]
+    private GameEntry? _currentGame;
+
+    [ObservableProperty]
+    private string? _toastMessage;
+
+    [ObservableProperty]
+    private bool _isToastVisible;
+
+    [ObservableProperty]
+    private bool _isFullscreen;
+
+    /// <summary>Initializes the shell with the default per-user settings store.</summary>
+    public MainWindowViewModel()
+        : this(new SettingsStore())
+    {
+    }
+
+    /// <summary>Initializes the shell with an explicit settings store (tests and tools).</summary>
+    public MainWindowViewModel(SettingsStore settingsStore)
+    {
+        _settingsStore = settingsStore;
+        Config = settingsStore.Load();
+        _session = new EmulatorSession();
+        _session.Log += OnSessionLog;
+        _session.FrameReady += OnFrameReady;
+        _session.Stopped += OnSessionStopped;
+
+        Home = new HomeViewModel(this);
+        Settings = new SettingsViewModel(this);
+        Library = new LibraryViewModel(this);
+        Logs = new LogsViewModel(this);
+        About = new AboutViewModel(this);
+
+        NavigationItems = new ObservableCollection<NavigationItem>
+        {
+            new(PageKind.Home, "Home", "Console status", AppIcons.Home, Home),
+            new(PageKind.Library, "Library", "Disc images", AppIcons.Library, Library),
+            new(PageKind.Settings, "Settings", "Configure XGrid", AppIcons.Settings, Settings),
+            new(PageKind.Logs, "Activity", "Emulator log", AppIcons.Logs, Logs),
+            new(PageKind.About, "About", "Build information", AppIcons.Info, About),
+        };
+        SelectedNavigationItem = NavigationItems[0];
+
+        _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _uiTimer.Tick += OnUiTick;
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.4) };
+        _toastTimer.Tick += OnToastTick;
+    }
+
+    /// <summary>Gets the persisted configuration.</summary>
+    public EmulatorSettings Config { get; private set; }
+
+    /// <summary>Gets the home page.</summary>
+    public HomeViewModel Home { get; }
+
+    /// <summary>Gets the library page.</summary>
+    public LibraryViewModel Library { get; }
+
+    /// <summary>Gets the settings page.</summary>
+    public SettingsViewModel Settings { get; }
+
+    /// <summary>Gets the activity log page.</summary>
+    public LogsViewModel Logs { get; }
+
+    /// <summary>Gets the about page.</summary>
+    public AboutViewModel About { get; }
+
+    /// <summary>Gets the sidebar navigation items.</summary>
+    public ObservableCollection<NavigationItem> NavigationItems { get; }
+
+    /// <summary>Gets all activity log entries (newest last).</summary>
+    public ObservableCollection<LogEntry> LogEntries { get; } = new();
+
+    /// <summary>Gets recently launched games (newest first).</summary>
+    public ObservableCollection<GameEntry> RecentGames { get; } = new();
+
+    /// <summary>Gets the file dialog service.</summary>
+    public FileDialogService Dialogs { get; } = new();
+
+    /// <summary>Gets the settings file path shown in the UI.</summary>
+    public string SettingsPath => _settingsStore.FilePath;
+
+    /// <summary>Gets a value indicating whether a BIOS image is configured.</summary>
+    public bool IsBiosReady => Config.IsBiosReady;
+
+    /// <summary>Gets a value indicating whether firmware setup is needed.</summary>
+    public bool NeedsSetup => !Config.IsBiosReady;
+
+    /// <summary>Gets the current page title.</summary>
+    public string PageTitle => SelectedNavigationItem?.Title ?? "Home";
+
+    /// <summary>Gets the current page caption.</summary>
+    public string PageCaption => SelectedNavigationItem?.Subtitle ?? string.Empty;
+
+    /// <summary>Gets the headline shown on the home page.</summary>
+    public string HomeHeadline
+    {
+        get
+        {
+            if (!Config.IsBiosReady)
+            {
+                return "Firmware required";
+            }
+
+            if (IsRunning && CurrentGame is not null)
+            {
+                return "Now playing";
+            }
+
+            if (IsRunning)
+            {
+                return "Console running";
+            }
+
+            return CurrentGame is not null ? "Ready to play" : "Ready when you are";
+        }
+    }
+
+    /// <summary>Gets the supporting copy shown on the home page.</summary>
+    public string HomeDetail
+    {
+        get
+        {
+            if (!Config.IsBiosReady)
+            {
+                return "Add your Xbox BIOS image to bring the emulated console to life.";
+            }
+
+            if (IsRunning)
+            {
+                return CurrentGame is not null
+                    ? CurrentGame.Title + " is powered on."
+                    : "The Xbox dashboard is live below.";
+            }
+
+            return CurrentGame is not null
+                ? "Power on again or choose another disc image."
+                : "Insert a disc image, or power on to reach the dashboard.";
+        }
+    }
+
+    /// <summary>Gets the placeholder shown before the first frame is presented.</summary>
+    public string FramePlaceholder => IsRunning
+        ? "Waiting for the first presented frame…"
+        : "Power on the console to see output here.";
+
+    /// <summary>Gets the power button label.</summary>
+    public string PowerButtonText => IsRunning ? "Power off" : "Power on";
+
+    /// <summary>Gets the pause button label.</summary>
+    public string PauseButtonText => IsPaused ? "Resume" : "Pause";
+
+    /// <summary>Gets the current game title (or a console default).</summary>
+    public string CurrentGameTitle => CurrentGame?.Title ?? "Xbox dashboard";
+
+    /// <summary>Gets the current game format label.</summary>
+    public string CurrentGameFormat => CurrentGame?.FormatText ?? "No disc";
+
+    /// <summary>Gets the current game size label.</summary>
+    public string CurrentGameSize => CurrentGame?.SizeText ?? string.Empty;
+
+    /// <summary>Attaches the shell to the main window and performs first-run initialization.</summary>
+    public void Attach(Window window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        Dialogs.Window = window;
+        window.Closing += OnWindowClosing;
+
+        AccentService.Apply(AccentPalette.Find(Config.Accent));
+        Settings.LoadFrom(Config);
+        RefreshRecentGames();
+        AddLog(LogLevel.Info, "XGrid frontend ready · " + RuntimeInformation.FrameworkDescription);
+        AddLog(
+            Config.IsBiosReady ? LogLevel.Info : LogLevel.Warning,
+            Config.IsBiosReady
+                ? "Firmware configured: " + Config.BiosPath
+                : "Firmware is not configured yet. Open Settings and choose a BIOS image.");
+
+        _uiTimer.Start();
+        _ = Library.RefreshAsync();
+    }
+
+    /// <summary>Stops the emulator and releases resources.</summary>
+    public void Shutdown()
+    {
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        _shuttingDown = true;
+        _uiTimer.Stop();
+        _toastTimer.Stop();
+        _session.Dispose();
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Shutdown();
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Navigates to a destination.</summary>
+    public void NavigateTo(PageKind kind)
+    {
+        foreach (NavigationItem item in NavigationItems)
+        {
+            if (item.Kind == kind)
+            {
+                SelectedNavigationItem = item;
+                return;
+            }
+        }
+    }
+
+    /// <summary>Appends a log line and mirrors it to the activity page.</summary>
+    public void AddLog(LogLevel level, string message)
+    {
+        var entry = new LogEntry(DateTimeOffset.Now, level, message);
+        LogEntries.Add(entry);
+        while (LogEntries.Count > 2000)
+        {
+            LogEntries.RemoveAt(0);
+        }
+
+        Logs.NotifyEntryAdded(entry);
+    }
+
+    /// <summary>Shows a transient toast message.</summary>
+    public void ShowToast(string message)
+    {
+        ToastMessage = message;
+        IsToastVisible = true;
+        _toastTimer.Stop();
+        _toastTimer.Start();
+    }
+
+    /// <summary>Saves the supplied settings, applying them immediately.</summary>
+    public void SaveSettings(EmulatorSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Normalize();
+        Config = settings;
+        try
+        {
+            _settingsStore.Save(Config);
+            Settings.LoadFrom(Config);
+            AccentService.Apply(AccentPalette.Find(Config.Accent));
+            NotifyConfigChanged();
+            RefreshRecentGames();
+            AddLog(LogLevel.Info, "Settings saved to " + _settingsStore.FilePath);
+            ShowToast("Settings saved");
+            _ = Library.RefreshAsync();
+        }
+        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Error, "Could not save settings: " + exception.Message);
+            ShowToast("Could not save settings");
+        }
+    }
+
+    /// <summary>Applies an accent palette without persisting it (live preview).</summary>
+    public static void PreviewAccent(string key)
+    {
+        AccentService.Apply(AccentPalette.Find(key));
+    }
+
+    /// <summary>Adds a library folder, persists it, and rescans.</summary>
+    public void AddLibraryFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)
+            || Config.LibraryFolders.Contains(folder, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Config.LibraryFolders.Add(folder);
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save the library folder: " + exception.Message);
+        }
+
+        Settings.LoadFrom(Config);
+        AddLog(LogLevel.Info, "Library folder added: " + folder);
+        _ = Library.RefreshAsync();
+    }
+
+    /// <summary>Forwards the current keyboard pad state to the emulation thread.</summary>
+    public void SetPad(ushort buttons, ReadOnlySpan<byte> analog, ReadOnlySpan<short> sticks)
+    {
+        if (_session.IsRunning)
+        {
+            _session.SetPad(buttons, analog, sticks);
+        }
+    }
+
+    /// <summary>Public command: powers the console on, or off when already running.</summary>
+    [RelayCommand]
+    private void TogglePower()
+    {
+        if (IsRunning)
+        {
+            StopSession();
+        }
+        else
+        {
+            StartGame(null);
+        }
+    }
+
+    /// <summary>Public command: starts a specific disc entry (or the configured disc).</summary>
+    [RelayCommand]
+    private void StartGame(GameEntry? game)
+    {
+        if (_session.IsRunning)
+        {
+            ShowToast("Power off the console before launching another disc.");
+            return;
+        }
+
+        if (!Config.IsBiosReady)
+        {
+            AddLog(LogLevel.Warning, "Power-on refused: no BIOS image is configured.");
+            ShowToast("Choose a BIOS image first.");
+            NavigateTo(PageKind.Settings);
+            return;
+        }
+
+        if (game is not null && !game.IsLaunchable)
+        {
+            ShowToast("Loose XBE files must be wrapped in an ISO or CHD image.");
+            return;
+        }
+
+        try
+        {
+            CurrentGame = game;
+            _session.Start(Config, game?.Path);
+            OnPropertyChanged(nameof(CurrentGameTitle));
+            OnPropertyChanged(nameof(CurrentGameFormat));
+            OnPropertyChanged(nameof(CurrentGameSize));
+            OnPropertyChanged(nameof(HomeHeadline));
+            OnPropertyChanged(nameof(HomeDetail));
+            IsRunning = true;
+            IsPaused = false;
+            StatusText = "Booting";
+            StatusDetail = game?.Title ?? "Xbox dashboard";
+            FrameBitmap = null;
+            HasFrame = false;
+            Steps = 0;
+            Frames = 0;
+            Mips = 0;
+            Fps = 0;
+            _lastSampleTicks = 0;
+            AddLog(LogLevel.Info, game is null
+                ? "Powering on the console…"
+                : "Launching " + game.Title + "…");
+            if (game is not null)
+            {
+                RememberGame(game.Path);
+            }
+
+            NavigateTo(PageKind.Home);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.IO.IOException
+                                              or UnauthorizedAccessException or ArgumentException)
+        {
+            IsRunning = false;
+            StatusText = "Idle";
+            StatusDetail = "Power-on failed";
+            AddLog(LogLevel.Error, "Power-on failed: " + exception.Message);
+            ShowToast("Power-on failed: " + exception.Message);
+        }
+    }
+
+    /// <summary>Public command: pauses or resumes the running console.</summary>
+    [RelayCommand(CanExecute = nameof(CanTogglePause))]
+    private void TogglePause()
+    {
+        if (_session.IsPaused)
+        {
+            _session.Resume();
+            IsPaused = false;
+            StatusText = "Running";
+            AddLog(LogLevel.Info, "Emulation resumed.");
+        }
+        else
+        {
+            _session.Pause();
+            IsPaused = true;
+            StatusText = "Paused";
+            AddLog(LogLevel.Info, "Emulation paused.");
+        }
+    }
+
+    /// <summary>Public command: stops the running console.</summary>
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private void StopSession()
+    {
+        if (!_session.IsRunning)
+        {
+            return;
+        }
+
+        AddLog(LogLevel.Info, "Stopping the console…");
+        _session.Stop();
+    }
+
+    /// <summary>Public command: stays on the home page.</summary>
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        NavigateTo(PageKind.Settings);
+    }
+
+    /// <summary>Public command: picks a disc image and launches it.</summary>
+    [RelayCommand]
+    private async Task OpenDiscAsync()
+    {
+        string? path = await Dialogs.PickFileAsync("Choose a disc image", FileDialogService.DiscTypes);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        if (!GameLibraryService.IsGameCandidate(path))
+        {
+            ShowToast("Choose an ISO, CHD, or XBE file.");
+            return;
+        }
+
+        GameEntry? entry = GameEntry.FromFile(path);
+        if (entry is null)
+        {
+            ShowToast("That file could not be read as a disc image.");
+            return;
+        }
+
+        StartGame(entry);
+    }
+
+    private bool CanTogglePause()
+    {
+        return IsRunning;
+    }
+
+    private bool CanStop()
+    {
+        return IsRunning;
+    }
+
+    partial void OnSelectedNavigationItemChanged(NavigationItem? value)
+    {
+        OnPropertyChanged(nameof(PageTitle));
+        OnPropertyChanged(nameof(PageCaption));
+    }
+
+    partial void OnIsRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PowerButtonText));
+        OnPropertyChanged(nameof(HomeHeadline));
+        OnPropertyChanged(nameof(HomeDetail));
+        OnPropertyChanged(nameof(FramePlaceholder));
+        TogglePauseCommand.NotifyCanExecuteChanged();
+        StopSessionCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsPausedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PauseButtonText));
+    }
+
+    partial void OnStatusDetailChanged(string value)
+    {
+        OnPropertyChanged(nameof(HomeDetail));
+    }
+
+    partial void OnCurrentGameChanged(GameEntry? value)
+    {
+        OnPropertyChanged(nameof(CurrentGameTitle));
+        OnPropertyChanged(nameof(CurrentGameFormat));
+        OnPropertyChanged(nameof(CurrentGameSize));
+        OnPropertyChanged(nameof(HomeHeadline));
+        OnPropertyChanged(nameof(HomeDetail));
+    }
+
+    private void OnSessionLog(object? sender, string message)
+    {
+        Dispatcher.UIThread.Post(() => AddLog(LogLevel.Info, message));
+    }
+
+    private void OnFrameReady(object? sender, FramePacket packet)
+    {
+        lock (_frameLock)
+        {
+            _pendingFrame = packet;
+        }
+    }
+
+    private void OnSessionStopped(object? sender, SessionStoppedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() => HandleSessionStopped(e));
+    }
+
+    private void HandleSessionStopped(SessionStoppedEventArgs e)
+    {
+        IsRunning = false;
+        IsPaused = false;
+        StatusText = e.Faulted ? "Faulted" : "Stopped";
+        StatusDetail = e.Message;
+        Mips = 0;
+        Fps = 0;
+        if (e.Faulted)
+        {
+            AddLog(LogLevel.Error, "Emulation stopped: " + e.Message);
+            ShowToast("Emulation stopped: " + e.Message);
+        }
+        else
+        {
+            AddLog(LogLevel.Info, $"Emulation stopped after {e.Steps:N0} steps.");
+        }
+    }
+
+    private void OnUiTick(object? sender, EventArgs e)
+    {
+        FramePacket? frame;
+        lock (_frameLock)
+        {
+            frame = _pendingFrame;
+            _pendingFrame = null;
+        }
+
+        if (frame is not null)
+        {
+            PresentFrame(frame);
+        }
+
+        if (!_session.IsRunning)
+        {
+            if (IsRunning)
+            {
+                IsRunning = false;
+            }
+
+            return;
+        }
+
+        long steps = _session.Steps;
+        long frames = _session.Frames;
+        long now = Stopwatch.GetTimestamp();
+        if (_lastSampleTicks == 0)
+        {
+            _lastSampleTicks = now;
+            _lastSampleSteps = steps;
+            _lastSampleFrames = frames;
+        }
+        else
+        {
+            double seconds = (now - _lastSampleTicks) / (double)Stopwatch.Frequency;
+            if (seconds >= 0.25)
+            {
+                double instantMips = (steps - _lastSampleSteps) / seconds / 1_000_000.0;
+                double instantFps = (frames - _lastSampleFrames) / seconds;
+                Mips = Mips <= 0 ? instantMips : (Mips * 0.65) + (instantMips * 0.35);
+                Fps = Fps <= 0 ? instantFps : (Fps * 0.65) + (instantFps * 0.35);
+                _lastSampleTicks = now;
+                _lastSampleSteps = steps;
+                _lastSampleFrames = frames;
+            }
+        }
+
+        Steps = (ulong)Math.Max(0, steps);
+        Frames = (ulong)Math.Max(0, frames);
+        Eip = string.Format(CultureInfo.InvariantCulture, "0x{0:X8}", _session.Eip);
+        if (IsPaused != _session.IsPaused)
+        {
+            IsPaused = _session.IsPaused;
+        }
+    }
+
+    private void PresentFrame(FramePacket packet)
+    {
+        int width = (int)packet.Width;
+        int height = (int)packet.Height;
+        int rowBytes = width * 4;
+        bool hasVisibleColor = false;
+        for (int index = 0; index < packet.Bgra.Length; index += 4)
+        {
+            packet.Bgra[index + 3] = 255;
+            if ((packet.Bgra[index] | packet.Bgra[index + 1] | packet.Bgra[index + 2]) != 0)
+            {
+                hasVisibleColor = true;
+            }
+        }
+
+        if (FrameBitmap is null
+            || FrameBitmap.PixelSize.Width != width
+            || FrameBitmap.PixelSize.Height != height)
+        {
+            FrameBitmap = new WriteableBitmap(
+                new PixelSize(width, height),
+                new Vector(96, 96),
+                PixelFormat.Bgra8888,
+                AlphaFormat.Opaque);
+        }
+
+        using (ILockedFramebuffer buffer = FrameBitmap.Lock())
+        {
+            if (buffer.RowBytes == rowBytes)
+            {
+                Marshal.Copy(packet.Bgra, 0, buffer.Address, rowBytes * height);
+            }
+            else
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    Marshal.Copy(packet.Bgra, y * rowBytes, IntPtr.Add(buffer.Address, y * buffer.RowBytes), rowBytes);
+                }
+            }
+        }
+
+        if (!HasFrame)
+        {
+            HasFrame = true;
+            OnPropertyChanged(nameof(FramePlaceholder));
+        }
+
+        if (hasVisibleColor && string.Equals(StatusText, "Booting", StringComparison.Ordinal))
+        {
+            StatusText = "Running";
+        }
+    }
+
+    private void RememberGame(string path)
+    {
+        Config.RecentGames.RemoveAll(existing => string.Equals(existing, path, StringComparison.OrdinalIgnoreCase));
+        Config.RecentGames.Insert(0, path);
+        while (Config.RecentGames.Count > 8)
+        {
+            Config.RecentGames.RemoveAt(Config.RecentGames.Count - 1);
+        }
+
+        try
+        {
+            _settingsStore.Save(Config);
+        }
+        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Warning, "Could not save recent games: " + exception.Message);
+        }
+
+        RefreshRecentGames();
+    }
+
+    private void RefreshRecentGames()
+    {
+        RecentGames.Clear();
+        foreach (string path in Config.RecentGames)
+        {
+            GameEntry? entry = GameEntry.FromFile(path);
+            if (entry is not null)
+            {
+                RecentGames.Add(entry);
+            }
+        }
+    }
+
+    private void NotifyConfigChanged()
+    {
+        OnPropertyChanged(nameof(IsBiosReady));
+        OnPropertyChanged(nameof(NeedsSetup));
+        OnPropertyChanged(nameof(SettingsPath));
+        OnPropertyChanged(nameof(HomeHeadline));
+        OnPropertyChanged(nameof(HomeDetail));
+        OnPropertyChanged(nameof(FramePlaceholder));
+    }
+
+    private void OnToastTick(object? sender, EventArgs e)
+    {
+        _toastTimer.Stop();
+        IsToastVisible = false;
+    }
+
+    private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        Shutdown();
+    }
+}

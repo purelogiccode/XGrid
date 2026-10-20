@@ -1,0 +1,444 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+             xmlns:local="using:XGrid.Frontend.Avalonia"
+             x:Class="XGrid.Frontend.Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <ScrollViewer Name="PageScroll">
+    <StackPanel Spacing="16" MaxWidth="1040" HorizontalAlignment="Stretch">
+      <!-- ===================== Save bar ===================== -->
+      <Border Classes="card tight" Padding="16">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="3" VerticalAlignment="Center">
+            <TextBlock Text="Configuration" Classes="label" />
+            <TextBlock Text="{Binding SettingsFolder}" Classes="mono" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button Classes="ghost" Command="{Binding OpenSettingsFolderCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                <TextBlock Text="Open folder" />
+              </StackPanel>
+            </Button>
+            <Button Classes="primary" Command="{Binding SaveCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Save}"
+                          Width="13"
+                          Height="13"
+                          Foreground="{DynamicResource XgAccentTextBrush}" />
+                <TextBlock Text="Save settings"
+                           Foreground="{DynamicResource XgAccentTextBrush}"
+                           FontWeight="SemiBold" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- ===================== Firmware ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Firmware" Classes="h3" />
+            <TextBlock Text="XGrid ships no Microsoft firmware. Provide your own legally obtained images."
+                       Classes="hint" />
+          </StackPanel>
+          <Border Classes="divider" />
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="BIOS image" Classes="label" />
+              <TextBlock Text="Required. The retail MCPX BIOS (256 KB or 512 KB)." Classes="hint" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Classes="path"
+                       Text="{Binding BiosPath, Mode=TwoWay}"
+                       Watermark="Path to the BIOS image" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
+              <Button Grid.Column="2"
+                      Classes="subtle icon"
+                      Command="{Binding ClearFieldCommand}"
+                      CommandParameter="bios"
+                      ToolTip.Tip="Clear">
+                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+              </Button>
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource XgErrorBrush}"
+                       IsVisible="{Binding ShowBiosWarning}" />
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource XgAccentBrush}"
+                       IsVisible="{Binding BiosPathValid}" />
+              <TextBlock Text="{Binding BiosStatusText}" Classes="hint" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="MCPX boot ROM" Classes="label" />
+              <TextBlock Text="Optional 512-byte MCPX ROM (mcpx_1.0.bin)." Classes="hint" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Classes="path"
+                       Text="{Binding McpxRomPath, Mode=TwoWay}"
+                       Watermark="Optional" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
+              <Button Grid.Column="2"
+                      Classes="subtle icon"
+                      Command="{Binding ClearFieldCommand}"
+                      CommandParameter="mcpx"
+                      ToolTip.Tip="Clear">
+                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+              </Button>
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="EEPROM image" Classes="label" />
+              <TextBlock Text="Optional 256-byte EEPROM dump. Uses a blank image when omitted." Classes="hint" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Classes="path"
+                       Text="{Binding EepromPath, Mode=TwoWay}"
+                       Watermark="Optional" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
+              <Button Grid.Column="2"
+                      Classes="subtle icon"
+                      Command="{Binding ClearFieldCommand}"
+                      CommandParameter="eeprom"
+                      ToolTip.Tip="Clear">
+                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+              </Button>
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Storage ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Storage" Classes="h3" />
+            <TextBlock Text="Discs and hard-disk images are mounted read-only or through a copy-on-write overlay."
+                       Classes="hint" />
+          </StackPanel>
+          <Border Classes="divider" />
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Hard-disk image" Classes="label" />
+              <TextBlock Text="Optional Xbox HDD image (raw or qcow2). Boots the dashboard when no disc is inserted."
+                       Classes="hint" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Classes="path"
+                       Text="{Binding HddPath, Mode=TwoWay}"
+                       Watermark="Optional" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
+              <Button Grid.Column="2"
+                      Classes="subtle icon"
+                      Command="{Binding ClearFieldCommand}"
+                      CommandParameter="hdd"
+                      ToolTip.Tip="Clear">
+                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+              </Button>
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="7">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Default disc image" Classes="label" />
+              <TextBlock Text="Inserted automatically when the console powers on without a selected game (ISO or CHD)."
+                         Classes="hint" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Classes="path"
+                       Text="{Binding DvdPath, Mode=TwoWay}"
+                       Watermark="Optional" />
+              <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
+              <Button Grid.Column="2"
+                      Classes="subtle icon"
+                      Command="{Binding ClearFieldCommand}"
+                      CommandParameter="dvd"
+                      ToolTip.Tip="Clear">
+                <PathIcon Data="{x:Static local:AppIcons.Close}" Width="13" Height="13" />
+              </Button>
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Emulation ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Emulation" Classes="h3" />
+            <TextBlock Text="The fast-mode JIT is optimised for play; the accurate interpreter reproduces every guest boundary."
+                       Classes="hint" />
+          </StackPanel>
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Guest memory" Classes="label" />
+              <TextBlock Text="64 MB is the retail configuration; 128 MB matches debug-kit hardware." Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="180"
+                      ItemsSource="{Binding RamOptions}"
+                      SelectedItem="{Binding RamMb, Mode=TwoWay}"
+                      VerticalAlignment="Center" />
+          </Grid>
+
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Fast mode (block JIT)" Classes="label" />
+              <TextBlock Text="Whole-block native execution. Recommended for interactive use."
+                         Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding FastMode, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <StackPanel Spacing="14" IsEnabled="{Binding FastMode}">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Raw x86-64 emitter" Classes="label" />
+                <TextBlock Text="Emits one native function per hot block. Fastest path, opt-in at the CLI."
+                           Classes="hint" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1"
+                            IsChecked="{Binding RawBlocks, Mode=TwoWay}"
+                            OnContent=""
+                            OffContent=""
+                            VerticalAlignment="Center" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Idle-spin fast-forward" Classes="label" />
+                <TextBlock Text="Skips kernel idle-wait loops until the next interrupt is pending."
+                           Classes="hint" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1"
+                            IsChecked="{Binding SpinSkip, Mode=TwoWay}"
+                            OnContent=""
+                            OffContent=""
+                            VerticalAlignment="Center" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Decode cache" Classes="label" />
+                <TextBlock Text="Caches decoded guest instructions. On by default in every mode."
+                           Classes="hint" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1"
+                            IsChecked="{Binding DecodeCache, Mode=TwoWay}"
+                            OnContent=""
+                            OffContent=""
+                            VerticalAlignment="Center" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="JIT build threshold" Classes="label" />
+                <TextBlock Text="Visits before a block is compiled. Lower reaches native code sooner."
+                           Classes="hint" />
+              </StackPanel>
+              <NumericUpDown Grid.Column="1"
+                             Width="130"
+                             Minimum="1"
+                             Maximum="4096"
+                             Increment="1"
+                             FormatString="0"
+                             Value="{Binding JitThreshold, Mode=TwoWay}"
+                             VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="007 end-of-stream quirk" Classes="label" />
+              <TextBlock Text="Title-specific compatibility fix (TitleId 0x4541000D). Leave enabled."
+                         Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding EosQuirk, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <Button Classes="ghost"
+                  Command="{Binding ResetPerformanceCommand}"
+                  HorizontalAlignment="Left"
+                  Content="Restore recommended performance options" />
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Network ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Network" Classes="h3" />
+            <TextBlock Text="The emulated NVNET adapter. Socket mode relays guest UDP through host sockets."
+                       Classes="hint" />
+          </StackPanel>
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Backend" Classes="label" />
+              <TextBlock Text="Loopback keeps everything inside the emulator." Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding NetworkOptions}"
+                      SelectedItem="{Binding SelectedNetwork, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:NetworkOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Link state" Classes="label" />
+              <TextBlock Text="Advertise the virtual Ethernet link as connected." Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding NetworkLinkUp, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Library ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3">
+              <TextBlock Text="Game library" Classes="h3" />
+              <TextBlock Text="Folders scanned recursively for ISO, CHD, and XBE files." Classes="hint" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost" Command="{Binding AddLibraryFolderCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                <TextBlock Text="Add folder" />
+              </StackPanel>
+            </Button>
+          </Grid>
+          <Border Classes="divider" />
+
+          <ItemsControl ItemsSource="{Binding LibraryFolders}" IsVisible="{Binding HasLibraryFolders}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:LibraryFolderItem">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,6">
+                  <PathIcon Data="{x:Static local:AppIcons.Folder}"
+                            Width="14"
+                            Height="14"
+                            VerticalAlignment="Center"
+                            Foreground="{DynamicResource XgTextMutedBrush}" />
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding Path}"
+                             Classes="mono"
+                             FontSize="11.5"
+                             TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center" />
+                  <Button Grid.Column="2"
+                          Classes="subtle icon"
+                          Width="32"
+                          Height="32"
+                          Command="{Binding RemoveCommand}"
+                          ToolTip.Tip="Remove folder">
+                    <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                  </Button>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <TextBlock IsVisible="{Binding !HasLibraryFolders}"
+                     Text="No folders yet. Add one to populate the library page."
+                     Classes="hint" />
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Appearance ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="16">
+          <StackPanel Spacing="3">
+            <TextBlock Text="Appearance" Classes="h3" />
+            <TextBlock Text="XGrid uses a dark theme on every platform. Pick an accent for highlights and controls."
+                       Classes="hint" />
+          </StackPanel>
+          <Border Classes="divider" />
+
+          <ListBox Classes="swatches"
+                   ItemsSource="{Binding AccentOptions}"
+                   SelectedItem="{Binding SelectedAccent, Mode=TwoWay}">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate DataType="vm:AccentOption">
+                <StackPanel Spacing="6" Width="72">
+                  <Border Width="46"
+                          Height="46"
+                          CornerRadius="13"
+                          HorizontalAlignment="Center"
+                          Background="{Binding Brush}">
+                    <PathIcon Data="{x:Static local:AppIcons.Check}"
+                              Width="18"
+                              Height="18"
+                              Foreground="#06200F"
+                              IsVisible="{Binding IsSelected}" />
+                  </Border>
+                  <TextBlock Text="{Binding Label}"
+                             Classes="caption"
+                             FontSize="10"
+                             HorizontalAlignment="Center" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Footer ===================== -->
+      <Grid ColumnDefinitions="*,Auto" Margin="2,4,2,8">
+        <TextBlock Text="Changes take effect on the next power-on."
+                   Classes="hint"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="primary" Command="{Binding SaveCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <PathIcon Data="{x:Static local:AppIcons.Save}"
+                      Width="13"
+                      Height="13"
+                      Foreground="{DynamicResource XgAccentTextBrush}" />
+            <TextBlock Text="Save settings"
+                       Foreground="{DynamicResource XgAccentTextBrush}"
+                       FontWeight="SemiBold" />
+          </StackPanel>
+        </Button>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
