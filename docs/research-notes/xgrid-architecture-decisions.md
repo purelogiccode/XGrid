@@ -11562,3 +11562,25 @@ below resolution, because the titles' cube stages never reach the face math
 on any cube-mapped content, and the plan already carries the fields.
 
 Suite **1519** (8 new differentials: 5 fast-vs-generic sampler shapes, the compiled modulate fill and both compiled lighting kinds, each asserting the specialized path engaged and comparing the framebuffer + every sampler/combiner counter), ktest smoke PASS 7/7.
+
+**Accurate-mode (gate-currency) differential.** The rasterizer is shared, so the
+same 1B legs were run with the JIT off (accurate mode) on the session-start build
+and this one: **RAM and CPU SHAs byte-identical** (menu `D9C99A58…` /
+`3D2740B8…`, triangle `F57934BF…` / `98039867…`), every NV2A counter identical
+(the accurate-mode menu counters `pixels=285171381 textured=278577344
+blended=211696978 clears=695 frames=686` match the §109-era recorded baseline
+exactly). `rasterPsh` in accurate mode: triangle **6.90 -> 3.63 s (-47%)**;
+menu wall 87.3 -> 75.6 s (-13.4%). The accurate-mode *triangle* wall barely
+moves (48.1 -> 48.0 s over two interleaved pairs) because the interpreter is
+~90% of that wall - the raster win is a fast-mode lever, not an accurate-mode
+one.
+
+**Deferred with an estimate: C3-z inline page pair.** The charter's scoped CPU
+experiment (a per-block one-entry VPN->phys cache in a raw frame slot plus a
+TLB epoch) was priced by inspection against the raw probe: a hit would save
+about 10 of the probe's ~18 instructions, but the cache test itself costs a
+load+compare pair, and the raw member mix is only ~50% memory members, so the
+expected `outerMs` win is ~2-3% - at or below the experiment's own 2% keep bar,
+with a correctness surface (stale page after a remap) that the epoch must cover.
+Not attempted; the next session can run it with the acceptance criteria already
+written in `next-session.md`.
