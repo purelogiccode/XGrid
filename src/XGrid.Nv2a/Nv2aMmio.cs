@@ -427,7 +427,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private readonly Dictionary<int, long> _diagRejects = new();
 
-    private readonly float[] _lightTexels = new float[9 * 4];
+    private readonly float[] _lightTexels = new float[9];
 
     private long _diagCompiledFills;
     private long _diagCompiledPixels;

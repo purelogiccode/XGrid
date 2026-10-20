@@ -11546,6 +11546,8 @@ menu 53.78 -> 42.01 s (-21.9%)** (medians; the shared host slowed ~15% between
 the session start and these pairs, so the session's own quiet-host anchors read
 47.96 -> ~39-40 s for the menu, 12.21 -> ~9.4-9.8 s for the triangle).
 
+A later quiet-host pass (single runs, same anchors) read **menu 47.96 -> 36.01 s
+wall / 13.34 s raster** and **triangle 12.21 -> 9.13 s wall / 3.30 s raster**.
 Compiled shares at 1B: menu `compiled=456164/308242392/13.8s` (245.8M modulate +
 62.4M lighting), triangle `compiled=53574/62444852/3.2s`. Remaining raster:
 ~0.45 s legacy on both titles plus the k1/k2/k3 compiled loops themselves

@@ -594,9 +594,10 @@ counter byte-identical:
    (same barycentric/interpolation/sampler/combiner/blend expressions) with the
    generic loop as the untouched fallback.
 
-1B `rasterPsh`: menu **24.0 -> 13.9-15.1 s (-44%)**, triangle **6.19 -> 3.31-3.45 s
+1B `rasterPsh`: menu **24.0 -> 13.3-15.1 s (-44%)**, triangle **6.19 -> 3.30-3.45 s
 (-45%)**. Interleaved wall medians vs the session-start commit (3/3 pairs):
-**triangle 12.44 -> 9.51 s (-23.5%), menu 53.78 -> 42.01 s (-21.9%)**. Suite
+**triangle 12.44 -> 9.51 s (-23.5%), menu 53.78 -> 42.01 s (-21.9%)**; on a
+quiet host the absolutes read **triangle 12.21 -> 9.13 s, menu 47.96 -> 36.01 s**. Suite
 **1519** (8 new differentials: sampler shapes plus both compiled fills, fail-pre-fix proven),
 ktest smoke PASS 7/7, format clean. Remaining wall is CPU engine + boot again
 (charter redirect criterion: Track C leads next, starting with the scoped C3-z
