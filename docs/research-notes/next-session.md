@@ -1,4 +1,4 @@
-﻿# Next session instructions (updated 2026-10-20 after the Track B present-path session)
+# Next session instructions (updated 2026-10-20 after the Track B present-path session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
@@ -15,7 +15,7 @@ split, the eight slices, the two shared-path wins) + §203 (course correction),
 git log --oneline -1        # expect: the §204 Track B present-path commit
 git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1530 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1532 green
 ```
 
 Expected 1B fast-mode anchors (if these differ, the environment moved - record it,
@@ -35,7 +35,7 @@ maxDelta 1 / 0 violations). Note the gl legs' **RAM** SHA differs by design (the
 software twin does not write the surfaces); CPU SHA and every counter must match
 the sw leg.
 
-- **1530 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1532 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, byte-identical to the accepted run), smoke 7/7 rows
   green. The xemu leg still cannot bind its monitor socket on this host.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.

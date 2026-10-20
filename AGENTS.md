@@ -579,10 +579,11 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   (menu sw -6.2%). Same-window medians vs `4f0bd47`: menu `gl+replace`
   63.09 → 45.25 s (-20.5%, 3/3, `drawMs` 12.55 → 2.41 s, readback → 0), triangle
   10.26 → 9.89 s (-0.9%, 3/3). 1B goldens pass (menu gl `6BE6325F…`, triangle gl
-  `3FC4B419…`, sw anchors unchanged, `BackendUnsupported=0`); quiet-host
-  projections are menu ~24.7 s (M-A boundary) and triangle ~6.4 s (CPU-bound).
+  `3FC4B419…`, sw anchors unchanged, `BackendUnsupported=0`); the automated
+  acceptance run projects menu **24.8 s** (0.8 over the 24 s target) and triangle
+  **6.1 s** (0.1 over) on a loaded host, so M-A is not fully closed.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1530 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1532 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
@@ -628,7 +629,7 @@ byte-identical on every gate.
   6.1 s** (target 6, over by 0.1) — the slice removes the ~7 s of GL overhead
   but does not fully close M-A. Closing the menu needs per-triangle batching;
   the triangle is CPU-bound.
-- **Gates:** 1530 tests green, format clean, 1B menu golden sw `4EF1FBF6…` vs gl
+- **Gates:** 1532 tests green, format clean, 1B menu golden sw `4EF1FBF6…` vs gl
   `6BE6325F…` (diff 1852 px, maxDelta 1, 0 violations), 1B triangle golden sw
   `A1740DE0…` vs gl `3FC4B419…` (diff 16744, maxDelta 1, 0 violations),
   `BackendUnsupported=0`, counters identical, **ktest smoke 7/7 rows green**
