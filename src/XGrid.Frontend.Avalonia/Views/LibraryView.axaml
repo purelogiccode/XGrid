@@ -1,0 +1,147 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+             xmlns:local="using:XGrid.Frontend.Avalonia"
+             x:Class="XGrid.Frontend.Avalonia.Views.LibraryView"
+             x:DataType="vm:LibraryViewModel">
+  <Grid RowDefinitions="Auto,*">
+    <!-- ===================== Toolbar ===================== -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBox Width="300"
+                 Watermark="Search games…"
+                 Text="{Binding SearchText, Mode=TwoWay}"
+                 VerticalAlignment="Center" />
+        <Button Classes="primary" Command="{Binding AddFolderCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
+            <TextBlock Text="Add folder" />
+          </StackPanel>
+        </Button>
+        <Button Classes="ghost" Command="{Binding RescanCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Data="{x:Static local:AppIcons.Refresh}" Width="14" Height="14" />
+            <TextBlock Text="Rescan" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <ProgressBar Width="120"
+                     Height="3"
+                     IsIndeterminate="True"
+                     IsVisible="{Binding IsScanning}"
+                     VerticalAlignment="Center" />
+        <TextBlock Text="{Binding StatusText}"
+                   Classes="caption"
+                   MaxWidth="420"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+    </Grid>
+
+    <!-- ===================== Empty state ===================== -->
+    <Border Grid.Row="1" Classes="card" IsVisible="{Binding ShowEmptyState}">
+      <StackPanel HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="14"
+                  MaxWidth="440">
+        <Grid Width="72" Height="72">
+          <Ellipse Stroke="{DynamicResource XgBorderStrongBrush}" StrokeThickness="1.5" />
+          <PathIcon Data="{x:Static local:AppIcons.Library}"
+                    Width="28"
+                    Height="28"
+                    Foreground="{DynamicResource XgAccentBrush}" />
+        </Grid>
+        <TextBlock Text="{Binding EmptyTitle}" Classes="h2" HorizontalAlignment="Center" />
+        <TextBlock Classes="body"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   Text="{Binding EmptyDetail}" />
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+          <Button Classes="primary" Command="{Binding AddFolderCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="14" Height="14" />
+              <TextBlock Text="Add a folder" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ghost" Command="{Binding RescanCommand}" Content="Rescan" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- ===================== Game rows ===================== -->
+    <ListBox Grid.Row="1"
+             Classes="rows"
+             ItemsSource="{Binding Games}"
+             IsVisible="{Binding !ShowEmptyState}"
+             SelectionMode="Single">
+      <ListBox.ItemTemplate>
+        <DataTemplate DataType="vm:GameListItem">
+          <Border Classes="card tight" Padding="14">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+              <Border Width="48"
+                      Height="48"
+                      CornerRadius="11"
+                      Background="{DynamicResource XgAccentSoftBrush}"
+                      VerticalAlignment="Center">
+                <PathIcon Data="{x:Static local:AppIcons.Disc}"
+                          Width="23"
+                          Height="23"
+                          Foreground="{DynamicResource XgAccentBrush}" />
+              </Border>
+
+              <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Folder}"
+                           Classes="caption"
+                           FontSize="10.5"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+
+              <StackPanel Grid.Column="2"
+                          Orientation="Horizontal"
+                          Spacing="10"
+                          VerticalAlignment="Center">
+                <Border Classes="pill" Padding="8,3" IsVisible="{Binding IsLaunchable}">
+                  <TextBlock Text="{Binding FormatText}"
+                             FontSize="10"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource XgAccentBrush}" />
+                </Border>
+                <Border Background="{DynamicResource XgSurfaceAltBrush}"
+                        CornerRadius="999"
+                        Padding="8,3"
+                        IsVisible="{Binding IsExecutable}">
+                  <TextBlock Text="XBE"
+                             FontSize="10"
+                             FontWeight="SemiBold"
+                             Classes="muted" />
+                </Border>
+                <TextBlock Text="{Binding SizeText}"
+                           Classes="muted"
+                           FontSize="12"
+                           Width="78"
+                           TextAlignment="Right"
+                           VerticalAlignment="Center" />
+                <Button Classes="primary"
+                        Command="{Binding LaunchCommand}"
+                        IsEnabled="{Binding IsLaunchable}"
+                        ToolTip.Tip="Loose XBE files need an ISO or CHD wrapper to boot."
+                        ToolTip.ShowOnDisabled="True">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <PathIcon Data="{x:Static local:AppIcons.Play}" Width="12" Height="12" />
+                    <TextBlock Text="Play" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Grid>
+</UserControl>

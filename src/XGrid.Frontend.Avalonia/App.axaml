@@ -1,0 +1,30 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:XGrid.Frontend.Avalonia.ViewModels"
+             xmlns:views="using:XGrid.Frontend.Avalonia.Views"
+             x:Class="XGrid.Frontend.Avalonia.App"
+             Name="XGrid"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://XGrid.Frontend.Avalonia/Styles/Theme.axaml" />
+  </Application.Styles>
+
+  <Application.DataTemplates>
+    <DataTemplate DataType="vm:HomeViewModel">
+      <views:HomeView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:LibraryViewModel">
+      <views:LibraryView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel">
+      <views:SettingsView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:LogsViewModel">
+      <views:LogsView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:AboutViewModel">
+      <views:AboutView />
+    </DataTemplate>
+  </Application.DataTemplates>
+</Application>
