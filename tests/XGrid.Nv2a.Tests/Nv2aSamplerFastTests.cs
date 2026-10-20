@@ -16,7 +16,7 @@ public sealed class Nv2aSamplerFastTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private class ArrayMemory : IGpuMemory
     {
         private readonly byte[] _data;
 
@@ -24,6 +24,8 @@ public sealed class Nv2aSamplerFastTests
         {
             _data = new byte[size];
         }
+
+        public byte[] Bytes => _data;
 
         public void WritePhysical(uint address, uint value)
         {
@@ -40,9 +42,75 @@ public sealed class Nv2aSamplerFastTests
         }
     }
 
-    private static (Nv2AMmio Nv2a, ArrayMemory Memory) CreateChannel()
+    /// <summary>
+    /// The O2/O7 fast-lane shape the production <c>PhysicalGpuMemory</c> adapter
+    /// exposes (direct RAM words inside a draw batch plus the RAM array view the
+    /// compiled fills index). Counts the calls each lane takes so a test can
+    /// prove which lane served the pixels.
+    /// </summary>
+    private sealed class FastArrayMemory : ArrayMemory, IGpuMemoryFast
     {
-        var memory = new ArrayMemory();
+        private bool _batch;
+
+        public long FastReads { get; private set; }
+
+        public long FastWrites { get; private set; }
+
+        public long Batches { get; private set; }
+
+        public bool RamViewAvailable { get; set; } = true;
+
+        public void BeginGpuBatch()
+        {
+            _batch = true;
+            Batches++;
+        }
+
+        public void EndGpuBatch() => _batch = false;
+
+        public bool TryReadPhysical(uint address, out uint value)
+        {
+            if (address < (uint)Bytes.Length && address <= (uint)Bytes.Length - 4u)
+            {
+                value = ReadPhysical(address);
+                FastReads++;
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        public bool TryWritePhysical(uint address, uint value)
+        {
+            if (!_batch || address > (uint)Bytes.Length - 4u)
+            {
+                return false;
+            }
+
+            WritePhysical(address, value);
+            FastWrites++;
+            return true;
+        }
+
+        public bool TryGetRamBytes(out byte[] bytes, out uint size)
+        {
+            if (!RamViewAvailable)
+            {
+                bytes = Array.Empty<byte>();
+                size = 0;
+                return false;
+            }
+
+            bytes = Bytes;
+            size = (uint)Bytes.Length;
+            return true;
+        }
+    }
+
+    private static (Nv2AMmio Nv2a, ArrayMemory Memory) CreateChannel(ArrayMemory? memory = null)
+    {
+        memory ??= new ArrayMemory();
         var nv2A = new Nv2AMmio(64u * 1024 * 1024, "NV2A", memory);
         nv2A.Write(Base + 0x2504u, 4, 1u);
         nv2A.Write(Base + 0x3200u, 4, 1u);
@@ -276,9 +344,9 @@ public sealed class Nv2aSamplerFastTests
     /// SrcAlpha/InvSrcAlpha/Add blend, opaque mask, no zeta traffic) - the
     /// compiled fill's shape - with the generic loop available as a reference.
     /// </summary>
-    private static FillResult RenderModulateFill(bool generic)
+    private static FillResult RenderModulateFill(bool generic, ArrayMemory? backing = null)
     {
-        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel(backing);
         nv2A.DiagnosticGenericFill = generic;
         WriteTriangle(memory);
         WriteUvs(memory, 0.5f, 0.5f);
@@ -345,6 +413,64 @@ public sealed class Nv2aSamplerFastTests
             string.Join(";", nv2A.TextureStateStats),
             nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// The compiled fill's direct-RAM lanes (texel read, blend destination read)
+    /// must produce exactly what the adapter lane produces: same framebuffer,
+    /// same counters, same sampler state. The fast memory proves the lane
+    /// engaged (<see cref="FastArrayMemory.FastReads"/> stays at zero when the
+    /// RAM view is withheld, which is the adapter fallback).
+    /// </summary>
+    [Fact]
+    public void CompiledModulateFill_DirectRamLane_MatchesAdapterLane()
+    {
+        var direct = new FastArrayMemory();
+        FillResult fast = RenderModulateFill(generic: false, direct);
+        FillResult adapter = RenderModulateFill(generic: false);
+
+        Assert.True(fast.Compiled, "the compiled modulate fill must engage");
+        Assert.True(direct.FastReads > 0, "the direct RAM texel lane must serve reads");
+        Assert.True(fast.Drawn > 0, "the draw must write pixels");
+        Assert.True(fast.Frame.AsSpan().SequenceEqual(adapter.Frame), "framebuffer differs");
+        Assert.Equal(adapter.Drawn, fast.Drawn);
+        Assert.Equal(adapter.Blended, fast.Blended);
+        Assert.Equal(adapter.Textured, fast.Textured);
+        Assert.Equal(adapter.Samples, fast.Samples);
+        Assert.Equal(adapter.RgbZero, fast.RgbZero);
+        Assert.Equal(adapter.CombinerRgbZero, fast.CombinerRgbZero);
+        Assert.True(string.Equals(adapter.Formats, fast.Formats, StringComparison.Ordinal),
+            $"formats differ: adapter={adapter.Formats} direct={fast.Formats}");
+        Assert.True(string.Equals(adapter.State, fast.State, StringComparison.Ordinal),
+            $"state differs:\n  adapter={adapter.State}\n  direct={fast.State}");
+    }
+
+    /// <summary>
+    /// Withholding the RAM view must fall back to the adapter lane and still
+    /// produce the reference result (the compiled fill has to work on any
+    /// IGpuMemory, including test fakes that never expose RAM).
+    /// </summary>
+    [Fact]
+    public void CompiledModulateFill_NoRamView_FallsBackToAdapter()
+    {
+        var noView = new FastArrayMemory { RamViewAvailable = false };
+        FillResult fast = RenderModulateFill(generic: false, noView);
+        FillResult reference = RenderModulateFill(generic: true);
+
+        Assert.True(fast.Compiled, "the compiled modulate fill must engage");
+
+        // Without the RAM view the loop keeps the per-sample TryReadPhysical
+        // lane (which increments FastReads) instead of the direct array read.
+        Assert.True(noView.FastReads > 0, "the adapter word lane must serve the texels");
+        Assert.True(noView.FastWrites > 0, "the batched write lane must still serve stores");
+        Assert.True(fast.Frame.AsSpan().SequenceEqual(reference.Frame), "framebuffer differs");
+        Assert.Equal(reference.Drawn, fast.Drawn);
+        Assert.Equal(reference.Blended, fast.Blended);
+        Assert.Equal(reference.Textured, fast.Textured);
+        Assert.Equal(reference.Samples, fast.Samples);
+        Assert.True(string.Equals(reference.State, fast.State, StringComparison.Ordinal),
+            $"state differs:\n  reference={reference.State}\n  fallback={fast.State}");
+    }
+
 
     [Fact]
     public void CompiledModulateFill_MatchesGenericLoop()
