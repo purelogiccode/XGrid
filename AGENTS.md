@@ -562,7 +562,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1516 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1519 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
@@ -597,7 +597,7 @@ counter byte-identical:
 1B `rasterPsh`: menu **24.0 -> 13.9-15.1 s (-44%)**, triangle **6.19 -> 3.31-3.45 s
 (-45%)**. Interleaved wall medians vs the session-start commit (3/3 pairs):
 **triangle 12.44 -> 9.51 s (-23.5%), menu 53.78 -> 42.01 s (-21.9%)**. Suite
-**1516** (5 new fast-vs-generic sampler differentials, fail-pre-fix proven),
+**1519** (8 new differentials: sampler shapes plus both compiled fills, fail-pre-fix proven),
 ktest smoke PASS 7/7, format clean. Remaining wall is CPU engine + boot again
 (charter redirect criterion: Track C leads next, starting with the scoped C3-z
 inline page pair).

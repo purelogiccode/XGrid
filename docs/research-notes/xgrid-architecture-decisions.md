@@ -11559,4 +11559,4 @@ below resolution, because the titles' cube stages never reach the face math
 (unconfigured extents). Kept in the plan anyway: it is exact, removes real work
 on any cube-mapped content, and the plan already carries the fields.
 
-Suite 1516 (5 new sampler differentials), ktest smoke PASS 7/7.
+Suite **1519** (8 new differentials: 5 fast-vs-generic sampler shapes, the compiled modulate fill and both compiled lighting kinds, each asserting the specialized path engaged and comparing the framebuffer + every sampler/combiner counter), ktest smoke PASS 7/7.
