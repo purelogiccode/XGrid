@@ -11241,5 +11241,21 @@ immediate and CL, SSE scalar cluster, shift helper-free pins); full solution
 1510/1510 green; format clean; ktest smoke **PASS 7/7** (known deltas, 01:10
 wall). Title differentials: triangle RAM `F57934BF...` / CPU `CF79FC17...`,
 menu RAM `660CA11B...` / CPU `F5D61C94...` at 1B - the established anchors.
-Performance A/B against the pre-C3-x commit is recorded in the session note
-(`AGENTS.md`); measurements are host-noise-bound while a game runs.
+
+**Quiet-host A/B (same window, 3 interleaved pairs per leg, old = `dcd0f3f^`
+built from `git archive`, new = `dcd0f3f`; 1B, `--jit --jit-threshold 16
+--jit-spin --jit-raw`; SHAs and counters identical between old and new on
+every pair).**
+
+| leg (1B) | wall old | wall new | delta | outerMs old -> new | ns/served member |
+|---|---:|---:|---:|---:|---:|
+| triangle `--gpu sw` | 14.74 s | 13.14 s | **-10.8%** (3/3) | 5596 -> 4039 (-27.8%) | - |
+| menu `--gpu sw` | 52.20 s | 48.43 s | **-7.2%** (3/3) | 40908 -> 37154 (-9.2%) | - |
+| triangle `--gpu gl --gpu-replace` | 7.56 s | 6.49 s | **-14.1%** (3/3) | 5363 -> 4087 (-23.8%) | **11.9 -> 8.8** |
+| menu `--gpu gl --gpu-replace` | 34.29 s | 31.56 s | **-8.0%** (3/3) | 30416 -> 27213 (-10.5%) | **36.7 -> 31.6** |
+
+The wall gain is smaller than the outerMs gain because the software rasterizer
+dominates those walls (39-48%, §199n) and the `gl+replace` legs still include
+the dashboard's device work inside `RunJitBlock`; the pure per-member cost is
+now **8.8 ns (triangle) / 31.6 ns (dashboard)** on the GL legs, against the
+§199n 18.5 / 61 ns. That is the C3-x target hit (menu 61 -> ~30 ns).
