@@ -623,8 +623,11 @@ byte-identical on every gate.
 - **Evidence (same-window, 3 interleaved pairs vs `4f0bd47`, SHAs identical):**
   menu `gl+replace` **63.09 → 45.25 s median (-20.5%, 3/3)**, `drawMs` 12.55 →
   2.41 s, readback → 0; triangle `gl+replace` 10.26 → 9.89 s (-0.9%, 3/3).
-  Projections on §203's quiet references: **menu 24.7 s** (target 24 — at the
-  boundary), **triangle 6.43 s** (target 6 — CPU-bound, Track B cannot close it).
+  `scripts/present-path-acceptance.ps1` (new) automates the ceremony; its last
+  run projects **menu 24.8 s** (M-A target 24, over by 0.8) and **triangle
+  6.1 s** (target 6, over by 0.1) — the slice removes the ~7 s of GL overhead
+  but does not fully close M-A. Closing the menu needs per-triangle batching;
+  the triangle is CPU-bound.
 - **Gates:** 1530 tests green, format clean, 1B menu golden sw `4EF1FBF6…` vs gl
   `6BE6325F…` (diff 1852 px, maxDelta 1, 0 violations), 1B triangle golden sw
   `A1740DE0…` vs gl `3FC4B419…` (diff 16744, maxDelta 1, 0 violations),

@@ -68,14 +68,18 @@ the sw leg.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Menu `gl+replace` (quiet projection ~24.7 s)**: GL submission ~1.2-1.5 s
+**Menu `gl+replace` (quiet projection ~24.8 s)**: GL submission ~1.2-1.5 s
 (texture fingerprint ~0.5-0.9 s, two GL calls ~0.4 s, state compares), CPU
 engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s. The menu's
 2.76M triangles are the structural limit: 2 GL calls each = 5.5M calls.
 
-**Triangle `gl+replace` (~6.4 s)**: CPU-bound (`nonJitMs` 3.75 s of `outerMs`
-6.3 s); GL submission is ~0.3 s. Track B cannot close the 6 s target without
+**Triangle `gl+replace` (~6.1 s)**: CPU-bound (`nonJitMs` 3.75 s of `outerMs`
+6.3 s); GL submission is ~0.3-0.6 s. Track B cannot close the 6 s target without
 Track C (frozen) or draw batching.
+
+The automated acceptance run is `scripts/present-path-acceptance.ps1` (interleaved
+sw/gl pairs -> medians -> projection against the recorded quiet references). Run
+it on an idle host to settle M-A; the host was 1.6-2.0x slow all session.
 
 ## 2. Recommended next session - fixed order
 
@@ -195,6 +199,9 @@ dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... --frame-first ou
 
 # interleaved A/B with per-pair deltas (untracked scratch)
 pwsh -File wt-data\ab-leg.ps1 -Workload menu -Pairs 3 -GpuReplace -BaseCli <base>\XGrid.Cli.dll
+
+# M-A acceptance in one command: interleaved sw/gl pairs, medians, projection
+pwsh -File scripts\present-path-acceptance.ps1 -Pairs 3 -Workload both
 ```
 
 `wt-data/ab-leg.ps1`, `wt-data/run-leg.ps1` and the baseline tree are untracked

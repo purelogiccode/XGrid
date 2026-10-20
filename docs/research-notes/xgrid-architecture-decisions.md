@@ -11897,11 +11897,18 @@ session, SHAs identical on every pair).**
 | menu `gl+replace` readback | 1.50 s (686) | **0** | removed |
 | triangle `gl+replace` 1B wall | 10.26 s (med) | 9.89 s (med) | -0.9%, 3/3 |
 
-Loaded-host absolutes; projections on §203's quiet references (ratio method)
-are **menu 24.7 s** (target 24) and **triangle 6.43 s** (target 6). The menu
-target is at the boundary (the host-factor projection gives 22-25 s across
-windows); the triangle leg is CPU-bound (`nonJitMs` 3.75 s of `outerMs` 6.3 s)
-and cannot reach 6 s from Track B alone.
+The same ceremony is now one command: `scripts/present-path-acceptance.ps1`
+(interleaved sw/gl pairs, medians, `drawMs`/readback, projection against the
+recorded quiet references, SHA check). Last measured run on the loaded host:
+**menu gl/sw 0.7450 -> quiet projection 24.8 s (target 24, over by 0.8 s)**;
+**triangle gl/sw 0.6965 -> 6.1 s (target 6, over by 0.1 s)**. Loaded-host
+absolutes; the projections use the ratio method and are biased *optimistic* for
+the raster-heavy sw leg on a contended host, so read them as "at the target,
+not comfortably under it". **Status: the slice delivers the measured ~7 s of GL
+overhead but does not fully close M-A.** The menu needs per-triangle batching
+(2.76M triangles x 2 GL calls is ~0.4 s, and the texture-content fingerprint
+~0.7 s; even removing the fingerprint entirely leaves ~24.1 s), and the triangle
+is CPU-bound (`nonJitMs` 3.75 s of `outerMs` 6.3 s).
 
 **Gates (all green).** 1530 tests; `dotnet format --verify-no-changes` clean;
 1B menu golden sw `4EF1FBF6…` (anchor) vs gl `6BE6325F…` (diff 1852 px,

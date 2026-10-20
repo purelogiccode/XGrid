@@ -131,11 +131,13 @@ triangle `F57934BF…`/`9B5AFC2A…`. 1B walls are continuity anchors only.
 - **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
   `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
   by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
-  overhead (~7.9 s) is removed and the menu projects to ~24.7 s (boundary); the
-  triangle projects to ~6.4 s (CPU-bound, Track B cannot close it). The
-  remaining menu submission is per-triangle (2.76M draws); batching is the
-  structural next step. The in-app GL display is still deferred (the frontend
-  uses the software path, which never readbacks).
+  overhead (~7.9 s) is removed; the automated acceptance run
+  (`scripts/present-path-acceptance.ps1`) projects menu **24.8 s** (over by 0.8)
+  and triangle **6.1 s** (over by 0.1) on a loaded host. Closing the menu needs
+  per-triangle batching (2.76M triangles × 2 GL calls + the texture-content
+  fingerprint); the triangle is CPU-bound (Track C frozen). The in-app GL
+  display is still deferred (the frontend uses the software path, which never
+  readbacks).
 - **M-B (Track E, corpus):** ≥8 samples in `docs/compatibility.md`, at least
   two beyond the dashboard/triangle/ktest (one textured 3D with mipmaps, one
   audio/DVD-path sample), boot-to-first-frame harness green, every row
