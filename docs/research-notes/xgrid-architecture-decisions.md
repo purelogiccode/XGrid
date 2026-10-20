@@ -11715,3 +11715,38 @@ only the 133 ms, so it was not done.
 
 Suite **1519** green, `dotnet format --verify-no-changes` clean, ktest smoke **PASS
 7/7** (known deltas match).
+
+**§202 addendum - `--jit-mmio` was broken (pre-existing) and is now exact.** The
+opt-in device fast path (`--jit-mmio`, `RawBlockEmitter.EmitDeviceLoad` /
+`EmitStore`'s device labels) had been unusable: the 1B menu leg halted at
+**25,146,493 steps** (EIP `0x800151EF`, IF=0) with a different RAM image. Bisected by
+1B-leg SHA bisection to a single raw block (`head=8001A3DC`, 13 members) whose final
+`jne` (`cmp [0x80035C34],0` earlier in the block) took the wrong direction; the
+block's own emitted code is byte-identical in both configurations and the device path
+is **never executed** (`mmioMembers=0`), so the flag's only effect was code layout.
+Disabling the store device label alone cured it, which pointed at emitter bookkeeping
+rather than at the device code:
+
+- `EmitMaterializeFlags()` writes the **host** FLAGS into `F_EFLAGS` when the
+  emitter's compile-time `_flagsLive` is true, and `EmitReloadAfterHelper()` (the end
+  of every device block) sets `_flagsLive = true`.
+- The device block is emitted *before* the member's `slow` block, so that
+  compile-time `true` leaked into the `slow` code: `EmitSyncForHelper()` then
+  materialized the **probe's own comparison results** (the host FLAGS were already
+  clobbered by the probe) into `F_EFLAGS`, and the next flag consumer loaded them.
+- Fix: reset `_flagsLive = false` before `a.Label(ref slow)` in both `EmitLoad` and
+  `EmitStore` (compile-time state does not flow along the emitted control flow), and
+  give the device paths `EmitSyncGuestStateForHelper()` (guest-state publish +
+  progress, no flag materialization) since the probe already materialized the correct
+  flags. The `[Fact] raw` **`MmioFast_FlagsAcrossSlowMemoryMember_MatchInterpreter`**
+  runs a `cmp -> watched store (slow path) -> jne` loop with `JitMmioFast` on and
+  matches the interpreter; fail-pre-fix proven (EFLAGS 0x70 vs 0x130).
+- Result: `--jit-mmio` now completes both 1B goldens with the exact anchors (menu
+  `660CA11B...`/`F5D61C94...`, triangle `F57934BF...`/`CF79FC17...`). It is **not a
+  perf win on these titles** (menu 33.4/33.2/33.7 s with the flag vs 33.6/32.9/32.9 s
+  without; `mmioMembers=0` - the probe already routes device pages to the slow path),
+  so it stays opt-in and out of the gate recipes. The bug is worth recording because
+  the same "state leaks across a never-taken branch" class would bite any future
+  emitted-path addition.
+
+Suite **1522** (Nv2a 255, Cpu 637).
