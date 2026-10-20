@@ -121,15 +121,27 @@ Canonical priority order: `docs/development-direction.md` (summarized in
 "JIT throughput is the binding constraint" with a product-path-first order:
 
 1. **Track B — host GPU present path (lead).** The Avalonia frontend renders on
-   the software rasterizer; `--gpu gl --gpu-replace` nets only 2.2 s on the menu
-   because of ~9.9 s of GL draw/readback/present overhead (31.1 vs 33.3 s;
-   readback alone is ~1.6 ms/flip, so ~8.8 s is unmeasured). Measure the split,
-   then remove the readback from fast-mode/window present; acceptance menu
-   fast+gl ≤ 24 s, triangle ≤ 6 s, `BackendUnsupported=0`, exact guest
-   SHAs/counters. Then B3 method coverage.
+   the software rasterizer; `--gpu gl --gpu-replace` netted only 2.2 s on the menu
+   because of ~9.9 s of GL draw/readback/present overhead (31.1 vs 33.3 s).
+   **Landed 2026-10-20 (§204):** the split was measured (submission 6.87 s =
+   2.49 µs × 2.76M draws, readback 0.71 s, swizzle/alloc ~0.3 s); the readback is
+   now opt-in (`--frame`/`--frame-first`), each draw is one packed `uTri[25]`
+   uniform + one `glDrawArrays` (positions by `gl_VertexID`, no VBO upload), the
+   per-draw key strings/divisions/binds are gone, and the per-method seam call +
+   method histogram were removed from the hot path. Same-window medians vs
+   `4f0bd47`: menu `gl+replace` **63.09 → 45.25 s (-20.5%, 3/3; `drawMs` 12.55 →
+   2.41 s, readback → 0)**, triangle 10.26 → 9.89 s (-0.9%, 3/3); quiet-host
+   projection menu ~24.7 s (boundary), triangle ~6.4 s (CPU-bound). 1B GL goldens
+   pass (menu `6BE6325F…`, triangle `3FC4B419…`, sw anchors unchanged). Next if
+   the targets must be closed: per-triangle batching (instanced + TBO). Then B3
+   method coverage on the corpus (zero `unsup` rows, guest counters identical).
 2. **Track E — compatibility corpus.** `docs/compatibility.md` + a
    boot-to-first-frame harness + ≥8 samples; no NV2A/APU fidelity polish without
-   a matrix row and a usage histogram (`compatibility-corpus.md`).
+   a matrix row and a usage histogram (`compatibility-corpus.md`). **Landed
+   2026-10-20:** `scripts/boot-to-first-frame.ps1` (+ `--frame-first`), four
+   measured rows, reproducible commands, the nxdk-toolchain blocker recorded;
+   `gpu-reference-map.md` + `nv097-coverage.md` (108 handled / 93 recorded) are
+   the fidelity steering inputs. Still short of M-B: 3 runnable samples.
 3. **Track P — product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.

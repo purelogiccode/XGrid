@@ -1,8 +1,8 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **starter, 2026-10-20.** This is the steering document for fidelity
-work, not a gate document. A row is evidence from a recorded run; gates stay in
-`docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
+Status: **first measured rows, 2026-10-20.** This is the steering document for
+fidelity work, not a gate document. A row is evidence from a recorded run; gates
+stay in `docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
 
 ## Rules
 
@@ -16,31 +16,92 @@ work, not a gate document. A row is evidence from a recorded run; gates stay in
   the measured evidence.
 - A fidelity landing must cite the row it fixes and the histogram that proves
   the usage. No row and no histogram means no NV2A/APU fidelity work.
+- Method-presence side of the histogram: `docs/research-notes/nv097-coverage.md`
+  (xemu 0.8.137 method table vs `Nv2aMmio`). Reference orientation:
+  `docs/research-notes/gpu-reference-map.md`.
+
+## The harness (one invocation per row)
+
+```powershell
+# one row
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample triangle
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample ktest          # needs the staged ISO
+
+# every runnable row, both backends
+pwsh -File scripts/boot-to-first-frame.ps1 -All
+```
+
+It boots the sample headless to a fixed step count, then prints one `BTFF` line
+and writes `wt-data/btff/<row>.json`:
+
+```text
+BTFF sample= dashboard gpu=sw+... steps= wall= msps= frames= stalls= draws= pixels=
+     firstFrameStep= firstFrameSha= lastFrameSha= ram= cpu= PASS|CHECK
+```
+
+`firstFrameStep` is the step anchor of the **first presented frame** (2M-step
+resolution; the CLI's `--frame-first` saves it). `lastFrameSha` is the final
+presented frame (the gate anchor). Fast mode slices its batches while hunting
+the first frame, so the `ram`/`cpu` SHAs here are fast-mode anchors, **not** the
+accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 
 ## Matrix
 
-| Sample | Source / provenance | Boot | First frame | Render | Audio | Known gaps | Anchor |
-|---|---|---|---|---|---|---|---|
-| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes — MCPX ROM → 1BL → 2BL → kernel → XBE | yes | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial; 686 flips/1B | fast 1B menu RAM `660CA11B…` / CPU `F5D61C94…`; accurate `D9C99A58…` / `3D2740B8…` |
-| **triangle.xbe** (nxdk) | XboxDev ghidra-xbe test XBE; nxdk `f998bdc` | yes | yes | colored Gouraud triangle | n/a | none on this stream | accurate frame `A1740DE0…`; fast 1B RAM `F57934BF…` / CPU `CF79FC17…` |
-| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log byte-identical; smoke 7/7 |
-| **nxdk-mesh** | source in `data/test-samples/nxdk-mesh/` | **blocked** — nxdk toolchain not on host | — | expected textured 3D + shaders | — | build dependency, not an emulator gap | — |
-| **nxdk-hello / nxdk-led** | source in `data/test-samples/` | **blocked** — toolchain | — | text / SMC LED | — | build dependency | — |
-| **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | not fetched | — | textured 3D | — | needs nxdk next to it | — |
-| **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | not fetched | — | vertex-shader oracle data | — | fetch + compare, not a boot row | — |
-| **OpenXDK demos** (framebuffer/XOR) | xbdev.net / OpenXDK | not fetched | — | raw framebuffer | — | candidate for non-D3D bring-up | — |
+| Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
+|---|---|---|---|---|---|---|---|---|
+| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `660CA11B` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `6BE6325F` | `-Sample dashboard` |
+| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `F57934BF` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `3FC4B419` | `-Sample triangle` |
+| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
+| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `scripts/ktest-smoke.ps1 -SkipXemu` (needs `XISOSharp` + staged media) |
+| **nxdk-mesh** (textured mesh, VS/PS shaders) | source in `data/test-samples/nxdk-mesh/` | **blocked** - nxdk toolchain not on host (MSYS2 base only: no clang/make; C: 247 MB free, must install on D:) | - | expected textured 3D + shaders | - | build dependency, not an emulator gap | - | - |
+| **nxdk-hello / nxdk-triangle / nxdk-led** | source in `data/test-samples/` | **blocked** - toolchain | - | text / triangle / SMC LED | - | build dependency | - | - |
+| **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs nxdk | - | textured 3D | - | fetch + toolchain | - | - |
+| **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs nxdk | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
+| **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - toolchain | - | raw framebuffer | - | candidate for non-D3D bring-up | - | - |
+
+## Measured rows (this session, loaded host)
+
+Recorded with the harness at 1B steps; the host was ~1.6-1.9x slower than the
+quiet-host baselines, so compare rows within a session, not across.
+
+| Row | wall | msps | frames | first frame | last frame | SHAs (ram/cpu) |
+|---|---:|---:|---:|---|---|---|
+| triangle, `sw` | 20.6 s | 48.6 | 68 | step 32M, `6F780A33` | `A1740DE0` | `777F4DEB` / `7DAB63EB` |
+| triangle, `gl+replace` | 10.6 s | 94.8 | 68 | step 32M, `6F780A33` | `3FC4B419` | `8AE82781` / `7DAB63EB` |
+| dashboard, `sw` | 62.7 s | 15.9 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `36B72FE1` / `F5D61C94` |
+| dashboard, `gl+replace` | 45.1 s | 22.2 | 686 | step 50M, `6F780A33` | `6BE6325F` | `CF151863` / `F5D61C94` |
+
+Reading: the first presented frame is the boot animation (`6F780A33`) in every
+row - a boot-chain anchor, not a title anchor. The title anchors are the
+last-frame SHAs, and the GL rows match their gate goldens
+(`3FC4B419`/`6BE6325F`), which is what makes these rows comparable to the gates.
 
 ## Current coverage reading
 
 - **Boot chain:** covered (dashboard + triangle + ktest all pass the real firmware
   path).
 - **Kernel surface:** covered by ktest (378 tests).
-- **3D pipeline:** thin — one static triangle plus the dashboard's menu stream.
+- **3D pipeline:** thin - one static triangle plus the dashboard's menu stream.
   No textured mesh, no mipmaps, no multistream/DMA vertex, no animated title.
-- **Texture formats / shader shapes:** whatever the dashboard's menu uses; the
-  rest of the NV097 space is unobserved.
+  `nv097-coverage.md` puts the method gap at 108 handled / 93 recorded, with the
+  immediate-mode vertex family (`0x1500-0x16FF`) and the raster modes as the
+  largest recorded-only groups.
+- **Texture formats / shader shapes:** whatever the dashboard's menu uses
+  (modulate + a few lighting shapes); DXT/paletted/mipmapped/filtered sampling
+  are unobserved. Nearest filtering only, in both renderers.
 - **Audio:** emulated, but no streaming consumer and no host output.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 
-The two "blocked" rows are the cheapest breadth win: the nxdk toolchain turns
-four existing source samples into four rows.
+## Sample wish list (cheapest first)
+
+1. **nxdk toolchain on the host** (blocker: MSYS2 has no clang/make; C: has
+   247 MB free so an install must target D:). Unblocks `nxdk-mesh` (textured
+   3D), `nxdk-hello`, `nxdk-triangle`, `nxdk-led` - four rows from sources
+   already in `data/test-samples/`.
+2. **xgu examples** once nxdk exists (spinning cubes, textures).
+3. **nxdk_vsh_tests** once nxdk exists (vertex-shader oracle data).
+4. **OpenXDK framebuffer demos** (non-D3D surface path).
+
+The two "blocked" rows are the cheapest breadth win: the toolchain turns four
+existing source samples into four rows.

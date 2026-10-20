@@ -570,19 +570,77 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   counter identical to the IL control. Quiet-host calibration this session:
   triangle IL 1B **10.20 s**, menu IL 1B **~40 s** (gl+replace+spin) — both faster than the
   §199d baselines (10.63 / 45.62).
+- **Track B present path (§204, 2026-10-20):** the GL path's ~7.9 s menu overhead
+  is ~1.3 s. The per-flip CPU readback is opt-in (`--frame`/`--frame-first`; the
+  window present blits the FBO), each draw is one `uTri[25]` uniform upload + one
+  `glDrawArrays` (2 GL calls, was 13 uniforms + a 24-byte `BufferData` + 2 binds),
+  texture keys/fingerprints no longer format strings or divide per texel, and the
+  per-method seam call + method histogram are gone from the hot path
+  (menu sw -6.2%). Same-window medians vs `4f0bd47`: menu `gl+replace`
+  63.09 → 45.25 s (-20.5%, 3/3, `drawMs` 12.55 → 2.41 s, readback → 0), triangle
+  10.26 → 9.89 s (-0.9%, 3/3). 1B goldens pass (menu gl `6BE6325F…`, triangle gl
+  `3FC4B419…`, sw anchors unchanged, `BackendUnsupported=0`); quiet-host
+  projections are menu ~24.7 s (M-A boundary) and triangle ~6.4 s (CPU-bound).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1519 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1530 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
 > **Next session starts here:** `docs/research-notes/next-session.md` — verified
-> start state + 1B anchors, what §203 changed (course correction: Track B present
-> path leads, Track E corpus, Track P product surface, Track C frozen), the
-> remaining wall split, ordered acceptance/kill criteria, measured negatives, the
-> validation ceremony, commands and diagnostics.
+> start state + 1B anchors, what §204 landed (Track B present path: readback
+> opt-in, per-draw submission -81%, method-histogram cost removed), the measured
+> split and what is left, the all-loaded order, measured negatives, validation
+> ceremony, commands and diagnostics.
 >
 > Frontend follow-ups (Track P): `docs/research-notes/avalonia-frontend.md`.
+> GPU reference orientation: `docs/research-notes/gpu-reference-map.md`; NV097
+> method coverage: `docs/research-notes/nv097-coverage.md`.
+
+**Session 2026-10-20 (eleventh; Track B present path + Track E corpus opening).**
+**The GL present path is measured and fixed, and the compatibility corpus has its
+first harness and measured rows (§204).** All host-side: guest behavior is
+byte-identical on every gate.
+
+- **The measurement first.** `GlBackendTimings` + a 1-in-64 sampled probe
+  (`XGRID_GL_PROBE=1`) split the menu's ~9.9 s GL cost: **draw submission 6.87 s
+  (2.49 µs × 2,760,841 draws)**, clear 0.01 s, **flip readback 0.71 s** (686 ×
+  1.04 ms), BGRA swizzle+alloc ~0.3 s. The readback was ~1 s, not 8.8 — the
+  per-draw submission was the lever.
+- **Eight slices landed:** readback opt-in (`--frame`/`--frame-first` only;
+  window present blits the FBO), one packed `uTri[25]` uniform upload per draw
+  (was 13 `glUniform` calls), program-structure cache (no per-draw key string),
+  `TextureKey` struct + per-entry sample addresses (removed 32 integer
+  divisions/draw) + prefetched 16-load fingerprint, GL binding shadows
+  (FBO/program/viewport/texture unit/texture), vertex positions by `gl_VertexID`
+  (no per-draw VBO upload: 2 GL calls/draw), raw-tick draw timing, and a latent
+  texture-reupload bug fix (stale id kept, new texture leaked).
+- **Two shared-path wins (Track D, measured >2%):**
+  `Nv2aMmio.CollectMethodHistogram` off in the CLI (2 dictionary updates ×
+  18.1M methods) = **menu sw -6.2% (64.2 → 60.3 s)**; `IPgraphBackend
+  .ObserveMethods` lets the GL backend decline the per-method callback = **-5.8 s
+  on the loaded menu gl wall**. The CLI now prints `methods=<MethodTotal>`.
+- **Evidence (same-window, 3 interleaved pairs vs `4f0bd47`, SHAs identical):**
+  menu `gl+replace` **63.09 → 45.25 s median (-20.5%, 3/3)**, `drawMs` 12.55 →
+  2.41 s, readback → 0; triangle `gl+replace` 10.26 → 9.89 s (-0.9%, 3/3).
+  Projections on §203's quiet references: **menu 24.7 s** (target 24 — at the
+  boundary), **triangle 6.43 s** (target 6 — CPU-bound, Track B cannot close it).
+- **Gates:** 1530 tests green, format clean, 1B menu golden sw `4EF1FBF6…` vs gl
+  `6BE6325F…` (diff 1852 px, maxDelta 1, 0 violations), 1B triangle golden sw
+  `A1740DE0…` vs gl `3FC4B419…` (diff 16744, maxDelta 1, 0 violations),
+  `BackendUnsupported=0`, counters identical, **ktest smoke 7/7 rows green**
+  (XGrid leg 792,800,535 steps, suite log byte-identical). Accurate mode
+  untouched.
+- **Track E:** `scripts/boot-to-first-frame.ps1` (new harness; prints one `BTFF`
+  line + JSON per row), `docs/compatibility.md` rewritten with reproducible
+  commands and four measured rows, the new `--frame-first <bmp>` CLI facility
+  (first presented frame + step anchor). The nxdk-toolchain blocker is recorded
+  precisely (MSYS2 base has no clang/make; C: 247 MB free → install on D:).
+  Two reference notes from a parallel session are indexed:
+  `gpu-reference-map.md` and `nv097-coverage.md` (201-row method table:
+  108 handled / 93 recorded).
+- **Diagnostics added:** `XGRID_GL_PROBE=1` (`probe[samples prep tex state uni
+  vtx gl fpRam fpAdapter]`), `--gpu gl` prints `readback=on|off`, `--frame-first`.
 
 **Session 2026-10-20 (course correction; docs only).** The canonical direction
 now leads with the product path. The Avalonia frontend made the software
