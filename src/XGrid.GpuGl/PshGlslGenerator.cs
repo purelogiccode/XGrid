@@ -71,11 +71,15 @@ public static class PshGlslGenerator
     /// </summary>
     private static void AppendInterpolation(StringBuilder sb)
     {
+        // Per-draw values travel as one packed vec4 block (uTri[24]) so a draw
+        // is one uniform upload (Track B: the per-draw 13-call uniform bill
+        // was the dominant GL submission cost). Layout is fixed by
+        // GlPgraphBackend.PackTriangleUniforms — slot indices here must match.
         sb.Append("  float px = gl_FragCoord.x;\n");
-        sb.Append("  float py = gl_FragCoord.y + uClipY;\n");
-        sb.Append("  vec2 vA = uPx[0];\n");
-        sb.Append("  vec2 vB = uPx[1];\n");
-        sb.Append("  vec2 vC = uPx[2];\n");
+        sb.Append("  float py = gl_FragCoord.y + uTri[2].z;\n");
+        sb.Append("  vec2 vA = uTri[0].xy;\n");
+        sb.Append("  vec2 vB = uTri[0].zw;\n");
+        sb.Append("  vec2 vC = uTri[1].xy;\n");
         sb.Append("  float area = ((vB.x - vA.x) * (vC.y - vA.y)) - ((vC.x - vA.x) * (vB.y - vA.y));\n");
         sb.Append("  float invArea = 1.0 / area;\n");
         sb.Append("  float w0 = (((vB.x - vA.x) * (py - vA.y)) - ((vB.y - vA.y) * (px - vA.x))) * invArea;\n");
@@ -86,10 +90,10 @@ public static class PshGlslGenerator
         sb.Append("  float p0 = w0;\n");
         sb.Append("  float p1 = w1;\n");
         sb.Append("  float p2 = w2;\n");
-        sb.Append("  if (uPerspective == 1) {\n");
-        sb.Append("    float s0 = w0 * uInvCw;\n");
-        sb.Append("    float s1 = w1 * uInvAw;\n");
-        sb.Append("    float s2 = w2 * uInvBw;\n");
+        sb.Append("  if (uTri[1].z == 1.0) {\n");
+        sb.Append("    float s0 = w0 * uTri[2].y;\n");
+        sb.Append("    float s1 = w1 * uTri[1].w;\n");
+        sb.Append("    float s2 = w2 * uTri[2].x;\n");
         sb.Append("    float sum = s0 + s1 + s2;\n");
         sb.Append("    if (!isnan(sum) && !isinf(sum) && sum != 0.0) {\n");
         sb.Append("      float invSum = 1.0 / sum;\n");
@@ -98,14 +102,14 @@ public static class PshGlslGenerator
         sb.Append("      p2 = s2 * invSum;\n");
         sb.Append("    }\n");
         sb.Append("  }\n");
-        sb.Append("  vec4 color = (p1 * uColorV[0]) + (p2 * uColorV[1]) + (p0 * uColorV[2]);\n");
-        sb.Append("  vec4 spec = (p1 * uSpecV[0]) + (p2 * uSpecV[1]) + (p0 * uSpecV[2]);\n");
-        sb.Append("  vec4 c0 = (p1 * uT0V[0]) + (p2 * uT0V[1]) + (p0 * uT0V[2]);\n");
-        sb.Append("  vec4 c1 = (p1 * uT1V[0]) + (p2 * uT1V[1]) + (p0 * uT1V[2]);\n");
-        sb.Append("  vec4 c2 = (p1 * uT2V[0]) + (p2 * uT2V[1]) + (p0 * uT2V[2]);\n");
-        sb.Append("  vec4 c3 = (p1 * uT3V[0]) + (p2 * uT3V[1]) + (p0 * uT3V[2]);\n");
-        sb.Append("  float fogFactor = (p1 * uVtx[0].z) + (p2 * uVtx[1].z) + (p0 * uVtx[2].z);\n");
-        sb.Append("  float depthZ = (w1 * uVtx[0].x) + (w2 * uVtx[1].x) + (w0 * uVtx[2].x);\n");
+        sb.Append("  vec4 color = (p1 * uTri[3]) + (p2 * uTri[4]) + (p0 * uTri[5]);\n");
+        sb.Append("  vec4 spec = (p1 * uTri[6]) + (p2 * uTri[7]) + (p0 * uTri[8]);\n");
+        sb.Append("  vec4 c0 = (p1 * uTri[9]) + (p2 * uTri[10]) + (p0 * uTri[11]);\n");
+        sb.Append("  vec4 c1 = (p1 * uTri[12]) + (p2 * uTri[13]) + (p0 * uTri[14]);\n");
+        sb.Append("  vec4 c2 = (p1 * uTri[15]) + (p2 * uTri[16]) + (p0 * uTri[17]);\n");
+        sb.Append("  vec4 c3 = (p1 * uTri[18]) + (p2 * uTri[19]) + (p0 * uTri[20]);\n");
+        sb.Append("  float fogFactor = (p1 * uTri[21].z) + (p2 * uTri[22].z) + (p0 * uTri[23].z);\n");
+        sb.Append("  float depthZ = (w1 * uTri[21].x) + (w2 * uTri[22].x) + (w0 * uTri[23].x);\n");
         sb.Append('\n');
     }
 
@@ -132,20 +136,7 @@ public static class PshGlslGenerator
         sb.Append("uniform int uTexCube[4];\n");
         sb.Append("uniform int uTexDim[4];\n");
         sb.Append("uniform uint uShaderClip;\n");
-        sb.Append("uniform vec2 uPx[3];\n");
-        sb.Append("uniform vec4 uColorV[3];\n");
-        sb.Append("uniform vec4 uSpecV[3];\n");
-        sb.Append("uniform vec4 uT0V[3];\n");
-        sb.Append("uniform vec4 uT1V[3];\n");
-        sb.Append("uniform vec4 uT2V[3];\n");
-        sb.Append("uniform vec4 uT3V[3];\n");
-        sb.Append("uniform vec4 uVtx[3];\n");
-        sb.Append("uniform int uPerspective;\n");
-        sb.Append("uniform float uInvAw;\n");
-        sb.Append("uniform float uInvBw;\n");
-        sb.Append("uniform float uInvCw;\n");
-        sb.Append("uniform float uClipY;\n");
-        sb.Append("uniform sampler2D uTex0;\n");
+        sb.Append("uniform vec4 uTri[25];\n"); sb.Append("uniform sampler2D uTex0;\n");
         sb.Append("uniform sampler2D uTex1;\n");
         sb.Append("uniform sampler2D uTex2;\n");
         sb.Append("uniform sampler2D uTex3;\n");

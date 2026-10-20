@@ -25,9 +25,16 @@ public static class GlBackendFactory
         return TryCreate(memory, windowEnabled, replaceSoftware: false, out backend, out why);
     }
 
-    /// <summary>Creates the GL backend; <paramref name="replaceSoftware"/> selects replacement mode (<c>--gpu-replace</c>), where the backend renders instead of mirroring and the software rasterizer skips honored draws.</summary>
+    /// <summary>Creates the GL backend; <paramref name="replaceSoftware"/> selects replacement mode (<c>--gpu-replace</c>), where the backend renders instead of mirroring and the software rasterizer skips honored draws. The per-flip CPU readback stays enabled (gate/frontend behavior).</summary>
     public static bool TryCreate(IGpuMemory memory, bool windowEnabled, bool replaceSoftware, out IPgraphBackend? backend,
         out string why)
+    {
+        return TryCreate(memory, windowEnabled, replaceSoftware, frameReadback: true, out backend, out why);
+    }
+
+    /// <summary>Creates the GL backend with an explicit per-flip readback policy.</summary>
+    public static bool TryCreate(IGpuMemory memory, bool windowEnabled, bool replaceSoftware, bool frameReadback,
+        out IPgraphBackend? backend, out string why)
     {
         ArgumentNullException.ThrowIfNull(memory);
         backend = null;
@@ -49,7 +56,7 @@ public static class GlBackendFactory
                 return false;
             }
 
-            backend = new GlPgraphBackend(context, created, gl, memory, windowEnabled, replaceSoftware);
+            backend = new GlPgraphBackend(context, created, gl, memory, windowEnabled, replaceSoftware, frameReadback);
             unsafe
             {
                 byte* version = gl.GetString(StringName.Version);

@@ -71,6 +71,8 @@ internal static class Program
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
         string? framePath = null;
+        string? frameFirstPath = null;
+        bool frameFirstSaved = false;
         string? pgraphPath = null;
         ulong pgraphMax = 262144;
         ulong eipHistInterval = 0;
@@ -198,6 +200,9 @@ internal static class Program
                     break;
                 case "--frame":
                     framePath = NextValue(args, ref i);
+                    break;
+                case "--frame-first":
+                    frameFirstPath = NextValue(args, ref i);
                     break;
                 case "--pgraph":
                     pgraphPath = NextValue(args, ref i);
@@ -402,6 +407,11 @@ internal static class Program
 
             machine.Reset();
             machine.Nv2A.MethodStreamCap = pgraphMax;
+            // The per-method histogram (two dictionary updates per PGRAPH
+            // method) is a diagnostic no CLI path consumes: the method dump
+            // reads MethodStream. Dropping it removes ~18M dictionary updates
+            // per 1B menu steps (Track D, measured).
+            machine.Nv2A.CollectMethodHistogram = false;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             Console.WriteLine(
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
@@ -428,13 +438,18 @@ internal static class Program
             if (string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
             {
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
-                // software for the session (Backend stays null).
+                // software for the session (Backend stays null). The per-flip
+                // CPU readback is opt-in (--frame): a flip stays on the GPU,
+                // which is the Track-B fast-mode present path.
                 var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, out Nv2a.IPgraphBackend? gpuBackendInstance,
+                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, framePath is not null || frameFirstPath is not null,
+                        out Nv2a.IPgraphBackend? gpuBackendInstance,
                         out string gpuWhy))
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
-                    Console.WriteLine($"GPU backend=gl {(gpuReplace ? "replace=on " : string.Empty)}{gpuWhy}");
+                    Console.WriteLine(
+                        $"GPU backend=gl {(gpuReplace ? "replace=on " : string.Empty)}{gpuWhy} " +
+                        $"readback={(framePath is not null || frameFirstPath is not null ? "on" : "off")}");
                 }
                 else
                 {
@@ -837,6 +852,15 @@ internal static class Program
                     target = Math.Min(target, 2_000_000);
                 }
 
+                if (frameFirstPath is not null && !frameFirstSaved)
+                {
+                    // First-frame anchor: the flip happens inside a batch, so
+                    // cap the batch while hunting it (2M-step anchor resolution
+                    // instead of the 250M progress interval; negligible cost,
+                    // and only until the first frame is saved).
+                    target = Math.Min(target, 2_000_000);
+                }
+
                 ulong ran = RunBatch(machine, target);
                 if (ran == 0)
                 {
@@ -846,6 +870,16 @@ internal static class Program
                 executed += ran;
                 ApplyPadIfDue(executed);
                 ApplyScriptIfDue(executed);
+                if (frameFirstPath is not null && !frameFirstSaved &&
+                    machine.Nv2A.FramesPresented > 0)
+                {
+                    // Track E harness: the first presented frame's step anchor
+                    // and pixels (headless; works for sw and gl backends).
+                    frameFirstSaved = true;
+                    SavePresentedFrame(machine, frameFirstPath);
+                    Console.WriteLine($"FrameFirst step={executed} path={frameFirstPath}");
+                }
+
                 if (windowMode)
                 {
                     machine.Nv2A.Backend?.Pump();
@@ -2071,7 +2105,8 @@ internal static class Program
         if (machine.Nv2A.Backend is not null)
         {
             Console.WriteLine(
-                $"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported}");
+                $"GPU {machine.Nv2A.Backend.DebugSummary} BackendUnsupported={machine.Nv2A.Backend.BackendUnsupported} " +
+                $"methods={machine.Nv2A.MethodTotal}");
             if (machine.Nv2A.Backend is GpuGl.GlPgraphBackend windowBackend &&
                 !string.Equals(windowBackend.WindowStatus, "off", StringComparison.Ordinal))
             {
@@ -2591,7 +2626,7 @@ internal static class Program
     /// texture reads). Doubles as the present-upload dirty watch handle for
     /// the GL backend (§132 (a*)).
     /// </summary>
-    private sealed class MachineGpuMemory : Nv2a.IGpuMemory, IPresentDirtyWatch
+    private sealed class MachineGpuMemory : Nv2a.IGpuMemory, Nv2a.IGpuMemoryRamView, IPresentDirtyWatch
     {
         private readonly AddressSpace _memory;
 
@@ -2605,6 +2640,14 @@ internal static class Program
         public uint ReadPhysical(uint address)
         {
             return _memory.Read32(address);
+        }
+
+        public bool TryGetRamBytes(out byte[] bytes, out uint size)
+        {
+            PhysicalMemory ram = _memory.Ram;
+            bytes = ram.RawBytes;
+            size = ram.Size;
+            return true;
         }
 
         public void WritePhysical(uint address, uint value)
@@ -2696,7 +2739,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

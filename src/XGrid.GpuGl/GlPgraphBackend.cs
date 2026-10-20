@@ -48,19 +48,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTexCube[0]",
         "uTexDim[0]",
         "uShaderClip",
-        "uPx[0]",
-        "uColorV[0]",
-        "uSpecV[0]",
-        "uT0V[0]",
-        "uT1V[0]",
-        "uT2V[0]",
-        "uT3V[0]",
-        "uVtx[0]",
-        "uPerspective",
-        "uInvAw",
-        "uInvBw",
-        "uInvCw",
-        "uClipY",
+        "uTri[0]",
         "uTex0",
         "uTex1",
         "uTex2",
@@ -80,19 +68,45 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private readonly uint _vertexShader;
     private readonly uint _vao;
-    private readonly uint _vbo;
     private readonly Dictionary<string, GlProgram> _programs = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, GlTextureEntry> _textures = new(StringComparer.Ordinal);
+    private readonly Dictionary<TextureKey, GlTextureEntry> _textures = new();
     private readonly float[] _vertexData = new float[VertexFloats * 3];
-    private readonly float[] _uPx = new float[3 * 2];
-    private readonly float[] _uColorV = new float[3 * 4];
-    private readonly float[] _uSpecV = new float[3 * 4];
-    private readonly float[] _uT0V = new float[3 * 4];
-    private readonly float[] _uT1V = new float[3 * 4];
-    private readonly float[] _uT2V = new float[3 * 4];
-    private readonly float[] _uT3V = new float[3 * 4];
-    private readonly float[] _uVtx = new float[3 * 4];
+
+    // Packed per-draw uniform block (uTri[24], see PshGlslGenerator) so a draw
+    // is ONE uniform upload instead of thirteen. Layout constants are the
+    // shader contract; the fragment shader reads the same slots.
+    private readonly float[] _uTri = new float[25 * 4];
+    private const int TriVaryingBase = 12; // floats 0..11 are the barycentric/scalar preamble
+    private const int TriVaryingStride = 12; // floats per per-vertex channel (3 vertices x vec4)
+    private const int TriClipSizeBase = 24 * 4; // uTri[24] = (clipW, clipH, 0, 0) for the vertex shader
+
+    // Shader-structure cache: draws in a run share the combiner structure, so
+    // the key string is only built when the 37 structure words change (the
+    // per-draw BuildKey allocation was a measured submission cost).
+    private readonly uint[] _lastStructure = new uint[ProgramStructureWords];
+    private GlProgram? _lastProgram;
+    private bool _lastLegacy;
+    private bool _lastStructureValid;
+
+    // Per-slot texture lookup cache (key struct, no per-draw string alloc).
+    private readonly TextureKey[] _lastTextureKey = new TextureKey[PshCombiner.TextureSlots];
+    private readonly GlTextureEntry?[] _lastTextureEntry = new GlTextureEntry?[PshCombiner.TextureSlots];
+    private readonly bool[] _lastTextureValid = new bool[PshCombiner.TextureSlots];
+    private readonly uint[] _boundTexture = new uint[PshCombiner.TextureSlots];
+    private int _activeTextureUnit = -1;
+
+    // Direct RAM word reads for texture fingerprints (IGpuMemoryFast lane);
+    // fall back to the adapter for non-RAM/out-of-range addresses.
+    private readonly byte[]? _ramBytes;
+    private readonly uint _ramSize;
     private readonly float[] _constFlat = new float[18 * 4];
+
+    // GL binding shadows: redundant per-draw binds are driver-side validation
+    // on a 2.76M-draw stream.
+    private uint _boundFbo;
+    private uint _currentProgram;
+    private uint _viewportW;
+    private uint _viewportH;
     private readonly int[] _texOk = new int[4];
     private readonly float[] _texSize = new float[4 * 2];
     private readonly int[] _texLinear = new int[4];
@@ -170,11 +184,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _presentUploads;
     private long _flipStaleUploads;
     private GlBackendTimings _timings;
-    private int _perspective;
-    private float _invAw;
-    private float _invBw;
-    private float _invCw;
-    private float _clipY;
     private readonly bool _windowRequested;
     private readonly bool _replaceSoftware;
     private bool _windowShown;
@@ -197,6 +206,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // program object, so unchanged values can be skipped entirely; the
         // *Valid flags force a full upload on first use.
         public float[] ScalarCache { get; } = new float[14];
+
+        /// <summary>Raw combiner constant registers captured with <see cref="ConstCache"/> (cheap change stamp: FillConsts costs 40 unpack conversions + 72 float compares per draw).</summary>
+        public uint[] ConstStamp { get; } = new uint[18];
+
+        // Resolved once at link: the per-draw packed block location (a
+        // per-draw dictionary lookup was measurable on 2.76M draws).
+        public int TriLocation { get; set; } = -1;
 
         public float[] TexCache { get; } = new float[32];
 
@@ -232,14 +248,74 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             Height = height;
         }
 
-        public uint Texture { get; }
+        public uint Texture { get; set; }
         public uint Fingerprint { get; set; }
         public int Width { get; }
         public int Height { get; }
+
+        /// <summary>
+        /// Guest addresses of the 16 fingerprint sample texels, resolved once
+        /// per cache key (the address formula costs two integer divisions per
+        /// texel; the menu re-fingerprints on every one of its 2.76M draws).
+        /// </summary>
+        public uint[] SampleAddresses { get; set; } = System.Array.Empty<uint>();
+
+        /// <summary>Word mask applied to a sampled texel (0xFFFF for 16-bit formats).</summary>
+        public uint SampleMask { get; set; } = uint.MaxValue;
+    }
+
+    /// <summary>
+    /// Combiner structure words that change the generated GLSL (factors, fog,
+    /// alpha, ZCLIP and texture enable/scale are uniforms and must not split
+    /// the key). Kept in step with <see cref="PshGlslGenerator.BuildKey"/>.
+    /// </summary>
+    private const int ProgramStructureWords = 5 + (PshCombiner.MaxStages * 4);
+
+    /// <summary>
+    /// Content-addressed texture cache key (guest offset + format + extent).
+    /// A value struct: the pre-Track-B path formatted a string per slot per
+    /// draw, which showed up as submission cost on the menu's 2.76M draws.
+    /// </summary>
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
+    private readonly struct TextureKey : IEquatable<TextureKey>
+    {
+        private readonly uint _offset;
+        private readonly uint _color;
+        private readonly int _width;
+        private readonly int _height;
+        private readonly int _pitch;
+        private readonly int _linear;
+
+        public TextureKey(in PgraphTextureSlot slot, uint color, int width, int height, int pitch, bool linear)
+        {
+            _offset = slot.Offset;
+            _color = color;
+            _width = width;
+            _height = height;
+            _pitch = pitch;
+            _linear = linear ? 1 : 0;
+        }
+
+        public bool Equals(TextureKey other)
+        {
+            return _offset == other._offset && _color == other._color &&
+                   _width == other._width && _height == other._height &&
+                   _pitch == other._pitch && _linear == other._linear;
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is TextureKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(_offset, _color, _width, _height, _pitch, _linear);
+        }
     }
 
     internal GlPgraphBackend(WglContext context, INativeContext glContext, GL gl, IGpuMemory memory,
-        bool windowEnabled = false, bool replaceSoftware = false)
+        bool windowEnabled = false, bool replaceSoftware = false, bool frameReadback = true)
     {
         _context = context;
         _glContext = glContext;
@@ -248,17 +324,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _dirtyWatch = memory as IPresentDirtyWatch;
         _windowRequested = windowEnabled;
         _replaceSoftware = replaceSoftware;
+        FlipReadbackEnabled = frameReadback;
         _windowStatus = windowEnabled ? "pending first frame" : "off";
+        if (memory is IGpuMemoryRamView ramView && ramView.TryGetRamBytes(out byte[] ramBytes, out uint ramSize))
+        {
+            _ramBytes = ramBytes;
+            _ramSize = ramSize;
+        }
 
         _vertexShader = CompileVertexShader();
+        // Empty VAO only: every per-draw value travels in the uTri uniform
+        // block (positions are selected by gl_VertexID), so there is no vertex
+        // buffer and no per-draw upload.
         _gl.GenVertexArrays(1, out _vao);
-        _gl.GenBuffers(1, out _vbo);
         _gl.BindVertexArray(_vao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
-        const uint stride = (uint)VertexStrideBytes;
-        _gl.EnableVertexAttribArray(0);
-        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, 0);
-        _gl.BindVertexArray(0);
 
         _gl.Disable(EnableCap.CullFace);
         _gl.Disable(EnableCap.Blend);
@@ -274,8 +353,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// <summary>Gets the number of draws, clears and flips that failed with a fatal GL error or an unsupported in-subset state; the gate requires 0.</summary>
     public long BackendUnsupported { get; private set; }
 
-    /// <summary>Gets the number of methods observed through the seam.</summary>
-    public long MethodsObserved { get; private set; }
+    /// <summary>
+    /// Gets or sets whether a flip reads the FBO back to CPU memory. The
+    /// readback is a gate/screenshot facility (CLI <c>--frame</c>, the
+    /// frontend's display copy), not a per-frame cost: it forces a full GPU
+    /// sync and a per-pixel R/B swizzle. Window presentation blits the FBO
+    /// directly and never needs it.
+    /// </summary>
+    public bool FlipReadbackEnabled { get; set; }
+
 
     /// <summary>Gets the number of triangles submitted to GL.</summary>
     public long Draws { get; private set; }
@@ -302,12 +388,21 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             var sb = new StringBuilder(384);
             sb.Append(CultureInfo.InvariantCulture,
-                $"backend=gl draws={Draws} clears={Clears} flips={Flips} methods={MethodsObserved} " +
+                $"backend=gl draws={Draws} clears={Clears} flips={Flips} " +
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
                 $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads}]");
             _timings.AppendTo(sb);
+            if (_probeEnabled)
+            {
+                double toMs = 1000.0 / Stopwatch.Frequency;
+                sb.Append(CultureInfo.InvariantCulture,
+                    $" probe[samples={_probeSamples} prepMs={_probePrepTicks * toMs:F0} " +
+                    $"texMs={_probeTextureTicks * toMs:F0} stateMs={_probeStateTicks * toMs:F0} " +
+                    $"uniMs={_probeUniformTicks * toMs:F0} vtxMs={_probeVertexTicks * toMs:F0} " +
+                    $"glMs={_probeGlTicks * toMs:F0} fpRam={_probeFpRam} fpAdapter={_probeFpAdapter}]");
+            }
             if (_fatalError is not null)
             {
                 sb.Append(CultureInfo.InvariantCulture, $" fatal=\"{_fatalError}\"");
@@ -317,13 +412,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    /// <summary>Observes one PGRAPH method triple at the top of RecordMethod, counting it in <see cref="MethodsObserved"/>; issues no GL calls.</summary>
+    /// <summary>The software path owns the method total (<c>Nv2aMmio.MethodTotal</c>): declining the per-method callback removes a virtual call per PGRAPH method (18M per 1B menu steps).</summary>
+    public bool ObserveMethods => false;
+
+    /// <summary>Observes one PGRAPH method triple; never called because <see cref="ObserveMethods"/> is false.</summary>
     public void Method(uint subchannel, uint method, uint parameter)
     {
         _ = subchannel;
         _ = method;
         _ = parameter;
-        MethodsObserved++;
     }
 
     /// <summary>Gets whether this backend replaces the software rasterizer for the draws it honors (opt-in replacement mode).</summary>
@@ -347,7 +444,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             long start = Stopwatch.GetTimestamp();
             bool drawn = TryDrawCore(info);
-            _timings.AddDraw(Stopwatch.GetElapsedTime(start));
+            _timings.AddDrawTicks(Stopwatch.GetTimestamp() - start);
             return drawn;
         }
         catch (Exception exception)
@@ -421,7 +518,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         DeleteFbo();
-        foreach (KeyValuePair<string, GlTextureEntry> entry in _textures)
+        foreach (KeyValuePair<TextureKey, GlTextureEntry> entry in _textures)
         {
             uint texture = entry.Value.Texture;
             _gl.DeleteTextures(1, ref texture);
@@ -431,8 +528,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _readback = null;
         _readbackWidth = 0;
         _readbackHeight = 0;
+        InvalidateTextureBinding();
         _fatalError = null;
-        MethodsObserved = 0;
         Draws = 0;
         Clears = 0;
         Flips = 0;
@@ -453,6 +550,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _presentUploads = 0;
         _flipStaleUploads = 0;
         _timings.Reset();
+        _probeDraws = 0;
+        _probeSamples = 0;
+        _probePrepTicks = 0;
+        _probeTextureTicks = 0;
+        _probeStateTicks = 0;
+        _probeUniformTicks = 0;
+        _probeVertexTicks = 0;
+        _probeGlTicks = 0;
 
         // Fail-closed (§132 (a*)): reset/load replaced guest state under a
         // backend whose FBO (just deleted above) may have been the presented
@@ -474,7 +579,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         try
         {
             DeleteFbo();
-            foreach (KeyValuePair<string, GlTextureEntry> entry in _textures)
+            foreach (KeyValuePair<TextureKey, GlTextureEntry> entry in _textures)
             {
                 uint texture = entry.Value.Texture;
                 _gl.DeleteTextures(1, ref texture);
@@ -487,12 +592,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             }
 
             _programs.Clear();
-            uint vbo = _vbo;
-            if (vbo != 0)
-            {
-                _gl.DeleteBuffers(1, ref vbo);
-            }
-
             uint vao = _vao;
             if (vao != 0)
             {
@@ -572,34 +671,62 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return false;
         }
 
+        bool probe = _probeEnabled && ((_probeDraws++ & 63L) == 0L);
+        long t0 = probe ? Stopwatch.GetTimestamp() : 0L;
         GlProgram program = EnsureProgram(legacy, combiner);
+        long t1 = probe ? Stopwatch.GetTimestamp() : 0L;
         ApplyTextures(program, info, combiner, legacy);
+        long t1b = probe ? Stopwatch.GetTimestamp() : 0L;
         ApplyState(in info);
+        long t1c = probe ? Stopwatch.GetTimestamp() : 0L;
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
-        _gl.Viewport(0, 0, info.ClipW, info.ClipH);
-        _gl.UseProgram(program.Id);
+        BindFbo(_fbo);
+        if (_viewportW != info.ClipW || _viewportH != info.ClipH)
+        {
+            _gl.Viewport(0, 0, info.ClipW, info.ClipH);
+            _viewportW = info.ClipW;
+            _viewportH = info.ClipH;
+        }
+
+        if (_currentProgram != program.Id)
+        {
+            _gl.UseProgram(program.Id);
+            _currentProgram = program.Id;
+        }
         ApplyUniforms(program, in info, combiner);
 
         PackVertices(in info, out int vertexCount);
         UploadTriangleUniforms(program);
-        _gl.BindVertexArray(_vao);
-        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
-        unsafe
+        long t2 = probe ? Stopwatch.GetTimestamp() : 0L;
+        long t3 = t2;
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
+        if (probe)
         {
-            fixed (float* pVertices = _vertexData)
-            {
-                _gl.BufferData(
-                    BufferTargetARB.ArrayBuffer,
-                    (UIntPtr)(vertexCount * VertexStrideBytes),
-                    pVertices,
-                    BufferUsageARB.StreamDraw);
-            }
+            long t4 = Stopwatch.GetTimestamp();
+            // 1-in-64 sampling keeps the probe's own cost off the measuring
+            // path (per-draw probes distorted the submission bill ~2x).
+            _probePrepTicks += t1 - t0;
+            _probeTextureTicks += t1b - t1;
+            _probeStateTicks += t1c - t1b;
+            _probeUniformTicks += t2 - t1c;
+            _probeVertexTicks += t3 - t2;
+            _probeGlTicks += t4 - t3;
+            _probeSamples++;
         }
 
-        _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertexCount);
         return true;
     }
+
+    private readonly bool _probeEnabled = string.Equals(
+        Environment.GetEnvironmentVariable("XGRID_GL_PROBE"), "1", StringComparison.Ordinal);
+    private long _probeDraws;
+    private long _probeSamples;
+    private long _probePrepTicks;
+    private long _probeTextureTicks;
+    private long _probeStateTicks;
+    private long _probeUniformTicks;
+    private long _probeVertexTicks;
+    private long _probeGlTicks;
 
     private void ClearCore(in PgraphClearInfo info)
     {
@@ -633,7 +760,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        BindFbo(_fbo);
         _gl.Enable(EnableCap.ScissorTest);
         int x = unchecked((int)(info.XMin - info.ClipX));
         int y = unchecked((int)(info.YMin - info.ClipY));
@@ -746,8 +873,27 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         uint width = record.Width;
         uint height = record.Height;
+        if (!FlipReadbackEnabled)
+        {
+            // Fast-mode present path (Track B): no CPU readback. The frame is
+            // never materialized host-side here; consumers that need pixels
+            // (--frame, the frontend display copy) opt in and keep the exact
+            // pre-Track-B behavior above. The FBO keeps the pixels for the
+            // window blit.
+            _readback = null;
+            _readbackWidth = 0;
+            _readbackHeight = 0;
+            ArmPresentWatch(in record);
+            if (_windowRequested)
+            {
+                PresentToWindow(width, height);
+            }
+
+            return;
+        }
+
         byte[] rgba = new byte[width * height * 4];
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        BindFbo(_fbo);
         long readbackStart = Stopwatch.GetTimestamp();
         unsafe
         {
@@ -780,17 +926,27 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // upload off non-suppressed writes into the watched spans (span
         // slots accumulate so a double-buffered app's surfaces stay
         // watched; a pre-first-flip CPU blit is the empty-FBO upload path).
+        ArmPresentWatch(in record);
+
+        if (_windowRequested)
+        {
+            PresentToWindow(width, height);
+        }
+    }
+
+    private void ArmPresentWatch(in PgraphSurfaceRecord record)
+    {
+        if (_probeNoWatch)
+        {
+            return;
+        }
+
         if (_fbo != 0 && _dirtyWatch is not null)
         {
             ulong span = (ulong)record.Pitch * (ulong)record.Height;
             _dirtyWatch.ArmPresentWatch(
                 record.SurfaceAddress,
                 span > uint.MaxValue ? uint.MaxValue : (uint)span);
-        }
-
-        if (_windowRequested)
-        {
-            PresentToWindow(width, height);
         }
     }
 
@@ -905,12 +1061,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
         }
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        BindFbo(0);
         _gl.BindTexture(TextureTarget.Texture2D, 0);
         uint delFbo = srcFbo;
         _gl.DeleteFramebuffers(1, ref delFbo);
         uint delTexture = texture;
         _gl.DeleteTextures(1, ref delTexture);
+        InvalidateTextureBinding();
         return complete;
     }
 
@@ -1020,7 +1177,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _fboZetaBytes = 0;
 
         _gl.GenFramebuffers(1, out _fbo);
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
+        BindFbo(_fbo);
         _gl.GenRenderbuffers(1, out _colorRenderbuffer);
         _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _colorRenderbuffer);
         _gl.RenderbufferStorage(
@@ -1096,7 +1253,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                     mask, BlitFramebufferFilter.Nearest);
             }
 
-            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            BindFbo(0);
             uint delFbo = oldFbo;
             _gl.DeleteFramebuffers(1, ref delFbo);
             if (oldColor != 0)
@@ -1125,6 +1282,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             uint fbo = _fbo;
             _gl.DeleteFramebuffers(1, ref fbo);
             _fbo = 0;
+            _boundFbo = 0;
         }
 
         if (_colorRenderbuffer != 0)
@@ -1148,11 +1306,28 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private uint CompileVertexShader()
     {
+        // Positions come from the packed per-draw uniform block, selected by
+        // gl_VertexID: the draw needs no per-draw vertex-buffer upload (Track B
+        // present-path measurement: BufferData was one of the three remaining
+        // GL calls per draw). The NDC mapping and the centroid inflate mirror
+        // the previous C# StoreVertex math operation-for-operation; the inflate
+        // only widens GL coverage, and the fragment shader's software-exact
+        // inside-test decides every pixel.
         const string source =
             "#version 330 core\n" +
-            "layout(location = 0) in vec2 aPos;\n" +
+            "uniform vec4 uTri[25];\n" +
             "void main() {\n" +
-            "  gl_Position = vec4(aPos, 0.0, 1.0);\n" +
+            "  vec2 vA = uTri[0].xy;\n" +
+            "  vec2 vB = uTri[0].zw;\n" +
+            "  vec2 vC = uTri[1].xy;\n" +
+            "  vec2 clip = vec2(uTri[2].w, uTri[2].z);\n" +
+            "  vec2 size = vec2(uTri[24].x, uTri[24].y);\n" +
+            "  vec2 ndcA = ((2.0 * (vA - clip)) / size) - 1.0;\n" +
+            "  vec2 ndcB = ((2.0 * (vB - clip)) / size) - 1.0;\n" +
+            "  vec2 ndcC = ((2.0 * (vC - clip)) / size) - 1.0;\n" +
+            "  vec2 ndc = (gl_VertexID == 0) ? ndcA : ((gl_VertexID == 1) ? ndcB : ndcC);\n" +
+            "  vec2 center = (ndcA + ndcB + ndcC) / 3.0;\n" +
+            "  gl_Position = vec4(center + ((ndc - center) * 1.02), 0.0, 1.0);\n" +
             "}\n";
         uint shader = _gl.CreateShader(ShaderType.VertexShader);
         _gl.ShaderSource(shader, source);
@@ -1170,9 +1345,18 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private GlProgram EnsureProgram(bool legacy, PshCombiner? combiner)
     {
+        // Fast path: the last draw's structure (draws arrive in runs, so the
+        // 37-word compare replaces a per-draw key-string allocation).
+        if (_lastProgram is not null && _lastLegacy == legacy &&
+            (legacy || StructureMatches(combiner!)))
+        {
+            return _lastProgram;
+        }
+
         string key = PshGlslGenerator.BuildKey(legacy, combiner!);
         if (_programs.TryGetValue(key, out GlProgram? existing))
         {
+            RememberProgram(legacy, combiner, existing);
             return existing;
         }
 
@@ -1209,15 +1393,76 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             glProgram.Locations[name] = location;
         }
 
+        glProgram.TriLocation = glProgram.Location("uTri[0]");
+
         _gl.UseProgram(program);
+        _currentProgram = program;
         _gl.Uniform1(glProgram.Location("uTex0"), 0);
         _gl.Uniform1(glProgram.Location("uTex1"), 1);
         _gl.Uniform1(glProgram.Location("uTex2"), 2);
         _gl.Uniform1(glProgram.Location("uTex3"), 3);
         _gl.UseProgram(0);
+        _currentProgram = 0;
         _programs.Add(key, glProgram);
         ProgramsCompiled++;
+        RememberProgram(legacy, combiner, glProgram);
         return glProgram;
+    }
+
+    private void RememberProgram(bool legacy, PshCombiner? combiner, GlProgram program)
+    {
+        _lastProgram = program;
+        _lastLegacy = legacy;
+        _lastStructureValid = !legacy;
+        if (legacy || combiner is null)
+        {
+            return;
+        }
+
+        int w = 0;
+        _lastStructure[w++] = combiner.Control;
+        _lastStructure[w++] = combiner.StageProgram;
+        _lastStructure[w++] = combiner.OtherStageInput;
+        _lastStructure[w++] = combiner.Final0;
+        _lastStructure[w++] = combiner.Final1;
+        for (int i = 0; i < PshCombiner.MaxStages; i++)
+        {
+            _lastStructure[w++] = combiner.RgbInputs[i];
+            _lastStructure[w++] = combiner.AlphaInputs[i];
+            _lastStructure[w++] = combiner.RgbOutputs[i];
+            _lastStructure[w++] = combiner.AlphaOutputs[i];
+        }
+    }
+
+    private bool StructureMatches(PshCombiner combiner)
+    {
+        if (!_lastStructureValid)
+        {
+            return false;
+        }
+
+        int w = 0;
+        if (_lastStructure[w++] != combiner.Control ||
+            _lastStructure[w++] != combiner.StageProgram ||
+            _lastStructure[w++] != combiner.OtherStageInput ||
+            _lastStructure[w++] != combiner.Final0 ||
+            _lastStructure[w++] != combiner.Final1)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < PshCombiner.MaxStages; i++)
+        {
+            if (_lastStructure[w++] != combiner.RgbInputs[i] ||
+                _lastStructure[w++] != combiner.AlphaInputs[i] ||
+                _lastStructure[w++] != combiner.RgbOutputs[i] ||
+                _lastStructure[w++] != combiner.AlphaOutputs[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private void ApplyTextures(GlProgram program, in PgraphDrawInfo info, PshCombiner? combiner, bool legacy)
@@ -1265,49 +1510,189 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _texDim[slot] = (int)((texture.Format & 0xC0u) >> 6);
             if (!sampleOk)
             {
+                _lastTextureValid[slot] = false;
                 continue;
             }
 
-            string key = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{texture.Offset:X8}:{color:X2}:{width}x{height}:{pitch}:{(linear ? 1 : 0)}");
-            uint fingerprint = FingerprintTexture(in texture, linear, bytes, width, height, pitch);
-            if (!_textures.TryGetValue(key, out GlTextureEntry? entry))
+            bool linearFlag = linear;
+            var key = new TextureKey(in texture, color, width, height, pitch, linearFlag);
+            GlTextureEntry? entry;
+            if (_lastTextureValid[slot] && _lastTextureKey[slot].Equals(key))
             {
-                uint textureId = UploadTexture(in texture, color, linear, bytes, width, height, pitch, fingerprint);
-                entry = new GlTextureEntry(textureId, fingerprint, width, height);
+                entry = _lastTextureEntry[slot]!;
+            }
+            else if (!_textures.TryGetValue(key, out entry))
+            {
+                uint textureId = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
+                entry = new GlTextureEntry(textureId, 0, width, height);
+                BuildSampleAddresses(entry, in texture, linear, bytes, width, height, pitch);
                 _textures.Add(key, entry);
             }
-            else if (entry.Fingerprint != fingerprint)
+
+            uint fingerprint = FingerprintEntry(entry);
+            if (entry.Fingerprint != fingerprint)
             {
-                UploadTexture(in texture, color, linear, bytes, width, height, pitch, fingerprint);
+                // Content change at the same guest address (the menu's atlas
+                // reuse): re-upload into the SAME entry and drop the old id so
+                // later draws bind the fresh texture, not a leaked one.
+                uint newId = UploadTexture(in texture, color, linear, bytes, width, height, pitch);
+                uint oldId = entry.Texture;
+                entry.Texture = newId;
                 entry.Fingerprint = fingerprint;
+                _gl.DeleteTextures(1, ref oldId);
+                InvalidateTextureBinding();
             }
 
-            _gl.ActiveTexture((TextureUnit)(0x84C0u + (uint)slot));
-            _gl.BindTexture(TextureTarget.Texture2D, entry.Texture);
+            _lastTextureKey[slot] = key;
+            _lastTextureEntry[slot] = entry;
+            _lastTextureValid[slot] = true;
+
+            // Binding shadow: consecutive draws usually bind the same texture
+            // on the same unit, and each redundant ActiveTexture/BindTexture
+            // pair is driver validation work on the 2.76M-draw menu stream.
+            if (_activeTextureUnit != slot)
+            {
+                _gl.ActiveTexture((TextureUnit)(0x84C0u + (uint)slot));
+                _activeTextureUnit = slot;
+            }
+
+            if (_boundTexture[slot] != entry.Texture)
+            {
+                _gl.BindTexture(TextureTarget.Texture2D, entry.Texture);
+                _boundTexture[slot] = entry.Texture;
+            }
         }
     }
 
-    private uint FingerprintTexture(in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height,
-        int pitch)
+    private readonly bool _probeNoWatch = string.Equals(
+        Environment.GetEnvironmentVariable("XGRID_GL_NOWATCH"), "1", StringComparison.Ordinal);
+
+    /// <summary>Binds a framebuffer through the binding shadow (the default framebuffer is 0 at context creation).</summary>
+    private void BindFbo(uint fbo)
     {
-        // Cheap sampled content fingerprint (head/tail/strided texel words):
-        // catches full-buffer re-uploads (the menu's real pattern) without a
-        // per-draw scan of megabytes; validated by the golden-frame gate.
-        uint hash = 2166136261u;
+        if (_boundFbo != fbo)
+        {
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
+            _boundFbo = fbo;
+        }
+    }
+
+    /// <summary>Drops the texture-unit binding shadow (any out-of-band Gen/Delete can reuse ids).</summary>
+    private void InvalidateTextureBinding()
+    {
+        _activeTextureUnit = -1;
+        Array.Clear(_boundTexture);
+        Array.Clear(_lastTextureValid);
+    }
+
+    /// <summary>Reads one 32-bit word for a texture fingerprint, using the direct RAM lane when the address is RAM (the adapter stays the authority for everything else).</summary>
+    private uint ReadFingerprintWord(uint address)
+    {
+        byte[]? ram = _ramBytes;
+        if (ram is not null && address <= _ramSize - 4u)
+        {
+            _probeFpRam++;
+            return System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                ram.AsSpan((int)address, 4));
+        }
+
+        _probeFpAdapter++;
+        return _memory.ReadPhysical(address);
+    }
+
+    private long _probeFpRam;
+    private long _probeFpAdapter;
+
+    /// <summary>
+    /// Resolves the 16 fingerprint sample addresses once per texture cache
+    /// key: the sample grid depends only on (offset, layout, extents), so the
+    /// per-draw check becomes 16 word reads with no address arithmetic.
+    /// </summary>
+    private static void BuildSampleAddresses(GlTextureEntry entry, in PgraphTextureSlot slot,
+        bool linear, uint bytes, int width, int height, int pitch)
+    {
+        uint[] addresses = new uint[16];
         for (int i = 0; i < 16; i++)
         {
             int x = (int)((ulong)((i * 97) + 13) % (uint)width);
             int y = (int)((ulong)((i * 389) + 7) % (uint)height);
-            uint address = TexelAddress(in slot, linear, bytes, width, height, pitch, x, y);
-            uint texel = bytes == 2
-                ? _memory.ReadPhysical(address) & 0xFFFFu
-                : _memory.ReadPhysical(address);
-            hash ^= texel;
-            hash *= 16777619u;
+            addresses[i] = TexelAddress(in slot, linear, bytes, width, height, pitch, x, y);
         }
 
+        entry.SampleAddresses = addresses;
+        entry.SampleMask = bytes == 2 ? 0xFFFFu : uint.MaxValue;
+    }
+
+    /// <summary>
+    /// Hashes the 16 pre-resolved sample words (same order/mask as the
+    /// original per-draw walk). All 16 loads are issued before hashing: the
+    /// FNV chain depends on each word, and on a 1 MB swizzled atlas the
+    /// sampled words are separate DRAM lines — a load-then-hash loop
+    /// serializes 16 memory latencies per draw (measured 7.4 us/draw on the
+    /// triangle; the triangle streams 3 textures per draw).
+    /// </summary>
+    private uint FingerprintEntry(GlTextureEntry entry)
+    {
+        uint[] addresses = entry.SampleAddresses;
+        uint mask = entry.SampleMask;
+
+        // Prefetch the 16 sample lines: they are scattered over the swizzled
+        // atlas, so each is a cold line (the CPU engine streams enough RAM to
+        // evict them between draws). Issuing the fills up front overlaps the
+        // latencies instead of paying them one at a time behind the hash chain.
+        byte[]? ram = _ramBytes;
+        if (ram is not null && System.Runtime.Intrinsics.X86.Sse.IsSupported)
+        {
+            ref byte ramBase = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(ram);
+            for (int i = 0; i < 16; i++)
+            {
+                uint address = addresses[i];
+                if (address <= _ramSize - 4u)
+                {
+                    unsafe
+                    {
+                        System.Runtime.Intrinsics.X86.Sse.Prefetch0(
+                            System.Runtime.CompilerServices.Unsafe.AsPointer(
+                                ref System.Runtime.CompilerServices.Unsafe.Add(ref ramBase, (int)address)));
+                    }
+                }
+            }
+        }
+
+        uint t0 = ReadFingerprintWord(addresses[0]) & mask;
+        uint t1 = ReadFingerprintWord(addresses[1]) & mask;
+        uint t2 = ReadFingerprintWord(addresses[2]) & mask;
+        uint t3 = ReadFingerprintWord(addresses[3]) & mask;
+        uint t4 = ReadFingerprintWord(addresses[4]) & mask;
+        uint t5 = ReadFingerprintWord(addresses[5]) & mask;
+        uint t6 = ReadFingerprintWord(addresses[6]) & mask;
+        uint t7 = ReadFingerprintWord(addresses[7]) & mask;
+        uint t8 = ReadFingerprintWord(addresses[8]) & mask;
+        uint t9 = ReadFingerprintWord(addresses[9]) & mask;
+        uint t10 = ReadFingerprintWord(addresses[10]) & mask;
+        uint t11 = ReadFingerprintWord(addresses[11]) & mask;
+        uint t12 = ReadFingerprintWord(addresses[12]) & mask;
+        uint t13 = ReadFingerprintWord(addresses[13]) & mask;
+        uint t14 = ReadFingerprintWord(addresses[14]) & mask;
+        uint t15 = ReadFingerprintWord(addresses[15]) & mask;
+
+        uint hash = 2166136261u;
+        hash = (hash ^ t0) * 16777619u;
+        hash = (hash ^ t1) * 16777619u;
+        hash = (hash ^ t2) * 16777619u;
+        hash = (hash ^ t3) * 16777619u;
+        hash = (hash ^ t4) * 16777619u;
+        hash = (hash ^ t5) * 16777619u;
+        hash = (hash ^ t6) * 16777619u;
+        hash = (hash ^ t7) * 16777619u;
+        hash = (hash ^ t8) * 16777619u;
+        hash = (hash ^ t9) * 16777619u;
+        hash = (hash ^ t10) * 16777619u;
+        hash = (hash ^ t11) * 16777619u;
+        hash = (hash ^ t12) * 16777619u;
+        hash = (hash ^ t13) * 16777619u;
+        hash = (hash ^ t14) * 16777619u;
+        hash = (hash ^ t15) * 16777619u;
         return hash;
     }
 
@@ -1324,7 +1709,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private uint UploadTexture(
         in PgraphTextureSlot slot, uint color, bool linear, uint bytes,
-        int width, int height, int pitch, uint fingerprint)
+        int width, int height, int pitch)
     {
         byte[] rgba = new byte[width * height * 4];
         for (int y = 0; y < height; y++)
@@ -1475,6 +1860,21 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _stateValid = true;
     }
 
+    /// <summary>Cheap combiner-constant change stamp: the 18 raw registers <see cref="PshCombiner.FillConsts"/> reads.</summary>
+    private static bool ConstRegistersMatch(GlProgram program, PshCombiner combiner)
+    {
+        uint[] stamp = program.ConstStamp;
+        for (int i = 0; i < 8; i++)
+        {
+            if (stamp[i] != combiner.Factor0[i] || stamp[8 + i] != combiner.Factor1[i])
+            {
+                return false;
+            }
+        }
+
+        return stamp[16] == combiner.SpecFogFactor[0] && stamp[17] == combiner.SpecFogFactor[1];
+    }
+
     private static bool SameValues(float[] a, float[] b, int count)
     {
         for (int i = 0; i < count; i++)
@@ -1499,11 +1899,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
-        PshCombiner.FillConsts(combiner, _constFlat);
-        if (!program.ConstValid || !SameValues(_constFlat, program.ConstCache, 72))
+        if (!program.ConstValid || !ConstRegistersMatch(program, combiner))
         {
+            PshCombiner.FillConsts(combiner, _constFlat);
             _gl.Uniform4(program.Location("uConsts[0]"), 18u, ref _constFlat[0]);
             Array.Copy(_constFlat, program.ConstCache, 72);
+            Array.Copy(combiner.Factor0, 0, program.ConstStamp, 0, 8);
+            Array.Copy(combiner.Factor1, 0, program.ConstStamp, 8, 8);
+            program.ConstStamp[16] = combiner.SpecFogFactor[0];
+            program.ConstStamp[17] = combiner.SpecFogFactor[1];
             program.ConstValid = true;
         }
 
@@ -1587,19 +1991,16 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private void PackVertices(in PgraphDrawInfo info, out int vertexCount)
     {
-        // NDC-only vertex buffer (attributes travel as per-draw uniforms so
-        // the fragment shader can re-run the software barycentric math
-        // exactly). Perspective rule mirrors Nv2AMmio.FillTriangle exactly.
+        // Per-draw values travel as uniforms so the fragment shader can re-run
+        // the software barycentric math exactly. Perspective rule mirrors
+        // Nv2AMmio.FillTriangle exactly. Positions go to uTri[0]/uTri[1] and
+        // the clip window to uTri[2].zw + uTri[24].xy (the vertex shader
+        // derives gl_Position from them by gl_VertexID).
         float invAw = info.A.W != 0f ? 1f / info.A.W : 0f;
         float invBw = info.B.W != 0f ? 1f / info.B.W : 0f;
         float invCw = info.C.W != 0f ? 1f / info.C.W : 0f;
         bool perspective = invAw != 0f && invBw != 0f && invCw != 0f &&
                            (info.A.W != info.B.W || info.B.W != info.C.W);
-        _perspective = perspective ? 1 : 0;
-        _invAw = invAw;
-        _invBw = invBw;
-        _invCw = invCw;
-        _clipY = info.ClipY;
         float clipW = info.ClipW;
         float clipH = info.ClipH;
         float clipX = info.ClipX;
@@ -1608,86 +2009,66 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         PgraphVertex a = info.A;
         PgraphVertex b = info.B;
         PgraphVertex c = info.C;
-        StoreVertex(in a, clipX, clipY, clipW, clipH, 0);
-        StoreVertex(in b, clipX, clipY, clipW, clipH, 1);
-        StoreVertex(in c, clipX, clipY, clipW, clipH, 2);
-
-        // Coverage superset: inflate the NDC triangle slightly about its
-        // centroid so GL rasterizes every pixel the software inclusive
-        // (any-sign) edge test accepts — GL's top-left rule alone drops
-        // shared-diagonal tie pixels that software covers TWICE (the
-        // double-blend on quad diagonals). The fragment shader's
-        // software-exact inside-test discards the over-coverage, leaving
-        // exactly software's per-triangle pixel set, ties included.
-        const float inflate = 1.02f;
-        float ndcAx = _vertexData[0];
-        float ndcAy = _vertexData[1];
-        float ndcBx = _vertexData[2];
-        float ndcBy = _vertexData[3];
-        float ndcCx = _vertexData[4];
-        float ndcCy = _vertexData[5];
-        float centerX = (ndcAx + ndcBx + ndcCx) / 3f;
-        float centerY = (ndcAy + ndcBy + ndcCy) / 3f;
-        _vertexData[0] = centerX + ((ndcAx - centerX) * inflate);
-        _vertexData[1] = centerY + ((ndcAy - centerY) * inflate);
-        _vertexData[2] = centerX + ((ndcBx - centerX) * inflate);
-        _vertexData[3] = centerY + ((ndcBy - centerY) * inflate);
-        _vertexData[4] = centerX + ((ndcCx - centerX) * inflate);
-        _vertexData[5] = centerY + ((ndcCy - centerY) * inflate);
+        StoreVertex(in a, 0);
+        StoreVertex(in b, 1);
+        StoreVertex(in c, 2);
+        _uTri[6] = perspective ? 1f : 0f;
+        _uTri[7] = invAw;
+        _uTri[8] = invBw;
+        _uTri[9] = invCw;
+        _uTri[10] = clipY;
+        _uTri[11] = clipX;
+        _uTri[TriClipSizeBase] = clipW;
+        _uTri[TriClipSizeBase + 1] = clipH;
         vertexCount = 3;
     }
 
-    private void StoreVertex(in PgraphVertex v, float clipX, float clipY, float clipW, float clipH, int index)
+    private void StoreVertex(in PgraphVertex v, int index)
     {
-        _uPx[(index * 2) + 0] = v.X;
-        _uPx[(index * 2) + 1] = v.Y;
-        _uColorV[(index * 4) + 0] = v.DiffuseR;
-        _uColorV[(index * 4) + 1] = v.DiffuseG;
-        _uColorV[(index * 4) + 2] = v.DiffuseB;
-        _uColorV[(index * 4) + 3] = v.DiffuseA;
-        _uSpecV[(index * 4) + 0] = v.SpecR;
-        _uSpecV[(index * 4) + 1] = v.SpecG;
-        _uSpecV[(index * 4) + 2] = v.SpecB;
-        _uSpecV[(index * 4) + 3] = v.SpecA;
-        _uT0V[(index * 4) + 0] = v.U0;
-        _uT0V[(index * 4) + 1] = v.V0;
-        _uT0V[(index * 4) + 2] = v.S0;
-        _uT0V[(index * 4) + 3] = v.T0W;
-        _uT1V[(index * 4) + 0] = v.U1;
-        _uT1V[(index * 4) + 1] = v.V1;
-        _uT1V[(index * 4) + 2] = v.S1;
-        _uT1V[(index * 4) + 3] = v.T1W;
-        _uT2V[(index * 4) + 0] = v.U2;
-        _uT2V[(index * 4) + 1] = v.V2;
-        _uT2V[(index * 4) + 2] = v.S2;
-        _uT2V[(index * 4) + 3] = v.T2W;
-        _uT3V[(index * 4) + 0] = v.U3;
-        _uT3V[(index * 4) + 1] = v.V3;
-        _uT3V[(index * 4) + 2] = v.S3;
-        _uT3V[(index * 4) + 3] = v.T3W;
-        _uVtx[(index * 4) + 0] = v.Z;
-        _uVtx[(index * 4) + 1] = v.W;
-        _uVtx[(index * 4) + 2] = v.Fog;
-        _uVtx[(index * 4) + 3] = 0f;
-
-        _vertexData[(index * VertexFloats) + 0] = ((2f * (v.X - clipX)) / clipW) - 1f;
-        _vertexData[(index * VertexFloats) + 1] = ((2f * (v.Y - clipY)) / clipH) - 1f;
+        // Preamble pixels: uTri[0] = (vA.x, vA.y, vB.x, vB.y), uTri[1].xy = vC.
+        _uTri[index * 2] = v.X;
+        _uTri[(index * 2) + 1] = v.Y;
+        int at = TriVaryingBase + (index * 4);
+        _uTri[at + 0] = v.DiffuseR;
+        _uTri[at + 1] = v.DiffuseG;
+        _uTri[at + 2] = v.DiffuseB;
+        _uTri[at + 3] = v.DiffuseA;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.SpecR;
+        _uTri[at + 1] = v.SpecG;
+        _uTri[at + 2] = v.SpecB;
+        _uTri[at + 3] = v.SpecA;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.U0;
+        _uTri[at + 1] = v.V0;
+        _uTri[at + 2] = v.S0;
+        _uTri[at + 3] = v.T0W;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.U1;
+        _uTri[at + 1] = v.V1;
+        _uTri[at + 2] = v.S1;
+        _uTri[at + 3] = v.T1W;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.U2;
+        _uTri[at + 1] = v.V2;
+        _uTri[at + 2] = v.S2;
+        _uTri[at + 3] = v.T2W;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.U3;
+        _uTri[at + 1] = v.V3;
+        _uTri[at + 2] = v.S3;
+        _uTri[at + 3] = v.T3W;
+        at += TriVaryingStride;
+        _uTri[at + 0] = v.Z;
+        _uTri[at + 1] = v.W;
+        _uTri[at + 2] = v.Fog;
+        _uTri[at + 3] = 0f;
     }
 
     private void UploadTriangleUniforms(GlProgram program)
     {
-        _gl.Uniform2(program.Location("uPx[0]"), 3u, ref _uPx[0]);
-        _gl.Uniform4(program.Location("uColorV[0]"), 3u, ref _uColorV[0]);
-        _gl.Uniform4(program.Location("uSpecV[0]"), 3u, ref _uSpecV[0]);
-        _gl.Uniform4(program.Location("uT0V[0]"), 3u, ref _uT0V[0]);
-        _gl.Uniform4(program.Location("uT1V[0]"), 3u, ref _uT1V[0]);
-        _gl.Uniform4(program.Location("uT2V[0]"), 3u, ref _uT2V[0]);
-        _gl.Uniform4(program.Location("uT3V[0]"), 3u, ref _uT3V[0]);
-        _gl.Uniform4(program.Location("uVtx[0]"), 3u, ref _uVtx[0]);
-        _gl.Uniform1(program.Location("uPerspective"), _perspective);
-        _gl.Uniform1(program.Location("uInvAw"), _invAw);
-        _gl.Uniform1(program.Location("uInvBw"), _invBw);
-        _gl.Uniform1(program.Location("uInvCw"), _invCw);
-        _gl.Uniform1(program.Location("uClipY"), _clipY);
+        // One upload for the whole per-draw block (was thirteen calls: the
+        // per-draw uniform bill dominated GL submission on the menu).
+        _gl.Uniform4(program.TriLocation, 25u, ref _uTri[0]);
     }
 }
