@@ -11967,3 +11967,98 @@ current state), `next-session.md` (rewritten), `ImplementationPlan.md`
 (status), plus the two other-session reference notes
 (`gpu-reference-map.md`, `nv097-coverage.md`) that are indexed from
 `next-session.md`.
+
+## §205 Track B draw-command batching: one instanced draw per PGRAPH primitive flush (2026-10-20, twelfth session) - LANDED
+
+**Question.** §204 left menu GL submission at ~1.2-1.5 s quiet, and named
+"per-triangle batching (instanced draws)" as the structural next step. Before
+building it, the batchable run length was measured, because the whole idea dies
+if a draw command is one triangle.
+
+**Measurement first (no code changes).** One 1B menu `--gpu gl --gpu-replace`
+run prints both numbers the ratio needs: `NV2A draws executed=33638` (draw
+commands, one per PGRAPH primitive flush) and `GPU backend=gl draws=2761019`
+(triangles offered to the backend) - **~82 triangles per draw command**. The
+1-in-64 `XGRID_GL_PROBE=1` split of `drawMs=2171` (786 ns/triangle) was texture
+work ~53%, uniform upload ~23%, `EnsureProgram` ~12%, `glDrawArrays` ~7%,
+state compares ~4%. So batching is worth ~2 s at 1B, and a *per-triangle* GL
+call reduction of ~98% is available.
+
+**Design (uniform-array blocks + instancing, not a texture buffer).** The §204
+plan sketched a TBO indexed by `gl_InstanceID`, but that moves the 25-vec4 block
+fetch into the *fragment* stage - ~19-25 texture-buffer lookups per fragment,
+i.e. a per-pixel cost on a path where there are 210M fragments/1B. Instead the
+per-triangle block stays a **uniform array** of `capacity * 25` vec4:
+
+- `flat out int vTri` in the vertex stage carries `gl_InstanceID` to the
+  fragment stage; both stages resolve the block with `#define T(i)
+  uTri[((vTri) * 25) + (i)]`. Dynamic indexing of a *uniform* array is a
+  constant-bank read (~1 cycle, and the driver can hoist it per primitive), not
+  a memory fetch. `gl_InstanceID` is 0 for a non-instanced draw, so the same
+  program serves the single-triangle path (block 0) with no second shader.
+- Capacity is the uniform budget: `min(MaxFragmentUniformVectors,
+  MaxVertexUniformVectors)` minus a 128-vec4 reserve over 25 vec4, clamped to
+  [1, 64]. This host (GL 4.6 compat) resolves to **64**; a minimum-spec GL 3.3
+  driver resolves to 3, and 1 disables batching. `XGRID_GL_NO_BATCH=1` forces
+  1 (same-binary A/B switch).
+- The *boundary* comes from the guest, not from a state fingerprint:
+  `IPgraphBackend.BeginDrawBatch()`/`EndDrawBatch()` (default no-ops) bracket
+  `Nv2aMmio.FlushDraw()`, the single entry point for every primitive flush. That
+  is the only place where "PGRAPH state and guest RAM cannot change between
+  these triangles" is *provable*: the flush loop is host-side and runs to
+  completion before the next method is processed. `TryDraw` outside a batch
+  keeps the exact old behavior, so an unwrapped caller can never be grouped.
+- Per batch: `EnsureProgram`, `ApplyTextures` (the 16-word content
+  fingerprint), `ApplyState`, `ApplyUniforms`, FBO/viewport/program binds run
+  **once**; each triangle appends its 100 floats to `_batchData`; the batch
+  submits with one `glUniform4(capacity*25)` + one
+  `glDrawArraysInstanced(TRIANGLES,0,3,count)`.
+- Ordering/validity: `Clear`, `Flip`, `ResetState`, `Dispose` and any
+  `TryDraw` that falls back to software flush the pending batch first, so the
+  software/GL write order is the pre-batching order. `drawMs` now includes the
+  flush (`timed[drawMs= flushMs= ...]`, `AddBatchFlushTicks` adds to both) so
+  submission stays comparable across batched and unbatched runs.
+
+**Evidence (same binary, interleaved pairs, `XGRID_GL_NO_BATCH` off/on, 1B menu
+`--gpu gl --gpu-replace`).**
+
+| metric | unbatched | batched | delta |
+|---|---|---|---|
+| `drawMs` (total submission) | 1971 ms | 1045 ms | **-47% (3/3)** |
+| of which batched flush | - | 242 ms | - |
+| `batchCalls` (instanced draws) | 0 | 59,437 | 46.5 tri/call |
+| wall (median of 3) | 42.20 s | 40.43 s | **-4.2% (3/3)** |
+| RAM / CPU SHA | `DD023100` / `F5D61C94` | identical | - |
+
+Per pair: wall -4.8 / -12.3 / -4.2%, `drawMs` -46.9 / -46.4 / -47.1%. The
+triangle leg batches too (`batchCalls=2423` for 54,492 triangles, `drawMs`
+251.8 ms of which flush 12.7 ms) but its wall is CPU-bound, so the win there is
+noise. Projected onto §204's quiet 24.8 s menu projection, -4.2% is ~23.8 s
+against the 24 s M-A target - **a projection, not an absolute** (this host
+still measures the reference sw legs ~1.9x slow; see `next-session.md` §5).
+
+**Gates (all green).** 1533 tests; `dotnet format --verify-no-changes` clean;
+1B menu golden sw `4EF1FBF6.` (anchor) vs gl `6BE6325F.` - **diff 1852 px,
+maxDelta 1, 0 violations** (byte-identical to the unbatched GL output, i.e. the
+batched fragment path is bit-exact); 1B triangle golden sw `A1740DE0.` (anchor)
+vs gl `3FC4B419.` - diff 16744, maxDelta 1, 0 violations; every counter
+identical (`draws=33632 frames=686 stalls=686`, `unsupported=0`,
+`BackendUnsupported=0`); fast-mode sw anchors exact (menu
+`660CA11B/F5D61C94`, triangle `F57934BF/CF79FC17`, pixels/textured unchanged);
+ktest XGrid leg at **792,800,535** steps to the 4E03A park with the 40,797-byte
+suite log **byte-identical** (SHA `CA5D3867.`). Mirror mode (`--gpu gl` without
+`--gpu-replace`) is covered by the menu golden run; replacement mode by the A/B.
+
+**Rejected / not done.** A TBO keyed by `gl_InstanceID` (per-fragment fetch
+cost, above). A state-fingerprint batch boundary (a per-triangle compare that
+must provably cover every field `PgraphDrawInfo` carries - the guest-side
+boundary is exact and free). Re-measuring §204's split from scratch (it stands).
+The remaining 803 ms of menu submission is now 2.76M x ~290 ns of block packing
+(`PackVerticesInto`, 100 float stores), not GL calls - that is the next
+structural item if submission matters again; per §204's fingerprint note it is
+below the current noise floor of every other lever.
+
+**Diagnostics added.** `XGRID_GL_NO_BATCH=1` (force the single-triangle path),
+`diag[... batchCalls= batchTris= batchCap=]`, `timed[flushMs=]`, probe `vtxMs`
+now measures the pack (the state fields measure per batch head).
+`scripts/batch-205-ab.ps1` runs the interleaved off/on A/B.

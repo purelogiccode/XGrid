@@ -1,5 +1,16 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-20 (twelfth session, §205) - Track B's two scoped slices are
+> in; Track C stays frozen.** Draw-command batching landed on top of §204
+> (`drawMs` 1971 -> 1045 ms, -47% 3/3; wall -4.2% 3/3; both 1B frames
+> byte-identical), so the GL path now costs ~1.05 s of a ~23.8 s projected menu
+> wall. Track B has no scoped slice left that is worth a session (the remainder
+> is ~0.8 s of block packing and the ~0.5-0.9 s texture fingerprint, both
+> documented as rejected/deferred). Next per `docs/development-direction.md` §0:
+> Track E (corpus) and Track P (product). The engine is still >50% of the
+> measured walls, but the redirect criterion is "after C3-x/y/z" and C3-x
+> landed; re-opening Track C remains an operator decision (C3-z, 2-3%).
+
 > **STATUS 2026-10-20 (course correction, §203) - Track C is FROZEN.** The CPU
 > engine is no longer the lead: the product frontend (`ea8b38f`) made the
 > software rasterizer the product renderer, so Track B leads with the

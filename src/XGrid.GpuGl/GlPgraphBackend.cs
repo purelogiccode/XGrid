@@ -71,10 +71,22 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     // Packed per-draw uniform block (uTri[25], see PshGlslGenerator) so a draw
     // is ONE uniform upload instead of thirteen. Layout constants are the
     // shader contract; the fragment shader reads the same slots.
-    private readonly float[] _uTri = new float[25 * 4];
+    private const int TriBlockFloats = 25 * 4; // one triangle's packed uniform block
+    private readonly float[] _uTri = new float[TriBlockFloats];
     private const int TriVaryingBase = 12; // floats 0..11 are the barycentric/scalar preamble
     private const int TriVaryingStride = 12; // floats per per-vertex channel (3 vertices x vec4)
     private const int TriClipSizeBase = 24 * 4; // uTri[24] = (clipW, clipH, 0, 0) for the vertex shader
+
+    // Draw-command batching: one PGRAPH primitive flush (BeginDrawBatch ..
+    // EndDrawBatch) shares program, texture, GL state and uniforms, so its
+    // triangles are staged in _batchData and submitted with one instanced
+    // draw. Capacity is the number of blocks that fit the uniform budget.
+    private readonly int _batchCapacity;
+    private readonly float[] _batchData;
+    private int _batchCount;
+    private bool _batchOpen;
+    private bool _batchStateReady;
+    private GlProgram? _batchProgram;
 
     // Shader-structure cache: draws in a run share the combiner structure, so
     // the key string is only built when the 37 structure words change (the
@@ -328,7 +340,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _ramSize = ramSize;
         }
 
-        _vertexShader = CompileVertexShader();
+        // Uniform-budget batch capacity: the packed block is 25 vec4 per
+        // triangle and both stages declare the array, so the smaller stage
+        // limit applies. A conservative fixed reserve covers the combiner,
+        // fog, alpha, ZCLIP and texture uniforms (~61 vec4 today).
+        bool batchingDisabled = string.Equals(
+            Environment.GetEnvironmentVariable("XGRID_GL_NO_BATCH"), "1", StringComparison.Ordinal);
+        int maxVectors = Math.Min(
+            QueryInteger(GetPName.MaxFragmentUniformVectors, 224),
+            QueryInteger(GetPName.MaxVertexUniformVectors, 224));
+        int capacity = batchingDisabled ? 1 : Math.Clamp((maxVectors - 128) / 25, 1, MaxBatchTriangles);
+        _batchCapacity = capacity;
+        _batchData = capacity > 1 ? new float[capacity * TriBlockFloats] : Array.Empty<float>();
+
+        _vertexShader = CompileVertexShader(capacity);
         // Empty VAO only: every per-draw value travels in the uTri uniform
         // block (positions are selected by gl_VertexID), so there is no vertex
         // buffer and no per-draw upload.
@@ -359,8 +384,24 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     public bool FlipReadbackEnabled { get; set; }
 
 
+    /// <summary>Upper bound on batched triangles per instanced draw (uniform budget permitting).</summary>
+    private const int MaxBatchTriangles = 64;
+
+    /// <summary>Reads one GL integer limit, falling back when the driver refuses the query (a 0 would disable batching).</summary>
+    private int QueryInteger(GetPName name, int fallback)
+    {
+        int value = _gl.GetInteger(name);
+        return value > 0 ? value : fallback;
+    }
+
     /// <summary>Gets the number of triangles submitted to GL.</summary>
     public long Draws { get; private set; }
+
+    /// <summary>Gets the number of instanced draws issued for batched draw commands.</summary>
+    public long BatchCalls { get; private set; }
+
+    /// <summary>Gets the number of triangles submitted through batched instanced draws.</summary>
+    public long BatchTriangles { get; private set; }
 
     /// <summary>Gets the number of clears mirrored to the FBO.</summary>
     public long Clears { get; private set; }
@@ -388,7 +429,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads}]");
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} " +
+                $"batchCalls={BatchCalls} batchTris={BatchTriangles} batchCap={_batchCapacity}]");
             _timings.AppendTo(sb);
             if (_probeEnabled)
             {
@@ -440,6 +482,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         {
             long start = Stopwatch.GetTimestamp();
             bool drawn = TryDrawCore(info);
+            if (!drawn)
+            {
+                // The caller will paint this triangle in software; submit the
+                // buffered host triangles first so the two writers keep the
+                // pre-batching draw order.
+                FlushBatch();
+            }
+
             _timings.AddDrawTicks(Stopwatch.GetTimestamp() - start);
             return drawn;
         }
@@ -453,6 +503,44 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
+    /// <summary>Opens one draw-command batch: from here to <see cref="EndDrawBatch"/> the guest state and RAM are frozen, so triangles are staged and submitted together.</summary>
+    public void BeginDrawBatch()
+    {
+        if (_fatalError is not null || _batchCapacity <= 1)
+        {
+            return;
+        }
+
+        _batchOpen = true;
+        _batchCount = 0;
+        _batchStateReady = false;
+    }
+
+    /// <summary>Closes the batch opened by <see cref="BeginDrawBatch"/> and submits its remaining triangles.</summary>
+    public void EndDrawBatch()
+    {
+        if (!_batchOpen)
+        {
+            return;
+        }
+
+        try
+        {
+            FlushBatch();
+        }
+        catch (Exception exception)
+        {
+            BackendUnsupported++;
+            _fatalCount++;
+            _fatalError = exception.GetType().Name + ": " + exception.Message;
+        }
+
+        _batchOpen = false;
+        _batchStateReady = false;
+        _batchCount = 0;
+        _batchProgram = null;
+    }
+
     /// <summary>Mirrors a clear the software path performed into the FBO via ClearCore, timing the call; a thrown GL exception increments <see cref="BackendUnsupported"/> and latches a fatal error.</summary>
     public void Clear(in PgraphClearInfo info)
     {
@@ -463,6 +551,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         try
         {
+            // A clear must never be reordered before buffered triangles.
+            FlushBatch();
             long start = Stopwatch.GetTimestamp();
             ClearCore(info);
             _timings.AddClear(Stopwatch.GetElapsedTime(start));
@@ -484,6 +574,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         try
         {
+            // The presented frame must include every triangle submitted so far.
+            FlushBatch();
             FlipCore(record);
         }
         catch (Exception exception)
@@ -513,6 +605,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return;
         }
 
+        // Buffered triangles belong to the FBO that is about to be deleted.
+        _batchOpen = false;
+        _batchCount = 0;
+        _batchStateReady = false;
+        _batchProgram = null;
         DeleteFbo();
         foreach (KeyValuePair<TextureKey, GlTextureEntry> entry in _textures)
         {
@@ -527,6 +624,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         InvalidateTextureBinding();
         _fatalError = null;
         Draws = 0;
+        BatchCalls = 0;
+        BatchTriangles = 0;
         Clears = 0;
         Flips = 0;
         LastFlipSurfaceAddress = 0;
@@ -572,6 +671,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         _disposed = true;
+        _batchOpen = false;
+        _batchCount = 0;
         try
         {
             DeleteFbo();
@@ -668,6 +769,64 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         bool probe = _probeEnabled && ((_probeDraws++ & 63L) == 0L);
+        if (_batchOpen && _batchCapacity > 1)
+        {
+            // Inside one draw command the guest cannot change PGRAPH state or
+            // RAM, so program/texture/state resolution runs once per batch and
+            // the whole run is one instanced draw (Track B: at 82 triangles
+            // per command this removes ~98% of the submission calls).
+            if (!_batchStateReady)
+            {
+                ApplyDrawState(in info, legacy, combiner, probe);
+                _batchStateReady = true;
+                _batchProgram = _lastProgram;
+            }
+
+            long vtxStart = probe ? Stopwatch.GetTimestamp() : 0L;
+            PackVerticesInto(in info, _batchData, _batchCount * TriBlockFloats);
+            if (probe)
+            {
+                _probeVertexTicks += Stopwatch.GetTimestamp() - vtxStart;
+                _probeSamples++;
+            }
+
+            _batchCount++;
+            BatchTriangles++;
+            if (_batchCount == _batchCapacity)
+            {
+                FlushBatch();
+            }
+
+            return true;
+        }
+
+        ApplyDrawState(in info, legacy, combiner, probe);
+
+        long t2 = probe ? Stopwatch.GetTimestamp() : 0L;
+        PackVertices(in info, out int vertexCount);
+        UploadTriangleUniforms(_lastProgram!);
+        long t3 = probe ? Stopwatch.GetTimestamp() : 0L;
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertexCount);
+        if (probe)
+        {
+            long t4 = Stopwatch.GetTimestamp();
+            // 1-in-64 sampling keeps the probe's own cost off the measuring
+            // path (per-draw probes distorted the submission bill ~2x).
+            _probeUniformTicks += t3 - t2;
+            _probeGlTicks += t4 - t3;
+            _probeSamples++;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves and applies everything that is constant for one draw command:
+    /// program, textures, GL state and the per-draw uniforms. Runs once per
+    /// batch instead of once per triangle.
+    /// </summary>
+    private void ApplyDrawState(in PgraphDrawInfo info, bool legacy, PshCombiner? combiner, bool probe)
+    {
         long t0 = probe ? Stopwatch.GetTimestamp() : 0L;
         GlProgram program = EnsureProgram(legacy, combiner);
         long t1 = probe ? Stopwatch.GetTimestamp() : 0L;
@@ -689,28 +848,34 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _gl.UseProgram(program.Id);
             _currentProgram = program.Id;
         }
-        ApplyUniforms(program, in info, combiner);
 
-        PackVertices(in info, out int vertexCount);
-        UploadTriangleUniforms(program);
+        ApplyUniforms(program, in info, combiner);
         long t2 = probe ? Stopwatch.GetTimestamp() : 0L;
-        long t3 = t2;
-        _gl.DrawArrays(PrimitiveType.Triangles, 0, 3);
+
         if (probe)
         {
-            long t4 = Stopwatch.GetTimestamp();
-            // 1-in-64 sampling keeps the probe's own cost off the measuring
-            // path (per-draw probes distorted the submission bill ~2x).
             _probePrepTicks += t1 - t0;
             _probeTextureTicks += t1b - t1;
             _probeStateTicks += t1c - t1b;
             _probeUniformTicks += t2 - t1c;
-            _probeVertexTicks += t3 - t2;
-            _probeGlTicks += t4 - t3;
-            _probeSamples++;
+        }
+    }
+
+    /// <summary>Submits every triangle buffered for the current batch as one instanced draw.</summary>
+    private void FlushBatch()
+    {
+        if (_batchCount == 0)
+        {
+            return;
         }
 
-        return true;
+        long start = Stopwatch.GetTimestamp();
+        GlProgram program = _batchProgram!;
+        _gl.Uniform4(program.TriLocation, (uint)(_batchCount * 25), ref _batchData[0]);
+        _gl.DrawArraysInstanced(PrimitiveType.Triangles, 0, 3u, (uint)_batchCount);
+        _timings.AddBatchFlushTicks(Stopwatch.GetTimestamp() - start);
+        BatchCalls++;
+        _batchCount = 0;
     }
 
     private readonly bool _probeEnabled = string.Equals(
@@ -1295,24 +1460,28 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _fboZetaBytes = 0;
     }
 
-    private uint CompileVertexShader()
+    private uint CompileVertexShader(int triangleCapacity)
     {
         // Positions come from the packed per-draw uniform block, selected by
-        // gl_VertexID: the draw needs no per-draw vertex-buffer upload (Track B
+        // gl_VertexID; the instance index selects the block of a batched draw.
+        // The draw needs no per-draw vertex-buffer upload (Track B
         // present-path measurement: BufferData was one of the three remaining
         // GL calls per draw). The NDC mapping and the centroid inflate mirror
         // the previous C# StoreVertex math operation-for-operation; the inflate
         // only widens GL coverage, and the fragment shader's software-exact
         // inside-test decides every pixel.
-        const string source =
+        string source =
             "#version 330 core\n" +
-            "uniform vec4 uTri[25];\n" +
+            string.Create(CultureInfo.InvariantCulture, $"uniform vec4 uTri[{triangleCapacity * 25}];\n") +
+            "flat out int vTri;\n" +
+            "#define T(i) uTri[((gl_InstanceID) * 25) + (i)]\n" +
             "void main() {\n" +
-            "  vec2 vA = uTri[0].xy;\n" +
-            "  vec2 vB = uTri[0].zw;\n" +
-            "  vec2 vC = uTri[1].xy;\n" +
-            "  vec2 clip = vec2(uTri[2].w, uTri[2].z);\n" +
-            "  vec2 size = vec2(uTri[24].x, uTri[24].y);\n" +
+            "  vTri = gl_InstanceID;\n" +
+            "  vec2 vA = T(0).xy;\n" +
+            "  vec2 vB = T(0).zw;\n" +
+            "  vec2 vC = T(1).xy;\n" +
+            "  vec2 clip = vec2(T(2).w, T(2).z);\n" +
+            "  vec2 size = vec2(T(24).x, T(24).y);\n" +
             "  vec2 ndcA = ((2.0 * (vA - clip)) / size) - 1.0;\n" +
             "  vec2 ndcB = ((2.0 * (vB - clip)) / size) - 1.0;\n" +
             "  vec2 ndcC = ((2.0 * (vC - clip)) / size) - 1.0;\n" +
@@ -1351,7 +1520,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return existing;
         }
 
-        string source = PshGlslGenerator.BuildFragmentSource(legacy, combiner!);
+        string source = PshGlslGenerator.BuildFragmentSource(legacy, combiner!, _batchCapacity);
         uint fragmentShader = _gl.CreateShader(ShaderType.FragmentShader);
         _gl.ShaderSource(fragmentShader, source);
         _gl.CompileShader(fragmentShader);
@@ -1993,73 +2162,75 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // Nv2AMmio.FillTriangle exactly. Positions go to uTri[0]/uTri[1] and
         // the clip window to uTri[2].zw + uTri[24].xy (the vertex shader
         // derives gl_Position from them by gl_VertexID).
+        PackVerticesInto(in info, _uTri, 0);
+        vertexCount = 3;
+    }
+
+    /// <summary>Packs one triangle's 25-vec4 block into <paramref name="target"/> at <paramref name="baseIndex"/> (floats).</summary>
+    private static void PackVerticesInto(in PgraphDrawInfo info, float[] target, int baseIndex)
+    {
         float invAw = info.A.W != 0f ? 1f / info.A.W : 0f;
         float invBw = info.B.W != 0f ? 1f / info.B.W : 0f;
         float invCw = info.C.W != 0f ? 1f / info.C.W : 0f;
         bool perspective = invAw != 0f && invBw != 0f && invCw != 0f &&
                            (info.A.W != info.B.W || info.B.W != info.C.W);
-        float clipW = info.ClipW;
-        float clipH = info.ClipH;
-        float clipX = info.ClipX;
-        float clipY = info.ClipY;
 
         PgraphVertex a = info.A;
         PgraphVertex b = info.B;
         PgraphVertex c = info.C;
-        StoreVertex(in a, 0);
-        StoreVertex(in b, 1);
-        StoreVertex(in c, 2);
-        _uTri[6] = perspective ? 1f : 0f;
-        _uTri[7] = invAw;
-        _uTri[8] = invBw;
-        _uTri[9] = invCw;
-        _uTri[10] = clipY;
-        _uTri[11] = clipX;
-        _uTri[TriClipSizeBase] = clipW;
-        _uTri[TriClipSizeBase + 1] = clipH;
-        vertexCount = 3;
+        StoreVertex(in a, 0, target, baseIndex);
+        StoreVertex(in b, 1, target, baseIndex);
+        StoreVertex(in c, 2, target, baseIndex);
+        target[baseIndex + 6] = perspective ? 1f : 0f;
+        target[baseIndex + 7] = invAw;
+        target[baseIndex + 8] = invBw;
+        target[baseIndex + 9] = invCw;
+        target[baseIndex + 10] = info.ClipY;
+        target[baseIndex + 11] = info.ClipX;
+        target[baseIndex + TriClipSizeBase] = info.ClipW;
+        target[baseIndex + TriClipSizeBase + 1] = info.ClipH;
     }
 
-    private void StoreVertex(in PgraphVertex v, int index)
+    private static void StoreVertex(in PgraphVertex v, int index, float[] target, int baseIndex)
     {
         // Preamble pixels: uTri[0] = (vA.x, vA.y, vB.x, vB.y), uTri[1].xy = vC.
-        _uTri[index * 2] = v.X;
-        _uTri[(index * 2) + 1] = v.Y;
-        int at = TriVaryingBase + (index * 4);
-        _uTri[at + 0] = v.DiffuseR;
-        _uTri[at + 1] = v.DiffuseG;
-        _uTri[at + 2] = v.DiffuseB;
-        _uTri[at + 3] = v.DiffuseA;
+        target[baseIndex + (index * 2)] = v.X;
+        target[baseIndex + (index * 2) + 1] = v.Y;
+        int at = baseIndex + TriVaryingBase + (index * 4);
+        target[at + 0] = v.DiffuseR;
+        target[at + 1] = v.DiffuseG;
+        target[at + 2] = v.DiffuseB;
+        target[at + 3] = v.DiffuseA;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.SpecR;
-        _uTri[at + 1] = v.SpecG;
-        _uTri[at + 2] = v.SpecB;
-        _uTri[at + 3] = v.SpecA;
+        target[at + 0] = v.SpecR;
+        target[at + 1] = v.SpecG;
+        target[at + 2] = v.SpecB;
+        target[at + 3] = v.SpecA;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.U0;
-        _uTri[at + 1] = v.V0;
-        _uTri[at + 2] = v.S0;
-        _uTri[at + 3] = v.T0W;
+        target[at + 0] = v.U0;
+        target[at + 1] = v.V0;
+        target[at + 2] = v.S0;
+        target[at + 3] = v.T0W;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.U1;
-        _uTri[at + 1] = v.V1;
-        _uTri[at + 2] = v.S1;
-        _uTri[at + 3] = v.T1W;
+        target[at + 0] = v.U1;
+        target[at + 1] = v.V1;
+        target[at + 2] = v.S1;
+        target[at + 3] = v.T1W;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.U2;
-        _uTri[at + 1] = v.V2;
-        _uTri[at + 2] = v.S2;
-        _uTri[at + 3] = v.T2W;
+        target[at + 0] = v.U2;
+        target[at + 1] = v.V2;
+        target[at + 2] = v.S2;
+        target[at + 3] = v.T2W;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.U3;
-        _uTri[at + 1] = v.V3;
-        _uTri[at + 2] = v.S3;
-        _uTri[at + 3] = v.T3W;
+        target[at + 0] = v.U3;
+        target[at + 1] = v.V3;
+        target[at + 2] = v.S3;
+        target[at + 3] = v.T3W;
         at += TriVaryingStride;
-        _uTri[at + 0] = v.Z;
-        _uTri[at + 1] = v.W;
-        _uTri[at + 2] = v.Fog;
-        _uTri[at + 3] = 0f;
+        target[at + 0] = v.Z;
+        target[at + 1] = v.W;
+        target[at + 2] = v.Fog;
+        target[at + 3] = 0f;
     }
 
     private void UploadTriangleUniforms(GlProgram program)

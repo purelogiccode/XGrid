@@ -582,21 +582,79 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `3FC4B419…`, sw anchors unchanged, `BackendUnsupported=0`); the automated
   acceptance run projects menu **24.8 s** (0.8 over the 24 s target) and triangle
   **6.1 s** (0.1 over) on a loaded host, so M-A is not fully closed.
+- **Track B draw-command batching (§205, 2026-10-20):** a PGRAPH primitive flush
+  averages **82 triangles**, so the GL backend now stages a flush and submits it
+  as **one** `glDrawArraysInstanced` with one `uTri[capacity*25]` upload (the
+  per-triangle block is a uniform-array slot selected by `gl_InstanceID` through a
+  flat varying; capacity 64 from the uniform budget; `XGRID_GL_NO_BATCH=1` forces
+  the old path). Same-binary interleaved A/B at 1B menu `gl+replace`: `drawMs`
+  1971 → **1045 ms (-47%, 3/3)**, wall median 42.20 → **40.43 s (-4.2%, 3/3)**,
+  59,437 instanced draws replace 2.76M single draws, guest SHAs identical, both
+  1B goldens **byte-identical** under the §204 policy (menu `6BE6325F…`, triangle
+  `3FC4B419…`), ktest log byte-identical. Projected onto §204's 24.8 s menu
+  projection: ~23.8 s against the 24 s M-A target. What is left of submission is
+  ~0.8 s of block packing, not GL calls.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1532 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1534 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
 > **Next session starts here:** `docs/research-notes/next-session.md` — verified
-> start state + 1B anchors, what §204 landed (Track B present path: readback
-> opt-in, per-draw submission -81%, method-histogram cost removed), the measured
-> split and what is left, the all-loaded order, measured negatives, validation
-> ceremony, commands and diagnostics.
+> start state + 1B anchors, what §205 landed (draw-command batching: -47%
+> submission, 59,437 instanced draws for 2.76M triangles, both 1B frames
+> byte-identical) and what §204 landed before it, where the remaining wall is,
+> the all-loaded order, measured negatives, validation ceremony, commands and
+> diagnostics.
 >
 > Frontend follow-ups (Track P): `docs/research-notes/avalonia-frontend.md`.
 > GPU reference orientation: `docs/research-notes/gpu-reference-map.md`; NV097
 > method coverage: `docs/research-notes/nv097-coverage.md`.
+
+**Session 2026-10-20 (twelfth; Track B draw-command batching, §205).**
+**One measured question, one structural slice: the GL backend no longer submits
+a draw per triangle.** Guest behavior is byte-identical on every gate; every
+change is host-side except the batch-boundary seam in `Nv2aMmio.FlushDraw`.
+
+- **Measured before building.** One 1B menu `--gpu gl --gpu-replace` run prints
+  both halves of the ratio: `NV2A draws executed=33638` (primitive flushes) and
+  `GPU backend=gl draws=2761019` (triangles) = **82 triangles per draw command**.
+  Without that number the slice would have been worthless: the dashboard's
+  `SET_BEGIN_END` history suggested one triangle per command. The 1-in-64 probe
+  split the 786 ns/triangle submission: texture work ~53%, uniform upload ~23%,
+  `EnsureProgram` ~12%, `glDrawArrays` ~7%, state ~4%.
+- **Design changed from the §204 sketch.** A TBO read by `gl_InstanceID` would
+  move the 25-vec4 block into the *fragment* stage (~19-25 lookups/fragment on a
+  210M-fragment leg, i.e. a per-pixel regression). Instead the block stays a
+  **uniform array** of `capacity * 25` vec4, and a `flat out/in int vTri` carries
+  `gl_InstanceID` to the fragment stage (`#define T(i) uTri[((vTri)*25)+(i)]` is
+  a constant-bank read, not a fetch). `gl_InstanceID` is 0 when not instanced, so
+  one program serves both paths. Capacity comes from the queried uniform budget
+  (64 here, 3 minimum-spec), `XGRID_GL_NO_BATCH=1` forces the old path.
+- **The boundary is guest-side and exact.** `IPgraphBackend.BeginDrawBatch()` /
+  `EndDrawBatch()` (default no-ops) bracket `Nv2aMmio.FlushDraw()` — the only
+  place where "PGRAPH state and guest RAM cannot change between these triangles"
+  is provable. No state fingerprint, and `TryDraw` outside a batch behaves
+  exactly as before. `Clear`/`Flip`/`ResetState`/`Dispose`/software-fallback
+  flush first, so write order matches the pre-batching behavior, and `drawMs`
+  now includes the flush (`flushMs` is the batch share).
+- **Evidence (same binary, interleaved, 3 pairs, 1B menu `gl+replace`):** `drawMs`
+  **1971 → 1045 ms (-47%, 3/3)**, of which 242 ms is the instanced draws;
+  `batchCalls=59437` for 2,761,019 triangles; wall median **42.20 → 40.43 s
+  (-4.2%, 3/3)**; RAM/CPU SHAs `DD023100`/`F5D61C94` on every leg. Triangle:
+  `batchCalls=2423`/54,492 triangles, `drawMs` 251.8 ms (flush 12.7 ms), wall
+  CPU-bound so no claim.
+- **Gates:** 1534 tests green; format clean; 1B menu golden sw `4EF1FBF6…` vs gl
+  **`6BE6325F…`** — diff 1852 px, maxDelta 1, 0 violations (the batched fragment
+  path is bit-exact); triangle sw `A1740DE0…` vs gl **`3FC4B419…`** — diff 16744,
+  0 violations; counters identical (`draws=33632 frames=686 stalls=686`,
+  `BackendUnsupported=0`); fast-mode sw anchors exact; ktest XGrid leg
+  792,800,535 steps with the 40,797-byte suite log byte-identical
+  (`CA5D3867…`). The mirror-mode menu run (no `--gpu-replace`) is covered by the
+  golden; the A/B covers replacement mode.
+- **New diagnostics/scripts:** `XGRID_GL_NO_BATCH=1`, `diag[... batchCalls=
+  batchTris= batchCap=]`, `timed[flushMs=]`, `scripts/batch-205-ab.ps1`.
+  Remaining menu submission is ~0.8 s of block packing, not GL calls.
 
 **Session 2026-10-20 (eleventh; Track B present path + Track E corpus opening).**
 **The GL present path is measured and fixed, and the compatibility corpus has its
