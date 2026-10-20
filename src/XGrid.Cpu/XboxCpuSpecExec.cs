@@ -2841,7 +2841,7 @@ public sealed partial class XboxCpu
         Fpu80 left = cpu.Fpu.GetRegister(instruction.Operand1.RegisterIndex);
         Fpu80 right = cpu.Fpu.GetRegister(0);
         cpu.Fpu.SetRegister(
-            instruction.Operand1.RegisterIndex, ApplyFpuArithmetic(mnemonic, left, right));
+            instruction.Operand1.RegisterIndex, cpu.ApplyFpuArithmetic(mnemonic, left, right));
         cpu.Fpu.Pop();
         cpu.Context.Eip += (uint)instruction.Length;
     }
@@ -2903,7 +2903,7 @@ public sealed partial class XboxCpu
         // memory source throws with no FPU mutation and precise EIP.
         Fpu80 left = cpu.ReadFpuReal(instruction.Operand1);
         Fpu80 right = cpu.ReadFpuReal(instruction.Operand2);
-        cpu.WriteFpuReal(instruction.Operand1, ApplyFpuArithmetic(mnemonic, left, right));
+        cpu.WriteFpuReal(instruction.Operand1, cpu.ApplyFpuArithmetic(mnemonic, left, right));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -3101,7 +3101,7 @@ public sealed partial class XboxCpu
         // `Fiadd/...` case. The integer read faults before ST(0) updates,
         // so EIP stays precise exactly like the interpreter.
         cpu.Fpu.SetRegister(
-            0, ApplyFpuArithmetic(mnemonic, cpu.Fpu.GetRegister(0), cpu.ReadFpuInteger(instruction.Operand1)));
+            0, cpu.ApplyFpuArithmetic(mnemonic, cpu.Fpu.GetRegister(0), cpu.ReadFpuInteger(instruction.Operand1)));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4681,3 +4681,4 @@ public sealed partial class XboxCpu
         cpu.Context.Eip += (uint)instruction.Length;
     }
 }
+

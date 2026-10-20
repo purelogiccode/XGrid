@@ -1,6 +1,8 @@
-# Next session instructions (written 2026-10-20, after the Track B fast-lane session)
+﻿# Next session instructions (updated 2026-10-20 after the oracle session)
 
 **Read in this order:** `AGENTS.md` (session notes + current state),
+`docs/research-notes/xemu-0.8.137.md` (verified 0.8.137 delta),
+`docs/research-notes/cpu-oracle.md` (independent x86 differential),
 `docs/research-notes/jit-track-charter.md` (status header),
 `docs/research-notes/xgrid-architecture-decisions.md` §202 (+ §200 for the loops'
 history), `docs/research-notes/rasterizer-inventory.md`, then this file.
@@ -8,11 +10,11 @@ history), `docs/research-notes/rasterizer-inventory.md`, then this file.
 ## 0. Verify the start state before touching anything
 
 ```powershell
-git log --oneline -1        # expect: docs: 202 session handoff ... (or your own head)
-git status --short          # only other-session edits (xemu-0.8.137 docs,
-                            # tools/completion-graph) may appear - never commit those
+git log --oneline -1        # expect: the oracle/0.8.137 session commit
+git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build   # expect 1522 green
+dotnet test  XGrid.sln -c Release --nologo --no-build   # expect 1519 green
+python tools/cpu-oracle/oracle.py --list | Measure-Object -Line   # 333 cases
 pwsh -File scripts/raster-leg.ps1 -Workload tri  -Log wt-data\start-tri.log
 pwsh -File scripts/raster-leg.ps1 -Workload menu -Log wt-data\start-menu.log
 ```
@@ -26,17 +28,38 @@ do not "fix" the code):
 | triangle (same flags) | `F57934BF…` | `CF79FC17…` | ~2.8 s |
 
 Accurate-mode anchors (JIT off): menu `D9C99A58…` / `3D2740B8…`, triangle
-`F57934BF…` / `98039867…`.
+`F57934BF.` / **`9B5AFC2A.`** (moved from `98039867` when the FPU
+status word started latching ZE on divide-by-zero; a byte diff of the two
+`.xgs` saves is exactly one byte, `0x0101 -> 0x0105`, RAM identical).
 
-- **1522 tests green**, `dotnet build -c Release` clean, `dotnet format
-  --verify-no-changes` clean, ktest smoke **PASS 7/7**.
+- **1519 tests green**, `dotnet build -c Release` clean, `dotnet format
+  --verify-no-changes` clean, ktest XGrid leg at **792,800,535** steps with only the
+  known deltas (319, 344); the xemu leg cannot bind its monitor socket on this host.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
 - **Oracle: `References2/xemu-0.8.137` is primary** (0.8.136 stays vendored).
 - Rasterizer 1B `compiled` share: menu ~456K fills / 308.2M px / ~12.0 s; triangle
   53,574 / 62.4M / ~2.6 s. Same host window: menu sw wall **33.3 s**, menu
   `--gpu gl --gpu-replace` **31.1 s** (use both as the session's reference pair).
 
-## 1. What the last session landed (§202) - do not redo it
+## 0b. What the tenth session landed - do not redo it
+
+1. **0.8.137 re-base.** `docs/research-notes/xemu-0.8.137.md` records the measured
+   delta: the NV2A tree is formatting-identical except PTIMER (`ptimer.c` rewrite,
+   `NV_PMC_INTR_0_PTIMER` bit 20 wired into `nv2a_update_irq`), the Vulkan blit
+   filter and the GL shader-cache key. No new NV097 methods and no PSH/VSH/vertex/
+   texture semantic change. The APU/DSP restructure is catalogued (4-vector
+   interrupt table with ILLEGAL at 0x04, SR bit names, DMA format 0, the
+   `DMA_CONTROL` 3-read completion, `XGSCNT`).
+2. **CPU differential oracle** (`tools/cpu-oracle/`, 333 cases, defined-flag masks).
+   It found and fixed `0F BA` (BT/BTS/BTR/BTC r/m, imm8) not being decoded, the
+   `FPREM` condition-code mapping, and `FDIV` ZE/IE latching.
+3. **Queued fidelity item (not done):** `Nv2aMmio` still implements the 0.8.136
+   PTIMER (counter-only, ALARM_0 ignored, no PTIMER IRQ). Land the 0.8.137 model
+   (61-bit register time with writable offset, 27-bit-masked ALARM_0 re-armed on
+   wrap, alarm pending latched on `INTR_0` read, PMC bit 20) with unit
+   differentials and unchanged menu/triangle goldens.
+
+## 1. What the ninth session landed (202) - do not redo it
 
 1. **Per-fill direct-RAM sampler in both compiled fills.** `IGpuMemoryFast.TryGetRamBytes
    (out byte[], out uint)` + `SamplerAddressBound(in SamplerPlan)` prove the highest
