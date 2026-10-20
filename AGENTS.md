@@ -570,10 +570,12 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
-> **Next session starts here:** `docs/research-notes/next-session.md` (start
-> state, the compiled rasterizer loops and their measured shares, Track B/C
-> candidates with acceptance/kill criteria, commands, measurement recipes,
-> non-goals).
+> **Next session starts here:** `docs/research-notes/next-session.md` - verified start
+> state + 1B anchors, what §202 landed (do not redo), the remaining wall split, an
+> ordered plan with acceptance/kill criteria for the two open tracks (Track B: 2-pixel
+> interleave in the k1 fill; Track C: identity-window probe, higher risk), the measured
+> negatives, the rules (validation ceremony, strip probes before A/B), commands and
+> diagnostics.
 
 **Session 2026-10-20 (ninth).** **Track B compiled-loop fast lanes: the sampler's
 descriptor work is gone (§202).** Priced by ablation on the 1B legs first (a probe
