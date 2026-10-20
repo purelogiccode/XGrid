@@ -578,9 +578,36 @@ public sealed unsafe partial class XboxCpu
     internal void RawNoteStorePhysical(uint physical, int sizeInBits) =>
         NoteStorePhysical(physical, sizeInBits);
 
+    /// <summary>Gets the raw runner's slow-path memory members (diagnostic).</summary>
+    public long RawSlowMemoryMembers => _rawSlowMemory;
+
+    private long _rawSlowMemory;
+    private long _rawSlowDevice;
+
+    /// <summary>Gets the raw runner's slow-path device-space members (diagnostic).</summary>
+    public long RawSlowDeviceMembers => _rawSlowDevice;
+
     /// <summary>Reads guest memory through the exact interpreter path (raw helper).</summary>
-    internal uint RawReadMemory(uint address, int size) => ReadMemory(address, size);
+    internal uint RawReadMemory(uint address, int size)
+    {
+        _rawSlowMemory++;
+        if (address >= 0xFD000000u)
+        {
+            _rawSlowDevice++;
+        }
+
+        return ReadMemory(address, size);
+    }
 
     /// <summary>Writes guest memory through the exact interpreter path (raw helper).</summary>
-    internal void RawWriteMemory(uint address, int size, uint value) => WriteMemory(address, size, value);
+    internal void RawWriteMemory(uint address, int size, uint value)
+    {
+        _rawSlowMemory++;
+        if (address >= 0xFD000000u)
+        {
+            _rawSlowDevice++;
+        }
+
+        WriteMemory(address, size, value);
+    }
 }
