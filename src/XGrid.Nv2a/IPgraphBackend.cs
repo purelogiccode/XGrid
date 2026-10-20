@@ -60,6 +60,29 @@ public interface IPgraphBackend
     }
 
     /// <summary>
+    /// Opens one PGRAPH draw-command batch: every <see cref="TryDraw"/> between
+    /// this call and <see cref="EndDrawBatch"/> belongs to the same primitive
+    /// flush, so the guest cannot change PGRAPH state or guest RAM between
+    /// them (the flush loop is host-side and runs to completion before the next
+    /// method is processed). A backend may therefore resolve program, texture,
+    /// state and uniform values once and submit the whole run with one host
+    /// call. Draws outside a batch carry no such guarantee and must be handled
+    /// one at a time. The default implementation ignores the boundary.
+    /// </summary>
+    void BeginDrawBatch()
+    {
+    }
+
+    /// <summary>
+    /// Closes the batch opened by <see cref="BeginDrawBatch"/>: the backend
+    /// must submit anything it buffered before returning, because the caller
+    /// may clear, flip, read back or reset immediately after.
+    /// </summary>
+    void EndDrawBatch()
+    {
+    }
+
+    /// <summary>
     /// Gets whether this backend replaces the software rasterizer for the
     /// draws and clears it honors (replacement mode) instead of mirroring it.
     /// Mirror mode (the default) keeps the software path authoritative: the

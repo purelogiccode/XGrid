@@ -24,10 +24,14 @@ public struct GlBackendTimings
     private double _drawMs;
     private double _clearMs;
     private double _readbackMs;
+    private double _flushMs;
     private long _readbacks;
 
     /// <summary>Gets cumulative draw-submission milliseconds.</summary>
     public readonly double DrawMs => _drawMs;
+
+    /// <summary>Gets the part of <see cref="DrawMs"/> spent submitting batched draw commands (one instanced draw per batch).</summary>
+    public readonly double FlushMs => _flushMs;
 
     /// <summary>Gets cumulative clear-submission milliseconds.</summary>
     public readonly double ClearMs => _clearMs;
@@ -50,6 +54,20 @@ public struct GlBackendTimings
         _drawMs += elapsedTicks * TicksToMs;
     }
 
+    /// <summary>
+    /// Records one batched draw-command submission from a raw tick delta. The
+    /// flush is part of draw submission (it is where a batched draw actually
+    /// reaches GL), so it is added to <see cref="DrawMs"/> as well as to the
+    /// <see cref="FlushMs"/> subset — <c>drawMs</c> stays comparable across
+    /// batched and unbatched runs.
+    /// </summary>
+    public void AddBatchFlushTicks(long elapsedTicks)
+    {
+        double ms = elapsedTicks * TicksToMs;
+        _flushMs += ms;
+        _drawMs += ms;
+    }
+
     /// <summary>Records one clear submission.</summary>
     public void AddClear(TimeSpan elapsed)
     {
@@ -69,6 +87,7 @@ public struct GlBackendTimings
         _drawMs = 0;
         _clearMs = 0;
         _readbackMs = 0;
+        _flushMs = 0;
         _readbacks = 0;
     }
 
@@ -80,6 +99,6 @@ public struct GlBackendTimings
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.Append(CultureInfo.InvariantCulture,
-            $" timed[drawMs={_drawMs:F1} clearMs={_clearMs:F1} readbackMs={_readbackMs:F1} readbacks={_readbacks}]");
+            $" timed[drawMs={_drawMs:F1} flushMs={_flushMs:F1} clearMs={_clearMs:F1} readbackMs={_readbackMs:F1} readbacks={_readbacks}]");
     }
 }

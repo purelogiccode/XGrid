@@ -4057,6 +4057,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void FlushDraw()
     {
+        // One draw command: every triangle below shares the live PGRAPH state
+        // (methods are processed sequentially and the primitive buffer is
+        // closed before the next one), so a backend may batch the whole run
+        // into one host submission. The boundary is server-side bookkeeping
+        // only; the software rasterizer is untouched.
+        IPgraphBackend? backend = Backend;
+        if (backend is null)
+        {
+            FlushDrawCommand();
+            return;
+        }
+
+        backend.BeginDrawBatch();
+        try
+        {
+            FlushDrawCommand();
+        }
+        finally
+        {
+            backend.EndDrawBatch();
+        }
+    }
+
+    private void FlushDrawCommand()
+    {
         if (_drawArraysRanges.Count != 0)
         {
             FlushDrawArraysDraw();

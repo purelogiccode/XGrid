@@ -116,11 +116,24 @@ against xemu where an oracle exists (triangle ≈830 Msteps/s; ktest smoke xemu
 medians vs `4f0bd47`: menu `gl+replace` **63.09 → 45.25 s (-20.5%, 3/3)**,
 triangle 10.26 → 9.89 s (-0.9%, 3/3). The quiet-host projections above are the
 ratio method against the previous session's references; the menu is at the
-M-A boundary (22–25 s across windows) and the triangle is CPU-bound
+M-A boundary (22-25 s across windows) and the triangle is CPU-bound
 (`nonJitMs` 3.75 s of `outerMs` 6.3 s), so it cannot reach 6 s from Track B
-alone. Remaining menu GL submission ~1.2–1.5 s, dominated by the texture-content
+alone. Remaining menu GL submission ~1.2-1.5 s, dominated by the texture-content
 fingerprint; the exact fix is guest-write span tracking, not weaker sampling.
 The shared method-histogram cost (-6.2% menu sw) was also removed (§204 item 8).
+
+**Track B slice 2 (§205) landed — draw-command batching.** A PGRAPH primitive
+flush averages **82 triangles**, so the backend now stages a whole flush and
+submits it with one instanced draw (per-triangle block = a uniform-array slot,
+selected by `gl_InstanceID` through a flat varying; capacity 64 from the uniform
+budget; `XGRID_GL_NO_BATCH=1` forces the old path). Same-binary interleaved A/B
+at 1B menu `gl+replace`: **`drawMs` 1971 → 1045 ms (-47%, 3/3)**, wall median
+42.20 → 40.43 s (**-4.2%, 3/3**), 59,437 instanced draws replace 2.76M single
+draws, RAM/CPU SHAs identical, both 1B goldens byte-identical under the §204
+policy (menu `6BE6325F.`, triangle `3FC4B419.`). Projected onto the 24.8 s menu
+projection that is ~23.8 s against the 24 s M-A target. What is left of
+submission is ~803 ms of block packing (100 float stores × 2.76M), not GL calls.
+
 
 Anchors (fast mode): menu RAM `660CA11B…` / CPU `F5D61C94…`; triangle
 `F57934BF…` / `CF79FC17…`. Accurate mode: menu `D9C99A58…`/`3D2740B8…`,

@@ -1,21 +1,22 @@
-# Next session instructions (updated 2026-10-20 after the Track B present-path session)
+# Next session instructions (updated 2026-10-20 after the draw-command batching session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §204 (measured present-path
-split, the eight slices, the two shared-path wins) + §203 (course correction),
-`docs/compatibility.md` (matrix + harness), `docs/research-notes/nv097-coverage.md`
-(method-presence gap: 108 handled / 93 recorded), `docs/research-notes/gpu-reference-map.md`
-(where to look for GPU facts), `docs/research-notes/jit-track-charter.md` (status),
+`docs/research-notes/xgrid-architecture-decisions.md` §205 (draw-command
+batching: measurement, design, evidence, gates) + §204 (present-path split,
+readback removal) + §203 (course correction), `docs/compatibility.md` (matrix +
+harness), `docs/research-notes/nv097-coverage.md` (method-presence gap),
+`docs/research-notes/gpu-reference-map.md` (where to look for GPU facts),
+`docs/research-notes/jit-track-charter.md` (status),
 `docs/research-notes/rasterizer-inventory.md`, then this file.
 
 ## 0. Verify the start state before touching anything
 
 ```powershell
-git log --oneline -1        # expect: the §204 Track B present-path commit
+git log --oneline -1        # expect: the §205 draw-command batching commit
 git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1532 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1534 green
 ```
 
 Expected 1B fast-mode anchors (if these differ, the environment moved - record it,
@@ -24,58 +25,73 @@ do not "fix" the code):
 | leg | RAM | CPU | `rasterPsh` (quiet) | `drawMs` (gl) |
 |---|---|---|---|---|
 | menu (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | `660CA11B…` | `F5D61C94…` | ~12.0 s | — |
-| menu `--gpu gl --gpu-replace` | `DD023100…` | `F5D61C94…` | 0 | ~1.2-1.5 s (quiet) |
+| menu `--gpu gl --gpu-replace` | `DD023100…` | `F5D61C94…` | 0 | ~1.05 s (`flushMs` ~0.24 s) |
 | triangle (same flags, sw) | `F57934BF…` | `CF79FC17…` | ~2.8 s | — |
-| triangle `--gpu gl --gpu-replace` | `D1EDD170…` | `CF79FC17…` | 0 | ~0.3 s (quiet) |
+| triangle `--gpu gl --gpu-replace` | `D1EDD170…` | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
 
 Accurate-mode anchors (JIT off): menu `D9C99A58…`/`3D2740B8…`, triangle
 `F57934BF.`/`9B5AFC2A.`. GL frame anchors: menu `6BE6325F…`, triangle `3FC4B419…`
 (policy diff vs sw: menu 1852 px / maxDelta 1 / 0 violations, triangle 16744 px /
 maxDelta 1 / 0 violations). Note the gl legs' **RAM** SHA differs by design (the
 software twin does not write the surfaces); CPU SHA and every counter must match
-the sw leg.
+the sw leg. Batching must never change either frame SHA: both were reproduced
+byte-identically in §205.
 
-- **1532 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
-  steps (suite log 40,797 B, byte-identical to the accepted run), smoke 7/7 rows
-  green. The xemu leg still cannot bind its monitor socket on this host.
+- **1534 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+  steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical to the accepted
+  run). The xemu leg still cannot bind its monitor socket on this host, and
+  `scripts/ktest-smoke.ps1` still needs `-XisoSharp` (its default path has the
+  old user name); §205 re-ran the gate's XGrid leg directly against the existing
+  `wt-data\ktest-smoke\xgrid\ktest-smoke.iso`.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
 
-## 0b. What the eleventh session landed (§204) - do not redo it
+## 0b. What the twelfth session landed (§205) - do not redo it
 
-1. **The GL split is measured** (do not re-measure from scratch): menu ~9.9 s =
-   submission 6.87 s (2.49 us/draw) + readback 0.71 s + swizzle/alloc ~0.3 s.
-   The readback was ~1 s, not 8.8 s. `XGRID_GL_PROBE=1` gives the intra-draw
-   split (1-in-64 samples).
-2. **Readback is opt-in**: `FlipReadbackEnabled` is set by the CLI only for
-   `--frame` / `--frame-first`; a flip otherwise stays on the GPU. Do not
-   re-enable it in the fast path; gates and screenshots opt in.
-3. **One uniform + one draw per triangle** (`uTri[25]`, positions by
-   `gl_VertexID`; no VBO upload). Program-structure cache, `TextureKey` structs,
-   per-entry sample addresses, prefetched fingerprints, GL binding shadows,
-   raw-tick timing, no double-upload on texture creation. Do not re-add per-draw
-   strings, per-draw `BufferData`, or redundant binds.
-4. **Shared-path wins are in**: `Nv2aMmio.CollectMethodHistogram` off in the CLI
-   (menu sw -6.2%), `IPgraphBackend.ObserveMethods` lets a backend decline the
-   per-method callback (loaded menu gl -5.8 s). Do not re-add a virtual call per
-   PGRAPH method.
-5. **Track E harness + rows**: `scripts/boot-to-first-frame.ps1`,
-   `--frame-first`, `docs/compatibility.md` with four measured rows.
-6. **Fidelity gate**: no NV2A/APU polish without a `docs/compatibility.md` row
-   and a usage histogram (`nv097-coverage.md` is the method-presence side).
+1. **Draw-command batching is in and default-on.** `IPgraphBackend`
+   `BeginDrawBatch()`/`EndDrawBatch()` bracket `Nv2aMmio.FlushDraw()`; the GL
+   backend stages every triangle of one primitive flush and submits it as one
+   `glDrawArraysInstanced` with one `glUniform4(capacity*25)` upload. Measured:
+   `drawMs` 1971 → 1045 ms (-47%, 3/3), wall -4.2% (3/3), 59,437 instanced draws
+   for 2.76M triangles. Do not re-add per-triangle `EnsureProgram`/
+   `ApplyTextures`/`ApplyState`/`ApplyUniforms` inside a batch, and do not
+   invent a state-fingerprint batch boundary: the guest-side boundary is exact.
+2. **The shader is instanced.** `flat out/in int vTri` carries
+   `gl_InstanceID`; both stages read the block with
+   `#define T(i) uTri[((vTri) * 25) + (i)]`. `gl_InstanceID` is 0 for
+   non-instanced draws, so **there is one program for both paths** - do not fork
+   a second fragment source for the single-triangle case. The array size is
+   `capacity * 25` and is part of `BuildFragmentSource`, so a fragment-source
+   golden test must pass the capacity.
+3. **Capacity = uniform budget.** `min(MaxFragmentUniformVectors,
+   MaxVertexUniformVectors) - 128)/25`, clamped to [1, 64] (64 on this host,
+   3 on a minimum-spec GL 3.3 driver). `XGRID_GL_NO_BATCH=1` forces 1 and is the
+   same-binary A/B switch (`scripts/batch-205-ab.ps1`). Do not hard-code 64.
+4. **Flush points are load-bearing.** `Clear`, `Flip`, `ResetState`, `Dispose`
+   and every `TryDraw` that falls back to software flush the pending batch
+   first, which keeps the software/GL write order identical to the pre-batching
+   behavior. Any new backend entry point that can change FBO content or guest
+   RAM must flush too.
+5. **`drawMs` includes the flush** (`timed[drawMs= flushMs= …]`,
+   `AddBatchFlushTicks` adds to both) so submission stays comparable across
+   batched and unbatched runs. `diag[... batchCalls= batchTris= batchCap=]`.
+6. **What is left of menu submission is packing, not GL calls**: ~803 ms =
+   2.76M × ~290 ns of `PackVerticesInto` (100 float stores per triangle). If
+   that ever matters, it needs a different data layout (e.g. float4-wide stores
+   or a persistent-mapped UBO written directly), not fewer GL calls.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Menu `gl+replace` (quiet projection ~24.8 s)**: GL submission ~1.2-1.5 s
-(texture fingerprint ~0.5-0.9 s, two GL calls ~0.4 s, state compares), CPU
-engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s. The menu's
-2.76M triangles are the structural limit: 2 GL calls each = 5.5M calls.
+**Menu `gl+replace` (quiet projection ~23.8 s)**: GL submission ~1.05 s
+(0.24 s of it the instanced draws), CPU engine ~17 s, block builds ~1.4 s,
+interpreter ~2.5 s, boot ~2 s. The remaining menu headroom is CPU engine
+(Track C, frozen) plus the ~0.8 s of block packing.
 
 **Triangle `gl+replace` (~6.1 s)**: CPU-bound (`nonJitMs` 3.75 s of `outerMs`
-6.3 s); GL submission is ~0.3-0.6 s. Track B cannot close the 6 s target without
-Track C (frozen) or draw batching.
+6.3 s); GL submission is ~0.25 s. Track B cannot close the 6 s target without
+Track C (frozen).
 
 The automated acceptance run is `scripts/present-path-acceptance.ps1` (interleaved
 sw/gl pairs -> medians -> projection against the recorded quiet references). Its
@@ -85,46 +101,53 @@ even with an idle CPU, so absolute M-A status is undecided (see §5).
 
 ## 2. Recommended next session - fixed order
 
-### Option A (Track B, if the 24 s/6 s targets must be closed): per-triangle batching
+Track B's two scoped slices are now both in, so the order moves to the other
+tracks. Pick **one**:
 
-Scope: batch the triangles of one draw command into **one** `glDrawArrays`
-instanced call, with the per-triangle block (the current `uTri[25]`) read from a
-**texture buffer object** indexed by `gl_InstanceID`. The fragment shader keeps
-its software-exact barycentric math (values are identical float32 reads), so the
-goldens must stay policy-clean. Ceiling: menu submission 1.2-1.5 s → ~0.2 s,
-i.e. the menu target met with ~1 s margin; it does nothing for the triangle.
-Kill: if the TBO path cannot reproduce the 200M byte-identical frame, stop and
-record (do not weaken the interpolation).
-
-### Option B (Track E, the steering signal): grow the corpus
+### Option A (Track E, the steering signal): grow the corpus
 
 Highest value: **clear the nxdk toolchain blocker** (install MSYS2 clang/make on
-D: - C: has 247 MB free - then `git clone --recursive` nxdk + `bin/activate`).
-That turns four existing sources into rows (`nxdk-mesh` = the first textured 3D
-row). Then re-run `scripts/boot-to-first-frame.ps1 -All` and update the matrix.
-The exit criterion (M-B) is >= 8 rows with at least two beyond
-dashboard/triangle/ktest; today there are 3 runnable rows.
+D: - C: has little free space - then `git clone --recursive` nxdk +
+`bin/activate`). That turns four existing sources into rows (`nxdk-mesh` = the
+first textured 3D row). Then re-run `scripts/boot-to-first-frame.ps1 -All` and
+update the matrix. The exit criterion (M-B) is >= 8 rows with at least two
+beyond dashboard/triangle/ktest; today there are 3 runnable rows.
 
-### Option C (Track P, parallel): one product feature
+### Option B (Track P, product): one feature
 
 Pick exactly one: host audio sink (APU output), physical gamepad binding, or
 save-state V1 in the Avalonia app. The frontend is still sw-only, keyboard-only,
 silent, stateless. Acceptance: the app plays a sample with sound, a pad, or
 save/load without the CLI.
 
-### Filed, lower value - do not start while B/E/P are open
+### Option C (Track B, only if M-A must be proven): close the projection gap
 
-- **Texture fingerprint exactness fix** (the last ~0.5-0.9 s of menu submission):
-  guest-write span tracking in `PhysicalMemory` (a coarse envelope compare per
-  write, dirty flags per span) so the 16 sampled reads only run when the
-  texture's span changed. Measured rejections: fewer/contiguous samples (silent
-  fidelity regression), per-write 8-span watch (net +0.5 s, hot path).
+Re-run `scripts/present-path-acceptance.ps1` on a *reference-state* host (its
+`sw` leg must read ~33 s menu / ~8.7 s triangle) and record M-A. If the menu is
+still over 24 s, the measured next items are: block packing (~0.8 s, §205) and
+the texture fingerprint (~0.5-0.9 s, needs guest-write span tracking - the
+rejected shortcuts are in §204). Do not start either while B/E are open.
+
+### Filed, lower value - do not start while A/B are open
+
+- **Texture fingerprint exactness fix**: guest-write span tracking in
+  `PhysicalMemory` (a coarse envelope compare per write, dirty flags per span) so
+  the 16 sampled reads only run when the texture's span changed. Measured
+  rejections: fewer/contiguous samples (silent fidelity regression), per-write
+  8-span watch (net +0.5 s, hot path).
 - **The 2-pixel k1 interleave** (>= 2% acceptance, bounded ceiling) - demoted.
 - **O6 row spans / Vector128 pack-blend** - ceilings ~0.5 s.
 - **Track C** stays frozen; C3-z (2-3%) only on an operator decision.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- A **texture-buffer object** for the per-triangle block (the §204 sketch):
+  it moves the block fetch into the fragment stage (~19-25 lookups/fragment on
+  a 210M-fragment leg). The uniform-array + instancing form is why batching
+  costs nothing per pixel (§205).
+- **State-fingerprint batch boundaries** - a per-triangle compare that must
+  cover every `PgraphDrawInfo` field; the guest-side `FlushDraw` boundary is
+  exact and free.
 - Per-draw probes: a `Stopwatch` pair per draw inflated the submission bill
   ~2x (`drawMs` 6.87 -> 12.6 s). Sample 1-in-64 (`XGRID_GL_PROBE=1`) or ablate.
 - `TimeSpan` per draw (`AddDraw(TimeSpan)`) - measurable; use `AddDrawTicks`.
@@ -143,9 +166,13 @@ save/load without the CLI.
 - **Two-tier validation.** Accurate mode is currency. Any shared-code or default
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` +
   flag-off byte-identical, plus the fast-mode gates. Host-side-only diagnostics
-  still need the 1B goldens (both backends) + ktest smoke.
+  still need the 1B goldens (both backends) + ktest smoke. A GL-submission
+  change additionally needs **both 1B frame goldens to reproduce byte-identically**
+  (§205 did: `6BE6325F…` / `3FC4B419…`) and the mirror-mode run (no
+  `--gpu-replace`), not just replacement mode.
 - **Strip probe instrumentation before any A/B leg.** Use a same-binary switch
-  first (`XGRID_GL_PROBE=1` is off by default and only sampled draws pay).
+  first (`XGRID_GL_PROBE=1`, `XGRID_GL_NO_BATCH=1`: off by default, only the
+  switched leg pays).
 - **1B runs only from a full solution build.**
 - Do **not** flip `--jit`/`--jit-raw` defaults without an operator decision.
 - No real Xbox games in gates; `data/test-samples/` is gate currency and real
@@ -153,28 +180,27 @@ save/load without the CLI.
   `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - Commit only your own files; do not sweep unrelated working-tree edits.
-- Write it up: the next decisions section (§205+) with the measured table,
+- Write it up: the next decisions section (§206+) with the measured table,
   charter + inventory status headers, `AGENTS.md` session note, and a fresh copy
   of this file.
 
 ## 5. Host-state warning (2026-10-20, measured at session close)
 
 **Absolute walls are NOT comparable to the recorded references on this host.**
-At session close the *unmodified baseline* build (`4f0bd47`) measured menu sw
-**62.6 s** and triangle sw **14.0 s** at 1B, against the recorded 33.3 s / 8.69 s,
-**with an idle CPU** (0.7 cores of background; `Win32_Processor` reports its
-3.6 GHz base clock). The raster share is inflated unevenly (`rasterPsh` 20.0 s
-vs the recorded 12.0 s = 1.67x), so no single factor converts today's numbers
-into the reference session's. Consequences:
+At the §204 session close the *unmodified baseline* build (`4f0bd47`) measured
+menu sw **62.6 s** and triangle sw **14.0 s** at 1B, against the recorded 33.3 s
+/ 8.69 s, **with an idle CPU** (0.7 cores of background; `Win32_Processor`
+reports its 3.6 GHz base clock). The raster share is inflated unevenly
+(`rasterPsh` 20.1 s vs the recorded 12.0 s = 1.67x), so no single factor converts
+today's numbers into the reference session's. Consequences:
 
-- Trust same-window A/B pairs and `drawMs` (host-side GL timer), not absolute
-  walls or cross-session projections.
+- Trust same-window A/B pairs and `drawMs`/`flushMs` (host-side GL timers), not
+  absolute walls or cross-session projections.
 - Before reading `present-path-acceptance.ps1`'s SUMMARY as M-A, check that its
   `sw` leg is ~33 s (menu) / ~8.7 s (triangle); if not, the host is off the
   reference state and only the ratio matters.
 - Suspects worth checking on a fresh boot: CPU boost/frequency state, power
-  plan (currently "AMD RyzenT Balanced"), memory clock, background I/O
-  (Dropbox/syncthing), and Rider indexing.
+  plan, memory clock, background I/O (Dropbox/syncthing), and Rider indexing.
 
 ## 6. Commands
 
@@ -185,7 +211,7 @@ dotnet build XGrid.sln -c Release --nologo --no-restore
 dotnet test XGrid.sln -c Release --nologo --no-build
 dotnet format XGrid.sln --no-restore; dotnet format XGrid.sln --no-restore --verify-no-changes
 
-# standing ktest gate (~2-5 min on this host)
+# standing ktest gate (~2-5 min on this host; needs -XisoSharp on this host)
 pwsh -File scripts/ktest-smoke.ps1 `
   -FirmwareDir "data\xemu-0.8.136-windows-x86_64" `
   -SuiteXbe "data\test-samples\kernel-test-suite-default.xbe" -SkipXemu
@@ -195,13 +221,16 @@ pwsh -File scripts/raster-leg.ps1 -Workload tri  -Log wt-data\leg-tri.log
 pwsh -File scripts/raster-leg.ps1 -Workload menu -Log wt-data\leg-menu.log
 # GL leg: add -Gpu gl -GpuReplace ; A/B: -Cli <other tree>\...\XGrid.Cli.dll
 
+# draw-command batching A/B (same binary, interleaved off/on, medians)
+pwsh -File scripts/batch-205-ab.ps1 -Workload menu -Pairs 3
+
 # GL goldens (1B): sw vs gl frame policy + counters
 pwsh -File scripts/gpu-slice1-golden.ps1      -OutDir wt-data\b1gold `
   -Bios data\xemu-0.8.136-windows-x86_64\Complex_4627.bin `
   -Mcpx data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin `
   -Eeprom data\xemu-0.8.136-windows-x86_64\eeprom.bin -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -OutDir wt-data\b1gold <same four> `
-  -Dvd wt-data\xemu-tri\triangle.iso
+  -Hdd wt-data\chain-199l\hdd.qcow2 -Dvd wt-data\xemu-tri\triangle.iso
 
 # Track E corpus rows (harness: one BTFF line + JSON per row)
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
@@ -209,9 +238,6 @@ pwsh -File scripts/boot-to-first-frame.ps1 -All
 
 # first presented frame + its step anchor on any boot
 dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... --frame-first out.bmp
-
-# interleaved A/B with per-pair deltas (untracked scratch)
-pwsh -File wt-data\ab-leg.ps1 -Workload menu -Pairs 3 -GpuReplace -BaseCli <base>\XGrid.Cli.dll
 
 # M-A acceptance in one command: interleaved sw/gl pairs, medians, projection
 pwsh -File scripts\present-path-acceptance.ps1 -Pairs 3 -Workload both
@@ -224,9 +250,11 @@ scratch - recreate them from this file if they are gone.
 
 `--gpu-time` (`raster seconds legacy= psh= ... fastfills=k1/k2/k3 compiled=...`;
 `--gpu-replace` sends draws to the GL backend so `psh` reads 0), **`XGRID_GL_PROBE=1`**
-(sampled intra-draw split + `fpRam/fpAdapter` fingerprint reads), the GL line's
-`timed[drawMs= clearMs= readbackMs= readbacks=]` and `diag[...]` counters,
-`readback=on|off` and `methods=` in the `GPU backend=gl` lines,
+(sampled intra-draw split + `fpRam/fpAdapter` fingerprint reads), **`XGRID_GL_NO_BATCH=1`**
+(force the single-triangle GL path), the GL line's
+`timed[drawMs= flushMs= clearMs= readbackMs= readbacks=]` and
+`diag[fboReallocs= fboZetaDrops= clipXY= flipEmpty= presentUploads= flipStaleUploads= batchCalls= batchTris= batchCap=]`
+counters, `readback=on|off` and `methods=` in the `GPU backend=gl` lines,
 `DiagnosticGenericSampler`/`DiagnosticGenericFill` (differential test switches),
 `--raw-shapes`, `XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`,
 `XGRID_RAW_SKIP_HEADS`, `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`,

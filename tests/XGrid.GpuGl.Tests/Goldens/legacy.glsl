@@ -20,6 +20,8 @@ uniform int uTexCube[4];
 uniform int uTexDim[4];
 uniform uint uShaderClip;
 uniform vec4 uTri[25];
+flat in int vTri;
+#define T(i) uTri[((vTri) * 25) + (i)]
 uniform sampler2D uTex0;
 uniform sampler2D uTex1;
 uniform sampler2D uTex2;
@@ -102,10 +104,10 @@ vec4 SampleSlot(int slot, vec2 uv) {
 
 void main() {
   float px = gl_FragCoord.x;
-  float py = gl_FragCoord.y + uTri[2].z;
-  vec2 vA = uTri[0].xy;
-  vec2 vB = uTri[0].zw;
-  vec2 vC = uTri[1].xy;
+  float py = gl_FragCoord.y + T(2).z;
+  vec2 vA = T(0).xy;
+  vec2 vB = T(0).zw;
+  vec2 vC = T(1).xy;
   float area = ((vB.x - vA.x) * (vC.y - vA.y)) - ((vC.x - vA.x) * (vB.y - vA.y));
   float invArea = 1.0 / area;
   float w0 = (((vB.x - vA.x) * (py - vA.y)) - ((vB.y - vA.y) * (px - vA.x))) * invArea;
@@ -115,10 +117,10 @@ void main() {
   float p0 = w0;
   float p1 = w1;
   float p2 = w2;
-  if (uTri[1].z == 1.0) {
-    float s0 = w0 * uTri[2].y;
-    float s1 = w1 * uTri[1].w;
-    float s2 = w2 * uTri[2].x;
+  if (T(1).z == 1.0) {
+    float s0 = w0 * T(2).y;
+    float s1 = w1 * T(1).w;
+    float s2 = w2 * T(2).x;
     float sum = s0 + s1 + s2;
     if (!isnan(sum) && !isinf(sum) && sum != 0.0) {
       float invSum = 1.0 / sum;
@@ -127,14 +129,14 @@ void main() {
       p2 = s2 * invSum;
     }
   }
-  vec4 color = (p1 * uTri[3]) + (p2 * uTri[4]) + (p0 * uTri[5]);
-  vec4 spec = (p1 * uTri[6]) + (p2 * uTri[7]) + (p0 * uTri[8]);
-  vec4 c0 = (p1 * uTri[9]) + (p2 * uTri[10]) + (p0 * uTri[11]);
-  vec4 c1 = (p1 * uTri[12]) + (p2 * uTri[13]) + (p0 * uTri[14]);
-  vec4 c2 = (p1 * uTri[15]) + (p2 * uTri[16]) + (p0 * uTri[17]);
-  vec4 c3 = (p1 * uTri[18]) + (p2 * uTri[19]) + (p0 * uTri[20]);
-  float fogFactor = (p1 * uTri[21].z) + (p2 * uTri[22].z) + (p0 * uTri[23].z);
-  float depthZ = (w1 * uTri[21].x) + (w2 * uTri[22].x) + (w0 * uTri[23].x);
+  vec4 color = (p1 * T(3)) + (p2 * T(4)) + (p0 * T(5));
+  vec4 spec = (p1 * T(6)) + (p2 * T(7)) + (p0 * T(8));
+  vec4 c0 = (p1 * T(9)) + (p2 * T(10)) + (p0 * T(11));
+  vec4 c1 = (p1 * T(12)) + (p2 * T(13)) + (p0 * T(14));
+  vec4 c2 = (p1 * T(15)) + (p2 * T(16)) + (p0 * T(17));
+  vec4 c3 = (p1 * T(18)) + (p2 * T(19)) + (p0 * T(20));
+  float fogFactor = (p1 * T(21).z) + (p2 * T(22).z) + (p0 * T(23).z);
+  float depthZ = (w1 * T(21).x) + (w2 * T(22).x) + (w0 * T(23).x);
 
   vec4 outcColor = color;
   if (uTexOk[0] == 1) outcColor *= SampleSlot(0, c0.xy);
