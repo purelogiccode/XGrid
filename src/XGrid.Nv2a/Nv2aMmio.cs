@@ -1,9 +1,11 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using XGrid.Core.Devices;
 using XGrid.Core.Snapshots;
@@ -4660,6 +4662,32 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Highest physical address a fast sampler plan can read, given the folds
+    /// the plan allows: every accepted wrap kind keeps the folded coordinate
+    /// inside <c>[0, Width)</c> / <c>[0, Height)</c>, and every swizzled
+    /// coordinate bit lands inside the union of the two swizzle masks. Used by
+    /// the compiled fills to hoist the RAM bounds test out of the pixel loop;
+    /// a plan whose bound does not fit keeps the per-access adapter path.
+    /// </summary>
+    private static uint SamplerAddressBound(ref readonly SamplerPlan plan)
+    {
+        long bound;
+        if (plan.Linear)
+        {
+            long width = plan.Width > 0 ? plan.Width : 1;
+            long height = plan.Height > 0 ? plan.Height : 1;
+            long pitch = plan.Pitch > 0 ? plan.Pitch : 0;
+            bound = (long)plan.Offset + ((height - 1) * pitch) + ((width - 1) * plan.FastBytes);
+        }
+        else
+        {
+            bound = (long)plan.Offset + ((long)(plan.SwizzleMaskX | plan.SwizzleMaskY) * plan.FastBytes);
+        }
+
+        return bound is < 0 or > uint.MaxValue ? uint.MaxValue : (uint)bound;
+    }
+
+    /// <summary>
     /// Per-draw texture sampler descriptor: the per-sample decode of format,
     /// shape, wrap modes, pitch and swizzle masks is loop-invariant, so it is
     /// resolved once per draw in <see cref="BuildSamplerPlans"/> (called from
@@ -4698,6 +4726,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         /// <summary>Texel size in bytes for the fast sampler (2 or 4).</summary>
         public int FastBytes;
+
+        /// <summary>
+        /// Per-fill decode shape: 0 = the <see cref="DecodeTextureTexel"/>
+        /// default branch (A8R8G8B8), 1 = the A4R4G4B4 branch, 2 = any other
+        /// color (the compiled loop calls the generic decode). Every value is
+        /// the exact branch the generic switch takes for this color.
+        /// </summary>
+        public int DecodeKind;
 
         /// <summary>Fast fold per axis: 0 = clamp, 1 = mirror (POT), 2 = wrap (POT).</summary>
         public int FastWrapU;
@@ -4785,6 +4821,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             plan.FastBytes = 0;
             plan.FastWrapU = 0;
             plan.FastWrapV = 0;
+            plan.DecodeKind = color switch
+            {
+                0x02u or 0x10u or 0x03u or 0x1Cu or 0x04u or 0x1Du or 0x05u or 0x11u or 0x07u or 0x1Eu
+                    => color is 0x04u or 0x1Du ? 1 : 2,
+                _ => 0,
+            };
             if (bytesPerTexel is 2 or 4 && width > 0 && height > 0 && !DiagnosticGenericSampler &&
                 plan.UAddr != (int)TextureAddressBorder && plan.VAddr != (int)TextureAddressBorder)
             {
@@ -6859,14 +6901,43 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         long pixels = 0;
         uint color = texturing.Color;
+
+        // Per-fill sampler fast lane (exact): the fast folds keep the sampled
+        // texel inside [0,Width) x [0,Height), so the highest address the
+        // samples can reach is a per-fill bound. When that bound lies inside
+        // RAM the loop reads the texel through the RAM array reference after
+        // the same bounds test TryReadPhysical performs; anything else takes
+        // the adapter path unchanged.
+        byte[] ram = Array.Empty<byte>();
+        uint ramLimit = 0;
+        if (_memoryFast is not null && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize) &&
+            ramSize >= 4)
+        {
+            ram = ramBytes;
+            ramLimit = ramSize - 4;
+        }
+
+        bool directTexel = ramLimit != 0 && SamplerAddressBound(in texturing) <= ramLimit;
+        int decodeKind = texturing.DecodeKind;
+
+        // The framebuffer read for the blend source is a direct RAM word when
+        // the fill's whole address span is inside RAM (the same test the
+        // adapter reader performs, hoisted per fill).
+        long maxDest = (long)colorBase + ((long)y1 * pitch) + ((long)x1 * 4u);
+        bool directDest = ramLimit != 0 && maxDest <= ramLimit;
+        ref byte ramBase = ref MemoryMarshal.GetArrayDataReference(ram);
+
         for (uint y = y0; y <= y1; y++)
         {
+            float py = y + 0.5f;
+            float t0 = (b.X - a.X) * (py - a.Y);
+            float t1 = (c.X - b.X) * (py - b.Y);
+            uint rowBase = colorBase + (y * pitch);
             for (uint x = x0; x <= x1; x++)
             {
                 float px = x + 0.5f;
-                float py = y + 0.5f;
-                float w0 = (((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X))) * invArea;
-                float w1 = (((c.X - b.X) * (py - b.Y)) - ((c.Y - b.Y) * (px - b.X))) * invArea;
+                float w0 = (t0 - ((b.Y - a.Y) * (px - a.X))) * invArea;
+                float w1 = (t1 - ((c.Y - b.Y) * (px - b.X))) * invArea;
                 float w2 = 1f - w0 - w1;
                 bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
                               (w0 <= 0f && w1 <= 0f && w2 <= 0f);
@@ -6905,7 +6976,75 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float sv = tw0 != 0f ? tv0 / tw0 : tv0;
 
                 _textureFormatAttempts[color]++;
-                SampleFast(in texturing, su, sv, out float tr, out float tg, out float tb, out float ta);
+                float tr;
+                float tg;
+                float tb;
+                float ta;
+
+                // SampleFast transcribed with the per-fill direct-RAM texel
+                // read and the per-fill decode branch (see SamplerPlan).
+                int rawX = (int)MathF.Floor(texturing.Linear ? su : su * texturing.Width);
+                int rawY = (int)MathF.Floor(texturing.Linear ? sv : sv * texturing.Height);
+                int sx = WrapFast(rawX, texturing.Width, texturing.FastWrapU, texturing.WrapMaskU,
+                    texturing.MirrorMaskU);
+                int sy = WrapFast(rawY, texturing.Height, texturing.FastWrapV, texturing.WrapMaskV,
+                    texturing.MirrorMaskV);
+                uint taddr;
+                if (texturing.Linear)
+                {
+                    taddr = texturing.Offset + (uint)((sy * texturing.Pitch) + (sx * texturing.FastBytes));
+                }
+                else if (texturing.MortonMasks)
+                {
+                    uint swizzled = (SpreadMortonBits((uint)sx) & texturing.SwizzleMaskX)
+                                  | ((SpreadMortonBits((uint)sy) << 1) & texturing.SwizzleMaskY);
+                    taddr = texturing.Offset + (swizzled * (uint)texturing.FastBytes);
+                }
+                else
+                {
+                    taddr = texturing.Offset + ((InterleaveBits((uint)sx, texturing.SwizzleMaskX) |
+                                                 InterleaveBits((uint)sy, texturing.SwizzleMaskY)) *
+                                                (uint)texturing.FastBytes);
+                }
+
+                uint texel;
+                if (directTexel)
+                {
+                    texel = BinaryPrimitives.ReadUInt32LittleEndian(
+                        MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
+                    if (texturing.FastBytes != 4)
+                    {
+                        texel &= 0xFFFFu;
+                    }
+                }
+                else
+                {
+                    texel = texturing.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
+                }
+
+                if (decodeKind == 0)
+                {
+                    // DecodeTextureTexel's default branch (A8R8G8B8).
+                    ta = Unit255[(int)((texel >> 24) & 0xFFu)];
+                    tr = Unit255[(int)((texel >> 16) & 0xFFu)];
+                    tg = Unit255[(int)((texel >> 8) & 0xFFu)];
+                    tb = Unit255[(int)(texel & 0xFFu)];
+                }
+                else if (decodeKind == 1)
+                {
+                    // DecodeTextureTexel's A4R4G4B4 branch.
+                    tr = Unit15[(int)((texel >> 8) & 0xFu)];
+                    tg = Unit15[(int)((texel >> 4) & 0xFu)];
+                    tb = Unit15[(int)(texel & 0xFu)];
+                    ta = Unit15[(int)((texel >> 12) & 0xFu)];
+                }
+                else
+                {
+                    DecodeTextureTexel(color, texel, out tr, out tg, out tb, out ta);
+                }
+
+                TrackTextureCoords(sx, sy);
+                CountSample(taddr, texel, tr, tg, tb);
 
                 float fr = PshCombiner.ModulatePass(Math.Max(tr, 0f), Math.Max(dr, 0f));
                 float fg = PshCombiner.ModulatePass(Math.Max(tg, 0f), Math.Max(dg, 0f));
@@ -6947,10 +7086,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     continue;
                 }
 
-                uint address = colorBase + (y * pitch) + (x * 4u);
+                uint address = rowBase + (x * 4u);
                 (float R, float G, float B, float A) src = (fr, fg, fb, fa);
                 (float R, float G, float B, float A) dst = (0f, 0f, 0f, 1f);
-                if (TryReadPixelFloat(address, 4, out float sr, out float sg, out float sb, out float sa))
+                if (directDest)
+                {
+                    // TryReadPixelFloat's 4-byte branch on the direct RAM word.
+                    uint pixel = BinaryPrimitives.ReadUInt32LittleEndian(
+                        MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)address), 4));
+                    dst = (Unit255[(int)((pixel >> 16) & 0xFFu)], Unit255[(int)((pixel >> 8) & 0xFFu)],
+                        Unit255[(int)(pixel & 0xFFu)], Unit255[(int)((pixel >> 24) & 0xFFu)]);
+                }
+                else if (TryReadPixelFloat(address, 4, out float sr, out float sg, out float sb, out float sa))
                 {
                     dst = (sr, sg, sb, sa);
                 }
@@ -7030,15 +7177,39 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float bxG = Math.Max(constTexels[7], 0f);
         float bxB = Math.Max(constTexels[8], 0f);
         uint color = stage0Plan.Color;
+
+        // Per-fill hoists (exact): the add-stage constants pass through
+        // clamp(1 * c, -1..1), i.e. clamp(c), with no per-fragment input; the
+        // barycentric y terms depend on y only and are loop invariant in x.
+        float addCdR = Math.Clamp(1f * c0aR, -1f, 1f);
+        float addCdG = Math.Clamp(1f * c0aG, -1f, 1f);
+        float addCdB = Math.Clamp(1f * c0aB, -1f, 1f);
+
+        // Per-fill sampler fast lane (see the modulate compiled fill): the
+        // direct RAM texel read and the decode branch are selected once.
+        byte[] ram = Array.Empty<byte>();
+        uint ramLimit = 0;
+        if (_memoryFast is not null && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize) &&
+            ramSize >= 4)
+        {
+            ram = ramBytes;
+            ramLimit = ramSize - 4;
+        }
+
+        bool directTexel = ramLimit != 0 && SamplerAddressBound(in stage0Plan) <= ramLimit;
+        int decodeKind = stage0Plan.DecodeKind;
+        ref byte ramBase = ref MemoryMarshal.GetArrayDataReference(ram);
         long pixels = 0;
         for (uint y = y0; y <= y1; y++)
         {
+            float py = y + 0.5f;
+            float t0 = (b.X - a.X) * (py - a.Y);
+            float t1 = (c.X - b.X) * (py - b.Y);
             for (uint x = x0; x <= x1; x++)
             {
                 float px = x + 0.5f;
-                float py = y + 0.5f;
-                float w0 = (((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X))) * invArea;
-                float w1 = (((c.X - b.X) * (py - b.Y)) - ((c.Y - b.Y) * (px - b.X))) * invArea;
+                float w0 = (t0 - ((b.Y - a.Y) * (px - a.X))) * invArea;
+                float w1 = (t1 - ((c.Y - b.Y) * (px - b.X))) * invArea;
                 float w2 = 1f - w0 - w1;
                 bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
                               (w0 <= 0f && w1 <= 0f && w2 <= 0f);
@@ -7082,7 +7253,72 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     float su = tw0 != 0f ? tu0 / tw0 : tu0;
                     float sv = tw0 != 0f ? tv0 / tw0 : tv0;
                     _textureFormatAttempts[color]++;
-                    SampleFast(in stage0Plan, su, sv, out t0r, out t0g, out t0b, out _);
+
+                    // SampleFast transcribed with the per-fill direct-RAM texel
+                    // read and decode branch (same expressions as the modulate
+                    // compiled fill and as SampleFast).
+                    int rawX = (int)MathF.Floor(stage0Plan.Linear ? su : su * stage0Plan.Width);
+                    int rawY = (int)MathF.Floor(stage0Plan.Linear ? sv : sv * stage0Plan.Height);
+                    int sx = WrapFast(rawX, stage0Plan.Width, stage0Plan.FastWrapU, stage0Plan.WrapMaskU,
+                        stage0Plan.MirrorMaskU);
+                    int sy = WrapFast(rawY, stage0Plan.Height, stage0Plan.FastWrapV, stage0Plan.WrapMaskV,
+                        stage0Plan.MirrorMaskV);
+                    uint taddr;
+                    if (stage0Plan.Linear)
+                    {
+                        taddr = stage0Plan.Offset +
+                                (uint)((sy * stage0Plan.Pitch) + (sx * stage0Plan.FastBytes));
+                    }
+                    else if (stage0Plan.MortonMasks)
+                    {
+                        uint swizzled = (SpreadMortonBits((uint)sx) & stage0Plan.SwizzleMaskX)
+                                      | ((SpreadMortonBits((uint)sy) << 1) & stage0Plan.SwizzleMaskY);
+                        taddr = stage0Plan.Offset + (swizzled * (uint)stage0Plan.FastBytes);
+                    }
+                    else
+                    {
+                        taddr = stage0Plan.Offset + ((InterleaveBits((uint)sx, stage0Plan.SwizzleMaskX) |
+                                                      InterleaveBits((uint)sy, stage0Plan.SwizzleMaskY)) *
+                                                     (uint)stage0Plan.FastBytes);
+                    }
+
+                    uint texel;
+                    if (directTexel)
+                    {
+                        texel = BinaryPrimitives.ReadUInt32LittleEndian(
+                            MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
+                        if (stage0Plan.FastBytes != 4)
+                        {
+                            texel &= 0xFFFFu;
+                        }
+                    }
+                    else
+                    {
+                        texel = stage0Plan.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
+                    }
+
+                    float ta0;
+                    if (decodeKind == 0)
+                    {
+                        ta0 = Unit255[(int)((texel >> 24) & 0xFFu)];
+                        t0r = Unit255[(int)((texel >> 16) & 0xFFu)];
+                        t0g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                        t0b = Unit255[(int)(texel & 0xFFu)];
+                    }
+                    else if (decodeKind == 1)
+                    {
+                        t0r = Unit15[(int)((texel >> 8) & 0xFu)];
+                        t0g = Unit15[(int)((texel >> 4) & 0xFu)];
+                        t0b = Unit15[(int)(texel & 0xFu)];
+                        ta0 = Unit15[(int)((texel >> 12) & 0xFu)];
+                    }
+                    else
+                    {
+                        DecodeTextureTexel(color, texel, out t0r, out t0g, out t0b, out ta0);
+                    }
+
+                    TrackTextureCoords(sx, sy);
+                    CountSample(taddr, texel, t0r, t0g, t0b);
                     TexturedPixels++;
                 }
 
@@ -7098,35 +7334,40 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float r1G = r1R;
                 float r1B = r1R;
 
-                r1R = Math.Clamp(Math.Max(r1R, 0f) * Math.Max(r1R, 0f), -1f, 1f);
-                r1G = Math.Clamp(Math.Max(r1G, 0f) * Math.Max(r1G, 0f), -1f, 1f);
-                r1B = Math.Clamp(Math.Max(r1B, 0f) * Math.Max(r1B, 0f), -1f, 1f);
+                // The unsigned max-square keeps R1 in [0,1]; every
+                // following signed square multiplies two values in [0,1],
+                // so the -1..1 clamp of the reference expression is a
+                // provable no-op (NaN passes through both forms
+                // identically).
+                float mR = Math.Max(r1R, 0f);
+                float mG = Math.Max(r1G, 0f);
+                float mB = Math.Max(r1B, 0f);
+                r1R = mR * mR;
+                r1G = mG * mG;
+                r1B = mB * mB;
                 for (int stage = 1; stage < powerStages; stage++)
                 {
-                    r1R = Math.Clamp(r1R * r1R, -1f, 1f);
-                    r1G = Math.Clamp(r1G * r1G, -1f, 1f);
-                    r1B = Math.Clamp(r1B * r1B, -1f, 1f);
+                    r1R *= r1R;
+                    r1G *= r1G;
+                    r1B *= r1B;
                 }
 
-                float abR = Math.Clamp(c0cR * Math.Max(r0R, 0f), -1f, 1f);
-                float abG = Math.Clamp(c0cG * Math.Max(r0G, 0f), -1f, 1f);
-                float abB = Math.Clamp(c0cB * Math.Max(r0B, 0f), -1f, 1f);
-                float cdR = Math.Clamp(c1cR * Math.Max(r1R, 0f), -1f, 1f);
-                float cdG = Math.Clamp(c1cG * Math.Max(r1G, 0f), -1f, 1f);
-                float cdB = Math.Clamp(c1cB * Math.Max(r1B, 0f), -1f, 1f);
+                // |c0c|, |c1c| <= 1 is proven per fill by the compiled-fill
+                // predicate: with max(r,0) in [0,1] each product stays
+                // inside -1..1, so the reference clamps are no-ops here.
+                float abR = c0cR * Math.Max(r0R, 0f);
+                float abG = c0cG * Math.Max(r0G, 0f);
+                float abB = c0cB * Math.Max(r0B, 0f);
+                float cdR = c1cR * Math.Max(r1R, 0f);
+                float cdG = c1cG * Math.Max(r1G, 0f);
+                float cdB = c1cB * Math.Max(r1B, 0f);
                 float v1R = Math.Clamp(abR + cdR, -1f, 1f);
                 float v1G = Math.Clamp(abG + cdG, -1f, 1f);
                 float v1B = Math.Clamp(abB + cdB, -1f, 1f);
-                r0R = abR;
-                r0G = abG;
-                r0B = abB;
 
                 float addR = Math.Clamp(dr * Math.Max(v1R, 0f), -1f, 1f);
                 float addG = Math.Clamp(dg * Math.Max(v1G, 0f), -1f, 1f);
                 float addB = Math.Clamp(db * Math.Max(v1B, 0f), -1f, 1f);
-                float addCdR = Math.Clamp(1f * c0aR, -1f, 1f);
-                float addCdG = Math.Clamp(1f * c0aG, -1f, 1f);
-                float addCdB = Math.Clamp(1f * c0aB, -1f, 1f);
                 r0R = Math.Clamp(addR + addCdR, -1f, 1f);
                 r0G = Math.Clamp(addG + addCdG, -1f, 1f);
                 r0B = Math.Clamp(addB + addCdB, -1f, 1f);
@@ -7450,6 +7691,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             else if (texModes[0] == PshCombiner.TexModeProject2D)
             {
                 lightingReason |= 0x80;
+            }
+
+            // The compiled loop drops the combine stage's -1..1 clamps
+            // (they are provable no-ops when each multiplier stays inside
+            // -1..1, since max(r,0) is always in [0,1]). Any other constant
+            // set keeps the generic loop, whose clamps are exact.
+            if (compiledLighting)
+            {
+                int combineStage = _combinerFastKind == 2 ? 6 : 5;
+                float[] c0c = consts[combineStage * 2];
+                float[] c1c = consts[(combineStage * 2) + 1];
+                compiledLighting = Math.Abs(c0c[0]) <= 1f && Math.Abs(c0c[1]) <= 1f && Math.Abs(c0c[2]) <= 1f &&
+                                   Math.Abs(c1c[0]) <= 1f && Math.Abs(c1c[1]) <= 1f && Math.Abs(c1c[2]) <= 1f;
+                if (!compiledLighting)
+                {
+                    lightingReason |= 0x4000_0000;
+                }
             }
 
             for (int i = 1; compiledLighting && i < PshCombiner.TextureSlots; i++)

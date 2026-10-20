@@ -1,87 +1,116 @@
-# Next session handoff (written 2026-10-20, after commit `6fb57b8`)
+# Next session handoff (written 2026-10-20, after the Track B fast-lane session)
 
 Read in this order: `AGENTS.md` (session notes + current state),
 `docs/research-notes/jit-track-charter.md` (status header),
-`docs/research-notes/xgrid-architecture-decisions.md` §200 (+ amendment),
-`docs/research-notes/rasterizer-inventory.md`, then this file.
+`docs/research-notes/xgrid-architecture-decisions.md` §202 (+ §200 for the loops'
+history), `docs/research-notes/rasterizer-inventory.md`, then this file.
 
 ## Start state (verified at close)
 
-- `master` @ `6fb57b8`; working tree clean.
+- `master` @ the commit titled *"gpu: rasterizer compiled-loop fast lanes"* (`git log --oneline -1`); working tree clean apart from
+  other-session edits (do not commit those).
 - **1519 tests green**, `dotnet build -c Release` clean,
   `dotnet format --verify-no-changes` clean.
 - ktest smoke **PASS 7/7**.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
+- **Oracle: `References2/xemu-0.8.137` is primary** (0.8.136 stays vendored).
 - 1B SW anchors (fast + raw): menu RAM `660CA11B…` / CPU `F5D61C94…`,
-  triangle RAM `F57934BF…` / CPU `CF79FC17…` (all counters as recorded).
-- **Rasterizer: the end-to-end wall is no longer raster-dominated.** 1B
-  `rasterPsh` is now 13.9-15.1 s (menu) and 3.31-3.45 s (triangle), from
-  24.0 / 6.19 at the session start (-44% / -45%); interleaved wall medians
-  -21.9% / -23.5%. `compiled=<fills>/<pixels>/<seconds>` in the `--gpu-time`
-  line reports the compiled-loop share (menu 456,164 fills / 308.2M px /
-  13.8 s; triangle 53,574 / 62.4M / 3.2 s).
+  triangle RAM `F57934BF…` / CPU `CF79FC17…`; accurate mode: menu
+  `D9C99A58…` / `3D2740B8…`, triangle `F57934BF…` / `98039867…`.
+- Rasterizer 1B `rasterPsh` on the current build: **menu 12.2-12.7 s**,
+  **triangle 2.85-3.05 s** (from 13.5 / 3.4 at the session start).
+  `compiled=<fills>/<pixels>/<seconds>` in the `--gpu-time` line reports the
+  compiled-loop share (menu ~456K fills / 308.2M px / ~12.0 s; triangle
+  53,574 / 62.4M / ~2.6 s).
 
-## What landed this session (§200)
+## What landed this session (§202)
 
-1. **O5 counter batching: measured negative and reverted.** Eliding *every*
-   per-pixel diagnostic moves the 1B raster by ~2% (menu) / ~0 (triangle).
-   Do not re-attempt without a new measurement.
-2. **O3b per-fill fast sampler** (`SamplerPlan.FastKind`): linear/Morton 2- and
-   4-byte texels with clamp/mirror/wrap folds; exact unit tables in
-   `DecodeTextureTexel` and `TryReadPixelFloat`.
-3. **O1 compiled modulate fill** (k1, 245.8M menu px) and **compiled lighting
-   fill** (k2/k3, 62.4M px on *both* titles). Both are per-fill predicates with
-   the generic loop as the untouched fallback.
-4. Cube-map face stride + swizzle masks hoisted into the sampler plan (exact,
-   measured neutral here — the titles' cube stages never reach the face math).
+1. **Per-fill direct-RAM sampler** in both compiled fills:
+   `IGpuMemoryFast.TryGetRamBytes(out byte[], out uint)` +
+   `SamplerAddressBound(in SamplerPlan)` prove the fill's highest sampled
+   address, so the per-sample adapter call and span construction become one
+   little-endian word read over the RAM array; every non-RAM/out-of-bound case
+   still takes `ReadGpu`. `SampleFast` remains the reference implementation for
+   the generic path.
+2. **`SamplerPlan.DecodeKind`**: the fill's exact `DecodeTextureTexel` branch
+   (0 = A8R8G8B8 default, 1 = A4R4G4B4, 2 = generic switch), removing the
+   per-sample jump table for the shapes the titles use.
+3. **Blend destination direct word** in the k1 fill when the whole framebuffer
+   span is inside RAM (same bounds test `TryReadPixelFloat` performs).
+4. **Lighting-loop provable clamp drops** (R1 power chain in [0,1]; combine
+   products gated by a per-fill `|c0c|,|c1c| <= 1` predicate that all 53,574
+   fills pass) plus per-fill `addCd` hoists and per-row barycentric hoists in
+   both fills.
+
+**Measured (1B, 3 interleaved pairs vs `65e136e`, SHAs + every counter
+identical):** triangle `rasterPsh` 3.39 -> 2.87 s (-14.2%, 3/3), wall 9.15 ->
+8.69 s (-4.0%, 3/3); menu 13.47 -> 12.49 s (-5.3%, 3/3), wall 35.45 -> 34.64 s
+(-0.3/-2.4/-4.2%). Accurate mode byte-identical (see anchors above).
+
+## Measured negatives - do NOT re-try without a new measurement
+
+- **k2 constant fold** (stage-0 dot + power + combine chain is per-fill constant
+  for kind 2): implemented exactly, measured **2-3% slower** on the same binary
+  (fold 3.15/3.15/3.17 vs off 3.11/3.07/3.07 s psh). The hoisted constants do
+  not stay in registers; the branch/register pressure costs more than the folded
+  math saves.
+- **Alpha-1 blend skip** (93.5% of menu k1 fragments have `fa == 1`, verified
+  bit-exact over 198M pixels): neutral. The destination read is 2.4 ns/px.
+- **`[MethodImpl(AggressiveInlining)]` on `SampleFast`**: neutral.
+- **Per-member CPU bookkeeping / idle-replay / hotspot notes in the spec
+  runner**: all neutral (interleaved probes).
+- **Block-build threshold below 16**: the sweep (16/64/256) trades build cost
+  (~200 us raw + 20 us IL per block) for interpreter time one-for-one.
+- Earlier sessions: O5 counter batching, C3-y bookkeeping, the 1024-slot data
+  translate cache, relay/E-series emission - all measured, all out.
 
 ## Where the remaining 1B wall is
 
-Menu: ~40 s wall = 13.9-15.1 s software raster + ~25 s CPU engine/boot. The
-raster is now two compiled loops (96% of menu pixels, 85% of triangle pixels)
-plus 0.45 s legacy. Per-pixel cost in the compiled loops is ~45 ns/px (menu
-blended+textured) and ~54 ns/px (triangle lighting).
+Menu (~35 s): raster ~12.3 s + CPU engine ~18 s + block builds ~1.4 s +
+interpreter ~2.5 s. Triangle (~8.7 s): raster ~2.9 s, CPU engine ~4 s,
+interpreter ~1.5 s. Inside the raster, §202's ablation prices the k1 loop as:
+**sampler ~4.5 s** (read latency + the dependent chain, not descriptor work),
+interpolation ~2.5 s, combiner/pack ~1 s, destination read 0.5 s, write 0.2 s.
 
 ## Candidate next tasks (pick by measured value)
 
-1. **Compiled-loop micro-structure (Track B, medium value).** The k1 loop is
-   245.8M blended+textured px at ~45 ns. The remaining per-pixel costs are the
-   sampler memory read (bounds + span construction per texel), `TryReadPixelFloat`
-   for the blend destination, `PackPixel`'s four clamps and `WritePixel`'s
-   interface call. One scoped experiment each, exactly as O5 was priced:
-   measure the ceiling first (elide the block, compare `rasterPsh`), keep only
-   >= 2% and 3/3.
-2. **O6 row spans (Track B, filed, medium risk).** Bbox iterations still cost
-   ~5-10 ns each outside the triangles; the compiled loops are the place to add
-   an x-interval superset per row (never change the float inside test).
-3. **Track C again (charter redirect criterion).** With the raster at ~14 s of
-   a 40 s menu wall, the CPU engine is the largest single item again. The raw
-   member mix is ~50% `MovLoad`/`MovStore`; the C3-z inline page-pair experiment
-   (one scoped trial, revert below 2%) is still un-run and still the only
-   scoped CPU item on file.
-4. **GL/`--gpu-replace` per-frame path** (charter Phase 4) and the `--window`
-   present-path readback: unchanged, still queued behind the above.
-5. **Differential-test coverage for the compiled fills.** The two compiled
-   paths are currently pinned only by the 1B goldens (SHAs + every counter over
-   308M / 62M pixels). `DiagnosticGenericFill` exists; a synthetic k2-k3 draw
-   needs the 8-stage combiner register stream
-   (`MethodCombinerColorIcwBase + stage*4`, `AlphaOcw`, `Factor0/1`, Control
-   `0x00011108`, Final `0x0C0B000F/0x0C011180`) plus the four texture slots.
+1. **2-pixel interleave in the k1 compiled loop (Track B, structural).** The
+   sampler's 4.5 s is dominated by the dependent chain
+   (interpolate -> floor -> fold -> address -> load -> decode -> combine), and
+   the loop body is ~150 instructions, so the OoO window covers only ~2 pixels.
+   Two independent pixel bodies per iteration (writes and counter commits kept
+   in x order) is the only remaining sizeable raster lever. Acceptance: 1B
+   `rasterPsh` >= 2% better, 3/3 pairs, exact SHAs + every counter, and the
+   two compiled-fill differential tests still green.
+2. **Pack/blend SIMD (`Vector128`)** for the k1 fragment: pack measured 0.3 s,
+   blend similar; `cvttps2dq` + `packuswb` reproduce `(uint)(clamp(x,0,1)*255+0.5)`
+   exactly for finite non-negative input, but the guard for NaN/signed-zero has
+   to be written down first. Ceiling is ~0.5 s; do it only if (1) stalls.
+3. **O6 row spans** (filed): an x-interval superset per row for the inside test;
+   never change the float inside test itself.
+4. **Track C** is at its structural limit for the current engine: the memory
+   probe's dependent-load chain is the cost, and every bookkeeping/cache
+   experiment so far measured neutral. Further CPU work needs a different
+   design (e.g. block-level memory versioning), not more slices.
+5. **GL / `--gpu-replace` per-frame path** and the `--window` present readback
+   (charter Phase 4) - unchanged, still queued behind the raster.
 
 ## Explicit non-goals / rules
 
-- Do **not** re-try O5 counter batching (measured), C3-y bookkeeping (neutral),
-  the 1024-slot data translate cache (neutral), or relay/E-series emission.
+- Do **not** re-try the items in the measured-negatives list.
 - Do not flip `--jit`/`--jit-raw` defaults without an operator decision.
-- No real Xbox games; `data/test-samples/` only. `References2/` is read-only —
-  never delete/move/clean it. Leave `Directory.Packages.props` alone.
+- No real Xbox games; `data/test-samples/` only. `References2/` is read-only.
+  Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - Fast mode is never gate currency; a shared-code or default change needs the
   full accurate-mode ceremony (median-of-3 + exact SHAs/counters +
   `verifyFailures=0` + flag-off byte-identical) plus fast-mode gates.
-- If you restore a file with `Copy-Item`, **touch it before rebuilding**:
-  MSBuild compares timestamps and will silently keep a stale binary (this cost
-  an hour in the O5/sampler work).
+- **Strip probe instrumentation before any A/B leg.** A `Stopwatch` pair left in
+  `RunNonJit` cost 0.35 s over 479K calls and disguised a -10% raster win as a
+  +1.3% wall regression. Use a same-binary switch to A/B a candidate against
+  itself first; use `git archive <commit> | tar -x` + build for the baseline.
+- If you restore a file with `Copy-Item`, touch it before rebuilding (MSBuild
+  compares timestamps).
 
 ## Commands
 
@@ -102,17 +131,20 @@ pwsh -File scripts/raster-leg.ps1 -Workload tri  -Log wt-data\leg-tri.log
 pwsh -File scripts/raster-leg.ps1 -Workload menu -Log wt-data\leg-menu.log
 # A/B against another build: add -Cli <other tree>\src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll
 
-# baseline tree for interleaved A/B
-$base = Join-Path $env:TEMP "xgrid-base-<commit>"
-git archive <commit> | tar -x -C $base
-dotnet build (Join-Path $base "XGrid.sln") -c Release --nologo
+# scratch (untracked, this session): interleaved A/B with per-pair deltas
+pwsh -File wt-data/ab-leg.ps1 -Workload tri  -Pairs 3
+pwsh -File wt-data/ab-leg.ps1 -Workload menu -Pairs 3     # -BaseCli overrides the control
+
+# accurate-mode leg (no --jit) for the shared-rasterizer differential
+pwsh -File wt-data/run-leg.ps1 -Workload menu -NoFast -Log wt-data\acc-menu.log
 ```
 
 ## Diagnostics worth keeping
 
-`--gpu-time` (raster seconds + `fastfills... compiled=...` + the rejection
-histogram `rej=` when timing is on), `DiagnosticGenericSampler` /
-`DiagnosticGenericFill` (differential test switches), `--raw-shapes`,
+`--gpu-time` (`raster seconds legacy= psh= ... fastfills=k1/k2/k3 compiled=...`;
+`--gpu-replace` sends draws to the GL backend so `psh` reads 0 and the CPU path is
+isolated), `DiagnosticGenericSampler` / `DiagnosticGenericFill` (differential test
+switches; the latter also disables the compiled fills), `--raw-shapes`,
 `XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`, `XGRID_RAW_SKIP_HEADS`,
 `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`, `XGRID_RAW_DUMP=1`,
-`--jit-timing`, `--gpu-replace`, `--bench`.
+`--jit-timing`, `--bench`.

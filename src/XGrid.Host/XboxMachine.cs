@@ -927,6 +927,14 @@ public sealed class XboxMachine : IIdleSkipHost
             return false;
         }
 
+        public bool TryGetRamBytes(out byte[] bytes, out uint size)
+        {
+            PhysicalMemory ram = _memory.Ram;
+            bytes = ram.RawBytes;
+            size = ram.Size;
+            return true;
+        }
+
         public bool TryWritePhysical(uint address, uint value)
         {
             PhysicalMemory ram = _memory.Ram;

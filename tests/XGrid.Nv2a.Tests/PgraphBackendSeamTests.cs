@@ -310,6 +310,13 @@ public sealed class PgraphBackendSeamTests
             return true;
         }
 
+        public bool TryGetRamBytes(out byte[] bytes, out uint size)
+        {
+            bytes = _data;
+            size = (uint)_data.Length;
+            return true;
+        }
+
         private uint Read32(uint address) =>
             (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) | (_data[address + 3] << 24));
 

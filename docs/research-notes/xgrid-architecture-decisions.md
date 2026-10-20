@@ -6,7 +6,8 @@ This document converts the reference study into concrete decisions for the plan'
 
 **Note — "Xermu" citations below are unverified.** An earlier draft listed a standalone C#
 emulator "Xermu" (`References2/Xermu-main`). It never existed in the workspace; the operator
-confirmed 2026-10-13 the primary reference is `References2/xemu-0.8.136`. Mentions of Xermu
+confirmed 2026-10-13 the primary reference is `References2/xemu-0.8.137` (0.8.136 was the
+primary snapshot until the 0.8.137 adoption on 2026-10-20). Mentions of Xermu
 in this file are historical artifacts of that draft — do not treat them as facts or as a
 pointer to any project. See `sources.md` "Xermu - WITHDRAWN".
 
@@ -398,7 +399,7 @@ Output report 6 bytes (left/right actuator u16)
 ## 16. Xbox PCI topology (from xemu `hw/xbox/xbox.c`) and reference-first process
 
 Process directive: consult the reference projects first for hardware specs and behavior.
-Xemu (`References2/xemu-0.8.136`) is the LLE reference for MCPX/PCI/IDE/NV2A; Cxbx-Reloaded and
+Xemu (`References2/xemu-0.8.137`) is the LLE reference for MCPX/PCI/IDE/NV2A; Cxbx-Reloaded and
 Xermu are HLE (kernel reimplementation, no NV2A emulation) and only inform kernel-facing
 behavior. Facts are extracted, never copied.
 
@@ -11584,3 +11585,133 @@ expected `outerMs` win is ~2-3% - at or below the experiment's own 2% keep bar,
 with a correctness surface (stale page after a remap) that the epoch must cover.
 Not attempted; the next session can run it with the acceptance criteria already
 written in `next-session.md`.
+
+## §201 xemu 0.8.137 adopted as the primary oracle (2026-10-20)
+
+**Decision.** `References2/xemu-0.8.137` replaces `References2/xemu-0.8.136` as the
+primary LLE reference. 0.8.136 stays vendored so the historical file:line citations in
+this document remain traceable; any fact that matters to current work is re-extracted
+from 0.8.137 before it is used.
+
+**Why.** 0.8.137 is a substantially newer snapshot (QEMU 10.2.0, 11,352 files):
+`hw/xbox` goes 164 -> 167 files with **150 differing or new**, of which `nv2a/` is 88/97
+and `mcpx/` is 38 files. The material addition is the APU DSP: `mcpx/apu/dsp/` now
+ships a full GP/EP interpreter (`interp/dsp_cpu.c`, 1,176 lines), an optional JIT
+(`dsp_jit.c`, 320 lines, selected by `g_config.audio.use_dsp_jit`), a restructured
+`dsp.c` (ops vtable) and an updated 441-line `gp_ep.c`. That is the reference for the
+remaining phase-12 DSP/mixing work; the §121 GP/EP bridge currently reproduces the
+handshake and notifiers only.
+
+**What to re-check.** APU/DSP semantics and DMA first; then the NV2A pgraph deltas
+(`methods.h.inc`, `texture.c`, `surface.c`, `glsl/psh.c`, `glsl/vsh-prog.c`) and
+MCPX/SMBus/USB/XID. The measured file-hash delta is catalogued in
+`docs/research-notes/xemu-0.8.137.md`; `xemu.md` keeps the 0.8.136-era facts with a
+superseded banner. Licensing is unchanged (GPL-2.0 overall, facts only; `dsp/**` is
+GPL-2+).
+
+**Process.** AGENTS.md, ImplementationPlan.md, `sources.md`, `xemu.md` and
+`xemu-playtest-v2.md` now name 0.8.137 as primary. Future notes should cite the
+snapshot they actually read; a 0.8.136 citation is acceptable only when the relevant
+file is unchanged in 0.8.137 or the point is explicitly historical.
+
+## §202 Rasterizer compiled-loop fast lanes: direct-RAM texel/dest reads, per-fill decode, lighting clamp drops (2026-10-20, ninth session) - LANDED
+
+**Method (measure first, exactly as §200 demands).** A temporary ablation switch
+(`XGRID_RASTER_PROBE`, removed before commit) ran the two 1B golden legs with
+individual blocks elided, so every slice below is chosen by a measured ceiling
+rather than an op-count guess. Menu (`--jit --jit-threshold 16 --jit-spin
+--jit-raw --gpu sw`, `compiled` = the two loop timers, 308.2M px / 278.9M samples):
+
+| ablation | compiled | delta |
+|---|---:|---:|
+| baseline | 13.47 / 13.37 s | - |
+| all sampler work elided | 11.85 / 11.77 s | **-1.6 s** |
+| texel decode elided | 12.34 / 12.42 s | -1.0 s |
+| `TrackTextureCoords` elided | 13.33 / 13.44 s | ~0 |
+| `CountSample` elided | 13.27 / 13.26 s | -0.15 s |
+| blend destination read elided | 13.54 / 13.51 s | -0.5 s |
+| pack+blend elided | 12.35 / 12.45 s (extra pack) | pack ~0.3 s |
+| surface write elided | 13.54 / 13.84 s | ~0.2 s |
+
+Two shapes were also measured directly on the traffic the titles run: **93.5% of the
+menu's k1 fragments have `fa == 1`** (198.15M of 212.00M) and the alpha-1 skip path
+produced **0 mismatches over 198M pixels** against the full blend. Implementing it
+anyway measured **neutral** (13.72/13.66 vs 13.89/13.37): the destination read is only
+~2.4 ns/px, so a per-pixel branch costs what it saves. Not landed.
+
+**Slice 1 - per-fill direct-RAM sampler with a per-fill decode branch (both compiled
+fills).** `IGpuMemoryFast.TryGetRamBytes(out byte[] bytes, out uint size)` exposes the
+RAM array and the exact size `TryReadPhysical` bounds-checks against.
+`SamplerAddressBound` proves the highest address a plan can read (the accepted wrap
+folds keep the coordinate inside the image; a swizzled index stays inside the union of
+the two swizzle masks), so one per-fill test replaces the per-sample interface call:
+inside the bound the loop reads `BinaryPrimitives.ReadUInt32LittleEndian` over a
+`MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, addr), 4)` (same
+little-endian decode, same four-byte requirement as the adapter, so a 2-byte texel
+still reads a word and masks), otherwise it calls `ReadGpu` unchanged. `SamplerPlan`
+gained `DecodeKind`, the exact `DecodeTextureTexel` branch for the fill's color
+(0 = the A8R8G8B8 default branch, 1 = A4R4G4B4, 2 = the generic switch), so the
+per-sample jump table is gone for the two shapes the titles use. The blend
+destination read (`TryReadPixelFloat`'s 4-byte branch) uses the same direct word when
+the fill's whole framebuffer span is inside RAM. Both compiled fills transcribe
+`SampleFast` operation-for-operation; the generic path keeps `SampleFast`.
+
+**Slice 2 - lighting-loop provable clamp drops and per-row hoists.** The reference
+chain `R1 = clamp(max(R1,0)^2)` then `clamp(R1*R1)` keeps R1 in [0,1], so every
+following -1..1 clamp is a provable no-op (NaN passes both forms identically); the
+combine-stage products `c0c*max(R0,0)` and `c1c*max(R1,0)` are no-ops whenever
+`|c0c|,|c1c| <= 1`, which is now a per-fill predicate (measured: **all 53,574
+lighting fills** pass) with the generic loop as the fallback. `addCd = clamp(1*c0Add)`
+is a per-fill constant and is hoisted. Both compiled fills hoist `py` and the two
+barycentric y terms, which are loop invariant in x (same expressions, same operands).
+
+**Negative result kept: the k2 constant fold.** For kind 2 the stage-0 dot inputs are
+the C0 constants and stages 1-3 are per-fill constants, so the whole dot/power/combine
+chain collapses to per-fill values. It was implemented exactly (same expressions
+evaluated once) and measured **2-3% slower** on the same binary with the switch
+interleaved (`--jit` triangle, fold on 3.15/3.15/3.17 vs off 3.11/3.07/3.07 s psh):
+the hoisted constants did not stay in registers and the branch/register pressure cost
+more than the folded math saved. Reverted. `[MethodImpl(AggressiveInlining)]` on
+`SampleFast` likewise measured neutral (psh +0.1/-0.7/-0.1%) and was dropped.
+
+**Measurement lesson (cost an hour).** The candidate leg of the first wall A/Bs still
+carried the CPU-side probe timers from the investigation (`RunNonJit` Stopwatch pair,
+block-build timers). That pair costs ~0.35 s over 479K calls and read as "the raster
+win did not reach the wall" (+1.3% triangle wall against a -10% raster). Revert probe
+instrumentation **before** any A/B leg; the same-binary gl-replace control (6.48/6.44/
+6.51 vs 6.83/6.79/6.80 s) is what localised it.
+
+**Validation (fast mode 1B, 3 interleaved pairs, `--gpu sw`; SHAs and every NV2A
+counter byte-identical on all legs - menu `660CA11B...`/`F5D61C94...`, triangle
+`F57934BF...`/`CF79FC17...`).**
+
+| 1B | baseline (`65e136e`) | final | delta |
+|---|---:|---:|---:|
+| triangle `rasterPsh` | 3.39 s | 2.87 s | **-14.2%** (3/3) |
+| triangle wall | 9.15 s | 8.69 s | **-4.0%** (3/3) |
+| menu `rasterPsh` | 13.47 s | 12.49 s | **-5.3%** (3/3) |
+| menu wall | 35.45 s | 34.64 s | **-2.3%** (3/3, -0.3/-2.4/-4.2) |
+| menu `compiled` | 13.18 s | 12.20 s | -7.4% |
+
+**Accurate mode (gate currency) is unchanged:** 1B legs with the JIT off reproduce the
+§200 anchors exactly - menu RAM `D9C99A58...` / CPU `3D2740B8...`, triangle
+`F57934BF...` / `98039867...` - with every counter identical (menu pixels 285171381,
+textured 278577344, blended 211696978, clears 695, frames 686; triangle 73781653 /
+33394020 / 518 / 306868 depth / 35 frames) and the texture-format histogram identical.
+`rasterPsh` in accurate mode: menu 13.22 -> 12.14 s (-8.2%), triangle 3.22 -> 2.75 s
+(-14.6%). The accurate *wall* barely moves (menu 74.2 -> 70.9 s, triangle 43.0 -> 43.3 s
+within host noise) because the interpreter owns ~90% of it.
+
+**CPU-side investigation (measured, no change landed).** Two candidate levers were
+priced and dropped: (a) the non-JIT time is not interpreter overhead to be trimmed -
+with gl+replace the triangle's `nonJitMs` falls 5.35 -> 2.5 s, i.e. most of it is the
+software raster executing inside an MMIO member (`Mov` 1.15M members at 1.64-3.38 us
+= 3.9 s of 5.8 s, matching `rasterPsh`); (b) block builds cost **~200 us raw + ~20 us
+IL** per block (`buildRaw=1222 ms` / `buildIl=133 ms` for 6,202 blocks at 1B), and a
+threshold sweep (16 / 64 / 256) trades build cost for interpreter time exactly one for
+one (outer -1.1 s, nonJit +1.4 s at 256), so `--jit-threshold 16` is at its optimum.
+The IL runner is built even when the raw runner succeeds; making it lazy would save
+only the 133 ms, so it was not done.
+
+Suite **1519** green, `dotnet format --verify-no-changes` clean, ktest smoke **PASS
+7/7** (known deltas match).
