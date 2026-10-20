@@ -275,6 +275,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TextureAddressBorder = 4u;
     private const uint TextureBumpMatBase = 0x28u;
     private const int MaxTextureSlots = 4;
+
+
+
     private const int MaxTransformProgramLength = 136;
     private const int MaxVertexShaderConstants = 192;
     private const uint VertexArrayOffsetMask = 0x7FFFFFFFu;
@@ -417,11 +420,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
             }
 
+
             return text;
         }
     }
 
     private readonly Dictionary<int, long> _diagRejects = new();
+
+    private readonly float[] _lightTexels = new float[9 * 4];
+
     private long _diagCompiledFills;
     private long _diagCompiledPixels;
     private long _rasterCompiledTicks;
@@ -4695,6 +4702,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         /// <summary>Fast fold per axis: 0 = clamp, 1 = mirror (POT), 2 = wrap (POT).</summary>
         public int FastWrapU;
         public int FastWrapV;
+
+        /// <summary>
+        /// Cube-map sampling descriptors (faces are stored contiguously, each a
+        /// full mip chain rounded to 128 bytes). Pure functions of the per-draw
+        /// texture registers, hoisted so the cube sampler does not rebuild the
+        /// face stride and swizzle masks per sample.
+        /// </summary>
+        public int CubeWidth;
+        public int CubeHeight;
+        public uint CubeBytes;
+        public uint CubeFaceStride;
+        public uint CubeMaskX;
+        public uint CubeMaskY;
+        public bool CubeMorton;
     }
 
     private void BuildSamplerPlans()
@@ -4776,6 +4797,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     plan.FastWrapU = fastU;
                     plan.FastWrapV = fastV;
                 }
+            }
+
+            int cubeWidth = (int)(_textureImageRect[slot] >> 16);
+            int cubeHeight = (int)(_textureImageRect[slot] & 0xFFFFu);
+            uint cubeBytes = color switch
+            {
+                0x06u => 4u,
+                0x05u => 2u,
+                _ => 0u,
+            };
+            plan.CubeWidth = cubeWidth;
+            plan.CubeHeight = cubeHeight;
+            plan.CubeBytes = cubeBytes;
+            plan.CubeFaceStride = 0u;
+            plan.CubeMaskX = 0u;
+            plan.CubeMaskY = 0u;
+            plan.CubeMorton = false;
+            if (cubeBytes != 0 && cubeWidth > 0 && cubeHeight > 0)
+            {
+                plan.CubeFaceStride = CubeFaceStride(slot, cubeWidth, cubeHeight, cubeBytes);
+                ComputeSwizzleMasks(cubeWidth, cubeHeight, out uint cubeMaskX, out uint cubeMaskY);
+                plan.CubeMaskX = cubeMaskX;
+                plan.CubeMaskY = cubeMaskY;
+                plan.CubeMorton = (cubeMaskX & 0xAAAAAAAAu) == 0 && (cubeMaskY & 0x55555555u) == 0;
             }
         }
     }
@@ -5030,20 +5075,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
-        int width = (int)(_textureImageRect[slot] >> 16);
-        int height = (int)(_textureImageRect[slot] & 0xFFFFu);
+        ref readonly SamplerPlan plan = ref _samplerPlans[slot];
+        int width = plan.CubeWidth;
+        int height = plan.CubeHeight;
         if (width <= 0 || height <= 0)
         {
             return false;
         }
 
         uint color = (_textureFormat[slot] >> 8) & 0xFFu;
-        uint bytes = color switch
-        {
-            0x06u => 4u,
-            0x05u => 2u,
-            _ => 0u,
-        };
+        uint bytes = plan.CubeBytes;
         if (bytes == 0)
         {
             return false;
@@ -5052,9 +5093,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         int face = PshCombiner.SelectCubeFace(x, y, z, out float s, out float t);
         int tx = Math.Clamp((int)MathF.Floor(s * width), 0, width - 1);
         int ty = Math.Clamp((int)MathF.Floor(t * height), 0, height - 1);
-        uint address = _textureOffset[slot] +
-                       (CubeFaceStride(slot, width, height, bytes) * (uint)face) +
-                       (SwizzleOffset(tx, ty, width, height) * bytes);
+        uint swizzled = plan.CubeMorton
+            ? (SpreadMortonBits((uint)tx) & plan.CubeMaskX) | ((SpreadMortonBits((uint)ty) << 1) & plan.CubeMaskY)
+            : InterleaveBits((uint)tx, plan.CubeMaskX) | InterleaveBits((uint)ty, plan.CubeMaskY);
+        uint address = _textureOffset[slot] + (plan.CubeFaceStride * (uint)face) + (swizzled * bytes);
         return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
     }
 
@@ -6923,6 +6965,220 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return pixels;
     }
 
+    /// <summary>
+    /// Rasterizer slice: compiled fill for the k2/k3 "squared lighting"
+    /// combiner shapes (the whole triangle raster and 22% of the menu). The
+    /// per-fill predicate proves that stages 1-3 of <see cref="ResolveTexel"/>
+    /// resolve to the constant <c>SetTexelNone</c> texel with no counter
+    /// updates (unconfigured cube/volume textures), so the compiled loop only
+    /// resolves stage 0 and carries the constant texels as scalars. The
+    /// combiner math is <see cref="PshCombiner.EvaluateLightingSpecialized"/>
+    /// transcribed operation-for-operation with its per-draw constants hoisted;
+    /// the fragment stage is the ProcessFragment color path with the proven
+    /// per-draw state (no alpha test, no blend, opaque mask, no zeta traffic).
+    /// </summary>
+    /// <summary>Writes one stage's per-fill constant texel (RGB) into the lighting scratch.</summary>
+    private void SetConstTexel(int stage, float r, float g, float b)
+    {
+        int offset = (stage - 1) * 3;
+        _lightTexels[offset] = r;
+        _lightTexels[offset + 1] = g;
+        _lightTexels[offset + 2] = b;
+    }
+
+    private long FillTrianglePshLighting(
+        PshVertex a, PshVertex b, PshVertex c,
+        uint x0, uint x1, uint y0, uint y1,
+        float invArea, bool perspective, float invAw, float invBw, float invCw,
+        uint pitch, int kind, float[][] consts, float[] constTexels,
+        bool sampleStage0, ref readonly SamplerPlan stage0Plan,
+        bool zclipActive, bool zclipCull, float zclipRange, float zclipMin, float zclipMax,
+        uint colorBase)
+    {
+        bool stage0FromC0 = kind == 2;
+        int powerStages = stage0FromC0 ? 5 : 4;
+        int combineStage = stage0FromC0 ? 6 : 5;
+        int addStage = stage0FromC0 ? 7 : 6;
+        float[] c0Stage0 = consts[0];
+        float[] c0Combine = consts[combineStage * 2];
+        float[] c1Combine = consts[(combineStage * 2) + 1];
+        float[] c0Add = consts[addStage * 2];
+        float[] specFog0 = consts[16];
+        float c0s0R = c0Stage0[0];
+        float c0s0G = c0Stage0[1];
+        float c0s0B = c0Stage0[2];
+        float c0cR = c0Combine[0];
+        float c0cG = c0Combine[1];
+        float c0cB = c0Combine[2];
+        float c1cR = c1Combine[0];
+        float c1cG = c1Combine[1];
+        float c1cB = c1Combine[2];
+        float c0aR = c0Add[0];
+        float c0aG = c0Add[1];
+        float c0aB = c0Add[2];
+        float sfR = specFog0[0];
+        float sfG = specFog0[1];
+        float sfB = specFog0[2];
+        float sfA = specFog0[3];
+        float b0 = (2f * Math.Max(constTexels[0], 0f)) - 1f;
+        float b1 = (2f * Math.Max(constTexels[1], 0f)) - 1f;
+        float b2 = (2f * Math.Max(constTexels[2], 0f)) - 1f;
+        float d0 = (2f * Math.Max(constTexels[3], 0f)) - 1f;
+        float d1 = (2f * Math.Max(constTexels[4], 0f)) - 1f;
+        float d2 = (2f * Math.Max(constTexels[5], 0f)) - 1f;
+        float bxR = Math.Max(constTexels[6], 0f);
+        float bxG = Math.Max(constTexels[7], 0f);
+        float bxB = Math.Max(constTexels[8], 0f);
+        uint color = stage0Plan.Color;
+        long pixels = 0;
+        for (uint y = y0; y <= y1; y++)
+        {
+            for (uint x = x0; x <= x1; x++)
+            {
+                float px = x + 0.5f;
+                float py = y + 0.5f;
+                float w0 = (((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X))) * invArea;
+                float w1 = (((c.X - b.X) * (py - b.Y)) - ((c.Y - b.Y) * (px - b.X))) * invArea;
+                float w2 = 1f - w0 - w1;
+                bool inside = (w0 >= 0f && w1 >= 0f && w2 >= 0f) ||
+                              (w0 <= 0f && w1 <= 0f && w2 <= 0f);
+                if (!inside)
+                {
+                    continue;
+                }
+
+                float p0 = w0;
+                float p1 = w1;
+                float p2 = w2;
+                if (perspective)
+                {
+                    float s0 = w0 * invCw;
+                    float s1 = w1 * invAw;
+                    float s2 = w2 * invBw;
+                    float sum = s0 + s1 + s2;
+                    if (float.IsFinite(sum) && sum != 0f)
+                    {
+                        float invSum = 1f / sum;
+                        p0 = s0 * invSum;
+                        p1 = s1 * invSum;
+                        p2 = s2 * invSum;
+                    }
+                }
+
+                pixels++;
+                float dr = (p1 * a.DiffuseR) + (p2 * b.DiffuseR) + (p0 * c.DiffuseR);
+                float dg = (p1 * a.DiffuseG) + (p2 * b.DiffuseG) + (p0 * c.DiffuseG);
+                float db = (p1 * a.DiffuseB) + (p2 * b.DiffuseB) + (p0 * c.DiffuseB);
+
+                // Stage 0 (k3): Project2D 2D sample at (oT0.x / oT0.w, oT0.y / oT0.w).
+                float t0r = 0f;
+                float t0g = 0f;
+                float t0b = 0f;
+                if (sampleStage0)
+                {
+                    float tu0 = (p1 * a.U0) + (p2 * b.U0) + (p0 * c.U0);
+                    float tv0 = (p1 * a.V0) + (p2 * b.V0) + (p0 * c.V0);
+                    float tw0 = (p1 * a.T0W) + (p2 * b.T0W) + (p0 * c.T0W);
+                    float su = tw0 != 0f ? tu0 / tw0 : tu0;
+                    float sv = tw0 != 0f ? tv0 / tw0 : tv0;
+                    _textureFormatAttempts[color]++;
+                    SampleFast(in stage0Plan, su, sv, out t0r, out t0g, out t0b, out _);
+                    TexturedPixels++;
+                }
+
+                // Stages 1-3 are per-fill constants (SetTexelNone, or the
+                // constant shadow result for a depth-format stage).
+                float a0 = stage0FromC0 ? c0s0R : (2f * Math.Max(t0r, 0f)) - 1f;
+                float a1 = stage0FromC0 ? c0s0G : (2f * Math.Max(t0g, 0f)) - 1f;
+                float a2 = stage0FromC0 ? c0s0B : (2f * Math.Max(t0b, 0f)) - 1f;
+                float r0R = Math.Clamp((a0 * b0) + (a1 * b1) + (a2 * b2), -1f, 1f);
+                float r0G = r0R;
+                float r0B = r0R;
+                float r1R = Math.Clamp((a0 * d0) + (a1 * d1) + (a2 * d2), -1f, 1f);
+                float r1G = r1R;
+                float r1B = r1R;
+
+                r1R = Math.Clamp(Math.Max(r1R, 0f) * Math.Max(r1R, 0f), -1f, 1f);
+                r1G = Math.Clamp(Math.Max(r1G, 0f) * Math.Max(r1G, 0f), -1f, 1f);
+                r1B = Math.Clamp(Math.Max(r1B, 0f) * Math.Max(r1B, 0f), -1f, 1f);
+                for (int stage = 1; stage < powerStages; stage++)
+                {
+                    r1R = Math.Clamp(r1R * r1R, -1f, 1f);
+                    r1G = Math.Clamp(r1G * r1G, -1f, 1f);
+                    r1B = Math.Clamp(r1B * r1B, -1f, 1f);
+                }
+
+                float abR = Math.Clamp(c0cR * Math.Max(r0R, 0f), -1f, 1f);
+                float abG = Math.Clamp(c0cG * Math.Max(r0G, 0f), -1f, 1f);
+                float abB = Math.Clamp(c0cB * Math.Max(r0B, 0f), -1f, 1f);
+                float cdR = Math.Clamp(c1cR * Math.Max(r1R, 0f), -1f, 1f);
+                float cdG = Math.Clamp(c1cG * Math.Max(r1G, 0f), -1f, 1f);
+                float cdB = Math.Clamp(c1cB * Math.Max(r1B, 0f), -1f, 1f);
+                float v1R = Math.Clamp(abR + cdR, -1f, 1f);
+                float v1G = Math.Clamp(abG + cdG, -1f, 1f);
+                float v1B = Math.Clamp(abB + cdB, -1f, 1f);
+                r0R = abR;
+                r0G = abG;
+                r0B = abB;
+
+                float addR = Math.Clamp(dr * Math.Max(v1R, 0f), -1f, 1f);
+                float addG = Math.Clamp(dg * Math.Max(v1G, 0f), -1f, 1f);
+                float addB = Math.Clamp(db * Math.Max(v1B, 0f), -1f, 1f);
+                float addCdR = Math.Clamp(1f * c0aR, -1f, 1f);
+                float addCdG = Math.Clamp(1f * c0aG, -1f, 1f);
+                float addCdB = Math.Clamp(1f * c0aB, -1f, 1f);
+                r0R = Math.Clamp(addR + addCdR, -1f, 1f);
+                r0G = Math.Clamp(addG + addCdG, -1f, 1f);
+                r0B = Math.Clamp(addB + addCdB, -1f, 1f);
+
+                float efR = Math.Max(r0R, 0f) * Math.Max(sfR, 0f);
+                float efG = Math.Max(r0G, 0f) * Math.Max(sfG, 0f);
+                float efB = Math.Max(r0B, 0f) * Math.Max(sfB, 0f);
+                float dxR = Math.Max(efR, 0f);
+                float dxG = Math.Max(efG, 0f);
+                float dxB = Math.Max(efB, 0f);
+                float axR = Math.Max(r0R, 0f);
+                float axG = Math.Max(r0G, 0f);
+                float axB = Math.Max(r0B, 0f);
+                float fr = dxR + (0f + ((bxR - 0f) * axR));
+                float fg = dxG + (0f + ((bxG - 0f) * axG));
+                float fb = dxB + (0f + ((bxB - 0f) * axB));
+                float fa = Math.Max(sfA, 0f);
+
+                if (fr == 0f && fg == 0f && fb == 0f)
+                {
+                    _combinerRgbZeroFragments++;
+                    if (fa > 0f)
+                    {
+                        _combinerRgbZeroAlphaFragments++;
+                    }
+                }
+
+                if (zclipActive)
+                {
+                    float depth = (w1 * a.Z) + (w2 * b.Z) + (w0 * c.Z);
+                    float zvalue = depth * zclipRange;
+                    if (zvalue < zclipMin || zvalue > zclipMax)
+                    {
+                        if (zclipCull)
+                        {
+                            ZclipCulledPixels++;
+                            continue;
+                        }
+
+                        ZclipClampedPixels++;
+                    }
+                }
+
+                uint address = colorBase + (y * pitch) + (x * 4u);
+                WritePixel(address, 4, PackPixel(4, fr, fg, fb, fa));
+                DrawnPixels++;
+            }
+        }
+
+        return pixels;
+    }
+
     private void FillTrianglePsh(
         PshVertex a, PshVertex b, PshVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint pitch,
@@ -7134,7 +7390,154 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _diagRejects[reason] = rejectCount + 1;
         }
 
-        for (uint y = y0; !compiledModulate && y <= y1; y++)
+        // Compiled fill for the k2/k3 lighting shapes: stages 1-3 must resolve
+        // to the constant SetTexelNone texel with no counter updates (an
+        // unconfigured cube/volume texture), which the generic resolve only
+        // proves per pixel. Anything else keeps the generic loop.
+        bool compiledLighting = false;
+        bool lightingSampleStage0 = false;
+        int lightingReason = 0x100000;
+        System.Array.Clear(_lightTexels);
+        if (bytes != 4)
+        {
+            lightingReason |= 1;
+        }
+
+        if (zetaBytes != 0)
+        {
+            lightingReason |= 2;
+        }
+
+        if (_colorMask != ColorMaskAll)
+        {
+            lightingReason |= 4;
+        }
+
+        if (_blendEnable)
+        {
+            lightingReason |= 8;
+        }
+
+        if (_alphaTestEnable)
+        {
+            lightingReason |= 0x10;
+        }
+
+        if (_memory is null)
+        {
+            lightingReason |= 0x20;
+        }
+
+        if (!compiledModulate && !DiagnosticGenericFill && _combinerFastKind is 2 or 3 &&
+            bytes == 4 && zetaBytes == 0 && _colorMask == ColorMaskAll &&
+            !_blendEnable && !_alphaTestEnable && _memory is not null &&
+            !anyClipPlane && !anyStageDotReader)
+        {
+            compiledLighting = true;
+            if (texModes[0] == PshCombiner.TexModeProject2D)
+            {
+                lightingSampleStage0 = _samplerPlans[0].FastKind != 0 &&
+                                       (_textureControl0[0] & TextureControl0Enable) != 0 &&
+                                       !IsTextureCubemap(0) &&
+                                       !IsDepthTextureFormat(_samplerPlans[0].Color);
+                compiledLighting = lightingSampleStage0;
+            }
+            else if (texModes[0] != PshCombiner.TexModeNone)
+            {
+                compiledLighting = false;
+                lightingReason |= 0x40;
+            }
+            else if (texModes[0] == PshCombiner.TexModeProject2D)
+            {
+                lightingReason |= 0x80;
+            }
+
+            for (int i = 1; compiledLighting && i < PshCombiner.TextureSlots; i++)
+            {
+                int mode = texModes[i];
+                if (mode == PshCombiner.TexModeNone)
+                {
+                    continue;
+                }
+
+                bool rectEmpty = (_textureImageRect[i] >> 16) == 0 ||
+                                 (_textureImageRect[i] & 0xFFFFu) == 0;
+                if (mode == PshCombiner.TexModeCubemap)
+                {
+                    // Cube mode with cube enabled resolves through
+                    // TrySampleTextureCube, which returns before any counter
+                    // when the face extent is unconfigured: SetTexelNone.
+                    compiledLighting = rectEmpty && IsTextureCubemap(i);
+                    if (!compiledLighting)
+                    {
+                        lightingReason |= 0x200 << (i * 2);
+                    }
+                }
+                else if (mode == PshCombiner.TexModeProject3D)
+                {
+                    uint stageColor = (_textureFormat[i] >> 8) & 0x7Fu;
+                    if (IsDepthTextureFormat(stageColor))
+                    {
+                        // A depth-format stage short-circuits in
+                        // TryResolveShadow; only the two unshadowed functions
+                        // are constant and counter-free.
+                        if (_shadowDepthFunc == ShadowDepthFuncNever)
+                        {
+                            SetConstTexel(i, 0f, 0f, 0f);
+                            compiledLighting = true;
+                        }
+                        else if (_shadowDepthFunc == ShadowDepthFuncAlways)
+                        {
+                            SetConstTexel(i, 1f, 1f, 1f);
+                            compiledLighting = true;
+                        }
+                        else
+                        {
+                            compiledLighting = false;
+                            lightingReason |= 0x2000 << (i * 2);
+                        }
+                    }
+                    else
+                    {
+                        compiledLighting = rectEmpty && TextureDimensionality(i) == 3;
+                        if (!compiledLighting)
+                        {
+                            lightingReason |= 0x4000 << (i * 2);
+                        }
+                    }
+                }
+                else
+                {
+                    compiledLighting = false;
+                    lightingReason |= 0x8000 << (i * 2);
+                }
+            }
+        }
+
+        if (RasterTimingEnabled && !compiledLighting && _combinerFastKind is 2 or 3)
+        {
+            _diagRejects.TryGetValue(lightingReason, out long lightingRejectCount);
+            _diagRejects[lightingReason] = lightingRejectCount + 1;
+        }
+
+        if (compiledLighting)
+        {
+            diagPixels = FillTrianglePshLighting(
+                a, b, c, x0, x1, y0, y1,
+                invArea, perspective, invAw, invBw, invCw,
+                pitch, _combinerFastKind, consts, _lightTexels,
+                lightingSampleStage0, in _samplerPlans[0],
+                _zclipActive, _zclipCull, _zclipRange, _zclipMin, _zclipMax,
+                _colorSurfaceBase + PresentedColorOffset);
+            _diagCompiledFills++;
+            _diagCompiledPixels += diagPixels;
+            if (RasterTimingEnabled)
+            {
+                _rasterCompiledTicks += Stopwatch.GetTimestamp() - rasterStart;
+            }
+        }
+
+        for (uint y = y0; !compiledModulate && !compiledLighting && y <= y1; y++)
         {
             for (uint x = x0; x <= x1; x++)
             {
