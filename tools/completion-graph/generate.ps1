@@ -1,5 +1,6 @@
 # generate.ps1 - renders completion-data.json as SVG treemaps (+ self-contained HTML).
-# Two styles per run:
+# Canonical output: the solid style. Only completion-treemap.* is committed;
+# fill/squares remain available on demand and must not be re-added to the repo.
 #   solid : tile is fully colored, color = percent done (red 0% -> yellow 50% -> green 100%)
 #   fill  : tile is a dark "slot"; the bottom `done%` of the tile is filled with the
 #           same heat color (100% = fully filled, 50% = half filled, 0% = empty)

@@ -1,4 +1,9 @@
-# xemu 0.8.136 — Hardware Facts and Architecture Notes
+# xemu 0.8.136 - Hardware Facts and Architecture Notes
+
+> **Snapshot note (2026-10-20):** the primary oracle is now `References2/xemu-0.8.137`
+> (adopted 2026-10-20). The facts below were extracted from 0.8.136 and remain valid
+> wherever the corresponding 0.8.137 file is unchanged; re-verify before relying on a
+> 0.8.136 line for APU/DSP or NV2A work. See `xemu-0.8.137.md` for the catalogued delta.
 
 Reference: `References2/xemu-0.8.136` (QEMU fork, `--target-list=i386-softmmu`, `-DXBOX=1`).
 License: GPL-2.0/LGPL-2+/MIT per file — facts extracted here, no code copied.
