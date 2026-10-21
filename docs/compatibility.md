@@ -77,7 +77,7 @@ anchor; on a double-buffered title the two differ by one buffer
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
-| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene **flat** | 41 flips / 2,679 draws, **2 colours**: a solid green shape on black | n/a | cubemap reflection does not vary - see gap 3 | RAM `1E59D83F` / CPU `D5D38C64`; last frame `5174B1EB` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
+| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
 | **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (217 flips) | 3,038 draws / 9.7M depth px; 41,401 culled | n/a | oracle delta (21.0, 19.0, 9.7) at 5B - animate/fog, needs a phase sweep | RAM `7A11CBEF` / CPU `5B0665B2` at 5B; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
 | **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat orange** | 2,730 draws, **26 colours**, 112,259 culled, `programLoad=12` | n/a | **`XGU_FIXED` transform is not implemented** - see gap 6 | RAM `AFF08085` / CPU `571363B4` at 3B | `-Sample xgu-distance_fog_ffp -Steps 3000000000` |
 | **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat** | 2,728 draws, 93,003 culled, `programLoad=12` | n/a | same FFP gap 6 | RAM `B5747761` / CPU `F0075C2F` at 3B | `-Sample xgu-spheremap_ffp -Steps 3000000000` |
@@ -151,22 +151,32 @@ pinned `a6c31ee`) via `scripts/build-nxdk-samples.ps1`, so the stale snapshots
 are no longer on the build path. `data/` is gitignored, which is why the gap
 survived: nothing tracked the sample sources.
 
-### 3. Cubemap reflection still renders flat (`xgu bump_cubemap_reflect`)
+### 3. Cubemap reflection rendered flat (`xgu bump_cubemap_reflect`) - **CLOSED 2026-10-21 (§209)**
 
 This sample samples texture format **`0x3A`** (`SZ_A8B8G8R8`) for a cube map.
-`IsSupportedSwizzledFormat` mirrors the reference renderer and accepts only
+`IsSupportedSwizzledFormat` mirrored the reference renderer and accepted only
 `0x05`/`0x06`, so all 896,067 samples counted a texture-mode fallback and the
-stage contributed nothing: the frame is a solid green shape on black.
+stage contributed nothing: the frame was a solid green shape on black.
 
-**Measured, and now correctly diagnosed (2026-10-21, §208g):** extending the
-whitelist alone made the fallbacks go to 0 and changed the frame not at all -
-because cube sampling is gated by **three** things (`IsSupportedSwizzledFormat`,
-`SamplerPlan.CubeBytes` and `TryDecodeSwizzledTexel`), and 207h moved one. With
-all three enabled the cube is sampled and the frame moves from `|dmean|`
-(59.6, 43.3, 11.5) to (47.2, 14.1, 7.2) against the reference - but the
-reflection is striped and shifted, so the remaining error is the direction
-chain, not the format. The partial path was reverted (a wrong cube is worse than
-a documented gap); the diagnosis is in decisions §208g.
+**The four gates (208g found three, §209a found the dominant one):**
+
+1. `IsSupportedSwizzledFormat` - widened to the SZ twins `0x3A`-`0x3C`.
+2. `SamplerPlan.CubeBytes` - knows they are 4-byte texels.
+3. `TryDecodeSwizzledTexel` - now shares `DecodeTextureTexel` instead of
+   hard-coding `0x05`/`0x06`, so the cube path cannot disagree with the 2D
+   sampler about channel order.
+4. **The face extent came from `TEXIMAGERECT`, but xemu reads a swizzled
+   texture's extent from TEXFMT `BASE_SIZE_U/V`.** The guest never programs the
+   rect, so the stale 512x512 default made the sampler walk 1 MB face strides
+   over 256 KB faces. This was the real cause of the "striped reflection" that
+   208g blamed on the direction chain.
+
+Result at 3B: **2 colours -> 21,041 colours, 36% black -> 0% black**, mean
+(58.0, 98.7, 29.8) against the reference (62.3, 100.1, 28.8); at 3.6B
+`|dmean|` is (5.3, 2.4, 1.3). The direction chain was verified faithful with a
+probe set (forced normal, normal-map dump, `TEX1`/`n`/`rv` vector dumps - all
+smooth), so no math changed. Evidence and the phase table: decisions §209.
+
 
 ### 4. Byte-order texture formats were unsupported (fixed 2026-10-20)
 
@@ -189,13 +199,31 @@ oracle the corpus did not have before. Compared as mean channel value plus an
 |---|---|---|---|
 | `vp_lighting` | (32.3, 26.7, 224.7) | (33.9, 28.1, 226.4) | **matches** - within 1.7/255 per channel, luminance histogram close (`83/81` in the darkest non-black bucket) |
 | `alpha_blending` | (20.8, 17.2, 233.2) | (25.6, 21.2, 229.0) at 4.6B | **matches** - within 4.8/255 per channel once the frame is taken at a comparable phase. The sample ping-pongs a shader `transparency` 1.0 -> 0.0 every 100 frames, so a single fixed step count measures the phase, not the renderer (decisions §208f; the earlier "blended geometry missing" verdict compared a mid-fade frame) |
-| `bump_cubemap_reflect` | (62.4, 100.2, 28.9) | (2.5, 52.3, 15.9) | **differs** - XGrid is darker and greener with 36% black pixels; consistent with gap 3 |
+| `bump_cubemap_reflect` | (62.3, 100.1, 28.8) | (58.0, 98.7, 29.8) at 3B; (57.0, 97.7, 30.2) at 3.6B | **matches** - within 5.3/255 per channel at the best phase, 21,041 colours vs the reference's 30,806, 0% black (was 2 colours / 36% black before §209a) |
 
 This is the first corpus evidence that can say "renders correctly" rather than
 just "renders something". **Animated samples need a phase sweep** (§208f):
 `scripts/frame-oracle.py <reference.png> <frame.bmp>...` scores several step
-counts and reports the best. With that, `vp_lighting` and `alpha_blending` both
-match; `bump_cubemap_reflect` is the only remaining oracle failure.
+counts and reports the best. With that, all three oracle rows match; the two
+`*_ffp` rows are blocked on compatibility gap 6 (fixed-function transforms).
+
+### 7. Texture filtering was ignored (opt-in since 2026-10-21, §209d)
+
+The sampler read no `TEXFILTER` state: every stage was nearest, and the
+`QUINCUNX`/`GAUSSIAN` convolution kernel was skipped. Measured usage: the
+dashboard menu's stage 0/1 program `2/2/1` (tent + quincunx) and stage 0 alone
+accounts for 211M of its 267M texel samples per 1B steps; `bump_cubemap_reflect`
+programs `2/2/1` on all four slots.
+
+`--tex-filter registers` now honors MIN/MAG as a tent filter at LOD 0 (per-tap
+wrap, face-local clamp on cube maps) and runs xemu's nine-tap 1-2-1 gaussian on
+PROJECT2D. It is **opt-in** because the menu has no external oracle and honoring
+the register changes 8.7% of its menu pixels (mean |delta| 2.3/2.1/2.0 per
+channel, colours 32,360 -> 39,254) while costing 2.4x wall on the software
+rasterizer (compiled fills fall back to the generic loop; a perf follow-up).
+The default path is byte-identical to the previous build (both 1B goldens PASS
+on their exact anchors). The GL backend is still nearest-only.
+
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 
@@ -265,8 +293,11 @@ sequence (an operator-visible route), not more steps.
   immediate-mode vertex family (`0x1500-0x16FF`) and the raster modes as the
   largest recorded-only groups.
 - **Texture formats / shader shapes:** whatever the dashboard's menu uses
-  (modulate + a few lighting shapes); DXT/paletted/mipmapped/filtered sampling
-  are unobserved. Nearest filtering only, in both renderers.
+  (modulate + a few lighting shapes) plus the xgu samples' byte-order formats,
+  a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
+  unobserved. **Filtering:** the software sampler honors MIN/MAG + convolution
+  behind `--tex-filter registers` (default off, gap 7); the GL backend is
+  nearest-only.
 - **Audio:** emulated, but no streaming consumer and no host output.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 

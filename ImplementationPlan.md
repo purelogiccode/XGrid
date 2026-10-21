@@ -158,8 +158,15 @@ Canonical priority order: `docs/development-direction.md` (summarized in
     the frontend samples it at ~30 Hz; `--frame` keeps its gate anchor). Making it the default
    needs xemu's display model and a gate re-record), and the repo's `nxdk-mesh`
    snapshot was missing `verts.h`/`texture.h`. Steering inputs:
-   `usage-histogram.md` (measured usage), `nv097-coverage.md` (111 handled / 90
+   `usage-histogram.md` (measured usage, now including TEXFILTER), `nv097-coverage.md` (111 handled / 90
    recorded), `gpu-reference-map.md`. One `mesh` mipmap question is still open.
+   **Corpus-driven fidelity landed 2026-10-21 (§209):** the cubemap row renders
+   (`xgu bump_cubemap_reflect`, 2 colours -> 21,041, `|dmean|` 5.3/2.4/1.3)
+   after fixing the face extent (TEXIMAGERECT vs TEXFMT `BASE_SIZE`) plus the
+   three format gates, and **TEXFILTER is honored** (tent at LOD 0 + quincunx
+   convolution) behind opt-in `--tex-filter registers` - the menu's stage 0
+   programs `2/2/1` on 211M texel samples/1B, so the default-flip decision is an
+   operator item with a measured pixel delta (8.7%, identical CPU SHA).
 3. **Track P — product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.

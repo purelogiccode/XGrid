@@ -12697,3 +12697,153 @@ the software rasterizer and the GL backend are equally affected.
 Corpus is now **17 rows over 13 samples**; the oracle table has five xgu
 entries, two of which match (`vp_lighting`, `alpha_blending` at a phase) and
 three of which name real gaps (cubemap direction chain, FFP x2).
+
+## 209 Cubemap reflection closed, and TEXFILTER became a real sampler feature (2026-10-21, sixteenth session)
+
+**Trigger.** `xgu bump_cubemap_reflect` was the last xgu oracle failure (208f):
+2 colours, a solid green shape, `|dmean|` (59.6, 43.3, 11.5) against the
+reference screenshot. 208g had already split the format gate into three
+(`IsSupportedSwizzledFormat`, `SamplerPlan.CubeBytes`, `TryDecodeSwizzledTexel`)
+and proved that all three together sample the cube but leave a striped frame -
+which it read as a broken `DOT_RFLCT_SPEC` direction chain. That reading was
+wrong, and the session's probes prove it.
+
+### 209a The fourth gate: a swizzled texture's extent is BASE_SIZE, not TEXIMAGERECT
+
+The dominant bug was not in the direction chain at all. `TrySampleTextureCube`
+took the face extent from `_textureImageRect` (the `SET_TEXTURE_IMAGE_RECT`
+register). xemu takes a **swizzled** texture's extent from TEXFMT
+`BASE_SIZE_U/V` and reads TEXIMAGERECT only for linear formats
+(`pgraph_get_texture_shape`, `hw/xbox/nv2a/pgraph/texture.c:269-293`).
+
+The guest never programs IMAGE_RECT for this sample's cube (the xgu helper sets
+`sizes` through `xgu_set_texture_format`, not the rect), so the register held
+the stale default `0x02000200` = 512x512. With a 512x512 face the sampler
+walked **1 MB face strides over 256 KB faces** and sampled coordinates 0..511
+inside a 256x256 face: the XGU logo stayed readable (the low coordinate bits
+are still correct) but everything above them aliased into the hatch that 208g
+called a broken direction chain.
+
+Evidence that this was the whole story: fixing the extent plus the three gates
+in one change moved the row from **2 colours / 36% black / `|dmean|`
+(59.6, 43.3, 11.5)** to **20,843 colours / 0% black / `|dmean|` (5.3, 2.4, 1.3)**
+at 3.6B - a match of the same order as `vp_lighting`'s (1.7/255), with no
+change to the reflection math.
+
+The three gates remain a real constraint, so they were widened together:
+
+- `IsSupportedSwizzledFormat` accepts the SZ byte-order twins `0x3A`-`0x3C`
+  (a cube map is always swizzled; linear cube maps are invalid in the
+  reference).
+- `SamplerPlan.CubeBytes` knows `0x3A`-`0x3C` are 4 bytes.
+- `TryDecodeSwizzledTexel` no longer hard-codes `0x05`/`0x06`: it reads the
+  texel width from `TextureFormatBytesPerTexel` and decodes through
+  `DecodeTextureTexel`, so the cube and volume paths can never disagree with
+  the 2D sampler about a format's channel order again. This is what makes the
+  next format a one-line change instead of a three-place trap.
+
+### 209b The direction chain was correct all along (probe evidence)
+
+208g's "striped and shifted" frame was re-examined with a temporary
+`XGRID_CUBE_DEBUG` probe (removed before commit; the findings are the durable
+part):
+
+| probe | what it rendered | result |
+|---|---|---|
+| `n = +Z` (smooth eye vector alone) | the cube sampled at a smooth direction field | **no speckle**, coherent environment faces |
+| stage-0 texel as colour | the normal map itself | clean: readable XGU, rivets, no noise |
+| `pT1.xyz` as colour | the `TEX1` varying | flat per face (the TBN rows are per-face constants) |
+| `n` as colour | the dot-chain normal | smooth gradient with the XGU emboss |
+| `rv` as colour | the final reflection vector | smooth gradient with the XGU emboss |
+
+Every input and every intermediate is smooth, so the chain is not noisy. The
+remaining "hatch" in a 3.6B frame is the **environment map's own content at a
+grazing view** (the cube texture is an industrial room with striped walls), not
+a sampling artifact. The reference screenshot was taken at a more frontal
+phase.
+
+### 209c The oracle needs a phase sweep for this sample too
+
+The camera orbits at 0.015 rad/frame, so `bump_cubemap_reflect` is as
+phase-dependent as `alpha_blending`. Measured at eight step counts
+(`--gpu sw`, fast mode, HDD+DVD):
+
+| steps (B) | 3.0 | 3.2 | 3.4 | 3.6 | 3.8 | 4.0 | 4.2 | 4.4 |
+|---|---|---|---|---|---|---|---|---|
+| oracle score | 106.5 | 81.5 | 47.5 | **27.5** | 66.4 | 81.7 | 69.1 | 44.9 |
+
+3.6B is the best mean match; 4.4B is the best *structural* match (the frontal
+plate that the reference shows). A single fixed step count would have reported
+the row as failing. `scripts/frame-oracle.py` already implements the sweep.
+
+### 209d TEXFILTER was stored and ignored - now it is a sampler feature (opt-in)
+
+While instrumenting the row, the new `filters=` diagnostic showed every stage
+of both textures programming **MIN/MAG 2 and convolution QUINCUNX**
+(`filters=2/2/1`). XGrid stored `_textureFilter` and never read it: the sampler
+is nearest-only, and the compatibility matrix lists that as a known engine
+limitation. Measured usage: `bump_cubemap_reflect` samples 26M texels/3.6B
+through it, and the **dashboard menu's stages 0/1 are 2/2/1** - stage 0 alone
+accounts for 211M of the menu's 267M texel samples per 1B steps, i.e. most of
+the product path's textured pixels.
+
+Landing (software renderer; `--tex-filter registers`, default `legacy`):
+
+- `SamplerPlan.Bilinear` - MIN in `{2,4,6,7}` or MAG in `{2,4}` is a tent
+  filter at LOD 0 (the only LOD the software sampler implements). The four taps
+  are wrapped/clamped **per tap**, exactly as GL wraps a bilinear footprint;
+  BORDER axes return the border colour for an outside tap.
+- `SamplerPlan.Convolution` - bits 13-15; PROJECT2D runs xemu
+  `apply_convolution_filter`: nine `textureProj` taps with the 1-2-1 gaussian
+  (`gaussian3x3`, `/16`), offsets one texel of the base level divided by `w`.
+- Cube maps get the 2D footprint with a **face-local clamp** (GL never blends
+  across cube faces).
+- The compiled fills only handle the nearest shape, so
+  `!plan.Bilinear && plan.Convolution == 0` was added to both their predicates;
+  a filtered draw falls back to the generic loop (perf follow-up, not
+  correctness).
+- Counters record one sample per fragment for a bilinear tap set and one per
+  tap for the convolution (so `tex ok` triples/×9s on filtered legs - that is
+  the real tap count).
+
+**Measured effect.** At 4.4B the filtered frame is visibly cleaner on the
+embossed bevels and the metal frame, but the corpus metric is neutral
+(`|dmean|` 5.0/10.8/5.3 → 5.2/11.1/5.4, `histL1` 23.9 → 23.9): at this
+resolution the residual error is dominated by the environment content, not by
+tap filtering. The honest statement is that the feature is **semantically
+required** (the guest asks for it and the reference renderer does it) and
+**metric-neutral on the only oracle available**, which is why it stays opt-in
+until the menu has an oracle.
+
+### 209e Validation
+
+- **Fail-pre-fix:** 4 of the 5 new cube tests fail on the pre-change source
+  (the three byte-order cases and the BASE_SIZE-vs-IMAGE_RECT case); the two
+  original cube tests had encoded the IMAGE_RECT extent and were moved to
+  `CubeFormat(0x06, 1, 1)`.
+- **New tests:** `Draw_CubeMapSamplesByteOrderFace` (0x3A/0x3B/0x3C channel
+  order through the cube path), `Draw_CubeMapExtentComesFromBaseSizeNotImageRect`,
+  and five `TextureFilterRegisters_*` tests (off stays nearest; on blends
+  between texel centres; a 1/1 word is byte-identical to legacy; a 9-tap
+  convolution spreads a single-texel impulse; the property defaults off).
+- **Default path is unchanged:** fast 1B menu `51B56687…`/`F5D61C94…` exact;
+  accurate 1B menu golden PASS (sw `4EF1FBF6…`, gl `B6116DAE…`,
+  `violations=0 maxDelta=1`, counters 33632/686/686); accurate triangle golden
+  PASS (sw `A1740DE0…`, counters 2706/68/34); BTFF triangle row
+  `0117A5E2`/`7DAB63EB` (matches the documented frame-first anchors); ktest
+  smoke PASS 7/7.
+- The **plain** triangle leg (no `--frame-first`) reads `CB95C006…`/`B8EF1021…`
+  on this host both before and after the change (verified with a stash-built
+  baseline), i.e. it is a different leg from the documented `B45254CA…` anchor,
+  not a regression. The anchor table should quote the flag set per row.
+
+### 209f Measured negatives / do-not-retry
+
+- Do not infer a VGA/texel extent from `_textureImageRect` for swizzled
+  textures; it is a stale guest default for cube maps (209a).
+- The `DOT_RFLCT_SPEC` chain (`n = (dot1, dot2, dot3)`, `e = pT1.w, pT2.w,
+  pT3.w`, `rv = 2n(n·e)/(n·n) - e`) is faithful to xemu `psh.c:1285-1304`;
+  208g's "direction chain" suspicion is disproven by the probe set in 209b.
+- Bilinear taps alone do not clean up a grazing environment map; the remaining
+  speckle is content + LOD 0 (no mip selection), not a tap-weight bug.
+
