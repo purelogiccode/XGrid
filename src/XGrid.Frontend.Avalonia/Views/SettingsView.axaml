@@ -53,7 +53,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding BiosPath, Mode=TwoWay}"
-                       Watermark="Path to the BIOS image" />
+                       PlaceholderText="Path to the BIOS image" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -82,7 +82,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding McpxRomPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -102,7 +102,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding EepromPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -152,7 +152,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding HddPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -173,7 +173,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding DvdPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -282,6 +282,31 @@
           </StackPanel>
 
           <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="Software rasterizer is portable; the OpenGL backend needs a Windows host and is used at the next power-on."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:RendererOption">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Label}" />
+                    <TextBlock Text="{Binding Hint}"
+                               FontSize="10.5"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource XgTextMutedBrush}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
 
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2">

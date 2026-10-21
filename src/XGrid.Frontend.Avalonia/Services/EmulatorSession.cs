@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -46,6 +47,8 @@ public sealed class EmulatorSession : IDisposable
 
     private readonly Lock _padLock = new();
     private readonly Lock _machineLock = new();
+    private readonly Lock _requestLock = new();
+    private readonly Queue<StateRequest> _requests = new();
     private readonly ManualResetEventSlim _runGate = new(initialState: true);
 
     private CancellationTokenSource? _cancellation;
@@ -223,7 +226,7 @@ public sealed class EmulatorSession : IDisposable
     public void SaveState(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        WithMachine(machine => machine.SaveState(path));
+        RunOnEmulationThread(machine => machine.SaveState(path));
     }
 
     /// <summary>
@@ -234,7 +237,7 @@ public sealed class EmulatorSession : IDisposable
     public void LoadState(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        WithMachine(machine =>
+        RunOnEmulationThread(machine =>
         {
             machine.LoadState(path);
 
@@ -244,13 +247,90 @@ public sealed class EmulatorSession : IDisposable
         });
     }
 
-    private void WithMachine(Action<XboxMachine> action)
+    /// <summary>
+    /// Runs a machine operation on the emulation thread, between batches.
+    /// </summary>
+    /// <remarks>
+    /// Device state is not the only thing with thread affinity: an attached GPU
+    /// backend owns a GL context that is current on the emulation thread only,
+    /// and a snapshot load resets backend state (<see cref="Nv2a.Nv2AMmio.LoadState"/>).
+    /// Marshalling instead of running under <see cref="_machineLock"/> from the
+    /// UI thread keeps every GL call on its owning thread and still observes a
+    /// quiescent machine, because the loop serves requests with no batch in
+    /// flight.
+    /// </remarks>
+    private void RunOnEmulationThread(Action<XboxMachine> work)
     {
-        XboxMachine machine = Volatile.Read(ref _machine)
-            ?? throw new InvalidOperationException("The console is not running.");
-        lock (_machineLock)
+        if (!_running || Volatile.Read(ref _machine) is null)
         {
-            action(machine);
+            throw new InvalidOperationException("The console is not running.");
+        }
+
+        using var request = new StateRequest(work);
+        lock (_requestLock)
+        {
+            _requests.Enqueue(request);
+        }
+
+        if (!request.Done.Wait(TimeSpan.FromSeconds(60)))
+        {
+            throw new InvalidOperationException("The console did not reach a quiescent point in time.");
+        }
+
+        if (request.Error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(request.Error).Throw();
+        }
+    }
+
+    /// <summary>Serves queued snapshot requests on the emulation thread.</summary>
+    private void ServeRequests(XboxMachine machine)
+    {
+        while (true)
+        {
+            StateRequest? request;
+            lock (_requestLock)
+            {
+                request = _requests.Count > 0 ? _requests.Dequeue() : null;
+            }
+
+            if (request is null)
+            {
+                return;
+            }
+
+            try
+            {
+                request.Work(machine);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // The caller sees the failure; the session must keep running.
+                request.Complete(exception);
+                continue;
+            }
+
+            request.Complete(error: null);
+        }
+    }
+
+    /// <summary>Releases requests that can no longer be served (the loop is exiting).</summary>
+    private void FailPendingRequests()
+    {
+        while (true)
+        {
+            StateRequest? request;
+            lock (_requestLock)
+            {
+                request = _requests.Count > 0 ? _requests.Dequeue() : null;
+            }
+
+            if (request is null)
+            {
+                return;
+            }
+
+            request.Complete(new InvalidOperationException("The console stopped before the request was served."));
         }
     }
 
@@ -283,9 +363,11 @@ public sealed class EmulatorSession : IDisposable
         try
         {
             machine = CreateMachine(settings, discPath, ref socketBackend);
+            GraphicsBackendHost.TryAttach(machine, settings, out string rendererDetail);
             Volatile.Write(ref _machine, machine);
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
+            Log?.Invoke(this, "Renderer: " + rendererDetail);
             if (_titleId is uint runningTitleId)
             {
                 string suffix = _titleOverrideApplied ? " (per-title override applied)" : string.Empty;
@@ -296,9 +378,14 @@ public sealed class EmulatorSession : IDisposable
 
             while (!token.IsCancellationRequested && !machine.Cpu.Context.Halted)
             {
+                // Snapshot requests run here, on the thread that owns the
+                // devices (and the GL context), with no batch in flight.
+                ServeRequests(machine);
                 if (_paused)
                 {
-                    _runGate.Wait(token);
+                    // A timed gate wait keeps the loop able to serve a save or
+                    // load request while the console is paused.
+                    _runGate.Wait(TimeSpan.FromMilliseconds(50), token);
                     continue;
                 }
 
@@ -349,12 +436,15 @@ public sealed class EmulatorSession : IDisposable
         }
         finally
         {
+            // Refuse new requests first, then release the ones still queued.
+            _running = false;
             Volatile.Write(ref _machine, null);
+            FailPendingRequests();
+            GraphicsBackendHost.Detach(machine);
             PersistEeprom(machine);
             machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();
-            _running = false;
             _paused = false;
             Stopped?.Invoke(this, new SessionStoppedEventArgs(faulted, reason, Steps));
         }
@@ -452,6 +542,12 @@ public sealed class EmulatorSession : IDisposable
         machine.Nv2A.TextureFilterRegisters =
             string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal);
 
+        // The per-method histogram is two dictionary updates per PGRAPH method
+        // (~18M per 1B dashboard steps) and no frontend surface reads it; the
+        // CLI drops it for the same reason (§204, measured there as a 6.2%
+        // software-mode win). Guest state is untouched.
+        machine.Nv2A.CollectMethodHistogram = false;
+
         machine.Reset();
         ConfigureCpu(machine, settings);
         return machine;
@@ -529,6 +625,16 @@ public sealed class EmulatorSession : IDisposable
         if (machine.Nv2A.TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra)
             && width > 0 && height > 0 && bgra.Length >= width * height * 4)
         {
+            // The software scanout hands out a fresh buffer per capture, but a
+            // backend readback is the backend's own buffer: the next flip
+            // overwrites it while the UI thread may still be copying this frame.
+            // Isolating it here (on the emulation thread, between flips) keeps
+            // the renderer switch from tearing the picture.
+            if (machine.Nv2A.Backend is not null)
+            {
+                bgra = (byte[])bgra.Clone();
+            }
+
             FrameReady?.Invoke(this, new FramePacket(width, height, bgra));
         }
     }
@@ -544,5 +650,39 @@ public sealed class EmulatorSession : IDisposable
         _nextProgressLog += ProgressLogInterval;
         Log?.Invoke(this, FormattableString.Invariant(
             $"Executed {steps:N0} steps · EIP 0x{Eip:X8} · {Frames:N0} frames"));
+    }
+
+    /// <summary>One machine operation queued for the emulation thread.</summary>
+    private sealed class StateRequest : IDisposable
+    {
+        public StateRequest(Action<XboxMachine> work)
+        {
+            Work = work;
+        }
+
+        public Action<XboxMachine> Work { get; }
+
+        public ManualResetEventSlim Done { get; } = new(initialState: false);
+
+        public Exception? Error { get; private set; }
+
+        /// <summary>Signals the caller, tolerating a caller that already gave up.</summary>
+        public void Complete(Exception? error)
+        {
+            Error = error;
+            try
+            {
+                Done.Set();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The waiting caller timed out and disposed the handle.
+            }
+        }
+
+        public void Dispose()
+        {
+            Done.Dispose();
+        }
     }
 }

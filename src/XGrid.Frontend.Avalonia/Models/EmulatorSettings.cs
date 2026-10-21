@@ -48,6 +48,13 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the NV2A texture filter mode ("legacy" or "registers", <c>--tex-filter</c>).</summary>
     public string TextureFilter { get; set; } = "legacy";
 
+    /// <summary>
+    /// Gets or sets the NV2A renderer: "software" (the portable rasterizer and
+    /// the default, <c>--gpu sw</c>) or "gl" (the host OpenGL backend,
+    /// <c>--gpu gl --gpu-replace</c>, Windows only).
+    /// </summary>
+    public string Renderer { get; set; } = "software";
+
     /// <summary>Gets or sets a value indicating whether the 007 end-of-stream quirk is enabled.</summary>
     public bool EosQuirk { get; set; } = true;
 
@@ -214,6 +221,7 @@ public sealed class EmulatorSettings
             JitThreshold = JitThreshold,
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = TextureFilter,
+            Renderer = Renderer,
             EosQuirk = EosQuirk,
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
@@ -237,6 +245,7 @@ public sealed class EmulatorSettings
         TextureFilter = string.Equals(TextureFilter, "registers", StringComparison.Ordinal)
             ? "registers"
             : "legacy";
+        Renderer = string.Equals(Renderer, "gl", StringComparison.Ordinal) ? "gl" : "software";
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";

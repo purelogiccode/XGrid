@@ -197,3 +197,38 @@ Project-local usage notes and the shortcut table live in
   one share the placeholder (`xgu`/nxdk samples all read `0xFFFF0002`), and a
   title-keyed override applies to every such image. Real titles have unique ids.
   `xgrid disc title <path>` prints the id and the exact `title:XXXXXXXX` key.
+
+## Update 2026-10-21 (decisions 220): the renderer switch (host GPU backend)
+
+- **The frontend can run the NV2A on the host GPU.** Settings has a **Renderer**
+  row: `Software rasterizer` (default, portable, `--gpu sw`) or
+  `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only). The choice applies
+  at the next power-on; a non-Windows host, or a failed WGL probe, logs the
+  reason and keeps the software path instead of failing the boot.
+- **How it is wired.** `Nv2AMmio.GpuMemory` (new, additive) exposes the machine's
+  guest-memory adapter; `GraphicsBackendHost.TryAttach` calls
+  `GlBackendFactory.TryCreate(memory, windowEnabled: false, replaceSoftware:
+  true, frameReadback: true)` on the emulation thread and attaches the backend;
+  `Detach` disposes it in the session's `finally`. The GL context is the CLI's
+  offscreen hidden-window context - nothing is embedded in the Avalonia visual
+  tree - and the frame still arrives through `TryCopyDisplayFrame` ->
+  `FramePacket` -> `WriteableBitmap`. A backend readback is cloned before it
+  leaves the emulation thread (the flip overwrites the backend's buffer).
+- **Measured (git-ignored harness `tools/frontend-smoke`, dashboard, fast mode,
+  interleaved 40 s pairs, same window):** software 1.014B / 1.021B steps (25.3 /
+  25.5 msps), OpenGL 1.121B / 1.106B steps (28.0 / 27.6 msps) = **+9.8% / +8.2%
+  guest throughput**, with the same 306,817 non-black pixels in the last frame
+  and a working 72 MB save/load round trip with GL attached. A 20 s window (boot
+  + intro, before the menu draws) gains +4.5%; the CLI's 1B menu leg - the same
+  switch without UI capture - is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
+- **Snapshot requests now run on the emulation thread.** `EmulatorSession`
+  marshals save/load into the loop (60 s ceiling, served between batches and
+  during a pause) because a load resets backend state and a GL context is only
+  current on its owning thread. The UI no longer holds the machine lock around
+  device state.
+- **Known limit:** the GL renderer presents the *flipped* surface, so a guest
+  that writes the framebuffer directly (nxdk `gamma`/`hello`) shows nothing in
+  GL mode, while the default software renderer shows its scanout. Filed as its
+  own slice.
+- **Tests:** `tests/XGrid.Frontend.Tests` 21 -> 34 (`RendererPolicyTests`,
+  `GraphicsBackendHostTests`, including a live attach/detach on Windows).

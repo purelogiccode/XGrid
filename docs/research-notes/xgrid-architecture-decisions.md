@@ -13745,3 +13745,108 @@ distinguish two images with the same id.
 
 Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
 including the regenerated GLSL string goldens for the new shader helpers).
+
+## 220 Track P/B: the frontend on the host GPU backend (2026-10-21, twenty-second session)
+
+The Avalonia frontend was software-only by construction (its 2026-10-20 charter
+excluded "a WGL/OpenGL window backend"); `next-session.md` Option B named the
+renderer switch as the next Track B product step. This session lands it as an
+**opt-in setting** with the software rasterizer still the default, and closes the
+last-mile thread-affinity problem the switch exposes.
+
+### 220a The frontend can render with the host GPU backend
+
+- **One new seam, no new renderer.** `Nv2AMmio.GpuMemory` exposes the
+  guest-memory adapter the device was built with (the same
+  `IGpuMemory`/`IGpuMemoryFast`/`IPresentDirtyWatch` object the software
+  rasterizer writes through), so a host can attach
+  `XGrid.GpuGl.GlBackendFactory` without building a second adapter over the same
+  address space. The CLI keeps its own adapter (unchanged behavior).
+- **`GraphicsBackendHost.TryAttach`** (frontend `Services/`) attaches
+  `windowEnabled: false, replaceSoftware: true, frameReadback: true` - exactly
+  `--gpu gl --gpu-replace` with the per-flip readback the UI needs - and
+  `Detach` releases it. Replacement mode is the point of the switch (it removes
+  the software rasterizer's share of the frame) and its composition rule is the
+  §219b one: a draw the backend declines is painted in software and the flip
+  re-uploads the whole presented surface.
+- **The picture path does not change.** `TryCopyDisplayFrame` already delegates
+  to the backend readback whenever a backend is attached (§208), so the same
+  `FramePacket` -> `WriteableBitmap` seam carries either renderer's pixels and
+  the two are never mixed. The GL context is an offscreen hidden-window context
+  (the CLI's), never embedded in the Avalonia visual tree.
+- **A backend frame is snapshotted before it leaves the emulation thread.** The
+  software scanout allocates a fresh buffer per capture; `ReadbackPresented`
+  returns the backend's own buffer, which the next flip overwrites while the UI
+  thread may still be copying it. `EmulatorSession.CaptureFrame` clones only in
+  the backend case (30 Hz, 1.2 MB), which removes the tearing window.
+- **Platform policy is a pure decision.** `RendererPolicy.Decide(renderer,
+  platformSupportsOpenGl)` returns Software / OpenGl / OpenGlUnavailable, so the
+  Windows-only constraint is tested off Windows; on a non-Windows host (or when
+  the WGL probe fails) the session logs the reason and keeps the software
+  rasterizer rather than failing the boot.
+- **Settings:** `EmulatorSettings.Renderer` (`"software"` default, `"gl"`),
+  normalized on load/clone, a Settings combo (`Software rasterizer` /
+  `OpenGL backend - Windows`), the power-on `Renderer:` log line, and the Home
+  display caption now names the configured renderer.
+
+### 220b A snapshot request runs on the thread that owns the devices
+
+`--gpu gl` was single-threaded in the CLI, but the frontend applied save/load
+under a lock *from the UI thread*, and a snapshot load calls
+`Nv2AMmio.LoadState -> Backend?.ResetState()` - GL calls, on a thread where the
+context is not current.
+
+`EmulatorSession` now marshals save/load: the UI enqueues a request and waits
+(60 s ceiling), the emulation loop serves it at the top of each iteration with
+no batch in flight (and during a pause, whose gate wait is now a 50 ms timed
+wait), and requests still queued when the run ends are failed explicitly. This
+preserves the old quiescence guarantee, keeps every GL call on its owning
+thread, and removes the lock the UI used to take around device state.
+
+### Evidence
+
+- **Tests 1738 -> 1751.** `tests/XGrid.Frontend.Tests` 21 -> 34
+  (`RendererPolicyTests` + `GraphicsBackendHostTests`): the default decision, the
+  platform matrix, unknown-value repair, clone/normalize of the new setting, and
+  three live checks - the machine exposes its GPU memory adapter, the software
+  choice never attaches a backend, and on Windows the OpenGL choice either
+  attaches a real backend (proved by `TryCopyDisplayFrame` returning false
+  before the first flip rather than software pixels) or reports the probe
+  failure it fell back on.
+- **Gates (accurate 1B, both backends):** menu slice-1 golden **PASS** - sw
+  `4EF1FBF66CB96CD7…`, gl `B6116DAE805822BF…`, diff 2602 px, maxDelta 1,
+  `violations=0`, counters `33632/686/686`, `BackendUnsupported=0`
+  (67.5 s sw / 76.8 s gl); triangle slice-2 golden **PASS** - sw
+  `A1740DE069128A04…`, gl `7A860ED7378A86E8…`, diff 27849, `violations=0`,
+  counters `2706/68/34`, `BackendUnsupported=0`.
+- **Fast 1B anchors exact:** menu RAM `34973510…` / CPU `F5D61C94…` (33.9 s,
+  `rasterPsh` 11.50 s, 253,998,498 px); triangle RAM `B45254CA…` / CPU
+  `7DAB63EB…` (10.9 s, `rasterPsh` 4.38 s, 57,663,082 px); `vec=0`, no fault.
+- **ktest smoke PASS 7/7** at **792,800,535** steps with the 40,797-byte suite
+  log **byte-identical** (`CA5D3867…`) - the renderer switch cannot reach the
+  kernel path.
+- **Frontend live session** (`tools/frontend-smoke`, dashboard, fast mode,
+  interleaved 40 s pairs, same window): software **1.014B / 1.021B steps**,
+  OpenGL **1.121B / 1.106B steps** = **+9.8% / +8.2%** guest throughput, with an
+  identical 306,817 non-black pixels in the last frame; a 72 MB `.xgs` save and
+  load succeeded with the GL backend attached (`Renderer: OpenGL backend
+  (replace=on, readback=on) - probe ok; GL_VERSION=4.6.0 NVIDIA 610.88`). A 20 s
+  window (boot + intro, before the menu draws) gains only +4.5%, and the CLI's
+  1B menu leg - the same renderer switch without UI capture - is the ceiling:
+  **33.95 s sw -> 23.46 s `gl+replace` (-30.9%)** with the CPU SHA unchanged
+  (`F5D61C94`; the RAM SHA differs because replacement mode skips the software
+  fill, the documented replace-mode contract).
+- The software default is byte-identical everywhere: no emulator, CLI or gate
+  path changed except the additive `Nv2AMmio.GpuMemory` property. The frontend
+  also mirrors the CLI's host-side diagnostic switch
+  (`CollectMethodHistogram = false`, no surface reads it) - no measurable effect
+  in the session windows so far, kept for parity.
+
+### Known limits (filed, not hidden)
+
+- The GL renderer presents the **flipped** surface, so a guest that renders
+  straight into the framebuffer (nxdk `gamma`/`hello`, §208) shows nothing in GL
+  mode while the software renderer shows its scanout. Rendering the true scanout
+  from a backend needs a per-frame surface compare, and is a separate slice.
+- The renderer is a global setting, not a per-title override; the per-title row
+  schema is unchanged.

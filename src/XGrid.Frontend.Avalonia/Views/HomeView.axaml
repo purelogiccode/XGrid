@@ -174,7 +174,7 @@
                                Classes="muted"
                                TextAlignment="Center"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="640 × 480 · software rasterizer"
+                    <TextBlock Text="{Binding Shell.DisplayCaption}"
                                Classes="caption"
                                HorizontalAlignment="Center" />
                   </StackPanel>

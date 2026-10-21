@@ -55,7 +55,8 @@ emulator plateau: a very accurate, very well-tested demo.
    NV097/APU/XBE work is driven by observed usage. Real ISOs stay benchmark-only
    (no gates, no fidelity work) until the operator changes the policy.
 3. **Track P makes it feel like an emulator.** The frontend landed (`ea8b38f`)
-   but is sw-only, keyboard-only, silent, and stateless. In parallel: host
+   but is keyboard-only, silent, and defaults to the software rasterizer (an
+   opt-in host-OpenGL renderer landed in §220). In parallel: host
    audio sink (APU output), physical gamepad binding, save-state V1, per-title
    config. Cheap relative to their product value; they do not block Track B.
 4. **Track C is frozen after the landed slices.** C3-x hit its target
@@ -73,6 +74,16 @@ ceiling behind its acceptance. A task that serves none of B/E/P is rejected even
 if it is interesting.
 
 ## 1. Priority stack (in order)
+
+**Status 2026-10-21 (22nd session, 220):** the product frontend can now use the
+host GPU backend - a **Renderer** setting (software default; OpenGL is
+Windows-only and opt-in) attaches `XGrid.GpuGl` on the emulation thread and
+still feeds the UI through `TryCopyDisplayFrame`. Measured on the dashboard
+(interleaved 40 s pairs): **+9.8% / +8.2% guest throughput**, with every gate
+anchor byte-identical; the CLI's 1B menu leg is the ceiling at -30.9%. Snapshot
+save/load was moved onto the emulation thread because a load resets backend state
+(a GL context belongs to its thread). Filed limit: the GL renderer presents the
+flipped surface, so direct-framebuffer guests still need the software renderer.
 
 **Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
 the fixed-function vertex stage (213) and its enabled-light loop (215) are
@@ -185,8 +196,9 @@ is a ratio, not a milestone.
   with an idle CPU, so absolute walls are not comparable. Re-run
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
-  is the structural step. The in-app GL display is still deferred (the frontend
-  uses the software path, which never readbacks).
+  is the structural step. The in-app GL display landed in §220 as an opt-in
+  renderer setting (software stays the default; the GL renderer presents the
+  flipped surface, so direct-framebuffer guests are a filed follow-up).
 - **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +

@@ -1,9 +1,10 @@
-# Next session instructions (updated 2026-10-21 after the twenty-first session)
+# Next session instructions (updated 2026-10-21 after the twenty-second session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §219 (GL TEXFILTER parity,
-replace-mode composition, clear write masks, per-title overrides V2) + §218 (APU
+`docs/research-notes/xgrid-architecture-decisions.md` §220 (the frontend renderer
+switch on the host GPU backend) + §219 (GL TEXFILTER parity, replace-mode
+composition, clear write masks, per-title overrides V2) + §218 (APU
 `NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216 (PTIMER
 0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function vertex
 stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
@@ -20,10 +21,10 @@ then this file.
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §219 session commit
+git log --oneline -1        # expect: the §220 session commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1738 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1751 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -40,7 +41,7 @@ Expected 1B fast-mode anchors (**gate media**: the triangle needs HDD + DVD):
 | menu + `--ffp` | `CC2A94DF…` | `F5D61C94…` | ~59 s (the FFP layer draws 121M more px) |
 | triangle BTFF (HDD + DVD, `--frame-first`) | `0117A5E2…` | `7DAB63EB…` | ~11.2 s |
 | triangle, plain (HDD + DVD, no `--frame*`) | `CB95C006…` | `B8EF1021…` | ~10.5 s |
-| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | ~10.6 s |
+| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | ~10.9 s |
 | triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
@@ -68,68 +69,73 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1738 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1751 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
-  **`--ffp` and `--tex-filter registers` are opt-in too**, and both are now also
-  settings in the Avalonia frontend (§217).
+  **`--ffp` and `--tex-filter registers` are opt-in too**, all reachable as
+  frontend settings, and since §220 the **renderer** is a frontend setting too
+  (software default; OpenGL is Windows-only and opt-in).
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
 
-## 0b. What the twenty-first session landed (§219) - do not redo it
+## 0b. What the twenty-second session landed (§220) - do not redo it
 
-1. **GL TEXFILTER parity (§219a, gap 7 closed).** `Nv2AMmio.DecodeTextureFilter`
-   is the one TEXFILTER decode (LOD-0 tent for MIN/MAG 2/4/6/7, the *effective*
-   convolution only when MIN is `CONVOLUTION_2D_LOD0 (7)`); `PgraphTextureSlot`
-   carries `FilterBilinear`/`FilterConvolution`; the fragment shader has
-   `SampleTent`/`SampleConvolved` behind the uniforms `uTexFilter`/`uTexConv`, so
-   no program key changes and the default path is the same nearest `texelFetch`.
-   GLSL goldens regenerated.
-2. **GL replace-mode composition (§219b, gap 8 closed).** A declined draw in
-   replace mode arms a per-flip flag; the flip drops the FBO and the present
-   upload rebuilds the frame from guest RAM (all-or-nothing). Diagnostic
-   `composeUploads=`.
-3. **Clears ignore the draw write masks (§219c).** `ClearCore` lifts
-   `glColorMask`/`glDepthMask`/`glStencilMask` for the clear, then invalidates
-   the state shadow. `ClearMaskLiveTests` fails pre-fix.
-4. **Per-title overrides V2 (§219d).** `XGrid.Host.DiscTitleId` (XBE certificate
-   id from a loose `.xbe` or an ISO's root `default.xbe`; a CHD reports false),
-   `title:XXXXXXXX` override keys with title-over-path precedence, the session's
-   power-on title log line, and CLI `xgrid disc title <path>`. Caveat: homebrew
-   images share the placeholder id `0xFFFF0002`.
+1. **The frontend can render on the host GPU backend.** `Nv2AMmio.GpuMemory`
+   exposes the machine's guest-memory adapter; frontend
+   `Services/GraphicsBackendHost.TryAttach` attaches `GlBackendFactory`
+   (`windowEnabled: false, replaceSoftware: true, frameReadback: true`) on the
+   emulation thread and `Detach`s it in the session's `finally`; frames keep
+   flowing through `TryCopyDisplayFrame -> FramePacket -> WriteableBitmap`.
+   `RendererPolicy.Decide(renderer, platformSupportsOpenGl)` is the pure
+   platform decision (Software / OpenGl / OpenGlUnavailable).
+2. **Snapshot save/load runs on the emulation thread.** `EmulatorSession` queues
+   the request and the loop serves it between batches (and during a pause; the
+   pause gate wait is now a 50 ms timed wait). Reason: `LoadState ->
+   Backend?.ResetState()` is GL work and must run where the context is current.
+3. **Backend readbacks are cloned before they leave the emulation thread**, so
+   the UI cannot copy a frame the next flip is overwriting.
+4. Measured on the dashboard (interleaved 40 s pairs, `tools/frontend-smoke`):
+   software 1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B (**+9.8% / +8.2%**),
+   same non-black pixel count, save/load round trip works with GL attached; the
+   CLI's 1B menu leg is the ceiling at **33.95 -> 23.46 s (-30.9%)**. Every gate
+   anchor byte-identical.
+5. The frontend drops the NV2A per-method histogram (`CollectMethodHistogram =
+   false`, matching the CLI); no UI surface reads it.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
 **Menu `gl+replace`**: GL submission ~1.05 s, CPU engine ~17 s, block builds
-~1.4 s, interpreter ~2.5 s, boot ~2 s. **Menu `sw` (the product path)**: ~31 s at
-1B, of which the software rasterizer is ~11 s. **Triangle `gl+replace`** ~7.5 s
-(10.5-11 s sw on gate media). Track C stays frozen.
+~1.4 s, interpreter ~2.5 s, boot ~2 s, readback ~0.8 s when the frame is
+captured. **Menu `sw` (the frontend default)**: ~34 s at 1B, of which the
+software rasterizer is ~11.5 s. **Triangle `gl+replace`** ~7.5 s (10.9 s sw on
+gate media). Track C stays frozen.
 
 ## 2. Recommended next session - pick one
 
-### Option A (Track P, the largest product gap): host audio output
+### Option A (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
 
-Sound is the last "feels like an emulator" piece and the only one from M-C that
-is still missing, but it is **not** last-mile wiring: the APU's GP DSP must
-execute the guest's mix blocks (`References2/xemu-0.8.137/hw/xbox/mcpx/apu/dsp/
-interp/` is the semantics oracle; the JIT is an external Rust crate, ignore it),
-the EP side needs the FIFO/DMA protocol (`dma.c`, format 0 = 8-bit), and only
-then can an S/PDIF/PCM sink feed a host device. Scope it as **DSP execution
-first** (bit-exact vs `interp/`, then observable mixer output counters), then the
-sink. No oracle title exists in the corpus yet (`xaudio` only proves the voice
-engine is live), so the acceptance is synthetic + the `xaudio` row.
+The §220 renderer presents the **flipped** surface, so nxdk `gamma`/`hello`
+(which write the framebuffer and never flip, §208) show nothing in GL mode while
+the software renderer shows their scanout. Fix shape: when the guest's PCRTC
+start/pitch describe a buffer the backend did not render, fall back to the
+software scanout for that frame instead of dropping it (the display capture is a
+host-side read, so this is not "mixing" in the guest-visible sense, but it needs
+a deliberate policy statement and a caretaker for `presentUploads`). Acceptance:
+`boot-to-first-frame.ps1 -Sample gamma -Gpu gl -GpuReplace` shows the same
+colours as the `-Gpu sw` row; the two gate titles' GL frames stay byte-identical.
 
-### Option B (Track B, product path): the frontend on the GL backend
+### Option B (Track P, the largest product gap): host audio output
 
-`XGrid.Frontend.Avalonia` is software-only. `--gpu gl --gpu-replace` is 2-4x
-faster on the menu and the composition gap is now closed (§219b), so the
-frontend could offer a renderer switch. The blocker is platform: `XGrid.GpuGl`
-creates a WGL context (Windows-only) and the frontend is cross-platform, so the
-reference has to be conditional on a Windows target (or a provider seam with a
-"no GPU backend" fallback). Acceptance: the EvoX menu runs in the app on both
-renderers, the frame pipeline still copies `TryCopyPresentedFrame` (the backend
-needs `frameReadback: true`), and a Linux/macOS build still compiles.
+Sound is the last "feels like an emulator" piece and the only one from M-C that is
+still missing, but it is **not** last-mile wiring: the APU's GP DSP must execute
+the guest's mix blocks (`References2/xemu-0.8.137/hw/xbox/mcpx/apu/dsp/interp/`
+is the semantics oracle; the JIT is an external Rust crate, ignore it), the EP
+side needs the FIFO/DMA protocol (`dma.c`, format 0 = 8-bit), and only then can
+an S/PDIF/PCM sink feed a host device. Scope it as **DSP execution first**
+(bit-exact vs `interp/`, then observable mixer output counters), then the sink.
+No oracle title exists in the corpus yet (`xaudio` only proves the voice engine
+is live), so the acceptance is synthetic + the `xaudio` row.
 
 ### Option C (filed defects, each needs its own differential)
 
@@ -140,9 +146,10 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
 - **The cull winding on `bumpenv_ripple`'s quads** (§211f), and the remaining
   DXT/paletted/mipmapped texture paths (unobserved by the corpus).
 - Per-title overrides V2 follow-ups: a CHD title-id reader (feed the CHD sector
-  stream into XISOSharp), and title-id display in the library rows.
+  stream into XISOSharp), title-id display in the library rows, and a
+  per-title renderer (the renderer is a global setting today).
 
-### Filed, lower value - do not start while A/C are open
+### Filed, lower value - do not start while A/B/C are open
 
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
 - Faithful VGA read-back, texture fingerprint exactness, the 2-pixel k1
@@ -169,6 +176,8 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
   measured so far has all lights off (§215b).
 - **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
   masks; the software fill does not (§219c).
+- **Running snapshot save/load on the UI thread** - a load resets backend state
+  (GL) and the context belongs to the emulation thread (§220b).
 
 ## 4. Rules (non-negotiable)
 
@@ -184,13 +193,13 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
   the default path byte-identical and the flag-on delta measured.
 - **Strip probe instrumentation before any A/B leg** (and before committing).
 - **1B runs only from a full solution build.**
-- Do **not** flip `--jit`/`--jit-raw`/`--tex-filter`/`--ffp` defaults without an
-  operator decision.
+- Do **not** flip `--jit`/`--jit-raw`/`--tex-filter`/`--ffp`/renderer defaults
+  without an operator decision.
 - No real Xbox games in gates; `data/test-samples/` is gate currency. `References2/`
   is read-only. Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v8, audio v3).
-- Write it up: a decisions section (§219+) with the measured table, charter +
+- Write it up: a decisions section (§220+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
@@ -203,9 +212,11 @@ counters) must match on both machines; **performance** anchors (walls, `msps`,
 `rasterPsh`) compare only within one machine and one window.
 
 H1 (PETERSONPC) is the reference host: every semantic anchor reproduces exactly,
-`vec=0`, no fault. This session's walls at 1B: menu slice-1 golden 67.2 s sw /
-76.2 s gl, triangle slice-2 golden 44.4 s sw / 53.6 s gl, cubemap replace leg
-10.4 s. Treat ceilings as ratios.
+`vec=0`, no fault. This session's walls at 1B: menu slice-1 golden 67.5 s sw /
+76.8 s gl, triangle slice-2 golden 44 s sw / 50 s gl, fast menu 33.9 s sw
+(23.5 s `gl+replace`), fast triangle 10.9 s, frontend dashboard session (fast,
+interleaved 40 s pairs) 1.014B-1.021B steps software / 1.106B-1.121B OpenGL.
+Treat ceilings as ratios.
 
 ## 6. Commands
 
@@ -255,6 +266,12 @@ pwsh -File scripts/gpu-slice1-golden.ps1 -OutDir wt-data\b1gold -Hdd wt-data\cha
 pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -OutDir wt-data\b2gold -Hdd wt-data\chain-199l\hdd.qcow2 `
   -Dvd wt-data\xemu-tri\triangle.iso
 
+# frontend application (software default; choose the OpenGL renderer on Settings)
+dotnet run --project src/XGrid.Frontend.Avalonia
+# §220 measurement harness (headless session, one renderer per run):
+#   dotnet build tools\frontend-smoke\frontend-smoke.csproj -c Release
+#   dotnet run --project tools\frontend-smoke -c Release --no-build -- <software|gl> 40
+
 # session start: fingerprint + precondition + References2 integrity
 pwsh -File scripts/host-doctor.ps1
 pwsh -File scripts/refs-manifest.ps1 -Verify          # add -Quick to skip content hashing
@@ -274,7 +291,8 @@ flipStaleUploads= composeUploads= batchCalls= batchTris= batchCap=]`,
 `XGRID_RAW_SKIP_HEADS`, `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`,
 `XGRID_RAW_DUMP=1`, `--jit-timing`, `--jit-tally`, `--bench`, `--frame-first`,
 `frames=`/`pcrtc=` on the `Frame` line, `--pgraph <path> --pgraph-max <n>`,
-`--eip-hist`, `--eeprom-out`.
+`--eip-hist`, `--eeprom-out`, and the frontend's power-on `Renderer:` line (which
+renderer attached and, on a fallback, why).
 
 **Probe recipe for a black-frame row** (§211 used it): print the method stream
 with `--pgraph`, then gate temporary probes on a single env var and print (a) per

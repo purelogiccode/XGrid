@@ -216,6 +216,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ? "Waiting for the first presented frame…"
         : "Power on the console to see output here.";
 
+    /// <summary>
+    /// Gets the caption under the display: the picture is a 640x480 console
+    /// scanout, rendered by the configured NV2A renderer.
+    /// </summary>
+    public string DisplayCaption => "640 × 480 · " + RendererPolicy.Describe(Config.Renderer);
+
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
 
@@ -830,6 +836,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
+        OnPropertyChanged(nameof(DisplayCaption));
     }
 
     private void OnToastTick(object? sender, EventArgs e)

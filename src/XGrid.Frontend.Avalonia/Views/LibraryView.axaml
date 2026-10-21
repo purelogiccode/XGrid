@@ -9,7 +9,7 @@
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
       <StackPanel Orientation="Horizontal" Spacing="10">
         <TextBox Width="300"
-                 Watermark="Search games…"
+                 PlaceholderText="Search games…"
                  Text="{Binding SearchText, Mode=TwoWay}"
                  VerticalAlignment="Center" />
         <Button Classes="primary" Command="{Binding AddFolderCommand}">

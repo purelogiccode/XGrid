@@ -737,6 +737,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private IPgraphBackend? _backend;
     private bool _observeMethods;
 
+    /// <summary>
+    /// Gets the guest-memory adapter this device was constructed with, or null
+    /// when it was built without one (the unit-test shape). A host GPU backend
+    /// needs exactly this view (physical reads plus the present dirty watch),
+    /// so exposing it lets a host attach a backend without constructing a
+    /// second adapter over the same address space. Host wiring only: it is
+    /// never serialized and never affects guest state.
+    /// </summary>
+    public IGpuMemory? GpuMemory => _memory;
+
     /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
     public long MethodTotal { get; private set; }
 

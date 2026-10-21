@@ -42,11 +42,20 @@ images on the Settings page.
 
 ## Display path
 
-The frontend boots the emulator in-process on a dedicated background thread and uses
-the portable software rasterizer (`--gpu sw` equivalent). Presented frames are copied
-from `Nv2AMmio.TryCopyPresentedFrame` into a `WriteableBitmap` on the UI thread. This
-keeps the frontend fully cross-platform with no WGL/OpenGL dependency and no mixing of
-software and GPU pixels. The emulator is never advanced from the UI thread.
+The frontend boots the emulator in-process on a dedicated background thread. Presented
+frames are copied from `Nv2AMmio.TryCopyDisplayFrame` into a `WriteableBitmap` on the UI
+thread, so software and GPU pixels are never mixed. The emulator is never advanced from
+the UI thread.
+
+The renderer is a setting:
+
+- **Software rasterizer** (default) - portable, identical to `--gpu sw`, and the same
+  path the accurate-mode goldens use.
+- **OpenGL backend** - identical to `--gpu gl --gpu-replace` (replacement mode, per-flip
+  readback) on a hidden-window WGL context owned by the emulation thread. Windows only:
+  on other platforms the request is logged and the software rasterizer is used. The
+  context never appears in the Avalonia visual tree; frames still arrive through the
+  same `FramePacket` seam.
 
 ## Default performance profile
 
@@ -61,8 +70,8 @@ interpreter. Toggle `Accent` to restyle the UI live.
 
 ## Current scope
 
-- Portable software rasterizer only; the GPU readback is displayed through Avalonia.
-  There is no WGL/OpenGL backend or separate emulator window.
+- Two NV2A renderers: the portable software rasterizer (default) and the Windows-only
+  OpenGL backend. The GL context is offscreen; there is no separate emulator window.
 - The keyboard mapping above drives the emulated player-1 XID pad. No physical gamepad
   binding or analog stick capture yet.
 - Audio devices are emulated by the core but host audio output is not wired to the UI.

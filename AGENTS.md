@@ -673,11 +673,68 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   key. CLI `xgrid disc title <path>` prints the id/key. Caveat: homebrew images
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
+- **Track P/B: the frontend on the host GPU backend (220, 2026-10-21):** the
+  Avalonia frontend has a **Renderer** setting — `Software rasterizer` (default,
+  portable) or `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only).
+  `Nv2AMmio.GpuMemory` exposes the machine's guest-memory adapter, the new
+  frontend `GraphicsBackendHost` attaches `GlBackendFactory` on the emulation
+  thread (`replaceSoftware`, `frameReadback`) and detaches it in the session's
+  `finally`; frames still arrive through `TryCopyDisplayFrame`. Snapshot
+  save/load is now marshalled onto the emulation thread (a load resets backend
+  state and a GL context belongs to its thread). Measured on the dashboard (40 s
+  interleaved pairs): **software 1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B
+  (+9.8% / +8.2%)**, same non-black pixel count, working 72 MB save/load round
+  trip; the CLI's 1B menu leg is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
+  The software default is byte-identical everywhere (all four 1B anchors exact,
+  ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1738 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1751 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-second; the frontend on the host GPU backend, §220).**
+
+- **The switch.** Settings -> Graphics -> **Renderer**: `Software rasterizer`
+  (portable, default, `--gpu sw`) or `OpenGL backend` (`--gpu gl --gpu-replace`,
+  Windows only). Applies at the next power-on; the power-on log prints a
+  `Renderer:` line with the probe result, and a non-Windows host or a failed WGL
+  probe falls back to software with the reason instead of failing the boot.
+- **Wiring (no new renderer, one new seam).** `Nv2AMmio.GpuMemory` exposes the
+  device's existing `IGpuMemory`/`IGpuMemoryFast`/`IPresentDirtyWatch` adapter;
+  frontend `GraphicsBackendHost.TryAttach` calls
+  `GlBackendFactory.TryCreate(memory, windowEnabled: false, replaceSoftware:
+  true, frameReadback: true)` — the CLI's offscreen hidden-window context, never
+  embedded in the Avalonia visual tree — and `Detach` disposes it in
+  `EmulatorSession`'s `finally`. `TryCopyDisplayFrame` already delegates to the
+  backend readback, so the `FramePacket`/`WriteableBitmap` seam is unchanged and
+  the two renderers are never mixed. A backend readback buffer is cloned before
+  it leaves the emulation thread (the next flip overwrites it, the UI copies it).
+- **Snapshot requests moved to the emulation thread.** `EmulatorSession`
+  save/load used to run on the UI thread under `_machineLock`; a load calls
+  `Nv2AMmio.LoadState -> Backend?.ResetState()`, i.e. GL calls, which is illegal
+  off the context's thread. They are now queued and served by the loop between
+  batches (and during a pause, whose gate wait became a 50 ms timed wait), with a
+  60 s ceiling and explicit failure of requests still queued at exit.
+- **Measured (dashboard, fast mode, interleaved 40 s pairs, same window):**
+  software 1.014B / 1.021B steps (25.3 / 25.5 msps); OpenGL 1.121B / 1.106B steps
+  (28.0 / 27.6 msps) = **+9.8% / +8.2% guest throughput**, identical 306,817
+  non-black pixels in the last frame, and a 72 MB `.xgs` save/load round trip
+  with GL attached. A 20 s window (boot + intro only) gains +4.5% - the software
+  rasterizer is not yet the bottleneck there; the CLI's 1B menu leg is the
+  ceiling at **33.95 s sw -> 23.46 s `gl+replace` (-30.9%)**.
+- **Also landed:** the frontend drops the NV2A per-method histogram
+  (`CollectMethodHistogram = false`, as the CLI does - no UI surface reads it).
+- **Gates unchanged:** accurate 1B menu golden PASS (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px, maxDelta 1, `violations=0`,
+  `BackendUnsupported=0`, counters 33632/686/686) and triangle golden PASS (sw
+  `A1740DE0…`, gl `7A860ED7…`, diff 27849, `violations=0`, counters 2706/68/34);
+  fast 1B menu RAM `34973510` / CPU `F5D61C94`, triangle RAM `B45254CA` / CPU
+  `7DAB63EB`; ktest smoke PASS with the byte-identical suite log. Suite 1738 ->
+  **1751** (frontend +13, including a live attach/detach test).
+- **Known limit (filed):** the GL renderer presents the *flipped* surface, so a
+  guest that writes the framebuffer directly (nxdk `gamma`/`hello`) shows
+  nothing in GL mode while the software renderer shows its scanout.
+
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate
 anchor byte-identical.**
