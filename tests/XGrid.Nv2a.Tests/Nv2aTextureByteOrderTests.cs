@@ -52,6 +52,38 @@ public sealed class Nv2aTextureByteOrderTests
         Assert.False(Nv2AMmio.IsLinearTextureFormat(color));
     }
 
+    [Theory]
+    [InlineData(0x17u, true)]
+    [InlineData(0x28u, false)]
+    [InlineData(0x29u, false)]
+    public void G8B8R8B8_AreTwoByteFormats(uint color, bool linear)
+    {
+        Assert.Equal(2u, Nv2AMmio.TextureFormatBytesPerTexel(color));
+        Assert.Equal(linear, Nv2AMmio.IsLinearTextureFormat(color));
+    }
+
+    /// <summary>
+    /// G8B8/R8B8 are 16-bit two-channel words. xemu samples them as GL_RG8
+    /// and swizzles (R, G, R, G) for G8B8 and (G, R, R, G) for R8B8, so the
+    /// low byte is B (G8B8) / R (R8B8) and the high byte is the other one.
+    /// `bumpenv_ripple` binds 0x28 for its derivative map and sampled it
+    /// 3.9M times with every sample missing before this decode existed.
+    /// </summary>
+    [Theory]
+    [InlineData(0x28u, 0x44, 0x33)]
+    [InlineData(0x17u, 0x44, 0x33)]
+    [InlineData(0x29u, 0x33, 0x44)]
+    public void G8B8R8B8_SwizzleChannelsLikeTheReference(uint color, int expectedR, int expectedG)
+    {
+        // Texel = 0x11223344: low byte 0x44, high byte 0x33.
+        Nv2AMmio.DecodeTextureTexel(color, Texel, out float r, out float g, out float b, out float a);
+
+        Assert.Equal(U((byte)expectedR), r);
+        Assert.Equal(U((byte)expectedG), g);
+        Assert.Equal(r, b);
+        Assert.Equal(g, a);
+    }
+
     [Fact]
     public void A8B8G8R8_PutsRedInTheLowByte()
     {
