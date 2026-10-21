@@ -109,3 +109,33 @@ Counts are Halo / triangle over their windows:
   `--pgraph-max` and the step count for a longer sample.
 - Counts measure *issued* methods, not *respected* ones: a method can be counted
   while the title never depends on its effect.
+
+## Texture formats actually sampled (2026-10-20)
+
+The `NV2A tex` diagnostic prints `formats=<id>=<attempts>/<misses>` per boot, so
+texture-format usage is measured rather than assumed. Sampled from the corpus:
+
+| workload | formats sampled (attempts / misses) |
+|---|---|
+| `triangle.xbe` (gate) | `06`=22,642,488/0, `12`=10,444,800/0, `1E`=306,732/0 |
+| `mesh` | `06`, `12` (mipmapped 3D, no misses) |
+| `xgu vp_lighting` | `06`=11,363,999/0, `12`=10,444,800/0, **`3F`=3,420,787/3,420,787 -> 0** |
+| `xgu bump_cubemap_reflect` | `06`, `12`, **`3A`=896,067/0** (cube map; 896k mode fallbacks) |
+
+**`0x3F` was the whole ballgame.** Every one of its 3.42M samples missed and the
+count matched the app's fragment total exactly, which is what identified the
+3-colour frame as a texture-format gap rather than a geometry or shader gap. It
+is `LU_IMAGE_A8B8G8R8` - a byte-order permutation of A8R8G8B8 that the 0.8.137
+header does not define (the newer fork does, with `0x40`/`0x41` and the swizzled
+twins `0x3A`-`0x3C`). Fixed in decisions §207h; the frame went from 3 colours to
+1,592 with full coverage.
+
+**Reading the counters.** `attempts/misses` is the useful pair: attempts tell you
+whether a format matters at all, misses tell you whether the sampler can serve
+it. A format with 0 attempts is irrelevant however exotic it looks; a format with
+attempts == misses is a guaranteed-broken draw path.
+
+**What this says about priorities.** The two 32-bit formats the gates and `mesh`
+use (`06`, `12`) were already handled, so three of the four workloads above never
+touched the gap. The corpus earned its keep exactly here: a title using an
+uncommon channel order would have rendered untextured with no other symptom.
