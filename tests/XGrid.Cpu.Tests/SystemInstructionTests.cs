@@ -4,6 +4,48 @@ namespace XGrid.Cpu.Tests;
 
 public sealed class SystemInstructionTests
 {
+    private const uint Data = 0x2000;
+
+    [Fact]
+    public void Xlat_TranslatesAlThroughTable()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xD7);
+        cpu.Context.Ebx = Data;
+        cpu.Context.Eax = 0x10;
+        cpu.Ram().Write8(Data + 0x10, 0x5A);
+
+        cpu.Step();
+
+        Assert.Equal(0x5Au, cpu.Context.Eax & 0xFF);
+    }
+
+    [Fact]
+    public void Xlat_Address16_WrapsTheOffset()
+    {
+        // 67 D7: the table offset is (BX + AL) masked to 16 bits.
+        XboxCpu cpu = CpuHarness.Create(0x67, 0xD7);
+        cpu.Context.Ebx = 0x0000FFF0;
+        cpu.Context.Eax = 0x20;
+        cpu.Ram().Write8(0x0010, 0x77);
+
+        cpu.Step();
+
+        Assert.Equal(0x77u, cpu.Context.Eax & 0xFF);
+    }
+
+    [Fact]
+    public void Xlat_LeavesTheUpperAlBytesAlone()
+    {
+        XboxCpu cpu = CpuHarness.Create(0xD7);
+        cpu.Context.Ebx = Data;
+        cpu.Context.Eax = 0x12345610;
+        cpu.Ram().Write8(Data + 0x10, 0x9F);
+
+        cpu.Step();
+
+        Assert.Equal(0x1234569Fu, cpu.Context.Eax);
+    }
+
     [Fact]
     public void Movzx_Byte()
     {

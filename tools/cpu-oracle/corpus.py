@@ -302,6 +302,327 @@ def string_cases():
     ]
 
 
+def mem64(offset, value):
+    return f"movq    ${value & 0xFFFFFFFFFFFFFFFF:#x}, {{p}}+{offset:#x}"
+
+
+def packed_pattern_cases():
+    """The MMX/SSE1 packed-integer shapes with sign-sensitive data.
+
+    The base corpus feeds one positive pattern. These cases feed a pattern that
+    is negative in every element (so a signed/unsigned slip cannot hide), a
+    saturating pattern for the add/sub pair, and the PMADDWD wraparound pair.
+    """
+    negative = [
+        mem32(0x00, 0x8000FFFF), mem32(0x04, 0xFFFE8001),
+        mem32(0x20, 0x7FFF0001), mem32(0x24, 0x00027FFE),
+    ]
+    saturating = [
+        mem32(0x00, 0x7F7F8080), mem32(0x04, 0xFF80FF7F),
+        mem32(0x20, 0x01010101), mem32(0x24, 0x7F7F8080),
+    ]
+    wrap = [
+        mem32(0x00, 0x80008000), mem32(0x04, 0x80008000),
+        mem32(0x20, 0x80008000), mem32(0x24, 0x80008000),
+    ]
+    bodies = [
+        ("paddsb", ["paddsb  {p}+0x20, %mm0"]),
+        ("paddsw", ["paddsw  {p}+0x20, %mm0"]),
+        ("paddusb", ["paddusb {p}+0x20, %mm0"]),
+        ("paddusw", ["paddusw {p}+0x20, %mm0"]),
+        ("psubsb", ["psubsb  {p}+0x20, %mm0"]),
+        ("psubsw", ["psubsw  {p}+0x20, %mm0"]),
+        ("psubusb", ["psubusb {p}+0x20, %mm0"]),
+        ("psubusw", ["psubusw {p}+0x20, %mm0"]),
+        ("pmullw", ["pmullw  {p}+0x20, %mm0"]),
+        ("pmulhw", ["pmulhw  {p}+0x20, %mm0"]),
+        ("pmulhuw", ["pmulhuw {p}+0x20, %mm0"]),
+        ("pmaddwd", ["pmaddwd {p}+0x20, %mm0"]),
+        ("pavgb", ["pavgb   {p}+0x20, %mm0"]),
+        ("pavgw", ["pavgw   {p}+0x20, %mm0"]),
+        ("packsswb", ["packsswb {p}+0x20, %mm0"]),
+        ("packuswb", ["packuswb {p}+0x20, %mm0"]),
+        ("packssdw", ["packssdw {p}+0x20, %mm0"]),
+        ("pcmpgtb", ["pcmpgtb {p}+0x20, %mm0"]),
+        ("pcmpgtw", ["pcmpgtw {p}+0x20, %mm0"]),
+        ("pcmpeqb", ["pcmpeqb {p}+0x20, %mm0"]),
+        ("psadbw", ["psadbw  {p}+0x20, %mm0"]),
+        ("punpcklbw", ["punpcklbw {p}+0x20, %mm0"]),
+        ("punpckhbw", ["punpckhbw {p}+0x20, %mm0"]),
+        ("pshufw", ["pshufw  $0x1B, %mm0, %mm1"]),
+    ]
+    cases = []
+    for label, setup in (("neg", negative), ("sat", saturating), ("wrap", wrap)):
+        for mnemonic, body in bodies:
+            store = "movq    %mm0, {p}+0x40"
+            if "pshufw" in mnemonic:
+                store = "movq    %mm1, {p}+0x40"
+            cases.append(Case(f"mmx_{label}_{mnemonic}", setup,
+                              ["movq    {p}+0x0, %mm0"] + body + [store]))
+    return cases
+
+
+def shift_edge_cases():
+    """Shift counts at and past the element width.
+
+    PSRAW/PSRAD saturate their count (per-element sign fill), PSLLW/PSLLD/PSRLW/
+    PSRLD become zero, and the immediate forms only encode one count byte.
+    """
+    setup = [
+        mem32(0x00, 0x8000FFFF), mem32(0x04, 0x7FFF0001),
+        mem32(0x20, 0x00000010), mem32(0x24, 0x00000000),
+    ]
+    cases = []
+    for mnemonic in ["psraw", "psrad", "psrlw", "psrld", "psllw", "pslld"]:
+        for count in [16, 17, 31, 32, 33, 63, 64, 255]:
+            cases.append(Case(f"mmx_{mnemonic}_imm{count}", setup,
+                              ["movq    {p}+0x0, %mm0", f"{mnemonic} ${count}, %mm0",
+                               "movq    %mm0, {p}+0x40"]))
+    for mnemonic in ["psraw", "psrad", "psrlw", "psrld", "psllw", "pslld"]:
+        for count in [17, 32, 255]:
+            cases.append(Case(f"mmx_{mnemonic}_reg{count}", setup,
+                              ["movq    {p}+0x0, %mm0", "movq    {p}+0x20, %mm1",
+                               f"{mnemonic} %mm1, %mm0", "movq    %mm0, {p}+0x40"]))
+    for count in [63, 64, 65, 255]:
+        cases.append(Case(f"mmx_psllq_imm{count}", setup,
+                          ["movq    {p}+0x0, %mm0", f"psllq ${count}, %mm0",
+                           "movq    %mm0, {p}+0x40"]))
+        cases.append(Case(f"mmx_psrlq_imm{count}", setup,
+                          ["movq    {p}+0x0, %mm0", f"psrlq ${count}, %mm0",
+                           "movq    %mm0, {p}+0x40"]))
+    # Seed the register-count variants with a count that byte-shift code masks.
+    cases.append(Case("mmx_psllq_reg_high",
+                      setup + [mem32(0x30, 0x00000041)],
+                      ["movq    {p}+0x0, %mm0", "movd    {p}+0x30, %mm1", "psllq %mm1, %mm0",
+                       "movq    %mm0, {p}+0x40"]))
+    return cases
+
+
+def mmx_transfer_cases():
+    return [
+        Case("mmx_movd_load", [mem32(0x00, 0x89ABCDEF)], ["movd    {p}+0x0, %mm3",
+                                                        "movd    %mm3, {p}+0x10"]),
+        Case("mmx_movd_store_gpr", [], ["movd    %mm5, %eax"], regs={"eax": 0}),
+        Case("mmx_movq_reg", [], ["movq    %mm2, %mm6"],
+             regs={"eax": 0}),
+        Case("mmx_movq_mem_roundtrip", [mem32(0x00, 0x01234567), mem32(0x04, 0x89ABCDEF)],
+             ["movq    {p}+0x0, %mm1", "movq    %mm1, {p}+0x10"]),
+        Case("mmx_pextrw", [], ["pextrw  $3, %mm0, %eax"]),
+        Case("mmx_pinsrw_high", [], ["pinsrw  $3, %eax, %mm0", "movq %mm0, {p}+0x40"],
+             regs={"eax": 0x0000BEEF}),
+        Case("mmx_pmovmskb", [], ["pmovmskb %mm0, %eax"]),
+        Case("mmx_emms", [mem32(0x00, 0x55667788), mem32(0x04, 0x11223344)],
+             ["movq    {p}+0x0, %mm0", "emms", "fld1", "fstps   {p}+0x10"]),
+        Case("mmx_maskmovq", [], ["maskmovq %mm1, %mm0"]),
+        Case("mmx_movntq", [], ["movntq  %mm0, {p}+0x40"]),
+    ]
+
+
+def x87_transcendental_cases():
+    cases = []
+    for mnemonic in ["fsin", "fcos", "fsqrt", "frndint", "f2xm1", "fxtract"]:
+        cases.append(Case(f"x87_{mnemonic}", [], [mnemonic, "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fsincos", [], ["fsincos", "fstps   {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_fptan", [], ["fptan", "fstps   {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_fpatan", [], ["fld1", "fld1", "fpatan", "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fpatan_quadrant", [mem32(0x00, 0xBF800000)],
+                      ["flds    {p}+0x0", "fld1", "fpatan", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_fyl2x", [], ["fld1", "fld1", "fyl2x", "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fyl2xp1", [], ["fld1", "fld1", "fyl2xp1", "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fprem", [mem32(0x00, 0x40490FDB), mem32(0x04, 0x3F800000)],
+                      ["flds    {p}+0x0", "flds    {p}+0x4", "fprem", "fstps   {p}+0x8",
+                       "fstps   {p}+0xC"]))
+    cases.append(Case("x87_fprem1", [mem32(0x00, 0x40490FDB), mem32(0x04, 0x3F800000)],
+                      ["flds    {p}+0x0", "flds    {p}+0x4", "fprem1", "fstps   {p}+0x8",
+                       "fstps   {p}+0xC"]))
+    cases.append(Case("x87_fscale_neg", [], ["fld1", "fld1", "fchs", "fscale",
+                                             "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fscale_wide", [], ["fld1", "fld1", "fscale", "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fincstp_fdecstp", [], ["fld1", "fld1", "fincstp", "fdecstp",
+                                                 "fstps   {p}+0x0"]))
+    cases.append(Case("x87_ffree", [], ["fld1", "ffree %st(1)", "fstps   {p}+0x0"]))
+    cases.append(Case("x87_fcomi", [], ["fldz", "fld1", "fcomi %st(1)", "fstps {p}+0x0"]))
+    cases.append(Case("x87_fucomi", [], ["fldz", "fld1", "fucomi %st(1)", "fstps {p}+0x0"]))
+    cases.append(Case("x87_fucomip", [], ["fldz", "fld1", "fucomip %st(1)", "fstps {p}+0x0"]))
+    cases.append(Case("x87_fcmov", [], ["fldz", "fld1", "fcomi %st(1)",
+                                        "fldz", "fcmovb %st(1), %st(0)", "fstps {p}+0x0"]))
+    cases.append(Case("x87_fnstsw_m16", [], ["fld1", "fnstsw  {p}+0x0"]))
+    cases.append(Case("x87_fldcw_stcw", [mem16(0x00, 0x0E7F)],
+                      ["fldcw   {p}+0x0", "fnstcw  {p}+0x2"]))
+    cases.append(Case("x87_fldcw_round_up", [mem16(0x00, 0x0F7F), mem32(0x04, 0x40000000)],
+                      ["fldcw   {p}+0x0", "flds    {p}+0x4", "frndint", "fistpl {p}+0x8"]))
+    cases.append(Case("x87_fistp_m64", ["movl    $0x40000000, {p}+0x0",
+                                       "movl    $0x00000000, {p}+0x4"],
+                      ["flds    {p}+0x0", "fistpll {p}+0x8"]))
+    cases.append(Case("x87_fistp_m64_neg", ["movl    $0xC0490FDB, {p}+0x0",
+                                            "movl    $0x00000000, {p}+0x4"],
+                      ["flds    {p}+0x0", "fistpll {p}+0x8"]))
+    cases.append(Case("x87_fistp_m16", ["movw    $0x0000, {p}+0x0"],
+                      ["filds   {p}+0x0", "fistps  {p}+0x2"]))
+    cases.append(Case("x87_fist_m64", ["movl    $0x40400000, {p}+0x0",
+                                      "movl    $0x00000000, {p}+0x4"],
+                      ["flds    {p}+0x0", "fistpll {p}+0x8"]))
+    cases.append(Case("x87_fild_m64", ["movl    $0x00000064, {p}+0x0",
+                                      "movl    $0xFFFFFFFE, {p}+0x4"],
+                      ["fildll  {p}+0x0", "fistpll {p}+0x10"]))
+    cases.append(Case("x87_fbld", ["movl    $0x00000000, {p}+0x0",
+                                   "movl    $0x00000000, {p}+0x4",
+                                   "movw    $0x0B33, {p}+0x8"],
+                      ["fbld    {p}+0x0", "fstps   {p}+0x10"]))
+    cases.append(Case("x87_fbstp", ["movl    $0x00000000, {p}+0x0",
+                                    "movl    $0x00000000, {p}+0x4",
+                                    "movw    $0x0B33, {p}+0x8"],
+                      ["fbld    {p}+0x0", "fbstp   {p}+0x10"]))
+    cases.append(Case("x87_fld_m80", ["movl    $0x00000000, {p}+0x0",
+                                      "movl    $0xC0000000, {p}+0x4",
+                                      "movw    $0x3FFF, {p}+0x8"],
+                      ["fldt    {p}+0x0", "fstpt   {p}+0x10"]))
+    cases.append(Case("x87_fclex", [],
+                      ["fld1", "fldz", "fdivp", "fnclex", "fnstsw  {p}+0x0"]))
+    cases.append(Case("x87_nan_compare", [mem32(0x00, 0x7FC00000)],
+                      ["flds    {p}+0x0", "fld1", "fucompp"]))
+    cases.append(Case("x87_nan_fcomi", [mem32(0x00, 0x7FC00000)],
+                      ["flds    {p}+0x0", "fld1", "fucomi %st(1)", "fstps {p}+0x4",
+                       "fstps {p}+0x8"]))
+    cases.append(Case("x87_neg_zero_compare", [mem32(0x00, 0x80000000)],
+                      ["fldz", "flds    {p}+0x0", "fucompp"]))
+    cases.append(Case("x87_nan_single_roundtrip", [mem32(0x00, 0x7FC00000)],
+                      ["flds    {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_nan_negative_roundtrip", [mem32(0x00, 0xFFC00000)],
+                      ["flds    {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_nan_payload_roundtrip", [mem32(0x00, 0x7FC12345)],
+                      ["flds    {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_nan_double_roundtrip",
+                      ["movl    $0x7FF80000, {p}+0x0", "movl    $0x00000000, {p}+0x4"],
+                      ["fldl    {p}+0x0", "fstpl   {p}+0x8"]))
+    cases.append(Case("x87_snan_single_roundtrip", [mem32(0x00, 0x7F800001)],
+                      ["flds    {p}+0x0", "fstps   {p}+0x4"]))
+    cases.append(Case("x87_inf_roundtrip", [mem32(0x00, 0xFF800000)],
+                      ["flds    {p}+0x0", "fstps   {p}+0x4"]))
+    return cases
+
+
+def integer_edge_cases():
+    # Every case keeps its stack and data inside its own page (`{p}`); the
+    # test harness reuses one memory image across cases, so a case must never
+    # read an absolute low address another case may have written.
+    return [
+        case("enter_leave", ["enterw  $0x10, $0", "leave"]),
+        case("enter_level3", ["enterw  $0x8, $3", "leave"],
+             setup=["leal    {p}+0x1E00, %ebp"]),
+        case("arpl", ["arpl    %bx, %ax"], regs={"eax": 0x00000005, "ebx": 0x0000000F}),
+        case("xlat", ["xlat"], regs={"eax": 0x00000010},
+             setup=["leal    {p}+0x0, %ebx", mem8(0x10, 0x5A)]),
+        case("xlat_address16_wrap", ["xlatb"],
+             regs={"eax": 0x00000020, "ebx": 0x0000FFF0},
+             setup=["leal    {p}+0x0, %ebx", mem8(0x10, 0x5A)]),
+        case("xlat_fs", ["xlatb   %fs:(%ebx)"], regs={"eax": 0x00000010},
+             setup=["leal    {p}+0x0, %ebx", mem8(0x10, 0x77)]),
+        case("loop_taken", ["movl    $0, %edx", "1:", "incl %edx", "loop 1b"],
+             regs={"ecx": 3}),
+        case("loope_clear", ["movl    $0x11111111, %eax", "loope 1f",
+                             "movl    $0x22222222, %edx", "1:", "nop"],
+             regs={"ecx": 1}, eflags=0x202),
+        case("loopne_taken", ["movl    $0x11111111, %eax", "loopne 1f",
+                              "movl    $0x22222222, %edx", "1:", "nop"],
+             regs={"ecx": 2}, eflags=0x202),
+        case("movsx_to_16", ["movsbw  %al, %bx"], regs={"eax": 0x00000080}),
+        case("movzx_to_16", ["movzbw  %al, %bx"], regs={"eax": 0x000000FF}),
+        case("movsx_high8", ["movsbl  %ah, %ebx"], regs={"eax": 0x80000000}),
+        case("bt_mem_offset", ["btl     %eax, {p}+0x0"], regs={"eax": 33},
+             flags_mask=0x001,
+             setup=[mem32(0x00, 0x00000000), mem32(0x04, 0x00000001)]),
+        case("bts_mem_offset", ["btsl    %eax, {p}+0x0"], regs={"eax": 40},
+             flags_mask=0x001,
+             setup=[mem32(0x00, 0x00000000), mem32(0x04, 0x00000000)]),
+        case("shld_count_zero", ["shldl   $0, %ebx, %eax"],
+             regs={"eax": 0x12345678, "ebx": 0x9ABCDEF0}),
+        case("shld_count_32", ["shldl   $32, %ebx, %eax"],
+             regs={"eax": 0x12345678, "ebx": 0x9ABCDEF0}),
+        case("shrd_count_33", ["shrdl   $33, %ebx, %eax"],
+             regs={"eax": 0x12345678, "ebx": 0x9ABCDEF0}, flags_mask=0x0C5),
+        case("rcr_8", ["rcrb    $1, %al"], regs={"eax": 0x00000001}),
+        case("rcr_16_cf", ["rcrw    $1, %ax"], regs={"eax": 0x00000001}, eflags=0x203),
+        case("rcl_32_cf", ["rcll    $1, %eax"], regs={"eax": 0x80000000}, eflags=0x203),
+        case("sar_31_neg", ["sarl    $31, %eax"], regs={"eax": 0x80000001}),
+        case("sar_8_31", ["sarb    $31, %al"], regs={"eax": 0x00000081}, flags_mask=0x0C4),
+        case("neg_zero", ["negl    %eax"], regs={"eax": 0}),
+        case("neg_min", ["negl    %eax"], regs={"eax": 0x80000000}),
+        case("inc_high8", ["incb    %ah"], regs={"eax": 0x0000FF00}),
+        case("dec_high8", ["decb    %bh"], regs={"eax": 0x00000000, "ebx": 0x00008000}),
+        case("xchg_high8", ["xchgb   %ah, %bl"],
+             regs={"eax": 0x12345678, "ebx": 0xAAAAAAEF}),
+        case("xadd_16", ["xaddw   %bx, %ax"], regs={"eax": 0xFFFF0001, "ebx": 0x0002FFFF}),
+        Case("cmpxchg8b_match", [mem32(0x00, 0x11111111), mem32(0x04, 0x22222222)],
+             ["cmpxchg8b {p}+0x0"],
+             regs={"eax": 0x11111111, "edx": 0x22222222,
+                   "ebx": 0x33333333, "ecx": 0x44444444}),
+        Case("cmpxchg8b_miss", [mem32(0x00, 0x11111111), mem32(0x04, 0x22222222)],
+             ["cmpxchg8b {p}+0x0"],
+             regs={"eax": 0x55555555, "edx": 0x66666666,
+                   "ebx": 0x33333333, "ecx": 0x44444444}),
+        case("cmpxchg_8", ["cmpxchgb %bl, %cl"],
+             regs={"eax": 0x11111111, "ebx": 0x22222222, "ecx": 0x33333311}),
+        case("imul_8", ["imulb   %bl"], regs={"eax": 0x00000080, "ebx": 0x00000002},
+             flags_mask=0x801),
+        case("imul_2op_16", ["imulw   %bx, %ax"], regs={"eax": 0x00008000, "ebx": 0x00000003},
+             flags_mask=0x801),
+        case("idiv_16_neg_result", ["idivw   %bx"],
+             regs={"eax": 0x00070000, "edx": 0xFFFFFFFF, "ebx": 0x00000002}, flags_mask=0),
+        case("push_16", ["pushw   %ax", "popl    %ebx"], regs={"eax": 0x12345678}),
+        case("test_16_imm", ["testw   $0x00FF, %ax"], regs={"eax": 0x00001234}),
+        case("or_high8", ["orb     $0x0F, %ah"], regs={"eax": 0x00001200}),
+        case("setcc_high8", ["setne   %ah"], regs={"eax": 0x00000000}, eflags=0x202),
+        case("mov_imm_to_high8", ["movb    $0x7F, %bh"], regs={"ebx": 0xAAAAAAAA}),
+    ]
+
+
+def addressing_cases():
+    """16-bit addressing forms and segment overrides, all page-relative."""
+    return [
+        case("addr16_lea_si", ["leal    (%si), %eax"],
+             setup=["leal    {p}+0x1010, %esi"]),
+        case("addr16_lea_di_disp", ["leal    0x10(%di), %eax"],
+             setup=["leal    {p}+0x1010, %edi"]),
+        case("addr16_lea_bp_disp", ["leal    (%bp), %eax"],
+             setup=["leal    {p}+0x1010, %ebp"]),
+        case("addr16_lea_bx_si", ["leal    (%bx,%si), %eax"],
+             setup=["leal    {p}+0x1000, %ebx", "leal    {p}+0x1000, %esi"]),
+        case("addr16_mov_bp", ["movl    (%bp), %eax"],
+             setup=["leal    {p}+0x1000, %ebp", mem32(0x1000, 0xCAFEBABE)]),
+        case("addr16_store", ["movl    %eax, 0x10(%bx)"],
+             regs={"eax": 0xDEADBEEF},
+             setup=["leal    {p}+0x1000, %ebx"]),
+        case("seg_fs_override", ["movl    %fs:(%ebx), %eax"],
+             setup=["leal    {p}+0x1000, %ebx", mem32(0x1000, 0x12345678)]),
+        case("seg_gs_override_store", ["movl    %eax, %gs:(%ebx)"],
+             regs={"eax": 0x87654321},
+             setup=["leal    {p}+0x1000, %ebx"]),
+        case("seg_es_string", ["rep movsb"], regs={"ecx": 2},
+             setup=[mem8(0x40, 0x11), mem8(0x41, 0x22)]),
+    ]
+
+
+def string_edge_cases():
+    return [
+        Case("rep_movsd", [mem32(0x40, 0x11223344), mem32(0x44, 0x55667788)],
+             ["rep movsl"], regs={"ecx": 2}),
+        Case("rep_movsb_zero", [], ["rep movsb"], regs={"ecx": 0}),
+        Case("rep_stosb_zero", [], ["rep stosb"], regs={"eax": 0x5A, "ecx": 0}),
+        Case("repne_scasb_found", [mem8(0x80, 0x42), mem8(0x81, 0x43)],
+             ["repne scasb"], regs={"eax": 0x43, "ecx": 4}),
+        Case("repne_scasb_missing", [mem8(0x80, 0x42), mem8(0x81, 0x42)],
+             ["repne scasb"], regs={"eax": 0x43, "ecx": 2}),
+        Case("repe_cmpsb_equal", [mem8(0x40, 0x10), mem8(0x41, 0x11),
+                                  mem8(0x80, 0x10), mem8(0x81, 0x11)],
+             ["repe cmpsb"], regs={"ecx": 2}),
+        Case("rep_lodsw", [mem16(0x40, 0x1234), mem16(0x42, 0x5678)],
+             ["rep lodsw"], regs={"ecx": 2}),
+        Case("rep_movsb_df1", [mem8(0x40, 0x11), mem8(0x41, 0x22)],
+             ["std", "rep movsb", "cld"], regs={"ecx": 2}),
+    ]
+
+
 def x87_cases():
     cases = []
     cases.append(Case("fld_m32", [mem32(0x00, 0x40490FDB)], ["flds    {p}+0x0", "fstps   {p}+0x8"]))
@@ -415,6 +736,114 @@ def sse_cases():
     return cases
 
 
+def x87_arithmetic_edge_cases():
+    return [
+        Case("x87_inf_times_zero", [mem32(0x00, 0x7F800000)],
+             ["flds    {p}+0x0", "fldz", "fmulp", "fstps   {p}+0x4"]),
+        Case("x87_inf_minus_inf", [mem32(0x00, 0x7F800000)],
+             ["flds    {p}+0x0", "flds    {p}+0x0", "fsubp", "fstps   {p}+0x4"]),
+        Case("x87_denormal_load", [mem32(0x00, 0x00000001)],
+             ["flds    {p}+0x0", "fstps   {p}+0x4"]),
+        Case("x87_denormal_arith", [mem32(0x00, 0x00000001), mem32(0x04, 0x3F800000)],
+             ["flds    {p}+0x0", "flds    {p}+0x4", "faddp", "fstps   {p}+0x8"]),
+        Case("x87_precision_single", [mem16(0x00, 0x007F), mem32(0x04, 0x3F800000),
+                                      mem32(0x08, 0x322BCC77)],
+             ["fldcw   {p}+0x0", "flds    {p}+0x4", "flds    {p}+0x8", "faddp",
+              "fstps   {p}+0x10"]),
+        Case("x87_round_up_int", [mem16(0x00, 0x0B7F), mem32(0x04, 0x40200000)],
+             ["fldcw   {p}+0x0", "flds    {p}+0x4", "fistpl {p}+0x8"]),
+        Case("x87_round_down_int", [mem16(0x00, 0x077F), mem32(0x04, 0x40200000)],
+             ["fldcw   {p}+0x0", "flds    {p}+0x4", "fistpl {p}+0x8"]),
+        Case("x87_fxam_zero", [], ["fldz", "fxam", "fnstsw  {p}+0x0"]),
+        Case("x87_fxam_inf", [mem32(0x00, 0xFF800000)],
+             ["flds    {p}+0x0", "fxam", "fnstsw  {p}+0x4"]),
+        Case("x87_fxam_nan", [mem32(0x00, 0x7FC00000)],
+             ["flds    {p}+0x0", "fxam", "fnstsw  {p}+0x4"]),
+        Case("x87_fxam_denormal", [mem32(0x00, 0x00000001)],
+             ["flds    {p}+0x0", "fxam", "fnstsw  {p}+0x4"]),
+        Case("x87_fxam_empty", [], ["fxam", "fnstsw  {p}+0x0"]),
+        Case("x87_fabs_nan", [mem32(0x00, 0xFFC00000)],
+             ["flds    {p}+0x0", "fabs", "fstps   {p}+0x4"]),
+        Case("x87_fchs_nan", [mem32(0x00, 0x7FC00000)],
+             ["flds    {p}+0x0", "fchs", "fstps   {p}+0x4"]),
+        Case("x87_fadd_neg_zero", [mem32(0x00, 0x80000000), mem32(0x04, 0x80000000)],
+             ["flds    {p}+0x0", "flds    {p}+0x4", "faddp", "fstps   {p}+0x8"]),
+        # FSQRT of a negative value is deliberately not a corpus case: the
+        # reference model reports only C2, while the SDM (and XGrid) also raise
+        # the invalid exception (see the README caveats).
+        Case("x87_fprem_quotient", [mem32(0x00, 0x40C00000), mem32(0x04, 0x3F000000)],
+             ["flds    {p}+0x0", "flds    {p}+0x4", "fprem", "fnstsw  {p}+0x8",
+              "fstps   {p}+0xC"]),
+    ]
+
+
+def sse_edge_cases():
+    data = [mem32(0x00, 0x00000000), mem32(0x04, 0x80000000),
+            mem32(0x08, 0x3F800000), mem32(0x0C, 0xBF800000)]
+    return [
+        Case("sse_cvtsi2ss_large", [], ["movl    $0x80000000, %eax", "cvtsi2ss %eax, %xmm0",
+                                        "movss   %xmm0, {p}+0x0"]),
+        Case("sse_cvttss2si_overflow", [mem32(0x00, 0x60AD78EC)],
+             ["movss   {p}+0x0, %xmm0", "cvttss2si %xmm0, %eax"]),
+        Case("sse_cvtss2si_negative", [mem32(0x00, 0xBF000000)],
+             ["movss   {p}+0x0, %xmm0", "cvtss2si %xmm0, %eax"]),
+        Case("sse_sqrtss_negative", [mem32(0x00, 0xBF800000)],
+             ["movss   {p}+0x0, %xmm0", "sqrtss  %xmm0, %xmm1", "movss %xmm1, {p}+0x4"]),
+        Case("sse_divss_by_zero", [mem32(0x00, 0x3F800000)],
+             ["movss   {p}+0x0, %xmm0", "xorps   %xmm1, %xmm1", "divss %xmm1, %xmm0",
+              "movss   %xmm0, {p}+0x4"]),
+        Case("sse_rcpss_zero", [], ["xorps   %xmm0, %xmm0", "rcpss %xmm0, %xmm1",
+                                    "movss %xmm1, {p}+0x0"]),
+        Case("sse_minps_zeros", data,
+             ["movups  {p}+0x0, %xmm0", "minps   {p}+0x4, %xmm0", "movups  %xmm0, {p}+0x10"]),
+        Case("sse_maxps_zeros", data,
+             ["movups  {p}+0x0, %xmm0", "maxps   {p}+0x4, %xmm0", "movups  %xmm0, {p}+0x10"]),
+        Case("sse_comiss_neg_zero", [mem32(0x00, 0x00000000), mem32(0x04, 0x80000000)],
+             ["movss   {p}+0x0, %xmm0", "comiss  {p}+0x4, %xmm0"], flags_mask=0x045),
+        Case("sse_ucomiss_lt", [mem32(0x00, 0x3F800000), mem32(0x04, 0x40000000)],
+             ["movss   {p}+0x0, %xmm0", "ucomiss {p}+0x4, %xmm0"], flags_mask=0x045),
+        Case("sse_movmskps_neg", data,
+             ["movups  {p}+0x0, %xmm0", "movmskps %xmm0, %eax"]),
+        Case("sse_shufps_zero", data,
+             ["movups  {p}+0x0, %xmm0", "movups  {p}+0x0, %xmm1", "shufps $0x00, %xmm1, %xmm0",
+              "movups  %xmm0, {p}+0x10"]),
+        Case("sse_mulps_neg", data,
+             ["movups  {p}+0x0, %xmm0", "movups  {p}+0x8, %xmm1", "mulps %xmm1, %xmm0",
+              "movups  %xmm0, {p}+0x10"]),
+        Case("sse_andps_zero", data,
+             ["movups  {p}+0x0, %xmm0", "andps   {p}+0x8, %xmm0", "movups  %xmm0, {p}+0x10"]),
+    ]
+
+
+def lock_prefix_cases():
+    return [
+        Case("lock_xadd", [mem32(0x00, 0x11111111)],
+             ["lock xaddl %ebx, {p}+0x0", "movl    {p}+0x0, %eax"], regs={"ebx": 0x22222222}),
+        Case("lock_cmpxchg", [mem32(0x00, 0x11111111)],
+             ["lock cmpxchgl %ebx, {p}+0x0", "movl    {p}+0x0, %ecx"],
+             regs={"eax": 0x11111111, "ebx": 0x22222222}),
+        Case("lock_add", [mem32(0x00, 0x11111111)],
+             ["lock addl %eax, {p}+0x0", "movl    {p}+0x0, %ecx"], regs={"eax": 1}),
+    ]
+
+
+def stack_edge_cases():
+    return [
+        case("push_esp_relative", ["pushl   -4(%esp)", "popl    %eax"],
+             setup=[mem32(0x17FC, 0xCAFEBABE)]),
+        case("push_esp_relative_current", ["pushl   (%esp)", "popl    %eax"]),
+        case("pop_esp", ["popl    %esp"], setup=[mem32(0x1800, 0x00001F00)]),
+        case("pusha_mem", ["pushal", "popal"]),
+        case("addr16_movsw", ["rep movsw"], regs={"ecx": 2},
+             setup=["leal    {p}+0x40, %esi", "leal    {p}+0x80, %edi",
+                    mem16(0x40, 0x1234), mem16(0x42, 0x5678)]),
+        case("or_8_mem_imm", ["orb     $0x0F, (%ebx)"],
+             setup=["leal    {p}+0x0, %ebx", mem8(0x00, 0xF0)]),
+        case("test_16_mem", ["testw   $0x0001, (%ebx)"],
+             setup=["leal    {p}+0x0, %ebx", mem16(0x00, 0x0001)]),
+    ]
+
+
 def build_corpus():
     cases = []
     cases.extend(alu_cases())
@@ -430,6 +859,19 @@ def build_corpus():
     cases.extend(x87_cases())
     cases.extend(mmx_cases())
     cases.extend(sse_cases())
+    # Second wave: sign-sensitive packed patterns, saturating shift counts,
+    # x87 transcendentals/environment, integer/addressing/string edges.
+    cases.extend(packed_pattern_cases())
+    cases.extend(shift_edge_cases())
+    cases.extend(mmx_transfer_cases())
+    cases.extend(x87_transcendental_cases())
+    cases.extend(integer_edge_cases())
+    cases.extend(addressing_cases())
+    cases.extend(string_edge_cases())
+    cases.extend(x87_arithmetic_edge_cases())
+    cases.extend(sse_edge_cases())
+    cases.extend(lock_prefix_cases())
+    cases.extend(stack_edge_cases())
     return cases
 
 

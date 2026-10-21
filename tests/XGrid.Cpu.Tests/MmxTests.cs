@@ -368,4 +368,72 @@ public sealed class MmxTests
         Assert.Equal(0x00, cpu.Ram().Read8(Scratch + 1));
         Assert.Equal(0xFF, cpu.Ram().Read8(Scratch + 2));
     }
+
+    // The packed min/max pair is signed for words (0F EA / 0F EE). The first
+    // version of the decoder had no PMINSW/PMAXSW and implemented these two
+    // opcodes with the *unsigned* byte-operand rule, so every negative lane
+    // picked the wrong side (found by the CPU oracle, decisions 220).
+    [Fact]
+    public void Pminsw_ComparesSignedWords()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xEA, 0xC1);
+        cpu.Context.WriteMmx(0, 0x000100008000FFFFUL);
+        cpu.Context.WriteMmx(1, 0xFF000304FF000102UL);
+
+        cpu.Step();
+
+        // min(-1, 258) = -1, min(-32768, -256) = -32768, min(0, 772) = 0,
+        // min(1, -256) = -256.
+        Assert.Equal(0xFF0000008000FFFFUL, cpu.Context.ReadMmx(0));
+    }
+
+    [Fact]
+    public void Pmaxsw_ComparesSignedWords()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0xEE, 0xC1);
+        cpu.Context.WriteMmx(0, 0x000100008000FFFFUL);
+        cpu.Context.WriteMmx(1, 0xFF000304FF000102UL);
+
+        cpu.Step();
+
+        // max(-1, 258) = 258, max(-32768, -256) = -256, max(0, 772) = 772,
+        // max(1, -256) = 1.
+        Assert.Equal(0x00010304FF000102UL, cpu.Context.ReadMmx(0));
+    }
+
+    // A shift count at or past the element width saturates to the sign fill of
+    // each element, not one fill for the whole register (the old code tested
+    // only the low word/dword's sign bit).
+    [Fact]
+    public void Psraw_CountPastWordWidth_FillsEachWordWithItsSign()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0x71, 0xE0, 0x10);
+        cpu.Context.WriteMmx(0, 0x000100008000FFFFUL);
+
+        cpu.Step();
+
+        Assert.Equal(0x00000000FFFFFFFFUL, cpu.Context.ReadMmx(0));
+    }
+
+    [Fact]
+    public void Psrad_CountPastDwordWidth_FillsEachDwordWithItsSign()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0x72, 0xE0, 0x20);
+        cpu.Context.WriteMmx(0, 0x7FFFFFFF80000001UL);
+
+        cpu.Step();
+
+        Assert.Equal(0x00000000FFFFFFFFUL, cpu.Context.ReadMmx(0));
+    }
+
+    [Fact]
+    public void Psrlw_CountPastWordWidth_Clears()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0x71, 0xD0, 0x10);
+        cpu.Context.WriteMmx(0, 0x8000FFFF8000FFFFUL);
+
+        cpu.Step();
+
+        Assert.Equal(0UL, cpu.Context.ReadMmx(0));
+    }
 }

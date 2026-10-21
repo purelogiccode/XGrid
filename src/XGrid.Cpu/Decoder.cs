@@ -600,6 +600,21 @@ public static class Decoder
             case 0xF5:
                 return Make(Mnemonic.Cmc, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
 
+            case 0xD7:
+                return Make(
+                    Mnemonic.Xlat,
+                    Operand.MemoryOperandValue(new MemoryOperand
+                    {
+                        Base = Gpr.Ebx,
+                        HasBase = true,
+                        SegmentOverride = segmentOverride,
+                    }, 8),
+                    Operand.None,
+                    position,
+                    operandSize,
+                    addressSize,
+                    opcode);
+
             case >= 0xD8 and <= 0xDF:
                 return DecodeFpu(code, ref position, opcode, operandSize, addressSize, segmentOverride);
 
@@ -1398,11 +1413,11 @@ public static class Decoder
             0xE5 => Mnemonic.Pmulhw,
             0xE8 => Mnemonic.Psubsb,
             0xE9 => Mnemonic.Psubsw,
-            0xEA => Mnemonic.Pminuw,
+            0xEA => Mnemonic.Pminsw,
             0xEB => Mnemonic.Por,
             0xEC => Mnemonic.Paddsb,
             0xED => Mnemonic.Paddsw,
-            0xEE => Mnemonic.Pmaxuw,
+            0xEE => Mnemonic.Pmaxsw,
             0xEF => Mnemonic.Pxor,
             0xF1 => Mnemonic.Psllw,
             0xF2 => Mnemonic.Pslld,
@@ -2735,8 +2750,10 @@ public static class Decoder
 
             displacement = unchecked((uint)(sbyte)code[position++]);
         }
-        else if (mod == 2 || (mod == 0 && !hasBase))
+        else if (mod == 2 || (mod == 0 && rm == 6))
         {
+            // Only [BP] (rm = 6) carries a disp16 without a ModRM displacement
+            // field; the index-only forms [SI]/[DI] (rm = 4/5) have none.
             if (position + 2 > code.Length)
             {
                 return false;

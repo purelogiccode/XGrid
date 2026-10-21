@@ -54,6 +54,10 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     /// <summary>Gets a value indicating whether this is a NaN (quiet or signaling).</summary>
     public bool IsNaN => Exponent == 0x7FFF && Significand != IntegerBit;
 
+    /// <summary>Gets a value indicating whether this is a signaling NaN (integer bit set, quiet bit clear).</summary>
+    public bool IsSignalingNaN => Exponent == 0x7FFF && Significand != IntegerBit
+                                  && (Significand & 0x4000000000000000UL) == 0;
+
     /// <summary>Gets a value indicating whether this is finite (not infinity or NaN).</summary>
     public bool IsFinite => Exponent != 0x7FFF;
 
@@ -104,7 +108,10 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     {
         if (IsNaN)
         {
-            return double.NaN;
+            // Preserve the sign (and the top payload bits): .NET's NaN constant
+            // is the *negative* quiet NaN, which would flip the sign of every
+            // stored NaN.
+            return BitConverter.Int64BitsToDouble(unchecked((long)ToDoubleBits()));
         }
 
         if (IsInfinity)
@@ -125,6 +132,69 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
 
         double magnitude = Math.ScaleB((double)Significand, Exponent - ExponentBias - 63);
         return IsNegative ? -magnitude : magnitude;
+    }
+
+    /// <summary>Converts to IEEE 754 single-precision bits, preserving a NaN's sign and payload.</summary>
+    public uint ToSingleBits()
+    {
+        if (IsNaN)
+        {
+            // A store is not an arithmetic operation: keep the payload (and the
+            // signaling bit) exactly as the register holds it.
+            return (IsNegative ? 0x80000000u : 0u) | 0x7F800000u
+                   | (uint)((Significand >> 40) & 0x007FFFFFUL);
+        }
+
+        return BitConverter.SingleToUInt32Bits((float)ToDouble());
+    }
+
+    /// <summary>Converts to IEEE 754 double-precision bits, preserving a NaN's sign and payload.</summary>
+    public ulong ToDoubleBits()
+    {
+        if (IsNaN)
+        {
+            return (IsNegative ? 0x8000000000000000UL : 0UL) | 0x7FF0000000000000UL
+                   | ((Significand >> 11) & 0x000FFFFFFFFFFFFFUL);
+        }
+
+        return (ulong)BitConverter.DoubleToInt64Bits(ToDouble());
+    }
+
+    /// <summary>
+    /// Creates a value from IEEE 754 single-precision bits. Unlike the
+    /// double-precision conversion path this preserves a signaling NaN (FLD is
+    /// not an arithmetic operation, so it must not quiet a NaN).
+    /// </summary>
+    public static Fpu80 FromSingleBits(uint bits)
+    {
+        if ((bits & 0x7F800000u) == 0x7F800000u)
+        {
+            ushort sign = (ushort)((bits >> 16) & 0x8000);
+            uint fraction = bits & 0x007FFFFFu;
+            return fraction == 0
+                ? new Fpu80((ushort)(sign | 0x7FFF), IntegerBit)
+                : new Fpu80((ushort)(sign | 0x7FFF), IntegerBit | ((ulong)fraction << 40));
+        }
+
+        return FromDouble(BitConverter.UInt32BitsToSingle(bits));
+    }
+
+    /// <summary>
+    /// Creates a value from IEEE 754 double-precision bits, preserving a
+    /// signaling NaN for the same reason as <see cref="FromSingleBits"/>.
+    /// </summary>
+    public static Fpu80 FromDoubleBits(ulong bits)
+    {
+        if ((bits & 0x7FF0000000000000UL) == 0x7FF0000000000000UL)
+        {
+            ushort sign = (ushort)((bits >> 48) & 0x8000);
+            ulong fraction = bits & 0x000FFFFFFFFFFFFFUL;
+            return fraction == 0
+                ? new Fpu80((ushort)(sign | 0x7FFF), IntegerBit)
+                : new Fpu80((ushort)(sign | 0x7FFF), IntegerBit | (fraction << 11));
+        }
+
+        return FromDouble(BitConverter.Int64BitsToDouble(unchecked((long)bits)));
     }
 
     /// <summary>Creates a value from a double.</summary>

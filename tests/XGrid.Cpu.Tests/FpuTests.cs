@@ -680,4 +680,102 @@ public sealed class FpuTests
 
         Assert.Equal(0x0200, cpu.Context.Fpu.StatusWord & 0x4700);
     }
+
+    // A NaN store must keep the sign and payload: the old conversion went
+    // through .NET's `double.NaN`, which is the *negative* quiet NaN, so every
+    // stored NaN came back with its sign bit flipped.
+    [Theory]
+    [InlineData(0x7FC12345u)]
+    [InlineData(0xFFC12345u)]
+    [InlineData(0x7F800001u)]
+    [InlineData(0xFF800001u)]
+    public void Fstp_SingleNaN_RoundTripsBits(uint bits)
+    {
+        // flds [0x2000]; fstps [0x2004]
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+                                        0xD9, 0x1D, 0x04, 0x20, 0x00, 0x00);
+        cpu.Ram().Write32(Data, bits);
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(bits, cpu.Ram().Read32(Data + 4));
+    }
+
+    [Fact]
+    public void Fstp_DoubleNaN_RoundTripsBits()
+    {
+        // fldl [0x2000]; fstpl [0x2008]
+        XboxCpu cpu = CpuHarness.Create(0xDD, 0x05, 0x00, 0x20, 0x00, 0x00,
+                                        0xDD, 0x1D, 0x08, 0x20, 0x00, 0x00);
+        cpu.Ram().Write64(Data, 0xFFF8000000000123UL);
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0xFFF8000000000123UL, cpu.Ram().Read64(Data + 8));
+    }
+
+    // FUCOM is a quiet compare: a quiet NaN reports unordered (C3=C2=C0=1)
+    // without latching the invalid exception. FCOM is not quiet.
+    [Fact]
+    public void Fucom_QuietNaN_SetsUnorderedWithoutInvalid()
+    {
+        // flds [0x2000]; fld1; fucom st(1)
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+                                        0xD9, 0xE8, 0xDD, 0xE1);
+        cpu.Ram().Write32(Data, 0x7FC00000u);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x4500, cpu.Context.Fpu.StatusWord & 0x4700);
+        Assert.Equal(0, cpu.Context.Fpu.StatusWord & 0x01);
+    }
+
+    [Fact]
+    public void Fcom_QuietNaN_SetsUnorderedAndInvalid()
+    {
+        // flds [0x2000]; fld1; fcom st(1)
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+                                        0xD9, 0xE8, 0xD8, 0xD1);
+        cpu.Ram().Write32(Data, 0x7FC00000u);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x4500, cpu.Context.Fpu.StatusWord & 0x4700);
+        Assert.Equal(0x01, cpu.Context.Fpu.StatusWord & 0x01);
+    }
+
+    [Fact]
+    public void Fucom_SignalingNaN_StillRaisesInvalid()
+    {
+        // flds [0x2000]; fld1; fucom st(1)
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00,
+                                        0xD9, 0xE8, 0xDD, 0xE1);
+        cpu.Ram().Write32(Data, 0x7F800001u);
+
+        cpu.Step();
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x01, cpu.Context.Fpu.StatusWord & 0x01);
+    }
+
+    [Fact]
+    public void Fsqrt_Negative_SetsC2AndInvalid()
+    {
+        // flds [0x2000]; fsqrt  =>  sqrt(-1)
+        XboxCpu cpu = CpuHarness.Create(0xD9, 0x05, 0x00, 0x20, 0x00, 0x00, 0xD9, 0xFA);
+        cpu.Ram().Write32(Data, 0xBF800000u);
+
+        cpu.Step();
+        cpu.Step();
+
+        Assert.Equal(0x0400, cpu.Context.Fpu.StatusWord & 0x4700);
+        Assert.Equal(0x01, cpu.Context.Fpu.StatusWord & 0x01);
+    }
 }
