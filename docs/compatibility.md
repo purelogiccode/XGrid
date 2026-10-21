@@ -78,9 +78,28 @@ anchor; on a double-buffered title the two differ by one buffer
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene **flat** | 41 flips / 2,679 draws, **2 colours**: a solid green shape on black | n/a | cubemap reflection does not vary - see gap 3 | RAM `1E59D83F` / CPU `D5D38C64`; last frame `5174B1EB` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
+| **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (217 flips) | 3,038 draws / 9.7M depth px; 41,401 culled | n/a | oracle delta (21.0, 19.0, 9.7) at 5B - animate/fog, needs a phase sweep | RAM `7A11CBEF` / CPU `5B0665B2` at 5B; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
+| **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat orange** | 2,730 draws, **26 colours**, 112,259 culled, `programLoad=12` | n/a | **`XGU_FIXED` transform is not implemented** - see gap 6 | RAM `AFF08085` / CPU `571363B4` at 3B | `-Sample xgu-distance_fog_ffp -Steps 3000000000` |
+| **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat** | 2,728 draws, 93,003 culled, `programLoad=12` | n/a | same FFP gap 6 | RAM `B5747761` / CPU `F0075C2F` at 3B | `-Sample xgu-spheremap_ffp -Steps 3000000000` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
+
+### 6. The fixed-function transform pipeline is not implemented (2026-10-21)
+
+`xgu distance_fog_ffp` and `xgu spheremap_ffp` call
+`xgu_set_transform_execution_mode(p, XGU_FIXED, ...)` and upload MVP matrices to
+the fixed-function block instead of loading a vertex program. XGrid only runs
+programmable vertex programs, so those draws produce nothing: the frames are
+flat backgrounds (26 colours vs the reference's 12,764; 93k-112k triangles
+culled) with `programLoad=12` (the boot animation only).
+
+This is a **new, large, well-scoped gap** found by widening the corpus (three
+more xgu rows, built here). It is not a small fidelity item: it needs the
+fixed-function vertex stage (matrix/lighting state, `SET_TRANSFORM_EXECUTION_MODE
+= FIXED`, the per-stage texture coordinate generation that goes with it). No
+XGrid feature covers it today; the sw rasterizer and the GL backend both sit
+downstream of the vertex stage, so both are affected identically.
 
 ## Known gaps surfaced by the corpus (2026-10-20)
 
