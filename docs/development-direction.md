@@ -96,7 +96,7 @@ if it is interesting.
 5. **D — cheap wins with a measured ceiling.** Page-end wait, bookkeeping.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency.
 
-## 2. Measured position (1B fast-mode legs, quiet host, 2026-10-20)
+## 2. Measured position (1B fast-mode legs, reference host, 2026-10-20)
 
 1 guest-second ≈ 733M steps (§68), so 1B steps ≈ 1.364 guest-seconds.
 **"xemu-class" means the same content runs at wall ≤ guest-time**, measured
@@ -138,6 +138,24 @@ submission is ~803 ms of block packing (100 float stores × 2.76M), not GL calls
 Anchors (fast mode): menu RAM `660CA11B…` / CPU `F5D61C94…`; triangle
 `F57934BF…` / `CF79FC17…`. Accurate mode: menu `D9C99A58…`/`3D2740B8…`,
 triangle `F57934BF…`/`9B5AFC2A…`. 1B walls are continuity anchors only.
+
+**Two hosts, two anchor classes (2026-10-20).** Development runs on two machines
+that share this Dropbox tree; `docs/hosts.md` holds their fingerprints and which
+anchors reproduce on each. Every measured table must say which class it is:
+
+- **Semantic anchors** — 1B RAM/CPU SHAs, frame SHAs, and every counter
+  (`draws`, `frames`, `stalls`, `BackendUnsupported`, `verifyFailures`,
+  `MethodTotal`). These are **host-independent**: a mismatch between machines on
+  the same commit is a determinism bug to file and fix, never an "environment
+  moved" note. Open item: the §199l fast-mode triangle SHA (`A2DCA55F…`) that
+  stopped reproducing — diagnose it, do not document it.
+- **Performance anchors** — walls, `msps`, `rasterPsh`, `drawMs`/`flushMs`.
+  Host-local, not comparable across machines; only same-window A/B pairs count.
+
+**Reference host** is whichever machine reproduces the quiet-host absolutes (menu
+`--gpu sw` ~33 s, triangle ~8.7 s at 1B on the *unmodified baseline*). M-A can
+only be recorded there; on any other host `present-path-acceptance.ps1`'s SUMMARY
+is a ratio, not a milestone.
 
 ## 3. Milestone ladder
 
@@ -215,8 +233,11 @@ the historical precedent, not a pattern to extend).
   TCG-port vehicle (charter §1/§6). New deps: only Iced (MIT, Phase 3) approved
   so far; otherwise the NuGet rule stands (precedent: `Xunit.SkippableFact`
   rejected; plain `[Fact]` + WGL-guard instead).
-- No `References2/` deletes/moves/rewrites ever (Dropbox sync root — restore
-  from `D:\xgrid-refs-restore\`, never work around a missing reference).
+- No `References2/` deletes/moves/rewrites ever. Its single canonical store is
+  `References2/` itself; verify with `scripts/refs-manifest.ps1 -Verify` against
+  `docs/refs-manifest.json`. Never work around a missing reference; do not
+  reintroduce an out-of-tree reference backup (`D:\xgrid-refs-restore\` is
+  retired by operator decision 2026-10-20).
 - No new codegen slices while Track C is frozen (section 0.4).
 - No micro-optimization below a measured 2% ceiling.
 - No "borrow" of xemu source; facts only, reimplemented clean-room.
@@ -232,3 +253,6 @@ the historical precedent, not a pattern to extend).
   touch core/CLI/test files.
 - Every Track B/E/P landing updates `ImplementationPlan.md` status,
   `docs/compatibility.md` (when it changes a sample row), and the session notes.
+- Session start on any machine: `pwsh -File scripts/host-doctor.ps1` (fingerprint,
+  free space, gate media, toolchain, `References2` integrity). A session that
+  skips it owns whatever environment surprise it hits.

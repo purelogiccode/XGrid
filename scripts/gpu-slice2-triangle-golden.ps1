@@ -21,7 +21,7 @@ param(
     [string]$Mcpx = "wt-data\mcpx_1.0.bin",
     [string]$Eeprom = "wt-data\eeprom.bin",
     [string]$Hdd = "wt-data\xbox_hdd.qcow2",
-    [string]$Dvd = "C:\Users\HomePC\AppData\Local\Temp\opencode\triangle-iso\triangle.iso",
+    [string]$Dvd = "",
     [string]$ExpectedSwSha = "A1740DE069128A04226D67B2896BACF4A4C481F01FF89DA2152C6278D87AA27C",
     [int]$ExpectedDraws = 2706,
     [int]$ExpectedFrames = 68,
@@ -29,9 +29,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Staged triangle ISO lives in the repo's scratch dir; the old default pointed
+# into an ephemeral per-user temp path that does not survive cleanup and does
+# not exist on the other development machine.
+if ($Dvd -eq "") { $Dvd = Join-Path (Split-Path -Parent $PSScriptRoot) "wt-data\xemu-tri\triangle.iso" }
 $cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
-if (-not (Test-Path $Dvd)) { Write-Error "Triangle ISO not found: $Dvd"; exit 2 }
+if (-not (Test-Path $Dvd)) { Write-Error "Triangle ISO not found: $Dvd (pass -Dvd <path>)"; exit 2 }
 
 $swBmp = Join-Path $OutDir "tri-golden-sw.bmp"
 $glBmp = Join-Path $OutDir "tri-golden-gl.bmp"

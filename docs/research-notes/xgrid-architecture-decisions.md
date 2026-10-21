@@ -12085,3 +12085,95 @@ three" exit criterion is unchanged and still blocked on the nxdk toolchain.
 `diag[... batchCalls= batchTris= batchCap=]`, `timed[flushMs=]`, probe `vtxMs`
 now measures the pack (the state fields measure per batch head).
 `scripts/batch-205-ab.ps1` runs the interleaved off/on A/B.
+
+## 206 Environment governance + Track P product slice: references as a single store, a host dimension, XInput and save states (2026-10-20)
+
+**Why this section exists.** Two development machines share one Dropbox tree, and
+the plan had no concept of a host. That produced a specific failure: a later
+session read the other machine's wall clocks as a regression (`§204`: the
+*unmodified baseline* measured menu sw 62.6 s against a recorded 33.3 s), and an
+earlier session recorded a 1B fast-mode SHA that "no longer reproduces - environment
+moved" (`§199l`). Both are plan defects, not emulator defects.
+
+### 206a References are a single store, verified not assumed
+
+Operator decision 2026-10-20: `References2/` is the canonical **and only** store.
+`D:\xgrid-refs-restore\` is retired and must not be reintroduced; no out-of-tree
+reference copy is promoted. What replaces the backup is **detection**, not
+duplication:
+
+- `scripts/refs-manifest.ps1` writes `docs/refs-manifest.json` (tracked by git):
+  one line per set with file count, byte total and a SHA-256 over the sorted
+  `path|size|content-hash` list.
+- `-Verify` re-derives and compares. Current tree: **9 sets, 43,153 files, PASS**.
+- The manifest is a checksum list, not a copy of any reference, so it survives a
+  wipe precisely because it lives in git rather than in the folder.
+- `xemu-Playtest-v2` is the one set with **no upstream URL**; its loss is
+  unrecoverable, which is why the manifest exists at all.
+
+### 206b Host dimension: semantic vs performance anchors
+
+`docs/hosts.md` (new) records a fingerprint per machine; `scripts/host-doctor.ps1`
+prints and checks it at session start. The binding rule:
+
+- **Semantic anchors** (1B RAM/CPU SHAs, frame SHAs, every counter) must be
+  identical on every host. A mismatch is a determinism bug, never an environment
+  note.
+- **Performance anchors** (walls, `msps`, `rasterPsh`, `drawMs`) are host-local;
+  only same-window A/B pairs travel between hosts.
+
+**H1 verified as the reference host.** All four 1B anchors reproduce exactly
+(`vec=0`, no fault): triangle `F57934BF…`/`CF79FC17…` 9.56 s, menu
+`660CA11B…`/`F5D61C94…` 39.08 s. So the emulator is deterministic and `§199l`'s
+drift was not a live bug here. Walls are +10%/+17% against the recorded quiet
+references, so ceilings are read as ratios on H1. The 62.6 s / 14.0 s reading did
+not reproduce and is treated as a transient.
+
+### 206c Track P: XInput controller support
+
+`XGrid.Input` was an orphaned project (no references, no tests). It is now the
+home of host-input translation - correctly outside `XGrid.Bus`, which must stay
+host-API-free:
+
+- `HostPad` - host state in the XID report's shape (digital mask, 8 analog bytes,
+  4 stick axes) with `IsNeutral` and shape validation.
+- `XInputPadMapping.Map(...)` - **pure** translation, so it is unit-testable
+  without a controller. The low byte of the XInput mask is identical to the Xbox
+  digital mask (d-pad, START, BACK, thumb clicks), so it passes through; A/B/X/Y
+  and LB/RB move to the analog bytes where the real pad carries their pressure;
+  triggers use XInput's 30/255 press threshold; sticks use **radial** dead zones
+  (7849 left / 8689 right) rather than per-axis, so a diagonal push is not eaten.
+- `XInputGamepadReader` - lazy `NativeLibrary` load of `xinput1_4` -> `xinput1_3`
+  -> `xinput9_1_0`, no `DllImport`, no throw when absent (a CI test asserts the
+  graceful-degradation contract on all three OSes).
+- Frontend: 60 Hz `DispatcherTimer` polls, merges with keyboard by OR (digital)
+  and max (analog), and is gated on window activation so a background window
+  cannot drive the game. No new dependency.
+
+**29 new tests**, suite 1538 -> **1567**.
+
+### 206d Track P: save/load in the app
+
+`EmulatorSession` publishes the live machine and takes a `_machineLock` around
+each batch, so `SaveState`/`LoadState` always observe a quiescent machine instead
+of racing a half-run batch. `LoadState` also resets the presented-frame baseline
+so the restored frame is delivered to the UI. UI: Home buttons, F8/F9, a
+`.xgs` save picker (`PickSaveFileAsync` added to `FileDialogService`), and the
+existing `.xgs` versioned format is unchanged.
+
+### 206e Host audio is NOT last-mile wiring - scoped, not attempted
+
+`McpxApuDevice` has no PCM sink: its DSP EP "only advances its frame divider
+here (its FIFO drain needs an S/PDIF sink)". So a host audio sink requires real
+output emulation (EP FIFO drain, mixer sample fetch, S/PDIF framing), not a
+buffer handoff, and it has no audio oracle. It is explicitly **not** a Track P
+one-session item; treat it as a fidelity feature gated by the usual
+row+histogram rule.
+
+### 206f Known environment hazard (evidence)
+
+`dotnet build` for the frontend failed twice with `CreateAppHost` /
+`BadImageFormatException: Image is too small` and a locked `.pdb`, both cleared
+only by deleting `src/XGrid.Frontend.Avalonia/obj` and `bin`. That is the
+signature of Dropbox touching build outputs mid-build, not of a code defect. It
+is the third independent argument for moving this tree out of the sync root.

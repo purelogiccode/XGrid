@@ -158,6 +158,16 @@ Canonical priority order: `docs/development-direction.md` (summarized in
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
+6. **Environment preconditions (binding, 2026-10-20).** Two machines share this
+   tree (`docs/hosts.md`); only the *reference host* may record M-A. Session start
+   is `scripts/host-doctor.ps1` (fingerprint, free space, toolchain, gate media,
+   `References2` manifest). Semantic anchors (1B RAM/CPU SHAs, frame SHAs, every
+   counter) must be **identical on both machines** — a mismatch is a determinism
+   bug, not an environment note; performance anchors (walls, `msps`, `rasterPsh`,
+   `drawMs`) are host-local and only same-window A/B pairs travel between hosts.
+   `References2/` is the canonical and only reference store, verified by
+   `scripts/refs-manifest.ps1` against `docs/refs-manifest.json`; out-of-tree
+   reference backups are retired by operator decision.
 
 Headless `--gpu sw` stays the default and gate currency; `data/test-samples/`
 stays gate currency and real content stays benchmark-only; accurate-mode perf

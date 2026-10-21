@@ -62,11 +62,21 @@ deleted "in the cloud" lands here as local file loss; no local script ran). Do n
 `Remove-Item`, `rm -rf`, `git clean`, `robocopy /MIR`, `dotnet clean`, or any
 cleanup/grooming script against `References2/` or a path that resolves to it; wave
 worktrees junction `References2/` read-only and worktree teardown must never descend
-through that junction. If a reference is missing, restore in this order — never work
-around a missing reference: (1) `D:\xgrid-refs-restore\` (verified full backup
-2026-10-14: 31,801 files / 513 MB, all 8 sets); (2) a client-accessible Windows shadow
-copy of C: (VSS); (3) the upstream URLs in `docs/research-notes/sources.md`
-(`xemu-Playtest-v2` has no upstream URL — operator-supplied only).
+through that junction. **The canonical and only store is this folder**
+(`C:\Users\HomePC\Dropbox\source\repos\CSharp_XboxEmulator\References2`). Do not create,
+promote or rely on an out-of-tree reference backup (`D:\xgrid-refs-restore\` is retired
+as of 2026-10-20 by operator decision — do not reintroduce it). Integrity is checked,
+not assumed: `pwsh -File scripts/refs-manifest.ps1 -Verify` compares every set against
+`docs/refs-manifest.json` (regenerate with `-Update` after adding or updating a set; the
+manifest is a checksum list (one entry per reference set), tracked by git, **not** a
+copy of any reference).
+If a reference is missing, recover from the other development machine's `References2/`
+(the Dropbox account is the only cross-machine carrier) or, for sets that have one, the
+upstream URL in `docs/research-notes/sources.md` — `xemu-Playtest-v2` has no upstream
+URL and exists only here, so it is the one set whose loss is unrecoverable. Two
+development machines share this tree (home machine = `H1` in `docs/hosts.md`); always
+run `scripts/host-doctor.ps1` at session start rather than assuming the previous
+session's environment.
 Renamed `References/` → `References2/` 2026-10-16 by the operator (repeated
 remote-origin deletions of `References/`); both names stay git-ignored.
 
@@ -600,12 +610,49 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-20 (thirteenth; environment governance + Track P product slice, §206).**
+**Two machines became a first-class concept, and the frontend stopped being
+keyboard-only and stateless.** Operator decision: `References2/` is the canonical
+**and only** reference store — `D:\xgrid-refs-restore\` is retired, no out-of-tree
+backup is promoted. Detection replaces duplication: `scripts/refs-manifest.ps1`
++ `docs/refs-manifest.json` (9 sets, 43,153 files, PASS) checks integrity from a
+checksum list that lives in git, so it survives a wipe of the folder it describes.
+
+- **Host dimension added** (`docs/hosts.md`, `scripts/host-doctor.ps1`): semantic
+  anchors (SHAs/counters) must match on every host — a mismatch is a determinism
+  bug, never an "environment moved" note; performance anchors (walls) are
+  host-local and only same-window A/B travels. **H1 verified as the reference
+  host**: all four 1B anchors reproduce exactly (`F57934BF…`/`CF79FC17…`
+  triangle 9.56 s, `660CA11B…`/`F5D61C94…` menu 39.08 s, `vec=0`, no fault), so
+  §199l's SHA drift was not a live bug here. Walls read +10%/+17% vs the recorded
+  quiet references — read ceilings as ratios on this host. The §204-close
+  62.6 s / 14.0 s reading did not reproduce; treat it as a transient.
+- **Track P landed (XInput + save states).** `XGrid.Input` (previously orphaned)
+  now holds `HostPad`, the **pure** `XInputPadMapping.Map` and a
+  `NativeLibrary`-loaded `XInputGamepadReader` (xinput1_4 -> 1_3 -> 9_1_0, no
+  `DllImport`, never throws when absent). Digital bits pass through (XInput's low
+  byte is the XID mask); A/B/X/Y and LB/RB map to the analog bytes; triggers use
+  the 30/255 threshold; sticks use **radial** dead zones so diagonals survive. The
+  frontend polls at 60 Hz, merges with the keyboard (OR digital / max analog) and
+  is gated on window activation. Save/load: `EmulatorSession` publishes the live
+  machine and takes `_machineLock` around each batch, so `.xgs` save/load observe
+  a quiescent machine; Home has buttons, F8/F9 and a save picker. No new
+  dependency. **1567 tests** (1538 + 29), format clean, app launches.
+- **Host audio is NOT last-mile wiring** — `McpxApuDevice` has no PCM sink ("its
+  FIFO drain needs an S/PDIF sink"), so it needs real output emulation and has no
+  oracle. Scoped as a fidelity feature, not a Track P item.
+- **Environment hazard, third strike:** frontend builds failed with
+  `CreateAppHost`/`BadImageFormatException: Image is too small` and a locked
+  `.pdb`, both cleared only by deleting the project's `obj`/`bin`. That is
+  Dropbox touching build outputs mid-build. Strongest argument yet for moving
+  this tree out of the sync root.
+
 > **Next session starts here:** `docs/research-notes/next-session.md` — verified
-> start state + 1B anchors, what §205 landed (draw-command batching: -47%
-> submission, 59,437 instanced draws for 2.76M triangles, both 1B frames
-> byte-identical) and what §204 landed before it, where the remaining wall is,
-> the all-loaded order, measured negatives, validation ceremony, commands and
-> diagnostics.
+> start state + the H1 anchor table, what §206 landed (references as a single
+> verified store, the host dimension, XInput + save states), what §205/§204 landed
+> before it, where the remaining wall is, the all-loaded order, measured
+> negatives, validation ceremony, commands and diagnostics. **Run
+> `scripts/host-doctor.ps1` first on every machine.**
 >
 > Frontend follow-ups (Track P): `docs/research-notes/avalonia-frontend.md`.
 > GPU reference orientation: `docs/research-notes/gpu-reference-map.md`; NV097
