@@ -472,6 +472,36 @@ public sealed class Nv2aSamplerFastTests
     }
 
 
+    /// <summary>
+    /// The compiled modulate fill must render the texture's colours, not just
+    /// write pixels: the harness's four gray texels (0x20/0x50/0x80/0xB0)
+    /// modulate white diffuse and land in the frame byte-exact. (The frames
+    /// compared by the tests above are only meaningful if they are not all
+    /// black; this pins that.)
+    /// </summary>
+    [Fact]
+    public void CompiledModulateFill_RendersTextureColors()
+    {
+        FillResult fast = RenderModulateFill(generic: false);
+        var colors = new System.Collections.Generic.HashSet<uint>(fast.Frame);
+        colors.Remove(0u);
+        string[] values = new string[colors.Count];
+        int index = 0;
+        foreach (uint value in colors)
+        {
+            values[index++] = value.ToString("X8");
+        }
+
+        System.Array.Sort(values, StringComparer.Ordinal);
+        Assert.Equal(DiagnosticModulateColors, values);
+        Assert.True(fast.Compiled, "the compiled modulate fill must engage");
+    }
+
+    private static readonly string[] DiagnosticModulateColors =
+    {
+        "FF202020", "FF505050", "FF808080", "FFB0B0B0",
+    };
+
     [Fact]
     public void CompiledModulateFill_MatchesGenericLoop()
     {

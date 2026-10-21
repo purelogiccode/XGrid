@@ -471,6 +471,9 @@ public sealed class Nv2AExoticTexModesTests
         int mid = (int)RedChannel(blended);
         int high = (int)RedChannel(upper);
         Assert.True(mid > low && mid < high, $"blended red {mid} not between {low} and {high}");
+        // GreyRamp puts 60 at texel 1 and 120 at texel 2; the grid-boundary
+        // sample is an even four-texel blend, so red is 90 (8-bit rounding).
+        Assert.InRange(mid, 88, 92);
     }
 
     /// <summary>
@@ -500,7 +503,9 @@ public sealed class Nv2AExoticTexModesTests
         int sharpRed = (int)RedChannel(sharp);
         int blurredRed = (int)RedChannel(blurred);
         Assert.True(sharpRed > 200, $"impulse texel should read bright, got {sharpRed}");
-        Assert.True(blurredRed is > 0 and < 128, $"convolution should spread the impulse, got {blurredRed}");
+        // The centre tap has weight 4/16, so 255 * 0.25 = 63.75 lands in the
+        // six-bit neighbourhood of 64.
+        Assert.InRange(blurredRed, 58, 70);
     }
 
     [Fact]
