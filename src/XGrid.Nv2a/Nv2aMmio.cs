@@ -152,6 +152,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodContextDmaColor = 0x194u;
     private const uint MethodAlphaTestEnable = 0x300u;
     private const uint MethodBlendEnable = 0x304u;
+    private const uint MethodCullFaceEnable = 0x308u;
+    private const uint MethodCullFace = 0x39Cu;
+    private const uint MethodFrontFace = 0x3A0u;
     private const uint MethodDepthTestEnable = 0x30Cu;
     private const uint MethodStencilTestEnable = 0x32Cu;
     private const uint MethodAlphaFunc = 0x33Cu;
@@ -316,6 +319,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint ZetaF16Max = 0xFFF8u;
     private const uint CompareLess = 1u;
     private const uint CompareAlways = 7u;
+
+    // NV097_SET_CULL_FACE_V_* and NV097_SET_FRONT_FACE_V_* (xemu nv2a_regs.h).
+    private const uint CullFrontFace = 0u;
+    private const uint CullBackFace = 1u;
+    private const uint CullFrontAndBackFace = 2u;
+    private const uint FrontFaceValueCw = 0x0900u;
+    private const uint FrontFaceValueCcw = 0x0901u;
     private const uint BlendZero = 0u;
     private const uint BlendOne = 1u;
     private const uint EquationAdd = 2u;
@@ -531,6 +541,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool _depthTestEnable;
     private uint _depthFunc;
     private bool _depthMask;
+    private bool _cullFaceEnable;
+    private uint _cullFace;
+    private bool _frontFaceCw = true;
     private bool _zFormatFloat;
     private float _zclipMin;
     private float _zclipMax;
@@ -689,6 +702,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of draws that ran the register-combiner stage. Diagnostics.</summary>
     public ulong CombinerDraws { get; private set; }
 
+    /// <summary>Gets the number of triangles discarded by the cull-face test. Diagnostics.</summary>
+    public long TrianglesCulled { get; private set; }
+
     /// <summary>
     /// When set, both software fill paths accumulate host wall time per draw
     /// for the <c>--gpu-time</c> diagnostic. Host-only: never snapshotted,
@@ -836,6 +852,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public string FragmentStateDebug =>
         $"alpha={_alphaTestEnable}:{_alphaFunc:X} blend={_blendEnable}:{_blendSrcFactor:X}/{_blendDstFactor:X} " +
         $"depth={_depthTestEnable}:{_depthFunc:X}:{_depthMask} stencil={_stencilTestEnable}:{_stencilFunc:X} " +
+        $"cull={_cullFaceEnable}:{_cullFace}:{(_frontFaceCw ? "cw" : "ccw")}:{TrianglesCulled} " +
         $"mask={_colorMask:X8} zetaDma={_dmaZeta:X}";
 
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
@@ -1014,6 +1031,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _depthTestEnable = false;
         _depthFunc = CompareLess;
         _depthMask = true;
+        _cullFaceEnable = false;
+        _cullFace = CullBackFace;
+        _frontFaceCw = true;
         _zFormatFloat = false;
         _zclipMin = 0f;
         _zclipMax = float.PositiveInfinity;
@@ -1317,6 +1337,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_depthTestEnable);
         writer.Write(_depthFunc);
         writer.Write(_depthMask);
+        writer.Write(_cullFaceEnable);
+        writer.Write(_cullFace);
+        writer.Write(_frontFaceCw);
         writer.Write(_zFormatFloat);
         writer.Write(_zclipMin);
         writer.Write(_zclipMax);
@@ -1620,6 +1643,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _depthTestEnable = reader.ReadBoolean();
         _depthFunc = reader.ReadUInt32();
         _depthMask = reader.ReadBoolean();
+        _cullFaceEnable = reader.ReadBoolean();
+        _cullFace = reader.ReadUInt32();
+        _frontFaceCw = reader.ReadBoolean();
         _zFormatFloat = reader.ReadBoolean();
         _zclipMin = reader.ReadSingle();
         _zclipMax = reader.ReadSingle();
@@ -1734,7 +1760,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 3;
+    private const int Nv2ASnapshotVersion = 4;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -2808,6 +2834,26 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case MethodBlendEnable:
                 _blendEnable = (parameter & 1u) != 0;
+                break;
+            case MethodCullFaceEnable:
+                _cullFaceEnable = (parameter & 1u) != 0;
+                break;
+            case MethodCullFace:
+                _cullFace = parameter switch
+                {
+                    // NV097_SET_CULL_FACE_V_FRONT / _BACK / _FRONT_AND_BACK.
+                    0x0404u => CullFrontFace,
+                    0x0405u => CullBackFace,
+                    0x0406u => CullFrontAndBackFace,
+                    _ => _cullFace,
+                };
+                break;
+            case MethodFrontFace:
+                if (parameter is FrontFaceValueCw or FrontFaceValueCcw)
+                {
+                    _frontFaceCw = parameter == FrontFaceValueCw;
+                }
+
                 break;
             case MethodDepthTestEnable:
                 _depthTestEnable = (parameter & 1u) != 0;
@@ -6176,6 +6222,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                              _blendEquation is not (0u or 1u or 3u or 4u or 5u);
     }
 
+    /// <summary>Decides whether a screen-space triangle is discarded by the cull-face test.</summary>
+    /// <remarks>
+    /// Screen space is Y-down, so a visually clockwise triangle has a positive
+    /// signed area under <c>((bx-ax)*(cy-ay)) - ((cx-ax)*(by-ay))</c>.
+    /// <c>SET_FRONT_FACE</c> selects which winding counts as front facing and
+    /// <c>SET_CULL_FACE</c> selects which winding is discarded; degenerate
+    /// triangles are already rejected by the caller.
+    /// </remarks>
+    private bool ShouldCull(float area)
+    {
+        if (!_cullFaceEnable)
+        {
+            return false;
+        }
+
+        if (_cullFace == CullFrontAndBackFace)
+        {
+            return true;
+        }
+
+        bool frontFacing = area > 0f == _frontFaceCw;
+        return frontFacing == (_cullFace == CullFrontFace);
+    }
+
     private void FillTriangle(
         float ax, float ay, float az, float aw, float ar, float ag, float ab, float aa, float au, float av,
         float bx, float by, float bz, float bw, float br, float bg, float bb, float ba, float bu, float bv,
@@ -6186,6 +6256,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float area = ((bx - ax) * (cy - ay)) - ((cx - ax) * (by - ay));
         if (area == 0f)
         {
+            return;
+        }
+
+        if (ShouldCull(area))
+        {
+            TrianglesCulled++;
             return;
         }
 
@@ -7487,6 +7563,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float area = ((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y));
         if (area == 0f)
         {
+            return;
+        }
+
+        if (ShouldCull(area))
+        {
+            TrianglesCulled++;
             return;
         }
 

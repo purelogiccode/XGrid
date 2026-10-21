@@ -2061,6 +2061,7 @@ internal static class Program
             $"pixels={machine.Nv2A.DrawnPixels} textured={machine.Nv2A.TexturedPixels} clears={machine.Nv2A.ClearsExecuted} " +
             $"blended={machine.Nv2A.BlendedPixels} depth={machine.Nv2A.DepthTestedPixels} " +
             $"zclip={machine.Nv2A.ZclipClampedPixels} zclipCull={machine.Nv2A.ZclipCulledPixels} " +
+            $"culled={machine.Nv2A.TrianglesCulled} " +
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
             $"inlineElements={machine.Nv2A.InlineElementCount}");

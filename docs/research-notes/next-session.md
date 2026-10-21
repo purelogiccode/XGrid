@@ -31,10 +31,15 @@ do not "fix" the code):
 
 | leg | RAM | CPU | `rasterPsh` (quiet) | `drawMs` (gl) |
 |---|---|---|---|---|
-| menu (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | `660CA11B…` | `F5D61C94…` | ~12.0 s | — |
-| menu `--gpu gl --gpu-replace` | `DD023100…` | `F5D61C94…` | 0 | ~1.05 s (`flushMs` ~0.24 s) |
-| triangle (same flags, sw) | `F57934BF…` | `CF79FC17…` | ~2.8 s | — |
-| triangle `--gpu gl --gpu-replace` | `D1EDD170…` | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
+| menu (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | `51B56687…` † | `F5D61C94…` | ~12.0 s | — |
+| menu `--gpu gl --gpu-replace` | `51B56687…` † | `F5D61C94…` | 0 | ~1.05 s (`flushMs` ~0.24 s) |
+| triangle (same flags, sw) | `DD1D516E…` † | `CF79FC17…` | ~1.8 s | — |
+| triangle `--gpu gl --gpu-replace` | `DD1D516E…` † | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
+
+† RAM anchors re-recorded after the §206g cull-face landing (2026-10-20): culled
+triangles no longer write zeta, so guest RAM changes while **every frame SHA and
+CPU SHA stays identical** (controlled pre/post A/B on both legs). Pre-cull values
+were menu `660CA11B`, triangle `F57934BF`.
 
 **Verified 2026-10-20 on H1** (`scripts/raster-leg.ps1`, 1B, fast, `--gpu sw`): all
 four semantic anchors reproduce **exactly**, `vec=0`, no fault. Measured walls

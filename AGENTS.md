@@ -646,6 +646,21 @@ checksum list that lives in git, so it survives a wipe of the folder it describe
   `.pdb`, both cleared only by deleting the project's `obj`/`bin`. That is
   Dropbox touching build outputs mid-build. Strongest argument yet for moving
   this tree out of the sync root.
+- **NV097 backface culling landed (§206g) — the first fidelity item chosen from
+  measured usage.** A Halo v1.09 benchmark probe produced the missing method
+  histogram (188,435 methods, 447 distinct); the top of the stream is the path
+  XGrid already implements, and the largest *missing* state was culling. The
+  same probe on `triangle.xbe` proved the **gate sample itself** uses it
+  (72 enables / 52 cull-face / 1 front-face) — so this was correctness, not a
+  title quirk. `SET_CULL_FACE_ENABLE`/`SET_CULL_FACE`/`SET_FRONT_FACE` now latch
+  and `ShouldCull(area)` runs in both fill paths (screen space is Y-down, so CW
+  has positive signed area). Controlled pre/post A/B on both gate legs: **RAM
+  moved, every CPU SHA and both gate frames byte-identical** (triangle
+  `A1740DE0`, menu `4EF1FBF6`). Raster effect on the same runs: triangle pixels
+  **89.1M → 57.7M (-35.3%)**, menu 285.5M → 253.7M (-11.1%), 41,035 triangles
+  culled per 1B. Fast RAM anchors re-recorded (triangle `DD1D516E`, menu
+  `51B56687`); snapshot version 3 → **4**; `culled=` added to the NV2A
+  diagnostic line; six new tests. **1573 tests.**
 
 > **Next session starts here:** `docs/research-notes/next-session.md` — verified
 > start state + the H1 anchor table, what §206 landed (references as a single

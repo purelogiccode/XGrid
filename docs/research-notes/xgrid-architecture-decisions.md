@@ -12177,3 +12177,59 @@ row+histogram rule.
 only by deleting `src/XGrid.Frontend.Avalonia/obj` and `bin`. That is the
 signature of Dropbox touching build outputs mid-build, not of a code defect. It
 is the third independent argument for moving this tree out of the sync root.
+
+### 206g NV097 backface culling: 41k triangles removed per 1B, 35% of the triangle's pixels, every frame unchanged (2026-10-20)
+
+**Trigger was a measurement, not a hunch.** A benchmark probe of `Halo - Combat
+Evolved (USA) (v1.09)` (real ISO, benchmark-only per §4 Corpus) booted to a
+presented frame and produced a 188,435-method stream with the method histogram
+the plan has been missing. The top of that stream is the path XGrid already
+implements — `ARRAY_ELEMENT16` 58,577, transform constants ~28k, `SET_BEGIN_END`
+5,368, texture state ~6.5k, transform-program words ~4k — so the draw path is
+not the gap. The gap is state XGrid stores nothing for, and the highest-count
+entry there was `SET_CULL_FACE_ENABLE` (144), `SET_CULL_FACE` (105),
+`SET_FRONT_FACE` (2).
+
+The same probe against the **gate sample** (`triangle.xbe`) showed the same
+methods (72 / 52 / 1), so this was not a title quirk: the sample the gates are
+built on enables culling and XGrid was drawing the back faces anyway.
+
+**Implementation.** `SET_CULL_FACE_ENABLE` (0x0308), `SET_CULL_FACE` (0x039C) and
+`SET_FRONT_FACE` (0x03A0) latch state; `ShouldCull(area)` runs in both fill paths
+(`FillTriangle` legacy, `FillTrianglePsh` program) right after the degenerate
+rejection. Screen space is Y-down, so a visually clockwise triangle has positive
+signed area under `((bx-ax)*(cy-ay)) - ((cx-ax)*(by-ay))`; `SET_FRONT_FACE`
+picks which winding is front, `SET_CULL_FACE` which is discarded (xemu's
+`NV097_SET_*_V_*` values: 0x0404 front, 0x0405 back, 0x0406 both; 0x0900 CW,
+0x0901 CCW). `TrianglesCulled` is a public counter and `culled=` joins the CLI's
+NV2A diagnostic line. Snapshot version 3 -> **4**.
+
+**Controlled A/B on both gate legs** (same commands, pre-cull binary built from
+the stashed sources, post-cull rebuilt):
+
+| leg (1B, accurate, `--gpu sw`) | RAM pre -> post | CPU | frame |
+|---|---|---|---|
+| triangle (+`--hdd`) | `5E6A6741` -> `812EA159` | `2F632483` = `2F632483` | `A1740DE0` = `A1740DE0` |
+| dashboard (+`--hdd`, pad script) | `D9C99A58` -> `01BE5D64` | `3D2740B8` = `3D2740B8` | `4EF1FBF6` = `4EF1FBF6` |
+
+So culling changes **RAM only**, and only because culled triangles no longer
+write zeta. Every CPU SHA and both gate frames are byte-identical. Fast-mode RAM
+anchors moved with it (triangle `F57934BF` -> `DD1D516E`, menu `660CA11B` ->
+`51B56687`); the anchor tables in `next-session.md`, `compatibility.md` and
+`hosts.md` are updated and the two older accurate values in the plan text were
+found to belong to the no-HDD invocation (the control reproduced
+`D9C99A58`/`3D2740B8` for the HDD command, so it is the triangle pair that was
+mislabelled).
+
+**Raster effect (same runs):** triangle pixels **89,142,121 -> 57,663,082
+(-35.3%)**, textured 48,754,488 -> 37,475,999, blended 518 -> 390, `culled=41035`
+of ~54k triangles; dashboard pixels 285,477,537 -> 253,692,342 (-11.1%),
+`culled=41035`. Both are pure overdraw removal: the images do not change.
+
+**Tests:** six in `Nv2aCullFaceTests` — culling disabled draws both windings;
+cull-back keeps the front winding and discards the other; cull-front is the
+mirror; flipping `SET_FRONT_FACE` flips the survivor; front-and-back discards
+everything; cull state round-trips through a snapshot. Suite 1567 -> **1573**.
+
+**Coverage:** `nv097-coverage.md` moves the three methods to `handled`
+(108/93 -> 111/90) and closes the "backface culling" feature-gap row.
