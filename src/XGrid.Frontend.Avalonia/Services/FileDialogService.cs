@@ -47,6 +47,32 @@ public sealed class FileDialogService
         return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
     }
 
+    /// <summary>Opens a save-file picker and returns a local path, or null when cancelled.</summary>
+    /// <param name="title">Dialog title.</param>
+    /// <param name="suggestedName">Default file name without an extension.</param>
+    /// <param name="types">Optional file-type filter.</param>
+    public async Task<string?> PickSaveFileAsync(
+        string title,
+        string suggestedName,
+        IReadOnlyList<FilePickerFileType>? types = null)
+    {
+        if (Window?.StorageProvider is not { } storage)
+        {
+            return null;
+        }
+
+        IStorageFile? file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = suggestedName,
+            DefaultExtension = "xgs",
+            ShowOverwritePrompt = true,
+            FileTypeChoices = types,
+        });
+
+        return file?.TryGetLocalPath();
+    }
+
     /// <summary>Launches the platform file manager at a folder path.</summary>
     public async Task OpenFolderAsync(string path)
     {
@@ -95,6 +121,13 @@ public sealed class FileDialogService
     public static IReadOnlyList<FilePickerFileType> DiskTypes { get; } = new[]
     {
         new FilePickerFileType("Xbox disk images") { Patterns = new[] { "*.qcow2", "*.img", "*.vhd", "*.bin" } },
+        new FilePickerFileType("All files") { Patterns = new[] { "*" } },
+    };
+
+    /// <summary>Save-state filter (<c>.xgs</c> snapshots).</summary>
+    public static IReadOnlyList<FilePickerFileType> StateTypes { get; } = new[]
+    {
+        new FilePickerFileType("XGrid save states") { Patterns = new[] { "*.xgs" } },
         new FilePickerFileType("All files") { Patterns = new[] { "*" } },
     };
 }

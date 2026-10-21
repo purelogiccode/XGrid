@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -525,6 +526,84 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         return IsRunning;
     }
 
+    /// <summary>Public command: saves a snapshot of the running console.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveState))]
+    private async Task SaveStateAsync()
+    {
+        if (!_session.IsRunning)
+        {
+            return;
+        }
+
+        string? path = await Dialogs.PickSaveFileAsync(
+            "Save state",
+            SuggestedStateName(),
+            FileDialogService.StateTypes);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            _session.SaveState(path);
+            AddLog(LogLevel.Info, "State saved: " + path);
+            ShowToast("State saved.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Error, "Save state failed: " + exception.Message);
+            ShowToast("Save state failed: " + exception.Message);
+        }
+    }
+
+    /// <summary>Public command: loads a snapshot into the running console.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveState))]
+    private async Task LoadStateAsync()
+    {
+        if (!_session.IsRunning)
+        {
+            return;
+        }
+
+        string? path = await Dialogs.PickFileAsync("Load state", FileDialogService.StateTypes);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            _session.LoadState(path);
+            AddLog(LogLevel.Info, "State loaded: " + path);
+            ShowToast("State loaded.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            AddLog(LogLevel.Error, "Load state failed: " + exception.Message);
+            ShowToast("Load state failed: " + exception.Message);
+        }
+    }
+
+    private bool CanSaveState()
+    {
+        return IsRunning;
+    }
+
+    private string SuggestedStateName()
+    {
+        string name = CurrentGame is { } game && !string.IsNullOrWhiteSpace(game.Title)
+            ? game.Title
+            : "xgrid";
+
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+
+        return name + " " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss", CultureInfo.InvariantCulture);
+    }
+
     partial void OnSelectedNavigationItemChanged(NavigationItem? value)
     {
         OnPropertyChanged(nameof(PageTitle));
@@ -539,6 +618,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(FramePlaceholder));
         TogglePauseCommand.NotifyCanExecuteChanged();
         StopSessionCommand.NotifyCanExecuteChanged();
+        SaveStateCommand.NotifyCanExecuteChanged();
+        LoadStateCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsPausedChanged(bool value)

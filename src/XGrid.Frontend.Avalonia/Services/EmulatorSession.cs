@@ -39,10 +39,12 @@ public sealed class EmulatorSession : IDisposable
     private const long ProgressLogInterval = 250_000_000;
 
     private readonly Lock _padLock = new();
+    private readonly Lock _machineLock = new();
     private readonly ManualResetEventSlim _runGate = new(initialState: true);
 
     private CancellationTokenSource? _cancellation;
     private Thread? _thread;
+    private XboxMachine? _machine;
     private volatile bool _running;
     private volatile bool _paused;
     private volatile bool _disposed;
@@ -166,6 +168,45 @@ public sealed class EmulatorSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Saves a snapshot while the emulation thread is parked between batches.
+    /// </summary>
+    /// <param name="path">Destination <c>.xgs</c> path.</param>
+    /// <exception cref="InvalidOperationException">The console is not running.</exception>
+    public void SaveState(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        WithMachine(machine => machine.SaveState(path));
+    }
+
+    /// <summary>
+    /// Loads a snapshot while the emulation thread is parked between batches.
+    /// </summary>
+    /// <param name="path">Source <c>.xgs</c> path.</param>
+    /// <exception cref="InvalidOperationException">The console is not running.</exception>
+    public void LoadState(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        WithMachine(machine =>
+        {
+            machine.LoadState(path);
+
+            // The restored frame is not the frame this session presented last;
+            // reset the baseline so the next present is delivered to the UI.
+            _lastPresentedFrame = 0;
+        });
+    }
+
+    private void WithMachine(Action<XboxMachine> action)
+    {
+        XboxMachine machine = Volatile.Read(ref _machine)
+            ?? throw new InvalidOperationException("The console is not running.");
+        lock (_machineLock)
+        {
+            action(machine);
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -195,6 +236,7 @@ public sealed class EmulatorSession : IDisposable
         try
         {
             machine = CreateMachine(settings, discPath, ref socketBackend);
+            Volatile.Write(ref _machine, machine);
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)}"));
 
@@ -207,7 +249,13 @@ public sealed class EmulatorSession : IDisposable
                 }
 
                 ApplyPad(machine);
-                int executed = machine.Run(BatchInstructions);
+                int executed;
+                lock (_machineLock)
+                {
+                    // Saves and loads take the same lock, so they always observe a
+                    // paused, quiescent machine rather than a half-run batch.
+                    executed = machine.Run(BatchInstructions);
+                }
                 if (executed > 0)
                 {
                     Interlocked.Add(ref _steps, executed);
@@ -247,6 +295,7 @@ public sealed class EmulatorSession : IDisposable
         }
         finally
         {
+            Volatile.Write(ref _machine, null);
             machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();

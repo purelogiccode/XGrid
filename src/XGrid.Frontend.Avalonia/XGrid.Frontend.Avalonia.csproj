@@ -29,6 +29,7 @@
     <ProjectReference Include="..\XGrid.Bus\XGrid.Bus.csproj" />
     <ProjectReference Include="..\XGrid.Graphics\XGrid.Graphics.csproj" />
     <ProjectReference Include="..\XGrid.Host\XGrid.Host.csproj" />
+    <ProjectReference Include="..\XGrid.Input\XGrid.Input.csproj" />
     <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
   </ItemGroup>
 
