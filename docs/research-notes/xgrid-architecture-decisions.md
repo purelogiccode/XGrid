@@ -12449,3 +12449,28 @@ fallbacks, flat green shape. Extending the whitelist to the SZ variants took the
 fallbacks to 0 and changed **no pixels at all** (identical frame and RAM), so the
 change was reverted rather than shipped without an oracle. The remaining work is
 cube direction mapping for those formats, not the decode.
+
+### 207i The corpus got an external oracle: reference screenshots
+
+The xgu repository ships 640x480 screenshots of each example. Comparing mean
+channel values and an 8-bucket luminance histogram against XGrid's presented
+frame gives the corpus something it lacked: a way to say "renders correctly"
+rather than "renders something".
+
+| sample | reference mean | XGrid mean | verdict |
+|---|---|---|---|
+| `vp_lighting` | (32.3, 26.7, 224.7) | (33.9, 28.1, 226.4) | matches within 1.7/255 per channel |
+| `alpha_blending` | (20.8, 17.2, 233.2) | (2.2, 1.8, 253.0) | differs: XGrid is 100% in the lowest luminance bucket, the reference spreads 11% + 6% into mid buckets |
+| `bump_cubemap_reflect` | (62.4, 100.2, 28.9) | (2.5, 52.3, 15.9) | differs: darker and greener, 36% black |
+
+Two consequences. First, 207h's byte-order fix is validated end to end: after it,
+`vp_lighting` reproduces the reference's colour profile almost exactly, which is
+much stronger evidence than "the frame has 1,592 colours now". Second, it splits
+two samples that both looked "flat-ish": `alpha_blending` is a *separate* gap
+(the blended geometry is missing or black) and is now the best-scoped next
+fidelity item, ahead of the cubemap work, because its background is already
+correct.
+
+`ktest` smoke re-run on the final build: **PASS 7/7**, 792,800,535 steps,
+40,797-byte suite log byte-identical, so the texture change is invisible to the
+standing gate.

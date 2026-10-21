@@ -64,8 +64,8 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2` | `-Sample hello` |
 | **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83` | `-Sample led` |
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
-| **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
-| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 90 flips / 2,952 draws / **137 colours**, full coverage | n/a | same 3B budget | RAM `40081D03` / CPU `1C5C575D`; last frame `973AF30A` | `-Sample xgu-alpha_blending -Steps 3000000000` |
+| **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
+| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 90 flips / 2,952 draws / **137 colours**, full coverage | n/a | same 3B budget; **blended geometry missing vs the reference screenshot** (gap 5) | RAM `40081D03` / CPU `1C5C575D`; last frame `973AF30A` | `-Sample xgu-alpha_blending -Steps 3000000000` |
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene **flat** | 41 flips / 2,679 draws, **2 colours**: a solid green shape on black | n/a | cubemap reflection does not vary - see gap 3 | RAM `1E59D83F` / CPU `D5D38C64`; last frame `5174B1EB` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
@@ -136,6 +136,22 @@ run: `3F` misses `3,420,787 -> 0`, textured pixels `+3.42M`, and the frame went
 from **3 colours / 250,090 px** to **1,592 colours / 307,200 px**. Both gate
 frames stayed byte-identical (`A1740DE0`, `4EF1FBF6`), because the gates use
 `0x06`/`0x07`/`0x12`/`0x1E`.
+
+### 5. Reference-screenshot oracle (xgu examples)
+
+The xgu repo ships 640x480 screenshots of each example, which is an external
+oracle the corpus did not have before. Compared as mean channel value plus an
+8-bucket luminance histogram (2-pixel stride):
+
+| sample | reference mean (R,G,B) | XGrid mean | verdict |
+|---|---|---|---|
+| `vp_lighting` | (32.3, 26.7, 224.7) | (33.9, 28.1, 226.4) | **matches** - within 1.7/255 per channel, luminance histogram close (`83/81` in the darkest non-black bucket) |
+| `alpha_blending` | (20.8, 17.2, 233.2) | (2.2, 1.8, 253.0) | **differs** - XGrid renders a near-uniform blue (100% in the lowest luminance bucket); the reference spreads 11% + 6% into mid buckets, i.e. the blended geometry is missing or black |
+| `bump_cubemap_reflect` | (62.4, 100.2, 28.9) | (2.5, 52.3, 15.9) | **differs** - XGrid is darker and greener with 36% black pixels; consistent with gap 3 |
+
+This is the first corpus evidence that can say "renders correctly" rather than
+just "renders something", and it separates two failures that both looked like
+"flat-ish frame": `vp_lighting` is right, `alpha_blending` is not.
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 
