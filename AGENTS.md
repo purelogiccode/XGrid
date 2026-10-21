@@ -254,7 +254,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   dashboard plus pause/resume/power cycles and settings persistence. Design note:
   `docs/research-notes/avalonia-frontend.md`; run
   `dotnet run --project src/XGrid.Frontend.Avalonia`.
-  **Renderer switch (2026-10-22, §220):** Settings → Renderer offers the portable
+  **Renderer switch (2026-10-22, §221):** Settings → Renderer offers the portable
   software rasterizer (default) or the host-GPU OpenGL backend (headless WGL,
   replacement mode + per-flip readback, created/disposed on the emulation thread;
   unavailable paths log a reason and stay on software). Measured on gate media at
@@ -691,7 +691,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   key. CLI `xgrid disc title <path>` prints the id/key. Caveat: homebrew images
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
-- **Track P/B: the frontend on the host GPU backend (220, 2026-10-21):** the
+- **Track P/B: the frontend on the host GPU backend (§221/§223, 2026-10-21):** the
   Avalonia frontend has a **Renderer** setting — `Software rasterizer` (default,
   portable) or `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only).
   `Nv2AMmio.GpuMemory` exposes the machine's guest-memory adapter, the new
@@ -760,7 +760,7 @@ byte-identical; all changes are host-side plus seam fields.**
 **Session 2026-10-22 (twenty-third; the GPU renderer is a frontend setting + the
 CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
 
-- **The app can render on the host GPU (§220).** Settings → *Renderer*: software
+- **The app can render on the host GPU (§221).** Settings → *Renderer*: software
   (default, portable) or OpenGL. `EmulatorSession` creates the headless WGL
   context on the emulation thread, attaches it in replacement mode with the
   per-flip readback on, and logs the probe line; any failure (non-Windows,
@@ -778,13 +778,13 @@ CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
   environment has no interactive desktop - the process starts and exits cleanly
   with no crash event); the seam that owns the feature, `EmulatorSession`, was
   driven for real.
-- **One guest-memory adapter (§220a).** `Nv2AMmio.GpuMemory` exposes the
+- **One guest-memory adapter (§221a).** `Nv2AMmio.GpuMemory` exposes the
   `IGpuMemory` the device was built with, and the CLI now passes it to
   `GlBackendFactory` instead of its own duplicate `MachineGpuMemory` (deleted).
   The 1B menu GL golden re-ran byte-identically (sw `4EF1FBF6…`, gl
   `B6116DAE…`, diff 2602 px / maxDelta 1 / violations 0, counters 33632/686/686,
   `BackendUnsupported=0`).
-- **CHD title id (§221).** Per-title override V2 could not resolve a CHD, so CHD
+- **CHD title id (§222).** Per-title override V2 could not resolve a CHD, so CHD
   libraries fell back to path keys. `XGrid.XboxFs.XdvdfsSectorReader` walks the
   XDVDFS volume over any `IDvdImage` (descriptor at partition sector 32, magic at
   +0x00/+0x7EC, root table at +20/+24, `14 + nameLen` entries, the `0xFFFF`
@@ -810,7 +810,7 @@ CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
   steps with the 40,797-byte suite log `CA5D3867…` byte-identical.
   Suite 1738 -> **1757** (Nv2a +4, Frontend +3, XboxFs +9, Integration +3).
 
-**Session 2026-10-21 (twenty-third; renderer policy seam, snapshot requests on
+**Session 2026-10-21 (twenty-fourth; renderer policy seam, snapshot requests on
 the emulation thread, frontend smoke harness - decisions §223).**
 
 - **The renderer decision is pure and testable.** `RendererPolicy.Decide`/
@@ -832,7 +832,7 @@ the emulation thread, frontend smoke harness - decisions §223).**
   prints steps/wall/frame SHA per renderer - the harness behind those numbers.
 - **Gates unchanged** (host-side only); suite grows by the frontend rows.
 
-**Session 2026-10-22 (twenty-fourth; per-title renderer, one GPU-memory adapter,
+**Session 2026-10-22 (twenty-fifth; per-title renderer, one GPU-memory adapter,
 `KeyedOption` collapse - decisions §224).**
 
 - **Per-title renderer.** `TitleOverride.Renderer` (same `software`/`opengl`
@@ -851,8 +851,7 @@ the emulation thread, frontend smoke harness - decisions §223).**
   (0 warnings now), and the frontend tests cover the per-title renderer merge
   (`RendererSettingTests`) plus the one-adapter rule (`MachineGpuMemoryTests`).
 
-## Session notes - newest first (wave runner retired 2026-10-15).
-**Session 2026-10-21 (twenty-fifth; CPU correctness campaign - five instruction
+**Session 2026-10-21 (twenty-sixth; CPU correctness campaign - five instruction
 bugs, one decoder bug, three missing/mismatched shapes; gate titles unchanged).**
 
 - **The differential was widened, and it paid off.** `tools/cpu-oracle/` went

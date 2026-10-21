@@ -13875,7 +13875,7 @@ step). The About page and the README list the keys.
   moves both by the same ~6.5% / max 80.
 - Suite: Nv2a 388, GpuGl 92 (the ╬ô├╢┬╝Γö¼Γòæ219b flip-drop live test is replaced by the
   composition test), format clean.
-## 221 Track B/P: the GPU renderer is a frontend setting (2026-10-22, twenty-second session)
+## 221 Track B/P: the GPU renderer is a frontend setting (2026-10-22, twenty-third session)
 
 Two slices, each with its own acceptance, both host-side/config-side. Gate
 currency is unchanged and re-verified: the 1B accurate frames/SHAs are untouched
@@ -14002,7 +14002,7 @@ oversized cap, directory entry, sector-pad walk), `XGrid.Integration.Tests`
 66 -> **69** (`TryReadImage` through a synthetic volume, a disc without the root
 executable, a null image). Suite 1738 -> **1757**.
 
-## 223 Track P/B: the renderer policy seam, threaded snapshot requests and the frontend smoke harness (2026-10-21, twenty-third session)
+## 223 Track P/B: the renderer policy seam, threaded snapshot requests and the frontend smoke harness (2026-10-21, twenty-fourth session)
 
 The Avalonia frontend was software-only by construction (its 2026-10-20 charter
 excluded "a WGL/OpenGL window backend"); `next-session.md` Option B named the
@@ -14107,7 +14107,7 @@ thread, and removes the lock the UI used to take around device state.
 - The renderer is a global setting, not a per-title override; the per-title row
   schema is unchanged.
 
-## 224 Track B/P: the per-title renderer, one GPU-memory adapter and the KeyedOption collapse (2026-10-22, twenty-fourth session)
+## 224 Track B/P: the per-title renderer, one GPU-memory adapter and the KeyedOption collapse (2026-10-22, twenty-fifth session)
 
 The product surface (`XGrid.Frontend.Avalonia`) was software-only, and that was
 recorded as an intentional limitation ("a GL backend owned by a foreign window
@@ -14203,7 +14203,7 @@ block, plus the `DiscLseek` shift retail discs need for their video partition).
 Not attempted in this slice: duplicating the XDVDFS reader is exactly the
 "two implementations, two answers" trap.
 
-## 225 CPU correctness campaign: five instruction bugs, one decoder bug and three missing shapes (2026-10-21, twenty-fifth session)
+## 225 CPU correctness campaign: five instruction bugs, one decoder bug and three missing shapes (2026-10-21, twenty-sixth session)
 
 **Track: core correctness (no perf claim, no behavior change on the gate titles).**
 The CPU differential (`tools/cpu-oracle/`) compared 333 hand-picked cases with

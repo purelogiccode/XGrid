@@ -1,4 +1,4 @@
-# Next session instructions (updated 2026-10-22 after the twenty-fifth session)
+# Next session instructions (updated 2026-10-22 after the twenty-sixth session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
