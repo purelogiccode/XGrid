@@ -671,7 +671,8 @@ checksum list that lives in git, so it survives a wipe of the folder it describe
 >
 > Frontend follow-ups (Track P): `docs/research-notes/avalonia-frontend.md`.
 > GPU reference orientation: `docs/research-notes/gpu-reference-map.md`; NV097
-> method coverage: `docs/research-notes/nv097-coverage.md`.
+> method coverage: `docs/research-notes/nv097-coverage.md`; **measured usage:
+> `docs/research-notes/usage-histogram.md`** (pick the next fidelity item there).
 
 **Session 2026-10-20 (twelfth; Track B draw-command batching, §205).**
 **One measured question, one structural slice: the GL backend no longer submits
