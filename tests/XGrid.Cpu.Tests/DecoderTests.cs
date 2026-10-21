@@ -78,6 +78,72 @@ public sealed class DecoderTests
         Assert.Equal(3, instruction.Length);
     }
 
+    // The index-only 16-bit forms [SI]/[DI] carry no displacement; only [BP]
+    // with mod=00 does. Reading two displacement bytes for them shifted the
+    // instruction stream (found by the CPU oracle, decisions 220).
+    [Fact]
+    public void AddressSizeOverride_SiForm_HasNoDisplacement()
+    {
+        DecodedInstruction instruction = Decode(0x67, 0x8D, 0x04);
+
+        MemoryOperand memory = instruction.Operand2.Memory;
+        Assert.True(memory.Is16Bit);
+        Assert.False(memory.HasBase);
+        Assert.True(memory.HasIndex);
+        Assert.Equal(Gpr.Esi, memory.Index);
+        Assert.Equal(0u, memory.Displacement);
+        Assert.Equal(3, instruction.Length);
+    }
+
+    [Fact]
+    public void AddressSizeOverride_DiForm_HasNoDisplacement()
+    {
+        DecodedInstruction instruction = Decode(0x67, 0x8D, 0x05);
+
+        MemoryOperand memory = instruction.Operand2.Memory;
+        Assert.False(memory.HasBase);
+        Assert.Equal(Gpr.Edi, memory.Index);
+        Assert.Equal(0u, memory.Displacement);
+        Assert.Equal(3, instruction.Length);
+    }
+
+    [Fact]
+    public void AddressSizeOverride_BpForm_HasDisplacement16()
+    {
+        // 67 8D 46 34: lea eax, [bp+0x34] (mod=01 rm=110 uses BP as the base).
+        DecodedInstruction instruction = Decode(0x67, 0x8D, 0x46, 0x34);
+
+        MemoryOperand memory = instruction.Operand2.Memory;
+        Assert.True(memory.HasBase);
+        Assert.Equal(Gpr.Ebp, memory.Base);
+        Assert.Equal(0x34u, memory.Displacement);
+        Assert.Equal(4, instruction.Length);
+    }
+
+    [Fact]
+    public void AddressSizeOverride_BpFormWithoutDisplacementUsesDisp16()
+    {
+        // 67 8D 06 34 12: lea eax, [0x1234] - mod=00 rm=110 is the disp16 form.
+        DecodedInstruction instruction = Decode(0x67, 0x8D, 0x06, 0x34, 0x12);
+
+        MemoryOperand memory = instruction.Operand2.Memory;
+        Assert.False(memory.HasBase);
+        Assert.False(memory.HasIndex);
+        Assert.Equal(0x1234u, memory.Displacement);
+        Assert.Equal(5, instruction.Length);
+    }
+
+    [Fact]
+    public void Xlat_Decodes()
+    {
+        DecodedInstruction instruction = Decode(0xD7);
+
+        Assert.Equal(Mnemonic.Xlat, instruction.Mnemonic);
+        Assert.Equal(OperandKind.Memory, instruction.Operand1.Kind);
+        Assert.Equal(Gpr.Ebx, instruction.Operand1.Memory.Base);
+        Assert.Equal(1, instruction.Length);
+    }
+
     [Fact]
     public void Jcc_Short()
     {
@@ -262,3 +328,4 @@ public sealed class DecoderTests
         Assert.Equal(Mnemonic.Unsupported, reserved.Mnemonic);
     }
 }
+

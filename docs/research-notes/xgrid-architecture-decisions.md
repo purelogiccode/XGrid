@@ -13755,8 +13755,8 @@ including the regenerated GLSL string goldens for the new shader helpers).
 ## 220 The GL sampler decodes the address word, a composed replace-mode frame keeps both writers, and the frontend can step frames (2026-10-21, twenty-second session)
 
 **Landing note: this section is the merge of the `repofleet/task-26` PR onto
-Γö¼┬║219.** Γö¼┬║219a's TEXFILTER decode and Γö¼┬║219c's clear-mask rule stay in force;
-220b-d replace Γö¼┬║219b's flip-drop composition with an explicit FBO -> guest-RAM
+╬ô├╢┬╝Γö¼Γòæ219.** ╬ô├╢┬╝Γö¼Γòæ219a's TEXFILTER decode and ╬ô├╢┬╝Γö¼Γòæ219c's clear-mask rule stay in force;
+220b-d replace ╬ô├╢┬╝Γö¼Γòæ219b's flip-drop composition with an explicit FBO -> guest-RAM
 copy, decode the texture-address word instead of reading it raw (clamp-to-border
 included), and add the Track P frame-step controls.
 
@@ -13769,7 +13769,7 @@ clamp 4,265 and **border/border** 35 times, slot 3 border/border 80 times with
 `FFFFFFFF` as the border colour, and TEXFILTER `2/2/1` (tent) next to `1/1/1`
 (nearest). The gate frames never showed the difference because their
 coordinates stay inside [0,1) and a tent at a texel centre is a nearest tap
-(Γö¼┬║210d).
+(╬ô├╢┬╝Γö¼Γòæ210d).
 
 **The bug the seam made visible.** The GL backend computed its wrap uniforms
 from the *raw* `NV097_SET_TEXTURE_ADDRESS` word. That word assigns **1 to wrap
@@ -13780,12 +13780,12 @@ correctly; only the two executors disagreed.
 ### 220b The seam carries resolved sampler state
 
 `PgraphTextureSlot` carries `SamplerWrapU/V` (0 wrap, 1 mirror, 2 clamp,
-3 clamp-to-border), `BorderColor`, plus Γö¼┬║219a's `FilterBilinear` /
+3 clamp-to-border), `BorderColor`, plus ╬ô├╢┬╝Γö¼Γòæ219a's `FilterBilinear` /
 `FilterConvolution`. They are filled in `Nv2AMmio.BuildTextureSlot` from
 `DecodeTextureAddressU/V` + `ToWrapMode` + `SamplerWrapMode` and the
 `ResolveTextureFilter(slot, ...)` helper - the same helper that
 `BuildSamplerPlans` calls, so the software `SamplerPlan` and the backend slot
-cannot drift (Γö¼┬║219a's static `DecodeTextureFilter` folded into it, so the flag
+cannot drift (╬ô├╢┬╝Γö¼Γòæ219a's static `DecodeTextureFilter` folded into it, so the flag
 is consulted in exactly one place). `--tex-filter` stays opt-in: with the flag
 off `FilterBilinear` is false and every stage is nearest, so the default path
 is unchanged by construction.
@@ -13803,7 +13803,7 @@ is unchanged by construction.
 - `SampleConvolved(slot, xyw)`: nine 1-2-1 taps one texel apart (`du = 1/w`, or
   `1/(w*size)` for a normalized stage), each tap a `SampleSlot`. Emitted only
   for PROJECT2D and only when `uTexConvolution` is non-zero (MIN =
-  `CONVOLUTION_2D_LOD0`, Γö¼┬║210a).
+  `CONVOLUTION_2D_LOD0`, ╬ô├╢┬╝Γö¼Γòæ210a).
 - PROJECT2D divides by w (`c.xy / c.w`, zero w keeps the pair), matching
   `ResolveTexel`'s reference `textureProj(norm(pT.xyw))`.
 - The interpolation preamble adds the **clip origin to both axes**:
@@ -13821,10 +13821,10 @@ The uniforms are per slot (`uTexBilinear[4]`, `uTexConvolution[4]`,
 
 ### 220d Gap 8: a declined draw composes instead of losing the frame
 
-This replaces Γö¼┬║219b's flip-drop. Replace mode sends every draw to GL and falls
+This replaces ╬ô├╢┬╝Γö¼Γòæ219b's flip-drop. Replace mode sends every draw to GL and falls
 back to the software rasterizer when the backend declines a shape - but the
 fallback writes guest RAM while the flip served the FBO, so one declined draw
-cost the whole frame's GL pixels (measured Γö¼┬║209f: the cubemap row presented the
+cost the whole frame's GL pixels (measured ╬ô├╢┬╝Γö¼Γòæ209f: the cubemap row presented the
 clear colour). The rule is now **one writer per frame**:
 
 1. On the first declined draw of a frame the backend flushes its staged batch
@@ -13867,13 +13867,13 @@ step). The About page and the README list the keys.
   2,706/68/34, PASS.
 - Menu `--tex-filter registers` (sw vs gl policy): both frames unchanged,
   PASS - evidence the flag's uniform path is wired, with the menu's
-  texel-centre sampling as the known non-discriminator (Γö¼┬║210d).
+  texel-centre sampling as the known non-discriminator (╬ô├╢┬╝Γö¼Γòæ210d).
 - `xgu vp_lighting` at 3B in replace mode (the only corpus row with fractional
   texcoords and zero declined draws): the two renderers agree within one 8-bit
   step in **both** states - gl legacy `E68070A3` vs sw `72B2F490`, gl registers
   `A9E09139` vs sw `CF698444`, `dmean <= 0.01`, max delta 1 - and the flag
   moves both by the same ~6.5% / max 80.
-- Suite: Nv2a 388, GpuGl 92 (the Γö¼┬║219b flip-drop live test is replaced by the
+- Suite: Nv2a 388, GpuGl 92 (the ╬ô├╢┬╝Γö¼Γòæ219b flip-drop live test is replaced by the
   composition test), format clean.
 ## 221 Track B/P: the GPU renderer is a frontend setting (2026-10-22, twenty-second session)
 
@@ -13913,7 +13913,7 @@ whole run - never a mix, and never a silent downgrade. `DetachRenderer` clears
 device images are disposed.
 
 The session also disables the `--pgraph` method histogram (a CLI diagnostic with
-two dictionary updates per PGRAPH method, measured -6.2% menu wall with Γö¼┬║204).
+two dictionary updates per PGRAPH method, measured -6.2% menu wall with ╬ô├╢┬╝Γö¼Γòæ204).
 The method total/stream still run, so the app is not blind - only the histogram
 map is empty, which is why a `.xgs` saved by the app differs from a CLI save in
 that map (same self-describing format, fewer diagnostic bytes).
@@ -13927,7 +13927,7 @@ writes the framebuffer directly and never flips (nxdk `gamma`/`hello`,
 `debugPrint`): its pixels exist only in RAM. New
 `Nv2AMmio.TryCopyScanoutFrameFromMemory` reads that buffer regardless of the
 backend; the session uses it only *before* the first backend frame, so a backend
-frame is never mixed with RAM pixels (the same all-or-nothing rule as Γö¼┬║129/Γö¼┬║219b).
+frame is never mixed with RAM pixels (the same all-or-nothing rule as ╬ô├╢┬╝Γö¼Γòæ129/╬ô├╢┬╝Γö¼Γòæ219b).
 
 `TryCopyScanoutFrame` itself keeps its old contract (no backend), so no caller
 changed behavior; `TryCopyScanoutFrameFromMemory` equals it byte-for-byte when
@@ -13944,17 +13944,17 @@ leg), 1B fast-mode steps, one run per renderer (scratch harness under
 | software | 34.8 s | 687 | `2239732C8B32998E` | 306,817 |
 | OpenGL (replace + readback) | 24.7 s | 688 | `B3C8042C4B39B4AE` | 306,817 |
 
-The two pictures agree everywhere except 2,385 of 307,200 pixels (|dmean| ╬ô├½├¬
+The two pictures agree everywhere except 2,385 of 307,200 pixels (|dmean| Γò¼├┤Γö£┬╜Γö£┬¼
 0.005/channel; the frames are also one flip apart), and the wall drops ~29%.
-The backend's own fidelity is gate currency, not this table: Γö¼┬║219's 1B GL golden
-pins the flip frame within the Γö¼ΓûÆ1 policy band.
+The backend's own fidelity is gate currency, not this table: ╬ô├╢┬╝Γö¼Γòæ219's 1B GL golden
+pins the flip frame within the ╬ô├╢┬╝╬ô├╗├å1 policy band.
 
 **Known verification gap, stated plainly:** the app's window was not observed
 live in this session's environment (no interactive desktop; the process starts
 and exits cleanly, no crash entry). The feature's seam - `EmulatorSession` -
 was exercised for real, and the frontend project builds with compiled XAML and
 analyzers clean. A human should still launch the app once and click through
-Settings ╬ô├Ñ├å Renderer.
+Settings Γò¼├┤Γö£├æΓö£├Ñ Renderer.
 
 ### 221e `unsupTex[...]`: which modes a declined draw asked for
 
@@ -13964,11 +13964,11 @@ now also prints a slot histogram of the modes that tripped
 **`unsupTex[m0C=14 m11=28]`**: DOT_REFLECT_SPECULAR (0x0C) on stage 3 and
 DOT_PRODUCT (0x11) on two earlier stages of the same 14 draws. So B3's next
 slice is two mode families, not one, and the reflection alone would not clear
-the row. Diagnostic only: the 3B cubemap leg still presents `DA0750EE╬ô├ç┬¬` with the
+the row. Diagnostic only: the 3B cubemap leg still presents `DA0750EEΓò¼├┤Γö£├ºΓö¼┬¼` with the
 same RAM/CPU SHAs and counters.
 
 ## 222 The CHD title id: a sector-level XDVDFS lookup (2026-10-22)
-The per-title override V2 keying (Γö¼┬║219d) could not resolve a CHD, so every CHD
+The per-title override V2 keying (╬ô├╢┬╝Γö¼Γòæ219d) could not resolve a CHD, so every CHD
 library fell back to a path key (documented gap). The blocker was structural:
 `XdvdfsFileSystem` is XISOSharp-backed and XISOSharp's explorer takes a *path*
 (ISO/CSO), while a CHD is a compressed sector stream.
@@ -13991,7 +13991,7 @@ an `IDvdImage`, so the path is testable without a CHD fixture).
 committed): for `wt-data/xemu-tri/triangle.iso` and five
 `data/test-samples/corpus/*.iso` images the sector reader returns exactly the id
 the XISOSharp path returns (`FFFF0002` for all six - the homebrew placeholder,
-Γö¼┬║219d). A CHD is not available on this host, so the container open itself is
+╬ô├╢┬╝Γö¼Γòæ219d). A CHD is not available on this host, so the container open itself is
 pinned by tests on an in-memory `IDvdImage` rather than by a real CHD run: the
 honest state is "the format path is implemented and differential-tested, the
 container hand-off is unexercised here".
@@ -14023,10 +14023,10 @@ last-mile thread-affinity problem the switch exposes.
   `--gpu gl --gpu-replace` with the per-flip readback the UI needs - and
   `Detach` releases it. Replacement mode is the point of the switch (it removes
   the software rasterizer's share of the frame) and its composition rule is the
-  ┬º219b one: a draw the backend declines is painted in software and the flip
+  Γö¼┬║219b one: a draw the backend declines is painted in software and the flip
   re-uploads the whole presented surface.
 - **The picture path does not change.** `TryCopyDisplayFrame` already delegates
-  to the backend readback whenever a backend is attached (┬º208), so the same
+  to the backend readback whenever a backend is attached (Γö¼┬║208), so the same
   `FramePacket` -> `WriteableBitmap` seam carries either renderer's pixels and
   the two are never mixed. The GL context is an offscreen hidden-window context
   (the CLI's), never embedded in the Avalonia visual tree.
@@ -14070,16 +14070,16 @@ thread, and removes the lock the UI used to take around device state.
   before the first flip rather than software pixels) or reports the probe
   failure it fell back on.
 - **Gates (accurate 1B, both backends):** menu slice-1 golden **PASS** - sw
-  `4EF1FBF66CB96CD7ΓÇª`, gl `B6116DAE805822BFΓÇª`, diff 2602 px, maxDelta 1,
+  `4EF1FBF66CB96CD7╬ô├ç┬¬`, gl `B6116DAE805822BF╬ô├ç┬¬`, diff 2602 px, maxDelta 1,
   `violations=0`, counters `33632/686/686`, `BackendUnsupported=0`
   (67.5 s sw / 76.8 s gl); triangle slice-2 golden **PASS** - sw
-  `A1740DE069128A04ΓÇª`, gl `7A860ED7378A86E8ΓÇª`, diff 27849, `violations=0`,
+  `A1740DE069128A04╬ô├ç┬¬`, gl `7A860ED7378A86E8╬ô├ç┬¬`, diff 27849, `violations=0`,
   counters `2706/68/34`, `BackendUnsupported=0`.
-- **Fast 1B anchors exact:** menu RAM `34973510ΓÇª` / CPU `F5D61C94ΓÇª` (33.9 s,
-  `rasterPsh` 11.50 s, 253,998,498 px); triangle RAM `B45254CAΓÇª` / CPU
-  `7DAB63EBΓÇª` (10.9 s, `rasterPsh` 4.38 s, 57,663,082 px); `vec=0`, no fault.
+- **Fast 1B anchors exact:** menu RAM `34973510╬ô├ç┬¬` / CPU `F5D61C94╬ô├ç┬¬` (33.9 s,
+  `rasterPsh` 11.50 s, 253,998,498 px); triangle RAM `B45254CA╬ô├ç┬¬` / CPU
+  `7DAB63EB╬ô├ç┬¬` (10.9 s, `rasterPsh` 4.38 s, 57,663,082 px); `vec=0`, no fault.
 - **ktest smoke PASS 7/7** at **792,800,535** steps with the 40,797-byte suite
-  log **byte-identical** (`CA5D3867ΓÇª`) - the renderer switch cannot reach the
+  log **byte-identical** (`CA5D3867╬ô├ç┬¬`) - the renderer switch cannot reach the
   kernel path.
 - **Frontend live session** (`tools/frontend-smoke`, dashboard, fast mode,
   interleaved 40 s pairs, same window): software **1.014B / 1.021B steps**,
@@ -14101,7 +14101,7 @@ thread, and removes the lock the UI used to take around device state.
 ### Known limits (filed, not hidden)
 
 - The GL renderer presents the **flipped** surface, so a guest that renders
-  straight into the framebuffer (nxdk `gamma`/`hello`, ┬º208) shows nothing in GL
+  straight into the framebuffer (nxdk `gamma`/`hello`, Γö¼┬║208) shows nothing in GL
   mode while the software renderer shows its scanout. Rendering the true scanout
   from a backend needs a per-frame surface compare, and is a separate slice.
 - The renderer is a global setting, not a per-title override; the per-title row
@@ -14202,3 +14202,71 @@ XGrid (volume descriptor at sector 32, root AVL table, `default.xbe` first
 block, plus the `DiscLseek` shift retail discs need for their video partition).
 Not attempted in this slice: duplicating the XDVDFS reader is exactly the
 "two implementations, two answers" trap.
+
+## 225 CPU correctness campaign: five instruction bugs, one decoder bug and three missing shapes (2026-10-21, twenty-fifth session)
+
+**Track: core correctness (no perf claim, no behavior change on the gate titles).**
+The CPU differential (`tools/cpu-oracle/`) compared 333 hand-picked cases with
+QEMU's TCG core. This session widened it to **629 cases** - a sign-sensitive
+pattern for every MMX/SSE1 packed op, every saturating shift count, the x87
+transcendentals/environment, 16-bit addressing, segment overrides, `LOCK`, and
+string/stack edges - and the new cases found **nine real defects** in the
+interpreter. Accurate mode is unchanged on both 1B goldens and the fast-mode
+anchors are exact, so none of the fixes is reachable on the two gate titles: they
+are pure coverage for shapes no gate run executes.
+
+### What the corpus found (each fixed, each pinned by a unit test)
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `PMINSW`/`PMAXSW` (`0F EA`/`0F EE`) were decoded as invented `Pminuw`/`Pmaxuw` and implemented with the **unsigned** word rule, so every negative lane took the wrong operand | renamed to `Pminsw`/`Pmaxsw`, signed compare (`(short)x` both sides) |
+| 2 | `PSRAW`/`PSRAD` with a count at/past the element width sign-filled from the **low element only** (one fill for the whole register) | per-element sign fill (`MapWords`/`MapDwords`) |
+| 3 | `XLAT` (`D7`) was not decoded at all | added (decode + execute; `(E)BX + AL`, 16-bit offset wrap, DS or segment override) |
+| 4 | 16-bit addressing `[SI]`/`[DI]` (`mod=00`, `rm=4/5`) consumed a **bogus disp16**, desynchronizing the instruction stream (the oracle showed `0x1FCE1F` - the `fxsave` displacement eaten as an LEA displacement) | only `mod=00 rm=6` is the disp16 form |
+| 5 | x87 NaN **stores flipped the sign and dropped the payload**: the conversion went through .NET's `double.NaN`, which is the *negative* quiet NaN (`0x7FC00000` stored as `0xFFC00000`) | `Fpu80.FromSingleBits`/`FromDoubleBits`/`ToSingleBits`/`ToDoubleBits` carry sign + payload; a signaling NaN survives `FLD`/`FSTP` unquieted |
+| 6 | `FUCOM`/`FUCOMP`/`FUCOMPP`/`FUCOMI`/`FUCOMIP` latched the **invalid exception for a quiet NaN**; only a signaling NaN may signal on a quiet compare (`FCOM`/`FCOMI`/`FICOM`/`FTST` stay non-quiet) | `SetFpuCompare`/`SetFpuFlagsCompare` gained the quiet rule + `Fpu80.IsSignalingNaN`; propagated to the spec handlers and the raw-emitter descriptor (bits 1/2) |
+| 7 | `FSQRT` of a negative value reported the indefinite NaN but left **C2 clear** | sets C2 (SDM 8.3.2) with the invalid flag |
+| 8 | `MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the **destination** on equal operands; the ISA returns the **source**, which is what decides the sign of a `+0.0`/`-0.0` pair | `left < right ? left : right` and the mirrored max form |
+| 9 | Corpus hygiene: three cases read an **absolute low address** another case had written (the harness reuses one image, the oracle maps a fresh one) | every case is page-relative (`{p}` + `lea`) |
+
+### What did *not* change (and why)
+
+- **No SSE2.** The Xbox CPU is a Pentium III: the 128-bit (`66`-prefixed)
+  packed-integer forms, `PADDQ`/`PSUBQ`/`MOVDQA`/`PSHUFD` and `MOVD xmm` do not
+  exist on it and are correctly rejected by the decoder. The corpus generates
+  only MMX/SSE1 shapes; the SSE2 forms it probed during the campaign were
+  dropped.
+- **`FSTENV`/`FSAVE` pointer fields** (FIP/FOP/FEA/FDS) stay unmodeled - the
+  reference fills them with model metadata and no measured row reads them. The
+  cases were dropped and the caveat recorded.
+- **`0/0` exception class**: the reference reports zero-divide (`ZE`), XGrid
+  reports invalid (`IE`) per the 387+ SDM. Cases that create a NaN by dividing
+  zero by zero were rewritten to load a NaN constant instead.
+- **`FSQRT`-negative IE** is *not* a corpus case for the same reason (the
+  reference sets C2 only); XGrid follows the SDM and the difference is recorded.
+
+### Evidence (this session, H1)
+
+- **Accurate 1B goldens PASS**, byte-identical: menu sw `4EF1FBF6…` / gl
+  `B6116DAE…` (diff 2602 px, maxDelta 1, violations 0, counters 33632/686/686),
+  triangle sw `A1740DE0…` / gl `7A860ED7…` (diff 27849, violations 0, counters
+  2706/68/34), `BackendUnsupported=0`, `composeUploads=0`.
+- **Fast 1B anchors exact**: triangle RAM `B45254CA` / CPU `7DAB63EB`
+  (10.9 s sw), menu RAM `34973510` / CPU `F5D61C94` (32.0 s sw).
+- **ktest smoke PASS 7/7** at **792,800,535** steps; the 40,797-byte suite log
+  is byte-identical (`CA5D3867…`).
+- **Suite 1738 -> 1762 tests** (CPU 643 -> 667: 24 new assertions; **18 of the
+  23 new behavior tests fail on the pre-fix source**, proven by stashing
+  `src/XGrid.Cpu` and re-running them; the other five pin behavior that was
+  already correct). No snapshot version change - no new device state.
+- Corpus: **629 cases** (`int.json` 190 KB / `int.dat` 483 KB), harness memory
+  now sized from the case count (`CpuOracleTests.MemorySizeFor`), so widening the
+  corpus no longer needs a constant bump.
+
+### Where the next differential is cheapest
+
+The oracle's per-case cost is ~0.4 ms (629 cases in 250 ms), so the remaining
+unexplored shapes are cheap to add: MMX/SSE1 *rounding* corners
+(`cvtps2pi`/`cvtpi2ps` overflow), `FCW`-driven precision/rounding combinations
+beyond the two now covered, `LOOP`/`JECXZ` with 16-bit address size, and
+`cmpxchg8b` fault paths (which need a handler dump - currently out of scope).

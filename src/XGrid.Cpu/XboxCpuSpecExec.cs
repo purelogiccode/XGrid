@@ -3124,25 +3124,25 @@ public sealed partial class XboxCpu
 
     private static void SpecFcom(XboxCpu cpu, in DecodedInstruction instruction)
     {
-        SpecFpuCompare(cpu, in instruction, pop: false);
+        SpecFpuCompare(cpu, in instruction, pop: false, quiet: false);
     }
 
     private static void SpecFcomp(XboxCpu cpu, in DecodedInstruction instruction)
     {
-        SpecFpuCompare(cpu, in instruction, pop: true);
+        SpecFpuCompare(cpu, in instruction, pop: true, quiet: false);
     }
 
     private static void SpecFucom(XboxCpu cpu, in DecodedInstruction instruction)
     {
-        SpecFpuCompare(cpu, in instruction, pop: false);
+        SpecFpuCompare(cpu, in instruction, pop: false, quiet: true);
     }
 
     private static void SpecFucomp(XboxCpu cpu, in DecodedInstruction instruction)
     {
-        SpecFpuCompare(cpu, in instruction, pop: true);
+        SpecFpuCompare(cpu, in instruction, pop: true, quiet: true);
     }
 
-    private static void SpecFpuCompare(XboxCpu cpu, in DecodedInstruction instruction, bool pop)
+    private static void SpecFpuCompare(XboxCpu cpu, in DecodedInstruction instruction, bool pop, bool quiet)
     {
         // Slice-17 shared compare: verbatim interpreter
         // `Fcom/Fcomp/Fucom/Fucomp` case. The compared operand is read
@@ -3152,7 +3152,7 @@ public sealed partial class XboxCpu
         Operand compared = instruction.Operand2.Kind == OperandKind.None
             ? instruction.Operand1
             : instruction.Operand2;
-        cpu.SetFpuCompare(cpu.Fpu.GetRegister(0), cpu.ReadFpuReal(compared));
+        cpu.SetFpuCompare(cpu.Fpu.GetRegister(0), cpu.ReadFpuReal(compared), quiet);
         if (pop)
         {
             cpu.Fpu.Pop();

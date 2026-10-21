@@ -38,7 +38,7 @@ public sealed class CpuOracleTests
         Assert.Equal(FxsaveSize + PageDumpSize, document.RecordSize);
         Assert.Equal(document.Cases.Count * document.RecordSize, records.Length);
 
-        var memory = new PhysicalMemory(MemorySize);
+        var memory = new PhysicalMemory(MemorySizeFor(document.Cases.Count));
         var bus = new AddressSpace(memory, UnmappedAccessPolicy.Throw);
         memory.Write32(0x001F1000, 0x00001F80); // MXCSR reset value used by the common prologue
         var failures = new List<string>();
@@ -160,6 +160,17 @@ public sealed class CpuOracleTests
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Physical memory the harness needs: every case gets its own data page above
+    /// <see cref="PageBase"/>, so the corpus size (not a fixed 6 MB) decides how
+    /// much RAM must be mapped.
+    /// </summary>
+    private static uint MemorySizeFor(int caseCount)
+    {
+        long needed = Math.Max(MemorySize, PageBase + ((long)caseCount * PageStride) + PageStride);
+        return (uint)((needed + 0xFFF) & ~0xFFFL);
     }
 
     private static string FindCorpusDirectory()

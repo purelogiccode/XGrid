@@ -225,6 +225,12 @@ Canonical priority order: `docs/development-direction.md` (summarized in
 
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+
+. **Track C - frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
+   deferred (2-3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+   The freeze covers *codegen/throughput*: interpreter **correctness** work is
+   still allowed and was done in 220 (nine instruction/decoder fixes found by the
+   independent x86 differential, no perf claim, no gate anchor moved).
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
 6. **Environment preconditions (binding, 2026-10-20).** Two machines share this
    tree (`docs/hosts.md`); only the *reference host* may record M-A. Session start
@@ -295,6 +301,25 @@ steps with the byte-identical 40,797-byte log. Suite 1738 -> 1757.
 
 **Remaining Track P gap: host audio output** (needs APU GP/EP DSP execution
 first). Track B's remaining item is B3 method coverage (zero `unsup` rows).---
+
+*Status 2026-10-21 (22nd session, decisions 220; 1762 tests green).** CPU
+correctness campaign: the independent x86 differential (`tools/cpu-oracle/`)
+widened from 333 to **629 cases** (sign-sensitive patterns for every MMX/SSE1
+packed op, saturating shift counts, x87 transcendentals/environment, 16-bit
+addressing, segment overrides, `LOCK`, string/stack edges) and found **nine
+defects**, all fixed and pinned: `PMINSW`/`PMAXSW` compared unsigned (they were
+decoded as invented `Pminuw`/`Pmaxuw`), `PSRAW`/`PSRAD` count saturation,
+`XLAT` undecoded, 16-bit `[SI]`/`[DI]` eating a bogus disp16, x87 NaN stores
+flipping the sign/dropping the payload (`.NET double.NaN` is negative), the
+FUCOM family latching IE for a quiet NaN, `FSQRT`-negative C2, and
+`MINPS`/`MAXPS`/`MINSS`/`MAXSS` returning the destination on equal operands.
+**No gate anchor moved** (accurate 1B goldens byte-identical, fast anchors exact,
+ktest log byte-identical) - the gate titles execute none of the fixed shapes.
+Deliberately out of scope: no SSE2 (the CPU is a Pentium III, so the 128-bit
+packed-int forms stay `UnsupportedInstruction`), `FSTENV`/`FSAVE` pointer
+metadata, the reference's `0/0` ZE-vs-IE class. Suite 1738 -> 1762.
+
+---
 
 # 1. Design Principles
 

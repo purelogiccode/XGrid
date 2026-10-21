@@ -143,6 +143,32 @@ public sealed class SseTests
         Assert.Equal(9f, Xmm(cpu, 0, 3));
     }
 
+    // MINPS/MAXPS return the source operand when the two values compare equal,
+    // so a ±0 pair keeps the source's sign instead of the destination's.
+    [Fact]
+    public void Maxps_EqualZeros_ReturnsSourceSign()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0x5F, 0xC1);
+        cpu.Context.WriteXmm128(0, Floats(0f, 0f, 0f, 0f).Low, Floats(0f, 0f, 0f, 0f).High);
+        cpu.Context.WriteXmm128(1, Floats(-0f, -0f, -0f, -0f).Low, Floats(-0f, -0f, -0f, -0f).High);
+
+        cpu.Step();
+
+        Assert.Equal(0x80000000u, cpu.Context.ReadXmmElement(0, 0));
+    }
+
+    [Fact]
+    public void Minps_EqualZeros_ReturnsSourceSign()
+    {
+        XboxCpu cpu = CpuHarness.Create(0x0F, 0x5D, 0xC1);
+        cpu.Context.WriteXmm128(0, Floats(-0f, -0f, -0f, -0f).Low, Floats(-0f, -0f, -0f, -0f).High);
+        cpu.Context.WriteXmm128(1, Floats(0f, 0f, 0f, 0f).Low, Floats(0f, 0f, 0f, 0f).High);
+
+        cpu.Step();
+
+        Assert.Equal(0x00000000u, cpu.Context.ReadXmmElement(0, 0));
+    }
+
     [Fact]
     public void Sqrtps_ComputesRoots()
     {

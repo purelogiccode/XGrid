@@ -1,5 +1,21 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-21 (twenty-second session, 220) - Track C stays frozen; the
+> session was CPU *correctness*, not throughput.** The independent x86
+> differential (`tools/cpu-oracle/`) widened from 333 to 629 cases and found nine
+> interpreter defects (unsigned `PMINSW`/`PMAXSW`, `PSRAW`/`PSRAD` count
+> saturation, missing `XLAT`, a 16-bit `[SI]`/`[DI]` disp16 decoder bug, x87 NaN
+> sign/payload loss, quiet-NaN compare exceptions, `FSQRT`-negative C2, SSE
+> min/max operand selection). Every fix is shared code, so fast mode inherits it;
+> the raw emitter's FPU-compare descriptor gained the quiet bit (bit 1/2) to stay
+> aligned with the interpreter. **No measured change on either title** - both 1B
+> accurate goldens are byte-identical and the fast anchors are exact (triangle
+> `B45254CA`/`7DAB63EB` 10.9 s, menu `34973510`/`F5D61C94` 32.0 s), so the engine
+> and rasterizer budget in 211 is unchanged (~17 s CPU engine on the
+> `gl+replace` menu wall, `sw` menu 32.0 s with `rasterPsh` 11.0 s). The freeze
+> covers codegen/throughput only; re-opening Track C remains an operator decision
+> (C3-z, 2-3%).
+
 > **STATUS 2026-10-21 (eighteenth session, §211) - Track C stays frozen; the
 > session was a Track E diagnosis with no engine or rasterizer change.** The
 > target was compatibility gap 10 (`xgu bumpenv_ripple` renders black, §209g).

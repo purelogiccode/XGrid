@@ -27,11 +27,7 @@ into emulator internals.
 | --- | --- |
 | **Home** | Power on/off, pause/resume, live presented-frame display, session counters, recent games, keyboard pad reference. |
 | **Library** | Recursive scan of configured folders for `.iso`, `.chd`, and `.xbe` entries; search, launch, rescan. |
-<<<<<<< HEAD
-| **Settings** | Firmware/storage paths, RAM size, renderer (software/OpenGL), JIT/performance options, NV2A fidelity switches, network backend, library folders, accent color. Persisted as JSON. |
-=======
-| **Settings** | Firmware/storage paths, RAM size, renderer (software/OpenGL), JIT/performance options, graphics fidelity switches, per-title overrides, network backend, library folders, accent color. Persisted as JSON. |
->>>>>>> pr9
+| **Settings** | Firmware/storage paths, RAM size, renderer (software/OpenGL), JIT/performance options, NV2A graphics fidelity switches, per-title overrides, network backend, library folders, accent color. Persisted as JSON. |
 | **Activity** | Filtered emulator log with copy and clear. |
 | **About** | Build/runtime information, project links, shortcuts. |
 
@@ -50,23 +46,6 @@ images on the Settings page.
 ## Display path
 
 The frontend boots the emulator in-process on a dedicated background thread. Two
-<<<<<<< HEAD
-renderers are selectable on the Settings page:
-
-- **Software** (default): the portable reference rasterizer, available everywhere.
-  The display controller's scanout in guest RAM (`TryCopyDisplayFrame`) is copied
-  into a `WriteableBitmap` on the UI thread.
-- **OpenGL** (Windows/WGL, `--gpu gl --gpu-replace` equivalent): the host GPU renders
-  every draw it honors, the per-flip readback supplies the picture, and a draw the
-  backend declines is painted by the software path with the next flip uploading the
-  composed surface (all-or-nothing - software and GPU pixels are never mixed in one
-  frame). If the GPU path is unavailable (non-Windows host, no GL 4.x, a failed
-  probe) the session logs the reason and keeps the software rasterizer for the whole
-  run. The GL context is created, used, and disposed on the emulation thread.
-
-The emulator is never advanced from the UI thread, and no emulator window is opened:
-the GPU renderer is headless and its frames are read back into Avalonia.
-=======
 renderers are available (Settings -> Emulation -> **Renderer**):
 
 - **Software rasterizer** (default) - the exact renderer, the same code path the
@@ -75,13 +54,14 @@ renderers are available (Settings -> Emulation -> **Renderer**):
   3D surface before a mode exists), so direct-framebuffer guests update too.
 - **OpenGL** - the host GPU backend in replacement mode
   (`--gpu gl --gpu-replace`), several times faster on the dashboard menu. The
-  backend renders offscreen into its own framebuffer; nothing is embedded in the
-  Avalonia visual tree and no foreign window is created. The picture is the
-  backend's per-flip readback, and a draw the backend declines is painted in
-  software and composed into the presented frame (all-or-nothing, never mixed).
-  When no GL context can be created (any non-Windows host, no driver, failed
-  probe) the session logs the reason and runs the software rasterizer instead
-  of failing.
+  backend renders offscreen into its own framebuffer (Windows/WGL); nothing is
+  embedded in the Avalonia visual tree and no foreign window is created. The
+  picture is the backend's per-flip readback, and a draw the backend declines is
+  painted in software and composed into the presented frame (all-or-nothing,
+  never mixed). When no GL context can be created (any non-Windows host, no
+  driver, failed probe) the session logs the reason and runs the software
+  rasterizer instead of failing. The context is created, used and disposed on
+  the emulation thread.
 
 Both renderers hand the same `FramePacket` (BGRA, top-down, 4:3) to the UI
 through a 100 ms dispatcher timer, which copies the rows into a `WriteableBitmap`.
@@ -90,8 +70,10 @@ WGL/OpenGL type in the UI layer.
 
 Note that the OpenGL renderer presents the last **flipped** frame, so a guest
 that only ever writes the framebuffer directly (nxdk `gamma`, `hello`) is not
-displayed on that renderer; the software renderer shows the scanout and does.
->>>>>>> pr9
+displayed on that renderer once a backend frame exists; the software renderer
+shows the scanout and does. Before the first backend frame the session reads the
+RAM scanout (`TryCopyScanoutFrameFromMemory`), so a guest that never flips is
+still visible.
 
 ## Default performance profile
 
@@ -106,9 +88,12 @@ interpreter. Toggle `Accent` to restyle the UI live.
 
 ## Current scope
 
-<<<<<<< HEAD
-- The portable software rasterizer is the default renderer; the OpenGL host-GPU
-  renderer is an opt-in Windows setting. Neither opens a separate emulator window.
+- Two renderers: the portable software rasterizer (default, exact) and the
+  opt-in host OpenGL backend (offscreen FBO + readback, Windows-only at runtime,
+  automatic software fallback elsewhere). Neither opens a separate emulator window.
+- Settings also expose the NV2A graphics-fidelity switches (`--ffp`,
+  `--tex-filter registers`), per-title overrides keyed by image path or XBE
+  title id (including a per-title renderer), and a persisted EEPROM image.
 - Programs that write the framebuffer directly (nxdk `gamma`/`hello`, `debugPrint`)
   issue no 3D draws and never flip, so on the GPU renderer they are shown from the RAM
   scanout until the backend presents its first frame; after that the backend readback
@@ -116,21 +101,8 @@ interpreter. Toggle `Accent` to restyle the UI live.
 - The keyboard mapping above drives the emulated player-1 XID pad. No physical gamepad
   binding or analog stick capture yet.
 - Audio devices are emulated by the core but host audio output is not wired to the UI.
-- Save states exist (`.xgs` save/load on the Home page, F8/F9); debugger panes and
-  per-title compatibility profiles are future work.
-=======
-- Two renderers: the portable software rasterizer (default, exact) and the
-  opt-in host OpenGL backend (offscreen FBO + readback, Windows-only at runtime,
-  automatic software fallback elsewhere). There is no separate emulator window.
-- Settings also expose the NV2A graphics-fidelity switches (`--ffp`,
-  `--tex-filter registers`), per-title overrides keyed by image path or XBE
-  title id (including a per-title renderer), and a persisted EEPROM image.
-- The keyboard mapping above drives the emulated player-1 XID pad. No physical gamepad
-  binding or analog stick capture yet.
-- Audio devices are emulated by the core but host audio output is not wired to the UI.
-- Save states are available from the Home page; debugger panes and screenshot
-  capture are future work.
->>>>>>> pr9
+- Save states exist (`.xgs` save/load on the Home page, F8/F9); debugger panes,
+  screenshot capture and per-title compatibility profiles are future work.
 - A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD image to boot.
 
 ## Keyboard
