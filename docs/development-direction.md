@@ -74,6 +74,15 @@ if it is interesting.
 
 ## 1. Priority stack (in order)
 
+**Status 2026-10-21 (19th session, §213):** compatibility gap 6 (the
+fixed-function vertex stage) is **implemented and opt-in** (`--ffp`): the two
+`xgu *_ffp` corpus rows render their scenes (2 -> 7,358 and 26 -> 7,601 colours,
+guest CPU SHAs unchanged) and the gate titles stay byte-identical except the
+dashboard's menu RAM/frame, which moves because the dashboard really issues
+22,207 fixed-function draws. The flag's default is the open operator decision;
+fixed-function *lighting* (39 lit draws per title) is the next fidelity slice.
+Track order is otherwise unchanged.
+
 1. **B — host GPU present path (lead).** Measure the split first (draw
    submission / readback / present) with `--gpu-time`; then fast-mode present
    must blit to the window/surface without a CPU readback. Readback stays only

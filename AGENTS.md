@@ -628,11 +628,87 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `compiled=` identical to the legacy leg, and triangle 10.53 → 11.66 s. The
   flag now moves **no gate anchor**: triangle RAM/CPU/frame identical, menu
   flipped frame byte-identical to `4EF1FBF6…` (only the back surface differs).
+- **Fixed-function vertex stage (§213, 2026-10-21, opt-in `--ffp`):** the NV2A
+  "cheops FF" vertex stage (transform, 1-4-matrix skinning, texgen, texture
+  matrix, color selection, eye-space fog, screen-space epilogue) transcribed from
+  `xemu 0.8.137 vsh-ff.c`, with the register decodes and
+  `FixedFunctionDraws`/`FixedFunctionLitDraws` counters (snapshot **v6**). The
+  two `xgu *_ffp` corpus rows render their scenes (2 → 7,358 and 26 → 7,601
+  colours, CPU SHAs unchanged); the triangle's 1B RAM/CPU/frame anchors are
+  byte-identical with the flag on, the dashboard's menu anchors move (22,207 of
+  its draws are fixed-function). Lit draws run the material/ambient/emission
+  chain; the enabled-light loop is filed and counted in `fixedFnLights=`.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1625 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1662 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-21 (nineteenth; compatibility gap 6 closed behind `--ffp`, §213).
+The fixed-function vertex stage exists, both `xgu *_ffp` corpus rows render their
+scenes, and the gate titles stay byte-identical.**
+
+- **What was missing, measured.** `xgu distance_fog_ffp` and `xgu spheremap_ffp`
+  set `SET_TRANSFORM_EXECUTION_MODE` to FIXED (0) and upload matrices into the XF
+  constant context instead of loading a program; XGrid ran whatever program was
+  resident, so both rendered flat backgrounds. The same mode is used by the EvoX
+  dashboard: **22,207** of its 33,632 draws per 1B steps are fixed-function (the
+  triangle: 39, all lit).
+- **Landed:** `FixedFunctionVertex` + `FixedFunctionVertexState` (transform,
+  1..4-matrix skinning with the summed-weight modes, normalize, all six texgen
+  modes per stage/channel, texture matrix, texture-matrix enable, color/specular
+  selection, eye-space fog distance, the `clampAwayZeroInf`/1-16-truncation
+  position epilogue) transcribed from `xemu 0.8.137 vsh-ff.c`; the register
+  decodes (`SET_LIGHT_CONTROL`, `SET_COLOR_MATERIAL`, `SET_LIGHTING_ENABLE`,
+  `SET_SKIN_MODE`, `SET_NORMALIZATION_ENABLE`, `SET_SPECULAR_ENABLE`,
+  `SET_LIGHT_ENABLE_MASK`, `SET_TEXGEN_S/T/R/Q`, `SET_TEXTURE_MATRIX_ENABLE`);
+  `FixedFunctionDraws`/`FixedFunctionLitDraws` diagnostics; snapshot v5 -> **v6**;
+  CLI `--ffp`; `boot-to-first-frame.ps1 -Ffp`.
+- **It is opt-in on purpose.** Mode-0 draws used to run the resident program, so
+  the flag changes the dashboard's picture (its menu background *is* that layer -
+  the scanout leg shows the clean EvoX background). Measured 1B H1: menu flag-off
+  RAM `51B56687` / CPU `F5D61C94`, 253,998,498 px, 30.9 s; flag-on RAM
+  `87BF40DA` / **CPU `F5D61C94`**, 375,569,329 px, `fixedFn=22208`, 59.0 s.
+  Triangle flag-off and flag-on **both** RAM `B45254CA` / CPU `7DAB63EB` with the
+  gate frame `A1740DE0` byte-identical (only host counters move). No oracle frame
+  exists for the dashboard's fixed-function layer, so the default stays off.
+- **Blast radius measured on the whole corpus** (13 rows, 1B, `-Corpus` vs
+  `-Corpus -Ffp`): every row's RAM moves (the boot animation is FFP-drawn) and
+  pixels go 42.0M -> 63.1M at +3.5-4 s, while **every CPU SHA and every
+  frame/scanout/display SHA stays identical**; the flag-off sweep reproduces
+  every documented row anchor (`gamma` `4EE18F78`, `hello` `4650454F`, `led`
+  `3D1F72DB`, `mesh` `D6A41BAC`, `xaudio` `B0C863C5`).
+- **Corpus rows (3B, BTFF):** `spheremap_ffp` 2 colours -> **7,358** (mean
+  (27.8, 16.3, 163.1), 4.9% black), RAM `B5747761` -> `8062CFB5`, CPU unchanged
+  `F0075C2F`; `distance_fog_ffp` 26 -> **7,601** colours (mean (129.4, 50.2,
+  37.4)), RAM `AFF08085` -> `12BAD517`, CPU unchanged `571363B4`.
+- **Lighting was the remaining slice and is now half landed, counted not faked:**
+  every lit draw seen so far runs with all lights off and specular off, so the
+  material/ambient/emission chain is implemented (below) and the enabled-light
+  loop (three light types, `reconstruct_specular_power`) stays filed in §213b,
+  counted in `fixedFnLights=`.
+- **Lighting: the material chain landed, the light loop did not.** Lit draws now
+  run the reference's ambient/emission chain (`SET_SCENE_AMBIENT_COLOR`,
+  `SET_MATERIAL_EMISSION`, `SET_MATERIAL_ALPHA`, the three-way source selections
+  and the alpha rule); a lit draw with an *enabled* light keeps the chain without
+  the light terms and increments `fixedFnLights=`. Every lit draw measured so far
+  has all lights off (`fixedFnLights=0`), so the landing is behavior-neutral on
+  every gate and corpus leg - verified: triangle 1B `--ffp` RAM/CPU/frame still
+  `B45254CA`/`7DAB63EB`/`A1740DE0`, menu `--ffp` still `87BF40DA`/`F5D61C94`
+  (frame `C5B734A2`), both `xgu *_ffp` rows identical.
+- **Gates:** accurate 1B menu `01BE5D64`/`3D2740B8` + frame `4EF1FBF6`, triangle
+  `812EA159`/`2F632483` + frame `A1740DE0`; fast menu `51B56687`/`F5D61C94`
+  (rasterPsh 10.75 s), triangle `B45254CA`/`7DAB63EB`; GL slice-1 `PASS`
+  (gl `B6116DAE`, violations 0, `BackendUnsupported=0`) and slice-2 `PASS`
+  (gl `7A860ED7`); ktest smoke **PASS 7/7** at **792,800,535** steps with the
+  40,797-byte log `CA5D3867` byte-identical; suite 1625 -> **1662** (+33 FFP,
+  +4 zeta); format clean.
+- **§214: the Z24S8 clear-word layout is a verified no-bug**, not the §211f
+  suspect: every consumer reads depth = bits 8-31 / stencil = bits 0-7, now
+  pinned by `Nv2aZetaClearLayoutTests` (synthetic stencil differential: ref
+  `0x74` draws, ref `0x00` rejected, zpass REPLACE writes the low byte and keeps
+  the depth field). The gate titles' `0xFFFFFF00` clear agrees on depth under
+  either reading, which is why only a synthetic test could settle it.
 
 **Session 2026-10-21 (eighteenth; compatibility gap 10 diagnosed, §211). The
 `bumpenv_ripple` black frame is a **state** answer, not a rasterizer bug - and the

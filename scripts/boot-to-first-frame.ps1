@@ -13,6 +13,7 @@
 # Usage (from the repo root, after dotnet build -c Release):
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample triangle
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
+#   pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-spheremap_ffp -Ffp   # fixed-function vertex stage
 #   pwsh -File scripts/boot-to-first-frame.ps1 -All
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Corpus          # every staged nxdk sample
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Iso path\to\x.iso   # any loose ISO
@@ -29,6 +30,7 @@ param(
     [ValidateSet("sw", "gl")][string]$Gpu = "sw",
     [switch]$GpuReplace,
     [switch]$NoFast,
+    [switch]$Ffp,
     [switch]$All,
     [switch]$Corpus,
     [string]$IsoPath = "",
@@ -109,7 +111,7 @@ function Resolve-Sample([string]$name) {
 function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     $spec = Resolve-Sample $name
     $expectNoFrame = $name -eq "ktest"
-    $tag = "$name-$gpu$(if ($replace) { '-replace' } else { '' })"
+    $tag = "$name-$gpu$(if ($replace) { '-replace' } else { '' })$(if ($Ffp) { '-ffp' } else { '' })"
     $log = Join-Path $OutDir "$tag.log"
     $firstBmp = Join-Path $OutDir "$tag-first.bmp"
     $lastBmp = Join-Path $OutDir "$tag-last.bmp"
@@ -124,6 +126,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
         "--eeprom", (Join-Path $FirmwareDir "eeprom.bin")
     ) + $spec.Media
     if (-not $NoFast) { $argv += @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw") }
+    if ($Ffp) { $argv += "--ffp" }
     $argv += @("--steps", "$($spec.Steps)", "--gpu", $gpu, "--frame", $lastBmp, "--frame-first", $firstBmp,
         "--frame-scanout", $scanBmp, "--frame-display", $displayBmp, "--bench", "--bench-name", $tag)
     if ($replace) { $argv += "--gpu-replace" }
@@ -191,7 +194,8 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
         command        = "dotnet $Cli boot --bios $FirmwareDir\Complex_4627.bin --mcpx $FirmwareDir\mcpx_1.0.bin " +
                          "--eeprom $FirmwareDir\eeprom.bin " + ($spec.Media -join " ") +
                          $(if (-not $NoFast) { " --jit --jit-threshold 16 --jit-spin --jit-raw" } else { "" }) +
-                         " --steps $steps --gpu $gpu" + $(if ($replace) { " --gpu-replace" } else { "" })
+                         " --steps $steps --gpu $gpu" + $(if ($replace) { " --gpu-replace" } else { "" }) +
+                         $(if ($Ffp) { " --ffp" } else { "" })
     }
 
     $record | ConvertTo-Json | Set-Content $json

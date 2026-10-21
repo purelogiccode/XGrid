@@ -197,6 +197,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodTransformConstantBase = 0x0B80u;
     private const uint MethodTransformConstantEnd = 0x0BFCu;
     private const uint MethodTransformExecutionMode = 0x1E94u;
+    private const uint MethodLightControl = 0x0294u;
+    private const uint MethodColorMaterial = 0x0298u;
+    private const uint MethodMaterialEmission = 0x03A8u;
+    private const uint MethodMaterialEmissionEnd = 0x03B0u;
+    private const uint MethodMaterialAlpha = 0x03B4u;
+    private const uint MethodSceneAmbient = 0x0A10u;
+    private const uint MethodSceneAmbientEnd = 0x0A18u;
+    private const uint MethodLightingEnable = 0x0314u;
+    private const uint MethodSkinMode = 0x0328u;
+    private const uint MethodNormalizationEnable = 0x03A4u;
+    private const uint MethodSpecularEnable = 0x03B8u;
+    private const uint MethodLightEnableMask = 0x03BCu;
+    private const uint MethodTexGenBase = 0x03C0u;
+    private const uint MethodTexGenEnd = 0x03CCu;
+    private const uint TexGenStageStride = 0x10u;
+    private const uint MethodTextureMatrixEnable = 0x0420u;
     private const uint MethodTransformProgramCxtWriteEn = 0x1E98u;
     private const uint MethodTransformProgramLoad = 0x1E9Cu;
     private const uint MethodTransformProgramStart = 0x1EA0u;
@@ -295,6 +311,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TransformProgramStartMask = 0xFFu;
     private const uint TransformExecutionModeMask = 3u;
     private const uint TransformModeProgrammable = 2u;
+    private const uint TransformModeFixed = 0u;
+    private const uint SkinModeMask = 7u;
     private const int MaxInlineElements = 65536;
     private const int MaxDrawArrayRanges = 1250;
     private const int VertexAttributeCount = 16;
@@ -526,6 +544,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
+    private readonly FixedFunctionVertexState _fixedFunction = new();
     private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
     private readonly List<float> _inlineVertices = new();
@@ -795,6 +814,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public bool TextureFilterRegisters { get; set; }
 
     /// <summary>
+    /// Gets or sets whether transform execution mode FIXED (0) runs the
+    /// fixed-function vertex stage (<see cref="FixedFunctionVertex"/>) instead
+    /// of the last-loaded vertex program.
+    /// </summary>
+    /// <remarks>
+    /// Opt-in: mode-0 draws used to run whatever vertex program happened to be
+    /// resident, so switching them to the fixed-function stage changes the
+    /// picture on titles that mix both paths (the EvoX dashboard issues 22,207
+    /// fixed-function draws per 1B steps). The stage itself is a transcription
+    /// of the reference (<c>vsh-ff.c</c>); it is gated because no reference
+    /// frame exists for those dashboard draws, so the default path has to stay
+    /// byte-identical for the gate anchors.
+    /// </remarks>
+    public bool FixedFunctionTransform { get; set; }
+
+    /// <summary>
     /// Gets the four TEXFILTER words as the sampler reads them (MIN in bits
     /// 16-21, MAG in bits 24-27, the convolution kernel in bits 13-15; 1 =
     /// nearest, 2 = linear, MIN 7 = CONVOLUTION_2D_LOD0). The kernel field is
@@ -927,6 +962,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the number of executed draws whose transform execution mode was not programmable. Diagnostics.</summary>
     public ulong NonProgrammableModeDraws { get; private set; }
+
+    /// <summary>Gets the number of executed draws that ran the fixed-function vertex stage. Diagnostics.</summary>
+    public ulong FixedFunctionDraws { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fixed-function draws that had <c>SET_LIGHTING_ENABLE</c>
+    /// set. Those run the reference's material/ambient/emission chain.
+    /// </summary>
+    public ulong FixedFunctionLitDraws { get; private set; }
+
+    /// <summary>
+    /// Gets the number of lit fixed-function draws that also enabled at least one
+    /// light (<c>SET_LIGHT_ENABLE_MASK</c> != 0). The enabled-light loop is not
+    /// implemented, so these draws keep the material chain without the light
+    /// terms; the counter keeps that documented gap measurable.
+    /// </summary>
+    public ulong FixedFunctionLightedDraws { get; private set; }
 
     /// <summary>Gets the current color surface offset in guest memory. Diagnostics.</summary>
     public uint PresentedColorOffset { get; private set; }
@@ -1199,6 +1251,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _transformProgramStart = 0;
         _transformExecutionMode = 0;
         _transformProgramCxtWriteEn = 0;
+        _fixedFunction.Reset();
         TransformConstantLoadDebug = 0;
         _beginMode = 0;
         DrawsExecuted = 0;
@@ -1212,6 +1265,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ZclipCulledPixels = 0;
         SkippedDraws = 0;
         NonProgrammableModeDraws = 0;
+        FixedFunctionDraws = 0;
+        FixedFunctionLitDraws = 0;
+        FixedFunctionLightedDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
         _methodStream.Clear();
@@ -1335,6 +1391,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_transformProgramStart);
         writer.Write(_transformExecutionMode);
         writer.Write(_transformProgramCxtWriteEn);
+        _fixedFunction.Write(writer);
         writer.Write(TransformProgramLoadDebug);
         writer.Write(TransformConstantLoadDebug);
         writer.Write(_beginMode);
@@ -1490,6 +1547,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(ZclipCulledPixels);
         writer.Write(SkippedDraws);
         writer.Write(NonProgrammableModeDraws);
+        writer.Write(FixedFunctionDraws);
+        writer.Write(FixedFunctionLitDraws);
+        writer.Write(FixedFunctionLightedDraws);
         writer.Write(SemaphoreReleases);
         writer.Write(SemaphoreDebug);
         writer.Write(PgraphEnabledDebug);
@@ -1628,6 +1688,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _transformProgramStart = reader.ReadUInt32();
         _transformExecutionMode = reader.ReadUInt32();
         _transformProgramCxtWriteEn = reader.ReadUInt32();
+        _fixedFunction.Read(reader);
         TransformProgramLoadDebug = reader.ReadUInt32();
         TransformConstantLoadDebug = reader.ReadUInt32();
         _beginMode = reader.ReadUInt32();
@@ -1817,6 +1878,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ZclipCulledPixels = reader.ReadUInt64();
         SkippedDraws = reader.ReadUInt64();
         NonProgrammableModeDraws = reader.ReadUInt64();
+        FixedFunctionDraws = reader.ReadUInt64();
+        FixedFunctionLitDraws = reader.ReadUInt64();
+        FixedFunctionLightedDraws = reader.ReadUInt64();
         SemaphoreReleases = reader.ReadInt32();
         SemaphoreDebug = reader.ReadString();
         PgraphEnabledDebug = reader.ReadUInt32();
@@ -1857,7 +1921,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 5;
+    private const int Nv2ASnapshotVersion = 6;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -3251,6 +3315,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case MethodTransformExecutionMode:
                 _transformExecutionMode = parameter & TransformExecutionModeMask;
                 break;
+            case MethodLightControl:
+                _fixedFunction.SetLightControl(parameter);
+                break;
+            case MethodMaterialAlpha:
+                _fixedFunction.MaterialAlpha = BitConverter.UInt32BitsToSingle(parameter);
+                break;
+            case MethodColorMaterial:
+                _fixedFunction.SetColorMaterial(parameter);
+                break;
+            case MethodLightingEnable:
+                _fixedFunction.Lighting = (parameter & 1u) != 0;
+                break;
+            case MethodSkinMode:
+                _fixedFunction.Skinning = (int)(parameter & SkinModeMask);
+                break;
+            case MethodNormalizationEnable:
+                _fixedFunction.Normalization = (parameter & 1u) != 0;
+                break;
+            case MethodSpecularEnable:
+                _fixedFunction.SpecularEnable = (parameter & 1u) != 0;
+                break;
+            case MethodLightEnableMask:
+                _fixedFunction.LightEnableMask = parameter;
+                break;
             case MethodTransformProgramCxtWriteEn:
                 _transformProgramCxtWriteEn = parameter;
                 break;
@@ -3289,6 +3377,33 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             ((method - MethodTransformConstantBase) & 3u) == 0)
         {
             WriteTransformConstant((method - MethodTransformConstantBase) / 4, parameter);
+        }
+
+        if (method >= MethodMaterialEmission && method <= MethodMaterialEmissionEnd &&
+            ((method - MethodMaterialEmission) & 3u) == 0)
+        {
+            _fixedFunction.MaterialEmission[(method - MethodMaterialEmission) / 4] =
+                BitConverter.UInt32BitsToSingle(parameter);
+        }
+
+        if (method >= MethodSceneAmbient && method <= MethodSceneAmbientEnd &&
+            ((method - MethodSceneAmbient) & 3u) == 0)
+        {
+            _fixedFunction.SceneAmbient[(method - MethodSceneAmbient) / 4] =
+                BitConverter.UInt32BitsToSingle(parameter);
+        }
+
+        if (method >= MethodTexGenBase && method <= MethodTexGenEnd + (TexGenStageStride * 3u) &&
+            ((method - MethodTexGenBase) & 3u) == 0)
+        {
+            uint index = (method - MethodTexGenBase) / 4u;
+            _fixedFunction.SetTexGen((int)(index / 4u), (int)(index % 4u), parameter);
+        }
+
+        if (method >= MethodTextureMatrixEnable && method < MethodTextureMatrixEnable + (uint)MaxTextureSlots)
+        {
+            _fixedFunction.SetTextureMatrixEnable(
+                (int)(method - MethodTextureMatrixEnable), parameter);
         }
 
         if (method >= MethodCompositeMatrix && method <= MethodCompositeMatrixEnd)
@@ -4513,7 +4628,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void FlushProgramDraw(VertexFetchMode mode)
     {
-        if (_memory is null || TransformProgramLoadDebug == 0)
+        // Transform execution mode FIXED (0) runs the fixed-function vertex
+        // stage instead of a vertex program: the guest uploads matrices into
+        // the XF constant context instead of loading a program, so no program
+        // needs to be resident (reference pgraph.c/glsl/vsh.c). Opt-in
+        // (FixedFunctionTransform): mode-0 draws used to run the resident
+        // program, so enabling this changes what those draws render.
+        bool fixedFunction = FixedFunctionTransform && _transformExecutionMode == TransformModeFixed;
+        if (_memory is null || (!fixedFunction && TransformProgramLoadDebug == 0))
         {
             SkippedDraws++;
             return;
@@ -4521,14 +4643,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         int programStart = ActiveTransformProgramStart();
         int programLength = ActiveTransformProgramLength(programStart);
-        if (programLength == 0)
+        if (!fixedFunction && programLength == 0)
         {
             SkippedDraws++;
             return;
         }
 
-        var program = new uint[programLength][];
-        Array.Copy(_transformProgram, programStart, program, 0, programLength);
+        uint[][] program = Array.Empty<uint[]>();
+        if (!fixedFunction)
+        {
+            program = new uint[programLength][];
+            Array.Copy(_transformProgram, programStart, program, 0, programLength);
+        }
 
         uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
         uint pitch = _surfacePitch & 0xFFFFu;
@@ -4603,6 +4729,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (_transformExecutionMode != TransformModeProgrammable)
         {
             NonProgrammableModeDraws++;
+            if (fixedFunction)
+            {
+                FixedFunctionDraws++;
+                if (_fixedFunction.Lighting)
+                {
+                    FixedFunctionLitDraws++;
+                    if (_fixedFunction.LightEnableMask != 0)
+                    {
+                        FixedFunctionLightedDraws++;
+                    }
+                }
+            }
         }
 
         bool colorWrite = (_colorMask & ColorMaskAll) != 0;
@@ -4696,7 +4834,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
             }
 
-            VshProgram.Execute(program, programLength, constants, inputs, outputs, out bool fogWritten);
+            bool fogWritten;
+            if (fixedFunction)
+            {
+                // The fixed-function stage owns the whole vertex, including
+                // the eye-space fog distance (oFog.x), so it is always written.
+                FixedFunctionVertex.Execute(
+                    _fixedFunction, constants, inputs, outputs, _fogEnable, (int)_fogGenMode);
+                fogWritten = true;
+            }
+            else
+            {
+                VshProgram.Execute(program, programLength, constants, inputs, outputs, out fogWritten);
+            }
 
             // Device-depth normalization (xemu clipRange.y): Xbox shaders emit
             // screen-space Z in depth-buffer units (the driver bakes the
