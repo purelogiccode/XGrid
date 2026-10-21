@@ -12639,3 +12639,37 @@ reference and reports the best; `scripts/frame-stat.py` prints the per-frame
 mean/histogram. `bump_cubemap_reflect` stays far from its reference at every
 phase tested (`|dmean|` ~60/43/12 at 3.0B/3.6B/4.2B), so its gap is real and is
 now the only remaining xgu oracle failure.
+
+### 208g Cube maps: the three gates, and why the partial path was reverted
+
+207h tried to make `xgu bump_cubemap_reflect` (texture format 0x3A,
+`SZ_A8B8G8R8`) sample by widening `IsSupportedSwizzledFormat` to the SZ twins,
+saw zero pixel change, and concluded there was no oracle for cube direction
+mapping. The zero-pixel result was a measurement artifact: **cube sampling is
+behind three gates and 207h moved one.**
+
+1. `IsSupportedSwizzledFormat` (the whitelist) - moved by 207h.
+2. `SamplerPlan.CubeBytes` - `TrySampleTextureCube` returns false when it is 0,
+   and the switch only knew 0x05/0x06. With the whitelist widened, the sampler
+   still bailed at `bytes == 0`, which returns *before* the fallback counter, so
+   the counters dropped to 0 while the texel stayed NONE.
+3. `TryDecodeSwizzledTexel` - knew only 0x06 (A8R8G8B8) and 0x05 (R5G6B5); a
+   0x3A texel returned false, i.e. NONE again.
+
+With all three enabled together the cube is genuinely sampled
+(`3A=5709991/0 fallbacks=0`) and the frame moves a long way toward the reference:
+`|dmean|` (59.6, 43.3, 11.5) -> **(47.2, 14.1, 7.2)** at 3.6B, green within
+14/255 and blue within 7/255. The image is still visibly wrong, though - the
+reflection is striped and shifted (`wt-data/alpha/bump-fix2.png`), i.e. the
+error is now the **direction/reflection chain** (the stage 3
+DOT_REFLECT_SPECULAR math fed by the stage 1/2 normal-map dot products), not the
+format gate.
+
+**Not shipped.** A partially correct cube map renders garbage in place of a flat
+shape, which is worse evidence than the documented gap; the change was reverted
+and the frame reproduces the pre-experiment pixels byte for byte. The three-gate
+list above is the durable result, and it is why the whitelist comment now warns
+that widening it alone is unobservable. Next attempt: start from all three
+enabled, compare the striped frame against the reference, and fix the reflection
+vector (face selection, s/t orientation, and the `DOT_RFLCT_SPEC` eye vector
+from texture-coord `.w`) before shipping.

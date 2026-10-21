@@ -152,12 +152,16 @@ is `bump_cubemap_reflect`: 2 colours at 3B (a solid green shape on black) and
 `|dmean|` ~60/43/12 against its reference at 3.0B/3.6B/4.2B, while its texture
 format decode is fixed (§207h). It samples **`0x3A` cube maps**, which
 `IsSupportedSwizzledFormat` rejects, so 896,067 samples count a texture-mode
-fallback - but extending the whitelist changed no pixels, which is why it was
-reverted. The open work is **cube direction mapping** for those formats, and it
-needs an oracle (the reference screenshot + `scripts/frame-oracle.py`).
-Acceptance: the frame moves toward the reference at some phase, both gate
-frames stay byte-identical, and the fallback counter reaches 0 with pixels
-changing (not just counters).
+fallback. **Start from §208g**: cube sampling has *three* gates
+(`IsSupportedSwizzledFormat`, `SamplerPlan.CubeBytes`, `TryDecodeSwizzledTexel`)
+and 207h only moved the first, which is why "no pixels changed". With all three
+on, the geometry samples and `|dmean|` drops from (59.6, 43.3, 11.5) to
+(47.2, 14.1, 7.2) - but the reflection is striped/shifted, so the remaining bug
+is the DOT_REFLECT_SPECULAR direction chain (face selection, s/t orientation,
+the eye vector from texture-coord `.w`). Oracle: the reference screenshot +
+`scripts/frame-oracle.py`. Acceptance: the reflection is visibly a reflection at
+some phase, both gate frames stay byte-identical, and `fallbacks` reaches 0 with
+pixels changing (not just counters).
 
 ### Option B (Track P, product): host audio sink (APU output)
 

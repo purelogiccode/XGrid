@@ -139,12 +139,15 @@ This sample samples texture format **`0x3A`** (`SZ_A8B8G8R8`) for a cube map.
 `0x05`/`0x06`, so all 896,067 samples counted a texture-mode fallback and the
 stage contributed nothing: the frame is a solid green shape on black.
 
-**Measured, not assumed:** extending the whitelist to the SZ byte-order variants
-made the fallbacks go to 0 and changed the frame **not at all** (identical last
-frame `5174B1EB`, identical RAM). That change was therefore reverted - without
-an oracle for cube direction mapping it is an unverified semantic change. The
-open work is cube addressing for those formats, not the format decode (the
-decode itself is fixed, see the texture-format gap below).
+**Measured, and now correctly diagnosed (2026-10-21, §208g):** extending the
+whitelist alone made the fallbacks go to 0 and changed the frame not at all -
+because cube sampling is gated by **three** things (`IsSupportedSwizzledFormat`,
+`SamplerPlan.CubeBytes` and `TryDecodeSwizzledTexel`), and 207h moved one. With
+all three enabled the cube is sampled and the frame moves from `|dmean|`
+(59.6, 43.3, 11.5) to (47.2, 14.1, 7.2) against the reference - but the
+reflection is striped and shifted, so the remaining error is the direction
+chain, not the format. The partial path was reverted (a wrong cube is worse than
+a documented gap); the diagnosis is in decisions §208g.
 
 ### 4. Byte-order texture formats were unsupported (fixed 2026-10-20)
 
