@@ -13054,3 +13054,174 @@ decision required, and there is no oracle yet for the menu).
   compiled tent path is pinned by the compiled-fill differential (frame +
   counters + `compiled=` counters), not by a blended colour.
 
+
+## 211 Gap 10 diagnosed: `xgu bumpenv_ripple` renders black (2026-10-21, eighteenth session)
+
+**Trigger.** `next-session.md` §2 left one undiagnosed row: `xgu bumpenv_ripple`
+presents a single black colour at 5.0-5.6B (`compatibility.md` gap 10) while the
+xgu reference screenshot shows the logo over a rippling reflection. The §209g
+format fix (`0x28` G8B8, 3.92M samples, misses 3.92M -> 0) was necessary but not
+sufficient. This session traced the whole chain from the presented surface back
+to the guest's per-frame method stream. **Nothing was changed in the renderer:
+the row is a state/composition finding, not a rasterizer bug** (the one code
+change is §212, unrelated to this row).
+
+**Repro** (gate media set: HDD + DVD, plain run - no `--frame-first`, so this
+leg's SHAs are its own):
+
+```powershell
+dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot `
+  --bios data\xemu-0.8.136-windows-x86_64\Complex_4627.bin `
+  --mcpx data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin `
+  --eeprom data\xemu-0.8.136-windows-x86_64\eeprom.bin `
+  --hdd wt-data\chain-199l\hdd.qcow2 --dvd data\test-samples\corpus\xgu-bumpenv_ripple.iso `
+  --jit --jit-threshold 16 --jit-spin --jit-raw --steps 5000000000 --gpu sw `
+  --frame wt-data\bump-last.bmp --bench --gpu-time
+```
+
+`BENCH steps=5000000000 wall=12.64 msps=395.55 ramSha256=AA10223C… cpuSha256=1AB9F002…`;
+`draws executed=3036 skipped=0 pixels=41995882 textured=31482463 clears=225
+blended=390 depth=9673672 zclip=0 zclipCull=10602 culled=41399 frames=216
+stalls=34 programLoad=18 constLoad=110`; the exported frame is 1 colour, 100%
+black. (The `BTFF` row in `compatibility.md` is a `--frame-first` leg, so its
+`7A11CBEF`/`5B0665B2` pair is a different flag set - §209e's anchor rule.)
+
+### 211a Every presented surface is uniformly opaque black
+
+A flip-time probe over the presented buffer (`nonBlack` = pixels with a nonzero
+RGB) on all 216 flips: `nonBlack=0/307200`, one distinct word, on every one of
+the three cycling buffers (`0x3AA8000`, `0x3BD4000`, `0x3D00000`). This is not a
+capture or scanout artefact - the software surfaces themselves are `FF000000`
+(the colour clear) with nothing drawn over them.
+
+### 211b Per frame the app issues exactly two draws and they are black by state
+
+The probe also prints `DrawnPixels` per flip: it is frozen from flip 35 onward
+while `draws` grows by 2 and `clears` by 1 per flip, i.e. the per-frame work is
+one colour clear, one zeta clear, **two** `Arrays` draws of one 4-vertex range
+(`begin=6`, quads) with vertex program `0+18`, and one flip. Their combiner
+state is identical for both:
+
+| field | value | meaning |
+|---|---|---|
+| `CONTROL` | `00000001` | one general stage |
+| stage 0 rgb ICW | `C9200000` | A = `T1`, B = zero-inverted(1) |
+| stage 0 rgb OCW | `00000040` | AB destination = `V0` (CD discarded) |
+| `FINAL0` | `00000004` | D = `V0` (A = B = C = zero) |
+| `FINAL1` | `00001400` | G = `V0.a`, no flags |
+
+So the fragment colour is the vertex diffuse register, which stage 0 *overwrites
+with the stage-1 texel* (`V0 = T1`). Two independent things then make it black:
+
+1. **Draw A (`m0100`)**: slot 0 is enabled (`0x28` G8B8 at `0x37FC000`) and slot 1
+   is enabled (`0x3A` at `0x387C000`), but **stage 1's texture mode is `NONE`**,
+   so `ResolveTexel` skips it and `T1` keeps its reset value `(0,0,0,1)` - this
+   draw is black by construction, in the reference too (`vec4 t1 = vec4(0.0)`).
+2. **Draw B (`m1600`)**: stage 0 = `PROJECT2D` on the `0x28` derivative map,
+   stage 1 = `BUMPENVMAP` on the `0x3A` logo (512x512 from TEXFMT
+   `0x09913A2A` BASE_SIZE_U/V = 9/9, `TEXADDRESS` `0x00030303` = clamp). The
+   probe's bump math is faithful: `dsdt = (sign3(t0.b), sign3(t0.g)) = (0, 0.165)`
+   off a derivative texel of `(0, 0.082, 0, 0.082)`, matrix `(0.062, 0, 0.062, 0)`,
+   offset `(0.0103, 0)`; at the quad's right edge the perturbed coordinate is
+   `(1.0054, 0.9938)`, which clamps to the texture's right-edge texel - and that
+   texel is `FF000000`. The sampled `t1` was `(0,0,0,1)` at every probed
+   fragment, i.e. black texels, not a failed sample (`miss=0`).
+
+Also note the vertex program itself writes **only** oPos and oT0/oT1: no oD0 or
+oD1 (`VSH 0D/0E` write `o0`, `0F-11` write `o9/o10`), so the interpolated diffuse
+is the shader's initial `(0,0,0,1)` - the same default xemu declares
+(`vsh.c:193`) - which matters only because the final combiner reads `V0`.
+
+### 211c The zeta clear is nearer than every fragment, and that is what hides the geometry
+
+Depth is `LEQUAL` (`DepthTestEnable=1`, func 3) and each frame clears colour *and*
+zeta (`CLEAR_SURFACE` parameter `0xF3`). The clear word is **`0x00711174`**
+(depth 0.4414 in the low-24-bit layout or 0x7111/0xFFFFFF = 0.0017 under the
+reference's `>> 8` layout - nearer either way), while every fragment sits at
+z ~ 0.5 (draw A exactly `0.5000`; draw B `0.5018` at the near corner down to
+`-0.6868` at the far ones). Nothing can pass, so the frame stays at the black
+clear. Two probes prove it:
+
+| probe | frame | verdict |
+|---|---|---|
+| baseline | 1 colour, 100% black | - |
+| zeta clear forced to a far word (`XGRID_DEPTH_CLEAR`) | **406 colours, 96.9% black, mean (5.5, 4.2, 2.3)** | identical |
+| depth test disabled (`XGRID_NO_DEPTH`) | **406 colours, 96.9% black, mean (5.5, 4.2, 2.3)** | identical |
+
+What appears once the depth gate is out is the plane's *screen footprint* (a
+wedge in the lower half, orange bands from the logo texture) - not the
+reference's full-screen reflection. So the depth state is the gate that hides the
+geometry, and something else (the app's own scene state, or the plane's
+projected extent) is why the footprint is a wedge. Both probes were removed
+before committing.
+
+### 211d Culling discards one triangle of each per-frame quad
+
+Each per-frame draw culls exactly one of its two triangles, and the app flips
+`SET_FRONT_FACE` between the two draws (draw A `cull=True:1:cw`, draw B
+`cull=True:1:ccw`). Forcing culling off raises the run's rasterized pixels
+`41,995,882 -> 73,474,921` (+75%) and still leaves the frame black, so culling is
+a second, independent symptom - the cull-face decision is worth a dedicated
+per-draw differential (area sign vs `SET_FRONT_FACE`) before anyone touches it.
+The gate titles are cull-neutral (§206g: every CPU SHA and both gate frames
+byte-identical), so they cannot catch a winding error.
+
+### 211e What this row is not
+
+- **Not the texture format.** `0x28` samples 3,917,732/3,917,732 with zero
+  misses (§209g); the decode is right, the texels are black.
+- **Not the bump direction chain.** The probe's `dsdt`, matrix and sample
+  coordinates match `psh.c`'s `sign3`/`bumpMat`/`texture(pT.xy + dsdt)` exactly.
+- **Not a malformed pushbuffer.** The same clear-value sequence
+  (`0x1D8C` `0x711158/5C/50/54/70/74/78/7C`, `0x1D90`
+  `0x3AA8003/0xB03D/0x12BFFF`, `NO_OPERATION 0xB2A`) appears in
+  `bump_cubemap_reflect`, which renders with content - it is this framework's
+  normal driver output, not a decode error.
+
+### 211f Filed with citations (not fixed - each needs its own differential)
+
+1. **Z24S8 clear-word layout.** The reference takes depth = `word >> 8` and
+   stencil = `word & 0xFF` (`pgraph_get_clear_depth_stencil_value`, pgraph.c:3104);
+   XGrid masks depth to the low 24 bits and reads the stencil from the top byte.
+   The gate titles clear with `0xFFFFFF00`, where both layouts agree on the
+   *stored* word but disagree on the stencil (`0xFF` vs `0x00`), so a fix must
+   show the stencil compare explicitly (no corpus title stencil-tests today).
+2. **Cull winding on these quads** (§211d): needs a per-draw area-sign
+   differential against `SET_FRONT_FACE`/`SET_CULL_FACE`; the corpus is the only
+   place that exercises it.
+3. **What the reference's full-screen reflection needs.** The remaining unknown
+   is the app's own state at this phase (camera/plane), not a decode; settling it
+   needs the second-emulator frame oracle (gap 9).
+
+## 212 The convolution tap step on linear (LU_IMAGE) stages
+
+`SampleConvolved` added `1 / Width` in *normalized* units on every stage. That is
+one texel for a swizzled stage, whose coordinates are normalized, but a linear
+format's coordinate is a texel index (`TrySampleTexture`: `plan.Linear ? u : u * Width`),
+so the step was `1/Width` of a texel and all nine taps landed on the same texel:
+a 1-2-1 convolution of a single bright texel stayed at full intensity instead of
+dropping to the centre weight.
+
+The reference normalizes first and then offsets by one texel
+(`psh.c apply_convolution_filter`: `norm%d(pT%d.xyw) + texCoordDelta / textureSize(texSamp%d, 0)`),
+which in this sampler's texel-unit space for a linear stage is exactly `1.0`.
+
+Fix: `du = plan.Linear ? invW : invW / Width` (same for V); the swizzled path is
+unchanged bit-for-bit.
+
+Test: `Nv2aExoticTexModesTests.TextureFilterRegisters_ConvolutionOffsetsOneTexelOnLinearTexture`
+plus a linear harness (`RenderFilteredLinearSample`: 4x4 `LU_IMAGE_A8R8G8B8`,
+row-major at `0x4000`, extent from TEXIMAGERECT, texel-unit coordinates). With an
+impulse at texel (1,1) sampled at (1.5, 1.5): centre red **195 pre-fix -> 64
+post-fix** (= 255 * 4/16, the centre weight), while a kernel field next to MIN 1
+still reads the sharp texel (255) on both builds.
+
+Reachability: only under `--tex-filter registers` with MIN =
+`CONVOLUTION_2D_LOD0` (7); no gate title programs MIN 7, so no anchor can move.
+Verified on the landing commit: accurate 1B menu `01BE5D64…`/`3D2740B8…` + frame
+`4EF1FBF6…`, accurate triangle `812EA159…`/`2F632483…` + frame `A1740DE0…`;
+GL policy frames `B6116DAE…` (menu) and `7A860ED7…` (triangle) with
+`violations=0 maxDelta=1 BackendUnsupported=0`; fast 1B menu
+`51B56687…`/`F5D61C94…` (31.16 s, `rasterPsh` 10.84 s) and triangle
+`B45254CA…`/`7DAB63EB…` (10.49 s); ktest smoke PASS 7/7 at 792,800,535 steps
+with the 40,797-byte suite log `CA5D3867…`; suite 1624 -> **1625**.

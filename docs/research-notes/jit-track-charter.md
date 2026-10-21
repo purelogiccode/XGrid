@@ -1,5 +1,19 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-21 (eighteenth session, §211) - Track C stays frozen; the
+> session was a Track E diagnosis with no engine or rasterizer change.** The
+> target was compatibility gap 10 (`xgu bumpenv_ripple` renders black, §209g).
+> It is now diagnosed as a *state* answer, not a renderer bug: every presented
+> surface is the colour clear, the two per-frame quads resolve their colour from
+> `T1` (`V0 = T1`, final `D = V0`; stage 1 is `NONE` in one draw, the bump draw
+> samples the logo's black edge), and the zeta clear (`0x00711174`, `LEQUAL`) is
+> nearer than every fragment, so nothing passes (§211a-211e). The only landed
+> change is the convolution tap step on linear (LU_IMAGE) stages inside the
+> opt-in `--tex-filter` path (§211b), which no gate title reaches. Engine and
+> rasterizer numbers are unchanged from §210 (menu `gl+replace` ~17 s CPU engine,
+> menu `sw` 31.2 s with `rasterPsh` 10.84 s). Re-opening Track C remains an
+> operator decision (C3-z, 2-3%).
+
 > **STATUS 2026-10-21 (seventeenth session, §210) - Track C stays frozen; the
 > session was Track B/D + fidelity, no engine change.** The lead item was
 > `next-session.md` Option A (teach the compiled fills the bilinear tap), and

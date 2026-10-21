@@ -78,7 +78,7 @@ anchor; on a double-buffered title the two differ by one buffer
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
-| **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (216 flips) | 3,038 draws / 9.7M depth px; 41,401 culled | n/a | **renders black at 5.0-5.6B** - the documented `|dmean|` (21.0, 19.0, 9.7) equals the reference's mean, i.e. it was measured on an all-black frame; the row was never a match. Format `0x28` (G8B8) was a real 3.9M-sample miss (fixed 2026-10-21, §209g) but the logo still does not appear - **new gap 10** (bump-env stage) | RAM `7A11CBEF` / CPU `5B0665B2` at 5B; last frame `18C7CC83` (the black frame, not the scene) | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
+| **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (216 flips) | 3,036 draws / 9.7M depth px; 41,399 culled | n/a | **renders black at 5.0-5.6B** - diagnosed 2026-10-21 (§211): every presented surface is the colour clear; the two per-frame quads resolve their colour from `T1` (stage 1 `NONE` in one draw by construction, black texels in the bump draw) and the zeta clear (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes. Forcing the clear far or the depth test off gives the same 406-colour wedge instead of the reference's full-screen reflection. Format `0x28` was the §209g fix; gap 10 stays open for the app-state question | RAM `7A11CBEF` / CPU `5B0665B2` at 5B (BTFF leg); plain leg RAM `AA10223C` / CPU `1AB9F002`; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
 | **xgu `swizzle_texture`** (swizzled 2D texture) | xgu repo, built 2026-10-21 | yes | flips yes, own scene at 3B | 87 flips / 2,725 draws / 45.1M px / 1,620 colours, full coverage; samples `0x3A` 3.14M with 0 misses | n/a | no reference screenshot in the xgu repo, so no oracle row; exercises the swizzled byte-order path (the §207h/§209 formats) | RAM `E2EB41ED` / CPU `B887B3C6`; last frame `FE32FB3C`, scanout/display `869CB402` at 3B | `-Sample xgu-swizzle_texture -Steps 3000000000` |
 | **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat orange** | 2,730 draws, **26 colours**, 112,259 culled, `programLoad=12` | n/a | **`XGU_FIXED` transform is not implemented** - see gap 6 | RAM `AFF08085` / CPU `571363B4` at 3B | `-Sample xgu-distance_fog_ffp -Steps 3000000000` |
 | **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes, scene **flat** | 2,728 draws, 93,003 culled, `programLoad=12` | n/a | same FFP gap 6 | RAM `B5747761` / CPU `F0075C2F` at 3B | `-Sample xgu-spheremap_ffp -Steps 3000000000` |
@@ -272,22 +272,53 @@ not produced a file yet (the redirected-stdio read loop is the open problem);
 xemu's own **F12** screenshot (`SaveScreenshot` into
 `general.screenshot_dir`) is the alternative route.
 
-### 10. `xgu bumpenv_ripple` renders a black frame (§209g)
+### 10. `xgu bumpenv_ripple` renders a black frame (§209g, diagnosed §211)
 
-At 5.0, 5.2, 5.4 and 5.6B the presented frame is a single black colour (216
-flips, 3,038 draws, 9.7M depth-tested pixels), while the reference screenshot
-shows the XGU logo above a rippling bump-env reflection. The sample binds
-`0x28` (`SZ_G8B8`) as its derivative map on stage 0 and `0x3A` as the logo on
-stage 1 (BUMPENVMAP with a bump matrix/scale/offset).
+At 5.0-5.6B the presented frame is a single black colour (216 flips, 3,036 draws,
+9.7M depth-tested pixels), while the reference screenshot shows the XGU logo
+above a rippling bump-env reflection. The sample binds `0x28` (`SZ_G8B8`) as its
+derivative map on stage 0 and `0x3A` as the logo on stage 1 (BUMPENVMAP with a
+bump matrix/scale/offset).
 
 `0x28` was an unsupported format: 3,917,732 samples per run and **every one
 missed**. It is now decoded like the reference (`GL_RG8` sampled with the
 `(R, G, R, G)` swizzle: r/b = low byte, g/a = high byte; the `0x17` LU twin
-shares the decode, `0x29` is `(G, R, R, G)`), and the miss count is zero - but
-the frame is still black, so a second cause remains somewhere in the stage-0/
-stage-1 bump-env path (or the vertex program/combiner for this sample).
-Not diagnosed; the row's oracle delta had been measured against the black
-frame, so its "matches the reference mean" reading was an artifact.
+shares the decode, `0x29` is `(G, R, R, G)`), and the miss count is zero - but the
+frame is still black.
+
+**Diagnosed 2026-10-21 (decisions §211).** The chain from the presented surface
+back to the guest's method stream, measured with temporary flip/draw/fragment
+probes (removed before committing):
+
+- **No surface ever has a pixel.** All 216 presented buffers are uniformly
+  `FF000000` - the colour clear, nothing drawn over it.
+- **Per frame the app issues two quads.** Each is one 4-vertex `Arrays` draw with
+  vertex program `0+18`, whose only outputs are oPos and oT0/oT1 (**no oD0**), and
+  each uses the same one-stage combiner: stage 0 `V0 = T1`, final combiner
+  `D = V0`. So the visible colour *is* the stage-1 texel.
+- **Draw A (`m0100`) is black by construction**: stage 1's mode is `NONE`, so
+  `T1` keeps the reset `(0,0,0,1)` - the reference does the same
+  (`vec4 t1 = vec4(0.0)`).
+- **Draw B (`m1600`) samples black texels**: the bump math is faithful
+  (`dsdt = (sign3(t0.b), sign3(t0.g))` off the `0x28` map, matrix
+  `(0.062, 0, 0.062, 0)`), but at the quad's right edge the perturbed coordinate
+  `(1.0054, 0.9938)` clamps to the logo texture's right-edge texel, which is
+  `FF000000`.
+- **The zeta clear hides everything anyway**: the app clears zeta to `0x00711174`
+  (depth ~0.44 in the low-24-bit layout, ~0.0017 in the reference's `>> 8`
+  layout) with `LEQUAL`, while every fragment is at z ~ 0.5, so nothing passes.
+  Forcing the clear far, or disabling the depth test, produces the *same* frame:
+  406 colours, 96.9% black, mean (5.5, 4.2, 2.3) - the plane's screen footprint
+  (a wedge), not the reference's full-screen reflection.
+- **Culling drops one triangle of each quad** (the app alternates
+  `SET_FRONT_FACE` between the two draws); forcing culling off raises rasterized
+  pixels 42.0M -> 73.5M and still leaves the frame black.
+
+Filed for their own differentials (§211f): the Z24S8 clear-word layout
+(`pgraph_get_clear_depth_stencil_value` puts the stencil in the low byte, XGrid in
+the high byte), the cull winding on these quads, and whatever app state the
+full-screen reflection needs (needs the gap-9 frame oracle). The row stays red;
+it is now a state answer rather than an unknown.
 
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
