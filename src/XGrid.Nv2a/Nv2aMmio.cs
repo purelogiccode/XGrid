@@ -737,6 +737,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private IPgraphBackend? _backend;
     private bool _observeMethods;
 
+    /// <summary>
+    /// Gets the guest-memory adapter this device was constructed with (null for
+    /// test fakes with no memory). A GPU backend needs the same adapter the
+    /// device uses for its own DMA reads/writes, so it sees the identical
+    /// reader/writer identity: texture uploads read what the device reads, and
+    /// the present-upload dirty watch (when the adapter implements
+    /// <see cref="IPresentDirtyWatch"/>) is the one the guest writes trip.
+    /// </summary>
+    public IGpuMemory? GpuMemory => _memory;
+
     /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
     public long MethodTotal { get; private set; }
 
@@ -6863,10 +6873,43 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>False when there is no scanout or no usable geometry.</returns>
     public bool TryCopyScanoutFrame(out uint width, out uint height, out byte[] bgra)
     {
+        if (Backend is not null)
+        {
+            width = 0;
+            height = 0;
+            bgra = Array.Empty<byte>();
+            return false;
+        }
+
+        return TryCopyScanoutCore(out width, out height, out bgra);
+    }
+
+    /// <summary>
+    /// Copies the RAM display buffer even when a GPU backend is attached.
+    /// </summary>
+    /// <remarks>
+    /// The display controller scans out guest RAM; a GPU backend's presented
+    /// image is a host-side readback of its own surface, so the two are
+    /// different sources, not two halves of one frame. Programs that write the
+    /// framebuffer directly (nxdk's <c>XVideoGetFB</c>, <c>debugPrint</c>) issue
+    /// no 3D draws and therefore never produce a backend frame at all - the
+    /// pixels they wrote are only in RAM. A caller that shows the backend
+    /// readback while one exists can use this lane as the source *before* the
+    /// backend has presented anything; it is never mixed into a frame the
+    /// backend drew.
+    /// </remarks>
+    /// <returns>False when no display mode is programmed or the buffer is not scannable.</returns>
+    public bool TryCopyScanoutFrameFromMemory(out uint width, out uint height, out byte[] bgra)
+    {
+        return TryCopyScanoutCore(out width, out height, out bgra);
+    }
+
+    private bool TryCopyScanoutCore(out uint width, out uint height, out byte[] bgra)
+    {
         width = 0;
         height = 0;
         bgra = Array.Empty<byte>();
-        if (Backend is not null || _memory is null || _pcrtcStart == 0)
+        if (_memory is null || _pcrtcStart == 0)
         {
             return false;
         }

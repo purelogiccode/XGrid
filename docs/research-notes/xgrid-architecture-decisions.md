@@ -13745,3 +13745,130 @@ distinguish two images with the same id.
 
 Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
 including the regenerated GLSL string goldens for the new shader helpers).
+
+## 220 Track B/P: the GPU renderer is a frontend setting (2026-10-22, twenty-second session)
+
+Two slices, each with its own acceptance, both host-side/config-side. Gate
+currency is unchanged and re-verified: the 1B accurate frames/SHAs are untouched
+(no guest-visible core change in either slice), the 1B menu GL golden re-ran
+byte-identically, and the standing ktest smoke is green.
+
+The Avalonia frontend was software-only by design (`--gpu sw` equivalent), which
+made the software rasterizer the product renderer and left the GPU path a CLI
+experiment. The GPU path now runs inside the app, and the piece that was missing
+was not rendering - it was *ownership*: the frontend must not reach into NV2A
+internals, and a WGL context is thread-affine.
+
+### 220a One guest-memory adapter, not two
+
+`Nv2AMmio.GpuMemory` exposes the `IGpuMemory` the device was constructed with
+(null for test fakes). The CLI had its own private `MachineGpuMemory` adapter
+over the same address space; it is deleted and the CLI now passes
+`machine.Nv2A.GpuMemory` to `GlBackendFactory`, so the device and every backend
+share one reader/writer identity, one present-upload dirty watch and one
+decode-cache page-drop policy. Behavior is unchanged by construction and
+measured: the 1B menu GL golden re-ran byte-identically (sw
+`4EF1FBF6CB96CD74...`, gl `B6116DAE805822BF...`, diff 2602 px, maxDelta 1,
+violations 0, counters 33632/686/686, `BackendUnsupported=0`).
+
+### 220b The renderer switch
+
+`EmulatorSettings.Renderer` (`software` default, `opengl`) is a Settings page
+row. `EmulatorSession.AttachRenderer` runs on the emulation thread: it refuses
+the GPU path on a non-Windows host, creates the hidden-window WGL context in
+replacement mode with the per-flip readback on, attaches it with
+`machine.Nv2A.Backend = backend`, and logs the probe line. Any failure (probe,
+GL version, context) logs the reason and leaves the session on software for the
+whole run - never a mix, and never a silent downgrade. `DetachRenderer` clears
+`Nv2A.Backend` and disposes the context in the session's `finally`, before the
+device images are disposed.
+
+The session also disables the `--pgraph` method histogram (a CLI diagnostic with
+two dictionary updates per PGRAPH method, measured -6.2% menu wall with §204).
+The method total/stream still run, so the app is not blind - only the histogram
+map is empty, which is why a `.xgs` saved by the app differs from a CLI save in
+that map (same self-describing format, fewer diagnostic bytes).
+
+### 220c The display source follows the renderer
+
+Software keeps `TryCopyDisplayFrame` (the display controller's RAM scanout,
+falling back to the flipped surface). The GPU path reads the backend's per-flip
+readback. The one shape that has no backend frame at all is a program that
+writes the framebuffer directly and never flips (nxdk `gamma`/`hello`,
+`debugPrint`): its pixels exist only in RAM. New
+`Nv2AMmio.TryCopyScanoutFrameFromMemory` reads that buffer regardless of the
+backend; the session uses it only *before* the first backend frame, so a backend
+frame is never mixed with RAM pixels (the same all-or-nothing rule as §129/§219b).
+
+`TryCopyScanoutFrame` itself keeps its old contract (no backend), so no caller
+changed behavior; `TryCopyScanoutFrameFromMemory` equals it byte-for-byte when
+no backend is attached (pinned by test).
+
+### 220d Measured
+
+Real `EmulatorSession`, gate media (BIOS + MCPX + EEPROM + the 1B dashboard HDD
+leg), 1B fast-mode steps, one run per renderer (scratch harness under
+`wt-data/`, not committed):
+
+| renderer | wall | flips | last display frame | non-black px |
+|---|---:|---:|---|---:|
+| software | 34.8 s | 687 | `2239732C8B32998E` | 306,817 |
+| OpenGL (replace + readback) | 24.7 s | 688 | `B3C8042C4B39B4AE` | 306,817 |
+
+The two pictures agree everywhere except 2,385 of 307,200 pixels (|dmean| ≈
+0.005/channel; the frames are also one flip apart), and the wall drops ~29%.
+The backend's own fidelity is gate currency, not this table: §219's 1B GL golden
+pins the flip frame within the ±1 policy band.
+
+**Known verification gap, stated plainly:** the app's window was not observed
+live in this session's environment (no interactive desktop; the process starts
+and exits cleanly, no crash entry). The feature's seam - `EmulatorSession` -
+was exercised for real, and the frontend project builds with compiled XAML and
+analyzers clean. A human should still launch the app once and click through
+Settings → Renderer.
+
+### 220e `unsupTex[...]`: which modes a declined draw asked for
+
+`unsup[modes=]` counts declined *draws*; Track B3 needs the *mode*. The GL line
+now also prints a slot histogram of the modes that tripped
+`CheckModesUnsupported`, and the cubemap row at 3B measures
+**`unsupTex[m0C=14 m11=28]`**: DOT_REFLECT_SPECULAR (0x0C) on stage 3 and
+DOT_PRODUCT (0x11) on two earlier stages of the same 14 draws. So B3's next
+slice is two mode families, not one, and the reflection alone would not clear
+the row. Diagnostic only: the 3B cubemap leg still presents `DA0750EE…` with the
+same RAM/CPU SHAs and counters.
+
+## 221 The CHD title id: a sector-level XDVDFS lookup (2026-10-22)
+The per-title override V2 keying (§219d) could not resolve a CHD, so every CHD
+library fell back to a path key (documented gap). The blocker was structural:
+`XdvdfsFileSystem` is XISOSharp-backed and XISOSharp's explorer takes a *path*
+(ISO/CSO), while a CHD is a compressed sector stream.
+
+`XGrid.XboxFs.XdvdfsSectorReader` walks the same volume layout over any
+`IDvdImage`, from the layout facts already recorded in
+`docs/research-notes/xisosharp.md` (cross-checked against the XISOSharp reader's
+own field offsets): descriptor at game-partition sector 32 with the magic at
++0x00 and +0x7EC, root table sector/size at +20/+24, entries of
+`14 + nameLength` bytes (left/right child u16 at +0/+2 in dwords, start sector
+u32 at +4, size at +8, attributes at +12, name at +14), the `0xFFFF`
+sector-pad sentinel and the disk-offset probe list (0, XGD2 0x0FD90000, XGD3
+0x02080000, XGD2-hybrid 0x89D80000, XGD1 0x18300000). Bounded: 8,192 entries per
+table, depth 32, and a visited set, so a corrupt table reports "no file" instead
+of hanging. `DiscTitleId.TryRead` now resolves `.chd` through
+`ChdDvdImage.Open` + `DiscTitleId.TryReadImage` (the new public seam that takes
+an `IDvdImage`, so the path is testable without a CHD fixture).
+
+**Cross-checked against the oracle on real images** (scratch harness, not
+committed): for `wt-data/xemu-tri/triangle.iso` and five
+`data/test-samples/corpus/*.iso` images the sector reader returns exactly the id
+the XISOSharp path returns (`FFFF0002` for all six - the homebrew placeholder,
+§219d). A CHD is not available on this host, so the container open itself is
+pinned by tests on an in-memory `IDvdImage` rather than by a real CHD run: the
+honest state is "the format path is implemented and differential-tested, the
+container hand-off is unexercised here".
+
+Tests: `XGrid.XboxFs.Tests` 19 -> **28** (`XdvdfsSectorReaderTests`: root file,
+XGD offset, AVL children, case-insensitive name, missing file, no magic,
+oversized cap, directory entry, sector-pad walk), `XGrid.Integration.Tests`
+66 -> **69** (`TryReadImage` through a synthetic volume, a disc without the root
+executable, a null image). Suite 1738 -> **1757**.

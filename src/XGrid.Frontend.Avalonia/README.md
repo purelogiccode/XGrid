@@ -24,7 +24,7 @@ the public `XGrid.Host` API (`XboxMachine`). It never reaches into emulator inte
 | --- | --- |
 | **Home** | Power on/off, pause/resume, live presented-frame display, session counters, recent games, keyboard pad reference. |
 | **Library** | Recursive scan of configured folders for `.iso`, `.chd`, and `.xbe` entries; search, launch, rescan. |
-| **Settings** | Firmware/storage paths, RAM size, JIT/performance options, network backend, library folders, accent color. Persisted as JSON. |
+| **Settings** | Firmware/storage paths, RAM size, renderer (software/OpenGL), JIT/performance options, NV2A fidelity switches, network backend, library folders, accent color. Persisted as JSON. |
 | **Activity** | Filtered emulator log with copy and clear. |
 | **About** | Build/runtime information, project links, shortcuts. |
 
@@ -42,11 +42,22 @@ images on the Settings page.
 
 ## Display path
 
-The frontend boots the emulator in-process on a dedicated background thread and uses
-the portable software rasterizer (`--gpu sw` equivalent). Presented frames are copied
-from `Nv2AMmio.TryCopyPresentedFrame` into a `WriteableBitmap` on the UI thread. This
-keeps the frontend fully cross-platform with no WGL/OpenGL dependency and no mixing of
-software and GPU pixels. The emulator is never advanced from the UI thread.
+The frontend boots the emulator in-process on a dedicated background thread. Two
+renderers are selectable on the Settings page:
+
+- **Software** (default): the portable reference rasterizer, available everywhere.
+  The display controller's scanout in guest RAM (`TryCopyDisplayFrame`) is copied
+  into a `WriteableBitmap` on the UI thread.
+- **OpenGL** (Windows/WGL, `--gpu gl --gpu-replace` equivalent): the host GPU renders
+  every draw it honors, the per-flip readback supplies the picture, and a draw the
+  backend declines is painted by the software path with the next flip uploading the
+  composed surface (all-or-nothing - software and GPU pixels are never mixed in one
+  frame). If the GPU path is unavailable (non-Windows host, no GL 4.x, a failed
+  probe) the session logs the reason and keeps the software rasterizer for the whole
+  run. The GL context is created, used, and disposed on the emulation thread.
+
+The emulator is never advanced from the UI thread, and no emulator window is opened:
+the GPU renderer is headless and its frames are read back into Avalonia.
 
 ## Default performance profile
 
@@ -61,12 +72,17 @@ interpreter. Toggle `Accent` to restyle the UI live.
 
 ## Current scope
 
-- Portable software rasterizer only; the GPU readback is displayed through Avalonia.
-  There is no WGL/OpenGL backend or separate emulator window.
+- The portable software rasterizer is the default renderer; the OpenGL host-GPU
+  renderer is an opt-in Windows setting. Neither opens a separate emulator window.
+- Programs that write the framebuffer directly (nxdk `gamma`/`hello`, `debugPrint`)
+  issue no 3D draws and never flip, so on the GPU renderer they are shown from the RAM
+  scanout until the backend presents its first frame; after that the backend readback
+  is the display source.
 - The keyboard mapping above drives the emulated player-1 XID pad. No physical gamepad
   binding or analog stick capture yet.
 - Audio devices are emulated by the core but host audio output is not wired to the UI.
-- Save states, debugger panes, and per-title compatibility profiles are future work.
+- Save states exist (`.xgs` save/load on the Home page, F8/F9); debugger panes and
+  per-title compatibility profiles are future work.
 - A loose `.xbe` is listed for inspection but must be wrapped in an ISO/CHD image to boot.
 
 ## Keyboard

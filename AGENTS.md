@@ -247,14 +247,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `xboxdash.xbe` (770048 B, `EvoX`, entry `0x12A17`) in partition at `0x465400`.
 - **Avalonia desktop frontend (2026-10-20, `ea8b38f`):** `XGrid.Frontend.Avalonia`
   is a runnable cross-platform dark-theme GUI (Windows/Linux/macOS) over the public
-  `XGrid.Host` API: Home with live software-rasterizer frames, Library
-  (ISO/CHD/XBE scan), Settings (firmware/storage/RAM/JIT/network/library/accent),
+  `XGrid.Host` API: Home with live frames, Library (ISO/CHD/XBE scan), Settings
+  (firmware/storage/RAM/renderer/JIT/NV2A fidelity/network/library/accent),
   Activity log, and About. In-process emulation on a background thread; frames via
-  `Nv2aMmio.TryCopyPresentedFrame` into a `WriteableBitmap`; no WGL dependency.
-  Verified live on the EvoX dashboard plus pause/resume/power cycles and settings
-  persistence. UI-only: no core/CLI/test changes. Design note:
+  `Nv2aMmio.TryCopyDisplayFrame` into a `WriteableBitmap`. Verified live on the EvoX
+  dashboard plus pause/resume/power cycles and settings persistence. Design note:
   `docs/research-notes/avalonia-frontend.md`; run
   `dotnet run --project src/XGrid.Frontend.Avalonia`.
+  **Renderer switch (2026-10-22, §220):** Settings → Renderer offers the portable
+  software rasterizer (default) or the host-GPU OpenGL backend (headless WGL,
+  replacement mode + per-flip readback, created/disposed on the emulation thread;
+  unavailable paths log a reason and stay on software). Measured on gate media at
+  1B through the real session: 34.8 s software vs 24.7 s OpenGL (-29%) with the
+  same picture.
 - NV2A at `0xFD000000`: PFIFO pusher + PGRAPH software rasterizer (M4–M8
   done: inline draws, vertex-program interpreter, textures, zeta/blend
   fragment pipeline, flip present path). `XGrid.Graphics/DisplayFrame`
@@ -674,10 +679,63 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1738 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1757 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-22 (twenty-second; the GPU renderer is a frontend setting + the
+CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
+
+- **The app can render on the host GPU (§220).** Settings → *Renderer*: software
+  (default, portable) or OpenGL. `EmulatorSession` creates the headless WGL
+  context on the emulation thread, attaches it in replacement mode with the
+  per-flip readback on, and logs the probe line; any failure (non-Windows,
+  probe, GL version) logs the reason and the session stays on software - never a
+  mix, never a silent downgrade. `DetachRenderer` clears `Nv2A.Backend` and
+  disposes the context in the session's `finally`.
+  The display source follows the renderer: software keeps the RAM scanout,
+  OpenGL shows the backend readback, and the one shape with no backend frame
+  (direct-framebuffer guests that never flip) is read through the new
+  `Nv2AMmio.TryCopyScanoutFrameFromMemory` lane *until* the first backend frame.
+  **Measured through the real `EmulatorSession` on gate media, 1B:** software
+  34.8 s / 687 flips / 306,817 non-black px; OpenGL 24.7 s / 688 flips / the same
+  pixel count, |dmean| ≈ 0.005 (2,385 of 307,200 px differ, mostly the one-flip
+  offset). The app's own window was not re-verified live this session (this agent
+  environment has no interactive desktop - the process starts and exits cleanly
+  with no crash event); the seam that owns the feature, `EmulatorSession`, was
+  driven for real.
+- **One guest-memory adapter (§220a).** `Nv2AMmio.GpuMemory` exposes the
+  `IGpuMemory` the device was built with, and the CLI now passes it to
+  `GlBackendFactory` instead of its own duplicate `MachineGpuMemory` (deleted).
+  The 1B menu GL golden re-ran byte-identically (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px / maxDelta 1 / violations 0, counters 33632/686/686,
+  `BackendUnsupported=0`).
+- **CHD title id (§221).** Per-title override V2 could not resolve a CHD, so CHD
+  libraries fell back to path keys. `XGrid.XboxFs.XdvdfsSectorReader` walks the
+  XDVDFS volume over any `IDvdImage` (descriptor at partition sector 32, magic at
+  +0x00/+0x7EC, root table at +20/+24, `14 + nameLen` entries, the `0xFFFF`
+  sector-pad sentinel, the XGD disc-offset probe list), bounded so a corrupt
+  table reports "no file". `DiscTitleId.TryRead` resolves `.chd` via
+  `ChdDvdImage.Open` + the new `DiscTitleId.TryReadImage(IDvdImage, …)` seam.
+  **Differential check on real images** (scratch, not committed): six ISOs
+  (`wt-data/xemu-tri/triangle.iso` + five corpus samples) return exactly the id
+  the XISOSharp path returns (`FFFF0002`). No CHD exists on this host, so the
+  container hand-off itself is covered by an in-memory `IDvdImage` test, not by
+  a real CHD run - keep that in mind before claiming CHD support generally.
+- **Doc correction:** `docs/research-notes/xisosharp.md` said the descriptor's
+  trailing magic sits at `+0x7F4` (8 bytes past the sector end); it is `+0x7EC`.
+- **New diagnostic `unsupTex[...]`** on the GL line: which texture modes the
+  declined replacement-mode draws asked for (slot counts). The cubemap row at 3B
+  reads `unsupTex[m0C=14 m11=28]` - DOT_REFLECT_SPECULAR plus DOT_PRODUCT on two
+  earlier stages - i.e. B3 method coverage needs both families, not just the
+  reflection. Counters, frames and SHAs are unchanged by the diagnostic
+  (cubemap frame still `DA0750EE…`).
+- **Gates:** 1B accurate menu frame `4EF1FBF6…` and triangle frame `A1740DE0…`
+  anchors unchanged (neither slice touches guest-visible behavior),
+  `format --verify-no-changes` clean, ktest smoke PASS 7/7 at **792,800,535**
+  steps with the 40,797-byte suite log `CA5D3867…` byte-identical.
+  Suite 1738 -> **1757** (Nv2a +4, Frontend +3, XboxFs +9, Integration +3).
+
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate
 anchor byte-identical.**

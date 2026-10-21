@@ -184,14 +184,17 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    (LU_IMAGE) stages (one texel per tap, `psh.c apply_convolution_filter`); the
    opt-in flag's default stays an operator item. 1625 tests green.
 3. **Track P - product completeness (parallel).** Host audio, physical pad,
-   save-state V1, per-title config. The frontend is sw-only, keyboard-only,
-   silent, stateless.
+   save-state V1, per-title config.
    **Status 2026-10-21 (20th session, §217):** physical pad and save states
    landed 2026-10-20 (§206); this session added the graphics-fidelity settings
    (`--ffp`, `--tex-filter`), per-title overrides (V1 keyed by image path),
    persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
    frontend's first test project (15 tests). Host audio (the DSP execution it
    needs) is the remaining product gap.
+   **Status 2026-10-22 (§§220-221):** the frontend is no longer sw-only - a
+   Settings → Renderer switch runs the host-GPU OpenGL backend headless with the
+   per-flip readback (measured -29% wall at 1B through the real session), and
+   per-title overrides V2 now key a CHD by its XBE title id.
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
@@ -243,6 +246,27 @@ precedence). Evidence: accurate 1B goldens PASS (sw `4EF1FBF6`/`A1740DE0`, GL
 `B6116DAE`/`7A860ED7`, violations 0, counters identical), fast legs exact (menu
 `34973510`/`F5D61C94`, triangle `B45254CA`/`7DAB63EB`), ktest smoke PASS 7/7 at
 792,800,535 steps with the byte-identical log. Suite 1717 -> 1738.
+
+**Status 2026-10-22 (22nd session, decisions §§220-221; 1757 tests green).** Two
+slices, no guest-visible behavior change: **the GPU renderer is a frontend
+setting** (§220 - Settings → Renderer picks software or OpenGL; the session
+creates the headless WGL context on the emulation thread in replacement mode
+with the per-flip readback, falls back to software with a logged reason on any
+failure, and the display follows the renderer with the new
+`TryCopyScanoutFrameFromMemory` lane covering direct-framebuffer guests before
+the first backend frame; measured through the real session at 1B on gate media:
+34.8 s software vs 24.7 s OpenGL, same picture) and **the CHD title id**
+(§221 - `XGrid.XboxFs.XdvdfsSectorReader` walks the XDVDFS volume over any
+`IDvdImage`, so `DiscTitleId` keys a CHD by XBE title id instead of falling back
+to its path; cross-checked against the XISOSharp path on six real ISOs). Host
+API: `Nv2AMmio.GpuMemory` exposes the device's guest-memory adapter (the CLI's
+duplicate adapter is deleted). Evidence: 1B menu GL golden PASS byte-identical
+(sw `4EF1FBF6`, gl `B6116DAE`, diff 2602 / maxDelta 1 / violations 0, counters
+33632/686/686), accurate frames unchanged, ktest smoke PASS 7/7 at 792,800,535
+steps with the byte-identical 40,797-byte log. Suite 1738 -> 1757.
+
+**Remaining Track P gap: host audio output** (needs APU GP/EP DSP execution
+first). Track B's remaining item is B3 method coverage (zero `unsup` rows).
 
 ---
 

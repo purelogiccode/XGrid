@@ -5,7 +5,9 @@ using System.IO;
 using System.Threading;
 using XGrid.Bus.Net;
 using XGrid.Frontend.Avalonia.Models;
+using XGrid.GpuGl;
 using XGrid.Host;
+using XGrid.Nv2a;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -71,6 +73,15 @@ public sealed class EmulatorSession : IDisposable
     private uint? _titleId;
     private string _titleName = string.Empty;
     private bool _titleOverrideApplied;
+
+    // Renderer state. The GPU backend (when the profile selects OpenGL) is
+    // created, used and disposed on the emulation thread: a WGL context is
+    // current on the thread that made it, and the emulation thread is the only
+    // one allowed to touch guest or backend state. `_gpuRendererActive` selects
+    // the display source; `_backendFrameSeen` latches the first backend present
+    // so the pre-flip window can still show the RAM scanout.
+    private bool _gpuRendererActive;
+    private bool _backendFrameSeen;
 
     /// <summary>Raised on the emulation thread when a new presented frame is available.</summary>
     public event EventHandler<FramePacket>? FrameReady;
@@ -150,6 +161,8 @@ public sealed class EmulatorSession : IDisposable
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
         _lastDisplayCapture = 0;
+        _backendFrameSeen = false;
+        _gpuRendererActive = false;
         _nextProgressLog = ProgressLogInterval;
         _paused = false;
         _running = true;
@@ -277,6 +290,7 @@ public sealed class EmulatorSession : IDisposable
     private void RunLoop(EmulatorSettings settings, string? discPath, CancellationToken token)
     {
         XboxMachine? machine = null;
+        IPgraphBackend? gpuBackend = null;
         SocketNetworkBackend? socketBackend = null;
         bool faulted = false;
         string reason = "Stopped";
@@ -286,6 +300,7 @@ public sealed class EmulatorSession : IDisposable
             Volatile.Write(ref _machine, machine);
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
+            gpuBackend = AttachRenderer(machine, settings);
             if (_titleId is uint runningTitleId)
             {
                 string suffix = _titleOverrideApplied ? " (per-title override applied)" : string.Empty;
@@ -350,6 +365,7 @@ public sealed class EmulatorSession : IDisposable
         finally
         {
             Volatile.Write(ref _machine, null);
+            DetachRenderer(machine, gpuBackend);
             PersistEeprom(machine);
             machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
@@ -452,9 +468,97 @@ public sealed class EmulatorSession : IDisposable
         machine.Nv2A.TextureFilterRegisters =
             string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal);
 
+        // The per-method PGRAPH histogram is a CLI diagnostic (--pgraph) that
+        // costs two dictionary updates per method; the frontend never reads it
+        // (measured -6.2% menu wall on the 1B CLI leg, §204). The method total
+        // and the method stream are unaffected.
+        machine.Nv2A.CollectMethodHistogram = false;
+
         machine.Reset();
         ConfigureCpu(machine, settings);
         return machine;
+    }
+
+    /// <summary>
+    /// Creates the GL backend on the emulation thread and attaches it to the
+    /// NV2A in replacement mode. Returns null when the profile asks for
+    /// software, or when the GPU path is unavailable here - the session then
+    /// keeps the software rasterizer for the whole run, never a mix.
+    /// </summary>
+    private IPgraphBackend? AttachRenderer(XboxMachine machine, EmulatorSettings settings)
+    {
+        _gpuRendererActive = false;
+        if (!EmulatorSettings.IsGpuRenderer(settings.Renderer))
+        {
+            return null;
+        }
+
+        // The GPU backend is a WGL context today: Windows only. Other hosts
+        // keep the portable rasterizer (the setting is a preference, not a
+        // requirement) and the log line says why.
+        if (!OperatingSystem.IsWindows())
+        {
+            Log?.Invoke(this, "Renderer: software (the OpenGL renderer needs Windows/WGL in this build).");
+            return null;
+        }
+
+        IGpuMemory? memory = machine.Nv2A.GpuMemory;
+        if (memory is null)
+        {
+            Log?.Invoke(this, "Renderer: software (the NV2A exposes no GPU memory adapter).");
+            return null;
+        }
+
+        // Replacement mode: the backend owns every draw it honors; a draw it
+        // declines is painted by the software path and the next flip uploads
+        // the composed surface (all-or-nothing, never a mix, §219b). The
+        // per-flip readback is on because the Avalonia display copies pixels.
+        if (!GlBackendFactory.TryCreate(
+                memory, windowEnabled: false, replaceSoftware: true, frameReadback: true,
+                out IPgraphBackend? backend, out string why) || backend is null)
+        {
+            Log?.Invoke(this, "Renderer: software (OpenGL unavailable: " + why + ").");
+            return null;
+        }
+
+        machine.Nv2A.Backend = backend;
+        _gpuRendererActive = true;
+        Log?.Invoke(this, "Renderer: OpenGL (host GPU, replacement mode, per-flip readback) \u00B7 " + why);
+        return backend;
+    }
+
+    /// <summary>
+    /// Detaches and disposes the GPU backend on the emulation thread (the
+    /// context is current there). Runs before the machine's devices are
+    /// disposed, and never from the UI thread.
+    /// </summary>
+    private void DetachRenderer(XboxMachine? machine, IPgraphBackend? backend)
+    {
+        if (backend is null)
+        {
+            _gpuRendererActive = false;
+            return;
+        }
+
+        try
+        {
+            if (machine is not null)
+            {
+                machine.Nv2A.Backend = null;
+            }
+
+            (backend as IDisposable)?.Dispose();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException)
+        {
+            // Teardown is best-effort: a context that is already gone must not
+            // mask the session's real stop reason.
+            Log?.Invoke(this, "Renderer: OpenGL teardown failed (" + exception.Message + ").");
+        }
+        finally
+        {
+            _gpuRendererActive = false;
+        }
     }
 
     private static void ConfigureCpu(XboxMachine machine, EmulatorSettings settings)
@@ -484,13 +588,14 @@ public sealed class EmulatorSession : IDisposable
 
     private static string DescribeGraphics(EmulatorSettings settings)
     {
+        string renderer = EmulatorSettings.IsGpuRenderer(settings.Renderer) ? "OpenGL renderer" : "software renderer";
         string vertex = settings.FixedFunctionVertex
             ? "fixed-function vertex stage"
             : "resident vertex program";
         string filter = string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal)
             ? "TEXFILTER registers"
             : "legacy nearest sampler";
-        return vertex + ", " + filter;
+        return renderer + ", " + vertex + ", " + filter;
     }
 
     private void ApplyPad(XboxMachine machine)
@@ -526,8 +631,44 @@ public sealed class EmulatorSession : IDisposable
         _lastPresentedFrame = presented;
         _lastDisplayCapture = now;
         Interlocked.Exchange(ref _frames, unchecked((long)presented));
-        if (machine.Nv2A.TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra)
-            && width > 0 && height > 0 && bgra.Length >= width * height * 4)
+
+        // Display source. Software: the display controller's scanout in RAM
+        // (what a TV shows), falling back to the flipped surface. GPU: the
+        // backend's per-flip readback, because the backend's pixels live in
+        // its own surface and the guest's RAM color surface was never drawn.
+        bool captured;
+        uint width;
+        uint height;
+        byte[] bgra;
+        if (_gpuRendererActive)
+        {
+            captured = machine.Nv2A.TryCopyDisplayFrame(out width, out height, out bgra);
+            if (captured)
+            {
+                _backendFrameSeen = true;
+            }
+            else if (!_backendFrameSeen)
+            {
+                // No backend frame yet (or ever). Programs that write the
+                // framebuffer directly never flip, so the only pixels they
+                // produce are in RAM: show that scanout rather than nothing.
+                // Once the backend has presented, this lane is never used, so
+                // a backend frame is never mixed with RAM pixels.
+                captured = machine.Nv2A.TryCopyScanoutFrameFromMemory(out width, out height, out bgra);
+            }
+            else
+            {
+                width = 0;
+                height = 0;
+                bgra = Array.Empty<byte>();
+            }
+        }
+        else
+        {
+            captured = machine.Nv2A.TryCopyDisplayFrame(out width, out height, out bgra);
+        }
+
+        if (captured && width > 0 && height > 0 && bgra.Length >= width * height * 4)
         {
             FrameReady?.Invoke(this, new FramePacket(width, height, bgra));
         }

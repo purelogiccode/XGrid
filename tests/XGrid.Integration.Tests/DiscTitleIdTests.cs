@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using XGrid.Host;
+using XGrid.Storage;
 using Xunit;
 
 namespace XGrid.Integration.Tests;
@@ -64,7 +65,7 @@ public sealed class DiscTitleIdTests
         Directory.CreateDirectory(directory);
         try
         {
-            // A CHD has no XDVDFS reader yet, and a missing file cannot be read.
+            // A missing CHD and a missing ISO cannot be opened at all.
             Assert.False(DiscTitleId.TryRead(Path.Combine(directory, "game.chd"), out _, out _));
             Assert.False(DiscTitleId.TryRead(Path.Combine(directory, "missing.iso"), out _, out _));
 
@@ -77,6 +78,33 @@ public sealed class DiscTitleIdTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public void ReadsTheTitleThroughACompressedContainerSectorStream()
+    {
+        // The CHD path: the reader walks the XDVDFS volume through the image's
+        // sector interface, which is exactly what a compressed CHD exposes.
+        var image = new MemoryDvdImage();
+
+        Assert.True(DiscTitleId.TryReadImage(image, out uint titleId, out string titleName));
+        Assert.Equal(TestTitleId, titleId);
+        Assert.Equal("HALO", titleName);
+    }
+
+    [Fact]
+    public void AnImageWithoutTheRootExecutableHasNoTitle()
+    {
+        var image = new MemoryDvdImage(rootFile: "eeprom.bin");
+
+        Assert.False(DiscTitleId.TryReadImage(image, out uint titleId, out _));
+        Assert.Equal(0u, titleId);
+    }
+
+    [Fact]
+    public void ANullImageIsRejected()
+    {
+        Assert.Throws<ArgumentNullException>(() => DiscTitleId.TryReadImage(null!, out _, out _));
     }
 
     [Fact]
@@ -159,5 +187,70 @@ public sealed class DiscTitleIdTests
         image[offset + 1] = (byte)(value >> 8);
         image[offset + 2] = (byte)(value >> 16);
         image[offset + 3] = (byte)(value >> 24);
+    }
+
+    /// <summary>
+    /// An in-memory disc image with one XDVDFS volume at sector 0 whose root
+    /// directory holds a single entry, standing in for the compressed
+    /// container the CHD path reads.
+    /// </summary>
+    private sealed class MemoryDvdImage : IDvdImage
+    {
+        private const int SectorSize = 2048;
+        private const int TotalSectors = 256;
+        private const uint RootSector = 0x30;
+        private const uint FileSector = 0x40;
+
+        private readonly byte[] _data = new byte[TotalSectors * SectorSize];
+
+        public MemoryDvdImage(string rootFile = "default.xbe")
+        {
+            byte[] xbe = BuildXbe(TestTitleId, "HALO");
+            int fileSectors = (xbe.Length + SectorSize - 1) / SectorSize;
+
+            Span<byte> descriptor = Sector(32);
+            Encoding.ASCII.GetBytes("MICROSOFT*XBOX*MEDIA").CopyTo(descriptor);
+            Encoding.ASCII.GetBytes("MICROSOFT*XBOX*MEDIA").CopyTo(descriptor[0x7EC..]);
+            WriteU32(descriptor, 20, RootSector);
+            WriteU32(descriptor, 24, SectorSize);
+
+            Span<byte> table = Sector(RootSector);
+            table[13] = (byte)rootFile.Length;
+            Encoding.ASCII.GetBytes(rootFile).CopyTo(table[14..]);
+            WriteU32(table, 4, FileSector);
+            WriteU32(table, 8, (uint)xbe.Length);
+
+            xbe.CopyTo(Sectors(FileSector, fileSectors));
+            _ = fileSectors;
+        }
+
+        public uint SectorCount => (uint)(_data.Length / SectorSize)!;
+
+        public void ReadSector(uint lba, Span<byte> destination)
+        {
+            Sector(lba).CopyTo(destination);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private Span<byte> Sector(uint lba)
+        {
+            return _data.AsSpan((int)(lba * SectorSize), SectorSize);
+        }
+
+        private Span<byte> Sectors(uint lba, int count)
+        {
+            return _data.AsSpan((int)(lba * SectorSize), count * SectorSize);
+        }
+
+        private static void WriteU32(Span<byte> data, int offset, uint value)
+        {
+            data[offset] = (byte)value;
+            data[offset + 1] = (byte)(value >> 8);
+            data[offset + 2] = (byte)(value >> 16);
+            data[offset + 3] = (byte)(value >> 24);
+        }
     }
 }

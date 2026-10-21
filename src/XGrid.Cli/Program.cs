@@ -482,11 +482,17 @@ internal static class Program
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null). The per-flip
                 // CPU readback is opt-in (--frame): a flip stays on the GPU,
-                // which is the Track-B fast-mode present path.
-                var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, framePath is not null || frameFirstPath is not null,
-                        out Nv2a.IPgraphBackend? gpuBackendInstance,
-                        out string gpuWhy))
+                // which is the Track-B fast-mode present path. The backend
+                // reads through the machine's own GPU-memory adapter, so
+                // texture reads and the present-upload dirty watch are the
+                // exact lanes the device uses.
+                Nv2a.IGpuMemory? gpuMemory = machine.Nv2A.GpuMemory;
+                string gpuWhy = "the machine exposes no GPU memory adapter";
+                Nv2a.IPgraphBackend? gpuBackendInstance = null;
+                bool gpuCreated = gpuMemory is not null &&
+                    GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, framePath is not null || frameFirstPath is not null,
+                        out gpuBackendInstance, out gpuWhy);
+                if (gpuCreated)
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
                     Console.WriteLine(
@@ -2770,71 +2776,6 @@ internal static class Program
         }
 
         return args[++index];
-    }
-
-    /// <summary>
-    /// IGpuMemory adapter over the machine's physical address space (backend
-    /// texture reads). Doubles as the present-upload dirty watch handle for
-    /// the GL backend (§132 (a*)).
-    /// </summary>
-    private sealed class MachineGpuMemory : Nv2a.IGpuMemory, Nv2a.IGpuMemoryRamView, IPresentDirtyWatch
-    {
-        private readonly AddressSpace _memory;
-
-        public MachineGpuMemory(AddressSpace memory)
-        {
-            _memory = memory;
-        }
-
-        public bool PresentDirty => _memory.Ram.PresentDirty;
-
-        public uint ReadPhysical(uint address)
-        {
-            return _memory.Read32(address);
-        }
-
-        public bool TryGetRamBytes(out byte[] bytes, out uint size)
-        {
-            PhysicalMemory ram = _memory.Ram;
-            bytes = ram.RawBytes;
-            size = ram.Size;
-            return true;
-        }
-
-        public void WritePhysical(uint address, uint value)
-        {
-            // Writer identity (§132 finding i): never dirty the presented
-            // frame from this adapter; only real guest writers count.
-            _memory.Ram.BeginGpuWriteSuppression();
-            try
-            {
-                _memory.Write32(address, value);
-            }
-            finally
-            {
-                _memory.Ram.EndGpuWriteSuppression();
-            }
-        }
-
-        public void ArmPresentWatch(uint address, uint length)
-        {
-            _memory.Ram.ArmPresentWatch(address, length);
-        }
-
-        public void DisarmPresentWatch()
-        {
-            _memory.Ram.DisarmPresentWatch();
-        }
-
-        public void MarkPresentDirty()
-        {
-            _memory.Ram.MarkPresentDirty();
-        }
-
-        public void ClearPresentDirty()
-        {
-            _memory.Ram.ClearPresentDirty();
-        }
     }
 
     private static string FormatJitMnemonicTop(long[] counts, int take)

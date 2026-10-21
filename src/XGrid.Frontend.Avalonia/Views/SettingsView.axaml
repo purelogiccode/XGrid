@@ -298,6 +298,25 @@
 
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="Software is the portable reference rasterizer. OpenGL renders on the host GPU (Windows/WGL) and falls back to software when unavailable."
+                         Classes="hint" TextWrapping="Wrap" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="240"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:RendererOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Texture filtering" Classes="label" />
               <TextBlock Text="Legacy ignores TEXFILTER; registers applies the tent filter at LOD 0."
                          Classes="hint" />
