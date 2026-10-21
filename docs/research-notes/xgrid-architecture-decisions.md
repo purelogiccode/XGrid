@@ -13745,3 +13745,71 @@ distinguish two images with the same id.
 
 Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
 including the regenerated GLSL string goldens for the new shader helpers).
+
+## 220 CPU correctness campaign: five instruction bugs, one decoder bug and three missing shapes (2026-10-21, twenty-second session)
+
+**Track: core correctness (no perf claim, no behavior change on the gate titles).**
+The CPU differential (`tools/cpu-oracle/`) compared 333 hand-picked cases with
+QEMU's TCG core. This session widened it to **629 cases** - a sign-sensitive
+pattern for every MMX/SSE1 packed op, every saturating shift count, the x87
+transcendentals/environment, 16-bit addressing, segment overrides, `LOCK`, and
+string/stack edges - and the new cases found **nine real defects** in the
+interpreter. Accurate mode is unchanged on both 1B goldens and the fast-mode
+anchors are exact, so none of the fixes is reachable on the two gate titles: they
+are pure coverage for shapes no gate run executes.
+
+### What the corpus found (each fixed, each pinned by a unit test)
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `PMINSW`/`PMAXSW` (`0F EA`/`0F EE`) were decoded as invented `Pminuw`/`Pmaxuw` and implemented with the **unsigned** word rule, so every negative lane took the wrong operand | renamed to `Pminsw`/`Pmaxsw`, signed compare (`(short)x` both sides) |
+| 2 | `PSRAW`/`PSRAD` with a count at/past the element width sign-filled from the **low element only** (one fill for the whole register) | per-element sign fill (`MapWords`/`MapDwords`) |
+| 3 | `XLAT` (`D7`) was not decoded at all | added (decode + execute; `(E)BX + AL`, 16-bit offset wrap, DS or segment override) |
+| 4 | 16-bit addressing `[SI]`/`[DI]` (`mod=00`, `rm=4/5`) consumed a **bogus disp16**, desynchronizing the instruction stream (the oracle showed `0x1FCE1F` - the `fxsave` displacement eaten as an LEA displacement) | only `mod=00 rm=6` is the disp16 form |
+| 5 | x87 NaN **stores flipped the sign and dropped the payload**: the conversion went through .NET's `double.NaN`, which is the *negative* quiet NaN (`0x7FC00000` stored as `0xFFC00000`) | `Fpu80.FromSingleBits`/`FromDoubleBits`/`ToSingleBits`/`ToDoubleBits` carry sign + payload; a signaling NaN survives `FLD`/`FSTP` unquieted |
+| 6 | `FUCOM`/`FUCOMP`/`FUCOMPP`/`FUCOMI`/`FUCOMIP` latched the **invalid exception for a quiet NaN**; only a signaling NaN may signal on a quiet compare (`FCOM`/`FCOMI`/`FICOM`/`FTST` stay non-quiet) | `SetFpuCompare`/`SetFpuFlagsCompare` gained the quiet rule + `Fpu80.IsSignalingNaN`; propagated to the spec handlers and the raw-emitter descriptor (bits 1/2) |
+| 7 | `FSQRT` of a negative value reported the indefinite NaN but left **C2 clear** | sets C2 (SDM 8.3.2) with the invalid flag |
+| 8 | `MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the **destination** on equal operands; the ISA returns the **source**, which is what decides the sign of a `+0.0`/`-0.0` pair | `left < right ? left : right` and the mirrored max form |
+| 9 | Corpus hygiene: three cases read an **absolute low address** another case had written (the harness reuses one image, the oracle maps a fresh one) | every case is page-relative (`{p}` + `lea`) |
+
+### What did *not* change (and why)
+
+- **No SSE2.** The Xbox CPU is a Pentium III: the 128-bit (`66`-prefixed)
+  packed-integer forms, `PADDQ`/`PSUBQ`/`MOVDQA`/`PSHUFD` and `MOVD xmm` do not
+  exist on it and are correctly rejected by the decoder. The corpus generates
+  only MMX/SSE1 shapes; the SSE2 forms it probed during the campaign were
+  dropped.
+- **`FSTENV`/`FSAVE` pointer fields** (FIP/FOP/FEA/FDS) stay unmodeled - the
+  reference fills them with model metadata and no measured row reads them. The
+  cases were dropped and the caveat recorded.
+- **`0/0` exception class**: the reference reports zero-divide (`ZE`), XGrid
+  reports invalid (`IE`) per the 387+ SDM. Cases that create a NaN by dividing
+  zero by zero were rewritten to load a NaN constant instead.
+- **`FSQRT`-negative IE** is *not* a corpus case for the same reason (the
+  reference sets C2 only); XGrid follows the SDM and the difference is recorded.
+
+### Evidence (this session, H1)
+
+- **Accurate 1B goldens PASS**, byte-identical: menu sw `4EF1FBF6…` / gl
+  `B6116DAE…` (diff 2602 px, maxDelta 1, violations 0, counters 33632/686/686),
+  triangle sw `A1740DE0…` / gl `7A860ED7…` (diff 27849, violations 0, counters
+  2706/68/34), `BackendUnsupported=0`, `composeUploads=0`.
+- **Fast 1B anchors exact**: triangle RAM `B45254CA` / CPU `7DAB63EB`
+  (10.9 s sw), menu RAM `34973510` / CPU `F5D61C94` (32.0 s sw).
+- **ktest smoke PASS 7/7** at **792,800,535** steps; the 40,797-byte suite log
+  is byte-identical (`CA5D3867…`).
+- **Suite 1738 -> 1762 tests** (CPU 643 -> 667: 24 new assertions; **18 of the
+  23 new behavior tests fail on the pre-fix source**, proven by stashing
+  `src/XGrid.Cpu` and re-running them; the other five pin behavior that was
+  already correct). No snapshot version change - no new device state.
+- Corpus: **629 cases** (`int.json` 190 KB / `int.dat` 483 KB), harness memory
+  now sized from the case count (`CpuOracleTests.MemorySizeFor`), so widening the
+  corpus no longer needs a constant bump.
+
+### Where the next differential is cheapest
+
+The oracle's per-case cost is ~0.4 ms (629 cases in 250 ms), so the remaining
+unexplored shapes are cheap to add: MMX/SSE1 *rounding* corners
+(`cvtps2pi`/`cvtpi2ps` overflow), `FCW`-driven precision/rounding combinations
+beyond the two now covered, `LOOP`/`JECXZ` with 16-bit address size, and
+`cmpxchg8b` fault paths (which need a handler dump - currently out of scope).

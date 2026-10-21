@@ -192,8 +192,11 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
    frontend's first test project (15 tests). Host audio (the DSP execution it
    needs) is the remaining product gap.
-4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
-   deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+4. **Track C - frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
+   deferred (2-3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+   The freeze covers *codegen/throughput*: interpreter **correctness** work is
+   still allowed and was done in 220 (nine instruction/decoder fixes found by the
+   independent x86 differential, no perf claim, no gate anchor moved).
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
 6. **Environment preconditions (binding, 2026-10-20).** Two machines share this
    tree (`docs/hosts.md`); only the *reference host* may record M-A. Session start
@@ -243,6 +246,23 @@ precedence). Evidence: accurate 1B goldens PASS (sw `4EF1FBF6`/`A1740DE0`, GL
 `B6116DAE`/`7A860ED7`, violations 0, counters identical), fast legs exact (menu
 `34973510`/`F5D61C94`, triangle `B45254CA`/`7DAB63EB`), ktest smoke PASS 7/7 at
 792,800,535 steps with the byte-identical log. Suite 1717 -> 1738.
+
+**Status 2026-10-21 (22nd session, decisions 220; 1762 tests green).** CPU
+correctness campaign: the independent x86 differential (`tools/cpu-oracle/`)
+widened from 333 to **629 cases** (sign-sensitive patterns for every MMX/SSE1
+packed op, saturating shift counts, x87 transcendentals/environment, 16-bit
+addressing, segment overrides, `LOCK`, string/stack edges) and found **nine
+defects**, all fixed and pinned: `PMINSW`/`PMAXSW` compared unsigned (they were
+decoded as invented `Pminuw`/`Pmaxuw`), `PSRAW`/`PSRAD` count saturation,
+`XLAT` undecoded, 16-bit `[SI]`/`[DI]` eating a bogus disp16, x87 NaN stores
+flipping the sign/dropping the payload (`.NET double.NaN` is negative), the
+FUCOM family latching IE for a quiet NaN, `FSQRT`-negative C2, and
+`MINPS`/`MAXPS`/`MINSS`/`MAXSS` returning the destination on equal operands.
+**No gate anchor moved** (accurate 1B goldens byte-identical, fast anchors exact,
+ktest log byte-identical) - the gate titles execute none of the fixed shapes.
+Deliberately out of scope: no SSE2 (the CPU is a Pentium III, so the 128-bit
+packed-int forms stay `UnsupportedInstruction`), `FSTENV`/`FSAVE` pointer
+metadata, the reference's `0/0` ZE-vs-IE class. Suite 1738 -> 1762.
 
 ---
 

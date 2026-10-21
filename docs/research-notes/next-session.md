@@ -1,29 +1,31 @@
-# Next session instructions (updated 2026-10-21 after the twenty-first session)
+# Next session instructions (updated 2026-10-21 after the twenty-second session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §219 (GL TEXFILTER parity,
-replace-mode composition, clear write masks, per-title overrides V2) + §218 (APU
-`NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216 (PTIMER
-0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function vertex
-stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
-(cubemap) + §208 (display model) + §207 (corpus),
+`docs/research-notes/xgrid-architecture-decisions.md` §220 (CPU correctness
+campaign: five instruction bugs, one decoder bug, three mismatched shapes;
+corpus 333 -> 629 cases) + §219 (GL TEXFILTER parity, replace-mode composition,
+clear write masks, per-title overrides V2) + §218 (APU `NV_PAPU_XGSCNT`) + §217
+(per-title overrides + EEPROM state) + §216 (PTIMER 0.8.137) + §215
+(fixed-function lighting) + §213 (the fixed-function vertex stage, `--ffp`) +
+§212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display
+model) + §207 (corpus),
 `docs/compatibility.md` (matrix + harness + the gaps the corpus found),
 `docs/research-notes/nv097-coverage.md` (method-presence gap; the fixed-function
 lighting rows moved to `handled` with §215), `docs/research-notes/
 usage-histogram.md` (measured NV097 and TEXFILTER usage),
 `docs/research-notes/gpu-reference-map.md`, `docs/research-notes/
 jit-track-charter.md` (status), `docs/research-notes/rasterizer-inventory.md`,
-then this file.
+`tools/cpu-oracle/README.md`, then this file.
 
 ## 0. Verify the start state before touching anything
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §219 session commit
+git log --oneline -1        # expect: the §220 session commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1738 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1762 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -68,7 +70,7 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1738 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1762 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp` and `--tex-filter registers` are opt-in too**, and both are now also
@@ -98,6 +100,31 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
    `title:XXXXXXXX` override keys with title-over-path precedence, the session's
    power-on title log line, and CLI `xgrid disc title <path>`. Caveat: homebrew
    images share the placeholder id `0xFFFF0002`.
+
+## 0b. What the twenty-second session landed (§220) - do not redo it
+
+1. **The CPU differential corpus grew 333 -> 629 cases** and found nine defects:
+   `PMINSW`/`PMAXSW` compared unsigned (they were decoded as invented
+   `Pminuw`/`Pmaxuw`); `PSRAW`/`PSRAD` saturating counts sign-filled from one
+   element; `XLAT` was not decoded at all; 16-bit `[SI]`/`[DI]` consumed a bogus
+   disp16 (a decoder bug that desynchronized the stream); x87 NaN stores flipped
+   the sign and dropped the payload (.NET `double.NaN` is negative); the FUCOM
+   family latched IE for a quiet NaN; `FSQRT` of a negative value left C2 clear;
+   `MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the destination on equal operands
+   (wrong sign for a `+0`/`-0` pair); and three corpus cases read an absolute low
+   address (the CI harness reuses one image, the oracle maps a fresh one).
+2. **Nothing moved on the gates** - both 1B accurate goldens are byte-identical,
+   the fast anchors are exact and the ktest log is unchanged. Re-run them if you
+   touch `src/XGrid.Cpu` (the titles execute none of the fixed shapes, so a
+   movement means a regression, not a re-record).
+3. **Rules now written down** in `tools/cpu-oracle/README.md`: cases stay inside
+   their own page and only read what they wrote; **no SSE2 cases** (the Xbox CPU
+   is a Pentium III); `FSTENV`/`FSAVE` pointer metadata and the reference's
+   `0/0` ZE-vs-IE class are deliberate non-cases.
+4. The oracle test sizes its memory from the case count
+   (`CpuOracleTests.MemorySizeFor`), so widening the corpus needs no constant
+   bump. `python tools/cpu-oracle/oracle.py --list` enumerates cases; one
+   regeneration is ~25 s.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
@@ -169,6 +196,14 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
   measured so far has all lights off (§215b).
 - **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
   masks; the software fill does not (§219c).
+- **Adding SSE2 opcodes to the CPU oracle** - the Xbox CPU is a Pentium III, so
+  the `66`-prefixed 128-bit packed-integer forms, `PADDQ`/`PSUBQ`/`MOVDQA`/
+  `PSHUFD` and `MOVD xmm` are *correctly* `UnsupportedInstruction` (§220).
+- **Reading absolute low addresses in an oracle case** - the CI harness reuses
+  one memory image across cases while the oracle maps a fresh one, so such a
+  case measures the previous case. Keep every case page-relative (§220).
+- **Treating an x87 quiet-NaN compare as invalid** - `FUCOM`/`FUCOMI` only
+  signal for a *signaling* NaN (§220).
 
 ## 4. Rules (non-negotiable)
 
@@ -258,6 +293,11 @@ pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -OutDir wt-data\b2gold -Hdd wt
 # session start: fingerprint + precondition + References2 integrity
 pwsh -File scripts/host-doctor.ps1
 pwsh -File scripts/refs-manifest.ps1 -Verify          # add -Quick to skip content hashing
+
+# CPU differential corpus (widened 2026-10-21; needs `pip install unicorn` and
+# mingw as/objcopy; ~25 s for 629 cases). Regenerate, then run CpuOracleTests.
+python tools/cpu-oracle/oracle.py --out tests/XGrid.Cpu.Tests/cpu-oracle/int
+python tools/cpu-oracle/oracle.py --list
 ```
 
 ## 7. Diagnostics worth keeping

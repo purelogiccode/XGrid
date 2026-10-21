@@ -334,10 +334,10 @@ internal static class JitPlanner
             Mnemonic.Fxch => PlanFpuExchange(instruction),
             Mnemonic.Fld1 => PlanFpuPushOne(instruction),
             Mnemonic.Fchs => PlanFpuChangeSign(instruction),
-            Mnemonic.Fcom => PlanFpuCompare(instruction, pop: false),
-            Mnemonic.Fucom => PlanFpuCompare(instruction, pop: false),
-            Mnemonic.Fcomp => PlanFpuCompare(instruction, pop: true),
-            Mnemonic.Fucomp => PlanFpuCompare(instruction, pop: true),
+            Mnemonic.Fcom => PlanFpuCompare(instruction, pop: false, quiet: false),
+            Mnemonic.Fucom => PlanFpuCompare(instruction, pop: false, quiet: true),
+            Mnemonic.Fcomp => PlanFpuCompare(instruction, pop: true, quiet: false),
+            Mnemonic.Fucomp => PlanFpuCompare(instruction, pop: true, quiet: true),
             Mnemonic.Fiadd => PlanFpuIntegerArithmetic(instruction),
             Mnemonic.Fimul => PlanFpuIntegerArithmetic(instruction),
             Mnemonic.Fisub => PlanFpuIntegerArithmetic(instruction),
@@ -883,7 +883,7 @@ internal static class JitPlanner
     }
 
     /// <summary>C3-x: <c>Fcom/Fcomp/Fucom/Fucomp</c> register and m32/m64 forms.</summary>
-    private static JitMemberPlan PlanFpuCompare(in DecodedInstruction instruction, bool pop)
+    private static JitMemberPlan PlanFpuCompare(in DecodedInstruction instruction, bool pop, bool quiet)
     {
         Operand compared = instruction.Operand2.Kind == OperandKind.None
             ? instruction.Operand1
@@ -897,7 +897,8 @@ internal static class JitPlanner
                     Length = instruction.Length,
                     Size = 80,
                     RegIndex = compared.RegisterIndex,
-                    Immediate = pop ? 1u : 0u,
+                    // bit0 = pop, bit1 = quiet compare (FUCOM family)
+                    Immediate = (pop ? 1u : 0u) | (quiet ? 2u : 0u),
                 },
                 instruction);
         }
@@ -911,7 +912,8 @@ internal static class JitPlanner
                     Length = instruction.Length,
                     Size = 80,
                     SourceSize = compared.Size,
-                    Immediate = pop ? 1u : 0u,
+                    // bit0 = pop, bit1 = 64-bit source, bit2 = quiet compare
+                    Immediate = (pop ? 1u : 0u) | (quiet ? 4u : 0u),
                 },
                 compared.Memory);
             return plan.HasMemory ? WithSpecHandler(plan, instruction) : default;

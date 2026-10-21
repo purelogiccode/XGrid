@@ -674,10 +674,58 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1738 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1762 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
-## Session notes — newest first (wave runner retired 2026-10-15).
+## Session notes - newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-second; CPU correctness campaign - five instruction
+bugs, one decoder bug, three missing/mismatched shapes; gate titles unchanged).**
+
+- **The differential was widened, and it paid off.** `tools/cpu-oracle/` went
+  from 333 to **629 cases** (sign-sensitive patterns for every MMX/SSE1 packed
+  op, every saturating shift count, the x87 transcendentals/environment, 16-bit
+  addressing, segment overrides, `LOCK`, and string/stack edges; the test's
+  memory size is now derived from the case count, `CpuOracleTests.MemorySizeFor`).
+  Nine defects fell out, each fixed and pinned:
+  1. **`PMINSW`/`PMAXSW` were unsigned.** `0F EA`/`0F EE` were decoded as invented
+     `Pminuw`/`Pmaxuw` and compared with the *unsigned* word rule, so every
+     negative lane took the wrong side. Renamed to `Pminsw`/`Pmaxsw` with a
+     signed compare.
+  2. **`PSRAW`/`PSRAD` count saturation** sign-filled from the low element only
+     (one fill for the whole register) instead of per element.
+  3. **`XLAT` (`D7`) was not decoded at all.** Added (decode + execute; the
+     offset is `(E)BX + AL` with the 16-bit wrap, DS or a segment override).
+  4. **16-bit addressing `[SI]`/`[DI]` ate a bogus disp16** (`mod=00 rm=4/5`),
+     desynchronizing the instruction stream - only `mod=00 rm=6` is the disp16
+     form. This one was a decoder bug, not a missing shape.
+  5. **x87 NaN stores flipped the sign and dropped the payload** because the
+     conversion went through .NET's `double.NaN` (the *negative* quiet NaN).
+     `Fpu80.FromSingleBits`/`FromDoubleBits`/`ToSingleBits`/`ToDoubleBits` carry
+     sign + payload; a signaling NaN survives `FLD`/`FSTP` unquieted.
+  6. **`FUCOM`/`FUCOMP`/`FUCOMPP`/`FUCOMI`/`FUCOMIP` latched IE for a quiet
+     NaN**; only a signaling NaN may signal on a quiet compare. Propagated to the
+     spec handlers and the raw-emitter descriptor (bits 1/2).
+  7. **`FSQRT` of a negative value** now sets C2 (SDM 8.3.2) with the invalid flag.
+  8. **`MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the destination on equal
+     operands**; the ISA returns the source, which decides the sign of a
+     `+0.0`/`-0.0` pair.
+  9. **Corpus hygiene:** three cases read an absolute low address another case
+     had written (the CI harness reuses one image, the oracle maps a fresh one).
+     Every case is page-relative now, and the rule is in the oracle README.
+- **Nothing changed on the gate titles.** Both 1B accurate goldens PASS
+  byte-identical (menu sw `4EF1FBF6…` / gl `B6116DAE…`, violations 0, counters
+  33632/686/686; triangle sw `A1740DE0…` / gl `7A860ED7…`, counters 2706/68/34),
+  the fast anchors are exact (triangle `B45254CA`/`7DAB63EB` 10.9 s, menu
+  `34973510`/`F5D61C94` 32.0 s), and the ktest smoke is PASS 7/7 at
+  **792,800,535** steps with the 40,797-byte log byte-identical (`CA5D3867…`).
+  No snapshot version change (no device state).
+- **Suite 1738 -> 1762** (CPU project 643 -> 667; 18 of the 23 new behavior
+  tests fail on the pre-fix source, proven by stashing `src/XGrid.Cpu`).
+  Deliberately out of scope and documented: no SSE2 (the CPU is a Pentium III,
+  so the 128-bit packed-int forms must stay rejected), `FSTENV`/`FSAVE` pointer
+  metadata, the reference's `0/0` ZE-vs-IE class, and `FSQRT`-negative IE.
+  Details: decisions §220; caveats: `tools/cpu-oracle/README.md`.
+
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate
 anchor byte-identical.**

@@ -721,6 +721,19 @@ public sealed partial class XboxCpu
                 Context.Eflags ^= FlagBits.Cf;
                 break;
 
+            case Mnemonic.Xlat:
+                {
+                    // AL = [segment:(E)BX + AL]; the offset wraps at the address
+                    // size, then the linear address adds the segment base below.
+                    SegmentRegister segment = instruction.Operand1.Memory.SegmentOverride
+                                              ?? SegmentRegister.Ds;
+                    uint offset = instruction.AddressSize == 16
+                        ? (uint)((Context.ReadRegister16(Gpr.Ebx) + Context.ReadRegister8(0)) & 0xFFFF)
+                        : Context.Ebx + Context.ReadRegister8(0);
+                    Context.WriteRegister8(0, (byte)ReadMemory(Context.GetSegmentBase(segment) + offset, 8));
+                    break;
+                }
+
             case Mnemonic.Cld:
                 Context.Eflags &= ~FlagBits.Df;
                 break;
@@ -1491,23 +1504,26 @@ public sealed partial class XboxCpu
     /// <summary>C3: <c>Fchs</c>.</summary>
     internal void JitFpuChangeSign() => Fpu.SetRegister(0, Fpu.GetRegister(0).Negate());
 
-    /// <summary>C3: <c>Fcom/Fcomp/Fucom/Fucomp st(i)</c> (bit0 = pop).</summary>
+    /// <summary>C3: <c>Fcom/Fcomp/Fucom/Fucomp st(i)</c> (bit0 = pop, bit1 = quiet compare).</summary>
     internal void JitFpuCompareReg(uint descriptor, int index)
     {
-        SetFpuCompare(Fpu.GetRegister(0), Fpu.GetRegister(index));
+        SetFpuCompare(Fpu.GetRegister(0), Fpu.GetRegister(index), (descriptor & 2) != 0);
         if ((descriptor & 1) != 0)
         {
             Fpu.Pop();
         }
     }
 
-    /// <summary>C3: <c>Fcom/Fcomp m32/m64</c> (bit0 = pop, bit1 = 64-bit source).</summary>
+    /// <summary>
+    /// C3: <c>Fcom/Fcomp/Fucom/Fucomp m32/m64</c> (bit0 = pop, bit1 = 64-bit
+    /// source, bit2 = quiet compare).
+    /// </summary>
     internal void JitFpuCompareMem(uint descriptor, ulong bits)
     {
         Fpu80 value = (descriptor & 2) != 0
-            ? Fpu80.FromDouble(BitConverter.Int64BitsToDouble(unchecked((long)bits)))
-            : Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(unchecked((uint)bits)));
-        SetFpuCompare(Fpu.GetRegister(0), value);
+            ? Fpu80.FromDoubleBits(bits)
+            : Fpu80.FromSingleBits((uint)bits);
+        SetFpuCompare(Fpu.GetRegister(0), value, (descriptor & 4) != 0);
         if ((descriptor & 1) != 0)
         {
             Fpu.Pop();
@@ -3629,8 +3645,8 @@ public sealed partial class XboxCpu
         uint address = ComputeAddress(operand.Memory);
         return operand.Size switch
         {
-            32 => Fpu80.FromDouble(BitConverter.UInt32BitsToSingle((uint)ReadMemory(address, 32))),
-            64 => Fpu80.FromDouble(BitConverter.Int64BitsToDouble((long)ReadMemory64(address))),
+            32 => Fpu80.FromSingleBits((uint)ReadMemory(address, 32)),
+            64 => Fpu80.FromDoubleBits(ReadMemory64(address)),
             _ => ReadMemoryFpu80(address),
         };
     }
@@ -3658,10 +3674,10 @@ public sealed partial class XboxCpu
         switch (operand.Size)
         {
             case 32:
-                WriteMemory(address, 32, BitConverter.SingleToUInt32Bits((float)value.ToDouble()));
+                WriteMemory(address, 32, value.ToSingleBits());
                 break;
             case 64:
-                WriteMemory64(address, (ulong)BitConverter.DoubleToInt64Bits(value.ToDouble()));
+                WriteMemory64(address, value.ToDoubleBits());
                 break;
             default:
                 WriteMemoryFpu80(address, value);
@@ -3746,12 +3762,19 @@ public sealed partial class XboxCpu
         Fpu.SetException(dividend.IsZero ? 0 : 2);
     }
 
-    private void SetFpuCompare(Fpu80 left, Fpu80 right)
+    private void SetFpuCompare(Fpu80 left, Fpu80 right, bool quiet = false)
     {
         if (left.IsNaN || right.IsNaN)
         {
             Fpu.SetConditionCodes(true, true, true);
-            Fpu.SetException(0);
+
+            // A quiet compare (FUCOM family) only signals on a signaling NaN;
+            // FCOM/FCOMI/FICOM/FTST signal on any NaN.
+            if (!quiet || left.IsSignalingNaN || right.IsSignalingNaN)
+            {
+                Fpu.SetException(0);
+            }
+
             return;
         }
 
@@ -3760,7 +3783,7 @@ public sealed partial class XboxCpu
         Fpu.SetConditionCodes(a == b, false, a < b);
     }
 
-    private void SetFpuFlagsCompare(Fpu80 left, Fpu80 right)
+    private void SetFpuFlagsCompare(Fpu80 left, Fpu80 right, bool quiet = false)
     {
         uint flags = Context.Eflags &
                      ~(FlagBits.Zf | FlagBits.Pf | FlagBits.Cf | FlagBits.Of | FlagBits.Sf | FlagBits.Af);
@@ -3768,6 +3791,10 @@ public sealed partial class XboxCpu
         if (left.IsNaN || right.IsNaN)
         {
             flags |= FlagBits.Zf | FlagBits.Pf | FlagBits.Cf;
+            if (!quiet || left.IsSignalingNaN || right.IsSignalingNaN)
+            {
+                Fpu.SetException(0);
+            }
         }
         else
         {
@@ -3879,7 +3906,8 @@ public sealed partial class XboxCpu
                     Operand compared = instruction.Operand2.Kind == OperandKind.None
                         ? instruction.Operand1
                         : instruction.Operand2;
-                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(compared));
+                    bool quiet = instruction.Mnemonic is Mnemonic.Fucom or Mnemonic.Fucomp;
+                    SetFpuCompare(Fpu.GetRegister(0), ReadFpuReal(compared), quiet);
                     if (instruction.Mnemonic is Mnemonic.Fcomp or Mnemonic.Fucomp)
                     {
                         Fpu.Pop();
@@ -3902,7 +3930,8 @@ public sealed partial class XboxCpu
 
             case Mnemonic.Fcompp:
             case Mnemonic.Fucompp:
-                SetFpuCompare(Fpu.GetRegister(0), Fpu.GetRegister(1));
+                SetFpuCompare(Fpu.GetRegister(0), Fpu.GetRegister(1),
+                    instruction.Mnemonic == Mnemonic.Fucompp);
                 Fpu.Pop();
                 Fpu.Pop();
                 break;
@@ -3911,7 +3940,8 @@ public sealed partial class XboxCpu
             case Mnemonic.Fcomip:
             case Mnemonic.Fucomi:
             case Mnemonic.Fucomip:
-                SetFpuFlagsCompare(Fpu.GetRegister(0), Fpu.GetRegister(instruction.Operand2.RegisterIndex));
+                SetFpuFlagsCompare(Fpu.GetRegister(0), Fpu.GetRegister(instruction.Operand2.RegisterIndex),
+                    instruction.Mnemonic is Mnemonic.Fucomi or Mnemonic.Fucomip);
                 if (instruction.Mnemonic is Mnemonic.Fcomip or Mnemonic.Fucomip)
                 {
                     Fpu.Pop();
@@ -3936,8 +3966,19 @@ public sealed partial class XboxCpu
                 break;
 
             case Mnemonic.Fsqrt:
-                Fpu.SetRegister(0, Fpu80.SquareRoot(Fpu.GetRegister(0)));
-                break;
+                {
+                    Fpu80 source = Fpu.GetRegister(0);
+                    if (source.IsNegative && !source.IsZero && !source.IsNaN)
+                    {
+                        // FSQRT of a negative value reports C2 (SDM 8.3.2) and
+                        // returns the indefinite NaN.
+                        Fpu.SetConditionCodes(false, true, false);
+                        Fpu.SetException(0);
+                    }
+
+                    Fpu.SetRegister(0, Fpu80.SquareRoot(source));
+                    break;
+                }
 
             case Mnemonic.Frndint:
                 Fpu.SetRegister(0, Fpu80.FromDouble(RoundToInteger(Fpu.GetRegister(0).ToDouble(), Fpu.RoundingMode)));
@@ -4577,10 +4618,10 @@ public sealed partial class XboxCpu
                 return MapBytes(left, right, static (x, y) => Math.Min(x, y));
             case Mnemonic.Pmaxub:
                 return MapBytes(left, right, static (x, y) => Math.Max(x, y));
-            case Mnemonic.Pminuw:
-                return MapWords(left, right, static (x, y) => Math.Min(x, y));
-            case Mnemonic.Pmaxuw:
-                return MapWords(left, right, static (x, y) => Math.Max(x, y));
+            case Mnemonic.Pminsw:
+                return MapWords(left, right, static (x, y) => (ushort)((short)x < (short)y ? x : y));
+            case Mnemonic.Pmaxsw:
+                return MapWords(left, right, static (x, y) => (ushort)((short)x > (short)y ? x : y));
             case Mnemonic.Psadbw:
                 {
                     int sum = 0;
@@ -4638,7 +4679,9 @@ public sealed partial class XboxCpu
             case Mnemonic.Psraw:
                 if (count > 15)
                 {
-                    return (short)(value & 0xFFFF) < 0 ? 0xFFFFFFFFFFFFFFFFUL : 0;
+                    // A shift count past the element width saturates: every word
+                    // becomes its own sign fill (NOT one fill for the whole register).
+                    return MapWords(value, 0, static (x, _) => (ushort)((short)x < 0 ? 0xFFFF : 0));
                 }
 
                 return MapWords(value, 0, (x, _) => (ushort)((short)x >> count));
@@ -4662,7 +4705,8 @@ public sealed partial class XboxCpu
             case Mnemonic.Psrad:
                 if (count > 31)
                 {
-                    return (int)value < 0 ? 0xFFFFFFFFFFFFFFFFUL : 0;
+                    // Saturating count: per doubleword sign fill.
+                    return MapDwords(value, 0, static (x, _) => (int)x < 0 ? 0xFFFFFFFFu : 0u);
                 }
 
                 return MapDwords(value, 0, (x, _) => (uint)((int)x >> count));
@@ -5066,9 +5110,12 @@ public sealed partial class XboxCpu
                 return left / right;
             case Mnemonic.Minps:
             case Mnemonic.Minss:
-                return float.IsNaN(left) || float.IsNaN(right) ? right : MathF.Min(left, right);
+                // MINPS/MINSS return the source operand when the values compare
+                // equal (so +0.0 vs -0.0 keeps the source sign) and for NaN.
+                return left < right ? left : right;
             default:
-                return float.IsNaN(left) || float.IsNaN(right) ? right : MathF.Max(left, right);
+                // MAXPS/MAXSS have the same source-on-equal rule.
+                return left > right ? left : right;
         }
     }
 

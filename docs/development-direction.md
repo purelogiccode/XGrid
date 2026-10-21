@@ -31,6 +31,9 @@ emulator plateau: a very accurate, very well-tested demo.
   SMBus, EEPROM, PIC/PIT/RTC, APU, nvnet, NV2A). Only depth remains.
 - The CPU engine (raw emitter, chaining, fault contract) stays landed and
   opt-in. Do not spend more sessions on it until the tracks below clear.
+  *Correctness* work is exempt from the freeze (it is not codegen): 220 landed
+  nine interpreter/decoder fixes found by the independent oracle, with no
+  throughput claim and no gate anchor moved.
 
 **What changes.**
 
@@ -278,7 +281,8 @@ the historical precedent, not a pattern to extend).
   `docs/refs-manifest.json`. Never work around a missing reference; do not
   reintroduce an out-of-tree reference backup (`D:\xgrid-refs-restore\` is
   retired by operator decision 2026-10-20).
-- No new codegen slices while Track C is frozen (section 0.4).
+- No new codegen slices while Track C is frozen (section 0.4). Interpreter
+  *correctness* fixes (oracle-found) are not codegen slices.
 - No micro-optimization below a measured 2% ceiling.
 - No "borrow" of xemu source; facts only, reimplemented clean-room.
 
