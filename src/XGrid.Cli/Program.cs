@@ -96,6 +96,7 @@ internal static class Program
         bool noEosQuirk = false;
         bool idleSkip = false;
         bool idleSkipProbe = false;
+        string texFilter = "legacy";
         bool fetchFast = false;
         bool decodeCache = true;
         bool decodeVerify = false;
@@ -273,6 +274,15 @@ internal static class Program
                 case "--idle-skip-probe":
                     idleSkipProbe = true;
                     break;
+                case "--tex-filter":
+                    texFilter = NextValue(args, ref i);
+                    if (texFilter is not ("legacy" or "registers"))
+                    {
+                        Console.Error.WriteLine($"Invalid --tex-filter '{texFilter}' (expected legacy|registers)");
+                        return 1;
+                    }
+
+                    break;
                 case "--fetch-fast":
                     fetchFast = true;
                     break;
@@ -421,8 +431,13 @@ internal static class Program
             // per 1B menu steps (Track D, measured).
             machine.Nv2A.CollectMethodHistogram = false;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
+            machine.Nv2A.TextureFilterRegisters = string.Equals(texFilter, "registers", StringComparison.Ordinal);
             Console.WriteLine(
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+            if (!string.Equals(texFilter, "legacy", StringComparison.Ordinal))
+            {
+                Console.WriteLine($"Texture filter={texFilter} (MIN/MAG tent at LOD 0 + convolution)");
+            }
 
             if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) &&
                 !string.Equals(gpuBackend, "gl", StringComparison.Ordinal))
@@ -2135,6 +2150,7 @@ internal static class Program
             $"NV2A tex ok={machine.Nv2A.TextureSampleSuccesses} rgb0={machine.Nv2A.TextureSampleRgbZero} " +
             $"disabled={machine.Nv2A.TextureSampleDisabled} badsize={machine.Nv2A.TextureSampleBadSize} " +
             $"formats={FormatTextureFormats(machine.Nv2A.TextureFormatAttempts, machine.Nv2A.TextureFormatMisses)} " +
+            $"filters={machine.Nv2A.TextureFilterDebug} " +
             $"fallbacks={machine.Nv2A.TexModeFallbacks} byMode={FormatModeFallbacks(machine.Nv2A.TexModeFallbacksByMode)} " +
             $"dotMaps={machine.Nv2A.UnsupportedDotMaps}");
         Console.WriteLine(
