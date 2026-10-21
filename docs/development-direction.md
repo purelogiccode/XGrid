@@ -103,10 +103,16 @@ if it is interesting.
 against xemu where an oracle exists (triangle ≈830 Msteps/s; ktest smoke xemu
 15 s vs XGrid fast 9–10 s) and against the real-time band otherwise (menu).
 
+**Correction 2026-10-21 (§208d):** the triangle rows below were measured on a
+DVD-only leg, which never launches the disc's XBE. On gate media (HDD+DVD) the
+same legs cost **11.3 s sw / 7.5 s `gl+replace`** at 1B on H1 (2,706 draws /
+68 frames / 57.7M px). Read the table as the boot-animation workload it actually
+measured; M-A's triangle target needs re-basing before it is chased.
+
 | leg | wall | raster | xemu reference | gap |
 |---|---:|---:|---|---:|
-| triangle `--gpu sw` | 8.69 s | 2.8 s | 830 Msteps/s (1.13× real time) | ~7× |
-| triangle `gl+replace` | 6.49 s → **~6.4 s** | — | same | ~5.6× |
+| triangle `--gpu sw` | 8.69 s (corrected: 11.3 s) | 2.8 s | 830 Msteps/s (1.13× real time) | ~7× |
+| triangle `gl+replace` | 6.49 s → **~6.4 s** (corrected: 7.5 s) | — | same | ~5.6× |
 | menu `--gpu sw` | 33.3 s → **~30 s** | 12.0 s | no oracle (xemu deadlocks) | ~25× real time |
 | menu `gl+replace` | 31.1 s → **~23.7 s** | - | same | ~17.4× real time |
 
@@ -171,6 +177,14 @@ is a ratio, not a milestone.
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
   is the structural step. The in-app GL display is still deferred (the frontend
   uses the software path, which never readbacks).
+- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
+  presents what the display controller scans out: the VGA CRTC behind
+  `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +
+  `--frame-display` export it, and the Avalonia frontend samples it at ~30 Hz,
+  so direct-framebuffer guests (`gamma`, `hello`) finally show their output.
+  `--frame` still exports the last flipped surface, so no frame anchor moved.
+  The same session corrected the triangle's media (§208d): every triangle leg
+  that used DVD only was measuring the boot animation.
 - **M-B (Track E, corpus) - MET 2026-10-20.** 14 rows over 10 distinct samples,
   every row reproducible: `scripts/build-nxdk-samples.ps1` builds the nxdk
   samples from a pinned upstream commit (`a6c31ee`) and

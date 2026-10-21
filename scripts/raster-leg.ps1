@@ -26,7 +26,16 @@ $firmware = @(
     "--mcpx", (Join-Path $media "mcpx_1.0.bin"),
     "--eeprom", (Join-Path $media "eeprom.bin")
 )
-$mediaArgs = if ($Workload -eq "menu") { @("--hdd", $hdd, "--pad-script", $padScript) } else { @("--dvd", $tri) }
+# The triangle needs the HDD as well as the disc: with DVD only the kernel never
+# launches the disc's XBE and the leg measures the boot animation (2,673 draws /
+# 35 frames / 42.3M px instead of 2,706 / 68 / 57.7M). That is the gate's media
+# set (scripts/gpu-slice2-triangle-golden.ps1), so performance legs use it too.
+$mediaArgs = if ($Workload -eq "menu") {
+    @("--hdd", $hdd, "--pad-script", $padScript)
+}
+else {
+    @("--hdd", $hdd, "--dvd", $tri)
+}
 $modeArgs = @()
 if (-not $NoFast) { $modeArgs = @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw") }
 $gpuArgs = @("--gpu", $Gpu, "--gpu-time")

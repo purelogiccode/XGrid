@@ -456,6 +456,21 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly uint[] _pgraph = new uint[PgraphSize / 4];
     private readonly byte[] _ramin = new byte[PraminSize];
     private readonly uint[] _prmcio = new uint[0x1000 / 4];
+
+    // VGA register file behind the NV_PRMCIO/NV_PRMVIO windows. The guest
+    // programs the display mode here (xemu forwards these MMIO offsets to
+    // vga_ioport_write), and the CRTC geometry is what the display controller
+    // actually scans out - see TryGetDisplayGeometry.
+    private readonly byte[] _vgaCrtc = new byte[256];
+    private readonly byte[] _vgaSequencer = new byte[8];
+    private readonly byte[] _vgaGraphics = new byte[16];
+    private readonly byte[] _vgaAttribute = new byte[21];
+    private byte _vgaCrtcIndex;
+    private byte _vgaSequencerIndex;
+    private byte _vgaGraphicsIndex;
+    private byte _vgaAttributeIndex;
+    private bool _vgaAttributeFlipFlop;
+    private bool _vgaCrtcWritten;
     private bool _retrace;
     private readonly Dictionary<uint, int> _readCounts = new();
     private readonly Dictionary<uint, int> _writeCounts = new();
@@ -837,7 +852,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public string PresentedFrameDebug =>
         $"frames={FramesPresented} stalls={FlipStalls} read={FlipReadDebug} write={FlipWriteDebug} modulo={FlipModuloDebug} " +
         $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
-        $"pcrtc={_pcrtcStart:X} valid={_presentedValid} frame={_presentedFrame}";
+        $"pcrtc={_pcrtcStart:X} valid={_presentedValid} frame={_presentedFrame} " +
+        $"crtc={DisplayWidth}x{DisplayHeight}+{DisplayLineOffset} bpp={DisplayBytesPerPixel} " +
+        $"display={DisplayStartAddress:X}";
 
     /// <summary>Gets the flip read buffer index. Diagnostics.</summary>
     public uint FlipReadDebug { get; private set; }
@@ -1151,6 +1168,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Array.Clear(_boundEngine);
         Array.Clear(_boundInstance);
         Array.Clear(_prmcio);
+        Array.Clear(_vgaCrtc);
+        Array.Clear(_vgaSequencer);
+        Array.Clear(_vgaGraphics);
+        Array.Clear(_vgaAttribute);
+        _vgaCrtcIndex = 0;
+        _vgaSequencerIndex = 0;
+        _vgaGraphicsIndex = 0;
+        _vgaAttributeIndex = 0;
+        _vgaAttributeFlipFlop = false;
+        _vgaCrtcWritten = false;
         _retrace = false;
         _pfifo[PfifoCache1Status / 4] = PfifoCache1StatusLowMark;
         _pfb[PfbCfg0 / 4] = PfbCfg0Reset;
@@ -1175,6 +1202,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         WriteUints(writer, _pgraph);
         writer.Write(_ramin);
         WriteUints(writer, _prmcio);
+        writer.Write(_vgaCrtc);
+        writer.Write(_vgaSequencer);
+        writer.Write(_vgaGraphics);
+        writer.Write(_vgaAttribute);
+        writer.Write(_vgaCrtcIndex);
+        writer.Write(_vgaSequencerIndex);
+        writer.Write(_vgaGraphicsIndex);
+        writer.Write(_vgaAttributeIndex);
+        writer.Write(_vgaAttributeFlipFlop);
+        writer.Write(_vgaCrtcWritten);
         writer.Write(_retrace);
         WriteCountMap(writer, _readCounts);
         WriteCountMap(writer, _writeCounts);
@@ -1452,6 +1489,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ReadUints(reader, _pgraph);
         ReadBytesExact(reader, _ramin);
         ReadUints(reader, _prmcio);
+        ReadBytesExact(reader, _vgaCrtc);
+        ReadBytesExact(reader, _vgaSequencer);
+        ReadBytesExact(reader, _vgaGraphics);
+        ReadBytesExact(reader, _vgaAttribute);
+        _vgaCrtcIndex = reader.ReadByte();
+        _vgaSequencerIndex = reader.ReadByte();
+        _vgaGraphicsIndex = reader.ReadByte();
+        _vgaAttributeIndex = reader.ReadByte();
+        _vgaAttributeFlipFlop = reader.ReadBoolean();
+        _vgaCrtcWritten = reader.ReadBoolean();
         _retrace = reader.ReadBoolean();
         ReadCountMap(reader, _readCounts);
         ReadCountMap(reader, _writeCounts);
@@ -1760,7 +1807,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 4;
+    private const int Nv2ASnapshotVersion = 5;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -1880,7 +1927,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint word = ReadAligned(aligned);
         uint shift = (offset & 3u) * 8;
         uint mask = size == 1 ? 0xFFu << (int)shift : 0xFFFFu << (int)shift;
-        WriteAligned(aligned, (word & ~mask) | ((value << (int)shift) & mask));
+        uint next = (word & ~mask) | ((value << (int)shift) & mask);
+        if (aligned >= PrmcioBase && aligned < PrmcioBase + 0x1000u)
+        {
+            // A VGA port write must be applied even when the data byte equals
+            // the previously written one - two registers may share a value,
+            // and a diff against the stored word would swallow the second.
+            WritePrmcio(aligned - PrmcioBase, next, (int)(offset - aligned), size);
+            return;
+        }
+
+        WriteAligned(aligned, next);
     }
 
     private uint ReadAligned(uint offset)
@@ -2036,7 +2093,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (offset >= PrmcioBase && offset < PrmcioBase + 0x1000u)
         {
             CountWrite(PrmcioBase);
-            _prmcio[(offset - PrmcioBase) / 4] = value;
+            WritePrmcio(offset - PrmcioBase, value, 0, 4);
             return;
         }
 
@@ -2276,6 +2333,127 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         return _prmcio[register / 4];
     }
+
+    /// <summary>
+    /// Stores a word of the NV_PRMCIO window and applies the addressed byte
+    /// lanes to the VGA register file. The bus reports which lanes a write
+    /// covered, so an index/data pair is never inferred from value changes.
+    /// </summary>
+    private void WritePrmcio(uint register, uint value, int laneStart, int laneCount)
+    {
+        _prmcio[(int)(register / 4)] = value;
+        for (int lane = laneStart; lane < laneStart + laneCount && lane < 4; lane++)
+        {
+            ApplyVgaPortWrite((ushort)(register + lane), (byte)(value >> (lane * 8)));
+        }
+    }
+
+    /// <summary>
+    /// VGA I/O port semantics for the ports NV2A mirrors at NV_PRMCIO
+    /// (xemu prmcio.c/prmvio.c -> vga_ioport_write). Only the index/data
+    /// latches the display model needs are decoded; unmodelled ports are
+    /// already stored verbatim in <see cref="_prmcio"/> for read-back.
+    /// </summary>
+    private void ApplyVgaPortWrite(ushort port, byte value)
+    {
+        switch (port)
+        {
+            case 0x3C0: // VGA_ATT_W: index on flip-flop 0, data on flip-flop 1
+                if (!_vgaAttributeFlipFlop)
+                {
+                    _vgaAttributeIndex = (byte)(value & 0x3F);
+                }
+                else
+                {
+                    int attribute = _vgaAttributeIndex & 0x1F;
+                    if (attribute < _vgaAttribute.Length)
+                    {
+                        _vgaAttribute[attribute] = value;
+                    }
+                }
+
+                _vgaAttributeFlipFlop = !_vgaAttributeFlipFlop;
+                break;
+
+            case 0x3C4: // VGA_SEQ_I
+                _vgaSequencerIndex = (byte)(value & 7);
+                break;
+
+            case 0x3C5: // VGA_SEQ_D
+                _vgaSequencer[_vgaSequencerIndex] = value;
+                break;
+
+            case 0x3CE: // VGA_GFX_I
+                _vgaGraphicsIndex = (byte)(value & 0x0F);
+                break;
+
+            case 0x3CF: // VGA_GFX_D
+                _vgaGraphics[_vgaGraphicsIndex] = value;
+                break;
+
+            case 0x3D4: // VGA_CRT_IC (colour index port)
+                _vgaCrtcIndex = value;
+                break;
+
+            case 0x3D5: // VGA_CRT_DC (colour data port)
+                // CR0-CR7 are write-protected while CR11 bit 7 is set; CR7
+                // bit 4 stays writable (QEMU vga_ioport_write).
+                if ((_vgaCrtc[0x11] & 0x80) != 0 && _vgaCrtcIndex <= 7)
+                {
+                    if (_vgaCrtcIndex == 7)
+                    {
+                        _vgaCrtc[7] = (byte)((_vgaCrtc[7] & ~0x10) | (value & 0x10));
+                    }
+
+                    return;
+                }
+
+                _vgaCrtc[_vgaCrtcIndex] = value;
+                _vgaCrtcWritten = true;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    /// <summary>Gets the display-controller scanout base (NV_PCRTC START, in bytes).</summary>
+    public uint DisplayStartAddress => _pcrtcStart;
+
+    /// <summary>Gets the scanout bytes per line the VGA CRTC programs (xemu nv2a_get_params).</summary>
+    public uint DisplayLineOffset =>
+        (uint)(_vgaCrtc[0x13] | ((_vgaCrtc[0x19] & 0xE0) << 3) | ((_vgaCrtc[0x25] & 0x20) << 6)) << 3;
+
+    /// <summary>Gets the active display width in pixels (QEMU vga_get_resolution).</summary>
+    public uint DisplayWidth => ((uint)_vgaCrtc[0x01] + 1u) * 8u;
+
+    /// <summary>Gets the active display height in pixels (QEMU vga_get_resolution).</summary>
+    public uint DisplayHeight =>
+        (uint)(_vgaCrtc[0x12] | ((_vgaCrtc[0x07] & 0x02) << 7) | ((_vgaCrtc[0x07] & 0x40) << 3)) + 1u;
+
+    /// <summary>Gets the bytes per scanout pixel the CRTC mode programs (NV CR28 bits 0-1).</summary>
+    public uint DisplayBytesPerPixel => (_vgaCrtc[0x28] & 3) switch
+    {
+        2 => 2u,
+        3 => 4u,
+        _ => 0u,
+    };
+
+    /// <summary>Gets the VGA sequencer clocking mode byte (bit 5 = screen off).</summary>
+    public byte DisplayClockMode => _vgaSequencer[1];
+
+    /// <summary>
+    /// Gets whether a 16 bpp display mode is 15-bit (X1R5G5B5) rather than
+    /// 16-bit RGB565: NV CR28 selects 16 bpp, and PRAMDAC general control bit 12
+    /// (ALT_MODE_SEL) selects which one (xemu nv2a_get_bpp).
+    /// </summary>
+    public bool DisplayFifteenBit => DisplayBytesPerPixel == 2 && (_generalControl & (1u << 12)) == 0;
+
+    /// <summary>Gets the CRTC register summary the display model derives from. Diagnostics.</summary>
+    public string VgaCrtcDebug =>
+        $"cr13={_vgaCrtc[0x13]:X2} cr19={_vgaCrtc[0x19]:X2} cr25={_vgaCrtc[0x25]:X2} " +
+        $"cr01={_vgaCrtc[0x01]:X2} cr12={_vgaCrtc[0x12]:X2} cr07={_vgaCrtc[0x07]:X2} cr28={_vgaCrtc[0x28]:X2} " +
+        $"index={_vgaCrtcIndex:X2} sr01={_vgaSequencer[1]:X2}";
 
     private void WritePcrtc(uint register, uint value)
     {
@@ -5862,38 +6040,130 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
-    /// Copies the current scanout surface - the buffer the display controller is
-    /// reading - instead of the last flipped 3D surface.
+    /// Resolves the display-controller scanout geometry: base, visible size,
+    /// line pitch and bytes per pixel.
+    /// </summary>
+    /// <remarks>
+    /// The guest programs the video mode through the VGA register file the NV2A
+    /// mirrors at NV_PRMCIO, so the CRTC is the authority (xemu
+    /// <c>nv2a_get_params</c> for the pitch and start address, QEMU
+    /// <c>vga_get_resolution</c> for the visible size; NV CR28 bits 0-1 select
+    /// the depth, <c>nv2a_get_bpp</c>). Until the guest has written a CRTC data
+    /// register there is no mode to speak of, and callers fall back to the last
+    /// flipped surface.
+    /// </remarks>
+    /// <returns>True when the CRTC describes a scannable buffer inside RAM.</returns>
+    public bool TryGetDisplayGeometry(out uint start, out uint width, out uint height, out uint lineOffset, out uint bytesPerPixel)
+    {
+        start = _pcrtcStart;
+        width = DisplayWidth;
+        height = DisplayHeight;
+        lineOffset = DisplayLineOffset;
+        bytesPerPixel = DisplayBytesPerPixel;
+        if (bytesPerPixel == 0)
+        {
+            bytesPerPixel = _presentedBytes;
+        }
+
+        bool screenOn = (DisplayClockMode & 0x20) == 0;
+        return _vgaCrtcWritten &&
+               screenOn &&
+               start != 0 &&
+               (bytesPerPixel == 2 || bytesPerPixel == 4) &&
+               width >= 64 && width <= MaxPresentDimension &&
+               height >= 32 && height <= MaxPresentDimension &&
+               (ulong)width * height <= MaxPresentPixels &&
+               lineOffset >= width * bytesPerPixel &&
+               lineOffset <= 0x4000u &&
+               (ulong)start + ((ulong)(height - 1) * lineOffset) + (width * bytesPerPixel) <= RamSize;
+    }
+
+    /// <summary>
+    /// Copies the frame the display controller is scanning out - what a TV
+    /// attached to the console would show at this instant.
     /// </summary>
     /// <remarks>
     /// Programs that render straight into the framebuffer (nxdk's
     /// <c>XVideoGetFB</c>, <c>debugPrint</c>) issue no 3D draws and no flips, so
-    /// <see cref="TryCopyPresentedFrame"/> never sees their output. The scanout
-    /// base is PCRTC START; geometry and pitch come from the current surface
-    /// state, which the kernel programs to the active video mode.
+    /// <see cref="TryCopyPresentedFrame"/> never sees their output. The display
+    /// buffer is PCRTC START read with the CRTC pitch; until the guest programs a
+    /// mode this falls back to the flipped surface so early boot still shows the
+    /// 3D output. A GPU backend owns the presented image, so it is never mixed
+    /// with the software scanout.
     /// </remarks>
-    /// <returns>False when there is no scanout or no usable surface geometry.</returns>
+    /// <returns>False when neither a display mode nor a presented frame is available.</returns>
+    public bool TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra)
+    {
+        width = 0;
+        height = 0;
+        bgra = Array.Empty<byte>();
+        if (Backend is not null)
+        {
+            return Backend.ReadbackPresented(out width, out height, out bgra);
+        }
+
+        if (_memory is not null &&
+            TryGetDisplayGeometry(out uint start, out uint displayWidth, out uint displayHeight, out uint lineOffset, out uint bytesPerPixel) &&
+            CopySurfacePixels(start, displayWidth, displayHeight, lineOffset, bytesPerPixel, DisplayFifteenBit, out bgra))
+        {
+            width = displayWidth;
+            height = displayHeight;
+            return true;
+        }
+
+        return TryCopyPresentedFrame(out width, out height, out bgra);
+    }
+
+    /// <summary>
+    /// Copies the current scanout surface - the buffer the display controller is
+    /// reading - instead of the last flipped 3D surface.
+    /// </summary>
+    /// <remarks>
+    /// Same source as <see cref="TryCopyDisplayFrame"/>, but without the backend
+    /// delegation and without the flipped-surface fallback: this is the raw
+    /// scanout export, and it fails when no display mode is programmed. Geometry
+    /// comes from the VGA CRTC, falling back to the presented surface records.
+    /// </remarks>
+    /// <returns>False when there is no scanout or no usable geometry.</returns>
     public bool TryCopyScanoutFrame(out uint width, out uint height, out byte[] bgra)
     {
         width = 0;
         height = 0;
         bgra = Array.Empty<byte>();
-        if (Backend is not null || _memory is null || !_presentedValid || _pcrtcStart == 0)
+        if (Backend is not null || _memory is null || _pcrtcStart == 0)
         {
             return false;
         }
 
-        if (!CopySurfacePixels(_pcrtcStart, _presentedWidth, _presentedHeight, _presentedPitch, _presentedBytes, out bgra))
+        if (!TryGetDisplayGeometry(out uint start, out uint scanWidth, out uint scanHeight, out uint lineOffset, out uint bytesPerPixel))
+        {
+            if (!_presentedValid)
+            {
+                return false;
+            }
+
+            start = _pcrtcStart;
+            scanWidth = _presentedWidth;
+            scanHeight = _presentedHeight;
+            lineOffset = _presentedPitch;
+            bytesPerPixel = _presentedBytes;
+        }
+
+        if (!CopySurfacePixels(start, scanWidth, scanHeight, lineOffset, bytesPerPixel, DisplayFifteenBit, out bgra))
         {
             return false;
         }
 
-        width = _presentedWidth;
-        height = _presentedHeight;
+        width = scanWidth;
+        height = scanHeight;
         return true;
     }
 
-    private bool CopySurfacePixels(uint offset, uint width, uint height, uint pitch, uint bytesPerPixel, out byte[] bgra)
+    private bool CopySurfacePixels(uint offset, uint width, uint height, uint pitch, uint bytesPerPixel, out byte[] bgra) =>
+        CopySurfacePixels(offset, width, height, pitch, bytesPerPixel, fifteenBit: false, out bgra);
+
+    private bool CopySurfacePixels(
+        uint offset, uint width, uint height, uint pitch, uint bytesPerPixel, bool fifteenBit, out byte[] bgra)
     {
         bgra = Array.Empty<byte>();
         ulong count = (ulong)width * height;
@@ -5929,8 +6199,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 else
                 {
                     uint half = ReadHalf(address);
-                    red = (((half >> 11) & 0x1Fu) * 255u) / 31u;
-                    green = (((half >> 5) & 0x3Fu) * 255u) / 63u;
+                    if (fifteenBit)
+                    {
+                        // VGA 15bpp (X1R5G5B5): 5 bits per channel, no green
+                        // extension (xemu nv2a_get_bpp -> QEMU vga_draw_line15).
+                        red = (((half >> 10) & 0x1Fu) * 255u) / 31u;
+                        green = (((half >> 5) & 0x1Fu) * 255u) / 31u;
+                    }
+                    else
+                    {
+                        red = (((half >> 11) & 0x1Fu) * 255u) / 31u;
+                        green = (((half >> 5) & 0x3Fu) * 255u) / 63u;
+                    }
+
                     blue = (half & 0x1Fu) * 255u / 31u;
                     alpha = 255u;
                 }

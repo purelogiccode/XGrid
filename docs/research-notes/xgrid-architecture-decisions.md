@@ -12474,3 +12474,168 @@ correct.
 `ktest` smoke re-run on the final build: **PASS 7/7**, 792,800,535 steps,
 40,797-byte suite log byte-identical, so the texture change is invisible to the
 standing gate.
+
+## 208 Display model: the console shows what the display controller scans out (2026-10-21, fifteenth session) - LANDED
+
+**Trigger.** The corpus measured this in 207d/207f: four nxdk samples with four
+different guest-RAM SHAs exported the *same* frame, because `--frame` and the
+Avalonia frontend present `CapturePresentedFrame`'s 3D colour surface and
+`gamma`/`hello` (`XVideoGetFB`, `debugPrint`) never draw 3D and never flip. The
+pixels were there (the scanout export recovered them) but the *product* path
+never looked at them. 207f deliberately deferred the fix: for a flipping title
+the two buffers differ, so switching needs a display model, not a buffer swap.
+
+### 208a The VGA register file behind NV_PRMCIO
+
+xemu forwards the NV2A's `NV_PRMCIO` MMIO window to `vga_ioport_write`, and its
+display parameters come from that register file (`nv2a.c:184-190`), not from the
+3D surface record. XGrid stored the window verbatim (`_prmcio`) and ignored it.
+It now decodes the index/data latches the mode set uses:
+
+- **CRTC** (ports 0x3D4/0x3D5) into `cr[256]`, with the CR0-CR7 write protection
+  from CR11 bit 7 (CR7 bit 4 stays writable), exactly QEMU's rule.
+- Sequencer (0x3C4/5), graphics (0x3CE/F) and the attribute index/data flip-flop
+  (0x3C0), so a later read-back model has somewhere to read from. Guest reads
+  still return the stored word (`_prmcio`), unchanged from before - making them
+  faithful is a separate fidelity item with its own gate.
+
+**The trap, found by a test not by reasoning.** The first implementation inferred
+which port a write addressed by diffing the stored word. That is wrong: two
+registers can share a data byte, so `WriteCrtc(0x11,0)` after `WriteCrtc(0x07,0)`
+was silently swallowed (the index lane changed, the data lane did not). The bus
+already knows the exact lanes - `Nv2AMmio.Write(address,size,value)` now applies
+`size` byte ports at `offset & 3` directly. `CrtcWriteProtection...` pins it.
+
+### 208b Geometry, and what "the displayed frame" means
+
+`TryGetDisplayGeometry` mirrors the reference:
+
+| field | source |
+|---|---|
+| base | `NV_PCRTC_START & 0x07FFFFFF` (bytes) |
+| line pitch | `(CR13 \| (CR19 & 0xE0) << 3 \| (CR25 & 0x20) << 6) << 3` (xemu `nv2a_get_params`) |
+| width | `(CR01 + 1) * 8` (QEMU `vga_get_resolution`) |
+| height | `(CR12 \| (CR07 & 0x02) << 7 \| (CR07 & 0x40) << 3) + 1` |
+| depth | CR28 bits 0-1: 2 = 16 bpp, 3 = 32 bpp (`nv2a_get_bpp`); 16 bpp is 15-bit X1R5G5B5 unless PRAMDAC general control bit 12 (ALT_MODE_SEL) selects RGB565 |
+
+`TryCopyDisplayFrame` reads that buffer; it falls back to the flipped surface
+until the guest programs a mode (early boot) and defers to a GPU backend's
+readback when one is attached (never mixes software and GL pixels).
+`TryCopyScanoutFrame` keeps its "raw scanout, no fallback to the flip surface"
+contract and now uses the same geometry, falling back to the old surface-record
+geometry when the CRTC is unprogrammed.
+
+`--frame` **stays the last flipped 3D surface** - that is the gate anchor and the
+"last completed frame". New `--frame-display` exports the display frame. The
+Avalonia frontend uses `TryCopyDisplayFrame` and samples it at ~30 Hz instead of
+only on `FramesPresented` changes, because a guest that never flips still has a
+picture. Snapshot v4 -> **v5** (CRTC/sequencer/graphics/attribute state).
+
+### 208c Evidence
+
+**The decode is independent, and it agrees with the old geometry bit for bit.**
+On six legs the CRTC-derived export reproduces the exact bytes the previous
+presented-surface geometry produced, which is a strong cross-check because the
+two paths share no numbers: `gamma` `D3EBF420`, `hello` `72D33DC2`, `led`
+`18C7CC83`, `mesh` `7328A99F`, menu `51658B3D`, triangle `AB50EF68`, all 640x480,
+pitch 2560, bpp 4 - and `pcrtc`/`surface` differ by exactly one page (0x12C000)
+on the double-buffered legs, i.e. the scanout is the front buffer and the 3D
+surface the back buffer.
+
+**Gate currency unchanged.** 1B accurate, HDD+DVD: menu RAM `01BE5D64` / CPU
+`3D2740B8` / frame `4EF1FBF6`; triangle RAM `812EA159` / CPU `2F632483` / frame
+`A1740DE0` - all exact. Fast menu `51B56687` / `F5D61C94` exact. `vec=0`, no
+fault on every leg. Suite 1596 -> **1605** (nine `Nv2aDisplayFrameTests`: CRTC
+decode, the CR19/CR25 extended offset, exact-lane port writes, CR protection,
+the display frame reading PCRTC START with the CRTC pitch, the pre-mode
+fallback, the SR01 screen-off blank, 15-bit vs 565, snapshot round-trip).
+
+### 208d Correction: the fast-mode "triangle" leg was measuring the boot animation
+
+Fixing the display model required running the triangle in the gate's media
+configuration (HDD + DVD), and the fast-mode anchors did not reproduce. The
+cause is a harness bug, not a code change:
+
+| leg (1B fast, sw) | draws | frames | pixels | RAM | CPU |
+|---|---:|---:|---:|---|---|
+| `--dvd` only (`raster-leg -Workload tri`) | 2,673 | 35 | 42,302,614 | `DD1D516E` | `CF79FC17` |
+| `--hdd --dvd` (gate media) | 2,706 | 68 | 57,663,082 | `B45254CA` | `7DAB63EB` |
+
+207b recorded the rule for corpus rows ("DVD-only runs never launch the disc's
+XBE") but the *performance* harnesses kept the DVD-only form, so
+`raster-leg.ps1 -Workload tri` and `present-path-acceptance.ps1` have been
+measuring the boot animation with a triangle's name. A stashed pre-change build
+reproduces the HDD+DVD pair exactly, so this session's change is not the cause.
+Both scripts now use the gate media.
+
+Corrected the position rather than the target: on H1 at 1B fast, the real
+triangle is **11.3 s sw** (was "8.0") and **7.5 s `gl+replace`** (was "6.4"),
+menu unchanged (`~37-54 s` depending on load, `gl+replace` unchanged). The
+triangle's GL win is -34% (11.3 -> 7.5), so Track B's conclusion stands - it is
+just measured on the real workload now. The fast triangle anchor becomes
+`B45254CA` / `7DAB63EB` (HDD+DVD); the DVD-only pair stays recorded above as the
+boot-animation anchor it always was.
+
+### 208e Left open
+
+- **Faithful VGA read-back** (0x3D5 returning `cr[index]`) - not done: the guest
+  reads the window 302 times per 1B and the raw word is what it wrote; changing
+  that is a behavior change that needs its own differential.
+- **`--frame` default.** Deliberately unchanged: the flipped surface is the gate
+  anchor, and the display frame is one frame behind for a flipping title. The
+  product path is fixed; flipping the export default would need a deliberate
+  re-record of every frame anchor (nothing in this landing requires it).
+- **16-bit display modes** are modelled (CR28/ALT_MODE_SEL) but no corpus sample
+  uses one, so the branch has unit coverage only.
+
+### 208d addendum: the fast-mode triangle RAM anchor also depends on `--frame-first`
+
+While correcting the media above, the same 1B fast triangle produced three RAM
+SHAs. They are all deterministic and all explainable by the flag set:
+
+| media | `--frame-first` | frames | RAM | CPU |
+|---|---|---|---:|---|
+| DVD only | no | 35 | `DD1D516E` | `CF79FC17` |
+| HDD + DVD | no | 68 | `B45254CA` | `7DAB63EB` |
+| HDD + DVD | yes | 68 | `0117A5E2` | `7DAB63EB` |
+
+`--frame-first` caps the run loop's batch at 2M steps until the first flip is
+saved (`Program.cs`), and batch boundaries move interrupt delivery, so guest RAM
+moves while the CPU state and every counter stay identical. `raster-leg.ps1`
+never passes the flag; `boot-to-first-frame.ps1` always does, which is why the
+corpus rows and the anchor table disagree by construction. Rule recorded in
+`docs/hosts.md`: quote the exact flag set with any fast-mode RAM SHA, and treat
+CPU + counters as the portable anchors.
+
+### 208f `alpha_blending` is not a gap - the oracle compared two animation phases
+
+207i recorded `xgu-alpha_blending` as the best-scoped fidelity item ("blended
+geometry missing or black", XGrid 100% in the lowest luminance bucket vs the
+reference's 11% + 6% in mid buckets). It is not a rendering gap.
+
+The sample ping-pongs a vertex-shader `transparency` uniform from 1.0 to 0.0 and
+back (0.02 per frame, so a 100-frame cycle) and the register combiner multiplies
+it into the fragment alpha (`col0 = tex0.rgba * col0.rgba`). A frame captured at
+one step count therefore shows one alpha. Measured over the cycle
+(`scripts/frame-oracle.py`, reference `D:\xgu\_screenshots\alpha_blending.png`):
+
+| steps | flips | mean (R,G,B) | |dmean| vs reference |
+|---|---:|---|---|
+| 3.0B | 92 | (3.2, 2.6, 252.1) | (17.7, 14.6, 18.9) |
+| 3.8B | 157 | (12.1, 10.0, 246.4) | (8.7, 7.3, 13.2) |
+| 4.2B | 190 | (1.0, 0.8, 254.1) | (19.8, 16.4, 20.9) |
+| 4.6B | 223 | (25.6, 21.2, 229.0) | **(4.8, 4.0, 4.2)** |
+| 5.0B | 256 | (31.7, 26.2, 234.5) | (10.8, 8.9, 1.3) |
+| reference | - | (20.8, 17.2, 233.2) | - |
+
+At 4.6B XGrid is within 4.8/255 per channel of the reference - the same order as
+`vp_lighting`'s 1.7/255 "match". The texel arithmetic checks out too: the
+texture is gold (mean 235,194,130), and the 3B frame `(21,20,242)` is exactly
+`alpha*src + (1-alpha)*(0,0,255)` with `alpha ~= 0.08`, i.e. mid-fade.
+
+**Consequence for the corpus:** an animated sample needs a phase-tolerant
+oracle. New `scripts/frame-oracle.py` scores several step counts against the
+reference and reports the best; `scripts/frame-stat.py` prints the per-frame
+mean/histogram. `bump_cubemap_reflect` stays far from its reference at every
+phase tested (`|dmean|` ~60/43/12 at 3.0B/3.6B/4.2B), so its gap is real and is
+now the only remaining xgu oracle failure.

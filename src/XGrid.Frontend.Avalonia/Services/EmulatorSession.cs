@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -38,6 +39,11 @@ public sealed class EmulatorSession : IDisposable
     private const int BatchInstructions = 65536;
     private const long ProgressLogInterval = 250_000_000;
 
+    // The display is a live scanout, not an event: guests that render straight
+    // into the framebuffer never flip, so the picture is sampled on a timer as
+    // well as on flips (~30 Hz, the panel refresh the UI can use).
+    private static readonly long DisplayCaptureInterval = Stopwatch.Frequency / 30;
+
     private readonly Lock _padLock = new();
     private readonly Lock _machineLock = new();
     private readonly ManualResetEventSlim _runGate = new(initialState: true);
@@ -52,6 +58,7 @@ public sealed class EmulatorSession : IDisposable
     private long _frames;
     private int _eip;
     private ulong _lastPresentedFrame;
+    private long _lastDisplayCapture;
     private long _nextProgressLog;
     private ushort _padButtons;
     private byte[] _padAnalog = new byte[8];
@@ -103,6 +110,7 @@ public sealed class EmulatorSession : IDisposable
         Interlocked.Exchange(ref _steps, 0);
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
+        _lastDisplayCapture = 0;
         _nextProgressLog = ProgressLogInterval;
         _paused = false;
         _running = true;
@@ -405,14 +413,16 @@ public sealed class EmulatorSession : IDisposable
     private void CaptureFrame(XboxMachine machine)
     {
         ulong presented = machine.Nv2A.FramesPresented;
-        if (presented == _lastPresentedFrame)
+        long now = Stopwatch.GetTimestamp();
+        if (presented == _lastPresentedFrame && now - _lastDisplayCapture < DisplayCaptureInterval)
         {
             return;
         }
 
         _lastPresentedFrame = presented;
+        _lastDisplayCapture = now;
         Interlocked.Exchange(ref _frames, unchecked((long)presented));
-        if (machine.Nv2A.TryCopyPresentedFrame(out uint width, out uint height, out byte[] bgra)
+        if (machine.Nv2A.TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra)
             && width > 0 && height > 0 && bgra.Length >= width * height * 4)
         {
             FrameReady?.Invoke(this, new FramePacket(width, height, bgra));

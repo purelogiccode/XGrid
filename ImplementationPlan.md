@@ -153,7 +153,9 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    (MSYS2 + clang/lld/llvm/bison/flex/cmake, nxdk `a6c31ee`) give **11 rows over
    7 samples**, every row reproducible. The corpus immediately found two measured
    gaps: direct-framebuffer output is not what `--frame`/the frontend present
-   (`TryCopyScanoutFrame` + `--frame-scanout` recover it; making it the default
+   (`TryCopyScanoutFrame` + `--frame-scanout` recover it - **closed 2026-10-21, §208** (the VGA CRTC behind `NV_PRMCIO` is
+    decoded, `TryCopyDisplayFrame` + `--frame-display` export the scanout and
+    the frontend samples it at ~30 Hz; `--frame` keeps its gate anchor). Making it the default
    needs xemu's display model and a gate re-record), and the repo's `nxdk-mesh`
    snapshot was missing `verts.h`/`texture.h`. Steering inputs:
    `usage-histogram.md` (measured usage), `nv097-coverage.md` (111 handled / 90

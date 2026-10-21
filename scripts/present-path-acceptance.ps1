@@ -56,10 +56,9 @@ function Run-Leg([string]$workload, [string]$gpu, [string]$tag) {
         $argv += @("--hdd", $Hdd, "--pad-script", $padScript)
     }
     else {
-        # DVD only, the configuration the quiet references were measured in
-        # (raster-leg -Workload tri). The gate's triangle golden adds --hdd;
-        # use the golden scripts for that configuration.
-        $argv += @("--dvd", $TriangleIso)
+        # Gate media (HDD + DVD). DVD only never launches the disc's XBE, so it
+        # measures the boot animation instead of the triangle (decisions 208).
+        $argv += @("--hdd", $Hdd, "--dvd", $TriangleIso)
     }
 
     $argv += @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw",

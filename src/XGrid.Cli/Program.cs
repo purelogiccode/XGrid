@@ -72,6 +72,7 @@ internal static class Program
         string? fbPath = null;
         string? framePath = null;
         string? frameScanoutPath = null;
+        string? frameDisplayPath = null;
         string? frameFirstPath = null;
         bool frameFirstSaved = false;
         string? pgraphPath = null;
@@ -204,6 +205,9 @@ internal static class Program
                     break;
                 case "--frame-scanout":
                     frameScanoutPath = NextValue(args, ref i);
+                    break;
+                case "--frame-display":
+                    frameDisplayPath = NextValue(args, ref i);
                     break;
                 case "--frame-first":
                     frameFirstPath = NextValue(args, ref i);
@@ -1017,6 +1021,11 @@ internal static class Program
                 SaveScanoutFrame(machine, frameScanoutPath);
             }
 
+            if (frameDisplayPath is not null)
+            {
+                SaveDisplayFrame(machine, frameDisplayPath);
+            }
+
             if (pgraphPath is not null)
             {
                 using var pgraphOut = new StreamWriter(pgraphPath);
@@ -1474,6 +1483,23 @@ internal static class Program
         else
         {
             Console.WriteLine($"FrameScanout unavailable ({machine.Nv2A.PresentedFrameDebug})");
+        }
+    }
+
+    private static void SaveDisplayFrame(XboxMachine machine, string path)
+    {
+        if (machine.Nv2A.TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra))
+        {
+            var frame = new DisplayFrame();
+            frame.Show(width, height, bgra);
+            frame.SaveBmp(path);
+            Console.WriteLine(
+                $"FrameDisplay {path} {width}x{height} nonzero={frame.CountNonZeroPixels()} " +
+                machine.Nv2A.PresentedFrameDebug);
+        }
+        else
+        {
+            Console.WriteLine($"FrameDisplay unavailable ({machine.Nv2A.PresentedFrameDebug})");
         }
     }
 
@@ -2766,7 +2792,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
