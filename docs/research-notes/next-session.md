@@ -20,7 +20,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the §209 cubemap/TEXFILTER commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1614 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1615 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -49,7 +49,7 @@ CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames
 `A1740DE0…` and `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle
 `7A860ED7…` (policy diff, never byte-exact).
 
-- **1614 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1615 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, byte-identical); the smoke ran in 48 s on H1.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:

@@ -12824,8 +12824,19 @@ until the menu has an oracle.
 - **New tests:** `Draw_CubeMapSamplesByteOrderFace` (0x3A/0x3B/0x3C channel
   order through the cube path), `Draw_CubeMapExtentComesFromBaseSizeNotImageRect`,
   and five `TextureFilterRegisters_*` tests (off stays nearest; on blends
-  between texel centres; a 1/1 word is byte-identical to legacy; a 9-tap
-  convolution spreads a single-texel impulse; the property defaults off).
+  between texel centres - pinned to 90/255, the exact four-tap average; a 1/1
+  word is byte-identical to legacy; the 9-tap convolution spreads a
+  single-texel impulse to its centre weight 64/255; the property defaults off).
+  Suite 1605 -> **1615** after the follow-up colour guard: the existing
+  compiled-modulate differential compared frames that were black because the
+  harness texture's alpha (0x11) multiplied the blend source away, so
+  `CompiledModulateFill_RendersTextureColors` now pins the four texture grays
+  byte-exact (the harness itself was correct - V0 is white, 0x08040000 is
+  `T0 * V0`).
+- **Corpus:** `xgu swizzle_texture` built with the §207 recipe (add
+  `$NXDK_DIR/bin` to PATH) is an 18th row / 14th sample: 2,725 draws, 45.1M
+  px, 1,620 colours, `0x3A` 3.14M samples with zero misses, no oracle (the
+  repo ships no screenshot). `compatibility.md` carries the row.
 - **Default path is unchanged:** fast 1B menu `51B56687…`/`F5D61C94…` exact;
   accurate 1B menu golden PASS (sw `4EF1FBF6…`, gl `B6116DAE…`,
   `violations=0 maxDelta=1`, counters 33632/686/686); accurate triangle golden

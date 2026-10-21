@@ -655,11 +655,17 @@ the filter registers - the previous session's diagnosis was one gate short.**
   85.6 s (perf follow-up: teach the compiled fills the bilinear tap). Default
   `legacy` is byte-identical: fast menu `51B56687`/`F5D61C94`, accurate goldens
   menu `4EF1FBF6`/`B6116DAE`, triangle `A1740DE0`/`7A860ED7`, ktest 7/7.
-- **Tests 1605 → 1614** (3 byte-order cube cases + BASE_SIZE extent + 5 filter
-  tests; 4 of the cube ones fail on the pre-change source). The plain triangle
-  leg (no `--frame-first`) reads `CB95C006…`/`B8EF1021…` both pre- and
-  post-change on this host - it is a different leg from the documented
-  `B45254CA…` row, not a regression.
+- **Tests 1605 → 1615** (3 byte-order cube cases + BASE_SIZE extent + 5 filter
+  tests + a compiled-modulate colour guard; 4 of the cube ones fail on the
+  pre-change source). The plain triangle leg (no `--frame-first`) reads
+  `CB95C006…`/`B8EF1021…` both pre- and post-change on this host - it is a
+  different leg from the documented `B45254CA…` row, not a regression.
+- **Corpus widened to 18 rows over 14 samples:** `D:\xgu\swizzle_texture`
+  builds with the §207 recipe (remember `$NXDK_DIR/bin` on PATH, or `make`
+  fails with `nxdk-cc: No such file or directory`) and renders a textured XGU
+  cube; it samples `0x3A` 3.14M times with zero misses, so it is a second
+  regression row for the byte-order/swizzled path. The xgu repo ships no
+  screenshot for it, so it has no oracle verdict.
 
 **Session 2026-10-21 (fifteenth; display model + a measurement correction, §208).**
 **The console now shows what the display controller scans out, and one
