@@ -13745,3 +13745,99 @@ distinguish two images with the same id.
 
 Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
 including the regenerated GLSL string goldens for the new shader helpers).
+
+### 220 Track B/P: the frontend renders on the host GL backend (renderer switch)
+
+The product surface (`XGrid.Frontend.Avalonia`) was software-only, and that was
+recorded as an intentional limitation ("a GL backend owned by a foreign window
+cannot be embedded in the Avalonia visual tree"). The second half of that
+sentence was wrong: the headless GL backend owns **no** foreign window - it
+renders into its own offscreen FBO and the picture reaches the UI through the
+existing readback (`IPgraphBackend.ReadbackPresented`), which
+`Nv2AMmio.TryCopyDisplayFrame` already prefers when a backend is attached. So
+the renderer switch needed no platform conditional compilation at all.
+
+**One GPU memory adapter, not two.** `XboxMachine` now keeps the
+`PhysicalGpuMemory` it hands to `Nv2AMmio` and publishes it as
+`XboxMachine.GpuMemory`. The CLI used to build a second wrapper
+(`Program.MachineGpuMemory`) over `machine.Memory`; that duplicate is deleted
+and `GlBackendFactory.TryCreate(machine.GpuMemory, ...)` uses the device's own
+adapter. Why it matters: the adapter carries the GPU-writer suppression, the
+present-upload dirty watch and the direct-RAM lane. Two instances over one
+`PhysicalMemory` happen to share the *RAM*, but a host backend that armed its
+watch through a different adapter object would be a second source of truth for
+the same state (and one the rasterizer's `BeginGpuBatch` suppression scope is
+not balanced against). One instance removes the class of bug.
+
+**Settings.** `EmulatorSettings.GpuRenderer` (`"software"` | `"gl"`, default
+software = the CLI default), `Clone()` copies it, `Normalize()` repairs anything
+else (including null/empty from a hand-edited file) to `"software"`, and the
+derived `UsesGpuBackend` is `[JsonIgnore]` so a stale file can never disagree
+with the key. The Settings page has a **Renderer** drop-down
+(`Software rasterizer (exact)` / `OpenGL (GPU, faster)`) in the Emulation card.
+A per-title override can pin a title to the other renderer
+(`TitleOverride.GpuRenderer`, row combo `inherit` / `software` / `OpenGL`) - the
+override merge runs before the session attaches the backend, so a title that
+needs the exact rasterizer keeps it while everything else runs on the GPU.
+
+**Session attach.** `EmulatorSession.AttachGpuBackend` runs inside
+`CreateMachine`, i.e. on the emulation thread that will use it - a WGL context
+is thread-affine and `WglContext` makes it current at creation. It asks for
+`replaceSoftware: true` + `frameReadback: true` (mirror mode still runs the
+software rasterizer for every draw, so it buys nothing, and the two pixel
+sources are never mixed), logs
+`GPU renderer: OpenGL replace mode . probe ok; GL_VERSION=...` on success, and
+on failure logs the reason and stays on the software rasterizer for the whole
+session. Failure is expected off Windows (`WglContext.TryCreate` returns false
+with "WGL context requires Windows") or with no GL driver; `GlBackendFactory`
+catches every exception around probe/creation. `DisposeGpuBackend` releases the
+hidden window, DC and context in the run's `finally`, on the same thread -
+without it every power cycle would leak a WGL context.
+
+**Evidence.**
+
+| check | result |
+|---|---|
+| CLI menu slice-1 golden (1B, `-Hdd wt-data\chain-199l\hdd.qcow2`) | **PASS**: sw `4EF1FBF66C...`, gl `B6116DAE80...`, diff 2602 px, maxDelta 1, violations 0, counters `33632/686/686`, `BackendUnsupported=0` |
+| CLI triangle slice-2 golden (1B, HDD+DVD) | **PASS**: sw `A1740DE069...`, gl `7A860ED737...`, diff 27849, violations 0, counters `2706/68/34`, `BackendUnsupported=0` |
+| frontend probe, GL leg (`EmulatorSession`, gate media, fast mode) | attach logged `GL_VERSION=4.6.0 NVIDIA 610.88`; 682 flips by 1B steps; 640x480 frames delivered to `FrameReady`; menu frame 32,442 colours, mean (55.1, 101.2, 156.6) |
+| frontend probe, software leg (same media/steps) | 682 flips; 640x480 frames; menu frame 27,543 colours, mean (49.9, 97.2, 154.1) |
+| frontend legs, boot phase (505M/522M steps) | presented frame **byte-identical** across renderers: `10F4D37BC929077C` |
+
+The two menu statistics differ because each leg samples a different animation
+instant (the last presented frame, not a fixed flip); the CLI goldens are the
+byte-level comparison and they are policy-identical. The frontend probe also
+reproduced the boot-phase frame byte-for-byte at the same phase on both
+renderers, which is the strongest available statement for the app path (the
+menu has no oracle frame).
+
+**Cross-platform.** `XGrid.GpuGl` is referenced by the frontend unconditionally.
+That is compile-safe on Linux/macOS (Silk.NET.OpenGL is managed; the Win32
+entry points are `DllImport`s that are only reached after the
+`OperatingSystem.IsWindows()` guard), and the runtime falls back to software
+with a logged reason. No `#if WINDOWS`, no TFM split, no second build.
+
+**Cleanup in the same slice.** Six Avalonia `AVLN5001` warnings
+(`TextBox.Watermark` is obsolete) became `PlaceholderText`; the frontend build
+is warning-clean again. The three byte-identical drop-down option classes
+(`NetworkOption`, `TextureFilterOption`, and the new renderer one) collapsed
+into one `KeyedOption`.
+
+**Tests.** Frontend 21 -> 30 (`RendererSettingTests`: default, the `gl` key,
+unknown/null repair, `Normalize` keeps `gl`, `Clone` independence, JSON
+round-trip without the derived flag, the per-title renderer merge and inherit,
+the override normalization rule and the row description) and Integration
+66 -> 69 (`MachineGpuMemoryTests`: RAM read/write through the adapter, the
+adapter is the machine's own (fast lane + present watch + the same RAM array),
+and a GPU write never arms the present-dirty bit while a guest write does).
+
+**Filed, not implemented - the CHD title-id follow-up is a dependency, not
+wiring.** `docs/next-session` Option C suggested "feed the CHD sector stream
+into XISOSharp"; XISOSharp 1.4.x has no stream-based `XisoExplorer` (the only
+constructors take an image *path*), so a CHD cannot be handed over. The
+options are an upstream `Stream` overload (then CHD support is ~20 lines via
+`ChdDvdImage`'s 2048-byte sector reads) or a minimal XDVDFS probe inside
+XGrid (volume descriptor at sector 32, root AVL table, `default.xbe` first
+block, plus the `DiscLseek` shift retail discs need for their video partition).
+Not attempted in this slice: duplicating the XDVDFS reader is exactly the
+"two implementations, two answers" trap.

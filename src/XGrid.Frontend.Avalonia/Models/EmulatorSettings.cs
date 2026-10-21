@@ -48,6 +48,21 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the NV2A texture filter mode ("legacy" or "registers", <c>--tex-filter</c>).</summary>
     public string TextureFilter { get; set; } = "legacy";
 
+    /// <summary>Gets or sets the graphics renderer ("software" or "gl", <c>--gpu</c>).</summary>
+    /// <remarks>
+    /// The software rasterizer is the exact renderer (gate currency). "gl" asks
+    /// for the host OpenGL backend in replacement mode, which renders the
+    /// presented image on the GPU and is several times faster on the dashboard's
+    /// menu stream; it falls back to software when no GL context can be created.
+    /// </remarks>
+    public string GpuRenderer { get; set; } = SoftwareRenderer;
+
+    /// <summary>Renderer key for the exact software rasterizer (the default).</summary>
+    public const string SoftwareRenderer = "software";
+
+    /// <summary>Renderer key for the host OpenGL backend (replacement mode).</summary>
+    public const string OpenGlRenderer = "gl";
+
     /// <summary>Gets or sets a value indicating whether the 007 end-of-stream quirk is enabled.</summary>
     public bool EosQuirk { get; set; } = true;
 
@@ -188,6 +203,13 @@ public sealed class EmulatorSettings
                 : "legacy";
         }
 
+        if (!string.IsNullOrEmpty(title.GpuRenderer))
+        {
+            effective.GpuRenderer = string.Equals(title.GpuRenderer, OpenGlRenderer, StringComparison.Ordinal)
+                ? OpenGlRenderer
+                : SoftwareRenderer;
+        }
+
         if (title.RamMb is int ram)
         {
             effective.RamMb = ram is 128 ? 128 : 64;
@@ -214,6 +236,7 @@ public sealed class EmulatorSettings
             JitThreshold = JitThreshold,
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = TextureFilter,
+            GpuRenderer = GpuRenderer,
             EosQuirk = EosQuirk,
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
@@ -237,6 +260,9 @@ public sealed class EmulatorSettings
         TextureFilter = string.Equals(TextureFilter, "registers", StringComparison.Ordinal)
             ? "registers"
             : "legacy";
+        GpuRenderer = string.Equals(GpuRenderer, OpenGlRenderer, StringComparison.Ordinal)
+            ? OpenGlRenderer
+            : SoftwareRenderer;
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";
@@ -266,6 +292,11 @@ public sealed class EmulatorSettings
                     : string.Equals(value.TextureFilter, "legacy", StringComparison.Ordinal)
                         ? "legacy"
                         : null;
+                value.GpuRenderer = string.Equals(value.GpuRenderer, OpenGlRenderer, StringComparison.Ordinal)
+                    ? OpenGlRenderer
+                    : string.Equals(value.GpuRenderer, SoftwareRenderer, StringComparison.Ordinal)
+                        ? SoftwareRenderer
+                        : null;
                 if (value.RamMb is int ram && ram is not (64 or 128))
                 {
                     value.RamMb = null;
@@ -284,6 +315,10 @@ public sealed class EmulatorSettings
 
         TitleOverrides = overrides;
     }
+
+    /// <summary>Gets a value indicating whether a host GPU backend is requested.</summary>
+    [JsonIgnore]
+    public bool UsesGpuBackend => string.Equals(GpuRenderer, OpenGlRenderer, StringComparison.Ordinal);
 
     /// <summary>Returns true when the required firmware image is present on disk.</summary>
     [JsonIgnore]

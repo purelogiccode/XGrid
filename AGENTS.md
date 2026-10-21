@@ -245,14 +245,17 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   FATX reader + `XGrid.Xbe` parser + `xgrid fatx ls/cat` / `xgrid xbe info` /
   `xgrid sector` (raw LBA dump); identified the boot dashboard as softmod
   `xboxdash.xbe` (770048 B, `EvoX`, entry `0x12A17`) in partition at `0x465400`.
-- **Avalonia desktop frontend (2026-10-20, `ea8b38f`):** `XGrid.Frontend.Avalonia`
-  is a runnable cross-platform dark-theme GUI (Windows/Linux/macOS) over the public
-  `XGrid.Host` API: Home with live software-rasterizer frames, Library
-  (ISO/CHD/XBE scan), Settings (firmware/storage/RAM/JIT/network/library/accent),
-  Activity log, and About. In-process emulation on a background thread; frames via
-  `Nv2aMmio.TryCopyPresentedFrame` into a `WriteableBitmap`; no WGL dependency.
-  Verified live on the EvoX dashboard plus pause/resume/power cycles and settings
-  persistence. UI-only: no core/CLI/test changes. Design note:
+- **Avalonia desktop frontend (2026-10-20, `ea8b38f`; renderer switch 2026-10-21, §220):**
+  `XGrid.Frontend.Avalonia` is a runnable cross-platform dark-theme GUI
+  (Windows/Linux/macOS) over the public `XGrid.Host` API: Home with live frames,
+  Library (ISO/CHD/XBE scan), Settings (firmware/storage/RAM/renderer/JIT/graphics
+  fidelity/overrides/network/library/accent), Activity log, and About. In-process
+  emulation on a background thread; frames via `Nv2aMmio.TryCopyDisplayFrame` into a
+  `WriteableBitmap`. The renderer is a setting: the software rasterizer (default,
+  exact) or the host OpenGL backend in replacement mode (offscreen FBO + per-flip
+  readback, `XboxMachine.GpuMemory`; Windows-only at runtime, automatic software
+  fallback elsewhere). Verified live on the EvoX dashboard plus pause/resume/power
+  cycles, settings persistence and both renderers. Design note:
   `docs/research-notes/avalonia-frontend.md`; run
   `dotnet run --project src/XGrid.Frontend.Avalonia`.
 - NV2A at `0xFD000000`: PFIFO pusher + PGRAPH software rasterizer (M4–M8
@@ -674,10 +677,65 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1738 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1750 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-second; the frontend renders on the host GL backend,
+§220). One slice, both GL goldens byte-identical, every fast anchor exact.**
+
+- **What changed.** The product surface was software-only; §219b had already
+  closed the GL replace-mode composition gap, so the renderer switch was the
+  remaining Track B/P item. New Settings -> Emulation -> **Renderer**
+  (`Software rasterizer (exact)` default, `OpenGL (GPU, faster)`),
+  `EmulatorSettings.GpuRenderer` (`"software"` | `"gl"`, `Normalize()` repairs
+  anything else, derived `UsesGpuBackend` is `[JsonIgnore]`, `Clone()` copies),
+  a per-title override can pin one title to the other renderer
+  (`TitleOverride.GpuRenderer`, row combo `inherit` / `software` / `OpenGL`),
+  and `EmulatorSession.AttachGpuBackend`/`DisposeGpuBackend`: the backend is
+  created on the emulation thread (WGL contexts are thread-affine), attaches in
+  replacement mode with `frameReadback: true`, and is disposed in the run's
+  `finally` (otherwise every power cycle leaks a hidden window + GL context).
+  Any failure logs the reason and stays software - off Windows
+  `WglContext.TryCreate` says "WGL context requires Windows", so the
+  cross-platform build needs no conditional compilation and no TFM split.
+- **The premise correction.** The old note said a GL backend "owned by a
+  foreign window cannot be embedded in the Avalonia visual tree". The headless
+  backend owns no window: it renders into its own offscreen FBO and the picture
+  arrives through `TryCopyDisplayFrame` -> `ReadbackPresented` -> `FramePacket`.
+  Nothing is embedded, so the frontend can offer it.
+- **One GPU memory adapter (§220).** `XboxMachine.GpuMemory` publishes the
+  `PhysicalGpuMemory` the NV2A itself uses; the CLI's duplicate
+  `MachineGpuMemory` wrapper is deleted. Both hosts now share the device's
+  GPU-writer suppression and present-dirty watch instead of a second view of
+  the same RAM.
+- **Evidence.** CLI menu slice-1 golden PASS (sw `4EF1FBF6`, gl `B6116DAE`,
+  diff 2602, maxDelta 1, violations 0, counters 33632/686/686,
+  `BackendUnsupported=0`) and triangle slice-2 golden PASS (sw `A1740DE0`,
+  gl `7A860ED7`, diff 27849, violations 0, counters 2706/68/34). Frontend probe
+  driving the real `EmulatorSession` on the gate media: the GL leg logs
+  `GL_VERSION=4.6.0 NVIDIA 610.88`, reaches the EvoX menu (682 flips by 1B
+  steps, 640x480 packets to `FrameReady`), and its boot-phase presented frame is
+  **byte-identical** to the software leg's (`10F4D37BC929077C`); menu-frame
+  statistics at different sampling instants differ as the animation phase
+  implies (GL 32,442 colours / mean (55.1,101.2,156.6) vs software 27,543 /
+  (49.9,97.2,154.1)).
+- **Gates.** Suite 1738 -> **1750** (Frontend +9 `RendererSettingTests`,
+  Integration +3 `MachineGpuMemoryTests`), format clean, 0 warnings (the six
+  Avalonia `AVLN5001` obsolete-`Watermark` warnings are fixed too), ktest smoke
+  **PASS 7/7** at 792,800,535 steps (40,797-byte log), fast 1B anchors exact -
+  menu `34973510`/`F5D61C94` (33.17 s), triangle `B45254CA`/`7DAB63EB`
+  (10.76 s), `vec=0`.
+- **Known limit:** the GL renderer presents the last *flipped* frame, so a
+  direct-framebuffer guest (`gamma`, `hello`) is not displayed on it; the
+  software renderer shows the CRTC scanout. Mirror mode is not offered (it still
+  runs the software rasterizer every draw).
+- **Filed, not done:** the CHD title-id follow-up is a dependency, not wiring -
+  XISOSharp 1.4.x has no stream-based `XisoExplorer` (path-only constructors),
+  so a CHD cannot be "fed into XISOSharp"; it needs an upstream `Stream`
+  overload or a minimal XDVDFS probe (plus the retail `DiscLseek` shift).
+  Three byte-identical option classes also collapsed into one `KeyedOption`.
+
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate
 anchor byte-identical.**

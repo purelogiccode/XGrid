@@ -244,6 +244,31 @@ precedence). Evidence: accurate 1B goldens PASS (sw `4EF1FBF6`/`A1740DE0`, GL
 `34973510`/`F5D61C94`, triangle `B45254CA`/`7DAB63EB`), ktest smoke PASS 7/7 at
 792,800,535 steps with the byte-identical log. Suite 1717 -> 1738.
 
+**Status 2026-10-21 (22nd session, decisions §220; 1750 tests green).** One
+slice, both GL goldens byte-identical: **the frontend renders on the host GL
+backend**. Settings -> Emulation -> Renderer (`Software rasterizer (exact)`
+default | `OpenGL (GPU, faster)`); `EmulatorSettings.GpuRenderer` with
+`Normalize()` repair and the `[JsonIgnore]` `UsesGpuBackend` derived flag;
+`EmulatorSession.AttachGpuBackend` creates the backend on the emulation thread in
+replacement mode with per-flip readback and `DisposeGpuBackend` releases it in
+the run's `finally`; off Windows the probe returns "WGL context requires Windows"
+and the session stays on the software rasterizer (no conditional compilation, no
+TFM split). A per-title override can pin one title to the other renderer
+(`TitleOverride.GpuRenderer`, row combo `inherit`/`software`/`OpenGL`).
+`XboxMachine.GpuMemory` now publishes the `PhysicalGpuMemory` the
+NV2A itself uses and the CLI's duplicate `MachineGpuMemory` wrapper is deleted -
+one GPU-writer suppression / present-dirty watch instead of two views of the same
+RAM. Evidence: menu slice-1 golden PASS (sw `4EF1FBF6`, GL `B6116DAE`, diff 2602,
+violations 0, counters 33632/686/686) and triangle slice-2 golden PASS (sw
+`A1740DE0`, GL `7A860ED7`, diff 27849, violations 0, counters 2706/68/34), fast
+1B anchors exact (menu `34973510`/`F5D61C94` 33.17 s, triangle
+`B45254CA`/`7DAB63EB` 10.76 s), ktest smoke PASS 7/7 at 792,800,535 steps; a
+frontend probe driving the real session reaches the EvoX menu on both renderers
+(682 flips by 1B steps) with a byte-identical boot-phase frame. Suite 1738 ->
+1750; frontend build warning-clean (`AVLN5001` fixed). Filed: the CHD title-id
+follow-up needs an XISOSharp `Stream` overload (path-only explorer today) or a
+minimal XDVDFS probe, not wiring.
+
 ---
 
 # 1. Design Principles

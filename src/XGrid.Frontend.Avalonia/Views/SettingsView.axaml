@@ -53,7 +53,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding BiosPath, Mode=TwoWay}"
-                       Watermark="Path to the BIOS image" />
+                       PlaceholderText="Path to the BIOS image" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -82,7 +82,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding McpxRomPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -102,7 +102,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding EepromPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -152,7 +152,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding HddPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -173,7 +173,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding DvdPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -308,7 +308,26 @@
                       SelectedItem="{Binding SelectedTextureFilter, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:TextureFilterOption">
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="OpenGL renders the picture on the GPU (much faster on the dashboard menu). Falls back to software when no GL context is available."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>
@@ -356,7 +375,7 @@
           <ItemsControl ItemsSource="{Binding TitleOverrides}">
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="vm:TitleOverrideItem">
-                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
                   <StackPanel Spacing="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
@@ -382,7 +401,19 @@
                                 OffContent="inherit"
                                 ToolTip.Tip="Inherit the global texture filter"
                                 VerticalAlignment="Center" />
-                  <Button Grid.Column="4"
+                  <ComboBox Grid.Column="4"
+                            Width="140"
+                            ItemsSource="{Binding Renderers}"
+                            SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                            ToolTip.Tip="Renderer for this title"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Grid.Column="5"
                           Classes="subtle icon"
                           Width="32"
                           Height="32"
@@ -422,7 +453,7 @@
                       SelectedItem="{Binding SelectedNetwork, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:NetworkOption">
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>

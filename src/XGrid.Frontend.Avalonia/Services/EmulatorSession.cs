@@ -5,7 +5,9 @@ using System.IO;
 using System.Threading;
 using XGrid.Bus.Net;
 using XGrid.Frontend.Avalonia.Models;
+using XGrid.GpuGl;
 using XGrid.Host;
+using XGrid.Nv2a;
 
 namespace XGrid.Frontend.Avalonia.Services;
 
@@ -351,6 +353,7 @@ public sealed class EmulatorSession : IDisposable
         {
             Volatile.Write(ref _machine, null);
             PersistEeprom(machine);
+            DisposeGpuBackend(machine);
             machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();
@@ -454,7 +457,62 @@ public sealed class EmulatorSession : IDisposable
 
         machine.Reset();
         ConfigureCpu(machine, settings);
+        AttachGpuBackend(machine, settings);
         return machine;
+    }
+
+    /// <summary>
+    /// Attaches the host OpenGL backend when the configuration asks for it.
+    /// </summary>
+    /// <remarks>
+    /// The backend is created on this thread (the emulation thread owns the WGL
+    /// context for its whole lifetime) and renders offscreen into its own
+    /// framebuffer, so nothing is embedded in the Avalonia visual tree: the
+    /// display path (<see cref="Nv2AMmio.TryCopyDisplayFrame"/>) defers to the
+    /// backend readback and the pixels still arrive as a
+    /// <see cref="FramePacket"/>. Replacement mode is the only mode offered -
+    /// mirror mode still runs the software rasterizer for every draw, so it
+    /// buys no speed, and the two writers are never mixed. Any failure (a
+    /// non-Windows host, no GL driver, a failed probe) falls back to the
+    /// software rasterizer for the whole session rather than failing the run.
+    /// </remarks>
+    private void AttachGpuBackend(XboxMachine machine, EmulatorSettings settings)
+    {
+        if (!settings.UsesGpuBackend)
+        {
+            return;
+        }
+
+        if (GlBackendFactory.TryCreate(
+                machine.GpuMemory,
+                windowEnabled: false,
+                replaceSoftware: true,
+                frameReadback: true,
+                out IPgraphBackend? backend,
+                out string why))
+        {
+            machine.Nv2A.Backend = backend;
+            Log?.Invoke(this, "GPU renderer: OpenGL replace mode · " + why);
+            return;
+        }
+
+        Log?.Invoke(this, "GPU renderer: OpenGL unavailable (" + why + ") — using the software rasterizer");
+    }
+
+    /// <summary>
+    /// Releases the host GPU backend (its hidden window, device context and GL
+    /// objects) on the emulation thread that created it.
+    /// </summary>
+    private static void DisposeGpuBackend(XboxMachine? machine)
+    {
+        if (machine?.Nv2A.Backend is IPgraphBackend backend)
+        {
+            machine.Nv2A.Backend = null;
+            if (backend is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     private static void ConfigureCpu(XboxMachine machine, EmulatorSettings settings)
@@ -484,13 +542,16 @@ public sealed class EmulatorSession : IDisposable
 
     private static string DescribeGraphics(EmulatorSettings settings)
     {
+        string renderer = settings.UsesGpuBackend
+            ? "OpenGL renderer (replace)"
+            : "software rasterizer";
         string vertex = settings.FixedFunctionVertex
             ? "fixed-function vertex stage"
             : "resident vertex program";
         string filter = string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal)
             ? "TEXFILTER registers"
             : "legacy nearest sampler";
-        return vertex + ", " + filter;
+        return renderer + ", " + vertex + ", " + filter;
     }
 
     private void ApplyPad(XboxMachine machine)

@@ -74,6 +74,20 @@ if it is interesting.
 
 ## 1. Priority stack (in order)
 
+**Status 2026-10-21 (22nd session, 220):** the product surface now offers the
+host renderer - Settings -> Emulation -> **Renderer** (software rasterizer, the
+exact default, or the OpenGL backend in replacement mode). The session creates
+and disposes the GL backend on the emulation thread and falls back to software
+with a logged reason when no GL context exists (every non-Windows host), so the
+cross-platform app keeps one build. `XboxMachine.GpuMemory` is now the single GPU
+adapter (the CLI's duplicate wrapper is gone): the device and any host backend
+share one GPU-writer suppression / present-dirty state. Both 1B GL goldens
+re-passed byte-identical and every fast anchor is exact - a product-path slice,
+not a fidelity one. Suite **1750**. Track order is unchanged; the largest
+remaining product gap is still host audio (APU DSP execution first), and the
+cheapest Track E step is a `-Corpus -Gpu gl -GpuReplace` sweep (a second renderer
+column for `docs/compatibility.md`).
+
 **Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
 the fixed-function vertex stage (213) and its enabled-light loop (215) are
 opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU

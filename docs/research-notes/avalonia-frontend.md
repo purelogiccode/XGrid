@@ -197,3 +197,50 @@ Project-local usage notes and the shortcut table live in
   one share the placeholder (`xgu`/nxdk samples all read `0xFFFF0002`), and a
   title-keyed override applies to every such image. Real titles have unique ids.
   `xgrid disc title <path>` prints the id and the exact `title:XXXXXXXX` key.
+
+## Update 2026-10-21 (decisions 220): the OpenGL renderer is selectable in the app
+
+- **Renderer switch.** Settings -> Emulation -> **Renderer** offers
+  `Software rasterizer (exact)` (default) and `OpenGL (GPU, faster)`. The GL
+  option attaches `XGrid.GpuGl`'s backend in replacement mode with per-flip
+  readback; the frame still arrives as a `FramePacket` through
+  `TryCopyDisplayFrame` (which prefers the backend readback), so the UI pipeline
+  is unchanged. A per-title override row has the same choice as an
+  `inherit`/`software`/`OpenGL` combo. The backend is offscreen - no foreign window, nothing embedded
+  in the Avalonia visual tree - which corrects the earlier "cannot be embedded"
+  note: only a *windowed* GL context would have had that problem.
+- **The renderer is a global setting with a per-title override.** Settings ->
+  Emulation -> Renderer picks `Software rasterizer (exact)` (default) or
+  `OpenGL (GPU, faster)`; a per-title override row can pin one title to the other
+  renderer (`inherit` / `software` / `OpenGL`), so a title that the GPU path
+  misrenders runs on the exact rasterizer while everything else keeps the faster
+  one.
+- **Lifetime and fallback.** `EmulatorSession.AttachGpuBackend` creates the
+  backend on the emulation thread (WGL contexts are thread-affine) and
+  `DisposeGpuBackend` releases the hidden window/DC/context in the run's
+  `finally`. Any failure logs the reason and the session runs the software
+  rasterizer; on Linux/macOS `WglContext.TryCreate` returns
+  "WGL context requires Windows", so the cross-platform build is unchanged and
+  needs no conditional compilation.
+- **One GPU memory adapter.** `XboxMachine.GpuMemory` now publishes the
+  `PhysicalGpuMemory` instance the NV2A itself uses; the CLI's duplicate wrapper
+  is gone. Both hosts therefore share the device's suppression/dirty-watch state
+  (§132/§135) instead of creating a second view of it.
+- **Measured (probe driving the real `EmulatorSession`, gate media, fast mode):**
+  the GL leg logs `GL_VERSION=4.6.0 NVIDIA 610.88`, reaches the EvoX menu (682
+  flips by 1B steps, 640x480 frames delivered), and its boot-phase frame is
+  byte-identical to the software leg's (`10F4D37BC929077C`). Menu-frame
+  statistics at different sampling instants: GL 32,442 colours / mean
+  (55.1, 101.2, 156.6) vs software 27,543 / (49.9, 97.2, 154.1). The byte-level
+  renderer comparison stays the CLI goldens, which pass (`4EF1FBF6`/`B6116DAE`
+  menu, `A1740DE0`/`7A860ED7` triangle, 0 violations).
+- **Also cleaned:** the six Avalonia `AVLN5001` obsolete-`Watermark` warnings are
+  gone (frontend build is warning-clean), and the three identical drop-down
+  option classes collapsed into `KeyedOption`.
+- **Tests:** `tests/XGrid.Frontend.Tests` 21 -> 30 (`RendererSettingTests`, including the per-title renderer merge and normalization),
+  `tests/XGrid.Integration.Tests` 66 -> 69 (`MachineGpuMemoryTests`).
+- **Limitation to document for users:** the GL renderer shows the last *flipped*
+  frame, so a guest that only writes the framebuffer directly (nxdk `gamma`,
+  `hello`) is not displayed there; the software renderer shows the CRTC scanout
+  and does. Mirror mode is not offered: it still runs the software rasterizer for
+  every draw and buys nothing.
