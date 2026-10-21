@@ -12,14 +12,18 @@ using XGrid.Frontend.Avalonia.Services;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
-/// <summary>One selectable NVNET backend.</summary>
-public sealed class NetworkOption
+/// <summary>One selectable option in a settings drop-down: a persisted key, a label and an optional hint.</summary>
+public sealed class KeyedOption
 {
-    /// <summary>Creates a backend option.</summary>
-    public NetworkOption(string key, string label)
+    /// <summary>Creates an option.</summary>
+    /// <param name="key">Value persisted in the settings file.</param>
+    /// <param name="label">Text shown in the drop-down.</param>
+    /// <param name="hint">Optional availability/behavior hint shown next to the label.</param>
+    public KeyedOption(string key, string label, string hint = "")
     {
         Key = key;
         Label = label;
+        Hint = hint;
     }
 
     /// <summary>Gets the persisted key.</summary>
@@ -27,55 +31,24 @@ public sealed class NetworkOption
 
     /// <summary>Gets the display label.</summary>
     public string Label { get; }
-}
 
-/// <summary>One selectable NV2A texture filter mode.</summary>
-public sealed class TextureFilterOption
-{
-    /// <summary>Creates a filter option.</summary>
-    public TextureFilterOption(string key, string label)
-    {
-        Key = key;
-        Label = label;
-    }
-
-    /// <summary>Gets the persisted key ("legacy" or "registers").</summary>
-    public string Key { get; }
-
-    /// <summary>Gets the display label.</summary>
-    public string Label { get; }
-}
-
-/// <summary>One selectable NV2A renderer.</summary>
-public sealed class RendererOption
-{
-    /// <summary>Creates a renderer option.</summary>
-    /// <param name="key">Persisted key (<c>software</c> or <c>opengl</c>).</param>
-    /// <param name="label">Text shown in the drop-down.</param>
-    /// <param name="hint">Availability hint shown next to the label.</param>
-    public RendererOption(string key, string label, string hint)
-    {
-        Key = key;
-        Label = label;
-        Hint = hint;
-    }
-
-    /// <summary>Gets the persisted key ("software" or "opengl").</summary>
-    public string Key { get; }
-
-    /// <summary>Gets the display label.</summary>
-    public string Label { get; }
-
-    /// <summary>Gets the availability hint shown next to the label.</summary>
+    /// <summary>Gets the availability/behavior hint (may be empty).</summary>
     public string Hint { get; }
 }
-
 /// <summary>One per-title override row in the settings list.</summary>
 public sealed class TitleOverrideItem : ObservableObject
 {
+    private static readonly KeyedOption[] RendererChoices = new[]
+    {
+        new KeyedOption(string.Empty, "inherit"),
+        new KeyedOption(EmulatorSettings.RendererSoftware, "software"),
+        new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL"),
+    };
+
     private bool _fixedFunctionVertex;
     private bool _texFilterRegisters;
     private bool _inheritTextureFilter;
+    private KeyedOption _selectedRenderer;
 
     /// <summary>Creates a row for a launched image path or an XBE title id.</summary>
     /// <param name="key">Override dictionary key (image path or <c>title:XXXXXXXX</c>).</param>
@@ -91,6 +64,9 @@ public sealed class TitleOverrideItem : ObservableObject
         _fixedFunctionVertex = value.FixedFunctionVertex == true;
         _texFilterRegisters = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal);
         _inheritTextureFilter = string.IsNullOrEmpty(value.TextureFilter);
+        _selectedRenderer = RendererChoices.FirstOrDefault(
+            option => option.Key.Length > 0 && string.Equals(option.Key, value.Renderer, StringComparison.Ordinal))
+            ?? RendererChoices[0];
         RemoveCommand = new RelayCommand(() => remove(this));
     }
 
@@ -142,6 +118,22 @@ public sealed class TitleOverrideItem : ObservableObject
         set => SetProperty(ref _inheritTextureFilter, value);
     }
 
+    /// <summary>Gets the renderer choices this row can pick from ("inherit", "software", "OpenGL").</summary>
+    public IReadOnlyList<KeyedOption> Renderers { get; } = RendererChoices;
+
+    /// <summary>Gets or sets the renderer this title uses (the "inherit" row keeps the global one).</summary>
+    public KeyedOption SelectedRenderer
+    {
+        get => _selectedRenderer;
+        set
+        {
+            if (value is not null)
+            {
+                SetProperty(ref _selectedRenderer, value);
+            }
+        }
+    }
+
     /// <summary>Projects the row back into the persisted model.</summary>
     public TitleOverride ToOverride()
     {
@@ -149,6 +141,7 @@ public sealed class TitleOverrideItem : ObservableObject
         {
             FixedFunctionVertex = _fixedFunctionVertex,
             TextureFilter = _inheritTextureFilter ? null : (_texFilterRegisters ? "registers" : "legacy"),
+            Renderer = _selectedRenderer.Key.Length == 0 ? null : _selectedRenderer.Key,
         };
     }
 }
@@ -210,10 +203,10 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _fixedFunctionVertex;
 
     [ObservableProperty]
-    private TextureFilterOption? _selectedTextureFilter;
+    private KeyedOption? _selectedTextureFilter;
 
     [ObservableProperty]
-    private RendererOption? _selectedRenderer;
+    private KeyedOption? _selectedRenderer;
 
     [ObservableProperty]
     private bool _eosQuirk = true;
@@ -222,7 +215,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _networkLinkUp = true;
 
     [ObservableProperty]
-    private NetworkOption? _selectedNetwork;
+    private KeyedOption? _selectedNetwork;
 
     [ObservableProperty]
     private AccentOption? _selectedAccent;
@@ -231,20 +224,21 @@ public sealed partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        NetworkOptions = new ObservableCollection<NetworkOption>
+        NetworkOptions = new ObservableCollection<KeyedOption>
         {
             new("loopback", "Loopback (offline)"),
             new("socket", "User-mode sockets"),
         };
-        TextureFilterOptions = new ObservableCollection<TextureFilterOption>
+        TextureFilterOptions = new ObservableCollection<KeyedOption>
         {
             new("legacy", "Legacy (nearest)"),
             new("registers", "TEXFILTER (tent, LOD 0)"),
         };
-        RendererOptions = new ObservableCollection<RendererOption>
+        RendererOptions = new ObservableCollection<KeyedOption>
         {
             new(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
-            new(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),        };
+            new(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
+        };
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -258,13 +252,13 @@ public sealed partial class SettingsViewModel : PageViewModel
     public IReadOnlyList<int> RamOptions { get; } = new[] { 64, 128 };
 
     /// <summary>Gets the selectable network backends.</summary>
-    public ObservableCollection<NetworkOption> NetworkOptions { get; }
+    public ObservableCollection<KeyedOption> NetworkOptions { get; }
 
     /// <summary>Gets the selectable texture filter modes.</summary>
-    public ObservableCollection<TextureFilterOption> TextureFilterOptions { get; }
+    public ObservableCollection<KeyedOption> TextureFilterOptions { get; }
 
     /// <summary>Gets the selectable NV2A renderers.</summary>
-    public ObservableCollection<RendererOption> RendererOptions { get; }
+    public ObservableCollection<KeyedOption> RendererOptions { get; }
 
     /// <summary>Gets the per-title overrides being edited.</summary>
     public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = new();

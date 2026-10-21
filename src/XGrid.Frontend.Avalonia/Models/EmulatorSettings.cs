@@ -209,6 +209,13 @@ public sealed class EmulatorSettings
                 : "legacy";
         }
 
+        if (!string.IsNullOrEmpty(title.Renderer))
+        {
+            effective.Renderer = string.Equals(title.Renderer, RendererOpenGl, StringComparison.Ordinal)
+                ? RendererOpenGl
+                : RendererSoftware;
+        }
+
         if (title.RamMb is int ram)
         {
             effective.RamMb = ram is 128 ? 128 : 64;
@@ -289,6 +296,11 @@ public sealed class EmulatorSettings
                     : string.Equals(value.TextureFilter, "legacy", StringComparison.Ordinal)
                         ? "legacy"
                         : null;
+                value.Renderer = string.Equals(value.Renderer, RendererOpenGl, StringComparison.Ordinal)
+                    ? RendererOpenGl
+                    : string.Equals(value.Renderer, RendererSoftware, StringComparison.Ordinal)
+                        ? RendererSoftware
+                        : null;
                 if (value.RamMb is int ram && ram is not (64 or 128))
                 {
                     value.RamMb = null;
@@ -307,6 +319,10 @@ public sealed class EmulatorSettings
 
         TitleOverrides = overrides;
     }
+
+    /// <summary>Gets a value indicating whether a host GPU backend is requested.</summary>
+    [JsonIgnore]
+    public bool UsesGpuBackend => IsGpuRenderer(Renderer);
 
     /// <summary>Returns true when the required firmware image is present on disk.</summary>
     [JsonIgnore]

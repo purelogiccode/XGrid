@@ -832,6 +832,25 @@ the emulation thread, frontend smoke harness - decisions §223).**
   prints steps/wall/frame SHA per renderer - the harness behind those numbers.
 - **Gates unchanged** (host-side only); suite grows by the frontend rows.
 
+**Session 2026-10-22 (twenty-fourth; per-title renderer, one GPU-memory adapter,
+`KeyedOption` collapse - decisions §224).**
+
+- **Per-title renderer.** `TitleOverride.Renderer` (same `software`/`opengl`
+  vocabulary as the global setting) pins one title to the other renderer; the
+  settings row offers `inherit` / `software` / `OpenGL`, and
+  `EmulatorSettings.WithTitleOverride` merges it into the boot snapshot, so a
+  title can opt into the GPU path without changing the global default.
+- **`XboxMachine.GpuMemory`.** The machine publishes the `PhysicalGpuMemory` the
+  NV2A itself uses; the CLI passes it to `GlBackendFactory` instead of wrapping
+  `Memory` again, so the device and every backend share one GPU-writer
+  suppression and present-dirty watch.
+- **One option type.** `NetworkOption`/`TextureFilterOption`/`RendererOption`
+  collapsed into `KeyedOption` (key + label + optional hint); the Settings XAML
+  template binds `KeyedOption`.
+- **Also:** the six Avalonia `AVLN5001` obsolete-`Watermark` warnings are fixed
+  (0 warnings now), and the frontend tests cover the per-title renderer merge
+  (`RendererSettingTests`) plus the one-adapter rule (`MachineGpuMemoryTests`).
+
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate
 anchor byte-identical.**

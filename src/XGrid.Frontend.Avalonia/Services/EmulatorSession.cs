@@ -551,8 +551,8 @@ public sealed class EmulatorSession : IDisposable
             _running = false;
             Volatile.Write(ref _machine, null);
             FailPendingRequests();
-            DetachRenderer(machine, gpuBackend); PersistEeprom(machine);
-            machine?.HddOverlay?.Dispose();
+            DetachRenderer(machine, gpuBackend);
+            PersistEeprom(machine); machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();
             _paused = false;
@@ -656,7 +656,8 @@ public sealed class EmulatorSession : IDisposable
         // (~18M per 1B dashboard steps) and no frontend surface reads it; the
         // CLI drops it for the same reason (§204, measured there as a 6.2%
         // software-mode win). Guest state is untouched. The method total and
-        // the method stream still run.        machine.Nv2A.CollectMethodHistogram = false;
+        // the method stream still run.
+        machine.Nv2A.CollectMethodHistogram = false;
 
         machine.Reset();
         ConfigureCpu(machine, settings);

@@ -81,8 +81,7 @@ measures **-29% wall** at 1B through the real `EmulatorSession` (34.8 s -> 24.7 
 on gate media) with the same picture; and per-title override V2 resolves a CHD
 through a sector-level XDVDFS lookup (§221), so a compressed library keys by
 title id. Suite **1757**. Track order is otherwise unchanged; the largest
-remaining product gap is host audio, which needs APU DSP execution first.
-**Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
+remaining product gap is host audio, which needs APU DSP execution first.**Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
 the fixed-function vertex stage (213) and its enabled-light loop (215) are
 opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU
 sample counter `NV_PAPU_XGSCNT` is derived from the EP frame divider (218, which
