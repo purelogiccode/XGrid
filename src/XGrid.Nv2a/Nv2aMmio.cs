@@ -5286,6 +5286,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 // Byte-order variants are 32-bit but not A8R8G8B8: they must take
                 // the generic decode or their channels silently swap.
                 0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 2,
+                // G8B8/R8B8 are 16-bit two-channel words: generic decode too.
+                0x17u or 0x28u or 0x29u => 2,
                 _ => 0,
             };
             if (bytesPerTexel is 2 or 4 && width > 0 && height > 0 && !DiagnosticGenericSampler &&
@@ -5471,21 +5473,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>
     /// Gets whether a texture color format uses linear (pitched) layout rather than
     /// swizzled layout. The linear formats are the pitch-addressed twins of the
-    /// swizzled color formats (0x10/0x11/0x12/0x1C/0x1D/0x1E); the sampler walks
-    /// them with the CONTROL1 pitch instead of <see cref="SwizzleOffset"/>.
+    /// swizzled color formats (0x10/0x11/0x12/0x1C/0x1D/0x1E, plus the LU byte-order
+    /// twins); the sampler walks them with the CONTROL1 pitch instead of
+    /// <see cref="SwizzleOffset"/>.
     /// </summary>
     /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
-    /// <returns>True for the six linear formats; false for swizzled formats.</returns>
+    /// <returns>True for the linear formats; false for swizzled formats.</returns>
     public static bool IsLinearTextureFormat(uint color)
     {
-        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu or 0x3Fu or 0x40u or 0x41u;
+        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu or 0x3Fu or 0x40u or 0x41u or 0x17u;
     }
 
     /// <summary>
     /// Gets the bytes per texel for a texture color format: 2 for the 16-bit
-    /// formats (0x02-0x05 and their linear twins), 4 for the 32-bit formats
-    /// (0x06/0x07, their linear twins, and the byte-order variants 0x3A-0x3C /
-    /// 0x3F-0x41), 0 for unsupported formats (the caller counts a format miss).
+    /// formats (0x02-0x05, their linear twins and the G8B8/R8B8 pair), 4 for the
+    /// 32-bit formats (0x06/0x07, their linear twins, and the byte-order variants
+    /// 0x3A-0x3C / 0x3F-0x41), 0 for unsupported formats (the caller counts a
+    /// format miss).
     /// </summary>
     /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
     /// <returns>2, 4, or 0 when the format is not backed by the sampler.</returns>
@@ -5493,7 +5497,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         return color switch
         {
-            0x02u or 0x03u or 0x04u or 0x05u or 0x10u or 0x11u or 0x1Cu or 0x1Du => 2u,
+            0x02u or 0x03u or 0x04u or 0x05u or 0x10u or 0x11u or 0x1Cu or 0x1Du
+                or 0x17u or 0x28u or 0x29u => 2u,
             0x06u or 0x07u or 0x12u or 0x1Eu => 4u,
             0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 4u,
             _ => 0u,
@@ -5563,6 +5568,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 g = Unit255[(int)((texel >> 16) & 0xFFu)];
                 b = Unit255[(int)((texel >> 8) & 0xFFu)];
                 a = Unit255[(int)(texel & 0xFFu)];
+                break;
+            case 0x28u:
+            case 0x17u:
+                // G8B8 (SZ and LU twins): 16-bit word, B in the low byte, G in
+                // the high byte. xemu samples it as GL_RG8 and swizzles the
+                // channels (R, G, R, G), i.e. r/b = low byte, g/a = high byte.
+                r = Unit255[(int)(texel & 0xFFu)];
+                g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                b = r;
+                a = g;
+                break;
+            case 0x29u:
+                // R8B8: the same 16-bit word with the channel swizzle
+                // (G, R, R, G) - r/b = high byte, g/a = low byte.
+                r = Unit255[(int)((texel >> 8) & 0xFFu)];
+                g = Unit255[(int)(texel & 0xFFu)];
+                b = r;
+                a = g;
                 break;
             case 0x02u:
             case 0x10u:
