@@ -7181,10 +7181,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint color = (_textureFormat[stage] >> 8) & 0xFFu;
 
         // 0x05/0x06 are what the reference renderer backs. The SZ byte-order
-        // variants are the same 4-byte swizzled layouts, but the reference
-        // asserts on them for cube maps and enabling them here changed no
-        // pixels on the one sample that uses them (measured 2026-10-20), so
-        // they stay out until there is an oracle for cube direction mapping.
+        // variants (0x3A-0x3C) are the same 4-byte swizzled layouts with the
+        // channels permuted; enabling them needs THREE gates together - this
+        // list, SamplerPlan.CubeBytes and TryDecodeSwizzledTexel - and even
+        // then the sampled reflection is visibly wrong (208g). Do not widen
+        // this list alone: the sampler then returns false without counting a
+        // fallback, and 207h read that as "no pixels changed".
         return color is 0x05u or 0x06u;
     }
 
