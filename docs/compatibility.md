@@ -1,6 +1,10 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **first measured rows, 2026-10-20; refreshed after §205 (draw-command
+Status: **rows re-measured 2026-10-21 after §208 (display model).** Every row now
+carries the product-path frame (`displaySha` = the CRTC scanout) next to the
+flipped-surface gate anchor, and the triangle's fast anchor is the gate media
+(HDD+DVD) after the §208d correction. Earlier: first measured rows 2026-10-20,
+refreshed after §205 (draw-command
 batching) with both backends per sample.** This is the steering document for
 fidelity work, not a gate document. A row is evidence from a recorded run; gates
 stay in `docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
@@ -51,21 +55,28 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 
 ## Matrix
 
+`displaySha` is the frame the **product** path shows (CLI `--frame-display`, the
+Avalonia frontend): the display controller's scanout, decoded from the VGA CRTC
+since §208. `lastFrameSha` is the last **flipped** 3D surface and stays the gate
+anchor; on a double-buffered title the two differ by one buffer
+(`surface - pcrtc = 0x12C000`, one 640x480x4 page). For every row below
+`displaySha == scanoutSha` - the model reproduces the raw scanout exactly.
+
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
 | **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `B6116DAE` (policy) | `-Sample dashboard` |
-| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `DD1D516E` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `7A860ED7` (policy) | `-Sample triangle` |
-| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
+| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
+| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **7.5 s** vs 11.3 s sw (gate media) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
-| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout `7328A99F` | `-Sample mesh` |
-| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420` | `-Sample gamma` |
-| **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same as `gamma` | 0 extra draws | n/a | same | RAM `ED83DC23` / CPU `D0A7BB8A`; scanout `2BC1C443` | `-Sample gamma-fade` |
-| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2` | `-Sample hello` |
-| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83` | `-Sample led` |
+| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout/display `7328A99F` | `-Sample mesh` |
+| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420`; **display `D3EBF420`** | `-Sample gamma` |
+| **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same as `gamma` | 0 extra draws | n/a | same | RAM `ED83DC23` / CPU `D0A7BB8A`; scanout `2BC1C443`; **display `2BC1C443`** | `-Sample gamma-fade` |
+| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2`; **display `72D33DC2`** (the text) | `-Sample hello` |
+| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83`; **display `18C7CC83`** | `-Sample led` |
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
-| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 90 flips / 2,952 draws / **137 colours**, full coverage | n/a | same 3B budget; **blended geometry missing vs the reference screenshot** (gap 5) | RAM `40081D03` / CPU `1C5C575D`; last frame `973AF30A` | `-Sample xgu-alpha_blending -Steps 3000000000` |
+| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene **flat** | 41 flips / 2,679 draws, **2 colours**: a solid green shape on black | n/a | cubemap reflection does not vary - see gap 3 | RAM `1E59D83F` / CPU `D5D38C64`; last frame `5174B1EB` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
@@ -76,7 +87,15 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 These are measured, not suspected — each one was found by running a sample, not
 by reading code.
 
-### 1. Direct-framebuffer output is not what `--frame`/the frontend present
+### 1. Direct-framebuffer output is not what `--frame`/the frontend present - **CLOSED 2026-10-21 (§208)**
+
+> Fixed by the display model: the VGA CRTC register file behind `NV_PRMCIO` is
+> decoded (pitch/width/height/depth), `TryCopyDisplayFrame` reads PCRTC START
+> with that geometry, the CLI exports it with `--frame-display`, and the Avalonia
+> frontend samples it at ~30 Hz (so a guest that never flips still updates the
+> picture). `--frame` stays the last flipped 3D surface - the gate anchor - and
+> is one frame ahead of the display for a double-buffered title. Details and the
+> evidence are in decisions §208. The original finding follows.
 
 `Nv2aMmio.CapturePresentedFrame` snapshots the **3D colour surface** at flip time,
 and `TryCopyPresentedFrame` reads that surface live. Programs that write the
@@ -96,12 +115,13 @@ The buffer was never missing: `TryCopyScanoutFrame` (new, reads PCRTC START) plu
 Four samples with four different RAM SHAs used to export one identical frame;
 they are now all distinguishable (`scanoutSha` per row above).
 
-**What is still open:** the *product* path (`--frame`, and the Avalonia frontend
-via `TryCopyPresentedFrame`) still presents the flip surface. Making scanout the
-default is not a one-line swap — for a flipping title the two buffers differ
-(`mesh`: 8,695 vs 8,548 colours), so it needs xemu's display model (`pcrtc.start
-/ 4` plus the VGA CRTC line offset, `nv2a.c:184-190`) and a deliberate gate
-re-record. Scoped, measured, not guessed.
+**Resolved (2026-10-21, §208).** The product path now uses the display model:
+`--frame-display` exports it, the Avalonia frontend samples it at ~30 Hz, and
+`--frame` deliberately keeps exporting the last flipped surface so every gate
+frame anchor stays valid. The model decodes the VGA CRTC the guest programs
+through `NV_PRMCIO` (pitch `(CR13 | CR19<<3 | CR25<<6) << 3`, size from CR01/
+CR12/CR07, depth from CR28 + PRAMDAC general control), and it reproduces the
+old scanout bytes exactly on six legs.
 
 ### 2. The repo's `nxdk-mesh` snapshot could never build
 
@@ -146,20 +166,24 @@ oracle the corpus did not have before. Compared as mean channel value plus an
 | sample | reference mean (R,G,B) | XGrid mean | verdict |
 |---|---|---|---|
 | `vp_lighting` | (32.3, 26.7, 224.7) | (33.9, 28.1, 226.4) | **matches** - within 1.7/255 per channel, luminance histogram close (`83/81` in the darkest non-black bucket) |
-| `alpha_blending` | (20.8, 17.2, 233.2) | (2.2, 1.8, 253.0) | **differs** - XGrid renders a near-uniform blue (100% in the lowest luminance bucket); the reference spreads 11% + 6% into mid buckets, i.e. the blended geometry is missing or black |
+| `alpha_blending` | (20.8, 17.2, 233.2) | (25.6, 21.2, 229.0) at 4.6B | **matches** - within 4.8/255 per channel once the frame is taken at a comparable phase. The sample ping-pongs a shader `transparency` 1.0 -> 0.0 every 100 frames, so a single fixed step count measures the phase, not the renderer (decisions §208f; the earlier "blended geometry missing" verdict compared a mid-fade frame) |
 | `bump_cubemap_reflect` | (62.4, 100.2, 28.9) | (2.5, 52.3, 15.9) | **differs** - XGrid is darker and greener with 36% black pixels; consistent with gap 3 |
 
 This is the first corpus evidence that can say "renders correctly" rather than
-just "renders something", and it separates two failures that both looked like
-"flat-ish frame": `vp_lighting` is right, `alpha_blending` is not.
+just "renders something". **Animated samples need a phase sweep** (§208f):
+`scripts/frame-oracle.py <reference.png> <frame.bmp>...` scores several step
+counts and reports the best. With that, `vp_lighting` and `alpha_blending` both
+match; `bump_cubemap_reflect` is the only remaining oracle failure.
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 
-> **Anchor note:** the matrix table above carries the current 1B fast anchors
-> (dashboard RAM `51B56687`, triangle RAM `DD1D516E`) for the `raster-leg`
-> command set. The `BTFF` rows below use the harness's own command (dashboard
-> with the gate pad script, triangle with HDD+DVD), so their RAM SHAs differ by
-> construction — compare rows within this table, not against the matrix.
+> **Anchor note (updated 2026-10-21, §208d):** a fast-mode **RAM** SHA is only
+> meaningful with its exact flag set. The triangle at 1B fast reads
+> `DD1D516E` (DVD only, boot animation), `B45254CA` (HDD+DVD, plain run) or
+> `0117A5E2` (HDD+DVD + `--frame-first`, which caps batches while hunting the
+> first flip). CPU SHA (`7DAB63EB` on HDD+DVD) and every counter are portable.
+> The `BTFF` rows below always pass `--frame-first`, so compare rows within this
+> table.
 
 Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M).
 Rows refreshed 2026-10-20 after the cull-face landing, so these are post-cull

@@ -73,10 +73,27 @@ this banner.
 **H1 is the reference host (verified 2026-10-20).** The semantic anchors reproduce
 **exactly** on H1, `vec=0`, no fault. Current values (post-§206g cull landing):
 
-| leg (1B, fast, `--gpu sw`) | RAM SHA | CPU SHA | wall |
+| leg (1B, fast, `--gpu sw`, **gate media**) | RAM SHA | CPU SHA | wall |
 |---|---|---|---|
-| triangle | `DD1D516E…` | `CF79FC17…` | 8.0 s |
-| menu | `51B56687…` | `F5D61C94…` | 35.4 s |
+| triangle (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | 11.3 s |
+| menu (HDD) | `51B56687…` | `F5D61C94…` | 35-54 s (load-dependent) |
+
+**Flag-set caveat (measured 2026-10-21).** The fast-mode triangle RAM SHA also
+depends on `--frame-first`: that flag caps batches at 2M steps while it hunts the
+first flip, which moves interrupt delivery and therefore guest RAM. Same media,
+1B, `--jit --jit-raw`: `B45254CA…` without it, `0117A5E2…` with it (CPU
+`7DAB63EB…` and every counter identical in both). The CPU SHA and the counters
+are the portable anchors; name the exact flag set whenever you quote a fast-mode
+RAM SHA. `scripts/boot-to-first-frame.ps1` always passes `--frame-first`, so its
+rows carry `0117A5E2…`; the anchor table above is the plain-run value.
+
+**Correction 2026-10-21 (§208d).** The triangle row used to read
+`DD1D516E…`/`CF79FC17…`/8.0 s. That pair is the **DVD-only** leg, which never
+launches the disc's XBE (`raster-leg.ps1` and `present-path-acceptance.ps1` both
+used it); it measures the boot animation - 2,673 draws / 35 frames / 42.3M px
+instead of 2,706 / 68 / 57.7M. A stashed pre-change build reproduces both pairs,
+so this is a harness/media fact, not a regression. Both scripts now use HDD+DVD.
+Triangle `gl+replace` on the real workload is 7.5 s (was "6.4").
 
 The pre-cull run reproduced the then-recorded anchors exactly (triangle
 `F57934BF…`/`CF79FC17…`, menu `660CA11B…`/`F5D61C94…`), which is what established

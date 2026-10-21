@@ -48,7 +48,7 @@ MainWindowViewModel (shell)
    |-- GameLibraryService (recursive .iso/.chd/.xbe scan)
    |-- Home / Library / Settings / Logs / About page view models
    v
-WriteableBitmap <- FramePacket <- Nv2aMmio.TryCopyPresentedFrame
+WriteableBitmap <- FramePacket <- Nv2aMmio.TryCopyDisplayFrame
 ```
 
 - The emulator runs on a dedicated background thread (`EmulatorSession.RunLoop`) in
@@ -57,11 +57,15 @@ WriteableBitmap <- FramePacket <- Nv2aMmio.TryCopyPresentedFrame
   loop joins with a 5 s ceiling. Device images (`HddOverlay`, `Dvd`) are disposed in
   `finally`. Faults are caught at the UI boundary (a guest exception must not kill
   the desktop process) and reported through the session stopped event.
-- Presented frames are captured on the emulation thread only when
-  `Nv2a.FramesPresented` changes. The packet is handed to the UI through a lock and
-  consumed by a 100 ms `DispatcherTimer`, which copies BGRA rows into a
-  `WriteableBitmap` (alpha forced to 255, row-stride aware). This path is portable and
-  never mixes software and backend pixels.
+- Frames are captured on the emulation thread when `Nv2a.FramesPresented` changes
+  **and at ~30 Hz regardless**, because the picture is a live scanout, not an
+  event: nxdk `gamma`/`hello` write the framebuffer directly and never flip
+  (§208). `TryCopyDisplayFrame` decodes the display controller's buffer (VGA
+  CRTC pitch/size from `NV_PRMCIO`), falls back to the flipped surface before a
+  mode exists, and defers to the backend readback when a GPU backend is attached,
+  so software and backend pixels are never mixed. The packet is handed to the UI
+  through a lock and consumed by a 100 ms `DispatcherTimer`, which copies BGRA
+  rows into a `WriteableBitmap` (alpha forced to 255, row-stride aware).
 - Keyboard input is translated to XID pad fields on the UI thread, stored as a pending
   state under a lock, and applied with `Gamepad.SetInput` at the next batch boundary.
 - The JIT is enabled from the settings profile: `JitEnabled`, `JitRawBlocks`,

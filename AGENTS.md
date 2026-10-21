@@ -610,6 +610,50 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-21 (fifteenth; display model + a measurement correction, §208).**
+**The console now shows what the display controller scans out, and one
+"triangle" performance leg turned out to be the boot animation.**
+
+- **`NV_PRMCIO` is decoded.** XGrid stored the VGA I/O window the guest programs
+  the video mode through and ignored it. It now models the CRTC index/data
+  latch (with the CR0-7 write protection from CR11 bit 7), plus the sequencer,
+  graphics and attribute latches, and derives the scanout geometry exactly like
+  the reference: base = PCRTC START, pitch = `(CR13 | CR19[5-7]<<3 |
+  CR25[5]<<6) << 3` (xemu `nv2a_get_params`), size `(CR01+1)*8` by
+  `(CR12|CR07 bits)+1` (QEMU `vga_get_resolution`), depth from CR28 with 15-bit
+  vs RGB565 from PRAMDAC general control bit 12.
+- **The trap is worth remembering:** the first version inferred which port a
+  write addressed by diffing the stored word, and silently swallowed
+  `WriteCrtc(0x11,0)` after `WriteCrtc(0x07,0)` - two registers can share a data
+  byte. The bus knows the exact lanes; `Nv2AMmio.Write` now passes them.
+- **`TryCopyDisplayFrame`** returns the scanout (backend readback when a GPU
+  backend is attached, flipped-surface fallback before a mode exists). CLI
+  `--frame-display`; the Avalonia frontend samples it at ~30 Hz, so a guest that
+  never flips (nxdk `gamma`, `hello`/`debugPrint`) finally shows its output.
+  **`--frame` still exports the last flipped surface**, so every frame anchor
+  stays valid. Snapshot v4 -> v5.
+- **Evidence.** Accurate 1B gates exact (menu `01BE5D64`/`3D2740B8`/`4EF1FBF6`,
+  triangle `812EA159`/`2F632483`/`A1740DE0`), fast menu `51B56687`/`F5D61C94`
+  exact, `vec=0`, ktest smoke PASS 7/7 at 792,800,535 steps with the 40,797-byte
+  log byte-identical. The CRTC export reproduces the old surface-geometry
+  scanout bytes on six legs (`gamma` `D3EBF420`, `hello` `72D33DC2`, `led`
+  `18C7CC83`, `mesh` `7328A99F`, menu `51658B3D`, triangle `AB50EF68`), and the
+  flip/display buffers differ by exactly one 640x480x4 page (`0x12C000`).
+  Suite 1596 -> **1605** (nine `Nv2aDisplayFrameTests`).
+- **Correction (§208d):** `raster-leg.ps1 -Workload tri` and
+  `present-path-acceptance.ps1` used **DVD only**, which per §207b never launches
+  the disc's XBE - they measured the boot animation (2,673 draws / 35 frames /
+  42.3M px, RAM `DD1D516E`) under a triangle's name. Gate media is HDD+DVD:
+  2,706 / 68 / 57.7M, RAM `B45254CA`, CPU `7DAB63EB`. A stashed pre-change build
+  reproduces both pairs, so this is media, not a regression. Corrected walls on
+  H1 at 1B fast: **triangle 11.3 s sw / 7.5 s `gl+replace`** (was "8.0 / 6.4"),
+  menu unchanged. The old triangle 6 s M-A target is re-based on a workload that
+  was never being measured - operator decision before anyone chases it.
+- **Build carry-over (not mine, not committed):** the frontend csproj is on
+  Avalonia 12.1.4 from a parallel session; `FileDialogService.CopyTextAsync` was
+  migrated to `DataTransfer`/`SetDataAsync` locally so the solution builds. Leave
+  both uncommitted unless that session lands its own version.
+
 **Session 2026-10-20 (fourteenth; Track E corpus unblocked, §207).**
 **M-B is met: 14 rows over 10 samples, every row reproducible.** The blocker was
 a toolchain that had never been installed, not the emulator.

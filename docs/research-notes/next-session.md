@@ -1,14 +1,14 @@
-# Next session instructions (updated 2026-10-20 after the corpus / scanout-export session)
+# Next session instructions (updated 2026-10-21 after the display-model session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §207 (corpus unblocked:
-toolchain recipe, 11 rows, scanout export) + §206 (references as one verified
-store, the host dimension, culling) + §205 (draw-command batching) + §204
-(present-path split), `docs/compatibility.md` (matrix + harness + the two gaps the
-corpus found), `docs/research-notes/usage-histogram.md` (measured NV097 usage),
-`docs/research-notes/nv097-coverage.md` (method-presence gap),
-`docs/research-notes/gpu-reference-map.md` (where to look for GPU facts),
+`docs/research-notes/xgrid-architecture-decisions.md` §208 (display model + the
+triangle-media correction) + §207 (corpus: toolchain, rows, scanout export) +
+§206 (references as one verified store, the host dimension, culling) + §205
+(draw-command batching) + §204 (present-path split), `docs/compatibility.md`
+(matrix + harness + the gaps the corpus found), `docs/research-notes/usage-histogram.md`
+(measured NV097 usage), `docs/research-notes/nv097-coverage.md` (method-presence
+gap), `docs/research-notes/gpu-reference-map.md` (where to look for GPU facts),
 `docs/research-notes/jit-track-charter.md` (status),
 `docs/research-notes/rasterizer-inventory.md`, then this file.
 
@@ -16,97 +16,93 @@ corpus found), `docs/research-notes/usage-histogram.md` (measured NV097 usage),
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §207g measured-rows refresh commit
+git log --oneline -1        # expect: the §208 display-model commit
 git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1576 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1605 green
 ```
 
-**Two machines share this tree** (`docs/hosts.md`). Start with `host-doctor.ps1`
-and read its VERDICT before trusting any number in this file: semantic anchors
-(SHAs/counters) must match everywhere, performance anchors (walls) only compare
-within one machine and one window. If the machine is new, add its fingerprint to
-`docs/hosts.md` first.
+**Two machines share this tree** (`docs/hosts.md`). Start with
+`host-doctor.ps1` and read its VERDICT before trusting any number in this file:
+semantic anchors (SHAs/counters) must match everywhere, performance anchors
+(walls) only compare within one machine and one window.
 
-Expected 1B fast-mode anchors (if these differ, the environment moved - record it,
-do not "fix" the code):
+Expected 1B fast-mode anchors (**gate media**: the triangle needs HDD + DVD):
 
-| leg | RAM | CPU | `rasterPsh` (quiet) | `drawMs` (gl) |
-|---|---|---|---|---|
-| menu (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | `51B56687…` † | `F5D61C94…` | ~12.0 s | — |
-| menu `--gpu gl --gpu-replace` | `51B56687…` † | `F5D61C94…` | 0 | ~1.05 s (`flushMs` ~0.24 s) |
-| triangle (same flags, sw) | `DD1D516E…` † | `CF79FC17…` | ~1.8 s | — |
-| triangle `--gpu gl --gpu-replace` | `DD1D516E…` † | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
+| leg (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | RAM | CPU | wall (H1) |
+|---|---|---|---|
+| menu (HDD + pad script) | `51B56687…` | `F5D61C94…` | 35-54 s (load) |
+| triangle (HDD + DVD, plain run) | `B45254CA…` | `7DAB63EB…` | ~11.3 s |
+| triangle (HDD + DVD, `--frame-first`) | `0117A5E2…` | `7DAB63EB…` | ~11.5 s |
 
-† RAM anchors re-recorded after the §206g cull-face landing (2026-10-20): culled
-triangles no longer write zeta, so guest RAM changes while **every software frame
-SHA and every CPU SHA stays identical** (controlled pre/post A/B on both legs).
-The GL frame fingerprints did move and stay inside the diff policy
-(`violations=0 maxDelta=1`, §207g) — treat GL SHAs as fingerprints, never as
-byte-exact goldens. Pre-cull RAM values were menu `660CA11B`, triangle `F57934BF`.
+A fast-mode **RAM** SHA is only meaningful with its exact flag set:
+`--frame-first` caps batches at 2M steps while it hunts the first flip, which
+moves interrupt delivery (§208d addendum). CPU + counters are the portable
+anchors.
 
-**Verified 2026-10-20 on H1** (`scripts/raster-leg.ps1`, 1B, fast, `--gpu sw`): all
-four semantic anchors reproduce **exactly**, `vec=0`, no fault. Measured walls
-triangle **9.56 s** / menu **39.08 s** pre-cull (8.0 s / 35.4 s post-cull), i.e.
-+10% / +17% against the quiet references — read ceilings as ratios on this host
-(see `docs/hosts.md`).
+The older triangle pair `DD1D516E…`/`CF79FC17…` is the **DVD-only** leg, which
+never launches the disc's XBE - it measures the boot animation (2,673 draws /
+35 frames / 42.3M px). §208d has the evidence and both scripts now use the gate
+media. Pre-cull (before §206g) the fast menu RAM was `660CA11B…`.
 
 Accurate-mode anchors (JIT off, HDD+DVD, post-cull): triangle RAM `812EA159…` /
 CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames `A1740DE0…`
-and `4EF1FBF6…` (unchanged from pre-cull — verified with a stashed pre-change
-build, §206g). GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
-(policy diff vs sw: menu 2602 px / maxDelta 1 / 0 violations, triangle 27849 px /
-maxDelta 1 / 0 violations, §207g). The older pair `F57934BF…`/`9B5AFC2A…` does
-**not** reproduce with the HDD-qualified command even pre-cull — it came from a
-no-HDD invocation and was mislabelled. Note the gl legs' **RAM** SHA differs by
-design (the software twin does not write the surfaces); CPU SHA and every counter
-must match the sw leg. Batching must never change either frame SHA: both were
-reproduced byte-identically in §205.
+and `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
+(policy diff, never byte-exact). The gl legs' **RAM** SHA differs by design (the
+software twin does not write the surfaces); CPU SHA and every counter must match.
 
-- **1538 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
-  steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical to the accepted
-  run). The xemu leg still cannot bind its monitor socket on this host, and
-  `scripts/ktest-smoke.ps1` still needs `-XisoSharp` (its default path has the
-  old user name); §205 re-ran the gate's XGrid leg directly against the existing
-  `wt-data\ktest-smoke\xgrid\ktest-smoke.iso`.
+Frame exports at 1B (same runs, §208c): the **flipped** surface is the gate
+anchor; the **display** frame is one page behind on a double-buffered title
+(`surface - pcrtc = 0x12C000` = one 640x480x4 buffer) and converges when the
+picture is static (menu: both `4EF1FBF6`; triangle display `AB50EF68`, menu
+display `51658B3D`).
+
+- **1605 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+  steps (suite log 40,797 B, byte-identical to the accepted run). The xemu leg
+  cannot bind its monitor socket on this host; `scripts/ktest-smoke.ps1` needs
+  `-XisoSharp` (its default path has an old user name).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
+- **Uncommitted carry-over that the tree needs to build:** the frontend csproj is
+  bumped to Avalonia 12.1.4 by a parallel session, and
+  `FileDialogService.CopyTextAsync` was migrated to the 12.x
+  `DataTransfer`/`SetDataAsync` clipboard API to keep `dotnet build XGrid.sln`
+  green. Neither file is part of §208; do not sweep them into your commits, and
+  re-check them if the parallel session lands its own version.
 
-## 0b. What the twelfth session landed (§205) - do not redo it
+## 0b. What the fifteenth session landed (§208) - do not redo it
 
-1. **Draw-command batching is in and default-on.** `IPgraphBackend`
-   `BeginDrawBatch()`/`EndDrawBatch()` bracket `Nv2aMmio.FlushDraw()`; the GL
-   backend stages every triangle of one primitive flush and submits it as one
-   `glDrawArraysInstanced` with one `glUniform4(capacity*25)` upload. Measured:
-   `drawMs` 1971 → 1045 ms (-47%, 3/3), wall -4.2% (3/3), 59,437 instanced draws
-   for 2.76M triangles. Do not re-add per-triangle `EnsureProgram`/
-   `ApplyTextures`/`ApplyState`/`ApplyUniforms` inside a batch, and do not
-   invent a state-fingerprint batch boundary: the guest-side boundary is exact.
-2. **The shader is instanced.** `flat out/in int vTri` carries
-   `gl_InstanceID`; both stages read the block with
-   `#define T(i) uTri[((vTri) * 25) + (i)]`. `gl_InstanceID` is 0 for
-   non-instanced draws, so **there is one program for both paths** - do not fork
-   a second fragment source for the single-triangle case. The array size is
-   `capacity * 25` and is part of `BuildFragmentSource`, so a fragment-source
-   golden test must pass the capacity.
-3. **Capacity = uniform budget.** `min(MaxFragmentUniformVectors,
-   MaxVertexUniformVectors) - 128)/25`, clamped to [1, 64] (64 on this host,
-   3 on a minimum-spec GL 3.3 driver). `XGRID_GL_NO_BATCH=1` forces 1 and is the
-   same-binary A/B switch (`scripts/batch-205-ab.ps1`). Do not hard-code 64.
-4. **Flush points are load-bearing.** `Clear`, `Flip`, `ResetState`, `Dispose`
-   and every `TryDraw` that falls back to software flush the pending batch
-   first, which keeps the software/GL write order identical to the pre-batching
-   behavior. Any new backend entry point that can change FBO content or guest
-   RAM must flush too.
-5. **`drawMs` includes the flush** (`timed[drawMs= flushMs= …]`,
-   `AddBatchFlushTicks` adds to both) so submission stays comparable across
-   batched and unbatched runs. `diag[... batchCalls= batchTris= batchCap=]`.
-6. **What is left of menu submission is packing, not GL calls**: ~803 ms =
-   2.76M × ~290 ns of `PackVerticesInto` (100 float stores per triangle). If
-   that ever matters, it needs a different data layout (e.g. float4-wide stores
-   or a persistent-mapped UBO written directly), not fewer GL calls.
+1. **The display model is real.** The VGA register file behind `NV_PRMCIO` is
+   decoded (CRTC index/data with CR0-7 protection, sequencer, graphics,
+   attribute flip-flop), and `TryGetDisplayGeometry` mirrors xemu
+   `nv2a_get_params` + QEMU `vga_get_resolution`: base = PCRTC START, pitch =
+   `(CR13 | CR19[5-7]<<3 | CR25[5]<<6) << 3`, size from CR01/CR12/CR07, depth
+   from CR28 (2 = 16 bpp, 3 = 32 bpp) with 15-bit vs RGB565 from PRAMDAC general
+   control bit 12.
+2. **`TryCopyDisplayFrame`** returns that buffer (backend readback when a GPU
+   backend is attached, flipped-surface fallback before a mode is programmed).
+   `TryCopyScanoutFrame` keeps its raw contract and uses the same geometry.
+   Snapshot v4 -> **v5**.
+3. **Product path:** `--frame-display <path>` (new) and the Avalonia frontend
+   (`EmulatorSession` samples the display at ~30 Hz, so a guest that never flips
+   still updates the picture). **`--frame` still exports the last flipped
+   surface** - every gate frame anchor stays valid.
+4. **Exact-lane port writes.** Do not infer the addressed VGA port by diffing the
+   stored word: two registers may share a data byte (`WriteCrtc(0x11,0)` was
+   swallowed after `WriteCrtc(0x07,0)`). `Nv2AMmio.Write` passes the exact lanes.
+5. **Triangle media correction (§208d).** `raster-leg.ps1` and
+   `present-path-acceptance.ps1` now use HDD+DVD for the triangle. Any wall you
+   compare against pre-2026-10-21 triangle numbers is comparing a lighter leg.
+   Also measured there: `--frame-first` changes the fast-mode **RAM** SHA (batch
+   cap -> IRQ delivery), so quote the flag set with any fast RAM anchor.
+6. **`alpha_blending` is not a gap (§208f).** The sample ping-pongs a shader
+   transparency every 100 frames; at 4.6B XGrid is within 4.8/255 of the
+   reference. New `scripts/frame-stat.py` (per-frame stats) and
+   `scripts/frame-oracle.py` (best-of-N phase match) make animated samples
+   measurable. The only remaining xgu oracle failure is
+   `bump_cubemap_reflect` (cube direction mapping).
 
 ## 0c. What the thirteenth/fourteenth sessions landed (§206/§207) - do not redo it
 
@@ -114,124 +110,91 @@ reproduced byte-identically in §205.
   verified store (`scripts/refs-manifest.ps1`, 9 sets / 43,153 files);
   `docs/hosts.md` + `scripts/host-doctor.ps1` split semantic anchors (must match
   everywhere) from performance anchors (host-local).
-- **§206 Track P product slice.** `XGrid.Input` now owns `HostPad` +
-  `XInputPadMapping` (pure, tested) + `XInputGamepadReader` (no `DllImport`,
-  never throws when absent); the frontend polls at 60 Hz, merges with the
-  keyboard and is gated on window activation. `.xgs` save/load in the app
-  (`EmulatorSession._machineLock` around each batch).
+- **§206 Track P product slice.** `XGrid.Input` owns `HostPad` +
+  `XInputPadMapping` (pure, tested) + `XInputGamepadReader` (no `DllImport`);
+  the frontend polls at 60 Hz, merges with the keyboard and is gated on window
+  activation. `.xgs` save/load in the app.
 - **§206g cull face.** `SET_CULL_FACE_ENABLE`/`SET_CULL_FACE`/`SET_FRONT_FACE`
   latch; `ShouldCull(area)` in both fill paths. 41,035 triangles culled per 1B,
   triangle pixels −35.3%, menu −11.1%, **every software frame and CPU SHA
-  byte-identical**. `culled=` on the NV2A line. Snapshot v3 → v4.
+  byte-identical**. `culled=` on the NV2A line.
 - **§207 corpus.** Toolchain in `scripts/build-nxdk-samples.ps1` (MSYS2 + clang/
-  lld/**llvm**/bison/flex/cmake, nxdk `a6c31ee`); `boot-to-first-frame.ps1
+  lld/**llvm**/bison/flex/cmake, nxdk `a6c31ee`), `boot-to-first-frame.ps1
   -Corpus` re-measures; 14 rows over 10 samples, M-B met.
-- **§207f scanout export.** `Nv2aMmio.TryCopyScanoutFrame` + `--frame-scanout`
-  read PCRTC START, which is where direct-framebuffer programs (`XVideoGetFB`,
-  `debugPrint`) actually draw: `gamma` goes from 1 colour to 768 / 298,744 px,
-  `hello` shows its text. Every corpus row now carries a `scanoutSha`.
+- **§207f/§208 scanout/display export.** `--frame-scanout`, `--frame-display`,
+  and a `displaySha` per corpus row.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Menu `gl+replace` (quiet projection ~23.8 s)**: GL submission ~1.05 s
-(0.24 s of it the instanced draws), CPU engine ~17 s, block builds ~1.4 s,
-interpreter ~2.5 s, boot ~2 s. The remaining menu headroom is CPU engine
-(Track C, frozen) plus the ~0.8 s of block packing.
+**Menu `gl+replace`**: GL submission ~1.05 s (0.24 s instanced draws), CPU
+engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s. Submission is
+not the problem; Track C is frozen.
 
-**Triangle `gl+replace` (~6.1 s)**: CPU-bound (`nonJitMs` 3.75 s of `outerMs`
-6.3 s); GL submission is ~0.25 s. Track B cannot close the 6 s target without
-Track C (frozen).
+**Triangle `gl+replace` (gate media, 1B)**: **7.5 s** now measured (11.3 s sw).
+The old "6.4 s / <= 6 s target" was computed on the DVD-only leg that renders the
+boot animation, so **the M-A triangle target needs an operator decision** before
+anyone chases it - the workload changed, not the performance.
 
-The automated acceptance run is `scripts/present-path-acceptance.ps1` (interleaved
-sw/gl pairs -> medians -> projection against the recorded quiet references). Its
-SUMMARY is only meaningful when its `sw` leg matches the reference (menu ~33 s,
-triangle ~8.7 s); on this host the *unmodified baseline* measures 62.6 / 14.0 s
-even with an idle CPU, so absolute M-A status is undecided (see §5).
+**`present-path-acceptance.ps1`** is meaningful only when its `sw` leg matches
+H1's reference in the same window (menu ~35-40 s, triangle ~11 s with the fixed
+media). Absolute M-A status on H1 is still undecided; ratios are not.
 
 ## 2. Recommended next session - fixed order
 
-**Chosen path (2026-10-20, H1, operator authorization).** Track P first: the
-frontend is the product and it was sw-only, keyboard-only, silent, stateless.
-Host audio is **not** a last-mile task — `McpxApuDevice` has no PCM sink at all
-(its DSP EP "FIFO drain needs an S/PDIF sink"), so audio needs real output
-emulation, not wiring, and is deferred as a scoped feature. Landed in that
-session: XInput controller support (analog + sticks, dead zone, XInput→XID
-mapping in `XGrid.Input` with 29 tests) and `.xgs` save/load in the app.
-
-Order after that: **Track E Option A (corpus)** — it is the only track that
-produces the usage histogram every future fidelity landing is gated on.
-Track B is done until M-A can be re-measured against H1's own reference.
-
 Pick **one**:
 
-### Option A (Track E, the steering signal): grow the corpus - **DONE 2026-10-20**
+### Option A (Track E, the steering signal): close the cubemap gap
 
-The nxdk toolchain blocker is cleared (`scripts/build-nxdk-samples.ps1`:
-MSYS2 + clang/lld/llvm/bison/flex/cmake, nxdk `a6c31ee`), the corpus has **11
-rows over 10 samples**, and `boot-to-first-frame.ps1 -Corpus` re-measures them.
-M-B is met.
+**Not `alpha_blending`** - §208f proved that sample renders correctly (within
+4.8/255 of the reference at 4.6B; the earlier verdict compared a mid-fade phase
+of its 100-frame transparency ping-pong). The only remaining xgu oracle failure
+is `bump_cubemap_reflect`: 2 colours at 3B (a solid green shape on black) and
+`|dmean|` ~60/43/12 against its reference at 3.0B/3.6B/4.2B, while its texture
+format decode is fixed (§207h). It samples **`0x3A` cube maps**, which
+`IsSupportedSwizzledFormat` rejects, so 896,067 samples count a texture-mode
+fallback - but extending the whitelist changed no pixels, which is why it was
+reverted. The open work is **cube direction mapping** for those formats, and it
+needs an oracle (the reference screenshot + `scripts/frame-oracle.py`).
+Acceptance: the frame moves toward the reference at some phase, both gate
+frames stay byte-identical, and the fallback counter reaches 0 with pixels
+changing (not just counters).
 
-Two gaps the corpus found, both recorded in `docs/compatibility.md`:
+### Option B (Track P, product): host audio sink (APU output)
 
-1. **Direct-framebuffer output is never presented** - the highest-value fix on
-   the board right now. `CapturePresentedFrame` snapshots the 3D color surface
-   at flip time, so nxdk programs that write the scanout buffer directly
-   (`XVideoGetFB`, `debugPrint`) produce no captured frame at all; `gamma`,
-   `gamma-fade`, `hello` and `led` all export the boot animation while their
-   guest RAM clearly differs. A correct fix models the display like xemu
-   (`pcrtc.start` + VGA CRTC line offset, `nv2a.c:184-190`) - not a one-line
-   swap, because the guest writes a VRAM-aperture address that gets masked into
-   the 64 MB space.
-2. `data/test-samples/nxdk-mesh` was missing `verts.h`/`texture.h` and could
-   never build; the corpus now builds from nxdk upstream instead.
+Large and unscoped: `McpxApuDevice` has no PCM sink, so this is real output
+emulation (EP FIFO drain, mixer fetch, S/PDIF framing) with no audio oracle
+(§206e). Pick it only with an operator mandate.
 
-Next corpus steps: fetch the xgu examples and `nxdk_vsh_tests` (toolchain is now
-available), and build `sdl`/`sdl_image` for a 2D-path row.
+### Option C (Track B, only if M-A must be proven): re-run the acceptance script
 
-### Option B (Track P, product): one feature
+Re-measure `present-path-acceptance.ps1` (now on gate media) in one window and
+record the ratios. Do not chase the old triangle 6 s target until the operator
+re-bases it on the real workload.
 
-Pick exactly one: host audio sink (APU output), physical gamepad binding, or
-save-state V1 in the Avalonia app. The frontend is still sw-only, keyboard-only,
-silent, stateless. Acceptance: the app plays a sample with sound, a pad, or
-save/load without the CLI.
+### Filed, lower value - do not start while A is open
 
-### Option C (Track B, only if M-A must be proven): close the projection gap
-
-Re-run `scripts/present-path-acceptance.ps1` on a *reference-state* host (its
-`sw` leg must read ~33 s menu / ~8.7 s triangle) and record M-A. If the menu is
-still over 24 s, the measured next items are: block packing (~0.8 s, §205) and
-the texture fingerprint (~0.5-0.9 s, needs guest-write span tracking - the
-rejected shortcuts are in §204). Do not start either while B/E are open.
-
-### Filed, lower value - do not start while A/B are open
-
-- **Texture fingerprint exactness fix**: guest-write span tracking in
-  `PhysicalMemory` (a coarse envelope compare per write, dirty flags per span) so
-  the 16 sampled reads only run when the texture's span changed. Measured
-  rejections: fewer/contiguous samples (silent fidelity regression), per-write
-  8-span watch (net +0.5 s, hot path).
-- **The 2-pixel k1 interleave** (>= 2% acceptance, bounded ceiling) - demoted.
-- **O6 row spans / Vector128 pack-blend** - ceilings ~0.5 s.
-- **Track C** stays frozen; C3-z (2-3%) only on an operator decision.
+- Faithful VGA read-back (0x3D5 -> `cr[index]`): guest reads the window 302
+  times/1B; changing what it reads is a behavior change needing a differential.
+- Texture fingerprint exactness (guest-write span tracking) and the 2-pixel k1
+  interleave - both measured below the noise floor (§204/§205).
+- 16-bit display modes: modelled but no corpus sample uses one (unit coverage
+  only).
+- Cubemap addressing for `0x3A`-`0x3C` (§207h/§compat gap 3): the decode is
+  fixed, the direction mapping has no oracle.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
-- A **texture-buffer object** for the per-triangle block (the §204 sketch):
-  it moves the block fetch into the fragment stage (~19-25 lookups/fragment on
-  a 210M-fragment leg). The uniform-array + instancing form is why batching
-  costs nothing per pixel (§205).
-- **State-fingerprint batch boundaries** - a per-triangle compare that must
-  cover every `PgraphDrawInfo` field; the guest-side `FlushDraw` boundary is
-  exact and free.
-- Per-draw probes: a `Stopwatch` pair per draw inflated the submission bill
-  ~2x (`drawMs` 6.87 -> 12.6 s). Sample 1-in-64 (`XGRID_GL_PROBE=1`) or ablate.
-- `TimeSpan` per draw (`AddDraw(TimeSpan)`) - measurable; use `AddDrawTicks`.
-- Weakening the texture fingerprint (contiguous window / fewer samples) - a
-  fidelity regression disguised as a win; do not.
-- A per-write texture-span watch in `PhysicalMemory` - ~0.2-0.4 s of write cost
-  for ~0.5-0.9 s of read cost, and it touches the frozen CPU hot path.
-- Earlier sessions: O5 counter batching, C3-y bookkeeping, the 1024-slot data
-  translate cache, relay/E-series emission, block fusion - all measured, all out.
+- **DVD-only triangle legs.** They never launch the disc XBE (§207b, §208d);
+  any triangle number measured that way is the boot animation.
+- A **texture-buffer object** for the per-triangle block (per-fragment fetch).
+- **State-fingerprint batch boundaries** - the guest-side `FlushDraw` boundary
+  is exact and free.
+- Per-draw probes (`Stopwatch` per draw inflated submission ~2x); sample
+  1-in-64 (`XGRID_GL_PROBE=1`) or ablate.
+- Weakening the texture fingerprint; a per-write texture-span watch in
+  `PhysicalMemory`.
+- O5 counter batching, C3-y bookkeeping, the 1024-slot data translate cache,
+  relay/E-series emission, block fusion - all measured, all out.
 
 ## 4. Rules (non-negotiable)
 
@@ -242,49 +205,36 @@ rejected shortcuts are in §204). Do not start either while B/E are open.
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` +
   flag-off byte-identical, plus the fast-mode gates. Host-side-only diagnostics
   still need the 1B goldens (both backends) + ktest smoke. A GL-submission
-  change additionally needs **both 1B frame goldens to reproduce byte-identically**
-  (§205 did: `6BE6325F…` / `3FC4B419…`) and the mirror-mode run (no
-  `--gpu-replace`), not just replacement mode.
-- **Strip probe instrumentation before any A/B leg.** Use a same-binary switch
-  first (`XGRID_GL_PROBE=1`, `XGRID_GL_NO_BATCH=1`: off by default, only the
-  switched leg pays).
+  change additionally needs both 1B frame goldens byte-identical and the
+  mirror-mode run (no `--gpu-replace`).
+- **Strip probe instrumentation before any A/B leg.**
 - **1B runs only from a full solution build.**
 - Do **not** flip `--jit`/`--jit-raw` defaults without an operator decision.
 - No real Xbox games in gates; `data/test-samples/` is gate currency and real
   ISOs are fast-mode benchmark-only. `References2/` is read-only. Leave
   `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
-- Commit only your own files; do not sweep unrelated working-tree edits.
-- Write it up: the next decisions section (§206+) with the measured table,
-  charter + inventory status headers, `AGENTS.md` session note, and a fresh copy
-  of this file.
+- Commit only your own files. **The Avalonia 12.1.4 csproj bump and its clipboard
+  migration are another session's edits** - leave them uncommitted.
+- Write it up: a decisions section (§209+) with the measured table, charter +
+  inventory status headers, `AGENTS.md` session note, and a fresh copy of this
+  file.
 
-## 5. Host state — two machines (2026-10-20)
+## 5. Host state — two machines (2026-10-21)
 
 **Development runs on two machines sharing this Dropbox tree.** Their fingerprints
-live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before believing any wall in
-this file. Anchor discipline: **semantic** anchors (SHAs, counters) must match on
-both machines — a mismatch is a bug, not an environment note; **performance**
-anchors (walls, `msps`, `rasterPsh`) compare only within one machine and one window.
+live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before believing any wall
+in this file. Anchor discipline: **semantic** anchors (SHAs, counters) must match
+on both machines - a mismatch is a bug, not an environment note; **performance**
+anchors (walls, `msps`, `rasterPsh`) compare only within one machine and one
+window.
 
-**Absolute walls are NOT comparable across machines.** At the §204 session close
-the *unmodified baseline* build (`4f0bd47`) measured menu sw **62.6 s** and
-triangle sw **14.0 s** at 1B, against the recorded 33.3 s / 8.69 s, **with an idle
-CPU** (0.7 cores of background; `Win32_Processor` reports its 3.6 GHz base clock).
-The raster share is inflated unevenly (`rasterPsh` 20.1 s vs the recorded 12.0 s =
-1.67x), so no single factor converts those numbers into the reference session's.
-Either the host is misconfigured today or the references came from the *other*
-machine — that is open item 1/3 in `docs/hosts.md`. Consequences:
-
-- Trust same-window A/B pairs and `drawMs`/`flushMs` (host-side GL timers), not
-  absolute walls or cross-session projections.
-- Before reading `present-path-acceptance.ps1`'s SUMMARY as M-A, check that its
-  `sw` leg is ~33 s (menu) / ~8.7 s (triangle); if not, this machine is off the
-  reference state and only the ratio matters.
-- A host is not the reference host until it reproduces those absolutes on an
-  unmodified baseline; record the verdict in `docs/hosts.md`.
-- Suspects worth checking on a fresh boot: CPU boost/frequency state, power
-  plan, memory clock, background I/O (Dropbox/syncthing), and Rider indexing.
+H1 (PETERSONPC) is the reference host: all four semantic anchors reproduce
+exactly, `vec=0`, no fault. Its walls read +10%/+17% against the quiet
+references; treat ceilings as ratios. §204-close's 62.6 s / 14.0 s menu/triangle
+reading did not reproduce and is treated as a transient. Suspects worth checking
+on a fresh boot: CPU boost/power plan, background I/O (Dropbox indexing), Rider
+indexing.
 
 ## 6. Commands
 
@@ -292,50 +242,35 @@ machine — that is open item 1/3 in `docs/hosts.md`. Consequences:
 # build / test / format
 dotnet restore XGrid.sln                     # only after project-graph changes
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test XGrid.sln -c Release --nologo --no-build
+dotnet test  XGrid.sln -c Release --nologo --no-build
 dotnet format XGrid.sln --no-restore; dotnet format XGrid.sln --no-restore --verify-no-changes
 
-# standing ktest gate (~2-5 min on this host; needs -XisoSharp on this host)
+# standing ktest gate (~1-5 min on this host; needs -XisoSharp here)
 pwsh -File scripts/ktest-smoke.ps1 `
   -FirmwareDir "data\xemu-0.8.136-windows-x86_64" `
-  -SuiteXbe "data\test-samples\kernel-test-suite-default.xbe" -SkipXemu
+  -SuiteXbe "data\test-samples\kernel-test-suite-default.xbe" -SkipXemu `
+  -XisoSharp "C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp\XISOSharp.Cli\bin\Release\net10.0\XISOSharp.exe"
 
-# one measurement leg (parses wall/outerMs/rasterPsh/pixels/SHAs)
+# one measurement leg (gate media; parses wall/outerMs/rasterPsh/pixels/SHAs)
 pwsh -File scripts/raster-leg.ps1 -Workload tri  -Log wt-data\leg-tri.log
 pwsh -File scripts/raster-leg.ps1 -Workload menu -Log wt-data\leg-menu.log
 # GL leg: add -Gpu gl -GpuReplace ; A/B: -Cli <other tree>\...\XGrid.Cli.dll
 
-# draw-command batching A/B (same binary, interleaved off/on, medians)
-pwsh -File scripts/batch-205-ab.ps1 -Workload menu -Pairs 3
+# all three frame exports in one run (flip = gate anchor, scanout/display = TV)
+dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... `
+  --frame wt-data\out.bmp --frame-scanout wt-data\out-scan.bmp --frame-display wt-data\out-display.bmp
 
 # Track E corpus (nxdk samples): build once, then measure every row
 pwsh -File scripts/build-nxdk-samples.ps1                 # needs MSYS2 + clang/lld/llvm
-pwsh -File scripts/build-nxdk-samples.ps1 -Samples mesh,gamma -Clone
 pwsh -File scripts/boot-to-first-frame.ps1 -Corpus        # all staged ISOs, 1B, sw
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample mesh -Gpu gl -GpuReplace
-pwsh -File scripts/boot-to-first-frame.ps1 -Iso D:\some\other.iso   # any loose ISO
-
-# direct-framebuffer programs: the flipped frame is stale, the scanout is not
-# (corpus rows carry scanoutSha; the Frame line prints surface= and pcrtc=)
-dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... `
-  --frame wt-data\out.bmp --frame-scanout wt-data\out-scanout.bmp
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample gamma -Gpu gl -GpuReplace
 
 # GL goldens (1B): sw vs gl frame policy + counters
-pwsh -File scripts/gpu-slice1-golden.ps1      -OutDir wt-data\b1gold `
-  -Bios data\xemu-0.8.136-windows-x86_64\Complex_4627.bin `
-  -Mcpx data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin `
-  -Eeprom data\xemu-0.8.136-windows-x86_64\eeprom.bin -Hdd wt-data\chain-199l\hdd.qcow2
-pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -OutDir wt-data\b1gold <same four> `
-  -Hdd wt-data\chain-199l\hdd.qcow2 -Dvd wt-data\xemu-tri\triangle.iso
+pwsh -File scripts/gpu-slice1-golden.ps1      -OutDir wt-data\b1gold -Hdd wt-data\chain-199l\hdd.qcow2
+pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -OutDir wt-data\b1gold -Hdd wt-data\chain-199l\hdd.qcow2 `
+  -Dvd wt-data\xemu-tri\triangle.iso
 
-# Track E corpus rows (harness: one BTFF line + JSON per row)
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
-pwsh -File scripts/boot-to-first-frame.ps1 -All
-
-# first presented frame + its step anchor on any boot
-dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... --frame-first out.bmp
-
-# M-A acceptance in one command: interleaved sw/gl pairs, medians, projection
+# M-A acceptance: interleaved sw/gl pairs, medians, projection (gate media now)
 pwsh -File scripts\present-path-acceptance.ps1 -Pairs 3 -Workload both
 
 # session start: fingerprint + precondition + References2 integrity
@@ -356,6 +291,8 @@ scratch - recreate them from this file if they are gone.
 `timed[drawMs= flushMs= clearMs= readbackMs= readbacks=]` and
 `diag[fboReallocs= fboZetaDrops= clipXY= flipEmpty= presentUploads= flipStaleUploads= batchCalls= batchTris= batchCap=]`
 counters, `readback=on|off` and `methods=` in the `GPU backend=gl` lines,
+`PresentedFrameDebug` (now carries `crtc=<w>x<h>+<pitch> bpp= display=<base>`),
+`Nv2AMmio.VgaCrtcDebug` (CR01/07/12/13/19/25/28 + SR01 + the latched index),
 `DiagnosticGenericSampler`/`DiagnosticGenericFill` (differential test switches),
 `--raw-shapes`, `XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`,
 `XGRID_RAW_SKIP_HEADS`, `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`,
