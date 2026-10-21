@@ -691,6 +691,20 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   key. CLI `xgrid disc title <path>` prints the id/key. Caveat: homebrew images
   that never set a certificate id share the placeholder (`0xFFFF0002`).
 
+- **Track P/B: the frontend on the host GPU backend (220, 2026-10-21):** the
+  Avalonia frontend has a **Renderer** setting — `Software rasterizer` (default,
+  portable) or `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only).
+  `Nv2AMmio.GpuMemory` exposes the machine's guest-memory adapter, the new
+  frontend `GraphicsBackendHost` attaches `GlBackendFactory` on the emulation
+  thread (`replaceSoftware`, `frameReadback`) and detaches it in the session's
+  `finally`; frames still arrive through `TryCopyDisplayFrame`. Snapshot
+  save/load is now marshalled onto the emulation thread (a load resets backend
+  state and a GL context belongs to its thread). Measured on the dashboard (40 s
+  interleaved pairs): **software 1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B
+  (+9.8% / +8.2%)**, same non-black pixel count, working 72 MB save/load round
+  trip; the CLI's 1B menu leg is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
+  The software default is byte-identical everywhere (all four 1B anchors exact,
+  ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: **1757 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
@@ -795,6 +809,28 @@ CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
   `format --verify-no-changes` clean, ktest smoke PASS 7/7 at **792,800,535**
   steps with the 40,797-byte suite log `CA5D3867…` byte-identical.
   Suite 1738 -> **1757** (Nv2a +4, Frontend +3, XboxFs +9, Integration +3).
+
+**Session 2026-10-21 (twenty-third; renderer policy seam, snapshot requests on
+the emulation thread, frontend smoke harness - decisions §223).**
+
+- **The renderer decision is pure and testable.** `RendererPolicy.Decide`/
+  `Describe`/`Normalize` (frontend `Services/`) owns the platform policy (OpenGL
+  only on Windows) and `GraphicsBackendHost.TryAttach`/`Detach` perform the side
+  effects; `EmulatorSession` calls the host and logs its one-line detail. The
+  setting's key space stays `EmulatorSettings.Renderer` (`software`/`opengl`),
+  so there is one persisted vocabulary.
+- **Snapshot save/load moved onto the emulation thread.** A load calls
+  `Nv2AMmio.LoadState -> Backend?.ResetState()` (GL calls), which is illegal off
+  the context's thread; requests are queued and served by the loop between
+  batches (and during a pause, whose gate wait is now a 50 ms timed wait), with a
+  60 s ceiling and explicit failure of requests still queued at exit.
+- **Measured in-app (dashboard, fast mode, interleaved 40 s pairs):** software
+  1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B = **+9.8% / +8.2% guest
+  throughput**, identical 306,817 non-black pixels, and a 72 MB `.xgs` round trip
+  with GL attached. The CLI's 1B menu leg remains the ceiling (-30.9%).
+- **`tools/frontend-smoke`** (new) drives a real `EmulatorSession` headlessly and
+  prints steps/wall/frame SHA per renderer - the harness behind those numbers.
+- **Gates unchanged** (host-side only); suite grows by the frontend rows.
 
 **Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
 composition + clear masks + per-title overrides V2). Four slices, every gate

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>XGrid.Tools.FrontendSmoke</RootNamespace>
+    <AssemblyName>frontend-smoke</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The referenced frontend is UI code: its continuations must resume on the Avalonia dispatcher. -->
+    <NoWarn>$(NoWarn);MA0004</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\XGrid.Frontend.Avalonia\XGrid.Frontend.Avalonia.csproj" />
+  </ItemGroup>
+
+</Project>

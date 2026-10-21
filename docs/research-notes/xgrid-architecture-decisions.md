@@ -13755,8 +13755,8 @@ including the regenerated GLSL string goldens for the new shader helpers).
 ## 220 The GL sampler decodes the address word, a composed replace-mode frame keeps both writers, and the frontend can step frames (2026-10-21, twenty-second session)
 
 **Landing note: this section is the merge of the `repofleet/task-26` PR onto
-§219.** §219a's TEXFILTER decode and §219c's clear-mask rule stay in force;
-220b-d replace §219b's flip-drop composition with an explicit FBO -> guest-RAM
+┬º219.** ┬º219a's TEXFILTER decode and ┬º219c's clear-mask rule stay in force;
+220b-d replace ┬º219b's flip-drop composition with an explicit FBO -> guest-RAM
 copy, decode the texture-address word instead of reading it raw (clamp-to-border
 included), and add the Track P frame-step controls.
 
@@ -13769,7 +13769,7 @@ clamp 4,265 and **border/border** 35 times, slot 3 border/border 80 times with
 `FFFFFFFF` as the border colour, and TEXFILTER `2/2/1` (tent) next to `1/1/1`
 (nearest). The gate frames never showed the difference because their
 coordinates stay inside [0,1) and a tent at a texel centre is a nearest tap
-(§210d).
+(┬º210d).
 
 **The bug the seam made visible.** The GL backend computed its wrap uniforms
 from the *raw* `NV097_SET_TEXTURE_ADDRESS` word. That word assigns **1 to wrap
@@ -13780,12 +13780,12 @@ correctly; only the two executors disagreed.
 ### 220b The seam carries resolved sampler state
 
 `PgraphTextureSlot` carries `SamplerWrapU/V` (0 wrap, 1 mirror, 2 clamp,
-3 clamp-to-border), `BorderColor`, plus §219a's `FilterBilinear` /
+3 clamp-to-border), `BorderColor`, plus ┬º219a's `FilterBilinear` /
 `FilterConvolution`. They are filled in `Nv2AMmio.BuildTextureSlot` from
 `DecodeTextureAddressU/V` + `ToWrapMode` + `SamplerWrapMode` and the
 `ResolveTextureFilter(slot, ...)` helper - the same helper that
 `BuildSamplerPlans` calls, so the software `SamplerPlan` and the backend slot
-cannot drift (§219a's static `DecodeTextureFilter` folded into it, so the flag
+cannot drift (┬º219a's static `DecodeTextureFilter` folded into it, so the flag
 is consulted in exactly one place). `--tex-filter` stays opt-in: with the flag
 off `FilterBilinear` is false and every stage is nearest, so the default path
 is unchanged by construction.
@@ -13803,7 +13803,7 @@ is unchanged by construction.
 - `SampleConvolved(slot, xyw)`: nine 1-2-1 taps one texel apart (`du = 1/w`, or
   `1/(w*size)` for a normalized stage), each tap a `SampleSlot`. Emitted only
   for PROJECT2D and only when `uTexConvolution` is non-zero (MIN =
-  `CONVOLUTION_2D_LOD0`, §210a).
+  `CONVOLUTION_2D_LOD0`, ┬º210a).
 - PROJECT2D divides by w (`c.xy / c.w`, zero w keeps the pair), matching
   `ResolveTexel`'s reference `textureProj(norm(pT.xyw))`.
 - The interpolation preamble adds the **clip origin to both axes**:
@@ -13821,10 +13821,10 @@ The uniforms are per slot (`uTexBilinear[4]`, `uTexConvolution[4]`,
 
 ### 220d Gap 8: a declined draw composes instead of losing the frame
 
-This replaces §219b's flip-drop. Replace mode sends every draw to GL and falls
+This replaces ┬º219b's flip-drop. Replace mode sends every draw to GL and falls
 back to the software rasterizer when the backend declines a shape - but the
 fallback writes guest RAM while the flip served the FBO, so one declined draw
-cost the whole frame's GL pixels (measured §209f: the cubemap row presented the
+cost the whole frame's GL pixels (measured ┬º209f: the cubemap row presented the
 clear colour). The rule is now **one writer per frame**:
 
 1. On the first declined draw of a frame the backend flushes its staged batch
@@ -13867,13 +13867,13 @@ step). The About page and the README list the keys.
   2,706/68/34, PASS.
 - Menu `--tex-filter registers` (sw vs gl policy): both frames unchanged,
   PASS - evidence the flag's uniform path is wired, with the menu's
-  texel-centre sampling as the known non-discriminator (§210d).
+  texel-centre sampling as the known non-discriminator (┬º210d).
 - `xgu vp_lighting` at 3B in replace mode (the only corpus row with fractional
   texcoords and zero declined draws): the two renderers agree within one 8-bit
   step in **both** states - gl legacy `E68070A3` vs sw `72B2F490`, gl registers
   `A9E09139` vs sw `CF698444`, `dmean <= 0.01`, max delta 1 - and the flag
   moves both by the same ~6.5% / max 80.
-- Suite: Nv2a 388, GpuGl 92 (the §219b flip-drop live test is replaced by the
+- Suite: Nv2a 388, GpuGl 92 (the ┬º219b flip-drop live test is replaced by the
   composition test), format clean.
 ## 221 Track B/P: the GPU renderer is a frontend setting (2026-10-22, twenty-second session)
 
@@ -13913,7 +13913,7 @@ whole run - never a mix, and never a silent downgrade. `DetachRenderer` clears
 device images are disposed.
 
 The session also disables the `--pgraph` method histogram (a CLI diagnostic with
-two dictionary updates per PGRAPH method, measured -6.2% menu wall with §204).
+two dictionary updates per PGRAPH method, measured -6.2% menu wall with ┬º204).
 The method total/stream still run, so the app is not blind - only the histogram
 map is empty, which is why a `.xgs` saved by the app differs from a CLI save in
 that map (same self-describing format, fewer diagnostic bytes).
@@ -13927,7 +13927,7 @@ writes the framebuffer directly and never flips (nxdk `gamma`/`hello`,
 `debugPrint`): its pixels exist only in RAM. New
 `Nv2AMmio.TryCopyScanoutFrameFromMemory` reads that buffer regardless of the
 backend; the session uses it only *before* the first backend frame, so a backend
-frame is never mixed with RAM pixels (the same all-or-nothing rule as §129/§219b).
+frame is never mixed with RAM pixels (the same all-or-nothing rule as ┬º129/┬º219b).
 
 `TryCopyScanoutFrame` itself keeps its old contract (no backend), so no caller
 changed behavior; `TryCopyScanoutFrameFromMemory` equals it byte-for-byte when
@@ -13944,17 +13944,17 @@ leg), 1B fast-mode steps, one run per renderer (scratch harness under
 | software | 34.8 s | 687 | `2239732C8B32998E` | 306,817 |
 | OpenGL (replace + readback) | 24.7 s | 688 | `B3C8042C4B39B4AE` | 306,817 |
 
-The two pictures agree everywhere except 2,385 of 307,200 pixels (|dmean| ≈
+The two pictures agree everywhere except 2,385 of 307,200 pixels (|dmean| Γëê
 0.005/channel; the frames are also one flip apart), and the wall drops ~29%.
-The backend's own fidelity is gate currency, not this table: §219's 1B GL golden
-pins the flip frame within the ±1 policy band.
+The backend's own fidelity is gate currency, not this table: ┬º219's 1B GL golden
+pins the flip frame within the ┬▒1 policy band.
 
 **Known verification gap, stated plainly:** the app's window was not observed
 live in this session's environment (no interactive desktop; the process starts
 and exits cleanly, no crash entry). The feature's seam - `EmulatorSession` -
 was exercised for real, and the frontend project builds with compiled XAML and
 analyzers clean. A human should still launch the app once and click through
-Settings → Renderer.
+Settings ΓåÆ Renderer.
 
 ### 221e `unsupTex[...]`: which modes a declined draw asked for
 
@@ -13964,11 +13964,11 @@ now also prints a slot histogram of the modes that tripped
 **`unsupTex[m0C=14 m11=28]`**: DOT_REFLECT_SPECULAR (0x0C) on stage 3 and
 DOT_PRODUCT (0x11) on two earlier stages of the same 14 draws. So B3's next
 slice is two mode families, not one, and the reflection alone would not clear
-the row. Diagnostic only: the 3B cubemap leg still presents `DA0750EE…` with the
+the row. Diagnostic only: the 3B cubemap leg still presents `DA0750EEΓÇª` with the
 same RAM/CPU SHAs and counters.
 
 ## 222 The CHD title id: a sector-level XDVDFS lookup (2026-10-22)
-The per-title override V2 keying (§219d) could not resolve a CHD, so every CHD
+The per-title override V2 keying (┬º219d) could not resolve a CHD, so every CHD
 library fell back to a path key (documented gap). The blocker was structural:
 `XdvdfsFileSystem` is XISOSharp-backed and XISOSharp's explorer takes a *path*
 (ISO/CSO), while a CHD is a compressed sector stream.
@@ -13991,7 +13991,7 @@ an `IDvdImage`, so the path is testable without a CHD fixture).
 committed): for `wt-data/xemu-tri/triangle.iso` and five
 `data/test-samples/corpus/*.iso` images the sector reader returns exactly the id
 the XISOSharp path returns (`FFFF0002` for all six - the homebrew placeholder,
-§219d). A CHD is not available on this host, so the container open itself is
+┬º219d). A CHD is not available on this host, so the container open itself is
 pinned by tests on an in-memory `IDvdImage` rather than by a real CHD run: the
 honest state is "the format path is implemented and differential-tested, the
 container hand-off is unexercised here".
@@ -14001,3 +14001,108 @@ XGD offset, AVL children, case-insensitive name, missing file, no magic,
 oversized cap, directory entry, sector-pad walk), `XGrid.Integration.Tests`
 66 -> **69** (`TryReadImage` through a synthetic volume, a disc without the root
 executable, a null image). Suite 1738 -> **1757**.
+
+## 223 Track P/B: the renderer policy seam, threaded snapshot requests and the frontend smoke harness (2026-10-21, twenty-third session)
+
+The Avalonia frontend was software-only by construction (its 2026-10-20 charter
+excluded "a WGL/OpenGL window backend"); `next-session.md` Option B named the
+renderer switch as the next Track B product step. This session lands it as an
+**opt-in setting** with the software rasterizer still the default, and closes the
+last-mile thread-affinity problem the switch exposes.
+
+### 223a The frontend can render with the host GPU backend
+
+- **One new seam, no new renderer.** `Nv2AMmio.GpuMemory` exposes the
+  guest-memory adapter the device was built with (the same
+  `IGpuMemory`/`IGpuMemoryFast`/`IPresentDirtyWatch` object the software
+  rasterizer writes through), so a host can attach
+  `XGrid.GpuGl.GlBackendFactory` without building a second adapter over the same
+  address space. The CLI keeps its own adapter (unchanged behavior).
+- **`GraphicsBackendHost.TryAttach`** (frontend `Services/`) attaches
+  `windowEnabled: false, replaceSoftware: true, frameReadback: true` - exactly
+  `--gpu gl --gpu-replace` with the per-flip readback the UI needs - and
+  `Detach` releases it. Replacement mode is the point of the switch (it removes
+  the software rasterizer's share of the frame) and its composition rule is the
+  §219b one: a draw the backend declines is painted in software and the flip
+  re-uploads the whole presented surface.
+- **The picture path does not change.** `TryCopyDisplayFrame` already delegates
+  to the backend readback whenever a backend is attached (§208), so the same
+  `FramePacket` -> `WriteableBitmap` seam carries either renderer's pixels and
+  the two are never mixed. The GL context is an offscreen hidden-window context
+  (the CLI's), never embedded in the Avalonia visual tree.
+- **A backend frame is snapshotted before it leaves the emulation thread.** The
+  software scanout allocates a fresh buffer per capture; `ReadbackPresented`
+  returns the backend's own buffer, which the next flip overwrites while the UI
+  thread may still be copying it. `EmulatorSession.CaptureFrame` clones only in
+  the backend case (30 Hz, 1.2 MB), which removes the tearing window.
+- **Platform policy is a pure decision.** `RendererPolicy.Decide(renderer,
+  platformSupportsOpenGl)` returns Software / OpenGl / OpenGlUnavailable, so the
+  Windows-only constraint is tested off Windows; on a non-Windows host (or when
+  the WGL probe fails) the session logs the reason and keeps the software
+  rasterizer rather than failing the boot.
+- **Settings:** `EmulatorSettings.Renderer` (`"software"` default, `"gl"`),
+  normalized on load/clone, a Settings combo (`Software rasterizer` /
+  `OpenGL backend - Windows`), the power-on `Renderer:` log line, and the Home
+  display caption now names the configured renderer.
+
+### 223b A snapshot request runs on the thread that owns the devices
+
+`--gpu gl` was single-threaded in the CLI, but the frontend applied save/load
+under a lock *from the UI thread*, and a snapshot load calls
+`Nv2AMmio.LoadState -> Backend?.ResetState()` - GL calls, on a thread where the
+context is not current.
+
+`EmulatorSession` now marshals save/load: the UI enqueues a request and waits
+(60 s ceiling), the emulation loop serves it at the top of each iteration with
+no batch in flight (and during a pause, whose gate wait is now a 50 ms timed
+wait), and requests still queued when the run ends are failed explicitly. This
+preserves the old quiescence guarantee, keeps every GL call on its owning
+thread, and removes the lock the UI used to take around device state.
+
+### Evidence
+
+- **Tests 1738 -> 1751.** `tests/XGrid.Frontend.Tests` 21 -> 34
+  (`RendererPolicyTests` + `GraphicsBackendHostTests`): the default decision, the
+  platform matrix, unknown-value repair, clone/normalize of the new setting, and
+  three live checks - the machine exposes its GPU memory adapter, the software
+  choice never attaches a backend, and on Windows the OpenGL choice either
+  attaches a real backend (proved by `TryCopyDisplayFrame` returning false
+  before the first flip rather than software pixels) or reports the probe
+  failure it fell back on.
+- **Gates (accurate 1B, both backends):** menu slice-1 golden **PASS** - sw
+  `4EF1FBF66CB96CD7…`, gl `B6116DAE805822BF…`, diff 2602 px, maxDelta 1,
+  `violations=0`, counters `33632/686/686`, `BackendUnsupported=0`
+  (67.5 s sw / 76.8 s gl); triangle slice-2 golden **PASS** - sw
+  `A1740DE069128A04…`, gl `7A860ED7378A86E8…`, diff 27849, `violations=0`,
+  counters `2706/68/34`, `BackendUnsupported=0`.
+- **Fast 1B anchors exact:** menu RAM `34973510…` / CPU `F5D61C94…` (33.9 s,
+  `rasterPsh` 11.50 s, 253,998,498 px); triangle RAM `B45254CA…` / CPU
+  `7DAB63EB…` (10.9 s, `rasterPsh` 4.38 s, 57,663,082 px); `vec=0`, no fault.
+- **ktest smoke PASS 7/7** at **792,800,535** steps with the 40,797-byte suite
+  log **byte-identical** (`CA5D3867…`) - the renderer switch cannot reach the
+  kernel path.
+- **Frontend live session** (`tools/frontend-smoke`, dashboard, fast mode,
+  interleaved 40 s pairs, same window): software **1.014B / 1.021B steps**,
+  OpenGL **1.121B / 1.106B steps** = **+9.8% / +8.2%** guest throughput, with an
+  identical 306,817 non-black pixels in the last frame; a 72 MB `.xgs` save and
+  load succeeded with the GL backend attached (`Renderer: OpenGL backend
+  (replace=on, readback=on) - probe ok; GL_VERSION=4.6.0 NVIDIA 610.88`). A 20 s
+  window (boot + intro, before the menu draws) gains only +4.5%, and the CLI's
+  1B menu leg - the same renderer switch without UI capture - is the ceiling:
+  **33.95 s sw -> 23.46 s `gl+replace` (-30.9%)** with the CPU SHA unchanged
+  (`F5D61C94`; the RAM SHA differs because replacement mode skips the software
+  fill, the documented replace-mode contract).
+- The software default is byte-identical everywhere: no emulator, CLI or gate
+  path changed except the additive `Nv2AMmio.GpuMemory` property. The frontend
+  also mirrors the CLI's host-side diagnostic switch
+  (`CollectMethodHistogram = false`, no surface reads it) - no measurable effect
+  in the session windows so far, kept for parity.
+
+### Known limits (filed, not hidden)
+
+- The GL renderer presents the **flipped** surface, so a guest that renders
+  straight into the framebuffer (nxdk `gamma`/`hello`, §208) shows nothing in GL
+  mode while the software renderer shows its scanout. Rendering the true scanout
+  from a backend needs a per-frame surface compare, and is a separate slice.
+- The renderer is a global setting, not a per-title override; the per-title row
+  schema is unchanged.
