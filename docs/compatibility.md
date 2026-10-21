@@ -225,6 +225,39 @@ rasterizer (compiled fills fall back to the generic loop; a perf follow-up).
 The default path is byte-identical to the previous build (both 1B goldens PASS
 on their exact anchors). The GL backend is still nearest-only.
 
+### 8. GL replace mode cannot compose a software-fallback draw (2026-10-21, §209f)
+
+`--gpu gl --gpu-replace` sends every draw to the GL backend and falls back to
+the software rasterizer when the backend declines a shape. The fallback is
+correct, but its pixels go to **guest RAM** while the presented image is the
+**GL FBO**, and the two are never merged: the flip serves the FBO as-is
+(`presentUploads=0`, `flipStaleUploads=0`), so a frame with any declined draw
+loses *all* fallback pixels.
+
+Measured on `xgu bump_cubemap_reflect` at 3B (`-Gpu gl -GpuReplace`):
+`BackendUnsupported=14` (`unsup[modes=14]` - the dot-product/reflection
+texture modes), 784,684 software-fallback pixels, and the presented frame is
+the **clear colour only** (`3553B0DF…` vs the software frame `DA0750EE…`;
+CPU SHA identical). The gate scripts assert `BackendUnsupported=0`, so the
+gate legs never enter this state; the corpus row now documents it.
+
+Fixing it needs a per-frame composition policy (all-or-nothing: drop the FBO
+and re-render the frame in software, or upload the fallback region into the
+FBO), not a one-line patch. Not started - the GL backend is not the product
+path.
+
+### 9. A second-emulator frame oracle is staged, not yet captured (§209f)
+
+The corpus's only external oracle is the xgu reference screenshots. xemu could
+be a second one (any sample, any phase), and the pieces that work are recorded
+in `scripts/xemu-screendump.ps1`: QMP over **stdio** answers correctly
+(greeting, `qmp_capabilities`, `cont`, `query-status`), the BIOS must be passed
+with `-bios`, the DVD with `-dvd_path` (xemu builds the drive itself), and
+`-display xemu` is the only display backend in this build. `screendump` has
+not produced a file yet (the redirected-stdio read loop is the open problem);
+xemu's own **F12** screenshot (`SaveScreenshot` into
+`general.screenshot_dir`) is the alternative route.
+
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 
