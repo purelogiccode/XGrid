@@ -56,6 +56,18 @@
                 </StackPanel>
               </Button>
               <Button Classes="ghost"
+                      Command="{Binding SaveStateCommand}"
+                      IsVisible="{Binding Shell.IsRunning}"
+                      ToolTip.Tip="Save a .xgs snapshot (F8)">
+                <TextBlock Text="Save state" />
+              </Button>
+              <Button Classes="ghost"
+                      Command="{Binding LoadStateCommand}"
+                      IsVisible="{Binding Shell.IsRunning}"
+                      ToolTip.Tip="Load a .xgs snapshot (F9)">
+                <TextBlock Text="Load state" />
+              </Button>
+              <Button Classes="ghost"
                       Command="{Binding OpenSettingsCommand}"
                       IsVisible="{Binding ShowSetupWarning}">
                 <StackPanel Orientation="Horizontal" Spacing="8">

@@ -64,6 +64,20 @@ public sealed partial class HomeViewModel : PageViewModel
         await Shell.OpenDiscCommand.ExecuteAsync(null);
     }
 
+    /// <summary>Public command: saves a snapshot of the running console.</summary>
+    [RelayCommand]
+    private async System.Threading.Tasks.Task SaveStateAsync()
+    {
+        await Shell.SaveStateCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>Public command: loads a snapshot into the running console.</summary>
+    [RelayCommand]
+    private async System.Threading.Tasks.Task LoadStateAsync()
+    {
+        await Shell.LoadStateCommand.ExecuteAsync(null);
+    }
+
     /// <summary>Public command: navigates to firmware settings.</summary>
     [RelayCommand]
     private void OpenSettings()
