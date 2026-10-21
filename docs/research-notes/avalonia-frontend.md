@@ -14,8 +14,10 @@ Non-goals for this slice:
 - no emulator behavior/fidelity work (the frontend observes the existing public
   `XGrid.Host` API only);
 - no replacement of the headless CLI or the accurate-mode gates;
-- no WGL/OpenGL window backend (that path is Windows-only and would break the
-  Linux/macOS requirement);
+- no WGL/OpenGL *window* backend (that path is Windows-only and would break the
+  Linux/macOS requirement). A headless GPU renderer is selectable since 2026-10-21
+  (§220): the context is created on the emulation thread and its frames are read
+  back into Avalonia, so no foreign window is ever embedded in the visual tree.
 - no save-state UI, debugger panes, per-title profiles, or host audio yet.
 
 ## Stack
@@ -172,6 +174,43 @@ Project-local usage notes and the shortcut table live in
   description, path-key normalization and the EEPROM store
   (save/load/clamp/reject/reset). 15 tests.
 
+
+# Update 2026-10-21 (decisions §221): the GPU renderer is a frontend setting
+
+- **Two renderers.** Settings → *Renderer*: **Software** (portable reference
+  rasterizer, default) or **OpenGL** (host GPU, Windows/WGL, the CLI's
+  `--gpu gl --gpu-replace` configuration with the per-flip readback on). The GPU
+  context is created, used and disposed on the emulation thread; an unavailable
+  GPU path logs the reason and the session stays on software for the whole run
+  (never a mix).
+- **Display source follows the renderer.** Software shows the display
+  controller's RAM scanout (`TryCopyDisplayFrame`, falling back to the flipped
+  surface). OpenGL shows the backend's per-flip readback. Before the backend has
+  presented its first frame - the direct-framebuffer guests that never flip - the
+  app reads the RAM scanout through the new
+  `Nv2AMmio.TryCopyScanoutFrameFromMemory` lane, which is never used once a
+  backend frame exists.
+- **Measured (this host, gate media, real `EmulatorSession`, 1B steps, scratch
+  harness in `wt-data/glprobe`, not committed):** software 34.8 s / 687 flips /
+  last display frame 306,817 non-black px, sha `2239732C…`; OpenGL 24.7 s /
+  688 flips / the same 306,817 non-black px, sha `B3C8042C…`. Same picture
+  (2,385 of 307,200 pixels differ by more than nothing, |dmean| ≈ 0.005), ~29%
+  less wall clock. The backend path itself is pinned by the 1B GL golden gates,
+  which this slice re-ran.
+- **Host API:** `Nv2AMmio.GpuMemory` exposes the guest-memory adapter the device
+  was built with (null for test fakes). The CLI now uses it too, which deleted
+  its duplicate adapter - one reader/writer identity for the device and every
+  backend.
+- **Diagnostics off in the app.** The session sets
+  `Nv2A.CollectMethodHistogram = false` (the `--pgraph` histogram costs two
+  dictionary updates per PGRAPH method; measured -6.2% menu wall, §204). The
+  method *total* and the method stream are unaffected, but a `.xgs` saved by the
+  app carries an empty histogram map where a CLI save would carry it - the same
+  self-describing format, less diagnostic data.
+- **Tests:** `tests/XGrid.Frontend.Tests` 21 → 24 (renderer default, clone,
+  `Normalize` repair, ordinal key comparison) and `tests/XGrid.Nv2a.Tests`
+  389 → 393 (`GpuMemory` exposure, the memory scanout lane with and without a
+  backend, lane parity with the software export).
 
 ## Update 2026-10-21 (next session): frame stepping
 

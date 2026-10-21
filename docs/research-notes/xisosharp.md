@@ -86,7 +86,13 @@ Runtime dependency: **`ZArchiveSharp` 1.4.0** (not BCL-only, despite docs claimi
 | Root dir size (bytes) | +24 | 4 |
 | FILETIME (1601 epoch, 100 ns) | +28 | 8 |
 | Unused/zero | +36 | 0x7C8 |
-| Trailing magic (verified) | +0x7F4 | 20 |
+| Trailing magic (verified) | +0x7EC | 20 |
+
+`+0x7EC` (= `20 + 4 + 4 + 8 + 0x7C8`) is the offset the XISOSharp reader seeks to
+(`XisoReader.TraverseXiso`), and it is the only position where a 20-byte magic
+still fits inside the 2048-byte descriptor sector. An earlier revision of this
+table said `+0x7F4`, which is 8 bytes past the sector end; corrected 2026-10-22
+while implementing `XGrid.XboxFs.XdvdfsSectorReader` (decisions 221).
 
 Writer default root sector `0x108`; root sector+size 0 = empty image.
 

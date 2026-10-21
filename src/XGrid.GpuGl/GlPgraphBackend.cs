@@ -176,6 +176,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _unsupportedFlip;
     private long _fatalCount;
 
+    // Which texture modes the declined draws asked for (0x00-0x1F, the
+    // combiner's 5-bit tex-mode field). `unsup[modes=]` says how many draws were
+    // declined; this says what to implement next (Track B3 method coverage needs
+    // the mode, not the total). Incremented only on a decline, never per draw.
+    private readonly long[] _unsupportedTexModeCounts = new long[0x20];
+
     // Slice-2 evidence diagnostics (informational, never BackendUnsupported):
     // measure exposure of the §113 open risks so their disposition is backed
     // by run counters instead of assumption. _fboReallocs counts FBO
@@ -444,6 +450,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
+                $" unsupTex[{DescribeUnsupportedTexModes()}]" +
                 $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} " +
                 $"composedFrames={_composedFrames} composedPixels={_composedPixels} composedDraws={_composedDraws} " +
                 $"batchCalls={BatchCalls} batchTris={BatchTriangles} batchCap={_batchCapacity}]");
@@ -727,6 +734,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _unsupportedCubeVolume = 0;
         _unsupportedFbo = 0;
         _unsupportedFlip = 0;
+        Array.Clear(_unsupportedTexModeCounts);
         _fatalCount = 0;
         _fboReallocs = 0;
         _fboZetaDrops = 0;
@@ -1347,7 +1355,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     }
 
     /// <summary>Returns true when a valid-stage slice-1-unsupported texture mode is in use.</summary>
-    private static bool CheckModesUnsupported(in PgraphDrawInfo info, PshCombiner combiner, out bool cubeVolume)
+    private bool CheckModesUnsupported(in PgraphDrawInfo info, PshCombiner combiner, out bool cubeVolume)
     {
         bool unsupported = false;
         cubeVolume = false;
@@ -1371,6 +1379,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 case PshCombiner.TexModeBumpEnvMap:
                 case PshCombiner.TexModeBumpEnvMapLum:
                     unsupported = true;
+                    _unsupportedTexModeCounts[mode & 0x1F]++;
                     break;
                 case PshCombiner.TexModeProject2D:
                 case PshCombiner.TexModeCubemap:
@@ -1378,6 +1387,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                     {
                         unsupported = true;
                         cubeVolume = true;
+                        _unsupportedTexModeCounts[mode & 0x1F]++;
                     }
 
                     break;
@@ -1386,6 +1396,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                     {
                         unsupported = true;
                         cubeVolume = true;
+                        _unsupportedTexModeCounts[mode & 0x1F]++;
                     }
 
                     break;
@@ -1411,6 +1422,29 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         bool enabled = (slot.Control0 & (1u << 30)) != 0;
         int dim = (int)((slot.Format & 0xC0u) >> 6);
         return enabled && dim == 3 && color is 0x05u or 0x06u;
+    }
+
+    /// <summary>Formats the declined-draw texture-mode histogram ("none" when empty).</summary>
+    private string DescribeUnsupportedTexModes()
+    {
+        var sb = new StringBuilder(64);
+        for (int mode = 0; mode < _unsupportedTexModeCounts.Length; mode++)
+        {
+            long count = _unsupportedTexModeCounts[mode];
+            if (count == 0)
+            {
+                continue;
+            }
+
+            if (sb.Length != 0)
+            {
+                sb.Append(' ');
+            }
+
+            sb.Append(CultureInfo.InvariantCulture, $"m{mode:X2}={count}");
+        }
+
+        return sb.Length == 0 ? "none" : sb.ToString();
     }
 
     private const uint TextureFormatCubemapEnable = 1u << 2;

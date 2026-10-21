@@ -48,6 +48,27 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the NV2A texture filter mode ("legacy" or "registers", <c>--tex-filter</c>).</summary>
     public string TextureFilter { get; set; } = "legacy";
 
+    /// <summary>
+    /// Gets or sets the renderer: <c>software</c> (the portable reference
+    /// rasterizer, always available) or <c>opengl</c> (the host GPU backend in
+    /// replacement mode, Windows/WGL only - <c>--gpu gl --gpu-replace</c>).
+    /// An unavailable GPU renderer falls back to software for the session.
+    /// </summary>
+    public string Renderer { get; set; } = RendererSoftware;
+
+    /// <summary>Renderer key for the software rasterizer.</summary>
+    public const string RendererSoftware = "software";
+
+    /// <summary>Renderer key for the OpenGL host GPU backend.</summary>
+    public const string RendererOpenGl = "opengl";
+
+    /// <summary>Returns true when <paramref name="renderer"/> names the GPU backend.</summary>
+    /// <param name="renderer">Renderer key.</param>
+    public static bool IsGpuRenderer(string? renderer)
+    {
+        return string.Equals(renderer, RendererOpenGl, StringComparison.Ordinal);
+    }
+
     /// <summary>Gets or sets a value indicating whether the 007 end-of-stream quirk is enabled.</summary>
     public bool EosQuirk { get; set; } = true;
 
@@ -214,6 +235,7 @@ public sealed class EmulatorSettings
             JitThreshold = JitThreshold,
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = TextureFilter,
+            Renderer = Renderer,
             EosQuirk = EosQuirk,
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
@@ -237,6 +259,7 @@ public sealed class EmulatorSettings
         TextureFilter = string.Equals(TextureFilter, "registers", StringComparison.Ordinal)
             ? "registers"
             : "legacy";
+        Renderer = IsGpuRenderer(Renderer) ? RendererOpenGl : RendererSoftware;
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";
