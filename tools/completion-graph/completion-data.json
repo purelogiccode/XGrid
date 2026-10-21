@@ -1,6 +1,6 @@
 {
-  "generated": "2026-10-20",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-20 after the C3 correctness campaigns \u00a7\u00a7199g/\u00a7199i, the \u00a7199k state hoist, the \u00a7199l/\u00a7199m raw-chaining re-land, \u00a7199o C3-x hot-shape native encoding, \u00a7199p rasterizer O2/O4, \u00a7200 O3b/O1 compiled fills, and \u00a7204 Track B present-path removal + Track E corpus harness + \u00a7205 draw-command batching (phase 18 re-derived from its own checklist))",
+  "generated": "2026-10-21",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-21 for \u00a7\u00a7206-225: XInput pad + save states \u00a7206, the display model \u00a7208, the corpus at 20 measured rows over 16 samples \u00a7\u00a7207-210, TEXFILTER on both backends \u00a7\u00a7210/219a/220c, the fixed-function vertex stage + lighting \u00a7\u00a7213/215, PTIMER \u00a7216, per-title overrides + persistent EEPROM \u00a7\u00a7217/219d/224, the GL sampler decode + replace-mode composition \u00a7220, the GPU renderer as a frontend setting \u00a7\u00a7221/223, the CHD title id \u00a7222 and the CPU correctness campaign \u00a7225)",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -28,7 +28,7 @@
           "p": 3,
           "name": "CPU (x86 PIII)",
           "weight": 11,
-          "done": 95
+          "done": 96
         },
         {
           "p": 4,
@@ -58,7 +58,7 @@
           "p": 8,
           "name": "Storage",
           "weight": 5,
-          "done": 85
+          "done": 86
         },
         {
           "p": 9,
@@ -76,7 +76,7 @@
           "p": 11,
           "name": "NV2A (GPU)",
           "weight": 15,
-          "done": 88
+          "done": 91
         },
         {
           "p": 12,
@@ -123,7 +123,7 @@
           "p": 18,
           "name": "GPU Optimization",
           "weight": 4,
-          "done": 72
+          "done": 76
         },
         {
           "p": 19,
@@ -135,25 +135,25 @@
           "p": 20,
           "name": "Automated Testing",
           "weight": 3,
-          "done": 73
+          "done": 80
         },
         {
           "p": 21,
           "name": "CLI & Frontend",
           "weight": 3,
-          "done": 60
+          "done": 72
         },
         {
           "p": 22,
           "name": "Save States & Replay",
           "weight": 2,
-          "done": 5
+          "done": 30
         },
         {
           "p": 23,
           "name": "Release",
           "weight": 3,
-          "done": 11
+          "done": 14
         }
       ]
     }
