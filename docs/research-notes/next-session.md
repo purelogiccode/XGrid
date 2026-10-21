@@ -20,7 +20,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the §209 cubemap/TEXFILTER commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1615 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1621 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -49,7 +49,7 @@ CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames
 `A1740DE0…` and `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle
 `7A860ED7…` (policy diff, never byte-exact).
 
-- **1615 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1621 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, byte-identical); the smoke ran in 48 s on H1.
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:
@@ -86,6 +86,10 @@ CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames
    a software-fallback draw (gap 8, `BackendUnsupported=14`, frame = clear
    colour) and the second-emulator frame oracle is staged but not capturing
    (gap 9, `scripts/xemu-screendump.ps1`).
+7. **G8B8/R8B8 formats decoded** (`0x28`/`0x29`/`0x17`), but
+   `bumpenv_ripple` still renders a black frame - its documented oracle delta
+   had been measured on that black frame, so the row was never a match
+   (gap 10, §209g). Tests 1615 -> 1621.
 
 ## 0c. What the fourteenth/fifteenth sessions landed (§206-§208) - do not redo it
 

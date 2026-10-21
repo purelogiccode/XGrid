@@ -666,6 +666,12 @@ the filter registers - the previous session's diagnosis was one gate short.**
   cube; it samples `0x3A` 3.14M times with zero misses, so it is a second
   regression row for the byte-order/swizzled path. The xgu repo ships no
   screenshot for it, so it has no oracle verdict.
+- **`0x28`/`0x29`/`0x17` (G8B8/R8B8) decoded (§209g).** `bumpenv_ripple`
+  sampled `0x28` 3.92M times and every sample missed; the decode now matches
+  the reference (`GL_RG8` + the `(R, G, R, G)` swizzle, `0x29` is
+  `(G, R, R, G)`). **That row still renders a black frame** at 5.0-5.6B, and its
+  documented oracle delta turned out to be measured on the black frame - it is
+  compatibility gap 10 now, not a match. Tests 1615 -> 1621.
 
 **Session 2026-10-21 (fifteenth; display model + a measurement correction, §208).**
 **The console now shows what the display controller scans out, and one
