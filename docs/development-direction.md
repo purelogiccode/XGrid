@@ -194,6 +194,17 @@ is a ratio, not a milestone.
   (SMC), `xaudio` (APU voice engine live). The corpus immediately produced two
   measured gaps: the direct-framebuffer present gap and the never-buildable
   `nxdk-mesh` snapshot (both in `docs/compatibility.md`).
+- **Cubemap reflection (Track E) - LANDED 2026-10-21 (§209).**
+  `xgu bump_cubemap_reflect` went from 2 colours / 36% black to 21,041 colours /
+  0% black, `|dmean|` (5.3, 2.4, 1.3) against its reference screenshot. The
+  dominant bug was the cube face extent read from `TEXIMAGERECT` instead of
+  TEXFMT `BASE_SIZE` (xemu's swizzled-texture rule), plus the three format
+  gates. The reflection math needed no change - the "striped" frame that 208g
+  blamed on the direction chain was the wrong face stride.
+  Same session: **TEXFILTER became a real sampler feature** (tent at LOD 0 +
+  quincunx convolution), opt-in as `--tex-filter registers` because it changes
+  every textured pixel of the menu and the menu has no oracle. See gap 7.
+
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
 - **M-D (xemu-class):** triangle ≤ 1.5 s, menu ≤ 4 s at 1B with the fast engine;

@@ -604,11 +604,62 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `3FC4B419…`), ktest log byte-identical. Projected onto §204's 24.8 s menu
   projection: ~23.8 s against the 24 s M-A target. What is left of submission is
   ~0.8 s of block packing, not GL calls.
+- **Cubemap reflection + TEXFILTER (§209, 2026-10-21):** `xgu
+  bump_cubemap_reflect` renders its reflection (2 colours / 36% black → 21,041
+  colours / 0% black, `|dmean|` (5.3, 2.4, 1.3) at 3.6B). The dominant bug was
+  the cube face extent read from `TEXIMAGERECT` instead of TEXFMT `BASE_SIZE`
+  (xemu's swizzled-texture rule); the three format gates (`0x3A`-`0x3C`
+  whitelist, `CubeBytes`, shared `DecodeTextureTexel`) were widened together,
+  and `TryDecodeSwizzledTexel` now shares the 2D decoder. The direction chain
+  needed no change. Also landed: **TEXFILTER is now honored** - tent at LOD 0
+  (per-tap wrap, face-local clamp for cubes) and the 9-tap quincunx/gaussian
+  convolution on PROJECT2D - **opt-in** as `--tex-filter registers` (default
+  `legacy` keeps every anchor byte-identical; the flag-on menu changes 8.7% of
+  pixels with an identical CPU SHA, at 2.4x sw wall because compiled fills
+  fall back to the generic loop). 1614 tests.
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1538 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1614 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-21 (sixteenth; cubemap reflection closed, TEXFILTER landed, §209).**
+**The last xgu oracle failure now renders its reflection, and the sampler reads
+the filter registers - the previous session's diagnosis was one gate short.**
+
+- **The bug was the face extent, not the direction chain.** `TrySampleTextureCube`
+  took the face size from `TEXIMAGERECT`; xemu takes a **swizzled** texture's
+  extent from TEXFMT `BASE_SIZE_U/V` and reads TEXIMAGERECT only for linear
+  formats. This guest never programs the rect, so the stale 512x512 default made
+  the sampler walk 1 MB face strides over 256 KB faces. With that fixed plus the
+  three format gates, the row goes from **2 colours / 36% black** to **21,041
+  colours / 0% black / `|dmean|` (5.3, 2.4, 1.3)** at its best phase - on par
+  with `vp_lighting`.
+- **Probe set (temporary, removed before commit):** forcing `n = +Z`, dumping
+  the normal map, `TEX1`, `n` and `rv` all produce smooth images, so the
+  `DOT_RFLCT_SPEC` chain (`xemu psh.c:1285-1304`) is faithful and §208g's
+  "striped = direction chain" reading is disproven. The residual hatch in a
+  3.6B frame is the environment map at a grazing view.
+- **The oracle needs a phase sweep here too.** Scores at 3.0/3.2/3.4/3.6/3.8/
+  4.0/4.2/4.4B: 106.5/81.5/47.5/**27.5**/66.4/81.7/69.1/44.9. 4.4B is the best
+  *structural* match (the reference's frontal plate).
+- **TEXFILTER was stored and ignored.** `filters=` shows `2/2/1` (tent +
+  quincunx) on the menu's stage 0/1 (stage 0 alone = 211M of 267M texel
+  samples/1B) and on all four stages of the bump sample. New opt-in
+  `--tex-filter registers`: `SamplerPlan.Bilinear` (MIN/MAG tent at LOD 0,
+  per-tap wrap, border taps) and `SamplerPlan.Convolution` (nine textureProj
+  taps, 1-2-1 gaussian, offsets / `w`), cube lookup face-local clamped,
+  compiled fills fall back to the generic loop when filtering is active.
+  Measured on the menu: 8.7% of pixels change (mean |delta| 2.3/2.1/2.0,
+  colours 32,360 → 39,254), **CPU SHA unchanged** (`F5D61C94…`), wall 34.9 →
+  85.6 s (perf follow-up: teach the compiled fills the bilinear tap). Default
+  `legacy` is byte-identical: fast menu `51B56687`/`F5D61C94`, accurate goldens
+  menu `4EF1FBF6`/`B6116DAE`, triangle `A1740DE0`/`7A860ED7`, ktest 7/7.
+- **Tests 1605 → 1614** (3 byte-order cube cases + BASE_SIZE extent + 5 filter
+  tests; 4 of the cube ones fail on the pre-change source). The plain triangle
+  leg (no `--frame-first`) reads `CB95C006…`/`B8EF1021…` both pre- and
+  post-change on this host - it is a different leg from the documented
+  `B45254CA…` row, not a regression.
 
 **Session 2026-10-21 (fifteenth; display model + a measurement correction, §208).**
 **The console now shows what the display controller scans out, and one

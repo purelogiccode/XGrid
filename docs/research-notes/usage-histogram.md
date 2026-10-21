@@ -139,3 +139,24 @@ attempts == misses is a guaranteed-broken draw path.
 use (`06`, `12`) were already handled, so three of the four workloads above never
 touched the gap. The corpus earned its keep exactly here: a title using an
 uncommon channel order would have rendered untextured with no other symptom.
+
+## TEXFILTER usage: the sampler's filter modes (2026-10-21)
+
+The `NV2A tex` line now also prints `filters=<min>/<mag>/<conv>` per slot (MIN in
+bits 16-23, MAG in bits 24-27, convolution kernel in bits 13-15; 1 = nearest,
+2 = linear/tent, conv 1 = quincunx). Measured on the same legs:
+
+| workload | filters (slot 0,1,2,3) | texel samples/1B attributed to stage 0 |
+|---|---|---|
+| dashboard menu (1B, fast) | `2/2/1, 2/2/1, 1/1/1, 1/1/1` | 211M of 267M (`0x12`) |
+| `triangle.xbe` (1B) | `2/2/1` x4 (boot-animation state) | 11.4M (`0x06`) |
+| `xgu bump_cubemap_reflect` (3.6B) | `2/2/1` x4 | 5.7M (`0x3A`) + a 5.7M-sample cube |
+
+So the product path's dominant texture stage asks for **tent filtering plus a
+5x5-equivalent quincunx blur**, and XGrid ignored both until §209d (the sampler
+was nearest-only on every stage). The feature landed opt-in
+(`--tex-filter registers`) because the menu has no external oracle: honoring
+the register changes every textured pixel of the gate frame. The histogram is
+the evidence that it matters; the corpus row is the only oracle for whether it
+is right.
+
