@@ -189,8 +189,10 @@ match; `bump_cubemap_reflect` is the only remaining oracle failure.
 > table.
 
 Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M).
-Rows refreshed 2026-10-20 after the cull-face landing, so these are post-cull
-values.
+Rows re-measured **2026-10-21** on the display-model build (§208): the `display`
+column is the product path, and it equals the flipped anchor on the GL legs by
+design (the backend owns the presented image) and lags it by one buffer on the
+double-buffered software legs.
 
 **Software frames are exact anchors; GL frames are policy-validated** (diff
 against the software frame: flat regions byte-exact, `±1 px` edge band, per-channel
@@ -199,14 +201,14 @@ tolerance ≤ 2). The exact GL SHA moved with the cull landing
 software frame stayed byte-identical and both GL gates still report
 `violations=0 maxDelta=1` — that is the documented contract, not a regression.
 
-| Row | wall | msps | frames | first frame | last frame | SHAs (ram/cpu) |
-|---|---:|---:|---:|---|---|---|
-| triangle, `sw` | 11.7 s | 85.6 | 68 | step 32M, `6F780A33` | `A1740DE0` | `0117A5E2` / `7DAB63EB` |
-| triangle, `gl+replace` | 7.1 s | 141.5 | 68 | step 32M, `6F780A33` | `7A860ED7` (policy) | `8AE82781` / `7DAB63EB` |
-| dashboard, `sw` | 34.0 s | 29.4 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `94A6D53C` / `F5D61C94` |
-| dashboard, `gl+replace` | 26.5 s | 37.7 | 686 | step 50M, `6F780A33` | `B6116DAE` (policy) | `CF151863` / `F5D61C94` |
-| ktest (600M, `disable-video=1`), `sw` | 9.0 s | 66.4 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `974F9901` / `76002239` |
-| ktest (600M, `disable-video=1`), `gl+replace` | 7.4 s | 81.5 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `42C9C960` / `76002239` |
+| Row | wall | msps | frames | first frame | last frame (flip) | display | SHAs (ram/cpu) |
+|---|---:|---:|---:|---|---|---|---|
+| triangle, `sw` | 12.1 s | 82.7 | 68 | step 32M, `6F780A33` | `A1740DE0` | `AB50EF68` | `0117A5E2` / `7DAB63EB` |
+| triangle, `gl+replace` | 7.2 s | 139.5 | 68 | step 32M, `6F780A33` | `7A860ED7` (policy) | `7A860ED7` | `8AE82781` / `7DAB63EB` |
+| dashboard, `sw` | 44.0 s | 22.7 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `51658B3D` | `94A6D53C` / `F5D61C94` |
+| dashboard, `gl+replace` | 29.9 s | 33.5 | 686 | step 50M, `6F780A33` | `B6116DAE` (policy) | `B6116DAE` | `CF151863` / `F5D61C94` |
+| ktest (600M, `disable-video=1`), `sw` | 8.6 s | 69.7 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `4573E131` / `76002239` |
+| ktest (600M, `disable-video=1`), `gl+replace` | 7.3 s | 82.0 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `71C0FD0F` / `76002239` |
 
 Reading: the first presented frame is the boot animation (`6F780A33`) in every
 row - a boot-chain anchor, not a title anchor. The title anchors are the
