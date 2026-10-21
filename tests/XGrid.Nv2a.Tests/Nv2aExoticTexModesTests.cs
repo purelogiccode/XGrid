@@ -214,6 +214,23 @@ public sealed class Nv2AExoticTexModesTests
     private const uint CubeMapFormat = (1u << 16) | (2u << 6) | (0x06u << 8) | 4u;
 
     /// <summary>
+    /// Builds a swizzled cube TEXFMT word the way xgu/nxdk programs it:
+    /// mip levels, dimensionality 2, cubemap enable, color format and the
+    /// BASE_SIZE_U/V log2 extents (xemu reads a swizzled texture's extent
+    /// from these, never from TEXIMAGERECT).
+    /// </summary>
+    private static uint CubeFormat(uint color, int logU, int logV, uint levels = 1u)
+    {
+        return Swizzled2DFormat(color, logU, logV, levels) | 4u;
+    }
+
+    /// <summary>Swizzled 2D TEXFMT word (no cubemap bit).</summary>
+    private static uint Swizzled2DFormat(uint color, int logU, int logV, uint levels = 1u)
+    {
+        return (levels << 16) | (2u << 6) | (color << 8) | ((uint)logU << 20) | ((uint)logV << 24);
+    }
+
+    /// <summary>
     /// Combiner that writes stage N's texel to R0 (A = TN, B = 1), final
     /// combiner passes R0. Stage modes below N are left at NONE.
     /// </summary>
@@ -264,13 +281,26 @@ public sealed class Nv2AExoticTexModesTests
 
     private static void PushCubeDraw(Nv2AMmio nv2A, ArrayMemory memory, float dx, float dy, float dz)
     {
+        PushCubeDraw(nv2A, memory, dx, dy, dz, CubeMapFormat, 2u, 2u);
+    }
+
+    private static void PushCubeDraw(
+        Nv2AMmio nv2A,
+        ArrayMemory memory,
+        float dx,
+        float dy,
+        float dz,
+        uint format,
+        uint imageRectWidth,
+        uint imageRectHeight)
+    {
         WriteTriangle(memory);
 
         var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
         PushSurface(pushes);
         PushTexcoordProgram(pushes);
         PushTexcoordArray(pushes, memory, 1, 0x2200u, dx, dy, dz, 1f);
-        PushFormatTextureSlot(pushes, 0, 0x4000u, CubeMapFormat, 0u, 2u, 2u);
+        PushFormatTextureSlot(pushes, 0, 0x4000u, format, 0u, imageRectWidth, imageRectHeight);
         PushStagePassTexel(pushes, 0, 0x03u);
         PushDraw(pushes);
         PushMethods(nv2A, memory, pushes.ToArray());
@@ -285,7 +315,7 @@ public sealed class Nv2AExoticTexModesTests
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         memory.WritePhysical(0x4000u + 12u, 0xFF123456u);
 
-        PushCubeDraw(nv2A, memory, 1f, 0f, 0f);
+        PushCubeDraw(nv2A, memory, 1f, 0f, 0f, CubeFormat(0x06u, 1, 1), 2u, 2u);
 
         Assert.Equal(0xFF123456u, ReadPixel(memory, 2, 2));
         Assert.Equal(0uL, nv2A.TexModeFallbacks);
@@ -298,10 +328,179 @@ public sealed class Nv2AExoticTexModesTests
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         memory.WritePhysical(0x4000u + (4u * 128u) + 12u, 0xFF123456u);
 
-        PushCubeDraw(nv2A, memory, 0f, 0f, 1f);
+        PushCubeDraw(nv2A, memory, 0f, 0f, 1f, CubeFormat(0x06u, 1, 1), 2u, 2u);
 
         Assert.Equal(0xFF123456u, ReadPixel(memory, 2, 2));
         Assert.Equal(0uL, nv2A.TexModeFallbacks);
+    }
+
+    [Theory]
+    // The SZ byte-order twins are the same 4-byte swizzled words with the
+    // channels permuted; a cube sample must decode them exactly like the 2D
+    // sampler does (0x3A is what xgu bump_cubemap_reflect binds). The
+    // pass-through combiner in this harness forces output alpha to 1, so the
+    // expectation pins the RGB channel order (the word's own alpha byte is
+    // covered by the 2D byte-order suite).
+    [InlineData(0x3Au, 0xFF563412u)]
+    [InlineData(0x3Bu, 0xFF3412FFu)]
+    [InlineData(0x3Cu, 0xFFFF1234u)]
+    public void Draw_CubeMapSamplesByteOrderFace(uint color, uint expected)
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        memory.WritePhysical(0x4000u + 12u, 0xFF123456u);
+
+        PushCubeDraw(nv2A, memory, 1f, 0f, 0f, CubeFormat(color, 1, 1), 2u, 2u);
+
+        Assert.Equal(expected, ReadPixel(memory, 2, 2));
+        Assert.Equal(0uL, nv2A.TexModeFallbacks);
+        Assert.True(nv2A.TexturedPixels > 0);
+    }
+
+    [Fact]
+    public void Draw_CubeMapExtentComesFromBaseSizeNotImageRect()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        // A 2x2 face (BASE_SIZE 1) samples (s,t) = (1,1) at the face texel
+        // with swizzled offset 3 (byte 12). A 1x1 TEXIMAGERECT would sample
+        // offset 0 instead, which holds a different texel.
+        memory.WritePhysical(0x4000u, 0xFF112233u);
+        memory.WritePhysical(0x4000u + 12u, 0xFF123456u);
+
+        PushCubeDraw(nv2A, memory, 1f, 0f, 0f, CubeFormat(0x06u, 1, 1), 1u, 1u);
+
+        Assert.Equal(0xFF123456u, ReadPixel(memory, 2, 2));
+        Assert.Equal(0uL, nv2A.TexModeFallbacks);
+    }
+
+    /// <summary>Morton/tiled texel offset for a 4x4 swizzled texture.</summary>
+    private static uint Swizzle2D(uint x, uint y)
+    {
+        uint result = 0u;
+        for (int bit = 0; bit < 8; bit++)
+        {
+            result |= ((x >> bit) & 1u) << (bit * 2);
+            result |= ((y >> bit) & 1u) << ((bit * 2) + 1);
+        }
+
+        return result;
+    }
+
+    private const uint LinearFilter = 0x02020000u;
+
+    /// <summary>
+    /// Renders one constant-UV Project2D sample of a swizzled 4x4 A8R8G8B8
+    /// texture with the given TEXFILTER word and returns the shaded pixel.
+    /// <see cref="Nv2AMmio.TextureFilterRegisters"/> is the opt-in that makes
+    /// the sampler honor MIN/MAG and the convolution kernel (TEXFILTER is
+    /// otherwise stored and ignored - the sampler is nearest-only).
+    /// </summary>
+    private static uint RenderFilteredSample(
+        uint filterWord,
+        float u,
+        float v,
+        bool registers,
+        Func<uint, uint, uint> texel)
+    {
+        var (nv2A, memory) = CreateChannel();
+        nv2A.TextureFilterRegisters = registers;
+        WriteTriangle(memory);
+        for (uint y = 0; y < 4; y++)
+        {
+            for (uint x = 0; x < 4; x++)
+            {
+                memory.WritePhysical(0x4000u + (Swizzle2D(x, y) * 4u), texel(x, y));
+            }
+        }
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        PushTexcoordProgram(pushes);
+        PushTexcoordArray(pushes, memory, 1, 0x2200u, u, v, 0f, 1f);
+        // Swizzled A8R8G8B8, dimensionality 2, BASE_SIZE 2 (4x4), one level.
+        PushFormatTextureSlot(pushes, 0, 0x4000u, Swizzled2DFormat(0x06u, 2, 2), 0x00010101u, 4u, 4u);
+        pushes.Add((0x1B14u, filterWord));
+        PushStagePassTexel(pushes, 0, 0x01u);
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.TexturedPixels > 0, "the draw must sample the texture");
+        return ReadPixel(memory, 1, 1);
+    }
+
+    private static uint GreyRamp(uint x, uint y) =>
+        0xFF000000u | ((x * 60u) << 16) | ((y * 60u) << 8) | 0x11u;
+
+    private static uint RedChannel(uint pixel) => (pixel >> 16) & 0xFFu;
+
+    [Fact]
+    public void TextureFilterRegisters_IsOffByDefault()
+    {
+        var (nv2A, _) = CreateChannel();
+        Assert.False(nv2A.TextureFilterRegisters);
+    }
+
+    /// <summary>
+    /// Off is the legacy nearest sampler: a sample at the texel grid boundary
+    /// (0.5 of a 4x4) is the upper texel, and the nearest texel center reads
+    /// the same value.
+    /// </summary>
+    [Fact]
+    public void TextureFilterRegisters_Off_StaysNearest()
+    {
+        uint boundary = RenderFilteredSample(LinearFilter, 0.5f, 0.5f, registers: false, GreyRamp);
+        uint center = RenderFilteredSample(LinearFilter, 0.625f, 0.625f, registers: false, GreyRamp);
+        uint lower = RenderFilteredSample(LinearFilter, 0.375f, 0.375f, registers: false, GreyRamp);
+        Assert.Equal(center, boundary);
+        Assert.NotEqual(lower, boundary);
+    }
+
+    /// <summary>
+    /// On, MIN/MAG 2 is a tent filter at LOD 0: the sample at the grid
+    /// boundary blends the four surrounding texels, so it differs from the
+    /// nearest result and lies between the two texel centres per channel.
+    /// </summary>
+    [Fact]
+    public void TextureFilterRegisters_On_BlendsBetweenTexels()
+    {
+        uint upper = RenderFilteredSample(LinearFilter, 0.625f, 0.625f, registers: true, GreyRamp);
+        uint lower = RenderFilteredSample(LinearFilter, 0.375f, 0.375f, registers: true, GreyRamp);
+        uint blended = RenderFilteredSample(LinearFilter, 0.5f, 0.5f, registers: true, GreyRamp);
+        uint nearest = RenderFilteredSample(LinearFilter, 0.5f, 0.5f, registers: false, GreyRamp);
+        Assert.NotEqual(nearest, blended);
+        int low = (int)RedChannel(lower);
+        int mid = (int)RedChannel(blended);
+        int high = (int)RedChannel(upper);
+        Assert.True(mid > low && mid < high, $"blended red {mid} not between {low} and {high}");
+    }
+
+    /// <summary>
+    /// A filter word that asks for nearest (1/1) must keep the exact legacy
+    /// result even with the registers enabled - the opt-in only changes what
+    /// the guest asked to change.
+    /// </summary>
+    [Fact]
+    public void TextureFilterRegisters_NearestWord_MatchesLegacy()
+    {
+        uint legacy = RenderFilteredSample(0x01010000u, 0.5f, 0.5f, registers: false, GreyRamp);
+        uint enabled = RenderFilteredSample(0x01010000u, 0.5f, 0.5f, registers: true, GreyRamp);
+        Assert.Equal(legacy, enabled);
+    }
+
+    /// <summary>
+    /// QUINCUNX/Gaussian convolution is xemu's nine-tap 1-2-1 blur: a single
+    /// bright texel in a black 4x4 spreads over its neighbours, so the center
+    /// sample drops to roughly the center weight (4/16) of the impulse.
+    /// </summary>
+    [Fact]
+    public void TextureFilterRegisters_ConvolutionBlursImpulse()
+    {
+        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
+        uint sharp = RenderFilteredSample(0x01010000u, 0.375f, 0.375f, registers: false, Impulse);
+        uint blurred = RenderFilteredSample(0x01012000u, 0.375f, 0.375f, registers: true, Impulse);
+        int sharpRed = (int)RedChannel(sharp);
+        int blurredRed = (int)RedChannel(blurred);
+        Assert.True(sharpRed > 200, $"impulse texel should read bright, got {sharpRed}");
+        Assert.True(blurredRed is > 0 and < 128, $"convolution should spread the impulse, got {blurredRed}");
     }
 
     [Fact]

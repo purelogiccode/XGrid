@@ -773,8 +773,48 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of successful samples whose RGB decoded to zero. Diagnostics.</summary>
     public ulong TextureSampleRgbZero { get; private set; }
 
-    /// <summary>Gets per-color-format texture sample attempts. Diagnostics.</summary>
+    /// <summary>
+    /// Gets per-color-format texture sample attempts. Diagnostics.
+    /// </summary>
     public IReadOnlyDictionary<uint, long> TextureFormatAttempts => Snapshot(_textureFormatAttempts);
+
+    /// <summary>
+    /// Gets or sets whether the sampler honors TEXFILTER (a tent filter at
+    /// LOD 0 when MIN/MAG ask for one, and the 3x3 gaussian convolution on
+    /// PROJECT2D). The sampler has always been nearest-only, so this is a
+    /// behavior change and stays off unless a caller opts in; the corpus
+    /// oracle for it is xgu bump_cubemap_reflect (both textures 2/2/QUINCUNX)
+    /// against the reference screenshot.
+    /// </summary>
+    public bool TextureFilterRegisters { get; set; }
+
+    /// <summary>
+    /// Gets the four TEXFILTER words (MIN in bits 16-23, MAG in bits 24-27;
+    /// 1 = nearest, 2 = linear). Diagnostics: the sampler is nearest-only, so
+    /// this names the stages whose filtering is not modelled.
+    /// </summary>
+    public string TextureFilterDebug
+    {
+        get
+        {
+            var builder = new System.Text.StringBuilder(40);
+            for (int slot = 0; slot < MaxTextureSlots; slot++)
+            {
+                if (slot != 0)
+                {
+                    builder.Append(',');
+                }
+
+                uint word = _textureFilter[slot];
+                uint min = (word >> 16) & 0xFFu;
+                uint mag = (word >> 24) & 0xFu;
+                uint conv = (word >> 13) & 0x7u;
+                builder.Append(CultureInfo.InvariantCulture, $"{min}/{mag}/{conv}");
+            }
+
+            return builder.ToString();
+        }
+    }
 
     /// <summary>Gets per-color-format texture sample misses (unsupported format). Diagnostics.</summary>
     public IReadOnlyDictionary<uint, long> TextureFormatMisses => Snapshot(_textureFormatMisses);
@@ -4839,6 +4879,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return false;
         }
 
+        if (plan.Bilinear)
+        {
+            return SampleBilinear(in plan, u, v, out r, out g, out b, out a);
+        }
+
         if (plan.FastKind != 0)
         {
             return SampleFast(in plan, u, v, out r, out g, out b, out a);
@@ -4943,6 +4988,118 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// TEXFILTER tent filter (opt-in <see cref="TextureFilterRegisters"/>):
+    /// GL_LINEAR at LOD 0. The sample position is the texel-center-offset
+    /// coordinate GL uses (<c>s*size - 0.5</c>), and each of the four taps is
+    /// wrapped independently - the address modes apply per tap, exactly as GL
+    /// wraps a bilinear footprint. One counter sample is recorded per
+    /// fragment (the base tap), not four.
+    /// </summary>
+    private bool SampleBilinear(ref readonly SamplerPlan plan, float u, float v, out float r, out float g, out float b,
+        out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        float fx = (plan.Linear ? u : u * plan.Width) - 0.5f;
+        float fy = (plan.Linear ? v : v * plan.Height) - 0.5f;
+        int x0 = (int)MathF.Floor(fx);
+        int y0 = (int)MathF.Floor(fy);
+        float wx = fx - x0;
+        float wy = fy - y0;
+        if (!TryReadPlannedTexel(in plan, x0, y0, out float r00, out float g00, out float b00, out float a00,
+                out uint baseAddress, out uint baseTexel) ||
+            !TryReadPlannedTexel(in plan, x0 + 1, y0, out float r10, out float g10, out float b10, out float a10,
+                out _, out _) ||
+            !TryReadPlannedTexel(in plan, x0, y0 + 1, out float r01, out float g01, out float b01, out float a01,
+                out _, out _) ||
+            !TryReadPlannedTexel(in plan, x0 + 1, y0 + 1, out float r11, out float g11, out float b11,
+                out float a11, out _, out _))
+        {
+            _textureFormatMisses[plan.Color]++;
+            _textureStateMisses[_currentTextureState]++;
+            return false;
+        }
+
+        float w00 = (1f - wx) * (1f - wy);
+        float w10 = wx * (1f - wy);
+        float w01 = (1f - wx) * wy;
+        float w11 = wx * wy;
+        r = (r00 * w00) + (r10 * w10) + (r01 * w01) + (r11 * w11);
+        g = (g00 * w00) + (g10 * w10) + (g01 * w01) + (g11 * w11);
+        b = (b00 * w00) + (b10 * w10) + (b01 * w01) + (b11 * w11);
+        a = (a00 * w00) + (a10 * w10) + (a01 * w01) + (a11 * w11);
+        TrackTextureCoords(x0, y0);
+        return CountSample(baseAddress, baseTexel, r, g, b);
+    }
+
+    /// <summary>
+    /// Reads and decodes one texel of a plan at an unwrapped coordinate: the
+    /// per-tap half of <see cref="SampleBilinear"/>, sharing the generic
+    /// sampler's border, wrap, layout and decode rules.
+    /// </summary>
+    private bool TryReadPlannedTexel(
+        ref readonly SamplerPlan plan,
+        int rawX,
+        int rawY,
+        out float r,
+        out float g,
+        out float b,
+        out float a,
+        out uint address,
+        out uint texel)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        address = plan.Offset;
+        texel = 0u;
+        if (plan.UAddr == (int)TextureAddressBorder || plan.VAddr == (int)TextureAddressBorder)
+        {
+            bool outU = plan.UAddr == (int)TextureAddressBorder && (rawX < 0 || rawX >= plan.Width);
+            bool outV = plan.VAddr == (int)TextureAddressBorder && (rawY < 0 || rawY >= plan.Height);
+            if (outU || outV)
+            {
+                texel = _textureBorderColor[plan.Slot];
+                DecodeBorderColor(texel, out r, out g, out b, out a);
+                return true;
+            }
+        }
+
+        int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
+        int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
+        uint bytesPerTexel = plan.BytesPerTexel;
+        if (bytesPerTexel == 0)
+        {
+            return false;
+        }
+
+        uint bytesAddress = plan.Offset;
+        if (plan.Linear)
+        {
+            bytesAddress += (uint)((y * plan.Pitch) + (x * (int)bytesPerTexel));
+        }
+        else if (plan.MortonMasks)
+        {
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            bytesAddress += swizzled * bytesPerTexel;
+        }
+        else
+        {
+            bytesAddress += (InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                             InterleaveBits((uint)y, plan.SwizzleMaskY)) * bytesPerTexel;
+        }
+
+        texel = bytesPerTexel == 2 ? ReadGpu(bytesAddress) & 0xFFFFu : ReadGpu(bytesAddress);
+        DecodeTextureTexel(plan.Color, texel, out r, out g, out b, out a);
+        address = bytesAddress;
+        return true;
+    }
+
+    /// <summary>
     /// Highest physical address a fast sampler plan can read, given the folds
     /// the plan allows: every accepted wrap kind keeps the folded coordinate
     /// inside <c>[0, Width)</c> / <c>[0, Height)</c>, and every swizzled
@@ -5033,6 +5190,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         public uint CubeMaskX;
         public uint CubeMaskY;
         public bool CubeMorton;
+
+        /// <summary>Texture stage this plan belongs to (border color lookup).</summary>
+        public int Slot;
+
+        /// <summary>
+        /// TEXFILTER asks for a tent filter at LOD 0 (MIN/MAG 2 or 4, plus the
+        /// tent minification variants). Only set when
+        /// <see cref="TextureFilterRegisters"/> is on, so the legacy nearest
+        /// sampler is byte-identical by construction.
+        /// </summary>
+        public bool Bilinear;
+
+        /// <summary>
+        /// TEXFILTER convolution kernel (bits 13-15): 0 none, 1 quincunx,
+        /// 2 gaussian-3. Applied to PROJECT2D like xemu
+        /// <c>apply_convolution_filter</c>: a 3x3 gaussian blur over nine
+        /// textureProj taps.
+        /// </summary>
+        public int Convolution;
     }
 
     private void BuildSamplerPlans()
@@ -5042,6 +5218,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             ref SamplerPlan plan = ref _samplerPlans[slot];
             uint color = (_textureFormat[slot] >> 8) & 0x7Fu;
             plan.Color = color;
+            plan.Slot = slot;
             bool linear = IsLinearTextureFormat(color);
             plan.Linear = linear;
             int width;
@@ -5125,12 +5302,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
             }
 
-            int cubeWidth = (int)(_textureImageRect[slot] >> 16);
-            int cubeHeight = (int)(_textureImageRect[slot] & 0xFFFFu);
+            // Cube maps are always swizzled, and xemu takes a swizzled
+            // texture's extent from TEXFMT BASE_SIZE_U/V - TEXIMAGERECT is
+            // only read for linear formats (pgraph_get_texture_shape). Using
+            // IMAGE_RECT here samples a 512x512 grid (the guest's stale
+            // default) over 256x256 faces.
+            int cubeWidth = 1 << (int)((_textureFormat[slot] >> 20) & 0xFu);
+            int cubeHeight = 1 << (int)((_textureFormat[slot] >> 24) & 0xFu);
             uint cubeBytes = color switch
             {
                 0x06u => 4u,
                 0x05u => 2u,
+                0x3Au or 0x3Bu or 0x3Cu => 4u,
                 _ => 0u,
             };
             plan.CubeWidth = cubeWidth;
@@ -5147,6 +5330,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 plan.CubeMaskX = cubeMaskX;
                 plan.CubeMaskY = cubeMaskY;
                 plan.CubeMorton = (cubeMaskX & 0xAAAAAAAAu) == 0 && (cubeMaskY & 0x55555555u) == 0;
+            }
+
+            // TEXFILTER decode (opt-in): MIN in bits 16-23, MAG in bits 24-27,
+            // convolution kernel in bits 13-15. Values follow nv2a_regs.h;
+            // with level 0 only, every tent variant is the same bilinear tap.
+            plan.Bilinear = false;
+            plan.Convolution = 0;
+            if (TextureFilterRegisters)
+            {
+                uint filter = _textureFilter[slot];
+                uint min = (filter >> 16) & 0x3Fu;
+                uint mag = (filter >> 24) & 0xFu;
+                plan.Bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
+                plan.Convolution = (int)((filter >> 13) & 0x7u);
             }
         }
     }
@@ -5448,12 +5645,93 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         int face = PshCombiner.SelectCubeFace(x, y, z, out float s, out float t);
+        if (plan.Bilinear)
+        {
+            return SampleCubeBilinear(memory, in plan, color, bytes, face, s, t, out r, out g, out b, out a);
+        }
+
         int tx = Math.Clamp((int)MathF.Floor(s * width), 0, width - 1);
         int ty = Math.Clamp((int)MathF.Floor(t * height), 0, height - 1);
         uint swizzled = plan.CubeMorton
             ? (SpreadMortonBits((uint)tx) & plan.CubeMaskX) | ((SpreadMortonBits((uint)ty) << 1) & plan.CubeMaskY)
             : InterleaveBits((uint)tx, plan.CubeMaskX) | InterleaveBits((uint)ty, plan.CubeMaskY);
         uint address = _textureOffset[slot] + (plan.CubeFaceStride * (uint)face) + (swizzled * bytes);
+        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+    }
+
+    /// <summary>
+    /// TEXFILTER tent filter for a cube map (opt-in): GL samples a cubemap
+    /// with LINEAR at LOD 0 inside the selected face and clamps the four taps
+    /// at the face edge - it never blends across faces - so this is the 2D
+    /// bilinear footprint with a face-local clamp.
+    /// </summary>
+    private bool SampleCubeBilinear(
+        IGpuMemory memory,
+        ref readonly SamplerPlan plan,
+        uint color,
+        uint bytes,
+        int face,
+        float s,
+        float t,
+        out float r,
+        out float g,
+        out float b,
+        out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        int width = plan.CubeWidth;
+        int height = plan.CubeHeight;
+        float fx = (s * width) - 0.5f;
+        float fy = (t * height) - 0.5f;
+        int x0 = (int)MathF.Floor(fx);
+        int y0 = (int)MathF.Floor(fy);
+        float wx = fx - x0;
+        float wy = fy - y0;
+        if (!TryReadCubeTexel(memory, in plan, color, bytes, face, x0, y0, out float r00, out float g00, out float b00,
+                out float a00) ||
+            !TryReadCubeTexel(memory, in plan, color, bytes, face, x0 + 1, y0, out float r10, out float g10,
+                out float b10, out float a10) ||
+            !TryReadCubeTexel(memory, in plan, color, bytes, face, x0, y0 + 1, out float r01, out float g01,
+                out float b01, out float a01) ||
+            !TryReadCubeTexel(memory, in plan, color, bytes, face, x0 + 1, y0 + 1, out float r11, out float g11,
+                out float b11, out float a11))
+        {
+            return false;
+        }
+
+        float w00 = (1f - wx) * (1f - wy);
+        float w10 = wx * (1f - wy);
+        float w01 = (1f - wx) * wy;
+        float w11 = wx * wy;
+        r = (r00 * w00) + (r10 * w10) + (r01 * w01) + (r11 * w11);
+        g = (g00 * w00) + (g10 * w10) + (g01 * w01) + (g11 * w11);
+        b = (b00 * w00) + (b10 * w10) + (b01 * w01) + (b11 * w11);
+        a = (a00 * w00) + (a10 * w10) + (a01 * w01) + (a11 * w11);
+        return true;
+    }
+
+    private bool TryReadCubeTexel(
+        IGpuMemory memory,
+        ref readonly SamplerPlan plan,
+        uint color,
+        uint bytes,
+        int face,
+        int tx,
+        int ty,
+        out float r,
+        out float g,
+        out float b,
+        out float a)
+    {
+        tx = Math.Clamp(tx, 0, plan.CubeWidth - 1);
+        ty = Math.Clamp(ty, 0, plan.CubeHeight - 1);
+        uint swizzled = plan.CubeMorton
+            ? (SpreadMortonBits((uint)tx) & plan.CubeMaskX) | ((SpreadMortonBits((uint)ty) << 1) & plan.CubeMaskY)
+            : InterleaveBits((uint)tx, plan.CubeMaskX) | InterleaveBits((uint)ty, plan.CubeMaskY);
+        uint address = _textureOffset[plan.Slot] + (plan.CubeFaceStride * (uint)face) + (swizzled * bytes);
         return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
     }
 
@@ -5536,7 +5814,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return (total + 127u) & ~127u;
     }
 
-    /// <summary>Decodes a swizzled A8R8G8B8 (0x06) or R5G6B5 (0x05) texel.</summary>
+    /// <summary>
+    /// Decodes a swizzled texel for any format the 2D sampler can decode
+    /// (A8R8G8B8, R5G6B5 and the byte-order twins), sharing
+    /// <see cref="DecodeTextureTexel"/> so the cube/volume paths can never
+    /// silently disagree with the 2D path about a format's channel order.
+    /// </summary>
     private static bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, out float r, out float g,
         out float b, out float a)
     {
@@ -5544,28 +5827,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         g = 1f;
         b = 1f;
         a = 1f;
-        switch (color)
+        uint bytes = TextureFormatBytesPerTexel(color);
+        if (bytes is not (2u or 4u))
         {
-            case 0x06u:
-                {
-                    uint texel = memory.ReadPhysical(address);
-                    a = ((texel >> 24) & 0xFFu) / 255f;
-                    r = ((texel >> 16) & 0xFFu) / 255f;
-                    g = ((texel >> 8) & 0xFFu) / 255f;
-                    b = (texel & 0xFFu) / 255f;
-                    return true;
-                }
-            case 0x05u:
-                {
-                    uint texel = memory.ReadPhysical(address) & 0xFFFFu;
-                    r = ((texel >> 11) & 0x1Fu) / 31f;
-                    g = ((texel >> 5) & 0x3Fu) / 63f;
-                    b = (texel & 0x1Fu) / 31f;
-                    return true;
-                }
-            default:
-                return false;
+            return false;
         }
+
+        uint texel = memory.ReadPhysical(address);
+        if (bytes == 2u)
+        {
+            texel &= 0xFFFFu;
+        }
+
+        DecodeTextureTexel(color, texel, out r, out g, out b, out a);
+        return true;
     }
 
     /// <summary>
@@ -6816,6 +7091,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     return false;
                 }
 
+                if (_samplerPlans[stage].Convolution is 1 or 2)
+                {
+                    return SampleConvolved(stage, tu, tv, coord[3], texel);
+                }
+
                 // xemu: textureProj(texSamp, norm(pT.xyw)) — the 2D coords
                 // divide by w even without a cube map. A zero w keeps the
                 // undivided coords (GLSL textureProj with w = 0 is undefined;
@@ -7180,14 +7460,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         uint color = (_textureFormat[stage] >> 8) & 0xFFu;
 
-        // 0x05/0x06 are what the reference renderer backs. The SZ byte-order
-        // variants (0x3A-0x3C) are the same 4-byte swizzled layouts with the
-        // channels permuted; enabling them needs THREE gates together - this
-        // list, SamplerPlan.CubeBytes and TryDecodeSwizzledTexel - and even
-        // then the sampled reflection is visibly wrong (208g). Do not widen
-        // this list alone: the sampler then returns false without counting a
-        // fallback, and 207h read that as "no pixels changed".
-        return color is 0x05u or 0x06u;
+        // 0x05/0x06 are the formats the reference renderer backs; the SZ
+        // byte-order variants (0x3A-0x3C) are the same swizzled layouts with
+        // the channels permuted (207h/208g). Cube sampling has THREE gates -
+        // this list, SamplerPlan.CubeBytes and the swizzled texel decode - so
+        // they are widened together; widening this one alone makes the
+        // sampler return false before any fallback counter moves.
+        return color is 0x05u or 0x06u or 0x3Au or 0x3Bu or 0x3Cu;
     }
 
     private static void SetTexelZero(float[] texel)
@@ -7238,6 +7517,69 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         SetTexelNone(texel);
         return false;
+    }
+
+    /// <summary>1-2-1 gaussian kernel used by the QUINCUNX/GAUSSIAN_3 convolution.</summary>
+    private static readonly float[] ConvolutionWeights =
+    {
+        1f / 16f, 2f / 16f, 1f / 16f,
+        2f / 16f, 4f / 16f, 2f / 16f,
+        1f / 16f, 2f / 16f, 1f / 16f,
+    };
+
+    /// <summary>Texel offsets of the 3x3 convolution, row-major.</summary>
+    private static readonly int[] ConvolutionOffsets =
+    {
+        -1, -1, 0, -1, 1, -1,
+        -1, 0, 0, 0, 1, 0,
+        -1, 1, 0, 1, 1, 1,
+    };
+
+    /// <summary>
+    /// TEXFILTER convolution (opt-in): xemu <c>apply_convolution_filter</c>, a
+    /// nine-tap textureProj blur with the 1-2-1 kernel. The tap offsets are
+    /// one texel of the stage's base level, expressed in the same normalized
+    /// coordinates textureProj divides by w.
+    /// </summary>
+    private bool SampleConvolved(int stage, float tu, float tv, float w, float[] texel)
+    {
+        ref readonly SamplerPlan plan = ref _samplerPlans[stage];
+        float invW = w != 0f ? 1f / w : 1f;
+        float du = invW / Math.Max(plan.Width, 1);
+        float dv = invW / Math.Max(plan.Height, 1);
+        float bu = tu * invW;
+        float bv = tv * invW;
+        float ar = 0f;
+        float ag = 0f;
+        float ab = 0f;
+        float aa = 0f;
+        bool sampled = false;
+        for (int i = 0; i < 9; i++)
+        {
+            float weight = ConvolutionWeights[i];
+            float u = bu + (ConvolutionOffsets[i * 2] * du);
+            float v = bv + (ConvolutionOffsets[(i * 2) + 1] * dv);
+            if (TrySampleTexture(stage, u, v, out float r, out float g, out float b, out float a))
+            {
+                ar += r * weight;
+                ag += g * weight;
+                ab += b * weight;
+                aa += a * weight;
+                sampled = true;
+            }
+        }
+
+        if (!sampled)
+        {
+            SetTexelNone(texel);
+            return false;
+        }
+
+        texel[0] = ar;
+        texel[1] = ag;
+        texel[2] = ab;
+        texel[3] = aa;
+        return true;
     }
 
     /// <summary>
@@ -8027,6 +8369,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // every pixel and the generic loop below runs zero iterations.
         bool compiledModulate = leanInterp &&
                                 !DiagnosticGenericFill &&
+                                !_samplerPlans[0].Bilinear &&
+                                _samplerPlans[0].Convolution == 0 &&
                                 texModes[0] == PshCombiner.TexModeProject2D &&
                                 bytes == 4 &&
                                 !_depthTestEnable &&
@@ -8185,6 +8529,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (texModes[0] == PshCombiner.TexModeProject2D)
             {
                 lightingSampleStage0 = _samplerPlans[0].FastKind != 0 &&
+                                       !_samplerPlans[0].Bilinear &&
+                                       _samplerPlans[0].Convolution == 0 &&
                                        (_textureControl0[0] & TextureControl0Enable) != 0 &&
                                        !IsTextureCubemap(0) &&
                                        !IsDepthTextureFormat(_samplerPlans[0].Color);
