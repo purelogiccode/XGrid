@@ -79,7 +79,9 @@ public sealed class ClearMaskLiveTests
             new PshCombiner(),
             fogEnable: false, fogR: 0f, fogG: 0f, fogB: 0f, fogA: 0f,
             shaderClipMode: 0u,
-            zFormatFloat: false);
+            zFormatFloat: false,
+            colorSurfaceAddress: 0u,
+            colorPitch: 0u);
     }
 
     private static PgraphClearInfo ColorClear(uint value)

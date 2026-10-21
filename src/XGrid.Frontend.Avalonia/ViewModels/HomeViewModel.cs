@@ -57,6 +57,20 @@ public sealed partial class HomeViewModel : PageViewModel
         Shell.StopSessionCommand.Execute(null);
     }
 
+    /// <summary>Public command: advances one frame while the console is paused.</summary>
+    [RelayCommand]
+    private void StepFrame()
+    {
+        Shell.StepFrameCommand.Execute(null);
+    }
+
+    /// <summary>Public command: advances a slice of guest time while paused.</summary>
+    [RelayCommand]
+    private void StepInstructions()
+    {
+        Shell.StepInstructionsCommand.Execute(null);
+    }
+
     /// <summary>Public command: picks and launches a disc image.</summary>
     [RelayCommand]
     private async System.Threading.Tasks.Task ChooseDiscAsync()

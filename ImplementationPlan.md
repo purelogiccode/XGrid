@@ -145,6 +145,19 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    calls) and the ~0.5-0.9 s texture fingerprint, both measured and deferred.
    Next: B3 method coverage on the corpus (zero `unsup` rows, guest counters
    identical) — the submission levers are spent.
+   **Status 2026-10-21 (next session, §219):** the GL backend now samples like the
+   software rasterizer - the TEXFILTER tent and the nine-tap 1-2-1 convolution
+   (only for MIN = CONVOLUTION_2D_LOD0), the *decoded* wrap modes (the raw address
+   word assigns 1 to wrap and 2 to mirror, which the backend had swapped) with
+   clamp-to-border, the PROJECT2D divide by w, and the clip origin on both
+   fragment axes - and `--gpu-replace` now composes a declined draw's frame into
+   guest RAM (one writer per frame) instead of presenting the clear colour
+   (compatibility gap 8 closed: `xgu bump_cubemap_reflect` 3B presents
+   `DA0750EE...` = the software frame, CPU SHA unchanged; depth/stencil are not
+   composed, documented). The 1B GL gate frames stay byte-identical (`B6116DAE`
+   menu / `7A860ED7` triangle), `BackendUnsupported=0`, `composedFrames=0`. On
+   `vp_lighting` the two renderers agree within one 8-bit step in both filter
+   states. Suite 1725.
 2. **Track E - compatibility corpus.** `docs/compatibility.md` + a
    boot-to-first-frame harness + ≥8 samples; no NV2A/APU fidelity polish without
    a matrix row and a usage histogram (`compatibility-corpus.md`). **M-B MET
@@ -172,6 +185,12 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    both compiled fills serving the tent, the flag costs 32.18 s vs 32.22 s at 1B
    menu and moves no gate anchor (triangle SHA/frame identical, menu frame
    `4EF1FBF6…`), while `bump_cubemap_reflect`'s colour depth goes 20,843 ->
+   **§219 (2026-10-21):** the GL side of gap 7 is closed too - `xgu vp_lighting`
+   at 3B (fractional texcoords, zero declined draws) matches the software frame
+   within one 8-bit step *with and without* `--tex-filter registers`, and the
+   flag moves both renderers by the same ~6.5% (max delta 80); the gate frames
+   are unchanged. Gap 8 is closed (§219d). Open corpus items are gap 9
+   (second-emulator frame oracle) and gap 10 (`bumpenv_ripple` app state).
    26,347 toward its reference's 30,806 at an unchanged mean. **§211
    (2026-10-21):** gap 10 (`xgu bumpenv_ripple` black) is **diagnosed, not
    fixed** - every presented surface is the colour clear, the two per-frame
@@ -192,6 +211,11 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
    frontend's first test project (15 tests). Host audio (the DSP execution it
    needs) is the remaining product gap.
+   **Status 2026-10-21 (next session):** pause now has a step control - F7 steps
+   one presented frame (8M-instruction budget so an idle guest cannot hang the
+   UI), Shift+F7 steps 1,000,000 instructions; Home gained both buttons and the
+   About page/README list the keys. Host audio (APU DSP execution) is still the
+   remaining product gap.
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).

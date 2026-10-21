@@ -14,7 +14,12 @@ param(
     [string]$Mcpx = "data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin",
     [string]$Eeprom = "data\xemu-0.8.136-windows-x86_64\eeprom.bin",
     [string]$Hdd = "wt-data\xbox_hdd.qcow2",
-    [string]$PadScript = "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"
+    [string]$PadScript = "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000",
+    # Same flag on BOTH legs so the policy compares the two backends under one
+    # feature set (the §209 TEXFILTER parity check).
+    [ValidateSet("legacy", "registers")][string]$TexFilter = "legacy",
+    # Extra CLI switches appended verbatim to BOTH legs (e.g. --ffp).
+    [string[]]$Extra = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,7 +34,7 @@ $glLog = Join-Path $OutDir "golden-gl.log"
 $baseArgs = @(
     "boot", "--bios", $Bios, "--mcpx", $Mcpx, "--eeprom", $Eeprom, "--hdd", $Hdd,
     "--steps", $Steps, "--pad-script", $PadScript
-)
+) + $(if ($TexFilter -ne "legacy") { @("--tex-filter", $TexFilter) } else { @() }) + $Extra
 
 Write-Host "== sw run =="
 $swWall = Measure-Command { & dotnet $cli @baseArgs --gpu sw --frame $swBmp 2>&1 | Tee-Object -FilePath $swLog | Out-Null }

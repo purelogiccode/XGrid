@@ -44,8 +44,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTexWrapY[0]",
         "uTexCube[0]",
         "uTexDim[0]",
-        "uTexFilter[0]",
-        "uTexConv[0]",
+        "uTexBilinear[0]",
+        "uTexConvolution[0]",
+        "uTexBorder[0]",
         "uShaderClip",
         "uTri[0]",
         "uTex0",
@@ -124,10 +125,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly int[] _texWrapY = new int[4];
     private readonly int[] _texCube = new int[4];
     private readonly int[] _texDim = new int[4];
-    private readonly int[] _texFilter = new int[4];
-    private readonly int[] _texConv = new int[4];
+    private readonly int[] _texBilinear = new int[4];
+    private readonly int[] _texConvolution = new int[4];
+    private readonly float[] _texBorder = new float[4 * 4];
     private readonly float[] _scalarScratch = new float[14];
-    private readonly float[] _texScratch = new float[4 * 10];
+    private readonly float[] _texScratch = new float[56];
 
     // GL-state shadow for ApplyState: consecutive draws usually share the
     // same resolved ROP state, so the redundant Enable/Disable/Func calls are
@@ -196,13 +198,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _presentUploads;
     private long _flipStaleUploads;
 
-    // Replace-mode composition (compatibility gap 8): a draw the backend
-    // declines in replace mode is painted by the software path into guest RAM,
-    // so the FBO no longer holds the whole frame. When any such draw happened
-    // since the last flip, the next flip drops the FBO and uploads the guest
-    // surface wholesale (full-frame replace — never a mix of the two writers).
-    private bool _softwareDrawsSinceFlipPainted;
-    private long _flipComposeUploads;
+    // Compatibility gap 8 (replace mode): a frame whose draw the backend
+    // declined is composed from the FBO into guest RAM and handed to the
+    // software rasterizer; the flip then uploads that RAM image instead of
+    // serving the FBO. The flag lives for one frame.
+    private bool _frameComposed;
+    private long _composedFrames;
+    private long _composedPixels;
+    private long _composedDraws;
     private GlBackendTimings _timings;
     private readonly bool _windowRequested;
     private readonly bool _replaceSoftware;
@@ -234,7 +237,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // per-draw dictionary lookup was measurable on 2.76M draws).
         public int TriLocation { get; set; } = -1;
 
-        public float[] TexCache { get; } = new float[4 * 10];
+        public float[] TexCache { get; } = new float[56];
 
         public float[] ConstCache { get; } = new float[72];
 
@@ -441,7 +444,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} composeUploads={_flipComposeUploads} " +
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} " +
+                $"composedFrames={_composedFrames} composedPixels={_composedPixels} composedDraws={_composedDraws} " +
                 $"batchCalls={BatchCalls} batchTris={BatchTriangles} batchCap={_batchCapacity}]");
             _timings.AppendTo(sb);
             if (_probeEnabled)
@@ -490,6 +494,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return false;
         }
 
+        if (_replaceSoftware && _frameComposed)
+        {
+            // The frame was already handed back to the software rasterizer
+            // (compatibility gap 8): every later draw must take the same
+            // writer, or the two images diverge and the flip loses one.
+            _composedDraws++;
+            return false;
+        }
+
         try
         {
             long start = Stopwatch.GetTimestamp();
@@ -498,12 +511,16 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             {
                 // The caller will paint this triangle in software; submit the
                 // buffered host triangles first so the two writers keep the
-                // pre-batching draw order. In replace mode the frame is now
-                // partly software, so the next flip must compose from guest RAM.
+                // pre-batching draw order.
                 FlushBatch();
                 if (_replaceSoftware)
                 {
-                    _softwareDrawsSinceFlipPainted = true;
+                    // Declining a draw in replacement mode would otherwise
+                    // lose every GL pixel of this frame (the flip serves the
+                    // FBO while the fallback pixels go to guest RAM). Compose
+                    // the FBO into guest RAM once, then let the software path
+                    // own the rest of the frame.
+                    ComposeToGuestSurface(in info);
                 }
             }
 
@@ -518,6 +535,62 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _fatalError = exception.GetType().Name + ": " + exception.Message;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Copies the FBO's clip window into the guest color surface so the
+    /// software rasterizer can continue the same frame (compatibility gap 8).
+    /// The FBO is the clip window with guest row 0 at its bottom, so FBO pixel
+    /// (x, y) is guest pixel (ClipX + x, ClipY + y) at the seam's
+    /// <see cref="PgraphDrawInfo.ColorSurfaceAddress"/>. Depth/stencil are not
+    /// composed (the GL depth buffer is host-side): a frame that mixes the two
+    /// writers keeps color continuity, which is what the presented image needs.
+    /// </summary>
+    private void ComposeToGuestSurface(in PgraphDrawInfo info)
+    {
+        if (_frameComposed || _fbo == 0)
+        {
+            return;
+        }
+
+        int width = (int)info.ClipW;
+        int height = (int)info.ClipH;
+        if (width <= 0 || height <= 0 || info.ColorBytes != 4 ||
+            info.ColorPitch < (uint)(width * 4) ||
+            _fboWidth < width || _fboHeight < height)
+        {
+            return;
+        }
+
+        FlushBatch();
+        byte[] rgba = new byte[width * height * 4];
+        long start = Stopwatch.GetTimestamp();
+        BindFbo(_fbo);
+        unsafe
+        {
+            fixed (byte* pRgba = rgba)
+            {
+                _gl.ReadPixels(0, 0, (uint)width, (uint)height, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
+            }
+        }
+
+        _timings.AddReadback(Stopwatch.GetElapsedTime(start));
+        uint baseAddress = info.ColorSurfaceAddress;
+        uint pitch = info.ColorPitch;
+        for (int y = 0; y < height; y++)
+        {
+            uint row = baseAddress + ((info.ClipY + (uint)y) * pitch);
+            for (int x = 0; x < width; x++)
+            {
+                int at = ((y * width) + x) * 4;
+                uint pixel = (uint)((rgba[at] << 16) | (rgba[at + 1] << 8) | rgba[at + 2] | (rgba[at + 3] << 24));
+                _memory.WritePhysical(row + ((info.ClipX + (uint)x) * 4u), pixel);
+            }
+        }
+
+        _frameComposed = true;
+        _composedFrames++;
+        _composedPixels += (long)width * height;
     }
 
     /// <summary>Opens one draw-command batch: from here to <see cref="EndDrawBatch"/> the guest state and RAM are frozen, so triangles are staged and submitted together.</summary>
@@ -661,8 +734,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _flipEmpty = 0;
         _presentUploads = 0;
         _flipStaleUploads = 0;
-        _flipComposeUploads = 0;
-        _softwareDrawsSinceFlipPainted = false;
+        _frameComposed = false;
+        _composedFrames = 0;
+        _composedPixels = 0;
+        _composedDraws = 0;
         _timings.Reset();
         _probeDraws = 0;
         _probeSamples = 0;
@@ -1009,25 +1084,24 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // uncertainty the flip uploads; a guard failure below takes the
         // flipEmpty abstain path and keeps the honest gap.
         bool droppedStaleFbo = false;
+        if (_frameComposed)
+        {
+            // The software rasterizer owns this frame (gap 8): its image is
+            // in guest RAM, the FBO is a stale partial copy. Drop it so the
+            // upload path below rebuilds the presented surface from RAM.
+            if (_fbo != 0)
+            {
+                DeleteFbo();
+            }
+
+            droppedStaleFbo = true;
+            _frameComposed = false;
+        }
+
         if (_fbo != 0 && _dirtyWatch?.PresentDirty == true)
         {
             DeleteFbo();
             droppedStaleFbo = true;
-        }
-
-        // Replace-mode composition (gap 8): if the backend declined a draw
-        // since the last flip, the software rasterizer painted it into guest
-        // RAM and the FBO is now a frame with a hole. Drop it so the upload
-        // path below rebuilds the whole presented surface from guest RAM.
-        bool composedSoftware = false;
-        if (_softwareDrawsSinceFlipPainted)
-        {
-            _softwareDrawsSinceFlipPainted = false;
-            if (_replaceSoftware && _fbo != 0)
-            {
-                DeleteFbo();
-                composedSoftware = true;
-            }
         }
 
         if (_fbo == 0)
@@ -1050,11 +1124,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 if (droppedStaleFbo)
                 {
                     _flipStaleUploads++;
-                }
-
-                if (composedSoftware)
-                {
-                    _flipComposeUploads++;
                 }
 
                 // The upload made the FBO authoritative from guest RAM at
@@ -1713,13 +1782,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _texSize[(slot * 2) + 0] = width;
             _texSize[(slot * 2) + 1] = height;
             _texLinear[slot] = linear ? 1 : 0;
-            _texWrapX[slot] = (int)(texture.Address & 0xFu);
-            _texWrapY[slot] = (int)((texture.Address >> 4) & 0xFu);
+            // The seam already decoded the address word: 0 wrap, 1 mirror,
+            // 2 clamp, 3 border. Reading the raw word here swapped wrap and
+            // mirror (raw 1 = wrap, raw 2 = mirror) and had no border mode.
+            _texWrapX[slot] = texture.SamplerWrapU;
+            _texWrapY[slot] = texture.SamplerWrapV;
+            _texBilinear[slot] = texture.FilterBilinear ? 1 : 0;
+            _texConvolution[slot] = texture.FilterConvolution;
+            Nv2AMmio.DecodeBorderColor(
+                texture.BorderColor,
+                out _texBorder[(slot * 4) + 0], out _texBorder[(slot * 4) + 1],
+                out _texBorder[(slot * 4) + 2], out _texBorder[(slot * 4) + 3]);
 
             _texCube[slot] = (texture.Format & TextureFormatCubemapEnable) != 0 ? 1 : 0;
             _texDim[slot] = (int)((texture.Format & 0xC0u) >> 6);
-            _texFilter[slot] = texture.FilterBilinear ? 1 : 0;
-            _texConv[slot] = texture.FilterConvolution;
             if (!sampleOk)
             {
                 _lastTextureValid[slot] = false;
@@ -2189,11 +2265,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             values[20 + i] = _texWrapY[i];
             values[24 + i] = _texCube[i];
             values[28 + i] = _texDim[i];
-            values[32 + i] = _texFilter[i];
-            values[36 + i] = _texConv[i];
+            values[32 + i] = _texBilinear[i];
+            values[36 + i] = _texConvolution[i];
+            values[40 + (i * 4)] = _texBorder[(i * 4) + 0];
+            values[41 + (i * 4)] = _texBorder[(i * 4) + 1];
+            values[42 + (i * 4)] = _texBorder[(i * 4) + 2];
+            values[43 + (i * 4)] = _texBorder[(i * 4) + 3];
         }
 
-        if (program.TexValid && SameValues(values, program.TexCache, 40))
+        if (program.TexValid && SameValues(values, program.TexCache, 56))
         {
             return;
         }
@@ -2205,9 +2285,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(program.Location("uTexWrapY[0]"), 4u, ref _texWrapY[0]);
         _gl.Uniform1(program.Location("uTexCube[0]"), 4u, ref _texCube[0]);
         _gl.Uniform1(program.Location("uTexDim[0]"), 4u, ref _texDim[0]);
-        _gl.Uniform1(program.Location("uTexFilter[0]"), 4u, ref _texFilter[0]);
-        _gl.Uniform1(program.Location("uTexConv[0]"), 4u, ref _texConv[0]);
-        Array.Copy(values, program.TexCache, 40);
+        _gl.Uniform1(program.Location("uTexBilinear[0]"), 4u, ref _texBilinear[0]);
+        _gl.Uniform1(program.Location("uTexConvolution[0]"), 4u, ref _texConvolution[0]);
+        _gl.Uniform4(program.Location("uTexBorder[0]"), 4u, ref _texBorder[0]);
+        Array.Copy(values, program.TexCache, 56);
         program.TexValid = true;
     }
 
