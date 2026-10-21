@@ -225,8 +225,24 @@ project). Evidence: 1B fast legs exact with and without `--ffp`
 `A1740DE0`/`4EF1FBF6` with GL policy frames `7A860ED7`/`B6116DAE`,
 `BackendUnsupported=0`, ktest smoke 7/7 at 792,800,535 steps with the
 byte-identical 40,797-byte log. The APU sample counter `NV_PAPU_XGSCNT` (§218) is now derived from the EP frame divider, which the dashboard reads and stores: the two menu RAM anchors were re-recorded (`01BE5D64 -> 6AB39AB0` accurate, `51B56687 -> 34973510` fast) while frames, CPU SHAs, counters and all 13 corpus rows stayed exact. NV2A snapshot v6 -> **v8** (old `.xgs` invalid).
-Next: Track P host audio (needs DSP execution), GL TEXFILTER parity, or the GL
-replace-mode fallback composition.
+Next: Track P host audio (needs DSP execution), the frontend on the GL backend
+(the composition blocker is closed), or the gap-9 second-emulator oracle.
+
+**Status 2026-10-21 (21st session, decisions §219; 1738 tests green).** Four
+slices, no anchor moved: **GL TEXFILTER parity** (§219a - compatibility gap 7
+closed; `DecodeTextureFilter` is the single decode, the shader runs the tent and
+the nine-tap PROJECT2D convolution behind `uTexFilter`/`uTexConv` uniforms, so
+the default is still the same nearest `texelFetch`), **GL replace-mode
+composition** (§219b - gap 8 closed; a software-painted draw makes the flip drop
+the FBO and rebuild the frame from guest RAM, `composeUploads=`; the cubemap
+corpus row's replace leg now presents the software anchor `DA0750EE…`),
+**clear write-mask parity** (§219c - `ClearCore` lifts the GL masks for a clear,
+`ClearMaskLiveTests` fails pre-fix), and **per-title overrides V2** (§219d -
+`XGrid.Host.DiscTitleId`, `title:XXXXXXXX` keys with title-over-path
+precedence). Evidence: accurate 1B goldens PASS (sw `4EF1FBF6`/`A1740DE0`, GL
+`B6116DAE`/`7A860ED7`, violations 0, counters identical), fast legs exact (menu
+`34973510`/`F5D61C94`, triangle `B45254CA`/`7DAB63EB`), ktest smoke PASS 7/7 at
+792,800,535 steps with the byte-identical log. Suite 1717 -> 1738.
 
 ---
 

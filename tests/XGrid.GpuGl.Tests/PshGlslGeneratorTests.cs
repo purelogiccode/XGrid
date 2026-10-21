@@ -187,6 +187,37 @@ public sealed class PshGlslGeneratorTests
             () => PshGlslGenerator.BuildFragmentSource(legacy: false, state, triangleCapacity: 0));
     }
 
+    [Fact]
+    public void TexFilterTentAndConvolution_AreUniformDriven()
+    {
+        // TEXFILTER parity (compatibility gap 7): the tent and the PROJECT2D
+        // convolution are generated from the same rules the software sampler
+        // uses (SampleBilinear / SampleConvolved), driven by per-slot uniforms
+        // so switching the registers on does not recompile a program and the
+        // default (0) path is the same nearest texelFetch.
+        PshCombiner state = MenuLikeCombiner();
+        state.StageProgram = 0x01u; // slot 0 PROJECT2D
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("uniform int uTexFilter[4];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform int uTexConv[4];", source, StringComparison.Ordinal);
+        Assert.Contains("vec4 SampleTent(int slot, vec2 uv)", source, StringComparison.Ordinal);
+        Assert.Contains("vec4 SampleConvolved(int slot, vec2 uv, float w)", source, StringComparison.Ordinal);
+        Assert.Contains("- vec2(0.5)", source, StringComparison.Ordinal);
+        Assert.Contains("kConvWeight[9]", source, StringComparison.Ordinal);
+        Assert.Contains("float[9](1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0", source, StringComparison.Ordinal);
+        Assert.Contains("if (uTexFilter[slot] == 1) return SampleTent(slot, uv);", source, StringComparison.Ordinal);
+        Assert.Contains("uTexConv[0] != 0) { t0 = SampleConvolved(0, c0.xy, c0.w); }", source, StringComparison.Ordinal);
+
+        // The filter registers are per-draw state, not shader structure.
+        state.StageProgram = 0x01u;
+        Assert.DoesNotContain("uTexFilter", PshGlslGenerator.BuildKey(legacy: false, state), StringComparison.Ordinal);
+
+        // Convolution is a PROJECT2D-only rule; a PROJECT3D slot never emits it.
+        state.StageProgram = 0x02u; // slot 0 PROJECT3D
+        string project3d = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.DoesNotContain("SampleConvolved(0", project3d, StringComparison.Ordinal);
+    }
+
     private static string Normalize(string text)
     {
         return text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n') + "\n";

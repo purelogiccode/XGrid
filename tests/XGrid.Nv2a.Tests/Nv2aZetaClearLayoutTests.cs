@@ -236,4 +236,41 @@ public sealed class Nv2aZetaClearLayoutTests
         Assert.Equal(0x00u, 0xFFFFFF00u & 0xFFu);
         Assert.Equal(0x74u, 0x00711174u & 0xFFu);
     }
+
+    [Fact]
+    public void ZetaClear_IgnoresTheStencilWriteMask()
+    {
+        // A clear is a raw surface fill: the stencil write mask is draw state
+        // (xemu's surface clear writes the word, it does not run the stencil
+        // op path), so a clear with the stencil masked off still stores the
+        // stencil byte.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var pushes = SurfaceState();
+        pushes.Add((0x358u, 0u)); // color write mask: nothing
+        pushes.Add((0x32Cu, 1u)); // stencil test enabled
+        pushes.Add((0x360u, 0u)); // stencil write mask: nothing
+        PushZetaClear(pushes, 0x00711174u);
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(0x00711174u, ReadZeta(memory, 0, 0));
+        Assert.Equal(0x00711174u, ReadZeta(memory, 15, 15));
+    }
+
+    [Fact]
+    public void ColorClear_IgnoresTheColorWriteMask()
+    {
+        // Same rule for the color surface: the clear writes every channel even
+        // with the color mask off (the mask only gates draw writes).
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var pushes = SurfaceState();
+        pushes.Add((0x358u, 0u)); // color write mask: nothing
+        pushes.Add((0x1D90u, 0xFF3366AAu)); // color clear value
+        pushes.Add((0x1D98u, 0x000F0000u));
+        pushes.Add((0x1D9Cu, 0x000F0000u));
+        pushes.Add((0x1D94u, 0x000000F0u)); // clear color
+        PushMethods(nv2A, memory, pushes.ToArray());
+
+        Assert.Equal(0xFF3366AAu, ReadPixel(memory, 0, 0));
+        Assert.Equal(0xFF3366AAu, ReadPixel(memory, 15, 15));
+    }
 }

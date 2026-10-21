@@ -1,0 +1,116 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using XGrid.Xbe;
+using XGrid.XboxFs;
+
+namespace XGrid.Host;
+
+/// <summary>
+/// Resolves the XBE certificate title id of a disc image or a loose
+/// executable: the identity a per-title configuration wants, because it
+/// follows the title across paths and containers instead of the file name.
+/// </summary>
+/// <remarks>
+/// A plain XDVDFS ISO is read through <see cref="XdvdfsFileSystem"/> (its root
+/// <c>default.xbe</c>), a loose <c>.xbe</c> is read directly, and a CHD is not
+/// resolved: the XDVDFS reader works on an ISO file and the CHD's sector
+/// stream would have to be re-fed into it. That gap is deliberate and
+/// documented — callers fall back to the path key for a CHD.
+/// </remarks>
+public static class DiscTitleId
+{
+    /// <summary>Largest executable the resolver will read out of an image.</summary>
+    private const long MaxExecutableBytes = 256L * 1024 * 1024;
+
+    /// <summary>The root executable name on every Xbox disc.</summary>
+    private const string RootExecutableName = "default.xbe";
+
+    /// <summary>
+    /// Tries to read the title id (and certificate title name) of an image.
+    /// </summary>
+    /// <param name="imagePath">ISO/XISO, CHD or loose XBE path.</param>
+    /// <param name="titleId">XBE certificate title id on success.</param>
+    /// <param name="titleName">Certificate title name on success (may be empty).</param>
+    /// <returns>True when a title id was read; false for any unsupported or unreadable image.</returns>
+    public static bool TryRead(string? imagePath, out uint titleId, out string titleName)
+    {
+        titleId = 0;
+        titleName = string.Empty;
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(imagePath);
+        try
+        {
+            if (extension.Equals(".xbe", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryReadExecutable(File.ReadAllBytes(imagePath), out titleId, out titleName);
+            }
+
+            if (extension.Equals(".iso", StringComparison.OrdinalIgnoreCase))
+            {
+                using XdvdfsFileSystem disc = XdvdfsFileSystem.Open(imagePath);
+                byte[]? executable = ReadRootExecutable(disc);
+                return executable is not null && TryReadExecutable(executable, out titleId, out titleName);
+            }
+        }
+        catch (Exception exception) when (exception is IOException
+                                              or UnauthorizedAccessException
+                                              or InvalidDataException
+                                              or NotSupportedException
+                                              or ArgumentException
+                                              or InvalidOperationException)
+        {
+            // An unreadable image simply has no title id; the caller keys by path.
+        }
+
+        return false;
+    }
+
+    /// <summary>Tries to parse a title id out of an in-memory XBE image.</summary>
+    /// <param name="image">Complete XBE file bytes.</param>
+    /// <param name="titleId">XBE certificate title id on success.</param>
+    /// <param name="titleName">Certificate title name on success.</param>
+    public static bool TryReadExecutable(ReadOnlySpan<byte> image, out uint titleId, out string titleName)
+    {
+        titleId = 0;
+        titleName = string.Empty;
+        try
+        {
+            XbeImage parsed = XbeImage.Load(image);
+            titleId = parsed.TitleId;
+            titleName = parsed.TitleName?.Trim() ?? string.Empty;
+            return titleId != 0;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Reads the disc's root <c>default.xbe</c>, or null when absent or too large to inspect.</summary>
+    private static byte[]? ReadRootExecutable(XdvdfsFileSystem disc)
+    {
+        IReadOnlyList<XdvdfsFileSystem.Entry> root = disc.ListDirectory("/");
+        foreach (XdvdfsFileSystem.Entry entry in root)
+        {
+            if (entry.IsDirectory ||
+                !string.Equals(entry.Name, RootExecutableName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (entry.Size <= 0 || entry.Size > MaxExecutableBytes)
+            {
+                return null;
+            }
+
+            return disc.ReadFile(entry);
+        }
+
+        return null;
+    }
+}

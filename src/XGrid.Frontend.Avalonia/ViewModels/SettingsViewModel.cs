@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -52,23 +53,46 @@ public sealed class TitleOverrideItem : ObservableObject
     private bool _texFilterRegisters;
     private bool _inheritTextureFilter;
 
-    /// <summary>Creates a row for a launched image path.</summary>
-    public TitleOverrideItem(string path, TitleOverride value, Action<TitleOverrideItem> remove)
+    /// <summary>Creates a row for a launched image path or an XBE title id.</summary>
+    /// <param name="key">Override dictionary key (image path or <c>title:XXXXXXXX</c>).</param>
+    /// <param name="value">Persisted override values.</param>
+    /// <param name="remove">Removal callback.</param>
+    /// <param name="titleName">Certificate title name when the key is a title id.</param>
+    public TitleOverrideItem(string key, TitleOverride value, Action<TitleOverrideItem> remove, string? titleName = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(remove);
-        Path = path;
+        Path = key;
+        TitleName = titleName ?? string.Empty;
         _fixedFunctionVertex = value.FixedFunctionVertex == true;
         _texFilterRegisters = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal);
         _inheritTextureFilter = string.IsNullOrEmpty(value.TextureFilter);
         RemoveCommand = new RelayCommand(() => remove(this));
     }
 
-    /// <summary>Gets the launched image path this override applies to.</summary>
+    /// <summary>Gets the override key (an image path, or <c>title:XXXXXXXX</c> for a title-id key).</summary>
     public string Path { get; }
 
-    /// <summary>Gets the short file name shown in the list.</summary>
-    public string DisplayName => System.IO.Path.GetFileName(Path);
+    /// <summary>Gets the certificate title name when this row is keyed by title id (may be empty).</summary>
+    public string TitleName { get; }
+
+    /// <summary>Gets the label shown in the list: the title name, the title id, or the file name.</summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (EmulatorSettings.TryParseTitleIdKey(Path, out uint titleId))
+            {
+                string id = "Title " + titleId.ToString("X8", CultureInfo.InvariantCulture);
+                return TitleName.Length == 0 ? id : TitleName + " (" + id + ")";
+            }
+
+            return System.IO.Path.GetFileName(Path);
+        }
+    }
+
+    /// <summary>Gets the muted second line: the image path, or the title-key rule.</summary>
+    public string PathText => EmulatorSettings.IsTitleIdKey(Path) ? "applies wherever this title id is launched" : Path;
 
     /// <summary>Gets the command that removes this override.</summary>
     public IRelayCommand RemoveCommand { get; }
@@ -330,7 +354,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         };
         foreach (TitleOverrideItem item in TitleOverrides)
         {
-            next.TitleOverrides[EmulatorSettings.NormalizeTitleKey(item.Path)] = item.ToOverride();
+            next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();
         }
 
         Shell.SaveSettings(next);
@@ -361,17 +385,33 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
 
         string key = EmulatorSettings.NormalizeTitleKey(path);
-        if (TitleOverrides.Any(item => string.Equals(
-                EmulatorSettings.NormalizeTitleKey(item.Path), key, StringComparison.OrdinalIgnoreCase)))
+        string? titleName = null;
+
+        // V2: key the override by the XBE title id when it can be read, so it
+        // follows the title across renamed, moved or re-wrapped images. An
+        // unreadable image (e.g. a CHD, which has no XDVDFS reader yet) keeps
+        // the V1 path key.
+        if (EmulatorSession.TryResolveTitle(path, out uint titleId, out string resolvedName))
         {
-            Shell.ShowToast("That image already has an override.");
+            key = EmulatorSettings.TitleIdKey(titleId);
+            titleName = resolvedName;
+        }
+
+        if (TitleOverrides.Any(item => string.Equals(
+                EmulatorSettings.CanonicalTitleKey(item.Path), key, StringComparison.OrdinalIgnoreCase)))
+        {
+            Shell.ShowToast("That title already has an override.");
             return;
         }
 
         TitleOverrides.Add(new TitleOverrideItem(
             key,
             new TitleOverride { FixedFunctionVertex = FixedFunctionVertex },
-            RemoveTitleOverride));
+            RemoveTitleOverride,
+            titleName));
+        Shell.ShowToast(titleName is null
+            ? "Override added for this image (no XBE title id could be read)."
+            : "Override added for title " + key);
     }
 
     /// <summary>Public command: removes a per-title override row.</summary>

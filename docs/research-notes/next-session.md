@@ -1,11 +1,13 @@
-# Next session instructions (updated 2026-10-21 after the twentieth session)
+# Next session instructions (updated 2026-10-21 after the twenty-first session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §217 (per-title overrides
-+ EEPROM state) + §216 (PTIMER 0.8.137) + §215 (fixed-function lighting) + §213
-(the fixed-function vertex stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10
-diagnosed) + §209 (cubemap) + §208 (display model) + §207 (corpus),
+`docs/research-notes/xgrid-architecture-decisions.md` §219 (GL TEXFILTER parity,
+replace-mode composition, clear write masks, per-title overrides V2) + §218 (APU
+`NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216 (PTIMER
+0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function vertex
+stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
+(cubemap) + §208 (display model) + §207 (corpus),
 `docs/compatibility.md` (matrix + harness + the gaps the corpus found),
 `docs/research-notes/nv097-coverage.md` (method-presence gap; the fixed-function
 lighting rows moved to `handled` with §215), `docs/research-notes/
@@ -18,10 +20,10 @@ then this file.
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §215-§217 session commit
+git log --oneline -1        # expect: the §219 session commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1714 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1738 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -44,6 +46,7 @@ Expected 1B fast-mode anchors (**gate media**: the triangle needs HDD + DVD):
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
 | `xgu-bump_cubemap_reflect` 3B BTFF | `DDB59317…` | `D5D38C64…` | ~12 s |
+| `xgu-bump_cubemap_reflect` 3B BTFF **`-Gpu gl -GpuReplace`** | `19D576A8…` | `D5D38C64…` | ~10.4 s; frame `DA0750EE…` (= sw), `composeUploads=7` |
 | `xgu-bumpenv_ripple` 5B, plain (no `--frame-first`) | `AA10223C…` | `1AB9F002…` | ~12.6 s |
 
 A fast-mode **RAM** SHA is only meaningful with its exact flag set:
@@ -65,7 +68,7 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1717 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1738 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp` and `--tex-filter registers` are opt-in too**, and both are now also
@@ -74,26 +77,27 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
 
-## 0b. What the twentieth session landed (§§215-217) - do not redo it
+## 0b. What the twenty-first session landed (§219) - do not redo it
 
-1. **Fixed-function lighting (§215).** The enabled-light loop is complete:
-   `FixedFunctionVertex.ApplyLight` (infinite/local/spot, range rejection,
-   `1/(a0 + a1 d + a2 d^2)`, the three spot-cone bands, the `LOCALEYE` view
-   vector), `SpecularPowerCurve` (the reference's piecewise reconstruction) and
-   the `SET_LIGHT_*` / `SET_SPECULAR_PARAMS` latches. Nv2a snapshot v7. **No
-   measured leg enables a light** (`fixedFnLights=0`), so every gate is
-   byte-identical. +18 tests in `Nv2aFixedFunctionLightingTests`.
-2. **PTIMER 0.8.137 (§216).** 61-bit register time with writable `TIME_0/1`,
-   `ALARM_0`, the alarm's `INTR_0` bit + immediate re-arm, the unconditional
-   read-latch, numerator/denominator 1/1, and `NV_PMC_INTR_0_PTIMER` (bit 20) in
-   the aggregate; polled from `Advance`. Nv2a snapshot v8. Both 1B gates
-   byte-identical. +14 tests in `Nv2aPtimerTests`.
-3. **Track P (§217).** `--ffp` / `--tex-filter` in the frontend Settings,
-   per-title overrides keyed by image path (V1; title-id keying is V2),
-   persistent EEPROM state (`<data dir>/eeprom.bin`, seed = the configured
-   firmware image) + CLI `--eeprom-out`, and `tests/XGrid.Frontend.Tests`
-   (15 tests) - the frontend's first test project.
-4. **Track E tooling:** `boot-to-first-frame.ps1 -TexFilter legacy|registers`.
+1. **GL TEXFILTER parity (§219a, gap 7 closed).** `Nv2AMmio.DecodeTextureFilter`
+   is the one TEXFILTER decode (LOD-0 tent for MIN/MAG 2/4/6/7, the *effective*
+   convolution only when MIN is `CONVOLUTION_2D_LOD0 (7)`); `PgraphTextureSlot`
+   carries `FilterBilinear`/`FilterConvolution`; the fragment shader has
+   `SampleTent`/`SampleConvolved` behind the uniforms `uTexFilter`/`uTexConv`, so
+   no program key changes and the default path is the same nearest `texelFetch`.
+   GLSL goldens regenerated.
+2. **GL replace-mode composition (§219b, gap 8 closed).** A declined draw in
+   replace mode arms a per-flip flag; the flip drops the FBO and the present
+   upload rebuilds the frame from guest RAM (all-or-nothing). Diagnostic
+   `composeUploads=`.
+3. **Clears ignore the draw write masks (§219c).** `ClearCore` lifts
+   `glColorMask`/`glDepthMask`/`glStencilMask` for the clear, then invalidates
+   the state shadow. `ClearMaskLiveTests` fails pre-fix.
+4. **Per-title overrides V2 (§219d).** `XGrid.Host.DiscTitleId` (XBE certificate
+   id from a loose `.xbe` or an ISO's root `default.xbe`; a CHD reports false),
+   `title:XXXXXXXX` override keys with title-over-path precedence, the session's
+   power-on title log line, and CLI `xgrid disc title <path>`. Caveat: homebrew
+   images share the placeholder id `0xFFFF0002`.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
@@ -116,26 +120,27 @@ first** (bit-exact vs `interp/`, then observable mixer output counters), then th
 sink. No oracle title exists in the corpus yet (`xaudio` only proves the voice
 engine is live), so the acceptance is synthetic + the `xaudio` row.
 
-### Option B (Track B/E): GL TEXFILTER parity
+### Option B (Track B, product path): the frontend on the GL backend
 
-The GL backend is still nearest-only (`compatibility.md` gap 7), so under
-`--tex-filter registers` the two renderers disagree on every fractional texcoord.
-This is a shader feature (bilinear + the nine-tap convolution in
-`PshGlslGenerator`, using the same tap/wrap rules as `SampleBilinear`), not a
-`glTexParameter`. Acceptance: the default (`legacy`) GL goldens stay
-byte-identical, and a corpus row with fractional texcoords (`bump_cubemap_reflect`
-at its best phase) moves toward the software frame instead of away from it.
+`XGrid.Frontend.Avalonia` is software-only. `--gpu gl --gpu-replace` is 2-4x
+faster on the menu and the composition gap is now closed (§219b), so the
+frontend could offer a renderer switch. The blocker is platform: `XGrid.GpuGl`
+creates a WGL context (Windows-only) and the frontend is cross-platform, so the
+reference has to be conditional on a Windows target (or a provider seam with a
+"no GPU backend" fallback). Acceptance: the EvoX menu runs in the app on both
+renderers, the frame pipeline still copies `TryCopyPresentedFrame` (the backend
+needs `frameReadback: true`), and a Linux/macOS build still compiles.
 
 ### Option C (filed defects, each needs its own differential)
 
-- **GL replace mode cannot compose a software-fallback draw** (`compatibility.md`
-  gap 8): a per-frame composition policy (drop the FBO and re-render, or upload
-  the fallback region + depth) - the corpus row is `bump_cubemap_reflect` 3B
-  `-Gpu gl -GpuReplace` (`BackendUnsupported=14`, present = clear only).
 - **`bumpenv_ripple`'s app state** (gap 10): diagnosed, needs gap 9's
   second-emulator frame.
-- **Stencil write/read masks through a clear** (extend `Nv2aZetaClearLayoutTests`).
-- Per-title overrides V2: title-id keying (needs the XBE read out of the disc).
+- **Second-emulator oracle** (gap 9): `xemu -display xemu` + F12 screenshot, or
+  the redirected-stdio QMP read loop.
+- **The cull winding on `bumpenv_ripple`'s quads** (§211f), and the remaining
+  DXT/paletted/mipmapped texture paths (unobserved by the corpus).
+- Per-title overrides V2 follow-ups: a CHD title-id reader (feed the CHD sector
+  stream into XISOSharp), and title-id display in the library rows.
 
 ### Filed, lower value - do not start while A/C are open
 
@@ -146,7 +151,8 @@ at its best phase) moves toward the software frame instead of away from it.
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
 - **Reading the convolution kernel field alone as "convolve"**: MIN must be
-  `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a).
+  `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a, and the GL
+  shader applies the same rule since §219a).
 - **Expecting a tent to change a gate title's frame** - both sample at texel
   centers (§210d).
 - **Blaming `bumpenv_ripple`'s black frame on the texture format or the bump
@@ -161,6 +167,8 @@ at its best phase) moves toward the software frame instead of away from it.
   draws render a real background layer (§213c).
 - **Assuming a lit fixed-function draw implies an enabled light** - every leg
   measured so far has all lights off (§215b).
+- **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
+  masks; the software fill does not (§219c).
 
 ## 4. Rules (non-negotiable)
 
@@ -182,7 +190,7 @@ at its best phase) moves toward the software frame instead of away from it.
   is read-only. Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v8, audio v3).
-- Write it up: a decisions section (§218+) with the measured table, charter +
+- Write it up: a decisions section (§219+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
@@ -195,10 +203,9 @@ counters) must match on both machines; **performance** anchors (walls, `msps`,
 `rasterPsh`) compare only within one machine and one window.
 
 H1 (PETERSONPC) is the reference host: every semantic anchor reproduces exactly,
-`vec=0`, no fault. This session's walls at 1B: triangle 10.57 s sw (rasterPsh
-4.22 s) / 14.94 s `--ffp` (8.72 s), menu 32.5-32.9 s sw (rasterPsh 11.2-11.4 s) /
-61.0 s `--ffp` (44.7 s); accurate menu slice-1 golden 66.0 s sw / 74.7 s gl,
-triangle slice-2 golden for both legs. Treat ceilings as ratios.
+`vec=0`, no fault. This session's walls at 1B: menu slice-1 golden 67.2 s sw /
+76.2 s gl, triangle slice-2 golden 44.4 s sw / 53.6 s gl, cubemap replace leg
+10.4 s. Treat ceilings as ratios.
 
 ## 6. Commands
 
@@ -234,9 +241,12 @@ dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... `
 # live EEPROM image out of a run (same bytes the frontend persists)
 dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... --eeprom-out wt-data\eeprom-out.bin
 
+# the per-title override key of an image (V2)
+dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll disc title wt-data\xemu-tri\triangle.iso
+
 # corpus row + its trend (the oracle screenshot lives outside this repo)
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3000000000
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-spheremap_ffp -Steps 3000000000 -Ffp
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -TexFilter registers
 python scripts/frame-stat.py wt-data\cube-legacy.bmp wt-data\cube-reg.bmp
 
@@ -256,9 +266,9 @@ pwsh -File scripts/refs-manifest.ps1 -Verify          # add -Quick to skip conte
 **`XGRID_GL_PROBE=1`**, **`XGRID_GL_NO_BATCH=1`**, the GL line's
 `timed[drawMs= flushMs= clearMs= readbackMs= readbacks=]` and
 `diag[fboReallocs= fboZetaDrops= clipXY= flipEmpty= presentUploads=
-flipStaleUploads= batchCalls= batchTris= batchCap=]`, `readback=on|off`,
-`methods=`, **`filters=<min>/<mag>/<kernel>`**, **`fixedFn=` / `fixedFnLit=` /
-`fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
+flipStaleUploads= composeUploads= batchCalls= batchTris= batchCap=]`,
+`readback=on|off`, `methods=`, **`filters=<min>/<mag>/<kernel>`**, **`fixedFn=` /
+`fixedFnLit=` / `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
 `--tex-filter registers`, `--ffp`, `DiagnosticGenericSampler`/`DiagnosticGenericFill`,
 `--raw-shapes`, `XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`,
 `XGRID_RAW_SKIP_HEADS`, `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`,

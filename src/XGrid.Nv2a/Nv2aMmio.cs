@@ -5746,13 +5746,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             plan.Convolution = 0;
             if (TextureFilterRegisters)
             {
-                uint filter = _textureFilter[slot];
-                uint min = (filter & TextureFilterMin) >> 16;
-                uint mag = (filter & TextureFilterMag) >> 24;
-                plan.Bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
-                plan.Convolution = EffectiveConvolutionKernel(filter);
+                DecodeTextureFilter(_textureFilter[slot], out plan.Bilinear, out plan.Convolution);
             }
         }
+    }
+
+    /// <summary>
+    /// Decodes one TEXFILTER word into the two opt-in sampler behaviors: the
+    /// LOD-0 tent (MIN/MAG 2 or 4, plus the tent minification variants) and the
+    /// effective PROJECT2D convolution kernel. The single source for both the
+    /// per-draw <see cref="SamplerPlan"/> and the backend-facing
+    /// <see cref="PgraphTextureSlot"/> snapshot, so the two renderers cannot
+    /// disagree about what the registers ask for.
+    /// </summary>
+    private static void DecodeTextureFilter(uint filter, out bool bilinear, out int convolution)
+    {
+        uint min = (filter & TextureFilterMin) >> 16;
+        uint mag = (filter & TextureFilterMag) >> 24;
+        bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
+        convolution = EffectiveConvolutionKernel(filter);
     }
 
     /// <summary>
@@ -7214,9 +7226,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private PgraphTextureSlot BuildTextureSlot(int slot)
     {
+        // The TEXFILTER behaviors reach the backend only when the sampler
+        // honors the registers, mirroring SamplerPlan (a backend that keys on
+        // these fields therefore keeps the legacy nearest sampler by default).
+        bool bilinear = false;
+        int convolution = 0;
+        if (TextureFilterRegisters)
+        {
+            DecodeTextureFilter(_textureFilter[slot], out bilinear, out convolution);
+        }
+
         return new PgraphTextureSlot(
             _textureOffset[slot], _textureFormat[slot], _textureAddress[slot],
-            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot]);
+            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot],
+            bilinear, convolution);
     }
 
     private PgraphDrawInfo BuildDrawInfo(

@@ -48,6 +48,8 @@ internal static class Program
                 return Sector(args);
             case "xbe":
                 return Xbe(args);
+            case "disc":
+                return Disc(args);
             default:
                 Console.Error.WriteLine($"Unknown command: {args[0]}");
                 PrintUsage();
@@ -2616,6 +2618,56 @@ internal static class Program
         return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
     }
 
+    /// <summary>
+    /// <c>xgrid disc title &lt;path&gt;</c>: prints the XBE certificate title id
+    /// and title name an image resolves to - the key the frontend's per-title
+    /// overrides (V2) use, so a user can look up what to write in
+    /// <c>TitleOverrides</c> without launching the title.
+    /// </summary>
+    private static int Disc(string[] args)
+    {
+        if (args.Length < 2 || !string.Equals(args[1], "title", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine("Usage: xgrid disc title <iso|xbe path>");
+            return 1;
+        }
+
+        string? path = null;
+        for (int i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                case "--file":
+                    path = NextValue(args, ref i);
+                    break;
+                default:
+                    if (path is null)
+                    {
+                        path = args[i];
+                    }
+
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.Error.WriteLine("disc title requires an ISO/XISO or .xbe path");
+            return 1;
+        }
+
+        if (!Host.DiscTitleId.TryRead(path, out uint titleId, out string titleName))
+        {
+            Console.Error.WriteLine(
+                $"No XBE title id read from '{path}' (unsupported or unreadable image; a CHD has no XDVDFS reader yet).");
+            return 4;
+        }
+
+        Console.WriteLine($"TitleId=0x{titleId:X8} key=title:{titleId:X8} Title='{titleName}'");
+        return 0;
+    }
+
     private static int Xbe(string[] args)
     {
         if (args.Length < 2 || !string.Equals(args[1], "info", StringComparison.Ordinal))
@@ -2870,6 +2922,9 @@ internal static class Program
         Console.WriteLine(
             "  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
         Console.WriteLine("                   Show XBE headers, sections, and libraries");
+        Console.WriteLine("  disc title <path>");
+        Console.WriteLine(
+            "                   Show the XBE title id/name of an ISO/XISO or loose .xbe (the key per-title overrides use)");
         Console.WriteLine("  --help, -h       Show this help");
         Console.WriteLine("  --version, -v    Show the version");
     }

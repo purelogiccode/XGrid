@@ -172,3 +172,28 @@ Project-local usage notes and the shortcut table live in
   description, path-key normalization and the EEPROM store
   (save/load/clamp/reject/reset). 15 tests.
 
+
+## Update 2026-10-21 (decisions 219d): per-title overrides V2 - keyed by title id
+
+- **A title keeps its configuration when the image moves.** `EmulatorSettings`
+  now accepts `title:XXXXXXXX` override keys (`TitleIdKey`,
+  `TryParseTitleIdKey`, `CanonicalTitleKey`); `FindTitleOverride(path, titleId)`
+  prefers the title key and falls back to the V1 path key, so an existing
+  path-keyed row keeps working.
+- **Where the id comes from:** `XGrid.Host.DiscTitleId.TryRead` reads the XBE
+  certificate title id at launch - a loose `.xbe` directly, an ISO/XISO through
+  `XdvdfsFileSystem` (the root `default.xbe`). A **CHD has no XDVDFS reader yet**
+  and reports false, so CHD titles keep the path key (documented gap, not a
+  silent mismatch). A zero certificate id is treated as unknown rather than
+  keying every such image under `title:00000000`.
+- **In the UI:** "Add override" resolves the picked image's title id and keys the
+  row by it; the row reads `NAME (Title XXXXXXXX)` over "applies wherever this
+  title id is launched", while a path-keyed row still shows its file path. The
+  power-on log line reports `Title XXXXXXXX · NAME (per-title override applied)`.
+- **Tests:** `tests/XGrid.Frontend.Tests` 15 -> 21 (`TitleOverrideKeyTests`), and
+  `tests/XGrid.Integration.Tests` +8 (`DiscTitleIdTests`, including the synthetic
+  XBE certificate and the CHD/missing-file negatives).
+- **Caveat:** the id is the *certificate* id, so homebrew images that never set
+  one share the placeholder (`xgu`/nxdk samples all read `0xFFFF0002`), and a
+  title-keyed override applies to every such image. Real titles have unique ids.
+  `xgrid disc title <path>` prints the id and the exact `title:XXXXXXXX` key.
