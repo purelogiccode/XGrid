@@ -629,12 +629,18 @@ a toolchain that had never been installed, not the emulator.
   boot but export the boot animation; `xaudio` proves the APU path is live
   (`voiceOff=1`, 135 reads / 203 writes).
 - **Top corpus-driven gap found by measuring:** *direct-framebuffer output is
-  never presented*. `CapturePresentedFrame` snapshots the 3D color surface at
-  flip time, so `XVideoGetFB`/`debugPrint` programs produce no captured frame —
-  four samples with four different RAM SHAs exported the identical frame. The
-  register dump proves it (`gamma surface=32A4000 pcrtc=3EB4000`). A correct fix
-  models the display like xemu (`pcrtc.start/4` + VGA CRTC line offset); it is
-  scoped, not guessed at.
+  not what `--frame`/the frontend present*. `CapturePresentedFrame` snapshots the
+  3D color surface at flip time, so `XVideoGetFB`/`debugPrint` programs produce no
+  captured frame — four samples with four different RAM SHAs exported the
+  identical frame. The pixels were never missing: `TryCopyScanoutFrame` +
+  `--frame-scanout` (new) read PCRTC START and recover them — `gamma` goes from
+  1 colour to **768 colours / 298,744 px**, `hello` shows its text (302 px), and
+  `led` is the correct negative control (scanout == flipped frame). Every corpus
+  row now carries a discriminating `scanoutSha`. **Not made the default:**
+  flipping titles differ between the two buffers (`mesh` 8,695 vs 8,548
+  colours), so switching needs xemu's display model (`pcrtc.start/4` + VGA CRTC
+  line offset) and a deliberate gate re-record. Both gate frames re-verified
+  byte-identical after the refactor (`A1740DE0`, `4EF1FBF6`).
 - Also: `data/test-samples/nxdk-mesh` was missing `verts.h`/`texture.h` and could
   never build (`data/` is gitignored, so nothing noticed); the corpus now builds
   from nxdk upstream. New diagnostic: the `Frame` line prints `pcrtc=`.

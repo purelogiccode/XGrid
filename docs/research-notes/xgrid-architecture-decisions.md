@@ -12334,3 +12334,35 @@ triangles culled, 42.6M pixels. Its mipmap usage is **not** yet verified, so the
 
 The `Frame` line now prints `pcrtc=<hex>` next to `surface=<hex>`, which is what
 made 207d provable in one run instead of a RAM-diff investigation.
+
+### 207f Follow-up: the scanout buffer was there all along
+
+207d said the direct-framebuffer samples export the boot animation. That is
+true of the *flipped* surface; the pixels themselves were never missing.
+`Nv2aMmio.TryCopyScanoutFrame` (new) reads the display controller's buffer from
+`PCRTC START` with the current surface geometry and pitch, and
+`--frame-scanout <path>` writes it. Same 1B runs, both exports:
+
+| sample | flipped frame | scanout | content |
+|---|---|---|---|
+| `gamma` | 1 colour, 0 non-black | **768 colours, 298,744 non-black** | the gradient and grey borders |
+| `hello` | 1 colour, 0 non-black | **2 colours, 302 non-black** | the printed text |
+| `led` | `18C7CC83` | `18C7CC83` | nothing - the correct negative control |
+| `mesh` | 8,695 colours | 8,548 colours | both populated, different buffers |
+
+So the diagnosis is confirmed and the export exists; every corpus row is now
+distinguishable by `scanoutSha` (`boot-to-first-frame.ps1` records it), which is
+what makes the rows evidence rather than assertions.
+
+**Deliberately NOT made the default.** For a flipping title the two buffers
+differ (`mesh` 8,695 vs 8,548 colours), so switching `--frame`/the frontend to
+the scanout would change the gate frames and require a re-record. Doing it
+correctly means xemu's display model (`nv2a.c:184-190`: `pcrtc.start / 4` plus
+the VGA CRTC line offset), because the guest writes a VRAM-aperture address that
+XGrid masks into its 64 MB space. That is the next scoped item, not a late-night
+one-liner.
+
+**Tests:** three in `Nv2aScanoutFrameTests` - the two exports read different
+buffers (green vs blue), the scanout export requires both a non-zero PCRTC start
+and presented geometry, and the scanout bytes match the guest's per-pixel values
+(so a row/pitch mistake cannot pass). Suite 1573 -> **1576**.

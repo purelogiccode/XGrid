@@ -113,6 +113,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     $log = Join-Path $OutDir "$tag.log"
     $firstBmp = Join-Path $OutDir "$tag-first.bmp"
     $lastBmp = Join-Path $OutDir "$tag-last.bmp"
+    $scanBmp = Join-Path $OutDir "$tag-scanout.bmp"
     $json = Join-Path $OutDir "$tag.json"
 
     $argv = @(
@@ -123,7 +124,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     ) + $spec.Media
     if (-not $NoFast) { $argv += @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw") }
     $argv += @("--steps", "$($spec.Steps)", "--gpu", $gpu, "--frame", $lastBmp, "--frame-first", $firstBmp,
-        "--bench", "--bench-name", $tag)
+        "--frame-scanout", $scanBmp, "--bench", "--bench-name", $tag)
     if ($replace) { $argv += "--gpu-replace" }
 
     & dotnet $Cli @argv *>&1 | Out-File $log
@@ -160,6 +161,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
 
     $firstSha = Sha-Of $firstBmp
     $lastSha = Sha-Of $lastBmp
+    $scanSha = Sha-Of $scanBmp
     $verdict = if ($fault -match "vec=0" -and ([int]$frames -gt 0 -or $expectNoFrame)) { "PASS" } else { "CHECK" }
 
     $record = [pscustomobject]@{
@@ -177,6 +179,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
         firstFrameStep = if ($firstStep) { [uint64]$firstStep } else { [uint64]0 }
         firstFrameSha  = $firstSha
         lastFrameSha   = $lastSha
+        scanoutSha     = $scanSha
         ramSha256      = $ram
         cpuSha256      = $cpu
         lastFault      = $fault
@@ -189,11 +192,12 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     }
 
     $record | ConvertTo-Json | Set-Content $json
-    Write-Host ("BTFF sample={0} gpu={1}{2} steps={3} wall={4:F2} msps={5:F2} frames={6} stalls={7} draws={8} pixels={9} firstFrameStep={10} firstFrameSha={11} lastFrameSha={12} ram={13} cpu={14} {15}" -f `
+    Write-Host ("BTFF sample={0} gpu={1}{2} steps={3} wall={4:F2} msps={5:F2} frames={6} stalls={7} draws={8} pixels={9} firstFrameStep={10} firstFrameSha={11} lastFrameSha={12} scanoutSha={13} ram={14} cpu={15} {16}" -f `
         $name, $gpu, $(if ($replace) { "+replace" } else { "" }), $steps, $wall, $msps, $frames, $stalls,
         $executedDraws, $pixels, $(if ($firstStep) { $firstStep } else { "-" }),
         $firstSha.Substring(0, [Math]::Min(16, $firstSha.Length)),
         $lastSha.Substring(0, [Math]::Min(16, $lastSha.Length)),
+        $scanSha.Substring(0, [Math]::Min(16, $scanSha.Length)),
         $ram.Substring(0, [Math]::Min(8, $ram.Length)),
         $cpu.Substring(0, [Math]::Min(8, $cpu.Length)), $verdict)
     return $record
