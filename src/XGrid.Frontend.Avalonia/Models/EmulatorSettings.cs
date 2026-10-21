@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json.Serialization;
 
@@ -66,23 +67,81 @@ public sealed class EmulatorSettings
     public List<string> RecentGames { get; set; } = new();
 
     /// <summary>
-    /// Gets or sets per-game overrides keyed by the launched image path. An
-    /// override only replaces the members it sets; everything else inherits the
-    /// global configuration.
+    /// Gets or sets per-game overrides. A key is either a launched image path
+    /// (V1) or a title id written as <c>title:4D530002</c> (V2), which follows
+    /// the title across paths and containers.
     /// </summary>
     public Dictionary<string, TitleOverride> TitleOverrides { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Returns the override configured for an image path, or null.</summary>
-    /// <param name="gamePath">Launched ISO/CHD/XBE path.</param>
-    public TitleOverride? FindTitleOverride(string? gamePath)
+    /// <summary>Prefix that marks an override key as an XBE title id.</summary>
+    public const string TitleIdKeyPrefix = "title:";
+
+    /// <summary>Builds the override dictionary key for an XBE title id.</summary>
+    /// <param name="titleId">XBE certificate title id.</param>
+    public static string TitleIdKey(uint titleId)
     {
-        if (string.IsNullOrWhiteSpace(gamePath) || TitleOverrides.Count == 0)
+        return TitleIdKeyPrefix + titleId.ToString("X8", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Returns true when an override key names a title id (not a path).</summary>
+    /// <param name="key">Override dictionary key.</param>
+    public static bool IsTitleIdKey(string key)
+    {
+        return key is not null && key.StartsWith(TitleIdKeyPrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Parses an override key written by <see cref="TitleIdKey"/>.</summary>
+    /// <param name="key">Override dictionary key.</param>
+    /// <param name="titleId">Parsed title id.</param>
+    public static bool TryParseTitleIdKey(string key, out uint titleId)
+    {
+        titleId = 0;
+        if (!IsTitleIdKey(key))
+        {
+            return false;
+        }
+
+        return uint.TryParse(
+            key.AsSpan(TitleIdKeyPrefix.Length), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out titleId);
+    }
+
+    /// <summary>
+    /// Returns the override for an image, preferring a title-id key (V2) and
+    /// falling back to the image path (V1). A null title id means the caller
+    /// could not read one (e.g. a CHD image), so only the path can match.
+    /// </summary>
+    /// <param name="gamePath">Launched ISO/CHD/XBE path.</param>
+    /// <param name="titleId">XBE title id of the launched disc, when known.</param>
+    public TitleOverride? FindTitleOverride(string? gamePath, uint? titleId = null)
+    {
+        if (TitleOverrides.Count == 0)
+        {
+            return null;
+        }
+
+        if (titleId is uint id && TitleOverrides.TryGetValue(TitleIdKey(id), out TitleOverride? byTitle))
+        {
+            return byTitle;
+        }
+
+        if (string.IsNullOrWhiteSpace(gamePath))
         {
             return null;
         }
 
         return TitleOverrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
+    }
+
+    /// <summary>
+    /// Canonicalizes an override key: title-id keys are rebuilt from their
+    /// parsed value, path keys are made absolute.
+    /// </summary>
+    /// <param name="key">Raw override key.</param>
+    public static string CanonicalTitleKey(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return TryParseTitleIdKey(key, out uint id) ? TitleIdKey(id) : NormalizeTitleKey(key);
     }
 
     /// <summary>Normalizes an image path into the override dictionary key.</summary>
@@ -103,13 +162,15 @@ public sealed class EmulatorSettings
 
     /// <summary>
     /// Returns an independent copy with the per-title override for
-    /// <paramref name="gamePath"/> applied, or a plain copy when there is none.
+    /// <paramref name="gamePath"/> (or its title id, when known) applied, or a
+    /// plain copy when there is none.
     /// </summary>
     /// <param name="gamePath">Launched ISO/CHD/XBE path (null for the dashboard).</param>
-    public EmulatorSettings WithTitleOverride(string? gamePath)
+    /// <param name="titleId">XBE title id of the launched disc, when known.</param>
+    public EmulatorSettings WithTitleOverride(string? gamePath, uint? titleId = null)
     {
         EmulatorSettings effective = Clone();
-        TitleOverride? title = FindTitleOverride(gamePath);
+        TitleOverride? title = FindTitleOverride(gamePath, titleId);
         if (title is null)
         {
             return effective;
@@ -210,7 +271,14 @@ public sealed class EmulatorSettings
                     value.RamMb = null;
                 }
 
-                overrides[NormalizeTitleKey(pair.Key)] = value;
+                // A title key that does not parse can never match a launch;
+                // dropping it is better than expanding it into a bogus path.
+                if (IsTitleIdKey(pair.Key) && !TryParseTitleIdKey(pair.Key, out _))
+                {
+                    continue;
+                }
+
+                overrides[CanonicalTitleKey(pair.Key)] = value;
             }
         }
 

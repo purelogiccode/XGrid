@@ -417,7 +417,10 @@ public readonly struct PgraphTextureSlot
     /// <param name="control0">Raw control word 0 (enable in bit 30).</param>
     /// <param name="control1">Raw control word 1 (linear pitch in the high 16 bits).</param>
     /// <param name="imageRect">Packed extent: width in the high 16 bits, height in the low 16.</param>
-    public PgraphTextureSlot(uint offset, uint format, uint address, uint control0, uint control1, uint imageRect)
+    /// <param name="filterBilinear">Whether the sampler honors a TEXFILTER tent at LOD 0 for this slot (false when the sampler is nearest-only).</param>
+    /// <param name="filterConvolution">Effective TEXFILTER convolution kernel for PROJECT2D (0 none, 1 quincunx, 2 gaussian-3).</param>
+    public PgraphTextureSlot(uint offset, uint format, uint address, uint control0, uint control1, uint imageRect,
+        bool filterBilinear = false, int filterConvolution = 0)
     {
         Offset = offset;
         Format = format;
@@ -425,6 +428,8 @@ public readonly struct PgraphTextureSlot
         Control0 = control0;
         Control1 = control1;
         ImageRect = imageRect;
+        FilterBilinear = filterBilinear;
+        FilterConvolution = filterConvolution;
     }
 
     /// <summary>Gets the guest-physical texture base offset.</summary>
@@ -444,6 +449,21 @@ public readonly struct PgraphTextureSlot
 
     /// <summary>Gets the packed extent: width in the high 16 bits, height in the low 16.</summary>
     public uint ImageRect { get; }
+
+    /// <summary>
+    /// Gets whether the sampler honors a TEXFILTER tent filter at LOD 0 for
+    /// this slot (the software <c>SamplerPlan.Bilinear</c> rule). Always false
+    /// unless the caller opted into the TEXFILTER registers, so a backend that
+    /// keys on it keeps the legacy nearest sampler by default.
+    /// </summary>
+    public bool FilterBilinear { get; }
+
+    /// <summary>
+    /// Gets the effective TEXFILTER convolution kernel for PROJECT2D: 0 none,
+    /// 1 quincunx, 2 gaussian-3 (the software <c>SamplerPlan.Convolution</c>
+    /// rule, which only applies when MIN selects CONVOLUTION_2D_LOD0).
+    /// </summary>
+    public int FilterConvolution { get; }
 }
 
 /// <summary>

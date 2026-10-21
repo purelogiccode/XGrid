@@ -50,6 +50,8 @@ public sealed class PgraphBackendSeamTests
 
         public uint LastClipW { get; private set; }
 
+        public PgraphTextureSlot LastTexture0 { get; private set; }
+
         public uint LastFlipSurfaceAddress { get; private set; }
 
         public List<uint> FlipSurfaceAddresses { get; } = new();
@@ -65,6 +67,7 @@ public sealed class PgraphBackendSeamTests
         public void Draw(in PgraphDrawInfo info)
         {
             LastClipW = info.ClipW;
+            LastTexture0 = info.Texture0;
             Draws++;
         }
 
@@ -352,6 +355,61 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(fastMemory.BeginBatches, fastMemory.EndBatches);
         Assert.True(fastMemory.FastWrites > 0, "fast write lane not used");
         Assert.True(fastMemory.FastReads > 0, "fast read lane not used");
+    }
+
+    /// <summary>
+    /// The TEXFILTER decode reaches a backend through the texture-slot
+    /// snapshot only when the sampler honors the registers, and then it carries
+    /// exactly the rules <see cref="Nv2AMmio"/> uses: MIN/MAG 2/4/6/7 select
+    /// the LOD-0 tent, and the convolution kernel is only effective when MIN
+    /// selects CONVOLUTION_2D_LOD0 (7).
+    /// </summary>
+    [Fact]
+    public void TextureSlot_CarriesFilterDecodeOnlyWhenSamplerHonorsRegisters()
+    {
+        // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2 (tent), kernel 1 (quincunx).
+        const uint Filter = (7u << 16) | (2u << 24) | (1u << 13);
+
+        (Nv2AMmio off, ArrayMemory offMemory) = CreateChannel();
+        var offBackend = new RecordingBackend();
+        off.Backend = offBackend;
+        WriteVertices(offMemory);
+        PushMethods(off, offMemory, WithFilter(Filter));
+
+        Assert.Equal(1L, offBackend.Draws);
+        Assert.False(offBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, offBackend.LastTexture0.FilterConvolution);
+
+        (Nv2AMmio on, ArrayMemory onMemory) = CreateChannel();
+        on.TextureFilterRegisters = true;
+        var onBackend = new RecordingBackend();
+        on.Backend = onBackend;
+        WriteVertices(onMemory);
+        PushMethods(on, onMemory, WithFilter(Filter));
+
+        Assert.Equal(1L, onBackend.Draws);
+        Assert.True(onBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(1, onBackend.LastTexture0.FilterConvolution);
+
+        // A tent next to a kernel field is NOT a convolution (the reference
+        // only convolves when MIN is 7): MIN 2, MAG 2, kernel 1.
+        (Nv2AMmio tent, ArrayMemory tentMemory) = CreateChannel();
+        tent.TextureFilterRegisters = true;
+        var tentBackend = new RecordingBackend();
+        tent.Backend = tentBackend;
+        WriteVertices(tentMemory);
+        PushMethods(tent, tentMemory, WithFilter((2u << 16) | (2u << 24) | (1u << 13)));
+
+        Assert.True(tentBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, tentBackend.LastTexture0.FilterConvolution);
+    }
+
+    private static (uint Method, uint Parameter)[] WithFilter(uint filter)
+    {
+        var stream = new List<(uint Method, uint Parameter)>(ElementDrawStream());
+        int drawStart = stream.FindIndex(entry => entry.Method == 0x17FCu);
+        stream.Insert(drawStart, (0x1B14u, filter));
+        return stream.ToArray();
     }
 
     [Fact]

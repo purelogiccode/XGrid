@@ -44,6 +44,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTexWrapY[0]",
         "uTexCube[0]",
         "uTexDim[0]",
+        "uTexFilter[0]",
+        "uTexConv[0]",
         "uShaderClip",
         "uTri[0]",
         "uTex0",
@@ -122,8 +124,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly int[] _texWrapY = new int[4];
     private readonly int[] _texCube = new int[4];
     private readonly int[] _texDim = new int[4];
+    private readonly int[] _texFilter = new int[4];
+    private readonly int[] _texConv = new int[4];
     private readonly float[] _scalarScratch = new float[14];
-    private readonly float[] _texScratch = new float[32];
+    private readonly float[] _texScratch = new float[4 * 10];
 
     // GL-state shadow for ApplyState: consecutive draws usually share the
     // same resolved ROP state, so the redundant Enable/Disable/Func calls are
@@ -191,6 +195,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _flipEmpty;
     private long _presentUploads;
     private long _flipStaleUploads;
+
+    // Replace-mode composition (compatibility gap 8): a draw the backend
+    // declines in replace mode is painted by the software path into guest RAM,
+    // so the FBO no longer holds the whole frame. When any such draw happened
+    // since the last flip, the next flip drops the FBO and uploads the guest
+    // surface wholesale (full-frame replace — never a mix of the two writers).
+    private bool _softwareDrawsSinceFlipPainted;
+    private long _flipComposeUploads;
     private GlBackendTimings _timings;
     private readonly bool _windowRequested;
     private readonly bool _replaceSoftware;
@@ -222,7 +234,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         // per-draw dictionary lookup was measurable on 2.76M draws).
         public int TriLocation { get; set; } = -1;
 
-        public float[] TexCache { get; } = new float[32];
+        public float[] TexCache { get; } = new float[4 * 10];
 
         public float[] ConstCache { get; } = new float[72];
 
@@ -429,7 +441,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 $"programs={_programs.Count} uploads={TextureUploads} unsupported={BackendUnsupported}" +
                 $" unsup[colorBytes={_unsupportedColorBytes} zformat={_unsupportedZFormat} modes={_unsupportedModes}" +
                 $" cubeVol={_unsupportedCubeVolume} fbo={_unsupportedFbo} flip={_unsupportedFlip} fatal={_fatalCount}]" +
-                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} " +
+                $" diag[fboReallocs={_fboReallocs} fboZetaDrops={_fboZetaDrops} clipXY={_clipXyNonZero} flipEmpty={_flipEmpty} presentUploads={_presentUploads} flipStaleUploads={_flipStaleUploads} composeUploads={_flipComposeUploads} " +
                 $"batchCalls={BatchCalls} batchTris={BatchTriangles} batchCap={_batchCapacity}]");
             _timings.AppendTo(sb);
             if (_probeEnabled)
@@ -486,8 +498,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             {
                 // The caller will paint this triangle in software; submit the
                 // buffered host triangles first so the two writers keep the
-                // pre-batching draw order.
+                // pre-batching draw order. In replace mode the frame is now
+                // partly software, so the next flip must compose from guest RAM.
                 FlushBatch();
+                if (_replaceSoftware)
+                {
+                    _softwareDrawsSinceFlipPainted = true;
+                }
             }
 
             _timings.AddDrawTicks(Stopwatch.GetTimestamp() - start);
@@ -644,6 +661,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _flipEmpty = 0;
         _presentUploads = 0;
         _flipStaleUploads = 0;
+        _flipComposeUploads = 0;
+        _softwareDrawsSinceFlipPainted = false;
         _timings.Reset();
         _probeDraws = 0;
         _probeSamples = 0;
@@ -928,6 +947,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         uint width = info.XMax - info.XMin + 1;
         uint height = info.YMax - info.YMin + 1;
         _gl.Scissor(x, y, width, height);
+
+        // A clear is a raw surface fill: the write masks are draw state, not
+        // clear state (Nv2AMmio.FillSurface writes the value verbatim, and a
+        // masked-out stencil/color can still be cleared). GL's glClear DOES
+        // honor glColorMask / glDepthMask / glStencilMask, so lift them for
+        // the clear and force the next draw to re-upload the real masks.
+        _gl.ColorMask(true, true, true, true);
+        _gl.DepthMask(true);
+        _gl.StencilMask(0xFF);
+        _stateValid = false;
+
         if (info.ClearColor && info.ColorBytes == 4)
         {
             GlStateMapper.MapClearColor(info.ColorValue, out float r, out float g, out float b, out float a);
@@ -985,6 +1015,21 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             droppedStaleFbo = true;
         }
 
+        // Replace-mode composition (gap 8): if the backend declined a draw
+        // since the last flip, the software rasterizer painted it into guest
+        // RAM and the FBO is now a frame with a hole. Drop it so the upload
+        // path below rebuilds the whole presented surface from guest RAM.
+        bool composedSoftware = false;
+        if (_softwareDrawsSinceFlipPainted)
+        {
+            _softwareDrawsSinceFlipPainted = false;
+            if (_replaceSoftware && _fbo != 0)
+            {
+                DeleteFbo();
+                composedSoftware = true;
+            }
+        }
+
         if (_fbo == 0)
         {
             // Present-upload slice: either no draw/clear has created the
@@ -1005,6 +1050,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 if (droppedStaleFbo)
                 {
                     _flipStaleUploads++;
+                }
+
+                if (composedSoftware)
+                {
+                    _flipComposeUploads++;
                 }
 
                 // The upload made the FBO authoritative from guest RAM at
@@ -1668,6 +1718,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
             _texCube[slot] = (texture.Format & TextureFormatCubemapEnable) != 0 ? 1 : 0;
             _texDim[slot] = (int)((texture.Format & 0xC0u) >> 6);
+            _texFilter[slot] = texture.FilterBilinear ? 1 : 0;
+            _texConv[slot] = texture.FilterConvolution;
             if (!sampleOk)
             {
                 _lastTextureValid[slot] = false;
@@ -2137,9 +2189,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             values[20 + i] = _texWrapY[i];
             values[24 + i] = _texCube[i];
             values[28 + i] = _texDim[i];
+            values[32 + i] = _texFilter[i];
+            values[36 + i] = _texConv[i];
         }
 
-        if (program.TexValid && SameValues(values, program.TexCache, 32))
+        if (program.TexValid && SameValues(values, program.TexCache, 40))
         {
             return;
         }
@@ -2151,7 +2205,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(program.Location("uTexWrapY[0]"), 4u, ref _texWrapY[0]);
         _gl.Uniform1(program.Location("uTexCube[0]"), 4u, ref _texCube[0]);
         _gl.Uniform1(program.Location("uTexDim[0]"), 4u, ref _texDim[0]);
-        Array.Copy(values, program.TexCache, 32);
+        _gl.Uniform1(program.Location("uTexFilter[0]"), 4u, ref _texFilter[0]);
+        _gl.Uniform1(program.Location("uTexConv[0]"), 4u, ref _texConv[0]);
+        Array.Copy(values, program.TexCache, 40);
         program.TexValid = true;
     }
 

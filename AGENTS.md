@@ -651,12 +651,83 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   which moved the menu RAM anchors (218; see the session note).
   configured firmware image stays a read-only seed; CLI `--eeprom-out`).
   `tests/XGrid.Frontend.Tests` (15 tests) is the frontend test project.
+- **GL TEXFILTER parity (219a, 2026-10-21):** `Nv2AMmio.DecodeTextureFilter`
+  is the single TEXFILTER decode (LOD-0 tent + the effective PROJECT2D
+  convolution), `PgraphTextureSlot.FilterBilinear`/`FilterConvolution` carry it
+  to the backend, and `PshGlslGenerator` emits `SampleTent` (`SampleBilinear`
+  transcribed) / `SampleConvolved` (nine-tap 1-2-1) behind per-slot uniforms
+  `uTexFilter`/`uTexConv`. Gap 7 closed; both GL goldens byte-identical.
+- **GL replace-mode composition (219b, 2026-10-21):** a draw the backend
+  declines is painted in software, so the flip drops the FBO and the present
+  upload rebuilds the whole frame from guest RAM (`composeUploads=`). The
+  cubemap corpus row's replace leg now presents `DA0750EE…` = the software
+  anchor (gap 8).
+- **A clear ignores the draw write masks (219c, 2026-10-21):** `ClearCore`
+  lifts `glColorMask`/`glDepthMask`/`glStencilMask` for the clear and
+  invalidates the state shadow; pinned by `ClearMaskLiveTests` (fails pre-fix)
+  and two `Nv2aZetaClearLayoutTests` cases.
+- **Per-title overrides V2 (219d, 2026-10-21):** `XGrid.Host.DiscTitleId` reads
+  the XBE certificate title id from a loose `.xbe` or an ISO's root
+  `default.xbe`; overrides can be keyed `title:XXXXXXXX` and the session logs
+  the resolved title. A CHD has no XDVDFS reader yet and falls back to the path
+  key. CLI `xgrid disc title <path>` prints the id/key. Caveat: homebrew images
+  that never set a certificate id share the placeholder (`0xFFFF0002`).
 
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1714 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1738 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
+composition + clear masks + per-title overrides V2). Four slices, every gate
+anchor byte-identical.**
+
+- **GL TEXFILTER parity (§219a, gap 7 closed).** The GL backend was nearest-only.
+  `Nv2AMmio.DecodeTextureFilter` is now the *single* decode of a TEXFILTER word
+  (LOD-0 tent for MIN/MAG 2/4/6/7; the effective convolution only when MIN is
+  `CONVOLUTION_2D_LOD0 (7)`, §210a) used by both `SamplerPlan` and the new
+  `PgraphTextureSlot.FilterBilinear`/`FilterConvolution`. The shader gained
+  `SampleNearest`/`SampleTent`/`SampleConvolved` (transcriptions of
+  `SampleBilinear`/`SampleConvolved`, same tap step, per-tap wrap), dispatched
+  by per-slot uniforms `uTexFilter`/`uTexConv` - not the program key, so nothing
+  re-compiles and the default (0) path is the same `texelFetch`. The GLSL string
+  goldens were regenerated. `filters=2/2/0` on the triangle means the tent path
+  runs there under `--tex-filter registers`, and `BackendUnsupported=0`.
+- **GL replace-mode composition (§219b, gap 8 closed).** `TryDraw` returning
+  false in replacement mode now sets "software painted since the last flip"; the
+  flip drops the FBO and the existing present-upload path rebuilds the whole
+  presented surface from guest RAM (all-or-nothing, never a mix). New diagnostic
+  `composeUploads=`. Measured on `xgu-bump_cubemap_reflect` 3B
+  `-Gpu gl -GpuReplace`: `unsupported=14` (unchanged), `composeUploads=7`,
+  `presentUploads=7`, presented frame **`DA0750EE…` = the software anchor**
+  (was clear-only), 10.4 s.
+- **A clear ignores the draw write masks (§219c).** `Nv2AMmio.FillSurface` writes
+  the clear value verbatim, but GL's `glClear` honors `glColorMask`/
+  `glDepthMask`/`glStencilMask`. `ClearCore` now lifts all three for the clear
+  and invalidates the state shadow so the next draw re-uploads them.
+  `ClearMaskLiveTests` (live GL) **fails on the pre-fix build** (masked clear
+  wrote nothing) and also proves the masks are restored; two
+  `Nv2aZetaClearLayoutTests` cases pin the software rule.
+- **Per-title overrides V2 (§219d).** `XGrid.Host.DiscTitleId` reads the XBE
+  certificate title id from a loose `.xbe` or an ISO's root `default.xbe` (a CHD
+  reports false - no XDVDFS reader for it yet - and the caller keys by path).
+  `EmulatorSettings` gained `TitleIdKey`/`TryParseTitleIdKey`/
+  `CanonicalTitleKey`, `FindTitleOverride(path, titleId)` (title key wins, path
+  falls back), canonicalization in `Normalize()` (unparsable title keys are
+  dropped), the settings row text (`NAME (Title XXXXXXXX)` / "applies wherever
+  this title id is launched"), a power-on log line
+  `Title XXXXXXXX · NAME (per-title override applied)`.
+  CLI `xgrid disc title <path>` prints the id and the `title:XXXXXXXX` key.
+  Caveat: homebrew images that never set a certificate id share the
+  placeholder `0xFFFF0002` (every nxdk/xgu sample), so a path-keyed row is
+  still the way to tell two such images apart.
+- **Gates:** accurate 1B menu slice-1 golden PASS (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px / maxDelta 1 / violations 0, counters
+  33632/686/686) and triangle slice-2 golden PASS (sw `A1740DE0…`, gl
+  `7A860ED7…`, diff 27849 / violations 0, counters 2706/68/34), both with
+  `BackendUnsupported=0` and `composeUploads=0` (mirror mode never composes).
+  Suite 1717 -> **1738**; format clean.
+
 **Session 2026-10-21 (twentieth; gap 6 lighting + PTIMER 0.8.137 + APU XGSCNT +
 two Track P features). Four landed slices; frames, CPU SHAs and every
 counter stayed exact, and the two menu **RAM** anchors were re-recorded.**

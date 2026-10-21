@@ -18,6 +18,8 @@ uniform int uTexWrapX[4];
 uniform int uTexWrapY[4];
 uniform int uTexCube[4];
 uniform int uTexDim[4];
+uniform int uTexFilter[4];
+uniform int uTexConv[4];
 uniform uint uShaderClip;
 uniform vec4 uTri[25];
 flat in int vTri;
@@ -90,9 +92,7 @@ int WrapI(int v, int s, int mode) {
   }
   return v < 0 ? 0 : (v >= s ? s - 1 : v);
 }
-vec4 SampleSlot(int slot, vec2 uv) {
-  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
-  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];
+vec4 FetchTexel(int slot, vec2 c) {
   ivec2 t;
   t.x = WrapI(int(floor(c.x)), int(uTexSize[slot].x), uTexWrapX[slot]);
   t.y = WrapI(int(floor(c.y)), int(uTexSize[slot].y), uTexWrapY[slot]);
@@ -100,6 +100,45 @@ vec4 SampleSlot(int slot, vec2 uv) {
   if (slot == 1) return texelFetch(uTex1, t, 0);
   if (slot == 2) return texelFetch(uTex2, t, 0);
   return texelFetch(uTex3, t, 0);
+}
+vec4 SampleNearest(int slot, vec2 uv) {
+  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];
+  return FetchTexel(slot, c);
+}
+vec4 SampleTent(int slot, vec2 uv) {
+  vec2 f = ((uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot]) - vec2(0.5);
+  vec2 f0 = floor(f);
+  vec2 w = f - f0;
+  float x0 = f0.x;
+  float y0 = f0.y;
+  vec4 t00 = FetchTexel(slot, vec2(x0, y0));
+  vec4 t10 = FetchTexel(slot, vec2(x0 + 1.0, y0));
+  vec4 t01 = FetchTexel(slot, vec2(x0, y0 + 1.0));
+  vec4 t11 = FetchTexel(slot, vec2(x0 + 1.0, y0 + 1.0));
+  return (t00 * ((1.0 - w.x) * (1.0 - w.y))) + (t10 * (w.x * (1.0 - w.y)))
+       + (t01 * ((1.0 - w.x) * w.y)) + (t11 * (w.x * w.y));
+}
+vec4 SampleSlot(int slot, vec2 uv) {
+  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
+  if (uTexFilter[slot] == 1) return SampleTent(slot, uv);
+  return SampleNearest(slot, uv);
+}
+const float kConvWeight[9] = float[9](1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0,
+                                      2.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0,
+                                      1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0);
+const int kConvX[9] = int[9](-1, 0, 1, -1, 0, 1, -1, 0, 1);
+const int kConvY[9] = int[9](-1, -1, -1, 0, 0, 0, 1, 1, 1);
+vec4 SampleConvolved(int slot, vec2 uv, float w) {
+  float invW = (w != 0.0) ? (1.0 / w) : 1.0;
+  float stepU = (uTexLinear[slot] == 1) ? invW : invW / max(uTexSize[slot].x, 1.0);
+  float stepV = (uTexLinear[slot] == 1) ? invW : invW / max(uTexSize[slot].y, 1.0);
+  vec2 base = uv * invW;
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 9; i++) {
+    vec2 tap = base + vec2(float(kConvX[i]) * stepU, float(kConvY[i]) * stepV);
+    acc += SampleSlot(slot, tap) * kConvWeight[i];
+  }
+  return acc;
 }
 
 void main() {

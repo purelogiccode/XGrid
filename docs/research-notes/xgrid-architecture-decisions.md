@@ -13633,3 +13633,115 @@ byte-identical at 792,800,535 steps.
 Precedent for re-recording a RAM SHA when hardware behaviour improves: 206g
 (backface culling) and 109 (depth compare). Frames, CPU SHAs and every counter
 are the invariants that did not move.
+
+## 219 Track B/E parity slices + Track P V2 (2026-10-21, twenty-first session)
+
+Four independent slices, all host-side or config-side, each with its own
+acceptance. Gate currency stayed accurate mode: both 1B SW frames are
+byte-identical (`4EF1FBF6` menu, `A1740DE0` triangle), both GL policy frames are
+byte-identical (`B6116DAE` / `7A860ED7`, `violations=0`,
+`BackendUnsupported=0`), the fast-mode RAM/CPU anchors are exact, and the ktest
+log is byte-identical at 792,800,535 steps.
+
+### 219a GL TEXFILTER parity (compatibility gap 7 closed)
+
+The GL backend was nearest-only: `PshGlslGenerator` emitted a
+plane `texelFetch` per slot, so under `--tex-filter registers` the two renderers
+disagreed on every fractional texcoord (`bump_cubemap_reflect` is the corpus
+row; `docs/compatibility.md` gap 7).
+
+- **One semantic source, two executors.** `Nv2AMmio.DecodeTextureFilter` is now
+  the single decode of a TEXFILTER word into the two behaviors the sampler
+  honors: the LOD-0 tent (MIN/MAG 2/4/6/7 - the reference's filter map collapses
+  every mipmap variant onto level 0) and the *effective* convolution kernel
+  (`min == CONVOLUTION_2D_LOD0 (7)` and kernel QUINCUNX/GAUSSIAN_3, §210a). Both
+  `SamplerPlan` and the backend-facing `PgraphTextureSlot` use it, so the two
+  renderers cannot disagree about what the registers ask for.
+- **`PgraphTextureSlot.FilterBilinear` / `FilterConvolution`** carry the decode
+  to the backend; they are zero unless the sampler honors the registers
+  (`TextureFilterRegisters`), so the default path is unchanged by construction.
+- **GLSL:** `SampleSlot` dispatches on `uTexFilter[slot]` (0 nearest, 1 tent) and
+  the PROJECT2D branch runs `SampleConvolved` when `uTexConv[slot] != 0` - the
+  same position in the stage order as the software `SampleConvolved` call
+  (after the cube/shadow checks, before the w division). `SampleTent` is
+  `SampleBilinear` transcribed: `s*size - 0.5`, per-tap wrap through the same
+  `WrapI`, the same four (1-wx)(1-wy) weights. `SampleConvolved` is the nine-tap
+  1-2-1 kernel with the software tap step (`1/w`, or `1/w/size` for a swizzled
+  stage). Both are **uniforms**, not shader-structure words, so flipping the
+  registers re-compiles nothing and the program key is unchanged.
+- **Why it does not move a gate:** both titles sample at texel centres, where a
+  tent is a nearest tap (§210d), and the default mask leaves `uTexFilter` zero.
+  The measured effect is therefore on the corpus row's colour depth, not on the
+  gates.
+
+### 219b GL replace-mode composition of a software-painted draw (gap 8 closed)
+
+A draw the GL backend declines in replacement mode is painted by the software
+rasterizer into guest RAM, but the FBO kept whatever the backend had drawn, so
+the presented frame was the backend's frame *minus* every fallback (the corpus
+repro `bump_cubemap_reflect 3B -Gpu gl -GpuReplace` presented the colour clear
+only, `BackendUnsupported=14`).
+
+`GlPgraphBackend` now records "a draw was painted in software since the last
+flip" and, at the flip, drops the FBO so the existing present-upload path
+rebuilds the whole presented surface from guest RAM (full-frame replace, never a
+mix of the two writers; the same rule the §129/§135 upload already enforced).
+The flag is per flip and only armed in replacement mode, so mirror mode and the
+gate goldens are untouched. New diagnostic `composeUploads=` in `diag[...]`.
+
+**Measured (corpus row, 3B, `-Sample xgu-bump_cubemap_reflect -Gpu gl
+-GpuReplace`):** `unsupported=14` unchanged, `composeUploads=7`,
+`presentUploads=7`, and the presented frame is now
+**`DA0750EE38297658` = the software flip frame anchor** (it was clear-only), in
+10.4 s. A rejected draw can no longer leave a hole in the frame.
+
+### 219c A clear is a raw fill: the write masks do not gate it
+
+`Nv2AMmio.FillSurface` writes the clear value verbatim, so the colour/depth/
+stencil *write* masks (draw state) cannot suppress a clear. GL's `glClear` does
+honor `glColorMask` / `glDepthMask` / `glStencilMask`, so a replacement-mode
+frame could lose a clear that followed a masked draw. `ClearCore` now lifts the
+three masks for the clear and sets `_stateValid = false` so the next draw
+re-uploads the real masks.
+
+Tests: `ClearMaskLiveTests.ColorClear_IgnoresTheColorWriteMask` (live, GL) — it
+**fails pre-fix** (the clear wrote nothing, `0x99` expected / `0` actual) and
+also proves the masks are restored for the following draw;
+`Nv2aZetaClearLayoutTests.ZetaClear_IgnoresTheStencilWriteMask` and
+`ColorClear_IgnoresTheColorWriteMask` pin the software side of the same rule.
+
+### 219d Per-title overrides V2: keyed by XBE title id
+
+V1 keyed an override by the launched image path, so renaming or moving an image
+lost its configuration. `XGrid.Host.DiscTitleId` reads the XBE certificate title
+id out of a loose `.xbe` or an XDVDFS ISO's root `default.xbe` (one read at
+launch; a CHD has no XDVDFS reader yet and deliberately reports false, and the
+caller falls back to the path key). `EmulatorSettings` accepts
+`title:XXXXXXXX` keys:
+
+- `TitleIdKey` / `TryParseTitleIdKey` / `IsTitleIdKey` / `CanonicalTitleKey`,
+- `FindTitleOverride(path, titleId)` prefers the title key and falls back to the
+  path, `WithTitleOverride(path, titleId)` applies the same rule,
+- `Normalize()` canonicalizes title keys and drops unparsable ones (they can
+  never match a launch),
+- the settings row shows `NAME (Title XXXXXXXX)` and the muted line reads
+  "applies wherever this title id is launched"; the session logs
+  `Title XXXXXXXX · NAME (per-title override applied)` on power-on.
+
+Tests: `DiscTitleIdTests` (+8) cover the certificate read, a zero id (unknown,
+never `title:00000000`), a garbage image, a loose `.xbe`, a CHD and a missing
+file; `TitleOverrideKeyTests` (+6) pin the key round-trip, title-over-path
+precedence, the path fallback, normalization and the row text. Frontend suite
+15 -> 21, integration suite 58 -> 66. CLI `xgrid disc title <path>` prints
+`TitleId=0xXXXXXXXX key=title:XXXXXXXX Title='…'` (verified on
+`wt-data/xemu-tri/triangle.iso` and both loose sample XBEs; exit 4 with a
+message for a CHD).
+
+**Caveat, measured on the samples:** the key is the *certificate* id, and
+homebrew images that never set one share the placeholder - the nxdk and xgu
+samples all read `0xFFFF0002`, so a title-keyed override applies to every one of
+them. Real titles carry unique ids; a path-keyed row (V1) remains the way to
+distinguish two images with the same id.
+
+Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
+including the regenerated GLSL string goldens for the new shader helpers).

@@ -359,7 +359,7 @@
                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
                   <StackPanel Spacing="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding Path}" Classes="mono" FontSize="10.5"
+                    <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource XgTextMutedBrush}" />
                   </StackPanel>

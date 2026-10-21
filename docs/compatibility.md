@@ -77,7 +77,7 @@ anchor; on a double-buffered title the two differ by one buffer
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
-| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
+| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase. **GL replace leg (2026-10-21, §219b):** 14 declined draws compose 7 of 41 flips from guest RAM and the presented frame is `DA0750EE…` = the software anchor (gap 8 closed) | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B; GL replace RAM `19D576A8` / CPU `D5D38C64` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` / `… -Gpu gl -GpuReplace` |
 | **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (216 flips) | 3,036 draws / 9.7M depth px; 41,399 culled | n/a | **renders black at 5.0-5.6B** - diagnosed 2026-10-21 (§211): every presented surface is the colour clear; the two per-frame quads resolve their colour from `T1` (stage 1 `NONE` in one draw by construction, black texels in the bump draw) and the zeta clear (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes. Forcing the clear far or the depth test off gives the same 406-colour wedge instead of the reference's full-screen reflection. Format `0x28` was the §209g fix; gap 10 stays open for the app-state question | RAM `7A11CBEF` / CPU `5B0665B2` at 5B (BTFF leg); plain leg RAM `AA10223C` / CPU `1AB9F002`; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
 | **xgu `swizzle_texture`** (swizzled 2D texture) | xgu repo, built 2026-10-21 | yes | flips yes, own scene at 3B | 87 flips / 2,725 draws / 45.1M px / 1,620 colours, full coverage; samples `0x3A` 3.14M with 0 misses | n/a | no reference screenshot in the xgu repo, so no oracle row; exercises the swizzled byte-order path (the §207h/§209 formats) | RAM `E2EB41ED` / CPU `B887B3C6`; last frame `FE32FB3C`, scanout/display `869CB402` at 3B | `-Sample xgu-swizzle_texture -Steps 3000000000` |
 | **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes; **fogged room renders** with `--ffp` | 2,730 draws / 84.2M px on, / 42.0M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat orange (gap 6) | **on:** RAM `12BAD517` / CPU `571363B4`, 7,601 colours, mean (129.4, 50.2, 37.4); **off:** RAM `AFF08085` / CPU `571363B4`, 26 colours | `-Sample xgu-distance_fog_ffp -Steps 3000000000 -Ffp` |
@@ -225,7 +225,7 @@ just "renders something". **Animated samples need a phase sweep** (§208f):
 counts and reports the best. With that, all three oracle rows match; the two
 `*_ffp` rows are blocked on compatibility gap 6 (fixed-function transforms).
 
-### 7. Texture filtering was ignored (opt-in since 2026-10-21, §209d/§210)
+### 7. Texture filtering was ignored (opt-in since 2026-10-21, §209d/§210) - **GL parity CLOSED 2026-10-21 (§219a)**
 
 The sampler read no `TEXFILTER` state: every stage was nearest, and the
 `QUINCUNX`/`GAUSSIAN` convolution kernel was skipped. Measured usage: the
@@ -254,28 +254,34 @@ gain colour depth at an unchanged mean - `bump_cubemap_reflect` 20,843 ->
 only interpolate, and it moves neither row's mean toward or away from its
 reference. The default path is byte-identical to the previous build (both 1B
 accurate goldens PASS on their exact anchors, the corpus rows reproduce, §210c).
-The GL backend is still nearest-only.
+**The GL backend now has the same behavior (§219a):** the tent and the
+PROJECT2D convolution are generated into the fragment shader from the same
+`Nv2AMmio.DecodeTextureFilter` decode the software sampler uses, driven by
+per-slot uniforms (`uTexFilter`, `uTexConv`), so `--tex-filter registers` makes
+the two renderers agree instead of only the software one honoring the registers.
+The uniforms are zero unless the sampler honors the registers, so the GL goldens
+stay byte-identical (`B6116DAE` / `7A860ED7`).
 
-### 8. GL replace mode cannot compose a software-fallback draw (2026-10-21, §209f)
+### 8. GL replace mode cannot compose a software-fallback draw - **CLOSED 2026-10-21 (§219b)**
 
 `--gpu gl --gpu-replace` sends every draw to the GL backend and falls back to
 the software rasterizer when the backend declines a shape. The fallback is
-correct, but its pixels go to **guest RAM** while the presented image is the
-**GL FBO**, and the two are never merged: the flip serves the FBO as-is
-(`presentUploads=0`, `flipStaleUploads=0`), so a frame with any declined draw
-loses *all* fallback pixels.
+correct, but its pixels went to **guest RAM** while the presented image was the
+**GL FBO**, and the two were never merged: the flip served the FBO as-is, so a
+frame with any declined draw lost *all* fallback pixels.
 
 Measured on `xgu bump_cubemap_reflect` at 3B (`-Gpu gl -GpuReplace`):
-`BackendUnsupported=14` (`unsup[modes=14]` - the dot-product/reflection
-texture modes), 784,684 software-fallback pixels, and the presented frame is
-the **clear colour only** (`3553B0DF…` vs the software frame `DA0750EE…`;
-CPU SHA identical). The gate scripts assert `BackendUnsupported=0`, so the
-gate legs never enter this state; the corpus row now documents it.
+`BackendUnsupported=14` (`unsup[modes=14]` - the dot-product/reflection texture
+modes), 784,684 software-fallback pixels, and the presented frame was the
+**clear colour only** (`3553B0DF…` vs the software frame `DA0750EE…`).
 
-Fixing it needs a per-frame composition policy (all-or-nothing: drop the FBO
-and re-render the frame in software, or upload the fallback region into the
-FBO), not a one-line patch. Not started - the GL backend is not the product
-path.
+The composition policy is now **all-or-nothing, and it is the software frame**:
+when any draw was painted in software since the last flip, the backend drops the
+FBO and the present-upload path rebuilds the whole presented surface from guest
+RAM (never a mix of the two writers). Measured after the fix: `unsupported=14`
+unchanged, `composeUploads=7`, `presentUploads=7`, and the presented frame is
+**`DA0750EE38297658` = the software anchor**. The rule only arms in replacement
+mode, so mirror-mode gates never take it.
 
 ### 9. A second-emulator frame oracle is staged, not yet captured (§209f)
 
@@ -336,6 +342,19 @@ Filed for their own differentials (§211f): the Z24S8 clear-word layout
 the high byte), the cull winding on these quads, and whatever app state the
 full-screen reflection needs (needs the gap-9 frame oracle). The row stays red;
 it is now a state answer rather than an unknown.
+
+### 11. A GL clear honored the draw write masks (2026-10-21, §219c) - **CLOSED**
+
+Found while composing fallback frames in replacement mode. A PGRAPH clear is a
+raw surface fill (`Nv2AMmio.FillSurface` writes the value verbatim), so the
+colour/depth/stencil *write* masks cannot suppress it; GL's `glClear` does honor
+`glColorMask` / `glDepthMask` / `glStencilMask`, so a replacement-mode frame
+could lose a clear issued after a masked draw. `ClearCore` now lifts the three
+masks for the clear and invalidates the state shadow so the next draw restores
+them. `ClearMaskLiveTests` fails on the pre-fix build (the masked clear wrote
+nothing) and both renderers are pinned by
+`Nv2aZetaClearLayoutTests.{ZetaClear_IgnoresTheStencilWriteMask,
+ColorClear_IgnoresTheColorWriteMask}`.
 
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
@@ -408,10 +427,9 @@ sequence (an operator-visible route), not more steps.
 - **Texture formats / shader shapes:** whatever the dashboard's menu uses
   (modulate + a few lighting shapes) plus the xgu samples' byte-order formats,
   a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
-  unobserved. **Filtering:** the software sampler honors MIN/MAG as a tent and
-  convolves only for MIN = CONVOLUTION_2D_LOD0, behind `--tex-filter registers`
-  (default off, gap 7 - cheap and anchor-neutral since §210); the GL backend is
-  nearest-only.
+  unobserved. **Filtering:** both renderers honor MIN/MAG as a tent and convolve
+  only for MIN = CONVOLUTION_2D_LOD0, behind `--tex-filter registers` (default
+  off, gap 7 - cheap and anchor-neutral since §210, GL parity since §219a).
 - **Audio:** emulated, but no streaming consumer and no host output.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 

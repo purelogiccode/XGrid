@@ -65,6 +65,13 @@ public sealed class EmulatorSession : IDisposable
     private short[] _padSticks = new short[4];
     private bool _padDirty;
 
+    // Title identity (V2 per-title overrides): resolved from the launched image
+    // once per run so the override dictionary can key by XBE title id instead
+    // of a file path, and so the UI can show what was launched.
+    private uint? _titleId;
+    private string _titleName = string.Empty;
+    private bool _titleOverrideApplied;
+
     /// <summary>Raised on the emulation thread when a new presented frame is available.</summary>
     public event EventHandler<FramePacket>? FrameReady;
 
@@ -89,6 +96,26 @@ public sealed class EmulatorSession : IDisposable
     /// <summary>Gets the current guest instruction pointer.</summary>
     public uint Eip => unchecked((uint)Volatile.Read(ref _eip));
 
+    /// <summary>Gets the XBE title id of the running disc (null when unknown, e.g. a CHD or the dashboard).</summary>
+    public uint? TitleId => _titleId;
+
+    /// <summary>Gets the XBE certificate title name of the running disc (empty when unknown).</summary>
+    public string TitleName => _titleName;
+
+    /// <summary>Gets a value indicating whether a per-title override was applied to this run.</summary>
+    public bool TitleOverrideApplied => _titleOverrideApplied;
+
+    /// <summary>
+    /// Resolves the XBE title id of an image (ISO/XISO or loose XBE; a CHD has
+    /// no reader yet and reports false) and returns it.
+    /// </summary>
+    /// <param name="imagePath">Disc image or executable path.</param>
+    /// <param name="titleName">Certificate title name on success.</param>
+    public static bool TryResolveTitle(string? imagePath, out uint titleId, out string titleName)
+    {
+        return DiscTitleId.TryRead(imagePath, out titleId, out titleName);
+    }
+
     /// <summary>Starts a run with a snapshot of the supplied settings.</summary>
     /// <param name="settings">Configuration to boot with (cloned before the thread starts).</param>
     /// <param name="discPath">Optional disc image to insert, overriding the configured disc.</param>
@@ -106,7 +133,19 @@ public sealed class EmulatorSession : IDisposable
             throw new InvalidOperationException("A BIOS image is required. Choose one on the Settings page.");
         }
 
-        EmulatorSettings snapshot = settings.WithTitleOverride(discPath);
+        // V2 per-title overrides: the title id is resolved once here, so a
+        // title keeps its configuration when the image is renamed, moved or
+        // re-wrapped. Unresolvable images fall back to the path key.
+        _titleId = null;
+        _titleName = string.Empty;
+        if (!string.IsNullOrWhiteSpace(discPath) && DiscTitleId.TryRead(discPath, out uint titleId, out string name))
+        {
+            _titleId = titleId;
+            _titleName = name;
+        }
+
+        EmulatorSettings snapshot = settings.WithTitleOverride(discPath, _titleId);
+        _titleOverrideApplied = settings.FindTitleOverride(discPath, _titleId) is not null;
         Interlocked.Exchange(ref _steps, 0);
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
@@ -247,6 +286,13 @@ public sealed class EmulatorSession : IDisposable
             Volatile.Write(ref _machine, machine);
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
+            if (_titleId is uint runningTitleId)
+            {
+                string suffix = _titleOverrideApplied ? " (per-title override applied)" : string.Empty;
+                string name = _titleName.Length == 0 ? string.Empty : " \u00B7 " + _titleName;
+                Log?.Invoke(this, FormattableString.Invariant(
+                    $"Title {runningTitleId:X8}{name}{suffix}"));
+            }
 
             while (!token.IsCancellationRequested && !machine.Cpu.Context.Halted)
             {

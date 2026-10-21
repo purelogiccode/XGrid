@@ -149,6 +149,14 @@ public static class PshGlslGenerator
         sb.Append("uniform int uTexWrapY[4];\n");
         sb.Append("uniform int uTexCube[4];\n");
         sb.Append("uniform int uTexDim[4];\n");
+        // TEXFILTER (opt-in on the guest side): 1 = tent filter at LOD 0
+        // (the software SampleBilinear rule), 0 = nearest. uTexConv is the
+        // effective convolution kernel (1 quincunx / 2 gaussian-3) that the
+        // reference only applies to PROJECT2D. Both are zero unless the
+        // sampler honors the TEXFILTER registers, so the default path is the
+        // same nearest texelFetch it has always been.
+        sb.Append("uniform int uTexFilter[4];\n");
+        sb.Append("uniform int uTexConv[4];\n");
         sb.Append("uniform uint uShaderClip;\n");
         sb.Append(CultureInfo.InvariantCulture,
             $"uniform vec4 uTri[{triangleCapacity * 25}];\n");
@@ -240,9 +248,7 @@ public static class PshGlslGenerator
         sb.Append("  }\n");
         sb.Append("  return v < 0 ? 0 : (v >= s ? s - 1 : v);\n");
         sb.Append("}\n");
-        sb.Append("vec4 SampleSlot(int slot, vec2 uv) {\n");
-        sb.Append("  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);\n");
-        sb.Append("  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];\n");
+        sb.Append("vec4 FetchTexel(int slot, vec2 c) {\n");
         sb.Append("  ivec2 t;\n");
         sb.Append("  t.x = WrapI(int(floor(c.x)), int(uTexSize[slot].x), uTexWrapX[slot]);\n");
         sb.Append("  t.y = WrapI(int(floor(c.y)), int(uTexSize[slot].y), uTexWrapY[slot]);\n");
@@ -250,6 +256,57 @@ public static class PshGlslGenerator
         sb.Append("  if (slot == 1) return texelFetch(uTex1, t, 0);\n");
         sb.Append("  if (slot == 2) return texelFetch(uTex2, t, 0);\n");
         sb.Append("  return texelFetch(uTex3, t, 0);\n");
+        sb.Append("}\n");
+        sb.Append("vec4 SampleNearest(int slot, vec2 uv) {\n");
+        sb.Append("  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];\n");
+        sb.Append("  return FetchTexel(slot, c);\n");
+        sb.Append("}\n");
+
+        // Nv2AMmio.SampleBilinear transcription (opt-in TEXFILTER tent): the
+        // sample position is the GL texel-centre-offset coordinate
+        // (s*size - 0.5), each of the four taps is wrapped independently and
+        // the weights are the same (1-wx)(1-wy) products, so a texel-centre
+        // sample reproduces the nearest texel bit-exactly.
+        sb.Append("vec4 SampleTent(int slot, vec2 uv) {\n");
+        sb.Append("  vec2 f = ((uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot]) - vec2(0.5);\n");
+        sb.Append("  vec2 f0 = floor(f);\n");
+        sb.Append("  vec2 w = f - f0;\n");
+        sb.Append("  float x0 = f0.x;\n");
+        sb.Append("  float y0 = f0.y;\n");
+        sb.Append("  vec4 t00 = FetchTexel(slot, vec2(x0, y0));\n");
+        sb.Append("  vec4 t10 = FetchTexel(slot, vec2(x0 + 1.0, y0));\n");
+        sb.Append("  vec4 t01 = FetchTexel(slot, vec2(x0, y0 + 1.0));\n");
+        sb.Append("  vec4 t11 = FetchTexel(slot, vec2(x0 + 1.0, y0 + 1.0));\n");
+        sb.Append("  return (t00 * ((1.0 - w.x) * (1.0 - w.y))) + (t10 * (w.x * (1.0 - w.y)))\n");
+        sb.Append("       + (t01 * ((1.0 - w.x) * w.y)) + (t11 * (w.x * w.y));\n");
+        sb.Append("}\n");
+        sb.Append("vec4 SampleSlot(int slot, vec2 uv) {\n");
+        sb.Append("  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);\n");
+        sb.Append("  if (uTexFilter[slot] == 1) return SampleTent(slot, uv);\n");
+        sb.Append("  return SampleNearest(slot, uv);\n");
+        sb.Append("}\n");
+        sb.Append("const float kConvWeight[9] = float[9](1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0,\n");
+        sb.Append("                                      2.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0,\n");
+        sb.Append("                                      1.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0);\n");
+        sb.Append("const int kConvX[9] = int[9](-1, 0, 1, -1, 0, 1, -1, 0, 1);\n");
+        sb.Append("const int kConvY[9] = int[9](-1, -1, -1, 0, 0, 0, 1, 1, 1);\n");
+
+        // Nv2AMmio.SampleConvolved transcription (opt-in TEXFILTER): xemu's
+        // apply_convolution_filter on PROJECT2D, nine textureProj taps with
+        // the 1-2-1 kernel, each tap one texel of the stage's base level in
+        // the stage's own coordinate space (texel units for a linear format,
+        // 1/size normalized for a swizzled one).
+        sb.Append("vec4 SampleConvolved(int slot, vec2 uv, float w) {\n");
+        sb.Append("  float invW = (w != 0.0) ? (1.0 / w) : 1.0;\n");
+        sb.Append("  float stepU = (uTexLinear[slot] == 1) ? invW : invW / max(uTexSize[slot].x, 1.0);\n");
+        sb.Append("  float stepV = (uTexLinear[slot] == 1) ? invW : invW / max(uTexSize[slot].y, 1.0);\n");
+        sb.Append("  vec2 base = uv * invW;\n");
+        sb.Append("  vec4 acc = vec4(0.0);\n");
+        sb.Append("  for (int i = 0; i < 9; i++) {\n");
+        sb.Append("    vec2 tap = base + vec2(float(kConvX[i]) * stepU, float(kConvY[i]) * stepV);\n");
+        sb.Append("    acc += SampleSlot(slot, tap) * kConvWeight[i];\n");
+        sb.Append("  }\n");
+        sb.Append("  return acc;\n");
         sb.Append("}\n");
         sb.Append('\n');
     }
@@ -349,9 +406,12 @@ public static class PshGlslGenerator
                 case PshCombiner.TexModeProject2D:
                     // Cubemap-flagged: software cube-samples when the format
                     // is 05/06 (slice-1 counts that as unsupported) or falls
-                    // back to none; slice 1 emits none either way.
+                    // back to none; slice 1 emits none either way. Otherwise
+                    // the effective TEXFILTER convolution runs first, exactly
+                    // where the software path runs SampleConvolved (after the
+                    // cube/shadow checks, before the w division).
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, {c}.xy); }}\n");
+                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else if (uTexConv[{slot}] != 0) {{ {t} = SampleConvolved({slot}, {c}.xy, {c}.w); }} else {{ {t} = SampleSlot({slot}, {c}.xy); }}\n");
                     break;
                 case PshCombiner.TexModeProject3D:
                     sb.Append(CultureInfo.InvariantCulture,
