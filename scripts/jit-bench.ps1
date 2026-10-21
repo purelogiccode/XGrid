@@ -33,7 +33,7 @@ $cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 
 $media = "D:\spec-soak\media"
-$triangleIso = "C:\Users\HomePC\AppData\Local\Temp\opencode\triangle-iso\triangle.iso"
+$triangleIso = Join-Path $root "wt-data\xemu-tri\triangle.iso"
 $outDir = "wt-data\jit-bench"
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 

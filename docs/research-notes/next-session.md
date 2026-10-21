@@ -13,11 +13,18 @@ harness, six measured rows across three samples), `docs/research-notes/nv097-cov
 ## 0. Verify the start state before touching anything
 
 ```powershell
+pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
 git log --oneline -1        # expect: the §205 draw-command batching commit
 git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
 dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1534 green
 ```
+
+**Two machines share this tree** (`docs/hosts.md`). Start with `host-doctor.ps1`
+and read its VERDICT before trusting any number in this file: semantic anchors
+(SHAs/counters) must match everywhere, performance anchors (walls) only compare
+within one machine and one window. If the machine is new, add its fingerprint to
+`docs/hosts.md` first.
 
 Expected 1B fast-mode anchors (if these differ, the environment moved - record it,
 do not "fix" the code):
@@ -28,6 +35,11 @@ do not "fix" the code):
 | menu `--gpu gl --gpu-replace` | `DD023100…` | `F5D61C94…` | 0 | ~1.05 s (`flushMs` ~0.24 s) |
 | triangle (same flags, sw) | `F57934BF…` | `CF79FC17…` | ~2.8 s | — |
 | triangle `--gpu gl --gpu-replace` | `D1EDD170…` | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
+
+**Verified 2026-10-20 on H1** (`scripts/raster-leg.ps1`, 1B, fast, `--gpu sw`): all
+four semantic anchors reproduce **exactly**, `vec=0`, no fault. Measured walls
+triangle **9.56 s** / menu **39.08 s**, i.e. +10% / +17% against the quiet
+references — read ceilings as ratios on this host (see `docs/hosts.md`).
 
 Accurate-mode anchors (JIT off): menu `D9C99A58…`/`3D2740B8…`, triangle
 `F57934BF.`/`9B5AFC2A.`. GL frame anchors: menu `6BE6325F…`, triangle `3FC4B419…`
@@ -101,17 +113,34 @@ even with an idle CPU, so absolute M-A status is undecided (see §5).
 
 ## 2. Recommended next session - fixed order
 
-Track B's two scoped slices are now both in, so the order moves to the other
-tracks. Pick **one**:
+**Chosen path (2026-10-20, H1, operator authorization).** Track P first: the
+frontend is the product and it was sw-only, keyboard-only, silent, stateless.
+Host audio is **not** a last-mile task — `McpxApuDevice` has no PCM sink at all
+(its DSP EP "FIFO drain needs an S/PDIF sink"), so audio needs real output
+emulation, not wiring, and is deferred as a scoped feature. Landed in that
+session: XInput controller support (analog + sticks, dead zone, XInput→XID
+mapping in `XGrid.Input` with 29 tests) and `.xgs` save/load in the app.
+
+Order after that: **Track E Option A (corpus)** — it is the only track that
+produces the usage histogram every future fidelity landing is gated on.
+Track B is done until M-A can be re-measured against H1's own reference.
+
+Pick **one**:
 
 ### Option A (Track E, the steering signal): grow the corpus
 
-Highest value: **clear the nxdk toolchain blocker** (install MSYS2 clang/make on
-D: - C: has little free space - then `git clone --recursive` nxdk +
+Highest value: **clear the nxdk toolchain blocker** (install clang/make into the
+existing `C:\msys64` via pacman, then `git clone --recursive` nxdk +
 `bin/activate`). That turns four existing sources into rows (`nxdk-mesh` = the
 first textured 3D row). Then re-run `scripts/boot-to-first-frame.ps1 -All` and
 update the matrix. The exit criterion (M-B) is >= 8 rows with at least two
 beyond dashboard/triangle/ktest; today there are 3 runnable rows.
+
+Host note (2026-10-20): on `H1` the toolchain state is git+gcc present, **clang/
+make/bash absent** — so this task starts with a package install, not a download
+project. The old "C: has only ~5 GB free, install on D:" constraint does not
+describe H1 (81 GB free, and `C:\msys64` already exists). Check `docs/hosts.md`
+before deciding which machine owns the corpus rows.
 
 ### Option B (Track P, product): one feature
 
@@ -184,21 +213,30 @@ rejected shortcuts are in §204). Do not start either while B/E are open.
   charter + inventory status headers, `AGENTS.md` session note, and a fresh copy
   of this file.
 
-## 5. Host-state warning (2026-10-20, measured at session close)
+## 5. Host state — two machines (2026-10-20)
 
-**Absolute walls are NOT comparable to the recorded references on this host.**
-At the §204 session close the *unmodified baseline* build (`4f0bd47`) measured
-menu sw **62.6 s** and triangle sw **14.0 s** at 1B, against the recorded 33.3 s
-/ 8.69 s, **with an idle CPU** (0.7 cores of background; `Win32_Processor`
-reports its 3.6 GHz base clock). The raster share is inflated unevenly
-(`rasterPsh` 20.1 s vs the recorded 12.0 s = 1.67x), so no single factor converts
-today's numbers into the reference session's. Consequences:
+**Development runs on two machines sharing this Dropbox tree.** Their fingerprints
+live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before believing any wall in
+this file. Anchor discipline: **semantic** anchors (SHAs, counters) must match on
+both machines — a mismatch is a bug, not an environment note; **performance**
+anchors (walls, `msps`, `rasterPsh`) compare only within one machine and one window.
+
+**Absolute walls are NOT comparable across machines.** At the §204 session close
+the *unmodified baseline* build (`4f0bd47`) measured menu sw **62.6 s** and
+triangle sw **14.0 s** at 1B, against the recorded 33.3 s / 8.69 s, **with an idle
+CPU** (0.7 cores of background; `Win32_Processor` reports its 3.6 GHz base clock).
+The raster share is inflated unevenly (`rasterPsh` 20.1 s vs the recorded 12.0 s =
+1.67x), so no single factor converts those numbers into the reference session's.
+Either the host is misconfigured today or the references came from the *other*
+machine — that is open item 1/3 in `docs/hosts.md`. Consequences:
 
 - Trust same-window A/B pairs and `drawMs`/`flushMs` (host-side GL timers), not
   absolute walls or cross-session projections.
 - Before reading `present-path-acceptance.ps1`'s SUMMARY as M-A, check that its
-  `sw` leg is ~33 s (menu) / ~8.7 s (triangle); if not, the host is off the
+  `sw` leg is ~33 s (menu) / ~8.7 s (triangle); if not, this machine is off the
   reference state and only the ratio matters.
+- A host is not the reference host until it reproduces those absolutes on an
+  unmodified baseline; record the verdict in `docs/hosts.md`.
 - Suspects worth checking on a fresh boot: CPU boost/frequency state, power
   plan, memory clock, background I/O (Dropbox/syncthing), and Rider indexing.
 
@@ -241,6 +279,11 @@ dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... --frame-first ou
 
 # M-A acceptance in one command: interleaved sw/gl pairs, medians, projection
 pwsh -File scripts\present-path-acceptance.ps1 -Pairs 3 -Workload both
+
+# session start: fingerprint + precondition + References2 integrity
+pwsh -File scripts/host-doctor.ps1
+pwsh -File scripts/refs-manifest.ps1 -Verify          # add -Quick to skip content hashing
+pwsh -File scripts/refs-manifest.ps1 -Update          # only after adding/updating a reference set
 ```
 
 `wt-data/ab-leg.ps1`, `wt-data/run-leg.ps1` and the baseline tree are untracked

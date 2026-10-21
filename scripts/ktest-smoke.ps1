@@ -20,7 +20,7 @@ param(
     [string]$FirmwareDir = "data\xemu-0.8.136-windows-x86_64",
     [string]$SuiteXbe = "data\test-samples\kernel-test-suite-default.xbe",
     [string]$XemuExe = "",
-    [string]$XisoSharp = "C:\Users\HomePC\Dropbox\source\repos\CSharp_XISOSharp\XISOSharp.Cli\bin\Release\net9.0\XISOSharp.exe",
+    [string]$XisoSharp = "",
     [string]$WorkDir = "wt-data\ktest-smoke",
     [string]$Subset = "51,71,224,231,282,319,344",
     [string]$Steps = "2000000000",
@@ -37,11 +37,28 @@ function Stamp([string]$m) { Write-Host ("[{0:mm\:ss}] {1}" -f $Wall.Elapsed, $m
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
+# XISOSharp lives in the sibling repo CSharp_XISOSharp. Resolve it from this
+# repo's parent so the gate works on any machine and user name; pass
+# -XisoSharp explicitly to override. (The old absolute default embedded one
+# machine's profile path and a stale TFM.)
+if ($XisoSharp -eq "") {
+    $sibling = Join-Path (Split-Path $Root -Parent) "CSharp_XISOSharp\XISOSharp.Cli\bin\Release"
+    foreach ($tfm in "net10.0", "net9.0", "net8.0") {
+        $candidate = Join-Path $sibling "$tfm\XISOSharp.exe"
+        if (Test-Path $candidate) { $XisoSharp = $candidate; break }
+    }
+    if ($XisoSharp -eq "" -and (Test-Path $sibling)) {
+        $found = Get-ChildItem -Path $sibling -Recurse -Filter XISOSharp.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) { $XisoSharp = $found.FullName }
+    }
+}
+
 $cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll"
 if (-not (Test-Path $cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 if (-not (Test-Path $FirmwareDir)) { Write-Error "Missing firmware dir: $FirmwareDir"; exit 2 }
 if (-not (Test-Path $SuiteXbe)) { Write-Error "Missing suite XBE: $SuiteXbe"; exit 2 }
-if (-not (Test-Path $XisoSharp)) { Write-Error "Missing XISOSharp: $XisoSharp"; exit 2 }
+if (-not (Test-Path $XisoSharp)) { Write-Error "Missing XISOSharp.exe: pass -XisoSharp <path> (looked for the sibling repo CSharp_XISOSharp)"; exit 2 }
 if ($XemuExe -eq "") { $XemuExe = Join-Path $FirmwareDir "xemu.exe" }
 if (-not (Test-Path $XemuExe)) { Write-Error "Missing xemu.exe: $XemuExe"; exit 2 }
 

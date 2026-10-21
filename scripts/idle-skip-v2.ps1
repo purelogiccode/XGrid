@@ -13,10 +13,12 @@ param(
     [ValidateSet("off", "probe", "on")][string]$Mode = "off",
     [string]$Steps = "1000000000",
     [string]$Cli = "src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll",
-    [string]$TriangleIso = "C:\Users\HomePC\AppData\Local\Temp\opencode\triangle-iso\triangle.iso"
+    [string]$TriangleIso = ""
 )
 
 $ErrorActionPreference = "Stop"
+# Default to the repo's staged ISO instead of an ephemeral per-user temp path.
+if ($TriangleIso -eq "") { $TriangleIso = Join-Path (Split-Path -Parent $PSScriptRoot) "wt-data\xemu-tri\triangle.iso" }
 if (-not (Test-Path $Cli)) { Write-Error "Build first: dotnet build XGrid.sln -c Release"; exit 2 }
 
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
