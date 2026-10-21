@@ -12673,3 +12673,27 @@ that widening it alone is unobservable. Next attempt: start from all three
 enabled, compare the striped frame against the reference, and fix the reflection
 vector (face selection, s/t orientation, and the `DOT_RFLCT_SPEC` eye vector
 from texture-coord `.w`) before shipping.
+
+### 208h Corpus widened by three xgu rows - and the fixed-function pipeline is unimplemented
+
+Building the remaining xgu examples from `D:\xgu` (three more bootable ISOs;
+the §207 recipe plus `NXDK_DIR=/d/nxdk` and `MSYSTEM=MINGW64` - do *not* source
+`nxdk/bin/activate`, it ends in `exec` and replaces the shell) adds three rows:
+
+| sample | transform mode | 3B frame | oracle |
+|---|---|---|---|
+| `bumpenv_ripple` | programmable | own scene from ~5B (217 flips, 9.7M depth px) | |dmean| (21.0, 19.0, 9.7) at 5B |
+| `distance_fog_ffp` | **`XGU_FIXED`** | flat orange, 26 colours | |dmean| (38.7, 4.1, 16.6) |
+| `spheremap_ffp` | **`XGU_FIXED`** | flat, 93k triangles culled | |dmean| (22.4, 13.7, 80.8) |
+
+`distance_fog_ffp` and `spheremap_ffp` upload MVPs to the **fixed-function**
+block (`SET_TRANSFORM_EXECUTION_MODE = FIXED`) and load no vertex program. XGrid
+only executes programmable programs, so the draws are degenerate: `programLoad`
+stays at the boot animation's 12, cull counts jump to 93k-112k, and the frame is
+the clear colour. That is a new, large feature gap (fixed-function vertex
+stage), recorded as compatibility gap 6 - it sits upstream of both renderers, so
+the software rasterizer and the GL backend are equally affected.
+
+Corpus is now **17 rows over 13 samples**; the oracle table has five xgu
+entries, two of which match (`vp_lighting`, `alpha_blending` at a phase) and
+three of which name real gaps (cubemap direction chain, FFP x2).
