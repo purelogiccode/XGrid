@@ -120,7 +120,9 @@ texture-format usage is measured rather than assumed. Sampled from the corpus:
 | `triangle.xbe` (gate) | `06`=22,642,488/0, `12`=10,444,800/0, `1E`=306,732/0 |
 | `mesh` | `06`, `12` (mipmapped 3D, no misses) |
 | `xgu vp_lighting` | `06`=11,363,999/0, `12`=10,444,800/0, **`3F`=3,420,787/3,420,787 -> 0** |
-| `xgu bump_cubemap_reflect` | `06`, `12`, **`3A`=896,067/0** (cube map; 896k mode fallbacks) |
+| `xgu bump_cubemap_reflect` | `06`, `12`, **`3A`=5,709,991/0** (cube map; was 896k mode fallbacks) |
+| `xgu bumpenv_ripple` | `06`, `12`, `3A`=9,673,664/0, **`28`=3,917,732/3,917,732 -> 0** (G8B8 derivative map) |
+| `xgu swizzle_texture` | `06`, `12`, `3A`=3,135,398/0 |
 
 **`0x3F` was the whole ballgame.** Every one of its 3.42M samples missed and the
 count matched the app's fragment total exactly, which is what identified the
@@ -129,6 +131,12 @@ is `LU_IMAGE_A8B8G8R8` - a byte-order permutation of A8R8G8B8 that the 0.8.137
 header does not define (the newer fork does, with `0x40`/`0x41` and the swizzled
 twins `0x3A`-`0x3C`). Fixed in decisions §207h; the frame went from 3 colours to
 1,592 with full coverage.
+
+**`0x28` (`SZ_G8B8`) was the second one** (§209g): 3.92M samples, all missing,
+on `xgu bumpenv_ripple`. Decoded like the reference (`GL_RG8` + the
+`(R, G, R, G)` swizzle) together with its `0x17` LU twin and the `0x29`
+(`R8B8`, `(G, R, R, G)`) sibling; misses went to zero. The sample still renders
+black, so the format was necessary but not sufficient (compatibility gap 10).
 
 **Reading the counters.** `attempts/misses` is the useful pair: attempts tell you
 whether a format matters at all, misses tell you whether the sampler can serve

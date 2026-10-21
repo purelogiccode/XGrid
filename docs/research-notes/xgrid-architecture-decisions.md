@@ -12815,6 +12815,16 @@ required** (the guest asks for it and the reference renderer does it) and
 **metric-neutral on the only oracle available**, which is why it stays opt-in
 until the menu has an oracle.
 
+The other two oracle rows were then measured both ways as well, and they settle
+the question for now: `bumpenv_ripple` at 5B is **pixel-identical** with and
+without the flag (its scene draws nothing - see 209g), and `alpha_blending` at
+4.6B changes 5.88% of pixels with a mean |delta| of 0.087/255 (max 57 on a few
+edge pixels) while every oracle number stays identical (`|dmean|` 4.8/4.0/4.2,
+`histL1` 35.9 both ways). **No corpus oracle distinguishes the two samplers**,
+so flipping the default would move every anchor with no evidence of
+improvement; the decision needs a discriminating sample (hard-edged texture,
+magnified or minified) or a real menu oracle.
+
 ### 209e Validation
 
 - **Fail-pre-fix:** 4 of the 5 new cube tests fail on the pre-change source
@@ -12872,4 +12882,31 @@ until the menu has an oracle.
   does not exist in this build, and `-drive index=1` collides with xemu's own
   drive (`-dvd_path` is the supported route); QMP stdio answers, `screendump`
   is still uncaptured (gap 9).
+
+### 209g G8B8/R8B8 formats, and `bumpenv_ripple` renders black
+
+The corpus re-measurement exposed a second texture-format gap and a row that
+had never been green:
+
+- `xgu bumpenv_ripple` binds **`0x28` (`SZ_G8B8`)** as its derivative map and
+  sampled it 3,917,732 times per 5B run, with **every sample missing**
+  (`formats= 28=3917732/3917732`). xemu backs it as `GL_RG8` with the channel
+  swizzle `(R, G, R, G)`: r/b = low byte, g/a = high byte. `0x17`
+  (`LU_IMAGE_G8B8`) shares the decode (same swizzle in the reference), and
+  `0x29` (`SZ_R8B8`) is `(G, R, R, G)` - r/b = high byte, g/a = low byte. All
+  three are now 2-byte formats in `TextureFormatBytesPerTexel` (0x17 is also a
+  linear-layout format) and decode through `DecodeTextureTexel`; the sample's
+  miss count went to zero and `tex ok` rose by exactly the 3.92M it used to
+  drop.
+- **But the row still renders black.** At 5.0/5.2/5.4/5.6B the presented frame
+  is a single black colour (216 flips, 3,038 draws, 9.7M depth-tested pixels,
+  41,401 culled) while the reference screenshot shows the XGU logo above a
+  ripple reflection. Its documented oracle delta `(21.0, 19.0, 9.7)` is exactly
+  the reference's mean, i.e. it was measured against an all-black frame - the
+  row was never a match, it just looked like a small difference. Recorded as
+  compatibility gap 10; the remaining cause is in the stage-0/stage-1
+  bump-env path (or the sample's vertex program/combiner), not the format.
+- Gate safety: the gate legs sample `0x06/0x07/0x12/0x1E`, so the new cases are
+  unreachable there; fast 1B menu after the change is `51B56687…`/`F5D61C94…`
+  exact. Suite 1615 -> 1621.
 
