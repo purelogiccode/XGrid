@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -11,14 +12,18 @@ using XGrid.Frontend.Avalonia.Services;
 
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
-/// <summary>One selectable NVNET backend.</summary>
-public sealed class NetworkOption
+/// <summary>One selectable option in a settings drop-down: a persisted key, a label and an optional hint.</summary>
+public sealed class KeyedOption
 {
-    /// <summary>Creates a backend option.</summary>
-    public NetworkOption(string key, string label)
+    /// <summary>Creates an option.</summary>
+    /// <param name="key">Value persisted in the settings file.</param>
+    /// <param name="label">Text shown in the drop-down.</param>
+    /// <param name="hint">Optional availability/behavior hint shown next to the label.</param>
+    public KeyedOption(string key, string label, string hint = "")
     {
         Key = key;
         Label = label;
+        Hint = hint;
     }
 
     /// <summary>Gets the persisted key.</summary>
@@ -26,6 +31,119 @@ public sealed class NetworkOption
 
     /// <summary>Gets the display label.</summary>
     public string Label { get; }
+
+    /// <summary>Gets the availability/behavior hint (may be empty).</summary>
+    public string Hint { get; }
+}
+/// <summary>One per-title override row in the settings list.</summary>
+public sealed class TitleOverrideItem : ObservableObject
+{
+    private static readonly KeyedOption[] RendererChoices = new[]
+    {
+        new KeyedOption(string.Empty, "inherit"),
+        new KeyedOption(EmulatorSettings.RendererSoftware, "software"),
+        new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL"),
+    };
+
+    private bool _fixedFunctionVertex;
+    private bool _texFilterRegisters;
+    private bool _inheritTextureFilter;
+    private KeyedOption _selectedRenderer;
+
+    /// <summary>Creates a row for a launched image path or an XBE title id.</summary>
+    /// <param name="key">Override dictionary key (image path or <c>title:XXXXXXXX</c>).</param>
+    /// <param name="value">Persisted override values.</param>
+    /// <param name="remove">Removal callback.</param>
+    /// <param name="titleName">Certificate title name when the key is a title id.</param>
+    public TitleOverrideItem(string key, TitleOverride value, Action<TitleOverrideItem> remove, string? titleName = null)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(remove);
+        Path = key;
+        TitleName = titleName ?? string.Empty;
+        _fixedFunctionVertex = value.FixedFunctionVertex == true;
+        _texFilterRegisters = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal);
+        _inheritTextureFilter = string.IsNullOrEmpty(value.TextureFilter);
+        _selectedRenderer = RendererChoices.FirstOrDefault(
+            option => option.Key.Length > 0 && string.Equals(option.Key, value.Renderer, StringComparison.Ordinal))
+            ?? RendererChoices[0];
+        RemoveCommand = new RelayCommand(() => remove(this));
+    }
+
+    /// <summary>Gets the override key (an image path, or <c>title:XXXXXXXX</c> for a title-id key).</summary>
+    public string Path { get; }
+
+    /// <summary>Gets the certificate title name when this row is keyed by title id (may be empty).</summary>
+    public string TitleName { get; }
+
+    /// <summary>Gets the label shown in the list: the title name, the title id, or the file name.</summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (EmulatorSettings.TryParseTitleIdKey(Path, out uint titleId))
+            {
+                string id = "Title " + titleId.ToString("X8", CultureInfo.InvariantCulture);
+                return TitleName.Length == 0 ? id : TitleName + " (" + id + ")";
+            }
+
+            return System.IO.Path.GetFileName(Path);
+        }
+    }
+
+    /// <summary>Gets the muted second line: the image path, or the title-key rule.</summary>
+    public string PathText => EmulatorSettings.IsTitleIdKey(Path) ? "applies wherever this title id is launched" : Path;
+
+    /// <summary>Gets the command that removes this override.</summary>
+    public IRelayCommand RemoveCommand { get; }
+
+    /// <summary>Gets or sets a value indicating whether the title runs the fixed-function vertex stage.</summary>
+    public bool FixedFunctionVertex
+    {
+        get => _fixedFunctionVertex;
+        set => SetProperty(ref _fixedFunctionVertex, value);
+    }
+
+    /// <summary>Gets or sets a value indicating whether the title maps TEXFILTER onto the tent sampler.</summary>
+    public bool TexFilterRegisters
+    {
+        get => _texFilterRegisters;
+        set => SetProperty(ref _texFilterRegisters, value);
+    }
+
+    /// <summary>Gets or sets a value indicating whether the override inherits the global texture filter.</summary>
+    public bool InheritTextureFilter
+    {
+        get => _inheritTextureFilter;
+        set => SetProperty(ref _inheritTextureFilter, value);
+    }
+
+    /// <summary>Gets the renderer choices this row can pick from ("inherit", "software", "OpenGL").</summary>
+    public IReadOnlyList<KeyedOption> Renderers { get; } = RendererChoices;
+
+    /// <summary>Gets or sets the renderer this title uses (the "inherit" row keeps the global one).</summary>
+    public KeyedOption SelectedRenderer
+    {
+        get => _selectedRenderer;
+        set
+        {
+            if (value is not null)
+            {
+                SetProperty(ref _selectedRenderer, value);
+            }
+        }
+    }
+
+    /// <summary>Projects the row back into the persisted model.</summary>
+    public TitleOverride ToOverride()
+    {
+        return new TitleOverride
+        {
+            FixedFunctionVertex = _fixedFunctionVertex,
+            TextureFilter = _inheritTextureFilter ? null : (_texFilterRegisters ? "registers" : "legacy"),
+            Renderer = _selectedRenderer.Key.Length == 0 ? null : _selectedRenderer.Key,
+        };
+    }
 }
 
 /// <summary>A library folder row with a remove command.</summary>
@@ -82,13 +200,22 @@ public sealed partial class SettingsViewModel : PageViewModel
     private decimal _jitThreshold = 8;
 
     [ObservableProperty]
+    private bool _fixedFunctionVertex;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedTextureFilter;
+
+    [ObservableProperty]
+    private KeyedOption? _selectedRenderer;
+
+    [ObservableProperty]
     private bool _eosQuirk = true;
 
     [ObservableProperty]
     private bool _networkLinkUp = true;
 
     [ObservableProperty]
-    private NetworkOption? _selectedNetwork;
+    private KeyedOption? _selectedNetwork;
 
     [ObservableProperty]
     private AccentOption? _selectedAccent;
@@ -97,10 +224,20 @@ public sealed partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        NetworkOptions = new ObservableCollection<NetworkOption>
+        NetworkOptions = new ObservableCollection<KeyedOption>
         {
             new("loopback", "Loopback (offline)"),
             new("socket", "User-mode sockets"),
+        };
+        TextureFilterOptions = new ObservableCollection<KeyedOption>
+        {
+            new("legacy", "Legacy (nearest)"),
+            new("registers", "TEXFILTER (tent, LOD 0)"),
+        };
+        RendererOptions = new ObservableCollection<KeyedOption>
+        {
+            new(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
+            new(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
         };
         foreach (AccentPalette palette in AccentPalette.All)
         {
@@ -108,13 +245,26 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
 
         LoadFrom(shell.Config);
+        TitleOverrides.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTitleOverrides));
     }
 
     /// <summary>Gets the guest RAM choices.</summary>
     public IReadOnlyList<int> RamOptions { get; } = new[] { 64, 128 };
 
     /// <summary>Gets the selectable network backends.</summary>
-    public ObservableCollection<NetworkOption> NetworkOptions { get; }
+    public ObservableCollection<KeyedOption> NetworkOptions { get; }
+
+    /// <summary>Gets the selectable texture filter modes.</summary>
+    public ObservableCollection<KeyedOption> TextureFilterOptions { get; }
+
+    /// <summary>Gets the selectable NV2A renderers.</summary>
+    public ObservableCollection<KeyedOption> RendererOptions { get; }
+
+    /// <summary>Gets the per-title overrides being edited.</summary>
+    public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = new();
+
+    /// <summary>Gets a value indicating whether any per-title override exists.</summary>
+    public bool HasTitleOverrides => TitleOverrides.Count > 0;
 
     /// <summary>Gets the accent swatches.</summary>
     public ObservableCollection<AccentOption> AccentOptions { get; } = new();
@@ -145,6 +295,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the settings storage folder.</summary>
     public string SettingsFolder => Path.GetDirectoryName(Shell.SettingsPath) ?? string.Empty;
 
+    /// <summary>Gets the persisted EEPROM state path.</summary>
+    public string EepromStatePath => new EepromStateStore(SettingsFolder).FilePath;
+
     /// <summary>Gets a value indicating whether any library folders are configured.</summary>
     public bool HasLibraryFolders => LibraryFolders.Count > 0;
 
@@ -163,6 +316,19 @@ public sealed partial class SettingsViewModel : PageViewModel
         SpinSkip = settings.SpinSkip;
         DecodeCache = settings.DecodeCache;
         JitThreshold = settings.JitThreshold;
+        FixedFunctionVertex = settings.FixedFunctionVertex;
+        SelectedTextureFilter = TextureFilterOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.TextureFilter, StringComparison.Ordinal))
+            ?? TextureFilterOptions[0];
+        SelectedRenderer = RendererOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Renderer, StringComparison.Ordinal))
+            ?? RendererOptions[0];
+        TitleOverrides.Clear();
+        foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
+        {
+            TitleOverrides.Add(new TitleOverrideItem(pair.Key, pair.Value, RemoveTitleOverride));
+        }
+
         EosQuirk = settings.EosQuirk;
         NetworkLinkUp = settings.NetworkLinkUp;
         SelectedNetwork = NetworkOptions.FirstOrDefault(
@@ -208,6 +374,9 @@ public sealed partial class SettingsViewModel : PageViewModel
             SpinSkip = SpinSkip,
             DecodeCache = DecodeCache,
             JitThreshold = (int)JitThreshold,
+            FixedFunctionVertex = FixedFunctionVertex,
+            TextureFilter = SelectedTextureFilter?.Key ?? "legacy",
+            Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,
@@ -215,6 +384,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             LibraryFolders = LibraryFolders.Select(item => item.Path).ToList(),
             RecentGames = new List<string>(Shell.Config.RecentGames),
         };
+        foreach (TitleOverrideItem item in TitleOverrides)
+        {
+            next.TitleOverrides[EmulatorSettings.CanonicalTitleKey(item.Path)] = item.ToOverride();
+        }
+
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
     }
@@ -229,6 +403,69 @@ public sealed partial class SettingsViewModel : PageViewModel
         DecodeCache = true;
         JitThreshold = 8;
         Shell.ShowToast("Recommended performance options restored — save to apply.");
+    }
+
+    /// <summary>Public command: adds a per-title override for a disc or XBE image.</summary>
+    [RelayCommand]
+    private async Task AddTitleOverrideAsync()
+    {
+        string? path = await Shell.Dialogs.PickFileAsync(
+            "Choose the disc or XBE this override applies to", FileDialogService.DiscTypes);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        string key = EmulatorSettings.NormalizeTitleKey(path);
+        string? titleName = null;
+
+        // V2: key the override by the XBE title id when it can be read, so it
+        // follows the title across renamed, moved or re-wrapped images. An
+        // unreadable image (e.g. a CHD, which has no XDVDFS reader yet) keeps
+        // the V1 path key.
+        if (EmulatorSession.TryResolveTitle(path, out uint titleId, out string resolvedName))
+        {
+            key = EmulatorSettings.TitleIdKey(titleId);
+            titleName = resolvedName;
+        }
+
+        if (TitleOverrides.Any(item => string.Equals(
+                EmulatorSettings.CanonicalTitleKey(item.Path), key, StringComparison.OrdinalIgnoreCase)))
+        {
+            Shell.ShowToast("That title already has an override.");
+            return;
+        }
+
+        TitleOverrides.Add(new TitleOverrideItem(
+            key,
+            new TitleOverride { FixedFunctionVertex = FixedFunctionVertex },
+            RemoveTitleOverride,
+            titleName));
+        Shell.ShowToast(titleName is null
+            ? "Override added for this image (no XBE title id could be read)."
+            : "Override added for title " + key);
+    }
+
+    /// <summary>Public command: removes a per-title override row.</summary>
+    [RelayCommand]
+    private void RemoveTitleOverride(TitleOverrideItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        TitleOverrides.Remove(item);
+    }
+
+    /// <summary>Public command: clears the persisted EEPROM state so the next boot re-seeds from the configured image.</summary>
+    [RelayCommand]
+    private void ResetEepromState()
+    {
+        var store = new EepromStateStore(SettingsFolder);
+        Shell.ShowToast(store.TryReset()
+            ? "EEPROM state cleared — the next boot reseeds from the configured image."
+            : "Could not clear the EEPROM state file.");
     }
 
     /// <summary>Public command: browses for the BIOS image.</summary>

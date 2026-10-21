@@ -18,6 +18,9 @@ uniform int uTexWrapX[4];
 uniform int uTexWrapY[4];
 uniform int uTexCube[4];
 uniform int uTexDim[4];
+uniform int uTexBilinear[4];
+uniform int uTexConvolution[4];
+uniform vec4 uTexBorder[4];
 uniform uint uShaderClip;
 uniform vec4 uTri[25];
 flat in int vTri;
@@ -90,20 +93,68 @@ int WrapI(int v, int s, int mode) {
   }
   return v < 0 ? 0 : (v >= s ? s - 1 : v);
 }
-vec4 SampleSlot(int slot, vec2 uv) {
-  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
-  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];
-  ivec2 t;
-  t.x = WrapI(int(floor(c.x)), int(uTexSize[slot].x), uTexWrapX[slot]);
-  t.y = WrapI(int(floor(c.y)), int(uTexSize[slot].y), uTexWrapY[slot]);
+vec4 FetchTexel(int slot, ivec2 t) {
   if (slot == 0) return texelFetch(uTex0, t, 0);
   if (slot == 1) return texelFetch(uTex1, t, 0);
   if (slot == 2) return texelFetch(uTex2, t, 0);
   return texelFetch(uTex3, t, 0);
 }
+vec4 SampleTap(int slot, ivec2 t) {
+  ivec2 size = ivec2(int(uTexSize[slot].x), int(uTexSize[slot].y));
+  int wu = uTexWrapX[slot];
+  int wv = uTexWrapY[slot];
+  if (wu == 3 || wv == 3) {
+    bool outU = wu == 3 && (t.x < 0 || t.x >= size.x);
+    bool outV = wv == 3 && (t.y < 0 || t.y >= size.y);
+    if (outU || outV) return uTexBorder[slot];
+  }
+  t.x = WrapI(t.x, size.x, wu);
+  t.y = WrapI(t.y, size.y, wv);
+  return FetchTexel(slot, t);
+}
+vec4 SampleSlot(int slot, vec2 uv) {
+  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
+  vec2 c = (uTexLinear[slot] == 1) ? uv : uv * uTexSize[slot];
+  if (uTexBilinear[slot] != 1) {
+    return SampleTap(slot, ivec2(int(floor(c.x)), int(floor(c.y))));
+  }
+  float fx = c.x - 0.5;
+  float fy = c.y - 0.5;
+  int x0 = int(floor(fx));
+  int y0 = int(floor(fy));
+  float wx = fx - float(x0);
+  float wy = fy - float(y0);
+  vec4 t00 = SampleTap(slot, ivec2(x0, y0));
+  vec4 t10 = SampleTap(slot, ivec2(x0 + 1, y0));
+  vec4 t01 = SampleTap(slot, ivec2(x0, y0 + 1));
+  vec4 t11 = SampleTap(slot, ivec2(x0 + 1, y0 + 1));
+  float w00 = (1.0 - wx) * (1.0 - wy);
+  float w10 = wx * (1.0 - wy);
+  float w01 = (1.0 - wx) * wy;
+  float w11 = wx * wy;
+  return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);
+}
+vec4 SampleConvolved(int slot, vec3 p) {
+  if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
+  float invW = (p.z != 0.0) ? (1.0 / p.z) : 1.0;
+  float du = (uTexLinear[slot] == 1) ? invW : (invW / max(uTexSize[slot].x, 1.0));
+  float dv = (uTexLinear[slot] == 1) ? invW : (invW / max(uTexSize[slot].y, 1.0));
+  vec2 base = p.xy * invW;
+  vec4 acc = vec4(0.0);
+  acc += SampleSlot(slot, base + vec2(-1.0 * du, -1.0 * dv)) * 0.0625;
+  acc += SampleSlot(slot, base + vec2(0.0 * du, -1.0 * dv)) * 0.1250;
+  acc += SampleSlot(slot, base + vec2(1.0 * du, -1.0 * dv)) * 0.0625;
+  acc += SampleSlot(slot, base + vec2(-1.0 * du, 0.0 * dv)) * 0.1250;
+  acc += SampleSlot(slot, base + vec2(0.0 * du, 0.0 * dv)) * 0.2500;
+  acc += SampleSlot(slot, base + vec2(1.0 * du, 0.0 * dv)) * 0.1250;
+  acc += SampleSlot(slot, base + vec2(-1.0 * du, 1.0 * dv)) * 0.0625;
+  acc += SampleSlot(slot, base + vec2(0.0 * du, 1.0 * dv)) * 0.1250;
+  acc += SampleSlot(slot, base + vec2(1.0 * du, 1.0 * dv)) * 0.0625;
+  return acc;
+}
 
 void main() {
-  float px = gl_FragCoord.x;
+  float px = gl_FragCoord.x + T(2).w;
   float py = gl_FragCoord.y + T(2).z;
   vec2 vA = T(0).xy;
   vec2 vB = T(0).zw;

@@ -197,6 +197,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodTransformConstantBase = 0x0B80u;
     private const uint MethodTransformConstantEnd = 0x0BFCu;
     private const uint MethodTransformExecutionMode = 0x1E94u;
+    private const uint MethodLightControl = 0x0294u;
+    private const uint MethodColorMaterial = 0x0298u;
+    private const uint MethodMaterialEmission = 0x03A8u;
+    private const uint MethodMaterialEmissionEnd = 0x03B0u;
+    private const uint MethodMaterialAlpha = 0x03B4u;
+    private const uint MethodSceneAmbient = 0x0A10u;
+    private const uint MethodSceneAmbientEnd = 0x0A18u;
+    private const uint MethodSpecularParams = 0x09E0u;
+    private const uint MethodLightConstantBase = 0x1000u;
+    private const uint MethodLightConstantEnd = 0x13FCu;
+    private const uint MethodLightingEnable = 0x0314u;
+    private const uint MethodSkinMode = 0x0328u;
+    private const uint MethodNormalizationEnable = 0x03A4u;
+    private const uint MethodSpecularEnable = 0x03B8u;
+    private const uint MethodLightEnableMask = 0x03BCu;
+    private const uint MethodTexGenBase = 0x03C0u;
+    private const uint MethodTexGenEnd = 0x03CCu;
+    private const uint TexGenStageStride = 0x10u;
+    private const uint MethodTextureMatrixEnable = 0x0420u;
     private const uint MethodTransformProgramCxtWriteEn = 0x1E98u;
     private const uint MethodTransformProgramLoad = 0x1E9Cu;
     private const uint MethodTransformProgramStart = 0x1EA0u;
@@ -278,6 +297,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TextureAddressMirror = 2u;
     private const uint TextureAddressClampToEdge = 3u;
     private const uint TextureAddressBorder = 4u;
+    private const uint TextureFilterMin = 0x003F0000u;
+    private const uint TextureFilterMag = 0x0F000000u;
+    private const uint TextureFilterKernel = 0x0000E000u;
+    private const uint TextureFilterMinConvolution2DLod0 = 7u;
+    private const uint TextureFilterKernelQuincunx = 1u;
+    private const uint TextureFilterKernelGaussian3 = 2u;
     private const uint TextureBumpMatBase = 0x28u;
     private const int MaxTextureSlots = 4;
 
@@ -289,6 +314,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint TransformProgramStartMask = 0xFFu;
     private const uint TransformExecutionModeMask = 3u;
     private const uint TransformModeProgrammable = 2u;
+    private const uint TransformModeFixed = 0u;
+    private const uint SkinModeMask = 7u;
     private const int MaxInlineElements = 65536;
     private const int MaxDrawArrayRanges = 1250;
     private const int VertexAttributeCount = 16;
@@ -342,6 +369,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint PtimerDenominator = 0x210u;
     private const uint PtimerTime0 = 0x400u;
     private const uint PtimerTime1 = 0x410u;
+    private const uint PtimerAlarm0 = 0x420u;
+
+    // PTIMER register-time layout (xemu 0.8.137 ptimer.c): a 29-bit high word
+    // followed by a 32-bit low word whose five least-significant bits are
+    // always zero, i.e. the internal tick is the register time shifted by 5.
+    private const ulong PtimerClockHighMask = 0x1FFFFFFFul;
+    private const ulong PtimerAlarmMask = 0xFFFFFFE0ul;
+    private const ulong PtimerRegTimeHighMask = PtimerClockHighMask << 32;
+    private const ulong PtimerRegTimeLowMask = 0xFFFFFFFFul;
+    private const ulong PtimerRegTimeMask = PtimerRegTimeHighMask | PtimerAlarmMask;
+    private const int PtimerInternalTimeShift = 5;
+    private const ulong PtimerInternalTimeMask = PtimerRegTimeMask >> PtimerInternalTimeShift;
 
     private const uint PfbCfg0 = 0x200u;
     private const uint PfbCfg0Reset = 0x03070103u;
@@ -481,9 +520,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _pbusCommand;
     private uint _ptimerPending;
     private uint _ptimerEnabled;
-    private uint _ptimerNumerator;
-    private uint _ptimerDenominator;
+    private uint _ptimerNumerator = 1u;
+    private uint _ptimerDenominator = 1u;
     private ulong _ptimerClock;
+    private ulong _ptimerAlarmTime;
+    private ulong _ptimerTimeOffset;
     private uint _pcrtcPending;
     private uint _pcrtcEnabled;
     private uint _pcrtcStart;
@@ -520,6 +561,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
+    private readonly FixedFunctionVertexState _fixedFunction = new();
     private readonly List<uint> _inlineElements = new();
     private readonly List<uint> _inlineWords = new();
     private readonly List<float> _inlineVertices = new();
@@ -695,6 +737,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private IPgraphBackend? _backend;
     private bool _observeMethods;
 
+    /// <summary>
+    /// Gets the guest-memory adapter this device was constructed with (null for
+    /// test fakes with no memory). A GPU backend needs the same adapter the
+    /// device uses for its own DMA reads/writes, so it sees the identical
+    /// reader/writer identity: texture uploads read what the device reads, and
+    /// the present-upload dirty watch (when the adapter implements
+    /// <see cref="IPresentDirtyWatch"/>) is the one the guest writes trip.
+    /// </summary>
+    public IGpuMemory? GpuMemory => _memory;
+
     /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
     public long MethodTotal { get; private set; }
 
@@ -781,17 +833,37 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>
     /// Gets or sets whether the sampler honors TEXFILTER (a tent filter at
     /// LOD 0 when MIN/MAG ask for one, and the 3x3 gaussian convolution on
-    /// PROJECT2D). The sampler has always been nearest-only, so this is a
-    /// behavior change and stays off unless a caller opts in; the corpus
-    /// oracle for it is xgu bump_cubemap_reflect (both textures 2/2/QUINCUNX)
+    /// PROJECT2D when MIN selects CONVOLUTION_2D_LOD0). The sampler has always
+    /// been nearest-only, so this is a behavior change and stays off unless a
+    /// caller opts in; the corpus oracle for it is xgu bump_cubemap_reflect
     /// against the reference screenshot.
     /// </summary>
     public bool TextureFilterRegisters { get; set; }
 
     /// <summary>
-    /// Gets the four TEXFILTER words (MIN in bits 16-23, MAG in bits 24-27;
-    /// 1 = nearest, 2 = linear). Diagnostics: the sampler is nearest-only, so
-    /// this names the stages whose filtering is not modelled.
+    /// Gets or sets whether transform execution mode FIXED (0) runs the
+    /// fixed-function vertex stage (<see cref="FixedFunctionVertex"/>) instead
+    /// of the last-loaded vertex program.
+    /// </summary>
+    /// <remarks>
+    /// Opt-in: mode-0 draws used to run whatever vertex program happened to be
+    /// resident, so switching them to the fixed-function stage changes the
+    /// picture on titles that mix both paths (the EvoX dashboard issues 22,207
+    /// fixed-function draws per 1B steps). The stage itself is a transcription
+    /// of the reference (<c>vsh-ff.c</c>); it is gated because no reference
+    /// frame exists for those dashboard draws, so the default path has to stay
+    /// byte-identical for the gate anchors.
+    /// </remarks>
+    public bool FixedFunctionTransform { get; set; }
+
+    /// <summary>
+    /// Gets the four TEXFILTER words as the sampler reads them (MIN in bits
+    /// 16-21, MAG in bits 24-27, the convolution kernel in bits 13-15; 1 =
+    /// nearest, 2 = linear, MIN 7 = CONVOLUTION_2D_LOD0). The kernel field is
+    /// printed as the *effective* kernel - zero unless MIN selects the
+    /// convolution, which is the only case the reference applies it in - so a
+    /// stage that programs kernel bits next to an ordinary tent filter reads
+    /// <c>2/2/0</c> and is sampled as a plain tent.
     /// </summary>
     public string TextureFilterDebug
     {
@@ -806,9 +878,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
 
                 uint word = _textureFilter[slot];
-                uint min = (word >> 16) & 0xFFu;
-                uint mag = (word >> 24) & 0xFu;
-                uint conv = (word >> 13) & 0x7u;
+                uint min = (word & TextureFilterMin) >> 16;
+                uint mag = (word & TextureFilterMag) >> 24;
+                int conv = EffectiveConvolutionKernel(word);
                 builder.Append(CultureInfo.InvariantCulture, $"{min}/{mag}/{conv}");
             }
 
@@ -918,6 +990,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the number of executed draws whose transform execution mode was not programmable. Diagnostics.</summary>
     public ulong NonProgrammableModeDraws { get; private set; }
 
+    /// <summary>Gets the number of executed draws that ran the fixed-function vertex stage. Diagnostics.</summary>
+    public ulong FixedFunctionDraws { get; private set; }
+
+    /// <summary>
+    /// Gets the number of fixed-function draws that had <c>SET_LIGHTING_ENABLE</c>
+    /// set. Those run the reference's material/ambient/emission chain.
+    /// </summary>
+    public ulong FixedFunctionLitDraws { get; private set; }
+
+    /// <summary>
+    /// Gets the number of lit fixed-function draws that also enabled at least one
+    /// light (<c>SET_LIGHT_ENABLE_MASK</c> != 0). Those run the reference's
+    /// enabled-light loop; the counter keeps light usage measurable.
+    /// </summary>
+    public ulong FixedFunctionLightedDraws { get; private set; }
+
     /// <summary>Gets the current color surface offset in guest memory. Diagnostics.</summary>
     public uint PresentedColorOffset { get; private set; }
 
@@ -988,6 +1076,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         _ptimerClock += coreTicks;
+        AdvancePtimerAlarm();
         _vsyncRemainder += coreTicks;
         while (_vsyncRemainder >= VsyncTicksPerFrame)
         {
@@ -1033,9 +1122,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _pbusCommand = 0;
         _ptimerPending = 0;
         _ptimerEnabled = 0;
-        _ptimerNumerator = 0;
-        _ptimerDenominator = 0;
+        _ptimerNumerator = 1;
+        _ptimerDenominator = 1;
         _ptimerClock = 0;
+        _ptimerAlarmTime = 0;
+        _ptimerTimeOffset = 0;
         _pcrtcPending = 0;
         _pcrtcEnabled = 0;
         _pcrtcStart = 0;
@@ -1189,6 +1280,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _transformProgramStart = 0;
         _transformExecutionMode = 0;
         _transformProgramCxtWriteEn = 0;
+        _fixedFunction.Reset();
         TransformConstantLoadDebug = 0;
         _beginMode = 0;
         DrawsExecuted = 0;
@@ -1202,6 +1294,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ZclipCulledPixels = 0;
         SkippedDraws = 0;
         NonProgrammableModeDraws = 0;
+        FixedFunctionDraws = 0;
+        FixedFunctionLitDraws = 0;
+        FixedFunctionLightedDraws = 0;
         _methodCounts.Clear();
         _methodParams.Clear();
         _methodStream.Clear();
@@ -1270,6 +1365,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_ptimerNumerator);
         writer.Write(_ptimerDenominator);
         writer.Write(_ptimerClock);
+        writer.Write(_ptimerAlarmTime);
+        writer.Write(_ptimerTimeOffset);
         writer.Write(_pcrtcPending);
         writer.Write(_pcrtcEnabled);
         writer.Write(_pcrtcStart);
@@ -1325,6 +1422,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_transformProgramStart);
         writer.Write(_transformExecutionMode);
         writer.Write(_transformProgramCxtWriteEn);
+        _fixedFunction.Write(writer);
         writer.Write(TransformProgramLoadDebug);
         writer.Write(TransformConstantLoadDebug);
         writer.Write(_beginMode);
@@ -1480,6 +1578,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(ZclipCulledPixels);
         writer.Write(SkippedDraws);
         writer.Write(NonProgrammableModeDraws);
+        writer.Write(FixedFunctionDraws);
+        writer.Write(FixedFunctionLitDraws);
+        writer.Write(FixedFunctionLightedDraws);
         writer.Write(SemaphoreReleases);
         writer.Write(SemaphoreDebug);
         writer.Write(PgraphEnabledDebug);
@@ -1563,6 +1664,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _ptimerNumerator = reader.ReadUInt32();
         _ptimerDenominator = reader.ReadUInt32();
         _ptimerClock = reader.ReadUInt64();
+        _ptimerAlarmTime = reader.ReadUInt64();
+        _ptimerTimeOffset = reader.ReadUInt64();
         _pcrtcPending = reader.ReadUInt32();
         _pcrtcEnabled = reader.ReadUInt32();
         _pcrtcStart = reader.ReadUInt32();
@@ -1618,6 +1721,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _transformProgramStart = reader.ReadUInt32();
         _transformExecutionMode = reader.ReadUInt32();
         _transformProgramCxtWriteEn = reader.ReadUInt32();
+        _fixedFunction.Read(reader);
         TransformProgramLoadDebug = reader.ReadUInt32();
         TransformConstantLoadDebug = reader.ReadUInt32();
         _beginMode = reader.ReadUInt32();
@@ -1807,6 +1911,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ZclipCulledPixels = reader.ReadUInt64();
         SkippedDraws = reader.ReadUInt64();
         NonProgrammableModeDraws = reader.ReadUInt64();
+        FixedFunctionDraws = reader.ReadUInt64();
+        FixedFunctionLitDraws = reader.ReadUInt64();
+        FixedFunctionLightedDraws = reader.ReadUInt64();
         SemaphoreReleases = reader.ReadInt32();
         SemaphoreDebug = reader.ReadString();
         PgraphEnabledDebug = reader.ReadUInt32();
@@ -1847,7 +1954,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 5;
+    private const int Nv2ASnapshotVersion = 8;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -2201,6 +2308,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             pending |= 1u << 24;
         }
 
+        // PTIMER's alarm raises its own INTR_0 bit and the PMC aggregate mirrors
+        // it only while the subunit's alarm interrupt is enabled
+        // (xemu nv2a_update_irq: NV_PMC_INTR_0_PTIMER).
+        if ((_ptimerPending & _ptimerEnabled & 1u) != 0)
+        {
+            pending |= 1u << 20;
+        }
+
         return pending;
     }
 
@@ -2225,19 +2340,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ReadPtimer(uint register)
     {
-        ulong clock = _ptimerNumerator == 0
-            ? _ptimerClock
-            : (_ptimerClock * _ptimerDenominator) / _ptimerNumerator;
-        return register switch
+        switch (register)
         {
-            PtimerIntr0 => _ptimerPending,
-            PtimerIntrEn0 => _ptimerEnabled,
-            PtimerNumerator => _ptimerNumerator,
-            PtimerDenominator => _ptimerDenominator,
-            PtimerTime0 => (uint)((clock & 0x7FFFFFFu) << 5),
-            PtimerTime1 => (uint)((clock >> 27) & 0x1FFFFFFFu),
-            _ => 0u,
-        };
+            case PtimerIntr0:
+                // Reading the status latches an alarm that has already been
+                // reached (reference ptimer_read). That latch is unconditional:
+                // the pending bit appears even with the alarm disabled, and the
+                // PMC aggregate filters it out until the guest enables it.
+                LatchPtimerAlarm(requireEnabled: false);
+                return _ptimerPending;
+            case PtimerIntrEn0:
+                return _ptimerEnabled;
+            case PtimerNumerator:
+                return _ptimerNumerator;
+            case PtimerDenominator:
+                return _ptimerDenominator;
+            case PtimerTime0:
+                return (uint)(PtimerRegTime() & PtimerRegTimeLowMask);
+            case PtimerTime1:
+                return (uint)((PtimerRegTime() >> 32) & PtimerClockHighMask);
+            case PtimerAlarm0:
+                return (uint)(_ptimerAlarmTime & PtimerRegTimeLowMask);
+            default:
+                return 0u;
+        }
     }
 
     private void WritePtimer(uint register, uint value)
@@ -2246,19 +2372,122 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             case PtimerIntr0:
                 _ptimerPending &= ~value;
+                UpdateIrq();
                 break;
             case PtimerIntrEn0:
                 _ptimerEnabled = value;
+                if ((value & 1u) != 0)
+                {
+                    // Enabling the alarm with an already-reached time raises it
+                    // immediately, exactly like schedule_qemu_timer.
+                    LatchPtimerAlarm();
+                }
+
+                UpdateIrq();
                 break;
             case PtimerNumerator:
                 _ptimerNumerator = value;
+                LatchPtimerAlarm();
                 break;
             case PtimerDenominator:
                 _ptimerDenominator = value;
+                LatchPtimerAlarm();
+                break;
+            case PtimerTime0:
+                SetPtimerTime(
+                    (PtimerRegTime() & ~PtimerRegTimeLowMask) | (value & PtimerAlarmMask));
+                break;
+            case PtimerTime1:
+                SetPtimerTime(
+                    ((ulong)(value & PtimerClockHighMask) << 32) | (PtimerRegTime() & PtimerRegTimeLowMask));
+                break;
+            case PtimerAlarm0:
+                _ptimerAlarmTime = PtimerNextAlarmTime(PtimerRegTime(), value);
+                LatchPtimerAlarm();
                 break;
             default:
                 break;
         }
+    }
+
+    /// <summary>
+    /// Absolute PTIMER clock: core ticks scaled by the numerator/denominator
+    /// pair the guest programs (reference <c>ptimer_get_absolute_clock</c>).
+    /// </summary>
+    private ulong PtimerAbsoluteClock()
+    {
+        ulong numerator = _ptimerNumerator == 0 ? 1ul : _ptimerNumerator;
+        ulong denominator = _ptimerDenominator == 0 ? 1ul : _ptimerDenominator;
+        return (_ptimerClock * denominator) / numerator;
+    }
+
+    /// <summary>
+    /// The 61-bit register time: the offset clock shifted into the register
+    /// layout (low five bits zero, high word masked to 29 bits).
+    /// </summary>
+    private ulong PtimerRegTime()
+    {
+        ulong internalClock = (PtimerAbsoluteClock() + _ptimerTimeOffset) & PtimerInternalTimeMask;
+        return (internalClock << PtimerInternalTimeShift) & PtimerRegTimeMask;
+    }
+
+    /// <summary>Repositions the clock so the register time reads as the target (TIME_0/TIME_1 writes).</summary>
+    private void SetPtimerTime(ulong targetRegTime)
+    {
+        ulong targetInternal = (targetRegTime >> PtimerInternalTimeShift) & PtimerInternalTimeMask;
+        _ptimerTimeOffset = targetInternal - PtimerAbsoluteClock();
+        LatchPtimerAlarm();
+    }
+
+    /// <summary>
+    /// Raises the alarm interrupt when the programmed alarm time has been
+    /// reached, re-arming it for the next low-word wrap (reference
+    /// <c>ptimer_alarm_fired</c> + <c>get_next_alarm_time</c>).
+    /// </summary>
+    /// <returns>True when a pending bit was raised.</returns>
+    private bool LatchPtimerAlarm(bool requireEnabled = true)
+    {
+        if (requireEnabled && (_ptimerEnabled & 1u) == 0)
+        {
+            return false;
+        }
+
+        ulong now = PtimerRegTime();
+        if (!IsPtimerAlarmReached(now, _ptimerAlarmTime))
+        {
+            return false;
+        }
+
+        _ptimerPending |= 1u;
+        _ptimerAlarmTime = PtimerNextAlarmTime(now, _ptimerAlarmTime);
+        UpdateIrq();
+        return true;
+    }
+
+    /// <summary>Advances the alarm check by the core ticks the render core just consumed.</summary>
+    private void AdvancePtimerAlarm() => LatchPtimerAlarm();
+
+    private static ulong PtimerAlarmDistance(ulong regNow, ulong alarmTime)
+    {
+        ulong diff = (alarmTime - regNow) & PtimerRegTimeMask;
+        return diff > (PtimerRegTimeMask >> 1) ? 0ul : diff;
+    }
+
+    private static bool IsPtimerAlarmReached(ulong regNow, ulong alarmTime) =>
+        PtimerAlarmDistance(regNow, alarmTime) == 0;
+
+    /// <summary>Next alarm time: the requested low word in the current high word, rolled one 2^32 step when already due.</summary>
+    private static ulong PtimerNextAlarmTime(ulong regNow, ulong alarmValue)
+    {
+        uint nowLow = (uint)(regNow & PtimerRegTimeLowMask);
+        ulong valueLow = alarmValue & PtimerAlarmMask;
+        ulong target = (regNow & ~PtimerRegTimeLowMask) | valueLow;
+        if (valueLow <= (nowLow & PtimerAlarmMask))
+        {
+            target += 1ul << 32;
+        }
+
+        return target & PtimerRegTimeMask;
     }
 
     private uint ReadPfb(uint register)
@@ -3241,6 +3470,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case MethodTransformExecutionMode:
                 _transformExecutionMode = parameter & TransformExecutionModeMask;
                 break;
+            case MethodLightControl:
+                _fixedFunction.SetLightControl(parameter);
+                break;
+            case MethodMaterialAlpha:
+                _fixedFunction.MaterialAlpha = BitConverter.UInt32BitsToSingle(parameter);
+                break;
+            case MethodColorMaterial:
+                _fixedFunction.SetColorMaterial(parameter);
+                break;
+            case MethodLightingEnable:
+                _fixedFunction.Lighting = (parameter & 1u) != 0;
+                break;
+            case MethodSkinMode:
+                _fixedFunction.Skinning = (int)(parameter & SkinModeMask);
+                break;
+            case MethodNormalizationEnable:
+                _fixedFunction.Normalization = (parameter & 1u) != 0;
+                break;
+            case MethodSpecularEnable:
+                _fixedFunction.SpecularEnable = (parameter & 1u) != 0;
+                break;
+            case MethodLightEnableMask:
+                _fixedFunction.LightEnableMask = parameter;
+                break;
             case MethodTransformProgramCxtWriteEn:
                 _transformProgramCxtWriteEn = parameter;
                 break;
@@ -3279,6 +3532,45 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             ((method - MethodTransformConstantBase) & 3u) == 0)
         {
             WriteTransformConstant((method - MethodTransformConstantBase) / 4, parameter);
+        }
+
+        if (method >= MethodMaterialEmission && method <= MethodMaterialEmissionEnd &&
+            ((method - MethodMaterialEmission) & 3u) == 0)
+        {
+            _fixedFunction.MaterialEmission[(method - MethodMaterialEmission) / 4] =
+                BitConverter.UInt32BitsToSingle(parameter);
+        }
+
+        if (method >= MethodSceneAmbient && method <= MethodSceneAmbientEnd &&
+            ((method - MethodSceneAmbient) & 3u) == 0)
+        {
+            _fixedFunction.SceneAmbient[(method - MethodSceneAmbient) / 4] =
+                BitConverter.UInt32BitsToSingle(parameter);
+        }
+
+        if (method >= MethodSpecularParams && method < MethodSpecularParams + 24u &&
+            ((method - MethodSpecularParams) & 3u) == 0)
+        {
+            _fixedFunction.TrySetSpecularParams(method, parameter);
+        }
+
+        if (method >= MethodLightConstantBase && method <= MethodLightConstantEnd &&
+            ((method - MethodLightConstantBase) & 3u) == 0)
+        {
+            _fixedFunction.TrySetLightMethod(method, parameter);
+        }
+
+        if (method >= MethodTexGenBase && method <= MethodTexGenEnd + (TexGenStageStride * 3u) &&
+            ((method - MethodTexGenBase) & 3u) == 0)
+        {
+            uint index = (method - MethodTexGenBase) / 4u;
+            _fixedFunction.SetTexGen((int)(index / 4u), (int)(index % 4u), parameter);
+        }
+
+        if (method >= MethodTextureMatrixEnable && method < MethodTextureMatrixEnable + (uint)MaxTextureSlots)
+        {
+            _fixedFunction.SetTextureMatrixEnable(
+                (int)(method - MethodTextureMatrixEnable), parameter);
         }
 
         if (method >= MethodCompositeMatrix && method <= MethodCompositeMatrixEnd)
@@ -4503,7 +4795,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void FlushProgramDraw(VertexFetchMode mode)
     {
-        if (_memory is null || TransformProgramLoadDebug == 0)
+        // Transform execution mode FIXED (0) runs the fixed-function vertex
+        // stage instead of a vertex program: the guest uploads matrices into
+        // the XF constant context instead of loading a program, so no program
+        // needs to be resident (reference pgraph.c/glsl/vsh.c). Opt-in
+        // (FixedFunctionTransform): mode-0 draws used to run the resident
+        // program, so enabling this changes what those draws render.
+        bool fixedFunction = FixedFunctionTransform && _transformExecutionMode == TransformModeFixed;
+        if (_memory is null || (!fixedFunction && TransformProgramLoadDebug == 0))
         {
             SkippedDraws++;
             return;
@@ -4511,14 +4810,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         int programStart = ActiveTransformProgramStart();
         int programLength = ActiveTransformProgramLength(programStart);
-        if (programLength == 0)
+        if (!fixedFunction && programLength == 0)
         {
             SkippedDraws++;
             return;
         }
 
-        var program = new uint[programLength][];
-        Array.Copy(_transformProgram, programStart, program, 0, programLength);
+        uint[][] program = Array.Empty<uint[]>();
+        if (!fixedFunction)
+        {
+            program = new uint[programLength][];
+            Array.Copy(_transformProgram, programStart, program, 0, programLength);
+        }
 
         uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
         uint pitch = _surfacePitch & 0xFFFFu;
@@ -4593,6 +4896,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (_transformExecutionMode != TransformModeProgrammable)
         {
             NonProgrammableModeDraws++;
+            if (fixedFunction)
+            {
+                FixedFunctionDraws++;
+                if (_fixedFunction.Lighting)
+                {
+                    FixedFunctionLitDraws++;
+                    if (_fixedFunction.LightEnableMask != 0)
+                    {
+                        FixedFunctionLightedDraws++;
+                    }
+                }
+            }
         }
 
         bool colorWrite = (_colorMask & ColorMaskAll) != 0;
@@ -4686,7 +5001,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 }
             }
 
-            VshProgram.Execute(program, programLength, constants, inputs, outputs, out bool fogWritten);
+            bool fogWritten;
+            if (fixedFunction)
+            {
+                // The fixed-function stage owns the whole vertex, including
+                // the eye-space fog distance (oFog.x), so it is always written.
+                FixedFunctionVertex.Execute(
+                    _fixedFunction, constants, inputs, outputs, _fogEnable, (int)_fogGenMode);
+                fogWritten = true;
+            }
+            else
+            {
+                VshProgram.Execute(program, programLength, constants, inputs, outputs, out fogWritten);
+            }
 
             // Device-depth normalization (xemu clipRange.y): Xbox shaders emit
             // screen-space Z in depth-buffer units (the driver bakes the
@@ -5100,6 +5427,91 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// One tap of the compiled fills' bilinear sampler: the per-tap half of
+    /// <see cref="SampleBilinear"/> transcribed operation-for-operation (the
+    /// read and decode half of <see cref="TryReadPlannedTexel"/>, with the
+    /// per-fill direct-RAM lane and per-fill decode branch). Only called for
+    /// plans whose <see cref="SamplerPlan.FastKind"/> is non-zero, so the texel
+    /// is 2 or 4 bytes and the tap can never fail.
+    /// </summary>
+    /// <param name="ramBase">Reference to the RAM array data (unused when
+    /// <paramref name="directTexel"/> is false).</param>
+    /// <param name="directTexel">The fill proved every tap address is in RAM.</param>
+    /// <param name="rawX">Unwrapped (pre-fold) texel x coordinate.</param>
+    /// <param name="rawY">Unwrapped (pre-fold) texel y coordinate.</param>
+    /// <param name="plan">The stage's sampler plan.</param>
+    /// <param name="r">Decoded red.</param>
+    /// <param name="g">Decoded green.</param>
+    /// <param name="b">Decoded blue.</param>
+    /// <param name="a">Decoded alpha.</param>
+    /// <param name="address">Physical address of the (folded) tap.</param>
+    /// <param name="texel">Raw texel word of the (folded) tap.</param>
+    private void ReadTapFast(
+        ref byte ramBase,
+        bool directTexel,
+        int rawX,
+        int rawY,
+        ref readonly SamplerPlan plan,
+        out float r,
+        out float g,
+        out float b,
+        out float a,
+        out uint address,
+        out uint texel)
+    {
+        int x = WrapFast(rawX, plan.Width, plan.FastWrapU, plan.WrapMaskU, plan.MirrorMaskU);
+        int y = WrapFast(rawY, plan.Height, plan.FastWrapV, plan.WrapMaskV, plan.MirrorMaskV);
+        if (plan.Linear)
+        {
+            address = plan.Offset + (uint)((y * plan.Pitch) + (x * plan.FastBytes));
+        }
+        else if (plan.MortonMasks)
+        {
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            address = plan.Offset + (swizzled * (uint)plan.FastBytes);
+        }
+        else
+        {
+            address = plan.Offset + ((InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                                      InterleaveBits((uint)y, plan.SwizzleMaskY)) * (uint)plan.FastBytes);
+        }
+
+        if (directTexel)
+        {
+            texel = BinaryPrimitives.ReadUInt32LittleEndian(
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)address), 4));
+            if (plan.FastBytes != 4)
+            {
+                texel &= 0xFFFFu;
+            }
+        }
+        else
+        {
+            texel = plan.FastBytes == 4 ? ReadGpu(address) : ReadGpu(address) & 0xFFFFu;
+        }
+
+        if (plan.DecodeKind == 0)
+        {
+            a = Unit255[(int)((texel >> 24) & 0xFFu)];
+            r = Unit255[(int)((texel >> 16) & 0xFFu)];
+            g = Unit255[(int)((texel >> 8) & 0xFFu)];
+            b = Unit255[(int)(texel & 0xFFu)];
+        }
+        else if (plan.DecodeKind == 1)
+        {
+            r = Unit15[(int)((texel >> 8) & 0xFu)];
+            g = Unit15[(int)((texel >> 4) & 0xFu)];
+            b = Unit15[(int)(texel & 0xFu)];
+            a = Unit15[(int)((texel >> 12) & 0xFu)];
+        }
+        else
+        {
+            DecodeTextureTexel(plan.Color, texel, out r, out g, out b, out a);
+        }
+    }
+
+    /// <summary>
     /// Highest physical address a fast sampler plan can read, given the folds
     /// the plan allows: every accepted wrap kind keeps the folded coordinate
     /// inside <c>[0, Width)</c> / <c>[0, Height)</c>, and every swizzled
@@ -5334,20 +5746,58 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 plan.CubeMorton = (cubeMaskX & 0xAAAAAAAAu) == 0 && (cubeMaskY & 0x55555555u) == 0;
             }
 
-            // TEXFILTER decode (opt-in): MIN in bits 16-23, MAG in bits 24-27,
-            // convolution kernel in bits 13-15. Values follow nv2a_regs.h;
-            // with level 0 only, every tent variant is the same bilinear tap.
-            plan.Bilinear = false;
-            plan.Convolution = 0;
-            if (TextureFilterRegisters)
-            {
-                uint filter = _textureFilter[slot];
-                uint min = (filter >> 16) & 0x3Fu;
-                uint mag = (filter >> 24) & 0xFu;
-                plan.Bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
-                plan.Convolution = (int)((filter >> 13) & 0x7u);
-            }
+            // TEXFILTER decode (opt-in): MIN in bits 16-21, MAG in bits 24-27,
+            // convolution kernel in bits 13-15. Values follow nv2a_regs.h.
+            // With level 0 only, every tent variant is the same bilinear tap:
+            // the reference's GL filter map turns MIN 2/4/6/7 into GL_LINEAR
+            // and 1/3/5 into GL_NEAREST (texture.c), i.e. exactly the mipmap
+            // variants collapsed onto level 0.
+            ResolveTextureFilter(slot, out bool bilinear, out int convolution);
+            plan.Bilinear = bilinear;
+            plan.Convolution = convolution;
         }
+    }
+
+    /// <summary>
+    /// Resolves a stage's effective TEXFILTER behaviour. The one place the
+    /// flag is consulted: the software sampler's <see cref="SamplerPlan"/> and
+    /// the backend seam's <see cref="PgraphTextureSlot"/> both read it, so the
+    /// rasterizer and the GPU backend can never disagree about a stage.
+    /// </summary>
+    private void ResolveTextureFilter(int slot, out bool bilinear, out int convolution)
+    {
+        bilinear = false;
+        convolution = 0;
+        if (!TextureFilterRegisters)
+        {
+            return;
+        }
+
+        uint filter = _textureFilter[slot]; uint min = (filter & TextureFilterMin) >> 16;
+        uint mag = (filter & TextureFilterMag) >> 24;
+        bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
+        convolution = EffectiveConvolutionKernel(filter);
+    }
+
+    /// <summary>
+    /// The TEXFILTER convolution kernel the sampler applies, following the
+    /// reference: xemu <c>psh.c</c> only looks at the kernel field when MIN is
+    /// <c>NV_PGRAPH_TEXFILTER0_MIN_CONVOLUTION_2D_LOD0</c> (7) and only
+    /// QUINCUNX (1) / GAUSSIAN_3 (2) convolve; every other pairing is a plain
+    /// sampler filter. The guest programs kernel bits next to an ordinary tent
+    /// MIN (the dashboard's four slots are <c>2/2/1</c>), which the reference
+    /// samples as a single bilinear tap, not as a 3x3 convolution.
+    /// </summary>
+    private static int EffectiveConvolutionKernel(uint filter)
+    {
+        uint min = (filter & TextureFilterMin) >> 16;
+        uint kernel = (filter & TextureFilterKernel) >> 13;
+        if (min != TextureFilterMinConvolution2DLod0)
+        {
+            return 0;
+        }
+
+        return kernel is TextureFilterKernelQuincunx or TextureFilterKernelGaussian3 ? (int)kernel : 0;
     }
 
     /// <summary>
@@ -6425,10 +6875,43 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>False when there is no scanout or no usable geometry.</returns>
     public bool TryCopyScanoutFrame(out uint width, out uint height, out byte[] bgra)
     {
+        if (Backend is not null)
+        {
+            width = 0;
+            height = 0;
+            bgra = Array.Empty<byte>();
+            return false;
+        }
+
+        return TryCopyScanoutCore(out width, out height, out bgra);
+    }
+
+    /// <summary>
+    /// Copies the RAM display buffer even when a GPU backend is attached.
+    /// </summary>
+    /// <remarks>
+    /// The display controller scans out guest RAM; a GPU backend's presented
+    /// image is a host-side readback of its own surface, so the two are
+    /// different sources, not two halves of one frame. Programs that write the
+    /// framebuffer directly (nxdk's <c>XVideoGetFB</c>, <c>debugPrint</c>) issue
+    /// no 3D draws and therefore never produce a backend frame at all - the
+    /// pixels they wrote are only in RAM. A caller that shows the backend
+    /// readback while one exists can use this lane as the source *before* the
+    /// backend has presented anything; it is never mixed into a frame the
+    /// backend drew.
+    /// </remarks>
+    /// <returns>False when no display mode is programmed or the buffer is not scannable.</returns>
+    public bool TryCopyScanoutFrameFromMemory(out uint width, out uint height, out byte[] bgra)
+    {
+        return TryCopyScanoutCore(out width, out height, out bgra);
+    }
+
+    private bool TryCopyScanoutCore(out uint width, out uint height, out byte[] bgra)
+    {
         width = 0;
         height = 0;
         bgra = Array.Empty<byte>();
-        if (Backend is not null || _memory is null || _pcrtcStart == 0)
+        if (_memory is null || _pcrtcStart == 0)
         {
             return false;
         }
@@ -6788,9 +7271,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private PgraphTextureSlot BuildTextureSlot(int slot)
     {
+        ResolveTextureFilter(slot, out bool bilinear, out int convolution);
+        uint address = _textureAddress[slot];
         return new PgraphTextureSlot(
-            _textureOffset[slot], _textureFormat[slot], _textureAddress[slot],
-            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot]);
+            _textureOffset[slot], _textureFormat[slot], address,
+            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot],
+            bilinear,
+            convolution,
+            SamplerWrapMode(DecodeTextureAddressU((int)address)),
+            SamplerWrapMode(DecodeTextureAddressV((int)address)),
+            _textureBorderColor[slot]);
+    }
+
+    /// <summary>
+    /// Encodes a decoded address mode in the sampler's own four-way space:
+    /// 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border. The raw word assigns 1 to
+    /// wrap and 2 to mirror, so reading it directly (as the GL backend used
+    /// to) swaps those two modes.
+    /// </summary>
+    private static int SamplerWrapMode(int addressMode)
+    {
+        return addressMode == (int)TextureAddressBorder ? 3 : ToWrapMode(addressMode);
     }
 
     private PgraphDrawInfo BuildDrawInfo(
@@ -6806,7 +7307,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _combiner,
             _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
             _shaderClipMode,
-            _zFormatFloat);
+            _zFormatFloat,
+            _colorSurfaceBase + PresentedColorOffset,
+            _surfacePitch & 0xFFFFu);
     }
 
     private PgraphDrawInfo BuildLegacyDrawInfo(
@@ -6834,7 +7337,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _combiner,
             _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
             _shaderClipMode,
-            _zFormatFloat);
+            _zFormatFloat,
+            _colorSurfaceBase + PresentedColorOffset,
+            _surfacePitch & 0xFFFFu);
     }
 
     private static PgraphVertex ToBackendVertex(in PshVertex v)
@@ -7568,8 +8073,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ref readonly SamplerPlan plan = ref _samplerPlans[stage];
         float invW = w != 0f ? 1f / w : 1f;
-        float du = invW / Math.Max(plan.Width, 1);
-        float dv = invW / Math.Max(plan.Height, 1);
+
+        // One tap is one texel in the stage's own coordinate space. The
+        // reference normalizes a rect (LU_IMAGE_*) coordinate first and then
+        // offsets by 1/textureSize (psh.c apply_convolution_filter: norm%d +
+        // texCoordDelta/textureSize), which in this sampler's texel-unit space
+        // for linear formats is a delta of exactly one texel; a swizzled stage
+        // is already normalized, so there the delta is 1/size.
+        float du = plan.Linear ? invW : invW / Math.Max(plan.Width, 1);
+        float dv = plan.Linear ? invW : invW / Math.Max(plan.Height, 1);
         float bu = tu * invW;
         float bv = tv * invW;
         float ar = 0f;
@@ -7763,7 +8275,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float invArea, bool perspective, float invAw, float invBw, float invCw,
         uint pitch, ref readonly SamplerPlan texturing,
         bool alphaTest, uint alphaFunc, float alphaRefScaled, uint colorBase,
-        bool zclipActive, bool zclipCull, float zclipRange, float zclipMin, float zclipMax)
+        bool zclipActive, bool zclipCull, float zclipRange, float zclipMin, float zclipMax,
+        bool bilinear)
     {
         long pixels = 0;
         uint color = texturing.Color;
@@ -7847,70 +8360,106 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 float tb;
                 float ta;
 
-                // SampleFast transcribed with the per-fill direct-RAM texel
-                // read and the per-fill decode branch (see SamplerPlan).
-                int rawX = (int)MathF.Floor(texturing.Linear ? su : su * texturing.Width);
-                int rawY = (int)MathF.Floor(texturing.Linear ? sv : sv * texturing.Height);
-                int sx = WrapFast(rawX, texturing.Width, texturing.FastWrapU, texturing.WrapMaskU,
-                    texturing.MirrorMaskU);
-                int sy = WrapFast(rawY, texturing.Height, texturing.FastWrapV, texturing.WrapMaskV,
-                    texturing.MirrorMaskV);
-                uint taddr;
-                if (texturing.Linear)
+                if (bilinear)
                 {
-                    taddr = texturing.Offset + (uint)((sy * texturing.Pitch) + (sx * texturing.FastBytes));
-                }
-                else if (texturing.MortonMasks)
-                {
-                    uint swizzled = (SpreadMortonBits((uint)sx) & texturing.SwizzleMaskX)
-                                  | ((SpreadMortonBits((uint)sy) << 1) & texturing.SwizzleMaskY);
-                    taddr = texturing.Offset + (swizzled * (uint)texturing.FastBytes);
+                    // TEXFILTER tent (SampleBilinear transcribed): the
+                    // texel-center-offset coordinate, four independently
+                    // folded taps and the bilinear weights. One sampler
+                    // counter per fragment (the base tap), as the generic
+                    // path records it.
+                    float fx = (texturing.Linear ? su : su * texturing.Width) - 0.5f;
+                    float fy = (texturing.Linear ? sv : sv * texturing.Height) - 0.5f;
+                    int tx0 = (int)MathF.Floor(fx);
+                    int ty0 = (int)MathF.Floor(fy);
+                    float wx = fx - tx0;
+                    float wy = fy - ty0;
+                    ReadTapFast(ref ramBase, directTexel, tx0, ty0, in texturing,
+                        out float r00, out float g00, out float b00, out float a00,
+                        out uint baseAddress, out uint baseTexel);
+                    ReadTapFast(ref ramBase, directTexel, tx0 + 1, ty0, in texturing,
+                        out float r10, out float g10, out float b10, out float a10, out _, out _);
+                    ReadTapFast(ref ramBase, directTexel, tx0, ty0 + 1, in texturing,
+                        out float r01, out float g01, out float b01, out float a01, out _, out _);
+                    ReadTapFast(ref ramBase, directTexel, tx0 + 1, ty0 + 1, in texturing,
+                        out float r11, out float g11, out float b11, out float a11, out _, out _);
+                    float w00 = (1f - wx) * (1f - wy);
+                    float w10 = wx * (1f - wy);
+                    float w01 = (1f - wx) * wy;
+                    float w11 = wx * wy;
+                    tr = (r00 * w00) + (r10 * w10) + (r01 * w01) + (r11 * w11);
+                    tg = (g00 * w00) + (g10 * w10) + (g01 * w01) + (g11 * w11);
+                    tb = (b00 * w00) + (b10 * w10) + (b01 * w01) + (b11 * w11);
+                    ta = (a00 * w00) + (a10 * w10) + (a01 * w01) + (a11 * w11);
+                    TrackTextureCoords(tx0, ty0);
+                    CountSample(baseAddress, baseTexel, tr, tg, tb);
                 }
                 else
                 {
-                    taddr = texturing.Offset + ((InterleaveBits((uint)sx, texturing.SwizzleMaskX) |
-                                                 InterleaveBits((uint)sy, texturing.SwizzleMaskY)) *
-                                                (uint)texturing.FastBytes);
-                }
-
-                uint texel;
-                if (directTexel)
-                {
-                    texel = BinaryPrimitives.ReadUInt32LittleEndian(
-                        MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
-                    if (texturing.FastBytes != 4)
+                    // SampleFast transcribed with the per-fill direct-RAM texel
+                    // read and the per-fill decode branch (see SamplerPlan).
+                    int rawX = (int)MathF.Floor(texturing.Linear ? su : su * texturing.Width);
+                    int rawY = (int)MathF.Floor(texturing.Linear ? sv : sv * texturing.Height);
+                    int sx = WrapFast(rawX, texturing.Width, texturing.FastWrapU, texturing.WrapMaskU,
+                        texturing.MirrorMaskU);
+                    int sy = WrapFast(rawY, texturing.Height, texturing.FastWrapV, texturing.WrapMaskV,
+                        texturing.MirrorMaskV);
+                    uint taddr;
+                    if (texturing.Linear)
                     {
-                        texel &= 0xFFFFu;
+                        taddr = texturing.Offset + (uint)((sy * texturing.Pitch) + (sx * texturing.FastBytes));
                     }
-                }
-                else
-                {
-                    texel = texturing.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
-                }
+                    else if (texturing.MortonMasks)
+                    {
+                        uint swizzled = (SpreadMortonBits((uint)sx) & texturing.SwizzleMaskX)
+                                      | ((SpreadMortonBits((uint)sy) << 1) & texturing.SwizzleMaskY);
+                        taddr = texturing.Offset + (swizzled * (uint)texturing.FastBytes);
+                    }
+                    else
+                    {
+                        taddr = texturing.Offset + ((InterleaveBits((uint)sx, texturing.SwizzleMaskX) |
+                                                     InterleaveBits((uint)sy, texturing.SwizzleMaskY)) *
+                                                    (uint)texturing.FastBytes);
+                    }
 
-                if (decodeKind == 0)
-                {
-                    // DecodeTextureTexel's default branch (A8R8G8B8).
-                    ta = Unit255[(int)((texel >> 24) & 0xFFu)];
-                    tr = Unit255[(int)((texel >> 16) & 0xFFu)];
-                    tg = Unit255[(int)((texel >> 8) & 0xFFu)];
-                    tb = Unit255[(int)(texel & 0xFFu)];
-                }
-                else if (decodeKind == 1)
-                {
-                    // DecodeTextureTexel's A4R4G4B4 branch.
-                    tr = Unit15[(int)((texel >> 8) & 0xFu)];
-                    tg = Unit15[(int)((texel >> 4) & 0xFu)];
-                    tb = Unit15[(int)(texel & 0xFu)];
-                    ta = Unit15[(int)((texel >> 12) & 0xFu)];
-                }
-                else
-                {
-                    DecodeTextureTexel(color, texel, out tr, out tg, out tb, out ta);
-                }
+                    uint texel;
+                    if (directTexel)
+                    {
+                        texel = BinaryPrimitives.ReadUInt32LittleEndian(
+                            MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
+                        if (texturing.FastBytes != 4)
+                        {
+                            texel &= 0xFFFFu;
+                        }
+                    }
+                    else
+                    {
+                        texel = texturing.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
+                    }
 
-                TrackTextureCoords(sx, sy);
-                CountSample(taddr, texel, tr, tg, tb);
+                    if (decodeKind == 0)
+                    {
+                        // DecodeTextureTexel's default branch (A8R8G8B8).
+                        ta = Unit255[(int)((texel >> 24) & 0xFFu)];
+                        tr = Unit255[(int)((texel >> 16) & 0xFFu)];
+                        tg = Unit255[(int)((texel >> 8) & 0xFFu)];
+                        tb = Unit255[(int)(texel & 0xFFu)];
+                    }
+                    else if (decodeKind == 1)
+                    {
+                        // DecodeTextureTexel's A4R4G4B4 branch.
+                        tr = Unit15[(int)((texel >> 8) & 0xFu)];
+                        tg = Unit15[(int)((texel >> 4) & 0xFu)];
+                        tb = Unit15[(int)(texel & 0xFu)];
+                        ta = Unit15[(int)((texel >> 12) & 0xFu)];
+                    }
+                    else
+                    {
+                        DecodeTextureTexel(color, texel, out tr, out tg, out tb, out ta);
+                    }
+
+                    TrackTextureCoords(sx, sy);
+                    CountSample(taddr, texel, tr, tg, tb);
+                }
 
                 float fr = PshCombiner.ModulatePass(Math.Max(tr, 0f), Math.Max(dr, 0f));
                 float fg = PshCombiner.ModulatePass(Math.Max(tg, 0f), Math.Max(dg, 0f));
@@ -8004,7 +8553,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint x0, uint x1, uint y0, uint y1,
         float invArea, bool perspective, float invAw, float invBw, float invCw,
         uint pitch, int kind, float[][] consts, float[] constTexels,
-        bool sampleStage0, ref readonly SamplerPlan stage0Plan,
+        bool sampleStage0, ref readonly SamplerPlan stage0Plan, bool bilinear,
         bool zclipActive, bool zclipCull, float zclipRange, float zclipMin, float zclipMax,
         uint colorBase)
     {
@@ -8120,72 +8669,105 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     float sv = tw0 != 0f ? tv0 / tw0 : tv0;
                     _textureFormatAttempts[color]++;
 
-                    // SampleFast transcribed with the per-fill direct-RAM texel
-                    // read and decode branch (same expressions as the modulate
-                    // compiled fill and as SampleFast).
-                    int rawX = (int)MathF.Floor(stage0Plan.Linear ? su : su * stage0Plan.Width);
-                    int rawY = (int)MathF.Floor(stage0Plan.Linear ? sv : sv * stage0Plan.Height);
-                    int sx = WrapFast(rawX, stage0Plan.Width, stage0Plan.FastWrapU, stage0Plan.WrapMaskU,
-                        stage0Plan.MirrorMaskU);
-                    int sy = WrapFast(rawY, stage0Plan.Height, stage0Plan.FastWrapV, stage0Plan.WrapMaskV,
-                        stage0Plan.MirrorMaskV);
-                    uint taddr;
-                    if (stage0Plan.Linear)
+                    if (bilinear)
                     {
-                        taddr = stage0Plan.Offset +
-                                (uint)((sy * stage0Plan.Pitch) + (sx * stage0Plan.FastBytes));
-                    }
-                    else if (stage0Plan.MortonMasks)
-                    {
-                        uint swizzled = (SpreadMortonBits((uint)sx) & stage0Plan.SwizzleMaskX)
-                                      | ((SpreadMortonBits((uint)sy) << 1) & stage0Plan.SwizzleMaskY);
-                        taddr = stage0Plan.Offset + (swizzled * (uint)stage0Plan.FastBytes);
+                        // TEXFILTER tent (SampleBilinear transcribed; same
+                        // expressions as the modulate compiled fill).
+                        float fx = (stage0Plan.Linear ? su : su * stage0Plan.Width) - 0.5f;
+                        float fy = (stage0Plan.Linear ? sv : sv * stage0Plan.Height) - 0.5f;
+                        int tx0 = (int)MathF.Floor(fx);
+                        int ty0 = (int)MathF.Floor(fy);
+                        float wx = fx - tx0;
+                        float wy = fy - ty0;
+                        ReadTapFast(ref ramBase, directTexel, tx0, ty0, in stage0Plan,
+                            out float r00, out float g00, out float b00, out _,
+                            out uint baseAddress, out uint baseTexel);
+                        ReadTapFast(ref ramBase, directTexel, tx0 + 1, ty0, in stage0Plan,
+                            out float r10, out float g10, out float b10, out _, out _, out _);
+                        ReadTapFast(ref ramBase, directTexel, tx0, ty0 + 1, in stage0Plan,
+                            out float r01, out float g01, out float b01, out _, out _, out _);
+                        ReadTapFast(ref ramBase, directTexel, tx0 + 1, ty0 + 1, in stage0Plan,
+                            out float r11, out float g11, out float b11, out _, out _, out _);
+                        float w00 = (1f - wx) * (1f - wy);
+                        float w10 = wx * (1f - wy);
+                        float w01 = (1f - wx) * wy;
+                        float w11 = wx * wy;
+                        t0r = (r00 * w00) + (r10 * w10) + (r01 * w01) + (r11 * w11);
+                        t0g = (g00 * w00) + (g10 * w10) + (g01 * w01) + (g11 * w11);
+                        t0b = (b00 * w00) + (b10 * w10) + (b01 * w01) + (b11 * w11);
+                        TrackTextureCoords(tx0, ty0);
+                        CountSample(baseAddress, baseTexel, t0r, t0g, t0b);
+                        TexturedPixels++;
                     }
                     else
                     {
-                        taddr = stage0Plan.Offset + ((InterleaveBits((uint)sx, stage0Plan.SwizzleMaskX) |
-                                                      InterleaveBits((uint)sy, stage0Plan.SwizzleMaskY)) *
-                                                     (uint)stage0Plan.FastBytes);
-                    }
-
-                    uint texel;
-                    if (directTexel)
-                    {
-                        texel = BinaryPrimitives.ReadUInt32LittleEndian(
-                            MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
-                        if (stage0Plan.FastBytes != 4)
+                        // SampleFast transcribed with the per-fill direct-RAM texel
+                        // read and decode branch (same expressions as the modulate
+                        // compiled fill and as SampleFast).
+                        int rawX = (int)MathF.Floor(stage0Plan.Linear ? su : su * stage0Plan.Width);
+                        int rawY = (int)MathF.Floor(stage0Plan.Linear ? sv : sv * stage0Plan.Height);
+                        int sx = WrapFast(rawX, stage0Plan.Width, stage0Plan.FastWrapU, stage0Plan.WrapMaskU,
+                            stage0Plan.MirrorMaskU);
+                        int sy = WrapFast(rawY, stage0Plan.Height, stage0Plan.FastWrapV, stage0Plan.WrapMaskV,
+                            stage0Plan.MirrorMaskV);
+                        uint taddr;
+                        if (stage0Plan.Linear)
                         {
-                            texel &= 0xFFFFu;
+                            taddr = stage0Plan.Offset +
+                                    (uint)((sy * stage0Plan.Pitch) + (sx * stage0Plan.FastBytes));
                         }
-                    }
-                    else
-                    {
-                        texel = stage0Plan.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
-                    }
+                        else if (stage0Plan.MortonMasks)
+                        {
+                            uint swizzled = (SpreadMortonBits((uint)sx) & stage0Plan.SwizzleMaskX)
+                                          | ((SpreadMortonBits((uint)sy) << 1) & stage0Plan.SwizzleMaskY);
+                            taddr = stage0Plan.Offset + (swizzled * (uint)stage0Plan.FastBytes);
+                        }
+                        else
+                        {
+                            taddr = stage0Plan.Offset + ((InterleaveBits((uint)sx, stage0Plan.SwizzleMaskX) |
+                                                          InterleaveBits((uint)sy, stage0Plan.SwizzleMaskY)) *
+                                                         (uint)stage0Plan.FastBytes);
+                        }
 
-                    float ta0;
-                    if (decodeKind == 0)
-                    {
-                        ta0 = Unit255[(int)((texel >> 24) & 0xFFu)];
-                        t0r = Unit255[(int)((texel >> 16) & 0xFFu)];
-                        t0g = Unit255[(int)((texel >> 8) & 0xFFu)];
-                        t0b = Unit255[(int)(texel & 0xFFu)];
-                    }
-                    else if (decodeKind == 1)
-                    {
-                        t0r = Unit15[(int)((texel >> 8) & 0xFu)];
-                        t0g = Unit15[(int)((texel >> 4) & 0xFu)];
-                        t0b = Unit15[(int)(texel & 0xFu)];
-                        ta0 = Unit15[(int)((texel >> 12) & 0xFu)];
-                    }
-                    else
-                    {
-                        DecodeTextureTexel(color, texel, out t0r, out t0g, out t0b, out ta0);
-                    }
+                        uint texel;
+                        if (directTexel)
+                        {
+                            texel = BinaryPrimitives.ReadUInt32LittleEndian(
+                                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref ramBase, (nint)taddr), 4));
+                            if (stage0Plan.FastBytes != 4)
+                            {
+                                texel &= 0xFFFFu;
+                            }
+                        }
+                        else
+                        {
+                            texel = stage0Plan.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
+                        }
 
-                    TrackTextureCoords(sx, sy);
-                    CountSample(taddr, texel, t0r, t0g, t0b);
-                    TexturedPixels++;
+                        float ta0;
+                        if (decodeKind == 0)
+                        {
+                            ta0 = Unit255[(int)((texel >> 24) & 0xFFu)];
+                            t0r = Unit255[(int)((texel >> 16) & 0xFFu)];
+                            t0g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                            t0b = Unit255[(int)(texel & 0xFFu)];
+                        }
+                        else if (decodeKind == 1)
+                        {
+                            t0r = Unit15[(int)((texel >> 8) & 0xFu)];
+                            t0g = Unit15[(int)((texel >> 4) & 0xFu)];
+                            t0b = Unit15[(int)(texel & 0xFu)];
+                            ta0 = Unit15[(int)((texel >> 12) & 0xFu)];
+                        }
+                        else
+                        {
+                            DecodeTextureTexel(color, texel, out t0r, out t0g, out t0b, out ta0);
+                        }
+
+                        TrackTextureCoords(sx, sy);
+                        CountSample(taddr, texel, t0r, t0g, t0b);
+                        TexturedPixels++;
+                    }
                 }
 
                 // Stages 1-3 are per-fill constants (SetTexelNone, or the
@@ -8389,10 +8971,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         long rasterStart = RasterTimingEnabled ? Stopwatch.GetTimestamp() : 0L;
 
         // Compiled fill for the dominant modulate shape: when selected it owns
-        // every pixel and the generic loop below runs zero iterations.
+        // every pixel and the generic loop below runs zero iterations. Both
+        // sampler shapes are served: the nearest tap and the TEXFILTER tent
+        // (a convolution stays on the generic loop).
         bool compiledModulate = leanInterp &&
                                 !DiagnosticGenericFill &&
-                                !_samplerPlans[0].Bilinear &&
                                 _samplerPlans[0].Convolution == 0 &&
                                 texModes[0] == PshCombiner.TexModeProject2D &&
                                 bytes == 4 &&
@@ -8413,7 +8996,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 pitch, in _samplerPlans[0],
                 _alphaTestEnable, _alphaFunc, _alphaRefScaled,
                 _colorSurfaceBase + PresentedColorOffset,
-                _zclipActive, _zclipCull, _zclipRange, _zclipMin, _zclipMax);
+                _zclipActive, _zclipCull, _zclipRange, _zclipMin, _zclipMax,
+                _samplerPlans[0].Bilinear);
             _diagCompiledFills++;
             _diagCompiledPixels += diagPixels;
             if (RasterTimingEnabled)
@@ -8552,7 +9136,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (texModes[0] == PshCombiner.TexModeProject2D)
             {
                 lightingSampleStage0 = _samplerPlans[0].FastKind != 0 &&
-                                       !_samplerPlans[0].Bilinear &&
                                        _samplerPlans[0].Convolution == 0 &&
                                        (_textureControl0[0] & TextureControl0Enable) != 0 &&
                                        !IsTextureCubemap(0) &&
@@ -8660,7 +9243,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 a, b, c, x0, x1, y0, y1,
                 invArea, perspective, invAw, invBw, invCw,
                 pitch, _combinerFastKind, consts, _lightTexels,
-                lightingSampleStage0, in _samplerPlans[0],
+                lightingSampleStage0, in _samplerPlans[0], lightingSampleStage0 && _samplerPlans[0].Bilinear,
                 _zclipActive, _zclipCull, _zclipRange, _zclipMin, _zclipMax,
                 _colorSurfaceBase + PresentedColorOffset);
             _diagCompiledFills++;

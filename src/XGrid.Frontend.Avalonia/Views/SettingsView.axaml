@@ -53,7 +53,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding BiosPath, Mode=TwoWay}"
-                       Watermark="Path to the BIOS image" />
+                       PlaceholderText="Path to the BIOS image" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseBiosCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -82,7 +82,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding McpxRomPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseMcpxCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -102,7 +102,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding EepromPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseEepromCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -113,6 +113,23 @@
               </Button>
             </Grid>
           </StackPanel>
+
+          <Border Classes="divider" />
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Persistent EEPROM state" Classes="label" />
+              <TextBlock Text="{Binding EepromStatePath}" Classes="mono" FontSize="10.5"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="The console's settings (video mode, language, region) are written here when a run stops; the image above is only the seed."
+                         Classes="hint" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Classes="ghost"
+                    VerticalAlignment="Center"
+                    Command="{Binding ResetEepromStateCommand}"
+                    Content="Reset state" />
+          </Grid>
         </StackPanel>
       </Border>
 
@@ -135,7 +152,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding HddPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseHddCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -156,7 +173,7 @@
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Classes="path"
                        Text="{Binding DvdPath, Mode=TwoWay}"
-                       Watermark="Optional" />
+                       PlaceholderText="Optional" />
               <Button Grid.Column="1" Classes="ghost" Command="{Binding BrowseDvdCommand}" Content="Browse…" />
               <Button Grid.Column="2"
                       Classes="subtle icon"
@@ -267,6 +284,101 @@
           <Border Classes="divider" />
 
           <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="Software rasterizer is portable; the OpenGL backend needs a Windows host and is used at the next power-on."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Label}" />
+                    <TextBlock Text="{Binding Hint}"
+                               FontSize="10.5"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource XgTextMutedBrush}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Fixed-function vertex stage" Classes="label" />
+              <TextBlock Text="Runs the NV2A fixed-function transform for mode-0 draws instead of the resident program."
+                         Classes="hint" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1"
+                          IsChecked="{Binding FixedFunctionVertex, Mode=TwoWay}"
+                          OnContent=""
+                          OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="Software is the portable reference rasterizer. OpenGL renders on the host GPU (Windows/WGL) and falls back to software when unavailable."
+                         Classes="hint" TextWrapping="Wrap" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="240"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Texture filtering" Classes="label" />
+              <TextBlock Text="Legacy ignores TEXFILTER; registers applies the tent filter at LOD 0."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding TextureFilterOptions}"
+                      SelectedItem="{Binding SelectedTextureFilter, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="OpenGL renders the picture on the GPU (much faster on the dashboard menu). Falls back to software when no GL context is available."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2">
               <TextBlock Text="007 end-of-stream quirk" Classes="label" />
               <TextBlock Text="Title-specific compatibility fix (TitleId 0x4541000D). Leave enabled."
@@ -283,6 +395,84 @@
                   Command="{Binding ResetPerformanceCommand}"
                   HorizontalAlignment="Left"
                   Content="Restore recommended performance options" />
+        </StackPanel>
+      </Border>
+
+      <!-- ===================== Per-title overrides ===================== -->
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="3">
+              <TextBlock Text="Per-title overrides" Classes="h3" />
+              <TextBlock Text="Graphics settings applied when a specific disc or XBE is launched. Unset values inherit the global configuration."
+                         Classes="hint" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost" Command="{Binding AddTitleOverrideCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{x:Static local:AppIcons.Folder}" Width="13" Height="13" />
+                <TextBlock Text="Add override" />
+              </StackPanel>
+            </Button>
+          </Grid>
+          <Border Classes="divider" />
+
+          <ItemsControl ItemsSource="{Binding TitleOverrides}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:TitleOverrideItem">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                  <StackPanel Spacing="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource XgTextMutedBrush}" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1"
+                                IsChecked="{Binding FixedFunctionVertex, Mode=TwoWay}"
+                                OnContent="ffp"
+                                OffContent="ffp"
+                                ToolTip.Tip="Fixed-function vertex stage for this title"
+                                VerticalAlignment="Center" />
+                  <ToggleSwitch Grid.Column="2"
+                                IsChecked="{Binding TexFilterRegisters, Mode=TwoWay}"
+                                IsEnabled="{Binding !InheritTextureFilter}"
+                                OnContent="filter"
+                                OffContent="filter"
+                                ToolTip.Tip="Map the TEXFILTER registers onto the tent sampler for this title"
+                                VerticalAlignment="Center" />
+                  <ToggleSwitch Grid.Column="3"
+                                IsChecked="{Binding InheritTextureFilter, Mode=TwoWay}"
+                                OnContent="inherit"
+                                OffContent="inherit"
+                                ToolTip.Tip="Inherit the global texture filter"
+                                VerticalAlignment="Center" />
+                  <ComboBox Grid.Column="4"
+                            Width="140"
+                            ItemsSource="{Binding Renderers}"
+                            SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                            ToolTip.Tip="Renderer for this title"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Grid.Column="5"
+                          Classes="subtle icon"
+                          Width="32"
+                          Height="32"
+                          Command="{Binding RemoveCommand}"
+                          ToolTip.Tip="Remove override">
+                    <PathIcon Data="{x:Static local:AppIcons.Close}" Width="12" Height="12" />
+                  </Button>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <TextBlock IsVisible="{Binding !HasTitleOverrides}"
+                     Text="No overrides yet. Add one for a title that needs different graphics settings."
+                     Classes="hint" />
         </StackPanel>
       </Border>
 
@@ -307,7 +497,7 @@
                       SelectedItem="{Binding SelectedNetwork, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:NetworkOption">
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>

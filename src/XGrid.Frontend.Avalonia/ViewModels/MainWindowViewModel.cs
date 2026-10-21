@@ -216,6 +216,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         ? "Waiting for the first presented frame…"
         : "Power on the console to see output here.";
 
+    /// <summary>
+    /// Gets the caption under the display: the picture is a 640x480 console
+    /// scanout, rendered by the configured NV2A renderer.
+    /// </summary>
+    public string DisplayCaption => "640 × 480 · " + RendererPolicy.Describe(Config.Renderer);
+
     /// <summary>Gets the power button label.</summary>
     public string PowerButtonText => IsRunning ? "Power off" : "Power on";
 
@@ -470,6 +476,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Public command: advances one frame while the console is paused.</summary>
+    [RelayCommand(CanExecute = nameof(CanStepFrame))]
+    private void StepFrame()
+    {
+        if (_session.StepFrame())
+        {
+            AddLog(LogLevel.Info, "Stepping one frame.");
+        }
+    }
+
+    /// <summary>Public command: advances a slice of guest time while paused.</summary>
+    [RelayCommand(CanExecute = nameof(CanStepFrame))]
+    private void StepInstructions()
+    {
+        if (_session.StepInstructions(1_000_000))
+        {
+            AddLog(LogLevel.Info, "Stepping 1,000,000 instructions.");
+        }
+    }
+
     /// <summary>Public command: stops the running console.</summary>
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void StopSession()
@@ -519,6 +545,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool CanTogglePause()
     {
         return IsRunning;
+    }
+
+    private bool CanStepFrame()
+    {
+        return IsRunning && IsPaused;
     }
 
     private bool CanStop()
@@ -625,6 +656,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsPausedChanged(bool value)
     {
         OnPropertyChanged(nameof(PauseButtonText));
+        StepFrameCommand.NotifyCanExecuteChanged();
+        StepInstructionsCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnStatusDetailChanged(string value)
@@ -830,6 +863,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HomeHeadline));
         OnPropertyChanged(nameof(HomeDetail));
         OnPropertyChanged(nameof(FramePlaceholder));
+        OnPropertyChanged(nameof(DisplayCaption));
     }
 
     private void OnToastTick(object? sender, EventArgs e)

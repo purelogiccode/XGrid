@@ -14,8 +14,10 @@ Non-goals for this slice:
 - no emulator behavior/fidelity work (the frontend observes the existing public
   `XGrid.Host` API only);
 - no replacement of the headless CLI or the accurate-mode gates;
-- no WGL/OpenGL window backend (that path is Windows-only and would break the
-  Linux/macOS requirement);
+- no WGL/OpenGL *window* backend (that path is Windows-only and would break the
+  Linux/macOS requirement). A headless GPU renderer is selectable since 2026-10-21
+  (§220): the context is created on the emulation thread and its frames are read
+  back into Avalonia, so no foreign window is ever embedded in the visual tree.
 - no save-state UI, debugger panes, per-title profiles, or host audio yet.
 
 ## Stack
@@ -147,3 +149,141 @@ dotnet run --project src/XGrid.Frontend.Avalonia
 
 Project-local usage notes and the shortcut table live in
 `src/XGrid.Frontend.Avalonia/README.md`.
+
+## Update 2026-10-21 (decisions 217): graphics fidelity, per-title overrides, EEPROM state
+
+- **The NV2A fidelity switches are reachable from the UI.** Settings now has
+  "Fixed-function vertex stage" (`--ffp`) and "Texture filtering" (`legacy` |
+  `TEXFILTER (tent, LOD 0)`), both defaulting to the CLI defaults, and the
+  power-on log line reports the active pair.
+- **Per-title overrides (V1).** `EmulatorSettings.TitleOverrides` keys a
+  `TitleOverride` (nullable `FixedFunctionVertex`, `TextureFilter`, `RamMb`) by
+  the launched image path; `WithTitleOverride(path)` merges it over the global
+  configuration at launch. The Settings page lists the rows with per-row
+  `ffp` / `filter` / `inherit` toggles, an "Add override" file picker and a
+  remove button. Title-id keying needs the XBE inside the disc and is filed V2.
+- **The EEPROM persists.** The guest rewrites the 24C02 EEPROM (video mode,
+  language, region) at runtime; the frontend now stores that image in
+  `<data dir>/eeprom.bin` (seeded from the configured firmware image, which is
+  never modified), loads it at power-on and saves it when a run stops. The
+  Settings page shows the path and has a "Reset state" button. The CLI gained
+  `--eeprom-out <path>` for the same image.
+- **The frontend has a test project.** `tests/XGrid.Frontend.Tests` (in
+  `XGrid.sln`) covers the plain models with no UI: settings defaults and
+  `Normalize` repairs, the override merge, `Clone` independence, the one-line
+  description, path-key normalization and the EEPROM store
+  (save/load/clamp/reject/reset). 15 tests.
+
+
+# Update 2026-10-21 (decisions §221): the GPU renderer is a frontend setting
+
+- **Two renderers.** Settings → *Renderer*: **Software** (portable reference
+  rasterizer, default) or **OpenGL** (host GPU, Windows/WGL, the CLI's
+  `--gpu gl --gpu-replace` configuration with the per-flip readback on). The GPU
+  context is created, used and disposed on the emulation thread; an unavailable
+  GPU path logs the reason and the session stays on software for the whole run
+  (never a mix).
+- **Display source follows the renderer.** Software shows the display
+  controller's RAM scanout (`TryCopyDisplayFrame`, falling back to the flipped
+  surface). OpenGL shows the backend's per-flip readback. Before the backend has
+  presented its first frame - the direct-framebuffer guests that never flip - the
+  app reads the RAM scanout through the new
+  `Nv2AMmio.TryCopyScanoutFrameFromMemory` lane, which is never used once a
+  backend frame exists.
+- **Measured (this host, gate media, real `EmulatorSession`, 1B steps, scratch
+  harness in `wt-data/glprobe`, not committed):** software 34.8 s / 687 flips /
+  last display frame 306,817 non-black px, sha `2239732C…`; OpenGL 24.7 s /
+  688 flips / the same 306,817 non-black px, sha `B3C8042C…`. Same picture
+  (2,385 of 307,200 pixels differ by more than nothing, |dmean| ≈ 0.005), ~29%
+  less wall clock. The backend path itself is pinned by the 1B GL golden gates,
+  which this slice re-ran.
+- **Host API:** `Nv2AMmio.GpuMemory` exposes the guest-memory adapter the device
+  was built with (null for test fakes). The CLI now uses it too, which deleted
+  its duplicate adapter - one reader/writer identity for the device and every
+  backend.
+- **Diagnostics off in the app.** The session sets
+  `Nv2A.CollectMethodHistogram = false` (the `--pgraph` histogram costs two
+  dictionary updates per PGRAPH method; measured -6.2% menu wall, §204). The
+  method *total* and the method stream are unaffected, but a `.xgs` saved by the
+  app carries an empty histogram map where a CLI save would carry it - the same
+  self-describing format, less diagnostic data.
+- **Tests:** `tests/XGrid.Frontend.Tests` 21 → 24 (renderer default, clone,
+  `Normalize` repair, ordinal key comparison) and `tests/XGrid.Nv2a.Tests`
+  389 → 393 (`GpuMemory` exposure, the memory scanout lane with and without a
+  backend, lane parity with the software export).
+
+## Update 2026-10-21 (next session): frame stepping
+
+- **Pause now has a step control (Track P, M-C "pause/step UI").** Home has
+  "Frame step" and "Step" (1,000,000 instructions) buttons, enabled only while
+  paused; `F7` steps one presented frame and `Shift+F7` steps 1,000,000
+  instructions. `EmulatorSession.StepFrame`/`StepInstructions` set a budget and
+  release the pause gate; the run loop consumes the budget in
+  `BatchInstructions` slices, stops when the next flip is presented (the frame
+  path) or the budget is spent (the instruction path), re-closes the gate and
+  logs the result. A frame step is budgeted at 8,000,000 instructions so a
+  guest that idles between flips cannot hang the UI - exhausting the budget is
+  reported as "frame-step budget exhausted", not as a failure.
+- The budget is consumed with compare-exchange semantics, so a second click
+  while the first step is running keeps its own budget instead of being
+  cleared by the finishing step.
+
+## Update 2026-10-21 (decisions 219d): per-title overrides V2 - keyed by title id
+
+- **A title keeps its configuration when the image moves.** `EmulatorSettings`
+  now accepts `title:XXXXXXXX` override keys (`TitleIdKey`,
+  `TryParseTitleIdKey`, `CanonicalTitleKey`); `FindTitleOverride(path, titleId)`
+  prefers the title key and falls back to the V1 path key, so an existing
+  path-keyed row keeps working.
+- **Where the id comes from:** `XGrid.Host.DiscTitleId.TryRead` reads the XBE
+  certificate title id at launch - a loose `.xbe` directly, an ISO/XISO through
+  `XdvdfsFileSystem` (the root `default.xbe`). A **CHD has no XDVDFS reader yet**
+  and reports false, so CHD titles keep the path key (documented gap, not a
+  silent mismatch). A zero certificate id is treated as unknown rather than
+  keying every such image under `title:00000000`.
+- **In the UI:** "Add override" resolves the picked image's title id and keys the
+  row by it; the row reads `NAME (Title XXXXXXXX)` over "applies wherever this
+  title id is launched", while a path-keyed row still shows its file path. The
+  power-on log line reports `Title XXXXXXXX · NAME (per-title override applied)`.
+- **Tests:** `tests/XGrid.Frontend.Tests` 15 -> 21 (`TitleOverrideKeyTests`), and
+  `tests/XGrid.Integration.Tests` +8 (`DiscTitleIdTests`, including the synthetic
+  XBE certificate and the CHD/missing-file negatives).
+- **Caveat:** the id is the *certificate* id, so homebrew images that never set
+  one share the placeholder (`xgu`/nxdk samples all read `0xFFFF0002`), and a
+  title-keyed override applies to every such image. Real titles have unique ids.
+  `xgrid disc title <path>` prints the id and the exact `title:XXXXXXXX` key.
+
+## Update 2026-10-21 (decisions 220): the renderer switch (host GPU backend)
+
+- **The frontend can run the NV2A on the host GPU.** Settings has a **Renderer**
+  row: `Software rasterizer` (default, portable, `--gpu sw`) or
+  `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only). The choice applies
+  at the next power-on; a non-Windows host, or a failed WGL probe, logs the
+  reason and keeps the software path instead of failing the boot.
+- **How it is wired.** `Nv2AMmio.GpuMemory` (new, additive) exposes the machine's
+  guest-memory adapter; `GraphicsBackendHost.TryAttach` calls
+  `GlBackendFactory.TryCreate(memory, windowEnabled: false, replaceSoftware:
+  true, frameReadback: true)` on the emulation thread and attaches the backend;
+  `Detach` disposes it in the session's `finally`. The GL context is the CLI's
+  offscreen hidden-window context - nothing is embedded in the Avalonia visual
+  tree - and the frame still arrives through `TryCopyDisplayFrame` ->
+  `FramePacket` -> `WriteableBitmap`. A backend readback is cloned before it
+  leaves the emulation thread (the flip overwrites the backend's buffer).
+- **Measured (git-ignored harness `tools/frontend-smoke`, dashboard, fast mode,
+  interleaved 40 s pairs, same window):** software 1.014B / 1.021B steps (25.3 /
+  25.5 msps), OpenGL 1.121B / 1.106B steps (28.0 / 27.6 msps) = **+9.8% / +8.2%
+  guest throughput**, with the same 306,817 non-black pixels in the last frame
+  and a working 72 MB save/load round trip with GL attached. A 20 s window (boot
+  + intro, before the menu draws) gains +4.5%; the CLI's 1B menu leg - the same
+  switch without UI capture - is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
+- **Snapshot requests now run on the emulation thread.** `EmulatorSession`
+  marshals save/load into the loop (60 s ceiling, served between batches and
+  during a pause) because a load resets backend state and a GL context is only
+  current on its owning thread. The UI no longer holds the machine lock around
+  device state.
+- **Known limit:** the GL renderer presents the *flipped* surface, so a guest
+  that writes the framebuffer directly (nxdk `gamma`/`hello`) shows nothing in
+  GL mode, while the default software renderer shows its scanout. Filed as its
+  own slice.
+- **Tests:** `tests/XGrid.Frontend.Tests` 21 -> 34 (`RendererPolicyTests`,
+  `GraphicsBackendHostTests`, including a live attach/detach on Windows).

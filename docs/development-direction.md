@@ -31,6 +31,9 @@ emulator plateau: a very accurate, very well-tested demo.
   SMBus, EEPROM, PIC/PIT/RTC, APU, nvnet, NV2A). Only depth remains.
 - The CPU engine (raw emitter, chaining, fault contract) stays landed and
   opt-in. Do not spend more sessions on it until the tracks below clear.
+  *Correctness* work is exempt from the freeze (it is not codegen): 220 landed
+  nine interpreter/decoder fixes found by the independent oracle, with no
+  throughput claim and no gate anchor moved.
 
 **What changes.**
 
@@ -55,7 +58,8 @@ emulator plateau: a very accurate, very well-tested demo.
    NV097/APU/XBE work is driven by observed usage. Real ISOs stay benchmark-only
    (no gates, no fidelity work) until the operator changes the policy.
 3. **Track P makes it feel like an emulator.** The frontend landed (`ea8b38f`)
-   but is sw-only, keyboard-only, silent, and stateless. In parallel: host
+   but is keyboard-only, silent, and defaults to the software rasterizer (an
+   opt-in host-OpenGL renderer landed in §220). In parallel: host
    audio sink (APU output), physical gamepad binding, save-state V1, per-title
    config. Cheap relative to their product value; they do not block Track B.
 4. **Track C is frozen after the landed slices.** C3-x hit its target
@@ -73,6 +77,33 @@ ceiling behind its acceptance. A task that serves none of B/E/P is rejected even
 if it is interesting.
 
 ## 1. Priority stack (in order)
+
+**Status 2026-10-22 (22nd session, §§220-221):** the frontend's renderer is a
+setting - software (default) or the headless host-GPU OpenGL backend, which
+measures **-29% wall** at 1B through the real `EmulatorSession` (34.8 s -> 24.7 s
+on gate media) with the same picture; and per-title override V2 resolves a CHD
+through a sector-level XDVDFS lookup (§221), so a compressed library keys by
+title id. Suite **1757**. Track order is otherwise unchanged; the largest
+remaining product gap is host audio, which needs APU DSP execution first.**Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
+the fixed-function vertex stage (213) and its enabled-light loop (215) are
+opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU
+sample counter `NV_PAPU_XGSCNT` is derived from the EP frame divider (218, which
+re-recorded the two menu RAM anchors; frames/CPU/counters unchanged), and the
+frontend exposes the graphics-fidelity switches, per-title overrides and a
+persisted EEPROM (217). Suite 1717. Track order is otherwise unchanged; the
+largest remaining product gap is host audio, which needs APU DSP execution
+first.
+
+**Status 2026-10-21 (21st session, 219):** the GL backend now samples like the
+software rasterizer (TEXFILTER tent/convolution, decoded wrap modes + border
+colour, the PROJECT2D w divide, the clip origin on both fragment axes) and
+`--gpu-replace` composes a software-fallback frame into guest RAM instead of
+presenting the clear colour - compatibility gaps 7 (GL side) and 8 are closed.
+Both 1B GL gate frames are byte-identical (`B6116DAE` / `7A860ED7`),
+`BackendUnsupported=0`, and `xgu vp_lighting` 3B agrees with the software frame
+within one 8-bit step in both filter states. Track P gained a frame-step
+control (F7 / Shift+F7). Suite 1725; the largest remaining product gap is still
+host audio (APU DSP execution first).
 
 1. **B — host GPU present path (lead).** Measure the split first (draw
    submission / readback / present) with `--gpu-time`; then fast-mode present
@@ -175,9 +206,8 @@ is a ratio, not a milestone.
   with an idle CPU, so absolute walls are not comparable. Re-run
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
-  is the structural step. The in-app GL display is still deferred (the frontend
-  uses the software path, which never readbacks).
-- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
+  is the structural step. **The in-app GL display landed 2026-10-22 (§220):** the
+  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default. The in-app switch is +9.8%/+8.2% guest throughput on the dashboard with every gate anchor unchanged (§223).`n- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +
   `--frame-display` export it, and the Avalonia frontend samples it at ~30 Hz,
@@ -268,7 +298,8 @@ the historical precedent, not a pattern to extend).
   `docs/refs-manifest.json`. Never work around a missing reference; do not
   reintroduce an out-of-tree reference backup (`D:\xgrid-refs-restore\` is
   retired by operator decision 2026-10-20).
-- No new codegen slices while Track C is frozen (section 0.4).
+- No new codegen slices while Track C is frozen (section 0.4). Interpreter
+  *correctness* fixes (oracle-found) are not codegen slices.
 - No micro-optimization below a measured 2% ceiling.
 - No "borrow" of xemu source; facts only, reimplemented clean-room.
 

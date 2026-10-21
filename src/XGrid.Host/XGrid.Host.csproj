@@ -13,6 +13,8 @@
     <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
     <ProjectReference Include="..\XGrid.Nv2a\XGrid.Nv2a.csproj" />
     <ProjectReference Include="..\XGrid.Storage\XGrid.Storage.csproj" />
+    <ProjectReference Include="..\XGrid.Xbe\XGrid.Xbe.csproj" />
+    <ProjectReference Include="..\XGrid.XboxFs\XGrid.XboxFs.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using XGrid.Bus.Net;
+using XGrid.Bus.Smbus;
 using XGrid.Bus.Usb;
 using XGrid.Core.Diagnostics;
 using XGrid.Cpu;
@@ -47,6 +48,8 @@ internal static class Program
                 return Sector(args);
             case "xbe":
                 return Xbe(args);
+            case "disc":
+                return Disc(args);
             default:
                 Console.Error.WriteLine($"Unknown command: {args[0]}");
                 PrintUsage();
@@ -80,6 +83,7 @@ internal static class Program
         ulong eipHistInterval = 0;
         string? ramDumpPath = null;
         string? raminPath = null;
+        string? eepromOutPath = null;
         string? saveStatePath = null;
         ulong saveAt = 0;
         bool hasSaveAt = false;
@@ -97,6 +101,7 @@ internal static class Program
         bool idleSkip = false;
         bool idleSkipProbe = false;
         string texFilter = "legacy";
+        bool fixedFunction = false;
         bool fetchFast = false;
         bool decodeCache = true;
         bool decodeVerify = false;
@@ -228,6 +233,9 @@ internal static class Program
                 case "--ramin":
                     raminPath = NextValue(args, ref i);
                     break;
+                case "--eeprom-out":
+                    eepromOutPath = NextValue(args, ref i);
+                    break;
                 case "--save-state":
                     saveStatePath = NextValue(args, ref i);
                     break;
@@ -273,6 +281,9 @@ internal static class Program
                     break;
                 case "--idle-skip-probe":
                     idleSkipProbe = true;
+                    break;
+                case "--ffp":
+                    fixedFunction = true;
                     break;
                 case "--tex-filter":
                     texFilter = NextValue(args, ref i);
@@ -432,11 +443,19 @@ internal static class Program
             machine.Nv2A.CollectMethodHistogram = false;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             machine.Nv2A.TextureFilterRegisters = string.Equals(texFilter, "registers", StringComparison.Ordinal);
+            machine.Nv2A.FixedFunctionTransform = fixedFunction;
             Console.WriteLine(
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+            if (fixedFunction)
+            {
+                Console.WriteLine(
+                    "Fixed-function vertex stage=on (SET_TRANSFORM_EXECUTION_MODE FIXED draws; lighting falls back to unlit)");
+            }
+
             if (!string.Equals(texFilter, "legacy", StringComparison.Ordinal))
             {
-                Console.WriteLine($"Texture filter={texFilter} (MIN/MAG tent at LOD 0 + convolution)");
+                Console.WriteLine(
+                    $"Texture filter={texFilter} (MIN/MAG tent at LOD 0; convolution only when MIN is CONVOLUTION_2D_LOD0)");
             }
 
             if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) &&
@@ -463,11 +482,17 @@ internal static class Program
                 // Slice-1 GPU backend: probe-gated; on failure fall back to
                 // software for the session (Backend stays null). The per-flip
                 // CPU readback is opt-in (--frame): a flip stays on the GPU,
-                // which is the Track-B fast-mode present path.
-                var gpuMemory = new MachineGpuMemory(machine.Memory);
-                if (GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, framePath is not null || frameFirstPath is not null,
-                        out Nv2a.IPgraphBackend? gpuBackendInstance,
-                        out string gpuWhy))
+                // which is the Track-B fast-mode present path. The backend
+                // reads through the machine's own GPU-memory adapter, so
+                // texture reads and the present-upload dirty watch are the
+                // exact lanes the device uses.
+                Nv2a.IGpuMemory? gpuMemory = machine.Nv2A.GpuMemory;
+                string gpuWhy = "the machine exposes no GPU memory adapter";
+                Nv2a.IPgraphBackend? gpuBackendInstance = null;
+                bool gpuCreated = gpuMemory is not null &&
+                    GpuGl.GlBackendFactory.TryCreate(gpuMemory, windowMode, gpuReplace, framePath is not null || frameFirstPath is not null,
+                        out gpuBackendInstance, out gpuWhy);
+                if (gpuCreated)
                 {
                     machine.Nv2A.Backend = gpuBackendInstance;
                     Console.WriteLine(
@@ -1019,6 +1044,17 @@ internal static class Program
                 byte[] ramin = machine.Nv2A.PraminSnapshot();
                 File.WriteAllBytes(raminPath, ramin);
                 Console.WriteLine($"PRAMIN {raminPath} {ramin.Length} bytes");
+            }
+
+            if (eepromOutPath is not null)
+            {
+                // The guest rewrites the EEPROM through the SMBus (video mode,
+                // language, region); write the live image so a later run can
+                // boot with the user's settings.
+                byte[] eeprom = new byte[Eeprom24C02.Size];
+                machine.CopyEeprom(eeprom);
+                File.WriteAllBytes(eepromOutPath, eeprom);
+                Console.WriteLine($"EEPROM {eepromOutPath} {eeprom.Length} bytes");
             }
 
             if (fbPath is not null)
@@ -2131,7 +2167,9 @@ internal static class Program
             $"culled={machine.Nv2A.TrianglesCulled} " +
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
-            $"inlineElements={machine.Nv2A.InlineElementCount}");
+            $"inlineElements={machine.Nv2A.InlineElementCount} " +
+            $"fixedFn={machine.Nv2A.FixedFunctionDraws} fixedFnLit={machine.Nv2A.FixedFunctionLitDraws} " +
+            $"fixedFnLights={machine.Nv2A.FixedFunctionLightedDraws}");
         if (machine.Nv2A.RasterTimingEnabled)
         {
             Console.WriteLine(
@@ -2586,6 +2624,56 @@ internal static class Program
         return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
     }
 
+    /// <summary>
+    /// <c>xgrid disc title &lt;path&gt;</c>: prints the XBE certificate title id
+    /// and title name an image resolves to - the key the frontend's per-title
+    /// overrides (V2) use, so a user can look up what to write in
+    /// <c>TitleOverrides</c> without launching the title.
+    /// </summary>
+    private static int Disc(string[] args)
+    {
+        if (args.Length < 2 || !string.Equals(args[1], "title", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine("Usage: xgrid disc title <iso|xbe path>");
+            return 1;
+        }
+
+        string? path = null;
+        for (int i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--image":
+                case "--file":
+                    path = NextValue(args, ref i);
+                    break;
+                default:
+                    if (path is null)
+                    {
+                        path = args[i];
+                    }
+
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.Error.WriteLine("disc title requires an ISO/XISO or .xbe path");
+            return 1;
+        }
+
+        if (!Host.DiscTitleId.TryRead(path, out uint titleId, out string titleName))
+        {
+            Console.Error.WriteLine(
+                $"No XBE title id read from '{path}' (unsupported or unreadable image; a CHD has no XDVDFS reader yet).");
+            return 4;
+        }
+
+        Console.WriteLine($"TitleId=0x{titleId:X8} key=title:{titleId:X8} Title='{titleName}'");
+        return 0;
+    }
+
     private static int Xbe(string[] args)
     {
         if (args.Length < 2 || !string.Equals(args[1], "info", StringComparison.Ordinal))
@@ -2690,71 +2778,6 @@ internal static class Program
         return args[++index];
     }
 
-    /// <summary>
-    /// IGpuMemory adapter over the machine's physical address space (backend
-    /// texture reads). Doubles as the present-upload dirty watch handle for
-    /// the GL backend (§132 (a*)).
-    /// </summary>
-    private sealed class MachineGpuMemory : Nv2a.IGpuMemory, Nv2a.IGpuMemoryRamView, IPresentDirtyWatch
-    {
-        private readonly AddressSpace _memory;
-
-        public MachineGpuMemory(AddressSpace memory)
-        {
-            _memory = memory;
-        }
-
-        public bool PresentDirty => _memory.Ram.PresentDirty;
-
-        public uint ReadPhysical(uint address)
-        {
-            return _memory.Read32(address);
-        }
-
-        public bool TryGetRamBytes(out byte[] bytes, out uint size)
-        {
-            PhysicalMemory ram = _memory.Ram;
-            bytes = ram.RawBytes;
-            size = ram.Size;
-            return true;
-        }
-
-        public void WritePhysical(uint address, uint value)
-        {
-            // Writer identity (§132 finding i): never dirty the presented
-            // frame from this adapter; only real guest writers count.
-            _memory.Ram.BeginGpuWriteSuppression();
-            try
-            {
-                _memory.Write32(address, value);
-            }
-            finally
-            {
-                _memory.Ram.EndGpuWriteSuppression();
-            }
-        }
-
-        public void ArmPresentWatch(uint address, uint length)
-        {
-            _memory.Ram.ArmPresentWatch(address, length);
-        }
-
-        public void DisarmPresentWatch()
-        {
-            _memory.Ram.DisarmPresentWatch();
-        }
-
-        public void MarkPresentDirty()
-        {
-            _memory.Ram.MarkPresentDirty();
-        }
-
-        public void ClearPresentDirty()
-        {
-            _memory.Ram.ClearPresentDirty();
-        }
-    }
-
     private static string FormatJitMnemonicTop(long[] counts, int take)
     {
         var top = new List<(long Count, int Index)>();
@@ -2808,7 +2831,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
@@ -2840,6 +2863,9 @@ internal static class Program
         Console.WriteLine(
             "  xbe info (--file <path> | --image <path> --partition <lba> [--size <sectors>] --path \\file)");
         Console.WriteLine("                   Show XBE headers, sections, and libraries");
+        Console.WriteLine("  disc title <path>");
+        Console.WriteLine(
+            "                   Show the XBE title id/name of an ISO/XISO or loose .xbe (the key per-title overrides use)");
         Console.WriteLine("  --help, -h       Show this help");
         Console.WriteLine("  --version, -v    Show the version");
     }

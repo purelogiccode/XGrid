@@ -50,6 +50,12 @@ public sealed class PgraphBackendSeamTests
 
         public uint LastClipW { get; private set; }
 
+        public bool HasLastTexture { get; private set; }
+
+        public PgraphTextureSlot LastTexture0 { get; private set; }
+
+        public PgraphTextureSlot LastTexture2 { get; private set; }
+
         public uint LastFlipSurfaceAddress { get; private set; }
 
         public List<uint> FlipSurfaceAddresses { get; } = new();
@@ -65,7 +71,9 @@ public sealed class PgraphBackendSeamTests
         public void Draw(in PgraphDrawInfo info)
         {
             LastClipW = info.ClipW;
-            Draws++;
+            LastTexture0 = info.Texture0;
+            LastTexture2 = info.Texture2;
+            HasLastTexture = true; Draws++;
         }
 
         public void Clear(in PgraphClearInfo info)
@@ -352,6 +360,61 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(fastMemory.BeginBatches, fastMemory.EndBatches);
         Assert.True(fastMemory.FastWrites > 0, "fast write lane not used");
         Assert.True(fastMemory.FastReads > 0, "fast read lane not used");
+    }
+
+    /// <summary>
+    /// The TEXFILTER decode reaches a backend through the texture-slot
+    /// snapshot only when the sampler honors the registers, and then it carries
+    /// exactly the rules <see cref="Nv2AMmio"/> uses: MIN/MAG 2/4/6/7 select
+    /// the LOD-0 tent, and the convolution kernel is only effective when MIN
+    /// selects CONVOLUTION_2D_LOD0 (7).
+    /// </summary>
+    [Fact]
+    public void TextureSlot_CarriesFilterDecodeOnlyWhenSamplerHonorsRegisters()
+    {
+        // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2 (tent), kernel 1 (quincunx).
+        const uint Filter = (7u << 16) | (2u << 24) | (1u << 13);
+
+        (Nv2AMmio off, ArrayMemory offMemory) = CreateChannel();
+        var offBackend = new RecordingBackend();
+        off.Backend = offBackend;
+        WriteVertices(offMemory);
+        PushMethods(off, offMemory, WithFilter(Filter));
+
+        Assert.Equal(1L, offBackend.Draws);
+        Assert.False(offBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, offBackend.LastTexture0.FilterConvolution);
+
+        (Nv2AMmio on, ArrayMemory onMemory) = CreateChannel();
+        on.TextureFilterRegisters = true;
+        var onBackend = new RecordingBackend();
+        on.Backend = onBackend;
+        WriteVertices(onMemory);
+        PushMethods(on, onMemory, WithFilter(Filter));
+
+        Assert.Equal(1L, onBackend.Draws);
+        Assert.True(onBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(1, onBackend.LastTexture0.FilterConvolution);
+
+        // A tent next to a kernel field is NOT a convolution (the reference
+        // only convolves when MIN is 7): MIN 2, MAG 2, kernel 1.
+        (Nv2AMmio tent, ArrayMemory tentMemory) = CreateChannel();
+        tent.TextureFilterRegisters = true;
+        var tentBackend = new RecordingBackend();
+        tent.Backend = tentBackend;
+        WriteVertices(tentMemory);
+        PushMethods(tent, tentMemory, WithFilter((2u << 16) | (2u << 24) | (1u << 13)));
+
+        Assert.True(tentBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, tentBackend.LastTexture0.FilterConvolution);
+    }
+
+    private static (uint Method, uint Parameter)[] WithFilter(uint filter)
+    {
+        var stream = new List<(uint Method, uint Parameter)>(ElementDrawStream());
+        int drawStart = stream.FindIndex(entry => entry.Method == 0x17FCu);
+        stream.Insert(drawStart, (0x1B14u, filter));
+        return stream.ToArray();
     }
 
     [Fact]
@@ -762,5 +825,78 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(1, backend.ResetCount);
         Assert.Same(backend, nv2A.Backend);
         Assert.Equal(0, backend.Methods);
+    }
+
+    /// <summary>Texture methods (SET_TEXTURE_ADDRESS/FILTER/BORDER_COLOR) followed by one draw.</summary>
+    private static (uint Method, uint Parameter)[] TexturedDrawStream()
+    {
+        var stream = new List<(uint Method, uint Parameter)>();
+        foreach ((uint method, uint parameter) in ElementDrawStream())
+        {
+            if (method == 0x17FCu && parameter == 5u)
+            {
+                stream.Add((0x1B08u, 0x00030404u)); // slot 0: U border, V border
+                stream.Add((0x1B14u, 0x02022000u)); // slot 0: MIN 2 MAG 2, kernel 1
+                stream.Add((0x1B24u, 0xFF000000u)); // slot 0: border colour
+                stream.Add((0x1B48u, 0x00020202u)); // slot 1: U mirror, V mirror
+                stream.Add((0x1B88u, 0x00020202u)); // slot 2: U mirror, V mirror
+                stream.Add((0x1B94u, 0x07074000u)); // slot 2: MIN 7 MAG 7, gaussian-3
+            }
+
+            stream.Add((method, parameter));
+        }
+
+        return stream.ToArray();
+    }
+
+    [Fact]
+    public void BackendSeesDecodedSamplerWrapModes()
+    {
+        // The seam carries the *decoded* address mode (0 wrap, 1 mirror,
+        // 2 clamp, 3 border): the raw word assigns 1 to wrap and 2 to mirror,
+        // and the GL backend read it directly (swapping them and clamping
+        // border axes) before this contract existed.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new RecordingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        PushMethods(nv2A, memory, TexturedDrawStream());
+
+        Assert.True(backend.HasLastTexture);
+        Assert.Equal(3, backend.LastTexture0.SamplerWrapU);
+        Assert.Equal(3, backend.LastTexture0.SamplerWrapV);
+        Assert.Equal(0xFF000000u, backend.LastTexture0.BorderColor);
+        Assert.Equal(1, backend.LastTexture2.SamplerWrapU);
+        Assert.Equal(1, backend.LastTexture2.SamplerWrapV);
+    }
+
+    [Fact]
+    public void BackendSeesResolvedTexFilterOnlyWhenRegistersAreEnabled()
+    {
+        // TEXFILTER is opt-in: with the flag off every stage is nearest and
+        // no backend can filter, so the default path is unchanged by
+        // construction. With it on the seam carries the same resolution the
+        // software SamplerPlan uses (tent for MIN/MAG 2 or 4/6/7; the kernel
+        // only counts when MIN selects the convolution).
+        (Nv2AMmio off, ArrayMemory offMemory) = CreateChannel();
+        var offBackend = new RecordingBackend();
+        off.Backend = offBackend;
+        WriteVertices(offMemory);
+        PushMethods(off, offMemory, TexturedDrawStream());
+        Assert.False(offBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, offBackend.LastTexture0.FilterConvolution);
+        Assert.False(offBackend.LastTexture2.FilterBilinear);
+        Assert.Equal(0, offBackend.LastTexture2.FilterConvolution);
+
+        (Nv2AMmio on, ArrayMemory onMemory) = CreateChannel();
+        on.TextureFilterRegisters = true;
+        var onBackend = new RecordingBackend();
+        on.Backend = onBackend;
+        WriteVertices(onMemory);
+        PushMethods(on, onMemory, TexturedDrawStream());
+        Assert.True(onBackend.LastTexture0.FilterBilinear);
+        Assert.Equal(0, onBackend.LastTexture0.FilterConvolution); // kernel next to a tent MIN is ignored
+        Assert.True(onBackend.LastTexture2.FilterBilinear);
+        Assert.Equal(2, onBackend.LastTexture2.FilterConvolution);
     }
 }

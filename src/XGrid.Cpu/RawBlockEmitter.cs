@@ -2041,7 +2041,7 @@ internal static unsafe class RawBlockEmitter
         {
             Assembler a = _a;
             EmitMaterializeFlags();
-            uint descriptor = plan.Immediate & 1u;
+            uint descriptor = plan.Immediate & 3u;
             a.mov(R32(Register.R9D), unchecked((int)descriptor));
             a.mov(R32(Register.R8D), plan.RegIndex);
             EmitParkedHelper(RawHelpers.FpuCompareRegAddress, () =>
@@ -2070,7 +2070,7 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R32(Register.R8D), RamAt());
             }
 
-            uint descriptor = plan.Immediate & 1u;
+            uint descriptor = plan.Immediate & 5u;
             if (plan.SourceSize == 64)
             {
                 descriptor |= 2u;

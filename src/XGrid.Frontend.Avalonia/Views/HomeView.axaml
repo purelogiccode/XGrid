@@ -174,7 +174,7 @@
                                Classes="muted"
                                TextAlignment="Center"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="640 × 480 · software rasterizer"
+                    <TextBlock Text="{Binding Shell.DisplayCaption}"
                                Classes="caption"
                                HorizontalAlignment="Center" />
                   </StackPanel>
@@ -203,6 +203,18 @@
                           IsEnabled="{Binding Shell.IsRunning}"
                           ToolTip.Tip="Power off">
                     <PathIcon Data="{x:Static local:AppIcons.Stop}" Width="14" Height="14" />
+                  </Button>
+                  <Button Classes="ghost"
+                          Command="{Binding StepFrameCommand}"
+                          IsEnabled="{Binding Shell.IsPaused}"
+                          ToolTip.Tip="Advance one frame while paused (F7)">
+                    <TextBlock Text="Frame step" />
+                  </Button>
+                  <Button Classes="ghost"
+                          Command="{Binding StepInstructionsCommand}"
+                          IsEnabled="{Binding Shell.IsPaused}"
+                          ToolTip.Tip="Advance 1,000,000 instructions while paused (Shift+F7)">
+                    <TextBlock Text="Step" />
                   </Button>
                   <Button Classes="subtle" Command="{Binding ChooseDiscCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="7">

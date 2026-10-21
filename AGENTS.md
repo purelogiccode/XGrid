@@ -247,14 +247,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `xboxdash.xbe` (770048 B, `EvoX`, entry `0x12A17`) in partition at `0x465400`.
 - **Avalonia desktop frontend (2026-10-20, `ea8b38f`):** `XGrid.Frontend.Avalonia`
   is a runnable cross-platform dark-theme GUI (Windows/Linux/macOS) over the public
-  `XGrid.Host` API: Home with live software-rasterizer frames, Library
-  (ISO/CHD/XBE scan), Settings (firmware/storage/RAM/JIT/network/library/accent),
+  `XGrid.Host` API: Home with live frames, Library (ISO/CHD/XBE scan), Settings
+  (firmware/storage/RAM/renderer/JIT/NV2A fidelity/network/library/accent),
   Activity log, and About. In-process emulation on a background thread; frames via
-  `Nv2aMmio.TryCopyPresentedFrame` into a `WriteableBitmap`; no WGL dependency.
-  Verified live on the EvoX dashboard plus pause/resume/power cycles and settings
-  persistence. UI-only: no core/CLI/test changes. Design note:
+  `Nv2aMmio.TryCopyDisplayFrame` into a `WriteableBitmap`. Verified live on the EvoX
+  dashboard plus pause/resume/power cycles and settings persistence. Design note:
   `docs/research-notes/avalonia-frontend.md`; run
   `dotnet run --project src/XGrid.Frontend.Avalonia`.
+  **Renderer switch (2026-10-22, §221):** Settings → Renderer offers the portable
+  software rasterizer (default) or the host-GPU OpenGL backend (headless WGL,
+  replacement mode + per-flip readback, created/disposed on the emulation thread;
+  unavailable paths log a reason and stay on software). Measured on gate media at
+  1B through the real session: 34.8 s software vs 24.7 s OpenGL (-29%) with the
+  same picture.
 - NV2A at `0xFD000000`: PFIFO pusher + PGRAPH software rasterizer (M4–M8
   done: inline draws, vertex-program interpreter, textures, zeta/blend
   fragment pipeline, flip present path). `XGrid.Graphics/DisplayFrame`
@@ -604,6 +609,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `3FC4B419…`), ktest log byte-identical. Projected onto §204's 24.8 s menu
   projection: ~23.8 s against the 24 s M-A target. What is left of submission is
   ~0.8 s of block packing, not GL calls.
+- **GL sampler parity + replace-mode composition (219, 2026-10-21):** the GL
+  backend now runs the software sampler - TEXFILTER tent and the nine-tap 1-2-1
+  convolution (MIN = CONVOLUTION_2D_LOD0 only), the *decoded* wrap modes with
+  clamp-to-border (the seam carries `SamplerWrapU/V`/`BorderColor`/`Bilinear`/
+  `Convolution`; the backend had read the raw word, where 1 is wrap and 2 is
+  mirror), the PROJECT2D divide by w, and the clip origin on both fragment axes.
+  In `--gpu-replace` a declined draw composes the FBO into guest RAM and the
+  frame continues in software, so a mixed frame presents the complete image
+  (gap 8 closed: `bump_cubemap_reflect` 3B presents `DA0750EE` = the software
+  frame; depth/stencil are not composed - documented). Both 1B GL goldens stay
+  byte-identical (`B6116DAE` / `7A860ED7`), `BackendUnsupported=0`,
+  `composedFrames=0`, fast anchors unchanged, ktest PASS 7/7.
+
 - **Cubemap reflection + TEXFILTER (§209, 2026-10-21):** `xgu
   bump_cubemap_reflect` renders its reflection (2 colours / 36% black → 21,041
   colours / 0% black, `|dmean|` (5.3, 2.4, 1.3) at 3.6B). The dominant bug was
@@ -617,11 +635,540 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `legacy` keeps every anchor byte-identical; the flag-on menu changes 8.7% of
   pixels with an identical CPU SHA, at 2.4x sw wall because compiled fills
   fall back to the generic loop). 1614 tests.
+- **TEXFILTER convolution gate + compiled tent fill (§210, 2026-10-21):** the
+  2.4x/8.7%-pixels §209 attributed to the tent was a **misapplied convolution**.
+  A TEXFILTER kernel field only convolves when MIN is `CONVOLUTION_2D_LOD0` (7)
+  (`xemu psh.c:197-210`); the dashboard and `bump_cubemap_reflect` program
+  `2/2/1` = tent, no blur. `EffectiveConvolutionKernel` now decodes it once for
+  the sampler and the `filters=` diagnostic (which prints the *effective*
+  kernel). Both compiled fills serve the tent (a shared exact `ReadTapFast` tap
+  reader), so 1B menu `registers` went **79.87 → 31.90 s** (legacy 32.22 s) with
+  `compiled=` identical to the legacy leg, and triangle 10.53 → 11.66 s. The
+  flag now moves **no gate anchor**: triangle RAM/CPU/frame identical, menu
+  flipped frame byte-identical to `4EF1FBF6…` (only the back surface differs).
+- **Fixed-function vertex stage (§213, 2026-10-21, opt-in `--ffp`):** the NV2A
+  "cheops FF" vertex stage (transform, 1-4-matrix skinning, texgen, texture
+  matrix, color selection, eye-space fog, screen-space epilogue) transcribed from
+  `xemu 0.8.137 vsh-ff.c`, with the register decodes and
+  `FixedFunctionDraws`/`FixedFunctionLitDraws` counters (snapshot **v6**). The
+  two `xgu *_ffp` corpus rows render their scenes (2 → 7,358 and 26 → 7,601
+  colours, CPU SHAs unchanged); the triangle's 1B RAM/CPU/frame anchors are
+  byte-identical with the flag on, the dashboard's menu anchors move (22,207 of
+  its draws are fixed-function). Lit draws run the material/ambient/emission
+  chain; the enabled-light loop is filed and counted in `fixedFnLights=`.
+- **Fixed-function lighting + PTIMER 0.8.137 (215-216, 2026-10-21):** the
+  fixed-function vertex stage is now complete - the enabled-light loop
+  (infinite/local/spot, `1/(a0 + a1 d + a2 d^2)` attenuation, the spot cone,
+  the `LOCALEYE` view vector) and the reconstructed specular exponent, behind
+  the same opt-in `--ffp`; no measured leg enables a light (`fixedFnLights=0`).
+  PTIMER now models the 0.8.137 alarm: writable `TIME_0/1` offset, `ALARM_0`
+  with the 2^32 re-arm, the alarm `INTR_0` bit and `NV_PMC_INTR_0_PTIMER`
+  (bit 20). NV2A snapshot v6 -> **v8**. Every gate anchor stayed byte-identical.
+- **Track P (217, 2026-10-21):** the frontend exposes `--ffp` and The APU sample counter
+  `NV_PAPU_XGSCNT` (0x200C) is now derived from the EP frame divider too,
+  which moved the menu RAM anchors (218; see the session note).
+  configured firmware image stays a read-only seed; CLI `--eeprom-out`).
+  `tests/XGrid.Frontend.Tests` (15 tests) is the frontend test project.
+- **GL TEXFILTER parity (219a, 2026-10-21):** `Nv2AMmio.DecodeTextureFilter`
+  is the single TEXFILTER decode (LOD-0 tent + the effective PROJECT2D
+  convolution), `PgraphTextureSlot.FilterBilinear`/`FilterConvolution` carry it
+  to the backend, and `PshGlslGenerator` emits `SampleTent` (`SampleBilinear`
+  transcribed) / `SampleConvolved` (nine-tap 1-2-1) behind per-slot uniforms
+  `uTexFilter`/`uTexConv`. Gap 7 closed; both GL goldens byte-identical.
+- **GL replace-mode composition (219b, 2026-10-21):** a draw the backend
+  declines is painted in software, so the flip drops the FBO and the present
+  upload rebuilds the whole frame from guest RAM (`composeUploads=`). The
+  cubemap corpus row's replace leg now presents `DA0750EE…` = the software
+  anchor (gap 8).
+- **A clear ignores the draw write masks (219c, 2026-10-21):** `ClearCore`
+  lifts `glColorMask`/`glDepthMask`/`glStencilMask` for the clear and
+  invalidates the state shadow; pinned by `ClearMaskLiveTests` (fails pre-fix)
+  and two `Nv2aZetaClearLayoutTests` cases.
+- **Per-title overrides V2 (219d, 2026-10-21):** `XGrid.Host.DiscTitleId` reads
+  the XBE certificate title id from a loose `.xbe` or an ISO's root
+  `default.xbe`; overrides can be keyed `title:XXXXXXXX` and the session logs
+  the resolved title. A CHD has no XDVDFS reader yet and falls back to the path
+  key. CLI `xgrid disc title <path>` prints the id/key. Caveat: homebrew images
+  that never set a certificate id share the placeholder (`0xFFFF0002`).
+
+- **Track P/B: the frontend on the host GPU backend (§221/§223, 2026-10-21):** the
+  Avalonia frontend has a **Renderer** setting — `Software rasterizer` (default,
+  portable) or `OpenGL backend` (`--gpu gl --gpu-replace`, Windows only).
+  `Nv2AMmio.GpuMemory` exposes the machine's guest-memory adapter, the new
+  frontend `GraphicsBackendHost` attaches `GlBackendFactory` on the emulation
+  thread (`replaceSoftware`, `frameReadback`) and detaches it in the session's
+  `finally`; frames still arrive through `TryCopyDisplayFrame`. Snapshot
+  save/load is now marshalled onto the emulation thread (a load resets backend
+  state and a GL context belongs to its thread). Measured on the dashboard (40 s
+  interleaved pairs): **software 1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B
+  (+9.8% / +8.2%)**, same non-black pixel count, working 72 MB save/load round
+  trip; the CLI's 1B menu leg is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
+  The software default is byte-identical everywhere (all four 1B anchors exact,
+  ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1614 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1812 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-second; the GL sampler decodes the texture
+address word, a composed replace-mode frame keeps both writers, and the
+frontend can step frames - decisions §220). Every gate anchor stayed
+byte-identical; all changes are host-side plus seam fields.**
+
+- **Gap 7 closed on the GL side (§220b/§220c).** The seam now carries resolved sampler
+  state (`SamplerWrapU/V` - 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border -,
+  `BorderColor`, plus §219a's `FilterBilinear`/`FilterConvolution`), filled by the same
+  `Nv2AMmio.ResolveTextureFilter` helper the software `SamplerPlan` uses (§219a's
+  static decode folded into it). The
+  GL backend had read the *raw* address word, so its wrap/mirror were swapped
+  and border clamped; the menu programs slot 1 wrap 3,950x and slot 3 border
+  80x (usage histogram). `PshGlslGenerator` now emits `SampleTap` (border +
+  wrap), the four-tap tent (`SampleBilinear` arithmetic), the nine-tap 1-2-1
+  `SampleConvolved` (PROJECT2D only, MIN = CONVOLUTION_2D_LOD0), the PROJECT2D
+  divide by w, and the clip origin on **both** fragment axes (`px += T(2).w`;
+  only `ClipY` was added, so `ClipX != 0` compared absolute vertices against
+  clip-relative `gl_FragCoord`). Measured on `xgu vp_lighting` 3B (the only
+  fractional-texcoord row with zero declined draws): gl vs sw agree within one
+  8-bit step in **both** filter states (legacy `E68070A3` vs `72B2F490`,
+  registers `A9E09139` vs `CF698444`, dmean <=0.01, maxDelta 1), and the flag
+  moves both by the same ~6.5%/maxDelta 80. The menu cannot discriminate
+  (texel-centre sampling) and its registers leg is the same `B6116DAE`.
+- **Gap 8 closed (§220d, supersedes §219b): one writer per frame.** In `--gpu-replace`, the first
+  declined draw now composes the FBO's clip window into the guest color
+  surface (new seam fields `PgraphDrawInfo.ColorSurfaceAddress`/`ColorPitch`,
+  the software fill's own address expression), every later draw of that frame
+  is declined too, and the flip drops the FBO so the present-upload path
+  rebuilds it from RAM (`composeUploads` is gone; the counters are
+  `composedFrames`/`composedPixels`/`composedDraws`). Depth/stencil are not composed (GL depth is host-side)
+  - documented. `xgu bump_cubemap_reflect` 3B `-Gpu gl -GpuReplace` now presents
+  **`DA0750EE` = the software frame** (was the clear only, `3553B0DF`), with
+  `composedFrames=7`, `composedPixels=2,150,400`, `BackendUnsupported=7`, CPU
+  SHA unchanged (`D5D38C64`).
+- **Track P: frame stepping (§220e).** Home has "Frame step" and "Step"; `F7` advances
+  one presented frame (8M-instruction budget so an idle guest cannot hang the
+  UI), `Shift+F7` advances 1,000,000 instructions. `EmulatorSession.StepFrame`/
+  `StepInstructions` set a budget and release the pause gate; the loop consumes
+  it in batches and re-closes the gate (compare-exchange budget so a second
+  click keeps its own step). About page + README list the keys.
+- **Gates:** menu 1B accurate golden PASS (sw `4EF1FBF6`, gl `B6116DAE`,
+  counters 33,632/686/686, `BackendUnsupported=0`, `composedFrames=0`);
+  triangle slice-2 golden PASS (sw `A1740DE0`, gl `7A860ED7`, 2,706/68/34);
+  menu `--tex-filter registers` sw-vs-gl policy PASS; Nv2a 391 green, GpuGl 92
+  green; format clean. New: `scripts/gpu-slice1-golden.ps1
+  -TexFilter legacy|registers` (+ a generic `-Extra`), `diag[composedFrames=
+  composedPixels= composedDraws=]`. Decisions §219 + §220; `compatibility.md` gaps 7/8.
+**Session 2026-10-22 (twenty-third; the GPU renderer is a frontend setting + the
+CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
+
+- **The app can render on the host GPU (§221).** Settings → *Renderer*: software
+  (default, portable) or OpenGL. `EmulatorSession` creates the headless WGL
+  context on the emulation thread, attaches it in replacement mode with the
+  per-flip readback on, and logs the probe line; any failure (non-Windows,
+  probe, GL version) logs the reason and the session stays on software - never a
+  mix, never a silent downgrade. `DetachRenderer` clears `Nv2A.Backend` and
+  disposes the context in the session's `finally`.
+  The display source follows the renderer: software keeps the RAM scanout,
+  OpenGL shows the backend readback, and the one shape with no backend frame
+  (direct-framebuffer guests that never flip) is read through the new
+  `Nv2AMmio.TryCopyScanoutFrameFromMemory` lane *until* the first backend frame.
+  **Measured through the real `EmulatorSession` on gate media, 1B:** software
+  34.8 s / 687 flips / 306,817 non-black px; OpenGL 24.7 s / 688 flips / the same
+  pixel count, |dmean| ≈ 0.005 (2,385 of 307,200 px differ, mostly the one-flip
+  offset). The app's own window was not re-verified live this session (this agent
+  environment has no interactive desktop - the process starts and exits cleanly
+  with no crash event); the seam that owns the feature, `EmulatorSession`, was
+  driven for real.
+- **One guest-memory adapter (§221a).** `Nv2AMmio.GpuMemory` exposes the
+  `IGpuMemory` the device was built with, and the CLI now passes it to
+  `GlBackendFactory` instead of its own duplicate `MachineGpuMemory` (deleted).
+  The 1B menu GL golden re-ran byte-identically (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px / maxDelta 1 / violations 0, counters 33632/686/686,
+  `BackendUnsupported=0`).
+- **CHD title id (§222).** Per-title override V2 could not resolve a CHD, so CHD
+  libraries fell back to path keys. `XGrid.XboxFs.XdvdfsSectorReader` walks the
+  XDVDFS volume over any `IDvdImage` (descriptor at partition sector 32, magic at
+  +0x00/+0x7EC, root table at +20/+24, `14 + nameLen` entries, the `0xFFFF`
+  sector-pad sentinel, the XGD disc-offset probe list), bounded so a corrupt
+  table reports "no file". `DiscTitleId.TryRead` resolves `.chd` via
+  `ChdDvdImage.Open` + the new `DiscTitleId.TryReadImage(IDvdImage, …)` seam.
+  **Differential check on real images** (scratch, not committed): six ISOs
+  (`wt-data/xemu-tri/triangle.iso` + five corpus samples) return exactly the id
+  the XISOSharp path returns (`FFFF0002`). No CHD exists on this host, so the
+  container hand-off itself is covered by an in-memory `IDvdImage` test, not by
+  a real CHD run - keep that in mind before claiming CHD support generally.
+- **Doc correction:** `docs/research-notes/xisosharp.md` said the descriptor's
+  trailing magic sits at `+0x7F4` (8 bytes past the sector end); it is `+0x7EC`.
+- **New diagnostic `unsupTex[...]`** on the GL line: which texture modes the
+  declined replacement-mode draws asked for (slot counts). The cubemap row at 3B
+  reads `unsupTex[m0C=14 m11=28]` - DOT_REFLECT_SPECULAR plus DOT_PRODUCT on two
+  earlier stages - i.e. B3 method coverage needs both families, not just the
+  reflection. Counters, frames and SHAs are unchanged by the diagnostic
+  (cubemap frame still `DA0750EE…`).
+- **Gates:** 1B accurate menu frame `4EF1FBF6…` and triangle frame `A1740DE0…`
+  anchors unchanged (neither slice touches guest-visible behavior),
+  `format --verify-no-changes` clean, ktest smoke PASS 7/7 at **792,800,535**
+  steps with the 40,797-byte suite log `CA5D3867…` byte-identical.
+  Suite 1738 -> **1757** (Nv2a +4, Frontend +3, XboxFs +9, Integration +3).
+
+**Session 2026-10-21 (twenty-fourth; renderer policy seam, snapshot requests on
+the emulation thread, frontend smoke harness - decisions §223).**
+
+- **The renderer decision is pure and testable.** `RendererPolicy.Decide`/
+  `Describe`/`Normalize` (frontend `Services/`) owns the platform policy (OpenGL
+  only on Windows) and `GraphicsBackendHost.TryAttach`/`Detach` perform the side
+  effects; `EmulatorSession` calls the host and logs its one-line detail. The
+  setting's key space stays `EmulatorSettings.Renderer` (`software`/`opengl`),
+  so there is one persisted vocabulary.
+- **Snapshot save/load moved onto the emulation thread.** A load calls
+  `Nv2AMmio.LoadState -> Backend?.ResetState()` (GL calls), which is illegal off
+  the context's thread; requests are queued and served by the loop between
+  batches (and during a pause, whose gate wait is now a 50 ms timed wait), with a
+  60 s ceiling and explicit failure of requests still queued at exit.
+- **Measured in-app (dashboard, fast mode, interleaved 40 s pairs):** software
+  1.014B / 1.021B steps vs OpenGL 1.121B / 1.106B = **+9.8% / +8.2% guest
+  throughput**, identical 306,817 non-black pixels, and a 72 MB `.xgs` round trip
+  with GL attached. The CLI's 1B menu leg remains the ceiling (-30.9%).
+- **`tools/frontend-smoke`** (new) drives a real `EmulatorSession` headlessly and
+  prints steps/wall/frame SHA per renderer - the harness behind those numbers.
+- **Gates unchanged** (host-side only); suite grows by the frontend rows.
+
+**Session 2026-10-22 (twenty-fifth; per-title renderer, one GPU-memory adapter,
+`KeyedOption` collapse - decisions §224).**
+
+- **Per-title renderer.** `TitleOverride.Renderer` (same `software`/`opengl`
+  vocabulary as the global setting) pins one title to the other renderer; the
+  settings row offers `inherit` / `software` / `OpenGL`, and
+  `EmulatorSettings.WithTitleOverride` merges it into the boot snapshot, so a
+  title can opt into the GPU path without changing the global default.
+- **`XboxMachine.GpuMemory`.** The machine publishes the `PhysicalGpuMemory` the
+  NV2A itself uses; the CLI passes it to `GlBackendFactory` instead of wrapping
+  `Memory` again, so the device and every backend share one GPU-writer
+  suppression and present-dirty watch.
+- **One option type.** `NetworkOption`/`TextureFilterOption`/`RendererOption`
+  collapsed into `KeyedOption` (key + label + optional hint); the Settings XAML
+  template binds `KeyedOption`.
+- **Also:** the six Avalonia `AVLN5001` obsolete-`Watermark` warnings are fixed
+  (0 warnings now), and the frontend tests cover the per-title renderer merge
+  (`RendererSettingTests`) plus the one-adapter rule (`MachineGpuMemoryTests`).
+
+**Session 2026-10-21 (twenty-sixth; CPU correctness campaign - five instruction
+bugs, one decoder bug, three missing/mismatched shapes; gate titles unchanged).**
+
+- **The differential was widened, and it paid off.** `tools/cpu-oracle/` went
+  from 333 to **629 cases** (sign-sensitive patterns for every MMX/SSE1 packed
+  op, every saturating shift count, the x87 transcendentals/environment, 16-bit
+  addressing, segment overrides, `LOCK`, and string/stack edges; the test's
+  memory size is now derived from the case count, `CpuOracleTests.MemorySizeFor`).
+  Nine defects fell out, each fixed and pinned:
+  1. **`PMINSW`/`PMAXSW` were unsigned.** `0F EA`/`0F EE` were decoded as invented
+     `Pminuw`/`Pmaxuw` and compared with the *unsigned* word rule, so every
+     negative lane took the wrong side. Renamed to `Pminsw`/`Pmaxsw` with a
+     signed compare.
+  2. **`PSRAW`/`PSRAD` count saturation** sign-filled from the low element only
+     (one fill for the whole register) instead of per element.
+  3. **`XLAT` (`D7`) was not decoded at all.** Added (decode + execute; the
+     offset is `(E)BX + AL` with the 16-bit wrap, DS or a segment override).
+  4. **16-bit addressing `[SI]`/`[DI]` ate a bogus disp16** (`mod=00 rm=4/5`),
+     desynchronizing the instruction stream - only `mod=00 rm=6` is the disp16
+     form. This one was a decoder bug, not a missing shape.
+  5. **x87 NaN stores flipped the sign and dropped the payload** because the
+     conversion went through .NET's `double.NaN` (the *negative* quiet NaN).
+     `Fpu80.FromSingleBits`/`FromDoubleBits`/`ToSingleBits`/`ToDoubleBits` carry
+     sign + payload; a signaling NaN survives `FLD`/`FSTP` unquieted.
+  6. **`FUCOM`/`FUCOMP`/`FUCOMPP`/`FUCOMI`/`FUCOMIP` latched IE for a quiet
+     NaN**; only a signaling NaN may signal on a quiet compare. Propagated to the
+     spec handlers and the raw-emitter descriptor (bits 1/2).
+  7. **`FSQRT` of a negative value** now sets C2 (SDM 8.3.2) with the invalid flag.
+  8. **`MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the destination on equal
+     operands**; the ISA returns the source, which decides the sign of a
+     `+0.0`/`-0.0` pair.
+  9. **Corpus hygiene:** three cases read an absolute low address another case
+     had written (the CI harness reuses one image, the oracle maps a fresh one).
+     Every case is page-relative now, and the rule is in the oracle README.
+- **Nothing changed on the gate titles.** Both 1B accurate goldens PASS
+  byte-identical (menu sw `4EF1FBF6…` / gl `B6116DAE…`, violations 0, counters
+  33632/686/686; triangle sw `A1740DE0…` / gl `7A860ED7…`, counters 2706/68/34),
+  the fast anchors are exact (triangle `B45254CA`/`7DAB63EB` 10.9 s, menu
+  `34973510`/`F5D61C94` 32.0 s), and the ktest smoke is PASS 7/7 at
+  **792,800,535** steps with the 40,797-byte log byte-identical (`CA5D3867…`).
+  No snapshot version change (no device state).
+- **Suite 1738 -> 1762** (CPU project 643 -> 667; 18 of the 23 new behavior
+  tests fail on the pre-fix source, proven by stashing `src/XGrid.Cpu`).
+  Deliberately out of scope and documented: no SSE2 (the CPU is a Pentium III,
+  so the 128-bit packed-int forms must stay rejected), `FSTENV`/`FSAVE` pointer
+  metadata, the reference's `0/0` ZE-vs-IE class, and `FSQRT`-negative IE.
+  Details: decisions §225; caveats: `tools/cpu-oracle/README.md`.
+
+**Session 2026-10-21 (twenty-first; GL TEXFILTER parity + replace-mode
+composition + clear masks + per-title overrides V2). Four slices, every gate
+anchor byte-identical.**
+
+- **GL TEXFILTER parity (§219a, gap 7 closed).** The GL backend was nearest-only.
+  `Nv2AMmio.DecodeTextureFilter` is now the *single* decode of a TEXFILTER word
+  (LOD-0 tent for MIN/MAG 2/4/6/7; the effective convolution only when MIN is
+  `CONVOLUTION_2D_LOD0 (7)`, §210a) used by both `SamplerPlan` and the new
+  `PgraphTextureSlot.FilterBilinear`/`FilterConvolution`. The shader gained
+  `SampleNearest`/`SampleTent`/`SampleConvolved` (transcriptions of
+  `SampleBilinear`/`SampleConvolved`, same tap step, per-tap wrap), dispatched
+  by per-slot uniforms `uTexFilter`/`uTexConv` - not the program key, so nothing
+  re-compiles and the default (0) path is the same `texelFetch`. The GLSL string
+  goldens were regenerated. `filters=2/2/0` on the triangle means the tent path
+  runs there under `--tex-filter registers`, and `BackendUnsupported=0`.
+- **GL replace-mode composition (§219b, gap 8 closed).** `TryDraw` returning
+  false in replacement mode now sets "software painted since the last flip"; the
+  flip drops the FBO and the existing present-upload path rebuilds the whole
+  presented surface from guest RAM (all-or-nothing, never a mix). New diagnostic
+  `composeUploads=`. Measured on `xgu-bump_cubemap_reflect` 3B
+  `-Gpu gl -GpuReplace`: `unsupported=14` (unchanged), `composeUploads=7`,
+  `presentUploads=7`, presented frame **`DA0750EE…` = the software anchor**
+  (was clear-only), 10.4 s.
+- **A clear ignores the draw write masks (§219c).** `Nv2AMmio.FillSurface` writes
+  the clear value verbatim, but GL's `glClear` honors `glColorMask`/
+  `glDepthMask`/`glStencilMask`. `ClearCore` now lifts all three for the clear
+  and invalidates the state shadow so the next draw re-uploads them.
+  `ClearMaskLiveTests` (live GL) **fails on the pre-fix build** (masked clear
+  wrote nothing) and also proves the masks are restored; two
+  `Nv2aZetaClearLayoutTests` cases pin the software rule.
+- **Per-title overrides V2 (§219d).** `XGrid.Host.DiscTitleId` reads the XBE
+  certificate title id from a loose `.xbe` or an ISO's root `default.xbe` (a CHD
+  reports false - no XDVDFS reader for it yet - and the caller keys by path).
+  `EmulatorSettings` gained `TitleIdKey`/`TryParseTitleIdKey`/
+  `CanonicalTitleKey`, `FindTitleOverride(path, titleId)` (title key wins, path
+  falls back), canonicalization in `Normalize()` (unparsable title keys are
+  dropped), the settings row text (`NAME (Title XXXXXXXX)` / "applies wherever
+  this title id is launched"), a power-on log line
+  `Title XXXXXXXX · NAME (per-title override applied)`.
+  CLI `xgrid disc title <path>` prints the id and the `title:XXXXXXXX` key.
+  Caveat: homebrew images that never set a certificate id share the
+  placeholder `0xFFFF0002` (every nxdk/xgu sample), so a path-keyed row is
+  still the way to tell two such images apart.
+- **Gates:** accurate 1B menu slice-1 golden PASS (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px / maxDelta 1 / violations 0, counters
+  33632/686/686) and triangle slice-2 golden PASS (sw `A1740DE0…`, gl
+  `7A860ED7…`, diff 27849 / violations 0, counters 2706/68/34), both with
+  `BackendUnsupported=0` and `composeUploads=0` (mirror mode never composes).
+  Suite 1717 -> **1738**; format clean.
+**Session 2026-10-21 (twentieth; gap 6 lighting + PTIMER 0.8.137 + APU XGSCNT +
+two Track P features). Four landed slices; frames, CPU SHAs and every
+counter stayed exact, and the two menu **RAM** anchors were re-recorded.**
+
+- **Fixed-function lighting (215).** The enabled-light loop is in:
+  `FixedFunctionVertex.ApplyLight` runs infinite/local/spot with range
+  rejection, `1/(a0 + a1*d + a2*d^2)` attenuation, the spot cone bands and the
+  `LOCALEYE` view vector; `SpecularPowerCurve` transcribes
+  `reconstruct_specular_power` (low-power shortcut, nine-segment fit with the
+  growth-rate variant, half-power extension, positive-coefficient guard);
+  `FixedFunctionVertexState` latches all eight lights (`SET_LIGHT_*` window,
+  0x80-byte stride, four-word spot direction) and the six
+  `SET_SPECULAR_PARAMS` words. Snapshot v6 -> v7. **No measured leg enables a
+  light** (`fixedFnLights=0` everywhere), so every gate is byte-identical:
+  triangle 1B `B45254CA`/`7DAB63EB` (57,663,082 px; `--ffp` 78,792,545 px),
+  menu `51B56687`/`F5D61C94` (253,998,498 px; `--ffp` `87BF40DA`, 375,569,329).
+  +18 tests (`Nv2aFixedFunctionLightingTests`).
+- **PTIMER (216).** The 0.8.137 alarm model: 61-bit register time with a
+  writable offset (`TIME_0`/`TIME_1` writes), numerator/denominator reset 1/1,
+  `ALARM_0` (0x420) armed with `get_next_alarm_time` (one 2^32 roll when not
+  strictly future), the alarm's own `INTR_0` bit with re-arm, the unconditional
+  read-latch, the immediate raise on enable, and `NV_PMC_INTR_0_PTIMER`
+  (bit 20) in the aggregate. Polled from `Advance(coreTicks)` (the core clock is
+  the clock source). Snapshot v7 -> v8. Both 1B gates byte-identical again.
+  +14 tests (`Nv2aPtimerTests`).
+- **Track P (217).** `--ffp` and `--tex-filter registers` are now reachable from
+  the Avalonia Settings page (CLI defaults preserved), per-title overrides
+  (V1 keyed by image path, `WithTitleOverride` merge + a Settings list with
+  `ffp`/`filter`/`inherit` toggles) and **persistent EEPROM state**: the guest's
+  user settings live in `<data dir>/eeprom.bin` while the configured firmware
+  image stays a read-only seed; `--eeprom-out <path>` exports the live image
+  from the CLI. New `tests/XGrid.Frontend.Tests` project (15 tests) covers the
+  settings model and the EEPROM store; `MachineEepromTests` (+3) and
+  `SmbusTests` (+2) cover the host/device copy path.
+- **APU `NV_PAPU_XGSCNT` (218).** Offset 0x200C now returns
+  `_epFrameDiv * 32` instead of the guest-written word (reference
+  `apu.c` + `apu_regs.h`: a 48 kHz sample counter, read-only). +3 tests
+  (`ApuFrameCounterTests`). **Anchor effect measured:** the 1B dashboard
+  reads it during audio init and stores the value, so its RAM image moves
+  while nothing else does - accurate menu RAM `01BE5D64` -> `6AB39AB0`
+  (CPU `3D2740B8`, frame `4EF1FBF6`, counters 33632/686/686 all identical),
+  fast menu RAM `51B56687` -> `34973510` (CPU `F5D61C94`), triangle
+  unchanged (`812EA159`/`2F632483`/`A1740DE0`), ktest suite log
+  byte-identical (`CA5D3867`, 792,800,535 steps). Precedent for a RAM
+  re-record: 206g/109; frames, CPU SHAs and counters are the invariants.
+- **Suite 1662 -> 1717 tests** (218 adds 3), `boot-to-first-frame.ps1` gained
+  `-TexFilter legacy|registers`. Gate evidence this session: menu slice-1
+  accurate golden PASS (sw `4EF1FBF6.`, gl `B6116DAE.`, violations 0,
+  `BackendUnsupported=0`, counters 33632/686/686), triangle slice-2 golden
+  PASS (`A1740DE0.` / `7A860ED7.`), ktest smoke PASS 7/7, fast 1B anchors
+  exact on both titles (with and without `--ffp`); the menu RAM numbers in
+  the 215 bullet are pre-218.
+
+**Session 2026-10-21 (nineteenth; compatibility gap 6 closed behind `--ffp`, §213).
+The fixed-function vertex stage exists, both `xgu *_ffp` corpus rows render their
+scenes, and the gate titles stay byte-identical.**
+
+- **What was missing, measured.** `xgu distance_fog_ffp` and `xgu spheremap_ffp`
+  set `SET_TRANSFORM_EXECUTION_MODE` to FIXED (0) and upload matrices into the XF
+  constant context instead of loading a program; XGrid ran whatever program was
+  resident, so both rendered flat backgrounds. The same mode is used by the EvoX
+  dashboard: **22,207** of its 33,632 draws per 1B steps are fixed-function (the
+  triangle: 39, all lit).
+- **Landed:** `FixedFunctionVertex` + `FixedFunctionVertexState` (transform,
+  1..4-matrix skinning with the summed-weight modes, normalize, all six texgen
+  modes per stage/channel, texture matrix, texture-matrix enable, color/specular
+  selection, eye-space fog distance, the `clampAwayZeroInf`/1-16-truncation
+  position epilogue) transcribed from `xemu 0.8.137 vsh-ff.c`; the register
+  decodes (`SET_LIGHT_CONTROL`, `SET_COLOR_MATERIAL`, `SET_LIGHTING_ENABLE`,
+  `SET_SKIN_MODE`, `SET_NORMALIZATION_ENABLE`, `SET_SPECULAR_ENABLE`,
+  `SET_LIGHT_ENABLE_MASK`, `SET_TEXGEN_S/T/R/Q`, `SET_TEXTURE_MATRIX_ENABLE`);
+  `FixedFunctionDraws`/`FixedFunctionLitDraws` diagnostics; snapshot v5 -> **v6**;
+  CLI `--ffp`; `boot-to-first-frame.ps1 -Ffp`.
+- **It is opt-in on purpose.** Mode-0 draws used to run the resident program, so
+  the flag changes the dashboard's picture (its menu background *is* that layer -
+  the scanout leg shows the clean EvoX background). Measured 1B H1: menu flag-off
+  RAM `51B56687` / CPU `F5D61C94`, 253,998,498 px, 30.9 s; flag-on RAM
+  `87BF40DA` / **CPU `F5D61C94`**, 375,569,329 px, `fixedFn=22208`, 59.0 s.
+  Triangle flag-off and flag-on **both** RAM `B45254CA` / CPU `7DAB63EB` with the
+  gate frame `A1740DE0` byte-identical (only host counters move). No oracle frame
+  exists for the dashboard's fixed-function layer, so the default stays off.
+- **Blast radius measured on the whole corpus** (13 rows, 1B, `-Corpus` vs
+  `-Corpus -Ffp`): every row's RAM moves (the boot animation is FFP-drawn) and
+  pixels go 42.0M -> 63.1M at +3.5-4 s, while **every CPU SHA and every
+  frame/scanout/display SHA stays identical**; the flag-off sweep reproduces
+  every documented row anchor (`gamma` `4EE18F78`, `hello` `4650454F`, `led`
+  `3D1F72DB`, `mesh` `D6A41BAC`, `xaudio` `B0C863C5`).
+- **Corpus rows (3B, BTFF):** `spheremap_ffp` 2 colours -> **7,358** (mean
+  (27.8, 16.3, 163.1), 4.9% black), RAM `B5747761` -> `8062CFB5`, CPU unchanged
+  `F0075C2F`; `distance_fog_ffp` 26 -> **7,601** colours (mean (129.4, 50.2,
+  37.4)), RAM `AFF08085` -> `12BAD517`, CPU unchanged `571363B4`.
+- **Lighting was the remaining slice and is now half landed, counted not faked:**
+  every lit draw seen so far runs with all lights off and specular off, so the
+  material/ambient/emission chain is implemented (below) and the enabled-light
+  loop (three light types, `reconstruct_specular_power`) stays filed in §213b,
+  counted in `fixedFnLights=`.
+- **Lighting: the material chain landed, the light loop did not.** Lit draws now
+  run the reference's ambient/emission chain (`SET_SCENE_AMBIENT_COLOR`,
+  `SET_MATERIAL_EMISSION`, `SET_MATERIAL_ALPHA`, the three-way source selections
+  and the alpha rule); a lit draw with an *enabled* light keeps the chain without
+  the light terms and increments `fixedFnLights=`. Every lit draw measured so far
+  has all lights off (`fixedFnLights=0`), so the landing is behavior-neutral on
+  every gate and corpus leg - verified: triangle 1B `--ffp` RAM/CPU/frame still
+  `B45254CA`/`7DAB63EB`/`A1740DE0`, menu `--ffp` still `87BF40DA`/`F5D61C94`
+  (frame `C5B734A2`), both `xgu *_ffp` rows identical.
+- **Gates:** accurate 1B menu `01BE5D64`/`3D2740B8` + frame `4EF1FBF6`, triangle
+  `812EA159`/`2F632483` + frame `A1740DE0`; fast menu `51B56687`/`F5D61C94`
+  (rasterPsh 10.75 s), triangle `B45254CA`/`7DAB63EB`; GL slice-1 `PASS`
+  (gl `B6116DAE`, violations 0, `BackendUnsupported=0`) and slice-2 `PASS`
+  (gl `7A860ED7`); ktest smoke **PASS 7/7** at **792,800,535** steps with the
+  40,797-byte log `CA5D3867` byte-identical; suite 1625 -> **1662** (+33 FFP,
+  +4 zeta); format clean.
+- **§214: the Z24S8 clear-word layout is a verified no-bug**, not the §211f
+  suspect: every consumer reads depth = bits 8-31 / stencil = bits 0-7, now
+  pinned by `Nv2aZetaClearLayoutTests` (synthetic stencil differential: ref
+  `0x74` draws, ref `0x00` rejected, zpass REPLACE writes the low byte and keeps
+  the depth field). The gate titles' `0xFFFFFF00` clear agrees on depth under
+  either reading, which is why only a synthetic test could settle it.
+
+**Session 2026-10-21 (eighteenth; compatibility gap 10 diagnosed, §211). The
+`bumpenv_ripple` black frame is a **state** answer, not a rasterizer bug - and the
+one change landed is a convolution fix on linear texture stages.**
+
+- **Diagnosis first, and it exonerates the renderer.** Replayed from the presented
+  surface back to the guest's method stream with temporary flip/draw/fragment
+  probes (all removed before committing; `git status` shows only the two intended
+  files). Chain: all **216** presented surfaces are uniformly `FF000000` (the
+  colour clear); each frame issues exactly **two** 4-vertex `Arrays` quads with
+  vertex program `0+18` that writes only oPos and oT0/oT1 (**no oD0**), under a
+  one-stage combiner that sets **`V0 = T1`** with final **`D = V0`** - so the
+  visible colour *is* the stage-1 texel. Draw A (`m0100`) never resolves stage 1
+  (mode `NONE`), so `T1` keeps `(0,0,0,1)`: black by construction, as in the
+  reference. Draw B (`m1600`) is BUMPENVMAP and its math is faithful
+  (`dsdt = (sign3(t0.b), sign3(t0.g))` off the `0x28` map, matrix
+  `(0.062,0,0.062,0)`), but the perturbed coordinate at the quad's right edge
+  (`1.0054, 0.9938`) clamps onto the logo texture's `FF000000` edge texel.
+- **The zeta clear is what hides the geometry.** The app clears zeta to
+  `0x00711174` (depth ~0.44 low-24-bit, ~0.0017 under the reference's `>> 8`
+  layout) with `LEQUAL` while every fragment is at z ~ 0.5, so nothing passes.
+  Forcing the clear far **or** disabling the depth test yields the identical
+  frame - **406 colours, 96.9% black, mean (5.5, 4.2, 2.3)** - i.e. the plane's
+  screen footprint (a wedge), not the reference's full-screen reflection. Culling
+  additionally drops one triangle of each quad (pixels 42.0M -> 73.5M with culling
+  off, frame still black).
+- **Filed, each needing its own differential:** the Z24S8 clear-word layout
+  (`pgraph_get_clear_depth_stencil_value` puts the stencil in the **low** byte,
+  XGrid in the high byte; the gates clear `0xFFFFFF00` where the stored depth
+  agrees and the stencil does not), the cull winding on those quads, and the app
+  state the reflection needs (gap 9's second-emulator frame).
+- **Landed: §212, the convolution tap step on linear (LU_IMAGE) stages.**
+  `SampleConvolved` added `1/Width` in normalized units on every stage, i.e.
+  `1/Width` of a texel where a linear stage's coordinate is a texel index, so all
+  nine taps read one texel. One texel per tap now (`psh.c
+  apply_convolution_filter` normalizes a rect coordinate first). Test
+  `TextureFilterRegisters_ConvolutionOffsetsOneTexelOnLinearTexture` plus a new
+  linear harness: an impulse centre reads **195 pre-fix -> 64 post-fix** (255 *
+  4/16), and a kernel field next to MIN 1 still reads sharp. Only reachable under
+  `--tex-filter registers` with MIN 7, so no anchor can move.
+- **Gates (landing commit):** accurate 1B menu `01BE5D64…`/`3D2740B8…` + frame
+  `4EF1FBF6…`, triangle `812EA159…`/`2F632483…` + frame `A1740DE0…`; GL policy
+  frames `B6116DAE…`/`7A860ED7…` with `violations=0 maxDelta=1
+  BackendUnsupported=0` and identical counters (`33632/686/686`, `2706/68/34`);
+  fast 1B menu `51B56687…`/`F5D61C94…` (31.16 s, `rasterPsh` 10.84 s) and triangle
+  `B45254CA…`/`7DAB63EB…` (10.49 s); ktest smoke **PASS 7/7** at **792,800,535**
+  steps with the 40,797-byte log `CA5D3867…` byte-identical; suite 1624 ->
+  **1625**; format clean. `gpu-slice1/2-golden.ps1` still default to
+  `wt-data\xbox_hdd.qcow2`, which does not exist on H1 - pass
+  `-Hdd wt-data\chain-199l\hdd.qcow2`.
+
+**Session 2026-10-21 (seventeenth; the TEXFILTER convolution gate + compiled tent
+fill, §210). The "2.4x filter cost" was a misapplied blur, and fixing it made the
+flag free and invisible on both gate titles.**
+
+- **Measured before building.** Option A was "teach the compiled fills the
+  bilinear tap". A 1B menu leg with `--tex-filter registers` printed
+  `filters=2/2/1` - MIN = TENT_LOD0 **and** a kernel field - and the reference
+  only convolves when MIN is `CONVOLUTION_2D_LOD0` (7) (`xemu
+  hw/xbox/nv2a/pgraph/glsl/psh.c:197-210`, filter map `gl/constants.h:26-36` +
+  `gl/texture.c:126-141`). The dashboard and `xgu bump_cubemap_reflect` both
+  program that pairing, i.e. the reference samples them as a **plain tent**. The
+  pre-fix build convolved them (36 taps/fragment): menu 1B wall **79.87 s**,
+  `rasterPsh` 57.84 s, 261.3M px, frame `AF991769…`. With the gate:
+  **33.34 s / 11.76 s / 253,998,498 px / frame `4EF1FBF6…` = the legacy anchor**.
+  So §209's "8.7% of pixels change" and "2.4x" were the blur, not the tent.
+- **Both compiled fills now serve the tent** (§210b): the predicate drops
+  `!Bilinear` (a convolution still declines), the pixel loop branches once per
+  fragment, and the tent branch is `SampleBilinear` transcribed through one
+  shared `ReadTapFast` tap reader (per-tap fold, linear/Morton/interleave
+  address, the per-fill direct-RAM lane and `DecodeKind`, the same weights, the
+  raw-coordinate `TrackTextureCoords`, one `CountSample` on the base tap).
+  Evidence it is the same arithmetic: the `registers` leg reaches
+  `compiled=429350/277015865` - identical to the legacy leg - and its RAM SHA
+  equals the gate-fix-only build that served those draws through the generic
+  loop. 1B menu `registers` **32.18 s** vs legacy **32.22 s**; triangle
+  10.53 → **11.66 s** (four taps on the k2/k3 shape, `rasterPsh` 4.28 → 5.05 s),
+  RAM/CPU identical to legacy.
+- **The flag now moves no gate anchor.** Triangle: RAM `B45254CA…`, CPU
+  `7DAB63EB…`, frame unchanged. Menu: flipped frame byte-identical to
+  `4EF1FBF6…` (`19FEA0EA…`/`F5D61C94…` RAM/CPU; only the double-buffered back
+  surface differs) because both titles sample at texel centers, where a tent is
+  a nearest tap. The corpus rows with fractional texcoords are where the flag
+  does change pixels, and both gain colour depth at an unchanged mean:
+  `bump_cubemap_reflect` at 3.6B (57.0, 97.7, 30.2), colours **20,843 → 26,347**
+  vs the reference's 30,806, and `vp_lighting` at 3B (33.9, 28.1, 226.4),
+  **1,592 → 2,405** (its legacy leg also re-verifies that row's anchors
+  `162DAFF1…`/`0380C502…`, unchanged).
+- **Tooling:** `scripts/raster-leg.ps1 -TexFilter legacy|registers` (the leg
+  previously required a hand-built CLI line and silently mis-measured when the
+  flag was passed as one string) and a METRIC `filters=` field;
+  `scripts/ktest-smoke.ps1` now reuses the stored §120 xemu oracle log under
+  `-SkipXemu` instead of failing on a fresh work dir (and the new parameter had
+  to avoid the name `$XemuLog`, because PowerShell variables are
+  case-insensitive - the same trap §207 recorded).
+- **Gates:** accurate 1B menu `01BE5D64…`/`3D2740B8…` + frame `4EF1FBF6…`,
+  triangle `812EA159…`/`2F632483…` + frame `A1740DE0…` (all exact), fast legs
+  exact, `vec=0`; ktest smoke PASS 7/7 at **792,800,535** steps with a
+  byte-identical 40,797 B suite log; tests 1621 → **1624** (+3, two of them
+  fail on the pre-change source).
+- **Open for the operator:** the flag's default. It is now cheap and invisible
+  on the gates, and the cubemap row's colour depth moves toward its reference,
+  but the menu still has no oracle (`next-session.md` Option B).
 
 **Session 2026-10-21 (sixteenth; cubemap reflection closed, TEXFILTER landed, §209).**
 **The last xgu oracle failure now renders its reflection, and the sampler reads

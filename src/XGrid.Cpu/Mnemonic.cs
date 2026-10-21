@@ -648,11 +648,11 @@ public enum Mnemonic
     /// <summary>Maximum of packed unsigned bytes.</summary>
     Pmaxub = 214,
 
-    /// <summary>Minimum of packed unsigned words.</summary>
-    Pminuw = 215,
+    /// <summary>Minimum of packed signed words.</summary>
+    Pminsw = 215,
 
-    /// <summary>Maximum of packed unsigned words.</summary>
-    Pmaxuw = 216,
+    /// <summary>Maximum of packed signed words.</summary>
+    Pmaxsw = 216,
 
     /// <summary>Sums absolute byte differences into words.</summary>
     Psadbw = 217,
@@ -953,4 +953,7 @@ public enum Mnemonic
 
     /// <summary>Complement carry flag.</summary>
     Cmc = 316,
+
+    /// <summary>Table look-up translation (AL = [base + AL]).</summary>
+    Xlat = 317,
 }

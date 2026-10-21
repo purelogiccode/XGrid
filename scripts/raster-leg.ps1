@@ -5,6 +5,7 @@ param(
     [ValidateSet("tri", "menu")][string]$Workload = "tri",
     [ulong]$Steps = 1000000000,
     [ValidateSet("sw", "gl")][string]$Gpu = "sw",
+    [ValidateSet("legacy", "registers")][string]$TexFilter = "legacy",
     [string]$Log,
     [string]$Cli,
     [switch]$GpuReplace,
@@ -38,6 +39,11 @@ else {
 }
 $modeArgs = @()
 if (-not $NoFast) { $modeArgs = @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw") }
+# TEXFILTER (opt-in): the default `legacy` is the nearest sampler, so a leg
+# without this flag keeps every recorded anchor. `registers` honors MIN/MAG as a
+# tent at LOD 0 and convolves only for MIN = CONVOLUTION_2D_LOD0 (§210);
+# measure it here instead of hand-building the CLI line.
+if ($TexFilter -ne "legacy") { $modeArgs += @("--tex-filter", $TexFilter) }
 $gpuArgs = @("--gpu", $Gpu, "--gpu-time")
 if ($GpuReplace) { $gpuArgs += "--gpu-replace" }
 
@@ -70,7 +76,7 @@ $textured = [regex]::Match($draws, "textured=(\d+)").Groups[1].Value
 $blended = [regex]::Match($draws, "blended=(\d+)").Groups[1].Value
 $depth = [regex]::Match($draws, "depth=(\d+)").Groups[1].Value
 
-"METRIC workload={0} steps={1} gpu={2} wall={3} msps={4} outerMs={5} rasterLegacy={6} rasterPsh={7} pixels={8} textured={9} blended={10} depth={11} ram={12} cpu={13}" -f `
+"METRIC workload={0} steps={1} gpu={2} filters={14} wall={3} msps={4} outerMs={5} rasterLegacy={6} rasterPsh={7} pixels={8} textured={9} blended={10} depth={11} ram={12} cpu={13}" -f `
     $Workload, $Steps, $Gpu, $wall, $msps, $outer, $legacy, $psh, $pixels, $textured, $blended, $depth,
-    $ram.Substring(0, [Math]::Min(8, $ram.Length)), $cpu.Substring(0, [Math]::Min(8, $cpu.Length))
+    $ram.Substring(0, [Math]::Min(8, $ram.Length)), $cpu.Substring(0, [Math]::Min(8, $cpu.Length)), $TexFilter
 "FAULT {0}" -f $fault

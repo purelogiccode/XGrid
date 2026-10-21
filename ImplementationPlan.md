@@ -145,6 +145,19 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    calls) and the ~0.5-0.9 s texture fingerprint, both measured and deferred.
    Next: B3 method coverage on the corpus (zero `unsup` rows, guest counters
    identical) — the submission levers are spent.
+   **Status 2026-10-21 (next session, §219):** the GL backend now samples like the
+   software rasterizer - the TEXFILTER tent and the nine-tap 1-2-1 convolution
+   (only for MIN = CONVOLUTION_2D_LOD0), the *decoded* wrap modes (the raw address
+   word assigns 1 to wrap and 2 to mirror, which the backend had swapped) with
+   clamp-to-border, the PROJECT2D divide by w, and the clip origin on both
+   fragment axes - and `--gpu-replace` now composes a declined draw's frame into
+   guest RAM (one writer per frame) instead of presenting the clear colour
+   (compatibility gap 8 closed: `xgu bump_cubemap_reflect` 3B presents
+   `DA0750EE...` = the software frame, CPU SHA unchanged; depth/stencil are not
+   composed, documented). The 1B GL gate frames stay byte-identical (`B6116DAE`
+   menu / `7A860ED7` triangle), `BackendUnsupported=0`, `composedFrames=0`. On
+   `vp_lighting` the two renderers agree within one 8-bit step in both filter
+   states. Suite 1725.
 2. **Track E - compatibility corpus.** `docs/compatibility.md` + a
    boot-to-first-frame harness + ≥8 samples; no NV2A/APU fidelity polish without
    a matrix row and a usage histogram (`compatibility-corpus.md`). **M-B MET
@@ -163,15 +176,61 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    **Corpus-driven fidelity landed 2026-10-21 (§209):** the cubemap row renders
    (`xgu bump_cubemap_reflect`, 2 colours -> 21,041, `|dmean|` 5.3/2.4/1.3)
    after fixing the face extent (TEXIMAGERECT vs TEXFMT `BASE_SIZE`) plus the
-   three format gates, and **TEXFILTER is honored** (tent at LOD 0 + quincunx
-   convolution) behind opt-in `--tex-filter registers` - the menu's stage 0
-   programs `2/2/1` on 211M texel samples/1B, so the default-flip decision is an
-   operator item with a measured pixel delta (8.7%, identical CPU SHA).
-3. **Track P — product completeness (parallel).** Host audio, physical pad,
-   save-state V1, per-title config. The frontend is sw-only, keyboard-only,
-   silent, stateless.
+   three format gates, and **TEXFILTER is honored** (tent at LOD 0, convolution
+   only for MIN = `CONVOLUTION_2D_LOD0`) behind opt-in `--tex-filter registers` -
+   the menu's stage 0 programs `2/2/1` on 211M texel samples/1B, so the
+   default-flip decision is an operator item. **§210 (2026-10-21):** the 2.4x
+   cost and the 8.7% pixel delta §209 attributed to the tent were a *misapplied
+   convolution* (the reference gates the kernel on MIN 7); with that fixed and
+   both compiled fills serving the tent, the flag costs 32.18 s vs 32.22 s at 1B
+   menu and moves no gate anchor (triangle SHA/frame identical, menu frame
+   `4EF1FBF6…`), while `bump_cubemap_reflect`'s colour depth goes 20,843 ->
+   **§219 (2026-10-21):** the GL side of gap 7 is closed too - `xgu vp_lighting`
+   at 3B (fractional texcoords, zero declined draws) matches the software frame
+   within one 8-bit step *with and without* `--tex-filter registers`, and the
+   flag moves both renderers by the same ~6.5% (max delta 80); the gate frames
+   are unchanged. Gap 8 is closed (§219d). Open corpus items are gap 9
+   (second-emulator frame oracle) and gap 10 (`bumpenv_ripple` app state).
+   26,347 toward its reference's 30,806 at an unchanged mean. **§211
+   (2026-10-21):** gap 10 (`xgu bumpenv_ripple` black) is **diagnosed, not
+   fixed** - every presented surface is the colour clear, the two per-frame
+   quads take their colour from `T1` (`V0 = T1`, final `D = V0`; stage 1 `NONE`
+   in one draw, black texels in the bump draw) and the zeta clear
+   (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes;
+   the renderer is exonerated and three items are filed (Z24S8 clear-word
+   layout vs the reference, cull winding on those quads, the app state the
+   reflection needs). The same session fixed the convolution tap step on linear
+   (LU_IMAGE) stages (one texel per tap, `psh.c apply_convolution_filter`); the
+   opt-in flag's default stays an operator item. 1625 tests green.
+3. **Track P - product completeness (parallel).** Host audio, physical pad,
+   save-state V1, per-title config.   **Status 2026-10-21 (20th session, §217):** physical pad and save states
+   landed 2026-10-20 (§206); this session added the graphics-fidelity settings
+   (`--ffp`, `--tex-filter`), per-title overrides (V1 keyed by image path),
+   persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
+   frontend's first test project (15 tests). Host audio (the DSP execution it
+   needs) is the remaining product gap.
+   **Status 2026-10-21 (twenty-second session):** pause now has a step control -
+   F7 steps one presented frame (8M-instruction budget so an idle guest cannot
+   hang the UI), Shift+F7 steps 1,000,000 instructions; Home gained both
+   buttons and the About page/README list the keys.
+   **Status 2026-10-22 (§§221-223):** the frontend is no longer sw-only - a
+   Settings > Renderer switch runs the host-GPU OpenGL backend headless with the
+   per-flip readback (measured -29% wall at 1B through the real session), and
+   per-title overrides V2 now key a CHD by its XBE title id. The policy seam
+   (`RendererPolicy`/`GraphicsBackendHost`), thread-correct snapshot save/load
+   and `tools/frontend-smoke` landed with it (measured +9.8%/+8.2% in-app
+   throughput, every gate anchor unchanged).
+   Host audio (APU DSP execution) is still the
+   remaining product gap.
+
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+
+. **Track C - frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
+   deferred (2-3%); only the `--jit`/`--jit-raw` default-flip decision remains.
+   The freeze covers *codegen/throughput*: interpreter **correctness** work is
+   still allowed and was done in 220 (nine instruction/decoder fixes found by the
+   independent x86 differential, no perf claim, no gate anchor moved).
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
 6. **Environment preconditions (binding, 2026-10-20).** Two machines share this
    tree (`docs/hosts.md`); only the *reference host* may record M-A. Session start
@@ -189,6 +248,76 @@ stays gate currency and real content stays benchmark-only; accurate-mode perf
 flags stay opt-in until median-of-3 walls plus exact golden SHAs/counters,
 `verifyFailures=0`, and flag-off byte-identical runs. Fast-mode contract:
 `docs/research-notes/jit-track-charter.md` (unchanged).
+
+**Status 2026-10-21 (20th session, decisions §§215-218; 1717 tests green).**
+Three landed slices, no existing anchor moved: **fixed-function lighting** (§215:
+the enabled-light loop, spot cone, attenuation and the reconstructed specular
+exponent behind opt-in `--ffp` - gap 6 is now complete, and no measured leg
+enables a light), **PTIMER 0.8.137** (§216: 61-bit register time with writable
+`TIME_0/1`, `ALARM_0` with the 2^32 re-arm, the alarm's `INTR_0` bit and
+`NV_PMC_INTR_0_PTIMER`), and **Track P** (§217: `--ffp`/`--tex-filter` in the
+frontend, per-title overrides V1, persistent EEPROM state, the frontend test
+project). Evidence: 1B fast legs exact with and without `--ffp`
+(triangle `B45254CA`/`7DAB63EB`, menu `51B56687`/`F5D61C94`), accurate goldens
+`A1740DE0`/`4EF1FBF6` with GL policy frames `7A860ED7`/`B6116DAE`,
+`BackendUnsupported=0`, ktest smoke 7/7 at 792,800,535 steps with the
+byte-identical 40,797-byte log. The APU sample counter `NV_PAPU_XGSCNT` (§218) is now derived from the EP frame divider, which the dashboard reads and stores: the two menu RAM anchors were re-recorded (`01BE5D64 -> 6AB39AB0` accurate, `51B56687 -> 34973510` fast) while frames, CPU SHAs, counters and all 13 corpus rows stayed exact. NV2A snapshot v6 -> **v8** (old `.xgs` invalid).
+Next: Track P host audio (needs DSP execution), the frontend on the GL backend
+(the composition blocker is closed), or the gap-9 second-emulator oracle.
+
+**Status 2026-10-21 (21st session, decisions §219; 1738 tests green).** Four
+slices, no anchor moved: **GL TEXFILTER parity** (§219a - compatibility gap 7
+closed; `DecodeTextureFilter` is the single decode, the shader runs the tent and
+the nine-tap PROJECT2D convolution behind `uTexFilter`/`uTexConv` uniforms, so
+the default is still the same nearest `texelFetch`), **GL replace-mode
+composition** (§219b - gap 8 closed; a software-painted draw makes the flip drop
+the FBO and rebuild the frame from guest RAM, `composeUploads=`; the cubemap
+corpus row's replace leg now presents the software anchor `DA0750EE…`),
+**clear write-mask parity** (§219c - `ClearCore` lifts the GL masks for a clear,
+`ClearMaskLiveTests` fails pre-fix), and **per-title overrides V2** (§219d -
+`XGrid.Host.DiscTitleId`, `title:XXXXXXXX` keys with title-over-path
+precedence). Evidence: accurate 1B goldens PASS (sw `4EF1FBF6`/`A1740DE0`, GL
+`B6116DAE`/`7A860ED7`, violations 0, counters identical), fast legs exact (menu
+`34973510`/`F5D61C94`, triangle `B45254CA`/`7DAB63EB`), ktest smoke PASS 7/7 at
+792,800,535 steps with the byte-identical log. Suite 1717 -> 1738.
+
+**Status 2026-10-22 (22nd session, decisions §§220-221; 1757 tests green).** Two
+slices, no guest-visible behavior change: **the GPU renderer is a frontend
+setting** (§220 - Settings → Renderer picks software or OpenGL; the session
+creates the headless WGL context on the emulation thread in replacement mode
+with the per-flip readback, falls back to software with a logged reason on any
+failure, and the display follows the renderer with the new
+`TryCopyScanoutFrameFromMemory` lane covering direct-framebuffer guests before
+the first backend frame; measured through the real session at 1B on gate media:
+34.8 s software vs 24.7 s OpenGL, same picture) and **the CHD title id**
+(§221 - `XGrid.XboxFs.XdvdfsSectorReader` walks the XDVDFS volume over any
+`IDvdImage`, so `DiscTitleId` keys a CHD by XBE title id instead of falling back
+to its path; cross-checked against the XISOSharp path on six real ISOs). Host
+API: `Nv2AMmio.GpuMemory` exposes the device's guest-memory adapter (the CLI's
+duplicate adapter is deleted). Evidence: 1B menu GL golden PASS byte-identical
+(sw `4EF1FBF6`, gl `B6116DAE`, diff 2602 / maxDelta 1 / violations 0, counters
+33632/686/686), accurate frames unchanged, ktest smoke PASS 7/7 at 792,800,535
+steps with the byte-identical 40,797-byte log. Suite 1738 -> 1757.
+
+**Remaining Track P gap: host audio output** (needs APU GP/EP DSP execution
+first). Track B's remaining item is B3 method coverage (zero `unsup` rows).---
+
+*Status 2026-10-21 (22nd session, decisions 220; 1762 tests green).** CPU
+correctness campaign: the independent x86 differential (`tools/cpu-oracle/`)
+widened from 333 to **629 cases** (sign-sensitive patterns for every MMX/SSE1
+packed op, saturating shift counts, x87 transcendentals/environment, 16-bit
+addressing, segment overrides, `LOCK`, string/stack edges) and found **nine
+defects**, all fixed and pinned: `PMINSW`/`PMAXSW` compared unsigned (they were
+decoded as invented `Pminuw`/`Pmaxuw`), `PSRAW`/`PSRAD` count saturation,
+`XLAT` undecoded, 16-bit `[SI]`/`[DI]` eating a bogus disp16, x87 NaN stores
+flipping the sign/dropping the payload (`.NET double.NaN` is negative), the
+FUCOM family latching IE for a quiet NaN, `FSQRT`-negative C2, and
+`MINPS`/`MAXPS`/`MINSS`/`MAXSS` returning the destination on equal operands.
+**No gate anchor moved** (accurate 1B goldens byte-identical, fast anchors exact,
+ktest log byte-identical) - the gate titles execute none of the fixed shapes.
+Deliberately out of scope: no SSE2 (the CPU is a Pentium III, so the 128-bit
+packed-int forms stay `UnsupportedInstruction`), `FSTENV`/`FSAVE` pointer
+metadata, the reference's `0/0` ZE-vs-IE class. Suite 1738 -> 1762.
 
 ---
 
@@ -2351,16 +2480,17 @@ dependencies) that talks to the emulator only through the public `XGrid.Host`
 Delivered in this slice:
 
 - dark modern shell with Home, Library, Settings, Activity, and About pages;
-- power/pause/resume/stop with a live presented-frame display (portable software
-  rasterizer + `WriteableBitmap`, no WGL dependency);
+- power/pause/resume/stop with a live presented-frame display (`WriteableBitmap`;
+  software rasterizer by default, opt-in hidden-window OpenGL backend since §220);
 - game selection and recursive library scan (ISO/CHD/XBE, XBE title parsing);
 - firmware, storage, RAM, JIT/performance, network, library-folder, and accent
   configuration persisted as JSON in the platform app-data folder;
 - keyboard-to-XID pad mapping, activity log, runtime accent themes.
 
 Deferred to later frontend slices: physical gamepad binding, host audio output,
-GPU-backend display, debugger panes, per-title profiles, and save-state UI. Design
-and validation record: `docs/research-notes/avalonia-frontend.md`; usage:
+debugger panes, per-title profiles (the renderer is global), save-state UI, and
+the GL path for direct-framebuffer guests. Design and validation record:
+`docs/research-notes/avalonia-frontend.md`; usage:
 `src/XGrid.Frontend.Avalonia/README.md`.
 
 ---
@@ -3310,11 +3440,11 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 18 GPU Optimization | 4 | 72% | rasterizer bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; menu 119→24.6 s, triangle 54.7→9.9 s); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); measured at 48% (menu) / 39% (triangle) of the 1B sw wall after C3 (§199n), then **§199p: O2 `IGpuMemoryFast` GPU-memory fast lane landed (-2.0% both titles, 3/3), then O4 branchless Morton spread (-5.9% triangle 3/3, -1.2% menu 2/3); §200: O3b per-fill fast sampler + O1 compiled k1 modulate (245.8M px) and k2/k3 lighting fills, 1B rasterPsh menu 24.0 → 13.3-15.1 s (-44%), triangle 6.19 → 3.31-3.45 s (-45%), interleaved wall -21.9% / -23.5%, quiet host 36.01 s / 9.13 s; accurate-mode raster triangle 6.90 → 3.63 s (-47%) with RAM/CPU SHAs and every counter exact; O5 counter batching and the cube-stride hoist measured neutral; the rasterizer is no longer the dominant wall**; **§204 present path measured and fixed: the per-flip readback is opt-in (`--frame`/`--frame-first`; 0 in normal runs), each draw is one packed `uTri[25]` uniform + one `glDrawArrays` (positions by `gl_VertexID`, no VBO upload), and the per-draw key strings/divisions/binds plus the per-method seam call are gone — `drawMs` 12.55 → 2.41 s (-81%), menu `gl+replace` 63.09 → 45.25 s (-20.5% same-window, 3/3), triangle 10.26 → 9.89 s; 1B GL goldens exact (`6BE6325F…` / `3FC4B419…`)**; **§205 draw-command batching landed: a PGRAPH primitive flush averages 82 triangles, so the backend stages a whole command and submits it with one `glDrawArraysInstanced` (per-triangle block = a uniform-array slot selected by `gl_InstanceID` through a flat varying, capacity 64 from the queried uniform budget, `XGRID_GL_NO_BATCH=1` forces the old path) — `drawMs` 1971 → 1045 ms (-47%, 3/3 same-binary), 59,437 instanced draws replace 2.76M single draws, menu `gl+replace` wall 42.20 → 40.43 s (-4.2%, 3/3), both 1B GL frame goldens byte-identical; the remaining menu submission is ~0.8 s of block packing (not GL calls) and the ~0.5-0.9 s texture fingerprint, both deferred with measured ceilings**; **the phase's own checklist is now closed** (command generation, submission, shader compilation, texture upload, render-pass creation, synchronization, frame pacing + the six caching techniques - see the phase-18 status block for the per-item evidence); what remains is measured leftovers (per-draw layer bits hybrid/z, ~0.8 s block packing, ~0.5-0.9 s texture fingerprint, O6 row spans demoted, product-path present pacing) - no capability gap; Vulkan/GL backend work stays in P11 |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
 | 20 Automated Testing | 3 | 73% | 1538 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests, plus 11 §199o C3-x shape differentials; 59/59 with the raw path forced on) + §199p fast-vs-legacy GPU-memory-lane differential + 8 §200 fast-vs-generic sampler/compiled-fill differentials + the §204 readback-policy live tests + 4 §205 batch-bracket seam tests (fail-pre-fix proven) + ktest smoke; the present-path acceptance script (`scripts/present-path-acceptance.ps1`), the batching A/B (`scripts/batch-205-ab.ps1`) and the boot-to-first-frame harness (`scripts/boot-to-first-frame.ps1`, six measured corpus rows (three samples, both backends)) automate the ceremony; fuzzing; **wider compatibility corpus is Track E (`docs/compatibility.md` + the harness; 6 measured rows across 3 samples, of the ≥8 M-B target, the additional rows still blocked on the nxdk toolchain)** |
-| 21 CLI & Frontend | 3 | 60% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f` (sw-only, keyboard-only, silent, stateless)**; §204 CLI observability: `--frame-first` (first presented frame + step anchor), `readback=on|off` and `methods=` in the boot summary; Track P adds host audio, physical pad, save states, per-title config |
+| 21 CLI & Frontend | 3 | 63% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f`** (keyboard-only, silent, software default) **with an opt-in host-OpenGL renderer (§220) and thread-correct snapshot save/load**; §204 CLI observability: `--frame-first` (first presented frame + step anchor), `readback=on|off` and `methods=` in the boot summary; Track P adds host audio, physical pad, save states, per-title config |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay — **Track P V1 next** (`.xgs` is versioned: CPU/RAM/device v2→v3 for NV2A and audio) |
 | 23 Release | 3 | 11% | packaging, installer; **compatibility list exists — `docs/compatibility.md` with six measured rows across three samples (both backends), reproducible commands and the `scripts/boot-to-first-frame.ps1` harness (Track E; M-B wants ≥8 rows, ≥2 beyond dashboard/triangle/ktest)** |
 
-**Result: ~75% complete overall** (weighted: 81.63 of 108 weight-points = 75.6%, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work; the score only moves with landed work).
+**Result: ~76% complete overall** (weighted: 81.72 of 108 weight-points = 75.7%, recomputed 2026-10-21 after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work; the score only moves with landed work).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:

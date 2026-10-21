@@ -490,22 +490,102 @@ public sealed class Nv2AExoticTexModesTests
     }
 
     /// <summary>
-    /// QUINCUNX/Gaussian convolution is xemu's nine-tap 1-2-1 blur: a single
-    /// bright texel in a black 4x4 spreads over its neighbours, so the center
-    /// sample drops to roughly the center weight (4/16) of the impulse.
+    /// QUINCUNX/Gaussian convolution is xemu's nine-tap 1-2-1 blur - applied
+    /// only when MIN is CONVOLUTION_2D_LOD0 (7), which is the one pairing the
+    /// reference convolves (xemu <c>psh.c:197-210</c>): a single bright texel
+    /// in a black 4x4 spreads over its neighbours, so the center sample drops
+    /// to roughly the center weight (4/16) of the impulse. The same kernel
+    /// field next to an ordinary tent MIN is not a convolution (the dashboard's
+    /// and the corpus cubemap's shape), so it must read the sharp texel.
     /// </summary>
     [Fact]
     public void TextureFilterRegisters_ConvolutionBlursImpulse()
     {
         static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
+        const uint kernelOnly = 0x02012000u;   // MIN 1 (nearest), MAG 2, kernel QUINCUNX
+        const uint convolution = 0x02072000u;  // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2, kernel QUINCUNX
         uint sharp = RenderFilteredSample(0x01010000u, 0.375f, 0.375f, registers: false, Impulse);
-        uint blurred = RenderFilteredSample(0x01012000u, 0.375f, 0.375f, registers: true, Impulse);
+        uint gated = RenderFilteredSample(kernelOnly, 0.375f, 0.375f, registers: true, Impulse);
+        uint blurred = RenderFilteredSample(convolution, 0.375f, 0.375f, registers: true, Impulse);
         int sharpRed = (int)RedChannel(sharp);
+        int gatedRed = (int)RedChannel(gated);
         int blurredRed = (int)RedChannel(blurred);
         Assert.True(sharpRed > 200, $"impulse texel should read bright, got {sharpRed}");
+        Assert.Equal(sharpRed, gatedRed);
         // The centre tap has weight 4/16, so 255 * 0.25 = 63.75 lands in the
         // six-bit neighbourhood of 64.
         Assert.InRange(blurredRed, 58, 70);
+    }
+
+    /// <summary>
+    /// The nine convolution taps are one texel apart on a linear (LU_IMAGE_*)
+    /// stage too. A rect texture takes texel-unit coordinates, so a delta of
+    /// 1/textureSize in normalized units would move a quarter of a texel and
+    /// every tap would read the same texel: the same impulse that blurs to
+    /// ~4/16 on a swizzled stage would stay at full intensity. xemu normalizes
+    /// the rect coordinate first and offsets by 1/textureSize
+    /// (<c>apply_convolution_filter</c>: <c>norm%d</c> + <c>texCoordDelta</c>),
+    /// i.e. exactly one texel in texel-unit space.
+    /// </summary>
+    [Fact]
+    public void TextureFilterRegisters_ConvolutionOffsetsOneTexelOnLinearTexture()
+    {
+        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
+        const uint kernelOnly = 0x02012000u;   // MIN 1 (nearest), MAG 2, kernel QUINCUNX
+        const uint convolution = 0x02072000u;  // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2, kernel QUINCUNX
+
+        // Texel-unit coordinates: (1.5, 1.5) is the centre of texel (1,1).
+        uint sharp = RenderFilteredLinearSample(0x01010000u, 1.5f, 1.5f, registers: false, Impulse);
+        uint gated = RenderFilteredLinearSample(kernelOnly, 1.5f, 1.5f, registers: true, Impulse);
+        uint blurred = RenderFilteredLinearSample(convolution, 1.5f, 1.5f, registers: true, Impulse);
+        int sharpRed = (int)RedChannel(sharp);
+        int gatedRed = (int)RedChannel(gated);
+        int blurredRed = (int)RedChannel(blurred);
+        Assert.True(sharpRed > 200, $"impulse texel should read bright, got {sharpRed}");
+        Assert.Equal(sharpRed, gatedRed);
+        // One texel per tap: the centre weight is 4/16, 255 * 0.25 = 63.75.
+        Assert.InRange(blurredRed, 58, 70);
+    }
+
+    /// <summary>
+    /// Renders one constant-UV Project2D sample of a linear (LU_IMAGE_A8R8G8B8)
+    /// 4x4 texture laid out row-major at 0x4000. Linear formats address texels
+    /// directly, so the extent comes from TEXIMAGERECT and the coordinates are
+    /// texel units (research-notes §95).
+    /// </summary>
+    private static uint RenderFilteredLinearSample(
+        uint filterWord,
+        float u,
+        float v,
+        bool registers,
+        Func<uint, uint, uint> texel)
+    {
+        var (nv2A, memory) = CreateChannel();
+        nv2A.TextureFilterRegisters = registers;
+        WriteTriangle(memory);
+        for (uint y = 0; y < 4; y++)
+        {
+            for (uint x = 0; x < 4; x++)
+            {
+                memory.WritePhysical(0x4000u + (((y * 4u) + x) * 4u), texel(x, y));
+            }
+        }
+
+        var pushes = new System.Collections.Generic.List<(uint Method, uint Parameter)>();
+        PushSurface(pushes);
+        PushTexcoordProgram(pushes);
+        PushTexcoordArray(pushes, memory, 1, 0x2200u, u, v, 0f, 1f);
+        // LU_IMAGE_A8R8G8B8: linear layout, dimensionality 2, one level; a
+        // swizzled word here would take its extent from BASE_SIZE instead.
+        const uint linearFormat = (1u << 16) | (2u << 6) | (0x1Eu << 8);
+        PushFormatTextureSlot(pushes, 0, 0x4000u, linearFormat, 0x00010101u, 4u, 4u);
+        pushes.Add((0x1B14u, filterWord));
+        PushStagePassTexel(pushes, 0, 0x01u);
+        PushDraw(pushes);
+        PushMethods(nv2A, memory, pushes.ToArray());
+        Assert.Equal(1uL, nv2A.DrawsExecuted);
+        Assert.True(nv2A.TexturedPixels > 0, "the draw must sample the texture");
+        return ReadPixel(memory, 1, 1);
     }
 
     [Fact]

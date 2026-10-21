@@ -337,17 +337,24 @@ public sealed class Nv2aSamplerFastTests
 
     private sealed record FillResult(
         uint[] Frame, ulong Drawn, ulong Blended, ulong Textured, ulong Samples, ulong RgbZero, long CombinerRgbZero,
-        string Formats, string State, bool Compiled);
+        string Formats, string State, bool Compiled, string Filters);
 
     /// <summary>
     /// Renders the kind-1 modulate shape (single stage-0 Project2D texture,
     /// SrcAlpha/InvSrcAlpha/Add blend, opaque mask, no zeta traffic) - the
     /// compiled fill's shape - with the generic loop available as a reference.
+    /// <paramref name="filter"/> programs TEXFILTER slot 0 and
+    /// <paramref name="filterRegisters"/> turns the register decode on; the
+    /// defaults keep the legacy nearest sampler. <paramref name="swizzled"/>
+    /// binds a swizzled (normalized-coordinate) 4x4 texture, whose per-sample
+    /// address runs through the Morton path instead of the linear one.
     /// </summary>
-    private static FillResult RenderModulateFill(bool generic, ArrayMemory? backing = null)
+    private static FillResult RenderModulateFill(bool generic, ArrayMemory? backing = null, uint filter = 0u,
+        bool filterRegisters = false, bool swizzled = false)
     {
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel(backing);
         nv2A.DiagnosticGenericFill = generic;
+        nv2A.TextureFilterRegisters = filterRegisters;
         WriteTriangle(memory);
         WriteUvs(memory, 0.5f, 0.5f);
 
@@ -357,10 +364,25 @@ public sealed class Nv2aSamplerFastTests
             memory.WritePhysical(0xB80u + (i * 4u), 0x3F800000u);
         }
 
-        for (uint i = 0; i < 4; i++)
+        if (swizzled)
         {
-            uint a = 0x20u + (i * 0x30u);
-            memory.WritePhysical(0x4000u + (i * 4u), 0xFF000000u | (a << 16) | (a << 8) | a);
+            for (uint y = 0; y < 4; y++)
+            {
+                for (uint x = 0; x < 4; x++)
+                {
+                    uint swizzledAddress = SpreadMortonBits(x) | (SpreadMortonBits(y) << 1);
+                    uint a = 0x20u + (((y * 4u) + x) * 0x10u);
+                    memory.WritePhysical(0x4000u + (swizzledAddress * 4u), 0xFF000000u | (a << 16) | (a << 8) | a);
+                }
+            }
+        }
+        else
+        {
+            for (uint i = 0; i < 4; i++)
+            {
+                uint a = 0x20u + (i * 0x30u);
+                memory.WritePhysical(0x4000u + (i * 4u), 0xFF000000u | (a << 16) | (a << 8) | a);
+            }
         }
 
         var pushes = new List<(uint Method, uint Parameter)>();
@@ -372,10 +394,15 @@ public sealed class Nv2aSamplerFastTests
         MethodPush(pushes, Insn(3, aMux: MuxC, constIndex: 0), 0x0B10u);
         MethodPush(pushes, Insn(9, final: true, v: 1), 0x0B20u);
         pushes.Add((0x1B00u, 0x4000u));
-        pushes.Add((0x1B04u, 0x00001200u));
-        pushes.Add((0x1B08u, 0x00010303u));
+        pushes.Add((0x1B04u, swizzled ? 0x00000600u | (2u << 20) | (2u << 24) : 0x00001200u));
+        pushes.Add((0x1B08u, swizzled ? 0x00010101u : 0x00010303u));
         pushes.Add((0x1B0Cu, 0x40000000u));
         pushes.Add((0x1B10u, 0x00000010u << 16));
+        if (filter != 0u)
+        {
+            pushes.Add((0x1B14u, filter));
+        }
+
         pushes.Add((0x1B1Cu, 0x00040004u));
         pushes.Add((0x1E70u, 0x01u));
         pushes.Add((0x1E60u, 0x01u));
@@ -411,7 +438,8 @@ public sealed class Nv2aSamplerFastTests
             (long)nv2A.CombinerRgbZeroFragments,
             string.Join(";", nv2A.TextureFormatAttempts),
             string.Join(";", nv2A.TextureStateStats),
-            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal));
+            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal),
+            nv2A.TextureFilterDebug);
     }
 
     /// <summary>
@@ -635,7 +663,8 @@ public sealed class Nv2aSamplerFastTests
             (long)nv2A.CombinerRgbZeroFragments,
             string.Join(";", nv2A.TextureFormatAttempts),
             string.Join(";", nv2A.TextureStateStats),
-            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal));
+            nv2A.FastKindDebug.Contains("compiled=1/", StringComparison.Ordinal),
+            nv2A.TextureFilterDebug);
     }
 
     private static void WriteConstant(ArrayMemory memory, int index, float x, float y, float z, float w)
@@ -680,6 +709,86 @@ public sealed class Nv2aSamplerFastTests
             $"formats differ: generic={slow.Formats} fast={fast.Formats}");
         Assert.True(string.Equals(slow.State, fast.State, StringComparison.Ordinal),
             $"state differs:\n  generic={slow.State}\n  fast={fast.State}");
+    }
+
+    /// <summary>
+    /// TEXFILTER MIN/MAG = TENT_LOD0 (2/2), the pairing the dashboard programs
+    /// on all four slots. The compiled modulate fill must serve it - same
+    /// framebuffer and same sampler accounting as the generic loop - instead of
+    /// dropping to the generic loop (the pre-§210 predicate declined every
+    /// bilinear plan, which is most of the 2.4x the flag used to cost).
+    /// </summary>
+    [Fact]
+    public void CompiledModulateFill_ServesTentFilter()
+    {
+        const uint tent = (2u << 16) | (2u << 24);
+        FillResult fast = RenderModulateFill(generic: false, filter: tent, filterRegisters: true, swizzled: true);
+        FillResult slow = RenderModulateFill(generic: true, filter: tent, filterRegisters: true, swizzled: true);
+
+        Assert.True(fast.Drawn > 0, "the draw must write pixels");
+        Assert.True(fast.Compiled, "the compiled modulate fill must serve the tent filter");
+        Assert.True(string.Equals(fast.Filters, "2/2/0,0/0/0,0/0/0,0/0/0", StringComparison.Ordinal),
+            $"filter decode: {fast.Filters}");
+        Assert.True(fast.Frame.AsSpan().SequenceEqual(slow.Frame), "framebuffer differs from the generic loop");
+        Assert.Equal(slow.Drawn, fast.Drawn);
+        Assert.Equal(slow.Blended, fast.Blended);
+        Assert.Equal(slow.Textured, fast.Textured);
+        Assert.Equal(slow.Samples, fast.Samples);
+        Assert.Equal(slow.RgbZero, fast.RgbZero);
+        Assert.Equal(slow.CombinerRgbZero, fast.CombinerRgbZero);
+        Assert.True(string.Equals(slow.Formats, fast.Formats, StringComparison.Ordinal),
+            $"formats differ: generic={slow.Formats} fast={fast.Formats}");
+        Assert.True(string.Equals(slow.State, fast.State, StringComparison.Ordinal),
+            $"state differs:\n  generic={slow.State}\n  fast={fast.State}");
+    }
+
+    /// <summary>
+    /// A convolution kernel programmed next to an ordinary tent MIN is not a
+    /// convolution: the reference only applies the kernel when MIN is
+    /// CONVOLUTION_2D_LOD0 (7) (xemu <c>psh.c</c>). The dashboard's four slots
+    /// are exactly this shape (2/2 + kernel 1), so the pin is that the kernel
+    /// bits are ignored - same frame as the tent-only word, still compiled.
+    /// </summary>
+    [Fact]
+    public void TextureFilter_KernelWithoutConvolutionMinIsIgnored()
+    {
+        const uint tent = (2u << 16) | (2u << 24);
+        const uint tentPlusKernel = tent | (1u << 13);
+        FillResult plain = RenderModulateFill(generic: false, filter: tent, filterRegisters: true, swizzled: true);
+        FillResult kernel = RenderModulateFill(generic: false, filter: tentPlusKernel, filterRegisters: true,
+            swizzled: true);
+
+        Assert.True(kernel.Compiled, "the compiled modulate fill must still engage");
+        Assert.True(string.Equals(kernel.Filters, "2/2/0,0/0/0,0/0/0,0/0/0", StringComparison.Ordinal),
+            $"the kernel field must decode as inactive: {kernel.Filters}");
+        Assert.True(kernel.Frame.AsSpan().SequenceEqual(plain.Frame),
+            "a kernel field without CONVOLUTION_2D_LOD0 must not convolve");
+        Assert.Equal(plain.Samples, kernel.Samples);
+    }
+
+    /// <summary>
+    /// MIN = CONVOLUTION_2D_LOD0 (7) + QUINCUNX is the one pairing the
+    /// reference convolves: nine taps per fragment instead of one, so the
+    /// sampler accounting is nine times the tent's and the compiled fill
+    /// declines (its transcription only knows the single-tap shape).
+    /// </summary>
+    [Fact]
+    public void TextureFilter_ConvolutionMinAppliesKernel()
+    {
+        const uint tent = (2u << 16) | (2u << 24);
+        const uint convolution = (7u << 16) | (2u << 24) | (1u << 13);
+        FillResult plain = RenderModulateFill(generic: false, filter: tent, filterRegisters: true, swizzled: true);
+        FillResult convolved = RenderModulateFill(generic: false, filter: convolution, filterRegisters: true,
+            swizzled: true);
+        FillResult convolvedGeneric = RenderModulateFill(generic: true, filter: convolution, filterRegisters: true,
+            swizzled: true);
+
+        Assert.False(convolved.Compiled, "a convolution must stay on the generic loop");
+        Assert.True(string.Equals(convolved.Filters, "7/2/1,0/0/0,0/0/0,0/0/0", StringComparison.Ordinal),
+            $"filter decode: {convolved.Filters}");
+        Assert.Equal(plain.Samples * 9, convolved.Samples);
+        Assert.True(convolved.Frame.AsSpan().SequenceEqual(convolvedGeneric.Frame), "framebuffer differs");
+        Assert.Equal(convolvedGeneric.Samples, convolved.Samples);
     }
 }
 

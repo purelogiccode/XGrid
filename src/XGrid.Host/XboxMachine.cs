@@ -53,7 +53,8 @@ public sealed class XboxMachine : IIdleSkipHost
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
         Ide.DmaMemory = new AddressSpaceGuestMemory(Memory, Cpu);
-        Nv2A = new Nv2AMmio(ramSize, "NV2A", new PhysicalGpuMemory(Memory, Cpu));
+        GpuMemory = new PhysicalGpuMemory(Memory, Cpu);
+        Nv2A = new Nv2AMmio(ramSize, "NV2A", GpuMemory);
         Nv2A.InterruptChanged += OnNv2aInterrupt;
         Memory.AddRegion(
             "NV2A",
@@ -143,6 +144,20 @@ public sealed class XboxMachine : IIdleSkipHost
 
     /// <summary>Gets the NV2A GPU register window.</summary>
     public Nv2AMmio Nv2A { get; }
+
+    /// <summary>
+    /// Gets the guest-memory view the NV2A uses (DMA pushbuffers, surfaces,
+    /// textures) as the machine's single GPU adapter.
+    /// </summary>
+    /// <remarks>
+    /// A host GPU backend needs the same view the device has: it also carries
+    /// the present-upload dirty watch and the direct-RAM lane, so attaching a
+    /// backend to <see cref="Nv2AMmio.Backend"/> without this instance would
+    /// observe a different suppression/watch state. Hosts that build a backend
+    /// (the CLI, the Avalonia frontend) must pass this instead of wrapping
+    /// <see cref="Memory"/> themselves.
+    /// </remarks>
+    public IGpuMemory GpuMemory { get; }
 
     /// <summary>Gets the MCPX ACI (AC'97 audio) register window.</summary>
     public McpxAciDevice Aci { get; }
@@ -234,6 +249,13 @@ public sealed class XboxMachine : IIdleSkipHost
     public void LoadEeprom(ReadOnlySpan<byte> image)
     {
         Bus.AttachEeprom(image);
+    }
+
+    /// <summary>Copies the live 256-byte EEPROM image out of the SMBus device.</summary>
+    /// <param name="destination">Buffer of at least 256 bytes.</param>
+    public void CopyEeprom(Span<byte> destination)
+    {
+        Bus.Eeprom.CopyImage(destination);
     }
 
     /// <summary>Attaches a raw or qcow2 HDD image to the primary master IDE drive.</summary>

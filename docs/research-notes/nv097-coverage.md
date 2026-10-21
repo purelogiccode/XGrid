@@ -1,6 +1,7 @@
 # NV097 method coverage (xemu 0.8.137 vs XGrid)
 
-Status: generated reference checklist, 2026-10-20. Companion to
+Status: generated reference checklist, 2026-10-20 (fixed-function vertex stage
+213 and fixed-function lighting 215 rows updated 2026-10-21). Companion to
 `gpu-reference-map.md`. **Not a gate** and not a development-plan change.
 
 ## How to read this
@@ -15,14 +16,13 @@ Status: generated reference checklist, 2026-10-20. Companion to
   allows, but the histogram is opt-in (`CollectMethodHistogram`) and the
   backend callback is opt-in (`ObserveMethods`), so "recorded" does not imply
   the GL backend saw it. "Recorded" is not automatically a bug:
-  fixed-function lighting/material/texgen state is normally replaced by
-  driver-generated vertex programs on the Xbox D3D path, and `WAIT_FOR_IDLE`
-  is effectively a no-op on XGrid's synchronous pusher. It is a gap when a
-  title actually depends on the state.
+  `WAIT_FOR_IDLE` is effectively a no-op on XGrid's synchronous pusher. It is a
+  gap when a title actually depends on the state. Since 213/215 the fixed-function
+  vertex stage (transform, texgen, skinning, texture matrix, color/material chain,
+  lighting) has sinks behind the opt-in `--ffp`; the back-light context and the
+  eye-vector methods do not.
 - **`Count`** is the number of method offsets in a range/case group, not the
   number of xemu table entries.
-- The table is a **method-presence** view. A handled method can still be
-  partially honored (see "Stored but not consumed" below).
 - **Group** is a heuristic prefix label; the method name and offset are
   authoritative. A few entries sit in a neighbouring group because their
   names do not share the prefix.
@@ -59,8 +59,8 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x0288 | `SET_COMBINER_SPECULAR_FOG_CW0` | method | 1 | handled | Combiner / shader |
 | 0x028C | `SET_COMBINER_SPECULAR_FOG_CW1` | method | 1 | handled | Combiner / shader |
 | 0x0290 | `SET_CONTROL0` | method | 1 | handled | Raster state |
-| 0x0294 | `SET_LIGHT_CONTROL` | method | 1 | recorded | Fixed-function lighting (recorded) |
-| 0x0298 | `SET_COLOR_MATERIAL` | method | 1 | recorded | Fixed-function lighting (recorded) |
+| 0x0294 | `SET_LIGHT_CONTROL` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
+| 0x0298 | `SET_COLOR_MATERIAL` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
 | 0x029C | `SET_FOG_MODE` | method | 1 | handled | Fog |
 | 0x02A0 | `SET_FOG_GEN_MODE` | method | 1 | handled | Fog |
 | 0x02A4 | `SET_FOG_ENABLE` | method | 1 | handled | Fog |
@@ -73,12 +73,12 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x0308 | `SET_CULL_FACE_ENABLE` | method | 1 | handled | Raster modes / queries |
 | 0x030C | `SET_DEPTH_TEST_ENABLE` | method | 1 | handled | Raster state |
 | 0x0310 | `SET_DITHER_ENABLE` | method | 1 | recorded | Raster modes / queries |
-| 0x0314 | `SET_LIGHTING_ENABLE` | method | 1 | recorded | Other |
+| 0x0314 | `SET_LIGHTING_ENABLE` | method | 1 | handled | Other |
 | 0x0318 | `SET_POINT_PARAMS_ENABLE` | method | 1 | recorded | Raster modes / queries |
 | 0x031C | `SET_POINT_SMOOTH_ENABLE` | method | 1 | recorded | Raster modes / queries |
 | 0x0320 | `SET_LINE_SMOOTH_ENABLE` | method | 1 | recorded | Raster modes / queries |
 | 0x0324 | `SET_POLY_SMOOTH_ENABLE` | method | 1 | recorded | Raster modes / queries |
-| 0x0328 | `SET_SKIN_MODE` | method | 1 | recorded | Fixed-function lighting (recorded) |
+| 0x0328 | `SET_SKIN_MODE` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
 | 0x032C | `SET_STENCIL_TEST_ENABLE` | method | 1 | handled | Raster state |
 | 0x0330 | `SET_POLY_OFFSET_POINT_ENABLE` | method | 1 | recorded | Raster modes / queries |
 | 0x0334 | `SET_POLY_OFFSET_LINE_ENABLE` | method | 1 | recorded | Raster modes / queries |
@@ -108,16 +108,16 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x0398 | `SET_CLIP_MAX` | method | 1 | handled | Raster state |
 | 0x039C | `SET_CULL_FACE` | method | 1 | handled | Raster modes / queries |
 | 0x03A0 | `SET_FRONT_FACE` | method | 1 | handled | Raster modes / queries |
-| 0x03A4 | `SET_NORMALIZATION_ENABLE` | method | 1 | recorded | Vertex submission |
-| 0x03A8 | `SET_MATERIAL_EMISSION` | range | 3 | recorded | Fixed-function lighting (recorded) |
-| 0x03B4 | `SET_MATERIAL_ALPHA` | method | 1 | recorded | Fixed-function lighting (recorded) |
-| 0x03B8 | `SET_SPECULAR_ENABLE` | method | 1 | recorded | Fixed-function lighting (recorded) |
-| 0x03BC | `SET_LIGHT_ENABLE_MASK` | method | 1 | recorded | Fixed-function lighting (recorded) |
-| 0x03C0 | `SET_TEXGEN_S` | case4 | 4 | recorded | Texture / texgen |
-| 0x03C4 | `SET_TEXGEN_T` | case4 | 4 | recorded | Texture / texgen |
-| 0x03C8 | `SET_TEXGEN_R` | case4 | 4 | recorded | Texture / texgen |
-| 0x03CC | `SET_TEXGEN_Q` | case4 | 4 | recorded | Texture / texgen |
-| 0x0420 | `SET_TEXTURE_MATRIX_ENABLE` | case4 | 4 | recorded | Texture / texgen |
+| 0x03A4 | `SET_NORMALIZATION_ENABLE` | method | 1 | handled | Vertex submission |
+| 0x03A8 | `SET_MATERIAL_EMISSION` | range | 3 | handled | Fixed-function lighting (opt-in `--ffp`) |
+| 0x03B4 | `SET_MATERIAL_ALPHA` | method | 1 | handled | Fixed-function lighting (opt-in `--ffp`) |
+| 0x03B8 | `SET_SPECULAR_ENABLE` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
+| 0x03BC | `SET_LIGHT_ENABLE_MASK` | method | 1 | handled | Fixed-function vertex stage (opt-in --ffp) |
+| 0x03C0 | `SET_TEXGEN_S` | case4 | 4 | handled | Texture / texgen |
+| 0x03C4 | `SET_TEXGEN_T` | case4 | 4 | handled | Texture / texgen |
+| 0x03C8 | `SET_TEXGEN_R` | case4 | 4 | handled | Texture / texgen |
+| 0x03CC | `SET_TEXGEN_Q` | case4 | 4 | handled | Texture / texgen |
+| 0x0420 | `SET_TEXTURE_MATRIX_ENABLE` | case4 | 4 | handled | Texture / texgen |
 | 0x043C | `SET_POINT_SIZE` | method | 1 | recorded | Raster modes / queries |
 | 0x0440 | `SET_PROJECTION_MATRIX` | range | 16 | handled | Other |
 | 0x0480 | `SET_MODEL_VIEW_MATRIX` | range | 64 | handled | Other |
@@ -128,12 +128,12 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x09C0 | `SET_FOG_PARAMS` | range | 3 | handled | Fog |
 | 0x09CC | `SET_TEXGEN_VIEW_MODEL` | method | 1 | recorded | Texture / texgen |
 | 0x09D0 | `SET_FOG_PLANE` | range | 4 | handled | Fog |
-| 0x09E0 | `SET_SPECULAR_PARAMS` | range | 6 | recorded | Fixed-function lighting (recorded) |
+| 0x09E0 | `SET_SPECULAR_PARAMS` | range | 6 | handled | Fixed-function lighting (opt-in `--ffp`) |
 | 0x09FC | `SET_PROVOKING_VERTEX` | method | 1 | recorded | Raster modes / queries |
-| 0x0A10 | `SET_SCENE_AMBIENT_COLOR` | range | 3 | recorded | Fixed-function lighting (recorded) |
+| 0x0A10 | `SET_SCENE_AMBIENT_COLOR` | range | 3 | handled | Fixed-function lighting (opt-in `--ffp`) |
 | 0x0A20 | `SET_VIEWPORT_OFFSET` | range | 4 | handled | Other |
 | 0x0A30 | `SET_POINT_PARAMS` | range | 8 | recorded | Raster modes / queries |
-| 0x0A50 | `SET_EYE_POSITION` | range | 4 | handled | Fixed-function lighting (recorded) |
+| 0x0A50 | `SET_EYE_POSITION` | range | 4 | handled | Fixed-function vertex stage (opt-in --ffp) |
 | 0x0A60 | `SET_COMBINER_FACTOR0` | range | 8 | handled | Combiner / shader |
 | 0x0A80 | `SET_COMBINER_FACTOR1` | range | 8 | handled | Combiner / shader |
 | 0x0AA0 | `SET_COMBINER_ALPHA_OCW` | range | 8 | handled | Combiner / shader |
@@ -143,7 +143,7 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x0B00 | `SET_TRANSFORM_PROGRAM` | range | 32 | handled | Transform / VSH |
 | 0x0B80 | `SET_TRANSFORM_CONSTANT` | range | 32 | handled | Transform / VSH |
 | 0x0C00 | `SET_BACK_LIGHT_AMBIENT_COLOR` | range | 128 | recorded | Fixed-function lighting (recorded) |
-| 0x1000 | `SET_LIGHT_AMBIENT_COLOR` | range | 256 | recorded | Fixed-function lighting (recorded) |
+| 0x1000 | `SET_LIGHT_AMBIENT_COLOR` | range | 256 | handled | Fixed-function lighting (opt-in `--ffp`) |
 | 0x1500 | `SET_VERTEX3F` | range | 3 | recorded | Vertex submission |
 | 0x1518 | `SET_VERTEX4F` | range | 4 | recorded | Vertex submission |
 | 0x1530 | `SET_NORMAL3F` | range | 3 | recorded | Vertex submission |
@@ -240,17 +240,18 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | Combiner / shader | 14 | 14 | 0 |
 | Context DMA | 8 | 1 | 7 |
 | Control | 3 | 2 | 1 |
-| Fixed-function lighting (recorded) | 15 | 1 | 14 |
+| Fixed-function lighting | 9 | 5 | 4 |
+| Fixed-function vertex stage (opt-in --ffp) | 6 | 6 | 0 |
 | Fog | 7 | 7 | 0 |
-| Other | 9 | 6 | 3 |
+| Other | 9 | 7 | 2 |
 | Presentation | 5 | 5 | 0 |
 | Raster modes / queries | 27 | 3 | 24 |
 | Raster state | 24 | 24 | 0 |
 | Surface / clear / present | 15 | 15 | 0 |
-| Texture / texgen | 20 | 13 | 7 |
+| Texture / texgen | 20 | 18 | 2 |
 | Transform / VSH | 8 | 7 | 1 |
 | Transform misc / shadow | 3 | 1 | 2 |
-| Vertex submission | 43 | 12 | 31 |
+| Vertex submission | 43 | 13 | 30 |
 
 ## Feature-level gaps (not visible as method entries)
 
@@ -274,7 +275,7 @@ They are the items a commercial title is most likely to hit first.
 | **Color key** | `SET_COLOR_KEY_COLOR` | Recorded only | Color-keyed transparency fails |
 | **Occlusion query** | `SET_ZPASS_PIXEL_COUNT_ENABLE`, `GET_REPORT`, `CLEAR_REPORT_VALUE` | Recorded only | Titles that gate effects/visibility on the report stall or draw everything |
 | **XVSS path** | `SET_TRANSFORM_DATA`, `LAUNCH_TRANSFORM_PROGRAM` | Recorded only; the programmable VSH path is implemented | Fixed-function/XVSS titles do not get vertex processing |
-| **Fixed-function lighting/material/texgen** | `SET_LIGHT_*`, `SET_MATERIAL_*`, `SET_TEXGEN_*`, `SET_TEXTURE_MATRIX_ENABLE`, `SET_EYE_*`, `SET_SPECULAR_PARAMS*`, `SET_SCENE_AMBIENT_COLOR` | Recorded only; the D3D path normally uses driver-generated VSH programs | Usually safe for D3D titles; a gap for XVSS/fixed-function paths |
+| **Fixed-function lighting/material/texgen** | `SET_LIGHT_*`, `SET_MATERIAL_*`, `SET_TEXGEN_*`, `SET_TEXTURE_MATRIX_ENABLE`, `SET_EYE_*`, `SET_SPECULAR_PARAMS*`, `SET_SCENE_AMBIENT_COLOR` | **Closed 2026-10-21 (213 + 215), opt-in `--ffp`**: the transform/texgen/skinning/texture-matrix/fog/color half, the material chain and the full enabled-light loop (infinite/local/spot, attenuation, cone, reconstructed specular power). The back-light color context and the eye-direction/eye-vector methods stay recorded (two-sided lighting is a reference TODO) | No measured title enables a light (`fixedFnLights=0` on every gate and corpus row); a lit draw with an enabled light now runs the light loop instead of the unlit pass-through |
 | **Render-to-texture** | surface/texture aliasing | Partial: the presented surface and RAM-backed textures work; general RTT feedback is not a first-class path | Titles that render to a texture and then sample it may show stale/black results |
 
 ## Stored but not consumed

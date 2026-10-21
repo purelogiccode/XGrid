@@ -29,6 +29,21 @@ public sealed class Eeprom24C02 : SmbusDevice, ISnapshotable
     /// <summary>Gets the current internal address pointer.</summary>
     public int AddressPointer { get; private set; }
 
+    /// <summary>
+    /// Copies the 256-byte image out of the device (the persisted user
+    /// settings live here; the guest rewrites it through the SMBus).
+    /// </summary>
+    /// <param name="destination">Buffer of at least <see cref="Size"/> bytes.</param>
+    public void CopyImage(Span<byte> destination)
+    {
+        if (destination.Length < Size)
+        {
+            throw new ArgumentException("the destination must hold the whole 256-byte image", nameof(destination));
+        }
+
+        _data.AsSpan(0, Size).CopyTo(destination);
+    }
+
     /// <summary>Saves the 256-byte image plus the address pointer (quiesce: no SMBus transaction in flight).</summary>
     public void SaveState(BinaryWriter writer)
     {

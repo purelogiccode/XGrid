@@ -271,6 +271,32 @@ public sealed class SmbusTests
         Assert.False(smbus.RecentTransactions[1].Ok);
     }
 
+    [Fact]
+    public void EepromCopyImageReturnsTheLiveDataIncludingGuestWrites()
+    {
+        // The frontend persists this image between runs: the copy must see the
+        // seeded bytes and every byte the guest wrote through the SMBus.
+        var eeprom = new Eeprom24C02(new byte[] { 0x10, 0x20, 0x30 });
+        eeprom.WriteByte(0x10, 0xAA);
+        eeprom.WriteByte(0x11, 0xBB);
+
+        byte[] image = new byte[Eeprom24C02.Size];
+        eeprom.CopyImage(image);
+
+        Assert.Equal(0x10, image[0]);
+        Assert.Equal(0xAA, image[0x10]);
+        Assert.Equal(0xBB, image[0x11]);
+        Assert.Equal(0xFF, image[0x12]);
+    }
+
+    [Fact]
+    public void EepromCopyImageRejectsAShortDestination()
+    {
+        var eeprom = new Eeprom24C02();
+
+        Assert.Throws<System.ArgumentException>(() => eeprom.CopyImage(new byte[16]));
+    }
+
     private static (Amd756Smbus Smbus, IoSpace Io, PciBus Pci) Create()
     {
         var io = new IoSpace();

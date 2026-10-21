@@ -1,4 +1,4 @@
-# xemu 0.8.137 - primary oracle delta (2026-10-20, re-based)
+# xemu 0.8.137 — primary oracle delta (2026-10-20, re-based)
 
 Reference: `References2/xemu-0.8.137` (QEMU fork, QEMU 10.2.0 base, 11,352 files).
 License: GPL-2.0 overall; `hw/xbox/**` per-file LGPL-2+ / MIT / GPL-2+; the
@@ -219,7 +219,8 @@ change between the snapshots. The core files did change in four places:
   (or, on the host-realtime path, until the 1000-cycle slice returns).
 - `NV_PAPU_XGSCNT` (0x200C) now returns `ep_frame_div * 32` (a sample counter)
   instead of `qemu_clock_get_ns()/100` (`apu.c:50-53`). Guests that pace on it
-  see a monotonic 48 kHz sample count.
+  see a monotonic 48 kHz sample count. **Landed in XGrid 2026-10-21**
+  (decisions 218): `McpxApuDevice` returns `_epFrameDiv * 32`, read-only.
 - APU VM stop/start now syncs both DSP backends (`dsp_sync_to_vm` /
   `dsp_sync_from_vm`, `apu.c:352-372`); `mcpx_apu_reset` invalidates the opcode
   cache through the ops vtable.
