@@ -18,7 +18,9 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
 - A fidelity landing must cite the row it fixes and the histogram that proves
   the usage. No row and no histogram means no NV2A/APU fidelity work.
 - Method-presence side of the histogram: `docs/research-notes/nv097-coverage.md`
-  (xemu 0.8.137 method table vs `Nv2aMmio`). Reference orientation:
+  (xemu 0.8.137 method table vs `Nv2aMmio`). **Usage side:**
+  `docs/research-notes/usage-histogram.md` (measured NV097 streams for the gate
+  sample and a benchmark probe). Reference orientation:
   `docs/research-notes/gpu-reference-map.md`.
 
 ## The harness (one invocation per row)
