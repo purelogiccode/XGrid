@@ -1,11 +1,13 @@
-# Next session instructions (updated 2026-10-20 after the draw-command batching session)
+# Next session instructions (updated 2026-10-20 after the corpus / scanout-export session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §205 (draw-command
-batching: measurement, design, evidence, gates) + §204 (present-path split,
-readback removal) + §203 (course correction), `docs/compatibility.md` (matrix +
-harness, six measured rows across three samples), `docs/research-notes/nv097-coverage.md` (method-presence gap),
+`docs/research-notes/xgrid-architecture-decisions.md` §207 (corpus unblocked:
+toolchain recipe, 11 rows, scanout export) + §206 (references as one verified
+store, the host dimension, culling) + §205 (draw-command batching) + §204
+(present-path split), `docs/compatibility.md` (matrix + harness + the two gaps the
+corpus found), `docs/research-notes/usage-histogram.md` (measured NV097 usage),
+`docs/research-notes/nv097-coverage.md` (method-presence gap),
 `docs/research-notes/gpu-reference-map.md` (where to look for GPU facts),
 `docs/research-notes/jit-track-charter.md` (status),
 `docs/research-notes/rasterizer-inventory.md`, then this file.
@@ -14,10 +16,10 @@ harness, six measured rows across three samples), `docs/research-notes/nv097-cov
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §205 draw-command batching commit
+git log --oneline -1        # expect: the §207g measured-rows refresh commit
 git status --short          # only other-session edits may appear - never commit those
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1534 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1576 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with `host-doctor.ps1`
@@ -37,22 +39,29 @@ do not "fix" the code):
 | triangle `--gpu gl --gpu-replace` | `DD1D516E…` † | `CF79FC17…` | 0 | ~0.25 s (`flushMs` ~0.013 s) |
 
 † RAM anchors re-recorded after the §206g cull-face landing (2026-10-20): culled
-triangles no longer write zeta, so guest RAM changes while **every frame SHA and
-CPU SHA stays identical** (controlled pre/post A/B on both legs). Pre-cull values
-were menu `660CA11B`, triangle `F57934BF`.
+triangles no longer write zeta, so guest RAM changes while **every software frame
+SHA and every CPU SHA stays identical** (controlled pre/post A/B on both legs).
+The GL frame fingerprints did move and stay inside the diff policy
+(`violations=0 maxDelta=1`, §207g) — treat GL SHAs as fingerprints, never as
+byte-exact goldens. Pre-cull RAM values were menu `660CA11B`, triangle `F57934BF`.
 
 **Verified 2026-10-20 on H1** (`scripts/raster-leg.ps1`, 1B, fast, `--gpu sw`): all
 four semantic anchors reproduce **exactly**, `vec=0`, no fault. Measured walls
-triangle **9.56 s** / menu **39.08 s**, i.e. +10% / +17% against the quiet
-references — read ceilings as ratios on this host (see `docs/hosts.md`).
+triangle **9.56 s** / menu **39.08 s** pre-cull (8.0 s / 35.4 s post-cull), i.e.
++10% / +17% against the quiet references — read ceilings as ratios on this host
+(see `docs/hosts.md`).
 
-Accurate-mode anchors (JIT off): menu `D9C99A58…`/`3D2740B8…`, triangle
-`F57934BF.`/`9B5AFC2A.`. GL frame anchors: menu `6BE6325F…`, triangle `3FC4B419…`
-(policy diff vs sw: menu 1852 px / maxDelta 1 / 0 violations, triangle 16744 px /
-maxDelta 1 / 0 violations). Note the gl legs' **RAM** SHA differs by design (the
-software twin does not write the surfaces); CPU SHA and every counter must match
-the sw leg. Batching must never change either frame SHA: both were reproduced
-byte-identically in §205.
+Accurate-mode anchors (JIT off, HDD+DVD, post-cull): triangle RAM `812EA159…` /
+CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames `A1740DE0…`
+and `4EF1FBF6…` (unchanged from pre-cull — verified with a stashed pre-change
+build, §206g). GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
+(policy diff vs sw: menu 2602 px / maxDelta 1 / 0 violations, triangle 27849 px /
+maxDelta 1 / 0 violations, §207g). The older pair `F57934BF…`/`9B5AFC2A…` does
+**not** reproduce with the HDD-qualified command even pre-cull — it came from a
+no-HDD invocation and was mislabelled. Note the gl legs' **RAM** SHA differs by
+design (the software twin does not write the surfaces); CPU SHA and every counter
+must match the sw leg. Batching must never change either frame SHA: both were
+reproduced byte-identically in §205.
 
 - **1538 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical to the accepted
@@ -98,6 +107,29 @@ byte-identically in §205.
    2.76M × ~290 ns of `PackVerticesInto` (100 float stores per triangle). If
    that ever matters, it needs a different data layout (e.g. float4-wide stores
    or a persistent-mapped UBO written directly), not fewer GL calls.
+
+## 0c. What the thirteenth/fourteenth sessions landed (§206/§207) - do not redo it
+
+- **§206 references governance + host dimension.** `References2/` is the single
+  verified store (`scripts/refs-manifest.ps1`, 9 sets / 43,153 files);
+  `docs/hosts.md` + `scripts/host-doctor.ps1` split semantic anchors (must match
+  everywhere) from performance anchors (host-local).
+- **§206 Track P product slice.** `XGrid.Input` now owns `HostPad` +
+  `XInputPadMapping` (pure, tested) + `XInputGamepadReader` (no `DllImport`,
+  never throws when absent); the frontend polls at 60 Hz, merges with the
+  keyboard and is gated on window activation. `.xgs` save/load in the app
+  (`EmulatorSession._machineLock` around each batch).
+- **§206g cull face.** `SET_CULL_FACE_ENABLE`/`SET_CULL_FACE`/`SET_FRONT_FACE`
+  latch; `ShouldCull(area)` in both fill paths. 41,035 triangles culled per 1B,
+  triangle pixels −35.3%, menu −11.1%, **every software frame and CPU SHA
+  byte-identical**. `culled=` on the NV2A line. Snapshot v3 → v4.
+- **§207 corpus.** Toolchain in `scripts/build-nxdk-samples.ps1` (MSYS2 + clang/
+  lld/**llvm**/bison/flex/cmake, nxdk `a6c31ee`); `boot-to-first-frame.ps1
+  -Corpus` re-measures; 11 rows over 7 samples, M-B met.
+- **§207f scanout export.** `Nv2aMmio.TryCopyScanoutFrame` + `--frame-scanout`
+  read PCRTC START, which is where direct-framebuffer programs (`XVideoGetFB`,
+  `debugPrint`) actually draw: `gamma` goes from 1 colour to 768 / 298,744 px,
+  `hello` shows its text. Every corpus row now carries a `scanoutSha`.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
@@ -275,6 +307,18 @@ pwsh -File scripts/raster-leg.ps1 -Workload menu -Log wt-data\leg-menu.log
 
 # draw-command batching A/B (same binary, interleaved off/on, medians)
 pwsh -File scripts/batch-205-ab.ps1 -Workload menu -Pairs 3
+
+# Track E corpus (nxdk samples): build once, then measure every row
+pwsh -File scripts/build-nxdk-samples.ps1                 # needs MSYS2 + clang/lld/llvm
+pwsh -File scripts/build-nxdk-samples.ps1 -Samples mesh,gamma -Clone
+pwsh -File scripts/boot-to-first-frame.ps1 -Corpus        # all staged ISOs, 1B, sw
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample mesh -Gpu gl -GpuReplace
+pwsh -File scripts/boot-to-first-frame.ps1 -Iso D:\some\other.iso   # any loose ISO
+
+# direct-framebuffer programs: the flipped frame is stale, the scanout is not
+# (corpus rows carry scanoutSha; the Frame line prints surface= and pcrtc=)
+dotnet src\XGrid.Cli\bin\Release\net10.0\XGrid.Cli.dll boot ... `
+  --frame wt-data\out.bmp --frame-scanout wt-data\out-scanout.bmp
 
 # GL goldens (1B): sw vs gl frame policy + counters
 pwsh -File scripts/gpu-slice1-golden.ps1      -OutDir wt-data\b1gold `
