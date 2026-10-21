@@ -490,19 +490,28 @@ public sealed class Nv2AExoticTexModesTests
     }
 
     /// <summary>
-    /// QUINCUNX/Gaussian convolution is xemu's nine-tap 1-2-1 blur: a single
-    /// bright texel in a black 4x4 spreads over its neighbours, so the center
-    /// sample drops to roughly the center weight (4/16) of the impulse.
+    /// QUINCUNX/Gaussian convolution is xemu's nine-tap 1-2-1 blur - applied
+    /// only when MIN is CONVOLUTION_2D_LOD0 (7), which is the one pairing the
+    /// reference convolves (xemu <c>psh.c:197-210</c>): a single bright texel
+    /// in a black 4x4 spreads over its neighbours, so the center sample drops
+    /// to roughly the center weight (4/16) of the impulse. The same kernel
+    /// field next to an ordinary tent MIN is not a convolution (the dashboard's
+    /// and the corpus cubemap's shape), so it must read the sharp texel.
     /// </summary>
     [Fact]
     public void TextureFilterRegisters_ConvolutionBlursImpulse()
     {
         static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
+        const uint kernelOnly = 0x02012000u;   // MIN 1 (nearest), MAG 2, kernel QUINCUNX
+        const uint convolution = 0x02072000u;  // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2, kernel QUINCUNX
         uint sharp = RenderFilteredSample(0x01010000u, 0.375f, 0.375f, registers: false, Impulse);
-        uint blurred = RenderFilteredSample(0x01012000u, 0.375f, 0.375f, registers: true, Impulse);
+        uint gated = RenderFilteredSample(kernelOnly, 0.375f, 0.375f, registers: true, Impulse);
+        uint blurred = RenderFilteredSample(convolution, 0.375f, 0.375f, registers: true, Impulse);
         int sharpRed = (int)RedChannel(sharp);
+        int gatedRed = (int)RedChannel(gated);
         int blurredRed = (int)RedChannel(blurred);
         Assert.True(sharpRed > 200, $"impulse texel should read bright, got {sharpRed}");
+        Assert.Equal(sharpRed, gatedRed);
         // The centre tap has weight 4/16, so 255 * 0.25 = 63.75 lands in the
         // six-bit neighbourhood of 64.
         Assert.InRange(blurredRed, 58, 70);

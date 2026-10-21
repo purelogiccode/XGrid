@@ -24,6 +24,9 @@ param(
     [string]$WorkDir = "wt-data\ktest-smoke",
     [string]$Subset = "51,71,224,231,282,319,344",
     [string]$Steps = "2000000000",
+    # -SkipXemu leaves no xemu leg to read, but the pairwise diff still needs the
+    # oracle log from the last full run. Default: the standing work dir's copy.
+    [string]$XemuOracleLog = "wt-data\ktest-smoke\xemu\xemu-log.txt",
     [int]$XemuPort = 4455,
     [double]$XemuTimeout = 420.0,
     [switch]$SkipXgrid,
@@ -122,6 +125,20 @@ dvd_path = 'ktest-smoke.iso'
 
 $xgridLog = Join-Path $G "xgrid-log.txt"
 $xemuLog = Join-Path $XE "xemu-log.txt"
+
+# The diff step reads both logs even under -SkipXemu (the differential is
+# against the §120 xemu oracle run, not against this invocation). Reuse the
+# stored oracle log rather than failing on a fresh work dir, and fail loudly -
+# never silently - when there is no oracle to compare against.
+if ($SkipXemu -and -not (Test-Path $xemuLog)) {
+    if (-not (Test-Path $XemuOracleLog)) {
+        Write-Error "No xemu oracle log for the pairwise diff: pass -XemuOracleLog <path> or run once without -SkipXemu"
+        exit 2
+    }
+
+    Copy-Item $XemuOracleLog $xemuLog -Force
+    Stamp "using stored xemu oracle log $XemuOracleLog"
+}
 
 # --- 3. XGrid leg ---
 if (-not $SkipXgrid) {

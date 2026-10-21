@@ -12910,3 +12910,147 @@ had never been green:
   unreachable there; fast 1B menu after the change is `51B56687…`/`F5D61C94…`
   exact. Suite 1615 -> 1621.
 
+## 210 The TEXFILTER convolution gate, and the compiled fills serve the tent (2026-10-21, seventeenth session)
+
+**Trigger.** `next-session.md` Option A: teach the compiled fills the bilinear
+tap so `--tex-filter registers` stops costing 2.4x. Pricing it first showed that
+the 2.4x was not the tent at all - it was a **misapplied convolution**, and the
+consequence is larger than the perf slice: with the reference's gating rule the
+flag becomes almost invisible *and* almost free on both gate titles.
+
+### 210a A TEXFILTER kernel field only convolves when MIN is CONVOLUTION_2D_LOD0
+
+`BuildSamplerPlans` decoded the convolution kernel (bits 13-15) for every stage
+that programmed it. The reference gates it on the MIN filter
+(`xemu-0.8.137 hw/xbox/nv2a/pgraph/glsl/psh.c:197-210`):
+
+```c
+uint32_t filter = pgraph_reg_r(pg, NV_PGRAPH_TEXFILTER0 + i * 4);
+unsigned int min_filter = GET_MASK(filter, NV_PGRAPH_TEXFILTER0_MIN);
+enum ConvolutionFilter kernel = CONVOLUTION_FILTER_DISABLED;
+if (min_filter == NV_PGRAPH_TEXFILTER0_MIN_CONVOLUTION_2D_LOD0) {   /* 7 */
+    int k = GET_MASK(filter, NV_PGRAPH_TEXFILTER0_CONVOLUTION_KERNEL);
+    assert(k == ..._QUINCUNX || k == ..._GAUSSIAN_3);
+    kernel = (enum ConvolutionFilter)k;
+}
+state->conv_tex[i] = kernel;
+```
+
+and the GL sampler maps MIN 1/3/5 to `GL_NEAREST` and 2/4/6/7 to `GL_LINEAR`
+(`gl/constants.h:26-36` with the mipmap collapse in `gl/texture.c:126-141`).
+The dashboard programs **`2/2/1` on all four slots** (MIN = TENT_LOD0, kernel
+field = QUINCUNX) and `xgu bump_cubemap_reflect` does the same, so the reference
+samples both as a **plain tent**, never as a 3x3 blur.
+
+Measured (1B menu, `--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`,
+one host window; `scripts/raster-leg.ps1 -TexFilter <leg>`):
+
+| leg | wall | `rasterPsh` | pixels | tex `filters=` | 1B frame |
+|---|---|---|---|---|---|
+| `legacy` (default) | 33.93 s | 11.36 s | 253,998,498 | 2/2/1 | `4EF1FBF6…` |
+| `registers`, kernel ungated (pre-210) | **79.87 s** | **57.84 s** | 261,302,773 | 2/2/1 | `AF991769…` |
+| `registers`, kernel gated on MIN 7 (210a) | 33.34 s | 11.76 s | 253,998,498 | 2/2/0 | `4EF1FBF6…` |
+
+Three facts fall out:
+
+1. Both §209 claims that made the flag look expensive/visible - the 2.4x wall
+   (79.87 -> 33.34 s) and "8.7% of the menu's pixels change" - were the
+   convolution. With the reference rule the flag costs **2% of the legacy wall**
+   and the presented 1B menu frame is **byte-identical to the legacy anchor**
+   (`4EF1FBF6…`), not merely close.
+2. The ramp cost came from the tap count: the ungated kernel sampled 36 texels
+   per fragment (nine bilinear taps) and changed the pixel count
+   (261.3M vs 254.0M) because the blur moved fragments across the alpha test.
+3. The kernel field is now decoded once, by one helper
+   (`EffectiveConvolutionKernel`), shared by `BuildSamplerPlans` and the
+   `filters=` diagnostic, so the print can never disagree with the sampler
+   again: `filters=2/2/0` = "tent programmed, kernel inactive".
+
+### 210b The compiled fills serve the tent (Option A)
+
+Both compiled fills (`FillTrianglePshModulate`, `FillTrianglePshLighting`)
+required `!plan.Bilinear`, so every tent-filtered draw fell back to the generic
+loop - that is where the rest of §209's 2.4x lived. They can serve it exactly:
+
+- The predicate drops `!Bilinear` (a convolution still declines) and passes
+  `bilinear` into the fill.
+- The pixel loop branches once per fragment on that per-fill flag. The tent
+  branch is `SampleBilinear` transcribed operation-for-operation: the
+  texel-center-offset coordinate (`s*size - 0.5`), `Floor`, `wx/wy`, four taps
+  through one shared `ReadTapFast` (the exact per-tap half of
+  `TryReadPlannedTexel`: per-tap fold, linear/Morton/bit-interleave address, the
+  per-fill direct-RAM lane, the per-fill `DecodeKind` branch), the same four
+  weights in the same order, `TrackTextureCoords` with the **raw** (pre-fold)
+  coordinate and **one** `CountSample` on the base tap - the counter contract the
+  generic path has.
+- The nearest body is untouched and stays the default path's code.
+
+Evidence that it is the same arithmetic, not a lookalike: on the 1B menu the
+`registers` leg reaches `compiled=429350/277015865` - identical to the `legacy`
+leg - and its RAM SHA (`19FEA0EA…`) is identical to the gate-fix-only build that
+served the same draws through the generic loop. 1B menu `registers` **31.90 s**
+vs `legacy` **32.22 s** (-1%), triangle `registers` **11.66 s** vs **10.53 s**
+(+10.8%, `rasterPsh` 4.28 -> 5.05 s = the four taps on the k2/k3 lighting
+shape), same pixels/textured/blended on both legs.
+
+### 210c Evidence
+
+| gate | result |
+|---|---|
+| fast 1B menu `legacy` | `51B56687…`/`F5D61C94…`, 33638 draws / 686 frames, `rasterPsh` 11.02 s - **exact** |
+| fast 1B triangle `legacy` (HDD+DVD) | `B45254CA…`/`7DAB63EB…`, 57,663,082 px - **exact** |
+| fast 1B menu `registers` | `19FEA0EA…`/`F5D61C94…` (CPU SHA identical to legacy), same pixels/counters |
+| fast 1B triangle `registers` | `B45254CA…`/`7DAB63EB…` - **identical to legacy**: the flag changes no pixel on this title |
+| accurate 1B menu | RAM/CPU `01BE5D64…`/`3D2740B8…`, 33632/686/686, frame `4EF1FBF6…` |
+| accurate 1B triangle | RAM/CPU `812EA159…`/`2F632483…`, 2706/68/34, frame `A1740DE0…` |
+| ktest smoke | PASS 7/7, XGrid leg 792,800,535 steps, suite log byte-identical |
+| corpus (`-Corpus`, 1B, default flag) | 14/14 rows PASS, every documented anchor reproduces (`gamma` `D3EBF420`, `gamma-fade` `2BC1C443`, `hello` `72D33DC2`, `led` `18C7CC83`, `mesh` `806CBEA7`/`7328A99F`, `xaudio` `8A969D86`, RAM/CPU pairs unchanged) |
+| suite | 1621 -> 1624 tests (+3: tent serves compiled, kernel-without-MIN-7 ignored, MIN-7 convolves) |
+
+Two of the three new tests fail on the pre-change source (the compiled fill does
+not engage under a tent; the kernel field convolves without MIN 7); the third
+pins the surviving convolution path (nine taps per fragment, compiled declines).
+
+### 210d Reading the flag today (input for Option B)
+
+With the gate fixed, `--tex-filter registers` is a *no-op on both gate titles'
+presented frames*: the triangle reads the identical RAM/CPU SHA and the menu's
+flipped frame is byte-identical to the legacy anchor (the menu's RAM differs
+only in the double-buffered back surface). The reason is measurable: the gate
+titles sample at texel centers - the dashboard's dominant stage-0 draw is a 1:1
+blit (`u=[0,639]`, 200.6M of 267.6M samples/1B), so a tent is a nearest tap
+there, and the only draws where the flag does blend are the 11.3M-pixel k2/k3
+lighting states (their tracked coordinate range is the raw pre-fold one).
+
+Two corpus rows *do* have fractional texcoords, and both move the same way -
+more colour depth, unchanged mean:
+
+| row (fast mode) | legacy | `--tex-filter registers` | reference |
+|---|---|---|---|
+| `bump_cubemap_reflect` 3.6B, last frame | mean (57.0, 97.7, 30.2), 20,843 colours | mean identical, **26,347** colours | mean (62.3, 100.1, 28.8), 30,806 colours |
+| `vp_lighting` 3B, last frame | mean (33.9, 28.1, 226.4), 1,592 colours | mean identical, **2,405** colours | mean (32.3, 26.7, 224.7) |
+
+(`vp_lighting`'s legacy leg also re-verifies that row's default anchors: RAM
+`162DAFF1…` / CPU `0380C502…`, 90 flips, 1,592 colours - unchanged by §210.)
+
+So Option B's question is now narrower and cheaper to answer: the flag no longer
+costs wall (32.22 -> 31.90 s menu) and no longer moves any gate anchor, and what
+remains unproven is only "is the tent right?" on a title with fractional
+texcoords - where the evidence so far is one-directional (a tent can only
+interpolate, and both oracle rows gain colour depth without moving their mean
+toward or away from the reference). **The default stays `legacy`** (operator
+decision required, and there is no oracle yet for the menu).
+
+### 210e Measured negatives / do-not-retry
+
+- Do not apply the convolution from the kernel field alone; MIN must be
+  CONVOLUTION_2D_LOD0 (7) (`psh.c:204`). The dashboard's `2/2/1` is a tent.
+- Do not read §209's "8.7% of pixels change / 2.4x wall" as the cost of a tent;
+  it was the misapplied blur (210a).
+- Do not expect a tent to change the gate titles' frames: their texcoords land on
+  texel centers (210d).
+- The test harness's `SET_VERTEX_DATA4F`-based draws sample at texel centers for
+  any texture size, so a tent cannot be observed as a blended pixel there; the
+  compiled tent path is pinned by the compiled-fill differential (frame +
+  counters + `compiled=` counters), not by a blended colour.
+

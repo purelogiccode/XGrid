@@ -436,7 +436,8 @@ internal static class Program
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
             if (!string.Equals(texFilter, "legacy", StringComparison.Ordinal))
             {
-                Console.WriteLine($"Texture filter={texFilter} (MIN/MAG tent at LOD 0 + convolution)");
+                Console.WriteLine(
+                    $"Texture filter={texFilter} (MIN/MAG tent at LOD 0; convolution only when MIN is CONVOLUTION_2D_LOD0)");
             }
 
             if (!string.Equals(gpuBackend, "sw", StringComparison.Ordinal) &&
