@@ -71,6 +71,7 @@ internal static class Program
         List<(uint Address, int Length, bool Virtual)> dumps = new();
         string? fbPath = null;
         string? framePath = null;
+        string? frameScanoutPath = null;
         string? frameFirstPath = null;
         bool frameFirstSaved = false;
         string? pgraphPath = null;
@@ -200,6 +201,9 @@ internal static class Program
                     break;
                 case "--frame":
                     framePath = NextValue(args, ref i);
+                    break;
+                case "--frame-scanout":
+                    frameScanoutPath = NextValue(args, ref i);
                     break;
                 case "--frame-first":
                     frameFirstPath = NextValue(args, ref i);
@@ -1008,6 +1012,11 @@ internal static class Program
                 SavePresentedFrame(machine, framePath);
             }
 
+            if (frameScanoutPath is not null)
+            {
+                SaveScanoutFrame(machine, frameScanoutPath);
+            }
+
             if (pgraphPath is not null)
             {
                 using var pgraphOut = new StreamWriter(pgraphPath);
@@ -1449,6 +1458,23 @@ internal static class Program
     {
         int batch = remaining > (ulong)int.MaxValue ? int.MaxValue : (int)remaining;
         return batch <= 0 ? 0 : (ulong)machine.Run(batch);
+    }
+
+    private static void SaveScanoutFrame(XboxMachine machine, string path)
+    {
+        if (machine.Nv2A.TryCopyScanoutFrame(out uint width, out uint height, out byte[] bgra))
+        {
+            var frame = new DisplayFrame();
+            frame.Show(width, height, bgra);
+            frame.SaveBmp(path);
+            Console.WriteLine(
+                $"FrameScanout {path} {width}x{height} nonzero={frame.CountNonZeroPixels()} " +
+                machine.Nv2A.PresentedFrameDebug);
+        }
+        else
+        {
+            Console.WriteLine($"FrameScanout unavailable ({machine.Nv2A.PresentedFrameDebug})");
+        }
     }
 
     private static void SavePresentedFrame(XboxMachine machine, string path)

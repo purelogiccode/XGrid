@@ -58,12 +58,12 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
-| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7` | `-Sample mesh` |
-| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | **direct-framebuffer present gap** (below) | RAM `4EE18F78` / CPU `C3371A8C` | `-Sample gamma` |
-| **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same direct-framebuffer gap | 0 extra draws | n/a | same gap | RAM `ED83DC23` / CPU `D0A7BB8A` | `-Sample gamma-fade` |
-| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same gap (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | same gap | RAM `4650454F` / CPU `C3371A8C` | `-Sample hello` |
-| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | same gap (no video content; toggles the SMC LED) | 0 extra draws | n/a | SMC LED only | RAM `3D1F72DB` / CPU `1C98838F` | `-Sample led` |
-| **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same direct-framebuffer gap (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2` | `-Sample xaudio` |
+| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout `7328A99F` | `-Sample mesh` |
+| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420` | `-Sample gamma` |
+| **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same as `gamma` | 0 extra draws | n/a | same | RAM `ED83DC23` / CPU `D0A7BB8A`; scanout `2BC1C443` | `-Sample gamma-fade` |
+| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2` | `-Sample hello` |
+| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83` | `-Sample led` |
+| **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
@@ -73,32 +73,32 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 These are measured, not suspected — each one was found by running a sample, not
 by reading code.
 
-### 1. Direct-framebuffer output is never presented (blocks `gamma`, `hello`, `led`)
+### 1. Direct-framebuffer output is not what `--frame`/the frontend present
 
-`Nv2aMmio.CapturePresentedFrame` snapshots the **3D color surface** at flip time,
+`Nv2aMmio.CapturePresentedFrame` snapshots the **3D colour surface** at flip time,
 and `TryCopyPresentedFrame` reads that surface live. Programs that write the
-scanout buffer directly — nxdk's `XVideoGetFB()`, `debugPrint`, `XVideoSetMode`
-— issue no 3D draws and no flips, so nothing is captured and `--frame` (and the
-frontend) keep showing the last flipped frame.
+scanout buffer directly — nxdk's `XVideoGetFB()` and `debugPrint` — issue no 3D
+draws and no flips, so the flipped frame stays at the boot animation.
 
-Evidence (1B fast, HDD+DVD):
+The buffer was never missing: `TryCopyScanoutFrame` (new, reads PCRTC START) plus
+`--frame-scanout` recover it. Measured at 1B, same runs:
 
-| sample | guest RAM SHA | exported frame SHA |
-|---|---|---|
-| `gamma` | `4EE18F78` | `18C7CC83` |
-| `gamma-fade` | `ED83DC23` | `18C7CC83` |
-| `hello` | `4650454F` | `18C7CC83` |
-| `led` | `3D1F72DB` | `18C7CC83` |
+| sample | flipped frame | scanout | what the scanout contains |
+|---|---|---|---|
+| `gamma` | 1 colour | **768 colours, 298,744 px** | the gradient + grey borders |
+| `hello` | 1 colour | **2 colours, 302 px** | the printed text |
+| `led` | `18C7CC83` | `18C7CC83` | nothing (correct negative control) |
+| `mesh` | 8,695 colours | 8,548 colours | both have content; the buffers differ |
 
-Four different guest states, one exported frame: the frame is the boot
-animation, not the program's output. The register dump agrees — at exit the
-exported surface and the scanout base are different buffers (`gamma`:
-`surface=32A4000 pcrtc=3EB4000`; `mesh`: `surface=3D00000 pcrtc=3BD4000`).
+Four samples with four different RAM SHAs used to export one identical frame;
+they are now all distinguishable (`scanoutSha` per row above).
 
-A correct fix has to model the display the way xemu does (PCRTC start plus the
-VGA CRTC line offset, `nv2a.c:184-190`), not just swap in `PCRTC_START`: the
-guest writes a VRAM-aperture address that XGrid masks into its 64 MB space, and
-the scanout moves during boot. Scoped, not attempted here.
+**What is still open:** the *product* path (`--frame`, and the Avalonia frontend
+via `TryCopyPresentedFrame`) still presents the flip surface. Making scanout the
+default is not a one-line swap — for a flipping title the two buffers differ
+(`mesh`: 8,695 vs 8,548 colours), so it needs xemu's display model (`pcrtc.start
+/ 4` plus the VGA CRTC line offset, `nv2a.c:184-190`) and a deliberate gate
+re-record. Scoped, measured, not guessed.
 
 ### 2. The repo's `nxdk-mesh` snapshot could never build
 

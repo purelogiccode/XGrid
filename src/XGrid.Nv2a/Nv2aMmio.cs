@@ -5812,25 +5812,70 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return Backend.ReadbackPresented(out width, out height, out bgra);
         }
 
-        if (!_presentedValid || _memory is null)
+        if (!_presentedValid)
         {
             return false;
         }
 
-        ulong count = (ulong)_presentedWidth * _presentedHeight;
-        if (count == 0 || count > MaxPresentPixels)
+        if (!CopySurfacePixels(_presentedOffset, _presentedWidth, _presentedHeight, _presentedPitch, _presentedBytes, out bgra))
+        {
+            return false;
+        }
+
+        width = _presentedWidth;
+        height = _presentedHeight;
+        return true;
+    }
+
+    /// <summary>
+    /// Copies the current scanout surface - the buffer the display controller is
+    /// reading - instead of the last flipped 3D surface.
+    /// </summary>
+    /// <remarks>
+    /// Programs that render straight into the framebuffer (nxdk's
+    /// <c>XVideoGetFB</c>, <c>debugPrint</c>) issue no 3D draws and no flips, so
+    /// <see cref="TryCopyPresentedFrame"/> never sees their output. The scanout
+    /// base is PCRTC START; geometry and pitch come from the current surface
+    /// state, which the kernel programs to the active video mode.
+    /// </remarks>
+    /// <returns>False when there is no scanout or no usable surface geometry.</returns>
+    public bool TryCopyScanoutFrame(out uint width, out uint height, out byte[] bgra)
+    {
+        width = 0;
+        height = 0;
+        bgra = Array.Empty<byte>();
+        if (Backend is not null || _memory is null || !_presentedValid || _pcrtcStart == 0)
+        {
+            return false;
+        }
+
+        if (!CopySurfacePixels(_pcrtcStart, _presentedWidth, _presentedHeight, _presentedPitch, _presentedBytes, out bgra))
+        {
+            return false;
+        }
+
+        width = _presentedWidth;
+        height = _presentedHeight;
+        return true;
+    }
+
+    private bool CopySurfacePixels(uint offset, uint width, uint height, uint pitch, uint bytesPerPixel, out byte[] bgra)
+    {
+        bgra = Array.Empty<byte>();
+        ulong count = (ulong)width * height;
+        if (count == 0 || count > MaxPresentPixels || _memory is null)
         {
             return false;
         }
 
         byte[] pixels = new byte[count * 4];
-        for (uint y = 0; y < _presentedHeight; y++)
+        for (uint y = 0; y < height; y++)
         {
-            uint row = _presentedOffset + (y * _presentedPitch);
-            for (uint x = 0; x < _presentedWidth; x++)
+            uint row = offset + (y * pitch);
+            for (uint x = 0; x < width; x++)
             {
-                uint address = row + (x * _presentedBytes);
-                if (address + _presentedBytes > RamSize)
+                uint address = row + (x * bytesPerPixel);
+                if (address + bytesPerPixel > RamSize)
                 {
                     return false;
                 }
@@ -5839,7 +5884,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 uint green;
                 uint blue;
                 uint alpha;
-                if (_presentedBytes == 4)
+                if (bytesPerPixel == 4)
                 {
                     uint pixel = ReadGpu(address);
                     blue = pixel & 0xFFu;
@@ -5856,7 +5901,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     alpha = 255u;
                 }
 
-                int at = (int)((((ulong)y * _presentedWidth) + x) * 4);
+                int at = (int)((((ulong)y * width) + x) * 4);
                 pixels[at] = (byte)blue;
                 pixels[at + 1] = (byte)green;
                 pixels[at + 2] = (byte)red;
@@ -5864,8 +5909,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
         }
 
-        width = _presentedWidth;
-        height = _presentedHeight;
         bgra = pixels;
         return true;
     }
