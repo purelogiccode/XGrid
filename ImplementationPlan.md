@@ -145,13 +145,19 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    calls) and the ~0.5-0.9 s texture fingerprint, both measured and deferred.
    Next: B3 method coverage on the corpus (zero `unsup` rows, guest counters
    identical) — the submission levers are spent.
-2. **Track E — compatibility corpus.** `docs/compatibility.md` + a
+2. **Track E - compatibility corpus.** `docs/compatibility.md` + a
    boot-to-first-frame harness + ≥8 samples; no NV2A/APU fidelity polish without
-   a matrix row and a usage histogram (`compatibility-corpus.md`). **Landed
-   2026-10-20:** `scripts/boot-to-first-frame.ps1` (+ `--frame-first`), four
-   measured rows, reproducible commands, the nxdk-toolchain blocker recorded;
-   `gpu-reference-map.md` + `nv097-coverage.md` (108 handled / 93 recorded) are
-   the fidelity steering inputs. Still short of M-B: 3 runnable samples.
+   a matrix row and a usage histogram (`compatibility-corpus.md`). **M-B MET
+   2026-10-20:** `scripts/boot-to-first-frame.ps1` (+ `--frame-first`,
+   `--frame-scanout`, `-Corpus`, `-IsoPath`) and `scripts/build-nxdk-samples.ps1`
+   (MSYS2 + clang/lld/llvm/bison/flex/cmake, nxdk `a6c31ee`) give **11 rows over
+   7 samples**, every row reproducible. The corpus immediately found two measured
+   gaps: direct-framebuffer output is not what `--frame`/the frontend present
+   (`TryCopyScanoutFrame` + `--frame-scanout` recover it; making it the default
+   needs xemu's display model and a gate re-record), and the repo's `nxdk-mesh`
+   snapshot was missing `verts.h`/`texture.h`. Steering inputs:
+   `usage-histogram.md` (measured usage), `nv097-coverage.md` (111 handled / 90
+   recorded), `gpu-reference-map.md`. One `mesh` mipmap question is still open.
 3. **Track P — product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.
