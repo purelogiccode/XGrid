@@ -7687,8 +7687,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ref readonly SamplerPlan plan = ref _samplerPlans[stage];
         float invW = w != 0f ? 1f / w : 1f;
-        float du = invW / Math.Max(plan.Width, 1);
-        float dv = invW / Math.Max(plan.Height, 1);
+
+        // One tap is one texel in the stage's own coordinate space. The
+        // reference normalizes a rect (LU_IMAGE_*) coordinate first and then
+        // offsets by 1/textureSize (psh.c apply_convolution_filter: norm%d +
+        // texCoordDelta/textureSize), which in this sampler's texel-unit space
+        // for linear formats is a delta of exactly one texel; a swizzled stage
+        // is already normalized, so there the delta is 1/size.
+        float du = plan.Linear ? invW : invW / Math.Max(plan.Width, 1);
+        float dv = plan.Linear ? invW : invW / Math.Max(plan.Height, 1);
         float bu = tu * invW;
         float bv = tv * invW;
         float ar = 0f;

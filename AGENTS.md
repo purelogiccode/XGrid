@@ -629,10 +629,60 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   flag now moves **no gate anchor**: triangle RAM/CPU/frame identical, menu
   flipped frame byte-identical to `4EF1FBF6…` (only the back surface differs).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1624 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1625 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-21 (eighteenth; compatibility gap 10 diagnosed, §211). The
+`bumpenv_ripple` black frame is a **state** answer, not a rasterizer bug - and the
+one change landed is a convolution fix on linear texture stages.**
+
+- **Diagnosis first, and it exonerates the renderer.** Replayed from the presented
+  surface back to the guest's method stream with temporary flip/draw/fragment
+  probes (all removed before committing; `git status` shows only the two intended
+  files). Chain: all **216** presented surfaces are uniformly `FF000000` (the
+  colour clear); each frame issues exactly **two** 4-vertex `Arrays` quads with
+  vertex program `0+18` that writes only oPos and oT0/oT1 (**no oD0**), under a
+  one-stage combiner that sets **`V0 = T1`** with final **`D = V0`** - so the
+  visible colour *is* the stage-1 texel. Draw A (`m0100`) never resolves stage 1
+  (mode `NONE`), so `T1` keeps `(0,0,0,1)`: black by construction, as in the
+  reference. Draw B (`m1600`) is BUMPENVMAP and its math is faithful
+  (`dsdt = (sign3(t0.b), sign3(t0.g))` off the `0x28` map, matrix
+  `(0.062,0,0.062,0)`), but the perturbed coordinate at the quad's right edge
+  (`1.0054, 0.9938`) clamps onto the logo texture's `FF000000` edge texel.
+- **The zeta clear is what hides the geometry.** The app clears zeta to
+  `0x00711174` (depth ~0.44 low-24-bit, ~0.0017 under the reference's `>> 8`
+  layout) with `LEQUAL` while every fragment is at z ~ 0.5, so nothing passes.
+  Forcing the clear far **or** disabling the depth test yields the identical
+  frame - **406 colours, 96.9% black, mean (5.5, 4.2, 2.3)** - i.e. the plane's
+  screen footprint (a wedge), not the reference's full-screen reflection. Culling
+  additionally drops one triangle of each quad (pixels 42.0M -> 73.5M with culling
+  off, frame still black).
+- **Filed, each needing its own differential:** the Z24S8 clear-word layout
+  (`pgraph_get_clear_depth_stencil_value` puts the stencil in the **low** byte,
+  XGrid in the high byte; the gates clear `0xFFFFFF00` where the stored depth
+  agrees and the stencil does not), the cull winding on those quads, and the app
+  state the reflection needs (gap 9's second-emulator frame).
+- **Landed: §212, the convolution tap step on linear (LU_IMAGE) stages.**
+  `SampleConvolved` added `1/Width` in normalized units on every stage, i.e.
+  `1/Width` of a texel where a linear stage's coordinate is a texel index, so all
+  nine taps read one texel. One texel per tap now (`psh.c
+  apply_convolution_filter` normalizes a rect coordinate first). Test
+  `TextureFilterRegisters_ConvolutionOffsetsOneTexelOnLinearTexture` plus a new
+  linear harness: an impulse centre reads **195 pre-fix -> 64 post-fix** (255 *
+  4/16), and a kernel field next to MIN 1 still reads sharp. Only reachable under
+  `--tex-filter registers` with MIN 7, so no anchor can move.
+- **Gates (landing commit):** accurate 1B menu `01BE5D64…`/`3D2740B8…` + frame
+  `4EF1FBF6…`, triangle `812EA159…`/`2F632483…` + frame `A1740DE0…`; GL policy
+  frames `B6116DAE…`/`7A860ED7…` with `violations=0 maxDelta=1
+  BackendUnsupported=0` and identical counters (`33632/686/686`, `2706/68/34`);
+  fast 1B menu `51B56687…`/`F5D61C94…` (31.16 s, `rasterPsh` 10.84 s) and triangle
+  `B45254CA…`/`7DAB63EB…` (10.49 s); ktest smoke **PASS 7/7** at **792,800,535**
+  steps with the 40,797-byte log `CA5D3867…` byte-identical; suite 1624 ->
+  **1625**; format clean. `gpu-slice1/2-golden.ps1` still default to
+  `wt-data\xbox_hdd.qcow2`, which does not exist on H1 - pass
+  `-Hdd wt-data\chain-199l\hdd.qcow2`.
 
 **Session 2026-10-21 (seventeenth; the TEXFILTER convolution gate + compiled tent
 fill, §210). The "2.4x filter cost" was a misapplied blur, and fixing it made the

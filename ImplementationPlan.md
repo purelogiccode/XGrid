@@ -172,7 +172,17 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    both compiled fills serving the tent, the flag costs 32.18 s vs 32.22 s at 1B
    menu and moves no gate anchor (triangle SHA/frame identical, menu frame
    `4EF1FBF6…`), while `bump_cubemap_reflect`'s colour depth goes 20,843 ->
-   26,347 toward its reference's 30,806 at an unchanged mean.
+   26,347 toward its reference's 30,806 at an unchanged mean. **§211
+   (2026-10-21):** gap 10 (`xgu bumpenv_ripple` black) is **diagnosed, not
+   fixed** - every presented surface is the colour clear, the two per-frame
+   quads take their colour from `T1` (`V0 = T1`, final `D = V0`; stage 1 `NONE`
+   in one draw, black texels in the bump draw) and the zeta clear
+   (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes;
+   the renderer is exonerated and three items are filed (Z24S8 clear-word
+   layout vs the reference, cull winding on those quads, the app state the
+   reflection needs). The same session fixed the convolution tap step on linear
+   (LU_IMAGE) stages (one texel per tap, `psh.c apply_convolution_filter`); the
+   opt-in flag's default stays an operator item. 1625 tests green.
 3. **Track P — product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.

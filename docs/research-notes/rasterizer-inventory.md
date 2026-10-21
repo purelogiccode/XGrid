@@ -1,5 +1,19 @@
 # Software rasterizer per-pixel inventory - XGrid NV2A (`--gpu sw`, the default)
 
+> **Status 2026-10-21 (§211) - no rasterizer change this session; one opt-in
+> sampler correction.** `xgu bumpenv_ripple`'s black frame (compatibility gap 10)
+> was diagnosed as *state*: the per-frame quads take their colour from `T1`
+> under `V0 = T1` / `D = V0`, one of them with stage 1 programmed `NONE`, and the
+> app's zeta clear is nearer than every fragment - forcing the clear far or the
+> depth test off yields the same 406-colour wedge, so the fill loop is not the
+> cause (§211a-211e). The landed change is in the opt-in convolution path:
+> `SampleConvolved` stepped `1/Width` of a texel on linear (LU_IMAGE) stages
+> instead of one texel, so the nine taps collapsed onto one texel; the swizzled
+> path is untouched (§211b). Raster numbers are unchanged from §210: 1B menu
+> `rasterPsh` 10.84 s of a 31.16 s wall, triangle 4.35 s, `compiled=` fills
+> identical to the legacy leg. O6 row spans and the 2-pixel interleave remain
+> demoted at their bounded ceilings.
+
 > **Status 2026-10-21 (§210) - the compiled fills serve TEXFILTER's tent, and
 > the "2.4x filter cost" was not the fill loop.** A kernel field only convolves
 > when MIN is CONVOLUTION_2D_LOD0 (7) (`xemu psh.c:197-210`); the dashboard and
