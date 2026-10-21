@@ -12837,6 +12837,11 @@ until the menu has an oracle.
   `$NXDK_DIR/bin` to PATH) is an 18th row / 14th sample: 2,725 draws, 45.1M
   px, 1,620 colours, `0x3A` 3.14M samples with zero misses, no oracle (the
   repo ships no screenshot). `compatibility.md` carries the row.
+  The whole corpus (`-Corpus`, 1B) was then re-measured on the final build:
+  every row PASS, and the six 1B anchors reproduce exactly (`gamma`
+  `D3EBF420`, `gamma-fade` `2BC1C443`, `hello` `72D33DC2`, `led` `18C7CC83`,
+  `mesh` `806CBEA7`/`7328A99F`, `xaudio` `8A969D86`), so the sampler changes
+  did not move any boot-animation row.
 - **Default path is unchanged:** fast 1B menu `51B56687…`/`F5D61C94…` exact;
   accurate 1B menu golden PASS (sw `4EF1FBF6…`, gl `B6116DAE…`,
   `violations=0 maxDelta=1`, counters 33632/686/686); accurate triangle golden
