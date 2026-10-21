@@ -53,9 +53,9 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
-| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `6BE6325F` | `-Sample dashboard` |
-| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `DD1D516E` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `3FC4B419` | `-Sample triangle` |
-| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
+| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `B6116DAE` (policy) | `-Sample dashboard` |
+| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `DD1D516E` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `7A860ED7` (policy) | `-Sample triangle` |
+| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
 | **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout `7328A99F` | `-Sample mesh` |
@@ -109,32 +109,39 @@ pinned `a6c31ee`) via `scripts/build-nxdk-samples.ps1`, so the stale snapshots
 are no longer on the build path. `data/` is gitignored, which is why the gap
 survived: nothing tracked the sample sources.
 
-## Measured rows (2026-10-20, twelfth session, loaded host)
+## Measured rows (2026-10-20, refreshed after §206g/§207)
 
-> **Anchor note (§206g cull-face landing, 2026-10-20):** the matrix table above
-> carries the post-cull 1B fast anchors (dashboard RAM `51B56687`, triangle RAM
-> `DD1D516E`); CPU SHAs and every frame SHA are unchanged. The `BTFF` rows below
-> still show pre-cull RAM values — refresh them on the next `-All` run.
+> **Anchor note:** the matrix table above carries the current 1B fast anchors
+> (dashboard RAM `51B56687`, triangle RAM `DD1D516E`) for the `raster-leg`
+> command set. The `BTFF` rows below use the harness's own command (dashboard
+> with the gate pad script, triangle with HDD+DVD), so their RAM SHAs differ by
+> construction — compare rows within this table, not against the matrix.
 
-Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M);
-the host runs ~1.6-1.9x slower than the quiet-host baselines, so compare rows
-within a session, not across. These are the post-§205 rows (draw-command
-batching): the GL walls moved by ~1% here, while the same-binary A/B measured
-`drawMs` -47% and wall -4.2% on the §205 commit.
+Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M).
+Rows refreshed 2026-10-20 after the cull-face landing, so these are post-cull
+values.
+
+**Software frames are exact anchors; GL frames are policy-validated** (diff
+against the software frame: flat regions byte-exact, `±1 px` edge band, per-channel
+tolerance ≤ 2). The exact GL SHA moved with the cull landing
+(`6BE6325F -> B6116DAE` dashboard, `3FC4B419 -> 7A860ED7` triangle) while the
+software frame stayed byte-identical and both GL gates still report
+`violations=0 maxDelta=1` — that is the documented contract, not a regression.
 
 | Row | wall | msps | frames | first frame | last frame | SHAs (ram/cpu) |
 |---|---:|---:|---:|---|---|---|
-| triangle, `sw` | 20.7 s | 48.3 | 68 | step 32M, `6F780A33` | `A1740DE0` | `777F4DEB` / `7DAB63EB` |
-| triangle, `gl+replace` | 10.5 s | 94.8 | 68 | step 32M, `6F780A33` | `3FC4B419` | `8AE82781` / `7DAB63EB` |
-| dashboard, `sw` | 62.0 s | 16.1 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `36B72FE1` / `F5D61C94` |
-| dashboard, `gl+replace` | 44.6 s | 22.4 | 686 | step 50M, `6F780A33` | `6BE6325F` | `CF151863` / `F5D61C94` |
-| ktest (600M, `disable-video=1`), `sw` | 14.9 s | 40.3 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `4D4849FA` / `76002239` |
-| ktest (600M, `disable-video=1`), `gl+replace` | 10.0 s | 59.8 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `42C9C960` / `76002239` |
+| triangle, `sw` | 11.7 s | 85.6 | 68 | step 32M, `6F780A33` | `A1740DE0` | `0117A5E2` / `7DAB63EB` |
+| triangle, `gl+replace` | 7.1 s | 141.5 | 68 | step 32M, `6F780A33` | `7A860ED7` (policy) | `8AE82781` / `7DAB63EB` |
+| dashboard, `sw` | 34.0 s | 29.4 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `94A6D53C` / `F5D61C94` |
+| dashboard, `gl+replace` | 26.5 s | 37.7 | 686 | step 50M, `6F780A33` | `B6116DAE` (policy) | `CF151863` / `F5D61C94` |
+| ktest (600M, `disable-video=1`), `sw` | 9.0 s | 66.4 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `974F9901` / `76002239` |
+| ktest (600M, `disable-video=1`), `gl+replace` | 7.4 s | 81.5 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `42C9C960` / `76002239` |
 
 Reading: the first presented frame is the boot animation (`6F780A33`) in every
 row - a boot-chain anchor, not a title anchor. The title anchors are the
-last-frame SHAs, and the GL rows match their gate goldens
-(`3FC4B419`/`6BE6325F`), which is what makes these rows comparable to the gates.
+last-frame SHAs. **Software frames are exact; GL frames are policy-validated**
+against the software frame (`violations=0 maxDelta=1` on both gate scripts), so
+the GL column is a fingerprint, not a byte-exact golden.
 The ktest rows are the smoke ISO staged by `scripts/ktest-smoke.ps1`; its suite
 log is the real evidence (`792,800,535` steps, 7/7 known deltas), the frames are
 just the boot animation because the suite config disables video. The GL rows

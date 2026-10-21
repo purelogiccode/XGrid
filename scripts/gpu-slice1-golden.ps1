@@ -10,9 +10,9 @@
 param(
     [string]$Steps = "1000000000",
     [string]$OutDir = ".",
-    [string]$Bios = "wt-data\Complex_4627.bin",
-    [string]$Mcpx = "wt-data\mcpx_1.0.bin",
-    [string]$Eeprom = "wt-data\eeprom.bin",
+    [string]$Bios = "data\xemu-0.8.136-windows-x86_64\Complex_4627.bin",
+    [string]$Mcpx = "data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin",
+    [string]$Eeprom = "data\xemu-0.8.136-windows-x86_64\eeprom.bin",
     [string]$Hdd = "wt-data\xbox_hdd.qcow2",
     [string]$PadScript = "down@950000000+hold,none@962000000,a@970000000+hold,none@976000000"
 )

@@ -12366,3 +12366,31 @@ one-liner.
 buffers (green vs blue), the scanout export requires both a non-zero PCRTC start
 and presented geometry, and the scanout bytes match the guest's per-pixel values
 (so a row/pitch mistake cannot pass). Suite 1573 -> **1576**.
+
+### 207g Correction: the cull landing moved the GL *fingerprints*, not the software frames
+
+Closing the corpus loop re-ran both golden harnesses, and they had never been
+re-run on the post-cull build with these media:
+
+- `gpu-slice1-golden.ps1` (dashboard): sw `4EF1FBF6` **exact**, gl
+  **`6BE6325F` -> `B6116DAE`**, `diff=2602 violations=0 outsideBand=0 maxDelta=1`.
+- `gpu-slice2-triangle-golden.ps1`: sw `A1740DE0` **exact**, gl
+  **`3FC4B419` -> `7A860ED7`**, `diff=27849 violations=0 maxDelta=1`.
+
+So the honest statement of 206g's evidence is: **every software frame and every
+CPU SHA is byte-identical, and the GL frames stay inside the diff policy with
+zero violations** - the exact GL SHA is a fingerprint, not a golden, and culling
+triangles before `TryDraw` moves it. Nothing regressed; the earlier note simply
+implied the GL SHAs were byte-exact too. `docs/compatibility.md` now says
+"policy" next to every GL value and the measured-rows table carries the current
+numbers.
+
+Both scripts also had machine-bound firmware defaults (`wt-data\Complex_4627.bin`,
+`wt-data\mcpx_1.0.bin`, `wt-data\eeprom.bin`) that do not exist on H1, so they
+exited 4 with no useful message. They now default to the canonical
+`data\xemu-0.8.136-windows-x86_64\` paths, like every other script.
+
+Post-cull measured rows (1B fast, `boot-to-first-frame.ps1 -All`): triangle sw
+11.7 s / 85.6 msps / `A1740DE0`, gl+replace 7.1 s / 141.5; dashboard sw 34.0 s /
+29.4 / `4EF1FBF6`, gl+replace 26.5 s / 37.7; ktest 600M sw 9.0 s / 66.4, gl 7.4 s /
+81.5. All six PASS, `vec=0`.
