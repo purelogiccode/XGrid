@@ -140,6 +140,20 @@ public partial class MainWindow : Window
                 ExecuteShellCommand(static viewModel => viewModel.TogglePauseCommand.Execute(null));
                 e.Handled = true;
                 return;
+            case Key.F7:
+                ExecuteShellCommand(viewModel =>
+                {
+                    if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                    {
+                        viewModel.StepInstructionsCommand.Execute(null);
+                    }
+                    else
+                    {
+                        viewModel.StepFrameCommand.Execute(null);
+                    }
+                });
+                e.Handled = true;
+                return;
             case Key.F8:
                 ExecuteShellCommand(static viewModel => _ = viewModel.SaveStateCommand.ExecuteAsync(null));
                 e.Handled = true;

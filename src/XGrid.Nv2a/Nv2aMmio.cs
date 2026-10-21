@@ -5742,17 +5742,32 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             // the reference's GL filter map turns MIN 2/4/6/7 into GL_LINEAR
             // and 1/3/5 into GL_NEAREST (texture.c), i.e. exactly the mipmap
             // variants collapsed onto level 0.
-            plan.Bilinear = false;
-            plan.Convolution = 0;
-            if (TextureFilterRegisters)
-            {
-                uint filter = _textureFilter[slot];
-                uint min = (filter & TextureFilterMin) >> 16;
-                uint mag = (filter & TextureFilterMag) >> 24;
-                plan.Bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
-                plan.Convolution = EffectiveConvolutionKernel(filter);
-            }
+            ResolveTextureFilter(slot, out bool bilinear, out int convolution);
+            plan.Bilinear = bilinear;
+            plan.Convolution = convolution;
         }
+    }
+
+    /// <summary>
+    /// Resolves a stage's effective TEXFILTER behaviour. The one place the
+    /// flag is consulted: the software sampler's <see cref="SamplerPlan"/> and
+    /// the backend seam's <see cref="PgraphTextureSlot"/> both read it, so the
+    /// rasterizer and the GPU backend can never disagree about a stage.
+    /// </summary>
+    private void ResolveTextureFilter(int slot, out bool bilinear, out int convolution)
+    {
+        bilinear = false;
+        convolution = 0;
+        if (!TextureFilterRegisters)
+        {
+            return;
+        }
+
+        uint filter = _textureFilter[slot];
+        uint min = (filter & TextureFilterMin) >> 16;
+        uint mag = (filter & TextureFilterMag) >> 24;
+        bilinear = min is 2u or 4u or 6u or 7u || mag is 2u or 4u;
+        convolution = EffectiveConvolutionKernel(filter);
     }
 
     /// <summary>
@@ -7214,9 +7229,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private PgraphTextureSlot BuildTextureSlot(int slot)
     {
+        ResolveTextureFilter(slot, out bool bilinear, out int convolution);
+        uint address = _textureAddress[slot];
         return new PgraphTextureSlot(
-            _textureOffset[slot], _textureFormat[slot], _textureAddress[slot],
-            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot]);
+            _textureOffset[slot], _textureFormat[slot], address,
+            _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot],
+            SamplerWrapMode(DecodeTextureAddressU((int)address)),
+            SamplerWrapMode(DecodeTextureAddressV((int)address)),
+            _textureBorderColor[slot],
+            bilinear,
+            convolution);
+    }
+
+    /// <summary>
+    /// Encodes a decoded address mode in the sampler's own four-way space:
+    /// 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border. The raw word assigns 1 to
+    /// wrap and 2 to mirror, so reading it directly (as the GL backend used
+    /// to) swaps those two modes.
+    /// </summary>
+    private static int SamplerWrapMode(int addressMode)
+    {
+        return addressMode == (int)TextureAddressBorder ? 3 : ToWrapMode(addressMode);
     }
 
     private PgraphDrawInfo BuildDrawInfo(
@@ -7232,7 +7265,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _combiner,
             _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
             _shaderClipMode,
-            _zFormatFloat);
+            _zFormatFloat,
+            _colorSurfaceBase + PresentedColorOffset,
+            _surfacePitch & 0xFFFFu);
     }
 
     private PgraphDrawInfo BuildLegacyDrawInfo(
@@ -7260,7 +7295,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _combiner,
             _fogEnable, _fogColor[0], _fogColor[1], _fogColor[2], _fogColor[3],
             _shaderClipMode,
-            _zFormatFloat);
+            _zFormatFloat,
+            _colorSurfaceBase + PresentedColorOffset,
+            _surfacePitch & 0xFFFFu);
     }
 
     private static PgraphVertex ToBackendVertex(in PshVertex v)

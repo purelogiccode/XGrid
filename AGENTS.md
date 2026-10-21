@@ -604,6 +604,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `3FC4B419…`), ktest log byte-identical. Projected onto §204's 24.8 s menu
   projection: ~23.8 s against the 24 s M-A target. What is left of submission is
   ~0.8 s of block packing, not GL calls.
+- **GL sampler parity + replace-mode composition (219, 2026-10-21):** the GL
+  backend now runs the software sampler - TEXFILTER tent and the nine-tap 1-2-1
+  convolution (MIN = CONVOLUTION_2D_LOD0 only), the *decoded* wrap modes with
+  clamp-to-border (the seam carries `SamplerWrapU/V`/`BorderColor`/`Bilinear`/
+  `Convolution`; the backend had read the raw word, where 1 is wrap and 2 is
+  mirror), the PROJECT2D divide by w, and the clip origin on both fragment axes.
+  In `--gpu-replace` a declined draw composes the FBO into guest RAM and the
+  frame continues in software, so a mixed frame presents the complete image
+  (gap 8 closed: `bump_cubemap_reflect` 3B presents `DA0750EE` = the software
+  frame; depth/stencil are not composed - documented). Both 1B GL goldens stay
+  byte-identical (`B6116DAE` / `7A860ED7`), `BackendUnsupported=0`,
+  `composedFrames=0`, fast anchors unchanged, ktest PASS 7/7.
+
 - **Cubemap reflection + TEXFILTER (§209, 2026-10-21):** `xgu
   bump_cubemap_reflect` renders its reflection (2 colours / 36% black → 21,041
   colours / 0% black, `|dmean|` (5.3, 2.4, 1.3) at 3.6B). The dominant bug was
@@ -653,10 +666,56 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `tests/XGrid.Frontend.Tests` (15 tests) is the frontend test project.
 
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1714 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1725 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twenty-first; the GL sampler catches up with the software
+rasterizer - compatibility gaps 7 and 8 - plus a frontend frame-step control).
+Every gate anchor stayed byte-identical; all changes are host-side plus two
+seam fields.**
+
+- **Gap 7 closed on the GL side (219).** The seam now carries resolved sampler
+  state (`SamplerWrapU/V` - 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border -,
+  `BorderColor`, `Bilinear`, `Convolution`), filled by the same
+  `Nv2AMmio.ResolveTextureFilter` helper the software `SamplerPlan` uses. The
+  GL backend had read the *raw* address word, so its wrap/mirror were swapped
+  and border clamped; the menu programs slot 1 wrap 3,950x and slot 3 border
+  80x (usage histogram). `PshGlslGenerator` now emits `SampleTap` (border +
+  wrap), the four-tap tent (`SampleBilinear` arithmetic), the nine-tap 1-2-1
+  `SampleConvolved` (PROJECT2D only, MIN = CONVOLUTION_2D_LOD0), the PROJECT2D
+  divide by w, and the clip origin on **both** fragment axes (`px += T(2).w`;
+  only `ClipY` was added, so `ClipX != 0` compared absolute vertices against
+  clip-relative `gl_FragCoord`). Measured on `xgu vp_lighting` 3B (the only
+  fractional-texcoord row with zero declined draws): gl vs sw agree within one
+  8-bit step in **both** filter states (legacy `E68070A3` vs `72B2F490`,
+  registers `A9E09139` vs `CF698444`, dmean <=0.01, maxDelta 1), and the flag
+  moves both by the same ~6.5%/maxDelta 80. The menu cannot discriminate
+  (texel-centre sampling) and its registers leg is the same `B6116DAE`.
+- **Gap 8 closed (219d): one writer per frame.** In `--gpu-replace`, the first
+  declined draw now composes the FBO's clip window into the guest color
+  surface (new seam fields `PgraphDrawInfo.ColorSurfaceAddress`/`ColorPitch`,
+  the software fill's own address expression), every later draw of that frame
+  is declined too, and the flip drops the FBO so the present-upload path
+  rebuilds it from RAM. Depth/stencil are not composed (GL depth is host-side)
+  - documented. `xgu bump_cubemap_reflect` 3B `-Gpu gl -GpuReplace` now presents
+  **`DA0750EE` = the software frame** (was the clear only, `3553B0DF`), with
+  `composedFrames=7`, `composedPixels=2,150,400`, `BackendUnsupported=7`, CPU
+  SHA unchanged (`D5D38C64`).
+- **Track P: frame stepping.** Home has "Frame step" and "Step"; `F7` advances
+  one presented frame (8M-instruction budget so an idle guest cannot hang the
+  UI), `Shift+F7` advances 1,000,000 instructions. `EmulatorSession.StepFrame`/
+  `StepInstructions` set a budget and release the pause gate; the loop consumes
+  it in batches and re-closes the gate (compare-exchange budget so a second
+  click keeps its own step). About page + README list the keys.
+- **Gates:** menu 1B accurate golden PASS (sw `4EF1FBF6`, gl `B6116DAE`,
+  counters 33,632/686/686, `BackendUnsupported=0`, `composedFrames=0`);
+  triangle slice-2 golden PASS (sw `A1740DE0`, gl `7A860ED7`, 2,706/68/34);
+  menu `--tex-filter registers` sw-vs-gl policy PASS; suite **1725** (Nv2a
+  386->388, GpuGl 85->91); format clean. New: `scripts/gpu-slice1-golden.ps1
+  -TexFilter legacy|registers` (+ a generic `-Extra`), `diag[composedFrames=
+  composedPixels= composedDraws=]`. Decisions 219; `compatibility.md` gaps 7/8.
+
 **Session 2026-10-21 (twentieth; gap 6 lighting + PTIMER 0.8.137 + APU XGSCNT +
 two Track P features). Four landed slices; frames, CPU SHAs and every
 counter stayed exact, and the two menu **RAM** anchors were re-recorded.**

@@ -75,6 +75,7 @@ interpreter. Toggle `Accent` to restyle the UI live.
 | --- | --- |
 | `F5` | Power on / off |
 | `F6` | Pause / resume |
+| `F7` / `Shift+F7` | Frame step / 1,000,000-instruction step (while paused) |
 | `F11` / `Esc` | Full screen toggle / exit |
 | `Ctrl+O` | Open a disc image |
 | `Ctrl+S` | Save settings (Settings page) |

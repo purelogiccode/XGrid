@@ -168,3 +168,34 @@ the register changes every textured pixel of the gate frame. The histogram is
 the evidence that it matters; the corpus row is the only oracle for whether it
 is right.
 
+
+## Sampler address modes and border colours (2026-10-21, §219)
+
+The same `--pgraph` window answers a second question the GL sampler needed:
+*which* NV097_SET_TEXTURE_ADDRESS / TEXFILTER / BORDER_COLOR words the gate
+title programs. Repro: 1B fast menu, `--pgraph wt-data\probe-menu-pgraph.txt
+--pgraph-max 8000000` (8,000,000-method window), then count column 3 for the
+texture-slot offsets.
+
+| slot | SET_TEXTURE_ADDRESS words (count) | resolved U/V |
+|---|---|---|
+| 0 | `00010303` (4,265), `00010404` (35), `00010101` (12), `00030303` (1) | clamp/clamp; border/border; wrap/wrap |
+| 1 | `00010101` (3,950), `00030303` (81) | **wrap/wrap** dominant |
+| 2 | `00010101` (3,950), `00030303` (81) | wrap/wrap dominant |
+| 3 | `00010101` (3,950), `00030404` (80), `00030303` (1) | wrap/wrap; **border/border** |
+
+| | words |
+|---|---|
+| TEXFILTER slot 0 | `01012000` (3,949 nearest), `02022000` (364 tent) |
+| TEXFILTER slots 1-3 | `02022000` / `01012000` mixtures (tent + a kernel field next to an ordinary MIN, so the effective kernel is 0 - §210a) |
+| BORDER_COLOR | slot 0 `FF000000` (34), slot 3 `FFFFFFFF` (6) |
+
+**Why this mattered.** The raw address word assigns **1 to wrap and 2 to
+mirror**, and the GL backend was reading the raw word: its wrap/mirror were
+swapped and mode 4 (border) fell into the clamp branch. The gate frames could
+not show it because their coordinates stay inside [0,1), but slot 1 (3,950
+writes) is `wrap`, slot 3 is `border`, and any draw that steps outside the
+texture would have sampled a different texel than the software rasterizer.
+The seam now carries the *decoded* mode (0 wrap, 1 mirror, 2 clamp, 3 border)
+plus the border colour, resolved once in `Nv2AMmio`, so the two executors
+cannot disagree (§219).

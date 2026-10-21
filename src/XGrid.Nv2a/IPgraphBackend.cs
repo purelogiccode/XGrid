@@ -417,7 +417,14 @@ public readonly struct PgraphTextureSlot
     /// <param name="control0">Raw control word 0 (enable in bit 30).</param>
     /// <param name="control1">Raw control word 1 (linear pitch in the high 16 bits).</param>
     /// <param name="imageRect">Packed extent: width in the high 16 bits, height in the low 16.</param>
-    public PgraphTextureSlot(uint offset, uint format, uint address, uint control0, uint control1, uint imageRect)
+    /// <param name="samplerWrapU">Resolved U address mode: 0 wrap, 1 mirror, 2 clamp, 3 border.</param>
+    /// <param name="samplerWrapV">Resolved V address mode: 0 wrap, 1 mirror, 2 clamp, 3 border.</param>
+    /// <param name="borderColor">Raw NV097_SET_TEXTURE_BORDER_COLOR word (ARGB).</param>
+    /// <param name="bilinear">Whether TEXFILTER asks for the tent filter at LOD 0.</param>
+    /// <param name="convolution">Effective TEXFILTER convolution kernel (0 none).</param>
+    public PgraphTextureSlot(
+        uint offset, uint format, uint address, uint control0, uint control1, uint imageRect,
+        int samplerWrapU, int samplerWrapV, uint borderColor, bool bilinear, int convolution)
     {
         Offset = offset;
         Format = format;
@@ -425,6 +432,11 @@ public readonly struct PgraphTextureSlot
         Control0 = control0;
         Control1 = control1;
         ImageRect = imageRect;
+        SamplerWrapU = samplerWrapU;
+        SamplerWrapV = samplerWrapV;
+        BorderColor = borderColor;
+        Bilinear = bilinear;
+        Convolution = convolution;
     }
 
     /// <summary>Gets the guest-physical texture base offset.</summary>
@@ -444,6 +456,34 @@ public readonly struct PgraphTextureSlot
 
     /// <summary>Gets the packed extent: width in the high 16 bits, height in the low 16.</summary>
     public uint ImageRect { get; }
+
+    /// <summary>
+    /// Gets the resolved U address mode in the sampler's own encoding: 0 wrap,
+    /// 1 mirror, 2 clamp-to-edge, 3 clamp-to-border. This is the decoded
+    /// NV097_SET_TEXTURE_ADDRESS value (1 wrap, 2 mirror, 3 clamp, 4 border),
+    /// not the raw word, so a backend cannot repeat the raw-word mapping.
+    /// </summary>
+    public int SamplerWrapU { get; }
+
+    /// <summary>Gets the resolved V address mode (same encoding as <see cref="SamplerWrapU"/>).</summary>
+    public int SamplerWrapV { get; }
+
+    /// <summary>Gets the raw NV097_SET_TEXTURE_BORDER_COLOR word (ARGB, xemu argb-pack order).</summary>
+    public uint BorderColor { get; }
+
+    /// <summary>
+    /// Gets whether TEXFILTER asks for a tent filter at LOD 0. Only true when
+    /// the Nv2a has the opt-in TEXFILTER registers enabled, so the default
+    /// nearest sampler stays byte-identical.
+    /// </summary>
+    public bool Bilinear { get; }
+
+    /// <summary>
+    /// Gets the effective TEXFILTER convolution kernel (0 none, 1 quincunx,
+    /// 2 gaussian-3). Non-zero only for the reference's one convolving pairing
+    /// (MIN = CONVOLUTION_2D_LOD0), see <see cref="Nv2AMmio"/>.
+    /// </summary>
+    public int Convolution { get; }
 }
 
 /// <summary>
@@ -479,6 +519,8 @@ public readonly struct PgraphDrawInfo
     /// <param name="fogA">Fog color alpha.</param>
     /// <param name="shaderClipMode">Raw shader clip-mode word (per-stage discard polarity).</param>
     /// <param name="zFormatFloat">Whether zeta values use the float format.</param>
+    /// <param name="colorSurfaceAddress">Guest-physical color-surface pixel (0,0): surface base + presented color offset.</param>
+    /// <param name="colorPitch">Color-surface row pitch in bytes (surface pitch low 16 bits).</param>
     public PgraphDrawInfo(
         in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH,
@@ -490,7 +532,9 @@ public readonly struct PgraphDrawInfo
         PshCombiner? combiner,
         bool fogEnable, float fogR, float fogG, float fogB, float fogA,
         uint shaderClipMode,
-        bool zFormatFloat)
+        bool zFormatFloat,
+        uint colorSurfaceAddress,
+        uint colorPitch)
     {
         A = a;
         B = b;
@@ -515,6 +559,8 @@ public readonly struct PgraphDrawInfo
         FogA = fogA;
         ShaderClipMode = shaderClipMode;
         ZFormatFloat = zFormatFloat;
+        ColorSurfaceAddress = colorSurfaceAddress;
+        ColorPitch = colorPitch;
     }
 
     /// <summary>Gets the first triangle vertex.</summary>
@@ -585,6 +631,19 @@ public readonly struct PgraphDrawInfo
 
     /// <summary>Gets whether zeta values use the float format.</summary>
     public bool ZFormatFloat { get; }
+
+    /// <summary>
+    /// Gets the guest-physical address of the color surface's pixel (0,0)
+    /// (surface base + presented color offset). A clip-window pixel (x, y) is
+    /// at <c>ColorSurfaceAddress + ((ClipY + y) * ColorPitch) + (x * 4)</c>:
+    /// the same expression the software fill uses. A GPU backend that has to
+    /// hand a frame back to the software rasterizer composes its image through
+    /// this address.
+    /// </summary>
+    public uint ColorSurfaceAddress { get; }
+
+    /// <summary>Gets the color-surface row pitch in bytes (surface pitch low 16 bits).</summary>
+    public uint ColorPitch { get; }
 
     /// <summary>Gets the texture slot by index (0-3).</summary>
     public PgraphTextureSlot GetTexture(int slot)

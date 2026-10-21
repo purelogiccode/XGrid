@@ -187,6 +187,107 @@ public sealed class PshGlslGeneratorTests
             () => PshGlslGenerator.BuildFragmentSource(legacy: false, state, triangleCapacity: 0));
     }
 
+    [Fact]
+    public void SamplerHonorsResolvedWrapModesAndTexFilterUniforms()
+    {
+        // GL TEXFILTER parity (compatibility gap 7): the shader reads the
+        // seam's resolved sampler state as uniforms, so the program cache key
+        // does not split on filter/address churn.
+        PshCombiner state = MenuLikeCombiner();
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("uniform int uTexBilinear[4];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform int uTexConvolution[4];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform vec4 uTexBorder[4];", source, StringComparison.Ordinal);
+
+        // Nearest path: one tap through SampleTap, which owns the border rule.
+        Assert.Contains("return SampleTap(slot, ivec2(int(floor(c.x)), int(floor(c.y))));", source,
+            StringComparison.Ordinal);
+        Assert.Contains("bool outU = wu == 3 && (t.x < 0 || t.x >= size.x);", source, StringComparison.Ordinal);
+        Assert.Contains("if (outU || outV) return uTexBorder[slot];", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TentFilter_UsesTexelCentreOffsetAndFourIndependentlyWrappedTaps()
+    {
+        // Same arithmetic as Nv2AMmio.SampleBilinear: fx = c - 0.5, four taps
+        // wrapped per axis, the exact weight products.
+        PshCombiner state = MenuLikeCombiner();
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("if (uTexBilinear[slot] != 1) {", source, StringComparison.Ordinal);
+        Assert.Contains("float fx = c.x - 0.5;", source, StringComparison.Ordinal);
+        Assert.Contains("float fy = c.y - 0.5;", source, StringComparison.Ordinal);
+        Assert.Contains("vec4 t00 = SampleTap(slot, ivec2(x0, y0));", source, StringComparison.Ordinal);
+        Assert.Contains("vec4 t11 = SampleTap(slot, ivec2(x0 + 1, y0 + 1));", source, StringComparison.Ordinal);
+        Assert.Contains("float w00 = (1.0 - wx) * (1.0 - wy);", source, StringComparison.Ordinal);
+        Assert.Contains("return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);", source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Convolution_EmitsNineOneTwoOneTapsOnProject2D()
+    {
+        // xemu apply_convolution_filter: nine textureProj taps with the 1-2-1
+        // kernel (weights sum to 16/16), one texel apart, only on PROJECT2D
+        // and only when MIN is CONVOLUTION_2D_LOD0 (the backend resolves that
+        // into uTexConvolution).
+        PshCombiner state = MenuLikeCombiner();
+        state.StageProgram = 0x01u; // slot 0 PROJECT2D
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("vec4 SampleConvolved(int slot, vec3 p) {", source, StringComparison.Ordinal);
+        Assert.Contains("acc += SampleSlot(slot, base + vec2(-1.0 * du, -1.0 * dv)) * 0.0625;", source,
+            StringComparison.Ordinal);
+        Assert.Contains("acc += SampleSlot(slot, base + vec2(0.0 * du, 0.0 * dv)) * 0.2500;", source,
+            StringComparison.Ordinal);
+        int taps = CountOccurrences(source, "acc += SampleSlot(");
+        Assert.Equal(9, taps);
+        Assert.Contains("else if (uTexConvolution[0] != 0) { t0 = SampleConvolved(0, c0.xyw); }", source,
+            StringComparison.Ordinal);
+    }
+
+    private static int CountOccurrences(string text, string needle)
+    {
+        int count = 0;
+        int at = 0;
+        while ((at = text.IndexOf(needle, at, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            at += needle.Length;
+        }
+
+        return count;
+    }
+
+    [Fact]
+    public void PreambleAddsTheClipOriginToBothFragmentAxes()
+    {
+        // The software fill works in absolute surface coordinates and clips
+        // against clipX/clipY; the GL viewport is clip-relative, so the
+        // fragment shader must add the clip origin on BOTH axes (it added only
+        // ClipY). diag[clipXY=] counts legs where this can matter.
+        PshCombiner state = MenuLikeCombiner();
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("float px = gl_FragCoord.x + T(2).w;", source, StringComparison.Ordinal);
+        Assert.Contains("float py = gl_FragCoord.y + T(2).z;", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Project2D_DividesProjectiveCoordinatesByW()
+    {
+        // Reference textureProj(norm(pT.xyw)): the 2D coords divide by w even
+        // without a cube map; a zero w keeps the undivided pair (software
+        // Nv2AMmio.ResolveTexel).
+        PshCombiner state = MenuLikeCombiner();
+        state.StageProgram = 0x01u; // slot 0 PROJECT2D
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("t0 = SampleSlot(0, (c0.w != 0.0) ? (c0.xy / c0.w) : c0.xy);", source,
+            StringComparison.Ordinal);
+
+        // The legacy path samples oT0 without the projection (software
+        // FillTriangle has no texture stage to project).
+        string legacy = PshGlslGenerator.BuildFragmentSource(legacy: true, state);
+        Assert.Contains("outcColor *= SampleSlot(0, c0.xy);", legacy, StringComparison.Ordinal);
+    }
+
     private static string Normalize(string text)
     {
         return text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n') + "\n";

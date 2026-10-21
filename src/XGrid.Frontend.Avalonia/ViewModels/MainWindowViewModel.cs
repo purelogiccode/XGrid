@@ -470,6 +470,26 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Public command: advances one frame while the console is paused.</summary>
+    [RelayCommand(CanExecute = nameof(CanStepFrame))]
+    private void StepFrame()
+    {
+        if (_session.StepFrame())
+        {
+            AddLog(LogLevel.Info, "Stepping one frame.");
+        }
+    }
+
+    /// <summary>Public command: advances a slice of guest time while paused.</summary>
+    [RelayCommand(CanExecute = nameof(CanStepFrame))]
+    private void StepInstructions()
+    {
+        if (_session.StepInstructions(1_000_000))
+        {
+            AddLog(LogLevel.Info, "Stepping 1,000,000 instructions.");
+        }
+    }
+
     /// <summary>Public command: stops the running console.</summary>
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void StopSession()
@@ -519,6 +539,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool CanTogglePause()
     {
         return IsRunning;
+    }
+
+    private bool CanStepFrame()
+    {
+        return IsRunning && IsPaused;
     }
 
     private bool CanStop()
@@ -625,6 +650,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsPausedChanged(bool value)
     {
         OnPropertyChanged(nameof(PauseButtonText));
+        StepFrameCommand.NotifyCanExecuteChanged();
+        StepInstructionsCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnStatusDetailChanged(string value)

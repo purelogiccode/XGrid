@@ -67,6 +67,8 @@ anchor; on a double-buffered title the two differ by one buffer
 | **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `B6116DAE` (policy) | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **7.5 s** vs 11.3 s sw (gate media) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
+| **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized; 7 draws per run need the software fallback (dot-product/reflection modes) | n/a | gap 8 closed (§219d): the first declined draw composes the FBO into guest RAM and the frame continues in software, so the presented frame equals the software frame; depth/stencil are not composed | last frame **`DA0750EE` = sw** at 3B; CPU `D5D38C64`; `BackendUnsupported=7`, `composedFrames=7`, `composedPixels=2,150,400`; RAM `19D576A8` (composition writes RAM by design) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
+| **xgu `vp_lighting`, TEXFILTER parity** | same | yes | yes, own scene from ~3B | replace mode, **`pixels=0`** (no fallback): the GL fragment shader runs the tent/convolution/wrap path | n/a | none; the flag moves both renderers by the same ~6.5% and they agree within one 8-bit step in both states (§219c) | gl legacy `E68070A3` vs sw `72B2F490` (dmean 0.00/0.01/0.01, maxDelta 1); gl registers `A9E09139` vs sw `CF698444` (same); CPU `0380C502` in all four | `-Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace [-TexFilter registers]` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
 | **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout/display `7328A99F` | `-Sample mesh` |
@@ -254,9 +256,33 @@ gain colour depth at an unchanged mean - `bump_cubemap_reflect` 20,843 ->
 only interpolate, and it moves neither row's mean toward or away from its
 reference. The default path is byte-identical to the previous build (both 1B
 accurate goldens PASS on their exact anchors, the corpus rows reproduce, §210c).
-The GL backend is still nearest-only.
 
-### 8. GL replace mode cannot compose a software-fallback draw (2026-10-21, §209f)
+**The GL backend samples it too since §219.** It was nearest-only until then and
+also read the *raw* texture-address word (1 = wrap, 2 = mirror, 4 = border), so
+its wrap/mirror were swapped and a border axis clamped. The seam now carries the
+decoded mode (0 wrap, 1 mirror, 2 clamp, 3 border), the border colour, and the
+resolved TEXFILTER pair, and `PshGlslGenerator` emits the same four-tap tent,
+the same nine-tap 1-2-1 convolution (only for `CONVOLUTION_2D_LOD0`), the
+PROJECT2D divide by w, and the clip origin on both fragment axes. Measured on
+the only corpus row with fractional texcoords and no unsupported draws,
+`xgu vp_lighting` at 3B, replace mode, `pixels=0` (no fallback):
+
+| pair | dmean (R,G,B) | differing px | max delta |
+|---|---|---|---|
+| gl legacy vs sw legacy (`E68070A3` vs `72B2F490`) | (0.00, 0.01, 0.01) | 1.4% | 1 |
+| **gl registers vs sw registers (`A9E09139` vs `CF698444`)** | **(0.00, 0.01, 0.01)** | **1.5%** | **1** |
+| gl legacy vs sw registers | (0.04, 0.09, 0.21) | 6.7% | 80 |
+| sw legacy vs sw registers | (0.04, 0.09, 0.20) | 6.4% | 80 |
+
+So the two renderers agree within one 8-bit step *in both modes*, and the flag
+moves both by the same ~6.5% (the pre-§219 GL backend could only have reproduced
+the legacy column under the flag). Guest state is identical in all four runs
+(CPU `0380C502`, the RAM SHA only differs between the flag states as in the
+software sweep); the 1B gate legs are byte-identical to their recorded GL
+fingerprints (`B6116DAE` / `7A860ED7`). The flag itself stays opt-in: the menu
+still has no external oracle.
+
+### 8. GL replace mode cannot compose a software-fallback draw - **CLOSED 2026-10-21 (§219)**
 
 `--gpu gl --gpu-replace` sends every draw to the GL backend and falls back to
 the software rasterizer when the backend declines a shape. The fallback is
@@ -265,17 +291,31 @@ correct, but its pixels go to **guest RAM** while the presented image is the
 (`presentUploads=0`, `flipStaleUploads=0`), so a frame with any declined draw
 loses *all* fallback pixels.
 
-Measured on `xgu bump_cubemap_reflect` at 3B (`-Gpu gl -GpuReplace`):
-`BackendUnsupported=14` (`unsup[modes=14]` - the dot-product/reflection
-texture modes), 784,684 software-fallback pixels, and the presented frame is
-the **clear colour only** (`3553B0DF…` vs the software frame `DA0750EE…`;
-CPU SHA identical). The gate scripts assert `BackendUnsupported=0`, so the
-gate legs never enter this state; the corpus row now documents it.
+Measured on `xgu bump_cubemap_reflect` at 3B (`-Gpu gl -GpuReplace`) before the
+fix: `BackendUnsupported=14` (`unsup[modes=14]` - the dot-product/reflection
+texture modes), 784,684 software-fallback pixels, and the presented frame was
+the **clear colour only** (`3553B0DF.` vs the software frame `DA0750EE.`;
+CPU SHA identical).
 
-Fixing it needs a per-frame composition policy (all-or-nothing: drop the FBO
-and re-render the frame in software, or upload the fallback region into the
-FBO), not a one-line patch. Not started - the GL backend is not the product
-path.
+**Fixed with a one-writer-per-frame composition policy (§219d).** On the first
+declined draw the backend copies its FBO's clip window into the guest color
+surface (the seam now carries `ColorSurfaceAddress`/`ColorPitch`, the exact
+expression the software fill uses), declines every later draw of that frame
+(guest RAM is authoritative from then on), and the flip re-uploads the composed
+image from RAM. Depth/stencil are not composed - the GL depth buffer is
+host-side, so the software half of a mixed frame tests against guest zeta; that
+is the documented limitation. Same row, same 3B leg, after the fix:
+
+| | before (§209f) | after (§219) |
+|---|---|---|
+| presented frame | `3553B0DF` (clear only) | **`DA0750EE` = the software frame** |
+| `BackendUnsupported` | 14 | 7 (one per affected frame) |
+| composition | none | `composedFrames=7`, `composedPixels=2,150,400`, `flipStaleUploads=7` |
+| CPU SHA | `D5D38C64` | `D5D38C64` |
+| RAM SHA | - | `19D576A8` (the composition writes the GL image into guest RAM by design) |
+
+The gate legs never entered this state (`BackendUnsupported=0`,
+`composedFrames=0`), so no gate anchor moved.
 
 ### 9. A second-emulator frame oracle is staged, not yet captured (§209f)
 
@@ -410,8 +450,10 @@ sequence (an operator-visible route), not more steps.
   a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
   unobserved. **Filtering:** the software sampler honors MIN/MAG as a tent and
   convolves only for MIN = CONVOLUTION_2D_LOD0, behind `--tex-filter registers`
-  (default off, gap 7 - cheap and anchor-neutral since §210); the GL backend is
-  nearest-only.
+  (default off, gap 7 - cheap and anchor-neutral since §210); the GL backend
+  implements the same tent, convolution, decoded wrap modes and border colour
+  since §219 (both renderers agree within one 8-bit step on `vp_lighting` in
+  both flag states).
 - **Audio:** emulated, but no streaming consumer and no host output.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 

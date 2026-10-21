@@ -84,6 +84,17 @@ persisted EEPROM (217). Suite 1717. Track order is otherwise unchanged; the
 largest remaining product gap is host audio, which needs APU DSP execution
 first.
 
+**Status 2026-10-21 (21st session, 219):** the GL backend now samples like the
+software rasterizer (TEXFILTER tent/convolution, decoded wrap modes + border
+colour, the PROJECT2D w divide, the clip origin on both fragment axes) and
+`--gpu-replace` composes a software-fallback frame into guest RAM instead of
+presenting the clear colour - compatibility gaps 7 (GL side) and 8 are closed.
+Both 1B GL gate frames are byte-identical (`B6116DAE` / `7A860ED7`),
+`BackendUnsupported=0`, and `xgu vp_lighting` 3B agrees with the software frame
+within one 8-bit step in both filter states. Track P gained a frame-step
+control (F7 / Shift+F7). Suite 1725; the largest remaining product gap is still
+host audio (APU DSP execution first).
+
 1. **B — host GPU present path (lead).** Measure the split first (draw
    submission / readback / present) with `--gpu-time`; then fast-mode present
    must blit to the window/surface without a CPU readback. Readback stays only

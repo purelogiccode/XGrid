@@ -13633,3 +13633,153 @@ byte-identical at 792,800,535 steps.
 Precedent for re-recording a RAM SHA when hardware behaviour improves: 206g
 (backface culling) and 109 (depth compare). Frames, CPU SHAs and every counter
 are the invariants that did not move.
+
+## 219 Track B/E: the GL sampler matches the software rasterizer, and a replace-mode fallback no longer loses the frame (2026-10-21, next session)
+
+Two GL-backend slices, one seam: **compatibility gap 7** (the GL backend was
+nearest-only and read the raw texture-address word) and **gap 8** (a declined
+draw in `--gpu-replace` silently dropped every GL pixel of the frame). Guest
+behaviour is unchanged on every measured leg; all changes are host-side plus
+two seam fields.
+
+### 219a Measured first: what the gate title actually programs
+
+A 1B fast menu run with `--pgraph --pgraph-max 8000000` (8,000,000-method
+window) gives the sampler state the shader had to honor (`usage-histogram.md`,
+"Sampler address modes"): slot 1 programs **wrap/wrap** 3,950 times, slot 0
+clamp 4,265 and **border/border** 35 times, slot 3 border/border 80 times with
+`FFFFFFFF` as the border colour, and TEXFILTER `2/2/1` (tent) next to `1/1/1`
+(nearest). The gate frames never showed the difference because their
+coordinates stay inside [0,1): a wrap, a mirror and a clamp all select the same
+texel there, and a tent at a texel centre is a nearest tap (§210d).
+
+**The bug the seam made visible.** The GL backend computed its wrap uniforms
+from the *raw* `NV097_SET_TEXTURE_ADDRESS` word. That word assigns **1 to wrap
+and 2 to mirror**, and 4 to clamp-to-border, so the backend had wrap and mirror
+swapped and treated border as clamp. The software sampler decoded the word
+correctly; only the two executors disagreed.
+
+### 219b The seam carries resolved sampler state
+
+`PgraphTextureSlot` gained five resolved fields (`IPgraphBackend.cs`):
+`SamplerWrapU/V` (0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border), `BorderColor`,
+`Bilinear` and `Convolution`. They are filled in `Nv2AMmio.BuildTextureSlot`
+from `DecodeTextureAddressU/V` + `ToWrapMode` + the new
+`ResolveTextureFilter(slot, ...)` helper - **the same helper
+`BuildSamplerPlans` now calls**, so the software `SamplerPlan` and the backend
+slot cannot drift. `--tex-filter` stays opt-in: with the flag off `Bilinear` is
+false and every stage is nearest, so the default path is unchanged by
+construction.
+
+### 219c The fragment shader samples like `Nv2AMmio`
+
+`PshGlslGenerator` now emits, from the same semantics as the C# sampler:
+
+- `SampleTap(slot, ivec2)`: an out-of-range coordinate on a border axis returns
+  `uTexBorder[slot]` (the decoded `NV097_SET_TEXTURE_BORDER_COLOR`), otherwise
+  the coordinate folds with `WrapI` in the stage's own mode (wrap/mirror/clamp).
+- `SampleSlot(slot, uv)`: nearest (`floor`) or the TEXFILTER tent - the
+  `c - 0.5` texel-centre offset, four independently wrapped taps and the exact
+  weight products of `SampleBilinear`. Linear (LU_IMAGE) formats keep texel-unit
+  coordinates, swizzled formats normalize.
+- `SampleConvolved(slot, xyw)`: `SampleConvolved`'s nine 1-2-1 taps, one texel
+  apart (`du = 1/w`, or `1/(w*size)` for a normalized stage), each tap a
+  `SampleSlot` (so a convolution over a tent is nine bilinear taps, exactly as
+  the software path's `TrySampleTexture` per tap). Emitted only for PROJECT2D
+  and only when `uTexConvolution` is non-zero - i.e. only when MIN is
+  `CONVOLUTION_2D_LOD0` (§210a).
+- PROJECT2D now divides by w (`c.xy / c.w`, zero w keeps the pair), matching
+  `ResolveTexel`'s reference `textureProj(norm(pT.xyw))`.
+- The interpolation preamble now adds the **clip origin to both axes**:
+  `px = gl_FragCoord.x + T(2).w`. It added only `ClipY` (`T(2).z`), so a
+  non-zero `ClipX` compared absolute vertex positions against clip-relative
+  fragment coordinates. `diag[clipXY=]` is the counter that watches this; it is
+  0 on both gate legs, which is why the gate never saw it.
+
+The uniforms are per slot (`uTexBilinear[4]`, `uTexConvolution[4]`,
+`uTexBorder[4]`), so filter/border churn cannot split the program cache. Both
+1B gate legs are **byte-identical to their recorded GL fingerprints**:
+menu `B6116DAE...` (`sw 4EF1FBF6...`), triangle `7A860ED7...`
+(`sw A1740DE0...`), `violations=0 maxDelta=1`, counters identical,
+`BackendUnsupported=0`, `clipXY=0`. The menu's `--tex-filter registers` GL leg
+is also `B6116DAE...` - the menu samples at texel centres, so honoring the
+register changes nothing there (the §210d result reproduces on the GL path).
+
+### 219d Gap 8: a declined draw composes instead of losing the frame
+
+Replace mode sends every draw to GL and falls back to the software rasterizer
+when the backend declines a shape - but the fallback writes guest RAM while the
+flip served the FBO, so one declined draw cost the whole frame's GL pixels
+(measured §209f: the cubemap row presented the clear colour, 784,684 fallback
+pixels displayed as a flat `3553B0DF`). The behavioural rule is now **one
+writer per frame**:
+
+1. On the first declined draw of a frame the backend flushes its staged batch
+   and copies the FBO's clip window into the guest color surface
+   (`ComposeToGuestSurface`). The destination address is the seam's new
+   `PgraphDrawInfo.ColorSurfaceAddress`/`ColorPitch` - the exact expression the
+   software fill uses (`surface base + presented offset + (ClipY+y)*pitch +
+   (ClipX+x)*4`), and the FBO's bottom row is guest row 0 for the same reason
+   the readback needs no flip.
+2. Every later draw of that frame is declined too (`_frameComposed`), even a
+   shape GL could render: after composition guest RAM is the authoritative
+   image and two writers would diverge.
+3. At the flip the FBO is dropped (`_frameComposed`) and the existing
+   present-upload path rebuilds it from guest RAM, so the readback/window show
+   the composed frame and the next frame starts from a correct FBO.
+
+Depth/stencil are **not** composed (the GL depth buffer is host-side): the
+software half of such a frame tests against guest zeta, which the GL half never
+wrote. Documented limitation, and the reason this is a composition policy, not
+a claim of fidelity.
+
+**Measured on `xgu bump_cubemap_reflect` at 3B, `-Gpu gl -GpuReplace`:**
+`BackendUnsupported=7` (one per frame that contains an unsupported draw),
+`composedFrames=7`, `composedPixels=2,150,400` (7 x 640x480),
+`flipStaleUploads=7`, and the presented frame is **`DA0750EE...` - identical
+to the software frame** (was `3553B0DF...`, the clear only). CPU SHA unchanged
+(`D5D38C64`); the RAM SHA differs (`19D576A8` vs `DDB59317`) because the
+composition writes the GL image into guest RAM by design.
+
+### 219e Validation
+
+- 1B accurate menu golden: sw `4EF1FBF6`, gl `B6116DAE`, counters
+  33,632/686/686, `BackendUnsupported=0`, `composedFrames=0`, PASS.
+- 1B accurate triangle golden: sw `A1740DE0`, gl `7A860ED7`, counters
+  2,706/68/34, PASS.
+- Menu `--tex-filter registers` (sw vs gl policy): both frames unchanged,
+  PASS - evidence the flag's uniform path is wired, with the menu's
+  texel-centre sampling as the known non-discriminator (§210d).
+- Suite **1725** (Nv2a 386 -> 388: decoded wrap modes, resolved filters;
+  GpuGl 85 -> 91: three sampler generator tests, the clip-origin preamble, the
+  projective divide, and a live composition test). Format clean.
+- Diagnostics: `diag[composedFrames= composedPixels= composedDraws=]`;
+  `scripts/gpu-slice1-golden.ps1 -TexFilter legacy|registers` (and a generic
+  `-Extra` array) run both backends under one flag set.
+
+### 219f The GL filter path reproduces the software filter (measured)
+
+The menu cannot discriminate (texel-centre sampling), so the acceptance leg is
+`xgu vp_lighting` at 3B in replace mode - the only corpus row with fractional
+texcoords and **zero** declined draws (`pixels=0`, so the frames are pure GL and
+the composition path is not involved). Four runs, same media/steps:
+
+| pair | dmean (R,G,B) | differing px | max delta |
+|---|---|---|---|
+| gl legacy (`E68070A3`) vs sw legacy (`72B2F490`) | (0.00, 0.01, 0.01) | 1.4% | 1 |
+| **gl `--tex-filter registers` (`A9E09139`) vs sw registers (`CF698444`)** | **(0.00, 0.01, 0.01)** | **1.5%** | **1** |
+| gl legacy vs sw registers | (0.04, 0.09, 0.21) | 6.7% | 80 |
+| sw legacy vs sw registers | (0.04, 0.09, 0.20) | 6.4% | 80 |
+
+The two renderers agree within one 8-bit step in **both** states (the residual
+is the GL texture upload's 8-bit quantization), and the flag moves both frames
+by the same ~6.5% / max 80. The pre-§219 GL backend was nearest-only and could
+only have produced the legacy column under the flag; the registers column is
+what proves the tent and the decoded sampler state reached the shader. Guest
+state: CPU `0380C502` in all four runs, sw RAM `162DAFF1` (the documented
+anchor) and `37FC8BA6` under the flag, gl RAM `266A30CC` (no software draw ran).
+- ktest smoke **PASS 7/7** at **792,800,535** steps, suite log 40,797 B
+  `CA5D3867...` byte-identical (no core guest behavior changed).
+- Fast 1B anchors unchanged: menu RAM `34973510` / CPU `F5D61C94`
+  (253,998,498 px, `rasterPsh` 11.16 s), triangle `B45254CA` / `7DAB63EB`
+  (57,663,082 px) - the sampler seam fields and the composition are host-side.
