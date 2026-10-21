@@ -611,7 +611,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
 **Session 2026-10-20 (fourteenth; Track E corpus unblocked, §207).**
-**M-B is met: 11 rows over 7 samples, every row reproducible.** The blocker was
+**M-B is met: 14 rows over 10 samples, every row reproducible.** The blocker was
 a toolchain that had never been installed, not the emulator.
 
 - **Toolchain landed** (`scripts/build-nxdk-samples.ps1`): MSYS2 + clang/lld/
@@ -628,6 +628,20 @@ a toolchain that had never been installed, not the emulator.
   triangles culled, 44 programs); `gamma`/`gamma-fade`/`hello`/`led`/`xaudio`
   boot but export the boot animation; `xaudio` proves the APU path is live
   (`voiceOff=1`, 135 reads / 203 writes).
+- **Fidelity item chosen by the corpus (§207h): byte-order texture formats.**
+  `xgu vp_lighting` rendered 3 colours while issuing 3.4M fragments; the texture
+  line said `3F=3420787/3420787` — format `0x3F` (`LU_IMAGE_A8B8G8R8`, defined
+  only in the newer xemu fork) sampled 3.42M times with **every** sample missing.
+  `0x3A`–`0x3C` and `0x3F`–`0x41` are now decoded as the same 32-bit words with
+  permuted channels; the non-obvious part was forcing `DecodeKind` to the generic
+  path, since its default 0 means "A8R8G8B8" in the compiled fills and would have
+  swapped red/blue silently. Result: misses `3.42M -> 0`, textured `+3.42M`, frame
+  **3 colours -> 1,592, full coverage**. Both gate frames byte-identical.
+  **1596 tests** (+20). Corpus rows now 14 over 10 samples, including three
+  `xgu` examples (`vp_lighting`, `alpha_blending`, `bump_cubemap_reflect`).
+- **Reverted, not shipped:** enabling `0x3A` cube maps removed 896k mode
+  fallbacks and changed **zero pixels**, so it went back out until there is an
+  oracle for cube direction mapping.
 - **Top corpus-driven gap found by measuring:** *direct-framebuffer output is
   not what `--frame`/the frontend present*. `CapturePresentedFrame` snapshots the
   3D color surface at flip time, so `XVideoGetFB`/`debugPrint` programs produce no

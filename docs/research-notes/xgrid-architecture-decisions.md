@@ -12394,3 +12394,58 @@ Post-cull measured rows (1B fast, `boot-to-first-frame.ps1 -All`): triangle sw
 11.7 s / 85.6 msps / `A1740DE0`, gl+replace 7.1 s / 141.5; dashboard sw 34.0 s /
 29.4 / `4EF1FBF6`, gl+replace 26.5 s / 37.7; ktest 600M sw 9.0 s / 66.4, gl 7.4 s /
 81.5. All six PASS, `vec=0`.
+
+### 207h Byte-order texture formats: 3.42M samples per boot were being dropped
+
+**How it was found.** The corpus row for `xgu vp_lighting` rendered a 3-colour
+frame while issuing 2,730 draws and 3.4M depth-tested fragments. The texture
+diagnostic named it in one line:
+
+    formats= 06=11363999/0 12=10444800/0 3F=3420787/3420787
+
+The second number is the miss count, and for `0x3F` it equalled the attempt
+count: **every sample failed**, and the count matched the app's fragment total
+exactly. `0x3F` is not in the 0.8.137 header at all; the newer fork defines it as
+`NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A8B8G8R8`, next to `0x40`
+(`B8G8R8A8`) and `0x41` (`R8G8B8A8`), with swizzled twins at `0x3A`-`0x3C`.
+
+**What they are.** The same 32-bit words as A8R8G8B8 with the channels permuted.
+`A8R8G8B8` reads red from bits 16-23; `A8B8G8R8` reads it from bits 0-7, and so
+on. Nothing about addressing, swizzling or filtering changes.
+
+**The fix, three places:**
+
+1. `TextureFormatBytesPerTexel`: `0x3A`-`0x3C`, `0x3F`-`0x41` -> 4 bytes.
+2. `DecodeTextureTexel`: three new channel permutations (SZ and LU twins share
+   one case each).
+3. `DecodeKind`: these must map to the **generic** decode. This was the trap -
+   `DecodeKind` defaults to 0, and 0 means "the A8R8G8B8 branch" in the compiled
+   fills, so a format with bytes-per-texel set but DecodeKind 0 would have
+   silently swapped red and blue with no miss counter to show it.
+
+`IsLinearTextureFormat` gains `0x3F`-`0x41` (LU) but not `0x3A`-`0x3C` (SZ).
+
+**Evidence.** Same command, before/after:
+
+| | before | after |
+|---|---|---|
+| `3F` format misses | 3,420,787 | **0** |
+| textured pixels | 21,808,799 | **25,229,586** |
+| frame | 3 colours / 250,090 px | **1,592 colours / 307,200 px** |
+
+Both gate frames are byte-identical after the change (`A1740DE0`, `4EF1FBF6`),
+because the gates use `0x06`/`0x07`/`0x12`/`0x1E`. Twenty tests in
+`Nv2aTextureByteOrderTests` pin the channel order per family, the SZ/LU twin
+equivalence, that `0x3F` is *not* the A8R8G8B8 layout (the trap above), and that
+genuinely unknown ids still report no texel width. Suite 1576 -> **1596**.
+
+**Also landed:** the BRDF / DOT_RFLCT_SPEC_CONST branches now count through
+`CountTexModeFallback(mode)`, so `byMode=` can name an offending stage instead
+of only showing a total (both modes are `NV2A_UNIMPLEMENTED` in xemu too).
+
+**Not landed, and why.** `xgu bump_cubemap_reflect` samples `0x3A` cube maps,
+which the reference-mirroring whitelist (`0x05`/`0x06`) rejects: 896,067 mode
+fallbacks, flat green shape. Extending the whitelist to the SZ variants took the
+fallbacks to 0 and changed **no pixels at all** (identical frame and RAM), so the
+change was reverted rather than shipped without an oracle. The remaining work is
+cube direction mapping for those formats, not the decode.

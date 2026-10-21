@@ -171,7 +171,7 @@ is a ratio, not a milestone.
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
   is the structural step. The in-app GL display is still deferred (the frontend
   uses the software path, which never readbacks).
-- **M-B (Track E, corpus) - MET 2026-10-20.** 11 rows over 7 distinct samples,
+- **M-B (Track E, corpus) - MET 2026-10-20.** 14 rows over 10 distinct samples,
   every row reproducible: `scripts/build-nxdk-samples.ps1` builds the nxdk
   samples from a pinned upstream commit (`a6c31ee`) and
   `scripts/boot-to-first-frame.ps1 -Corpus` re-measures them. Beyond

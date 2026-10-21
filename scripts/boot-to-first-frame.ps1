@@ -24,7 +24,7 @@
 # 1 = sample faulted / no frame presented, 2 = environment problem.
 
 param(
-    [ValidateSet("dashboard", "triangle", "ktest", "hello", "led", "mesh", "gamma", "gamma-fade", "xaudio")]
+    # No ValidateSet on purpose: any ISO staged in $CorpusDir is a valid sample.
     [string]$Sample = "triangle",
     [ValidateSet("sw", "gl")][string]$Gpu = "sw",
     [switch]$GpuReplace,

@@ -282,11 +282,13 @@ They are the items a commercial title is most likely to hit first.
 These methods have a core state sink (so they are `handled` in the table)
 but the value is not fully honored by the current renderer:
 
-- `SET_TEXTURE_FILTER` — stored; NEAREST is hard-coded in both the software
+- `SET_TEXTURE_FILTER` - stored; NEAREST is hard-coded in both the software
   sampler and the GL upload path.
-- `SET_TEXTURE_FORMAT` — the MIPMAP_LEVELS field is stored, but sampling is
-  level 0; the color-format field supports only `0x02`-`0x07`,
-  `0x10`-`0x12`, `0x1C`-`0x1E`.
+- `SET_TEXTURE_FORMAT` - the MIPMAP_LEVELS field is stored, but sampling is
+  level 0; the color-format field supports `0x02`-`0x07`, `0x10`-`0x12`,
+  `0x1C`-`0x1E` and the byte-order variants `0x3A`-`0x3C` / `0x3F`-`0x41`
+  (added 2026-10-20 after the corpus found `0x3F` sampled 3.42M times with every
+  sample missing, decisions §207h). Cube maps still accept only `0x05`/`0x06`.
 - `SET_TEXTURE_CONTROL0` — the enable bit is used; the LOD/MAX_LOD bits
   affect only the cube face-stride calculation, not mip selection.
 - `SET_TRANSFORM_PROGRAM_CXT_WRITE_EN` — stored, not consumed.

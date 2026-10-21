@@ -4928,6 +4928,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             {
                 0x02u or 0x10u or 0x03u or 0x1Cu or 0x04u or 0x1Du or 0x05u or 0x11u or 0x07u or 0x1Eu
                     => color is 0x04u or 0x1Du ? 1 : 2,
+                // Byte-order variants are 32-bit but not A8R8G8B8: they must take
+                // the generic decode or their channels silently swap.
+                0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 2,
                 _ => 0,
             };
             if (bytesPerTexel is 2 or 4 && width > 0 && height > 0 && !DiagnosticGenericSampler &&
@@ -5100,14 +5103,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>True for the six linear formats; false for swizzled formats.</returns>
     public static bool IsLinearTextureFormat(uint color)
     {
-        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu;
+        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu or 0x3Fu or 0x40u or 0x41u;
     }
 
     /// <summary>
     /// Gets the bytes per texel for a texture color format: 2 for the 16-bit
     /// formats (0x02-0x05 and their linear twins), 4 for the 32-bit formats
-    /// (0x06/0x07 and their linear twins), 0 for unsupported formats (the
-    /// caller counts a format miss).
+    /// (0x06/0x07, their linear twins, and the byte-order variants 0x3A-0x3C /
+    /// 0x3F-0x41), 0 for unsupported formats (the caller counts a format miss).
     /// </summary>
     /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
     /// <returns>2, 4, or 0 when the format is not backed by the sampler.</returns>
@@ -5117,6 +5120,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             0x02u or 0x03u or 0x04u or 0x05u or 0x10u or 0x11u or 0x1Cu or 0x1Du => 2u,
             0x06u or 0x07u or 0x12u or 0x1Eu => 4u,
+            0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 4u,
             _ => 0u,
         };
     }
@@ -5151,10 +5155,40 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// tables (<see cref="Unit255"/> etc.), so the results are bit-identical
     /// to the previous per-channel divisions.
     /// </summary>
+    /// <remarks>
+    /// The byte-order variants (0x3A-0x3C SZ, 0x3F-0x41 LU) are the same 32-bit
+    /// words with the channels permuted, so they only change which byte each
+    /// channel reads. They are enumerated in the newer xemu fork's
+    /// <c>nv2a_regs.h</c> (0x3F = <c>LU_IMAGE_A8B8G8R8</c>), not in 0.8.137.
+    /// </remarks>
     public static void DecodeTextureTexel(uint color, uint texel, out float r, out float g, out float b, out float a)
     {
         switch (color)
         {
+            case 0x3Au:
+            case 0x3Fu:
+                // A8B8G8R8: A high byte, then B, G, R.
+                r = Unit255[(int)(texel & 0xFFu)];
+                g = Unit255[(int)((texel >> 8) & 0xFFu)];
+                b = Unit255[(int)((texel >> 16) & 0xFFu)];
+                a = Unit255[(int)((texel >> 24) & 0xFFu)];
+                break;
+            case 0x3Bu:
+            case 0x40u:
+                // B8G8R8A8: B high byte, then G, R, A.
+                b = Unit255[(int)((texel >> 24) & 0xFFu)];
+                g = Unit255[(int)((texel >> 16) & 0xFFu)];
+                r = Unit255[(int)((texel >> 8) & 0xFFu)];
+                a = Unit255[(int)(texel & 0xFFu)];
+                break;
+            case 0x3Cu:
+            case 0x41u:
+                // R8G8B8A8: R high byte, then G, B, A.
+                r = Unit255[(int)((texel >> 24) & 0xFFu)];
+                g = Unit255[(int)((texel >> 16) & 0xFFu)];
+                b = Unit255[(int)((texel >> 8) & 0xFFu)];
+                a = Unit255[(int)(texel & 0xFFu)];
+                break;
             case 0x02u:
             case 0x10u:
                 r = Unit31[(int)((texel >> 10) & 0x1Fu)];
@@ -6562,8 +6596,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case PshCombiner.TexModeDotRflctSpecConst:
                 // xemu emits vec4(0.0) plus NV2A_UNIMPLEMENTED for these two
                 // (the Cxbx variants are explicitly untested HLE guesses).
+                // Counted per mode so a corpus row can name the offending stage
+                // instead of only showing a fallback total.
                 SetTexelZero(texel);
-                TexModeFallbacks++;
+                CountTexModeFallback(mode);
                 return false;
             case PshCombiner.TexModeDotProduct:
             case PshCombiner.TexModeDotZw:
@@ -6862,6 +6898,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool IsSupportedSwizzledFormat(int stage)
     {
         uint color = (_textureFormat[stage] >> 8) & 0xFFu;
+
+        // 0x05/0x06 are what the reference renderer backs. The SZ byte-order
+        // variants are the same 4-byte swizzled layouts, but the reference
+        // asserts on them for cube maps and enabling them here changed no
+        // pixels on the one sample that uses them (measured 2026-10-20), so
+        // they stay out until there is an oracle for cube direction mapping.
         return color is 0x05u or 0x06u;
     }
 
