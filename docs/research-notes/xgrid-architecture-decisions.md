@@ -12857,4 +12857,14 @@ until the menu has an oracle.
   208g's "direction chain" suspicion is disproven by the probe set in 209b.
 - Bilinear taps alone do not clean up a grazing environment map; the remaining
   speckle is content + LOD 0 (no mip selection), not a tap-weight bug.
+- `--gpu gl --gpu-replace` cannot compose a software-fallback draw: the
+  fallback's pixels go to guest RAM and the present serves the GL FBO
+  (`bump_cubemap_reflect`: `BackendUnsupported=14`, 784,684 fallback pixels,
+  presented frame = the clear colour). The gate scripts assert
+  `BackendUnsupported=0`, so gates never see it; do not read a GL frame of a
+  partially-supported row as a rendering result.
+- xemu as a frame oracle: HMP `-monitor stdio` produces nothing, `-display sdl`
+  does not exist in this build, and `-drive index=1` collides with xemu's own
+  drive (`-dvd_path` is the supported route); QMP stdio answers, `screendump`
+  is still uncaptured (gap 9).
 

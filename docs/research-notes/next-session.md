@@ -80,6 +80,12 @@ CPU `2F632483…`, menu RAM `01BE5D64…` / CPU `3D2740B8…`; both frames
 4. **New diagnostics:** `filters=<min>/<mag>/<conv>` on the NV2A tex line (the
    measurement that justified the feature: menu stage 0/1 are `2/2/1`, stage 0
    = 211M of 267M texel samples/1B).
+5. **Corpus:** 18 rows over 14 samples (`xgu swizzle_texture` added, no
+   oracle); `bump_cubemap_reflect` is now the third matching oracle row.
+6. **Two measured gaps documented, not fixed:** GL replace mode cannot compose
+   a software-fallback draw (gap 8, `BackendUnsupported=14`, frame = clear
+   colour) and the second-emulator frame oracle is staged but not capturing
+   (gap 9, `scripts/xemu-screendump.ps1`).
 
 ## 0c. What the fourteenth/fifteenth sessions landed (§206-§208) - do not redo it
 
@@ -156,6 +162,17 @@ emulation (EP FIFO drain, mixer fetch, S/PDIF framing) with no audio oracle.
 - GL-backend texture filtering (parity with the software path). The GL shader
   fetches texels itself, so this is a shader change (bilinear + convolution),
   not a `glTexParameter`.
+- **GL replace mode loses software-fallback draws** (compatibility gap 8):
+  `--gpu gl --gpu-replace` on a row the backend partially declines presents
+  the clear colour, because the fallback writes guest RAM and the present
+  serves the FBO (`bump_cubemap_reflect`, `BackendUnsupported=14`, measured
+  2026-10-21). Needs a per-frame composition policy, and the GL backend is not
+  the product path.
+- **A second-emulator frame oracle** (compatibility gap 9):
+  `scripts/xemu-screendump.ps1` is staged - QMP over stdio works, `screendump`
+  does not produce a file yet. The F12 screenshot route is the alternative.
+  This is the cheapest way to get an oracle for the *menu* (and thus settle
+  Option B).
 - Mip selection (LOD computation) - the sampler always samples level 0; the
   corpus has no mipmapped sample yet.
 - Faithful VGA read-back (0x3D5 -> `cr[index]`), texture fingerprint exactness,
