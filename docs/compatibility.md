@@ -200,7 +200,7 @@ oracle the corpus did not have before. Compared as mean channel value plus an
 |---|---|---|---|
 | `vp_lighting` | (32.3, 26.7, 224.7) | (33.9, 28.1, 226.4) | **matches** - within 1.7/255 per channel, luminance histogram close (`83/81` in the darkest non-black bucket) |
 | `alpha_blending` | (20.8, 17.2, 233.2) | (25.6, 21.2, 229.0) at 4.6B | **matches** - within 4.8/255 per channel once the frame is taken at a comparable phase. The sample ping-pongs a shader `transparency` 1.0 -> 0.0 every 100 frames, so a single fixed step count measures the phase, not the renderer (decisions §208f; the earlier "blended geometry missing" verdict compared a mid-fade frame) |
-| `bump_cubemap_reflect` | (62.3, 100.1, 28.8) | (58.0, 98.7, 29.8) at 3B; (57.0, 97.7, 30.2) at 3.6B | **matches** - within 5.3/255 per channel at the best phase, 21,041 colours vs the reference's 30,806, 0% black (was 2 colours / 36% black before §209a) |
+| `bump_cubemap_reflect` | (62.3, 100.1, 28.8) | (58.0, 98.7, 29.8) at 3B; (57.0, 97.7, 30.2) at 3.6B | **matches** - within 5.3/255 per channel at the best phase, 20,843 colours (nearest) / **26,347** with `--tex-filter registers` vs the reference's 30,806, 0% black (was 2 colours / 36% black before §209a; §210: the tent moves the colour depth a third of the remaining way to the reference at an unchanged mean) |
 
 This is the first corpus evidence that can say "renders correctly" rather than
 just "renders something". **Animated samples need a phase sweep** (§208f):
@@ -208,22 +208,36 @@ just "renders something". **Animated samples need a phase sweep** (§208f):
 counts and reports the best. With that, all three oracle rows match; the two
 `*_ffp` rows are blocked on compatibility gap 6 (fixed-function transforms).
 
-### 7. Texture filtering was ignored (opt-in since 2026-10-21, §209d)
+### 7. Texture filtering was ignored (opt-in since 2026-10-21, §209d/§210)
 
 The sampler read no `TEXFILTER` state: every stage was nearest, and the
 `QUINCUNX`/`GAUSSIAN` convolution kernel was skipped. Measured usage: the
-dashboard menu's stage 0/1 program `2/2/1` (tent + quincunx) and stage 0 alone
-accounts for 211M of its 267M texel samples per 1B steps; `bump_cubemap_reflect`
-programs `2/2/1` on all four slots.
+dashboard menu's stage 0/1 program `2/2/1` (MIN/MAG tent, kernel field 1) and
+stage 0 alone accounts for 211M of its 267M texel samples per 1B steps;
+`bump_cubemap_reflect` programs `2/2/1` on all four slots.
 
-`--tex-filter registers` now honors MIN/MAG as a tent filter at LOD 0 (per-tap
-wrap, face-local clamp on cube maps) and runs xemu's nine-tap 1-2-1 gaussian on
-PROJECT2D. It is **opt-in** because the menu has no external oracle and honoring
-the register changes 8.7% of its menu pixels (mean |delta| 2.3/2.1/2.0 per
-channel, colours 32,360 -> 39,254) while costing 2.4x wall on the software
-rasterizer (compiled fills fall back to the generic loop; a perf follow-up).
-The default path is byte-identical to the previous build (both 1B goldens PASS
-on their exact anchors). The GL backend is still nearest-only.
+`--tex-filter registers` honors MIN/MAG as a tent filter at LOD 0 (per-tap wrap,
+face-local clamp on cube maps) and runs xemu's nine-tap 1-2-1 gaussian on
+PROJECT2D - but **only when MIN is `CONVOLUTION_2D_LOD0` (7)**, which is the
+only pairing the reference convolves (`psh.c:197-210`, §210a). A kernel field
+programmed next to an ordinary tent MIN - which is exactly what the dashboard
+and the cubemap sample do - is ignored, so `filters=2/2/0` reads "tent, no
+kernel" and both titles are sampled as a plain tent.
+
+State after §210: the flag is **cheap and invisible on both gate titles**
+(menu 1B wall 32.22 -> 31.90 s, triangle 10.53 -> 11.66 s, the menu's flipped
+frame byte-identical to the legacy anchor `4EF1FBF6…`, the triangle's RAM/CPU
+SHA identical) because both sample their textures at texel centers, where a
+tent is a nearest tap. Both compiled fills now serve the tent (the previous
+2.4x fallback is gone). It stays **opt-in**: what is still unproven is whether
+the tent is *right* on a title with fractional texcoords, and the menu has no
+external oracle. The two corpus rows that do have fractional texcoords both
+gain colour depth at an unchanged mean - `bump_cubemap_reflect` 20,843 ->
+26,347 (reference 30,806) and `vp_lighting` 1,592 -> 2,405 - i.e. the tent can
+only interpolate, and it moves neither row's mean toward or away from its
+reference. The default path is byte-identical to the previous build (both 1B
+accurate goldens PASS on their exact anchors, the corpus rows reproduce, §210c).
+The GL backend is still nearest-only.
 
 ### 8. GL replace mode cannot compose a software-fallback draw (2026-10-21, §209f)
 
@@ -346,8 +360,9 @@ sequence (an operator-visible route), not more steps.
 - **Texture formats / shader shapes:** whatever the dashboard's menu uses
   (modulate + a few lighting shapes) plus the xgu samples' byte-order formats,
   a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
-  unobserved. **Filtering:** the software sampler honors MIN/MAG + convolution
-  behind `--tex-filter registers` (default off, gap 7); the GL backend is
+  unobserved. **Filtering:** the software sampler honors MIN/MAG as a tent and
+  convolves only for MIN = CONVOLUTION_2D_LOD0, behind `--tex-filter registers`
+  (default off, gap 7 - cheap and anchor-neutral since §210); the GL backend is
   nearest-only.
 - **Audio:** emulated, but no streaming consumer and no host output.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.

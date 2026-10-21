@@ -617,11 +617,75 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `legacy` keeps every anchor byte-identical; the flag-on menu changes 8.7% of
   pixels with an identical CPU SHA, at 2.4x sw wall because compiled fills
   fall back to the generic loop). 1614 tests.
+- **TEXFILTER convolution gate + compiled tent fill (§210, 2026-10-21):** the
+  2.4x/8.7%-pixels §209 attributed to the tent was a **misapplied convolution**.
+  A TEXFILTER kernel field only convolves when MIN is `CONVOLUTION_2D_LOD0` (7)
+  (`xemu psh.c:197-210`); the dashboard and `bump_cubemap_reflect` program
+  `2/2/1` = tent, no blur. `EffectiveConvolutionKernel` now decodes it once for
+  the sampler and the `filters=` diagnostic (which prints the *effective*
+  kernel). Both compiled fills serve the tent (a shared exact `ReadTapFast` tap
+  reader), so 1B menu `registers` went **79.87 → 31.90 s** (legacy 32.22 s) with
+  `compiled=` identical to the legacy leg, and triangle 10.53 → 11.66 s. The
+  flag now moves **no gate anchor**: triangle RAM/CPU/frame identical, menu
+  flipped frame byte-identical to `4EF1FBF6…` (only the back surface differs).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1614 tests green**,
+   once; conflicts were purged 2026-10-09). Baseline: **1624 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-21 (seventeenth; the TEXFILTER convolution gate + compiled tent
+fill, §210). The "2.4x filter cost" was a misapplied blur, and fixing it made the
+flag free and invisible on both gate titles.**
+
+- **Measured before building.** Option A was "teach the compiled fills the
+  bilinear tap". A 1B menu leg with `--tex-filter registers` printed
+  `filters=2/2/1` - MIN = TENT_LOD0 **and** a kernel field - and the reference
+  only convolves when MIN is `CONVOLUTION_2D_LOD0` (7) (`xemu
+  hw/xbox/nv2a/pgraph/glsl/psh.c:197-210`, filter map `gl/constants.h:26-36` +
+  `gl/texture.c:126-141`). The dashboard and `xgu bump_cubemap_reflect` both
+  program that pairing, i.e. the reference samples them as a **plain tent**. The
+  pre-fix build convolved them (36 taps/fragment): menu 1B wall **79.87 s**,
+  `rasterPsh` 57.84 s, 261.3M px, frame `AF991769…`. With the gate:
+  **33.34 s / 11.76 s / 253,998,498 px / frame `4EF1FBF6…` = the legacy anchor**.
+  So §209's "8.7% of pixels change" and "2.4x" were the blur, not the tent.
+- **Both compiled fills now serve the tent** (§210b): the predicate drops
+  `!Bilinear` (a convolution still declines), the pixel loop branches once per
+  fragment, and the tent branch is `SampleBilinear` transcribed through one
+  shared `ReadTapFast` tap reader (per-tap fold, linear/Morton/interleave
+  address, the per-fill direct-RAM lane and `DecodeKind`, the same weights, the
+  raw-coordinate `TrackTextureCoords`, one `CountSample` on the base tap).
+  Evidence it is the same arithmetic: the `registers` leg reaches
+  `compiled=429350/277015865` - identical to the legacy leg - and its RAM SHA
+  equals the gate-fix-only build that served those draws through the generic
+  loop. 1B menu `registers` **32.18 s** vs legacy **32.22 s**; triangle
+  10.53 → **11.66 s** (four taps on the k2/k3 shape, `rasterPsh` 4.28 → 5.05 s),
+  RAM/CPU identical to legacy.
+- **The flag now moves no gate anchor.** Triangle: RAM `B45254CA…`, CPU
+  `7DAB63EB…`, frame unchanged. Menu: flipped frame byte-identical to
+  `4EF1FBF6…` (`19FEA0EA…`/`F5D61C94…` RAM/CPU; only the double-buffered back
+  surface differs) because both titles sample at texel centers, where a tent is
+  a nearest tap. The corpus rows with fractional texcoords are where the flag
+  does change pixels, and both gain colour depth at an unchanged mean:
+  `bump_cubemap_reflect` at 3.6B (57.0, 97.7, 30.2), colours **20,843 → 26,347**
+  vs the reference's 30,806, and `vp_lighting` at 3B (33.9, 28.1, 226.4),
+  **1,592 → 2,405** (its legacy leg also re-verifies that row's anchors
+  `162DAFF1…`/`0380C502…`, unchanged).
+- **Tooling:** `scripts/raster-leg.ps1 -TexFilter legacy|registers` (the leg
+  previously required a hand-built CLI line and silently mis-measured when the
+  flag was passed as one string) and a METRIC `filters=` field;
+  `scripts/ktest-smoke.ps1` now reuses the stored §120 xemu oracle log under
+  `-SkipXemu` instead of failing on a fresh work dir (and the new parameter had
+  to avoid the name `$XemuLog`, because PowerShell variables are
+  case-insensitive - the same trap §207 recorded).
+- **Gates:** accurate 1B menu `01BE5D64…`/`3D2740B8…` + frame `4EF1FBF6…`,
+  triangle `812EA159…`/`2F632483…` + frame `A1740DE0…` (all exact), fast legs
+  exact, `vec=0`; ktest smoke PASS 7/7 at **792,800,535** steps with a
+  byte-identical 40,797 B suite log; tests 1621 → **1624** (+3, two of them
+  fail on the pre-change source).
+- **Open for the operator:** the flag's default. It is now cheap and invisible
+  on the gates, and the cubemap row's colour depth moves toward its reference,
+  but the menu still has no oracle (`next-session.md` Option B).
 
 **Session 2026-10-21 (sixteenth; cubemap reflection closed, TEXFILTER landed, §209).**
 **The last xgu oracle failure now renders its reflection, and the sampler reads

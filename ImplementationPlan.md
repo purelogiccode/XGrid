@@ -163,10 +163,16 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    **Corpus-driven fidelity landed 2026-10-21 (§209):** the cubemap row renders
    (`xgu bump_cubemap_reflect`, 2 colours -> 21,041, `|dmean|` 5.3/2.4/1.3)
    after fixing the face extent (TEXIMAGERECT vs TEXFMT `BASE_SIZE`) plus the
-   three format gates, and **TEXFILTER is honored** (tent at LOD 0 + quincunx
-   convolution) behind opt-in `--tex-filter registers` - the menu's stage 0
-   programs `2/2/1` on 211M texel samples/1B, so the default-flip decision is an
-   operator item with a measured pixel delta (8.7%, identical CPU SHA).
+   three format gates, and **TEXFILTER is honored** (tent at LOD 0, convolution
+   only for MIN = `CONVOLUTION_2D_LOD0`) behind opt-in `--tex-filter registers` -
+   the menu's stage 0 programs `2/2/1` on 211M texel samples/1B, so the
+   default-flip decision is an operator item. **§210 (2026-10-21):** the 2.4x
+   cost and the 8.7% pixel delta §209 attributed to the tent were a *misapplied
+   convolution* (the reference gates the kernel on MIN 7); with that fixed and
+   both compiled fills serving the tent, the flag costs 32.18 s vs 32.22 s at 1B
+   menu and moves no gate anchor (triangle SHA/frame identical, menu frame
+   `4EF1FBF6…`), while `bump_cubemap_reflect`'s colour depth goes 20,843 ->
+   26,347 toward its reference's 30,806 at an unchanged mean.
 3. **Track P — product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.

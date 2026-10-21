@@ -1,5 +1,16 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-21 (seventeenth session, §210) - Track C stays frozen; the
+> session was Track B/D + fidelity, no engine change.** The lead item was
+> `next-session.md` Option A (teach the compiled fills the bilinear tap), and
+> pricing it found that the "2.4x cost of TEXFILTER" was a misapplied
+> convolution (`psh.c:204`), not the tent. Both landed: the flag is now 31.90 s
+> vs the 32.22 s legacy menu wall at 1B and no gate anchor moves (§210). The CPU
+> engine is unchanged and still ~17 s of the `gl+replace` menu wall; the sw
+> product path is 32.2 s, of which the rasterizer is 11.0 s. Re-opening Track C
+> remains an operator decision (C3-z, 2-3%); nothing in this session changes its
+> calculus.
+
 > **STATUS 2026-10-20 (twelfth session, §205) - Track B's two scoped slices are
 > in; Track C stays frozen.** Draw-command batching landed on top of §204
 > (`drawMs` 1971 -> 1045 ms, -47% 3/3; wall -4.2% 3/3; both 1B frames
