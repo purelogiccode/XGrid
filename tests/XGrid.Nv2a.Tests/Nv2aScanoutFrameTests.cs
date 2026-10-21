@@ -176,4 +176,109 @@ public sealed class Nv2aScanoutFrameTests
         Assert.Equal(0x03, bgra[8]);
         Assert.Equal(0x04, bgra[12]);
     }
+
+    /// <summary>
+    /// Minimal backend that presents nothing (the shape of a run whose guest
+    /// never flips, e.g. an nxdk direct-framebuffer program on the GPU path).
+    /// </summary>
+    private sealed class PresentingNothingBackend : IPgraphBackend
+    {
+        public long BackendUnsupported => 0;
+
+        public string DebugSummary => "fake";
+
+        public void Method(uint subchannel, uint method, uint parameter)
+        {
+        }
+
+        public void Draw(in PgraphDrawInfo info)
+        {
+        }
+
+        public void Clear(in PgraphClearInfo info)
+        {
+        }
+
+        public void Flip(in PgraphSurfaceRecord record)
+        {
+        }
+
+        public bool ReadbackPresented(out uint width, out uint height, out byte[] bgra)
+        {
+            width = 0;
+            height = 0;
+            bgra = Array.Empty<byte>();
+            return false;
+        }
+
+        public void ResetState()
+        {
+        }
+    }
+
+    [Fact]
+    public void MemoryScanoutLane_ReadsRamEvenWithABackendAttached()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        Fill(memory, FlippedSurface, Green);
+        Fill(memory, ScanoutSurface, Blue);
+        Present(nv2A, memory, FlippedSurface);
+        nv2A.Write(Base + PcrtcStart, 4, ScanoutSurface);
+
+        // The raw scanout export belongs to the software path: with a backend
+        // attached it refuses (the backend owns the presented image).
+        nv2A.Backend = new PresentingNothingBackend();
+        Assert.False(nv2A.TryCopyScanoutFrame(out _, out _, out _));
+        Assert.False(nv2A.TryCopyDisplayFrame(out _, out _, out _));
+
+        // The memory lane still reads the display controller's RAM buffer: the
+        // pixels a direct-framebuffer guest wrote are only there.
+        Assert.True(nv2A.TryCopyScanoutFrameFromMemory(out uint width, out uint height, out byte[] bgra));
+        Assert.Equal(Width, width);
+        Assert.Equal(Height, height);
+        Assert.Equal(0x00, bgra[1]);
+        Assert.Equal(0xFF, bgra[2]);
+    }
+
+    [Fact]
+    public void MemoryScanoutLane_MatchesTheSoftwareLaneWithNoBackend()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        Fill(memory, FlippedSurface, Green);
+        memory.WritePhysical(ScanoutSurface + 0u, 0xFF000001u);
+        memory.WritePhysical(ScanoutSurface + 4u, 0xFF000002u);
+        memory.WritePhysical(ScanoutSurface + Pitch + 0u, 0xFF000003u);
+        memory.WritePhysical(ScanoutSurface + Pitch + 4u, 0xFF000004u);
+        Present(nv2A, memory, FlippedSurface);
+        nv2A.Write(Base + PcrtcStart, 4, ScanoutSurface);
+
+        Assert.True(nv2A.TryCopyScanoutFrame(out _, out _, out byte[] software));
+        Assert.True(nv2A.TryCopyScanoutFrameFromMemory(out _, out _, out byte[] fromMemory));
+
+        Assert.Equal(Convert.ToHexString(software), Convert.ToHexString(fromMemory), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void MemoryScanoutLane_RequiresAScanoutAndGeometry()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+
+        // Nothing presented and no PCRTC start: no geometry for either lane.
+        Assert.False(nv2A.TryCopyScanoutFrameFromMemory(out _, out _, out _));
+
+        Present(nv2A, memory, FlippedSurface);
+        Assert.False(nv2A.TryCopyScanoutFrameFromMemory(out _, out _, out _));
+    }
+
+    [Fact]
+    public void GpuMemoryExposesTheAdapterTheDeviceWasBuiltWith()
+    {
+        var memory = new ArrayMemory();
+        var nv2A = new Nv2AMmio(64u * 1024 * 1024, "NV2A", memory);
+
+        Assert.Same(memory, nv2A.GpuMemory);
+
+        // A test fake with no memory reports null rather than a fabricated lane.
+        Assert.Null(new Nv2AMmio(64u * 1024 * 1024, "NV2A").GpuMemory);
+    }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using XGrid.Storage;
 using XGrid.Xbe;
 using XGrid.XboxFs;
 
@@ -13,10 +14,10 @@ namespace XGrid.Host;
 /// </summary>
 /// <remarks>
 /// A plain XDVDFS ISO is read through <see cref="XdvdfsFileSystem"/> (its root
-/// <c>default.xbe</c>), a loose <c>.xbe</c> is read directly, and a CHD is not
-/// resolved: the XDVDFS reader works on an ISO file and the CHD's sector
-/// stream would have to be re-fed into it. That gap is deliberate and
-/// documented — callers fall back to the path key for a CHD.
+/// <c>default.xbe</c>), a loose <c>.xbe</c> is read directly, and a CHD is read
+/// through <see cref="XdvdfsSectorReader"/>, which walks the same volume layout
+/// over the compressed image's sector stream (<see cref="XdvdfsFileSystem"/>
+/// itself only opens ISO/CSO paths).
 /// </remarks>
 public static class DiscTitleId
 {
@@ -56,6 +57,12 @@ public static class DiscTitleId
                 byte[]? executable = ReadRootExecutable(disc);
                 return executable is not null && TryReadExecutable(executable, out titleId, out titleName);
             }
+
+            if (extension.Equals(".chd", StringComparison.OrdinalIgnoreCase))
+            {
+                using IDvdImage image = ChdDvdImage.Open(imagePath);
+                return TryReadImage(image, out titleId, out titleName);
+            }
         }
         catch (Exception exception) when (exception is IOException
                                               or UnauthorizedAccessException
@@ -65,6 +72,39 @@ public static class DiscTitleId
                                               or InvalidOperationException)
         {
             // An unreadable image simply has no title id; the caller keys by path.
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to read the title id out of an already-open disc image (any
+    /// <see cref="IDvdImage"/>, e.g. a compressed CHD).
+    /// </summary>
+    /// <param name="image">Sector source of the disc image.</param>
+    /// <param name="titleId">XBE certificate title id on success.</param>
+    /// <param name="titleName">Certificate title name on success (may be empty).</param>
+    /// <returns>True when the root executable was found and its certificate read.</returns>
+    public static bool TryReadImage(IDvdImage image, out uint titleId, out string titleName)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        titleId = 0;
+        titleName = string.Empty;
+        try
+        {
+            if (!XdvdfsSectorReader.TryReadRootFile(image, RootExecutableName, MaxExecutableBytes, out byte[] xbe))
+            {
+                return false;
+            }
+
+            return TryReadExecutable(xbe, out titleId, out titleName);
+        }
+        catch (Exception exception) when (exception is IOException
+                                              or InvalidDataException
+                                              or NotSupportedException
+                                              or ArgumentException
+                                              or InvalidOperationException)
+        {
         }
 
         return false;

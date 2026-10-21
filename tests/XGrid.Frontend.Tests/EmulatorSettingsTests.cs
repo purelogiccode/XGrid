@@ -16,12 +16,47 @@ public sealed class EmulatorSettingsTests
     public void GlobalGraphicsSwitchesDefaultToTheCliDefaults()
     {
         // The CLI flags are opt-in, so a fresh configuration must be too: the
-        // resident vertex program and the legacy sampler.
+        // resident vertex program, the legacy sampler and the software renderer.
         var settings = new EmulatorSettings();
 
         Assert.False(settings.FixedFunctionVertex);
         Assert.Equal("legacy", settings.TextureFilter);
+        Assert.Equal("software", settings.Renderer);
+        Assert.False(EmulatorSettings.IsGpuRenderer(settings.Renderer));
         Assert.Empty(settings.TitleOverrides);
+    }
+
+    [Fact]
+    public void RendererSurvivesCloneAndNormalize()
+    {
+        var settings = new EmulatorSettings { Renderer = EmulatorSettings.RendererOpenGl };
+
+        EmulatorSettings copy = settings.Clone();
+
+        Assert.Equal(EmulatorSettings.RendererOpenGl, copy.Renderer);
+        Assert.True(EmulatorSettings.IsGpuRenderer(copy.Renderer));
+        Assert.NotSame(settings, copy);
+    }
+
+    [Fact]
+    public void NormalizeRepairsAnUnknownRenderer()
+    {
+        // A hand-edited or newer config must never leave the session on a
+        // renderer key nothing implements: anything but "opengl" is software.
+        var settings = new EmulatorSettings { Renderer = "vulkan" };
+
+        settings.Normalize();
+
+        Assert.Equal(EmulatorSettings.RendererSoftware, settings.Renderer);
+    }
+
+    [Fact]
+    public void RendererKeyComparisonsAreOrdinal()
+    {
+        Assert.True(EmulatorSettings.IsGpuRenderer("opengl"));
+        Assert.False(EmulatorSettings.IsGpuRenderer("OpenGL"));
+        Assert.False(EmulatorSettings.IsGpuRenderer(null));
+        Assert.False(EmulatorSettings.IsGpuRenderer(string.Empty));
     }
 
     [Fact]

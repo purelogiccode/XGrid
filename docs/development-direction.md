@@ -74,6 +74,14 @@ if it is interesting.
 
 ## 1. Priority stack (in order)
 
+**Status 2026-10-22 (22nd session, §§220-221):** the frontend's renderer is a
+setting - software (default) or the headless host-GPU OpenGL backend, which
+measures **-29% wall** at 1B through the real `EmulatorSession` (34.8 s -> 24.7 s
+on gate media) with the same picture; and per-title override V2 resolves a CHD
+through a sector-level XDVDFS lookup (§221), so a compressed library keys by
+title id. Suite **1757**. Track order is otherwise unchanged; the largest
+remaining product gap is host audio, which needs APU DSP execution first.
+
 **Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
 the fixed-function vertex stage (213) and its enabled-light loop (215) are
 opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU
@@ -196,8 +204,8 @@ is a ratio, not a milestone.
   with an idle CPU, so absolute walls are not comparable. Re-run
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
-  is the structural step. The in-app GL display is still deferred (the frontend
-  uses the software path, which never readbacks).
+  is the structural step. **The in-app GL display landed 2026-10-22 (§220):** the
+  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default.
 - **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +

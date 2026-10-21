@@ -46,6 +46,23 @@ public sealed class TextureFilterOption
     public string Label { get; }
 }
 
+/// <summary>One selectable renderer.</summary>
+public sealed class RendererOption
+{
+    /// <summary>Creates a renderer option.</summary>
+    public RendererOption(string key, string label)
+    {
+        Key = key;
+        Label = label;
+    }
+
+    /// <summary>Gets the persisted key ("software" or "opengl").</summary>
+    public string Key { get; }
+
+    /// <summary>Gets the display label.</summary>
+    public string Label { get; }
+}
+
 /// <summary>One per-title override row in the settings list.</summary>
 public sealed class TitleOverrideItem : ObservableObject
 {
@@ -189,6 +206,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     private TextureFilterOption? _selectedTextureFilter;
 
     [ObservableProperty]
+    private RendererOption? _selectedRenderer;
+
+    [ObservableProperty]
     private bool _eosQuirk = true;
 
     [ObservableProperty]
@@ -214,6 +234,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             new("legacy", "Legacy (nearest)"),
             new("registers", "TEXFILTER (tent, LOD 0)"),
         };
+        RendererOptions = new ObservableCollection<RendererOption>
+        {
+            new(EmulatorSettings.RendererSoftware, "Software (portable, reference)"),
+            new(EmulatorSettings.RendererOpenGl, "OpenGL (host GPU, Windows)"),
+        };
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -231,6 +256,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable texture filter modes.</summary>
     public ObservableCollection<TextureFilterOption> TextureFilterOptions { get; }
+
+    /// <summary>Gets the selectable renderers.</summary>
+    public ObservableCollection<RendererOption> RendererOptions { get; }
 
     /// <summary>Gets the per-title overrides being edited.</summary>
     public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = new();
@@ -292,6 +320,9 @@ public sealed partial class SettingsViewModel : PageViewModel
         SelectedTextureFilter = TextureFilterOptions.FirstOrDefault(
             option => string.Equals(option.Key, settings.TextureFilter, StringComparison.Ordinal))
             ?? TextureFilterOptions[0];
+        SelectedRenderer = RendererOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.Renderer, StringComparison.Ordinal))
+            ?? RendererOptions[0];
         TitleOverrides.Clear();
         foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
         {
@@ -345,6 +376,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             JitThreshold = (int)JitThreshold,
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = SelectedTextureFilter?.Key ?? "legacy",
+            Renderer = SelectedRenderer?.Key ?? EmulatorSettings.RendererSoftware,
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,

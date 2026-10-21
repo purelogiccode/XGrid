@@ -1,10 +1,10 @@
-# Next session instructions (updated 2026-10-21 after the twenty-first session)
+# Next session instructions (updated 2026-10-22 after the twenty-second session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §220 (GL sampler decode,
-composition policy, frame stepping) + §219 (GL TEXFILTER parity, clear write
-masks, per-title overrides V2) + §218 (APU
+docs/research-notes/xgrid-architecture-decisions.md` §221 (CHD title id) + §220
+(the GPU renderer as a frontend setting) + §219 (GL TEXFILTER parity,
+replace-mode composition, clear write masks, per-title overrides V2) + §218 (APU
 `NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216 (PTIMER
 0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function vertex
 stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
@@ -20,10 +20,10 @@ then this file.
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the §219 session commit
+git log --oneline -1        # expect: the §220/§221 session commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1738 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1757 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -73,15 +73,42 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1738 tests green**, build/format clean, ktest XGrid leg at **792,800,535**  steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
+ **1757 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+  steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
-  **`--ffp` and `--tex-filter registers` are opt-in too**, and both are now also
-  settings in the Avalonia frontend (§217).
+  **`--ffp`, `--tex-filter registers` and the OpenGL **renderer** are opt-in too**,
+  and all three are settings in the Avalonia frontend (§217, §220).
 - **Oracle: `References2/xemu-0.8.137` is primary.** GPU orientation:
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
 
-## 0b. What the twenty-first/twenty-second sessions landed (§219, §220) - do not redo it
+# 0b. What the twenty-second session landed (§§220-221) - do not redo it
+
+1. **The GPU renderer is a frontend setting (§220).** Settings → *Renderer*:
+   software (default) or OpenGL. `EmulatorSession.AttachRenderer` creates the
+   headless WGL context **on the emulation thread** in replacement mode with
+   `frameReadback: true`, attaches it (`machine.Nv2A.Backend = backend`), logs the
+   probe line, and falls back to software with a logged reason on any failure
+   (non-Windows, probe, GL version). `DetachRenderer` clears `Nv2A.Backend` and
+   disposes in the `finally`. The display follows the renderer; **new**
+   `Nv2AMmio.TryCopyScanoutFrameFromMemory` reads the RAM scanout even with a
+   backend attached, used only before the first backend frame (direct-framebuffer
+   guests that never flip). `TryCopyScanoutFrame` keeps its old "no backend"
+   contract.
+2. **One guest-memory adapter (§220a).** `Nv2AMmio.GpuMemory` exposes the
+   `IGpuMemory` the device was built with; the CLI's duplicate
+   `MachineGpuMemory` is deleted and the CLI passes `machine.Nv2A.GpuMemory`.
+3. **CHD title id (§221).** `XGrid.XboxFs.XdvdfsSectorReader` walks the XDVDFS
+   volume over any `IDvdImage` (descriptor at partition sector 32, magic at
+   +0x00/+0x7EC, root table at +20/+24, `14 + nameLen` entries, the `0xFFFF`
+   sector-pad sentinel, XGD disc-offset probe list) and `DiscTitleId` resolves
+   `.chd` through `ChdDvdImage.Open` + the new `TryReadImage(IDvdImage, …)` seam.
+   Cross-checked against the XISOSharp path on six real ISOs. **No CHD exists on
+   H1**, so the container hand-off is test-covered but not run end to end.
+4. **Doc correction:** `xisosharp.md`'s trailing-magic offset is `+0x7EC`, not
+   `+0x7F4` (which is past the sector end).
+
+## 0c. What the twenty-first session landed (§219) - do not redo it
 
 1. **GL TEXFILTER parity (§219a, gap 7).** `DecodeTextureFilter` became the one
    TEXFILTER decode (LOD-0 tent for MIN/MAG 2/4/6/7, the *effective*
@@ -119,6 +146,11 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 1B, of which the software rasterizer is ~11 s. **Triangle `gl+replace`** ~7.5 s
 (10.5-11 s sw on gate media). Track C stays frozen.
 
+**Through the real frontend session (this host, 1B, gate media, §220d):**
+software **34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black
+pixel count. The app is still `Run(65536)`-batched with a 30 Hz display capture,
+so the remaining product cost is the same CPU engine the CLI measures.
+
 ## 2. Recommended next session - pick one
 
 ### Option A (Track P, the largest product gap): host audio output
@@ -133,16 +165,21 @@ first** (bit-exact vs `interp/`, then observable mixer output counters), then th
 sink. No oracle title exists in the corpus yet (`xaudio` only proves the voice
 engine is live), so the acceptance is synthetic + the `xaudio` row.
 
-### Option B (Track B, product path): the frontend on the GL backend
+### Option B (Track B): B3 method coverage - zero `unsup` rows
 
-`XGrid.Frontend.Avalonia` is software-only. `--gpu gl --gpu-replace` is 2-4x
-faster on the menu and the composition gap is closed (§220d), so the frontend
-could offer a renderer switch. The blocker is platform: `XGrid.GpuGl` creates a
-WGL context (Windows-only) and the frontend is cross-platform, so the reference
-has to be conditional on a Windows target (or a provider seam with a "no GPU
-backend" fallback). Acceptance: the EvoX menu runs in the app on both
-renderers, the frame pipeline still copies `TryCopyPresentedFrame` (the backend
-needs `frameReadback: true`), and a Linux/macOS build still compiles.
+he GL backend declines a deliberate list of texture modes
+(`CheckModesUnsupported`: DOT_PRODUCT/DOT_ZW/DOT_ST, DOT_REFLECT_DIFF/SPEC,
+DOT_STR3D/CUBE, BUMPENVMAP/LUM, and the cube/volume success paths). Measured at
+1B the corpus rows are all in the boot animation with `unsupported=0`; the
+cubemap row at **3B** is the one that trips (`unsupported=14`, all
+DOT_REFLECT_SPECULAR on stage 3, sampling a format-`0x06` cube map), and §219b
+makes its frame correct by composing from guest RAM (`composeUploads=7`).
+Honouring those modes in GLSL (reflection direction + cube sampling) would clear
+the row's `unsup` count and remove the composition, but it is the largest
+remaining GPU feature: it needs a cube-texture upload path and the
+`ResolveDotReflection`/`TrySampleTextureCube` semantics transcribed. Measure
+first: add a per-declined-draw mode histogram to `unsup[...]` so the next session
+knows how many corpus rows are affected before building it.
 
 ### Option C (Track E): the two remaining corpus gaps
 
@@ -160,15 +197,9 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
   the redirected-stdio QMP read loop.
 - **The cull winding on `bumpenv_ripple`'s quads** (§211f), and the remaining
   DXT/paletted/mipmapped texture paths (unobserved by the corpus).
-- Per-title overrides V2 follow-ups: a CHD title-id reader (feed the CHD sector
-  stream into XISOSharp), and title-id display in the library rows.
-- **Depth composition for mixed replace-mode frames.** The policy is
-  colour-only: a frame that mixes GL and software writers keeps guest zeta from
-  the software half, so the GL geometry's depth is lost. Composing depth is
-  possible (read the depth/stencil renderbuffer and write it into guest zeta in
-  the surface's Z16/Z24S8 layout) but needs its own differential - the corpus
-  row for it is `bumpenv_ripple` (gap 10) or a synthetic seam test. Do not start
-  it without a measured pixel delta.
+ Per-title overrides V2 follow-ups: **title-id display in the library rows**
+  (the CHD reader landed in §221), and a per-title *renderer* override (the
+  renderer is global today, §220).
 
 ### Filed, lower value - do not start while A/B are open
 
@@ -223,11 +254,15 @@ needs `frameReadback: true`), and a Linux/macOS build still compiles.
   is read-only. Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v8, audio v3).
-- Write it up: a decisions section (§221+) with the measured table, charter +
+ **Frontend work** builds `src/XGrid.Frontend.Avalonia` (and now references
+  `XGrid.GpuGl`, so the solution build must stay platform-clean); UI-observable
+  behavior lives in `EmulatorSession`, which is the seam a scratch harness can
+  drive headlessly (see §220d - the harness was throwaway, in `wt-data/`).
+- Write it up: a decisions section (§219+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
-## 5. Host state - two machines (2026-10-21)
+## 5. Host state - two machines (2026-10-22)
 
 **Development runs on two machines sharing this Dropbox tree.** Their
 fingerprints live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before
@@ -236,12 +271,12 @@ counters) must match on both machines; **performance** anchors (walls, `msps`,
 `rasterPsh`) compare only within one machine and one window.
 
 H1 (PETERSONPC) is the reference host: every semantic anchor reproduces exactly,
-`vec=0`, no fault. This session's walls at 1B: menu slice-1 golden 67.2 s sw /
-76.2 s gl, triangle slice-2 golden 44.4 s sw / 53.6 s gl, cubemap replace leg
-10.4 s; menu fast 32.5-32.9 s sw (rasterPsh 11.2-11.4 s), triangle fast BTFF
-~10.5-11.2 s. `host-doctor.ps1` says READY with the standing warning that
-clang/make are absent (the nxdk corpus rows cannot be rebuilt on this
-machine). Treat ceilings as ratios.
+vec=0`, no fault. This session's walls at 1B: menu slice-1 GL golden 71.2 s sw /
+76.5 s gl (accurate mode), menu dashboard through the real frontend session
+34.8 s software / 24.7 s OpenGL (fast mode), ktest smoke 47 s. Treat ceilings as
+ratios. Clang/make are absent on H1, so the nxdk corpus rows cannot be rebuilt
+here.
+
 ## 6. Commands
 
 ```powershell
@@ -303,14 +338,25 @@ pwsh -File scripts/refs-manifest.ps1 -Verify          # add -Quick to skip conte
 **`XGRID_GL_PROBE=1`**, **`XGRID_GL_NO_BATCH=1`**, the GL line's
 `timed[drawMs= flushMs= clearMs= readbackMs= readbacks=]`,
 `diag[fboReallocs= fboZetaDrops= clipXY= flipEmpty= presentUploads=
-flipStaleUploads= composedFrames= composedPixels= composedDraws= batchCalls=
-batchTris= batchCap=]`, `readback=on|off`, `methods=`, **`filters=<min>/<mag>/<conv>`**,
-**`fixedFn=` / `fixedFnLit=` / `fixedFnLights=`**, `PresentedFrameDebug`,
-`Nv2AMmio.VgaCrtcDebug`, `--tex-filter registers`, `--ffp`,
-`DiagnosticGenericSampler`/`DiagnosticGenericFill`, `--raw-shapes`,
-`XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`, `XGRID_RAW_SKIP_HEADS`,
-`XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`, `XGRID_RAW_DUMP=1`,
-`--jit-timing`, `--jit-tally`, `--bench`, `--frame-first`, `frames=`/`pcrtc=`
+lipStaleUploads= composeUploads= batchCalls= batchTris= batchCap=]`,
+`readback=on|off`, `methods=`, **`filters=<min>/<mag>/<conv>`**, **`fixedFn=` /
+`fixedFnLit=` / `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
+`--tex-filter registers`, `--ffp`, `DiagnosticGenericSampler`/`DiagnosticGenericFill`,
+`--raw-shapes`, `XGRID_RAW_PROFILE=1` + `XGRID_RAW_CHAIN=0`,
+`XGRID_RAW_SKIP_HEADS`, `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`,
+`XGRID_RAW_DUMP=1`, `--jit-timing`, `--jit-tally`, `--bench`, `--frame-first`,
+`frames=`/`pcrtc=` on the `Frame` line, `--pgraph <path> --pgraph-max <n>`,
+`--eip-hist`, `--eeprom-out`, and the new lanes from §220/§221:
+`Nv2AMmio.GpuMemory` (the one adapter the device and the backend share),
+`Nv2AMmio.TryCopyScanoutFrameFromMemory` (RAM scanout with a backend attached),
+`DiscTitleId.TryReadImage(IDvdImage, …)` (title id without a container path),
+`xgrid disc title <path>` (now works for a CHD), and **`unsupTex[mNN=n …]`** on
+the GL line: the texture-mode histogram of *declined* replacement-mode draws
+(slot counts, not draws). Measured on the cubemap row at 3B:
+`unsupTex[m0C=14 m11=28]` - DOT_REFLECT_SPECULAR on stage 3 and DOT_PRODUCT on
+two earlier stages - so Option B's first target is larger than the 14
+`BackendUnsupported` draws suggest.
+
 **Probe recipe for a black-frame row** (§211 used it): print the method stream
 with `--pgraph`, then gate temporary probes on a single env var and print (a) per
 flip the presented surface's non-black count, (b) per draw the mode/ranges/
