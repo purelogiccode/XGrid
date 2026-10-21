@@ -649,6 +649,21 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   H1 at 1B fast: **triangle 11.3 s sw / 7.5 s `gl+replace`** (was "8.0 / 6.4"),
   menu unchanged. The old triangle 6 s M-A target is re-based on a workload that
   was never being measured - operator decision before anyone chases it.
+- **Corpus: 17 rows over 13 samples (§208h).** Built three more xgu examples
+  (`bumpenv_ripple`, `distance_fog_ffp`, `spheremap_ffp`). `bumpenv_ripple` runs
+  its own scene from ~5B; the two `*_ffp` samples render flat because
+  **`XGU_FIXED` (fixed-function transform) is not implemented** - compatibility
+  gap 6, a large feature upstream of both renderers. `alpha_blending` is NOT a
+  gap: its shader transparency ping-pongs, and at the right phase (4.6B) XGrid
+  is within 4.8/255 of the reference (§208f). New `scripts/frame-stat.py` and
+  `scripts/frame-oracle.py` make animated samples measurable.
+- **Cube maps: three gates, not one (§208g).** Sampling needs
+  `IsSupportedSwizzledFormat`, `SamplerPlan.CubeBytes` *and*
+  `TryDecodeSwizzledTexel`; §207h moved only the first, which is why it looked
+  like "no pixels changed". With all three the cube samples (frame |dmean|
+  59.6/43.3/11.5 -> 47.2/14.1/7.2) but the reflection is striped, so the partial
+  path was reverted - the remaining error is the DOT_REFLECT_SPECULAR direction
+  chain.
 - **Build carry-over (not mine, not committed):** the frontend csproj is on
   Avalonia 12.1.4 from a parallel session; `FileDialogService.CopyTextAsync` was
   migrated to `DataTransfer`/`SetDataAsync` locally so the solution builds. Leave

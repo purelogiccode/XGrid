@@ -101,8 +101,14 @@ display `51658B3D`).
    transparency every 100 frames; at 4.6B XGrid is within 4.8/255 of the
    reference. New `scripts/frame-stat.py` (per-frame stats) and
    `scripts/frame-oracle.py` (best-of-N phase match) make animated samples
-   measurable. The only remaining xgu oracle failure is
-   `bump_cubemap_reflect` (cube direction mapping).
+   measurable.
+7. **Corpus widened by three xgu rows (§208h): 17 rows over 13 samples.** Build
+   them with `NXDK_DIR=/d/nxdk`, `MSYSTEM=MINGW64`, PATH `/usr/bin:/mingw64/bin`
+   - and do **not** source `nxdk/bin/activate` (it ends in `exec` and replaces
+   the shell). `bumpenv_ripple` runs its own scene from ~5B. The two `*_ffp`
+   samples are flat: **`XGU_FIXED` (fixed-function transform) is not
+   implemented** - compatibility gap 6, a large feature, upstream of both
+   renderers.
 
 ## 0c. What the thirteenth/fourteenth sessions landed (§206/§207) - do not redo it
 
@@ -144,6 +150,12 @@ media). Absolute M-A status on H1 is still undecided; ratios are not.
 Pick **one**:
 
 ### Option A (Track E, the steering signal): close the cubemap gap
+
+**Bigger but much larger, filed not recommended:** fixed-function transforms
+(compatibility gap 6, §208h) - two of the three new corpus rows render nothing
+because XGrid only executes programmable vertex programs. A full FFP vertex
+stage (matrix/lighting state, per-stage texgen) is a multi-session feature.
+The cubemap item below is bounded by comparison.
 
 **Not `alpha_blending`** - §208f proved that sample renders correctly (within
 4.8/255 of the reference at 4.6B; the earlier verdict compared a mid-fade phase
