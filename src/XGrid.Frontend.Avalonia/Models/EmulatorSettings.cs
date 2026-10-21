@@ -41,6 +41,12 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets the JIT build threshold (visits before a block is compiled).</summary>
     public int JitThreshold { get; set; } = 8;
 
+    /// <summary>Gets or sets a value indicating whether the NV2A fixed-function vertex stage is used (<c>--ffp</c>).</summary>
+    public bool FixedFunctionVertex { get; set; }
+
+    /// <summary>Gets or sets the NV2A texture filter mode ("legacy" or "registers", <c>--tex-filter</c>).</summary>
+    public string TextureFilter { get; set; } = "legacy";
+
     /// <summary>Gets or sets a value indicating whether the 007 end-of-stream quirk is enabled.</summary>
     public bool EosQuirk { get; set; } = true;
 
@@ -59,10 +65,80 @@ public sealed class EmulatorSettings
     /// <summary>Gets or sets recently launched disc images (newest first).</summary>
     public List<string> RecentGames { get; set; } = new();
 
+    /// <summary>
+    /// Gets or sets per-game overrides keyed by the launched image path. An
+    /// override only replaces the members it sets; everything else inherits the
+    /// global configuration.
+    /// </summary>
+    public Dictionary<string, TitleOverride> TitleOverrides { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Returns the override configured for an image path, or null.</summary>
+    /// <param name="gamePath">Launched ISO/CHD/XBE path.</param>
+    public TitleOverride? FindTitleOverride(string? gamePath)
+    {
+        if (string.IsNullOrWhiteSpace(gamePath) || TitleOverrides.Count == 0)
+        {
+            return null;
+        }
+
+        return TitleOverrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
+    }
+
+    /// <summary>Normalizes an image path into the override dictionary key.</summary>
+    /// <param name="gamePath">Launched ISO/CHD/XBE path.</param>
+    public static string NormalizeTitleKey(string gamePath)
+    {
+        ArgumentNullException.ThrowIfNull(gamePath);
+        string trimmed = gamePath.Trim();
+        try
+        {
+            return Path.GetFullPath(trimmed);
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return trimmed;
+        }
+    }
+
+    /// <summary>
+    /// Returns an independent copy with the per-title override for
+    /// <paramref name="gamePath"/> applied, or a plain copy when there is none.
+    /// </summary>
+    /// <param name="gamePath">Launched ISO/CHD/XBE path (null for the dashboard).</param>
+    public EmulatorSettings WithTitleOverride(string? gamePath)
+    {
+        EmulatorSettings effective = Clone();
+        TitleOverride? title = FindTitleOverride(gamePath);
+        if (title is null)
+        {
+            return effective;
+        }
+
+        if (title.FixedFunctionVertex is bool fixedFunction)
+        {
+            effective.FixedFunctionVertex = fixedFunction;
+        }
+
+        if (!string.IsNullOrEmpty(title.TextureFilter))
+        {
+            effective.TextureFilter = string.Equals(title.TextureFilter, "registers", StringComparison.Ordinal)
+                ? "registers"
+                : "legacy";
+        }
+
+        if (title.RamMb is int ram)
+        {
+            effective.RamMb = ram is 128 ? 128 : 64;
+        }
+
+        return effective;
+    }
+
     /// <summary>Creates an independent copy of these settings.</summary>
     public EmulatorSettings Clone()
     {
-        return new EmulatorSettings
+        var result = new EmulatorSettings
         {
             BiosPath = BiosPath,
             McpxRomPath = McpxRomPath,
@@ -75,6 +151,8 @@ public sealed class EmulatorSettings
             SpinSkip = SpinSkip,
             DecodeCache = DecodeCache,
             JitThreshold = JitThreshold,
+            FixedFunctionVertex = FixedFunctionVertex,
+            TextureFilter = TextureFilter,
             EosQuirk = EosQuirk,
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
@@ -82,6 +160,12 @@ public sealed class EmulatorSettings
             LibraryFolders = new List<string>(LibraryFolders),
             RecentGames = new List<string>(RecentGames),
         };
+        foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
+        {
+            result.TitleOverrides[pair.Key] = pair.Value.Clone();
+        }
+
+        return result;
     }
 
     /// <summary>Clamps and repairs values loaded from disk.</summary>
@@ -89,6 +173,9 @@ public sealed class EmulatorSettings
     {
         RamMb = RamMb is 128 ? 128 : 64;
         JitThreshold = Math.Clamp(JitThreshold, 1, 4096);
+        TextureFilter = string.Equals(TextureFilter, "registers", StringComparison.Ordinal)
+            ? "registers"
+            : "legacy";
         NetworkBackend = string.Equals(NetworkBackend, "socket", StringComparison.Ordinal)
             ? "socket"
             : "loopback";
@@ -101,6 +188,33 @@ public sealed class EmulatorSettings
         RecentGames ??= new List<string>();
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
         RecentGames.RemoveAll(string.IsNullOrWhiteSpace);
+
+        var overrides = new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase);
+        if (TitleOverrides is not null)
+        {
+            foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || pair.Value.IsEmpty)
+                {
+                    continue;
+                }
+
+                TitleOverride value = pair.Value;
+                value.TextureFilter = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal)
+                    ? "registers"
+                    : string.Equals(value.TextureFilter, "legacy", StringComparison.Ordinal)
+                        ? "legacy"
+                        : null;
+                if (value.RamMb is int ram && ram is not (64 or 128))
+                {
+                    value.RamMb = null;
+                }
+
+                overrides[NormalizeTitleKey(pair.Key)] = value;
+            }
+        }
+
+        TitleOverrides = overrides;
     }
 
     /// <summary>Returns true when the required firmware image is present on disk.</summary>

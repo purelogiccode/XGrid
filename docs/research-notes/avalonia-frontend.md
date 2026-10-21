@@ -147,3 +147,28 @@ dotnet run --project src/XGrid.Frontend.Avalonia
 
 Project-local usage notes and the shortcut table live in
 `src/XGrid.Frontend.Avalonia/README.md`.
+
+## Update 2026-10-21 (decisions 217): graphics fidelity, per-title overrides, EEPROM state
+
+- **The NV2A fidelity switches are reachable from the UI.** Settings now has
+  "Fixed-function vertex stage" (`--ffp`) and "Texture filtering" (`legacy` |
+  `TEXFILTER (tent, LOD 0)`), both defaulting to the CLI defaults, and the
+  power-on log line reports the active pair.
+- **Per-title overrides (V1).** `EmulatorSettings.TitleOverrides` keys a
+  `TitleOverride` (nullable `FixedFunctionVertex`, `TextureFilter`, `RamMb`) by
+  the launched image path; `WithTitleOverride(path)` merges it over the global
+  configuration at launch. The Settings page lists the rows with per-row
+  `ffp` / `filter` / `inherit` toggles, an "Add override" file picker and a
+  remove button. Title-id keying needs the XBE inside the disc and is filed V2.
+- **The EEPROM persists.** The guest rewrites the 24C02 EEPROM (video mode,
+  language, region) at runtime; the frontend now stores that image in
+  `<data dir>/eeprom.bin` (seeded from the configured firmware image, which is
+  never modified), loads it at power-on and saves it when a run stops. The
+  Settings page shows the path and has a "Reset state" button. The CLI gained
+  `--eeprom-out <path>` for the same image.
+- **The frontend has a test project.** `tests/XGrid.Frontend.Tests` (in
+  `XGrid.sln`) covers the plain models with no UI: settings defaults and
+  `Normalize` repairs, the override merge, `Clone` independence, the one-line
+  description, path-key normalization and the EEPROM store
+  (save/load/clamp/reject/reset). 15 tests.
+

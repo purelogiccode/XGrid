@@ -204,6 +204,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodMaterialAlpha = 0x03B4u;
     private const uint MethodSceneAmbient = 0x0A10u;
     private const uint MethodSceneAmbientEnd = 0x0A18u;
+    private const uint MethodSpecularParams = 0x09E0u;
+    private const uint MethodLightConstantBase = 0x1000u;
+    private const uint MethodLightConstantEnd = 0x13FCu;
     private const uint MethodLightingEnable = 0x0314u;
     private const uint MethodSkinMode = 0x0328u;
     private const uint MethodNormalizationEnable = 0x03A4u;
@@ -366,6 +369,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint PtimerDenominator = 0x210u;
     private const uint PtimerTime0 = 0x400u;
     private const uint PtimerTime1 = 0x410u;
+    private const uint PtimerAlarm0 = 0x420u;
+
+    // PTIMER register-time layout (xemu 0.8.137 ptimer.c): a 29-bit high word
+    // followed by a 32-bit low word whose five least-significant bits are
+    // always zero, i.e. the internal tick is the register time shifted by 5.
+    private const ulong PtimerClockHighMask = 0x1FFFFFFFul;
+    private const ulong PtimerAlarmMask = 0xFFFFFFE0ul;
+    private const ulong PtimerRegTimeHighMask = PtimerClockHighMask << 32;
+    private const ulong PtimerRegTimeLowMask = 0xFFFFFFFFul;
+    private const ulong PtimerRegTimeMask = PtimerRegTimeHighMask | PtimerAlarmMask;
+    private const int PtimerInternalTimeShift = 5;
+    private const ulong PtimerInternalTimeMask = PtimerRegTimeMask >> PtimerInternalTimeShift;
 
     private const uint PfbCfg0 = 0x200u;
     private const uint PfbCfg0Reset = 0x03070103u;
@@ -505,9 +520,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _pbusCommand;
     private uint _ptimerPending;
     private uint _ptimerEnabled;
-    private uint _ptimerNumerator;
-    private uint _ptimerDenominator;
+    private uint _ptimerNumerator = 1u;
+    private uint _ptimerDenominator = 1u;
     private ulong _ptimerClock;
+    private ulong _ptimerAlarmTime;
+    private ulong _ptimerTimeOffset;
     private uint _pcrtcPending;
     private uint _pcrtcEnabled;
     private uint _pcrtcStart;
@@ -974,9 +991,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>
     /// Gets the number of lit fixed-function draws that also enabled at least one
-    /// light (<c>SET_LIGHT_ENABLE_MASK</c> != 0). The enabled-light loop is not
-    /// implemented, so these draws keep the material chain without the light
-    /// terms; the counter keeps that documented gap measurable.
+    /// light (<c>SET_LIGHT_ENABLE_MASK</c> != 0). Those run the reference's
+    /// enabled-light loop; the counter keeps light usage measurable.
     /// </summary>
     public ulong FixedFunctionLightedDraws { get; private set; }
 
@@ -1050,6 +1066,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         _ptimerClock += coreTicks;
+        AdvancePtimerAlarm();
         _vsyncRemainder += coreTicks;
         while (_vsyncRemainder >= VsyncTicksPerFrame)
         {
@@ -1095,9 +1112,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _pbusCommand = 0;
         _ptimerPending = 0;
         _ptimerEnabled = 0;
-        _ptimerNumerator = 0;
-        _ptimerDenominator = 0;
+        _ptimerNumerator = 1;
+        _ptimerDenominator = 1;
         _ptimerClock = 0;
+        _ptimerAlarmTime = 0;
+        _ptimerTimeOffset = 0;
         _pcrtcPending = 0;
         _pcrtcEnabled = 0;
         _pcrtcStart = 0;
@@ -1336,6 +1355,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_ptimerNumerator);
         writer.Write(_ptimerDenominator);
         writer.Write(_ptimerClock);
+        writer.Write(_ptimerAlarmTime);
+        writer.Write(_ptimerTimeOffset);
         writer.Write(_pcrtcPending);
         writer.Write(_pcrtcEnabled);
         writer.Write(_pcrtcStart);
@@ -1633,6 +1654,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _ptimerNumerator = reader.ReadUInt32();
         _ptimerDenominator = reader.ReadUInt32();
         _ptimerClock = reader.ReadUInt64();
+        _ptimerAlarmTime = reader.ReadUInt64();
+        _ptimerTimeOffset = reader.ReadUInt64();
         _pcrtcPending = reader.ReadUInt32();
         _pcrtcEnabled = reader.ReadUInt32();
         _pcrtcStart = reader.ReadUInt32();
@@ -1921,7 +1944,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 6;
+    private const int Nv2ASnapshotVersion = 8;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -2275,6 +2298,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             pending |= 1u << 24;
         }
 
+        // PTIMER's alarm raises its own INTR_0 bit and the PMC aggregate mirrors
+        // it only while the subunit's alarm interrupt is enabled
+        // (xemu nv2a_update_irq: NV_PMC_INTR_0_PTIMER).
+        if ((_ptimerPending & _ptimerEnabled & 1u) != 0)
+        {
+            pending |= 1u << 20;
+        }
+
         return pending;
     }
 
@@ -2299,19 +2330,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ReadPtimer(uint register)
     {
-        ulong clock = _ptimerNumerator == 0
-            ? _ptimerClock
-            : (_ptimerClock * _ptimerDenominator) / _ptimerNumerator;
-        return register switch
+        switch (register)
         {
-            PtimerIntr0 => _ptimerPending,
-            PtimerIntrEn0 => _ptimerEnabled,
-            PtimerNumerator => _ptimerNumerator,
-            PtimerDenominator => _ptimerDenominator,
-            PtimerTime0 => (uint)((clock & 0x7FFFFFFu) << 5),
-            PtimerTime1 => (uint)((clock >> 27) & 0x1FFFFFFFu),
-            _ => 0u,
-        };
+            case PtimerIntr0:
+                // Reading the status latches an alarm that has already been
+                // reached (reference ptimer_read). That latch is unconditional:
+                // the pending bit appears even with the alarm disabled, and the
+                // PMC aggregate filters it out until the guest enables it.
+                LatchPtimerAlarm(requireEnabled: false);
+                return _ptimerPending;
+            case PtimerIntrEn0:
+                return _ptimerEnabled;
+            case PtimerNumerator:
+                return _ptimerNumerator;
+            case PtimerDenominator:
+                return _ptimerDenominator;
+            case PtimerTime0:
+                return (uint)(PtimerRegTime() & PtimerRegTimeLowMask);
+            case PtimerTime1:
+                return (uint)((PtimerRegTime() >> 32) & PtimerClockHighMask);
+            case PtimerAlarm0:
+                return (uint)(_ptimerAlarmTime & PtimerRegTimeLowMask);
+            default:
+                return 0u;
+        }
     }
 
     private void WritePtimer(uint register, uint value)
@@ -2320,19 +2362,122 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             case PtimerIntr0:
                 _ptimerPending &= ~value;
+                UpdateIrq();
                 break;
             case PtimerIntrEn0:
                 _ptimerEnabled = value;
+                if ((value & 1u) != 0)
+                {
+                    // Enabling the alarm with an already-reached time raises it
+                    // immediately, exactly like schedule_qemu_timer.
+                    LatchPtimerAlarm();
+                }
+
+                UpdateIrq();
                 break;
             case PtimerNumerator:
                 _ptimerNumerator = value;
+                LatchPtimerAlarm();
                 break;
             case PtimerDenominator:
                 _ptimerDenominator = value;
+                LatchPtimerAlarm();
+                break;
+            case PtimerTime0:
+                SetPtimerTime(
+                    (PtimerRegTime() & ~PtimerRegTimeLowMask) | (value & PtimerAlarmMask));
+                break;
+            case PtimerTime1:
+                SetPtimerTime(
+                    ((ulong)(value & PtimerClockHighMask) << 32) | (PtimerRegTime() & PtimerRegTimeLowMask));
+                break;
+            case PtimerAlarm0:
+                _ptimerAlarmTime = PtimerNextAlarmTime(PtimerRegTime(), value);
+                LatchPtimerAlarm();
                 break;
             default:
                 break;
         }
+    }
+
+    /// <summary>
+    /// Absolute PTIMER clock: core ticks scaled by the numerator/denominator
+    /// pair the guest programs (reference <c>ptimer_get_absolute_clock</c>).
+    /// </summary>
+    private ulong PtimerAbsoluteClock()
+    {
+        ulong numerator = _ptimerNumerator == 0 ? 1ul : _ptimerNumerator;
+        ulong denominator = _ptimerDenominator == 0 ? 1ul : _ptimerDenominator;
+        return (_ptimerClock * denominator) / numerator;
+    }
+
+    /// <summary>
+    /// The 61-bit register time: the offset clock shifted into the register
+    /// layout (low five bits zero, high word masked to 29 bits).
+    /// </summary>
+    private ulong PtimerRegTime()
+    {
+        ulong internalClock = (PtimerAbsoluteClock() + _ptimerTimeOffset) & PtimerInternalTimeMask;
+        return (internalClock << PtimerInternalTimeShift) & PtimerRegTimeMask;
+    }
+
+    /// <summary>Repositions the clock so the register time reads as the target (TIME_0/TIME_1 writes).</summary>
+    private void SetPtimerTime(ulong targetRegTime)
+    {
+        ulong targetInternal = (targetRegTime >> PtimerInternalTimeShift) & PtimerInternalTimeMask;
+        _ptimerTimeOffset = targetInternal - PtimerAbsoluteClock();
+        LatchPtimerAlarm();
+    }
+
+    /// <summary>
+    /// Raises the alarm interrupt when the programmed alarm time has been
+    /// reached, re-arming it for the next low-word wrap (reference
+    /// <c>ptimer_alarm_fired</c> + <c>get_next_alarm_time</c>).
+    /// </summary>
+    /// <returns>True when a pending bit was raised.</returns>
+    private bool LatchPtimerAlarm(bool requireEnabled = true)
+    {
+        if (requireEnabled && (_ptimerEnabled & 1u) == 0)
+        {
+            return false;
+        }
+
+        ulong now = PtimerRegTime();
+        if (!IsPtimerAlarmReached(now, _ptimerAlarmTime))
+        {
+            return false;
+        }
+
+        _ptimerPending |= 1u;
+        _ptimerAlarmTime = PtimerNextAlarmTime(now, _ptimerAlarmTime);
+        UpdateIrq();
+        return true;
+    }
+
+    /// <summary>Advances the alarm check by the core ticks the render core just consumed.</summary>
+    private void AdvancePtimerAlarm() => LatchPtimerAlarm();
+
+    private static ulong PtimerAlarmDistance(ulong regNow, ulong alarmTime)
+    {
+        ulong diff = (alarmTime - regNow) & PtimerRegTimeMask;
+        return diff > (PtimerRegTimeMask >> 1) ? 0ul : diff;
+    }
+
+    private static bool IsPtimerAlarmReached(ulong regNow, ulong alarmTime) =>
+        PtimerAlarmDistance(regNow, alarmTime) == 0;
+
+    /// <summary>Next alarm time: the requested low word in the current high word, rolled one 2^32 step when already due.</summary>
+    private static ulong PtimerNextAlarmTime(ulong regNow, ulong alarmValue)
+    {
+        uint nowLow = (uint)(regNow & PtimerRegTimeLowMask);
+        ulong valueLow = alarmValue & PtimerAlarmMask;
+        ulong target = (regNow & ~PtimerRegTimeLowMask) | valueLow;
+        if (valueLow <= (nowLow & PtimerAlarmMask))
+        {
+            target += 1ul << 32;
+        }
+
+        return target & PtimerRegTimeMask;
     }
 
     private uint ReadPfb(uint register)
@@ -3391,6 +3536,18 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _fixedFunction.SceneAmbient[(method - MethodSceneAmbient) / 4] =
                 BitConverter.UInt32BitsToSingle(parameter);
+        }
+
+        if (method >= MethodSpecularParams && method < MethodSpecularParams + 24u &&
+            ((method - MethodSpecularParams) & 3u) == 0)
+        {
+            _fixedFunction.TrySetSpecularParams(method, parameter);
+        }
+
+        if (method >= MethodLightConstantBase && method <= MethodLightConstantEnd &&
+            ((method - MethodLightConstantBase) & 3u) == 0)
+        {
+            _fixedFunction.TrySetLightMethod(method, parameter);
         }
 
         if (method >= MethodTexGenBase && method <= MethodTexGenEnd + (TexGenStageStride * 3u) &&

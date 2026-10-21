@@ -74,14 +74,15 @@ if it is interesting.
 
 ## 1. Priority stack (in order)
 
-**Status 2026-10-21 (19th session, §213):** compatibility gap 6 (the
-fixed-function vertex stage) is **implemented and opt-in** (`--ffp`): the two
-`xgu *_ffp` corpus rows render their scenes (2 -> 7,358 and 26 -> 7,601 colours,
-guest CPU SHAs unchanged) and the gate titles stay byte-identical except the
-dashboard's menu RAM/frame, which moves because the dashboard really issues
-22,207 fixed-function draws. The flag's default is the open operator decision;
-fixed-function *lighting* (39 lit draws per title) is the next fidelity slice.
-Track order is otherwise unchanged.
+**Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
+the fixed-function vertex stage (213) and its enabled-light loop (215) are
+opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU
+sample counter `NV_PAPU_XGSCNT` is derived from the EP frame divider (218, which
+re-recorded the two menu RAM anchors; frames/CPU/counters unchanged), and the
+frontend exposes the graphics-fidelity switches, per-title overrides and a
+persisted EEPROM (217). Suite 1717. Track order is otherwise unchanged; the
+largest remaining product gap is host audio, which needs APU DSP execution
+first.
 
 1. **B — host GPU present path (lead).** Measure the split first (draw
    submission / readback / present) with `--gpu-time`; then fast-mode present

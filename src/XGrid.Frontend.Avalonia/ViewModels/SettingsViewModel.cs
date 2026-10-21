@@ -28,6 +28,83 @@ public sealed class NetworkOption
     public string Label { get; }
 }
 
+/// <summary>One selectable NV2A texture filter mode.</summary>
+public sealed class TextureFilterOption
+{
+    /// <summary>Creates a filter option.</summary>
+    public TextureFilterOption(string key, string label)
+    {
+        Key = key;
+        Label = label;
+    }
+
+    /// <summary>Gets the persisted key ("legacy" or "registers").</summary>
+    public string Key { get; }
+
+    /// <summary>Gets the display label.</summary>
+    public string Label { get; }
+}
+
+/// <summary>One per-title override row in the settings list.</summary>
+public sealed class TitleOverrideItem : ObservableObject
+{
+    private bool _fixedFunctionVertex;
+    private bool _texFilterRegisters;
+    private bool _inheritTextureFilter;
+
+    /// <summary>Creates a row for a launched image path.</summary>
+    public TitleOverrideItem(string path, TitleOverride value, Action<TitleOverrideItem> remove)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(remove);
+        Path = path;
+        _fixedFunctionVertex = value.FixedFunctionVertex == true;
+        _texFilterRegisters = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal);
+        _inheritTextureFilter = string.IsNullOrEmpty(value.TextureFilter);
+        RemoveCommand = new RelayCommand(() => remove(this));
+    }
+
+    /// <summary>Gets the launched image path this override applies to.</summary>
+    public string Path { get; }
+
+    /// <summary>Gets the short file name shown in the list.</summary>
+    public string DisplayName => System.IO.Path.GetFileName(Path);
+
+    /// <summary>Gets the command that removes this override.</summary>
+    public IRelayCommand RemoveCommand { get; }
+
+    /// <summary>Gets or sets a value indicating whether the title runs the fixed-function vertex stage.</summary>
+    public bool FixedFunctionVertex
+    {
+        get => _fixedFunctionVertex;
+        set => SetProperty(ref _fixedFunctionVertex, value);
+    }
+
+    /// <summary>Gets or sets a value indicating whether the title maps TEXFILTER onto the tent sampler.</summary>
+    public bool TexFilterRegisters
+    {
+        get => _texFilterRegisters;
+        set => SetProperty(ref _texFilterRegisters, value);
+    }
+
+    /// <summary>Gets or sets a value indicating whether the override inherits the global texture filter.</summary>
+    public bool InheritTextureFilter
+    {
+        get => _inheritTextureFilter;
+        set => SetProperty(ref _inheritTextureFilter, value);
+    }
+
+    /// <summary>Projects the row back into the persisted model.</summary>
+    public TitleOverride ToOverride()
+    {
+        return new TitleOverride
+        {
+            FixedFunctionVertex = _fixedFunctionVertex,
+            TextureFilter = _inheritTextureFilter ? null : (_texFilterRegisters ? "registers" : "legacy"),
+        };
+    }
+}
+
 /// <summary>A library folder row with a remove command.</summary>
 public sealed class LibraryFolderItem
 {
@@ -82,6 +159,12 @@ public sealed partial class SettingsViewModel : PageViewModel
     private decimal _jitThreshold = 8;
 
     [ObservableProperty]
+    private bool _fixedFunctionVertex;
+
+    [ObservableProperty]
+    private TextureFilterOption? _selectedTextureFilter;
+
+    [ObservableProperty]
     private bool _eosQuirk = true;
 
     [ObservableProperty]
@@ -102,12 +185,18 @@ public sealed partial class SettingsViewModel : PageViewModel
             new("loopback", "Loopback (offline)"),
             new("socket", "User-mode sockets"),
         };
+        TextureFilterOptions = new ObservableCollection<TextureFilterOption>
+        {
+            new("legacy", "Legacy (nearest)"),
+            new("registers", "TEXFILTER (tent, LOD 0)"),
+        };
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
         }
 
         LoadFrom(shell.Config);
+        TitleOverrides.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTitleOverrides));
     }
 
     /// <summary>Gets the guest RAM choices.</summary>
@@ -115,6 +204,15 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     /// <summary>Gets the selectable network backends.</summary>
     public ObservableCollection<NetworkOption> NetworkOptions { get; }
+
+    /// <summary>Gets the selectable texture filter modes.</summary>
+    public ObservableCollection<TextureFilterOption> TextureFilterOptions { get; }
+
+    /// <summary>Gets the per-title overrides being edited.</summary>
+    public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = new();
+
+    /// <summary>Gets a value indicating whether any per-title override exists.</summary>
+    public bool HasTitleOverrides => TitleOverrides.Count > 0;
 
     /// <summary>Gets the accent swatches.</summary>
     public ObservableCollection<AccentOption> AccentOptions { get; } = new();
@@ -145,6 +243,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the settings storage folder.</summary>
     public string SettingsFolder => Path.GetDirectoryName(Shell.SettingsPath) ?? string.Empty;
 
+    /// <summary>Gets the persisted EEPROM state path.</summary>
+    public string EepromStatePath => new EepromStateStore(SettingsFolder).FilePath;
+
     /// <summary>Gets a value indicating whether any library folders are configured.</summary>
     public bool HasLibraryFolders => LibraryFolders.Count > 0;
 
@@ -163,6 +264,16 @@ public sealed partial class SettingsViewModel : PageViewModel
         SpinSkip = settings.SpinSkip;
         DecodeCache = settings.DecodeCache;
         JitThreshold = settings.JitThreshold;
+        FixedFunctionVertex = settings.FixedFunctionVertex;
+        SelectedTextureFilter = TextureFilterOptions.FirstOrDefault(
+            option => string.Equals(option.Key, settings.TextureFilter, StringComparison.Ordinal))
+            ?? TextureFilterOptions[0];
+        TitleOverrides.Clear();
+        foreach (KeyValuePair<string, TitleOverride> pair in settings.TitleOverrides)
+        {
+            TitleOverrides.Add(new TitleOverrideItem(pair.Key, pair.Value, RemoveTitleOverride));
+        }
+
         EosQuirk = settings.EosQuirk;
         NetworkLinkUp = settings.NetworkLinkUp;
         SelectedNetwork = NetworkOptions.FirstOrDefault(
@@ -208,6 +319,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             SpinSkip = SpinSkip,
             DecodeCache = DecodeCache,
             JitThreshold = (int)JitThreshold,
+            FixedFunctionVertex = FixedFunctionVertex,
+            TextureFilter = SelectedTextureFilter?.Key ?? "legacy",
             EosQuirk = EosQuirk,
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,
@@ -215,6 +328,11 @@ public sealed partial class SettingsViewModel : PageViewModel
             LibraryFolders = LibraryFolders.Select(item => item.Path).ToList(),
             RecentGames = new List<string>(Shell.Config.RecentGames),
         };
+        foreach (TitleOverrideItem item in TitleOverrides)
+        {
+            next.TitleOverrides[EmulatorSettings.NormalizeTitleKey(item.Path)] = item.ToOverride();
+        }
+
         Shell.SaveSettings(next);
         Shell.Home.NotifySettingsChanged();
     }
@@ -229,6 +347,53 @@ public sealed partial class SettingsViewModel : PageViewModel
         DecodeCache = true;
         JitThreshold = 8;
         Shell.ShowToast("Recommended performance options restored — save to apply.");
+    }
+
+    /// <summary>Public command: adds a per-title override for a disc or XBE image.</summary>
+    [RelayCommand]
+    private async Task AddTitleOverrideAsync()
+    {
+        string? path = await Shell.Dialogs.PickFileAsync(
+            "Choose the disc or XBE this override applies to", FileDialogService.DiscTypes);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        string key = EmulatorSettings.NormalizeTitleKey(path);
+        if (TitleOverrides.Any(item => string.Equals(
+                EmulatorSettings.NormalizeTitleKey(item.Path), key, StringComparison.OrdinalIgnoreCase)))
+        {
+            Shell.ShowToast("That image already has an override.");
+            return;
+        }
+
+        TitleOverrides.Add(new TitleOverrideItem(
+            key,
+            new TitleOverride { FixedFunctionVertex = FixedFunctionVertex },
+            RemoveTitleOverride));
+    }
+
+    /// <summary>Public command: removes a per-title override row.</summary>
+    [RelayCommand]
+    private void RemoveTitleOverride(TitleOverrideItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        TitleOverrides.Remove(item);
+    }
+
+    /// <summary>Public command: clears the persisted EEPROM state so the next boot re-seeds from the configured image.</summary>
+    [RelayCommand]
+    private void ResetEepromState()
+    {
+        var store = new EepromStateStore(SettingsFolder);
+        Shell.ShowToast(store.TryReset()
+            ? "EEPROM state cleared — the next boot reseeds from the configured image."
+            : "Could not clear the EEPROM state file.");
     }
 
     /// <summary>Public command: browses for the BIOS image.</summary>

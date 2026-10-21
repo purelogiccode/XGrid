@@ -17,8 +17,14 @@ public sealed class SettingsStore
     /// <summary>Initializes a store rooted at the platform application-data folder.</summary>
     public SettingsStore()
     {
+        DirectoryPath = ResolveDirectory();
+    }
+
+    /// <summary>Resolves the per-user data folder (honors <c>XGRID_FRONTEND_DATA_DIR</c>).</summary>
+    public static string ResolveDirectory()
+    {
         string? overrideDirectory = Environment.GetEnvironmentVariable("XGRID_FRONTEND_DATA_DIR");
-        DirectoryPath = string.IsNullOrWhiteSpace(overrideDirectory)
+        return string.IsNullOrWhiteSpace(overrideDirectory)
             ? DefaultDirectory()
             : overrideDirectory;
     }

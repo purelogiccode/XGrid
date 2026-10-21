@@ -638,11 +638,77 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   byte-identical with the flag on, the dashboard's menu anchors move (22,207 of
   its draws are fixed-function). Lit draws run the material/ambient/emission
   chain; the enabled-light loop is filed and counted in `fixedFnLights=`.
+- **Fixed-function lighting + PTIMER 0.8.137 (215-216, 2026-10-21):** the
+  fixed-function vertex stage is now complete - the enabled-light loop
+  (infinite/local/spot, `1/(a0 + a1 d + a2 d^2)` attenuation, the spot cone,
+  the `LOCALEYE` view vector) and the reconstructed specular exponent, behind
+  the same opt-in `--ffp`; no measured leg enables a light (`fixedFnLights=0`).
+  PTIMER now models the 0.8.137 alarm: writable `TIME_0/1` offset, `ALARM_0`
+  with the 2^32 re-arm, the alarm `INTR_0` bit and `NV_PMC_INTR_0_PTIMER`
+  (bit 20). NV2A snapshot v6 -> **v8**. Every gate anchor stayed byte-identical.
+- **Track P (217, 2026-10-21):** the frontend exposes `--ffp` and The APU sample counter
+  `NV_PAPU_XGSCNT` (0x200C) is now derived from the EP frame divider too,
+  which moved the menu RAM anchors (218; see the session note).
+  configured firmware image stays a read-only seed; CLI `--eeprom-out`).
+  `tests/XGrid.Frontend.Tests` (15 tests) is the frontend test project.
+
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-   once; conflicts were purged 2026-10-09). Baseline: **1662 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1714 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+**Session 2026-10-21 (twentieth; gap 6 lighting + PTIMER 0.8.137 + APU XGSCNT +
+two Track P features). Four landed slices; frames, CPU SHAs and every
+counter stayed exact, and the two menu **RAM** anchors were re-recorded.**
+
+- **Fixed-function lighting (215).** The enabled-light loop is in:
+  `FixedFunctionVertex.ApplyLight` runs infinite/local/spot with range
+  rejection, `1/(a0 + a1*d + a2*d^2)` attenuation, the spot cone bands and the
+  `LOCALEYE` view vector; `SpecularPowerCurve` transcribes
+  `reconstruct_specular_power` (low-power shortcut, nine-segment fit with the
+  growth-rate variant, half-power extension, positive-coefficient guard);
+  `FixedFunctionVertexState` latches all eight lights (`SET_LIGHT_*` window,
+  0x80-byte stride, four-word spot direction) and the six
+  `SET_SPECULAR_PARAMS` words. Snapshot v6 -> v7. **No measured leg enables a
+  light** (`fixedFnLights=0` everywhere), so every gate is byte-identical:
+  triangle 1B `B45254CA`/`7DAB63EB` (57,663,082 px; `--ffp` 78,792,545 px),
+  menu `51B56687`/`F5D61C94` (253,998,498 px; `--ffp` `87BF40DA`, 375,569,329).
+  +18 tests (`Nv2aFixedFunctionLightingTests`).
+- **PTIMER (216).** The 0.8.137 alarm model: 61-bit register time with a
+  writable offset (`TIME_0`/`TIME_1` writes), numerator/denominator reset 1/1,
+  `ALARM_0` (0x420) armed with `get_next_alarm_time` (one 2^32 roll when not
+  strictly future), the alarm's own `INTR_0` bit with re-arm, the unconditional
+  read-latch, the immediate raise on enable, and `NV_PMC_INTR_0_PTIMER`
+  (bit 20) in the aggregate. Polled from `Advance(coreTicks)` (the core clock is
+  the clock source). Snapshot v7 -> v8. Both 1B gates byte-identical again.
+  +14 tests (`Nv2aPtimerTests`).
+- **Track P (217).** `--ffp` and `--tex-filter registers` are now reachable from
+  the Avalonia Settings page (CLI defaults preserved), per-title overrides
+  (V1 keyed by image path, `WithTitleOverride` merge + a Settings list with
+  `ffp`/`filter`/`inherit` toggles) and **persistent EEPROM state**: the guest's
+  user settings live in `<data dir>/eeprom.bin` while the configured firmware
+  image stays a read-only seed; `--eeprom-out <path>` exports the live image
+  from the CLI. New `tests/XGrid.Frontend.Tests` project (15 tests) covers the
+  settings model and the EEPROM store; `MachineEepromTests` (+3) and
+  `SmbusTests` (+2) cover the host/device copy path.
+- **APU `NV_PAPU_XGSCNT` (218).** Offset 0x200C now returns
+  `_epFrameDiv * 32` instead of the guest-written word (reference
+  `apu.c` + `apu_regs.h`: a 48 kHz sample counter, read-only). +3 tests
+  (`ApuFrameCounterTests`). **Anchor effect measured:** the 1B dashboard
+  reads it during audio init and stores the value, so its RAM image moves
+  while nothing else does - accurate menu RAM `01BE5D64` -> `6AB39AB0`
+  (CPU `3D2740B8`, frame `4EF1FBF6`, counters 33632/686/686 all identical),
+  fast menu RAM `51B56687` -> `34973510` (CPU `F5D61C94`), triangle
+  unchanged (`812EA159`/`2F632483`/`A1740DE0`), ktest suite log
+  byte-identical (`CA5D3867`, 792,800,535 steps). Precedent for a RAM
+  re-record: 206g/109; frames, CPU SHAs and counters are the invariants.
+- **Suite 1662 -> 1717 tests** (218 adds 3), `boot-to-first-frame.ps1` gained
+  `-TexFilter legacy|registers`. Gate evidence this session: menu slice-1
+  accurate golden PASS (sw `4EF1FBF6.`, gl `B6116DAE.`, violations 0,
+  `BackendUnsupported=0`, counters 33632/686/686), triangle slice-2 golden
+  PASS (`A1740DE0.` / `7A860ED7.`), ktest smoke PASS 7/7, fast 1B anchors
+  exact on both titles (with and without `--ffp`); the menu RAM numbers in
+  the 215 bullet are pre-218.
 
 **Session 2026-10-21 (nineteenth; compatibility gap 6 closed behind `--ffp`, §213).
 The fixed-function vertex stage exists, both `xgu *_ffp` corpus rows render their

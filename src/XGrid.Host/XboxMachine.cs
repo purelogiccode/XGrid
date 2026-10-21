@@ -236,6 +236,13 @@ public sealed class XboxMachine : IIdleSkipHost
         Bus.AttachEeprom(image);
     }
 
+    /// <summary>Copies the live 256-byte EEPROM image out of the SMBus device.</summary>
+    /// <param name="destination">Buffer of at least 256 bytes.</param>
+    public void CopyEeprom(Span<byte> destination)
+    {
+        Bus.Eeprom.CopyImage(destination);
+    }
+
     /// <summary>Attaches a raw or qcow2 HDD image to the primary master IDE drive.</summary>
     /// <remarks>Writes are captured by an in-memory overlay so the backing image is not modified.</remarks>
     public void AttachHdd(string path)

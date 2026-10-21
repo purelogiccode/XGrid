@@ -13406,3 +13406,230 @@ reference into the low byte while the depth field is untouched. The gate titles'
 `0xFFFFFF00` clear is depth 1.0 under either reading and stencil `0x00`, which is
 exactly why no gate anchor could ever have caught this - the differential had to
 be synthetic. No product code changed.
+
+## 215 Fixed-function lighting: the enabled-light loop (2026-10-21, twentieth session)
+
+Compatibility gap 6's remaining slice (§213b) is closed: a lit fixed-function
+draw now runs the reference's **enabled-light loop** in addition to the
+material chain. Reference: `xemu 0.8.137 hw/xbox/nv2a/pgraph/glsl/vsh-ff.c`
+(light loop, `SET_LIGHT_CONTROL_LOCALEYE` view vector) plus `pgraph.c`
+(`NV097_SET_LIGHT_*` decode, `reconstruct_specular_power`).
+
+### 215a What landed
+
+- **`FixedFunctionVertexState`** latches the per-light block: three-word
+  ambient/diffuse/specular colors, local range, infinite half vector, infinite
+  direction, spot falloff (stored, the reference leaves it unused), the
+  four-word spot direction, local position and local attenuation, for all eight
+  lights. `TrySetLightMethod(method, parameter)` decodes the
+  `SET_LIGHT_AMBIENT_COLOR` window exactly like the reference handler
+  (0x1000 + light*0x80, three-word colors, single-word range, four-word spot
+  direction, 0x74..0x7C padding ignored). `TrySetSpecularParams` stores the six
+  `SET_SPECULAR_PARAMS` words and recomputes the exponent on the sixth.
+- **`SpecularPowerCurve.Reconstruct`** is a transcription of
+  `reconstruct_specular_power` including the low-power shortcut
+  (`c2 - 2*c0`), the positive-coefficient guard (`0.0001`), the nine-segment
+  step-point/coefficient fit (quadratic for segments 0-2 and 6-8,
+  saturation-growth-rate for 3-5) and the half-power range extension. The
+  arithmetic stays in `float`, like the reference's `struct CurveCoefficients`.
+- **`FixedFunctionVertex.ApplyLight`** runs the reference's per-light block:
+  infinite lights normalize the uploaded direction and use either the uploaded
+  half vector (not normalized, as the reference does) or
+  `normalize(direction + VPeye)` when `LOCALEYE` is set; local/spot lights use
+  the eye-space light position, are skipped outside their range, attenuate by
+  `1 / (a0 + a1*d + a2*d*d)` and build the half vector from `VP + VPeye`. The
+  spot cone uses `cosHalfPhi = -spotDir.w/|spotDir.xyz|`,
+  `cosHalfTheta = 1/|spotDir.xyz| + cosHalfPhi` and `rho`; full cone leaves the
+  attenuation, outside sets it to zero, the penumbra multiplies by
+  `dot(spotDir.xyz, VP) + spotDir.w`. `pf = pow(nDotHV, specularPower)` is zero
+  when either dot is zero. The ambient term is added unconditionally and the
+  diffuse/specular terms follow the material-source switches, exactly as the
+  generated GLSL does.
+- **`Nv2AMmio`** latches the `SET_SPECULAR_PARAMS` (0x9E0) and light (0x1000)
+  windows; `FixedFunctionLightedDraws` (`fixedFnLights=`) now means "lit draw
+  with at least one enabled light" instead of "gap". Nv2a snapshot v6 -> **v7**
+  for the new light/specular state (the §216 PTIMER state then took it to v8).
+
+### 215b Evidence: behavior-neutral on every gate leg (no leg enables a light)
+
+Every measured leg still has `fixedFnLights=0`, so the landing cannot move a
+gate: `scripts/raster-leg.ps1` at 1B on H1, one run each.
+
+| leg | RAM | CPU | pixels |
+|---|---|---|---|
+| triangle `sw` | `B45254CA` | `7DAB63EB` | 57,663,082 |
+| triangle `sw --ffp` | `B45254CA` | `7DAB63EB` | 78,792,545 |
+| menu `sw` | `51B56687` | `F5D61C94` | 253,998,498 |
+| menu `sw --ffp` | `87BF40DA` | `F5D61C94` | 375,569,329 |
+
+All four are the documented §213 anchors (the `--ffp` menu pixel count matches
+too), i.e. the light loop is exercised by neither gate title.
+
+### 215c Tests
+
+`tests/XGrid.Nv2a.Tests/Nv2aFixedFunctionLightingTests.cs` (+16): infinite-light
+ambient+diffuse terms, the uploaded half vector used unnormalized with a
+reconstructed power of 2, the `LOCALEYE` half vector, the local-light range
+rejection, distance attenuation with the three coefficients, the diffuse-source
+switch on the light term, the three spot-cone bands (full / penumbra / outside),
+the specular-disable overwrite, the full light-window decode per property
+(including the padding words and the per-light separation), the light-type
+decode from `SET_LIGHT_ENABLE_MASK`, the sixth-word power recomputation, the
+curve's four branches, and a device-level draw whose infinite light contributes
+(1,1,0) to the surface. Suite 1662 -> **1680** (+16 lighting, +2 PTIMER-adjacent
+in other projects; see §216).
+
+## 216 PTIMER: the 0.8.137 alarm model (2026-10-21, twentieth session)
+
+The 0.8.137 re-base note (`docs/research-notes/xemu-0.8.137.md`) filed PTIMER as
+the one functional NV2A delta versus 0.8.136; it is now landed.
+Reference: `hw/xbox/nv2a/ptimer.c` + the PTIMER branch of `nv2a_update_irq`.
+
+### 216a What landed
+
+- **Register time**: a 61-bit value (29-bit high word, 32-bit low word with the
+  five least-significant bits zero) built from the absolute clock plus a
+  writable offset. `TIME_0`/`TIME_1` are now **writable** (`time_offset =
+  target_internal - absolute`), so the guest can reposition the counter.
+- **Numerator/denominator** reset to **1/1** (reference `ptimer_reset`) and
+  scale the absolute clock (`ticks * denominator / numerator`); both registers
+  remain readable.
+- **`ALARM_0`** (0x420) arms the next compare as
+  `get_next_alarm_time`: the requested low word in the current high word,
+  rolled one 2^32 step when it is not strictly in the future. The compare uses
+  the reference's signed-distance rule (`diff > mask/2` means "already behind").
+- **Interrupt**: reaching the alarm sets `PTIMER_INTR_0` bit 0 and re-arms one
+  wrap later; acknowledging clears it. Reading `INTR_0` latches an
+  already-reached alarm unconditionally (the reference does this even while the
+  alarm is disabled); writing `INTR_EN_0` with bit 0 latches an already-reached
+  alarm immediately. The alarm is polled from `Advance(coreTicks)` (no host
+  timer: the core clock is the clock source), which is where the reference
+  schedules its QEMU timer.
+- **PMC aggregate**: `NV_PMC_INTR_0_PTIMER` (bit 20) is now part of
+  `AggregatePending()` gated on `pending & enabled`, matching
+  `nv2a_update_irq`, so a guest that only enables the PMC level still sees the
+  IRQ.
+- **Snapshot** v7 -> **v8** (alarm time + time offset).
+
+### 216b Evidence
+
+- Both 1B fast gates are **byte-identical** to §215b (`B45254CA`/`7DAB63EB`,
+  `51B56687`/`F5D61C94`, same pixel counts): the kernel programs the timer but
+  never arms an alarm on these titles, and the 1/1 reset equals the old
+  `numerator == 0 ? raw : scaled` shortcut for a freshly reset device.
+- `tests/XGrid.Nv2a.Tests/Nv2aPtimerTests.cs` (+15): reset defaults and the
+  reset-time read-latch, the shifted register time, denominator and numerator
+  scaling, `TIME_0`/`TIME_1` writes (including the 29-bit high-word mask), the
+  alarm raise + PMC bit 20 + ack, silence while disabled and the immediate
+  raise on enable, the unconditional read-latch, the 2^32 wrap re-arm (three
+  advances across the boundary), re-arm after firing, "same low word rolls one
+  wrap", and a snapshot round trip that re-fires identically.
+
+## 217 Track P: per-title overrides and persistent EEPROM state (2026-10-21, twentieth session)
+
+Two product-completeness items from the Track P list, both in the desktop
+frontend, plus the first test project for it.
+
+### 217a Graphics fidelity is reachable from the UI
+
+`--ffp` and `--tex-filter registers` existed only as CLI flags, so the two
+frontend-facing fidelity features of §§209-213 could not be turned on from the
+app. `EmulatorSettings` now carries `FixedFunctionVertex` (default off) and
+`TextureFilter` (`legacy`|`registers`, default `legacy`) - the CLI defaults, so
+nothing changes for an existing configuration - the Settings page exposes both,
+`EmulatorSession` applies them to `machine.Nv2A`, and the power-on log line
+reports the active pair.
+
+### 217b Per-title overrides (V1: keyed by image path)
+
+`EmulatorSettings.TitleOverrides` maps an image path to a `TitleOverride`
+(nullable `FixedFunctionVertex`, `TextureFilter`, `RamMb`) and
+`WithTitleOverride(path)` merges it over a clone at launch, so an override only
+has to carry what that title needs. Keys are normalized full paths
+(case-insensitive), the empty/empty-valued rows are dropped by `Normalize`, and
+the Settings page lists the rows with per-row `ffp` / `filter` / `inherit`
+toggles and a remove button. **Title-id keying** (title id from the XBE inside
+the ISO/CHD) needs core disc reading and is filed as V2; the path key is exact
+for the launch the override is applied to.
+
+### 217c The EEPROM now persists between runs
+
+The 24C02 EEPROM holds the console's user settings (video mode, language,
+region) and the guest rewrites it through the SMBus, but XGrid rebuilt it from
+the firmware image every run. Added:
+
+- `Eeprom24C02.CopyImage(Span<byte>)` and `XboxMachine.CopyEeprom(Span<byte>)`.
+- CLI `--eeprom-out <path>`: writes the live image at the end of the run (next
+  to `--ramdump`/`--ramin`), for harnesses and for tests.
+- `EepromStateStore` (frontend): `<data dir>/eeprom.bin` holds the persisted
+  image. The configured firmware image is treated as a **read-only seed**: the
+  first run seeds from it, later runs load the persisted copy (logged), a run's
+  writes are saved when it stops, and the Settings page's "Reset state" button
+  deletes the file so the next boot re-seeds. The user's firmware image is
+  never modified.
+
+Evidence: `--eeprom-out` on a 400M-step and a 2B-step dashboard run writes a
+byte-identical copy of the seed (the kernel rewrites no EEPROM word on this
+path), which is the expected no-op; the device/host write path is pinned by
+`MachineEepromTests` (+3, live device write visible in the copy) and
+`SmbusTests` (+2, `CopyImage` sees guest writes and rejects a short buffer).
+
+### 217d The frontend has a test project
+
+`tests/XGrid.Frontend.Tests` (added to `XGrid.sln`) covers the app's plain
+models without a UI: the settings defaults, `Normalize` repairs, the override
+merge (inherit / partial / full / null path), `Clone` independence, the
+one-line description, path-key normalization, and the EEPROM store's
+save/load/clamp/reject/reset behaviour. 15 tests.
+
+### 217e Track E tooling
+
+`scripts/boot-to-first-frame.ps1` gained `-TexFilter legacy|registers` (the row
+tag and recorded command carry it), so a corpus row can be measured under the
+filter flag the same way `-Ffp` measures the fixed-function stage.
+
+## 218 APU `NV_PAPU_XGSCNT` is a real register (2026-10-21, twentieth session)
+
+The 0.8.137 re-base note listed `NV_PAPU_XGSCNT` = `ep_frame_div *
+NUM_SAMPLES_PER_FRAME` as one of the few functional APU deltas; XGrid returned
+whatever the guest had written to that word (normally zero). The guest watches
+this counter as a playback clock, so a title that paces on it would see time
+stand still.
+
+`McpxApuDevice.Read` now returns `_epFrameDiv * 32` for offset `0x200C`
+(reference `xemu 0.8.137 hw/xbox/mcpx/apu/apu.c` + `apu_regs.h`:
+`NV_PAPU_XGSCNT = 0x0000200C`, `NUM_SAMPLES_PER_FRAME = 32`), derived and
+read-only: a write is ignored, exactly like the reference (its write path falls
+through to the register array the read never uses for this offset). No snapshot
+change - `_epFrameDiv` was already in the audio block.
+
+Tests: `tests/XGrid.Audio.Tests/ApuFrameCounterTests.cs` (+3) pin the 32
+samples-per-frame step, the no-tick inside a frame (advancing
+`FrameCycles - 1`), and that a write cannot move the counter.
+
+### 218a Anchor effect: the dashboard reads (and stores) this counter
+
+The change is **not** free: the 1B dashboard RAM image moves while everything
+that is gate currency stays exact.
+
+| leg | before | after |
+|---|---|---|
+| accurate menu 1B RAM / CPU | `01BE5D64` / `3D2740B8` | **`6AB39AB0`** / `3D2740B8` (CPU unchanged) |
+| accurate menu frame | `4EF1FBF6` | **`4EF1FBF6`** (byte-identical) |
+| accurate menu counters | 33,632 draws / 686 frames / 686 stalls | identical |
+| fast menu RAM / CPU | `51B56687` / `F5D61C94` | **`34973510`** / `F5D61C94` |
+| fast menu + `--tex-filter registers` RAM | `19FEA0EA` | **`EE8F69FB`** (CPU `F5D61C94`, 253,998,498 px) |
+| fast menu + `--ffp` RAM | `87BF40DA` | **`CC2A94DF`** (CPU `F5D61C94`, 375,569,329 px) |
+| accurate + fast triangle (RAM / CPU / frame) | `812EA159` / `2F632483` / `A1740DE0` | **identical** |
+| corpus rows (13, 1B, TV + xgu): RAM / CPU / frame / scanout / display | see `compatibility.md` | **identical** (they never reach the dashboard menu at 1B) |
+
+Every pixel counter is identical (253,692,342 px accurate / 253,998,498 fast,
+same textured/blended/depth), so the dashboard is not rendering differently: it
+reads XGSCNT during audio init and stores the value. The triangle does not read
+it. The GL golden policy frames are unchanged (`B6116DAE` / `7A860ED7`,
+violations 0, `BackendUnsupported=0`), and the ktest smoke suite log is
+byte-identical at 792,800,535 steps.
+
+Precedent for re-recording a RAM SHA when hardware behaviour improves: 206g
+(backface culling) and 109 (depth compare). Frames, CPU SHAs and every counter
+are the invariants that did not move.

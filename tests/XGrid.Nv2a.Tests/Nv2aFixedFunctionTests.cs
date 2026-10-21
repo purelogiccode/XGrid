@@ -715,8 +715,9 @@ public sealed class Nv2aFixedFunctionTests
     [Fact]
     public void Draw_LitDrawWithAnEnabledLightIsCountedSeparately()
     {
-        // Lights are not implemented: a lit draw with an enabled light keeps the
-        // material chain and is counted, so the gap is measurable.
+        // An enabled light runs the reference's light loop; every light color
+        // defaults to zero here, so the surface stays black but the counter
+        // keeps light usage measurable (fixedFnLights= on the CLI line).
         (Nv2AMmio nv2A, ArrayMemory memory) = DrawFixedFunction(lightingEnable: 1u, lightMask: 0x00000001u);
 
         Assert.Equal(1uL, nv2A.FixedFunctionDraws);
