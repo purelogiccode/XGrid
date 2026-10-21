@@ -610,6 +610,38 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-20 (fourteenth; Track E corpus unblocked, §207).**
+**M-B is met: 11 rows over 7 samples, every row reproducible.** The blocker was
+a toolchain that had never been installed, not the emulator.
+
+- **Toolchain landed** (`scripts/build-nxdk-samples.ps1`): MSYS2 + clang/lld/
+  **llvm**/bison/flex/cmake, nxdk `a6c31ee`. Two traps worth knowing:
+  `mingw-w64-x86_64-llvm` is **mandatory** (nxdk links with `llvm-dlltool`,
+  which clang does not ship, and pacman lists llvm only as optional), and
+  msys2's own git cannot reach the network here — clone with the Windows PATH
+  git, build inside MSYS2.
+- **Harness generalized**: `-Corpus` (every staged ISO), `-IsoPath`, 1B corpus
+  budget. Two measured corrections: 400M steps leaves every sample in the boot
+  animation (identical counters look like a harness bug), and **corpus rows need
+  HDD + DVD** — DVD-only runs never launch the disc's XBE.
+- **Rows**: `mesh` renders its own content (66 flips, 2,864 draws, 48,627
+  triangles culled, 44 programs); `gamma`/`gamma-fade`/`hello`/`led`/`xaudio`
+  boot but export the boot animation; `xaudio` proves the APU path is live
+  (`voiceOff=1`, 135 reads / 203 writes).
+- **Top corpus-driven gap found by measuring:** *direct-framebuffer output is
+  never presented*. `CapturePresentedFrame` snapshots the 3D color surface at
+  flip time, so `XVideoGetFB`/`debugPrint` programs produce no captured frame —
+  four samples with four different RAM SHAs exported the identical frame. The
+  register dump proves it (`gamma surface=32A4000 pcrtc=3EB4000`). A correct fix
+  models the display like xemu (`pcrtc.start/4` + VGA CRTC line offset); it is
+  scoped, not guessed at.
+- Also: `data/test-samples/nxdk-mesh` was missing `verts.h`/`texture.h` and could
+  never build (`data/` is gitignored, so nothing noticed); the corpus now builds
+  from nxdk upstream. New diagnostic: the `Frame` line prints `pcrtc=`.
+- PowerShell gotcha recorded: variable names are case-insensitive, so a
+  `foreach ($iso …)` loop variable collided with a `[string]$Iso` parameter and
+  silently coerced to a string (empty sample names, same media re-run).
+
 **Session 2026-10-20 (thirteenth; environment governance + Track P product slice, §206).**
 **Two machines became a first-class concept, and the frontend stopped being
 keyboard-only and stateless.** Operator decision: `References2/` is the canonical

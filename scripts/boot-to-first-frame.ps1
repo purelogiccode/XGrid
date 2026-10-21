@@ -14,16 +14,26 @@
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample triangle
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
 #   pwsh -File scripts/boot-to-first-frame.ps1 -All
+#   pwsh -File scripts/boot-to-first-frame.ps1 -Corpus          # every staged nxdk sample
+#   pwsh -File scripts/boot-to-first-frame.ps1 -Iso path\to\x.iso   # any loose ISO
+#
+# Corpus samples are DVD-only (no HDD) so the boot path is the sample itself.
+# Stage them with scripts/build-nxdk-samples.ps1.
 #
 # Exit 0 = harness ran and the sample presented at least one frame,
 # 1 = sample faulted / no frame presented, 2 = environment problem.
 
 param(
-    [ValidateSet("dashboard", "triangle", "ktest")][string]$Sample = "triangle",
+    [ValidateSet("dashboard", "triangle", "ktest", "hello", "led", "mesh", "gamma", "gamma-fade", "xaudio")]
+    [string]$Sample = "triangle",
     [ValidateSet("sw", "gl")][string]$Gpu = "sw",
     [switch]$GpuReplace,
     [switch]$NoFast,
     [switch]$All,
+    [switch]$Corpus,
+    [string]$IsoPath = "",
+    [string]$CorpusDir = "data\test-samples\corpus",
+    [ulong]$CorpusSteps = 1000000000,
     [ulong]$Steps = 0,
     [string]$OutDir = "wt-data\btff",
     [string]$Cli = "",
@@ -76,7 +86,23 @@ function Resolve-Sample([string]$name) {
                 FirstFrame = "console output (disable-video=1: no frame expected)"
             }
         }
-        default { throw "unknown sample: $name" }
+        default {
+            # Corpus sample: a standalone nxdk ISO from data\test-samples\corpus.
+            # HDD + DVD, the same media set the triangle gate row uses: without
+            # the HDD the kernel never launches the disc's XBE and the run stops
+            # at the boot animation (measured 2026-10-20).
+            $sampleIso = if ($IsoPath) { $IsoPath } else { Join-Path $CorpusDir "$name.iso" }
+            if (-not (Test-Path $sampleIso)) {
+                throw "sample '$name' has no corpus ISO at $sampleIso (build with scripts/build-nxdk-samples.ps1)"
+            }
+            if (-not (Test-Path $Hdd)) { throw "corpus samples need the HDD image: $Hdd" }
+            return [pscustomobject]@{
+                Name     = $name
+                Media    = @("--hdd", (Resolve-Path $Hdd).Path, "--dvd", (Resolve-Path $sampleIso).Path)
+                Steps    = if ($Steps -gt 0) { $Steps } else { $CorpusSteps }
+                FirstFrame = "nxdk sample: $name"
+            }
+        }
     }
 }
 
@@ -174,7 +200,35 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
 }
 
 $failed = $false
-if ($All) {
+if ($Corpus) {
+    # Every staged corpus ISO, on the selected backend(s). Rows go into
+    # docs/compatibility.md; a sample that fails to present is a CHECK row,
+    # not a crash of the harness.
+    $isos = @(Get-ChildItem $CorpusDir -Filter *.iso -ErrorAction SilentlyContinue | Sort-Object Name)
+    if ($isos.Count -eq 0) {
+        Write-Error "no corpus ISOs in $CorpusDir (build with scripts/build-nxdk-samples.ps1)"
+        exit 2
+    }
+
+    foreach ($corpusIso in $isos) {
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($corpusIso.Name)
+        if ($name -in @("dashboard", "triangle", "ktest")) {
+            Write-Host "BTFF corpus: skipping $name (a named gate sample owns that name; use -Sample $name)"
+            continue
+        }
+
+        Write-Host "BTFF corpus: running $name from $($corpusIso.FullName)"
+        try {
+            $r = Run-Sample $name $Gpu $GpuReplace.IsPresent
+            if ($null -eq $r -or $r.verdict -ne "PASS") { $failed = $true }
+        }
+        catch {
+            Write-Host "BTFF sample=$name gpu=$Gpu SKIP ($($_.Exception.Message))"
+            $failed = $true
+        }
+    }
+}
+elseif ($All) {
     foreach ($s in @("dashboard", "triangle", "ktest")) {
         foreach ($g in @("sw", "gl")) {
             try {

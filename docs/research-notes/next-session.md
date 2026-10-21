@@ -132,20 +132,29 @@ Track B is done until M-A can be re-measured against H1's own reference.
 
 Pick **one**:
 
-### Option A (Track E, the steering signal): grow the corpus
+### Option A (Track E, the steering signal): grow the corpus - **DONE 2026-10-20**
 
-Highest value: **clear the nxdk toolchain blocker** (install clang/make into the
-existing `C:\msys64` via pacman, then `git clone --recursive` nxdk +
-`bin/activate`). That turns four existing sources into rows (`nxdk-mesh` = the
-first textured 3D row). Then re-run `scripts/boot-to-first-frame.ps1 -All` and
-update the matrix. The exit criterion (M-B) is >= 8 rows with at least two
-beyond dashboard/triangle/ktest; today there are 3 runnable rows.
+The nxdk toolchain blocker is cleared (`scripts/build-nxdk-samples.ps1`:
+MSYS2 + clang/lld/llvm/bison/flex/cmake, nxdk `a6c31ee`), the corpus has **11
+rows over 7 samples**, and `boot-to-first-frame.ps1 -Corpus` re-measures them.
+M-B is met.
 
-Host note (2026-10-20): on `H1` the toolchain state is git+gcc present, **clang/
-make/bash absent** — so this task starts with a package install, not a download
-project. The old "C: has only ~5 GB free, install on D:" constraint does not
-describe H1 (81 GB free, and `C:\msys64` already exists). Check `docs/hosts.md`
-before deciding which machine owns the corpus rows.
+Two gaps the corpus found, both recorded in `docs/compatibility.md`:
+
+1. **Direct-framebuffer output is never presented** - the highest-value fix on
+   the board right now. `CapturePresentedFrame` snapshots the 3D color surface
+   at flip time, so nxdk programs that write the scanout buffer directly
+   (`XVideoGetFB`, `debugPrint`) produce no captured frame at all; `gamma`,
+   `gamma-fade`, `hello` and `led` all export the boot animation while their
+   guest RAM clearly differs. A correct fix models the display like xemu
+   (`pcrtc.start` + VGA CRTC line offset, `nv2a.c:184-190`) - not a one-line
+   swap, because the guest writes a VRAM-aperture address that gets masked into
+   the 64 MB space.
+2. `data/test-samples/nxdk-mesh` was missing `verts.h`/`texture.h` and could
+   never build; the corpus now builds from nxdk upstream instead.
+
+Next corpus steps: fetch the xgu examples and `nxdk_vsh_tests` (toolchain is now
+available), and build `sdl`/`sdl_image` for a 2D-path row.
 
 ### Option B (Track P, product): one feature
 

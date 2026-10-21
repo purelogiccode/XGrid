@@ -171,10 +171,15 @@ is a ratio, not a milestone.
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
   is the structural step. The in-app GL display is still deferred (the frontend
   uses the software path, which never readbacks).
-- **M-B (Track E, corpus):** ≥8 samples in `docs/compatibility.md`, at least
-  two beyond the dashboard/triangle/ktest (one textured 3D with mipmaps, one
-  audio/DVD-path sample), boot-to-first-frame harness green, every row
-  reproducible.
+- **M-B (Track E, corpus) - MET 2026-10-20.** 11 rows over 7 distinct samples,
+  every row reproducible: `scripts/build-nxdk-samples.ps1` builds the nxdk
+  samples from a pinned upstream commit (`a6c31ee`) and
+  `scripts/boot-to-first-frame.ps1 -Corpus` re-measures them. Beyond
+  dashboard/triangle/ktest: `mesh` (textured 3D with VS/PS shaders - mipmap use
+  not yet exercised), `gamma`/`gamma-fade`/`hello` (direct-framebuffer), `led`
+  (SMC), `xaudio` (APU voice engine live). The corpus immediately produced two
+  measured gaps: the direct-framebuffer present gap and the never-buildable
+  `nxdk-mesh` snapshot (both in `docs/compatibility.md`).
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
 - **M-D (xemu-class):** triangle ≤ 1.5 s, menu ≤ 4 s at 1B with the fast engine;
