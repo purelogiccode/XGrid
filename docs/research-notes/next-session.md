@@ -7,8 +7,7 @@ docs/research-notes/xgrid-architecture-decisions.md` §221 (CHD title id) + §22
 replace-mode composition, clear write masks, per-title overrides V2) + §218 (APU`NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216 (PTIMER
 0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function vertex
 stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
-(cubemap) + §208 (display model) + §207 (corpus),
-`docs/compatibility.md` (matrix + harness + the gaps the corpus found),
+(cubemap) + §208 (display model) + §207 (corpus),`docs/compatibility.md` (matrix + harness + the gaps the corpus found),
 `docs/research-notes/usage-histogram.md` (measured NV097 / TEXFILTER / sampler
 address-mode usage), `docs/research-notes/nv097-coverage.md` (method-presence
 gap), `docs/research-notes/gpu-reference-map.md`, `docs/research-notes/
@@ -23,7 +22,6 @@ git log --oneline -1        # expect: the §220/§221 session commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
 dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1757 green```
-
 **Two machines share this tree** (`docs/hosts.md`). Start with
 `host-doctor.ps1` and read its VERDICT before trusting any number in this file:
 semantic anchors (SHAs/counters) must match everywhere, performance anchors
@@ -35,13 +33,12 @@ the gate scripts on H1):
 
 | leg (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | RAM | CPU | wall (H1) |
 |---|---|---|---|
-| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 31-54 s (load) |
+| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 31-54 s (load); 33.17 s measured |
 | menu + `--tex-filter registers` | `EE8F69FB…` | `F5D61C94…` | ~32 s |
 | menu + `--ffp` | `CC2A94DF…` | `F5D61C94…` | ~59 s (the FFP layer draws 121M more px) |
 | triangle BTFF (HDD + DVD, `--frame-first`) | `0117A5E2…` | `7DAB63EB…` | ~11.2 s |
 | triangle, plain (HDD + DVD, no `--frame*`) | `CB95C006…` | `B8EF1021…` | ~10.5 s |
-| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | ~10.9 s |
-| triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
+| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | ~10.9 s || triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
@@ -62,7 +59,9 @@ anchor.
 Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 `2F632483…`, menu RAM `6AB39AB0…` / CPU `3D2740B8…`; both frames `A1740DE0…` and
 `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
-(policy diff, never byte-exact).
+(policy diff, never byte-exact). Both GL goldens were re-run **after** the
+single-adapter change (§220) and reproduce these exactly (`diff=2602` /
+`diff=27849`, `violations=0`, `maxDelta=1`, `BackendUnsupported=0`).
 
 **The menu RAM SHAs moved in 218:** the APU `NV_PAPU_XGSCNT` register now returns
 `ep_frame_div * 32` (the reference behaviour), the dashboard reads it and stores
@@ -147,7 +146,6 @@ gate media). Track C stays frozen.
 software **34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black
 pixel count. The app is still `Run(65536)`-batched with a 30 Hz display capture,
 so the remaining product cost is the same CPU engine the CLI measures.
-
 ## 2. Recommended next session - pick one
 
 ### Option A (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
@@ -178,7 +176,6 @@ remaining GPU feature: it needs a cube-texture upload path and the
 first: add a per-declined-draw mode histogram to `unsup[...]` so the next session
 knows how many corpus rows are affected before building it.
 ### Option C (Track E): the two remaining corpus gaps
-
 - **Gap 10, `bumpenv_ripple`'s app state** (§211): diagnosed to a colour-clear
   frame with a nearer-than-everything zeta clear; needs the gap-9 oracle to know
   what state the reference ends up in. The cheapest start is gap 9 (xemu
@@ -190,13 +187,13 @@ knows how many corpus rows are affected before building it.
 - **`bumpenv_ripple`'s app state** (gap 10): diagnosed, needs gap 9's
   second-emulator frame.
 - **Second-emulator oracle** (gap 9): `xemu -display xemu` + F12 screenshot, or
-  the redirected-stdio QMP read loop.
+  the redirected-stdio QMP read loop. This one unlocks both gap 10 and a menu
+  oracle.
 - **The cull winding on `bumpenv_ripple`'s quads** (§211f), and the remaining
   DXT/paletted/mipmapped texture paths (unobserved by the corpus).
  Per-title overrides V2 follow-ups: **title-id display in the library rows**
   (the CHD reader landed in §221), and a per-title *renderer* override (the
   renderer is global today, §220).
-
 ### Filed, lower value - do not start while A/B are open
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
 - Per-title overrides V2 (title-id keying) - the frontend keys by path today;
@@ -204,12 +201,13 @@ knows how many corpus rows are affected before building it.
   extraction).
 - Faithful VGA read-back, texture fingerprint exactness, the 2-pixel k1
   interleave - all measured below the noise floor (§204/§205/§208).
+- A GL *window* renderer in the frontend: the offscreen FBO + readback path is
+  the product path; a second window would need input routing for no gain.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
 - **Reading the convolution kernel field alone as "convolve"**: MIN must be
-  `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a, and the GL
-  shader applies the same rule since §219a).
+  `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a).
 - **Expecting a tent to change a gate title's frame** - both sample at texel
   centers (§210d; the GL registers leg is byte-identical too, §220c).
 - **Blaming `bumpenv_ripple`'s black frame on the texture format or the bump
@@ -218,6 +216,9 @@ knows how many corpus rows are affected before building it.
 - **Reading the raw texture-address word** - 1 is wrap, 2 is mirror, 4 is
   border (§220b).
 - **DVD-only triangle legs** - they never launch the disc XBE (§208d).
+- **"A GL backend needs a foreign window, so it cannot be embedded"** - the
+  headless backend is an offscreen FBO; the frontend uses it with no window and
+  no conditional compilation (§220).
 - A texture-buffer object for the per-triangle block; state-fingerprint batch
   boundaries; per-draw probes (sample 1-in-64 or ablate).
 - O5 counter batching, C3-y bookkeeping, the 1024-slot data translate cache,
@@ -242,7 +243,10 @@ knows how many corpus rows are affected before building it.
   still need the 1B goldens (both backends) + ktest smoke. A GL-submission
   change additionally needs both 1B frame goldens byte-identical and the
   mirror-mode run (no `--gpu-replace`). A **flagged** behavior change must show
-  the default path byte-identical and the flag-on delta measured.
+  the default path byte-identical and the flag-on delta measured. Frontend
+  work: `dotnet build src/XGrid.Frontend.Avalonia -c Release` + project format
+  clean; a frontend-only change does not re-run the core gates, but it must not
+  change core behavior.
 - **Strip probe instrumentation before any A/B leg** (and before committing).
 - **1B runs only from a full solution build.**
 - Do **not** flip `--jit`/`--jit-raw`/`--tex-filter`/`--ffp`/renderer defaults
@@ -255,8 +259,7 @@ knows how many corpus rows are affected before building it.
   `XGrid.GpuGl`, so the solution build must stay platform-clean); UI-observable
   behavior lives in `EmulatorSession`, which is the seam a scratch harness can
   drive headlessly (see §220d - the harness was throwaway, in `wt-data/`).
-- Write it up: a decisions section (§219+) with the measured table, charter +  inventory status headers, `AGENTS.md` session note, and a fresh copy of this
-  file.
+- Write it up: a decisions section (§219+) with the measured table, charter +  inventory status headers, `AGENTS.md` session note, and a fresh copy of this  file.
 
 ## 5. Host state - two machines (2026-10-22)
 
@@ -271,8 +274,7 @@ vec=0`, no fault. This session's walls at 1B: menu slice-1 GL golden 71.2 s sw /
 76.5 s gl (accurate mode), menu dashboard through the real frontend session
 34.8 s software / 24.7 s OpenGL (fast mode), ktest smoke 47 s. Treat ceilings as
 ratios. Clang/make are absent on H1, so the nxdk corpus rows cannot be rebuilt
-here.
-## 6. Commands
+here.## 6. Commands
 
 ```powershell
 # build / test / format
@@ -315,7 +317,6 @@ pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Ste
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -TexFilter registers
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace -TexFilter registers
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-spheremap_ffp -Steps 3000000000 -Ffppython scripts/frame-stat.py wt-data\cube-legacy.bmp wt-data\cube-reg.bmp
-
 # GL goldens (1B): both need -Hdd (the default wt-data\xbox_hdd.qcow2 is gone on H1)
 pwsh -File scripts/gpu-slice1-golden.ps1 -OutDir wt-data\b1gold -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/gpu-slice1-golden.ps1 -OutDir wt-data\b1gold-tf -Hdd wt-data\chain-199l\hdd.qcow2 -TexFilter registers
@@ -356,11 +357,12 @@ the GL line: the texture-mode histogram of *declined* replacement-mode draws
 (slot counts, not draws). Measured on the cubemap row at 3B:
 `unsupTex[m0C=14 m11=28]` - DOT_REFLECT_SPECULAR on stage 3 and DOT_PRODUCT on
 two earlier stages - so Option B's first target is larger than the 14
-`BackendUnsupported` draws suggest.
-**Probe recipe for a black-frame row** (§211 used it): print the method stream
+`BackendUnsupported` draws suggest.**Probe recipe for a black-frame row** (§211 used it): print the method stream
 with `--pgraph`, then gate temporary probes on a single env var and print (a) per
 flip the presented surface's non-black count, (b) per draw the mode/ranges/
 program/combiner/texture-state key, (c) the first vertices' post-transform
 position + diffuse + uv, (d) the first fragments' coords, texels, diffuse and
 final colour. Strip every probe before committing - `git status` must show only
-the intended files.
+the intended files. The §220 frontend probe is the same idea one level up: a
+throwaway console project that drives `EmulatorSession` with settings, counts
+`FrameReady` packets and hashes them (it lived in `wt-data/`, never committed).

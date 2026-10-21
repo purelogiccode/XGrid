@@ -295,7 +295,7 @@
                       SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:RendererOption">
+                <DataTemplate DataType="vm:KeyedOption">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{Binding Label}" />
                     <TextBlock Text="{Binding Hint}"
@@ -333,7 +333,7 @@
                       SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:RendererOption">
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>
@@ -352,7 +352,26 @@
                       SelectedItem="{Binding SelectedTextureFilter, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:TextureFilterOption">
+                <DataTemplate DataType="vm:KeyedOption">
+                  <TextBlock Text="{Binding Label}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Renderer" Classes="label" />
+              <TextBlock Text="OpenGL renders the picture on the GPU (much faster on the dashboard menu). Falls back to software when no GL context is available."
+                         Classes="hint" />
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Width="220"
+                      ItemsSource="{Binding RendererOptions}"
+                      SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>
@@ -400,7 +419,7 @@
           <ItemsControl ItemsSource="{Binding TitleOverrides}">
             <ItemsControl.ItemTemplate>
               <DataTemplate DataType="vm:TitleOverrideItem">
-                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,8">
                   <StackPanel Spacing="1" VerticalAlignment="Center">
                     <TextBlock Text="{Binding DisplayName}" Classes="label" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding PathText}" Classes="mono" FontSize="10.5"
@@ -426,7 +445,19 @@
                                 OffContent="inherit"
                                 ToolTip.Tip="Inherit the global texture filter"
                                 VerticalAlignment="Center" />
-                  <Button Grid.Column="4"
+                  <ComboBox Grid.Column="4"
+                            Width="140"
+                            ItemsSource="{Binding Renderers}"
+                            SelectedItem="{Binding SelectedRenderer, Mode=TwoWay}"
+                            ToolTip.Tip="Renderer for this title"
+                            VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate DataType="vm:KeyedOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Grid.Column="5"
                           Classes="subtle icon"
                           Width="32"
                           Height="32"
@@ -466,7 +497,7 @@
                       SelectedItem="{Binding SelectedNetwork, Mode=TwoWay}"
                       VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
-                <DataTemplate DataType="vm:NetworkOption">
+                <DataTemplate DataType="vm:KeyedOption">
                   <TextBlock Text="{Binding Label}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>

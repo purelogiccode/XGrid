@@ -18,6 +18,9 @@ public sealed class TitleOverride
     /// <summary>Gets or sets the per-title texture filter mode ("legacy" or "registers").</summary>
     public string? TextureFilter { get; set; }
 
+    /// <summary>Gets or sets the per-title renderer ("software" or "gl"; null inherits).</summary>
+    public string? Renderer { get; set; }
+
     /// <summary>Gets or sets the per-title guest RAM size in megabytes.</summary>
     public int? RamMb { get; set; }
 
@@ -28,6 +31,7 @@ public sealed class TitleOverride
         {
             FixedFunctionVertex = FixedFunctionVertex,
             TextureFilter = TextureFilter,
+            Renderer = Renderer,
             RamMb = RamMb,
         };
     }
@@ -35,12 +39,13 @@ public sealed class TitleOverride
     /// <summary>Returns true when the override carries no value at all.</summary>
     public bool IsEmpty => FixedFunctionVertex is null
         && string.IsNullOrEmpty(TextureFilter)
+        && string.IsNullOrEmpty(Renderer)
         && RamMb is null;
 
     /// <summary>Builds a one-line summary for the settings list.</summary>
     public string Describe()
     {
-        var parts = new System.Collections.Generic.List<string>(3);
+        var parts = new System.Collections.Generic.List<string>(4);
         if (FixedFunctionVertex == true)
         {
             parts.Add("fixed-function vertex");
@@ -53,6 +58,11 @@ public sealed class TitleOverride
         if (!string.IsNullOrEmpty(TextureFilter))
         {
             parts.Add("filter: " + TextureFilter);
+        }
+
+        if (!string.IsNullOrEmpty(Renderer))
+        {
+            parts.Add("renderer: " + Renderer);
         }
 
         if (RamMb is not null)

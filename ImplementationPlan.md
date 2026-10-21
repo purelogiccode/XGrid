@@ -294,8 +294,7 @@ duplicate adapter is deleted). Evidence: 1B menu GL golden PASS byte-identical
 steps with the byte-identical 40,797-byte log. Suite 1738 -> 1757.
 
 **Remaining Track P gap: host audio output** (needs APU GP/EP DSP execution
-first). Track B's remaining item is B3 method coverage (zero `unsup` rows).
----
+first). Track B's remaining item is B3 method coverage (zero `unsup` rows).---
 
 # 1. Design Principles
 
