@@ -173,6 +173,22 @@ Project-local usage notes and the shortcut table live in
   (save/load/clamp/reject/reset). 15 tests.
 
 
+## Update 2026-10-21 (next session): frame stepping
+
+- **Pause now has a step control (Track P, M-C "pause/step UI").** Home has
+  "Frame step" and "Step" (1,000,000 instructions) buttons, enabled only while
+  paused; `F7` steps one presented frame and `Shift+F7` steps 1,000,000
+  instructions. `EmulatorSession.StepFrame`/`StepInstructions` set a budget and
+  release the pause gate; the run loop consumes the budget in
+  `BatchInstructions` slices, stops when the next flip is presented (the frame
+  path) or the budget is spent (the instruction path), re-closes the gate and
+  logs the result. A frame step is budgeted at 8,000,000 instructions so a
+  guest that idles between flips cannot hang the UI - exhausting the budget is
+  reported as "frame-step budget exhausted", not as a failure.
+- The budget is consumed with compare-exchange semantics, so a second click
+  while the first step is running keeps its own budget instead of being
+  cleared by the finishing step.
+
 ## Update 2026-10-21 (decisions 219d): per-title overrides V2 - keyed by title id
 
 - **A title keeps its configuration when the image moves.** `EmulatorSettings`

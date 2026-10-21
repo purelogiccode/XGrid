@@ -13676,6 +13676,12 @@ row; `docs/compatibility.md` gap 7).
 
 ### 219b GL replace-mode composition of a software-painted draw (gap 8 closed)
 
+> **Superseded by §220d** when the `repofleet/task-26` PR merged: the flip-drop
+> below was replaced by an explicit FBO -> guest-RAM composition on the first
+> declined draw, which also keeps the GL pixels of a mixed frame. The
+> `composeUploads=` counter no longer exists (`composedFrames=` replaces it).
+> The description is kept for the record.
+
 A draw the GL backend declines in replacement mode is painted by the software
 rasterizer into guest RAM, but the FBO kept whatever the backend had drawn, so
 the presented frame was the backend's frame *minus* every fallback (the corpus
@@ -13745,3 +13751,127 @@ distinguish two images with the same id.
 
 Suite 1717 -> **1738** tests (Nv2a +3, GpuGl +4, Integration +8, Frontend +6,
 including the regenerated GLSL string goldens for the new shader helpers).
+
+## 220 The GL sampler decodes the address word, a composed replace-mode frame keeps both writers, and the frontend can step frames (2026-10-21, twenty-second session)
+
+**Landing note: this section is the merge of the `repofleet/task-26` PR onto
+§219.** §219a's TEXFILTER decode and §219c's clear-mask rule stay in force;
+220b-d replace §219b's flip-drop composition with an explicit FBO -> guest-RAM
+copy, decode the texture-address word instead of reading it raw (clamp-to-border
+included), and add the Track P frame-step controls.
+
+### 220a Measured first: what the gate title actually programs
+
+A 1B fast menu run with `--pgraph --pgraph-max 8000000` (8,000,000-method
+window) gives the sampler state the shader has to honor (`usage-histogram.md`,
+"Sampler address modes"): slot 1 programs **wrap/wrap** 3,950 times, slot 0
+clamp 4,265 and **border/border** 35 times, slot 3 border/border 80 times with
+`FFFFFFFF` as the border colour, and TEXFILTER `2/2/1` (tent) next to `1/1/1`
+(nearest). The gate frames never showed the difference because their
+coordinates stay inside [0,1) and a tent at a texel centre is a nearest tap
+(§210d).
+
+**The bug the seam made visible.** The GL backend computed its wrap uniforms
+from the *raw* `NV097_SET_TEXTURE_ADDRESS` word. That word assigns **1 to wrap
+and 2 to mirror**, and 4 to clamp-to-border, so the backend had wrap and mirror
+swapped and treated border as clamp. The software sampler decoded the word
+correctly; only the two executors disagreed.
+
+### 220b The seam carries resolved sampler state
+
+`PgraphTextureSlot` carries `SamplerWrapU/V` (0 wrap, 1 mirror, 2 clamp,
+3 clamp-to-border), `BorderColor`, plus §219a's `FilterBilinear` /
+`FilterConvolution`. They are filled in `Nv2AMmio.BuildTextureSlot` from
+`DecodeTextureAddressU/V` + `ToWrapMode` + `SamplerWrapMode` and the
+`ResolveTextureFilter(slot, ...)` helper - the same helper that
+`BuildSamplerPlans` calls, so the software `SamplerPlan` and the backend slot
+cannot drift (§219a's static `DecodeTextureFilter` folded into it, so the flag
+is consulted in exactly one place). `--tex-filter` stays opt-in: with the flag
+off `FilterBilinear` is false and every stage is nearest, so the default path
+is unchanged by construction.
+
+### 220c The fragment shader samples like `Nv2AMmio`
+
+`PshGlslGenerator` emits, from the same semantics as the C# sampler:
+
+- `SampleTap(slot, ivec2)`: an out-of-range coordinate on a border axis returns
+  `uTexBorder[slot]` (the decoded `NV097_SET_TEXTURE_BORDER_COLOR`), otherwise
+  the coordinate folds with `WrapI` in the stage's own mode.
+- `SampleSlot(slot, uv)`: nearest (`floor`) or the tent - the `c - 0.5`
+  texel-centre offset, four independently wrapped taps and the exact weight
+  products of `SampleBilinear`.
+- `SampleConvolved(slot, xyw)`: nine 1-2-1 taps one texel apart (`du = 1/w`, or
+  `1/(w*size)` for a normalized stage), each tap a `SampleSlot`. Emitted only
+  for PROJECT2D and only when `uTexConvolution` is non-zero (MIN =
+  `CONVOLUTION_2D_LOD0`, §210a).
+- PROJECT2D divides by w (`c.xy / c.w`, zero w keeps the pair), matching
+  `ResolveTexel`'s reference `textureProj(norm(pT.xyw))`.
+- The interpolation preamble adds the **clip origin to both axes**:
+  `px = gl_FragCoord.x + T(2).w`. It added only `ClipY`, so a non-zero `ClipX`
+  compared absolute vertex positions against clip-relative fragment
+  coordinates. `diag[clipXY=]` is the counter that watches this; it is 0 on both
+  gate legs, which is why the gate never saw it.
+
+The uniforms are per slot (`uTexBilinear[4]`, `uTexConvolution[4]`,
+`uTexBorder[4]`), so filter/border churn cannot split the program cache. Both
+1B gate legs are byte-identical to their recorded GL fingerprints: menu
+`B6116DAE...` (sw `4EF1FBF6...`), triangle `7A860ED7...` (sw `A1740DE0...`),
+`violations=0 maxDelta=1`, counters identical, `BackendUnsupported=0`,
+`clipXY=0`.
+
+### 220d Gap 8: a declined draw composes instead of losing the frame
+
+This replaces §219b's flip-drop. Replace mode sends every draw to GL and falls
+back to the software rasterizer when the backend declines a shape - but the
+fallback writes guest RAM while the flip served the FBO, so one declined draw
+cost the whole frame's GL pixels (measured §209f: the cubemap row presented the
+clear colour). The rule is now **one writer per frame**:
+
+1. On the first declined draw of a frame the backend flushes its staged batch
+   and copies the FBO's clip window into the guest color surface
+   (`ComposeToGuestSurface`). The destination address is the seam's
+   `PgraphDrawInfo.ColorSurfaceAddress`/`ColorPitch` - the exact expression the
+   software fill uses - and the FBO's bottom row is guest row 0.
+2. Every later draw of that frame is declined too (`_frameComposed`), even a
+   shape GL could render: after the composition guest RAM is authoritative.
+3. At the flip the FBO is dropped and the existing present-upload path rebuilds
+   it from guest RAM, so the readback/window show the composed frame.
+
+Depth/stencil are **not** composed (the GL depth buffer is host-side): the
+software half of such a frame tests against guest zeta, which the GL half never
+wrote. Documented limitation, and the reason this is a composition policy, not
+a claim of fidelity.
+
+**Measured on `xgu bump_cubemap_reflect` at 3B, `-Gpu gl -GpuReplace`:**
+`BackendUnsupported=7`, `composedFrames=7`, `composedPixels=2,150,400`
+(7 x 640x480), `flipStaleUploads=7`, and the presented frame is
+**`DA0750EE...` - identical to the software frame** (was `3553B0DF...`, the
+clear only). CPU SHA unchanged (`D5D38C64`); the RAM SHA differs because the
+composition writes the GL image into guest RAM by design. The new diagnostic is
+`diag[composedFrames= composedPixels= composedDraws=]`.
+
+### 220e Track P: frame stepping
+
+Home has "Frame step" and "Step"; `F7` advances one presented frame (an
+8M-instruction budget so an idle guest cannot hang the UI), `Shift+F7` advances
+1,000,000 instructions. `EmulatorSession.StepFrame`/`StepInstructions` set a
+budget and release the pause gate; the loop consumes it in batches and
+re-closes the gate (compare-exchange budget so a second click keeps its own
+step). The About page and the README list the keys.
+
+### 220f Validation
+
+- 1B accurate menu golden: sw `4EF1FBF6`, gl `B6116DAE`, counters
+  33,632/686/686, `BackendUnsupported=0`, `composedFrames=0`, PASS.
+- 1B accurate triangle golden: sw `A1740DE0`, gl `7A860ED7`, counters
+  2,706/68/34, PASS.
+- Menu `--tex-filter registers` (sw vs gl policy): both frames unchanged,
+  PASS - evidence the flag's uniform path is wired, with the menu's
+  texel-centre sampling as the known non-discriminator (§210d).
+- `xgu vp_lighting` at 3B in replace mode (the only corpus row with fractional
+  texcoords and zero declined draws): the two renderers agree within one 8-bit
+  step in **both** states - gl legacy `E68070A3` vs sw `72B2F490`, gl registers
+  `A9E09139` vs sw `CF698444`, `dmean <= 0.01`, max delta 1 - and the flag
+  moves both by the same ~6.5% / max 80.
+- Suite: Nv2a 388, GpuGl 92 (the §219b flip-drop live test is replaced by the
+  composition test), format clean.

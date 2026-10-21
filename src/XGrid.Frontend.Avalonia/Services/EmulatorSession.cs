@@ -39,6 +39,11 @@ public sealed class EmulatorSession : IDisposable
     private const int BatchInstructions = 65536;
     private const long ProgressLogInterval = 250_000_000;
 
+    // Frame stepping (pause + advance): a step keeps the pause gate closed and
+    // releases exactly the requested work. A frame step is budgeted, because a
+    // guest can idle for millions of steps between flips.
+    private const long FrameStepFallbackInstructions = 8_000_000;
+
     // The display is a live scanout, not an event: guests that render straight
     // into the framebuffer never flip, so the picture is sampled on a timer as
     // well as on flips (~30 Hz, the panel refresh the UI can use).
@@ -64,6 +69,8 @@ public sealed class EmulatorSession : IDisposable
     private byte[] _padAnalog = new byte[8];
     private short[] _padSticks = new short[4];
     private bool _padDirty;
+    private long _stepBudget;
+    private long _stepTargetFrame;
 
     // Title identity (V2 per-title overrides): resolved from the launched image
     // once per run so the override dictionary can key by XBE title id instead
@@ -153,6 +160,8 @@ public sealed class EmulatorSession : IDisposable
         _nextProgressLog = ProgressLogInterval;
         _paused = false;
         _running = true;
+        Interlocked.Exchange(ref _stepBudget, 0);
+        Interlocked.Exchange(ref _stepTargetFrame, 0);
         _runGate.Set();
         _cancellation = new CancellationTokenSource();
 
@@ -185,8 +194,54 @@ public sealed class EmulatorSession : IDisposable
             return;
         }
 
+        Interlocked.Exchange(ref _stepBudget, 0);
+        Interlocked.Exchange(ref _stepTargetFrame, 0);
         _paused = false;
         _runGate.Set();
+    }
+
+    /// <summary>
+    /// Advances a paused console by one presented frame (or by
+    /// <paramref name="maxInstructions"/> when the guest presents nothing in
+    /// that budget, e.g. while it idles). The console stays paused.
+    /// </summary>
+    /// <param name="maxInstructions">Upper bound on instructions for the step.</param>
+    /// <returns>True when the step was accepted (the console is running and paused).</returns>
+    public bool StepFrame(long maxInstructions = FrameStepFallbackInstructions)
+    {
+        if (!_running || !_paused)
+        {
+            return false;
+        }
+
+        if (maxInstructions <= 0)
+        {
+            maxInstructions = FrameStepFallbackInstructions;
+        }
+
+        Interlocked.Exchange(ref _stepTargetFrame, Frames + 1);
+        Interlocked.Exchange(ref _stepBudget, maxInstructions);
+        _runGate.Set();
+        return true;
+    }
+
+    /// <summary>
+    /// Advances a paused console by an instruction count (a finer-grained step
+    /// than <see cref="StepFrame"/>). The console stays paused.
+    /// </summary>
+    /// <param name="instructions">Instruction budget.</param>
+    /// <returns>True when the step was accepted.</returns>
+    public bool StepInstructions(long instructions)
+    {
+        if (!_running || !_paused || instructions <= 0)
+        {
+            return false;
+        }
+
+        Interlocked.Exchange(ref _stepTargetFrame, 0);
+        Interlocked.Add(ref _stepBudget, instructions);
+        _runGate.Set();
+        return true;
     }
 
     /// <summary>Requests a stop and waits briefly for the emulation thread to exit.</summary>
@@ -244,6 +299,47 @@ public sealed class EmulatorSession : IDisposable
         });
     }
 
+    /// <summary>
+    /// Consumes the executed instructions from the step budget and re-closes
+    /// the pause gate when the step is done (frame reached or budget spent).
+    /// Only meaningful while paused; a running session ignores the budget.
+    /// </summary>
+    private void CompleteStep(int executed)
+    {
+        if (!_paused)
+        {
+            return;
+        }
+
+        long remaining = Interlocked.Add(ref _stepBudget, -executed);
+        long target = Interlocked.Read(ref _stepTargetFrame);
+        bool frameReached = target > 0 && Frames >= target;
+        if (remaining > 0 && !frameReached)
+        {
+            return;
+        }
+
+        if (frameReached)
+        {
+            Interlocked.Exchange(ref _stepTargetFrame, 0);
+            Interlocked.Exchange(ref _stepBudget, 0);
+            Log?.Invoke(this, FormattableString.Invariant($"Stepped to frame {Frames:N0} · EIP 0x{Eip:X8}"));
+        }
+        else
+        {
+            // Clear only the spent budget: a step requested while this batch
+            // ran must keep its own budget.
+            Interlocked.CompareExchange(ref _stepBudget, 0, remaining);
+            Log?.Invoke(this, FormattableString.Invariant(
+                $"Stepped {executed:N0} instructions (frame-step budget exhausted at EIP 0x{Eip:X8})."));
+        }
+
+        if (Interlocked.Read(ref _stepBudget) == 0)
+        {
+            _runGate.Reset();
+        }
+    }
+
     private void WithMachine(Action<XboxMachine> action)
     {
         XboxMachine machine = Volatile.Read(ref _machine)
@@ -296,19 +392,27 @@ public sealed class EmulatorSession : IDisposable
 
             while (!token.IsCancellationRequested && !machine.Cpu.Context.Halted)
             {
-                if (_paused)
+                long stepBudget = Interlocked.Read(ref _stepBudget);
+                bool stepping = _paused && stepBudget != 0;
+                if (_paused && !stepping)
                 {
                     _runGate.Wait(token);
                     continue;
                 }
 
                 ApplyPad(machine);
+                int batch = BatchInstructions;
+                if (stepping && stepBudget < batch)
+                {
+                    batch = (int)stepBudget;
+                }
+
                 int executed;
                 lock (_machineLock)
                 {
                     // Saves and loads take the same lock, so they always observe a
                     // paused, quiescent machine rather than a half-run batch.
-                    executed = machine.Run(BatchInstructions);
+                    executed = machine.Run(batch);
                 }
                 if (executed > 0)
                 {
@@ -317,6 +421,7 @@ public sealed class EmulatorSession : IDisposable
                 }
 
                 CaptureFrame(machine);
+                CompleteStep(executed);
                 LogProgressIfDue();
                 if (executed == 0)
                 {
