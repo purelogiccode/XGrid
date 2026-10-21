@@ -70,7 +70,7 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x02E0 | `SET_WINDOW_CLIP_VERTICAL` | range | 8 | recorded | Raster modes / queries |
 | 0x0300 | `SET_ALPHA_TEST_ENABLE` | method | 1 | handled | Raster state |
 | 0x0304 | `SET_BLEND_ENABLE` | method | 1 | handled | Raster state |
-| 0x0308 | `SET_CULL_FACE_ENABLE` | method | 1 | recorded | Raster modes / queries |
+| 0x0308 | `SET_CULL_FACE_ENABLE` | method | 1 | handled | Raster modes / queries |
 | 0x030C | `SET_DEPTH_TEST_ENABLE` | method | 1 | handled | Raster state |
 | 0x0310 | `SET_DITHER_ENABLE` | method | 1 | recorded | Raster modes / queries |
 | 0x0314 | `SET_LIGHTING_ENABLE` | method | 1 | recorded | Other |
@@ -106,8 +106,8 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | 0x0390 | `SET_BACK_POLYGON_MODE` | method | 1 | recorded | Other |
 | 0x0394 | `SET_CLIP_MIN` | method | 1 | handled | Raster state |
 | 0x0398 | `SET_CLIP_MAX` | method | 1 | handled | Raster state |
-| 0x039C | `SET_CULL_FACE` | method | 1 | recorded | Raster modes / queries |
-| 0x03A0 | `SET_FRONT_FACE` | method | 1 | recorded | Raster modes / queries |
+| 0x039C | `SET_CULL_FACE` | method | 1 | handled | Raster modes / queries |
+| 0x03A0 | `SET_FRONT_FACE` | method | 1 | handled | Raster modes / queries |
 | 0x03A4 | `SET_NORMALIZATION_ENABLE` | method | 1 | recorded | Vertex submission |
 | 0x03A8 | `SET_MATERIAL_EMISSION` | range | 3 | recorded | Fixed-function lighting (recorded) |
 | 0x03B4 | `SET_MATERIAL_ALPHA` | method | 1 | recorded | Fixed-function lighting (recorded) |
@@ -244,7 +244,7 @@ Status: generated reference checklist, 2026-10-20. Companion to
 | Fog | 7 | 7 | 0 |
 | Other | 9 | 6 | 3 |
 | Presentation | 5 | 5 | 0 |
-| Raster modes / queries | 27 | 0 | 27 |
+| Raster modes / queries | 27 | 3 | 24 |
 | Raster state | 24 | 24 | 0 |
 | Surface / clear / present | 15 | 15 | 0 |
 | Texture / texgen | 20 | 13 | 7 |
@@ -266,7 +266,7 @@ They are the items a commercial title is most likely to hit first.
 | **Multistream / vertex DMA** | `SET_CONTEXT_DMA_VERTEX_A/B`, `SET_CONTEXT_DMA_A/B` | Recorded only; vertex fetch reads guest arrays directly | Titles using multi-stream vertex buffers will not fetch correctly |
 | **Immediate-mode vertices** | `SET_VERTEX3F`/`SET_VERTEX4F`, `SET_NORMAL*`, `SET_DIFFUSE*`, `SET_SPECULAR_COLOR*`, `SET_TEXCOORD*`, `SET_WEIGHT*` (`0x1500`-`0x16FF`) | Recorded only; XGrid's inline path handles `SET_VERTEX_DATA*` (`0x1880`-`0x1AFC`) | Titles using immediate-mode draws produce no/partial geometry |
 | **Window clip / scissor** | `SET_WINDOW_CLIP_TYPE`, `SET_WINDOW_CLIP_HORIZONTAL/VERTICAL` | Recorded only | UI panels, split-screen and viewport sub-rects draw outside their rect |
-| **Backface culling** | `SET_CULL_FACE_ENABLE`, `SET_CULL_FACE`, `SET_FRONT_FACE` | Recorded only; no cull | Extra overdraw; alpha-blended backfaces can show through |
+| **Backface culling** | `SET_CULL_FACE_ENABLE`, `SET_CULL_FACE`, `SET_FRONT_FACE` | **Closed 2026-10-20 (§206g)** — state latched, screen-space winding test in both fill paths | Was extra overdraw + see-through backfaces |
 | **Flat shading** | `SET_SHADE_MODE`, `SET_PROVOKING_VERTEX` | Recorded only | Per-vertex colors interpolate where the title expects flat |
 | **Polygon offset** | `SET_POLY_OFFSET_*`, `SET_POLYGON_OFFSET_*` | Recorded only | Z-fighting on decals/shadows |
 | **Point/line/wireframe** | `SET_POINT_*`, `SET_LINE_SMOOTH_ENABLE`, `SET_FRONT/BACK_POLYGON_MODE`, `SET_POLY_SMOOTH_ENABLE` | Recorded only | Only filled triangles are rasterized |

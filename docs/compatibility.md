@@ -51,8 +51,8 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
-| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `660CA11B` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `6BE6325F` | `-Sample dashboard` |
-| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `F57934BF` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `3FC4B419` | `-Sample triangle` |
+| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `6BE6325F` | `-Sample dashboard` |
+| **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `DD1D516E` / CPU `CF79FC17`; accurate frame `A1740DE0`; gl `3FC4B419` | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
@@ -63,6 +63,11 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - toolchain | - | raw framebuffer | - | candidate for non-D3D bring-up | - | - |
 
 ## Measured rows (2026-10-20, twelfth session, loaded host)
+
+> **Anchor note (§206g cull-face landing, 2026-10-20):** the matrix table above
+> carries the post-cull 1B fast anchors (dashboard RAM `51B56687`, triangle RAM
+> `DD1D516E`); CPU SHAs and every frame SHA are unchanged. The `BTFF` rows below
+> still show pre-cull RAM values — refresh them on the next `-All` run.
 
 Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M);
 the host runs ~1.6-1.9x slower than the quiet-host baselines, so compare rows

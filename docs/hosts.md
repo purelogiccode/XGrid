@@ -70,26 +70,27 @@ this banner.
 
 ## Reference host
 
-**H1 is the reference host (verified 2026-10-20).** All four semantic anchors
-reproduce **exactly** on H1 with the current build, `vec=0`, no fault:
+**H1 is the reference host (verified 2026-10-20).** The semantic anchors reproduce
+**exactly** on H1, `vec=0`, no fault. Current values (post-§206g cull landing):
 
 | leg (1B, fast, `--gpu sw`) | RAM SHA | CPU SHA | wall |
 |---|---|---|---|
-| triangle | `F57934BF…` ✓ | `CF79FC17…` ✓ | 9.56 s |
-| menu | `660CA11B…` ✓ | `F5D61C94…` ✓ | 39.08 s |
+| triangle | `DD1D516E…` | `CF79FC17…` | 8.0 s |
+| menu | `51B56687…` | `F5D61C94…` | 35.4 s |
 
-So the emulator is deterministic and the anchors are host-independent as
-intended. Walls read +10% (triangle) / +17% (menu) against the recorded
-quiet-host references (8.69 s / 33.3 s), which is host noise, not a
-configuration fault: the plan's ceilings should be read as ratios on this
-machine, not as absolutes.
+The pre-cull run reproduced the then-recorded anchors exactly (triangle
+`F57934BF…`/`CF79FC17…`, menu `660CA11B…`/`F5D61C94…`), which is what established
+H1 as the reference host and proved the build deterministic. The cull-face
+landing then moved **RAM only** (culled triangles stop writing zeta) with every
+CPU SHA and every frame SHA identical — controlled pre/post A/B, see decisions
+§206g.
 
 - **M-A can be recorded here**, provided the `sw` leg of
   `scripts/present-path-acceptance.ps1` is compared against H1's own reference
   (10% above the recorded numbers), not the raw 33.3 s figure.
 - The §204-close reading of menu sw **62.6 s** / triangle **14.0 s** did not
-  reproduce today (39.08 / 9.56 s). Treat it as a transient (thermal, Dropbox
-  sync, or a background build), not as a host property.
+  reproduce today (39.08 / 9.56 s pre-cull, 35.4 / 8.0 s post-cull). Treat it as
+  a transient (thermal, Dropbox sync, or a background build), not a host property.
 
 ## Open items
 
