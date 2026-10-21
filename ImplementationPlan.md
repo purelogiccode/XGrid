@@ -203,8 +203,7 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    (LU_IMAGE) stages (one texel per tap, `psh.c apply_convolution_filter`); the
    opt-in flag's default stays an operator item. 1625 tests green.
 3. **Track P - product completeness (parallel).** Host audio, physical pad,
-   save-state V1, per-title config.
-   **Status 2026-10-21 (20th session, §217):** physical pad and save states
+   save-state V1, per-title config.   **Status 2026-10-21 (20th session, §217):** physical pad and save states
    landed 2026-10-20 (§206); this session added the graphics-fidelity settings
    (`--ffp`, `--tex-filter`), per-title overrides (V1 keyed by image path),
    persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
@@ -214,12 +213,17 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    F7 steps one presented frame (8M-instruction budget so an idle guest cannot
    hang the UI), Shift+F7 steps 1,000,000 instructions; Home gained both
    buttons and the About page/README list the keys.
-   **Status 2026-10-22 (§§221-222):** the frontend is no longer sw-only - a
+   **Status 2026-10-22 (§§221-223):** the frontend is no longer sw-only - a
    Settings > Renderer switch runs the host-GPU OpenGL backend headless with the
    per-flip readback (measured -29% wall at 1B through the real session), and
-   per-title overrides V2 now key a CHD by its XBE title id.
+   per-title overrides V2 now key a CHD by its XBE title id. The policy seam
+   (`RendererPolicy`/`GraphicsBackendHost`), thread-correct snapshot save/load
+   and `tools/frontend-smoke` landed with it (measured +9.8%/+8.2% in-app
+   throughput, every gate anchor unchanged).
    Host audio (APU DSP execution) is still the
-   remaining product gap.4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
+   remaining product gap.
+
+4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
 6. **Environment preconditions (binding, 2026-10-20).** Two machines share this
@@ -291,7 +295,6 @@ steps with the byte-identical 40,797-byte log. Suite 1738 -> 1757.
 
 **Remaining Track P gap: host audio output** (needs APU GP/EP DSP execution
 first). Track B's remaining item is B3 method coverage (zero `unsup` rows).
-
 ---
 
 # 1. Design Principles
@@ -2453,16 +2456,17 @@ dependencies) that talks to the emulator only through the public `XGrid.Host`
 Delivered in this slice:
 
 - dark modern shell with Home, Library, Settings, Activity, and About pages;
-- power/pause/resume/stop with a live presented-frame display (portable software
-  rasterizer + `WriteableBitmap`, no WGL dependency);
+- power/pause/resume/stop with a live presented-frame display (`WriteableBitmap`;
+  software rasterizer by default, opt-in hidden-window OpenGL backend since §220);
 - game selection and recursive library scan (ISO/CHD/XBE, XBE title parsing);
 - firmware, storage, RAM, JIT/performance, network, library-folder, and accent
   configuration persisted as JSON in the platform app-data folder;
 - keyboard-to-XID pad mapping, activity log, runtime accent themes.
 
 Deferred to later frontend slices: physical gamepad binding, host audio output,
-GPU-backend display, debugger panes, per-title profiles, and save-state UI. Design
-and validation record: `docs/research-notes/avalonia-frontend.md`; usage:
+debugger panes, per-title profiles (the renderer is global), save-state UI, and
+the GL path for direct-framebuffer guests. Design and validation record:
+`docs/research-notes/avalonia-frontend.md`; usage:
 `src/XGrid.Frontend.Avalonia/README.md`.
 
 ---
@@ -3412,11 +3416,11 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 18 GPU Optimization | 4 | 72% | rasterizer bit-exact specialization (§§180–187: fast combiner configs, planned evaluator, sampler plans, blend specialization, lean interpolation; menu 119→24.6 s, triangle 54.7→9.9 s); neutral experiments reverted (§183/§186); GL backend pairing measured parity-to-worse at 1B (§194 am.3 — sw stays default); measured at 48% (menu) / 39% (triangle) of the 1B sw wall after C3 (§199n), then **§199p: O2 `IGpuMemoryFast` GPU-memory fast lane landed (-2.0% both titles, 3/3), then O4 branchless Morton spread (-5.9% triangle 3/3, -1.2% menu 2/3); §200: O3b per-fill fast sampler + O1 compiled k1 modulate (245.8M px) and k2/k3 lighting fills, 1B rasterPsh menu 24.0 → 13.3-15.1 s (-44%), triangle 6.19 → 3.31-3.45 s (-45%), interleaved wall -21.9% / -23.5%, quiet host 36.01 s / 9.13 s; accurate-mode raster triangle 6.90 → 3.63 s (-47%) with RAM/CPU SHAs and every counter exact; O5 counter batching and the cube-stride hoist measured neutral; the rasterizer is no longer the dominant wall**; **§204 present path measured and fixed: the per-flip readback is opt-in (`--frame`/`--frame-first`; 0 in normal runs), each draw is one packed `uTri[25]` uniform + one `glDrawArrays` (positions by `gl_VertexID`, no VBO upload), and the per-draw key strings/divisions/binds plus the per-method seam call are gone — `drawMs` 12.55 → 2.41 s (-81%), menu `gl+replace` 63.09 → 45.25 s (-20.5% same-window, 3/3), triangle 10.26 → 9.89 s; 1B GL goldens exact (`6BE6325F…` / `3FC4B419…`)**; **§205 draw-command batching landed: a PGRAPH primitive flush averages 82 triangles, so the backend stages a whole command and submits it with one `glDrawArraysInstanced` (per-triangle block = a uniform-array slot selected by `gl_InstanceID` through a flat varying, capacity 64 from the queried uniform budget, `XGRID_GL_NO_BATCH=1` forces the old path) — `drawMs` 1971 → 1045 ms (-47%, 3/3 same-binary), 59,437 instanced draws replace 2.76M single draws, menu `gl+replace` wall 42.20 → 40.43 s (-4.2%, 3/3), both 1B GL frame goldens byte-identical; the remaining menu submission is ~0.8 s of block packing (not GL calls) and the ~0.5-0.9 s texture fingerprint, both deferred with measured ceilings**; **the phase's own checklist is now closed** (command generation, submission, shader compilation, texture upload, render-pass creation, synchronization, frame pacing + the six caching techniques - see the phase-18 status block for the per-item evidence); what remains is measured leftovers (per-draw layer bits hybrid/z, ~0.8 s block packing, ~0.5-0.9 s texture fingerprint, O6 row spans demoted, product-path present pacing) - no capability gap; Vulkan/GL backend work stays in P11 |
 | 19 Debugger | 3 | 30% | save states, symbols, GUI |
 | 20 Automated Testing | 3 | 73% | 1538 tests + goldens/median harnesses + randomized emit-inline differential net + 44 JIT differentials (fuzz/IRQ sweeps/faults/paging) + raw-emitter differentials (`RawJitTests` + the §199h delivered-EFLAGS parity, page-table-store-under-watch, exact watch-range-hit and split-member block-exit tests, plus 11 §199o C3-x shape differentials; 59/59 with the raw path forced on) + §199p fast-vs-legacy GPU-memory-lane differential + 8 §200 fast-vs-generic sampler/compiled-fill differentials + the §204 readback-policy live tests + 4 §205 batch-bracket seam tests (fail-pre-fix proven) + ktest smoke; the present-path acceptance script (`scripts/present-path-acceptance.ps1`), the batching A/B (`scripts/batch-205-ab.ps1`) and the boot-to-first-frame harness (`scripts/boot-to-first-frame.ps1`, six measured corpus rows (three samples, both backends)) automate the ceremony; fuzzing; **wider compatibility corpus is Track E (`docs/compatibility.md` + the harness; 6 measured rows across 3 samples, of the ≥8 M-B target, the additional rows still blocked on the nxdk toolchain)** |
-| 21 CLI & Frontend | 3 | 60% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f` (sw-only, keyboard-only, silent, stateless)**; §204 CLI observability: `--frame-first` (first presented frame + step anchor), `readback=on|off` and `methods=` in the boot summary; Track P adds host audio, physical pad, save states, per-title config |
+| 21 CLI & Frontend | 3 | 63% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f`** (keyboard-only, silent, software default) **with an opt-in host-OpenGL renderer (§220) and thread-correct snapshot save/load**; §204 CLI observability: `--frame-first` (first presented frame + step anchor), `readback=on|off` and `methods=` in the boot summary; Track P adds host audio, physical pad, save states, per-title config |
 | 22 Save States & Replay | 2 | 5% | snapshot/replay — **Track P V1 next** (`.xgs` is versioned: CPU/RAM/device v2→v3 for NV2A and audio) |
 | 23 Release | 3 | 11% | packaging, installer; **compatibility list exists — `docs/compatibility.md` with six measured rows across three samples (both backends), reproducible commands and the `scripts/boot-to-first-frame.ps1` harness (Track E; M-B wants ≥8 rows, ≥2 beyond dashboard/triangle/ktest)** |
 
-**Result: ~75% complete overall** (weighted: 81.63 of 108 weight-points = 75.6%, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work; the score only moves with landed work).
+**Result: ~76% complete overall** (weighted: 81.72 of 108 weight-points = 75.7%, recomputed 2026-10-21 after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work; the score only moves with landed work).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:

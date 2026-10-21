@@ -46,14 +46,18 @@ public sealed class TextureFilterOption
     public string Label { get; }
 }
 
-/// <summary>One selectable renderer.</summary>
+/// <summary>One selectable NV2A renderer.</summary>
 public sealed class RendererOption
 {
     /// <summary>Creates a renderer option.</summary>
-    public RendererOption(string key, string label)
+    /// <param name="key">Persisted key (<c>software</c> or <c>opengl</c>).</param>
+    /// <param name="label">Text shown in the drop-down.</param>
+    /// <param name="hint">Availability hint shown next to the label.</param>
+    public RendererOption(string key, string label, string hint)
     {
         Key = key;
         Label = label;
+        Hint = hint;
     }
 
     /// <summary>Gets the persisted key ("software" or "opengl").</summary>
@@ -61,6 +65,9 @@ public sealed class RendererOption
 
     /// <summary>Gets the display label.</summary>
     public string Label { get; }
+
+    /// <summary>Gets the availability hint shown next to the label.</summary>
+    public string Hint { get; }
 }
 
 /// <summary>One per-title override row in the settings list.</summary>
@@ -236,9 +243,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         };
         RendererOptions = new ObservableCollection<RendererOption>
         {
-            new(EmulatorSettings.RendererSoftware, "Software (portable, reference)"),
-            new(EmulatorSettings.RendererOpenGl, "OpenGL (host GPU, Windows)"),
-        };
+            new(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
+            new(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),        };
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -257,7 +263,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     /// <summary>Gets the selectable texture filter modes.</summary>
     public ObservableCollection<TextureFilterOption> TextureFilterOptions { get; }
 
-    /// <summary>Gets the selectable renderers.</summary>
+    /// <summary>Gets the selectable NV2A renderers.</summary>
     public ObservableCollection<RendererOption> RendererOptions { get; }
 
     /// <summary>Gets the per-title overrides being edited.</summary>

@@ -55,7 +55,8 @@ emulator plateau: a very accurate, very well-tested demo.
    NV097/APU/XBE work is driven by observed usage. Real ISOs stay benchmark-only
    (no gates, no fidelity work) until the operator changes the policy.
 3. **Track P makes it feel like an emulator.** The frontend landed (`ea8b38f`)
-   but is sw-only, keyboard-only, silent, and stateless. In parallel: host
+   but is keyboard-only, silent, and defaults to the software rasterizer (an
+   opt-in host-OpenGL renderer landed in §220). In parallel: host
    audio sink (APU output), physical gamepad binding, save-state V1, per-title
    config. Cheap relative to their product value; they do not block Track B.
 4. **Track C is frozen after the landed slices.** C3-x hit its target
@@ -81,7 +82,6 @@ on gate media) with the same picture; and per-title override V2 resolves a CHD
 through a sector-level XDVDFS lookup (§221), so a compressed library keys by
 title id. Suite **1757**. Track order is otherwise unchanged; the largest
 remaining product gap is host audio, which needs APU DSP execution first.
-
 **Status 2026-10-21 (20th session, 215-218):** gap 6 is **closed end to end** -
 the fixed-function vertex stage (213) and its enabled-light loop (215) are
 opt-in (`--ffp`), PTIMER now models the 0.8.137 alarm registers (216), the APU
@@ -205,8 +205,7 @@ is a ratio, not a milestone.
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
   is the structural step. **The in-app GL display landed 2026-10-22 (§220):** the
-  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default.
-- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
+  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default. The in-app switch is +9.8%/+8.2% guest throughput on the dashboard with every gate anchor unchanged (§223).`n- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +
   `--frame-display` export it, and the Avalonia frontend samples it at ~30 Hz,
