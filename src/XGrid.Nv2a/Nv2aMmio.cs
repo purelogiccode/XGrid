@@ -837,7 +837,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public string PresentedFrameDebug =>
         $"frames={FramesPresented} stalls={FlipStalls} read={FlipReadDebug} write={FlipWriteDebug} modulo={FlipModuloDebug} " +
         $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
-        $"valid={_presentedValid} frame={_presentedFrame}";
+        $"pcrtc={_pcrtcStart:X} valid={_presentedValid} frame={_presentedFrame}";
 
     /// <summary>Gets the flip read buffer index. Diagnostics.</summary>
     public uint FlipReadDebug { get; private set; }

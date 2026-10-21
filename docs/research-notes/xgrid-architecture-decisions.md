@@ -12233,3 +12233,104 @@ everything; cull state round-trips through a snapshot. Suite 1567 -> **1573**.
 
 **Coverage:** `nv097-coverage.md` moves the three methods to `handled`
 (108/93 -> 111/90) and closes the "backface culling" feature-gap row.
+
+## 207 Track E: the nxdk corpus is real - 11 rows, 7 samples, and two measured gaps (2026-10-20)
+
+**M-B is met.** The blocker was never the emulator: it was that the corpus had
+three runnable rows and six blocked ones, all blocked on a toolchain that had
+never been installed. This session installed it, built the samples, generalized
+the harness, and measured the rows.
+
+### 207a The toolchain recipe (and the two traps)
+
+MSYS2 at `C:\msys64` (already present on H1) plus:
+
+    pacman -S --needed git make bison flex cmake \
+             mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-llvm
+
+Traps, both cost a build cycle:
+
+1. **`mingw-w64-x86_64-llvm` is mandatory, not optional.** nxdk links its import
+   libraries with `llvm-dlltool`, which is not in the clang package; without it
+   every link dies with `llvm-dlltool: No such file or directory`. pacman lists
+   llvm only as an optional dependency of clang, so the obvious install is
+   incomplete.
+2. **msys2's own git cannot reach the network** here (`remote helper 'https'
+   aborted session`) - its curl/ca-cert stack is not configured. The Windows
+   PATH git clones fine. Use `git clone` from outside MSYS2, then build inside.
+3. `bash script.sh` does not source `/etc/profile`, so `make` is not on PATH
+   even though MSYS2 is installed. The build script prepends
+   `/usr/bin:<msys>/mingw64/bin` explicitly and sets `MSYSTEM=MINGW64` (nxdk's
+   Makefile hard-errors otherwise).
+
+`scripts/build-nxdk-samples.ps1` wraps all of that: it checks for the toolchain
+(it names the missing `llvm-dlltool` and prints the exact pacman line), clones
+nxdk on request, builds the requested samples, and stages ISOs into
+`data/test-samples/corpus/`. It builds **nxdk's own `samples/<name>`** at a
+pinned commit (`a6c31ee`), not the copies under `data/test-samples/`: those are
+stale partial snapshots (see 207d).
+
+### 207b Harness: `-Corpus`, and two measured corrections
+
+`scripts/boot-to-first-frame.ps1` gained `-Corpus` (every staged ISO),
+`-IsoPath` (any loose ISO) and a `-CorpusSteps` budget of 1B.
+
+- **400M steps is not enough for a corpus row.** At 400M every sample sat in the
+  boot animation and returned identical counters (25 frames, 2,654 draws) - the
+  boot animation is the dominant draw source, so identical output looks like a
+  harness bug rather than "not booted yet". At 1B the samples separate.
+- **Corpus rows must use HDD + DVD.** DVD-only runs never launch the disc's XBE:
+  all five samples ended in the kernel idle thread with the boot animation as
+  their last frame. With the HDD present the kernel launches the disc XBE, which
+  is the same media set the triangle gate row uses.
+- The `-All` set (`dashboard`/`triangle`/`ktest`) is untouched, and corpus names
+  that collide with a named sample (`triangle`) are skipped with an explicit
+  message instead of silently shadowed.
+
+PowerShell lesson worth keeping: **variable names are case-insensitive**, so a
+`foreach ($iso in $isos)` loop variable silently collides with a `[string]$Iso`
+parameter and gets coerced to a string - every row printed an empty sample name
+and re-ran the same media. The parameter is now `$IsoPath` and the loop variable
+`$corpusIso`.
+
+### 207c Measured rows (1B fast, HDD+DVD, `--gpu sw`)
+
+| sample | frames | draws | last frame | RAM | CPU | verdict |
+|---|---:|---:|---|---|---|---|
+| `mesh` | 66 | 2,864 | `806CBEA7` | `D6A41BAC` | `6DA19D89` | PASS - renders its own content |
+| `gamma-fade` | 34 | 2,672 | `18C7CC83` | `ED83DC23` | `D0A7BB8A` | PASS boot, frame not captured |
+| `gamma` | 34 | 2,672 | `18C7CC83` | `4EE18F78` | `C3371A8C` | PASS boot, frame not captured |
+| `hello` | 34 | 2,672 | `18C7CC83` | `4650454F` | `C3371A8C` | PASS boot, frame not captured |
+| `led` | 34 | 2,672 | `18C7CC83` | `3D1F72DB` | `1C98838F` | PASS boot, frame not captured |
+| `xaudio` | 34 | 2,672 | `18C7CC83` | `B0C863C5` | `07DB79D2` | PASS boot, APU live |
+
+`mesh` is the only new sample that renders: 5,115 clears, 44 programs, 48,627
+triangles culled, 42.6M pixels. Its mipmap usage is **not** yet verified, so the
+"textured 3D with mipmaps" wording in M-B is only half satisfied.
+
+### 207d Two gaps the corpus found by measuring
+
+1. **Direct-framebuffer output is never presented.** `CapturePresentedFrame`
+   snapshots the **3D color surface** at flip time; `TryCopyPresentedFrame`
+   reads it live. `XVideoSetMode` + `XVideoGetFB` programs (nxdk `gamma`, and
+   `debugPrint` in `hello`) write the scanout buffer directly and issue no 3D
+   draws and no flips, so nothing is captured. Four samples with four different
+   guest RAM SHAs all exported the identical frame `18C7CC83` - the boot
+   animation. The register dump confirms different buffers: `gamma`
+   `surface=32A4000 pcrtc=3EB4000`, `mesh` `surface=3D00000 pcrtc=3BD4000`.
+   A correct fix models the display the way xemu does (`nv2a.c:184-190`:
+   `pcrtc.start / 4` plus the VGA CRTC line offset), because the guest writes a
+   VRAM-aperture address that XGrid masks into its 64 MB space, and the scanout
+   moves during boot. **Scoped, not attempted** - it would have been a guess.
+   This is now the top corpus-driven item.
+2. **`data/test-samples/nxdk-mesh` could never have built.** Its `main.c`
+   `#include`s `verts.h`; the snapshot had neither `verts.h` (49 KB) nor
+   `texture.h` (1.7 MB), and its README links a `screenshot.png` that was also
+   absent. `data/` is gitignored, which is why nothing noticed. The corpus now
+   builds from nxdk upstream, so the partial snapshots are off the build path,
+   and the missing files were restored locally for anyone building by hand.
+
+### 207e Diagnostic added
+
+The `Frame` line now prints `pcrtc=<hex>` next to `surface=<hex>`, which is what
+made 207d provable in one run instead of a RAM-diff investigation.

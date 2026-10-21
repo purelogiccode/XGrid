@@ -58,11 +58,56 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0` | n/a | target <= 6 s not met (6.4 s projected, CPU-bound) | CPU `CF79FC17`; frame `3FC4B419` | `-Sample triangle -Gpu gl -GpuReplace` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
-| **nxdk-mesh** (textured mesh, VS/PS shaders) | source in `data/test-samples/nxdk-mesh/` | **blocked** - nxdk toolchain not on host (MSYS2 base only: no clang/make; C: 247 MB free, must install on D:) | - | expected textured 3D + shaders | - | build dependency, not an emulator gap | - | - |
-| **nxdk-hello / nxdk-triangle / nxdk-led** | source in `data/test-samples/` | **blocked** - toolchain | - | text / triangle / SMC LED | - | build dependency | - | - |
-| **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs nxdk | - | textured 3D | - | fetch + toolchain | - | - |
-| **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs nxdk | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
-| **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - toolchain | - | raw framebuffer | - | candidate for non-D3D bring-up | - | - |
+| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7` | `-Sample mesh` |
+| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | **direct-framebuffer present gap** (below) | RAM `4EE18F78` / CPU `C3371A8C` | `-Sample gamma` |
+| **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same direct-framebuffer gap | 0 extra draws | n/a | same gap | RAM `ED83DC23` / CPU `D0A7BB8A` | `-Sample gamma-fade` |
+| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same gap (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | same gap | RAM `4650454F` / CPU `C3371A8C` | `-Sample hello` |
+| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | same gap (no video content; toggles the SMC LED) | 0 extra draws | n/a | SMC LED only | RAM `3D1F72DB` / CPU `1C98838F` | `-Sample led` |
+| **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same direct-framebuffer gap (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2` | `-Sample xaudio` |
+| **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
+| **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
+| **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
+
+## Known gaps surfaced by the corpus (2026-10-20)
+
+These are measured, not suspected — each one was found by running a sample, not
+by reading code.
+
+### 1. Direct-framebuffer output is never presented (blocks `gamma`, `hello`, `led`)
+
+`Nv2aMmio.CapturePresentedFrame` snapshots the **3D color surface** at flip time,
+and `TryCopyPresentedFrame` reads that surface live. Programs that write the
+scanout buffer directly — nxdk's `XVideoGetFB()`, `debugPrint`, `XVideoSetMode`
+— issue no 3D draws and no flips, so nothing is captured and `--frame` (and the
+frontend) keep showing the last flipped frame.
+
+Evidence (1B fast, HDD+DVD):
+
+| sample | guest RAM SHA | exported frame SHA |
+|---|---|---|
+| `gamma` | `4EE18F78` | `18C7CC83` |
+| `gamma-fade` | `ED83DC23` | `18C7CC83` |
+| `hello` | `4650454F` | `18C7CC83` |
+| `led` | `3D1F72DB` | `18C7CC83` |
+
+Four different guest states, one exported frame: the frame is the boot
+animation, not the program's output. The register dump agrees — at exit the
+exported surface and the scanout base are different buffers (`gamma`:
+`surface=32A4000 pcrtc=3EB4000`; `mesh`: `surface=3D00000 pcrtc=3BD4000`).
+
+A correct fix has to model the display the way xemu does (PCRTC start plus the
+VGA CRTC line offset, `nv2a.c:184-190`), not just swap in `PCRTC_START`: the
+guest writes a VRAM-aperture address that XGrid masks into its 64 MB space, and
+the scanout moves during boot. Scoped, not attempted here.
+
+### 2. The repo's `nxdk-mesh` snapshot could never build
+
+`data/test-samples/nxdk-mesh/` was missing `verts.h` (49 KB) and `texture.h`
+(1.7 MB), both `#include`d by its own `main.c`, plus the `screenshot.png` its
+README links. The corpus now builds from nxdk upstream (`samples/<name>` at
+pinned `a6c31ee`) via `scripts/build-nxdk-samples.ps1`, so the stale snapshots
+are no longer on the build path. `data/` is gitignored, which is why the gap
+survived: nothing tracked the sample sources.
 
 ## Measured rows (2026-10-20, twelfth session, loaded host)
 
