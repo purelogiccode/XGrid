@@ -13225,3 +13225,184 @@ GL policy frames `B6116DAE…` (menu) and `7A860ED7…` (triangle) with
 `51B56687…`/`F5D61C94…` (31.16 s, `rasterPsh` 10.84 s) and triangle
 `B45254CA…`/`7DAB63EB…` (10.49 s); ktest smoke PASS 7/7 at 792,800,535 steps
 with the 40,797-byte suite log `CA5D3867…`; suite 1624 -> **1625**.
+
+## 213 The fixed-function ("cheops FF") vertex stage, opt-in `--ffp`
+
+Compatibility gap 6 (fixed-function transform) is a real feature, not a decode:
+`xgu distance_fog_ffp` and `xgu spheremap_ffp` set
+`SET_TRANSFORM_EXECUTION_MODE` to FIXED (0) and upload their matrices into the
+XF constant context instead of loading a program. XGrid had no fixed-function
+vertex stage, so those draws ran whatever vertex program happened to be
+resident. The stage is now implemented from the reference
+(`xemu 0.8.137 hw/xbox/nv2a/pgraph/glsl/vsh-ff.c` + the `pgraph.c` method
+handlers) and gated behind a new opt-in switch.
+
+### 213a What landed
+
+- **`src/XGrid.Nv2a/FixedFunctionVertexState.cs`** - the latched registers:
+  `SET_LIGHT_CONTROL` (0x294: separate specular / local eye / alpha-from-material-
+  specular), `SET_COLOR_MATERIAL` (0x298: four two-bit material sources),
+  `SET_LIGHTING_ENABLE` (0x314), `SET_SKIN_MODE` (0x328), `SET_NORMALIZATION_ENABLE`
+  (0x3A4), `SET_SPECULAR_ENABLE` (0x3B8), `SET_LIGHT_ENABLE_MASK` (0x3BC),
+  `SET_TEXGEN_S/T/R/Q` (0x3C0/0x3C4/0x3C8/0x3CC, four stages at 0x10 stride) and
+  `SET_TEXTURE_MATRIX_ENABLE` (0x420..0x42C). Skinning mode maps to the
+  reference's matrix count / weight-summing table. Matrices, texgen planes,
+  texture matrices, eye position, fog plane and viewport scale/offset are *not*
+  duplicated: they already live in the shared XF constant context
+  (`NV_IGRAPH_XF_XFCTX_*` layout, constants 0x00 composite / 0x08 model-view /
+  0x0C inverse / 0x38 eye / 0x39 fog / 0x3A scale / 0x3B offset / 0x40 texgen
+  planes / 0x44 texture matrices).
+- **`src/XGrid.Nv2a/FixedFunctionVertex.cs`** - the stage. Row-vector convention
+  (`result[j] = dot(v, c[j])`, matching the reference's
+  `v * mat4(c0, c1, c2, c3)`); skinned tPosition/tNormal (1..4 matrices, the
+  summed-weight modes derive the last weight); normalization; texgen per stage
+  channel (DISABLE pass-through, EYE_LINEAR, OBJECT_LINEAR, SPHERE_MAP,
+  REFLECTION_MAP, NORMAL_MAP); the texture matrix; color selection (unlit
+  pass-through, specular-enable/separate-specular/alpha-from-material rules);
+  the eye-space fog distance; and the position epilogue (`w` through
+  `clampAwayZeroInf`, `xy /= w`, `+= VPOFF`, truncate to 1/16, `z` in
+  depth-buffer units, which the existing shared code then divides by the
+  zeta-format range).
+- **`Nv2AMmio`**: `FlushProgramDraw` runs the stage when the execution mode is
+  FIXED **and** the new `FixedFunctionTransform` switch is on; the draw no
+  longer needs a resident program in that mode. New diagnostics
+  `FixedFunctionDraws` / `FixedFunctionLitDraws` (both snapshotted, printed as
+  `fixedFn=` / `fixedFnLit=` on the NV2A draws line). Nv2a snapshot v5 -> **v6**.
+- **CLI** `--ffp` (+ usage line, + a one-line banner when on).
+
+### 213b Lighting: the material chain landed, the light loop did not (measured)
+
+`FixedFunctionVertex`'s lit branch now runs the reference's material chain
+(`vsh-ff.c`): the ambient source selects the base color
+(MATERIAL = the scene-ambient register, DIFFUSE/SPECULAR = the vertex
+attributes), `oD0.rgb *= materialEmission` and then the emission source is added
+(same three-way selection), the alpha comes from the diffuse source (MATERIAL ->
+`SET_MATERIAL_ALPHA`, SPECULAR -> `v4.a`, DIFFUSE -> `v3.a`), and `oD1` starts as
+`(0,0,0,v4.a)` before the usual specular rules. The colors are latched from
+`SET_SCENE_AMBIENT_COLOR` (0xA10..0xA18), `SET_MATERIAL_EMISSION`
+(0x3A8..0x3B0) and `SET_MATERIAL_ALPHA` (0x3B4).
+
+**The enabled-light loop is still missing** (infinite/local/spot with
+attenuation, the spot cone, and `reconstruct_specular_power` over
+`SET_SPECULAR_PARAMS`). A lit draw with any enabled light keeps the material
+chain without the light terms and increments the new
+`FixedFunctionLightedDraws` (`fixedFnLights=` on the CLI line), so the residual
+gap is measured rather than silent.
+
+**Every lit draw measured so far has all lights off** - `fixedFnLights=0` on both
+gate titles and on both `xgu *_ffp` rows, `fixedFnLit=39` on each - and the
+landing is **behavior-neutral on every gate and corpus leg**: triangle 1B
+`--ffp` RAM/CPU/frame identical (`B45254CA` / `7DAB63EB` / `A1740DE0`), menu 1B
+`--ffp` identical (`87BF40DA` / `F5D61C94`, 375,569,329 px, frame `C5B734A2`),
+`spheremap_ffp` / `distance_fog_ffp` flags-on identical (RAM `8062CFB5` /
+`12BAD517`, frames `354C7975` / `7EFCC9B3`). So the slice is verified as
+*semantically* correct and *observably* neutral: those 39 draws do not survive
+depth/clip into the captured frame either way.
+
+### 213c The dashboard really mixes both paths - that is why this is opt-in
+
+At 1B the dashboard issues **22,207** fixed-function draws (accurate) /
+**22,208** (fast) out of 33,632; the triangle issues 39. Mode-0 draws used to
+run the last-loaded program (a leftover from the boot animation), so switching
+them to the reference's fixed-function stage changes what the dashboard
+renders. Measured on H1, 1B, `--gpu sw --jit --jit-threshold 16 --jit-spin
+--jit-raw`:
+
+| leg | flag off | flag on (`--ffp`) |
+|---|---|---|
+| menu, `raster-leg -Workload menu` | RAM `51B56687` / CPU `F5D61C94`, 253,998,498 px, `rasterPsh` 10.75 s, wall 30.9 s | RAM `87BF40DA` / **CPU `F5D61C94`**, 375,569,329 px, `fixedFn=22208`, wall 59.0 s |
+| triangle, `raster-leg -Workload tri` | RAM `B45254CA` / CPU `7DAB63EB`, 57,663,082 px, blended 390, culled 41,035, wall 10.4 s | **RAM `B45254CA` / CPU `7DAB63EB`** (identical), 78,792,545 px, blended 20,181,852, culled 40,802, wall 14.6 s |
+| triangle 1B frame (`--frame`) | `A1740DE0...` (gate anchor) | **`A1740DE0...` (byte-identical)** |
+
+The guest CPU SHA never moves on any leg - the stage only changes which pixels
+the 3D pipeline writes. On the triangle even the RAM SHA and the exported gate
+frame are identical; only host-side counters move (the 39 lit draws now raster
+78.8M - 57.7M px that later draws overwrite). On the dashboard the picture does
+change: the FFP draws are the menu's animated background layer. Its scanout leg
+(`--frame-scanout`) is a clean EvolutionX background (soft blue sphere + logo),
+i.e. the transform places coherent geometry; the *flipped* surface shows that
+layer composed over the boot-logo screen left in the other buffer, which is the
+double-buffering §208 already documents. There is **no oracle frame** for those
+dashboard draws, so the default path stays byte-identical and the flag stays
+opt-in (the same policy as `--tex-filter registers`). Mounted cost when on:
++28 s per 1B menu steps (the 121M extra fragments are real work).
+
+**Blast radius across the corpus (1B, `-Corpus` and `-Corpus -Ffp`, 13 rows).**
+Every row boots through the same dashboard, so its boot animation is
+fixed-function: with `--ffp` all 13 rows change RAM (e.g. `gamma`
+`4EE18F78` -> `FC56207C`, `led` `3D1F72DB` -> `9FA585E6`) and pixels
+(41,995,882 -> 63,125,345) at +3.5-4 s wall, while **every CPU SHA and every
+frame/scanout/display SHA is identical** (all rows are still in the boot
+animation at 1B, so they present the same frame). The flag-off sweep reproduces
+every documented 1B row anchor exactly (`gamma` `4EE18F78`, `hello` `4650454F`,
+`led` `3D1F72DB`, `mesh` `D6A41BAC`, `xaudio` `B0C863C5`), which is the
+regression evidence for the landing.
+
+### 213d Corpus rows: gap 6 is closed under the flag
+
+`scripts/boot-to-first-frame.ps1 -Sample <name> -Steps 3000000000 [-Ffp]`
+(the harness gained `-Ffp`; the tag and the recorded command carry it):
+
+| row | flag off | flag on |
+|---|---|---|
+| `xgu-spheremap_ffp` | 2 colours, mean (0.0, 0.0, 252.0), 42.2M px, RAM `B5747761`, CPU `F0075C2F` | **7,358 colours**, mean (27.8, 16.3, 163.1), 4.9 % black, 70.2M px, RAM `8062CFB5`, **CPU `F0075C2F`** |
+| `xgu-distance_fog_ffp` | 26 colours, mean (156.0, 49.0, 28.0), 42.0M px, RAM `AFF08085`, CPU `571363B4` | **7,601 colours**, mean (129.4, 50.2, 37.4), 0 % black, 84.2M px, RAM `12BAD517`, **CPU `571363B4`** |
+
+The flag-off rows reproduce the previously recorded anchors exactly
+(`B5747761` / `AFF08085`, CPU SHAs identical), which pins both legs. Frames:
+`wt-data/btff/<sample>-sw-last.bmp` (off) vs `<sample>-sw-ffp-last.bmp` (on).
+The sphere-map sample renders its environment-mapped sphere and the fog sample
+a coherent fogged room - both were flat backgrounds before. No reference
+screenshot covers these two rows (the xgu repo ships none), so the images are
+evidence of structure, not of exact color.
+
+The stage is backend-agnostic (the GL backend consumes the same transformed
+vertices): `xgu spheremap_ffp` at 3B with `--ffp --gpu gl --gpu-replace` renders
+mean (27.4, 16.0, 163.0) / 7,370 colours against the software leg's
+(27.8, 16.3, 163.1) / 7,358 - a normal edge-band policy difference with
+`BackendUnsupported=0` and `unsupported=0`.
+
+### 213e Tests
+
+`tests/XGrid.Nv2a.Tests/Nv2aFixedFunctionTests.cs` (+33): the position epilogue
+(composite-only transform with a decoy model-view matrix, 1/16 truncation, the
+`clampAwayZeroInf` zero-w case, the perspective divide), every texgen mode
+(disabled/eye-linear/object-linear/sphere-map twice/reflection/normal-map),
+the texture matrix, the unlit color path + specular rules, the lit material chain
+(ambient/emission sources and the alpha rule, unit + on the surface), radial/planar
+fog distances, both skinning weight modes and the skinned composite path, the
+register decoders, a snapshot round-trip, and the device-level draws (the opt-in
+gate, the rendered object-space triangle with its viewport-offset control, and
+the lit/lighted counters). Suite 1625 -> **1662** (with §214's four zeta tests).
+
+### 213f Open item handed back
+
+The operator decision on the flag's default: enabling it moves the dashboard's
+fast/accurate menu RAM anchors and the menu frame; it leaves both triangle
+anchors and the triangle frame byte-identical. The only missing oracle is a
+reference frame for the dashboard's fixed-function background layer
+(compatibility gap 9's second-emulator frame would settle it).
+
+## 214 The Z24S8 clear-word layout is verified, not a defect (§211f closed)
+
+§211f filed a suspected defect: `pgraph_get_clear_depth_stencil_value`
+(`pgraph.c:3104`) reads a Z24S8 clear word as **depth = `word >> 8`, stencil =
+`word & 0xFF`**, and the filing read XGrid as masking the depth to the low 24
+bits and taking the stencil from the high byte. Re-reading every consumer shows
+the current code already matches the reference, and it is now pinned by
+`tests/XGrid.Nv2a.Tests/Nv2aZetaClearLayoutTests.cs` (+4):
+
+| consumer | reading |
+|---|---|
+| `FillSurface` (zeta clear store) | stores the clear word verbatim, so the *stored* word is `depth << 8 \| stencil` by construction |
+| `WriteZeta` (fragment store) | `(depthBits << 8) \| newStencil` |
+| depth compare / stencil read | `(storedZeta >> 8) & 0xFFFFFF` and `storedZeta & 0xFF` |
+| `GlStateMapper.MapZetaClear` (GL backend clear) | `depth = ((word >> 8) & 0xFFFFFF) / 16777215`, `stencil = word & 0xFF` |
+
+Evidence: a Z24S8 clear of `0x00711174` stores that word at every cleared texel;
+a stencil test (`EQUAL`) against ref `0x74` draws and against ref `0x00` is
+rejected (a high-byte reading would invert both); a zpass `REPLACE` writes the
+reference into the low byte while the depth field is untouched. The gate titles'
+`0xFFFFFF00` clear is depth 1.0 under either reading and stencil `0x00`, which is
+exactly why no gate anchor could ever have caught this - the differential had to
+be synthetic. No product code changed.

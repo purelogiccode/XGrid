@@ -97,6 +97,7 @@ internal static class Program
         bool idleSkip = false;
         bool idleSkipProbe = false;
         string texFilter = "legacy";
+        bool fixedFunction = false;
         bool fetchFast = false;
         bool decodeCache = true;
         bool decodeVerify = false;
@@ -274,6 +275,9 @@ internal static class Program
                 case "--idle-skip-probe":
                     idleSkipProbe = true;
                     break;
+                case "--ffp":
+                    fixedFunction = true;
+                    break;
                 case "--tex-filter":
                     texFilter = NextValue(args, ref i);
                     if (texFilter is not ("legacy" or "registers"))
@@ -432,8 +436,15 @@ internal static class Program
             machine.Nv2A.CollectMethodHistogram = false;
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             machine.Nv2A.TextureFilterRegisters = string.Equals(texFilter, "registers", StringComparison.Ordinal);
+            machine.Nv2A.FixedFunctionTransform = fixedFunction;
             Console.WriteLine(
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
+            if (fixedFunction)
+            {
+                Console.WriteLine(
+                    "Fixed-function vertex stage=on (SET_TRANSFORM_EXECUTION_MODE FIXED draws; lighting falls back to unlit)");
+            }
+
             if (!string.Equals(texFilter, "legacy", StringComparison.Ordinal))
             {
                 Console.WriteLine(
@@ -2132,7 +2143,9 @@ internal static class Program
             $"culled={machine.Nv2A.TrianglesCulled} " +
             $"frames={machine.Nv2A.FramesPresented} stalls={machine.Nv2A.FlipStalls} " +
             $"programLoad={machine.Nv2A.TransformProgramLoadDebug} constLoad={machine.Nv2A.TransformConstantLoadDebug} " +
-            $"inlineElements={machine.Nv2A.InlineElementCount}");
+            $"inlineElements={machine.Nv2A.InlineElementCount} " +
+            $"fixedFn={machine.Nv2A.FixedFunctionDraws} fixedFnLit={machine.Nv2A.FixedFunctionLitDraws} " +
+            $"fixedFnLights={machine.Nv2A.FixedFunctionLightedDraws}");
         if (machine.Nv2A.RasterTimingEnabled)
         {
             Console.WriteLine(
@@ -2809,7 +2822,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");
