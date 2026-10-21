@@ -14,6 +14,7 @@
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample triangle
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample dashboard -Gpu gl -GpuReplace
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-spheremap_ffp -Ffp   # fixed-function vertex stage
+#   pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -TexFilter registers
 #   pwsh -File scripts/boot-to-first-frame.ps1 -All
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Corpus          # every staged nxdk sample
 #   pwsh -File scripts/boot-to-first-frame.ps1 -Iso path\to\x.iso   # any loose ISO
@@ -31,6 +32,7 @@ param(
     [switch]$GpuReplace,
     [switch]$NoFast,
     [switch]$Ffp,
+    [ValidateSet("legacy", "registers")][string]$TexFilter = "legacy",
     [switch]$All,
     [switch]$Corpus,
     [string]$IsoPath = "",
@@ -111,7 +113,7 @@ function Resolve-Sample([string]$name) {
 function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     $spec = Resolve-Sample $name
     $expectNoFrame = $name -eq "ktest"
-    $tag = "$name-$gpu$(if ($replace) { '-replace' } else { '' })$(if ($Ffp) { '-ffp' } else { '' })"
+    $tag = "$name-$gpu$(if ($replace) { '-replace' } else { '' })$(if ($Ffp) { '-ffp' } else { '' })$(if ($TexFilter -eq 'registers') { '-reg' } else { '' })"
     $log = Join-Path $OutDir "$tag.log"
     $firstBmp = Join-Path $OutDir "$tag-first.bmp"
     $lastBmp = Join-Path $OutDir "$tag-last.bmp"
@@ -127,6 +129,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
     ) + $spec.Media
     if (-not $NoFast) { $argv += @("--jit", "--jit-threshold", "16", "--jit-spin", "--jit-raw") }
     if ($Ffp) { $argv += "--ffp" }
+    if ($TexFilter -ne "legacy") { $argv += @("--tex-filter", $TexFilter) }
     $argv += @("--steps", "$($spec.Steps)", "--gpu", $gpu, "--frame", $lastBmp, "--frame-first", $firstBmp,
         "--frame-scanout", $scanBmp, "--frame-display", $displayBmp, "--bench", "--bench-name", $tag)
     if ($replace) { $argv += "--gpu-replace" }
@@ -195,7 +198,7 @@ function Run-Sample([string]$name, [string]$gpu, [bool]$replace) {
                          "--eeprom $FirmwareDir\eeprom.bin " + ($spec.Media -join " ") +
                          $(if (-not $NoFast) { " --jit --jit-threshold 16 --jit-spin --jit-raw" } else { "" }) +
                          " --steps $steps --gpu $gpu" + $(if ($replace) { " --gpu-replace" } else { "" }) +
-                         $(if ($Ffp) { " --ffp" } else { "" })
+                         $(if ($Ffp) { " --ffp" } else { "" }) + $(if ($TexFilter -ne "legacy") { " --tex-filter $TexFilter" } else { "" })
     }
 
     $record | ConvertTo-Json | Set-Content $json

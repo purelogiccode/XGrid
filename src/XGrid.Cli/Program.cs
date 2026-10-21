@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using XGrid.Bus.Net;
+using XGrid.Bus.Smbus;
 using XGrid.Bus.Usb;
 using XGrid.Core.Diagnostics;
 using XGrid.Cpu;
@@ -80,6 +81,7 @@ internal static class Program
         ulong eipHistInterval = 0;
         string? ramDumpPath = null;
         string? raminPath = null;
+        string? eepromOutPath = null;
         string? saveStatePath = null;
         ulong saveAt = 0;
         bool hasSaveAt = false;
@@ -228,6 +230,9 @@ internal static class Program
                     break;
                 case "--ramin":
                     raminPath = NextValue(args, ref i);
+                    break;
+                case "--eeprom-out":
+                    eepromOutPath = NextValue(args, ref i);
                     break;
                 case "--save-state":
                     saveStatePath = NextValue(args, ref i);
@@ -1031,6 +1036,17 @@ internal static class Program
                 byte[] ramin = machine.Nv2A.PraminSnapshot();
                 File.WriteAllBytes(raminPath, ramin);
                 Console.WriteLine($"PRAMIN {raminPath} {ramin.Length} bytes");
+            }
+
+            if (eepromOutPath is not null)
+            {
+                // The guest rewrites the EEPROM through the SMBus (video mode,
+                // language, region); write the live image so a later run can
+                // boot with the user's settings.
+                byte[] eeprom = new byte[Eeprom24C02.Size];
+                machine.CopyEeprom(eeprom);
+                File.WriteAllBytes(eepromOutPath, eeprom);
+                Console.WriteLine($"EEPROM {eepromOutPath} {eeprom.Length} bytes");
             }
 
             if (fbPath is not null)
@@ -2822,7 +2838,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

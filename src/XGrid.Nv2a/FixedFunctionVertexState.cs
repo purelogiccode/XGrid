@@ -24,8 +24,37 @@ public sealed class FixedFunctionVertexState
     /// <summary>Texgen channels per stage (S, T, R, Q).</summary>
     public const int TexGenChannels = 4;
 
+    /// <summary>Number of fixed-function light sources.</summary>
+    public const int LightCount = 8;
+
+    /// <summary>Byte distance between two light blocks in the <c>SET_LIGHT_*</c> window.</summary>
+    public const uint LightStride = 0x80u;
+
+    /// <summary>First method of the <c>SET_LIGHT_AMBIENT_COLOR</c> window (8 lights x 32 words).</summary>
+    public const uint LightConstantBase = 0x1000u;
+
+    /// <summary>First method of the <c>SET_SPECULAR_PARAMS</c> range (6 words).</summary>
+    public const uint SpecularParamsBase = 0x09E0u;
+
     private readonly int[] _texGen = new int[TextureSlots * TexGenChannels];
     private readonly bool[] _textureMatrixEnable = new bool[TextureSlots];
+
+    // Per-light registers (xemu pgraph.c NV097_SET_LIGHT_* handlers): the
+    // ambient/diffuse/specular colors live in ltctxb, the spot falloff and
+    // direction in ltctxa, the local range in ltc1; the infinite half vector,
+    // infinite direction, local position and local attenuation are plain
+    // per-light arrays in the reference.
+    private readonly float[] _lightAmbient = new float[LightCount * 3];
+    private readonly float[] _lightDiffuse = new float[LightCount * 3];
+    private readonly float[] _lightSpecular = new float[LightCount * 3];
+    private readonly float[] _lightLocalRange = new float[LightCount];
+    private readonly float[] _lightInfiniteHalfVector = new float[LightCount * 3];
+    private readonly float[] _lightInfiniteDirection = new float[LightCount * 3];
+    private readonly float[] _lightSpotFalloff = new float[LightCount * 3];
+    private readonly float[] _lightSpotDirection = new float[LightCount * 4];
+    private readonly float[] _lightLocalPosition = new float[LightCount * 3];
+    private readonly float[] _lightLocalAttenuation = new float[LightCount * 3];
+    private readonly float[] _specularParams = new float[6];
 
     /// <summary>True when <c>SET_LIGHTING_ENABLE</c> selects the lighting path.</summary>
     public bool Lighting { get; set; }
@@ -75,6 +104,185 @@ public sealed class FixedFunctionVertexState
 
     /// <summary>Material alpha (<c>SET_MATERIAL_ALPHA</c>): the oD0 alpha when the diffuse source is MATERIAL.</summary>
     public float MaterialAlpha { get; set; }
+
+    /// <summary>
+    /// Reconstructed specular exponent from <c>SET_SPECULAR_PARAMS</c>
+    /// (xemu <c>reconstruct_specular_power</c>, recomputed when the sixth word
+    /// arrives). Zero until the guest uploads the curve.
+    /// </summary>
+    public float SpecularPower { get; private set; }
+
+    /// <summary>
+    /// The light type of one source, from the two bits
+    /// <c>SET_LIGHT_ENABLE_MASK</c> holds for it (0 = off, 1 = infinite,
+    /// 2 = local, 3 = spot).
+    /// </summary>
+    /// <param name="light">Light index (0..7).</param>
+    public int GetLightType(int light)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(light);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(light, LightCount);
+        return (int)((LightEnableMask >> (light * 2)) & 3u);
+    }
+
+    /// <summary>One light's ambient color (<c>SET_LIGHT_AMBIENT_COLOR</c>), three floats.</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightAmbient(int light) =>
+        _lightAmbient.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's diffuse color (<c>SET_LIGHT_DIFFUSE_COLOR</c>), three floats.</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightDiffuse(int light) =>
+        _lightDiffuse.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's specular color (<c>SET_LIGHT_SPECULAR_COLOR</c>), three floats.</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightSpecular(int light) =>
+        _lightSpecular.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's local range (<c>SET_LIGHT_LOCAL_RANGE</c>).</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public float GetLightLocalRange(int light)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(light);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(light, LightCount);
+        return _lightLocalRange[light];
+    }
+
+    /// <summary>One light's infinite half vector (<c>SET_LIGHT_INFINITE_HALF_VECTOR</c>).</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightInfiniteHalfVector(int light) =>
+        _lightInfiniteHalfVector.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's infinite direction (<c>SET_LIGHT_INFINITE_DIRECTION</c>).</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightInfiniteDirection(int light) =>
+        _lightInfiniteDirection.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's spot falloff (<c>SET_LIGHT_SPOT_FALLOFF</c>), the reference's unused <c>ltctxa[L0_K]</c>.</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightSpotFalloff(int light) =>
+        _lightSpotFalloff.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's spot direction (<c>SET_LIGHT_SPOT_DIRECTION</c>): xyz + the cone cosine word.</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightSpotDirection(int light) =>
+        _lightSpotDirection.AsSpan(CheckedLightBase(light, 4), 4);
+
+    /// <summary>One light's local position (<c>SET_LIGHT_LOCAL_POSITION</c>).</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightLocalPosition(int light) =>
+        _lightLocalPosition.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>One light's local attenuation constants (<c>SET_LIGHT_LOCAL_ATTENUATION</c>).</summary>
+    /// <param name="light">Light index (0..7).</param>
+    public ReadOnlySpan<float> GetLightLocalAttenuation(int light) =>
+        _lightLocalAttenuation.AsSpan(CheckedLightBase(light, 3), 3);
+
+    /// <summary>The raw <c>SET_SPECULAR_PARAMS</c> curve words (6 floats).</summary>
+    public ReadOnlySpan<float> GetSpecularParams() => _specularParams;
+
+    private static int CheckedLightBase(int light, int width)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(light);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(light, LightCount);
+        return light * width;
+    }
+
+    /// <summary>
+    /// Latches one word of the <c>SET_LIGHT_*</c> window
+    /// (<c>SET_LIGHT_AMBIENT_COLOR</c> .. +8*32 words), decoding the light index
+    /// and the within-light offset exactly like the reference handler.
+    /// </summary>
+    /// <param name="method">Method offset.</param>
+    /// <param name="parameter">Raw method parameter.</param>
+    /// <returns>True when the method belongs to the light window.</returns>
+    public bool TrySetLightMethod(uint method, uint parameter)
+    {
+        if (method < LightConstantBase || method >= LightConstantBase + (LightCount * LightStride))
+        {
+            return false;
+        }
+
+        uint relative = method - LightConstantBase;
+        int light = (int)(relative / LightStride);
+        uint offset = relative % LightStride;
+        float value = BitConverter.UInt32BitsToSingle(parameter);
+
+        // The within-light layout mirrors the reference method window
+        // (NV097_SET_LIGHT_* offsets): three-word colors, then the single-word
+        // range, the three-word vectors, the four-word spot direction and the
+        // 0x74..0x7C padding.
+        if (offset <= 0x08)
+        {
+            _lightAmbient[(light * 3) + (int)(offset / 4u)] = value;
+        }
+        else if (offset >= 0x0C && offset <= 0x14)
+        {
+            _lightDiffuse[(light * 3) + (int)((offset - 0x0C) / 4u)] = value;
+        }
+        else if (offset >= 0x18 && offset <= 0x20)
+        {
+            _lightSpecular[(light * 3) + (int)((offset - 0x18) / 4u)] = value;
+        }
+        else if (offset == 0x24)
+        {
+            _lightLocalRange[light] = value;
+        }
+        else if (offset >= 0x28 && offset <= 0x30)
+        {
+            _lightInfiniteHalfVector[(light * 3) + (int)((offset - 0x28) / 4u)] = value;
+        }
+        else if (offset >= 0x34 && offset <= 0x3C)
+        {
+            _lightInfiniteDirection[(light * 3) + (int)((offset - 0x34) / 4u)] = value;
+        }
+        else if (offset >= 0x40 && offset <= 0x48)
+        {
+            _lightSpotFalloff[(light * 3) + (int)((offset - 0x40) / 4u)] = value;
+        }
+        else if (offset >= 0x4C && offset <= 0x58)
+        {
+            _lightSpotDirection[(light * 4) + (int)((offset - 0x4C) / 4u)] = value;
+        }
+        else if (offset >= 0x5C && offset <= 0x64)
+        {
+            _lightLocalPosition[(light * 3) + (int)((offset - 0x5C) / 4u)] = value;
+        }
+        else if (offset >= 0x68 && offset <= 0x70)
+        {
+            _lightLocalAttenuation[(light * 3) + (int)((offset - 0x68) / 4u)] = value;
+        }
+
+        // 0x74..0x7C are padding/no light property: ignored like the
+        // reference's default case (which asserts in debug builds).
+        return true;
+    }
+
+    /// <summary>
+    /// Latches one word of <c>SET_SPECULAR_PARAMS</c> and recomputes
+    /// <see cref="SpecularPower"/> when the sixth word arrives (reference
+    /// <c>SET_SPECULAR_PARAMS</c> handler).
+    /// </summary>
+    /// <param name="method">Method offset.</param>
+    /// <param name="parameter">Raw method parameter.</param>
+    /// <returns>True when the method belongs to the parameter range.</returns>
+    public bool TrySetSpecularParams(uint method, uint parameter)
+    {
+        if (method < SpecularParamsBase || method >= SpecularParamsBase + 24u)
+        {
+            return false;
+        }
+
+        int slot = (int)((method - SpecularParamsBase) / 4u);
+        _specularParams[slot] = BitConverter.UInt32BitsToSingle(parameter);
+        if (slot == 5)
+        {
+            SpecularPower = SpecularPowerCurve.Reconstruct(_specularParams);
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Number of model-view matrices the skinning mode blends (0 for
@@ -177,6 +385,18 @@ public sealed class FixedFunctionVertexState
         MaterialAlpha = 0f;
         Array.Clear(_texGen);
         Array.Clear(_textureMatrixEnable);
+        Array.Clear(_lightAmbient);
+        Array.Clear(_lightDiffuse);
+        Array.Clear(_lightSpecular);
+        Array.Clear(_lightLocalRange);
+        Array.Clear(_lightInfiniteHalfVector);
+        Array.Clear(_lightInfiniteDirection);
+        Array.Clear(_lightSpotFalloff);
+        Array.Clear(_lightSpotDirection);
+        Array.Clear(_lightLocalPosition);
+        Array.Clear(_lightLocalAttenuation);
+        Array.Clear(_specularParams);
+        SpecularPower = 0f;
     }
 
     /// <summary>Writes the state to a snapshot stream.</summary>
@@ -216,6 +436,19 @@ public sealed class FixedFunctionVertexState
         {
             writer.Write(_textureMatrixEnable[i]);
         }
+
+        WriteFloats(writer, _lightAmbient);
+        WriteFloats(writer, _lightDiffuse);
+        WriteFloats(writer, _lightSpecular);
+        WriteFloats(writer, _lightLocalRange);
+        WriteFloats(writer, _lightInfiniteHalfVector);
+        WriteFloats(writer, _lightInfiniteDirection);
+        WriteFloats(writer, _lightSpotFalloff);
+        WriteFloats(writer, _lightSpotDirection);
+        WriteFloats(writer, _lightLocalPosition);
+        WriteFloats(writer, _lightLocalAttenuation);
+        WriteFloats(writer, _specularParams);
+        writer.Write(SpecularPower);
     }
 
     /// <summary>Reads the state from a snapshot stream.</summary>
@@ -254,6 +487,35 @@ public sealed class FixedFunctionVertexState
         for (int i = 0; i < _textureMatrixEnable.Length; i++)
         {
             _textureMatrixEnable[i] = reader.ReadBoolean();
+        }
+
+        ReadFloats(reader, _lightAmbient);
+        ReadFloats(reader, _lightDiffuse);
+        ReadFloats(reader, _lightSpecular);
+        ReadFloats(reader, _lightLocalRange);
+        ReadFloats(reader, _lightInfiniteHalfVector);
+        ReadFloats(reader, _lightInfiniteDirection);
+        ReadFloats(reader, _lightSpotFalloff);
+        ReadFloats(reader, _lightSpotDirection);
+        ReadFloats(reader, _lightLocalPosition);
+        ReadFloats(reader, _lightLocalAttenuation);
+        ReadFloats(reader, _specularParams);
+        SpecularPower = reader.ReadSingle();
+    }
+
+    private static void WriteFloats(BinaryWriter writer, float[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            writer.Write(values[i]);
+        }
+    }
+
+    private static void ReadFloats(BinaryReader reader, float[] values)
+    {
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = reader.ReadSingle();
         }
     }
 }

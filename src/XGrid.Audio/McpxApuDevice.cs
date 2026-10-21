@@ -68,6 +68,11 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint VpVoiceOn = 0x20124;
     private const uint VpVoiceOff = 0x20128;
 
+    // The EP frame counter register and the mixed samples it counts per frame
+    // (xemu apu_regs.h NV_PAPU_XGSCNT / NUM_SAMPLES_PER_FRAME).
+    private const uint XgsCnt = 0x200C;
+    private const uint SamplesPerFrame = 32;
+
     private const uint GpRst = 0x3FFFC;
     private const uint EpRst = 0x5FFFC;
     private const uint DspRunBits = 0x3u;
@@ -712,6 +717,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             // xemu's VP does not simulate the PIO queue and always reports it empty.
             VpPioFree => PioFreeCount,
+            // The EP frame counter, in mixed samples (xemu apu.c:
+            // ep_frame_div * NUM_SAMPLES_PER_FRAME). The guest watches it as a
+            // playback clock, so it must advance with the frame divider.
+            XgsCnt => _epFrameDiv * SamplesPerFrame,
             < WindowSize => _regs[offset >> 2],
             _ => 0,
         };

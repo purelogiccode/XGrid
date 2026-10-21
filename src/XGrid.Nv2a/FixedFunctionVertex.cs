@@ -23,13 +23,12 @@ namespace XGrid.Nv2a;
 /// <c>result[j] = dot(v, c[j])</c>.
 /// </para>
 /// <para>
-/// Lighting (<c>SET_LIGHTING_ENABLE</c>): the material chain is implemented
-/// (ambient source + material emission product + emission source + the
-/// <c>oD1</c> alpha rule), which is exactly what the reference reduces to when
-/// no light is enabled. The enabled-light loop (infinite/local/spot,
-/// attenuation, spot cone, specular power) is not: a lit draw with any enabled
-/// light keeps the chain without the light terms and is counted in
-/// <see cref="Nv2AMmio.FixedFunctionLightedDraws"/> so the gap stays measured.
+/// Lighting (<c>SET_LIGHTING_ENABLE</c>): the material chain (ambient source +
+/// material emission product + emission source + the <c>oD1</c> alpha rule)
+/// and the enabled-light loop (infinite/local/spot, distance attenuation, the
+/// spot cone, the reconstructed specular exponent and the material-source
+/// selection of the diffuse/specular terms) are implemented, transcribed from
+/// the reference's <c>vsh-ff.c</c> lit branch.
 /// </para>
 /// </remarks>
 public static class FixedFunctionVertex
@@ -58,6 +57,19 @@ public static class FixedFunctionVertex
     /// <summary><c>NV097_SET_TEXGEN_*_NORMAL_MAP</c>.</summary>
     public const uint TexGenNormalMap = 0x8511u;
 
+    // SET_LIGHT_ENABLE_MASK light types (xemu vsh_regs.h VshLight).
+    /// <summary>The light is disabled.</summary>
+    public const int LightOff = 0;
+
+    /// <summary>A directional (infinite) light.</summary>
+    public const int LightInfinite = 1;
+
+    /// <summary>A positional (local) light with distance attenuation.</summary>
+    public const int LightLocal = 2;
+
+    /// <summary>A positional light restricted to a cone.</summary>
+    public const int LightSpot = 3;
+
     // SET_COLOR_MATERIAL source selectors (xemu vsh_regs.h MaterialColorSource).
     /// <summary>Material color source: the material color registers.</summary>
     public const int MaterialColorSourceMaterial = 0;
@@ -72,6 +84,7 @@ public static class FixedFunctionVertex
     private const int CompositeMatrix = 0x00;
     private const int ModelViewMatrix = 0x08;
     private const int InverseModelViewMatrix = 0x0C;
+    private const int EyePosition = 0x38;
     private const int FogPlane = 0x39;
     private const int ViewportOffset = 0x3B;
     private const int TexGenPlane = 0x40;
@@ -206,6 +219,35 @@ public static class FixedFunctionVertex
             {
                 outputs[7][i] = inputs[7][i];
                 outputs[8][i] = inputs[8][i];
+            }
+
+            // The eye-space view vector the reference derives once when
+            // SET_LIGHT_CONTROL_LOCALEYE is set, shared by every light.
+            Span<float> view = stackalloc float[3];
+            if (state.LocalEye)
+            {
+                ComputeView(constants[EyePosition], eye, view);
+            }
+
+            for (int light = 0; light < FixedFunctionVertexState.LightCount; light++)
+            {
+                int type = state.GetLightType(light);
+                if (type == LightOff)
+                {
+                    continue;
+                }
+
+                ApplyLight(
+                    state,
+                    light,
+                    type,
+                    outputs[3],
+                    outputs[4],
+                    eyeNormal,
+                    eye,
+                    view,
+                    inputs[3],
+                    inputs[4]);
             }
         }
 
@@ -365,13 +407,171 @@ public static class FixedFunctionVertex
         result[2] = incident[2] - (2f * dot * normal[2]);
     }
 
-    private static void Normalize(Span<float> value)
+    /// <summary>
+    /// Eye-space view vector for the per-vertex specular term (reference
+    /// <c>normalize(eyePosition.xyz / eyePosition.w - tPosition.xyz / tPosition.w)</c>).
+    /// </summary>
+    private static void ComputeView(ReadOnlySpan<float> eyePosition, ReadOnlySpan<float> eye, Span<float> view)
+    {
+        float invEyeW = 1f / eyePosition[3];
+        float invPositionW = 1f / eye[3];
+        view[0] = (eyePosition[0] * invEyeW) - (eye[0] * invPositionW);
+        view[1] = (eyePosition[1] * invEyeW) - (eye[1] * invPositionW);
+        view[2] = (eyePosition[2] * invEyeW) - (eye[2] * invPositionW);
+        Normalize3(view);
+    }
+
+    /// <summary>
+    /// Adds one enabled light's ambient/diffuse/specular terms to the lit
+    /// outputs, transcribed from the reference's light loop
+    /// (<c>xemu vsh-ff.c</c>): infinite lights use the uploaded direction and
+    /// half vector, local/spot lights use the eye-space light position with
+    /// distance attenuation and are skipped outside their range, and a spot
+    /// light additionally scales by the cone falloff.
+    /// </summary>
+    private static void ApplyLight(
+        FixedFunctionVertexState state,
+        int light,
+        int type,
+        Span<float> diffuseOutput,
+        Span<float> specularOutput,
+        ReadOnlySpan<float> normal,
+        ReadOnlySpan<float> eye,
+        ReadOnlySpan<float> view,
+        ReadOnlySpan<float> diffuseAttribute,
+        ReadOnlySpan<float> specularAttribute)
+    {
+        Span<float> direction = stackalloc float[3];
+        Span<float> halfVector = stackalloc float[3];
+        float attenuation = 1f;
+        float nDotVP;
+        float nDotHV;
+
+        if (type is LightLocal or LightSpot)
+        {
+            ReadOnlySpan<float> lightPosition = state.GetLightLocalPosition(light);
+            float invPositionW = 1f / eye[3];
+            direction[0] = lightPosition[0] - (eye[0] * invPositionW);
+            direction[1] = lightPosition[1] - (eye[1] * invPositionW);
+            direction[2] = lightPosition[2] - (eye[2] * invPositionW);
+            float distance = MathF.Sqrt(
+                (direction[0] * direction[0]) + (direction[1] * direction[1]) +
+                (direction[2] * direction[2]));
+            if (distance > state.GetLightLocalRange(light))
+            {
+                return;
+            }
+
+            Normalize3(direction);
+            ReadOnlySpan<float> constants = state.GetLightLocalAttenuation(light);
+            attenuation = 1f /
+                          (constants[0] + (constants[1] * distance) +
+                           (constants[2] * distance * distance));
+
+            // halfVector = normalize(VPeye or (0,0,0) + VP); the reference
+            // normalizes VP again in the no-local-eye case.
+            for (int i = 0; i < 3; i++)
+            {
+                halfVector[i] = state.LocalEye ? view[i] + direction[i] : direction[i];
+            }
+
+            Normalize3(halfVector);
+            nDotVP = MathF.Max(0f, Dot3(normal, direction));
+            nDotHV = MathF.Max(0f, Dot3(normal, halfVector));
+
+            if (type == LightSpot)
+            {
+                ReadOnlySpan<float> spot = state.GetLightSpotDirection(light);
+                float invScale = 1f / MathF.Sqrt(
+                    (spot[0] * spot[0]) + (spot[1] * spot[1]) + (spot[2] * spot[2]));
+                float cosHalfPhi = -invScale * spot[3];
+                float cosHalfTheta = invScale + cosHalfPhi;
+                float spotDirDotVP = (spot[0] * direction[0]) + (spot[1] * direction[1]) +
+                                     (spot[2] * direction[2]);
+                float rho = invScale * spotDirDotVP;
+                if (rho > cosHalfTheta)
+                {
+                    // Inside the full-intensity cone: attenuation unchanged.
+                }
+                else if (rho <= cosHalfPhi)
+                {
+                    attenuation = 0f;
+                }
+                else
+                {
+                    attenuation *= spotDirDotVP + spot[3];
+                }
+            }
+        }
+        else
+        {
+            ReadOnlySpan<float> infinite = state.GetLightInfiniteDirection(light);
+            direction[0] = infinite[0];
+            direction[1] = infinite[1];
+            direction[2] = infinite[2];
+            Normalize3(direction);
+            nDotVP = MathF.Max(0f, Dot3(normal, direction));
+            if (state.LocalEye)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    halfVector[i] = direction[i] + view[i];
+                }
+
+                Normalize3(halfVector);
+                nDotHV = MathF.Max(0f, Dot3(normal, halfVector));
+            }
+            else
+            {
+                // The guest supplies the half vector; the reference does not
+                // normalize it here.
+                ReadOnlySpan<float> uploaded = state.GetLightInfiniteHalfVector(light);
+                nDotHV = MathF.Max(0f, Dot3(normal, uploaded));
+            }
+        }
+
+        float pf = nDotVP == 0f || nDotHV == 0f
+            ? 0f
+            : MathF.Pow(nDotHV, state.SpecularPower);
+        ReadOnlySpan<float> ambientColor = state.GetLightAmbient(light);
+        ReadOnlySpan<float> diffuseColor = state.GetLightDiffuse(light);
+        ReadOnlySpan<float> specularColor = state.GetLightSpecular(light);
+        for (int i = 0; i < 3; i++)
+        {
+            float lightDiffuse = diffuseColor[i] * attenuation * nDotVP;
+            float lightSpecular = specularColor[i] * attenuation * pf;
+            diffuseOutput[i] += ambientColor[i] * attenuation;
+            diffuseOutput[i] += state.DiffuseSource switch
+            {
+                MaterialColorSourceDiffuse => diffuseAttribute[i] * lightDiffuse,
+                MaterialColorSourceSpecular => specularAttribute[i] * lightDiffuse,
+                _ => lightDiffuse,
+            };
+
+            specularOutput[i] += state.SpecularSource switch
+            {
+                MaterialColorSourceDiffuse => diffuseAttribute[i] * lightSpecular,
+                MaterialColorSourceSpecular => specularAttribute[i] * lightSpecular,
+                _ => lightSpecular,
+            };
+        }
+    }
+
+    private static float Dot3(ReadOnlySpan<float> left, ReadOnlySpan<float> right) =>
+        (left[0] * right[0]) + (left[1] * right[1]) + (left[2] * right[2]);
+
+    private static void Normalize3(Span<float> value)
     {
         float length = MathF.Sqrt(
             (value[0] * value[0]) + (value[1] * value[1]) + (value[2] * value[2]));
         value[0] /= length;
         value[1] /= length;
         value[2] /= length;
+    }
+
+    private static void Normalize(Span<float> value)
+    {
+        Normalize3(value);
     }
 
     private static void Skin(

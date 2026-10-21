@@ -80,13 +80,13 @@ anchor; on a double-buffered title the two differ by one buffer
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
 | **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (216 flips) | 3,036 draws / 9.7M depth px; 41,399 culled | n/a | **renders black at 5.0-5.6B** - diagnosed 2026-10-21 (§211): every presented surface is the colour clear; the two per-frame quads resolve their colour from `T1` (stage 1 `NONE` in one draw by construction, black texels in the bump draw) and the zeta clear (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes. Forcing the clear far or the depth test off gives the same 406-colour wedge instead of the reference's full-screen reflection. Format `0x28` was the §209g fix; gap 10 stays open for the app-state question | RAM `7A11CBEF` / CPU `5B0665B2` at 5B (BTFF leg); plain leg RAM `AA10223C` / CPU `1AB9F002`; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
 | **xgu `swizzle_texture`** (swizzled 2D texture) | xgu repo, built 2026-10-21 | yes | flips yes, own scene at 3B | 87 flips / 2,725 draws / 45.1M px / 1,620 colours, full coverage; samples `0x3A` 3.14M with 0 misses | n/a | no reference screenshot in the xgu repo, so no oracle row; exercises the swizzled byte-order path (the §207h/§209 formats) | RAM `E2EB41ED` / CPU `B887B3C6`; last frame `FE32FB3C`, scanout/display `869CB402` at 3B | `-Sample xgu-swizzle_texture -Steps 3000000000` |
-| **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes; **fogged room renders** with `--ffp` | 2,730 draws / 84.2M px on, / 42.0M off | n/a | fixed-function **enabled-light loop** unimplemented (39 lit draws, all with lights off); flag off = flat orange (gap 6) | **on:** RAM `12BAD517` / CPU `571363B4`, 7,601 colours, mean (129.4, 50.2, 37.4); **off:** RAM `AFF08085` / CPU `571363B4`, 26 colours | `-Sample xgu-distance_fog_ffp -Steps 3000000000 -Ffp` |
-| **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes; **sphere-mapped sphere renders** with `--ffp` | 2,728 draws / 70.2M px on, / 42.2M off | n/a | fixed-function **enabled-light loop** unimplemented (39 lit draws, all with lights off); flag off = flat blue (gap 6) | **on:** RAM `8062CFB5` / CPU `F0075C2F`, 7,358 colours, mean (27.8, 16.3, 163.1); **off:** RAM `B5747761` / CPU `F0075C2F`, 2 colours | `-Sample xgu-spheremap_ffp -Steps 3000000000 -Ffp` |
+| **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes; **fogged room renders** with `--ffp` | 2,730 draws / 84.2M px on, / 42.0M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat orange (gap 6) | **on:** RAM `12BAD517` / CPU `571363B4`, 7,601 colours, mean (129.4, 50.2, 37.4); **off:** RAM `AFF08085` / CPU `571363B4`, 26 colours | `-Sample xgu-distance_fog_ffp -Steps 3000000000 -Ffp` |
+| **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes; **sphere-mapped sphere renders** with `--ffp` | 2,728 draws / 70.2M px on, / 42.2M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat blue (gap 6) | **on:** RAM `8062CFB5` / CPU `F0075C2F`, 7,358 colours, mean (27.8, 16.3, 163.1); **off:** RAM `B5747761` / CPU `F0075C2F`, 2 colours | `-Sample xgu-spheremap_ffp -Steps 3000000000 -Ffp` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
 
-### 6. The fixed-function transform pipeline - **CLOSED 2026-10-21 (§213), opt-in `--ffp`**
+### 6. The fixed-function transform pipeline - **CLOSED 2026-10-21 (213 + 215), opt-in `--ffp`**
 
 > `xgu distance_fog_ffp` and `xgu spheremap_ffp` call
 > `xgu_set_transform_execution_mode(p, XGU_FIXED, ...)` and upload MVP matrices
@@ -98,12 +98,12 @@ anchor; on a double-buffered title the two differ by one buffer
 > rows. It stays opt-in because the EvoX dashboard mixes 22,207 fixed-function
 > draws with its programmable ones and no oracle frame exists for them (enabling
 > it moves the menu anchors; the triangle anchors and gate frame are
-> byte-identical either way). Fixed-function **lighting** is half landed (the
-> material/ambient/emission chain; the enabled-light loop is the remaining slice
-> and is counted in `fixedFnLights=`, 0 on every measured leg). Details and
-> measurements: decisions §213.
-
-The original finding follows.
+> byte-identical either way). **The enabled-light loop landed in 215** (infinite/
+> local/spot with distance attenuation, the spot cone and the reconstructed
+> specular exponent), so the whole stage - material chain and lighting - is
+> complete; `fixedFnLights=` still reports how many lit draws enable a light
+> (0 on every measured row, so no corpus row exercises it yet). Details and
+> measurements: decisions 213 and 215.
 
 `xgu distance_fog_ffp` and `xgu spheremap_ffp` call
 `xgu_set_transform_execution_mode(p, XGU_FIXED, ...)` and upload MVP matrices to

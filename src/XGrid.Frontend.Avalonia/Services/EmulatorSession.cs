@@ -106,7 +106,7 @@ public sealed class EmulatorSession : IDisposable
             throw new InvalidOperationException("A BIOS image is required. Choose one on the Settings page.");
         }
 
-        EmulatorSettings snapshot = settings.Clone();
+        EmulatorSettings snapshot = settings.WithTitleOverride(discPath);
         Interlocked.Exchange(ref _steps, 0);
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
@@ -246,7 +246,7 @@ public sealed class EmulatorSession : IDisposable
             machine = CreateMachine(settings, discPath, ref socketBackend);
             Volatile.Write(ref _machine, machine);
             Log?.Invoke(this, FormattableString.Invariant(
-                $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)}"));
+                $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
 
             while (!token.IsCancellationRequested && !machine.Cpu.Context.Halted)
             {
@@ -304,12 +304,40 @@ public sealed class EmulatorSession : IDisposable
         finally
         {
             Volatile.Write(ref _machine, null);
+            PersistEeprom(machine);
             machine?.HddOverlay?.Dispose();
             machine?.Dvd?.Dispose();
             socketBackend?.Dispose();
             _running = false;
             _paused = false;
             Stopped?.Invoke(this, new SessionStoppedEventArgs(faulted, reason, Steps));
+        }
+    }
+
+    /// <summary>
+    /// Writes the live EEPROM image to the frontend data folder so the guest's
+    /// video mode / language / region settings survive across runs.
+    /// </summary>
+    private void PersistEeprom(XboxMachine? machine)
+    {
+        if (machine is null)
+        {
+            return;
+        }
+
+        try
+        {
+            byte[] image = new byte[EepromStateStore.ImageSize];
+            machine.CopyEeprom(image);
+            var store = new EepromStateStore(SettingsStore.ResolveDirectory());
+            if (!store.TrySave(image))
+            {
+                Log?.Invoke(this, "EEPROM state could not be saved (the data folder is not writable).");
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            Log?.Invoke(this, "EEPROM state not saved: " + exception.Message);
         }
     }
 
@@ -331,6 +359,16 @@ public sealed class EmulatorSession : IDisposable
         {
             machine.LoadEeprom(File.ReadAllBytes(settings.EepromPath));
             Log?.Invoke(this, "EEPROM image loaded.");
+        }
+
+        // The frontend keeps the console's user settings in its own eeprom.bin:
+        // the configured firmware image is only the seed. A persisted image
+        // therefore wins over the seed so video mode/language changes survive.
+        var eepromState = new EepromStateStore(SettingsStore.ResolveDirectory());
+        if (eepromState.TryLoad(out byte[] persistedEeprom))
+        {
+            machine.LoadEeprom(persistedEeprom);
+            Log?.Invoke(this, "EEPROM state restored from " + eepromState.FilePath);
         }
 
         if (!string.IsNullOrWhiteSpace(settings.HddPath) && File.Exists(settings.HddPath))
@@ -359,6 +397,15 @@ public sealed class EmulatorSession : IDisposable
 
         machine.Net.SetLinkUp(settings.NetworkLinkUp);
         machine.SevenEosQuirkEnabled = settings.EosQuirk;
+
+        // NV2A fidelity switches (both opt-in at the CLI): the fixed-function
+        // vertex stage replaces the resident program for mode-0 draws, and the
+        // texture filter mode honors the TEXFILTER registers instead of the
+        // legacy nearest sampler.
+        machine.Nv2A.FixedFunctionTransform = settings.FixedFunctionVertex;
+        machine.Nv2A.TextureFilterRegisters =
+            string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal);
+
         machine.Reset();
         ConfigureCpu(machine, settings);
         return machine;
@@ -387,6 +434,17 @@ public sealed class EmulatorSession : IDisposable
 
         string emitter = settings.RawBlocks ? "raw block JIT" : "block JIT";
         return settings.SpinSkip ? emitter + " + idle-spin skip" : emitter;
+    }
+
+    private static string DescribeGraphics(EmulatorSettings settings)
+    {
+        string vertex = settings.FixedFunctionVertex
+            ? "fixed-function vertex stage"
+            : "resident vertex program";
+        string filter = string.Equals(settings.TextureFilter, "registers", StringComparison.Ordinal)
+            ? "TEXFILTER registers"
+            : "legacy nearest sampler";
+        return vertex + ", " + filter;
     }
 
     private void ApplyPad(XboxMachine machine)

@@ -183,9 +183,15 @@ Canonical priority order: `docs/development-direction.md` (summarized in
    reflection needs). The same session fixed the convolution tap step on linear
    (LU_IMAGE) stages (one texel per tap, `psh.c apply_convolution_filter`); the
    opt-in flag's default stays an operator item. 1625 tests green.
-3. **Track P — product completeness (parallel).** Host audio, physical pad,
+3. **Track P - product completeness (parallel).** Host audio, physical pad,
    save-state V1, per-title config. The frontend is sw-only, keyboard-only,
    silent, stateless.
+   **Status 2026-10-21 (20th session, §217):** physical pad and save states
+   landed 2026-10-20 (§206); this session added the graphics-fidelity settings
+   (`--ffp`, `--tex-filter`), per-title overrides (V1 keyed by image path),
+   persistent EEPROM state (`<data dir>/eeprom.bin`, CLI `--eeprom-out`) and the
+   frontend's first test project (15 tests). Host audio (the DSP execution it
+   needs) is the remaining product gap.
 4. **Track C — frozen.** C3-x landed; C3-y/xlat neutral and reverted; C3-z
    deferred (2–3%); only the `--jit`/`--jit-raw` default-flip decision remains.
 5. **Track D — measured >2% only** (page-end wait, bookkeeping).
@@ -205,6 +211,22 @@ stays gate currency and real content stays benchmark-only; accurate-mode perf
 flags stay opt-in until median-of-3 walls plus exact golden SHAs/counters,
 `verifyFailures=0`, and flag-off byte-identical runs. Fast-mode contract:
 `docs/research-notes/jit-track-charter.md` (unchanged).
+
+**Status 2026-10-21 (20th session, decisions §§215-218; 1717 tests green).**
+Three landed slices, no existing anchor moved: **fixed-function lighting** (§215:
+the enabled-light loop, spot cone, attenuation and the reconstructed specular
+exponent behind opt-in `--ffp` - gap 6 is now complete, and no measured leg
+enables a light), **PTIMER 0.8.137** (§216: 61-bit register time with writable
+`TIME_0/1`, `ALARM_0` with the 2^32 re-arm, the alarm's `INTR_0` bit and
+`NV_PMC_INTR_0_PTIMER`), and **Track P** (§217: `--ffp`/`--tex-filter` in the
+frontend, per-title overrides V1, persistent EEPROM state, the frontend test
+project). Evidence: 1B fast legs exact with and without `--ffp`
+(triangle `B45254CA`/`7DAB63EB`, menu `51B56687`/`F5D61C94`), accurate goldens
+`A1740DE0`/`4EF1FBF6` with GL policy frames `7A860ED7`/`B6116DAE`,
+`BackendUnsupported=0`, ktest smoke 7/7 at 792,800,535 steps with the
+byte-identical 40,797-byte log. The APU sample counter `NV_PAPU_XGSCNT` (§218) is now derived from the EP frame divider, which the dashboard reads and stores: the two menu RAM anchors were re-recorded (`01BE5D64 -> 6AB39AB0` accurate, `51B56687 -> 34973510` fast) while frames, CPU SHAs, counters and all 13 corpus rows stayed exact. NV2A snapshot v6 -> **v8** (old `.xgs` invalid).
+Next: Track P host audio (needs DSP execution), GL TEXFILTER parity, or the GL
+replace-mode fallback composition.
 
 ---
 
