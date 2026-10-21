@@ -64,6 +64,9 @@ accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 | **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2` | `-Sample hello` |
 | **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83` | `-Sample led` |
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
+| **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
+| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 90 flips / 2,952 draws / **137 colours**, full coverage | n/a | same 3B budget | RAM `40081D03` / CPU `1C5C575D`; last frame `973AF30A` | `-Sample xgu-alpha_blending -Steps 3000000000` |
+| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene **flat** | 41 flips / 2,679 draws, **2 colours**: a solid green shape on black | n/a | cubemap reflection does not vary - see gap 3 | RAM `1E59D83F` / CPU `D5D38C64`; last frame `5174B1EB` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` |
 | **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
 | **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
 | **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
@@ -108,6 +111,31 @@ README links. The corpus now builds from nxdk upstream (`samples/<name>` at
 pinned `a6c31ee`) via `scripts/build-nxdk-samples.ps1`, so the stale snapshots
 are no longer on the build path. `data/` is gitignored, which is why the gap
 survived: nothing tracked the sample sources.
+
+### 3. Cubemap reflection still renders flat (`xgu bump_cubemap_reflect`)
+
+This sample samples texture format **`0x3A`** (`SZ_A8B8G8R8`) for a cube map.
+`IsSupportedSwizzledFormat` mirrors the reference renderer and accepts only
+`0x05`/`0x06`, so all 896,067 samples counted a texture-mode fallback and the
+stage contributed nothing: the frame is a solid green shape on black.
+
+**Measured, not assumed:** extending the whitelist to the SZ byte-order variants
+made the fallbacks go to 0 and changed the frame **not at all** (identical last
+frame `5174B1EB`, identical RAM). That change was therefore reverted - without
+an oracle for cube direction mapping it is an unverified semantic change. The
+open work is cube addressing for those formats, not the format decode (the
+decode itself is fixed, see the texture-format gap below).
+
+### 4. Byte-order texture formats were unsupported (fixed 2026-10-20)
+
+`xgu vp_lighting` sampled format **`0x3F`** (`LU_IMAGE_A8B8G8R8`, defined in the
+newer xemu fork but not in 0.8.137) 3,420,787 times and **every sample missed**,
+so its geometry rendered untextured. Formats `0x3A`-`0x3C` and `0x3F`-`0x41` are
+now decoded as the same 32-bit words with permuted channels. Result on the same
+run: `3F` misses `3,420,787 -> 0`, textured pixels `+3.42M`, and the frame went
+from **3 colours / 250,090 px** to **1,592 colours / 307,200 px**. Both gate
+frames stayed byte-identical (`A1740DE0`, `4EF1FBF6`), because the gates use
+`0x06`/`0x07`/`0x12`/`0x1E`.
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 

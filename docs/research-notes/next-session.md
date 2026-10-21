@@ -125,7 +125,7 @@ reproduced byte-identically in §205.
   byte-identical**. `culled=` on the NV2A line. Snapshot v3 → v4.
 - **§207 corpus.** Toolchain in `scripts/build-nxdk-samples.ps1` (MSYS2 + clang/
   lld/**llvm**/bison/flex/cmake, nxdk `a6c31ee`); `boot-to-first-frame.ps1
-  -Corpus` re-measures; 11 rows over 7 samples, M-B met.
+  -Corpus` re-measures; 14 rows over 10 samples, M-B met.
 - **§207f scanout export.** `Nv2aMmio.TryCopyScanoutFrame` + `--frame-scanout`
   read PCRTC START, which is where direct-framebuffer programs (`XVideoGetFB`,
   `debugPrint`) actually draw: `gamma` goes from 1 colour to 768 / 298,744 px,
@@ -168,7 +168,7 @@ Pick **one**:
 
 The nxdk toolchain blocker is cleared (`scripts/build-nxdk-samples.ps1`:
 MSYS2 + clang/lld/llvm/bison/flex/cmake, nxdk `a6c31ee`), the corpus has **11
-rows over 7 samples**, and `boot-to-first-frame.ps1 -Corpus` re-measures them.
+rows over 10 samples**, and `boot-to-first-frame.ps1 -Corpus` re-measures them.
 M-B is met.
 
 Two gaps the corpus found, both recorded in `docs/compatibility.md`:
