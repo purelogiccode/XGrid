@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
 
 namespace XGrid.Frontend.Avalonia.Services;
@@ -99,7 +100,9 @@ public sealed class FileDialogService
     {
         if (Window?.Clipboard is { } clipboard)
         {
-            await clipboard.SetTextAsync(text);
+            var data = new DataTransfer();
+            data.Add(DataTransferItem.CreateText(text));
+            await clipboard.SetDataAsync(data);
         }
     }
 
