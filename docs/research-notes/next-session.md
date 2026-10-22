@@ -165,13 +165,17 @@ priced facts a decision needs are all in §233:
 
 So the three real options are: **(i) own the encoder** (a `FastAssembler` with
 fixed-size rel32 branches and one pass - the emitter uses ~40 `Assembler`
-methods, so it is a contained but real rewrite; price it by measuring
-`assembleMs` on a spike), **(ii) slim the per-member code** (the fast path is
-~15 of 99 instructions; the rest is probe/guard/slow paths - the measured
-shared-stub saving is only -60 ms per block, -160 ms global, §233e), or
-**(iii) a different engine shape** (a native core / threaded code, which is the
-"native-core option" the charter names). Do not start (i) without a spike that
-shows `Assemble` is the 682 ms it is measured to be.
+methods, so it is a contained but real rewrite), **(ii) slim the per-member
+code** (the fast path is ~15 of 99 instructions; the rest is probe/guard/slow
+paths - the measured shared-stub saving is only -60 ms per block, -160 ms
+global, §233e, and the chain-edge A/B says instruction count is not the wall's
+currency), or **(iii) a different engine shape** (a native core / threaded
+code, which is the "native-core option" the charter names). **The open number
+for (i)** is the ratio between `Assembler.Assemble` (359-377 ns/instruction
+measured) and a bare `BlockEncoder.Encode`/`Encoder.Encode` pass over the same
+instruction list; a one-file spike in `tests/XGrid.Cpu.Tests` can measure it -
+do that before committing a session to the rewrite. (An attempt at the spike
+in session 33 was abandoned on Iced API details, not on the measurement.)
 
 ### Option B (bounded B3 finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
