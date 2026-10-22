@@ -10,7 +10,7 @@ day-to-day agent entry point; this file is the priority order every agent follow
 follows the display controller under a GPU backend (direct-framebuffer guests
 show their own buffer in the OpenGL renderer), and the C7 "own the encoder"
 option is priced and rejected: a 3.2x faster encoder is ~7% of the triangle wall,
-below the stage bar. C7's lever is the engine shape.** Track order unchanged; the
+below the stage bar, and a trace emitter's block-boundary ceiling is derived at ~3-5% (§235). C7's lever is the engine shape.** Track order unchanged; the
 next C work is the engine-shape decision (§0 kill/reassess, `next-session.md`).
 
 **Operator decision.** The long-run objective is **xemu-class performance or
@@ -437,3 +437,4 @@ the historical precedent, not a pattern to extend).
 - Session start on any machine: `pwsh -File scripts/host-doctor.ps1` (fingerprint,
   free space, gate media, toolchain, `References2` integrity). A session that
   skips it owns whatever environment surprise it hits.
+

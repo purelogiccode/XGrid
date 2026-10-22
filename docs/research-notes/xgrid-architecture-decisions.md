@@ -15121,3 +15121,47 @@ the old backend branch the two "serve the scanout" cases fail). Format clean.
 `CA5D3867` (40,797 B) byte-identical.
 
 
+
+## 235 Track C: trace formation's ceiling is derived from the measured block-boundary cost (2026-10-22, thirty-fifth session)
+
+**Docs only; no code change.** §234e closed the encoder option with a measurement.
+The other C7 candidate - a trace/superblock emitter that keeps state across
+blocks (option i in `next-session.md` §2) - can be priced from numbers this build
+already has, and the price says it cannot reach the stage bar either, *for the
+reason a trace is normally bought* (removing block boundaries).
+
+**The derivation.** A block boundary costs, measured:
+
+| quantity | value | source |
+|---|---|---|
+| cold `RunJitBlock` entry (prologue, memo, table lookup, yield) | 132 ns | §233a (`523k` calls) |
+| chain edge | ~2 ns | §233d (42 fewer instructions per edge bought 1 ns at `124M` edges) |
+| block invocations at 1B | 767,413 | §233a |
+| chained edges at 1B | 124,218,685 | §233c |
+| runner total (1B triangle) | 3,393 ms | §233a |
+
+So the *whole* boundary population is `767k x 132 ns = 101 ms` of cold entries
+plus `124M x 2 ns = 248 ms` of chain edges = **~350 ms of a 3.66 s runner
+(3.4 s runner + 0.25 s `RunSpecBlock`), i.e. ~5% of the 6.66 s wall**. A trace
+emitter removes the chain edges (it already has no per-block boundary) and some
+of the cold entries; its realistic ceiling is therefore **3-5% of the wall**,
+below the C-stage bar.
+
+**Why that is the *whole* case for a trace, not just part of it.** The other
+argument for traces is code layout / branch-predictor pressure - fewer indirect
+jumps, one contiguous code region per trace. §233d and §233e contradict that
+argument in this engine: cutting the chain edge from ~82 to ~40 instructions (a
+50% reduction in the executed instructions per edge) bought **1 ns** per edge,
+and the per-member fast path is 15 of ~99 emitted instructions while slim
+variants measured neutral. The runner is **not** front-end or instruction-count
+bound; it is bound by the per-member work itself (6.25 ns/member, dominated by
+the memory probe and the served/EIP bookkeeping, which a trace would still do per
+member).
+
+**What this leaves.** Only option (iii), a different execution model, has an
+argument that does not reduce to "fewer instructions": the per-member work has to
+get cheaper in kind (fused memory access without the probe, or a host register
+allocation that removes the slot traffic), not just less frequent. Before a
+session is spent, price it the §233a way - a call-level or per-member probe of
+one candidate transformation, with the exactness gates attached - because every
+other C lever has now been retired on a number.

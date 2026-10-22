@@ -541,8 +541,7 @@ wall lever** - `Assembler.Assemble` 390 ns/instruction vs a single-pass
 1,026 ms formation, so the whole rewrite buys ~7% triangle / ~3% menu, below the
 stage bar; (ii) the runner's 6.25 ns/member is **not** instruction-count bound
 (the chain-edge refactor cut ~82 instructions per edge for 1 ns, §233d), and
-shared cold stubs priced at -160 ms global (§233e). What remains is **(iii) the
-engine shape** - a trace/native core or a different execution model - which
+shared cold stubs priced at -160 ms global (§233e), and the boundary population a trace removes is ~350 ms of the runner = **3-5% of the wall** (§235). What remains is **\(iii\) the engine shape** - a trace/native core or a different execution model - which
 `next-session.md` §2 carries as the open decision with the stage table attached.
 
 Each stage: same-window A/B (≥10% wall or ≥20% engine), exact 1B
@@ -618,3 +617,4 @@ microbenchmark, §138 decomposition); `gpu-swapchain-brief.md` §5 (gap math);
 `development-direction.md`. External (facts/design only): QEMU TCG (GPL-2.0),
 Ryujinx ARMeilleure (MIT), Iced (MIT), Intel SDM. Operator decision
 2026-10-18, recorded in decisions §190, `AGENTS.md`, `ImplementationPlan.md`.
+

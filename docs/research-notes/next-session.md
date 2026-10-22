@@ -158,27 +158,30 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 Every cheaper lever now has a price and is out: C4 (null), C4b (~250 ms
 ceiling), shared stubs (-160 ms), slimming members (instruction count is not
-the wall's currency), the encoder (~7%). The charter's kill criterion has
+the wall's currency), the encoder (~7%), trace formation (~3-5%, §235). The charter's kill criterion has
 fired twice, so the next C work is a **decision with a measurement attached**,
 and `next-session.md` §2's job is to make that cheap:
 
-- **(i) Trace formation on top of the raw runner** (state across blocks, poll
-  per boundary, §193 contract). §233a says a cold `RunJitBlock` entry is 132 ns
-  and the in-frame chain entry already shares the frame, so the remaining
-  per-block cost is the *poll + state publish at exit*, not the entry. Price it
-  first with the same call-level probe (the §233a method): if
-  `invocations/calls` overhead is <5% of the runner, a trace emitter cannot
-  reach the bar either and should be dropped.
+- **(i) Trace formation - priced out on a number (§235, docs only).** The whole
+  block-boundary population a trace removes is ~350 ms of the 3.66 s runner
+  (767k cold entries at 132 ns + 124M chain edges at ~2 ns) = **3-5% of the
+  wall**, and the two measurements that would justify the *other* trace
+  argument (code layout / fewer instructions) are negative: halving the chain
+  edge's instructions bought 1 ns per edge (§233d), and slimming members is
+  neutral (§233e). Do not spend a session on a trace emitter without a new
+  measurement that contradicts those two.
 - **(ii) The interpreter/`Step` side of the boot** (2.0 s of the 6.9 s wall,
   1.15 s of it in the first 100M steps). The cache line that refuses non-RAM
   pages is already priced at ~250 ms; the rest is `RunSpecBlock` (1.4 s over
   34k calls, 259 ns/member) and the one-instruction decode. A *superblock for
   the boot* (form blocks in ROM pages) is the only untried shape here.
 - **(iii) A different execution model** (threaded code / a native core), the
-  "native-core option" the charter names. Decide with a spike, not a rewrite:
-  the raw emitter already produces one native function per block, so the
-  question is what a *2-3 block* superblock would cost in code size and
-  I-cache (the §199d block-fusion negative is the prior art to re-measure).
+  "native-core option" the charter names - **the only remaining option with an
+  argument that is not "fewer instructions"**: the per-member work (6.25 ns) has
+  to get cheaper in kind (fused memory access without the translate probe, or a
+  register allocation that removes the slot traffic). Price it the §233a way
+  before a rewrite: a per-member probe of one candidate transformation with the
+  exactness gates attached.
 
 Whichever is chosen: same-window A/B, exact 1B SHAs/counters, flag-off
 byte-identical, ktest log byte-identical, and `docs/development-direction.md`
@@ -367,4 +370,6 @@ line, `--frame-display`, `--pgraph <path> --pgraph-max <n>`, `--eip-hist`,
 `--eeprom-out`, `XGRID_TRACE_PRESENT=1` (a *temporary* flip/CRTC trace that was
 used to establish §234b - re-add it the same way if a display-source question
 needs it), and the frontend's `Renderer:` power-on line.
+
+
 

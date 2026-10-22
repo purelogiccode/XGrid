@@ -769,7 +769,9 @@ decisions §234). Track P/B product fix, exact; no gate anchor moved.**
   table `Assemble` is 682 ms of the triangle's 1,026 ms formation, so a 3.2x
   encoder is **~7% of the triangle wall / ~3% of the menu wall**: below the C
   stage's 10% bar and unrelated to the 5.5x gap. **Do not own the encoder**; C7's
-  lever is the engine shape.
+  lever is the engine shape. §235 derives the same for a trace emitter: the
+  block-boundary population it removes is ~350 ms of the runner = ~3-5% of the
+  wall, so the engine-shape decision (option iii) is the only one left.
 - **Gates (234f).** Accurate 1B menu golden PASS (sw `4EF1FBF6` / gl `B6116DAE`,
   diff 2602, violations 0, counters 33632/686/686) and triangle PASS (sw
   `A1740DE0` / gl `7A860ED7`, diff 27849, 2706/68/34); fast 1B anchors exact
@@ -2605,4 +2607,6 @@ reverted.
    KTHREAD/KWAIT offsets if needed.
 
 Earlier AV-device gate details (research-notes §33, for reference):
+
+
 
