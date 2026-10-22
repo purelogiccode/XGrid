@@ -23,72 +23,58 @@ internal delegate int JitRun(XboxCpu cpu, DecodeCacheEntry[] entries, int budget
 internal unsafe delegate int RawRun(IntPtr cpu, RawState* state, IntPtr entries, int budget);
 
 /// <summary>One built fast-mode block (a run of natively emittable members).</summary>
-internal sealed class JitBlock
+internal sealed class JitBlock(
+    uint headLinear,
+    uint headEip,
+    int operandSize,
+    int addressSize,
+    ulong generation,
+    int memberCount,
+    DecodeCacheEntry[] entries,
+    JitRun? runner,
+    RawRun? rawRunner,
+    nint rawEntry,
+    bool hasSti,
+    bool hasStore)
 {
-    public JitBlock(
-        uint headLinear,
-        uint headEip,
-        int operandSize,
-        int addressSize,
-        ulong generation,
-        int memberCount,
-        DecodeCacheEntry[] entries,
-        JitRun? runner,
-        RawRun? rawRunner,
-        nint rawEntry,
-        bool hasSti,
-        bool hasStore)
-    {
-        HeadLinear = headLinear;
-        HeadEip = headEip;
-        OperandSize = operandSize;
-        AddressSize = addressSize;
-        Generation = generation;
-        MemberCount = memberCount;
-        Entries = entries;
-        Runner = runner;
-        RawRunner = rawRunner;
-        RawEntry = rawEntry;
-        HasSti = hasSti;
-        HasStore = hasStore;
-    }
 
     /// <summary>Gets the linear fetch address of the block head (the cache key).</summary>
-    public uint HeadLinear { get; }
+    public uint HeadLinear { get; } = headLinear;
 
     /// <summary>Gets the EIP of the block head.</summary>
-    public uint HeadEip { get; }
+    public uint HeadEip { get; } = headEip;
 
     /// <summary>Gets the decode-time operand size the block was built for.</summary>
-    public int OperandSize { get; }
+    public int OperandSize { get; } = operandSize;
 
     /// <summary>Gets the decode-time address size the block was built for.</summary>
-    public int AddressSize { get; }
+    public int AddressSize { get; } = addressSize;
 
     /// <summary>Gets the decode/block generation the block was built for.</summary>
     // ReSharper disable once UnusedAutoPropertyAccessor.Global
-    public ulong Generation { get; }
+    // ReSharper disable once UnusedMember.Global
+    public ulong Generation { get; } = generation;
 
     /// <summary>Gets the number of members the runner serves (at most <see cref="JitEmitter.MaxMembers"/>).</summary>
-    public int MemberCount { get; }
+    public int MemberCount { get; } = memberCount;
 
     /// <summary>Gets the member decode entries (CallSpec fallback instructions).</summary>
-    public DecodeCacheEntry[] Entries { get; }
+    public DecodeCacheEntry[] Entries { get; } = entries;
 
     /// <summary>Gets the IL runner (null when the block is raw-only).</summary>
-    public JitRun? Runner { get; }
+    public JitRun? Runner { get; } = runner;
 
     /// <summary>Gets the C3 raw runner function pointer (0 when absent).</summary>
-    public RawRun? RawRunner { get; }
+    public RawRun? RawRunner { get; } = rawRunner;
 
     /// <summary>Gets the native raw entry point (0 when absent; chain target).</summary>
-    public nint RawEntry { get; }
+    public nint RawEntry { get; } = rawEntry;
 
     /// <summary>Gets whether the block contains an STI member (fast-mode idle-wait detection).</summary>
-    public bool HasSti { get; }
+    public bool HasSti { get; } = hasSti;
 
     /// <summary>Gets whether the block contains a member with a memory/side-effect write (fast-mode idle-wait detection).</summary>
-    public bool HasStore { get; }
+    public bool HasStore { get; } = hasStore;
 }
 
 /// <summary>
@@ -106,11 +92,11 @@ internal sealed class JitBlock
 internal sealed class JitBlockCache
 {
     /// <summary>Maximum cached heads before non-built entries are dropped.</summary>
-    public const int MaxHeads = 65536;
+    private const int MaxHeads = 65536;
 
     private const int MemoSize = 32;
 
-    private readonly Dictionary<uint, Entry> _heads = new();
+    private readonly Dictionary<uint, Entry> _heads = [];
     private readonly uint[] _memoHead = new uint[MemoSize];
     private readonly ulong[] _memoGeneration = new ulong[MemoSize];
     private readonly JitBlock?[] _memoBlock = new JitBlock?[MemoSize];
@@ -124,12 +110,7 @@ internal sealed class JitBlockCache
     {
         int slot = (int)(headLinear & (MemoSize - 1));
         JitBlock? block = _memoBlock[slot];
-        if (block is not null && _memoHead[slot] == headLinear && _memoGeneration[slot] == generation)
-        {
-            return block;
-        }
-
-        return null;
+        return block is not null && _memoHead[slot] == headLinear && _memoGeneration[slot] == generation ? block : null;
     }
 
     private void Memoize(uint headLinear, ulong generation, JitBlock block)
@@ -316,7 +297,7 @@ internal sealed class JitBlockCache
         {
             if (entry.Block is null && !entry.Rejected && entry.Visits < 16)
             {
-                (drop ??= new List<uint>()).Add(head);
+                (drop ??= []).Add(head);
             }
         }
 

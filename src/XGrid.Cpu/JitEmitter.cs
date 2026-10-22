@@ -212,7 +212,7 @@ internal static class JitEmitter
         var method = new DynamicMethod(
             $"JitBlock_{headLinear:X8}_{plans.Length}",
             typeof(int),
-            new[] { typeof(XboxCpu), typeof(DecodeCacheEntry[]), typeof(int) },
+            [typeof(XboxCpu), typeof(DecodeCacheEntry[]), typeof(int)],
             typeof(XboxCpu),
             skipVisibility: true);
         ILGenerator il = method.GetILGenerator();

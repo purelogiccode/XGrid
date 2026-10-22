@@ -7,7 +7,8 @@ namespace XGrid.Cpu;
 /// 32-bit non-PAE paging unit with a software TLB (plan section 9). Handles 4 KB and 4 MB pages,
 /// A/D bits, and write-protect faults.
 /// </summary>
-public sealed class Mmu
+/// <remarks>Creates an MMU over the given context and physical bus.</remarks>
+public sealed class Mmu(XboxContext context, IMemoryBus memory)
 {
     /// <summary>
     /// Physical pages eligible for page-table tracking: every base-RAM page
@@ -18,17 +19,9 @@ public sealed class Mmu
 
     private const int TrackedPageWords = TrackedPages / 64;
 
-    private readonly XboxContext _context;
-    private readonly IMemoryBus _memory;
+    private readonly XboxContext _context = context ?? throw new ArgumentNullException(nameof(context));
+    private readonly IMemoryBus _memory = memory ?? throw new ArgumentNullException(nameof(memory));
     private readonly SoftTlb _tlb = new();
-    private ulong[]? _pageTablePages;
-
-    /// <summary>Creates an MMU over the given context and physical bus.</summary>
-    public Mmu(XboxContext context, IMemoryBus memory)
-    {
-        _context = context ?? throw new ArgumentNullException(nameof(context));
-        _memory = memory ?? throw new ArgumentNullException(nameof(memory));
-    }
 
     /// <summary>
     /// Gets or sets the optional hotspot observer (§126). Null (default) means
@@ -63,16 +56,17 @@ public sealed class Mmu
     /// </summary>
     public bool PageTableTrackingEnabled
     {
-        get => _pageTablePages is not null;
+        // ReSharper disable once UnusedMember.Global
+        get => PageTablePageBits is not null;
         set
         {
             if (value)
             {
-                _pageTablePages ??= new ulong[TrackedPageWords];
+                PageTablePageBits ??= new ulong[TrackedPageWords];
             }
             else
             {
-                _pageTablePages = null;
+                PageTablePageBits = null;
             }
         }
     }
@@ -84,9 +78,9 @@ public sealed class Mmu
     public void Flush()
     {
         _tlb.Flush();
-        if (_pageTablePages is not null)
+        if (PageTablePageBits is not null)
         {
-            Array.Clear(_pageTablePages);
+            Array.Clear(PageTablePageBits);
         }
 
         OnFlush?.Invoke();
@@ -108,21 +102,22 @@ public sealed class Mmu
     /// </summary>
     public bool IsPageTablePage(uint physicalPage)
     {
-        ulong[]? pages = _pageTablePages;
+        ulong[]? pages = PageTablePageBits;
         return pages is not null
                && physicalPage < TrackedPages
                && (pages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
     }
 
     /// <summary>Gets the page-table-page bitset (C3 raw store guard pins it; null when tracking is off).</summary>
-    internal ulong[]? PageTablePageBits => _pageTablePages;
+    internal ulong[]? PageTablePageBits { get; private set; }
 
     /// <summary>Gets the last physical page tracked by <see cref="IsPageTablePage"/> (exclusive).</summary>
+    // ReSharper disable once UnusedMember.Global
     internal static int TrackedPageLimit => TrackedPages;
 
     private void TrackPageTablePage(uint physicalPage)
     {
-        ulong[]? pages = _pageTablePages;
+        ulong[]? pages = PageTablePageBits;
         if (pages is not null && physicalPage < TrackedPages)
         {
             pages[physicalPage >> 6] |= 1UL << (int)(physicalPage & 63);

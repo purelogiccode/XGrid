@@ -13,49 +13,39 @@ namespace XGrid.Graphics;
 public static class FrameDiff
 {
     /// <summary>Result of a golden-frame comparison.</summary>
+    /// <remarks>Creates a golden-frame comparison result.</remarks>
+    /// <param name="width">The frame width.</param>
+    /// <param name="height">The frame height.</param>
+    /// <param name="diffPixels">The number of pixels that differ at all.</param>
+    /// <param name="edgeBandPixels">The number of differing pixels inside the edge band.</param>
+    /// <param name="violations">The number of policy violations.</param>
+    /// <param name="maxChannelDelta">The maximum per-channel delta seen anywhere.</param>
+    /// <param name="rgbDiffPixels">The number of differing pixels whose RGB changed.</param>
     [StructLayout(LayoutKind.Auto)]
-    public readonly struct Result
+    public readonly struct Result(int width, int height, int diffPixels, int edgeBandPixels, int violations, int maxChannelDelta,
+        int rgbDiffPixels)
     {
-        /// <summary>Creates a golden-frame comparison result.</summary>
-        /// <param name="width">The frame width.</param>
-        /// <param name="height">The frame height.</param>
-        /// <param name="diffPixels">The number of pixels that differ at all.</param>
-        /// <param name="edgeBandPixels">The number of differing pixels inside the edge band.</param>
-        /// <param name="violations">The number of policy violations.</param>
-        /// <param name="maxChannelDelta">The maximum per-channel delta seen anywhere.</param>
-        /// <param name="rgbDiffPixels">The number of differing pixels whose RGB changed.</param>
-        public Result(int width, int height, int diffPixels, int edgeBandPixels, int violations, int maxChannelDelta,
-            int rgbDiffPixels)
-        {
-            Width = width;
-            Height = height;
-            DiffPixels = diffPixels;
-            EdgeBandPixels = edgeBandPixels;
-            Violations = violations;
-            MaxChannelDelta = maxChannelDelta;
-            RgbDiffPixels = rgbDiffPixels;
-        }
 
         /// <summary>Gets the frame width.</summary>
-        public int Width { get; }
+        private int Width { get; } = width;
 
         /// <summary>Gets the frame height.</summary>
-        public int Height { get; }
+        private int Height { get; } = height;
 
         /// <summary>Gets the number of pixels that differ at all.</summary>
-        public int DiffPixels { get; }
+        public int DiffPixels { get; } = diffPixels;
 
         /// <summary>Gets the number of differing pixels inside the ±1 px edge band.</summary>
-        public int EdgeBandPixels { get; }
+        public int EdgeBandPixels { get; } = edgeBandPixels;
 
         /// <summary>Gets the number of policy violations (must be 0 to pass).</summary>
-        public int Violations { get; }
+        public int Violations { get; } = violations;
 
         /// <summary>Gets the maximum per-channel delta seen anywhere.</summary>
-        public int MaxChannelDelta { get; }
+        public int MaxChannelDelta { get; } = maxChannelDelta;
 
         /// <summary>Gets the number of differing pixels whose RGB (ignoring alpha) changed.</summary>
-        public int RgbDiffPixels { get; }
+        private int RgbDiffPixels { get; } = rgbDiffPixels;
 
         /// <summary>Gets whether the pair satisfies the §3.4 policy.</summary>
         public bool Passed => Violations == 0;

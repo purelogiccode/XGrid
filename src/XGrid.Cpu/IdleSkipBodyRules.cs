@@ -271,11 +271,6 @@ internal static class IdleSkipBodyRules
     private static string? CheckRegister(int register, uint written, uint defined)
     {
         uint bit = 1u << register;
-        if ((written & bit) != 0 && (defined & bit) == 0)
-        {
-            return "cross-read";
-        }
-
-        return null;
+        return (written & bit) != 0 && (defined & bit) == 0 ? "cross-read" : null;
     }
 }

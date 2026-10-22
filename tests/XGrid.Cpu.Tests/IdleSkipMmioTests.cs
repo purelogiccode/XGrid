@@ -21,23 +21,23 @@ public sealed class IdleSkipMmioTests
     // mov eax,[0x2000]; or eax,[0x3000]; test eax,eax; jz 0x1000; hlt
     // (RAM poll plus a classified device-register read in one body)
     private static readonly byte[] DualPollLoop =
-    {
+    [
         0xA1, 0x00, 0x20, 0x00, 0x00, 0x0B, 0x05, 0x00, 0x30, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF1, 0xF4,
-    };
+    ];
 
     // mov [0x3000],eax; mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt
     // (device-register WRITE in body: immediate hard stop even when the model
     // would classify the register as stable)
     private static readonly byte[] MmioWriteLoop =
-    {
+    [
         0xA3, 0x00, 0x30, 0x00, 0x00, 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF2, 0xF4,
-    };
+    ];
 
     // in al,0x40; test al,0x80; jnz 0x1000; hlt  (PIO poll: attribution target)
-    private static readonly byte[] PioPollLoop = { 0xE4, 0x40, 0xA8, 0x80, 0x75, 0xFA, 0xF4 };
+    private static readonly byte[] PioPollLoop = [0xE4, 0x40, 0xA8, 0x80, 0x75, 0xFA, 0xF4];
 
     // dec ecx; jnz 0x1000; hlt  (register countdown: static-rule attribution)
-    private static readonly byte[] CountdownLoop = { 0x49, 0x75, 0xFD, 0xF4 };
+    private static readonly byte[] CountdownLoop = [0x49, 0x75, 0xFD, 0xF4];
 
     [Fact]
     public void MmioPoll_ScheduledChange_SkipLandsExactlyOnDeadline()
@@ -225,7 +225,7 @@ public sealed class IdleSkipMmioTests
     private static byte[] MmioPollLoopBytes()
     {
         // mov eax,[0x3000]; test eax,eax; jz 0x1000; hlt
-        return new byte[] { 0xA1, 0x00, 0x30, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4 };
+        return [0xA1, 0x00, 0x30, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];
     }
 
     private static (XboxCpu Cpu, FakeMmioHost Host) CreateIdleCpu(byte[] code, bool enableIdleSkip = true)
@@ -269,16 +269,10 @@ public sealed class IdleSkipMmioTests
     /// value at the deadline, then report deadline 0 (change pending
     /// observation) so the skipper stops with zero overshoot.
     /// </summary>
-    private sealed class FakeMmioHost : IIdleSkipHost, IIdleSkipReadModel
+    private sealed class FakeMmioHost(PhysicalMemory ram) : IIdleSkipHost, IIdleSkipReadModel
     {
-        private readonly PhysicalMemory _ram;
-        private readonly List<(uint Address, long Deadline, byte Value)> _changes = new();
-        private readonly List<long> _irqAt = new();
-
-        public FakeMmioHost(PhysicalMemory ram)
-        {
-            _ram = ram;
-        }
+        private readonly List<(uint Address, long Deadline, byte Value)> _changes = [];
+        private readonly List<long> _irqAt = [];
 
         private bool Irq { get; set; }
 
@@ -287,9 +281,9 @@ public sealed class IdleSkipMmioTests
         /// <summary>Breaks the model (stops classifying everything) once this many cycles have advanced.</summary>
         public ulong? BreakModelAfterAdvance { get; set; }
 
-        private HashSet<uint> NonRam { get; } = new() { MmioAddress };
+        private HashSet<uint> NonRam { get; } = [MmioAddress];
 
-        public HashSet<uint> Stable { get; } = new();
+        public HashSet<uint> Stable { get; } = [];
 
         public ulong? FireRamPollAtAdvanced { get; set; }
 
@@ -355,7 +349,7 @@ public sealed class IdleSkipMmioTests
                 long remaining = deadline - delta;
                 if (remaining <= 0)
                 {
-                    _ram.Write8(address, value);
+                    ram.Write8(address, value);
                     _changes[i] = (address, 0, value);
                 }
                 else
@@ -380,7 +374,7 @@ public sealed class IdleSkipMmioTests
 
             if (FireRamPollAtAdvanced is { } fireAt && Advanced >= fireAt)
             {
-                _ram.Write8(RamPollAddress, 1);
+                ram.Write8(RamPollAddress, 1);
                 FireRamPollAtAdvanced = null;
             }
         }

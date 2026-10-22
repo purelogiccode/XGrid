@@ -11,7 +11,7 @@ namespace XGrid.Bus.Tests;
 
 public sealed class SocketNetworkBackendTests
 {
-    private static readonly byte[] GuestMac = new byte[] { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
+    private static readonly byte[] GuestMac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
     private const uint GuestIp = 0xC0A80002u;
     private const uint GatewayIp = SocketNetworkBackend.GatewayIpAddress;
 
@@ -177,7 +177,7 @@ public sealed class SocketNetworkBackendTests
         Assert.NotNull(reply);
         Assert.Equal(14 + 28, reply.Length);
         // Ethernet: to requestor, from gateway.
-        Assert.Equal(GuestMac, reply[0..6]);
+        Assert.Equal(GuestMac, reply[..6]);
         Assert.Equal(SocketNetworkBackend.GatewayMacAddress, reply[6..12]);
         // ARP reply: opcode 2, sender gateway, target requestor.
         Assert.Equal(2, (reply[20] << 8) | reply[21]);
@@ -205,13 +205,13 @@ public sealed class SocketNetworkBackendTests
     public void IcmpEcho_ToGateway_GetsReply()
     {
         using var backend = new SocketNetworkBackend();
-        byte[] data = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        byte[] data = [0xDE, 0xAD, 0xBE, 0xEF];
         backend.SendPacket(BuildIcmpEcho(GuestMac, GuestIp, GatewayIp, 0x1234, 0x0007, data));
 
         Assert.True(backend.TryReceive(out byte[]? reply));
         Assert.NotNull(reply);
         // MACs/IPs swapped, ICMP type 0, ident/seq/data preserved.
-        Assert.Equal(GuestMac, reply[0..6]);
+        Assert.Equal(GuestMac, reply[..6]);
         Assert.Equal(SocketNetworkBackend.GatewayMacAddress, reply[6..12]);
         Assert.Equal(new byte[] { 0xC0, 0xA8, 0x00, 0x01 }, reply[26..30]);
         Assert.Equal(new byte[] { 0xC0, 0xA8, 0x00, 0x02 }, reply[30..34]);
@@ -234,7 +234,7 @@ public sealed class SocketNetworkBackendTests
         listener.Client.ReceiveTimeout = 5000;
         int port = ((IPEndPoint)listener.Client.LocalEndPoint!).Port;
         uint loopback = 0x7F000001u;
-        byte[] payload = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F };
+        byte[] payload = [0x68, 0x65, 0x6C, 0x6C, 0x6F];
 
         backend.SendPacket(BuildUdpFrame(GuestMac, GuestIp, 40000, loopback, (ushort)port, payload));
 
@@ -243,7 +243,7 @@ public sealed class SocketNetworkBackendTests
         byte[] received = listener.Receive(ref remote);
         Assert.Equal(payload, received);
 
-        byte[] answer = new byte[] { 0x6F, 0x6B };
+        byte[] answer = [0x6F, 0x6B];
         listener.Send(answer, answer.Length, remote);
 
         byte[]? inbound = null;
@@ -254,7 +254,7 @@ public sealed class SocketNetworkBackendTests
             "udp reply was not delivered back to the backend");
         Assert.NotNull(inbound);
         // Re-encapsulated: gateway MAC -> guest MAC, sender -> guest.
-        Assert.Equal(GuestMac, inbound![0..6]);
+        Assert.Equal(GuestMac, inbound![..6]);
         Assert.Equal(SocketNetworkBackend.GatewayMacAddress, inbound[6..12]);
         Assert.Equal(new byte[] { 0x7F, 0x00, 0x00, 0x01 }, inbound[26..30]);
         Assert.Equal(new byte[] { 0xC0, 0xA8, 0x00, 0x02 }, inbound[30..34]);
@@ -269,8 +269,8 @@ public sealed class SocketNetworkBackendTests
     public void MalformedFrames_Dropped()
     {
         using var backend = new SocketNetworkBackend();
-        backend.SendPacket(new byte[] { 1, 2, 3 });
-        backend.SendPacket(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x86, 0xDD });
+        backend.SendPacket([1, 2, 3]);
+        backend.SendPacket([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x86, 0xDD]);
 
         Assert.False(backend.TryReceive(out _));
         Assert.Equal(2, backend.DroppedPackets);
@@ -280,7 +280,7 @@ public sealed class SocketNetworkBackendTests
     public void TcpFrame_DroppedAndCounted()
     {
         using var backend = new SocketNetworkBackend();
-        byte[] frame = BuildUdpFrame(GuestMac, GuestIp, 40000, 0x08080808u, 80, new byte[] { 1 });
+        byte[] frame = BuildUdpFrame(GuestMac, GuestIp, 40000, 0x08080808u, 80, [1]);
         frame[14 + 9] = 6;
 
         backend.SendPacket(frame);

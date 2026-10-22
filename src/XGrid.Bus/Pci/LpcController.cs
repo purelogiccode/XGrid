@@ -8,22 +8,22 @@ namespace XGrid.Bus.Pci;
 public sealed class LpcController : PciDevice, IIoPortDevice
 {
     /// <summary>ACPI/SCI routing register (two bytes).</summary>
-    public const int AcpiRoutingRegister = 0x64;
+    private const int AcpiRoutingRegister = 0x64;
 
     /// <summary>PIRQ routing register (one byte per PIRQ, A-D).</summary>
-    public const int PirqRoutingRegister = 0x68;
+    private const int PirqRoutingRegister = 0x68;
 
     /// <summary>Internal IRQ routing register (eight 4-bit nibbles).</summary>
-    public const int IntRoutingRegister = 0x6C;
+    private const int IntRoutingRegister = 0x6C;
 
     /// <summary>MCPX boot ROM overlay control register.</summary>
-    public const int RomOverlayRegister = 0x80;
+    private const int RomOverlayRegister = 0x80;
 
     /// <summary>Hardware default of the internal IRQ routing register.</summary>
-    public const uint DefaultIntRouting = 0x0E065491;
+    private const uint DefaultIntRouting = 0x0E065491;
 
     /// <summary>Hardware default of the PIRQ routing register.</summary>
-    public const uint DefaultPirqRouting = 0x00031000;
+    private const uint DefaultPirqRouting = 0x00031000;
 
     private readonly IoSpace _io;
     private IDisposable? _ioWindow;
@@ -83,16 +83,11 @@ public sealed class LpcController : PciDevice, IIoPortDevice
     /// <summary>Returns the PIC IRQ from an ACPI routing byte (0-3), or 0 when unrouted.</summary>
     public int ResolveAcpiIrq(int index)
     {
-        if (index is < 0 or > 3)
-        {
-            return 0;
-        }
-
-        return (int)ReadConfig(AcpiRoutingRegister + index, 1);
+        return index is < 0 or > 3 ? 0 : (int)ReadConfig(AcpiRoutingRegister + index, 1);
     }
 
     /// <summary>Returns the routing index for a PCI slot, or -1 when the slot has no IRQ.</summary>
-    public static int RoutingIndexForSlot(int slot)
+    private static int RoutingIndexForSlot(int slot)
     {
         return slot switch
         {

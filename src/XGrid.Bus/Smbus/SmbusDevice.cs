@@ -9,6 +9,7 @@ public interface ISmbusDevice
     byte Address { get; }
 
     /// <summary>Handles a quick command. Returns false on error.</summary>
+    // ReSharper disable once UnusedParameter.Global
     bool Quick(bool read);
 
     /// <summary>Reads one byte without a command (protocol BYTE).</summary>
@@ -37,16 +38,12 @@ public interface ISmbusDevice
 }
 
 /// <summary>Base class with error-returning defaults for unsupported protocols.</summary>
-public abstract class SmbusDevice : ISmbusDevice
+/// <remarks>Creates a device at the given 7-bit address.</remarks>
+public abstract class SmbusDevice(byte address) : ISmbusDevice
 {
-    /// <summary>Creates a device at the given 7-bit address.</summary>
-    protected SmbusDevice(byte address)
-    {
-        Address = address;
-    }
 
     /// <summary>Gets the 7-bit SMBus address the device was created with.</summary>
-    public byte Address { get; }
+    public byte Address { get; } = address;
 
     /// <summary>Handles a quick command. This base implementation accepts every quick command and returns true.</summary>
     /// <param name="read">Whether the quick command is a read.</param>

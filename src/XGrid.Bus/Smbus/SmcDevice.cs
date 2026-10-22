@@ -8,7 +8,7 @@ namespace XGrid.Bus.Smbus;
 public sealed class SmcDevice : SmbusDevice, ISnapshotable
 {
     /// <summary>SMC SMBus address.</summary>
-    public const byte DeviceAddress = 0x10;
+    private const byte DeviceAddress = 0x10;
 
     /// <summary>Interrupt status flag for tray closed (set at realize, as in xemu).</summary>
     public const byte TrayClosedStatus = 0x02;
@@ -16,9 +16,9 @@ public sealed class SmcDevice : SmbusDevice, ISnapshotable
     /// <summary>Scratch value selecting the short boot animation (xemu `short-animation`).</summary>
     public const byte ScratchShortAnimation = 0x04;
 
-    private readonly char[] _version = { 'P', '0', '1' };
-    private readonly Dictionary<byte, int> _readCounts = new();
-    private readonly Dictionary<byte, int> _writeCounts = new();
+    private readonly char[] _version = ['P', '0', '1'];
+    private readonly Dictionary<byte, int> _readCounts = [];
+    private readonly Dictionary<byte, int> _writeCounts = [];
     private int _versionIndex;
     private byte _command;
     private byte _scratch = ScratchShortAnimation;

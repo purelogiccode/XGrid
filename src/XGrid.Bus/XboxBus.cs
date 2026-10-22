@@ -17,7 +17,7 @@ public sealed class XboxBus : IXboxDevice, ISnapshotable
     public const ulong CpuClockHz = 733333333;
 
     /// <summary>ACPI PM timer frequency (3.579545 MHz).</summary>
-    public const uint PmTimerFrequency = 3579545;
+    private const uint PmTimerFrequency = 3579545;
 
     private ulong _pitRemainder;
     private ulong _pmRemainder;
@@ -90,7 +90,7 @@ public sealed class XboxBus : IXboxDevice, ISnapshotable
     public Eeprom24C02 Eeprom { get; private set; }
 
     /// <summary>Gets the video encoder stub.</summary>
-    public ConexantCx25871 Encoder { get; }
+    private ConexantCx25871 Encoder { get; }
 
     /// <summary>Replaces the EEPROM image (e.g. with a user-supplied eeprom.bin).</summary>
     public void AttachEeprom(ReadOnlySpan<byte> image)
@@ -226,17 +226,9 @@ public sealed class XboxBus : IXboxDevice, ISnapshotable
 
     private int ResolveDeviceIrq(PciDevice device)
     {
-        if (device is Amd756Smbus)
-        {
-            return Lpc.ResolveAcpiIrq(1);
-        }
-
-        if (device is Nv2AGpu)
-        {
-            return Lpc.ResolveSlotIrq(30);
-        }
-
-        return Lpc.ResolveSlotIrq(device.DeviceNumber);
+        return device is Amd756Smbus
+            ? Lpc.ResolveAcpiIrq(1)
+            : device is Nv2AGpu ? Lpc.ResolveSlotIrq(30) : Lpc.ResolveSlotIrq(device.DeviceNumber);
     }
 
     private void OnPitOutput(int channel)

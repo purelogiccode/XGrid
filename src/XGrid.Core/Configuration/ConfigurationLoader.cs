@@ -19,12 +19,9 @@ public static class ConfigurationLoader
             EmulatorConfiguration? configuration =
                 JsonSerializer.Deserialize(json, EmulatorConfigurationJsonContext.Default.EmulatorConfiguration);
 
-            if (configuration is null)
-            {
-                throw new ConfigurationException("Configuration JSON did not contain an object.");
-            }
-
-            return configuration.Validate();
+            return configuration is null
+                ? throw new ConfigurationException("Configuration JSON did not contain an object.")
+                : configuration.Validate();
         }
         catch (JsonException exception)
         {

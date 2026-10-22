@@ -15,11 +15,13 @@ public sealed class PshGlslGeneratorTests
     {
         // Observed menu shape (design §1.2/§3.1): stages=1,
         // control=00000001, final combiner enabled, texture modes NONE.
-        var combiner = new PshCombiner();
-        combiner.Control = 0x00000001u;
-        combiner.StageProgram = 0u;
-        combiner.Final0 = 0x00000000u;
-        combiner.Final1 = 0x00000001u;
+        var combiner = new PshCombiner
+        {
+            Control = 0x00000001u,
+            StageProgram = 0u,
+            Final0 = 0x00000000u,
+            Final1 = 0x00000001u
+        };
         combiner.RgbInputs[0] = 0x00000000u;
         combiner.RgbOutputs[0] = 0x00000000u;
         combiner.AlphaInputs[0] = 0x00000000u;

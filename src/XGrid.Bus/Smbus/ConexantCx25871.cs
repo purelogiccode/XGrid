@@ -8,7 +8,7 @@ namespace XGrid.Bus.Smbus;
 public sealed class ConexantCx25871 : SmbusDevice, ISnapshotable
 {
     /// <summary>Conexant CX25871 SMBus address.</summary>
-    public const byte DeviceAddress = 0x45;
+    private const byte DeviceAddress = 0x45;
 
     private readonly byte[] _registers = new byte[256];
     private byte _pointer;
@@ -20,6 +20,7 @@ public sealed class ConexantCx25871 : SmbusDevice, ISnapshotable
     }
 
     /// <summary>Gets the register file (indexed by register number).</summary>
+    // ReSharper disable once UnusedMember.Global
     public byte this[byte register] => _registers[register];
 
     /// <summary>Saves the 256-byte register file plus the pointer (quiesce: no SMBus transaction in flight).</summary>

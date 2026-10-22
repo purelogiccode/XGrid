@@ -33,16 +33,19 @@ public sealed class XboxContext
     }
 
     /// <summary>Gets the address of the Eip field (C3 raw emitter; context must be pinned).</summary>
+    // ReSharper disable once UnusedMember.Global
     internal unsafe uint* RawEipAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _eip);
 
     /// <summary>Gets the address of the Eflags field (C3 raw emitter; context must be pinned).</summary>
+    // ReSharper disable once UnusedMember.Global
     internal unsafe uint* RawEflagsAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _eflags);
 
     /// <summary>Gets the address of the Tsc field (C3 raw emitter; context must be pinned).</summary>
+    // ReSharper disable once UnusedMember.Global
     internal unsafe ulong* RawTscAddress() => (ulong*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _tsc);
 
     /// <summary>Gets the address of the register file (C3 raw emitter; array must be pinned).</summary>
-    internal unsafe uint* RawRegistersAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref _registers[0]);
+    internal unsafe uint* RawRegistersAddress() => (uint*)System.Runtime.CompilerServices.Unsafe.AsPointer(ref RawRegisterArray[0]);
 
     /// <summary>Gets the raw register array (C3 raw emitter pins it).</summary>
     internal uint[] RawRegisterArray => _registers;
@@ -160,7 +163,7 @@ public sealed class XboxContext
     /// <summary>Returns the CPU to its power-on state (reset vector at 0xFFFFFFF0).</summary>
     public void Reset()
     {
-        Array.Clear(_registers);
+        Array.Clear(RawRegisterArray);
         Array.Clear(_debugRegisters);
         Array.Clear(_segments);
         Eip = 0xFFF0;
@@ -234,32 +237,32 @@ public sealed class XboxContext
     /// <summary>Reads a 32-bit general-purpose register.</summary>
     public uint ReadRegister(Gpr register)
     {
-        return _registers[(int)register];
+        return RawRegisterArray[(int)register];
     }
 
     /// <summary>Writes a 32-bit general-purpose register.</summary>
     public void WriteRegister(Gpr register, uint value)
     {
-        _registers[(int)register] = value;
+        RawRegisterArray[(int)register] = value;
     }
 
     /// <summary>Reads the low 16 bits of a general-purpose register.</summary>
     public ushort ReadRegister16(Gpr register)
     {
-        return (ushort)_registers[(int)register];
+        return (ushort)RawRegisterArray[(int)register];
     }
 
     /// <summary>Writes the low 16 bits of a general-purpose register.</summary>
     public void WriteRegister16(Gpr register, ushort value)
     {
-        _registers[(int)register] = (_registers[(int)register] & 0xFFFF0000u) | value;
+        RawRegisterArray[(int)register] = (RawRegisterArray[(int)register] & 0xFFFF0000u) | value;
     }
 
     /// <summary>Reads an 8-bit register by ModRM encoding (0-3 low bytes, 4-7 high bytes).</summary>
     public byte ReadRegister8(int index)
     {
         int register = index & 3;
-        uint value = _registers[register];
+        uint value = RawRegisterArray[register];
         return (index & 4) != 0 ? (byte)(value >> 8) : (byte)value;
     }
 
@@ -267,8 +270,8 @@ public sealed class XboxContext
     public void WriteRegister8(int index, byte value)
     {
         int register = index & 3;
-        uint current = _registers[register];
-        _registers[register] = (index & 4) != 0
+        uint current = RawRegisterArray[register];
+        RawRegisterArray[register] = (index & 4) != 0
             ? (current & 0xFFFF00FFu) | ((uint)value << 8)
             : (current & 0xFFFFFF00u) | value;
     }

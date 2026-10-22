@@ -28,14 +28,9 @@ public sealed class Nv2aZetaClearLayoutTests
     private const uint StencilOpKeep = 0x1E00u;
     private const uint StencilOpReplace = 0x1E01u;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x20000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x20000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -89,15 +84,15 @@ public sealed class Nv2aZetaClearLayoutTests
     /// </summary>
     private static System.Collections.Generic.List<(uint Method, uint Parameter)> SurfaceState()
     {
-        return new System.Collections.Generic.List<(uint Method, uint Parameter)>
-        {
+        return
+        [
             (0x0208u, 0x00000124u), // pitch type, color 4-byte, zeta Z24S8
             (0x020Cu, 0x00400040u), // color pitch 0x40, zeta pitch 0x40
             (0x0210u, ColorBase),
             (0x0214u, ZetaBase),
             (0x0200u, 0x00100000u), // clip H: width 16
             (0x0204u, 0x00100000u), // clip V: height 16
-        };
+        ];
     }
 
     private static void PushZetaClear(
@@ -166,7 +161,7 @@ public sealed class Nv2aZetaClearLayoutTests
         (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
         var pushes = SurfaceState();
         PushZetaClear(pushes, 0x00711174u);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0x00711174u, ReadZeta(memory, 0, 0));
         Assert.Equal(0x00711174u, ReadZeta(memory, 15, 15));
@@ -195,7 +190,7 @@ public sealed class Nv2aZetaClearLayoutTests
             pushes.Add((0x374u, StencilOpKeep));
             pushes.Add((0x378u, StencilOpKeep));
             PushTriangle(pushes, memory);
-            PushMethods(nv2A, memory, pushes.ToArray());
+            PushMethods(nv2A, memory, [.. pushes]);
 
             Assert.Equal(1uL, nv2A.DrawsExecuted);
             return ReadPixel(memory, 5, 5);
@@ -218,7 +213,7 @@ public sealed class Nv2aZetaClearLayoutTests
         pushes.Add((0x35Cu, 0u)); // depth mask off: zeta depth must not move
         pushes.Add((0x1D90u, 0xFF00FF00u));
         PushTriangle(pushes, memory);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         // Stencil replaced inside the triangle, depth field untouched.
         Assert.Equal(0xFF00005Au, ReadZeta(memory, 5, 5));
@@ -250,7 +245,7 @@ public sealed class Nv2aZetaClearLayoutTests
         pushes.Add((0x32Cu, 1u)); // stencil test enabled
         pushes.Add((0x360u, 0u)); // stencil write mask: nothing
         PushZetaClear(pushes, 0x00711174u);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0x00711174u, ReadZeta(memory, 0, 0));
         Assert.Equal(0x00711174u, ReadZeta(memory, 15, 15));
@@ -268,7 +263,7 @@ public sealed class Nv2aZetaClearLayoutTests
         pushes.Add((0x1D98u, 0x000F0000u));
         pushes.Add((0x1D9Cu, 0x000F0000u));
         pushes.Add((0x1D94u, 0x000000F0u)); // clear color
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0xFF3366AAu, ReadPixel(memory, 0, 0));
         Assert.Equal(0xFF3366AAu, ReadPixel(memory, 15, 15));

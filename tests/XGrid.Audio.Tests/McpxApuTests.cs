@@ -145,7 +145,7 @@ public sealed class McpxApuTests
 
     private sealed class FakeMemory : IApuMemory
     {
-        private readonly Dictionary<uint, uint> _dwords = new();
+        private readonly Dictionary<uint, uint> _dwords = [];
 
         public uint Read32(uint address)
         {

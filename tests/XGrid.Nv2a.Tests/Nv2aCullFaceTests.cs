@@ -23,14 +23,9 @@ public sealed class Nv2aCullFaceTests
     private const uint FrontFaceCw = 0x0900u;
     private const uint FrontFaceCcw = 0x0901u;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -118,32 +113,31 @@ public sealed class Nv2aCullFaceTests
             (0x0308u, cullEnable),
             (0x039Cu, cullFace),
             (0x03A0u, frontFace),
+            // Position program: oPos = v0 (the same words PgraphBackendSeamTests uses
+            // for its software-draw oracle).
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x0B10u, 0u),
+            (0x0B14u, 0x0020001Bu),
+            (0x0B18u, 0x0C36006Cu),
+            (0x0B1Cu, 0x0000F819u),
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0x3F000000u),
+            (0x0B88u, 0x3E800000u),
+            (0x0B8Cu, 0x3F800000u),
+
+            // Element 0 is implied by BEGIN_END; the two pushes supply 1 and 2.
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u)
         };
 
-        // Position program: oPos = v0 (the same words PgraphBackendSeamTests uses
-        // for its software-draw oracle).
-        pushes.Add((0x1E9Cu, 0u));
-        pushes.Add((0x0B00u, 0u));
-        pushes.Add((0x0B04u, 0x0020001Bu));
-        pushes.Add((0x0B08u, 0x0836006Cu));
-        pushes.Add((0x0B0Cu, 0x0000F800u));
-        pushes.Add((0x0B10u, 0u));
-        pushes.Add((0x0B14u, 0x0020001Bu));
-        pushes.Add((0x0B18u, 0x0C36006Cu));
-        pushes.Add((0x0B1Cu, 0x0000F819u));
-        pushes.Add((0x1EA4u, 0u));
-        pushes.Add((0x0B80u, 0x3F800000u));
-        pushes.Add((0x0B84u, 0x3F000000u));
-        pushes.Add((0x0B88u, 0x3E800000u));
-        pushes.Add((0x0B8Cu, 0x3F800000u));
-
-        // Element 0 is implied by BEGIN_END; the two pushes supply 1 and 2.
-        pushes.Add((0x17FCu, 5u));
-        pushes.Add((0x1800u, 0x00010000u));
-        pushes.Add((0x1808u, 0x00000002u));
-        pushes.Add((0x17FCu, 0u));
-
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         return (nv2A.TrianglesCulled, nv2A.DrawnPixels);
     }
 
@@ -223,7 +217,7 @@ public sealed class Nv2aCullFaceTests
             (0x039Cu, CullFaceFront),
             (0x03A0u, FrontFaceCcw),
         };
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         using var buffer = new System.IO.MemoryStream();
         using (var writer = new System.IO.BinaryWriter(buffer, System.Text.Encoding.UTF8, leaveOpen: true))

@@ -14,12 +14,14 @@ public sealed class UnhandledGuestException : Exception
     }
 
     /// <summary>Initializes a new instance of the <see cref="UnhandledGuestException"/> class.</summary>
+    // ReSharper disable once UnusedMember.Global
     public UnhandledGuestException()
     {
     }
 
     /// <summary>Initializes a new instance of the <see cref="UnhandledGuestException"/> class with a message.</summary>
     /// <param name="message">The message describing the error.</param>
+    // ReSharper disable once UnusedMember.Global
     public UnhandledGuestException(string? message) : base(message)
     {
     }
@@ -27,6 +29,7 @@ public sealed class UnhandledGuestException : Exception
     /// <summary>Initializes a new instance of the <see cref="UnhandledGuestException"/> class with a message and inner exception.</summary>
     /// <param name="message">The message describing the error.</param>
     /// <param name="innerException">The exception that caused this error.</param>
+    // ReSharper disable once UnusedMember.Global
     public UnhandledGuestException(string? message, Exception? innerException) : base(message, innerException)
     {
     }

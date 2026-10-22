@@ -51,7 +51,7 @@ public sealed class DeviceSnapshotTests
 
     private sealed class FakeUsbMemory : IUsbMemory
     {
-        private readonly Dictionary<uint, byte> _ram = new();
+        private readonly Dictionary<uint, byte> _ram = [];
 
         public byte Read8(uint address)
         {
@@ -221,7 +221,7 @@ public sealed class DeviceSnapshotTests
     public void Eeprom_RoundTrip()
     {
         AssertRoundTrip(
-            () => new Eeprom24C02(new byte[] { 0x01, 0x02, 0x03 }),
+            () => new Eeprom24C02([0x01, 0x02, 0x03]),
             device =>
             {
                 var eeprom = (Eeprom24C02)device;
@@ -333,7 +333,7 @@ public sealed class DeviceSnapshotTests
             device =>
             {
                 var pad = (XidGamepad)device;
-                pad.SetInput(0x0003, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, new short[] { 100, -100, 50, -50 });
+                pad.SetInput(0x0003, [1, 2, 3, 4, 5, 6, 7, 8], [100, -100, 50, -50]);
                 pad.HandleSetup(new UsbSetupPacket(0x00, 0x05, 0x0002, 0, 0), out _);
                 pad.CompleteStatusStage();
             });

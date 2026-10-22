@@ -24,7 +24,7 @@ public interface IUsbDeviceHub : IUsbDeviceFunction
 public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 {
     /// <summary>Maximum downstream port count (QEMU MAX_PORTS).</summary>
-    public const int MaxPorts = 8;
+    private const int MaxPorts = 8;
 
     private const byte StatusEndpoint = 1;
 
@@ -57,20 +57,20 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
     private const ushort FeaturePortChangeReset = 20;
 
     private static readonly byte[] DeviceDescriptor =
-    {
+    [
         0x12, 0x01, 0x10, 0x01, 0x09, 0x00, 0x00, 0x08,
         0x09, 0x04, 0xAA, 0x55, 0x01, 0x01, 0x01, 0x02,
         0x03, 0x01,
-    };
+    ];
 
     private static readonly byte[] ConfigDescriptor =
-    {
+    [
         0x09, 0x02, 0x19, 0x00, 0x01, 0x01, 0x00, 0xE0, 0x00,
         0x09, 0x04, 0x00, 0x00, 0x01, 0x09, 0x00, 0x00, 0x00,
         0x07, 0x05, 0x81, 0x03, 0x02, 0x00, 0xFF,
-    };
+    ];
 
-    private static readonly byte[] LangDescriptor = { 0x04, 0x03, 0x09, 0x04 };
+    private static readonly byte[] LangDescriptor = [0x04, 0x03, 0x09, 0x04];
 
     private static readonly byte[] HubStatus = new byte[4];
 
@@ -83,7 +83,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 
     private readonly HubPort[] _ports;
     private readonly byte[] _hubDescriptor;
-    private readonly List<string> _requestLog = new();
+    private readonly List<string> _requestLog = [];
     private bool _remoteWakeup;
     private byte _pendingAddress = 0xFF;
     private byte _pendingConfig;
@@ -303,7 +303,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 
     private UsbTransferResult HandleSetupCore(in UsbSetupPacket setup, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         switch ((setup.RequestType, setup.Request))
         {
             case (0x80, 0x06):
@@ -316,10 +316,10 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
                 _hasPendingConfig = true;
                 return UsbTransferResult.Ack;
             case (0x80, 0x08):
-                payload = new[] { Configured ? (byte)1 : (byte)0 };
+                payload = [Configured ? (byte)1 : (byte)0];
                 return UsbTransferResult.Ack;
             case (0x80, 0x00):
-                payload = new[] { (byte)(1 | (_remoteWakeup ? 2 : 0)), (byte)0 };
+                payload = [(byte)(1 | (_remoteWakeup ? 2 : 0)), 0];
                 return UsbTransferResult.Ack;
             case (0x00, 0x01) when setup.Value == 1:
                 _remoteWakeup = false;
@@ -328,7 +328,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
                 _remoteWakeup = true;
                 return UsbTransferResult.Ack;
             case (0x81, 0x0A):
-                payload = new byte[] { 0 };
+                payload = [0];
                 return UsbTransferResult.Ack;
             case (0x01, 0x0B) when setup.Value == 0:
                 return UsbTransferResult.Ack;
@@ -381,7 +381,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
     /// <returns>Ack with the bitmap, Nak when no port has a pending change, or Stall for other endpoints or too-short reads.</returns>
     public UsbTransferResult HandleIn(byte endpoint, int length, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         if (endpoint != StatusEndpoint)
         {
             LogRequest(FormattableString.Invariant($"in ep{endpoint} len={length} -> {UsbTransferResult.Stall} [0]"));
@@ -445,7 +445,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
 
     private static UsbTransferResult GetDescriptor(byte type, byte index, ushort length, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         switch (type)
         {
             case DescriptorDevice:
@@ -461,7 +461,7 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
                     1 => Slice(StringDescriptor("QEMU"), length),
                     2 => Slice(StringDescriptor("QEMU USB Hub"), length),
                     3 => Slice(StringDescriptor("314159"), length),
-                    _ => Array.Empty<byte>(),
+                    _ => [],
                 };
                 return index <= 3 ? UsbTransferResult.Ack : UsbTransferResult.Stall;
             default:
@@ -473,12 +473,12 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
     {
         HubPort port = _ports[index];
         byte[] result =
-        {
+        [
             (byte)port.Status,
             (byte)(port.Status >> 8),
             (byte)port.Change,
             (byte)(port.Change >> 8),
-        };
+        ];
         return Slice(result, length);
     }
 

@@ -19,22 +19,22 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     public const uint GatewayIpAddress = 0xC0A80001u;
 
     /// <summary>Default guest IPv4 address (192.168.0.2) until learned from outbound frames.</summary>
-    public const uint DefaultGuestIpAddress = 0xC0A80002u;
+    private const uint DefaultGuestIpAddress = 0xC0A80002u;
 
     /// <summary>Maximum queued response frames before the oldest is dropped.</summary>
-    public const int MaxQueuedFrames = 64;
+    private const int MaxQueuedFrames = 64;
 
     /// <summary>Maximum transmitted-frame copies kept in the log.</summary>
-    public const int MaxLoggedFrames = 16;
+    private const int MaxLoggedFrames = 16;
 
     /// <summary>Maximum concurrent UDP NAT mappings.</summary>
-    public const int MaxUdpMappings = 16;
+    private const int MaxUdpMappings = 16;
 
     /// <summary>UDP mapping idle lifetime in milliseconds.</summary>
-    public const long UdpMappingLifetimeMs = 60_000;
+    private const long UdpMappingLifetimeMs = 60_000;
 
     /// <summary>Virtual gateway MAC (locally administered).</summary>
-    public static byte[] GatewayMacAddress { get; } = new byte[] { 0x52, 0x55, 0x0A, 0x00, 0x02, 0x01 };
+    public static byte[] GatewayMacAddress { get; } = [0x52, 0x55, 0x0A, 0x00, 0x02, 0x01];
 
     private const ushort EtherTypeArp = 0x0806;
     private const ushort EtherTypeIpv4 = 0x0800;
@@ -44,20 +44,19 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     private const byte IcmpEchoReply = 0;
 
     private readonly Queue<byte[]> _responses = new();
-    private readonly List<byte[]> _sentLog = new();
-    private readonly List<UdpMapping> _udpMappings = new();
-    private readonly Dictionary<uint, byte[]> _ipToMac = new();
+    private readonly List<byte[]> _sentLog = [];
+    private readonly List<UdpMapping> _udpMappings = [];
+    private readonly Dictionary<uint, byte[]> _ipToMac = [];
     private readonly byte[] _guestMac = new byte[6];
     private bool _haveGuestMac;
-    private uint _guestIp = DefaultGuestIpAddress;
     private ushort _ipIdent;
     private bool _disposed;
 
     /// <summary>Gets the number of frames handed to the backend.</summary>
-    public long SentPackets { get; private set; }
+    private long SentPackets { get; set; }
 
     /// <summary>Gets the total transmitted frame bytes.</summary>
-    public long SentBytes { get; private set; }
+    private long SentBytes { get; set; }
 
     /// <summary>Gets the number of frames dropped (runt, unsupported, queue/mapping overflow).</summary>
     public long DroppedPackets { get; private set; }
@@ -75,13 +74,15 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
     public long UdpReceived { get; private set; }
 
     /// <summary>Gets recent transmitted-frame copies (newest last), for diagnostics.</summary>
+    // ReSharper disable once UnusedMember.Global
     public IReadOnlyList<byte[]> SentLog => _sentLog;
 
     /// <summary>Gets the number of response frames currently queued for the guest.</summary>
+    // ReSharper disable once UnusedMember.Global
     public int QueuedFrames => _responses.Count;
 
     /// <summary>Gets the guest IPv4 address learned from outbound frames (network order).</summary>
-    public uint GuestIp => _guestIp;
+    public uint GuestIp { get; private set; } = DefaultGuestIpAddress;
 
     /// <summary>Handles one guest Ethernet frame: counts it in <see cref="SentPackets"/>/
     /// <see cref="SentBytes"/>, learns the guest MAC, answers ARP for the virtual gateway,
@@ -334,8 +335,10 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
             Socket socket;
             try
             {
-                socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-                socket.EnableBroadcast = true;
+                socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
+                {
+                    EnableBroadcast = true
+                };
             }
             catch (SocketException)
             {
@@ -476,7 +479,7 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
 
     private void LearnHost(uint ip, byte[] mac)
     {
-        _guestIp = ip;
+        GuestIp = ip;
         _ipToMac[ip] = (byte[])mac.Clone();
     }
 
@@ -578,7 +581,7 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
 
     private static byte[] ToBigEndianBytes(uint ip)
     {
-        return new[] { (byte)(ip >> 24), (byte)(ip >> 16), (byte)(ip >> 8), (byte)ip };
+        return [(byte)(ip >> 24), (byte)(ip >> 16), (byte)(ip >> 8), (byte)ip];
     }
 
     private static uint FromBigEndianBytes(byte[] bytes)
@@ -586,29 +589,19 @@ public sealed class SocketNetworkBackend : INetworkBackend, IDisposable
         return ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
     }
 
-    private sealed class UdpMapping
+    private sealed class UdpMapping(Socket socket, uint guestIp, ushort guestPort, uint dstIp, ushort dstPort)
     {
-        public UdpMapping(Socket socket, uint guestIp, ushort guestPort, uint dstIp, ushort dstPort)
-        {
-            Socket = socket;
-            GuestIp = guestIp;
-            GuestPort = guestPort;
-            DstIp = dstIp;
-            DstPort = dstPort;
-            LastActivity = Environment.TickCount64;
-        }
+        public Socket Socket { get; } = socket;
 
-        public Socket Socket { get; }
+        public uint GuestIp { get; } = guestIp;
 
-        public uint GuestIp { get; }
+        public ushort GuestPort { get; } = guestPort;
 
-        public ushort GuestPort { get; }
+        public uint DstIp { get; } = dstIp;
 
-        public uint DstIp { get; }
+        public ushort DstPort { get; } = dstPort;
 
-        public ushort DstPort { get; }
-
-        public long LastActivity { get; set; }
+        public long LastActivity { get; set; } = Environment.TickCount64;
 
         public bool Failed { get; set; }
     }

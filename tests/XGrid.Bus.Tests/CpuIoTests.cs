@@ -200,11 +200,11 @@ public sealed class CpuIoTests
 
     private sealed class StubIoBus : IIoBus
     {
-        public byte Read8Value { get; set; }
+        public byte Read8Value { get; init; }
 
-        public ushort Read16Value { get; set; }
+        public ushort Read16Value { get; init; }
 
-        public uint Read32Value { get; set; }
+        public uint Read32Value { get; init; }
 
         public ushort LastPort { get; private set; }
 

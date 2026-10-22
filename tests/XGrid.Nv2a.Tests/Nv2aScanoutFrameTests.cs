@@ -27,14 +27,9 @@ public sealed class Nv2aScanoutFrameTests
     private const uint Width = 2u;
     private const uint Height = 2u;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -207,7 +202,7 @@ public sealed class Nv2aScanoutFrameTests
         {
             width = 0;
             height = 0;
-            bgra = Array.Empty<byte>();
+            bgra = [];
             return false;
         }
 

@@ -17,7 +17,7 @@ public sealed class GameListItem
     }
 
     /// <summary>Gets the underlying entry.</summary>
-    public GameEntry Game { get; }
+    private GameEntry Game { get; }
 
     /// <summary>Gets the launch command.</summary>
     public IRelayCommand LaunchCommand { get; }

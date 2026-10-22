@@ -27,7 +27,7 @@ public sealed class Eeprom24C02 : SmbusDevice, ISnapshotable
     }
 
     /// <summary>Gets the current internal address pointer.</summary>
-    public int AddressPointer { get; private set; }
+    private int AddressPointer { get; set; }
 
     /// <summary>
     /// Copies the 256-byte image out of the device (the persisted user

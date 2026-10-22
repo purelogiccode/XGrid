@@ -19,6 +19,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public const uint BaseAddress = 0xFEC00000;
 
     /// <summary>ACI MMIO window size (PCI BAR2 size).</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint WindowSize = 0x00001000;
 
     private const uint NamLimit = 0x100;
@@ -518,12 +519,7 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     private ushort MixerLoad(uint offset)
     {
-        if (offset + 2 > _mixer.Length)
-        {
-            return 0xFFFF;
-        }
-
-        return (ushort)(_mixer[offset] | (_mixer[offset + 1] << 8));
+        return offset + 2 > _mixer.Length ? (ushort)0xFFFF : (ushort)(_mixer[offset] | (_mixer[offset + 1] << 8));
     }
 
     private sealed class BmBlock

@@ -49,7 +49,7 @@ public sealed class PshCombiner : ISnapshotable
     public const int RegV1 = 0x5;
 
     /// <summary>Combiner register id for the first texture texel (T1-T3 follow at 0x9-0xB).</summary>
-    public const int RegT0 = 0x8;
+    private const int RegT0 = 0x8;
 
     /// <summary>Combiner register id for temporary register R0 (also the MUX select source).</summary>
     public const int RegR0 = 0xC;
@@ -65,47 +65,47 @@ public sealed class PshCombiner : ISnapshotable
 
     // Input mappings (psh_regs.h PS_INPUTMAPPING).
     /// <summary>Input mapping: unsigned identity, max(x, 0).</summary>
-    public const int MapUnsignedIdentity = 0x00;
+    private const int MapUnsignedIdentity = 0x00;
 
     /// <summary>Input mapping: unsigned invert, 1 - clamp(x, 0, 1).</summary>
-    public const int MapUnsignedInvert = 0x20;
+    private const int MapUnsignedInvert = 0x20;
 
     /// <summary>Input mapping: expand to [-1,1], 2 * max(x, 0) - 1.</summary>
-    public const int MapExpandNormal = 0x40;
+    private const int MapExpandNormal = 0x40;
 
     /// <summary>Input mapping: negated expand, -2 * max(x, 0) + 1.</summary>
-    public const int MapExpandNegate = 0x60;
+    private const int MapExpandNegate = 0x60;
 
     /// <summary>Input mapping: half-bias, max(x, 0) - 0.5.</summary>
-    public const int MapHalfbiasNormal = 0x80;
+    private const int MapHalfbiasNormal = 0x80;
 
     /// <summary>Input mapping: negated half-bias, -max(x, 0) + 0.5.</summary>
-    public const int MapHalfbiasNegate = 0xA0;
+    private const int MapHalfbiasNegate = 0xA0;
 
     /// <summary>Input mapping: signed identity, x unchanged.</summary>
-    public const int MapSignedIdentity = 0xC0;
+    private const int MapSignedIdentity = 0xC0;
 
     /// <summary>Input mapping: signed negate, -x.</summary>
-    public const int MapSignedNegate = 0xE0;
+    private const int MapSignedNegate = 0xE0;
 
     // Output mappings (psh_regs.h PS_COMBINEROUTPUT).
     /// <summary>Output mapping: identity, x.</summary>
-    public const int OutIdentity = 0x00;
+    private const int OutIdentity = 0x00;
 
     /// <summary>Output mapping: bias, x - 0.5.</summary>
-    public const int OutBias = 0x08;
+    private const int OutBias = 0x08;
 
     /// <summary>Output mapping: shift left one, x * 2.</summary>
-    public const int OutShiftLeft1 = 0x10;
+    private const int OutShiftLeft1 = 0x10;
 
     /// <summary>Output mapping: biased shift left one, (x - 0.5) * 2.</summary>
-    public const int OutShiftLeft1Bias = 0x18;
+    private const int OutShiftLeft1Bias = 0x18;
 
     /// <summary>Output mapping: shift left two, x * 4.</summary>
-    public const int OutShiftLeft2 = 0x20;
+    private const int OutShiftLeft2 = 0x20;
 
     /// <summary>Output mapping: shift right one, x / 2.</summary>
-    public const int OutShiftRight1 = 0x30;
+    private const int OutShiftRight1 = 0x30;
 
     // Output flag bits within an OCW word.
     /// <summary>OCW flag: the CD pair uses a dot product instead of a multiply.</summary>
@@ -242,6 +242,7 @@ public sealed class PshCombiner : ISnapshotable
     public uint Final1 { get; set; }
 
     /// <summary>Resets all combiner state to power-on defaults (disabled).</summary>
+    // ReSharper disable once UnusedMember.Global
     public void Reset()
     {
         Array.Clear(RgbInputs);
@@ -443,32 +444,32 @@ public sealed class PshCombiner : ISnapshotable
     /// HILO dot maps: hi = (a &lt;&lt; 8) | r, lo = (g &lt;&lt; 8) | b, each from
     /// the reference byte quantization <c>uint(component * 0xFF)</c>.
     /// </summary>
-    public static void DecodeHilo(float r, float g, float b, float a, out float hi, out float lo)
+    private static void DecodeHilo(float r, float g, float b, float a, out float hi, out float lo)
     {
         hi = (((uint)(a * 255f) << 8) | (uint)(r * 255f));
         lo = (((uint)(g * 255f) << 8) | (uint)(b * 255f));
     }
 
     /// <summary>D3D signed 16-bit decode (xemu sign1 extended): (h - 0x8000)/0x7FFF.</summary>
-    public static float DecodeHemisphereD3D(float h)
+    private static float DecodeHemisphereD3D(float h)
     {
         return (h - 32768f) / 32767f;
     }
 
     /// <summary>OpenGL signed 16-bit decode (xemu sign2 extended) with the +0.5 bias.</summary>
-    public static float DecodeHemisphereGl(float h)
+    private static float DecodeHemisphereGl(float h)
     {
         return h >= 32768f ? (h - 65535.5f) / 32767.5f : (h + 0.5f) / 32767.5f;
     }
 
     /// <summary>Plain signed 16-bit decode (xemu sign3 extended), two's complement / 0x7FFF.</summary>
-    public static float DecodeHemisphere(float h)
+    private static float DecodeHemisphere(float h)
     {
         return h >= 32768f ? (h - 65536f) / 32767f : h / 32767f;
     }
 
     /// <summary>Hemisphere z = sqrt(max(0, 1 - H*H - L*L)).</summary>
-    public static float HemisphereZ(float h, float l)
+    private static float HemisphereZ(float h, float l)
     {
         return MathF.Sqrt(Math.Max(0f, 1f - (h * h) - (l * l)));
     }
@@ -494,6 +495,7 @@ public sealed class PshCombiner : ISnapshotable
     }
 
     /// <summary>Luminance companion of <see cref="Sign3"/> (xemu <c>sign3_to_0_to_1</c>).</summary>
+    // ReSharper disable once UnusedMember.Global
     public static float Sign3To01(float x)
     {
         return x >= 0f ? x / 2f : 1f + (x / 2f);
@@ -638,19 +640,19 @@ public sealed class PshCombiner : ISnapshotable
     }
 
     /// <summary>Unpacks an ARGB-packed constant word to RGBA floats.</summary>
-    public static float[] UnpackArgb(uint argb)
+    private static float[] UnpackArgb(uint argb)
     {
-        return new[]
-        {
+        return
+        [
             ((argb >> 16) & 0xFFu) / 255f,
             ((argb >> 8) & 0xFFu) / 255f,
             (argb & 0xFFu) / 255f,
             ((argb >> 24) & 0xFFu) / 255f,
-        };
+        ];
     }
 
     /// <summary>Unpacks one ARGB word into <paramref name="destination"/> at <paramref name="offset"/> (R,G,B,A) without allocating.</summary>
-    public static void UnpackArgbTo(uint argb, float[] destination, int offset)
+    private static void UnpackArgbTo(uint argb, float[] destination, int offset)
     {
         destination[offset] = ((argb >> 16) & 0xFFu) / 255f;
         destination[offset + 1] = ((argb >> 8) & 0xFFu) / 255f;
@@ -865,19 +867,13 @@ public sealed class PshCombiner : ISnapshotable
             return 0;
         }
 
-        if (Control == 0x00011108u && RgbInputs[0] == 0xC149C14Au && AlphaInputs[0] == 0xD159D15Au &&
-            IsLightingTail(combineStage: 6, addStage: 7))
-        {
-            return 2;
-        }
-
-        if (Control == 0x00011107u && RgbInputs[0] == 0x4849484Au && AlphaInputs[0] == 0x5859585Au &&
-            IsLightingTail(combineStage: 5, addStage: 6))
-        {
-            return 3;
-        }
-
-        return 0;
+        return Control == 0x00011108u && RgbInputs[0] == 0xC149C14Au && AlphaInputs[0] == 0xD159D15Au &&
+            IsLightingTail(combineStage: 6, addStage: 7)
+            ? 2
+            : Control == 0x00011107u && RgbInputs[0] == 0x4849484Au && AlphaInputs[0] == 0x5859585Au &&
+            IsLightingTail(combineStage: 5, addStage: 6)
+            ? 3
+            : 0;
     }
 
     private bool IsLightingTail(int combineStage, int addStage)
@@ -924,6 +920,7 @@ public sealed class PshCombiner : ISnapshotable
     public static void EvaluateLightingSpecialized(
         int kind,
         float[] diffuse,
+        // ReSharper disable once UnusedParameter.Global
         float[] specular,
         float[][] texels,
         float[][] consts,
@@ -1049,7 +1046,8 @@ public sealed class PshCombiner : ISnapshotable
     /// -1..1), 0) + 0</c>. Public so the rasterizer's compiled modulate fill
     /// can run the identical expression without a per-fragment array walk.
     /// </summary>
-    public static float ModulatePass(float t0, float v0)
+    // ReSharper disable once MemberCanBePrivate.Global
+    internal static float ModulatePass(float t0, float v0)
     {
         // Stage: ab = clamp(-1..1) of the product; cd = clamp(0 * 0) = +0;
         // mux = ab + cd (no FlagMux) re-clamped. Final: D = max(mux, 0);
@@ -1138,7 +1136,7 @@ public sealed class PshCombiner : ISnapshotable
             for (int component = 0; component < 4; component++)
             {
                 _planConst[(slot * 4) + component] =
-                    MapComponent(ReadComponent(default, Array.Empty<float>(), consts, stage, reg, chan, component), mod);
+                    MapComponent(ReadComponent(default, [], consts, stage, reg, chan, component), mod);
             }
 
             return;
@@ -1190,7 +1188,7 @@ public sealed class PshCombiner : ISnapshotable
             for (int component = 0; component < 4; component++)
             {
                 _finalConst[(slot * 4) + component] = MapComponent(
-                    ReadFinalComponent(default, 0f, 0f, 0f, Array.Empty<float>(), consts, reg, chan, component), mod);
+                    ReadFinalComponent(default, 0f, 0f, 0f, [], consts, reg, chan, component), mod);
             }
 
             return;
@@ -1510,12 +1508,9 @@ public sealed class PshCombiner : ISnapshotable
     private float[] StageConst(float[][] consts, int stage, int reg)
     {
         uint flags = Control >> 8;
-        if (reg == RegC0)
-        {
-            return ((flags & ControlUniqueC0) != 0) ? consts[stage * 2] : consts[0];
-        }
-
-        return ((flags & ControlUniqueC1) != 0) ? consts[(stage * 2) + 1] : consts[1];
+        return reg == RegC0
+            ? ((flags & ControlUniqueC0) != 0) ? consts[stage * 2] : consts[0]
+            : ((flags & ControlUniqueC1) != 0) ? consts[(stage * 2) + 1] : consts[1];
     }
 
     private float ReadComponent(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan,
@@ -1553,12 +1548,7 @@ public sealed class PshCombiner : ISnapshotable
         }
 
         int offset = RegOffset(reg);
-        if (offset < 0)
-        {
-            return 0f;
-        }
-
-        return regs[offset + component];
+        return offset < 0 ? 0f : regs[offset + component];
     }
 
     private float ReadFinalComponent(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts,
@@ -1569,17 +1559,11 @@ public sealed class PshCombiner : ISnapshotable
             return component == 0 ? efx : component == 1 ? efy : efz;
         }
 
-        if (reg == RegC0)
-        {
-            return chan != 0 ? consts[16][3] : consts[16][component];
-        }
-
-        if (reg == RegC1)
-        {
-            return chan != 0 ? consts[17][3] : consts[17][component];
-        }
-
-        return ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
+        return reg == RegC0
+            ? chan != 0 ? consts[16][3] : consts[16][component]
+            : reg == RegC1
+            ? chan != 0 ? consts[17][3] : consts[17][component]
+            : ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
     private float ReadFinalAlpha(Span<float> regs, float efz, float[] fog, float[][] consts,
@@ -1592,17 +1576,9 @@ public sealed class PshCombiner : ISnapshotable
             return component == 3 ? 0f : efz;
         }
 
-        if (reg == RegC0)
-        {
-            return consts[16][component];
-        }
-
-        if (reg == RegC1)
-        {
-            return consts[17][component];
-        }
-
-        return ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
+        return reg == RegC0
+            ? consts[16][component]
+            : reg == RegC1 ? consts[17][component] : ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
     private float ReadAlpha(Span<float> regs, float[] fog, float[][] consts, int stage, int reg, int chan)

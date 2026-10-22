@@ -8,17 +8,11 @@ namespace XGrid.Storage.Tests;
 
 public sealed class DeviceSnapshotTests
 {
-    private sealed class MemoryDiskImage : IDiskImage
+    private sealed class MemoryDiskImage(uint sectors) : IDiskImage
     {
-        private readonly byte[] _data;
+        private readonly byte[] _data = new byte[sectors * 512];
 
-        public MemoryDiskImage(uint sectors)
-        {
-            _data = new byte[sectors * 512];
-            SectorCount = sectors;
-        }
-
-        public uint SectorCount { get; }
+        public uint SectorCount { get; } = sectors;
 
         public void ReadSector(uint lba, Span<byte> destination)
         {
@@ -35,17 +29,11 @@ public sealed class DeviceSnapshotTests
         }
     }
 
-    private sealed class MemoryDvdImage : IDvdImage
+    private sealed class MemoryDvdImage(uint sectors) : IDvdImage
     {
-        private readonly byte[] _data;
+        private readonly byte[] _data = new byte[sectors * 2048];
 
-        public MemoryDvdImage(uint sectors)
-        {
-            _data = new byte[sectors * 2048];
-            SectorCount = sectors;
-        }
-
-        public uint SectorCount { get; }
+        public uint SectorCount { get; } = sectors;
 
         public void ReadSector(uint lba, Span<byte> destination)
         {

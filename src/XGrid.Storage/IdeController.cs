@@ -17,8 +17,8 @@ public sealed class IdeController : PciDevice
     /// <summary>Maximum bytes moved per bus-master start (runaway PRDT guard).</summary>
     private const uint MaxDmaBytes = 4u * 1024 * 1024;
 
-    private readonly System.Collections.Generic.List<string> _commandLog = new();
-    private readonly System.Collections.Generic.List<string> _accessLog = new();
+    private readonly System.Collections.Generic.List<string> _commandLog = [];
+    private readonly System.Collections.Generic.List<string> _accessLog = [];
     private readonly BusMasterChannel _busMaster = new();
     private IoSpace? _io;
     private IDisposable? _busMasterRegistration;
@@ -481,19 +481,13 @@ public sealed class IdeController : PciDevice
         }
     }
 
-    private sealed class BusMasterWindow : IIoPortDevice
+    private sealed class BusMasterWindow(IdeController controller) : IIoPortDevice
     {
-        private readonly IdeController _controller;
-
-        public BusMasterWindow(IdeController controller)
-        {
-            _controller = controller;
-        }
 
         public uint Read(ushort offset, int size)
         {
             uint result = (offset & 8) == 0 ? ReadPrimary((ushort)(offset & 7)) : 0;
-            _controller.LogAccess($"BR{offset:X}:{result:X}");
+            controller.LogAccess($"BR{offset:X}:{result:X}");
             return size switch
             {
                 8 => result & 0xFFu,
@@ -509,8 +503,8 @@ public sealed class IdeController : PciDevice
                 return;
             }
 
-            _controller.LogAccess($"BW{offset & 7:X}:{value:X}:{size}");
-            var bm = _controller._busMaster;
+            controller.LogAccess($"BW{offset & 7:X}:{value:X}:{size}");
+            var bm = controller._busMaster;
             switch (offset & 7)
             {
                 case 0:
@@ -519,7 +513,7 @@ public sealed class IdeController : PciDevice
                     {
                         bm.Starts++;
                         bm.Status |= BmStatusActive;
-                        _controller.TryRunDma();
+                        controller.TryRunDma();
                     }
                     else
                     {
@@ -546,7 +540,7 @@ public sealed class IdeController : PciDevice
 
         private uint ReadPrimary(ushort offset)
         {
-            var bm = _controller._busMaster;
+            var bm = controller._busMaster;
             return offset switch
             {
                 0 => bm.Command,
@@ -557,21 +551,15 @@ public sealed class IdeController : PciDevice
         }
     }
 
-    private sealed class TaskfileWindow : IIoPortDevice
+    private sealed class TaskfileWindow(IdeController controller) : IIoPortDevice
     {
-        private readonly IdeController _controller;
-
-        public TaskfileWindow(IdeController controller)
-        {
-            _controller = controller;
-        }
 
         public uint Read(ushort offset, int size)
         {
-            uint result = _controller.SelectedDrive.ReadTaskfile(offset, size);
+            uint result = controller.SelectedDrive.ReadTaskfile(offset, size);
             if (offset == 7)
             {
-                _controller.LogAccess($"T{(_controller._selected == 0 ? 'M' : 'S')}R7:{result:X}:{size}");
+                controller.LogAccess($"T{(controller._selected == 0 ? 'M' : 'S')}R7:{result:X}:{size}");
             }
 
             return result;
@@ -581,53 +569,47 @@ public sealed class IdeController : PciDevice
         {
             if (offset == 6)
             {
-                _controller.SelectDrive(value);
+                controller.SelectDrive(value);
                 return;
             }
 
             if (offset is 1 or 2 or 3 or 4 or 5)
             {
                 // Shared bus: taskfile setup writes land on both drives (QEMU ide_ioport_write).
-                _controller.PrimaryMaster.WriteTaskfile(offset, size, value);
-                _controller.PrimarySlave.WriteTaskfile(offset, size, value);
+                controller.PrimaryMaster.WriteTaskfile(offset, size, value);
+                controller.PrimarySlave.WriteTaskfile(offset, size, value);
                 return;
             }
 
-            _controller.SelectedDrive.WriteTaskfile(offset, size, value);
+            controller.SelectedDrive.WriteTaskfile(offset, size, value);
             if (offset == 7)
             {
-                _controller.LogCommand((byte)value);
+                controller.LogCommand((byte)value);
             }
 
-            _controller.LogAccess($"T{(_controller._selected == 0 ? 'M' : 'S')}W{offset:X}:{value:X}:{size}");
+            controller.LogAccess($"T{(controller._selected == 0 ? 'M' : 'S')}W{offset:X}:{value:X}:{size}");
 
             if (offset is 0 or 7)
             {
                 // Drive-initiated kick: covers START-then-command order (the bus
                 // master may already be armed when the drive stages DMA work).
-                _controller.TryRunDma();
+                controller.TryRunDma();
             }
         }
     }
 
-    private sealed class ControlWindow : IIoPortDevice
+    private sealed class ControlWindow(IdeController controller) : IIoPortDevice
     {
-        private readonly IdeController _controller;
-
-        public ControlWindow(IdeController controller)
-        {
-            _controller = controller;
-        }
 
         public uint Read(ushort offset, int size)
         {
-            return _controller.SelectedDrive.ReadControl();
+            return controller.SelectedDrive.ReadControl();
         }
 
         public void Write(ushort offset, int size, uint value)
         {
-            _controller.PrimaryMaster.WriteControl(value);
-            _controller.PrimarySlave.WriteControl(value);
+            controller.PrimaryMaster.WriteControl(value);
+            controller.PrimarySlave.WriteControl(value);
         }
     }
 }

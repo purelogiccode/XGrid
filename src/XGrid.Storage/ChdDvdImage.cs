@@ -15,7 +15,7 @@ namespace XGrid.Storage;
 public sealed class ChdDvdImage : IDvdImage
 {
     /// <summary>DVD sector size in bytes.</summary>
-    public const int SectorSize = 2048;
+    private const int SectorSize = 2048;
 
     private readonly ChdFile _chd;
     private readonly byte[] _scratch = new byte[SectorSize];
@@ -40,12 +40,7 @@ public sealed class ChdDvdImage : IDvdImage
         try
         {
             uint sectors = (uint)(chd.TotalBytes / SectorSize);
-            if (sectors == 0)
-            {
-                throw new InvalidDataException($"CHD image is too small: '{path}'.");
-            }
-
-            return new ChdDvdImage(chd, sectors);
+            return sectors == 0 ? throw new InvalidDataException($"CHD image is too small: '{path}'.") : new ChdDvdImage(chd, sectors);
         }
         catch
         {

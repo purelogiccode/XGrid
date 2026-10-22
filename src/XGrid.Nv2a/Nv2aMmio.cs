@@ -408,8 +408,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint UserDmaGet = 0x44u;
     private const uint UserRef = 0x48u;
 
-    private readonly IGpuMemory? _memory;
-
     /// <summary>Optional O2 fast lane for per-pixel RAM traffic (null for test fakes).</summary>
     private readonly IGpuMemoryFast? _memoryFast;
     // Diagnostic (`--gpu-time`): distinct combiner-configuration histogram.
@@ -431,8 +429,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[] _pshDiffuse = new float[4];
     private readonly float[] _pshSpecular = new float[4];
     private readonly float[] _pshFog = new float[4];
-    private readonly float[][] _pshTexels = { new float[4], new float[4], new float[4], new float[4] };
-    private readonly float[][] _pshCoords = { new float[4], new float[4], new float[4], new float[4] };
+    private readonly float[][] _pshTexels = [new float[4], new float[4], new float[4], new float[4]];
+    private readonly float[][] _pshCoords = [new float[4], new float[4], new float[4], new float[4]];
     private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
     private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
     // Per-draw sampler plans (rebuilt in EnterTextureState for both draw paths).
@@ -476,7 +474,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
     }
 
-    private readonly Dictionary<int, long> _diagRejects = new();
+    private readonly Dictionary<int, long> _diagRejects = [];
 
     private readonly float[] _lightTexels = new float[9];
 
@@ -485,8 +483,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private long _rasterCompiledTicks;
     private long _rasterLegacyTicks;
     private long _rasterPshTicks;
-    private long _rasterLegacyCalls;
-    private long _rasterPshCalls;
     private readonly uint[] _boundEngine = new uint[8];
     private readonly uint[] _boundInstance = new uint[8];
     private readonly uint[] _pfifo = new uint[PfifoSize / 4];
@@ -511,11 +507,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool _vgaAttributeFlipFlop;
     private bool _vgaCrtcWritten;
     private bool _retrace;
-    private readonly Dictionary<uint, int> _readCounts = new();
-    private readonly Dictionary<uint, int> _writeCounts = new();
-    private readonly Dictionary<uint, int> _userReadOffsets = new();
+    private readonly Dictionary<uint, int> _readCounts = [];
+    private readonly Dictionary<uint, int> _writeCounts = [];
+    private readonly Dictionary<uint, int> _userReadOffsets = [];
 
-    private readonly List<uint> _pmcIntrEnLog = new();
+    private readonly List<uint> _pmcIntrEnLog = [];
     private uint _pmcPending;
     private uint _pbusCommand;
     private uint _ptimerPending;
@@ -527,7 +523,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private ulong _ptimerTimeOffset;
     private uint _pcrtcPending;
     private uint _pcrtcEnabled;
-    private uint _pcrtcStart;
     private uint _pcrtcRaster;
     private uint _nvpllCoeff = PramdacNvpllReset;
     private uint _mpllCoeff;
@@ -562,10 +557,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
     private readonly FixedFunctionVertexState _fixedFunction = new();
-    private readonly List<uint> _inlineElements = new();
-    private readonly List<uint> _inlineWords = new();
-    private readonly List<float> _inlineVertices = new();
-    private readonly List<(int Start, int Count)> _drawArraysRanges = new();
+    private readonly List<uint> _inlineElements = [];
+    private readonly List<uint> _inlineWords = [];
+    private readonly List<float> _inlineVertices = [];
+    private readonly List<(int Start, int Count)> _drawArraysRanges = [];
     private readonly float[][] _inlineValues;
     private readonly uint[] _textureOffset = new uint[MaxTextureSlots];
     private readonly uint[] _textureFormat = new uint[MaxTextureSlots];
@@ -586,7 +581,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[] _fogColor = new float[4];
     private readonly float[] _fogParams = new float[3];
     private readonly PshCombiner _combiner = new();
-    private static readonly float[] CombinerFogConst = new[] { 0f, 0f, 0f, 1f };
+    private static readonly float[] CombinerFogConst = [0f, 0f, 0f, 1f];
     private bool _alphaTestEnable;
     private uint _alphaFunc;
     private uint _alphaRef;
@@ -623,9 +618,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _colorSurfaceBase;
     private uint _zetaSurfaceBase;
     private uint _beginMode;
-    private readonly Dictionary<uint, int> _methodCounts = new();
-    private readonly Dictionary<uint, uint> _methodParams = new();
-    private readonly List<(uint Subchannel, uint Method, uint Parameter)> _methodStream = new();
+    private readonly Dictionary<uint, int> _methodCounts = [];
+    private readonly Dictionary<uint, uint> _methodParams = [];
+    private readonly List<(uint Subchannel, uint Method, uint Parameter)> _methodStream = [];
     private readonly long[] _textureFormatAttempts = new long[128];
     private readonly long[] _textureFormatMisses = new long[128];
     private readonly long[] _texModeFallbackByMode = new long[0x20];
@@ -633,7 +628,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private long _combinerRgbZeroAlphaFragments;
     private const int TextureStateCap = 512;
     private readonly Dictionary<string, int> _textureStateIndex = new(StringComparer.Ordinal);
-    private readonly List<string> _textureStateKeys = new();
+    private readonly List<string> _textureStateKeys = [];
     private readonly long[] _textureStateSamples = new long[TextureStateCap];
     private readonly long[] _textureStateRgbZero = new long[TextureStateCap];
     private readonly long[] _textureStateFallbacks = new long[TextureStateCap];
@@ -652,7 +647,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ArgumentException.ThrowIfNullOrEmpty(name);
         RamSize = ramSize;
         Name = name;
-        _memory = memory;
+        GpuMemory = memory;
         _memoryFast = memory as IGpuMemoryFast;
         for (int i = 0; i < MaxTransformProgramLength; i++)
         {
@@ -726,15 +721,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     public IPgraphBackend? Backend
     {
-        get => _backend;
-        set
+        get; set
         {
-            _backend = value;
+            field = value;
             _observeMethods = value is { ObserveMethods: true };
         }
     }
 
-    private IPgraphBackend? _backend;
     private bool _observeMethods;
 
     /// <summary>
@@ -745,7 +738,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// the present-upload dirty watch (when the adapter implements
     /// <see cref="IPresentDirtyWatch"/>) is the one the guest writes trip.
     /// </summary>
-    public IGpuMemory? GpuMemory => _memory;
+    public IGpuMemory? GpuMemory { get; }
 
     /// <summary>Gets the total number of PGRAPH method triples observed (diagnostics for every backend).</summary>
     public long MethodTotal { get; private set; }
@@ -780,10 +773,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public bool RasterTimingEnabled { get; set; }
 
     /// <summary>Gets the number of timed legacy fill-path invocations. Diagnostics.</summary>
-    public long RasterLegacyCalls => _rasterLegacyCalls;
+    public long RasterLegacyCalls { get; private set; }
 
     /// <summary>Gets the number of timed combiner fill-path invocations. Diagnostics.</summary>
-    public long RasterPshCalls => _rasterPshCalls;
+    public long RasterPshCalls { get; private set; }
 
     /// <summary>Gets the accumulated legacy fill-path wall time (seconds). Diagnostics.</summary>
     public double RasterLegacySeconds => _rasterLegacyTicks / (double)Stopwatch.Frequency;
@@ -964,7 +957,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public string PresentedFrameDebug =>
         $"frames={FramesPresented} stalls={FlipStalls} read={FlipReadDebug} write={FlipWriteDebug} modulo={FlipModuloDebug} " +
         $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
-        $"pcrtc={_pcrtcStart:X} valid={_presentedValid} frame={_presentedFrame} " +
+        $"pcrtc={DisplayStartAddress:X} valid={_presentedValid} frame={_presentedFrame} " +
         $"crtc={DisplayWidth}x{DisplayHeight}+{DisplayLineOffset} bpp={DisplayBytesPerPixel} " +
         $"display={DisplayStartAddress:X}";
 
@@ -1129,7 +1122,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _ptimerTimeOffset = 0;
         _pcrtcPending = 0;
         _pcrtcEnabled = 0;
-        _pcrtcStart = 0;
+        DisplayStartAddress = 0;
         _pcrtcRaster = 0;
         _nvpllCoeff = PramdacNvpllReset;
         _mpllCoeff = 0;
@@ -1369,7 +1362,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_ptimerTimeOffset);
         writer.Write(_pcrtcPending);
         writer.Write(_pcrtcEnabled);
-        writer.Write(_pcrtcStart);
+        writer.Write(DisplayStartAddress);
         writer.Write(_pcrtcRaster);
         writer.Write(_nvpllCoeff);
         writer.Write(_mpllCoeff);
@@ -1668,7 +1661,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _ptimerTimeOffset = reader.ReadUInt64();
         _pcrtcPending = reader.ReadUInt32();
         _pcrtcEnabled = reader.ReadUInt32();
-        _pcrtcStart = reader.ReadUInt32();
+        DisplayStartAddress = reader.ReadUInt32();
         _pcrtcRaster = reader.ReadUInt32();
         _nvpllCoeff = reader.ReadUInt32();
         _mpllCoeff = reader.ReadUInt32();
@@ -2579,7 +2572,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             PcrtcIntr0 => _pcrtcPending,
             PcrtcIntrEn0 => _pcrtcEnabled,
-            PcrtcStart => _pcrtcStart,
+            PcrtcStart => DisplayStartAddress,
             PcrtcRaster => _pcrtcRaster++,
             _ => 0u,
         };
@@ -2679,7 +2672,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>Gets the display-controller scanout base (NV_PCRTC START, in bytes).</summary>
-    public uint DisplayStartAddress => _pcrtcStart;
+    public uint DisplayStartAddress { get; private set; }
 
     /// <summary>Gets the scanout bytes per line the VGA CRTC programs (xemu nv2a_get_params).</summary>
     public uint DisplayLineOffset =>
@@ -2727,7 +2720,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 _pcrtcEnabled = value;
                 break;
             case PcrtcStart:
-                _pcrtcStart = value & 0x07FFFFFFu;
+                DisplayStartAddress = value & 0x07FFFFFFu;
                 break;
         }
 
@@ -2785,23 +2778,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ReadUser(uint offset)
     {
-        if (IsActiveDmaChannel(offset) && (offset & 0xFFFFu) switch
+        return IsActiveDmaChannel(offset) && (offset & 0xFFFFu) switch
         {
             UserDmaPut => true,
             UserDmaGet => true,
             UserRef => true,
             _ => false,
-        })
-        {
-            return (offset & 0xFFFFu) switch
+        }
+            ? (offset & 0xFFFFu) switch
             {
                 UserDmaPut => _pfifo[PfifoCache1DmaPut / 4],
                 UserDmaGet => _pfifo[PfifoCache1DmaGet / 4],
                 _ => _pfifo[PfifoCache1Ref / 4],
-            };
-        }
-
-        return 0;
+            }
+            : 0;
     }
 
     private void WriteUser(uint offset, uint value)
@@ -2832,12 +2822,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool IsActiveDmaChannel(uint offset)
     {
         uint channel = offset >> 16;
-        if (((_pfifo[PfifoMode / 4] >> (int)channel) & 1u) == 0)
-        {
-            return false;
-        }
-
-        return channel == (_pfifo[PfifoCache1Push1 / 4] & Push1ChidMask);
+        return ((_pfifo[PfifoMode / 4] >> (int)channel) & 1u) != 0 && channel == (_pfifo[PfifoCache1Push1 / 4] & Push1ChidMask);
     }
 
     private uint RaminWord(uint offset)
@@ -2912,17 +2897,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private bool SurfaceFitsContext(uint handle, uint offset, uint pitch, uint height)
     {
-        if (!TryResolveDmaContext(handle, _surfaceChannel, out _, out uint limit))
-        {
-            return true;
-        }
-
-        return offset + ((ulong)pitch * height) <= (ulong)limit + 1;
+        return !TryResolveDmaContext(handle, _surfaceChannel, out _, out uint limit)
+            || offset + ((ulong)pitch * height) <= (ulong)limit + 1;
     }
 
     private void RunPusher()
     {
-        if (_memory is null)
+        if (GpuMemory is null)
         {
             return;
         }
@@ -2999,7 +2980,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             }
 
-            uint word = _memory.ReadPhysical(dmaBase + get);
+            uint word = GpuMemory.ReadPhysical(dmaBase + get);
             get += 4;
 
             uint state = _pfifo[PfifoCache1DmaState / 4];
@@ -3203,7 +3184,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (_observeMethods)
         {
-            _backend!.Method(subchannel, method, parameter);
+            Backend!.Method(subchannel, method, parameter);
         }
 
         switch (method)
@@ -4010,21 +3991,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void WriteSemaphoreRelease(uint channel, uint value)
     {
-        if (_memory is null)
+        if (GpuMemory is null)
         {
             return;
         }
 
-        uint instance;
-        if (TryRamhtLookup(_dmaSemaphore, channel, out uint handleInstance, out _))
-        {
-            instance = handleInstance;
-        }
-        else
-        {
-            instance = _dmaSemaphore & DmaInstanceAddressMask;
-        }
-
+        var instance = TryRamhtLookup(_dmaSemaphore, channel, out uint handleInstance, out _)
+            ? handleInstance
+            : _dmaSemaphore & DmaInstanceAddressMask;
         if (instance + 12 > PraminSize)
         {
             SemaphoreDebug = $"dma={_dmaSemaphore:X} instance={instance:X} out-of-range";
@@ -4047,7 +4021,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private void ExecuteClear(uint parameter)
     {
         ClearsExecuted++;
-        if (_memory is null)
+        if (GpuMemory is null)
         {
             return;
         }
@@ -4155,7 +4129,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         uint pixel)
     {
         using GpuWriteBatch batch = new(_memoryFast);
-        if (_memory is null || pitch == 0)
+        if (GpuMemory is null || pitch == 0)
         {
             return;
         }
@@ -4388,7 +4362,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint ReadGpu(uint address) =>
         _memoryFast is not null && _memoryFast.TryReadPhysical(address, out uint value)
             ? value
-            : _memory!.ReadPhysical(address);
+            : GpuMemory!.ReadPhysical(address);
 
     /// <summary>
     /// O2 fast-lane 32-bit write: direct inside an open draw batch, otherwise
@@ -4398,7 +4372,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         if (_memoryFast is null || !_memoryFast.TryWritePhysical(address, value))
         {
-            _memory!.WritePhysical(address, value);
+            GpuMemory!.WritePhysical(address, value);
         }
     }
 
@@ -4421,7 +4395,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void WritePixel(uint address, uint bytes, uint pixel)
     {
-        if (_memory is null || address + bytes > RamSize)
+        if (GpuMemory is null || address + bytes > RamSize)
         {
             return;
         }
@@ -4579,12 +4553,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             float InlineColor(int vertex, int component)
             {
                 uint baseWord = (uint)(vertex * (int)vertexWords) + offsets[colorSlot];
-                if (colorCount <= (uint)component)
-                {
-                    return component == 3 ? 1f : 0f;
-                }
-
-                return Math.Clamp(
+                return colorCount <= (uint)component
+                    ? component == 3 ? 1f : 0f
+                    : Math.Clamp(
                     NaNToOne(BitConverter.Int32BitsToSingle((int)_inlineWords[(int)baseWord + component])), 0f, 1f);
             }
         }
@@ -4673,107 +4644,74 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// when the program leaves oFog unwritten) through the fog-mode equation.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    private readonly struct PshVertex
+    private readonly struct PshVertex(
+        float x, float y, float z, float w,
+        float diffuseR, float diffuseG, float diffuseB, float diffuseA,
+        float specR, float specG, float specB, float specA,
+        float u0, float v0, float s0,
+        float u1, float v1, float s1,
+        float u2, float v2, float s2,
+        float u3, float v3, float s3,
+        float t0W, float t1W, float t2W, float t3W,
+        float fog)
     {
-        public PshVertex(
-            float x, float y, float z, float w,
-            float diffuseR, float diffuseG, float diffuseB, float diffuseA,
-            float specR, float specG, float specB, float specA,
-            float u0, float v0, float s0,
-            float u1, float v1, float s1,
-            float u2, float v2, float s2,
-            float u3, float v3, float s3,
-            float t0W, float t1W, float t2W, float t3W,
-            float fog)
-        {
-            X = x;
-            Y = y;
-            Z = z;
-            W = w;
-            DiffuseR = diffuseR;
-            DiffuseG = diffuseG;
-            DiffuseB = diffuseB;
-            DiffuseA = diffuseA;
-            SpecR = specR;
-            SpecG = specG;
-            SpecB = specB;
-            SpecA = specA;
-            U0 = u0;
-            V0 = v0;
-            S0 = s0;
-            U1 = u1;
-            V1 = v1;
-            S1 = s1;
-            U2 = u2;
-            V2 = v2;
-            S2 = s2;
-            U3 = u3;
-            V3 = v3;
-            S3 = s3;
-            T0W = t0W;
-            T1W = t1W;
-            T2W = t2W;
-            T3W = t3W;
-            Fog = fog;
-        }
+        public float X { get; } = x;
 
-        public float X { get; }
+        public float Y { get; } = y;
 
-        public float Y { get; }
+        public float Z { get; } = z;
 
-        public float Z { get; }
+        public float W { get; } = w;
 
-        public float W { get; }
+        public float DiffuseR { get; } = diffuseR;
 
-        public float DiffuseR { get; }
+        public float DiffuseG { get; } = diffuseG;
 
-        public float DiffuseG { get; }
+        public float DiffuseB { get; } = diffuseB;
 
-        public float DiffuseB { get; }
+        public float DiffuseA { get; } = diffuseA;
 
-        public float DiffuseA { get; }
+        public float SpecR { get; } = specR;
 
-        public float SpecR { get; }
+        public float SpecG { get; } = specG;
 
-        public float SpecG { get; }
+        public float SpecB { get; } = specB;
 
-        public float SpecB { get; }
+        public float SpecA { get; } = specA;
 
-        public float SpecA { get; }
+        public float U0 { get; } = u0;
 
-        public float U0 { get; }
+        public float V0 { get; } = v0;
 
-        public float V0 { get; }
+        public float S0 { get; } = s0;
 
-        public float S0 { get; }
+        public float U1 { get; } = u1;
 
-        public float U1 { get; }
+        public float V1 { get; } = v1;
 
-        public float V1 { get; }
+        public float S1 { get; } = s1;
 
-        public float S1 { get; }
+        public float U2 { get; } = u2;
 
-        public float U2 { get; }
+        public float V2 { get; } = v2;
 
-        public float V2 { get; }
+        public float S2 { get; } = s2;
 
-        public float S2 { get; }
+        public float U3 { get; } = u3;
 
-        public float U3 { get; }
+        public float V3 { get; } = v3;
 
-        public float V3 { get; }
+        public float S3 { get; } = s3;
 
-        public float S3 { get; }
+        public float T0W { get; } = t0W;
 
-        public float T0W { get; }
+        public float T1W { get; } = t1W;
 
-        public float T1W { get; }
+        public float T2W { get; } = t2W;
 
-        public float T2W { get; }
+        public float T3W { get; } = t3W;
 
-        public float T3W { get; }
-
-        public float Fog { get; }
+        public float Fog { get; } = fog;
     }
 
     private void FlushProgramDraw(VertexFetchMode mode)
@@ -4785,7 +4723,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // (FixedFunctionTransform): mode-0 draws used to run the resident
         // program, so enabling this changes what those draws render.
         bool fixedFunction = FixedFunctionTransform && _transformExecutionMode == TransformModeFixed;
-        if (_memory is null || (!fixedFunction && TransformProgramLoadDebug == 0))
+        if (GpuMemory is null || (!fixedFunction && TransformProgramLoadDebug == 0))
         {
             SkippedDraws++;
             return;
@@ -4799,7 +4737,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        uint[][] program = Array.Empty<uint[]>();
+        uint[][] program = [];
         if (!fixedFunction)
         {
             program = new uint[programLength][];
@@ -4844,12 +4782,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         var transformed = new Dictionary<int, PshVertex>();
 
-        uint[] elements = mode == VertexFetchMode.Elements ? _inlineElements.ToArray() : Array.Empty<uint>();
+        uint[] elements = mode == VertexFetchMode.Elements ? [.. _inlineElements] : [];
         DrawsExecuted++;
         bool combinerActive = _combiner.FinalEnabled;
         EnterTextureState(combinerActive, programStart, programLength);
         float[][] combinerConsts =
-            combinerActive ? PshCombiner.BuildConsts(_combiner) : Array.Empty<float[]>();
+            combinerActive ? PshCombiner.BuildConsts(_combiner) : [];
         if (combinerActive)
         {
             CombinerDraws++;
@@ -5086,7 +5024,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         uint format = _vertexFormat[slot];
         int count = (int)((format >> 4) & 0xFu);
-        if (count == 0 || _memory is null)
+        if (count == 0 || GpuMemory is null)
         {
             return;
         }
@@ -5153,12 +5091,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private byte ReadByte(uint address)
     {
-        return (byte)(_memory!.ReadPhysical(address) & 0xFFu);
+        return (byte)(GpuMemory!.ReadPhysical(address) & 0xFFu);
     }
 
     private short ReadInt16(uint address)
     {
-        return (short)(_memory!.ReadPhysical(address) & 0xFFFFu);
+        return (short)(GpuMemory!.ReadPhysical(address) & 0xFFFFu);
     }
 
     private bool TrySampleTexture0(float u, float v, out float r, out float g, out float b, out float a)
@@ -5172,7 +5110,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         g = 1f;
         b = 1f;
         a = 1f;
-        if (_memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
+        if (GpuMemory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
         {
             TextureSampleDisabled++;
             return false;
@@ -5773,12 +5711,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         uint min = (filter & TextureFilterMin) >> 16;
         uint kernel = (filter & TextureFilterKernel) >> 13;
-        if (min != TextureFilterMinConvolution2DLod0)
-        {
-            return 0;
-        }
-
-        return kernel is TextureFilterKernelQuincunx or TextureFilterKernelGaussian3 ? (int)kernel : 0;
+        return min != TextureFilterMinConvolution2DLod0
+            ? 0
+            : kernel is TextureFilterKernelQuincunx or TextureFilterKernelGaussian3 ? (int)kernel : 0;
     }
 
     /// <summary>
@@ -5788,17 +5723,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     private static int FastWrapKind(int wrapMode, int wrapMask, int mirrorMask)
     {
-        if (wrapMode == 2)
-        {
-            return 0;
-        }
-
-        if (wrapMode == 1)
-        {
-            return mirrorMask >= 0 ? 1 : -1;
-        }
-
-        return wrapMask >= 0 ? 2 : -1;
+        return wrapMode == 2 ? 0 : wrapMode == 1 ? mirrorMask >= 0 ? 1 : -1 : wrapMask >= 0 ? 2 : -1;
     }
 
     /// <summary>
@@ -5810,12 +5735,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         if (mode == 0)
         {
-            if (value < 0)
-            {
-                return 0;
-            }
-
-            return value >= size ? size - 1 : value;
+            return value < 0 ? 0 : value >= size ? size - 1 : value;
         }
 
         if (mode == 1)
@@ -6077,7 +5997,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         g = 1f;
         b = 1f;
         a = 1f;
-        IGpuMemory? memory = _memory;
+        IGpuMemory? memory = GpuMemory;
         if (memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
         {
             return false;
@@ -6201,7 +6121,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         g = 1f;
         b = 1f;
         a = 1f;
-        IGpuMemory? memory = _memory;
+        IGpuMemory? memory = GpuMemory;
         if (memory is null || (_textureControl0[slot] & TextureControl0Enable) == 0)
         {
             return false;
@@ -6525,22 +6445,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ZetaBytesPerPixel()
     {
-        if (((_surfaceFormat & 0xF00u) >> 8) != SurfaceTypePitch)
-        {
-            return 0;
-        }
-
-        if (((_surfacePitch >> 16) & 0xFFFFu) == 0)
-        {
-            return 0;
-        }
-
-        return ((_surfaceFormat >> 4) & 0xFu) switch
-        {
-            ZetaFormatZ16 => 2u,
-            ZetaFormatZ24S8 => 4u,
-            _ => 0u,
-        };
+        return ((_surfaceFormat & 0xF00u) >> 8) != SurfaceTypePitch
+            ? 0
+            : ((_surfacePitch >> 16) & 0xFFFFu) == 0
+            ? 0
+            : ((_surfaceFormat >> 4) & 0xFu) switch
+            {
+                ZetaFormatZ16 => 2u,
+                ZetaFormatZ24S8 => 4u,
+                _ => 0u,
+            };
     }
 
     /// <summary>
@@ -6555,22 +6469,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     public static float ZetaDepthRange(uint zetaFormat, bool floatDepth)
     {
-        if (floatDepth)
-        {
-            return zetaFormat switch
+        return floatDepth
+            ? zetaFormat switch
             {
                 ZetaFormatZ16 => ZetaDepthRangeF16,
                 ZetaFormatZ24S8 => ZetaDepthRangeF24,
                 _ => 1f,
+            }
+            : zetaFormat switch
+            {
+                ZetaFormatZ16 => ZetaDepthRangeZ16,
+                ZetaFormatZ24S8 => ZetaDepthRangeZ24S8,
+                _ => 1f,
             };
-        }
-
-        return zetaFormat switch
-        {
-            ZetaFormatZ16 => ZetaDepthRangeZ16,
-            ZetaFormatZ24S8 => ZetaDepthRangeZ24S8,
-            _ => 1f,
-        };
     }
 
     /// <summary>
@@ -6580,12 +6491,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     public static float ConvertF16ToFloat(uint f16)
     {
-        if (f16 == 0)
-        {
-            return 0f;
-        }
-
-        return BitConverter.UInt32BitsToSingle((f16 << 11) + ZetaF16Bias);
+        return f16 == 0 ? 0f : BitConverter.UInt32BitsToSingle((f16 << 11) + ZetaF16Bias);
     }
 
     /// <summary>
@@ -6596,12 +6502,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     public static float ConvertF24ToFloat(uint f24)
     {
         f24 &= 0xFFFFFFu;
-        if (f24 == 0)
-        {
-            return 0f;
-        }
-
-        return BitConverter.UInt32BitsToSingle(f24 << 7);
+        return f24 == 0 ? 0f : BitConverter.UInt32BitsToSingle(f24 << 7);
     }
 
     /// <summary>
@@ -6616,12 +6517,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         float scaled = Math.Clamp(depth, 0f, 1f) * ZetaDepthRangeF16;
         uint bits = BitConverter.SingleToUInt32Bits(scaled);
-        if (bits < ZetaF16Bias)
-        {
-            return 0u;
-        }
-
-        return Math.Min((bits - ZetaF16Bias) >> 11, ZetaF16Max);
+        return bits < ZetaF16Bias ? 0u : Math.Min((bits - ZetaF16Bias) >> 11, ZetaF16Max);
     }
 
     /// <summary>
@@ -6713,7 +6609,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private uint ReadHalf(uint address)
     {
-        uint word = _memory!.ReadPhysical(address & ~3u);
+        uint word = GpuMemory!.ReadPhysical(address & ~3u);
         return ((address & 2u) == 0) ? word & 0xFFFFu : word >> 16;
     }
 
@@ -6728,7 +6624,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _presentedValid = (bytes == 2 || bytes == 4) &&
                           width != 0 && width <= MaxPresentDimension &&
                           height != 0 && height <= MaxPresentDimension &&
-                          pitch != 0 && pitchType && _memory is not null;
+                          pitch != 0 && pitchType && GpuMemory is not null;
         if (_presentedValid)
         {
             _presentedOffset = SurfaceBase(_dmaColor) + PresentedColorOffset;
@@ -6745,7 +6641,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         width = 0;
         height = 0;
-        bgra = Array.Empty<byte>();
+        bgra = [];
         if (Backend is not null)
         {
             // Backend attached: the presented frame is exclusively the
@@ -6784,7 +6680,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>True when the CRTC describes a scannable buffer inside RAM.</returns>
     public bool TryGetDisplayGeometry(out uint start, out uint width, out uint height, out uint lineOffset, out uint bytesPerPixel)
     {
-        start = _pcrtcStart;
+        start = DisplayStartAddress;
         width = DisplayWidth;
         height = DisplayHeight;
         lineOffset = DisplayLineOffset;
@@ -6825,13 +6721,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         width = 0;
         height = 0;
-        bgra = Array.Empty<byte>();
+        bgra = [];
         if (Backend is not null)
         {
             return Backend.ReadbackPresented(out width, out height, out bgra);
         }
 
-        if (_memory is not null &&
+        if (GpuMemory is not null &&
             TryGetDisplayGeometry(out uint start, out uint displayWidth, out uint displayHeight, out uint lineOffset, out uint bytesPerPixel) &&
             CopySurfacePixels(start, displayWidth, displayHeight, lineOffset, bytesPerPixel, DisplayFifteenBit, out bgra))
         {
@@ -6860,7 +6756,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             width = 0;
             height = 0;
-            bgra = Array.Empty<byte>();
+            bgra = [];
             return false;
         }
 
@@ -6891,8 +6787,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         width = 0;
         height = 0;
-        bgra = Array.Empty<byte>();
-        if (_memory is null || _pcrtcStart == 0)
+        bgra = [];
+        if (GpuMemory is null || DisplayStartAddress == 0)
         {
             return false;
         }
@@ -6904,7 +6800,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 return false;
             }
 
-            start = _pcrtcStart;
+            start = DisplayStartAddress;
             scanWidth = _presentedWidth;
             scanHeight = _presentedHeight;
             lineOffset = _presentedPitch;
@@ -6927,9 +6823,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private bool CopySurfacePixels(
         uint offset, uint width, uint height, uint pitch, uint bytesPerPixel, bool fifteenBit, out byte[] bgra)
     {
-        bgra = Array.Empty<byte>();
+        bgra = [];
         ulong count = (ulong)width * height;
-        if (count == 0 || count > MaxPresentPixels || _memory is null)
+        if (count == 0 || count > MaxPresentPixels || GpuMemory is null)
         {
             return false;
         }
@@ -6992,7 +6888,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void WriteZeta(uint address, uint bytes, bool writeDepth, float depth, bool writeStencil, uint stencil)
     {
-        if (_memory is null || address + bytes > RamSize)
+        if (GpuMemory is null || address + bytes > RamSize)
         {
             return;
         }
@@ -7027,7 +6923,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         g = 0f;
         b = 0f;
         a = 1f;
-        if (_memory is null || address + bytes > RamSize)
+        if (GpuMemory is null || address + bytes > RamSize)
         {
             return false;
         }
@@ -7054,7 +6950,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float r, float g, float b, float a, float depth,
         uint zetaBytes, uint zetaPitch)
     {
-        if (_memory is null)
+        if (GpuMemory is null)
         {
             return;
         }
@@ -7508,7 +7404,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (RasterTimingEnabled)
         {
             _rasterLegacyTicks += Stopwatch.GetTimestamp() - rasterStart;
-            _rasterLegacyCalls++;
+            RasterLegacyCalls++;
         }
     }
 
@@ -7524,7 +7420,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     private bool TryResolveShadow(int stage, float[] texel)
     {
-        if (_memory is null || (_textureControl0[stage] & TextureControl0Enable) == 0)
+        if (GpuMemory is null || (_textureControl0[stage] & TextureControl0Enable) == 0)
         {
             return false;
         }
@@ -7625,12 +7521,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     // xemu: textureProj(texSamp, pT.xyzw) — (x/w, y/w) for 2D
                     // samplers, (x/w, y/w, z/w) for volume textures.
                     float invW = 1f / coord[3];
-                    if (TextureDimensionality(stage) == 3)
-                    {
-                        return SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel);
-                    }
-
-                    return SampleInto(stage, tu * invW, tv * invW, texel);
+                    return TextureDimensionality(stage) == 3
+                        ? SampleInto3D(stage, tu * invW, tv * invW, ts * invW, texel)
+                        : SampleInto(stage, tu * invW, tv * invW, texel);
                 }
 
             case PshCombiner.TexModeCubemap:
@@ -8030,19 +7923,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>1-2-1 gaussian kernel used by the QUINCUNX/GAUSSIAN_3 convolution.</summary>
     private static readonly float[] ConvolutionWeights =
-    {
+    [
         1f / 16f, 2f / 16f, 1f / 16f,
         2f / 16f, 4f / 16f, 2f / 16f,
         1f / 16f, 2f / 16f, 1f / 16f,
-    };
+    ];
 
     /// <summary>Texel offsets of the 3x3 convolution, row-major.</summary>
     private static readonly int[] ConvolutionOffsets =
-    {
+    [
         -1, -1, 0, -1, 1, -1,
         -1, 0, 0, 0, 1, 0,
         -1, 1, 0, 1, 1, 1,
-    };
+    ];
 
     /// <summary>
     /// TEXFILTER convolution (opt-in): xemu <c>apply_convolution_filter</c>, a
@@ -8135,7 +8028,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private bool IsTextureSamplingConfigured(int stage)
     {
-        return _memory is not null &&
+        return GpuMemory is not null &&
                (_textureControl0[stage] & TextureControl0Enable) != 0 &&
                (_textureImageRect[stage] >> 16) != 0 &&
                (_textureImageRect[stage] & 0xFFFFu) != 0;
@@ -8268,7 +8161,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // RAM the loop reads the texel through the RAM array reference after
         // the same bounds test TryReadPhysical performs; anything else takes
         // the adapter path unchanged.
-        byte[] ram = Array.Empty<byte>();
+        byte[] ram = [];
         uint ramLimit = 0;
         if (_memoryFast is not null && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize) &&
             ramSize >= 4)
@@ -8583,7 +8476,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         // Per-fill sampler fast lane (see the modulate compiled fill): the
         // direct RAM texel read and the decode branch are selected once.
-        byte[] ram = Array.Empty<byte>();
+        byte[] ram = [];
         uint ramLimit = 0;
         if (_memoryFast is not null && _memoryFast.TryGetRamBytes(out byte[] ramBytes, out uint ramSize) &&
             ramSize >= 4)
@@ -8961,7 +8854,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                                 !_stencilTestEnable &&
                                 _colorMask == ColorMaskAll &&
                                 _blendFastSrcAlpha &&
-                                _memory is not null &&
+                                GpuMemory is not null &&
                                 _samplerPlans[0].FastKind != 0 &&
                                 (_textureControl0[0] & TextureControl0Enable) != 0 &&
                                 !IsTextureCubemap(0) &&
@@ -9021,7 +8914,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 reason |= 0x40;
             }
 
-            if (_memory is null)
+            if (GpuMemory is null)
             {
                 reason |= 0x80;
             }
@@ -9100,14 +8993,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             lightingReason |= 0x10;
         }
 
-        if (_memory is null)
+        if (GpuMemory is null)
         {
             lightingReason |= 0x20;
         }
 
         if (!compiledModulate && !DiagnosticGenericFill && _combinerFastKind is 2 or 3 &&
             bytes == 4 && zetaBytes == 0 && _colorMask == ColorMaskAll &&
-            !_blendEnable && !_alphaTestEnable && _memory is not null &&
+            !_blendEnable && !_alphaTestEnable && GpuMemory is not null &&
             !anyClipPlane && !anyStageDotReader)
         {
             compiledLighting = true;
@@ -9403,7 +9296,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (RasterTimingEnabled)
         {
             _rasterPshTicks += Stopwatch.GetTimestamp() - rasterStart;
-            _rasterPshCalls++;
+            RasterPshCalls++;
             if (_combinerFastKind is >= 1 and <= 3)
             {
                 _diagFastKindFills[_combinerFastKind]++;

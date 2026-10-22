@@ -49,7 +49,7 @@ public sealed class MachineSnapshotTests
         string path = Path.GetTempFileName();
         try
         {
-            File.WriteAllBytes(path, new byte[] { (byte)'N', (byte)'O', (byte)'P', (byte)'E', 1, 0, 0, 0 });
+            File.WriteAllBytes(path, [(byte)'N', (byte)'O', (byte)'P', (byte)'E', 1, 0, 0, 0]);
 
             XboxMachine machine = CreateLoadedMachine();
             Assert.Throws<InvalidDataException>(() => machine.LoadState(path));
@@ -100,9 +100,9 @@ public sealed class MachineSnapshotTests
             machine.SaveState(baseline);
 
             string[] tags =
-            {
+            [
                 "CPU", "RAM", "BUS", "IDE", "NV2A", "ACI", "APU", "NET", "USB0", "USB1", "MACH",
-            };
+            ];
 
             using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
             using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: false))
@@ -115,7 +115,7 @@ public sealed class MachineSnapshotTests
                     WriteSection(writer, tag, ExtractSection(baseline, tag));
                 }
 
-                WriteSection(writer, "FUTURE-DEVICE", new byte[] { 1, 2, 3, 4 });
+                WriteSection(writer, "FUTURE-DEVICE", [1, 2, 3, 4]);
             }
 
             XboxMachine restored = CreateLoadedMachine();
@@ -212,7 +212,7 @@ public sealed class MachineSnapshotTests
         Array.Fill(rom, (byte)0x90);
 
         // Reset vector at ROM offset 0x1F0: mov ax, 0x5678; hlt (real mode).
-        byte[] code = { 0xB8, 0x78, 0x56, 0xF4 };
+        byte[] code = [0xB8, 0x78, 0x56, 0xF4];
         code.CopyTo(rom, 0x1F0);
 
         machine.LoadBios(bios, rom);

@@ -28,7 +28,7 @@ public sealed class EepromStateStore
     }
 
     /// <summary>Gets the folder that holds the persisted image.</summary>
-    public string DirectoryPath { get; }
+    private string DirectoryPath { get; }
 
     /// <summary>Gets the persisted image path.</summary>
     public string FilePath => Path.Combine(DirectoryPath, "eeprom.bin");

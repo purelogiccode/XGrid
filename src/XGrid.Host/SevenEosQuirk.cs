@@ -15,42 +15,43 @@ namespace XGrid.Host;
 public static class SevenEosQuirk
 {
     /// <summary>007: Agent Under Fire title identifier.</summary>
-    public const uint TitleId007 = 0x4541000Du;
+    private const uint TitleId007 = 0x4541000Du;
 
     /// <summary>XBE header base virtual address.</summary>
-    public const uint XbeHeaderVa = 0x10000u;
+    private const uint XbeHeaderVa = 0x10000u;
 
     /// <summary>Offset of the certificate pointer in the XBE header.</summary>
-    public const uint CertPointerOffset = 0x118u;
+    private const uint CertPointerOffset = 0x118u;
 
     /// <summary>Offset of TitleId within the certificate.</summary>
-    public const uint TitleIdOffsetInCert = 0x08u;
+    private const uint TitleIdOffsetInCert = 0x08u;
 
     /// <summary>Parked stream struct virtual address.</summary>
-    public const uint StrmVa = 0x80B6C800u;
+    private const uint StrmVa = 0x80B6C800u;
 
     /// <summary>Waiter handle virtual address (points at <see cref="StrmVa"/>).</summary>
-    public const uint HandleVa = 0x80B6CBE8u;
+    private const uint HandleVa = 0x80B6CBE8u;
 
     /// <summary>Offset of state field within STRM (2 = refill-pending).</summary>
-    public const uint StrmStateOffset = 0x44u;
+    private const uint StrmStateOffset = 0x44u;
 
     /// <summary>Offset of remaining field within the handle (0 = empty).</summary>
-    public const uint HandleRemainingOffset = 0x08u;
+    private const uint HandleRemainingOffset = 0x08u;
 
     /// <summary>Offset of the current-chunk pointer within the handle.</summary>
-    public const uint HandleCurrentOffset = 0x0Cu;
+    private const uint HandleCurrentOffset = 0x0Cu;
 
     /// <summary>Offset of the staged (landed but unlinked) buffer pointer within STRM.</summary>
-    public const uint StrmStagedOffset = 0x60u;
+    private const uint StrmStagedOffset = 0x60u;
 
     /// <summary>STRM struct magic ("STRM").</summary>
-    public const uint StrmMagic = 0x4D525453u;
+    private const uint StrmMagic = 0x4D525453u;
 
     /// <summary>Stream chunk tag ("MPCh").</summary>
-    public const uint MpchMagic = 0x6843504Du;
+    private const uint MpchMagic = 0x6843504Du;
 
     /// <summary>Consumed queue-entry marker (written by the release path).</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint ConsumedMarker = 0xFFFFFFFEu;
 
     /// <summary>Stability delay in guest steps before firing (filters transients).</summary>
@@ -109,12 +110,7 @@ public static class SevenEosQuirk
 
         // Tag present in the staged buffer but not linked into the consumable
         // queue: the current entry must not be an MPCh chunk.
-        if (currentMarker == MpchMagic)
-        {
-            return false;
-        }
-
-        return true;
+        return currentMarker != MpchMagic;
     }
 
     /// <summary>

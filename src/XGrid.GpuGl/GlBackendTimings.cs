@@ -21,37 +21,31 @@ public struct GlBackendTimings
 {
     private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
 
-    private double _drawMs;
-    private double _clearMs;
-    private double _readbackMs;
-    private double _flushMs;
-    private long _readbacks;
-
     /// <summary>Gets cumulative draw-submission milliseconds.</summary>
-    public readonly double DrawMs => _drawMs;
+    public double DrawMs { get; private set; }
 
     /// <summary>Gets the part of <see cref="DrawMs"/> spent submitting batched draw commands (one instanced draw per batch).</summary>
-    public readonly double FlushMs => _flushMs;
+    public double FlushMs { get; private set; }
 
     /// <summary>Gets cumulative clear-submission milliseconds.</summary>
-    public readonly double ClearMs => _clearMs;
+    public double ClearMs { get; private set; }
 
     /// <summary>Gets cumulative flip-readback (<c>ReadPixels</c>) milliseconds.</summary>
-    public readonly double ReadbackMs => _readbackMs;
+    public double ReadbackMs { get; private set; }
 
     /// <summary>Gets the number of readbacks performed.</summary>
-    public readonly long Readbacks => _readbacks;
+    public long Readbacks { get; private set; }
 
     /// <summary>Records one draw submission.</summary>
     public void AddDraw(TimeSpan elapsed)
     {
-        _drawMs += elapsed.TotalMilliseconds;
+        DrawMs += elapsed.TotalMilliseconds;
     }
 
     /// <summary>Records one draw submission from a raw <see cref="Stopwatch.GetTimestamp"/> delta (no TimeSpan per draw).</summary>
     public void AddDrawTicks(long elapsedTicks)
     {
-        _drawMs += elapsedTicks * TicksToMs;
+        DrawMs += elapsedTicks * TicksToMs;
     }
 
     /// <summary>
@@ -64,31 +58,31 @@ public struct GlBackendTimings
     public void AddBatchFlushTicks(long elapsedTicks)
     {
         double ms = elapsedTicks * TicksToMs;
-        _flushMs += ms;
-        _drawMs += ms;
+        FlushMs += ms;
+        DrawMs += ms;
     }
 
     /// <summary>Records one clear submission.</summary>
     public void AddClear(TimeSpan elapsed)
     {
-        _clearMs += elapsed.TotalMilliseconds;
+        ClearMs += elapsed.TotalMilliseconds;
     }
 
     /// <summary>Records one flip readback.</summary>
     public void AddReadback(TimeSpan elapsed)
     {
-        _readbackMs += elapsed.TotalMilliseconds;
-        _readbacks++;
+        ReadbackMs += elapsed.TotalMilliseconds;
+        Readbacks++;
     }
 
     /// <summary>Clears all accumulators (mirrors backend <c>ResetState</c>).</summary>
     public void Reset()
     {
-        _drawMs = 0;
-        _clearMs = 0;
-        _readbackMs = 0;
-        _flushMs = 0;
-        _readbacks = 0;
+        DrawMs = 0;
+        ClearMs = 0;
+        ReadbackMs = 0;
+        FlushMs = 0;
+        Readbacks = 0;
     }
 
     /// <summary>
@@ -99,6 +93,6 @@ public struct GlBackendTimings
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.Append(CultureInfo.InvariantCulture,
-            $" timed[drawMs={_drawMs:F1} flushMs={_flushMs:F1} clearMs={_clearMs:F1} readbackMs={_readbackMs:F1} readbacks={_readbacks}]");
+            $" timed[drawMs={DrawMs:F1} flushMs={FlushMs:F1} clearMs={ClearMs:F1} readbackMs={ReadbackMs:F1} readbacks={Readbacks}]");
     }
 }

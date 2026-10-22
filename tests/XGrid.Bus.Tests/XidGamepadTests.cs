@@ -121,8 +121,8 @@ public sealed class XidGamepadTests
                     == UsbTransferResult.Stall);
         Assert.True(pad.HandleSetup(new UsbSetupPacket(0x21, 0x09, 0x0200, 0, 6), out _)
                     == UsbTransferResult.Ack);
-        Assert.True(pad.CompleteControlOut(new byte[] { 0, 6, 1, 2, 3, 4 }) == UsbTransferResult.Ack);
-        Assert.True(pad.CompleteControlOut(new byte[] { 0, 6, 1 }) == UsbTransferResult.Stall);
+        Assert.True(pad.CompleteControlOut([0, 6, 1, 2, 3, 4]) == UsbTransferResult.Ack);
+        Assert.True(pad.CompleteControlOut([0, 6, 1]) == UsbTransferResult.Stall);
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class XidGamepadTests
     public void SetInput_IsVisibleOnInterruptEndpoint()
     {
         var pad = new XidGamepad();
-        pad.SetInput(0x0001, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, new short[] { 100, -200, 300, -400 });
+        pad.SetInput(0x0001, [1, 2, 3, 4, 5, 6, 7, 8], [100, -200, 300, -400]);
 
         Assert.True(pad.HandleIn(2, 20, out byte[] report) == UsbTransferResult.Ack);
 
@@ -181,15 +181,15 @@ public sealed class XidGamepadTests
         Assert.Equal(-200, BitConverter.ToInt16(report, 14));
 
         Assert.True(pad.HandleIn(3, 20, out _) == UsbTransferResult.Stall);
-        Assert.True(pad.HandleOut(2, new byte[] { 0, 6, 0, 0, 0, 0 }) == UsbTransferResult.Ack);
-        Assert.True(pad.HandleOut(1, Array.Empty<byte>()) == UsbTransferResult.Stall);
+        Assert.True(pad.HandleOut(2, [0, 6, 0, 0, 0, 0]) == UsbTransferResult.Ack);
+        Assert.True(pad.HandleOut(1, []) == UsbTransferResult.Stall);
     }
 
     [Fact]
     public void SetInput_SurvivesReset()
     {
         var pad = new XidGamepad();
-        pad.SetInput(0x0010, new byte[] { 0, 0, 0xFF, 0, 0, 0, 0, 0 }, new short[] { 0, 0, 0, 0 });
+        pad.SetInput(0x0010, [0, 0, 0xFF, 0, 0, 0, 0, 0], [0, 0, 0, 0]);
 
         pad.Reset();
 

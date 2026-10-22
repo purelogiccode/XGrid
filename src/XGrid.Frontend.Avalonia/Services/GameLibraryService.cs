@@ -84,6 +84,7 @@ public static class GameLibraryService
     }
 
     /// <summary>Returns the prettified display title for a path (no I/O).</summary>
+    // ReSharper disable once UnusedMember.Global
     public static string TitleFromPath(string path)
     {
         string name = Path.GetFileNameWithoutExtension(path);

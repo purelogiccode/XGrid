@@ -181,7 +181,7 @@ public sealed class XboxMachineTests
         Array.Fill(rom, (byte)0x90);
 
         // Reset vector sits at ROM offset 0x1F0: mov ax, 0x5678; hlt (real mode)
-        byte[] code = { 0xB8, 0x78, 0x56, 0xF4 };
+        byte[] code = [0xB8, 0x78, 0x56, 0xF4];
         code.CopyTo(rom, 0x1F0);
         return rom;
     }

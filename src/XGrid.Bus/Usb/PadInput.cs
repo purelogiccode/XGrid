@@ -5,25 +5,19 @@ using System.Runtime.InteropServices;
 namespace XGrid.Bus.Usb;
 
 /// <summary>Parsed <c>--pad</c> CLI input state for driving an <see cref="XidGamepad"/>.</summary>
+/// <remarks>Creates a pad state from its parts.</remarks>
 [StructLayout(LayoutKind.Auto)]
-public readonly struct PadInput
+public readonly struct PadInput(ushort buttons, byte[] analog, short[] sticks)
 {
-    /// <summary>Creates a pad state from its parts.</summary>
-    public PadInput(ushort buttons, byte[] analog, short[] sticks)
-    {
-        Buttons = buttons;
-        Analog = analog;
-        Sticks = sticks;
-    }
 
     /// <summary>Gets the digital button bitmask.</summary>
-    public ushort Buttons { get; }
+    public ushort Buttons { get; } = buttons;
 
     /// <summary>Gets the 8 analog button bytes (X Y A B white black triggers).</summary>
-    public byte[] Analog { get; }
+    public byte[] Analog { get; } = analog;
 
     /// <summary>Gets the 4 stick axes (LX LY RX RY).</summary>
-    public short[] Sticks { get; }
+    public short[] Sticks { get; } = sticks;
 
     /// <summary>Gets the neutral (no input) pad state.</summary>
     public static PadInput Neutral { get; } = new(0, new byte[8], new short[4]);

@@ -9,7 +9,7 @@ namespace XGrid.Core.Diagnostics;
 /// </summary>
 public sealed class EipHistogram
 {
-    private readonly Dictionary<uint, ulong> _counts = new();
+    private readonly Dictionary<uint, ulong> _counts = [];
 
     /// <summary>Gets the total number of samples recorded.</summary>
     public ulong Total { get; private set; }

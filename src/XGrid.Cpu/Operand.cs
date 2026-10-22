@@ -4,19 +4,19 @@ namespace XGrid.Cpu;
 public readonly struct Operand
 {
     /// <summary>Gets the operand kind.</summary>
-    public OperandKind Kind { get; init; }
+    public OperandKind Kind { get; private init; }
 
     /// <summary>Gets the register index (0-7) for register operands.</summary>
-    public int RegisterIndex { get; init; }
+    public int RegisterIndex { get; private init; }
 
     /// <summary>Gets the operand size in bits (8, 16, or 32).</summary>
-    public int Size { get; init; }
+    public int Size { get; private init; }
 
     /// <summary>Gets the immediate value.</summary>
-    public uint Immediate { get; init; }
+    public uint Immediate { get; private init; }
 
     /// <summary>Gets the memory operand description.</summary>
-    public MemoryOperand Memory { get; init; }
+    public MemoryOperand Memory { get; private init; }
 
     /// <summary>Gets an empty operand.</summary>
     public static Operand None => default;

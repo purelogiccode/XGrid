@@ -9,6 +9,7 @@ namespace XGrid.Bus.Pci;
 public class PciDevice : IXboxDevice, ISnapshotable
 {
     /// <summary>All-ones value used by firmware to size a BAR.</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint BarProbeValue = 0xFFFFFFFFu;
 
     private readonly byte[] _config = new byte[256];
@@ -52,37 +53,38 @@ public class PciDevice : IXboxDevice, ISnapshotable
     public byte DeviceNumber { get; }
 
     /// <summary>Gets the function number.</summary>
-    public byte FunctionNumber { get; }
+    private byte FunctionNumber { get; }
 
     /// <summary>Gets the PCI vendor ID.</summary>
-    public ushort VendorId { get; }
+    private ushort VendorId { get; }
 
     /// <summary>Gets the PCI device ID.</summary>
-    public ushort DeviceId { get; }
+    private ushort DeviceId { get; }
 
     /// <summary>Gets the revision ID.</summary>
-    public byte RevisionId { get; }
+    private byte RevisionId { get; }
 
     /// <summary>Gets the base class code.</summary>
-    public byte ClassCode { get; }
+    private byte ClassCode { get; }
 
     /// <summary>Gets the subclass code.</summary>
-    public byte Subclass { get; }
+    private byte Subclass { get; }
 
     /// <summary>Gets the programming interface code.</summary>
-    public byte InterfaceCode { get; }
+    private byte InterfaceCode { get; }
 
     /// <summary>Gets the packed device/function number.</summary>
     public int DevFn => (DeviceNumber << 3) | FunctionNumber;
 
     /// <summary>Gets or sets the interrupt pin (1 = INTA#).</summary>
-    public byte InterruptPin { get; protected set; } = 1;
+    public byte InterruptPin { get; } = 1;
 
     private byte _headerType;
 
     /// <summary>Gets or sets the header-type byte at 0x0E (bit 7 = multi-function device).</summary>
     protected byte HeaderType
     {
+        // ReSharper disable once UnusedMember.Global
         get => _headerType;
         set
         {
@@ -92,7 +94,7 @@ public class PciDevice : IXboxDevice, ISnapshotable
     }
 
     /// <summary>Gets or sets the interrupt line (programmed by firmware).</summary>
-    public byte InterruptLine { get; set; }
+    public byte InterruptLine { get; private set; }
 
     /// <summary>Gets the bus this device is attached to.</summary>
     public PciBus? Bus { get; internal set; }
@@ -188,7 +190,7 @@ public class PciDevice : IXboxDevice, ISnapshotable
     private const int SnapshotVersion = 1;
 
     /// <summary>Reads configuration space (1, 2, or 4 bytes, little-endian).</summary>
-    public virtual uint ReadConfig(int offset, int size)
+    public uint ReadConfig(int offset, int size)
     {
         for (int i = 0; i < _bars.Length; i++)
         {
@@ -315,20 +317,13 @@ public class PciDevice : IXboxDevice, ISnapshotable
         };
     }
 
-    private sealed class PciBar
+    private sealed class PciBar(uint size, bool isIo, bool prefetchable)
     {
-        public PciBar(uint size, bool isIo, bool prefetchable)
-        {
-            Size = size;
-            IsIo = isIo;
-            Prefetchable = prefetchable;
-        }
+        public uint Size { get; } = size;
 
-        public uint Size { get; }
+        public bool IsIo { get; } = isIo;
 
-        public bool IsIo { get; }
-
-        public bool Prefetchable { get; }
+        public bool Prefetchable { get; } = prefetchable;
 
         public uint Base { get; set; }
 

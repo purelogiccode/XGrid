@@ -13,7 +13,7 @@ namespace XGrid.Cpu.Tests;
 public sealed class FetchFastPathTests
 {
     // nop; nop; mov eax,0x1234; hlt (8 bytes, no data accesses).
-    private static readonly byte[] StraightLine = { 0x90, 0x90, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xF4 };
+    private static readonly byte[] StraightLine = [0x90, 0x90, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xF4];
 
     private const uint PageDirectory = 0x4000;
     private const uint PageTable = 0x5000;

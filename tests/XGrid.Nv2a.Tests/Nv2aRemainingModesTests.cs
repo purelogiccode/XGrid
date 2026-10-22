@@ -22,14 +22,9 @@ public sealed class Nv2ARemainingModesTests
     // ReSharper disable once UnusedMember.Local
     private const int MuxC = 3;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -102,7 +97,7 @@ public sealed class Nv2ARemainingModesTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static uint F(float value)
@@ -320,7 +315,7 @@ public sealed class Nv2ARemainingModesTests
         PushFormatTextureSlot(pushes, 0, 0x4000u, format, address, 2u, 2u);
         PushStagePassTexel(pushes, 0, stageMode);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
     }
@@ -372,7 +367,7 @@ public sealed class Nv2ARemainingModesTests
         pushes.Add((0x1B24u, 0xFFFF0000u));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(0xFFFF0000u, ReadPixel(memory, 2, 2));
     }
@@ -391,7 +386,7 @@ public sealed class Nv2ARemainingModesTests
         pushes.Add((0x1B24u, 0xFFFF0000u));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(0xFF111111u, ReadPixel(memory, 2, 2));
     }
 
@@ -415,7 +410,7 @@ public sealed class Nv2ARemainingModesTests
         pushes.Add((0x0AACu, 0x000000C0u));
         pushes.Add((0x028Cu, 0x00001C00u));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(1uL, nv2A.DrawsExecuted);
     }
 
@@ -461,7 +456,7 @@ public sealed class Nv2ARemainingModesTests
         pushes.Add((0x1E6Cu, 7u));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         using var stream = new System.IO.MemoryStream();
         using (var writer = new System.IO.BinaryWriter(stream))

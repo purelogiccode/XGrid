@@ -59,7 +59,7 @@ public sealed class ApuFrameCounterTests
 
     private sealed class FakeMemory : IApuMemory
     {
-        private readonly Dictionary<uint, byte> _ram = new();
+        private readonly Dictionary<uint, byte> _ram = [];
 
         public void Write8(uint address, byte value) => _ram[address] = value;
 

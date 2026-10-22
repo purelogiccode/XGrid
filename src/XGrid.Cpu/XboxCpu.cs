@@ -12,7 +12,6 @@ public sealed partial class XboxCpu
     private uint _sysenterCs;
     private uint _sysenterEsp;
     private uint _sysenterEip;
-    private IHotspotObserver? _hotspot;
 
     // Memory-path slice 1 (§161): RAM-direct fast path. When the bus is the
     // standard AddressSpace, its RAM is cached here so physical accesses can
@@ -43,10 +42,9 @@ public sealed partial class XboxCpu
     // tag misses — a 4-slot direct-mapped cache thrashes on any working set
     // past four pages. The mask is baked into both emitters, so slots must
     // stay a power of two and match <see cref="DataXlatMask"/>.
-    internal const int DataXlatSlots = 256;
+    private const int DataXlatSlots = 256;
 
     internal const uint DataXlatMask = DataXlatSlots - 1;
-
     private readonly uint[] _dataXlatTag = CreateDataXlatTags();
     private readonly uint[] _dataXlatPhys = new uint[DataXlatSlots];
     private readonly bool[] _dataXlatWritable = new bool[DataXlatSlots];
@@ -90,7 +88,7 @@ public sealed partial class XboxCpu
     public IMemoryBus Memory { get; }
 
     /// <summary>Gets the I/O port bus.</summary>
-    public IIoBus Io { get; }
+    private IIoBus Io { get; }
 
     /// <summary>Gets or sets the external interrupt controller (PIC) acknowledged when IF is set.</summary>
     public IInterruptSource? InterruptSource { get; set; }
@@ -110,10 +108,10 @@ public sealed partial class XboxCpu
     /// </summary>
     public IHotspotObserver? HotspotObserver
     {
-        get => _hotspot;
+        get;
         set
         {
-            _hotspot = value;
+            field = value;
             Mmu.Observer = value;
         }
     }
@@ -168,7 +166,7 @@ public sealed partial class XboxCpu
                     if (TryTransferToInterrupt(vector, Context.Eip, false, 0))
                     {
                         InterruptCount++;
-                        _blocks?.EndBoundary();
+                        BlockStatistics?.EndBoundary();
                         return;
                     }
                 }
@@ -197,14 +195,14 @@ public sealed partial class XboxCpu
                     uint specEipBefore = Context.Eip;
                     spec(this, instruction);
                     _idle?.Observe(instruction, specEipBefore, Context.Eip);
-                    _hotspot?.Observe(instruction, specEipBefore, Context.Eip);
+                    HotspotObserver?.Observe(instruction, specEipBefore, Context.Eip);
                     return;
                 }
             }
 
             if (!instruction.IsValid)
             {
-                _blocks?.EndBoundary();
+                BlockStatistics?.EndBoundary();
                 LastFaultVector = 6;
                 LastFaultEip = Context.Eip;
                 LastFaultErrorCode = 0;
@@ -219,11 +217,11 @@ public sealed partial class XboxCpu
             uint eipBefore = Context.Eip;
             ExecuteInstruction(instruction);
             _idle?.Observe(instruction, eipBefore, Context.Eip);
-            _hotspot?.Observe(instruction, eipBefore, Context.Eip);
+            HotspotObserver?.Observe(instruction, eipBefore, Context.Eip);
         }
         catch (PageFaultSignal fault)
         {
-            _blocks?.EndBoundary();
+            BlockStatistics?.EndBoundary();
             Context.Cr2 = fault.LinearAddress;
             LastFaultVector = 14;
             LastFaultEip = Context.Eip;
@@ -267,7 +265,7 @@ public sealed partial class XboxCpu
                 }
             }
 
-            if (_jitEnabled)
+            if (JitEnabled)
             {
                 // Fast-mode JIT (opt-in): serve whole blocks natively. A zero
                 // return means no block covers this head; the member paths
@@ -290,7 +288,7 @@ public sealed partial class XboxCpu
                 continue;
             }
 
-            if (_blocks is { SpecEnabled: true })
+            if (BlockStatistics is { SpecEnabled: true })
             {
                 // Slice 2 (§139): serve blocked members through the unrolled
                 // runner. Only used inside Execute (trace/break-log callers use
@@ -318,7 +316,7 @@ public sealed partial class XboxCpu
     /// </summary>
     private int RunNonJit(int budget)
     {
-        if (_blocks is { SpecEnabled: true })
+        if (BlockStatistics is { SpecEnabled: true })
         {
             int slice = JitSpecSlice > 0 && JitSpecSlice < budget ? JitSpecSlice : budget;
             int specRan = RunSpecBlock(slice);
@@ -343,7 +341,7 @@ public sealed partial class XboxCpu
             return;
         }
 
-        IHotspotObserver? observer = _hotspot;
+        IHotspotObserver? observer = HotspotObserver;
         if (observer is null)
         {
             FetchLegacy(segmentBase, buffer);
@@ -386,7 +384,7 @@ public sealed partial class XboxCpu
     /// <returns>The physical address of fetch-window byte 0 (decode cache fill, §131 leg (d)).</returns>
     private uint FetchFast(uint fetchLinear, Span<byte> buffer)
     {
-        _hotspot?.NoteFetch(false);
+        HotspotObserver?.NoteFetch(false);
         uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted,
             out uint errorCode);
         if (faulted)
@@ -415,7 +413,7 @@ public sealed partial class XboxCpu
     /// </summary>
     private uint FetchFastCrossPage(uint fetchLinear, Span<byte> buffer, out uint secondPhysicalBase)
     {
-        _hotspot?.NoteFetch(true);
+        HotspotObserver?.NoteFetch(true);
         int split = 0x1000 - (int)(fetchLinear & 0xFFFu);
         uint basePhysical = Mmu.Translate(fetchLinear, isWrite: false, isInstruction: true, out bool faulted,
             out uint errorCode);
@@ -1195,12 +1193,9 @@ public sealed partial class XboxCpu
 
     private static SegmentRegister DefaultSegment(in MemoryOperand memory)
     {
-        if (memory.Is16Bit)
-        {
-            return memory.HasBase && memory.Base == Gpr.Ebp ? SegmentRegister.Ss : SegmentRegister.Ds;
-        }
-
-        return memory.HasBase && (memory.Base == Gpr.Esp || memory.Base == Gpr.Ebp)
+        return memory.Is16Bit
+            ? memory.HasBase && memory.Base == Gpr.Ebp ? SegmentRegister.Ss : SegmentRegister.Ds
+            : memory.HasBase && (memory.Base == Gpr.Esp || memory.Base == Gpr.Ebp)
             ? SegmentRegister.Ss
             : SegmentRegister.Ds;
     }
@@ -1210,14 +1205,14 @@ public sealed partial class XboxCpu
         if (!Mmu.IsEnabled)
         {
             uint direct = RawRead(address, size);
-            if (_hotspot is not null)
+            if (HotspotObserver is not null)
             {
                 if (CrossesPage(address, size))
                 {
-                    _hotspot.NoteSplitAccess();
+                    HotspotObserver.NoteSplitAccess();
                 }
 
-                _hotspot.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(address));
+                HotspotObserver.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(address));
             }
 
             return direct;
@@ -1225,13 +1220,13 @@ public sealed partial class XboxCpu
 
         if (CrossesPage(address, size))
         {
-            _hotspot?.NoteSplitAccess();
+            HotspotObserver?.NoteSplitAccess();
             int bytes = size / 8;
             uint value = 0;
             for (int i = 0; i < bytes; i++)
             {
                 uint physical = TranslateLinear(address + (uint)i, isWrite: false, isInstruction: false);
-                _hotspot?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(physical));
+                HotspotObserver?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(physical));
                 value |= (uint)Memory.Read8(physical) << (8 * i);
             }
 
@@ -1240,7 +1235,7 @@ public sealed partial class XboxCpu
 
         uint translated = TranslateLinear(address, isWrite: false, isInstruction: false);
         uint result = RawRead(translated, size);
-        _hotspot?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(translated));
+        HotspotObserver?.NoteDataAccess(isWrite: false, isRam: ClassifyHotspot(translated));
         return result;
     }
 
@@ -1249,14 +1244,14 @@ public sealed partial class XboxCpu
         if (!Mmu.IsEnabled)
         {
             RawWrite(address, size, value);
-            if (_hotspot is not null)
+            if (HotspotObserver is not null)
             {
                 if (CrossesPage(address, size))
                 {
-                    _hotspot.NoteSplitAccess();
+                    HotspotObserver.NoteSplitAccess();
                 }
 
-                _hotspot.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(address));
+                HotspotObserver.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(address));
             }
 
             return;
@@ -1264,12 +1259,12 @@ public sealed partial class XboxCpu
 
         if (CrossesPage(address, size))
         {
-            _hotspot?.NoteSplitAccess();
+            HotspotObserver?.NoteSplitAccess();
             int bytes = size / 8;
             for (int i = 0; i < bytes; i++)
             {
                 uint physical = TranslateLinear(address + (uint)i, isWrite: true, isInstruction: false);
-                _hotspot?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(physical));
+                HotspotObserver?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(physical));
                 Memory.Write8(physical, (byte)(value >> (8 * i)));
                 NoteStorePhysical(physical, 8);
             }
@@ -1279,7 +1274,7 @@ public sealed partial class XboxCpu
 
         uint translated = TranslateLinear(address, isWrite: true, isInstruction: false);
         RawWrite(translated, size, value);
-        _hotspot?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(translated));
+        HotspotObserver?.NoteDataAccess(isWrite: true, isRam: ClassifyHotspot(translated));
     }
 
     private uint RawRead(uint address, int size)
@@ -1287,7 +1282,7 @@ public sealed partial class XboxCpu
         // Slice-1 RAM fast path: same Ram method the AddressSpace branch
         // would call (reads carry no watch/counter side effects), so the
         // only skipped work is the interface dispatch + region branch.
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (ram is not null)
         {
             uint length = size == 8 ? 1u : size == 16 ? 2u : 4u;
@@ -1311,7 +1306,7 @@ public sealed partial class XboxCpu
         // page-drop is correctness, not observability), and the AddressSpace
         // write watch is preserved by falling back whenever it could fire.
         // Ram.Write* runs the same present-dirty choke the bus path hits.
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (ram is not null)
         {
             uint length = size == 8 ? 1u : size == 16 ? 2u : 4u;
@@ -1360,14 +1355,14 @@ public sealed partial class XboxCpu
     /// </summary>
     private uint ReadPhysicalJit(uint physical, int size)
     {
-        _jitMmioMembers++;
+        JitMmioMembers++;
         return RawRead(physical, size);
     }
 
     /// <inheritdoc cref="ReadPhysicalJit"/>
     private void WritePhysicalJit(uint physical, int size, uint value)
     {
-        _jitMmioMembers++;
+        JitMmioMembers++;
         RawWrite(physical, size, value);
     }
 
@@ -1467,20 +1462,13 @@ public sealed partial class XboxCpu
         int op = (int)(descriptor & 0xFF);
         int destination = (int)((descriptor >> 8) & 0xFF);
         bool wide = (descriptor & FpuArithDouble) != 0;
-        Fpu80 value;
-        if ((descriptor & FpuArithInteger) != 0)
-        {
-            value = wide
+        var value = (descriptor & FpuArithInteger) != 0
+            ? wide
                 ? Fpu80.FromInt64(unchecked((short)bits))
-                : Fpu80.FromInt64(unchecked((int)bits));
-        }
-        else
-        {
-            value = wide
+                : Fpu80.FromInt64(unchecked((int)bits))
+            : wide
                 ? Fpu80.FromDouble(BitConverter.Int64BitsToDouble(unchecked((long)bits)))
                 : Fpu80.FromDouble(BitConverter.UInt32BitsToSingle(unchecked((uint)bits)));
-        }
-
         Fpu80 left = Fpu.GetRegister(destination);
         Fpu.SetRegister(destination, ApplyFpuArithOp(op, left, value));
     }
@@ -1620,7 +1608,7 @@ public sealed partial class XboxCpu
     /// need no gate. Hotspot data notes are emitted by the callers either
     /// way and are unaffected.
     /// </summary>
-    private bool FastWideAllowed => _hotspot is null && _idle is null && Mmu.Observer is null;
+    private bool FastWideAllowed => HotspotObserver is null && _idle is null && Mmu.Observer is null;
 
     private static bool CrossesPage(uint address, int sizeInBits)
     {
@@ -1640,15 +1628,15 @@ public sealed partial class XboxCpu
         {
             uint vpn = linearAddress >> 12;
             int slot = (int)(vpn & DataXlatMask);
-            if (_dataXlatTag[slot] == vpn)
+            if (DataXlatTagArray[slot] == vpn)
             {
-                if (isWrite && !_dataXlatWritable[slot]
+                if (isWrite && !DataXlatWritableArray[slot]
                     && (Context.Cr0 & ControlRegisterBits.Cr0WriteProtect) != 0)
                 {
                     throw new PageFaultSignal(linearAddress, 3u);
                 }
 
-                uint hit = _dataXlatPhys[slot] + (linearAddress & 0xFFFu);
+                uint hit = DataXlatPhysArray[slot] + (linearAddress & 0xFFFu);
                 _idle?.NoteAccess(hit, isWrite, isInstruction);
                 return hit;
             }
@@ -1660,9 +1648,9 @@ public sealed partial class XboxCpu
                 throw new PageFaultSignal(linearAddress, fastError);
             }
 
-            _dataXlatTag[slot] = vpn;
-            _dataXlatPhys[slot] = pageBase;
-            _dataXlatWritable[slot] = pageWritable;
+            DataXlatTagArray[slot] = vpn;
+            DataXlatPhysArray[slot] = pageBase;
+            DataXlatWritableArray[slot] = pageWritable;
             _dataXlatArmed = true;
             _idle?.NoteAccess(solved, isWrite, isInstruction);
             return solved;
@@ -1685,7 +1673,7 @@ public sealed partial class XboxCpu
             return;
         }
 
-        Array.Fill(_dataXlatTag, uint.MaxValue);
+        Array.Fill(DataXlatTagArray, uint.MaxValue);
         _dataXlatArmed = false;
     }
 
@@ -2206,12 +2194,7 @@ public sealed partial class XboxCpu
 
     private bool RaiseDivideError()
     {
-        if (TryTransferToInterrupt(0, Context.Eip, false, 0))
-        {
-            return true;
-        }
-
-        throw new UnhandledGuestException(0, Context.Eip);
+        return TryTransferToInterrupt(0, Context.Eip, false, 0) ? true : throw new UnhandledGuestException(0, Context.Eip);
     }
 
     private static long SignedValue(uint value, int size)
@@ -2383,14 +2366,9 @@ public sealed partial class XboxCpu
     {
         uint value = ReadOperand(instruction.Operand2);
 
-        if (instruction.Operand2.Size == 8)
-        {
-            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFu : (uint)(sbyte)value;
-        }
-        else
-        {
-            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFFFu : (uint)(short)value;
-        }
+        value = instruction.Operand2.Size == 8
+            ? instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFu : (uint)(sbyte)value
+            : instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFFFu : (uint)(short)value;
 
         WriteOperand(instruction.Operand1, value);
     }
@@ -2676,7 +2654,7 @@ public sealed partial class XboxCpu
             return false;
         }
 
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (ram is null)
         {
             return false;
@@ -2770,37 +2748,11 @@ public sealed partial class XboxCpu
             // element (its bytes cross a page boundary) takes exactly one
             // legacy iteration, whose split byte loop is already exact.
             uint dstOff = dstLinear & 0xFFFu;
-            uint iters;
-            if (!decrement)
-            {
-                iters = (0x1000u - dstOff) / (uint)delta;
-            }
-            else if (dstOff + (uint)delta > 0x1000u)
-            {
-                iters = 0;
-            }
-            else
-            {
-                iters = dstOff / (uint)delta + 1u;
-            }
-
+            var iters = !decrement ? (0x1000u - dstOff) / (uint)delta : dstOff + (uint)delta > 0x1000u ? 0 : dstOff / (uint)delta + 1u;
             if (move && iters > 0)
             {
                 uint srcOff = srcLinear & 0xFFFu;
-                uint srcIters;
-                if (!decrement)
-                {
-                    srcIters = (0x1000u - srcOff) / (uint)delta;
-                }
-                else if (srcOff + (uint)delta > 0x1000u)
-                {
-                    srcIters = 0;
-                }
-                else
-                {
-                    srcIters = srcOff / (uint)delta + 1u;
-                }
-
+                var srcIters = !decrement ? (0x1000u - srcOff) / (uint)delta : srcOff + (uint)delta > 0x1000u ? 0 : srcOff / (uint)delta + 1u;
                 iters = Math.Min(iters, srcIters);
             }
 
@@ -2893,20 +2845,9 @@ public sealed partial class XboxCpu
         while (remaining > 0)
         {
             uint dstLinear = esBase + dstCursor;
-            uint iters;
-            if (!decrement)
-            {
-                iters = (0x1000u - (dstLinear & 0xFFFu)) / (uint)delta;
-            }
-            else if ((dstLinear & 0xFFFu) + (uint)delta > 0x1000u)
-            {
-                iters = 0;
-            }
-            else
-            {
-                iters = ((dstLinear & 0xFFFu) / (uint)delta) + 1u;
-            }
-
+            var iters = !decrement
+                ? (0x1000u - (dstLinear & 0xFFFu)) / (uint)delta
+                : (dstLinear & 0xFFFu) + (uint)delta > 0x1000u ? 0 : ((dstLinear & 0xFFFu) / (uint)delta) + 1u;
             if (iters == 0)
             {
                 iters = 1;
@@ -3132,25 +3073,19 @@ public sealed partial class XboxCpu
         {
             // Slice 1: one direct 64-bit RAM read instead of two bus
             // dispatches (little-endian combine is identical by construction).
-            PhysicalMemory? ram = _ramDirect;
-            if (ram is not null && (ulong)address + 8 <= _ramSize)
-            {
-                return ram.Read64(address);
-            }
-
-            return Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
+            PhysicalMemory? ram = RawRamDevice;
+            return ram is not null && (ulong)address + 8 <= _ramSize
+                ? ram.Read64(address)
+                : Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
         }
 
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: false, isInstruction: false);
-            PhysicalMemory? ram = _ramDirect;
-            if (ram is not null && (ulong)physical + 8 <= _ramSize)
-            {
-                return ram.Read64(physical);
-            }
-
-            return Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
+            PhysicalMemory? ram = RawRamDevice;
+            return ram is not null && (ulong)physical + 8 <= _ramSize
+                ? ram.Read64(physical)
+                : Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
         }
 
         ulong value = 0;
@@ -3169,7 +3104,7 @@ public sealed partial class XboxCpu
         {
             // Slice 1: mirror of the read fusion. NoteStorePhysical still
             // runs first; the write watch is preserved via fallback.
-            PhysicalMemory? ram = _ramDirect;
+            PhysicalMemory? ram = RawRamDevice;
             if (ram is not null && (ulong)address + 8 <= _ramSize && !IsWatched(address, 8))
             {
                 NoteStorePhysical(address, 64);
@@ -3186,7 +3121,7 @@ public sealed partial class XboxCpu
         if (!CrossesPage(address, 64))
         {
             uint physical = TranslateLinear(address, isWrite: true, isInstruction: false);
-            PhysicalMemory? ram = _ramDirect;
+            PhysicalMemory? ram = RawRamDevice;
             if (ram is not null && (ulong)physical + 8 <= _ramSize && !IsWatched(physical, 8))
             {
                 NoteStorePhysical(physical, 64);
@@ -3215,7 +3150,7 @@ public sealed partial class XboxCpu
         // observers (note counts change 2-idle+1-hotspot to 1-idle+0);
         // one-page guard keeps fault behavior identical (the second
         // translate can only fault on a different page).
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (FastWideAllowed && ram is not null
             && (address & 0xFFFu) + 10 <= 0x1000u && (ulong)address + 10 <= _ramSize)
         {
@@ -3238,7 +3173,7 @@ public sealed partial class XboxCpu
         // Slice 1: mirror of the read fusion. NoteStorePhysical(80) on one
         // page drops exactly the page the legacy two drops hit (idempotent);
         // present-dirty accumulates by OR so chunking is invisible.
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (FastWideAllowed && ram is not null
             && (address & 0xFFFu) + 10 <= 0x1000u && (ulong)address + 10 <= _ramSize)
         {
@@ -3274,7 +3209,7 @@ public sealed partial class XboxCpu
         // legacy partial fill. Gated on FastWideAllowed (translate/idle/TLB
         // note counts change N→pages); the MMU-off shape needs no gate (no
         // translates, no observer-visible difference).
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (!Mmu.IsEnabled)
         {
             if (ram is not null && address + (ulong)length <= _ramSize)
@@ -3338,7 +3273,7 @@ public sealed partial class XboxCpu
         // (idempotent), and WriteSpan runs the same present-dirty choke.
         // Watch overlap falls back per chunk to preserve per-byte WatchHit
         // traffic. Same gating as the read path.
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (!Mmu.IsEnabled)
         {
             if (ram is not null && address + (ulong)length <= _ramSize && !IsWatched(address, (uint)length))
@@ -5257,19 +5192,19 @@ public sealed partial class XboxCpu
         uint control = instruction.Operand3.Immediate;
 
         uint[] destination =
-        {
+        [
             ElementBits((dlow, dhigh), 0),
             ElementBits((dlow, dhigh), 1),
             ElementBits((dlow, dhigh), 2),
             ElementBits((dlow, dhigh), 3),
-        };
+        ];
         uint[] source =
-        {
+        [
             ElementBits((slow, shigh), 0),
             ElementBits((slow, shigh), 1),
             ElementBits((slow, shigh), 2),
             ElementBits((slow, shigh), 3),
-        };
+        ];
 
         ulong rlow = destination[control & 3] | ((ulong)destination[(control >> 2) & 3] << 32);
         ulong rhigh = source[(control >> 4) & 3] | ((ulong)source[(control >> 6) & 3] << 32);
@@ -5287,7 +5222,7 @@ public sealed partial class XboxCpu
         // Slice 1: single-translate 128-bit RAM read (legacy: two
         // ReadMemory64 = two translates + four bus dispatches). Same
         // one-page + observer gating as the FPU80 fusion.
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (FastWideAllowed && ram is not null
             && (address & 0xFFFu) + 16 <= 0x1000u && (ulong)address + 16 <= _ramSize)
         {
@@ -5310,7 +5245,7 @@ public sealed partial class XboxCpu
         }
 
         uint address = ComputeAddress(operand.Memory);
-        PhysicalMemory? ram = _ramDirect;
+        PhysicalMemory? ram = RawRamDevice;
         if (FastWideAllowed && ram is not null
             && (address & 0xFFFu) + 16 <= 0x1000u && (ulong)address + 16 <= _ramSize)
         {
@@ -5343,12 +5278,7 @@ public sealed partial class XboxCpu
         }
 
         float rounded = truncate ? MathF.Truncate(value) : RoundFloat(value);
-        if (rounded is < -2147483648f or >= 2147483648f)
-        {
-            return unchecked((int)0x80000000u);
-        }
-
-        return (int)rounded;
+        return rounded is < -2147483648f or >= 2147483648f ? unchecked((int)0x80000000u) : (int)rounded;
     }
 
     private float RoundFloat(float value)

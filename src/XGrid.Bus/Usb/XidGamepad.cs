@@ -20,33 +20,25 @@ public enum UsbTransferResult
 }
 
 /// <summary>Decoded 8-byte USB setup packet.</summary>
+/// <remarks>Creates a setup packet from its raw fields.</remarks>
 [StructLayout(LayoutKind.Auto)]
-public readonly struct UsbSetupPacket
+public readonly struct UsbSetupPacket(byte requestType, byte request, ushort value, ushort index, ushort length)
 {
-    /// <summary>Creates a setup packet from its raw fields.</summary>
-    public UsbSetupPacket(byte requestType, byte request, ushort value, ushort index, ushort length)
-    {
-        RequestType = requestType;
-        Request = request;
-        Value = value;
-        Index = index;
-        Length = length;
-    }
 
     /// <summary>Gets bmRequestType (direction, type, recipient).</summary>
-    public byte RequestType { get; }
+    public byte RequestType { get; } = requestType;
 
     /// <summary>Gets bRequest.</summary>
-    public byte Request { get; }
+    public byte Request { get; } = request;
 
     /// <summary>Gets wValue.</summary>
-    public ushort Value { get; }
+    public ushort Value { get; } = value;
 
     /// <summary>Gets wIndex.</summary>
-    public ushort Index { get; }
+    public ushort Index { get; } = index;
 
     /// <summary>Gets wLength.</summary>
-    public ushort Length { get; }
+    public ushort Length { get; } = length;
 }
 
 /// <summary>USB device function behind an OHCI controller (control endpoint 0 plus interrupt endpoints).</summary>
@@ -104,33 +96,33 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
     private const int OutputReportSize = 6;
 
     private static readonly byte[] DeviceDescriptor =
-    {
+    [
         0x12, 0x01, 0x10, 0x01, 0x00, 0x00, 0x00, 0x40,
         0x5E, 0x04, 0x02, 0x02, 0x00, 0x01, 0x01, 0x02,
         0x03, 0x01,
-    };
+    ];
 
     private static readonly byte[] ConfigDescriptor =
-    {
+    [
         0x09, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 0x80, 0x32,
         0x09, 0x04, 0x00, 0x00, 0x02, 0x58, 0x42, 0x00, 0x00,
         0x07, 0x05, 0x82, 0x03, 0x20, 0x00, 0x04,
         0x07, 0x05, 0x02, 0x03, 0x20, 0x00, 0x04,
-    };
+    ];
 
     private static readonly byte[] XidDescriptor =
-    {
+    [
         0x10, 0x42, 0x00, 0x01, 0x01, 0x01, 0x14, 0x06,
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    };
+    ];
 
-    private static readonly byte[] LangDescriptor = { 0x04, 0x03, 0x09, 0x04 };
+    private static readonly byte[] LangDescriptor = [0x04, 0x03, 0x09, 0x04];
 
     private readonly byte[] _inputReport = new byte[InputReportSize];
     private readonly byte[] _outputReport = new byte[OutputReportSize];
     private readonly byte[] _inputCapabilities = new byte[InputReportSize];
     private readonly byte[] _outputCapabilities = new byte[OutputReportSize];
-    private readonly List<string> _requestLog = new();
+    private readonly List<string> _requestLog = [];
     private readonly byte[] _heldAnalog = new byte[8];
     private readonly short[] _heldSticks = new short[4];
     private ushort _heldButtons;
@@ -299,7 +291,7 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
 
     private UsbTransferResult HandleSetupCore(in UsbSetupPacket setup, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         if (setup.RequestType == 0x80 && setup.Request == 0x06)
         {
             return GetDescriptor((byte)(setup.Value >> 8), (byte)setup.Value, setup.Length, out payload);
@@ -355,12 +347,12 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
                 _hasPendingConfig = true;
                 return UsbTransferResult.Ack;
             case (0x80, 0x08):
-                payload = new[] { Configured ? (byte)1 : (byte)0 };
+                payload = [Configured ? (byte)1 : (byte)0];
                 return UsbTransferResult.Ack;
             case (0x80, 0x00):
             case (0x81, 0x00):
             case (0x82, 0x00):
-                payload = new byte[] { 0, 0 };
+                payload = [0, 0];
                 return UsbTransferResult.Ack;
             case (0x00, 0x03):
             case (0x00, 0x01):
@@ -439,7 +431,7 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
 
     private UsbTransferResult HandleInCore(byte endpoint, int length, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         if (endpoint != InterruptEndpoint || length <= 0)
         {
             return UsbTransferResult.Stall;
@@ -469,7 +461,7 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
 
     private static UsbTransferResult GetDescriptor(byte type, byte index, ushort length, out byte[] payload)
     {
-        payload = Array.Empty<byte>();
+        payload = [];
         switch (type)
         {
             case DescriptorDevice:
@@ -485,7 +477,7 @@ public sealed class XidGamepad : IUsbDeviceFunction, ISnapshotable
                     1 => Slice(StringDescriptor("XGrid"), length),
                     2 => Slice(StringDescriptor("Xbox Controller"), length),
                     3 => Slice(StringDescriptor("1"), length),
-                    _ => Array.Empty<byte>(),
+                    _ => [],
                 };
                 return index <= 3 ? UsbTransferResult.Ack : UsbTransferResult.Stall;
             default:

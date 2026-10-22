@@ -11,7 +11,7 @@ public sealed class DisplayFrameTests
     {
         var frame = new DisplayFrame();
 
-        frame.Show(2u, 1u, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+        frame.Show(2u, 1u, [1, 2, 3, 4, 5, 6, 7, 8]);
 
         Assert.True(frame.HasFrame);
         Assert.Equal(2u, frame.Width);
@@ -31,7 +31,7 @@ public sealed class DisplayFrameTests
     public void SaveBmp_WritesBottomUpBitmap()
     {
         var frame = new DisplayFrame();
-        frame.Show(2u, 2u, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
+        frame.Show(2u, 2u, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
         string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".bmp");
 
         try

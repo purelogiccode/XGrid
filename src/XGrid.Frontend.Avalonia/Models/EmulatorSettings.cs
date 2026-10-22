@@ -10,34 +10,34 @@ namespace XGrid.Frontend.Avalonia.Models;
 public sealed class EmulatorSettings
 {
     /// <summary>Gets or sets the MCPX BIOS image path (required to power on).</summary>
-    public string BiosPath { get; set; } = string.Empty;
+    public string BiosPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the optional 512-byte MCPX boot ROM path.</summary>
-    public string McpxRomPath { get; set; } = string.Empty;
+    public string McpxRomPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the optional 256-byte EEPROM image path.</summary>
-    public string EepromPath { get; set; } = string.Empty;
+    public string EepromPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the optional hard-disk image path.</summary>
-    public string HddPath { get; set; } = string.Empty;
+    public string HddPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the disc image inserted at power-on (ISO/XISO or CHD).</summary>
-    public string DvdPath { get; set; } = string.Empty;
+    public string DvdPath { get; init; } = string.Empty;
 
     /// <summary>Gets or sets the guest RAM size in megabytes (64 retail, 128 debug kit).</summary>
     public int RamMb { get; set; } = 64;
 
     /// <summary>Gets or sets a value indicating whether the fast-mode JIT engine is enabled.</summary>
-    public bool FastMode { get; set; } = true;
+    public bool FastMode { get; init; } = true;
 
     /// <summary>Gets or sets a value indicating whether the raw x86-64 block emitter is used.</summary>
-    public bool RawBlocks { get; set; } = true;
+    public bool RawBlocks { get; init; } = true;
 
     /// <summary>Gets or sets a value indicating whether idle-spin fast-forwarding is enabled.</summary>
-    public bool SpinSkip { get; set; } = true;
+    public bool SpinSkip { get; init; } = true;
 
     /// <summary>Gets or sets a value indicating whether the decode cache is enabled.</summary>
-    public bool DecodeCache { get; set; } = true;
+    public bool DecodeCache { get; init; } = true;
 
     /// <summary>Gets or sets the JIT build threshold (visits before a block is compiled).</summary>
     public int JitThreshold { get; set; } = 8;
@@ -70,22 +70,22 @@ public sealed class EmulatorSettings
     }
 
     /// <summary>Gets or sets a value indicating whether the 007 end-of-stream quirk is enabled.</summary>
-    public bool EosQuirk { get; set; } = true;
+    public bool EosQuirk { get; init; } = true;
 
     /// <summary>Gets or sets the NVNET backend ("loopback" or "socket").</summary>
     public string NetworkBackend { get; set; } = "loopback";
 
     /// <summary>Gets or sets a value indicating whether the emulated network link is up.</summary>
-    public bool NetworkLinkUp { get; set; } = true;
+    public bool NetworkLinkUp { get; init; } = true;
 
     /// <summary>Gets or sets the accent palette key.</summary>
     public string Accent { get; set; } = "Emerald";
 
     /// <summary>Gets or sets the folders scanned by the game library.</summary>
-    public List<string> LibraryFolders { get; set; } = new();
+    public List<string> LibraryFolders { get; init; } = [];
 
     /// <summary>Gets or sets recently launched disc images (newest first).</summary>
-    public List<string> RecentGames { get; set; } = new();
+    public List<string> RecentGames { get; init; } = [];
 
     /// <summary>
     /// Gets or sets per-game overrides. A key is either a launched image path
@@ -118,12 +118,8 @@ public sealed class EmulatorSettings
     public static bool TryParseTitleIdKey(string key, out uint titleId)
     {
         titleId = 0;
-        if (!IsTitleIdKey(key))
-        {
-            return false;
-        }
-
-        return uint.TryParse(
+        return IsTitleIdKey(key)
+            && uint.TryParse(
             key.AsSpan(TitleIdKeyPrefix.Length), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out titleId);
     }
 
@@ -146,12 +142,9 @@ public sealed class EmulatorSettings
             return byTitle;
         }
 
-        if (string.IsNullOrWhiteSpace(gamePath))
-        {
-            return null;
-        }
-
-        return TitleOverrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
+        return string.IsNullOrWhiteSpace(gamePath)
+            ? null
+            : TitleOverrides.TryGetValue(NormalizeTitleKey(gamePath), out TitleOverride? value) ? value : null;
     }
 
     /// <summary>
@@ -247,8 +240,8 @@ public sealed class EmulatorSettings
             NetworkBackend = NetworkBackend,
             NetworkLinkUp = NetworkLinkUp,
             Accent = Accent,
-            LibraryFolders = new List<string>(LibraryFolders),
-            RecentGames = new List<string>(RecentGames),
+            LibraryFolders = [.. LibraryFolders],
+            RecentGames = [.. RecentGames],
         };
         foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
         {

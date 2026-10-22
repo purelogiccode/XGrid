@@ -12,7 +12,18 @@ namespace XGrid.Cpu;
 /// source window packed into 15 bytes (debug-verify mode, §131 gotcha ix).
 /// The invalid (#UD) marker is cached like any other decode (gotcha vi).
 /// </summary>
-public readonly struct DecodeCacheEntry
+/// <remarks>Initializes a cache entry.</remarks>
+public readonly struct DecodeCacheEntry(
+    DecodedInstruction instruction,
+    uint physicalBase,
+    uint secondPhysicalBase,
+    int crossSplit,
+    int operandSize,
+    int addressSize,
+    ulong source0,
+    uint source8,
+    ushort source12,
+    byte source14)
 {
     /// <summary>
     /// The decoded instruction (may be an invalid marker). A public field
@@ -20,49 +31,25 @@ public readonly struct DecodeCacheEntry
     /// in place with ldelema+ldflda instead of copying the entry.
     /// </summary>
 #pragma warning disable CA1051 // Addressable field required for emitted ldflda; the struct stays readonly.
-    public readonly DecodedInstruction Instruction;
+    public readonly DecodedInstruction Instruction = instruction;
+
 #pragma warning restore CA1051
 
-    /// <summary>Initializes a cache entry.</summary>
-    public DecodeCacheEntry(
-        DecodedInstruction instruction,
-        uint physicalBase,
-        uint secondPhysicalBase,
-        int crossSplit,
-        int operandSize,
-        int addressSize,
-        ulong source0,
-        uint source8,
-        ushort source12,
-        byte source14)
-    {
-        Instruction = instruction;
-        PhysicalBase = physicalBase;
-        SecondPhysicalBase = secondPhysicalBase;
-        CrossSplit = crossSplit;
-        OperandSize = operandSize;
-        AddressSize = addressSize;
-        Source0 = source0;
-        Source8 = source8;
-        Source12 = source12;
-        Source14 = source14;
-    }
-
     /// <summary>Gets the physical address of fetch-window byte 0 at fill time.</summary>
-    public uint PhysicalBase { get; init; }
+    public uint PhysicalBase { get; } = physicalBase;
 
     /// <summary>
     /// Gets the physical address of fetch-window byte <see cref="CrossSplit"/>
     /// (the first byte of the second page) for a cross-page window; 0 for
     /// single-page windows.
     /// </summary>
-    public uint SecondPhysicalBase { get; init; }
+    public uint SecondPhysicalBase { get; } = secondPhysicalBase;
 
     /// <summary>
     /// Gets the fetch-window offset where the second page starts (0 for
     /// single-page windows; 1..14 for cross-page windows, D3).
     /// </summary>
-    public int CrossSplit { get; init; }
+    public int CrossSplit { get; } = crossSplit;
 
     /// <summary>Gets the physical address of fetch-window byte <paramref name="offset"/> (split-aware).</summary>
     public uint PhysicalOf(int offset)
@@ -73,22 +60,22 @@ public readonly struct DecodeCacheEntry
     }
 
     /// <summary>Gets the operand-size default the decode was produced with.</summary>
-    public int OperandSize { get; init; }
+    public int OperandSize { get; } = operandSize;
 
     /// <summary>Gets the address-size default the decode was produced with.</summary>
-    public int AddressSize { get; init; }
+    public int AddressSize { get; } = addressSize;
 
     /// <summary>Gets fetch-window bytes 0-7 (little-endian).</summary>
-    public ulong Source0 { get; init; }
+    private ulong Source0 { get; } = source0;
 
     /// <summary>Gets fetch-window bytes 8-11 (little-endian).</summary>
-    public uint Source8 { get; init; }
+    private uint Source8 { get; } = source8;
 
     /// <summary>Gets fetch-window bytes 12-13 (little-endian).</summary>
-    public ushort Source12 { get; init; }
+    private ushort Source12 { get; } = source12;
 
     /// <summary>Gets fetch-window byte 14.</summary>
-    public byte Source14 { get; init; }
+    private byte Source14 { get; } = source14;
 
     /// <summary>Compares a full 15-byte fetch window against the recorded source bytes.</summary>
     public bool SourceMatches(ReadOnlySpan<byte> window)
@@ -141,12 +128,11 @@ public sealed class DecodeCache
     private const int TrackedPages = (int)(MaxTrackedPhysical >> 12);
     private const int ActivePageWords = TrackedPages / 64;
 
-    private readonly Dictionary<uint, DecodeCacheEntry> _entries = new();
-    private readonly Dictionary<uint, List<uint>> _byPhysicalPage = new();
-    private readonly ulong[] _activePages = new ulong[ActivePageWords];
+    private readonly Dictionary<uint, DecodeCacheEntry> _entries = [];
+    private readonly Dictionary<uint, List<uint>> _byPhysicalPage = [];
 
     /// <summary>Gets the active-physical-page bitset (C3 raw store guard pins it).</summary>
-    internal ulong[] ActivePageBits => _activePages;
+    internal ulong[] ActivePageBits { get; } = new ulong[ActivePageWords];
 
     /// <summary>Gets or sets optional derived blocks; null leaves the legacy cache unchanged.</summary>
     public DecodedBlockCache? Blocks { get; set; }
@@ -258,7 +244,7 @@ public sealed class DecodeCache
         {
             if (!_byPhysicalPage.TryGetValue(physicalPage, out List<uint>? keys))
             {
-                keys = new List<uint>();
+                keys = [];
                 _byPhysicalPage.Add(physicalPage, keys);
             }
 
@@ -268,7 +254,7 @@ public sealed class DecodeCache
             {
                 if (!_byPhysicalPage.TryGetValue(secondPage, out List<uint>? secondKeys))
                 {
-                    secondKeys = new List<uint>();
+                    secondKeys = [];
                     _byPhysicalPage.Add(secondPage, secondKeys);
                 }
 
@@ -331,7 +317,7 @@ public sealed class DecodeCache
 
     private readonly Dictionary<uint, long>? _nonRamPages =
         string.Equals(Environment.GetEnvironmentVariable("XGRID_NONRAM"), "1", StringComparison.Ordinal)
-            ? new Dictionary<uint, long>()
+            ? []
             : null;
 
     /// <summary>Gets the non-cacheable fetch pages seen when XGRID_NONRAM=1 (diagnostic).</summary>
@@ -388,23 +374,23 @@ public sealed class DecodeCache
 
         _entries.Clear();
         _byPhysicalPage.Clear();
-        Array.Clear(_activePages);
+        Array.Clear(ActivePageBits);
         FullFlushes++;
     }
 
     private void MarkActive(uint physicalPage)
     {
-        _activePages[physicalPage >> 6] |= 1UL << (int)(physicalPage & 63);
+        ActivePageBits[physicalPage >> 6] |= 1UL << (int)(physicalPage & 63);
     }
 
     private void ClearActive(uint physicalPage)
     {
-        _activePages[physicalPage >> 6] &= ~(1UL << (int)(physicalPage & 63));
+        ActivePageBits[physicalPage >> 6] &= ~(1UL << (int)(physicalPage & 63));
     }
 
     private bool IsActive(uint physicalPage)
     {
         return physicalPage < TrackedPages
-               && (_activePages[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
+               && (ActivePageBits[physicalPage >> 6] & (1UL << (int)(physicalPage & 63))) != 0;
     }
 }

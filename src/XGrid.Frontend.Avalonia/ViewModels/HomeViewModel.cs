@@ -19,7 +19,7 @@ public sealed partial class HomeViewModel : PageViewModel
     }
 
     /// <summary>Gets recent games with per-row launch commands.</summary>
-    public ObservableCollection<GameListItem> Recent { get; } = new();
+    public ObservableCollection<GameListItem> Recent { get; } = [];
 
     /// <summary>Gets a value indicating whether any recent games exist.</summary>
     public bool HasRecent => Recent.Count > 0;

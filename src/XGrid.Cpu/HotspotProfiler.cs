@@ -41,7 +41,7 @@ public sealed class HotspotProfiler : IHotspotObserver
     public const int HeadWindowRetained = MaxTrackedHeads / 2;
 
     private readonly ulong[] _mnemonicCounts = new ulong[MaxMnemonicIndex() + 1];
-    private readonly Dictionary<uint, ulong> _heads = new();
+    private readonly Dictionary<uint, ulong> _heads = [];
     private int _windowFill;
 
     /// <summary>Gets the total number of executed instructions observed.</summary>

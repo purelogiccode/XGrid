@@ -17,7 +17,7 @@ namespace XGrid.Host;
 public sealed class TestRomRunner : IDisposable
 {
     /// <summary>Guest console port (Bochs-style debug output).</summary>
-    public const ushort ConsolePort = 0xE9;
+    private const ushort ConsolePort = 0xE9;
 
     private const uint GdtAddress = 0x7000;
 

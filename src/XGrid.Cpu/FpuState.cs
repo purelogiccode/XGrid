@@ -6,13 +6,13 @@ namespace XGrid.Cpu;
 public sealed class FpuState
 {
     /// <summary>Default control word after FNINIT.</summary>
-    public const ushort DefaultControlWord = 0x037F;
+    private const ushort DefaultControlWord = 0x037F;
 
     /// <summary>Tag value for a valid (normal) register.</summary>
     public const int TagValid = 0;
 
     /// <summary>Tag value for a zero register.</summary>
-    public const int TagZero = 1;
+    private const int TagZero = 1;
 
     /// <summary>Tag value for a special (NaN/infinity/denormal/unnormal) register.</summary>
     public const int TagSpecial = 2;
@@ -42,6 +42,7 @@ public sealed class FpuState
     public int RoundingMode => (ControlWord >> 10) & 3;
 
     /// <summary>Gets the precision-control field from the control word.</summary>
+    // ReSharper disable once UnusedMember.Global
     public int PrecisionControl => (ControlWord >> 8) & 3;
 
     /// <summary>Returns the register at stack position ST(index).</summary>
@@ -67,12 +68,10 @@ public sealed class FpuState
     }
 
     /// <summary>Pops the top register and marks it empty.</summary>
-    public Fpu80 Pop()
+    public void Pop()
     {
-        Fpu80 value = _registers[Top];
         SetTag(Top, TagEmpty);
         Top = (Top + 1) & 7;
-        return value;
     }
 
     /// <summary>Marks ST(index) empty without changing the stack pointer.</summary>
@@ -114,6 +113,7 @@ public sealed class FpuState
     }
 
     /// <summary>Gets whether an unmasked exception is pending (would trigger #MF on FWAIT).</summary>
+    // ReSharper disable once UnusedMember.Global
     public bool HasUnmaskedException
     {
         get
@@ -161,6 +161,7 @@ public sealed class FpuState
     }
 
     /// <summary>Sets the C0 condition flag (bit 8).</summary>
+    // ReSharper disable once UnusedMember.Global
     public void SetC0(bool value)
     {
         if (value)
@@ -218,16 +219,6 @@ public sealed class FpuState
 
     private static int ClassifyTag(Fpu80 value)
     {
-        if (value.IsZero)
-        {
-            return TagZero;
-        }
-
-        if (!value.IsFinite || value.Exponent == 0 || value.IsUnnormal)
-        {
-            return TagSpecial;
-        }
-
-        return TagValid;
+        return value.IsZero ? TagZero : !value.IsFinite || value.Exponent == 0 || value.IsUnnormal ? TagSpecial : TagValid;
     }
 }

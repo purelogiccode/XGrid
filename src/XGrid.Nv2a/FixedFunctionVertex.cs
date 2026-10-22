@@ -34,12 +34,13 @@ namespace XGrid.Nv2a;
 public static class FixedFunctionVertex
 {
     /// <summary>Fixed-function texture stages.</summary>
-    public const int TextureSlots = FixedFunctionVertexState.TextureSlots;
+    private const int TextureSlots = FixedFunctionVertexState.TextureSlots;
 
     /// <summary>Texgen channels per stage (S, T, R, Q).</summary>
-    public const int TexGenChannels = FixedFunctionVertexState.TexGenChannels;
+    private const int TexGenChannels = FixedFunctionVertexState.TexGenChannels;
 
     /// <summary><c>NV097_SET_TEXGEN_*_DISABLE</c>: pass the input attribute through.</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint TexGenDisable = 0x0000u;
 
     /// <summary><c>NV097_SET_TEXGEN_*_EYE_LINEAR</c>.</summary>
@@ -120,11 +121,7 @@ public static class FixedFunctionVertex
         ReadOnlySpan<float> weight = inputs[1];
         ReadOnlySpan<float> normal = inputs[2];
 
-        Span<float> normalSource = stackalloc float[4];
-        normalSource[0] = normal[0];
-        normalSource[1] = normal[1];
-        normalSource[2] = normal[2];
-        normalSource[3] = 0f;
+        Span<float> normalSource = [normal[0], normal[1], normal[2], 0f];
 
         // tPosition (eye space) and tNormal (normal through the inverse
         // model-view matrix), skinned when SET_SKIN_MODE blends matrices.
@@ -397,10 +394,7 @@ public static class FixedFunctionVertex
     private static void ComputeReflection(ReadOnlySpan<float> eye, ReadOnlySpan<float> normal, Span<float> result)
     {
         float length = MathF.Sqrt((eye[0] * eye[0]) + (eye[1] * eye[1]) + (eye[2] * eye[2]));
-        Span<float> incident = stackalloc float[3];
-        incident[0] = eye[0] / length;
-        incident[1] = eye[1] / length;
-        incident[2] = eye[2] / length;
+        Span<float> incident = [eye[0] / length, eye[1] / length, eye[2] / length];
         float dot = (normal[0] * incident[0]) + (normal[1] * incident[1]) + (normal[2] * incident[2]);
         result[0] = incident[0] - (2f * dot * normal[0]);
         result[1] = incident[1] - (2f * dot * normal[1]);
@@ -644,11 +638,8 @@ public static class FixedFunctionVertex
     /// </summary>
     private static float ClampAwayZeroInf(float value)
     {
-        if (value > 0f || BitConverter.SingleToUInt32Bits(value) == 0u)
-        {
-            return Math.Clamp(value, ClampLowPositive, ClampHighPositive);
-        }
-
-        return Math.Clamp(value, -ClampHighPositive, -ClampLowPositive);
+        return value > 0f || BitConverter.SingleToUInt32Bits(value) == 0u
+            ? Math.Clamp(value, ClampLowPositive, ClampHighPositive)
+            : Math.Clamp(value, -ClampHighPositive, -ClampLowPositive);
     }
 }

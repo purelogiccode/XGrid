@@ -39,7 +39,7 @@ public sealed class GameEntry
     public GameFormat Format { get; }
 
     /// <summary>Gets the image size in bytes.</summary>
-    public long SizeBytes { get; }
+    private long SizeBytes { get; }
 
     /// <summary>Gets a value indicating whether the entry can be inserted as a disc.</summary>
     public bool IsLaunchable => Format is GameFormat.Iso or GameFormat.Chd;

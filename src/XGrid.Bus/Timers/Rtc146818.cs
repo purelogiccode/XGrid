@@ -162,17 +162,14 @@ public sealed class Rtc146818 : IIoPortDevice, ISnapshotable
             return value;
         }
 
-        if (index <= 0x09)
-        {
-            return TimeRegister(index);
-        }
-
-        return index switch
-        {
-            0x0A => _statusA,
-            0x0B => _statusB,
-            _ => _cmos[index],
-        };
+        return index <= 0x09
+            ? TimeRegister(index)
+            : index switch
+            {
+                0x0A => _statusA,
+                0x0B => _statusB,
+                _ => _cmos[index],
+            };
     }
 
     private void WriteData(byte index, byte value)

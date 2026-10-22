@@ -15,7 +15,7 @@ namespace XGrid.Bus.Io;
 public sealed class TestRomConsole : IIoPortDevice
 {
     private readonly StringBuilder _pending = new();
-    private readonly List<string> _lines = new();
+    private readonly List<string> _lines = [];
 
     /// <summary>Gets completed log lines (without the terminating newline).</summary>
     public IReadOnlyList<string> Lines => _lines;

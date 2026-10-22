@@ -5,14 +5,9 @@ namespace XGrid.Storage.Tests;
 
 public sealed class AtapiTests
 {
-    private sealed class ArrayDisk : IDiskImage
+    private sealed class ArrayDisk(int sectors) : IDiskImage
     {
-        private readonly byte[] _data;
-
-        public ArrayDisk(int sectors)
-        {
-            _data = new byte[sectors * AtaDevice.SectorSize];
-        }
+        private readonly byte[] _data = new byte[sectors * AtaDevice.SectorSize];
 
         public uint SectorCount => (uint)(_data.Length / AtaDevice.SectorSize);
 
@@ -205,7 +200,7 @@ public sealed class AtapiTests
         drive.WriteTaskfile(7, 8, 0xA0);
 
         // MODE SENSE(10), page 0x3E, 28-byte allocation (xemu oracle packet).
-        byte[] packet = new byte[] { 0x5A, 0x00, 0x3E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x00, 0x00, 0x00 };
+        byte[] packet = [0x5A, 0x00, 0x3E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x00, 0x00, 0x00];
         foreach (byte b in packet)
         {
             drive.WriteTaskfile(0, 8, b);

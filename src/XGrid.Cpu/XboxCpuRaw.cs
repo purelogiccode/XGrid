@@ -49,7 +49,7 @@ public sealed unsafe partial class XboxCpu
     /// Gets whether direct raw-to-raw chaining is enabled. <c>XGRID_RAW_CHAIN=0</c>
     /// disables the chain tails and publications (A/B switch, diagnostics only).
     /// </summary>
-    internal static readonly bool RawChainEnabled =
+    private static readonly bool RawChainEnabled =
         !string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_CHAIN"), "0", StringComparison.Ordinal);
 
     /// <summary>Gets or sets whether fast mode may use the C3 raw block emitter.</summary>
@@ -77,17 +77,17 @@ public sealed unsafe partial class XboxCpu
     internal static void NoteRawBuildFailure() => RawBuildFailures++;
 
     /// <summary>Gets the number of chain-target publications (diagnostic).</summary>
-    public ulong RawChainPublishes { get; private set; }
+    private ulong RawChainPublishes { get; set; }
 
     /// <summary>Gets the number of chain-table clears (diagnostic).</summary>
-    public ulong RawChainClears { get; private set; }
+    private ulong RawChainClears { get; set; }
 
     /// <summary>
     /// Builds the raw machine view for the current call. Segment bases and the
     /// RAM size are refreshed because they can change between calls; the
     /// pointers themselves are stable once pinned.
     /// </summary>
-    internal RawState* BuildRawState()
+    private RawState* BuildRawState()
     {
         EnsureRawArraysPinned();
 
@@ -116,7 +116,7 @@ public sealed unsafe partial class XboxCpu
         RawState* state = _rawStateBlock;
         *state = _rawStateTemplate;
         state->RamSize = _ramSize;
-        state->Generation = _blocks is null ? null : _blocks.GenerationPointer;
+        state->Generation = BlockStatistics is null ? null : BlockStatistics.GenerationPointer;
         RefreshRawState(state);
 
         // Across a RunJitBlock call these are invariant: the watch range is
@@ -143,7 +143,7 @@ public sealed unsafe partial class XboxCpu
     /// enabled). Everything else in <see cref="BuildRawState"/> is invariant
     /// across the call.
     /// </summary>
-    internal void RefreshRawState(RawState* state)
+    private void RefreshRawState(RawState* state)
     {
         // Store guard tables (pinned on first sight; the instances are
         // effectively permanent, the reference check is belt and braces).
@@ -179,7 +179,7 @@ public sealed unsafe partial class XboxCpu
     }
 
     /// <summary>Publishes a raw block as a chaining target.</summary>
-    internal void PublishRawChainBlock(uint headEip, ulong generation, int members, nint target, nint entries)
+    private void PublishRawChainBlock(uint headEip, ulong generation, int members, nint target, nint entries)
     {
         // The table is allocated with the other pinned raw arrays; publishing
         // happens at block formation, which can precede the first raw
@@ -193,9 +193,9 @@ public sealed unsafe partial class XboxCpu
         uint index = (headEip * RawChainHash.Multiplier) >> RawChainHash.IndexShift;
         RawChainEntry* entry = &_rawChainTable[index];
         RawChainPublishes++;
-        if (XboxCpu.RawTraceEnabled)
+        if (RawTraceEnabled)
         {
-            XboxCpu.RawTrace($"  chain publish head={headEip:X5} gen={generation} members={members}");
+            RawTrace($"  chain publish head={headEip:X5} gen={generation} members={members}");
         }
         entry->Valid = 1;
         entry->Eip = headEip;
@@ -210,7 +210,7 @@ public sealed unsafe partial class XboxCpu
     /// invalidated without a decode-generation bump, so no chain edge can
     /// reach a block whose pinned entries array may be collected.
     /// </summary>
-    internal void ClearRawChainTable()
+    private void ClearRawChainTable()
     {
         RawChainClears++;
         if (_rawChainTable is not null)
@@ -222,7 +222,7 @@ public sealed unsafe partial class XboxCpu
     /// <summary>
     /// Copies the live context fields into the raw scratch block.
     /// </summary>
-    internal void RawEnter()
+    private void RawEnter()
     {
         // Guard the interpolation: this runs once per raw invocation (millions
         // per run), and an unguarded interpolated string allocates on every
@@ -246,7 +246,7 @@ public sealed unsafe partial class XboxCpu
     }
 
     /// <summary>Copies the raw scratch block back into the live context.</summary>
-    internal void RawExit()
+    private void RawExit()
     {
         if (RawTraceEnabled)
         {
@@ -291,10 +291,10 @@ public sealed unsafe partial class XboxCpu
 
 
     /// <summary>Records one built raw runner (called by block formation).</summary>
-    internal void NoteRawBlockBuilt() => JitRawBlocksBuilt++;
+    private void NoteRawBlockBuilt() => JitRawBlocksBuilt++;
 
     /// <summary>Records one raw runner invocation (called by the block loop).</summary>
-    internal void NoteRawInvocation() => JitRawInvocations++;
+    private void NoteRawInvocation() => JitRawInvocations++;
 
     /// <summary>
     /// Gets whether the raw-kind profile is enabled (<c>XGRID_RAW_PROFILE=1</c>).
@@ -307,10 +307,10 @@ public sealed unsafe partial class XboxCpu
         string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_PROFILE"), "1", StringComparison.Ordinal);
 
     /// <summary>Per-kind executed member counts (valid when <see cref="RawProfileEnabled"/>).</summary>
-    internal long[] RawKindCounts { get; } = new long[64];
+    private long[] RawKindCounts { get; } = new long[64];
 
     /// <summary>Tallies the served prefix of one raw block by planned kind.</summary>
-    internal void NoteRawProfile(JitBlock block, int served)
+    private void NoteRawProfile(JitBlock block, int served)
     {
         int count = Math.Min(served, block.MemberCount);
         for (int i = 0; i < count; i++)
@@ -362,7 +362,7 @@ public sealed unsafe partial class XboxCpu
 
 
     /// <summary>Records members served by a raw runner (called by the block loop).</summary>
-    internal void NoteRawServed(int members) => JitRawServedMembers += (ulong)members;
+    private void NoteRawServed(int members) => JitRawServedMembers += (ulong)members;
 
     /// <summary>
     /// Gets or sets whether helper-routed raw members are tallied by mnemonic
@@ -454,7 +454,7 @@ public sealed unsafe partial class XboxCpu
     /// unsound: a GC during a helper moves the object and every later call
     /// would write into freed memory.
     /// </summary>
-    internal IntPtr RawSelfHandle => GCHandle.ToIntPtr(_rawSelfHandle);
+    private IntPtr RawSelfHandle => GCHandle.ToIntPtr(_rawSelfHandle);
 
     private GCHandle _rawSelfHandle;
     private RawState _rawStateTemplate;
@@ -495,7 +495,7 @@ public sealed unsafe partial class XboxCpu
     /// exception handling (fault delivery, diagnostics) sees it exactly as the
     /// IL runner's.
     /// </summary>
-    internal void ThrowRawFault()
+    private void ThrowRawFault()
     {
         Exception? pending = _rawPendingFault;
         _rawPendingFault = null;
@@ -518,25 +518,20 @@ public sealed unsafe partial class XboxCpu
     internal static XboxCpu? RawFromHandleOrNull(IntPtr handle)
     {
         GCHandle gcHandle = GCHandle.FromIntPtr(handle);
-        if (!gcHandle.IsAllocated)
-        {
-            return null;
-        }
-
-        return gcHandle.Target as XboxCpu;
+        return !gcHandle.IsAllocated ? null : gcHandle.Target as XboxCpu;
     }
 
     /// <summary>Gets the data translate-cache tag table (raw emitter pin target).</summary>
-    internal uint[] DataXlatTagArray => _dataXlatTag;
+    private uint[] DataXlatTagArray => _dataXlatTag;
 
     /// <summary>Gets the data translate-cache physical table (raw emitter pin target).</summary>
-    internal uint[] DataXlatPhysArray => _dataXlatPhys;
+    private uint[] DataXlatPhysArray => _dataXlatPhys;
 
     /// <summary>Gets the data translate-cache writability table (raw emitter pin target).</summary>
-    internal bool[] DataXlatWritableArray => _dataXlatWritable;
+    private bool[] DataXlatWritableArray => _dataXlatWritable;
 
     /// <summary>Gets the RAM device the raw emitter reads directly (null when unattached).</summary>
-    internal PhysicalMemory? RawRamDevice => _ramDirect;
+    private PhysicalMemory? RawRamDevice => _ramDirect;
 
     /// <summary>Runs one instruction through the interpreter body (raw helper).</summary>
     internal void RawExecuteInstruction(in DecodedInstruction instruction) => ExecuteInstruction(in instruction);
@@ -577,21 +572,18 @@ public sealed unsafe partial class XboxCpu
         NoteStorePhysical(physical, sizeInBits);
 
     /// <summary>Gets the raw runner's slow-path memory members (diagnostic).</summary>
-    public long RawSlowMemoryMembers => _rawSlowMemory;
-
-    private long _rawSlowMemory;
-    private long _rawSlowDevice;
+    public long RawSlowMemoryMembers { get; private set; }
 
     /// <summary>Gets the raw runner's slow-path device-space members (diagnostic).</summary>
-    public long RawSlowDeviceMembers => _rawSlowDevice;
+    public long RawSlowDeviceMembers { get; private set; }
 
     /// <summary>Reads guest memory through the exact interpreter path (raw helper).</summary>
     internal uint RawReadMemory(uint address, int size)
     {
-        _rawSlowMemory++;
+        RawSlowMemoryMembers++;
         if (address >= 0xFD000000u)
         {
-            _rawSlowDevice++;
+            RawSlowDeviceMembers++;
         }
 
         return ReadMemory(address, size);
@@ -600,10 +592,10 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Writes guest memory through the exact interpreter path (raw helper).</summary>
     internal void RawWriteMemory(uint address, int size, uint value)
     {
-        _rawSlowMemory++;
+        RawSlowMemoryMembers++;
         if (address >= 0xFD000000u)
         {
-            _rawSlowDevice++;
+            RawSlowDeviceMembers++;
         }
 
         WriteMemory(address, size, value);

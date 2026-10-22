@@ -18,7 +18,7 @@ namespace XGrid.Frontend.Avalonia.Views;
     Justification = "A Window's lifetime is the process's; the reader is released in the Closed handler, the only point Avalonia offers.")]
 public partial class MainWindow : Window
 {
-    private readonly HashSet<Key> _pressed = new();
+    private readonly HashSet<Key> _pressed = [];
     private readonly XInputGamepadReader _gamepad = new();
     private HostPad _hostPad = HostPad.Neutral;
     private DispatcherTimer? _padTimer;

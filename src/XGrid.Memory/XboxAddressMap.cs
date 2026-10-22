@@ -4,6 +4,7 @@ namespace XGrid.Memory;
 public static class XboxAddressMap
 {
     /// <summary>Main RAM base.</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint RamBase = 0x00000000;
 
     /// <summary>NV2A tiling RAM mirror base.</summary>
@@ -35,9 +36,11 @@ public static class XboxAddressMap
     public const uint FlashMirrorSize = 0x01000000;
 
     /// <summary>MCPX boot ROM base (overlaid at the top of the BIOS image).</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint McpxRomBase = 0xFFFFFE00;
 
     /// <summary>MCPX boot ROM size (512 bytes).</summary>
+    // ReSharper disable once UnusedMember.Global
     public const uint McpxRomSize = 0x00000200;
 
     /// <summary>NV2A register window base.</summary>

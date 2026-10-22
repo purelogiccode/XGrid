@@ -19,5 +19,6 @@ public enum LogLevel
     Error = 4,
 
     /// <summary>Failures that prevent the emulator from continuing.</summary>
+    // ReSharper disable once UnusedMember.Global
     Critical = 5,
 }

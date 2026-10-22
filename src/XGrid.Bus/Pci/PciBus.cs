@@ -24,8 +24,8 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
     private const int SecondaryBusRegister = 0x19;
 
     private readonly PciDevice?[] _devices = new PciDevice[256];
-    private readonly List<(PciDevice Bridge, PciBus Secondary)> _secondaries = new();
-    private readonly Dictionary<ushort, int> _configAccesses = new();
+    private readonly List<(PciDevice Bridge, PciBus Secondary)> _secondaries = [];
+    private readonly Dictionary<ushort, int> _configAccesses = [];
 
     /// <summary>Creates the root PCI bus and registers its configuration ports in the I/O space.</summary>
     public PciBus(IoSpace io)
@@ -50,7 +50,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
     public event Action<PciDevice>? InterruptLowered;
 
     /// <summary>Gets the configuration address register value.</summary>
-    public uint ConfigAddress { get; private set; }
+    private uint ConfigAddress { get; set; }
 
     /// <summary>Gets configuration access counts keyed by (bus &lt;&lt; 8) | devfn. Diagnostics.</summary>
     public IReadOnlyDictionary<ushort, int> ConfigAccessCounts => _configAccesses;
@@ -78,6 +78,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
     }
 
     /// <summary>Finds a device by device/function number, or null.</summary>
+    // ReSharper disable once UnusedMember.Global
     public PciDevice? Find(byte deviceNumber, byte functionNumber)
     {
         return _devices[(deviceNumber << 3) | functionNumber];
@@ -123,12 +124,7 @@ public sealed class PciBus : IXboxDevice, IIoPortDevice, ISnapshotable
     public uint Read(ushort offset, int size)
     {
         int bytes = size / 8;
-        if (offset < 4)
-        {
-            return ReadAddressRegister(offset, bytes);
-        }
-
-        return ReadDataRegister(offset - 4, bytes);
+        return offset < 4 ? ReadAddressRegister(offset, bytes) : ReadDataRegister(offset - 4, bytes);
     }
 
     /// <summary>Writes a configuration mechanism #1 port byte: offsets 0-3 merge into the 0xCF8

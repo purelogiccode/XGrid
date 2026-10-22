@@ -19,14 +19,9 @@ public sealed class Nv2AExoticTexModesTests
     private const int MuxV = 2;
     private const int MuxC = 3;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -99,7 +94,7 @@ public sealed class Nv2AExoticTexModesTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static uint F(float value)
@@ -297,7 +292,7 @@ public sealed class Nv2AExoticTexModesTests
         PushFormatTextureSlot(pushes, 0, 0x4000u, format, 0u, imageRectWidth, imageRectHeight);
         PushStagePassTexel(pushes, 0, 0x03u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -415,7 +410,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x1B14u, filterWord));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.TexturedPixels > 0, "the draw must sample the texture");
         return ReadPixel(memory, 1, 1);
@@ -495,7 +490,6 @@ public sealed class Nv2AExoticTexModesTests
     [Fact]
     public void TextureFilterRegisters_ConvolutionBlursImpulse()
     {
-        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
         const uint kernelOnly = 0x02012000u;   // MIN 1 (nearest), MAG 2, kernel QUINCUNX
         const uint convolution = 0x02072000u;  // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2, kernel QUINCUNX
         uint sharp = RenderFilteredSample(0x01010000u, 0.375f, 0.375f, registers: false, Impulse);
@@ -509,6 +503,8 @@ public sealed class Nv2AExoticTexModesTests
         // The centre tap has weight 4/16, so 255 * 0.25 = 63.75 lands in the
         // six-bit neighbourhood of 64.
         Assert.InRange(blurredRed, 58, 70);
+        return;
+        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
     }
 
     /// <summary>
@@ -524,7 +520,6 @@ public sealed class Nv2AExoticTexModesTests
     [Fact]
     public void TextureFilterRegisters_ConvolutionOffsetsOneTexelOnLinearTexture()
     {
-        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
         const uint kernelOnly = 0x02012000u;   // MIN 1 (nearest), MAG 2, kernel QUINCUNX
         const uint convolution = 0x02072000u;  // MIN 7 (CONVOLUTION_2D_LOD0), MAG 2, kernel QUINCUNX
 
@@ -539,6 +534,8 @@ public sealed class Nv2AExoticTexModesTests
         Assert.Equal(sharpRed, gatedRed);
         // One texel per tap: the centre weight is 4/16, 255 * 0.25 = 63.75.
         Assert.InRange(blurredRed, 58, 70);
+        return;
+        static uint Impulse(uint x, uint y) => x == 1 && y == 1 ? 0xFFFFFFFFu : 0xFF000000u;
     }
 
     /// <summary>
@@ -576,7 +573,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x1B14u, filterWord));
         PushStagePassTexel(pushes, 0, 0x01u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.TexturedPixels > 0, "the draw must sample the texture");
         return ReadPixel(memory, 1, 1);
@@ -601,7 +598,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x1B10u, (4u * 4u) << 16));
         PushStagePassTexel(pushes, 0, 0x03u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0xFF0F0F0Fu, ReadPixel(memory, 2, 2));
         Assert.Equal(0uL, nv2A.TexModeFallbacks);
@@ -626,7 +623,7 @@ public sealed class Nv2AExoticTexModesTests
         PushFormatTextureSlot(pushes, 0, 0x4000u, project3DFormat, 0x00030303u, 2u, 2u);
         PushStagePassTexel(pushes, 0, 0x02u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0xFF336699u, ReadPixel(memory, 2, 2));
         Assert.Equal(0uL, nv2A.TexModeFallbacks);
@@ -643,7 +640,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x17F8u, clipMode));
         PushStagePassTexel(pushes, 0, 0x05u);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -714,7 +711,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x1E60u, 0x03u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.Equal(0xFF123456u, ReadPixel(memory, 2, 2));
@@ -745,7 +742,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x0288u, 0x000C0C00u));
         pushes.Add((0x028Cu, 0x00001C00u));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.Equal(0x00000000u, ReadPixel(memory, 2, 2));
@@ -807,7 +804,7 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((0x1E60u, 0x03u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(0uL, nv2A.TexModeFallbacks);

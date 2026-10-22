@@ -1,16 +1,12 @@
 namespace XGrid.Core.Emulation;
 
 /// <summary>Monotonic count of emulated CPU cycles. The single source of emulated time.</summary>
-public sealed class EmulatedClock
+/// <remarks>Creates a clock for the given time mode.</remarks>
+public sealed class EmulatedClock(TimeMode mode)
 {
-    /// <summary>Creates a clock for the given time mode.</summary>
-    public EmulatedClock(TimeMode mode)
-    {
-        Mode = mode;
-    }
 
     /// <summary>Gets how time advances.</summary>
-    public TimeMode Mode { get; }
+    public TimeMode Mode { get; } = mode;
 
     /// <summary>Gets the number of cycles elapsed since the last reset.</summary>
     public ulong Cycles { get; private set; }

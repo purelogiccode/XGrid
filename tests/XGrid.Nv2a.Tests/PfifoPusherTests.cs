@@ -6,14 +6,9 @@ public sealed class PfifoPusherTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -116,14 +111,14 @@ public sealed class PfifoPusherTests
         nv2A.Write(Base + 0x710000u + 9u * 8u + 4u, 4, 0x80001115u);
 
         uint[] words =
-        {
+        [
             0x00040194u, 0x00000009u,
             0x000C020Cu, 0x01000100u, 0x00000000u, 0x00000000u,
             0x00080200u, 0x00400040u, 0x00400040u,
             0x00040208u, 0x00000128u,
             0x00081D98u, 0x003F0000u, 0x003F0000u,
             0x000C1D8Cu, 0x00000000u, 0x11223344u, 0x000000F0u,
-        };
+        ];
         for (int i = 0; i < words.Length; i++)
         {
             memory.WritePhysical((uint)(i * 4), words[i]);

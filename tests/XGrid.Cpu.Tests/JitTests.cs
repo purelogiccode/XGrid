@@ -660,42 +660,26 @@ public sealed class JitTests
     }
 
     /// <summary>Fires one vector at the Nth acknowledge (shared shape with EmitTests).</summary>
-    private sealed class CountedInterruptSource : IInterruptSource
+    private sealed class CountedInterruptSource(int vector, int fireAt) : IInterruptSource
     {
-        private readonly int _vector;
-        private readonly int _fireAt;
         private int _acks;
-
-        public CountedInterruptSource(int vector, int fireAt)
-        {
-            _vector = vector;
-            _fireAt = fireAt;
-        }
 
         public int Acknowledge()
         {
             _acks++;
-            return _acks == _fireAt ? _vector : -1;
+            return _acks == fireAt ? vector : -1;
         }
     }
 
     /// <summary>Fires the vector on every Nth acknowledge.</summary>
-    private sealed class PeriodicInterruptSource : IInterruptSource
+    private sealed class PeriodicInterruptSource(int vector, int every) : IInterruptSource
     {
-        private readonly int _vector;
-        private readonly int _every;
         private int _acks;
-
-        public PeriodicInterruptSource(int vector, int every)
-        {
-            _vector = vector;
-            _every = every;
-        }
 
         public int Acknowledge()
         {
             _acks++;
-            return _acks % _every == 0 ? _vector : -1;
+            return _acks % every == 0 ? vector : -1;
         }
     }
 
@@ -1462,7 +1446,7 @@ public sealed class JitTests
         }
 
         code.Add(0xF4);
-        return code.ToArray();
+        return [.. code];
     }
 
     /// <summary>
@@ -1632,7 +1616,7 @@ public sealed class JitTests
         }
 
         code.Add(0xF4);
-        return code.ToArray();
+        return [.. code];
     }
 
     /// <summary>Picks a register for immediate loads, never ESP (stack safety).</summary>

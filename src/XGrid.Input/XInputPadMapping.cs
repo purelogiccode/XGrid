@@ -42,7 +42,7 @@ public static class XInputPadMapping
     public const ushort RightThumb = 0x0080;
 
     /// <summary>Mask covering every digital bit the Xbox report carries.</summary>
-    public const ushort DigitalMask = 0x00FF;
+    private const ushort DigitalMask = 0x00FF;
 
     // XInput-only flags that map onto an analog byte.
     /// <summary>Left shoulder (black) flag.</summary>
@@ -64,13 +64,13 @@ public static class XInputPadMapping
     public const ushort ButtonY = 0x8000;
 
     /// <summary>XInput's recommended left-stick dead zone.</summary>
-    public const short LeftDeadZone = 7849;
+    private const short LeftDeadZone = 7849;
 
     /// <summary>XInput's recommended right-stick dead zone.</summary>
-    public const short RightDeadZone = 8689;
+    private const short RightDeadZone = 8689;
 
     /// <summary>XInput's recommended trigger press threshold.</summary>
-    public const byte TriggerThreshold = 30;
+    private const byte TriggerThreshold = 30;
 
     /// <summary>Translates raw XInput fields into a pad report.</summary>
     /// <param name="xinputButtons">The XInput <c>wButtons</c> mask.</param>

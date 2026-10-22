@@ -86,6 +86,7 @@ internal enum JitKind : byte
 /// <summary>ALU operation selector baked into a plan (carry-free and carry-aware).</summary>
 internal enum JitAluOp : byte
 {
+    // ReSharper disable once UnusedMember.Global
     None = 0,
     Add,
     Sub,
@@ -100,6 +101,7 @@ internal enum JitAluOp : byte
 /// <summary>Shift operation selector baked into a plan.</summary>
 internal enum JitShiftOp : byte
 {
+    // ReSharper disable once UnusedMember.Global
     None = 0,
     Shl,
     Shr,
@@ -235,12 +237,7 @@ internal static class JitPlanner
     public static JitMemberPlan Plan(in DecodedInstruction instruction)
     {
         JitMemberPlan plan = PlanNative(instruction);
-        if (plan.Kind != JitKind.None)
-        {
-            return plan;
-        }
-
-        return PlanSpecFallback(instruction);
+        return plan.Kind != JitKind.None ? plan : PlanSpecFallback(instruction);
     }
 
     /// <summary>
@@ -265,22 +262,19 @@ internal static class JitPlanner
         }
 
         MethodInfo method = handler.Method;
-        if (!method.IsStatic || method.ReturnType != typeof(void) || method.GetParameters().Length != 2)
-        {
-            return default;
-        }
+        return !method.IsStatic || method.ReturnType != typeof(void) || method.GetParameters().Length != 2
+            ? default
+            : new JitMemberPlan
+            {
+                Kind = JitKind.CallSpec,
+                Length = instruction.Length,
+                SpecHandler = method,
 
-        return new JitMemberPlan
-        {
-            Kind = JitKind.CallSpec,
-            Length = instruction.Length,
-            SpecHandler = method,
-
-            // POPF can turn interrupts on; the emitted member is followed by
-            // the post-member IRQ poll (mirroring the interpreter's next
-            // instruction boundary).
-            PollAfter = instruction.Mnemonic == Mnemonic.Popf,
-        };
+                // POPF can turn interrupts on; the emitted member is followed by
+                // the post-member IRQ poll (mirroring the interpreter's next
+                // instruction boundary).
+                PollAfter = instruction.Mnemonic == Mnemonic.Popf,
+            };
     }
 
     private static bool IsControlTransfer(Mnemonic mnemonic)
@@ -430,12 +424,9 @@ internal static class JitPlanner
                 JitKind.FpuStoreRealPop => JitKind.FpuStoreRegisterPop,
                 _ => JitKind.None,
             };
-            if (registerKind == JitKind.None)
-            {
-                return default;
-            }
-
-            return WithSpecHandler(
+            return registerKind == JitKind.None
+                ? default
+                : WithSpecHandler(
                 new JitMemberPlan
                 {
                     Kind = registerKind,
@@ -602,12 +593,9 @@ internal static class JitPlanner
     private static JitMemberPlan PlanFpuArithmeticPop(in DecodedInstruction instruction)
     {
         Operand first = instruction.Operand1;
-        if (first.Kind != OperandKind.Register || first.Size != 80)
-        {
-            return default;
-        }
-
-        return WithSpecHandler(
+        return first.Kind != OperandKind.Register || first.Size != 80
+            ? default
+            : WithSpecHandler(
             new JitMemberPlan
             {
                 Kind = JitKind.FpuArithPop,
@@ -622,12 +610,9 @@ internal static class JitPlanner
     private static JitMemberPlan PlanFpuExchange(in DecodedInstruction instruction)
     {
         Operand first = instruction.Operand1;
-        if (first.Kind != OperandKind.Register || first.Size != 80)
-        {
-            return default;
-        }
-
-        return WithSpecHandler(
+        return first.Kind != OperandKind.Register || first.Size != 80
+            ? default
+            : WithSpecHandler(
             new JitMemberPlan
             {
                 Kind = JitKind.FpuExchange,
@@ -856,10 +841,9 @@ internal static class JitPlanner
     {
         Operand first = instruction.Operand1;
         Operand second = instruction.Operand2;
-        if (first.Kind == OperandKind.Register && first.Size == 32
-            && second.Kind == OperandKind.Register && second.Size == 32)
-        {
-            return WithSpecHandler(
+        return first.Kind == OperandKind.Register && first.Size == 32
+            && second.Kind == OperandKind.Register && second.Size == 32
+            ? WithSpecHandler(
                 new JitMemberPlan
                 {
                     Kind = JitKind.XchgRR,
@@ -868,10 +852,8 @@ internal static class JitPlanner
                     RegIndex = first.RegisterIndex,
                     SecondRegIndex = second.RegisterIndex,
                 },
-                instruction);
-        }
-
-        return default;
+                instruction)
+            : default;
     }
 
     /// <summary>C3-x: <c>Fchs</c> - negate ST(0).</summary>
@@ -948,12 +930,9 @@ internal static class JitPlanner
     private static JitMemberPlan PlanSetcc(in DecodedInstruction instruction)
     {
         Operand first = instruction.Operand1;
-        if (first.Kind != OperandKind.Register || first.Size != 8)
-        {
-            return default;
-        }
-
-        return WithSpecHandler(
+        return first.Kind != OperandKind.Register || first.Size != 8
+            ? default
+            : WithSpecHandler(
             new JitMemberPlan
             {
                 Kind = JitKind.Setcc,
@@ -1252,10 +1231,9 @@ internal static class JitPlanner
     {
         Operand first = instruction.Operand1;
         Operand second = instruction.Operand2;
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Immediate
-            && IsSized(first.Size))
-        {
-            return new JitMemberPlan
+        return first.Kind == OperandKind.Register && second.Kind == OperandKind.Immediate
+            && IsSized(first.Size)
+            ? new JitMemberPlan
             {
                 Kind = JitKind.ShiftRI,
                 Length = instruction.Length,
@@ -1263,23 +1241,18 @@ internal static class JitPlanner
                 RegIndex = first.RegisterIndex,
                 ShiftOp = op,
                 Immediate = second.Immediate,
-            };
-        }
-
-        if (first.Kind == OperandKind.Register && second.Kind == OperandKind.Register
-            && second.Size == 8 && second.RegisterIndex == (int)Gpr.Ecx && IsSized(first.Size))
-        {
-            return new JitMemberPlan
+            }
+            : first.Kind == OperandKind.Register && second.Kind == OperandKind.Register
+            && second.Size == 8 && second.RegisterIndex == (int)Gpr.Ecx && IsSized(first.Size)
+            ? new JitMemberPlan
             {
                 Kind = JitKind.ShiftRC,
                 Length = instruction.Length,
                 Size = first.Size,
                 RegIndex = first.RegisterIndex,
                 ShiftOp = op,
-            };
-        }
-
-        return default;
+            }
+            : default;
     }
 
     private static JitMemberPlan PlanPush(in DecodedInstruction instruction)
@@ -1331,18 +1304,15 @@ internal static class JitPlanner
         }
 
         Operand first = instruction.Operand1;
-        if (first.Kind == OperandKind.Register && first.Size == 32)
-        {
-            return new JitMemberPlan
+        return first.Kind == OperandKind.Register && first.Size == 32
+            ? new JitMemberPlan
             {
                 Kind = JitKind.PopR,
                 Length = instruction.Length,
                 Size = 32,
                 RegIndex = first.RegisterIndex,
-            };
-        }
-
-        return default;
+            }
+            : default;
     }
 
     /// <summary>The interpreter's exact string handler (rep loop and the
@@ -1391,19 +1361,16 @@ internal static class JitPlanner
     /// delivery matches the interpreter instead of waiting for the block end.</summary>
     private static JitMemberPlan PlanPortIo(in DecodedInstruction instruction, MethodInfo handler)
     {
-        if (instruction.AddressSize != 32 || instruction.OperandSize is not (8 or 16 or 32))
-        {
-            return default;
-        }
-
-        return new JitMemberPlan
-        {
-            Kind = JitKind.CallInterpreter,
-            Length = instruction.Length,
-            Size = instruction.OperandSize,
-            SpecHandler = handler,
-            PollAfter = true,
-        };
+        return instruction.AddressSize != 32 || instruction.OperandSize is not (8 or 16 or 32)
+            ? default
+            : new JitMemberPlan
+            {
+                Kind = JitKind.CallInterpreter,
+                Length = instruction.Length,
+                Size = instruction.OperandSize,
+                SpecHandler = handler,
+                PollAfter = true,
+            };
     }
 
     /// <summary>
@@ -1482,9 +1449,8 @@ internal static class JitPlanner
         }
 
         // Near return only (no far pointer on the stack).
-        if (instruction.Operand1.Kind is OperandKind.Immediate || instruction.Operand1.Kind == OperandKind.None)
-        {
-            return new JitMemberPlan
+        return instruction.Operand1.Kind is OperandKind.Immediate || instruction.Operand1.Kind == OperandKind.None
+            ? new JitMemberPlan
             {
                 Kind = JitKind.RetNear,
                 Length = instruction.Length,
@@ -1493,10 +1459,8 @@ internal static class JitPlanner
                     ? instruction.Operand1.Immediate
                     : 0,
                 IsTerminator = true,
-            };
-        }
-
-        return default;
+            }
+            : default;
     }
 
     private static JitMemberPlan PlanJmp(in DecodedInstruction instruction)
@@ -1540,19 +1504,16 @@ internal static class JitPlanner
 
     private static JitMemberPlan PlanJcc(in DecodedInstruction instruction)
     {
-        if (instruction.Operand1.Kind == OperandKind.Immediate)
-        {
-            return new JitMemberPlan
+        return instruction.Operand1.Kind == OperandKind.Immediate
+            ? new JitMemberPlan
             {
                 Kind = JitKind.JccRel,
                 Length = instruction.Length,
                 Immediate = instruction.Operand1.Immediate,
                 Condition = instruction.Condition,
                 IsTerminator = true,
-            };
-        }
-
-        return default;
+            }
+            : default;
     }
 
     private static bool IsSized(int size)

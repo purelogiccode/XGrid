@@ -225,7 +225,7 @@ internal static class BlockEmitter
         var method = new DynamicMethod(
             $"EmitTail_{headLinear:X8}_{entries.Length}",
             typeof(void),
-            new[] { typeof(XboxCpu), typeof(DecodeCacheEntry[]), typeof(int[]), typeof(int), typeof(ulong) },
+            [typeof(XboxCpu), typeof(DecodeCacheEntry[]), typeof(int[]), typeof(int), typeof(ulong)],
             typeof(XboxCpu),
             skipVisibility: true);
         ILGenerator il = method.GetILGenerator();

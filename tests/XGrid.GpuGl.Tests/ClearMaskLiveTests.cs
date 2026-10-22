@@ -12,14 +12,8 @@ namespace XGrid.GpuGl.Tests;
 /// them for the next draw. Returns early (pass) when no GL context is
 /// available, like the other live rows.
 /// </summary>
-public sealed class ClearMaskLiveTests
+public sealed class ClearMaskLiveTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public ClearMaskLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -102,7 +96,7 @@ public sealed class ClearMaskLiveTests
         bool created = GlBackendFactory.TryCreate(memory, out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 

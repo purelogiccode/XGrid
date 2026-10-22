@@ -17,7 +17,7 @@ namespace XGrid.Cpu.Tests;
 public sealed class EmitTests
 {
     private static readonly byte[] Chain =
-    {
+    [
         0x89, 0xD8, // mov eax,ebx
         0x01, 0xC8, // add eax,ecx
         0x29, 0xD0, // sub eax,edx
@@ -28,9 +28,9 @@ public sealed class EmitTests
         0x89, 0x05, 0x00, 0x50, 0x00, 0x00, // mov [0x5000],eax
         0x90, // nop
         0xEB, 0xEB, // jmp head (19+2 bytes back; hlt has no handler so chains loop)
-    };
+    ];
 
-    private static readonly byte[] Loop = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xEB, 0xF8 };
+    private static readonly byte[] Loop = [0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xEB, 0xF8];
 
     [Fact]
     public void StraightChain_MatchesSpecAndPlain_ServesTails()
@@ -78,7 +78,7 @@ public sealed class EmitTests
         // rewinds, so the warmed tail faults mid-tail (a fault on a cold
         // block would halt before any tail forms). The vector-14 handler is
         // a bare HLT that stops the run.
-        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x8B, 0x19, 0x90, 0x90, 0xEB, 0xF4 };
+        byte[] code = [0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x8B, 0x19, 0x90, 0x90, 0xEB, 0xF4];
 
         XboxCpu spec = CreatePaged(EmitMode.Spec, code);
         XboxCpu emit = CreatePaged(EmitMode.Emit, code);
@@ -110,7 +110,7 @@ public sealed class EmitTests
     [InlineData(5)]
     public void IrqMidTail_MatchesSpec(int fireAt)
     {
-        byte[] code = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xF8 };
+        byte[] code = [0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xF8];
 
         XboxCpu spec = CreateIrq(EmitMode.Spec, code, fireAt);
         XboxCpu emit = CreateIrq(EmitMode.Emit, code, fireAt);
@@ -139,7 +139,7 @@ public sealed class EmitTests
         // past-threshold visits). Unlike faults, a pending
         // exit earns no decode hit (the poll precedes it on the member
         // path), which AssertSameCounters pins.
-        byte[] code = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xF8 };
+        byte[] code = [0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xF8];
 
         XboxCpu spec = CreateIrq(EmitMode.Spec, code, fireAt);
         XboxCpu emit = CreateIrq(EmitMode.Emit, code, fireAt);
@@ -163,7 +163,7 @@ public sealed class EmitTests
         // block here.
         // 0x1000 nop; 0x1001 sti; 0x1002 jmp +2 -> 0x1006;
         // 0x1004/0x1005 skipped; 0x1006..0x1008 nops; 0x1009 jmp 0x1006.
-        byte[] code = { 0x90, 0xFB, 0xEB, 0x02, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xFB };
+        byte[] code = [0x90, 0xFB, 0xEB, 0x02, 0x90, 0x90, 0x90, 0x90, 0x90, 0xEB, 0xFB];
 
         XboxCpu spec = CreateSti(EmitMode.Spec, code);
         XboxCpu emit = CreateSti(EmitMode.Emit, code);
@@ -186,7 +186,7 @@ public sealed class EmitTests
         // CPU stores cannot produce mid-tail. What this pins is exactness of
         // the perpetual-miss SMC path plus patch coherence (the last store
         // wrote the then-current AL).
-        byte[] code = { 0x90, 0xA2, 0x06, 0x10, 0x00, 0x00, 0x90, 0x90, 0xEB, 0xF6 };
+        byte[] code = [0x90, 0xA2, 0x06, 0x10, 0x00, 0x00, 0x90, 0x90, 0xEB, 0xF6];
 
         XboxCpu spec = Create(EmitMode.Spec, code);
         XboxCpu emit = Create(EmitMode.Emit, code);
@@ -206,7 +206,7 @@ public sealed class EmitTests
     {
         // CPUID terminates its block with no handler, so every head
         // iteration counts one fallback while the nops block emits.
-        byte[] code = { 0x90, 0x0F, 0xA2, 0x90, 0x90, 0x90, 0xEB, 0xF8 };
+        byte[] code = [0x90, 0x0F, 0xA2, 0x90, 0x90, 0x90, 0xEB, 0xF8];
 
         XboxCpu spec = Create(EmitMode.Spec, code);
         XboxCpu emit = Create(EmitMode.Emit, code);
@@ -249,7 +249,7 @@ public sealed class EmitTests
     }
 
     private static readonly byte[] MemoryShapes =
-    {
+    [
         0x8B, 0x03, // mov eax,[ebx]           (load32)
         0x89, 0x43, 0x04, // mov [ebx+4],eax  (store32)
         0x8A, 0x0B, // mov cl,[ebx]            (load8)
@@ -261,7 +261,7 @@ public sealed class EmitTests
         0x64, 0x8B, 0x0B, // mov ecx, fs:[ebx]    (segment override load)
         0x65, 0x89, 0x4B, 0x14, // mov gs:[ebx+0x14],ecx (segment override store)
         0xEB, 0xDC, // jmp head
-    };
+    ];
 
     [Fact]
     public void InlineBodies_MemoryShapes_MatchSpecAndEmit()
@@ -305,7 +305,7 @@ public sealed class EmitTests
         // EBX=0x2000 makes BX=0x2000 and ESI=0 makes SI=0, so the load
         // reads 0x2000 through the same shared ComputeAddress path. The
         // load sits at member 1 so a warmed tail serves it.
-        byte[] code = { 0x90, 0x67, 0x8B, 0x00, 0x90, 0xEB, 0xF9 }; // nop; mov eax,[bx+si]; nop; jmp head
+        byte[] code = [0x90, 0x67, 0x8B, 0x00, 0x90, 0xEB, 0xF9]; // nop; mov eax,[bx+si]; nop; jmp head
 
         XboxCpu spec = Create(EmitMode.Spec, code);
         XboxCpu inline = Create(EmitMode.EmitInline, code);
@@ -330,7 +330,7 @@ public sealed class EmitTests
         // A watched physical range steers RawWrite onto the legacy bus path
         // (CheckWatch + WatchHit). The inline body must take the same path
         // with identical hit counts and values.
-        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4 };
+        byte[] code = [0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4];
 
         XboxCpu spec = Create(EmitMode.Spec, code);
         XboxCpu inline = Create(EmitMode.EmitInline, code);
@@ -367,7 +367,7 @@ public sealed class EmitTests
         // inline twin: phase A warms the block against a mapped page; phase
         // B steers ECX at an unmapped VPN so the warmed tail faults mid-tail
         // through the inline body's translate call.
-        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x8B, 0x01, 0x90, 0x90, 0xEB, 0xF4 };
+        byte[] code = [0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x8B, 0x01, 0x90, 0x90, 0xEB, 0xF4];
 
         XboxCpu spec = CreatePaged(EmitMode.Spec, code);
         XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
@@ -400,7 +400,7 @@ public sealed class EmitTests
         // bytes of VPN2 so the store crosses into unmapped VPN3 and faults
         // on the third byte through the inline body's per-byte translate
         // loop, with the store's start EIP.
-        byte[] code = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4 };
+        byte[] code = [0xB8, 0x01, 0x00, 0x00, 0x00, 0x90, 0x89, 0x19, 0x90, 0x90, 0xEB, 0xF4];
 
         XboxCpu spec = CreatePaged(EmitMode.Spec, code);
         XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
@@ -430,7 +430,7 @@ public sealed class EmitTests
         // A page-table entry can map a linear page outside RAM: the fast
         // path's RAM-bounds check must fall back to the twin, which takes
         // the same bus read/write path (counters included).
-        byte[] code = { 0x90, 0x8B, 0x03, 0x89, 0x43, 0x04, 0xEB, 0xF8 }; // nop; mov eax,[ebx]; mov [ebx+4],eax; jmp head
+        byte[] code = [0x90, 0x8B, 0x03, 0x89, 0x43, 0x04, 0xEB, 0xF8]; // nop; mov eax,[ebx]; mov [ebx+4],eax; jmp head
 
         XboxCpu spec = CreatePaged(EmitMode.Spec, code);
         XboxCpu inline = CreatePaged(EmitMode.EmitInline, code);
@@ -462,7 +462,7 @@ public sealed class EmitTests
         // kind: Mov load/store 32 and 8, Cmp reg/mem + mem/reg + mem/imm,
         // Test mem/imm.
         byte[] code =
-        {
+        [
             0x90, // nop (head)
             0x8B, 0x03, // mov eax,[ebx]
             0x89, 0x43, 0x04, // mov [ebx+4],eax
@@ -473,7 +473,7 @@ public sealed class EmitTests
             0x83, 0x7B, 0x0C, 0x55, // cmp dword [ebx+12],0x55
             0xF7, 0x43, 0x10, 0x0F, 0x00, 0x00, 0x00, // test dword [ebx+16],0xF
             0xEB, 0xE2, // jmp head
-        };
+        ];
 
         XboxCpu off = CreatePaged(EmitMode.EmitInline, code);
         off.Context.Ebx = 0x2000;
@@ -652,7 +652,7 @@ public sealed class EmitTests
         int rel = -(code.Count + 2);
         code.Add(0xEB);
         code.Add(unchecked((byte)rel));
-        return code.ToArray();
+        return [.. code];
     }
 
     private static void EmitPrefix(List<byte> code, Random rng)
@@ -913,22 +913,14 @@ public sealed class EmitTests
     }
 
     /// <summary>Fires one vector at the Nth acknowledge.</summary>
-    private sealed class CountedInterruptSource : IInterruptSource
+    private sealed class CountedInterruptSource(int vector, int fireAt) : IInterruptSource
     {
-        private readonly int _vector;
-        private readonly int _fireAt;
         private int _acks;
-
-        public CountedInterruptSource(int vector, int fireAt)
-        {
-            _vector = vector;
-            _fireAt = fireAt;
-        }
 
         public int Acknowledge()
         {
             _acks++;
-            return _acks == _fireAt ? _vector : -1;
+            return _acks == fireAt ? vector : -1;
         }
     }
 }

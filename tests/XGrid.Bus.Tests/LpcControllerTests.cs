@@ -92,8 +92,10 @@ public sealed class LpcControllerTests
     {
         var io = new IoSpace();
         var pci = new PciBus(io);
-        var lpc = new LpcController(io, pci);
-        lpc.Pm1Status = 0x0003;
+        var lpc = new LpcController(io, pci)
+        {
+            Pm1Status = 0x0003
+        };
 
         pci.WriteConfig(PciBus.MakeConfigAddress(1, 0, 0x10), 4, 0x8000);
         io.Write16(0x8000, 0x0001);

@@ -167,27 +167,15 @@ internal static unsafe class RawBlockEmitter
         }
     }
 
-    private sealed class EmitContext
+    private sealed class EmitContext(uint headEip, JitMemberPlan[] plans, bool mmioFast, bool chainable)
     {
         private readonly Assembler _a = new(64);
-        private readonly uint _headEip;
-        private readonly JitMemberPlan[] _plans;
-        private readonly bool _mmioFast;
-        private readonly bool _chainable;
         private Label _exit;
         private Label _ret;
         private Label _leave;
         private Label _faultRet;
         private bool _flagsLive;
         private bool _memberHelper;
-
-        public EmitContext(uint headEip, JitMemberPlan[] plans, bool mmioFast, bool chainable)
-        {
-            _headEip = headEip;
-            _plans = plans;
-            _mmioFast = mmioFast;
-            _chainable = chainable;
-        }
 
         public nint Build()
         {
@@ -197,10 +185,10 @@ internal static unsafe class RawBlockEmitter
             _faultRet = _a.CreateLabel(string.Empty);
             EmitPrologue();
 
-            uint eip = _headEip;
-            for (int i = 0; i < _plans.Length; i++)
+            uint eip = headEip;
+            for (int i = 0; i < plans.Length; i++)
             {
-                JitMemberPlan plan = _plans[i];
+                JitMemberPlan plan = plans[i];
                 EmitMember(plan, eip, i);
                 if (!plan.IsTerminator)
                 {
@@ -220,7 +208,7 @@ internal static unsafe class RawBlockEmitter
             _a.Assemble(writer, (ulong)memory);
             if (string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_DUMP"), "1", StringComparison.Ordinal))
             {
-                Dump(headEip: _headEip, memory, writer.Position);
+                Dump(headEip: headEip, memory, writer.Position);
             }
 
             return (nint)memory;
@@ -263,17 +251,13 @@ internal static unsafe class RawBlockEmitter
             {
                 operand = R64(baseRegister.Value) + (R64(indexRegister.Value) * scale);
             }
-            else if (baseRegister is not null)
-            {
-                operand = R64(baseRegister.Value) + 0L;
-            }
-            else if (indexRegister is not null)
-            {
-                operand = R64(indexRegister.Value) * scale;
-            }
             else
             {
-                throw new InvalidOperationException("raw: memory operand without base or index");
+                operand = baseRegister is not null
+                    ? R64(baseRegister.Value) + 0L
+                    : indexRegister is not null
+                    ? R64(indexRegister.Value) * scale
+                    : throw new InvalidOperationException("raw: memory operand without base or index");
             }
 
             return displacement == 0 ? operand : operand + displacement;
@@ -379,7 +363,7 @@ internal static unsafe class RawBlockEmitter
             a.Label(ref _exit);
             EmitStoreGuestState();
 
-            if (_chainable)
+            if (chainable)
             {
                 EmitChainAttempt();
             }
@@ -2758,7 +2742,7 @@ internal static unsafe class RawBlockEmitter
             EmitAddress(plan);
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            Label? device = _mmioFast ? a.CreateLabel(string.Empty) : null;
+            Label? device = mmioFast ? a.CreateLabel(string.Empty) : null;
             EmitProbe(plan.Size / 8, isStore: false, slow, device);
             EmitMoveFromMemory(plan.Size, plan.RegIndex, RamAt());
             a.jmp(done);
@@ -2841,7 +2825,7 @@ internal static unsafe class RawBlockEmitter
 
             Label slow = a.CreateLabel(string.Empty);
             Label done = a.CreateLabel(string.Empty);
-            Label? device = _mmioFast ? a.CreateLabel(string.Empty) : null;
+            Label? device = mmioFast ? a.CreateLabel(string.Empty) : null;
             EmitProbe(plan.Size / 8, isStore: true, slow, device);
             EmitMoveValueScratchToMemory(plan.Size, RamAt());
             a.jmp(done);
@@ -3321,20 +3305,18 @@ internal static unsafe class RawBlockEmitter
 
     private sealed class BufferCodeWriter(byte* buffer, int capacity) : CodeWriter
     {
-        private readonly byte* _buffer = buffer;
         private readonly int _capacity = capacity;
-        private int _position;
 
-        public int Position => _position;
+        public int Position { get; private set; }
 
         public override void WriteByte(byte value)
         {
-            if (_position >= _capacity)
+            if (Position >= _capacity)
             {
                 throw new InvalidOperationException("raw block exceeded its code buffer");
             }
 
-            _buffer[_position++] = value;
+            buffer[Position++] = value;
         }
     }
 }

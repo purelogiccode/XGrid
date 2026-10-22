@@ -4,9 +4,9 @@ namespace XGrid.Cpu;
 /// E3-1 (§175): lean per-shape bodies served directly from emitted tails.
 /// These are call-based twins of the memory spec handlers with the
 /// emit-mode invariants folded in: an emitted tail only runs while
-/// <see cref="XboxCpu.HotspotObserver"/> and the idle-skip detector are
+/// <see cref="HotspotObserver"/> and the idle-skip detector are
 /// null (the RunEmitTail guard), so the <c>_hotspot</c> branches and notes
-/// of <see cref="XboxCpu.ReadMemory"/>/<see cref="XboxCpu.WriteMemory"/>
+/// of <see cref="ReadMemory"/>/<see cref="WriteMemory"/>
 /// are unreachable and the lean helpers skip them. Everything else — MMU
 /// gate, cross-page byte loop, translate side effects, RAM-direct fallback,
 /// store-watch handling and exact fault order — mirrors the interpreter
@@ -290,14 +290,11 @@ public sealed partial class XboxCpu
             }
         }
 
-        if (instruction.Mnemonic == Mnemonic.Test && instruction.Operand1.Size == 32
-            && instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Immediate)
-        {
-            return BuildPlan(twin, InlineFastKind.TestMemImm32, instruction.Operand1.Memory,
-                -1, instruction.Operand2.Immediate, 32, instruction.Length);
-        }
-
-        return TwinOnly(twin, instruction.Length);
+        return instruction.Mnemonic == Mnemonic.Test && instruction.Operand1.Size == 32
+            && instruction.Operand1.Kind == OperandKind.Memory && instruction.Operand2.Kind == OperandKind.Immediate
+            ? BuildPlan(twin, InlineFastKind.TestMemImm32, instruction.Operand1.Memory,
+                -1, instruction.Operand2.Immediate, 32, instruction.Length)
+            : TwinOnly(twin, instruction.Length);
     }
 
     private static InlineFastPlan TwinOnly(SpecInlineHandler twin, int length)
@@ -374,16 +371,8 @@ public sealed partial class XboxCpu
             return CmpMemReg32FastHandler;
         }
 
-        if (handler == SpecCmpMemImm32Handler)
-        {
-            return CmpMemImm32FastHandler;
-        }
-
-        if (handler == SpecTestMemImm32Handler)
-        {
-            return TestMemImm32FastHandler;
-        }
-
-        return null;
+        return handler == SpecCmpMemImm32Handler
+            ? CmpMemImm32FastHandler
+            : handler == SpecTestMemImm32Handler ? TestMemImm32FastHandler : null;
     }
 }

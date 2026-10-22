@@ -8,27 +8,21 @@ namespace XGrid.Cpu;
 /// IEEE 754 80-bit extended-precision value in the x87 register format.
 /// Arithmetic is performed in double precision and rounded back (documented limitation).
 /// </summary>
+/// <remarks>Creates a value from its raw fields.</remarks>
 [StructLayout(LayoutKind.Auto)]
-public readonly struct Fpu80 : IEquatable<Fpu80>
+public readonly struct Fpu80(ushort signExponent, ulong significand) : IEquatable<Fpu80>
 {
     /// <summary>Exponent bias of the extended format.</summary>
-    public const int ExponentBias = 16383;
+    private const int ExponentBias = 16383;
 
     /// <summary>Explicit-integer-bit mask of the significand.</summary>
-    public const ulong IntegerBit = 0x8000000000000000UL;
-
-    /// <summary>Creates a value from its raw fields.</summary>
-    public Fpu80(ushort signExponent, ulong significand)
-    {
-        SignExponent = signExponent;
-        Significand = significand;
-    }
+    private const ulong IntegerBit = 0x8000000000000000UL;
 
     /// <summary>Gets the sign bit (15) and biased exponent (14-0).</summary>
-    public ushort SignExponent { get; }
+    public ushort SignExponent { get; } = signExponent;
 
     /// <summary>Gets the 64-bit significand (explicit integer bit at bit 63).</summary>
-    public ulong Significand { get; }
+    public ulong Significand { get; } = significand;
 
     /// <summary>Gets whether the sign bit is set.</summary>
     public bool IsNegative => (SignExponent & 0x8000) != 0;
@@ -40,9 +34,11 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     public bool IsZero => Exponent == 0 && Significand == 0;
 
     /// <summary>Gets a value indicating whether this is a denormal (integer bit clear).</summary>
+    // ReSharper disable once UnusedMember.Global
     public bool IsDenormal => Exponent == 0 && Significand != 0 && (Significand & IntegerBit) == 0;
 
     /// <summary>Gets a value indicating whether this is a pseudo-denormal (integer bit set).</summary>
+    // ReSharper disable once UnusedMember.Global
     public bool IsPseudoDenormal => Exponent == 0 && Significand != 0 && (Significand & IntegerBit) != 0;
 
     /// <summary>Gets a value indicating whether this is an unnormal (integer bit clear).</summary>
@@ -65,15 +61,18 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     public static Fpu80 Zero => new(0, 0);
 
     /// <summary>Gets negative zero.</summary>
+    // ReSharper disable once UnusedMember.Global
     public static Fpu80 NegativeZero => new(0x8000, 0);
 
     /// <summary>Gets one.</summary>
     public static Fpu80 One => new(0x3FFF, IntegerBit);
 
     /// <summary>Gets positive infinity.</summary>
+    // ReSharper disable once UnusedMember.Global
     public static Fpu80 PositiveInfinity => new(0x7FFF, IntegerBit);
 
     /// <summary>Gets the default indefinite NaN.</summary>
+    // ReSharper disable once UnusedMember.Global
     public static Fpu80 Indefinite => new(0xFFFF, 0xC000000000000000UL);
 
     /// <summary>Gets log2(10).</summary>
@@ -151,13 +150,10 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     /// <summary>Converts to IEEE 754 double-precision bits, preserving a NaN's sign and payload.</summary>
     public ulong ToDoubleBits()
     {
-        if (IsNaN)
-        {
-            return (IsNegative ? 0x8000000000000000UL : 0UL) | 0x7FF0000000000000UL
-                   | ((Significand >> 11) & 0x000FFFFFFFFFFFFFUL);
-        }
-
-        return (ulong)BitConverter.DoubleToInt64Bits(ToDouble());
+        return IsNaN
+            ? (IsNegative ? 0x8000000000000000UL : 0UL) | 0x7FF0000000000000UL
+                   | ((Significand >> 11) & 0x000FFFFFFFFFFFFFUL)
+            : (ulong)BitConverter.DoubleToInt64Bits(ToDouble());
     }
 
     /// <summary>
@@ -237,6 +233,7 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     }
 
     /// <summary>Creates a value from an unsigned 32-bit integer.</summary>
+    // ReSharper disable once UnusedMember.Global
     public static Fpu80 FromUInt32(uint value)
     {
         return FromInt64(value);
@@ -444,11 +441,6 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
     {
         ulong guard = (significand >> (right - 1)) & 1UL;
         ulong lower = right >= 2 ? significand & ((1UL << (right - 1)) - 1) : 0;
-        if (guard == 0)
-        {
-            return false;
-        }
-
-        return lower != 0 || ((significand >> right) & 1UL) != 0;
+        return guard != 0 && (lower != 0 || ((significand >> right) & 1UL) != 0);
     }
 }

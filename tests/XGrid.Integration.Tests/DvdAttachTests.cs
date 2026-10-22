@@ -9,7 +9,7 @@ namespace XGrid.Integration.Tests;
 
 public sealed class DvdAttachTests : IDisposable
 {
-    private readonly List<string> _tempFiles = new();
+    private readonly List<string> _tempFiles = [];
     private bool _disposed;
 
     [Fact]

@@ -10,9 +10,10 @@ using XGrid.Frontend.Avalonia.Services;
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
 /// <summary>Library page: scans configured folders and launches disc images.</summary>
-public sealed partial class LibraryViewModel : PageViewModel
+/// <remarks>Creates the library page.</remarks>
+public sealed partial class LibraryViewModel(MainWindowViewModel shell) : PageViewModel(shell)
 {
-    private readonly List<GameEntry> _all = new();
+    private readonly List<GameEntry> _all = [];
 
     [ObservableProperty]
     private string _searchText = string.Empty;
@@ -23,14 +24,8 @@ public sealed partial class LibraryViewModel : PageViewModel
     [ObservableProperty]
     private string _statusText = "No folders configured yet.";
 
-    /// <summary>Creates the library page.</summary>
-    public LibraryViewModel(MainWindowViewModel shell)
-        : base(shell)
-    {
-    }
-
     /// <summary>Gets the currently visible games.</summary>
-    public ObservableCollection<GameListItem> Games { get; } = new();
+    public ObservableCollection<GameListItem> Games { get; } = [];
 
     /// <summary>Gets a value indicating whether the library's configured folders are empty.</summary>
     public bool HasNoFolders => Shell.Config.LibraryFolders.Count == 0;
@@ -52,7 +47,7 @@ public sealed partial class LibraryViewModel : PageViewModel
     /// <summary>Rescans every configured folder.</summary>
     public async Task RefreshAsync()
     {
-        string[] folders = Shell.Config.LibraryFolders.ToArray();
+        string[] folders = [.. Shell.Config.LibraryFolders];
         OnPropertyChanged(nameof(HasNoFolders));
         if (folders.Length == 0)
         {

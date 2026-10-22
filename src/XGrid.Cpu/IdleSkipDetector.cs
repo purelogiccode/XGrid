@@ -10,26 +10,26 @@ namespace XGrid.Cpu;
 /// it arms a trigger the execute loop consumes to bulk-advance time up to the
 /// next observable deadline (IRQ, watched-RAM change, or host deadline).
 /// </summary>
-internal sealed class IdleSkipDetector
+internal sealed class IdleSkipDetector(XboxCpu cpu)
 {
     internal const int DefaultMinIterations = 128;
     internal const int MaxBodyInstructions = 32;
+    // ReSharper disable once UnusedMember.Global
     internal const int MaxBodyBytes = 128;
-    internal const int MaxWatchAddresses = 32;
-    internal const int MaxAccountedHeads = 128;
+    private const int MaxWatchAddresses = 32;
+    private const int MaxAccountedHeads = 128;
 
     /// <summary>Sentinel stored as a head's offending address when a PIO port is not an immediate.</summary>
-    internal const uint UnknownPortAddress = 0xFFFFFFFFu;
+    private const uint UnknownPortAddress = 0xFFFFFFFFu;
 
-    private readonly XboxCpu _cpu;
-    private readonly List<uint> _iterationWatch = new();
-    private readonly List<uint> _validatedWatch = new();
-    private readonly List<uint> _watchBaseline = new();
-    private readonly List<DecodedInstruction> _iterationStream = new();
-    private readonly List<uint> _iterationMmio = new();
-    private readonly List<uint> _validatedMmio = new();
-    private readonly Dictionary<uint, HeadTrack> _rejectedHeads = new();
-    private readonly HashSet<uint> _armableHeads = new();
+    private readonly List<uint> _iterationWatch = [];
+    private readonly List<uint> _validatedWatch = [];
+    private readonly List<uint> _watchBaseline = [];
+    private readonly List<DecodedInstruction> _iterationStream = [];
+    private readonly List<uint> _iterationMmio = [];
+    private readonly List<uint> _validatedMmio = [];
+    private readonly Dictionary<uint, HeadTrack> _rejectedHeads = [];
+    private readonly HashSet<uint> _armableHeads = [];
     private readonly ulong[] _rejectSteps = new ulong[7];
 
     private bool _spanOpen;
@@ -41,7 +41,6 @@ internal sealed class IdleSkipDetector
     private bool _measuring;
     private bool _poisoned;
     private uint _poisonedHead;
-    private uint _head;
     private uint _nextEip;
     private uint _espAtHead;
     private int _bodyInstructions;
@@ -52,18 +51,12 @@ internal sealed class IdleSkipDetector
     private uint _pioPort;
     private uint? _firstNonRamAddress;
     private bool _watchOverflow;
-    private bool _validatedRaisesIf;
 
-    public IdleSkipDetector(XboxCpu cpu)
-    {
-        _cpu = cpu;
-    }
-
-    public int MinIterations { get; set; } = DefaultMinIterations;
+    private int MinIterations { get; } = DefaultMinIterations;
 
     public bool TriggerPending { get; private set; }
 
-    public uint Head => _head;
+    public uint Head { get; private set; }
 
     public uint LastTriggerEip { get; private set; }
 
@@ -72,17 +65,17 @@ internal sealed class IdleSkipDetector
     /// mid-body regardless of the IF flag at the loop head, so the skip loop's
     /// IRQ hard-stop must not gate on IF for such bodies.
     /// </summary>
-    public bool ValidatedRaisesIf => _validatedRaisesIf;
+    public bool ValidatedRaisesIf { get; private set; }
 
-    public ulong IterationsCompleted { get; set; }
+    public ulong IterationsCompleted { get; private set; }
 
-    public ulong StaticRejects { get; set; }
+    public ulong StaticRejects { get; private set; }
 
-    public ulong AccessAborts { get; set; }
+    public ulong AccessAborts { get; private set; }
 
-    public ulong StructuralAborts { get; set; }
+    public ulong StructuralAborts { get; private set; }
 
-    public ulong Triggers { get; set; }
+    public ulong Triggers { get; private set; }
 
     public ulong SkippedSteps { get; set; }
 
@@ -94,23 +87,23 @@ internal sealed class IdleSkipDetector
 
     public ulong StopBudget { get; set; }
 
-    public ulong StopReadDeadline { get; set; }
+    public ulong StopReadDeadline { get; private set; }
 
-    public ulong StopModelLost { get; set; }
+    public ulong StopModelLost { get; private set; }
 
-    public ulong HltExecuted { get; set; }
+    public ulong HltExecuted { get; private set; }
 
     /// <summary>Steps attributed to heads that reached a skip trigger (V1-skippable parks).</summary>
     public ulong ArmableSteps { get; private set; }
 
     /// <summary>Rejected heads seen after the accounting capacity was exhausted.</summary>
-    public ulong HeadsUntracked { get; set; }
+    public ulong HeadsUntracked { get; private set; }
 
     /// <summary>Triggers dropped because control left the loop before the skip ran.</summary>
-    public ulong TriggerDrops { get; set; }
+    public ulong TriggerDrops { get; private set; }
 
     /// <summary>RunIdleSkip invocations that reached the skip loop (probe excluded).</summary>
-    public ulong SkipInvocations { get; set; }
+    public ulong SkipInvocations { get; private set; }
 
     /// <summary>Skip attempts that bailed because no idle-skip host was wired.</summary>
     public ulong SkipHostNull { get; set; }
@@ -191,7 +184,7 @@ internal sealed class IdleSkipDetector
                 return;
             }
 
-            if (eipAfter < eipBefore && eipAfter == _head)
+            if (eipAfter < eipBefore && eipAfter == Head)
             {
                 // Completing backward branch: record it, then validate the stream.
                 if (CountBodyInstruction(instruction, eipAfter))
@@ -266,7 +259,7 @@ internal sealed class IdleSkipDetector
             return;
         }
 
-        IIdleSkipHost? host = _cpu.IdleSkipHost;
+        IIdleSkipHost? host = cpu.IdleSkipHost;
         if (host is null)
         {
             _sawNonRam = true;
@@ -297,7 +290,7 @@ internal sealed class IdleSkipDetector
             // classifies (side-effect free, value changes only with device time)
             // may stay in the body; the skip loop clamps chunks to its deadline.
             if (!isInstruction
-                && _cpu.IdleSkipReadModel is { } model
+                && cpu.IdleSkipReadModel is { } model
                 && model.TryGetReadEffect(physicalAddress, out _))
             {
                 if (!_iterationMmio.Contains(physicalAddress))
@@ -400,7 +393,7 @@ internal sealed class IdleSkipDetector
         _pioPort = 0;
         _firstNonRamAddress = null;
         _watchOverflow = false;
-        _validatedRaisesIf = false;
+        ValidatedRaisesIf = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
         _iterationMmio.Clear();
@@ -412,7 +405,7 @@ internal sealed class IdleSkipDetector
         ResetAfterSkip();
         _poisoned = false;
         _poisonedHead = 0;
-        _head = 0;
+        Head = 0;
         _nextEip = 0;
         _espAtHead = 0;
         _validatedWatch.Clear();
@@ -453,7 +446,7 @@ internal sealed class IdleSkipDetector
 
     private void StartCandidate(uint head)
     {
-        if (_cpu.IdleSkipHost is null)
+        if (cpu.IdleSkipHost is null)
         {
             return;
         }
@@ -464,11 +457,11 @@ internal sealed class IdleSkipDetector
         }
 
         _measuring = true;
-        _head = head;
+        Head = head;
         _nextEip = head;
         _bodyInstructions = 0;
         _hitCount = 0;
-        _espAtHead = _cpu.Context.Esp;
+        _espAtHead = cpu.Context.Esp;
         _sawWrite = false;
         _sawNonRam = false;
         _sawPio = false;
@@ -506,7 +499,7 @@ internal sealed class IdleSkipDetector
             return;
         }
 
-        if (_cpu.Context.Esp != _espAtHead)
+        if (cpu.Context.Esp != _espAtHead)
         {
             RegisterRejectedHead(IdleSkipRejectReason.Structural);
             Abort(structural: true);
@@ -526,11 +519,11 @@ internal sealed class IdleSkipDetector
         _validatedWatch.AddRange(_iterationWatch);
         _validatedMmio.Clear();
         _validatedMmio.AddRange(_iterationMmio);
-        _validatedRaisesIf = raisesIf;
+        ValidatedRaisesIf = raisesIf;
         IterationsCompleted++;
         _hitCount++;
 
-        _espAtHead = _cpu.Context.Esp;
+        _espAtHead = cpu.Context.Esp;
         _bodyInstructions = 0;
         _sawWrite = false;
         _sawNonRam = false;
@@ -541,22 +534,22 @@ internal sealed class IdleSkipDetector
         _iterationWatch.Clear();
         _iterationStream.Clear();
         _iterationMmio.Clear();
-        _nextEip = _head;
+        _nextEip = Head;
 
         if (_hitCount >= MinIterations && !TriggerPending)
         {
             TriggerPending = true;
             Triggers++;
-            LastTriggerEip = _head;
-            _rejectedHeads.Remove(_head);
-            _armableHeads.Add(_head);
+            LastTriggerEip = Head;
+            _rejectedHeads.Remove(Head);
+            _armableHeads.Add(Head);
         }
     }
 
     private void PoisonAndAbort()
     {
         _poisoned = true;
-        _poisonedHead = _head;
+        _poisonedHead = Head;
         Abort(structural: false);
     }
 
@@ -577,7 +570,7 @@ internal sealed class IdleSkipDetector
         _pioPort = 0;
         _firstNonRamAddress = null;
         _watchOverflow = false;
-        _validatedRaisesIf = false;
+        ValidatedRaisesIf = false;
         _iterationWatch.Clear();
         _iterationStream.Clear();
         _iterationMmio.Clear();
@@ -593,7 +586,7 @@ internal sealed class IdleSkipDetector
     /// </summary>
     private void AccountVisit(uint head)
     {
-        ulong tsc = _cpu.Context.Tsc;
+        ulong tsc = cpu.Context.Tsc;
         if (_spanOpen)
         {
             ulong delta = tsc - _spanLastVisitTsc;
@@ -646,12 +639,12 @@ internal sealed class IdleSkipDetector
 
     private void RegisterRejectedHead(IdleSkipRejectReason reason, uint address = 0)
     {
-        if (_armableHeads.Contains(_head))
+        if (_armableHeads.Contains(Head))
         {
             return;
         }
 
-        if (!_rejectedHeads.TryGetValue(_head, out HeadTrack? track))
+        if (!_rejectedHeads.TryGetValue(Head, out HeadTrack? track))
         {
             if (_rejectedHeads.Count >= MaxAccountedHeads)
             {
@@ -660,7 +653,7 @@ internal sealed class IdleSkipDetector
             }
 
             track = new HeadTrack();
-            _rejectedHeads[_head] = track;
+            _rejectedHeads[Head] = track;
         }
 
         if (track.Reason == IdleSkipRejectReason.None)
@@ -683,7 +676,7 @@ internal sealed class IdleSkipDetector
             return true;
         }
 
-        IIdleSkipReadModel? model = _cpu.IdleSkipReadModel;
+        IIdleSkipReadModel? model = cpu.IdleSkipReadModel;
         if (model is null)
         {
             StopModelLost++;
@@ -727,7 +720,7 @@ internal sealed class IdleSkipDetector
 
     private uint ReadWatchDword(uint physicalAddress)
     {
-        IMemoryBus memory = _cpu.Memory;
+        IMemoryBus memory = cpu.Memory;
         return memory.Read8(physicalAddress)
                | ((uint)memory.Read8(physicalAddress + 1) << 8)
                | ((uint)memory.Read8(physicalAddress + 2) << 16)

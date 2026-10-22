@@ -162,7 +162,7 @@ public sealed class XInputPadMappingTests
         Assert.True(HostPad.Neutral.IsNeutral);
         Assert.False(new HostPad(1, new byte[8], new short[4]).IsNeutral);
         Assert.False(new HostPad(0, [0, 0, 0, 1, 0, 0, 0, 0], new short[4]).IsNeutral);
-        Assert.False(new HostPad(0, new byte[8], new short[] { 0, 0, 0, -1 }).IsNeutral);
+        Assert.False(new HostPad(0, new byte[8], [0, 0, 0, -1]).IsNeutral);
     }
 
     [Fact]

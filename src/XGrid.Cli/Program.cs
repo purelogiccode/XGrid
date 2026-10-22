@@ -69,9 +69,9 @@ internal static class Program
         int traceStart = 0;
         bool traceRegs = false;
         uint? breakAddress = null;
-        List<uint> breakLogAddresses = new();
+        List<uint> breakLogAddresses = [];
         uint ramMb = 64;
-        List<(uint Address, int Length, bool Virtual)> dumps = new();
+        List<(uint Address, int Length, bool Virtual)> dumps = [];
         string? fbPath = null;
         string? framePath = null;
         string? frameScanoutPath = null;
@@ -129,7 +129,7 @@ internal static class Program
         bool windowMode = false;
         bool gpuReplace = false;
         string? hotspotPath = null;
-        List<string> scans = new();
+        List<string> scans = [];
         uint machineWatchStart = 0x35B00;
         uint machineWatchEnd = 0x35D00;
 
@@ -418,7 +418,7 @@ internal static class Program
             machine = new XboxMachine(ramMb * 1024 * 1024);
             machine.LoadBios(
                 File.ReadAllBytes(biosPath),
-                mcpxPath is null ? default : File.ReadAllBytes(mcpxPath));
+                mcpxPath is null ? null : File.ReadAllBytes(mcpxPath));
             if (eepromPath is not null)
             {
                 machine.LoadEeprom(File.ReadAllBytes(eepromPath));
@@ -1190,7 +1190,7 @@ internal static class Program
         string? pgraphPath = null;
         ulong pgraphMax = 262144;
         uint? breakAddress = null;
-        List<(uint Address, int Length, bool Virtual)> dumps = new();
+        List<(uint Address, int Length, bool Virtual)> dumps = [];
 
         for (int i = 1; i < args.Length; i++)
         {
@@ -2009,6 +2009,11 @@ internal static class Program
                         6 => "128",
                         _ => "?",
                     };
+                    Console.WriteLine(
+                        $"  rawshape {((Mnemonic)mnemonic),-12} {Form((OperandKind)op1)}" +
+                        $"{Form((OperandKind)op2)} size={sizeText,-3} count={top[i].Count}");
+                    continue;
+
                     string Form(OperandKind kind) => kind switch
                     {
                         OperandKind.Register => "R",
@@ -2016,9 +2021,6 @@ internal static class Program
                         OperandKind.Immediate => "I",
                         _ => "-",
                     };
-                    Console.WriteLine(
-                        $"  rawshape {((Mnemonic)mnemonic),-12} {Form((OperandKind)op1)}" +
-                        $"{Form((OperandKind)op2)} size={sizeText,-3} count={top[i].Count}");
                 }
             }
 
@@ -2097,7 +2099,7 @@ internal static class Program
 
         Console.WriteLine($"PCI cfg (bus+devfn):{configLog}");
         var barLog = new System.Text.StringBuilder();
-        int[] barSlots = { 0x10, 0x18, 0x20, 0x28, 0x30, 0x48 };
+        int[] barSlots = [0x10, 0x18, 0x20, 0x28, 0x30, 0x48];
         foreach (int devfn in barSlots)
         {
             uint cmdAddr = Bus.Pci.PciBus.MakeConfigAddress((byte)(devfn >> 3), 0, 0x04);
@@ -2648,10 +2650,7 @@ internal static class Program
                     path = NextValue(args, ref i);
                     break;
                 default:
-                    if (path is null)
-                    {
-                        path = args[i];
-                    }
+                    path ??= args[i];
 
                     break;
             }
@@ -2770,12 +2769,7 @@ internal static class Program
 
     private static string NextValue(string[] args, ref int index)
     {
-        if (index + 1 >= args.Length)
-        {
-            throw new ArgumentException($"Missing value for {args[index]}");
-        }
-
-        return args[++index];
+        return index + 1 >= args.Length ? throw new ArgumentException($"Missing value for {args[index]}") : args[++index];
     }
 
     private static string FormatJitMnemonicTop(long[] counts, int take)

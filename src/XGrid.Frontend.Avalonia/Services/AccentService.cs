@@ -6,45 +6,37 @@ using Avalonia.Media;
 namespace XGrid.Frontend.Avalonia.Services;
 
 /// <summary>A selectable accent color and its derived shades.</summary>
-public sealed class AccentPalette
+/// <remarks>Creates a palette entry.</remarks>
+public sealed class AccentPalette(string key, string label, Color color)
 {
-    /// <summary>Creates a palette entry.</summary>
-    public AccentPalette(string key, string label, Color color)
-    {
-        Key = key;
-        Label = label;
-        Color = color;
-        Hover = Mix(color, Colors.White, 0.24);
-        Soft = Color.FromArgb(38, color.R, color.G, color.B);
-    }
 
     /// <summary>Gets the stable settings key.</summary>
-    public string Key { get; }
+    public string Key { get; } = key;
 
     /// <summary>Gets the display label.</summary>
-    public string Label { get; }
+    public string Label { get; } = label;
 
     /// <summary>Gets the primary accent color.</summary>
-    public Color Color { get; }
+    public Color Color { get; } = color;
 
     /// <summary>Gets the pointer-over shade.</summary>
-    public Color Hover { get; }
+    public Color Hover { get; } = Mix(color, Colors.White, 0.24);
 
     /// <summary>Gets the translucent selection fill.</summary>
-    public Color Soft { get; }
+    public Color Soft { get; } = Color.FromArgb(38, color.R, color.G, color.B);
 
     /// <summary>Gets the swatch brush.</summary>
     public IBrush Brush => new SolidColorBrush(Color);
 
     /// <summary>The built-in palettes, in display order.</summary>
-    public static IReadOnlyList<AccentPalette> All { get; } = new[]
-    {
+    public static IReadOnlyList<AccentPalette> All { get; } =
+    [
         new AccentPalette("Emerald", "Emerald", Color.Parse("#57E389")),
         new AccentPalette("Aqua", "Aqua", Color.Parse("#4CD7F2")),
         new AccentPalette("Violet", "Violet", Color.Parse("#A78BFA")),
         new AccentPalette("Amber", "Amber", Color.Parse("#F5B84C")),
         new AccentPalette("Crimson", "Crimson", Color.Parse("#FF6B81")),
-    };
+    ];
 
     /// <summary>Resolves a palette key, falling back to Emerald.</summary>
     public static AccentPalette Find(string? key)
@@ -62,12 +54,12 @@ public sealed class AccentPalette
 
     private static Color Mix(Color from, Color to, double amount)
     {
-        static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
         return Color.FromArgb(
             Lerp(from.A, to.A, amount),
             Lerp(from.R, to.R, amount),
             Lerp(from.G, to.G, amount),
             Lerp(from.B, to.B, amount));
+        static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
     }
 }
 
@@ -102,11 +94,11 @@ public static class AccentService
 
     private static Color Mix(Color from, Color to, double amount)
     {
-        static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
         return Color.FromArgb(
             Lerp(from.A, to.A, amount),
             Lerp(from.R, to.R, amount),
             Lerp(from.G, to.G, amount),
             Lerp(from.B, to.B, amount));
+        static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
     }
 }

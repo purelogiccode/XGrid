@@ -8,14 +8,9 @@ public sealed class PshCombinerTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -91,17 +86,17 @@ public sealed class PshCombinerTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static float[] Vec(float x, float y, float z, float w)
     {
-        return new[] { x, y, z, w };
+        return [x, y, z, w];
     }
 
     private static float[][] Texels(float r, float g, float b, float a)
     {
-        return new[] { Vec(r, g, b, a), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f) };
+        return [Vec(r, g, b, a), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f), Vec(0f, 0f, 0f, 1f)];
     }
 
     private static (float R, float G, float B, float A) Run(PshCombiner combiner, float[] diffuse, float[][] texels)
@@ -742,10 +737,10 @@ public sealed class PshCombinerTests
         // development was a missing input mapping on the final combiner's
         // EF_PROD reads (config below: D = EfProd with UnsignedInvert). The
         // four cases isolate stages vs final and the EfProd slot.
-        uint[] ri = { 0x09D1C176u, 0x1E1B4EC3u, 0x62B9630Au, 0x1076D0F5u, 0x7062236Du, 0x7675F7F3u, 0x5DC0F139u, 0x063B5164u };
-        uint[] ai = { 0x2EBA3D74u, 0x14F69F7Eu, 0x3279F03Au, 0x3FB6FF90u, 0x42C89934u, 0x49CF3202u, 0x07318715u, 0x4A6FDFCDu };
-        uint[] ro = { 0x0000E301u, 0x0009781Du, 0x000D039Fu, 0x0004EB9Fu, 0x0005C1D6u, 0x000A5067u, 0x000722F8u, 0x000B6605u };
-        uint[] ao = { 0x0000EB97u, 0x00097B85u, 0x000D0128u, 0x0004E7ADu, 0x0005C928u, 0x000A5196u, 0x00072E5Fu, 0x000B6350u };
+        uint[] ri = [0x09D1C176u, 0x1E1B4EC3u, 0x62B9630Au, 0x1076D0F5u, 0x7062236Du, 0x7675F7F3u, 0x5DC0F139u, 0x063B5164u];
+        uint[] ai = [0x2EBA3D74u, 0x14F69F7Eu, 0x3279F03Au, 0x3FB6FF90u, 0x42C89934u, 0x49CF3202u, 0x07318715u, 0x4A6FDFCDu];
+        uint[] ro = [0x0000E301u, 0x0009781Du, 0x000D039Fu, 0x0004EB9Fu, 0x0005C1D6u, 0x000A5067u, 0x000722F8u, 0x000B6605u];
+        uint[] ao = [0x0000EB97u, 0x00097B85u, 0x000D0128u, 0x0004E7ADu, 0x0005C928u, 0x000A5196u, 0x00072E5Fu, 0x000B6350u];
 
         // A: no final combiner -> isolates the stages.
         var noFinal = BuildConfig(8, ri, ai, ro, ao, 0u, 0u);
@@ -845,7 +840,7 @@ public sealed class PshCombinerTests
         // mappings are restricted to the six valid Out* encodings (the
         // generic path throws on the reserved ones, which hardware cannot
         // produce).
-        int[] validMappings = { 0x00, 0x08, 0x10, 0x18, 0x20, 0x30 };
+        int[] validMappings = [0x00, 0x08, 0x10, 0x18, 0x20, 0x30];
         var rng = new Random(20261018);
         for (int n = 0; n < 40; n++)
         {

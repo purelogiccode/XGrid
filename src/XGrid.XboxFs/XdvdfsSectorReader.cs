@@ -41,7 +41,7 @@ namespace XGrid.XboxFs;
 public static class XdvdfsSectorReader
 {
     /// <summary>DVD sector size in bytes.</summary>
-    public const int SectorSize = 2048;
+    private const int SectorSize = 2048;
 
     /// <summary>Sector that holds the XDVDFS volume descriptor inside the game partition.</summary>
     public const int VolumeDescriptorSector = 32;
@@ -62,13 +62,13 @@ public static class XdvdfsSectorReader
     /// a plain image first, then the XGD variants.
     /// </summary>
     private static readonly long[] DiscSeeks =
-    {
+    [
         0L,
         0x0FD90000L, // XGD2 / global lseek
         0x02080000L, // XGD3
         0x89D80000L, // XGD2 hybrid
         0x18300000L, // XGD1
-    };
+    ];
 
     /// <summary>
     /// Reads a root-level file out of an XDVDFS volume on a sector stream.
@@ -84,7 +84,7 @@ public static class XdvdfsSectorReader
         ArgumentException.ThrowIfNullOrEmpty(fileName);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxBytes, 1L);
 
-        contents = Array.Empty<byte>();
+        contents = [];
         foreach (long discSeek in DiscSeeks)
         {
             if (!TryReadVolumeHeader(image, discSeek, out uint rootSector, out uint rootSize))
@@ -146,7 +146,7 @@ public static class XdvdfsSectorReader
         int sectors = (int)((tableSize + SectorSize - 1u) / SectorSize);
         if (!TryReadSectors(image, (discSeek / SectorSize) + tableSector, sectors, out table))
         {
-            table = Array.Empty<byte>();
+            table = [];
             return false;
         }
 
@@ -211,19 +211,14 @@ public static class XdvdfsSectorReader
             }
         }
 
-        if (right != 0 &&
-            TryFindEntry(table, right * 4L, fileName, visited, budget, depth + 1, out entry))
-        {
-            return true;
-        }
-
-        return false;
+        return right != 0 &&
+            TryFindEntry(table, right * 4L, fileName, visited, budget, depth + 1, out entry);
     }
 
     /// <summary>Reads a file's contiguous data sectors.</summary>
     private static bool TryReadData(IDvdImage image, long discSeek, uint startSector, uint size, out byte[] data)
     {
-        data = Array.Empty<byte>();
+        data = [];
         long first = (discSeek / SectorSize) + startSector;
         int sectors = (int)((size + SectorSize - 1u) / SectorSize);
         if (!TryReadSectors(image, first, sectors, out byte[] raw))
@@ -238,7 +233,7 @@ public static class XdvdfsSectorReader
     /// <summary>Reads <paramref name="count"/> contiguous sectors, refusing anything outside the image.</summary>
     private static bool TryReadSectors(IDvdImage image, long startSector, int count, out byte[] data)
     {
-        data = Array.Empty<byte>();
+        data = [];
         if (startSector < 0 || count <= 0)
         {
             return false;
@@ -263,31 +258,19 @@ public static class XdvdfsSectorReader
     }
 
     /// <summary>One parsed directory entry.</summary>
-    private readonly struct DirectoryEntry
+    private readonly struct DirectoryEntry(uint startSector, uint size, bool isDirectory)
     {
-        public DirectoryEntry(uint startSector, uint size, bool isDirectory)
-        {
-            StartSector = startSector;
-            Size = size;
-            IsDirectory = isDirectory;
-        }
+        public uint StartSector { get; } = startSector;
 
-        public uint StartSector { get; }
+        public uint Size { get; } = size;
 
-        public uint Size { get; }
-
-        public bool IsDirectory { get; }
+        public bool IsDirectory { get; } = isDirectory;
     }
 
     /// <summary>Bounds the number of entries a walk may visit on a corrupt table.</summary>
-    private sealed class EntryBudget
+    private sealed class EntryBudget(int remaining)
     {
-        private int _remaining;
-
-        public EntryBudget(int remaining)
-        {
-            _remaining = remaining;
-        }
+        private int _remaining = remaining;
 
         public bool Take()
         {

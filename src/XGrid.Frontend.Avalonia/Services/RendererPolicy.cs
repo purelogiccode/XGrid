@@ -36,7 +36,7 @@ public static class RendererPolicy
 
     /// <summary>Returns true when the persisted value selects the OpenGL backend.</summary>
     /// <param name="renderer">Persisted renderer key.</param>
-    public static bool IsOpenGl(string? renderer)
+    private static bool IsOpenGl(string? renderer)
     {
         return EmulatorSettings.IsGpuRenderer(renderer);
     }
@@ -64,11 +64,8 @@ public static class RendererPolicy
     /// <param name="platformSupportsOpenGl">True on a Windows host.</param>
     public static RendererChoice Decide(string? renderer, bool platformSupportsOpenGl)
     {
-        if (!IsOpenGl(renderer))
-        {
-            return RendererChoice.Software;
-        }
-
-        return platformSupportsOpenGl ? RendererChoice.OpenGl : RendererChoice.OpenGlUnavailable;
+        return !IsOpenGl(renderer)
+            ? RendererChoice.Software
+            : platformSupportsOpenGl ? RendererChoice.OpenGl : RendererChoice.OpenGlUnavailable;
     }
 }

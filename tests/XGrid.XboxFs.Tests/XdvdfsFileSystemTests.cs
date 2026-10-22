@@ -16,7 +16,7 @@ public sealed class XdvdfsFileSystemTests : IDisposable
     private const uint SubTableSector = 35;
     private const uint NestedSector = 36;
 
-    private readonly List<string> _tempFiles = new();
+    private readonly List<string> _tempFiles = [];
     private bool _disposed;
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class XdvdfsFileSystemTests : IDisposable
     [Fact]
     public void Open_GarbageThrowsInvalidData()
     {
-        string path = WriteTemp(new byte[] { 1, 2, 3, 4 });
+        string path = WriteTemp([1, 2, 3, 4]);
 
         Assert.Throws<InvalidDataException>(() => XdvdfsFileSystem.Open(path));
     }

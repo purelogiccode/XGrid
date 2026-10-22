@@ -12,7 +12,7 @@ namespace XGrid.Nv2a;
 public static class VshProgram
 {
     /// <summary>Maximum instruction count (NV2A_MAX_TRANSFORM_PROGRAM_LENGTH).</summary>
-    public const int MaxInstructions = 136;
+    private const int MaxInstructions = 136;
 
     /// <summary>Number of constant registers (NV2A_VERTEXSHADER_CONSTANTS).</summary>
     public const int ConstantCount = 192;
@@ -421,7 +421,7 @@ public static class VshProgram
 
         bool negate = Field(token, swizzleSubtoken, negateBit, 1) != 0;
         var result = new float[4];
-        Span<int> swizzle = stackalloc int[4] { x, y, z, w };
+        Span<int> swizzle = [x, y, z, w];
         for (int i = 0; i < 4; i++)
         {
             float value = source[swizzle[i]];
@@ -445,12 +445,7 @@ public static class VshProgram
 
     private static float[] ReadRegister(float[][] registers, float[][] outputs, int index)
     {
-        if (index == 12)
-        {
-            return outputs[0];
-        }
-
-        return registers[index];
+        return index == 12 ? outputs[0] : registers[index];
     }
 
     private static void WriteMasked(float[] destination, float[] value, int mask)
@@ -587,13 +582,10 @@ public static class VshProgram
 
     private static float ClampAwayZeroInf(float value)
     {
-        if (value > 0.0f || BitConverter.SingleToUInt32Bits(value) == 0)
-        {
-            return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0x1F800000u),
-                BitConverter.UInt32BitsToSingle(0x5F800000u));
-        }
-
-        return Math.Clamp(value, BitConverter.UInt32BitsToSingle(0xDF800000u),
+        return value > 0.0f || BitConverter.SingleToUInt32Bits(value) == 0
+            ? Math.Clamp(value, BitConverter.UInt32BitsToSingle(0x1F800000u),
+                BitConverter.UInt32BitsToSingle(0x5F800000u))
+            : Math.Clamp(value, BitConverter.UInt32BitsToSingle(0xDF800000u),
             BitConverter.UInt32BitsToSingle(0x9F800000u));
     }
 

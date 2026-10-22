@@ -38,7 +38,7 @@ internal static class GlProbe
         {
         }
 
-        byte[] texel = { 64, 128, 192, 255 };
+        byte[] texel = [64, 128, 192, 255];
         uint program = 0;
         uint vertexShader = 0;
         uint fragmentShader = 0;

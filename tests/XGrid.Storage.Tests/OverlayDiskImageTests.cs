@@ -5,17 +5,11 @@ namespace XGrid.Storage.Tests;
 
 public sealed class OverlayDiskImageTests
 {
-    private sealed class MemoryDiskImage : IDiskImage
+    private sealed class MemoryDiskImage(uint sectors) : IDiskImage
     {
-        private readonly byte[] _data;
+        private readonly byte[] _data = new byte[sectors * 512];
 
-        public MemoryDiskImage(uint sectors)
-        {
-            _data = new byte[sectors * 512];
-            SectorCount = sectors;
-        }
-
-        public uint SectorCount { get; }
+        public uint SectorCount { get; } = sectors;
 
         public int Writes { get; private set; }
 
@@ -86,9 +80,9 @@ public sealed class OverlayDiskImageTests
         overlay.WriteSector(5, data);
 
         Assert.Equal(3, overlay.WriteCount);
-        Assert.Equal(new uint[] { 5, 2, 5 }, overlay.WriteLog);
+        Assert.Equal([5, 2, 5], overlay.WriteLog);
         Assert.Equal(2, overlay.ModifiedSectorCount);
-        Assert.Equal(new uint[] { 2, 5 }, overlay.GetModifiedSectors());
+        Assert.Equal([2, 5], overlay.GetModifiedSectors());
     }
 
     [Fact]

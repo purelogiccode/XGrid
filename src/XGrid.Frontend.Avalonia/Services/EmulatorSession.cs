@@ -12,24 +12,18 @@ using XGrid.Nv2a;
 namespace XGrid.Frontend.Avalonia.Services;
 
 /// <summary>Describes why an emulation run ended.</summary>
-public sealed class SessionStoppedEventArgs : EventArgs
+/// <remarks>Creates the event payload.</remarks>
+public sealed class SessionStoppedEventArgs(bool faulted, string message, long steps) : EventArgs
 {
-    /// <summary>Creates the event payload.</summary>
-    public SessionStoppedEventArgs(bool faulted, string message, long steps)
-    {
-        Faulted = faulted;
-        Message = message;
-        Steps = steps;
-    }
 
     /// <summary>Gets a value indicating whether the run ended on an exception.</summary>
-    public bool Faulted { get; }
+    public bool Faulted { get; } = faulted;
 
     /// <summary>Gets the human-readable stop reason.</summary>
-    public string Message { get; }
+    public string Message { get; } = message;
 
     /// <summary>Gets the number of guest instructions executed.</summary>
-    public long Steps { get; }
+    public long Steps { get; } = steps;
 }
 
 /// <summary>
@@ -69,8 +63,8 @@ public sealed class EmulatorSession : IDisposable
     private long _lastDisplayCapture;
     private long _nextProgressLog;
     private ushort _padButtons;
-    private byte[] _padAnalog = new byte[8];
-    private short[] _padSticks = new short[4];
+    private readonly byte[] _padAnalog = new byte[8];
+    private readonly short[] _padSticks = new short[4];
     private bool _padDirty;
     private long _stepBudget;
     private long _stepTargetFrame;
@@ -78,9 +72,6 @@ public sealed class EmulatorSession : IDisposable
     // Title identity (V2 per-title overrides): resolved from the launched image
     // once per run so the override dictionary can key by XBE title id instead
     // of a file path, and so the UI can show what was launched.
-    private uint? _titleId;
-    private string _titleName = string.Empty;
-    private bool _titleOverrideApplied;
 
     // Renderer state. The GPU backend (when the profile selects OpenGL) is
     // created, used and disposed on the emulation thread: a WGL context is
@@ -116,13 +107,13 @@ public sealed class EmulatorSession : IDisposable
     public uint Eip => unchecked((uint)Volatile.Read(ref _eip));
 
     /// <summary>Gets the XBE title id of the running disc (null when unknown, e.g. a CHD or the dashboard).</summary>
-    public uint? TitleId => _titleId;
+    private uint? TitleId { get; set; }
 
     /// <summary>Gets the XBE certificate title name of the running disc (empty when unknown).</summary>
-    public string TitleName => _titleName;
+    private string TitleName { get; set; } = string.Empty;
 
     /// <summary>Gets a value indicating whether a per-title override was applied to this run.</summary>
-    public bool TitleOverrideApplied => _titleOverrideApplied;
+    private bool TitleOverrideApplied { get; set; }
 
     /// <summary>
     /// Resolves the XBE title id of an image (ISO/XISO or loose XBE; a CHD has
@@ -156,16 +147,16 @@ public sealed class EmulatorSession : IDisposable
         // V2 per-title overrides: the title id is resolved once here, so a
         // title keeps its configuration when the image is renamed, moved or
         // re-wrapped. Unresolvable images fall back to the path key.
-        _titleId = null;
-        _titleName = string.Empty;
+        TitleId = null;
+        TitleName = string.Empty;
         if (!string.IsNullOrWhiteSpace(discPath) && DiscTitleId.TryRead(discPath, out uint titleId, out string name))
         {
-            _titleId = titleId;
-            _titleName = name;
+            TitleId = titleId;
+            TitleName = name;
         }
 
-        EmulatorSettings snapshot = settings.WithTitleOverride(discPath, _titleId);
-        _titleOverrideApplied = settings.FindTitleOverride(discPath, _titleId) is not null;
+        EmulatorSettings snapshot = settings.WithTitleOverride(discPath, TitleId);
+        TitleOverrideApplied = settings.FindTitleOverride(discPath, TitleId) is not null;
         Interlocked.Exchange(ref _steps, 0);
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
@@ -361,7 +352,7 @@ public sealed class EmulatorSession : IDisposable
     /// <remarks>
     /// Device state is not the only thing with thread affinity: an attached GPU
     /// backend owns a GL context that is current on the emulation thread only,
-    /// and a snapshot load resets backend state (<see cref="Nv2a.Nv2AMmio.LoadState"/>).
+    /// and a snapshot load resets backend state (<see cref="Nv2AMmio.LoadState"/>).
     /// Marshalling instead of running on the UI thread keeps every GL call on
     /// its owning thread and still observes a
     /// quiescent machine, because the loop serves requests with no batch in
@@ -476,10 +467,10 @@ public sealed class EmulatorSession : IDisposable
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
             gpuBackend = AttachRenderer(machine, settings);
-            if (_titleId is { } runningTitleId)
+            if (TitleId is { } runningTitleId)
             {
-                string suffix = _titleOverrideApplied ? " (per-title override applied)" : string.Empty;
-                string name = _titleName.Length == 0 ? string.Empty : " \u00B7 " + _titleName;
+                string suffix = TitleOverrideApplied ? " (per-title override applied)" : string.Empty;
+                string name = TitleName.Length == 0 ? string.Empty : " \u00B7 " + TitleName;
                 Log?.Invoke(this, FormattableString.Invariant(
                     $"Title {runningTitleId:X8}{name}{suffix}"));
             }
@@ -593,7 +584,7 @@ public sealed class EmulatorSession : IDisposable
         var machine = new XboxMachine(ramSize);
         byte[] bios = File.ReadAllBytes(settings.BiosPath);
         byte[] mcpx = string.IsNullOrWhiteSpace(settings.McpxRomPath) || !File.Exists(settings.McpxRomPath)
-            ? Array.Empty<byte>()
+            ? []
             : File.ReadAllBytes(settings.McpxRomPath);
         machine.LoadBios(bios, mcpx);
         string firmwareDetail = mcpx.Length > 0
@@ -814,7 +805,7 @@ public sealed class EmulatorSession : IDisposable
             {
                 width = 0;
                 height = 0;
-                bgra = Array.Empty<byte>();
+                bgra = [];
             }
         }
         else
@@ -852,14 +843,9 @@ public sealed class EmulatorSession : IDisposable
     }
 
     /// <summary>One machine operation queued for the emulation thread.</summary>
-    private sealed class StateRequest : IDisposable
+    private sealed class StateRequest(Action<XboxMachine> work) : IDisposable
     {
-        public StateRequest(Action<XboxMachine> work)
-        {
-            Work = work;
-        }
-
-        public Action<XboxMachine> Work { get; }
+        public Action<XboxMachine> Work { get; } = work;
 
         public ManualResetEventSlim Done { get; } = new(initialState: false);
 

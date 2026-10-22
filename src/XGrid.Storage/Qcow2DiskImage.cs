@@ -102,7 +102,7 @@ public sealed class Qcow2DiskImage : IDiskImage
         _stream.ReadExactly(destination[..512]);
     }
 
-    /// <summary>Always throws <see cref="System.NotSupportedException"/>; the qcow2 reader is read-only.</summary>
+    /// <summary>Always throws <see cref="NotSupportedException"/>; the qcow2 reader is read-only.</summary>
     public void WriteSector(uint lba, ReadOnlySpan<byte> source)
     {
         throw new NotSupportedException("The qcow2 reader is read-only.");

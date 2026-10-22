@@ -5,19 +5,14 @@ using XGrid.Frontend.Avalonia.Services;
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
 /// <summary>One selectable accent swatch.</summary>
-public sealed partial class AccentOption : ObservableObject
+/// <remarks>Creates an option around a palette entry.</remarks>
+public sealed partial class AccentOption(AccentPalette palette) : ObservableObject
 {
     [ObservableProperty]
     private bool _isSelected;
 
-    /// <summary>Creates an option around a palette entry.</summary>
-    public AccentOption(AccentPalette palette)
-    {
-        Palette = palette;
-    }
-
     /// <summary>Gets the palette entry.</summary>
-    public AccentPalette Palette { get; }
+    private AccentPalette Palette { get; } = palette;
 
     /// <summary>Gets the swatch fill.</summary>
     public IBrush Brush => Palette.Brush;
@@ -49,43 +44,31 @@ public enum PageKind
 }
 
 /// <summary>A sidebar destination plus its page view model.</summary>
-public sealed class NavigationItem : ObservableObject
+/// <remarks>Creates a navigation item.</remarks>
+public sealed class NavigationItem(PageKind kind, string title, string subtitle, Geometry icon, PageViewModel page) : ObservableObject
 {
-    /// <summary>Creates a navigation item.</summary>
-    public NavigationItem(PageKind kind, string title, string subtitle, Geometry icon, PageViewModel page)
-    {
-        Kind = kind;
-        Title = title;
-        Subtitle = subtitle;
-        Icon = icon;
-        Page = page;
-    }
 
     /// <summary>Gets the destination kind.</summary>
-    public PageKind Kind { get; }
+    public PageKind Kind { get; } = kind;
 
     /// <summary>Gets the navigation label.</summary>
-    public string Title { get; }
+    public string Title { get; } = title;
 
     /// <summary>Gets the short description.</summary>
-    public string Subtitle { get; }
+    public string Subtitle { get; } = subtitle;
 
     /// <summary>Gets the icon geometry.</summary>
-    public Geometry Icon { get; }
+    public Geometry Icon { get; } = icon;
 
     /// <summary>Gets the destination view model.</summary>
-    public PageViewModel Page { get; }
+    public PageViewModel Page { get; } = page;
 }
 
 /// <summary>Base class for a navigable page view model.</summary>
-public abstract class PageViewModel : ObservableObject
+/// <remarks>Creates a page bound to the application shell.</remarks>
+public abstract class PageViewModel(MainWindowViewModel shell) : ObservableObject
 {
-    /// <summary>Creates a page bound to the application shell.</summary>
-    protected PageViewModel(MainWindowViewModel shell)
-    {
-        Shell = shell;
-    }
 
     /// <summary>Gets the application shell.</summary>
-    public MainWindowViewModel Shell { get; }
+    public MainWindowViewModel Shell { get; } = shell;
 }

@@ -12,7 +12,7 @@ namespace XGrid.GpuGl.Tests;
 /// rasterizer continues on that image, and the flip uploads it back instead of
 /// serving the partial FBO. Returns early (pass) when no GL context exists.
 /// </summary>
-public sealed class ReplaceModeComposeLiveTests
+public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
 {
     /// <summary>A 4x4 A8R8G8B8 surface plus a clip window that maps onto it.</summary>
     private const uint Surface = 0x2000u;
@@ -20,12 +20,6 @@ public sealed class ReplaceModeComposeLiveTests
     private const uint Width = 4u;
     private const uint Height = 4u;
 
-    private readonly ITestOutputHelper _output;
-
-    public ReplaceModeComposeLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -125,7 +119,7 @@ public sealed class ReplaceModeComposeLiveTests
             memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 

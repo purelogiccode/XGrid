@@ -157,7 +157,7 @@ public sealed class AtaDevice : ISnapshotable
     /// <summary>Gets the cumulative PIO packet bytes received (diagnostics; survives reset).</summary>
     public int TotalPacketBytes { get; private set; }
 
-    private readonly System.Collections.Generic.List<string> _packetLog = new();
+    private readonly System.Collections.Generic.List<string> _packetLog = [];
 
     /// <summary>Gets the error register.</summary>
     public byte Error { get; private set; }

@@ -34,7 +34,7 @@ public sealed partial class AboutViewModel : PageViewModel
     public string OperatingSystemText { get; }
 
     /// <summary>Gets the project repository URL.</summary>
-    public string RepositoryUrl { get; }
+    private string RepositoryUrl { get; }
 
     /// <summary>Gets the settings file path.</summary>
     public string SettingsPath => Shell.SettingsPath;

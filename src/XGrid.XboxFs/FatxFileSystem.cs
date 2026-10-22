@@ -52,28 +52,21 @@ public sealed class FatxFileSystem
     }
 
     /// <summary>A parsed FATX directory entry.</summary>
-    public readonly struct Entry
+    /// <remarks>Creates an entry record.</remarks>
+    public readonly struct Entry(string name, byte attributes, uint startCluster, uint size)
     {
-        /// <summary>Creates an entry record.</summary>
-        public Entry(string name, byte attributes, uint startCluster, uint size)
-        {
-            Name = name;
-            Attributes = attributes;
-            StartCluster = startCluster;
-            Size = size;
-        }
 
         /// <summary>Gets the file or directory name.</summary>
-        public string Name { get; }
+        public string Name { get; } = name;
 
         /// <summary>Gets the attribute byte (0x10 = directory).</summary>
-        public byte Attributes { get; }
+        private byte Attributes { get; } = attributes;
 
         /// <summary>Gets the first data cluster (0 when empty).</summary>
-        public uint StartCluster { get; }
+        public uint StartCluster { get; } = startCluster;
 
         /// <summary>Gets the size in bytes.</summary>
-        public uint Size { get; }
+        public uint Size { get; } = size;
 
         /// <summary>Gets whether the entry is a directory.</summary>
         public bool IsDirectory => (Attributes & 0x10) != 0;
@@ -157,13 +150,10 @@ public sealed class FatxFileSystem
             }
         }
 
-        if (filled < data.Length)
-        {
-            throw new InvalidDataException(
-                $"File '{entry.Name}' is truncated at {filled} of {data.Length} bytes.");
-        }
-
-        return data;
+        return filled < data.Length
+            ? throw new InvalidDataException(
+                $"File '{entry.Name}' is truncated at {filled} of {data.Length} bytes.")
+            : data;
     }
 
     private static uint FindDataStart(
@@ -341,12 +331,7 @@ public sealed class FatxFileSystem
         uint guard = _maxCluster + 1;
         while (cluster != 0 && cluster < _endMarker && guard-- > 0)
         {
-            if (cluster > _maxCluster)
-            {
-                throw new InvalidDataException($"FAT chain leaves the partition at {cluster}.");
-            }
-
-            yield return cluster;
+            yield return cluster > _maxCluster ? throw new InvalidDataException($"FAT chain leaves the partition at {cluster}.") : cluster;
             cluster = ReadFat(cluster);
         }
 

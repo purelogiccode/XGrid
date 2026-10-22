@@ -110,7 +110,7 @@ public sealed class BusMasterDmaTests
 
     private sealed class SparseMemory : IGuestMemory
     {
-        private readonly Dictionary<uint, byte> _cells = new();
+        private readonly Dictionary<uint, byte> _cells = [];
 
         public byte ReadPhysical(uint address)
         {

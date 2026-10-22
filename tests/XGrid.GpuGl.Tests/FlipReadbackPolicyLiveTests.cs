@@ -12,14 +12,8 @@ namespace XGrid.GpuGl.Tests;
 /// enabling it must restore the exact pre-Track-B behavior. Returns early
 /// (pass) when no GL context is available - no extra test dependency.
 /// </summary>
-public sealed class FlipReadbackPolicyLiveTests
+public sealed class FlipReadbackPolicyLiveTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public FlipReadbackPolicyLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -49,7 +43,7 @@ public sealed class FlipReadbackPolicyLiveTests
             out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 
@@ -98,7 +92,7 @@ public sealed class FlipReadbackPolicyLiveTests
         bool created = GlBackendFactory.TryCreate(memory, out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 

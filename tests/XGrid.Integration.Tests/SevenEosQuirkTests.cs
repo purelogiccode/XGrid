@@ -150,8 +150,10 @@ public sealed class SevenEosQuirkTests
     [Fact]
     public void Machine_DisabledQuirk_NeverFires()
     {
-        var machine = new XboxMachine();
-        machine.SevenEosQuirkEnabled = false;
+        var machine = new XboxMachine
+        {
+            SevenEosQuirkEnabled = false
+        };
 
         Assert.False(machine.CheckSevenEosQuirk());
         Assert.Equal(0uL, machine.SevenEosQuirkFires);
@@ -303,12 +305,9 @@ public sealed class SevenEosQuirkTests
         uint physical = machine.Cpu.Mmu.Translate(
             virtualAddress, isWrite: false, isInstruction: false,
             out bool faulted, out _);
-        if (faulted)
-        {
-            throw new InvalidOperationException($"VA 0x{virtualAddress:X8} unmapped in test setup.");
-        }
-
-        return machine.Memory.Read32(physical);
+        return faulted
+            ? throw new InvalidOperationException($"VA 0x{virtualAddress:X8} unmapped in test setup.")
+            : machine.Memory.Read32(physical);
     }
 
     private static void WriteVa(XboxMachine machine, uint virtualAddress, uint value)

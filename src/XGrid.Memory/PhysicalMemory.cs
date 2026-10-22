@@ -8,7 +8,7 @@ namespace XGrid.Memory;
 public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
 {
     /// <summary>Default retail Xbox RAM size (64 MB).</summary>
-    public const uint DefaultSize = 64u * 1024 * 1024;
+    private const uint DefaultSize = 64u * 1024 * 1024;
 
     private const uint RamStateVersion = 1;
 
@@ -20,14 +20,11 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     // suppression counter exempts the NV2A software twin's own surface
     // writes (§132 finding i). Host-side only, never serialized.
     private const int PresentWatchMaxSpans = 4;
-
-    private readonly byte[] _bytes;
     private readonly uint[] _presentWatchBase = new uint[PresentWatchMaxSpans];
     private readonly uint[] _presentWatchLength = new uint[PresentWatchMaxSpans];
     private int _presentWatchCount;
     private int _presentWatchNext;
     private int _gpuWriteSuppression;
-    private bool _presentDirty;
 
     /// <summary>Allocates RAM of the given size in bytes.</summary>
     public PhysicalMemory(uint size = DefaultSize)
@@ -37,7 +34,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
             throw new ArgumentOutOfRangeException(nameof(size), size, "RAM size must be between 1 byte and 2 GB.");
         }
 
-        _bytes = new byte[size];
+        RawBytes = new byte[size];
         Size = size;
     }
 
@@ -45,57 +42,57 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     public uint Size { get; }
 
     /// <summary>Gets the backing byte array (C3 raw emitter pins it for direct access).</summary>
-    public byte[] RawBytes => _bytes;
+    public byte[] RawBytes { get; }
 
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {
-        return _bytes[CheckedIndex(address, 1)];
+        return RawBytes[CheckedIndex(address, 1)];
     }
 
     /// <summary>Reads a 16-bit little-endian value.</summary>
     public ushort Read16(uint address)
     {
-        return Endian.Read16(_bytes.AsSpan(CheckedIndex(address, 2), 2));
+        return Endian.Read16(RawBytes.AsSpan(CheckedIndex(address, 2), 2));
     }
 
     /// <summary>Reads a 32-bit little-endian value.</summary>
     public uint Read32(uint address)
     {
-        return Endian.Read32(_bytes.AsSpan(CheckedIndex(address, 4), 4));
+        return Endian.Read32(RawBytes.AsSpan(CheckedIndex(address, 4), 4));
     }
 
     /// <summary>Reads a 64-bit little-endian value.</summary>
     public ulong Read64(uint address)
     {
-        return Endian.Read64(_bytes.AsSpan(CheckedIndex(address, 8), 8));
+        return Endian.Read64(RawBytes.AsSpan(CheckedIndex(address, 8), 8));
     }
 
     /// <summary>Writes one byte.</summary>
     public void Write8(uint address, byte value)
     {
-        _bytes[CheckedIndex(address, 1)] = value;
+        RawBytes[CheckedIndex(address, 1)] = value;
         NoteGuestWrite(address, 1);
     }
 
     /// <summary>Writes a 16-bit little-endian value.</summary>
     public void Write16(uint address, ushort value)
     {
-        Endian.Write16(_bytes.AsSpan(CheckedIndex(address, 2), 2), value);
+        Endian.Write16(RawBytes.AsSpan(CheckedIndex(address, 2), 2), value);
         NoteGuestWrite(address, 2);
     }
 
     /// <summary>Writes a 32-bit little-endian value.</summary>
     public void Write32(uint address, uint value)
     {
-        Endian.Write32(_bytes.AsSpan(CheckedIndex(address, 4), 4), value);
+        Endian.Write32(RawBytes.AsSpan(CheckedIndex(address, 4), 4), value);
         NoteGuestWrite(address, 4);
     }
 
     /// <summary>Writes a 64-bit little-endian value.</summary>
     public void Write64(uint address, ulong value)
     {
-        Endian.Write64(_bytes.AsSpan(CheckedIndex(address, 8), 8), value);
+        Endian.Write64(RawBytes.AsSpan(CheckedIndex(address, 8), 8), value);
         NoteGuestWrite(address, 8);
     }
 
@@ -114,29 +111,29 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     /// <summary>Returns a writable span over RAM.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {
-        return _bytes.AsSpan(CheckedRange(address, length), length);
+        return RawBytes.AsSpan(CheckedRange(address, length), length);
     }
 
     /// <summary>Returns a read-only span over RAM.</summary>
     public ReadOnlySpan<byte> GetReadOnlySpan(uint address, int length)
     {
-        return _bytes.AsSpan(CheckedRange(address, length), length);
+        return RawBytes.AsSpan(CheckedRange(address, length), length);
     }
 
     /// <summary>Zeroes all of RAM.</summary>
     public void Clear()
     {
-        Array.Clear(_bytes);
+        Array.Clear(RawBytes);
         if (_presentWatchCount > 0)
         {
             // Fail-closed: wholesale RAM replacement while a backend FBO is
             // armed leaves the FBO stale until the next upload.
-            _presentDirty = true;
+            PresentDirty = true;
         }
     }
 
     /// <summary>Gets a value indicating whether a non-suppressed writer touched a watched presented-surface span since the last clear (present-upload staleness, §132 (a*)).</summary>
-    public bool PresentDirty => _presentDirty;
+    public bool PresentDirty { get; private set; }
 
     /// <summary>Enters the GPU-writer-identity suppression scope: writes issued inside it never set the present dirty bit (NV2A software-twin surface writes, §132 finding i). Single-threaded by design; pair with <see cref="EndGpuWriteSuppression"/> in a finally.</summary>
     public void BeginGpuWriteSuppression()
@@ -193,13 +190,13 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
     /// <summary>Marks the presented surface dirty (fail-closed: snapshot load or reset while a backend FBO may still hold prior content).</summary>
     public void MarkPresentDirty()
     {
-        _presentDirty = true;
+        PresentDirty = true;
     }
 
     /// <summary>Clears the present dirty bit, to be called only after an upload made the backend FBO authoritative from guest RAM.</summary>
     public void ClearPresentDirty()
     {
-        _presentDirty = false;
+        PresentDirty = false;
     }
 
     /// <summary>Saves the full RAM contents (V1 snapshot).</summary>
@@ -209,7 +206,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
 
         writer.Write(RamStateVersion);
         writer.Write(Size);
-        writer.Write(_bytes);
+        writer.Write(RawBytes);
     }
 
     /// <summary>Restores the full RAM contents (V1 snapshot).</summary>
@@ -235,14 +232,14 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
             throw new InvalidDataException($"Snapshot RAM payload truncated ({bytes.Length} of {Size} bytes).");
         }
 
-        Buffer.BlockCopy(bytes, 0, _bytes, 0, (int)Size);
+        Buffer.BlockCopy(bytes, 0, RawBytes, 0, (int)Size);
         if (_presentWatchCount > 0)
         {
             // Fail-closed (§132 (a*)): snapshot load replaces RAM wholesale;
             // a backend FBO armed over the pre-load surfaces is stale until
             // the next upload. The bit itself is not serialized (backend is
             // excluded from snapshots - §101).
-            _presentDirty = true;
+            PresentDirty = true;
         }
     }
 
@@ -265,7 +262,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
             ulong watchedEnd = watchedStart + _presentWatchLength[i];
             if (start < watchedEnd && watchedStart < end)
             {
-                _presentDirty = true;
+                PresentDirty = true;
                 return;
             }
         }
@@ -278,12 +275,9 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
 
     private int CheckedRange(uint address, int length)
     {
-        if (length < 0 || address + (ulong)length > Size)
-        {
-            throw new MemoryAccessException(
-                $"RAM access out of range: address 0x{address:X8}, length {length}, size 0x{Size:X8}.");
-        }
-
-        return (int)address;
+        return length < 0 || address + (ulong)length > Size
+            ? throw new MemoryAccessException(
+                $"RAM access out of range: address 0x{address:X8}, length {length}, size 0x{Size:X8}.")
+            : (int)address;
     }
 }

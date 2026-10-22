@@ -22,7 +22,7 @@ public interface IDiskImage : IDisposable
 public sealed class RawDiskImage : IDiskImage
 {
     /// <summary>Sector size in bytes.</summary>
-    public const int SectorSize = 512;
+    private const int SectorSize = 512;
 
     private readonly FileStream _stream;
 
@@ -88,8 +88,8 @@ public sealed class RawDiskImage : IDiskImage
 public sealed class OverlayDiskImage : IDiskImage, ISnapshotable
 {
     private readonly IDiskImage _backing;
-    private readonly Dictionary<uint, byte[]> _overlay = new();
-    private readonly List<uint> _writeLog = new();
+    private readonly Dictionary<uint, byte[]> _overlay = [];
+    private readonly List<uint> _writeLog = [];
 
     /// <summary>Creates an overlay over the given backing image (which it owns).</summary>
     public OverlayDiskImage(IDiskImage backing)

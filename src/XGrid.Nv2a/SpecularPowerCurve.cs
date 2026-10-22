@@ -110,12 +110,7 @@ public static class SpecularPowerCurve
         // The half-power curve extends the range beyond 1250 for driver
         // generated values; low-power inverted pairs are excluded by the
         // high |c0| test (reference comment).
-        if (power == 0f || (halfPower > power && c0 < -0.1f))
-        {
-            return halfPower * 2f;
-        }
-
-        return power;
+        return power == 0f || (halfPower > power && c0 < -0.1f) ? halfPower * 2f : power;
     }
 
     private static float ReconstructOne(float c0)

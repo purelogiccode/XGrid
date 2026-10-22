@@ -1,4 +1,3 @@
-using System;
 using XGrid.Bus.Usb;
 using Xunit;
 
@@ -264,7 +263,7 @@ public sealed class UsbHubTests
 
         Assert.True(hub.HandleSetup(new UsbSetupPacket(0xC1, 0x06, 0x4200, 0, 16), out _)
                     == UsbTransferResult.Stall);
-        Assert.True(hub.HandleOut(1, Array.Empty<byte>()) == UsbTransferResult.Stall);
-        Assert.True(hub.CompleteControlOut(new byte[] { 1 }) == UsbTransferResult.Stall);
+        Assert.True(hub.HandleOut(1, []) == UsbTransferResult.Stall);
+        Assert.True(hub.CompleteControlOut([1]) == UsbTransferResult.Stall);
     }
 }

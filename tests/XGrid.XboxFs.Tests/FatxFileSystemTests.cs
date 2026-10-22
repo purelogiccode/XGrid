@@ -221,31 +221,21 @@ public sealed class FatxFileSystemTests
 
     private static void WriteEnd(FakeDisk disk, uint lba, int offset)
     {
-        Span<byte> end = stackalloc byte[1];
-        end[0] = 0xFF;
+        Span<byte> end = [0xFF];
         disk.WritePartial(lba, offset, end);
     }
 
-    private sealed class FakeDisk : IDiskImage
+    private sealed class FakeDisk(uint sectors) : IDiskImage
     {
-        private readonly Dictionary<uint, byte[]> _sectors = new();
+        private readonly Dictionary<uint, byte[]> _sectors = [];
 
-        public FakeDisk(uint sectors)
-        {
-            SectorCount = sectors;
-        }
-
-        public uint SectorCount { get; }
+        public uint SectorCount { get; } = sectors;
 
         public void WriteFatEntry(uint baseLba, uint index, uint value, bool wide)
         {
             uint offset = index * (wide ? 4u : 2u);
             int size = wide ? 4 : 2;
-            Span<byte> bytes = stackalloc byte[4];
-            bytes[0] = (byte)value;
-            bytes[1] = (byte)(value >> 8);
-            bytes[2] = (byte)(value >> 16);
-            bytes[3] = (byte)(value >> 24);
+            Span<byte> bytes = [(byte)value, (byte)(value >> 8), (byte)(value >> 16), (byte)(value >> 24)];
             WritePartial(baseLba + 8 + (offset / 512), (int)(offset % 512), bytes.Slice(0, size));
         }
 

@@ -7,6 +7,7 @@ public enum GraphicsBackend
     Vulkan = 0,
 
     /// <summary>OpenGL backend (optional).</summary>
+    // ReSharper disable once UnusedMember.Global
     OpenGl = 1,
 
     /// <summary>No rendering; used by headless tools and tests.</summary>

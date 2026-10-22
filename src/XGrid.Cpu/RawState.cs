@@ -180,6 +180,7 @@ internal static unsafe class RawCodeMemory
     }
 
     /// <summary>Releases a region from <see cref="Allocate"/>.</summary>
+    // ReSharper disable once UnusedMember.Global
     public static void Free(void* block)
     {
         if (block is not null)

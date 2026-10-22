@@ -570,111 +570,99 @@ public sealed partial class XboxCpu
             };
         }
 
-        if (first == OperandKind.Memory && second == OperandKind.Register)
-        {
-            return size switch
+        return first == OperandKind.Memory && second == OperandKind.Register
+            ? size switch
             {
                 8 => SpecMovMemReg8Handler,
                 16 => SpecMovMemReg16Handler,
                 _ => size == 32 ? SpecMovMemReg32Handler : null,
-            };
-        }
-
-        if (first == OperandKind.Memory && second == OperandKind.Immediate)
-        {
-            return size switch
+            }
+            : first == OperandKind.Memory && second == OperandKind.Immediate
+            ? size switch
             {
                 8 => SpecMovMemImm8Handler,
                 16 => SpecMovMemImm16Handler,
                 _ => size == 32 ? SpecMovMemImm32Handler : null,
-            };
-        }
-
-        return null;
+            }
+            : null;
     }
 
     private static SpecHandler? ResolveSpecAlu(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
     {
         bool regReg = first == OperandKind.Register && second == OperandKind.Register;
         bool regImm = first == OperandKind.Register && second == OperandKind.Immediate;
-        if (!regReg && !regImm)
-        {
-            return null;
-        }
-
-        return (mnemonic, regReg, size) switch
-        {
-            (Mnemonic.Add, true, 8) => SpecAddRegReg8Handler,
-            (Mnemonic.Add, true, 16) => SpecAddRegReg16Handler,
-            (Mnemonic.Add, true, 32) => SpecAddRegReg32Handler,
-            (Mnemonic.Add, false, 8) => SpecAddRegImm8Handler,
-            (Mnemonic.Add, false, 16) => SpecAddRegImm16Handler,
-            (Mnemonic.Add, false, 32) => SpecAddRegImm32Handler,
-            (Mnemonic.Sub, true, 8) => SpecSubRegReg8Handler,
-            (Mnemonic.Sub, true, 16) => SpecSubRegReg16Handler,
-            (Mnemonic.Sub, true, 32) => SpecSubRegReg32Handler,
-            (Mnemonic.Sub, false, 8) => SpecSubRegImm8Handler,
-            (Mnemonic.Sub, false, 16) => SpecSubRegImm16Handler,
-            (Mnemonic.Sub, false, 32) => SpecSubRegImm32Handler,
-            (Mnemonic.And, true, 8) => SpecAndRegReg8Handler,
-            (Mnemonic.And, true, 16) => SpecAndRegReg16Handler,
-            (Mnemonic.And, true, 32) => SpecAndRegReg32Handler,
-            (Mnemonic.And, false, 8) => SpecAndRegImm8Handler,
-            (Mnemonic.And, false, 16) => SpecAndRegImm16Handler,
-            (Mnemonic.And, false, 32) => SpecAndRegImm32Handler,
-            (Mnemonic.Or, true, 8) => SpecOrRegReg8Handler,
-            (Mnemonic.Or, true, 16) => SpecOrRegReg16Handler,
-            (Mnemonic.Or, true, 32) => SpecOrRegReg32Handler,
-            (Mnemonic.Or, false, 8) => SpecOrRegImm8Handler,
-            (Mnemonic.Or, false, 16) => SpecOrRegImm16Handler,
-            (Mnemonic.Or, false, 32) => SpecOrRegImm32Handler,
-            (Mnemonic.Xor, true, 8) => SpecXorRegReg8Handler,
-            (Mnemonic.Xor, true, 16) => SpecXorRegReg16Handler,
-            (Mnemonic.Xor, true, 32) => SpecXorRegReg32Handler,
-            (Mnemonic.Xor, false, 8) => SpecXorRegImm8Handler,
-            (Mnemonic.Xor, false, 16) => SpecXorRegImm16Handler,
-            (Mnemonic.Xor, false, 32) => SpecXorRegImm32Handler,
-            (Mnemonic.Adc, true, 8) => SpecAdcRegReg8Handler,
-            (Mnemonic.Adc, true, 16) => SpecAdcRegReg16Handler,
-            (Mnemonic.Adc, true, 32) => SpecAdcRegReg32Handler,
-            (Mnemonic.Adc, false, 8) => SpecAdcRegImm8Handler,
-            (Mnemonic.Adc, false, 16) => SpecAdcRegImm16Handler,
-            (Mnemonic.Adc, false, 32) => SpecAdcRegImm32Handler,
-            (Mnemonic.Sbb, true, 8) => SpecSbbRegReg8Handler,
-            (Mnemonic.Sbb, true, 16) => SpecSbbRegReg16Handler,
-            (Mnemonic.Sbb, true, 32) => SpecSbbRegReg32Handler,
-            (Mnemonic.Sbb, false, 8) => SpecSbbRegImm8Handler,
-            (Mnemonic.Sbb, false, 16) => SpecSbbRegImm16Handler,
-            (Mnemonic.Sbb, false, 32) => SpecSbbRegImm32Handler,
-            _ => null,
-        };
+        return !regReg && !regImm
+            ? null
+            : (mnemonic, regReg, size) switch
+            {
+                (Mnemonic.Add, true, 8) => SpecAddRegReg8Handler,
+                (Mnemonic.Add, true, 16) => SpecAddRegReg16Handler,
+                (Mnemonic.Add, true, 32) => SpecAddRegReg32Handler,
+                (Mnemonic.Add, false, 8) => SpecAddRegImm8Handler,
+                (Mnemonic.Add, false, 16) => SpecAddRegImm16Handler,
+                (Mnemonic.Add, false, 32) => SpecAddRegImm32Handler,
+                (Mnemonic.Sub, true, 8) => SpecSubRegReg8Handler,
+                (Mnemonic.Sub, true, 16) => SpecSubRegReg16Handler,
+                (Mnemonic.Sub, true, 32) => SpecSubRegReg32Handler,
+                (Mnemonic.Sub, false, 8) => SpecSubRegImm8Handler,
+                (Mnemonic.Sub, false, 16) => SpecSubRegImm16Handler,
+                (Mnemonic.Sub, false, 32) => SpecSubRegImm32Handler,
+                (Mnemonic.And, true, 8) => SpecAndRegReg8Handler,
+                (Mnemonic.And, true, 16) => SpecAndRegReg16Handler,
+                (Mnemonic.And, true, 32) => SpecAndRegReg32Handler,
+                (Mnemonic.And, false, 8) => SpecAndRegImm8Handler,
+                (Mnemonic.And, false, 16) => SpecAndRegImm16Handler,
+                (Mnemonic.And, false, 32) => SpecAndRegImm32Handler,
+                (Mnemonic.Or, true, 8) => SpecOrRegReg8Handler,
+                (Mnemonic.Or, true, 16) => SpecOrRegReg16Handler,
+                (Mnemonic.Or, true, 32) => SpecOrRegReg32Handler,
+                (Mnemonic.Or, false, 8) => SpecOrRegImm8Handler,
+                (Mnemonic.Or, false, 16) => SpecOrRegImm16Handler,
+                (Mnemonic.Or, false, 32) => SpecOrRegImm32Handler,
+                (Mnemonic.Xor, true, 8) => SpecXorRegReg8Handler,
+                (Mnemonic.Xor, true, 16) => SpecXorRegReg16Handler,
+                (Mnemonic.Xor, true, 32) => SpecXorRegReg32Handler,
+                (Mnemonic.Xor, false, 8) => SpecXorRegImm8Handler,
+                (Mnemonic.Xor, false, 16) => SpecXorRegImm16Handler,
+                (Mnemonic.Xor, false, 32) => SpecXorRegImm32Handler,
+                (Mnemonic.Adc, true, 8) => SpecAdcRegReg8Handler,
+                (Mnemonic.Adc, true, 16) => SpecAdcRegReg16Handler,
+                (Mnemonic.Adc, true, 32) => SpecAdcRegReg32Handler,
+                (Mnemonic.Adc, false, 8) => SpecAdcRegImm8Handler,
+                (Mnemonic.Adc, false, 16) => SpecAdcRegImm16Handler,
+                (Mnemonic.Adc, false, 32) => SpecAdcRegImm32Handler,
+                (Mnemonic.Sbb, true, 8) => SpecSbbRegReg8Handler,
+                (Mnemonic.Sbb, true, 16) => SpecSbbRegReg16Handler,
+                (Mnemonic.Sbb, true, 32) => SpecSbbRegReg32Handler,
+                (Mnemonic.Sbb, false, 8) => SpecSbbRegImm8Handler,
+                (Mnemonic.Sbb, false, 16) => SpecSbbRegImm16Handler,
+                (Mnemonic.Sbb, false, 32) => SpecSbbRegImm32Handler,
+                _ => null,
+            };
     }
 
     private static SpecHandler? ResolveSpecTest(Mnemonic mnemonic, OperandKind first, OperandKind second, int size)
     {
         bool regReg = first == OperandKind.Register && second == OperandKind.Register;
         bool regImm = first == OperandKind.Register && second == OperandKind.Immediate;
-        if (!regReg && !regImm)
-        {
-            return null;
-        }
-
-        return (mnemonic, regReg, size) switch
-        {
-            (Mnemonic.Cmp, true, 8) => SpecCmpRegReg8Handler,
-            (Mnemonic.Cmp, true, 16) => SpecCmpRegReg16Handler,
-            (Mnemonic.Cmp, true, 32) => SpecCmpRegReg32Handler,
-            (Mnemonic.Cmp, false, 8) => SpecCmpRegImm8Handler,
-            (Mnemonic.Cmp, false, 16) => SpecCmpRegImm16Handler,
-            (Mnemonic.Cmp, false, 32) => SpecCmpRegImm32Handler,
-            (Mnemonic.Test, true, 8) => SpecTestRegReg8Handler,
-            (Mnemonic.Test, true, 16) => SpecTestRegReg16Handler,
-            (Mnemonic.Test, true, 32) => SpecTestRegReg32Handler,
-            (Mnemonic.Test, false, 8) => SpecTestRegImm8Handler,
-            (Mnemonic.Test, false, 16) => SpecTestRegImm16Handler,
-            (Mnemonic.Test, false, 32) => SpecTestRegImm32Handler,
-            _ => null,
-        };
+        return !regReg && !regImm
+            ? null
+            : (mnemonic, regReg, size) switch
+            {
+                (Mnemonic.Cmp, true, 8) => SpecCmpRegReg8Handler,
+                (Mnemonic.Cmp, true, 16) => SpecCmpRegReg16Handler,
+                (Mnemonic.Cmp, true, 32) => SpecCmpRegReg32Handler,
+                (Mnemonic.Cmp, false, 8) => SpecCmpRegImm8Handler,
+                (Mnemonic.Cmp, false, 16) => SpecCmpRegImm16Handler,
+                (Mnemonic.Cmp, false, 32) => SpecCmpRegImm32Handler,
+                (Mnemonic.Test, true, 8) => SpecTestRegReg8Handler,
+                (Mnemonic.Test, true, 16) => SpecTestRegReg16Handler,
+                (Mnemonic.Test, true, 32) => SpecTestRegReg32Handler,
+                (Mnemonic.Test, false, 8) => SpecTestRegImm8Handler,
+                (Mnemonic.Test, false, 16) => SpecTestRegImm16Handler,
+                (Mnemonic.Test, false, 32) => SpecTestRegImm32Handler,
+                _ => null,
+            };
     }
 
     /// <summary>
@@ -902,13 +890,10 @@ public sealed partial class XboxCpu
         // interpreter on both paths.
         if (mnemonic is Mnemonic.Rcl or Mnemonic.Rcr)
         {
-            if ((first != OperandKind.Register && first != OperandKind.Memory)
-                || (second != OperandKind.Immediate && second != OperandKind.Register))
-            {
-                return null;
-            }
-
-            return mnemonic == Mnemonic.Rcl ? SpecRclHandler : SpecRcrHandler;
+            return (first != OperandKind.Register && first != OperandKind.Memory)
+                || (second != OperandKind.Immediate && second != OperandKind.Register)
+                ? null
+                : mnemonic == Mnemonic.Rcl ? SpecRclHandler : SpecRcrHandler;
         }
 
         if (second == OperandKind.Register)
@@ -916,20 +901,17 @@ public sealed partial class XboxCpu
             // Slice 15: r,CL and m,CL. One shared body per mnemonic reads
             // the size from the cached member at serve time, exactly like
             // the interpreter — no per-size split needed.
-            if (first != OperandKind.Register && first != OperandKind.Memory)
-            {
-                return null;
-            }
-
-            return mnemonic switch
-            {
-                Mnemonic.Shl => SpecShlCountClHandler,
-                Mnemonic.Shr => SpecShrCountClHandler,
-                Mnemonic.Sar => SpecSarCountClHandler,
-                Mnemonic.Rol => SpecRolCountClHandler,
-                Mnemonic.Ror => SpecRorCountClHandler,
-                _ => null,
-            };
+            return first != OperandKind.Register && first != OperandKind.Memory
+                ? null
+                : mnemonic switch
+                {
+                    Mnemonic.Shl => SpecShlCountClHandler,
+                    Mnemonic.Shr => SpecShrCountClHandler,
+                    Mnemonic.Sar => SpecSarCountClHandler,
+                    Mnemonic.Rol => SpecRolCountClHandler,
+                    Mnemonic.Ror => SpecRorCountClHandler,
+                    _ => null,
+                };
         }
 
         int pair;
@@ -1060,27 +1042,24 @@ public sealed partial class XboxCpu
 
     private static SpecHandler? ResolveSpecSseScalar(Mnemonic mnemonic, OperandKind first, OperandKind second)
     {
-        if (first != OperandKind.Register)
-        {
-            return null;
-        }
-
-        return (mnemonic, second) switch
-        {
-            (Mnemonic.Addss, OperandKind.Register) => SpecAddssRegRegHandler,
-            (Mnemonic.Addss, OperandKind.Memory) => SpecAddssRegMemHandler,
-            (Mnemonic.Subss, OperandKind.Register) => SpecSubssRegRegHandler,
-            (Mnemonic.Subss, OperandKind.Memory) => SpecSubssRegMemHandler,
-            (Mnemonic.Mulss, OperandKind.Register) => SpecMulssRegRegHandler,
-            (Mnemonic.Mulss, OperandKind.Memory) => SpecMulssRegMemHandler,
-            (Mnemonic.Divss, OperandKind.Register) => SpecDivssRegRegHandler,
-            (Mnemonic.Divss, OperandKind.Memory) => SpecDivssRegMemHandler,
-            (Mnemonic.Minss, OperandKind.Register) => SpecMinssRegRegHandler,
-            (Mnemonic.Minss, OperandKind.Memory) => SpecMinssRegMemHandler,
-            (Mnemonic.Maxss, OperandKind.Register) => SpecMaxssRegRegHandler,
-            (Mnemonic.Maxss, OperandKind.Memory) => SpecMaxssRegMemHandler,
-            _ => null,
-        };
+        return first != OperandKind.Register
+            ? null
+            : (mnemonic, second) switch
+            {
+                (Mnemonic.Addss, OperandKind.Register) => SpecAddssRegRegHandler,
+                (Mnemonic.Addss, OperandKind.Memory) => SpecAddssRegMemHandler,
+                (Mnemonic.Subss, OperandKind.Register) => SpecSubssRegRegHandler,
+                (Mnemonic.Subss, OperandKind.Memory) => SpecSubssRegMemHandler,
+                (Mnemonic.Mulss, OperandKind.Register) => SpecMulssRegRegHandler,
+                (Mnemonic.Mulss, OperandKind.Memory) => SpecMulssRegMemHandler,
+                (Mnemonic.Divss, OperandKind.Register) => SpecDivssRegRegHandler,
+                (Mnemonic.Divss, OperandKind.Memory) => SpecDivssRegMemHandler,
+                (Mnemonic.Minss, OperandKind.Register) => SpecMinssRegRegHandler,
+                (Mnemonic.Minss, OperandKind.Memory) => SpecMinssRegMemHandler,
+                (Mnemonic.Maxss, OperandKind.Register) => SpecMaxssRegRegHandler,
+                (Mnemonic.Maxss, OperandKind.Memory) => SpecMaxssRegMemHandler,
+                _ => null,
+            };
     }
 
     private static SpecHandler? ResolveSpecSseCvt(OperandKind first, OperandKind second, Mnemonic mnemonic)
@@ -1121,22 +1100,19 @@ public sealed partial class XboxCpu
     /// </summary>
     private static SpecHandler? ResolveSpecFpuAlu(Mnemonic mnemonic, OperandKind first, OperandKind second)
     {
-        if (first != OperandKind.Register
-            || (second != OperandKind.Register && second != OperandKind.Memory))
-        {
-            return null;
-        }
-
-        return mnemonic switch
-        {
-            Mnemonic.Fadd => SpecFaddHandler,
-            Mnemonic.Fmul => SpecFmulHandler,
-            Mnemonic.Fsub => SpecFsubHandler,
-            Mnemonic.Fsubr => SpecFsubrHandler,
-            Mnemonic.Fdiv => SpecFdivHandler,
-            Mnemonic.Fdivr => SpecFdivrHandler,
-            _ => null,
-        };
+        return first != OperandKind.Register
+            || (second != OperandKind.Register && second != OperandKind.Memory)
+            ? null
+            : mnemonic switch
+            {
+                Mnemonic.Fadd => SpecFaddHandler,
+                Mnemonic.Fmul => SpecFmulHandler,
+                Mnemonic.Fsub => SpecFsubHandler,
+                Mnemonic.Fsubr => SpecFsubrHandler,
+                Mnemonic.Fdiv => SpecFdivHandler,
+                Mnemonic.Fdivr => SpecFdivrHandler,
+                _ => null,
+            };
     }
 
     private static SpecHandler? ResolveSpecFpuPop(Mnemonic mnemonic)

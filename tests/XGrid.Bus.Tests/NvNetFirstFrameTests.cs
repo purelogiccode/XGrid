@@ -213,7 +213,7 @@ public sealed class NvNetFirstFrameTests
         byte[] frame = GoldenFrame;
 
         Assert.Equal(342, frame.Length);
-        Assert.Equal(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }, frame[0..6]);
+        Assert.Equal(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }, frame[..6]);
         Assert.Equal(new byte[] { 0x00, 0x50, 0xF2, 0xA4, 0xF5, 0xA8 }, frame[6..12]);
         Assert.Equal(0x0800, ReadBe16(frame, 12));
 

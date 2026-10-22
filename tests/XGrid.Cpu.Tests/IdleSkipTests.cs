@@ -18,26 +18,26 @@ public sealed class IdleSkipTests
     private const uint LoopHead = 0x1000;
 
     // mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt
-    private static readonly byte[] PollLoop = { 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4 };
+    private static readonly byte[] PollLoop = [0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];
 
     // mov eax,[0x3000]; test eax,eax; jz 0x1000; hlt  (0x3000 classified non-RAM by the host)
-    private static readonly byte[] MmioPollLoop = { 0xA1, 0x00, 0x30, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4 };
+    private static readonly byte[] MmioPollLoop = [0xA1, 0x00, 0x30, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];
 
     // in al,0x60; test al,0x80; jnz 0x1000; hlt
-    private static readonly byte[] PioPollLoop = { 0xE4, 0x60, 0xA8, 0x80, 0x75, 0xFA, 0xF4 };
+    private static readonly byte[] PioPollLoop = [0xE4, 0x60, 0xA8, 0x80, 0x75, 0xFA, 0xF4];
 
     // dec ecx; jnz 0x1000; hlt   (register countdown: must never be skipped)
-    private static readonly byte[] CountdownLoop = { 0x49, 0x75, 0xFD, 0xF4 };
+    private static readonly byte[] CountdownLoop = [0x49, 0x75, 0xFD, 0xF4];
 
     // Kernel-idle-thread shape: sti; nop; nop; cli; mov eax,[0x2000]; test; jz 0x1000; hlt
     // (STI in the body: an IRQ is deliverable mid-body even though IF is clear at the head)
     private static readonly byte[] StiIdleLoop =
-    {
+    [
         0xFB, 0x90, 0x90, 0xFA, 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF3, 0xF4,
-    };
+    ];
 
     // inc dword [0x2000]; jmp 0x1000  (memory write in body: must never be skipped)
-    private static readonly byte[] WriteLoop = { 0xFF, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00, 0xEB, 0xF7 };
+    private static readonly byte[] WriteLoop = [0xFF, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00, 0xEB, 0xF7];
 
     [Fact]
     public void Skip_LandsExactlyOnHostDeadline_AndExitsPollLoop()
@@ -257,15 +257,9 @@ public sealed class IdleSkipTests
     /// Fake device with one scheduled event: a deadline in cycles from skip start
     /// that fires the poll write and/or an IRQ when the advance reaches it.
     /// </summary>
-    private sealed class FakeIdleHost : IIdleSkipHost
+    private sealed class FakeIdleHost(PhysicalMemory ram) : IIdleSkipHost
     {
-        private readonly PhysicalMemory _ram;
         private long? _deadline;
-
-        public FakeIdleHost(PhysicalMemory ram)
-        {
-            _ram = ram;
-        }
 
         public bool Irq { get; set; }
 
@@ -282,9 +276,9 @@ public sealed class IdleSkipTests
         // ReSharper disable once MemberHidesStaticFromOuterClass
         public uint? PollAddress { get; set; }
 
-        private byte PollValue { get; set; } = 1;
+        private byte PollValue { get; } = 1;
 
-        public HashSet<uint> NonRam { get; } = new();
+        public HashSet<uint> NonRam { get; } = [];
 
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
@@ -307,7 +301,7 @@ public sealed class IdleSkipTests
                     _deadline = null;
                     if (FirePollAtDeadline && PollAddress is { } deadlinePoll)
                     {
-                        _ram.Write8(deadlinePoll, PollValue);
+                        ram.Write8(deadlinePoll, PollValue);
                     }
 
                     if (FireIrqAtDeadline)
@@ -319,7 +313,7 @@ public sealed class IdleSkipTests
 
             if (FirePollAtAdvanced is { } fireAt && Advanced >= fireAt && PollAddress is { } address)
             {
-                _ram.Write8(address, PollValue);
+                ram.Write8(address, PollValue);
                 FirePollAtAdvanced = null;
             }
         }

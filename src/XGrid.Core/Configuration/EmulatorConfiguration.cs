@@ -29,16 +29,8 @@ public sealed class EmulatorConfiguration
             throw new ConfigurationException("All configuration sections are required.");
         }
 
-        if (Graphics.ResolutionScale < 1 || Graphics.ResolutionScale > 16)
-        {
-            throw new ConfigurationException("graphics.resolutionScale must be between 1 and 16.");
-        }
-
-        if (string.IsNullOrWhiteSpace(Input.Backend))
-        {
-            throw new ConfigurationException("input.backend must not be empty.");
-        }
-
-        return this;
+        return Graphics.ResolutionScale < 1 || Graphics.ResolutionScale > 16
+            ? throw new ConfigurationException("graphics.resolutionScale must be between 1 and 16.")
+            : string.IsNullOrWhiteSpace(Input.Backend) ? throw new ConfigurationException("input.backend must not be empty.") : this;
     }
 }

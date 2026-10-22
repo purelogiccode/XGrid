@@ -28,7 +28,7 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     public const byte HostCommand = 0x8;
 
     /// <summary>Host block data register.</summary>
-    public const byte HostBlockData = 0x9;
+    private const byte HostBlockData = 0x9;
 
     /// <summary>Transaction completed (cycle) status.</summary>
     public const byte HcycStatus = 0x10;
@@ -40,19 +40,19 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     public const byte AbrtStatus = 0x01;
 
     /// <summary>Status bits cleared by writing them back.</summary>
-    public const byte ClearStatusMask = 0x37;
+    private const byte ClearStatusMask = 0x37;
 
     /// <summary>Global-enable bit that starts a transaction.</summary>
-    public const byte TransactionGo = 0x08;
+    private const byte TransactionGo = 0x08;
 
     /// <summary>Global-enable bit that arms the completion interrupt.</summary>
-    public const byte InterruptEnable = 0x10;
+    private const byte InterruptEnable = 0x10;
 
     /// <summary>Global-enable bit that aborts the current transaction.</summary>
-    public const byte AbortBit = 0x20;
+    private const byte AbortBit = 0x20;
 
     private readonly IoSpace _io;
-    private readonly Dictionary<byte, ISmbusDevice> _devices = new();
+    private readonly Dictionary<byte, ISmbusDevice> _devices = [];
     private readonly byte[] _blockData = new byte[32];
     private IDisposable? _window;
     private byte _address;
@@ -60,7 +60,7 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     private byte _data1;
     private byte _command;
     private int _blockIndex;
-    private readonly List<Transaction> _recent = new();
+    private readonly List<Transaction> _recent = [];
 
     /// <summary>Creates the controller and registers it on the PCI bus.</summary>
     public Amd756Smbus(IoSpace io, PciBus bus)
@@ -286,14 +286,7 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                     LowerInterrupt();
                 }
 
-                if ((value & ClearStatusMask) != 0)
-                {
-                    Status = 0;
-                }
-                else
-                {
-                    Status = HcycStatus;
-                }
+                Status = (value & ClearStatusMask) != 0 ? (byte)0 : HcycStatus;
 
                 _blockIndex = 0;
                 break;
@@ -366,26 +359,12 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                 break;
 
             case 1:
-                if (read)
-                {
-                    ok = device.TryReceiveByte(out _data0);
-                }
-                else
-                {
-                    ok = device.SendByte(_command);
-                }
+                ok = read ? device.TryReceiveByte(out _data0) : device.SendByte(_command);
 
                 break;
 
             case 2:
-                if (read)
-                {
-                    ok = device.TryReadByte(_command, out _data0);
-                }
-                else
-                {
-                    ok = device.WriteByte(_command, _data0);
-                }
+                ok = read ? device.TryReadByte(_command, out _data0) : device.WriteByte(_command, _data0);
 
                 break;
 
@@ -452,39 +431,29 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
     }
 
     /// <summary>One executed SMBus transaction. Diagnostics.</summary>
-    public readonly struct Transaction
+    /// <remarks>Creates a transaction record.</remarks>
+    public readonly struct Transaction(byte slaveAddress, int protocol, byte command, bool read, bool ok, byte data0, byte data1)
     {
-        /// <summary>Creates a transaction record.</summary>
-        public Transaction(byte slaveAddress, int protocol, byte command, bool read, bool ok, byte data0, byte data1)
-        {
-            SlaveAddress = slaveAddress;
-            Protocol = protocol;
-            Command = command;
-            Read = read;
-            Ok = ok;
-            Data0 = data0;
-            Data1 = data1;
-        }
 
         /// <summary>Gets the 7-bit slave address.</summary>
-        public byte SlaveAddress { get; }
+        public byte SlaveAddress { get; } = slaveAddress;
 
         /// <summary>Gets the protocol number (0-5).</summary>
-        public int Protocol { get; }
+        public int Protocol { get; } = protocol;
 
         /// <summary>Gets the command byte.</summary>
-        public byte Command { get; }
+        public byte Command { get; } = command;
 
         /// <summary>Gets whether it was a read.</summary>
-        public bool Read { get; }
+        public bool Read { get; } = read;
 
         /// <summary>Gets whether it succeeded.</summary>
-        public bool Ok { get; }
+        public bool Ok { get; } = ok;
 
         /// <summary>Gets the data byte 0 delivered or received.</summary>
-        public byte Data0 { get; }
+        public byte Data0 { get; } = data0;
 
         /// <summary>Gets the data byte 1 delivered or received.</summary>
-        public byte Data1 { get; }
+        public byte Data1 { get; } = data1;
     }
 }

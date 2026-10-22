@@ -216,12 +216,9 @@ public static class Decoder
 
             case 0xCD:
                 {
-                    if (!TryReadImmediate(code, ref position, 8, out uint vector))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Interrupt, Operand.ImmediateOperand(vector, 8), Operand.None, position,
+                    return !TryReadImmediate(code, ref position, 8, out uint vector)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Interrupt, Operand.ImmediateOperand(vector, 8), Operand.None, position,
                         operandSize, addressSize, opcode);
                 }
 
@@ -246,78 +243,60 @@ public static class Decoder
             case 0x84 or 0x85:
                 {
                     int testSize = opcode == 0x84 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, testSize, addressSize, segmentOverride, out int testReg,
-                            out Operand testRm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Test, testRm, Operand.RegisterOperand(testReg, testSize), position, operandSize,
+                    return !TryParseModRm(code, ref position, testSize, addressSize, segmentOverride, out int testReg,
+                            out Operand testRm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Test, testRm, Operand.RegisterOperand(testReg, testSize), position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0x86 or 0x87:
                 {
                     int xchgSize = opcode == 0x86 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, xchgSize, addressSize, segmentOverride, out int xchgReg,
-                            out Operand xchgRm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Xchg, xchgRm, Operand.RegisterOperand(xchgReg, xchgSize), position, operandSize,
+                    return !TryParseModRm(code, ref position, xchgSize, addressSize, segmentOverride, out int xchgReg,
+                            out Operand xchgRm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Xchg, xchgRm, Operand.RegisterOperand(xchgReg, xchgSize), position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0x88 or 0x89:
                 {
                     int movSize = opcode == 0x88 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out int movReg,
-                            out Operand movRm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Mov, movRm, Operand.RegisterOperand(movReg, movSize), position, operandSize,
+                    return !TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out int movReg,
+                            out Operand movRm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Mov, movRm, Operand.RegisterOperand(movReg, movSize), position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0x8A or 0x8B:
                 {
                     int movSize = opcode == 0x8A ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out int movReg,
-                            out Operand movRm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Mov, Operand.RegisterOperand(movReg, movSize), movRm, position, operandSize,
+                    return !TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out int movReg,
+                            out Operand movRm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Mov, Operand.RegisterOperand(movReg, movSize), movRm, position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0x8D:
                 {
-                    if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int leaReg,
+                    return !TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int leaReg,
                             out Operand leaRm)
-                        || leaRm.Kind != OperandKind.Memory)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Lea, Operand.RegisterOperand(leaReg, operandSize), leaRm, position, operandSize,
+                        || leaRm.Kind != OperandKind.Memory
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Lea, Operand.RegisterOperand(leaReg, operandSize), leaRm, position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0x8C or 0x8E:
                 {
-                    if (!TryParseModRm(code, ref position, 16, addressSize, segmentOverride, out int segment,
+                    return !TryParseModRm(code, ref position, 16, addressSize, segmentOverride, out int segment,
                             out Operand rm)
-                        || segment > 5)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return opcode == 0x8E
+                        || segment > 5
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : opcode == 0x8E
                         ? Make(Mnemonic.MovSreg, Operand.ImmediateOperand((uint)segment, 8), rm, position, operandSize,
                             addressSize, opcode)
                         : Make(Mnemonic.MovSregRead, rm, Operand.ImmediateOperand((uint)segment, 8), position, operandSize,
@@ -329,58 +308,46 @@ public static class Decoder
 
             case 0x9A:
                 {
-                    if (!TryReadImmediate(code, ref position, operandSize, out uint farOffset)
-                        || !TryReadImmediate(code, ref position, 16, out uint farSelector))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.CallFar,
-                        Operand1 = Operand.ImmediateOperand(farOffset, operandSize),
-                        Operand2 = Operand.ImmediateOperand(farSelector, 16),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                    return !TryReadImmediate(code, ref position, operandSize, out uint farOffset)
+                        || !TryReadImmediate(code, ref position, 16, out uint farSelector)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.CallFar,
+                            Operand1 = Operand.ImmediateOperand(farOffset, operandSize),
+                            Operand2 = Operand.ImmediateOperand(farSelector, 16),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case 0xCA or 0xCB:
                 {
-                    if (opcode == 0xCB)
-                    {
-                        return Make(Mnemonic.Retf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
-                    }
-
-                    if (!TryReadImmediate(code, ref position, 16, out uint popBytes))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Retf, Operand.ImmediateOperand(popBytes, 16), Operand.None, position, operandSize,
+                    return opcode == 0xCB
+                        ? Make(Mnemonic.Retf, Operand.None, Operand.None, position, operandSize, addressSize, opcode)
+                        : !TryReadImmediate(code, ref position, 16, out uint popBytes)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Retf, Operand.ImmediateOperand(popBytes, 16), Operand.None, position, operandSize,
                         addressSize, opcode);
                 }
 
             case 0xEA:
                 {
-                    if (!TryReadImmediate(code, ref position, operandSize, out uint farOffset)
-                        || !TryReadImmediate(code, ref position, 16, out uint farSelector))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.JmpFar,
-                        Operand1 = Operand.ImmediateOperand(farOffset, operandSize),
-                        Operand2 = Operand.ImmediateOperand(farSelector, 16),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                    return !TryReadImmediate(code, ref position, operandSize, out uint farOffset)
+                        || !TryReadImmediate(code, ref position, 16, out uint farSelector)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.JmpFar,
+                            Operand1 = Operand.ImmediateOperand(farOffset, operandSize),
+                            Operand2 = Operand.ImmediateOperand(farSelector, 16),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case >= 0x91 and <= 0x97:
@@ -433,12 +400,9 @@ public static class Decoder
             case 0xA8 or 0xA9:
                 {
                     int testSize = opcode == 0xA8 ? 8 : operandSize;
-                    if (!TryReadImmediate(code, ref position, testSize, out uint testImm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, testSize, out uint testImm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         Mnemonic.Test,
                         Operand.RegisterOperand(0, testSize),
                         Operand.ImmediateOperand(testImm, testSize),
@@ -450,12 +414,9 @@ public static class Decoder
 
             case >= 0xB0 and <= 0xB7:
                 {
-                    if (!TryReadImmediate(code, ref position, 8, out uint immByte))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, 8, out uint immByte)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         Mnemonic.Mov,
                         Operand.RegisterOperand(opcode & 7, 8),
                         Operand.ImmediateOperand(immByte, 8),
@@ -467,12 +428,9 @@ public static class Decoder
 
             case >= 0xB8 and <= 0xBF:
                 {
-                    if (!TryReadImmediate(code, ref position, operandSize, out uint immValue))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, operandSize, out uint immValue)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         Mnemonic.Mov,
                         Operand.RegisterOperand(opcode & 7, operandSize),
                         Operand.ImmediateOperand(immValue, operandSize),
@@ -499,25 +457,19 @@ public static class Decoder
 
             case 0x8F:
                 {
-                    if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int popReg,
+                    return !TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int popReg,
                             out Operand popRm)
-                        || popReg != 0)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Pop, popRm, Operand.None, position, operandSize, addressSize, opcode);
+                        || popReg != 0
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Pop, popRm, Operand.None, position, operandSize, addressSize, opcode);
                 }
 
             case 0xC8:
                 {
-                    if (!TryReadImmediate(code, ref position, 16, out uint enterAllocation)
-                        || !TryReadImmediate(code, ref position, 8, out uint enterNesting))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, 16, out uint enterAllocation)
+                        || !TryReadImmediate(code, ref position, 8, out uint enterNesting)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         Mnemonic.Enter,
                         Operand.ImmediateOperand(enterAllocation, 16),
                         Operand.ImmediateOperand(enterNesting, 8),
@@ -530,13 +482,10 @@ public static class Decoder
             case 0xC6 or 0xC7:
                 {
                     int movSize = opcode == 0xC6 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out _, out Operand movRm)
-                        || !TryReadImmediate(code, ref position, movSize, out uint movImm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Mov, movRm, Operand.ImmediateOperand(movImm, movSize), position, operandSize,
+                    return !TryParseModRm(code, ref position, movSize, addressSize, segmentOverride, out _, out Operand movRm)
+                        || !TryReadImmediate(code, ref position, movSize, out uint movImm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Mov, movRm, Operand.ImmediateOperand(movImm, movSize), position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -567,12 +516,9 @@ public static class Decoder
 
             case 0xE8 or 0xE9:
                 {
-                    if (!TryReadImmediate(code, ref position, operandSize, out uint rel))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, operandSize, out uint rel)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         opcode == 0xE8 ? Mnemonic.Call : Mnemonic.Jmp,
                         Operand.ImmediateOperand(rel, operandSize),
                         Operand.None,
@@ -797,13 +743,10 @@ public static class Decoder
 
         if (opcode is 0xBC or 0xBD)
         {
-            if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int destinationReg,
-                    out Operand source))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(
+            return !TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int destinationReg,
+                    out Operand source)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(
                 opcode == 0xBC ? Mnemonic.Bsf : Mnemonic.Bsr,
                 Operand.RegisterOperand(destinationReg, operandSize),
                 source,
@@ -836,15 +779,12 @@ public static class Decoder
 
         if (opcode is 0xC7)
         {
-            if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int groupReg,
+            return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int groupReg,
                     out Operand groupRm)
                 || groupReg != 1
-                || groupRm.Kind != OperandKind.Memory)
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(
+                || groupRm.Kind != OperandKind.Memory
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(
                 Mnemonic.Cmpxchg8B,
                 groupRm,
                 Operand.None,
@@ -868,12 +808,9 @@ public static class Decoder
 
         if (opcode is >= 0x80 and <= 0x8F)
         {
-            if (!TryReadImmediate(code, ref position, operandSize, out uint rel))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(
+            return !TryReadImmediate(code, ref position, operandSize, out uint rel)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(
                 Mnemonic.Jcc,
                 Operand.ImmediateOperand(rel, operandSize),
                 Operand.None,
@@ -944,13 +881,10 @@ public static class Decoder
 
         if (opcode == 0xAF)
         {
-            if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int reg,
-                    out Operand rm))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(Mnemonic.Imul, Operand.RegisterOperand(reg, operandSize), rm, position, operandSize,
+            return !TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int reg,
+                    out Operand rm)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(Mnemonic.Imul, Operand.RegisterOperand(reg, operandSize), rm, position, operandSize,
                 addressSize, opcode);
         }
 
@@ -977,13 +911,10 @@ public static class Decoder
 
         if (opcode is >= 0x40 and <= 0x4F)
         {
-            if (!TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int reg,
-                    out Operand rm))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(
+            return !TryParseModRm(code, ref position, operandSize, addressSize, segmentOverride, out int reg,
+                    out Operand rm)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(
                 Mnemonic.Cmovcc,
                 Operand.RegisterOperand(reg, operandSize),
                 rm,
@@ -996,12 +927,9 @@ public static class Decoder
 
         if (opcode is >= 0x90 and <= 0x9F)
         {
-            if (!TryParseModRm(code, ref position, 8, addressSize, segmentOverride, out _, out Operand rm))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(
+            return !TryParseModRm(code, ref position, 8, addressSize, segmentOverride, out _, out Operand rm)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(
                 Mnemonic.Setcc,
                 rm,
                 Operand.None,
@@ -1064,13 +992,10 @@ public static class Decoder
             case 0x6E or 0x7E:
                 {
                     int direction = opcode == 0x6E ? 0 : 1;
-                    if (!TryParseModRm(code, ref position, 32, addressSize, segmentOverride, out int mmReg,
-                            out Operand source))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return direction == 0
+                    return !TryParseModRm(code, ref position, 32, addressSize, segmentOverride, out int mmReg,
+                            out Operand source)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : direction == 0
                         ? Make(Mnemonic.Movd, Operand.RegisterOperand(mmReg, 64), source, position, operandSize,
                             addressSize, opcode)
                         : Make(Mnemonic.Movd, source, Operand.RegisterOperand(mmReg, 64), position, operandSize,
@@ -1079,13 +1004,10 @@ public static class Decoder
 
             case 0x6F or 0x7F:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
-                            out Operand source))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return opcode == 0x6F
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                            out Operand source)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : opcode == 0x6F
                         ? Make(Mnemonic.Movq, Operand.RegisterOperand(mmReg, 64), source, position, operandSize,
                             addressSize, opcode)
                         : Make(Mnemonic.Movq, source, Operand.RegisterOperand(mmReg, 64), position, operandSize,
@@ -1094,24 +1016,21 @@ public static class Decoder
 
             case 0x70:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
                             out Operand source)
-                        || !TryReadImmediate(code, ref position, 8, out uint shuffle))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.Pshufw,
-                        Operand1 = Operand.RegisterOperand(mmReg, 64),
-                        Operand2 = source,
-                        Operand3 = Operand.ImmediateOperand(shuffle, 8),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                        || !TryReadImmediate(code, ref position, 8, out uint shuffle)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.Pshufw,
+                            Operand1 = Operand.RegisterOperand(mmReg, 64),
+                            Operand2 = source,
+                            Operand3 = Operand.ImmediateOperand(shuffle, 8),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case 0x71 or 0x72 or 0x73:
@@ -1136,67 +1055,58 @@ public static class Decoder
                         source = Operand.MemoryOperandValue(source.Memory, 16);
                     }
 
-                    if (!TryReadImmediate(code, ref position, 8, out uint lane))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.Pinsrw,
-                        Operand1 = Operand.RegisterOperand(mmReg, 64),
-                        Operand2 = source,
-                        Operand3 = Operand.ImmediateOperand(lane, 8),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                    return !TryReadImmediate(code, ref position, 8, out uint lane)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.Pinsrw,
+                            Operand1 = Operand.RegisterOperand(mmReg, 64),
+                            Operand2 = source,
+                            Operand3 = Operand.ImmediateOperand(lane, 8),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case 0xC5:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
                             out Operand source)
                         || source.Kind != OperandKind.Register
-                        || !TryReadImmediate(code, ref position, 8, out uint lane))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.Pextrw,
-                        Operand1 = Operand.RegisterOperand(mmReg, 32),
-                        Operand2 = source,
-                        Operand3 = Operand.ImmediateOperand(lane, 8),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                        || !TryReadImmediate(code, ref position, 8, out uint lane)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.Pextrw,
+                            Operand1 = Operand.RegisterOperand(mmReg, 32),
+                            Operand2 = source,
+                            Operand3 = Operand.ImmediateOperand(lane, 8),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case 0xC6:
                 {
-                    if (!TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
+                    return !TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
                             out Operand source)
-                        || !TryReadImmediate(code, ref position, 8, out uint control))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return new DecodedInstruction
-                    {
-                        Mnemonic = Mnemonic.Shufps,
-                        Operand1 = Operand.RegisterOperand(xmmReg, 128),
-                        Operand2 = source,
-                        Operand3 = Operand.ImmediateOperand(control, 8),
-                        Length = position,
-                        OperandSize = operandSize,
-                        AddressSize = addressSize,
-                        Opcode = opcode,
-                    };
+                        || !TryReadImmediate(code, ref position, 8, out uint control)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : new DecodedInstruction
+                        {
+                            Mnemonic = Mnemonic.Shufps,
+                            Operand1 = Operand.RegisterOperand(xmmReg, 128),
+                            Operand2 = source,
+                            Operand3 = Operand.ImmediateOperand(control, 8),
+                            Length = position,
+                            OperandSize = operandSize,
+                            AddressSize = addressSize,
+                            Opcode = opcode,
+                        };
                 }
 
             case 0xD1 or 0xD2 or 0xD3:
@@ -1206,14 +1116,11 @@ public static class Decoder
 
             case 0xD7:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
                             out Operand source)
-                        || source.Kind != OperandKind.Register)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Pmovmskb, Operand.RegisterOperand(mmReg, 32), source, position, operandSize,
+                        || source.Kind != OperandKind.Register
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Pmovmskb, Operand.RegisterOperand(mmReg, 32), source, position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -1222,14 +1129,11 @@ public static class Decoder
 
             case 0xE7:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
                             out Operand destination)
-                        || destination.Kind != OperandKind.Memory)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Movntq, destination, Operand.RegisterOperand(mmReg, 64), position, operandSize,
+                        || destination.Kind != OperandKind.Memory
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Movntq, destination, Operand.RegisterOperand(mmReg, 64), position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -1238,14 +1142,11 @@ public static class Decoder
 
             case 0xF7:
                 {
-                    if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
+                    return !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg,
                             out Operand source)
-                        || source.Kind != OperandKind.Register)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Maskmovq, Operand.RegisterOperand(mmReg, 64), source, position, operandSize,
+                        || source.Kind != OperandKind.Register
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Maskmovq, Operand.RegisterOperand(mmReg, 64), source, position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -1274,13 +1175,10 @@ public static class Decoder
 
             case 0x28 or 0x29:
                 {
-                    if (!TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
-                            out Operand source))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return opcode == 0x28
+                    return !TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
+                            out Operand source)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : opcode == 0x28
                         ? Make(Mnemonic.Movaps, Operand.RegisterOperand(xmmReg, 128), source, position, operandSize,
                             addressSize, opcode)
                         : Make(Mnemonic.Movaps, source, Operand.RegisterOperand(xmmReg, 128), position, operandSize,
@@ -1293,14 +1191,11 @@ public static class Decoder
 
             case 0x2B:
                 {
-                    if (!TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
+                    return !TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
                             out Operand destination)
-                        || destination.Kind != OperandKind.Memory)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Movntps, destination, Operand.RegisterOperand(xmmReg, 128), position, operandSize,
+                        || destination.Kind != OperandKind.Memory
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Movntps, destination, Operand.RegisterOperand(xmmReg, 128), position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -1323,14 +1218,11 @@ public static class Decoder
 
             case 0x50:
                 {
-                    if (!TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
+                    return !TryParseModRm(code, ref position, 128, addressSize, segmentOverride, out int xmmReg,
                             out Operand source)
-                        || source.Kind != OperandKind.Register)
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(Mnemonic.Movmskps, Operand.RegisterOperand(xmmReg, 32), source, position, operandSize,
+                        || source.Kind != OperandKind.Register
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(Mnemonic.Movmskps, Operand.RegisterOperand(xmmReg, 32), source, position, operandSize,
                         addressSize, opcode);
                 }
 
@@ -1475,12 +1367,9 @@ public static class Decoder
             _ => Mnemonic.Unsupported,
         };
 
-        if (mnemonic == Mnemonic.Unsupported || !TryReadImmediate(code, ref position, 8, out uint count))
-        {
-            return Unsupported(position, opcode, operandSize, addressSize);
-        }
-
-        return Make(
+        return mnemonic == Mnemonic.Unsupported || !TryReadImmediate(code, ref position, 8, out uint count)
+            ? Unsupported(position, opcode, operandSize, addressSize)
+            : Make(
             mnemonic,
             Operand.RegisterOperand(rm, 64),
             Operand.ImmediateOperand(count, 8),
@@ -1577,24 +1466,15 @@ public static class Decoder
             return Unsupported(position, opcode, operandSize, addressSize);
         }
 
-        if (mandatoryPrefix == 0xF3)
-        {
-            if (!TryParseModRm(code, ref position, 32, addressSize, segmentOverride, out int xmmReg,
-                    out Operand source))
-            {
-                return Unsupported(position, opcode, operandSize, addressSize);
-            }
-
-            return Make(Mnemonic.Cvtsi2Ss, Operand.RegisterOperand(xmmReg, 128), source, position, operandSize,
-                addressSize, opcode);
-        }
-
-        if (!TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg, out Operand mmSource))
-        {
-            return Unsupported(position, opcode, operandSize, addressSize);
-        }
-
-        return Make(Mnemonic.Cvtpi2Ps, Operand.RegisterOperand(mmReg, 128), mmSource, position, operandSize,
+        return mandatoryPrefix == 0xF3
+            ? !TryParseModRm(code, ref position, 32, addressSize, segmentOverride, out int xmmReg,
+                    out Operand source)
+                ? Unsupported(position, opcode, operandSize, addressSize)
+                : Make(Mnemonic.Cvtsi2Ss, Operand.RegisterOperand(xmmReg, 128), source, position, operandSize,
+                addressSize, opcode)
+            : !TryParseModRm(code, ref position, 64, addressSize, segmentOverride, out int mmReg, out Operand mmSource)
+            ? Unsupported(position, opcode, operandSize, addressSize)
+            : Make(Mnemonic.Cvtpi2Ps, Operand.RegisterOperand(mmReg, 128), mmSource, position, operandSize,
             addressSize, opcode);
     }
 
@@ -1738,23 +1618,20 @@ public static class Decoder
 
         bool scalar = mandatoryPrefix == 0xF3;
         int size = scalar ? 32 : 128;
-        if (!TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int xmmReg, out Operand source)
-            || !TryReadImmediate(code, ref position, 8, out uint predicate))
-        {
-            return Unsupported(position, opcode, operandSize, addressSize);
-        }
-
-        return new DecodedInstruction
-        {
-            Mnemonic = scalar ? Mnemonic.Cmpss : Mnemonic.Cmpps,
-            Operand1 = Operand.RegisterOperand(xmmReg, 128),
-            Operand2 = source,
-            Operand3 = Operand.ImmediateOperand(predicate, 8),
-            Length = position,
-            OperandSize = operandSize,
-            AddressSize = addressSize,
-            Opcode = opcode,
-        };
+        return !TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int xmmReg, out Operand source)
+            || !TryReadImmediate(code, ref position, 8, out uint predicate)
+            ? Unsupported(position, opcode, operandSize, addressSize)
+            : new DecodedInstruction
+            {
+                Mnemonic = scalar ? Mnemonic.Cmpss : Mnemonic.Cmpps,
+                Operand1 = Operand.RegisterOperand(xmmReg, 128),
+                Operand2 = source,
+                Operand3 = Operand.ImmediateOperand(predicate, 8),
+                Length = position,
+                OperandSize = operandSize,
+                AddressSize = addressSize,
+                Opcode = opcode,
+            };
     }
 
     private static DecodedInstruction DecodeSseState(
@@ -1845,17 +1722,11 @@ public static class Decoder
             return Unsupported(position, opcode, operandSize, addressSize);
         }
 
-        if (!TryParseModRm(code, ref position, memorySize, addressSize, segmentOverride, out _, out Operand memory))
-        {
-            return Unsupported(position, opcode, operandSize, addressSize);
-        }
-
-        if (opcode is 0xD8 or 0xDC)
-        {
-            return Make(mnemonic, Operand.RegisterOperand(0, 80), memory, position, operandSize, addressSize, opcode);
-        }
-
-        return Make(mnemonic, memory, Operand.None, position, operandSize, addressSize, opcode);
+        return !TryParseModRm(code, ref position, memorySize, addressSize, segmentOverride, out _, out Operand memory)
+            ? Unsupported(position, opcode, operandSize, addressSize)
+            : opcode is 0xD8 or 0xDC
+            ? Make(mnemonic, Operand.RegisterOperand(0, 80), memory, position, operandSize, addressSize, opcode)
+            : Make(mnemonic, memory, Operand.None, position, operandSize, addressSize, opcode);
     }
 
     private static bool TryGetFpuMemoryOperation(
@@ -2282,36 +2153,27 @@ public static class Decoder
             case 0 or 1:
                 {
                     int size = form == 0 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int reg, out Operand rm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(mnemonic, rm, Operand.RegisterOperand(reg, size), position, operandSize, addressSize,
+                    return !TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int reg, out Operand rm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(mnemonic, rm, Operand.RegisterOperand(reg, size), position, operandSize, addressSize,
                         opcode);
                 }
 
             case 2 or 3:
                 {
                     int size = form == 2 ? 8 : operandSize;
-                    if (!TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int reg, out Operand rm))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(mnemonic, Operand.RegisterOperand(reg, size), rm, position, operandSize, addressSize,
+                    return !TryParseModRm(code, ref position, size, addressSize, segmentOverride, out int reg, out Operand rm)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(mnemonic, Operand.RegisterOperand(reg, size), rm, position, operandSize, addressSize,
                         opcode);
                 }
 
             case 4 or 5:
                 {
                     int size = form == 4 ? 8 : operandSize;
-                    if (!TryReadImmediate(code, ref position, size, out uint immediate))
-                    {
-                        return Unsupported(position, opcode, operandSize, addressSize);
-                    }
-
-                    return Make(
+                    return !TryReadImmediate(code, ref position, size, out uint immediate)
+                        ? Unsupported(position, opcode, operandSize, addressSize)
+                        : Make(
                         mnemonic,
                         Operand.RegisterOperand(0, size),
                         Operand.ImmediateOperand(immediate, size),
@@ -2537,12 +2399,9 @@ public static class Decoder
             _ => Mnemonic.Unsupported,
         };
 
-        if (mnemonic is Mnemonic.CallFar or Mnemonic.JmpFar && rm.Kind != OperandKind.Memory)
-        {
-            return Unsupported(position, opcode, operandSize, addressSize);
-        }
-
-        return mnemonic == Mnemonic.Unsupported
+        return mnemonic is Mnemonic.CallFar or Mnemonic.JmpFar && rm.Kind != OperandKind.Memory
+            ? Unsupported(position, opcode, operandSize, addressSize)
+            : mnemonic == Mnemonic.Unsupported
             ? Unsupported(position, opcode, operandSize, addressSize)
             : Make(mnemonic, rm, Operand.None, position, operandSize, addressSize, opcode);
     }

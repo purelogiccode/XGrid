@@ -8,7 +8,7 @@ internal sealed class RecordingMmioDevice : IMmioDevice
 
     public IReadOnlyList<MmioAccess> Accesses => _accesses;
 
-    public uint ReadValue { get; set; } = 0xDEADBEEF;
+    public uint ReadValue { get; init; } = 0xDEADBEEF;
 
     public uint Read(uint address, int size)
     {

@@ -13,14 +13,8 @@ namespace XGrid.GpuGl.Tests;
 /// when no GL context is available — the row is exercised on any GL-capable
 /// host.
 /// </summary>
-public sealed class WindowPresentLiveTests
+public sealed class WindowPresentLiveTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public WindowPresentLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -48,7 +42,7 @@ public sealed class WindowPresentLiveTests
         bool created = GlBackendFactory.TryCreate(memory, out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 
@@ -75,7 +69,7 @@ public sealed class WindowPresentLiveTests
             out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 
@@ -100,7 +94,7 @@ public sealed class WindowPresentLiveTests
             {
                 // Headless/session-0: the window degrades like a probe failure
                 // and the session continues headless.
-                _output.WriteLine("window unavailable in this session: " + gl.WindowStatus);
+                output.WriteLine("window unavailable in this session: " + gl.WindowStatus);
                 Assert.Contains("window unavailable", gl.WindowStatus);
                 Assert.Equal(0, gl.WindowPresents);
             }

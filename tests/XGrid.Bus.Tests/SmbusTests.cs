@@ -276,7 +276,7 @@ public sealed class SmbusTests
     {
         // The frontend persists this image between runs: the copy must see the
         // seeded bytes and every byte the guest wrote through the SMBus.
-        var eeprom = new Eeprom24C02(new byte[] { 0x10, 0x20, 0x30 });
+        var eeprom = new Eeprom24C02([0x10, 0x20, 0x30]);
         eeprom.WriteByte(0x10, 0xAA);
         eeprom.WriteByte(0x11, 0xBB);
 

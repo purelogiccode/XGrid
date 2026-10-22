@@ -317,11 +317,11 @@ public static class PshGlslGenerator
     private static void AppendConvolutionTaps(StringBuilder sb)
     {
         (int X, int Y)[] offsets =
-        {
+        [
             (-1, -1), (0, -1), (1, -1),
             (-1, 0), (0, 0), (1, 0),
             (-1, 1), (0, 1), (1, 1),
-        };
+        ];
         for (int i = 0; i < offsets.Length; i++)
         {
             int weight = (offsets[i].X == 0 ? 2 : 1) * (offsets[i].Y == 0 ? 2 : 1);
@@ -673,14 +673,11 @@ public static class PshGlslGenerator
     private static string StageConstExpr(PshCombiner state, int stage, bool isC0)
     {
         uint flags = state.Control >> 8;
-        if (isC0)
-        {
-            return (flags & PshCombiner.ControlUniqueC0) != 0
+        return isC0
+            ? (flags & PshCombiner.ControlUniqueC0) != 0
                 ? $"uConsts[{(stage * 2).ToString(CultureInfo.InvariantCulture)}]"
-                : "uConsts[0]";
-        }
-
-        return (flags & PshCombiner.ControlUniqueC1) != 0
+                : "uConsts[0]"
+            : (flags & PshCombiner.ControlUniqueC1) != 0
             ? $"uConsts[{((stage * 2) + 1).ToString(CultureInfo.InvariantCulture)}]"
             : "uConsts[1]";
     }
@@ -820,16 +817,10 @@ public static class PshGlslGenerator
             return component == 3 ? "0.0" : $"{ef}.z";
         }
 
-        if (reg == PshCombiner.RegC0)
-        {
-            return SwizzleComponent("uConsts[16]", component);
-        }
-
-        if (reg == PshCombiner.RegC1)
-        {
-            return SwizzleComponent("uConsts[17]", component);
-        }
-
-        return ReadScalarCore(state, PshCombiner.MaxStages, reg, chan, component);
+        return reg == PshCombiner.RegC0
+            ? SwizzleComponent("uConsts[16]", component)
+            : reg == PshCombiner.RegC1
+            ? SwizzleComponent("uConsts[17]", component)
+            : ReadScalarCore(state, PshCombiner.MaxStages, reg, chan, component);
     }
 }

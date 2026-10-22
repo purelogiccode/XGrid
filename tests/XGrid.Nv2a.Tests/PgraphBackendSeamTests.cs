@@ -58,7 +58,7 @@ public sealed class PgraphBackendSeamTests
 
         public uint LastFlipSurfaceAddress { get; private set; }
 
-        public List<uint> FlipSurfaceAddresses { get; } = new();
+        public List<uint> FlipSurfaceAddresses { get; } = [];
 
         public void Method(uint subchannel, uint method, uint parameter)
         {
@@ -93,7 +93,7 @@ public sealed class PgraphBackendSeamTests
         {
             width = 0;
             height = 0;
-            bgra = Array.Empty<byte>();
+            bgra = [];
             return false;
         }
 
@@ -156,7 +156,7 @@ public sealed class PgraphBackendSeamTests
         {
             width = 0;
             height = 0;
-            bgra = Array.Empty<byte>();
+            bgra = [];
             return false;
         }
 
@@ -218,8 +218,8 @@ public sealed class PgraphBackendSeamTests
     /// <summary>The ElementDraw_RunsVertexProgramAndRasterizes stream (existing golden).</summary>
     private static (uint Method, uint Parameter)[] ElementDrawStream()
     {
-        return new[]
-        {
+        return
+        [
             (0x0208u, 0x00000104u),
             (0x020Cu, 0x00000040u),
             (0x0210u, 0x00003000u),
@@ -245,7 +245,7 @@ public sealed class PgraphBackendSeamTests
             (0x1800u, 0x00010000u),
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
-        };
+        ];
     }
 
     private static void WriteVertices(IGpuMemory memory)
@@ -414,7 +414,7 @@ public sealed class PgraphBackendSeamTests
         var stream = new List<(uint Method, uint Parameter)>(ElementDrawStream());
         int drawStart = stream.FindIndex(entry => entry.Method == 0x17FCu);
         stream.Insert(drawStart, (0x1B14u, filter));
-        return stream.ToArray();
+        return [.. stream];
     }
 
     [Fact]
@@ -519,7 +519,7 @@ public sealed class PgraphBackendSeamTests
 
         public int FlipInsideBatch { get; private set; }
 
-        public List<int> RunLengths { get; } = new();
+        public List<int> RunLengths { get; } = [];
 
         public int MaxRun { get; private set; }
 
@@ -597,7 +597,7 @@ public sealed class PgraphBackendSeamTests
         {
             width = 0;
             height = 0;
-            bgra = Array.Empty<byte>();
+            bgra = [];
             return false;
         }
 
@@ -623,7 +623,7 @@ public sealed class PgraphBackendSeamTests
             stream.Add((method, parameter));
         }
 
-        return stream.ToArray();
+        return [.. stream];
     }
 
     [Fact]
@@ -665,7 +665,7 @@ public sealed class PgraphBackendSeamTests
         var twice = new List<(uint Method, uint Parameter)>(first.Length * 2);
         twice.AddRange(first);
         twice.AddRange(first);
-        PushMethods(nv2A, memory, twice.ToArray());
+        PushMethods(nv2A, memory, [.. twice]);
 
         Assert.Equal(2uL, nv2A.DrawsExecuted);
         Assert.Equal(2, backend.Draws);
@@ -846,7 +846,7 @@ public sealed class PgraphBackendSeamTests
             stream.Add((method, parameter));
         }
 
-        return stream.ToArray();
+        return [.. stream];
     }
 
     [Fact]

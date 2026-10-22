@@ -12,14 +12,8 @@ namespace XGrid.GpuGl.Tests;
 /// Returns early (pass) when no GL context is available — no extra test
 /// dependency; the row is exercised on any GL-capable host.
 /// </summary>
-public sealed class PresentUploadLiveTests
+public sealed class PresentUploadLiveTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public PresentUploadLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -47,7 +41,7 @@ public sealed class PresentUploadLiveTests
         bool created = GlBackendFactory.TryCreate(memory, out IPgraphBackend? backend, out string why);
         if (!created || backend is null)
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return;
         }
 
@@ -67,10 +61,10 @@ public sealed class PresentUploadLiveTests
             Assert.Equal(3u, width);
             Assert.Equal(2u, height);
             byte[] expected =
-            {
+            [
                 0x1E, 0x14, 0x0A, 0xFF, 0x32, 0x28, 0x28, 0xE1, 0x54, 0x52, 0x50, 0xC8,
                 0x7C, 0x7A, 0x78, 0xA0, 0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-            };
+            ];
             Assert.Equal(expected, bgra);
             Assert.Equal(0, backend.BackendUnsupported);
             Assert.Contains("presentUploads=1", backend.DebugSummary, StringComparison.Ordinal);

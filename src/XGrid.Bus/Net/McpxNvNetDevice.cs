@@ -28,7 +28,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public const uint BaseAddress = 0xFEF00000;
 
     /// <summary>NVNET MMIO window size (PCI BAR0 size).</summary>
-    public const uint WindowSize = 0x00000400;
+    private const uint WindowSize = 0x00000400;
 
     // Register offsets (xemu nvnet_regs.h).
     private const uint IrqStatus = 0x000;
@@ -103,15 +103,16 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const int DescriptorSize = 8;
 
     /// <summary>TX coalesce buffer size: default MTU (1500) + 128 slack (xemu TX_ALLOC_BUFSIZE).</summary>
-    public const int TxBufferSize = 1500 + 128;
+    private const int TxBufferSize = 1500 + 128;
 
     /// <summary>RX frame size limit: default MTU (1500) + 128 slack (xemu RX_ALLOC_BUFSIZE).</summary>
     public const int RxBufferSize = 1500 + 128;
 
     /// <summary>Link autonegotiation delay in milliseconds (xemu AUTONEG_DURATION_MS).</summary>
-    public const ulong AutonegDelayMs = 250;
+    private const ulong AutonegDelayMs = 250;
 
     /// <summary>Maximum frames held in the device-side pending slot + inject path (matches loopback bound).</summary>
+    // ReSharper disable once UnusedMember.Global
     public const int MaxPendingFrames = 64;
 
     // RX descriptor flag bits (xemu nvnet_regs.h NV_RX_*).
@@ -135,12 +136,11 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly ushort[] _phy = new ushort[PhyCount];
-    private readonly Dictionary<uint, int> _regReads = new();
-    private readonly Dictionary<uint, int> _regWrites = new();
+    private readonly Dictionary<uint, int> _regReads = [];
+    private readonly Dictionary<uint, int> _regWrites = [];
     private readonly byte[] _txBuffer = new byte[TxBufferSize];
     private uint _txOffset;
     private byte[]? _pendingFrame;
-    private bool _autoNegPending;
     private ulong _autoNegElapsedMs;
     private ulong _autoNegRemainder;
 
@@ -223,7 +223,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public bool LinkUp => (_phy[PhyBmsr] & BmsrLinkStatus) != 0;
 
     /// <summary>Gets whether a 250 ms autonegotiation is in flight, for diagnostics.</summary>
-    public bool AutoNegPending => _autoNegPending;
+    public bool AutoNegPending { get; private set; }
 
     /// <summary>Gets the TX ring base address, for diagnostics.</summary>
     public uint TxRingBaseAddress => _regs[TxRingBase >> 2];
@@ -261,7 +261,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _regWrites.Clear();
         _txOffset = 0;
         _pendingFrame = null;
-        _autoNegPending = false;
+        AutoNegPending = false;
         _autoNegElapsedMs = 0;
         _autoNegRemainder = 0;
         TxPackets = 0;
@@ -333,7 +333,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
             writer.Write(_pendingFrame);
         }
 
-        writer.Write(_autoNegPending);
+        writer.Write(AutoNegPending);
         writer.Write(_autoNegElapsedMs);
         writer.Write(_autoNegRemainder);
         writer.Write(Reads);
@@ -432,7 +432,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
             _pendingFrame = null;
         }
 
-        _autoNegPending = reader.ReadBoolean();
+        AutoNegPending = reader.ReadBoolean();
         _autoNegElapsedMs = reader.ReadUInt64();
         _autoNegRemainder = reader.ReadUInt64();
         Reads = reader.ReadInt64();
@@ -473,17 +473,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
             return "tx-start";
         }
 
-        if ((_regs[TxRxControl >> 2] & TxRxBit2) != 0)
-        {
-            return "bit2";
-        }
-
-        if ((_phy[PhyBmsr] & BmsrLinkStatus) == 0)
-        {
-            return "link";
-        }
-
-        return null;
+        return (_regs[TxRxControl >> 2] & TxRxBit2) != 0 ? "bit2" : (_phy[PhyBmsr] & BmsrLinkStatus) == 0 ? "link" : null;
     }
 
     /// <summary>
@@ -526,17 +516,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
             return "rx-start";
         }
 
-        if ((_regs[TxRxControl >> 2] & TxRxBit2) != 0)
-        {
-            return "bit2";
-        }
-
-        if ((_phy[PhyBmsr] & BmsrLinkStatus) == 0)
-        {
-            return "link";
-        }
-
-        return null;
+        return (_regs[TxRxControl >> 2] & TxRxBit2) != 0 ? "bit2" : (_phy[PhyBmsr] & BmsrLinkStatus) == 0 ? "link" : null;
     }
 
     /// <summary>
@@ -701,7 +681,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             if (LinkUp)
             {
-                _autoNegPending = false;
+                AutoNegPending = false;
                 _autoNegElapsedMs = 0;
                 _autoNegRemainder = 0;
                 return;
@@ -709,7 +689,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
             if ((_phy[PhyBmcr] & BmcrAutoEn) != 0 && (_phy[PhyBmsr] & BmsrAnComp) == 0)
             {
-                _autoNegPending = true;
+                AutoNegPending = true;
                 _autoNegElapsedMs = 0;
                 _autoNegRemainder = 0;
             }
@@ -720,7 +700,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
         else
         {
-            _autoNegPending = false;
+            AutoNegPending = false;
             _autoNegElapsedMs = 0;
             _autoNegRemainder = 0;
             if (!LinkUp)
@@ -738,7 +718,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     public void Advance(ulong cycles)
     {
-        if (_autoNegPending)
+        if (AutoNegPending)
         {
             _autoNegRemainder += cycles * 1000;
             ulong ms = _autoNegRemainder / XboxBus.CpuClockHz;
@@ -818,12 +798,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         // No RX engine exists yet and the transmitter idles between KICKs, so the
         // busy bits always read clear. Forcing zero (rather than latching) keeps
         // busy-wait loops honest.
-        if (offset == TxStatus || offset == RxStatus)
-        {
-            return 0;
-        }
-
-        return _regs[offset >> 2];
+        return offset == TxStatus || offset == RxStatus ? 0 : _regs[offset >> 2];
     }
 
     private void WriteReg(uint offset, uint value)
@@ -1054,10 +1029,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _regs[IrqStatusIndex] |= IrqRxNoBuf;
         UpdateIrq();
         RxDropNoBuf++;
-        if (_pendingFrame is null)
-        {
-            _pendingFrame = frame.ToArray();
-        }
+        _pendingFrame ??= frame.ToArray();
     }
 
     private bool TryDmaFrameToGuest(ReadOnlySpan<byte> frame)
@@ -1117,7 +1089,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _regs[AdapterControl >> 2] |= AdapterLinkUp;
         _regs[MiiStatus >> 2] |= MiiLinkChange;
         _regs[IrqStatusIndex] |= IrqMiiEvent;
-        _autoNegPending = false;
+        AutoNegPending = false;
         LinkChanges++;
         UpdateIrq();
     }

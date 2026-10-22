@@ -12,7 +12,7 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
     /// <summary>PIT input clock (Xbox 1.125 MHz; matches xemu i8254.h PIT_FREQ).</summary>
     public const uint InputFrequency = 1125001;
 
-    private readonly Channel[] _channels = { new(), new(), new() };
+    private readonly Channel[] _channels = [new(), new(), new()];
     private byte _control;
 
     /// <summary>Creates the PIT and registers its ports.</summary>
@@ -38,12 +38,7 @@ public sealed class Pit8254 : IXboxDevice, IIoPortDevice, ISnapshotable
     /// <param name="size">Access width in bytes (ignored; the PIT counter port returns one byte).</param>
     public uint Read(ushort offset, int size)
     {
-        if (offset == 3)
-        {
-            return _control;
-        }
-
-        return _channels[offset & 3].ReadCounter();
+        return offset == 3 ? _control : _channels[offset & 3].ReadCounter();
     }
 
     /// <summary>Writes to the PIT window at ports 0x40-0x43: offset 3 is the control word (channel

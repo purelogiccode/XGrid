@@ -7,14 +7,9 @@ public sealed class Nv2AFogTexModesTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -92,7 +87,7 @@ public sealed class Nv2AFogTexModesTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static float[][] ZeroRegisters(int count)
@@ -126,9 +121,9 @@ public sealed class Nv2AFogTexModesTests
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true)];
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
         // Reference destination-prefix selection (xemu fog_mask_str; Cxbx
@@ -143,9 +138,9 @@ public sealed class Nv2AFogTexModesTests
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 5, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 5, final: true)];
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
         Assert.Equal(1.0f, outputs[5][0]);
@@ -170,9 +165,11 @@ public sealed class Nv2AFogTexModesTests
     [Fact]
     public void DotMaps_AndInputTex_DecodeFromShaderCtl()
     {
-        var combiner = new PshCombiner();
-        combiner.DotRgbMapping = 0x0CBAu;
-        combiner.OtherStageInput = 0x00210000u;
+        var combiner = new PshCombiner
+        {
+            DotRgbMapping = 0x0CBAu,
+            OtherStageInput = 0x00210000u
+        };
 
         Assert.Equal(0, combiner.DecodeDotMap(0));
         Assert.Equal(0xA, combiner.DecodeDotMap(1));
@@ -354,7 +351,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x09C0u, F(1.25f)));
         pushes.Add((0x09C4u, F(0f)));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -388,7 +385,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x09C4u, F(0f)));
         PushDraw(pushes);
         nv2A.RasterTimingEnabled = true;
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.Equal(1L, nv2A.RasterPshCalls);
@@ -421,7 +418,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x09C0u, F(1.25f)));
         pushes.Add((0x09C4u, F(0f)));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -495,7 +492,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x02u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -527,7 +524,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x02u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.Equal(0uL, nv2A.TexModeFallbacks);
@@ -561,7 +558,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x02u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));
         Assert.True(nv2A.UnsupportedDotMaps > 0);
@@ -666,7 +663,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E48u, 0x000000C0u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -736,7 +733,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x02u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -746,7 +743,7 @@ public sealed class Nv2AFogTexModesTests
     [Fact]
     public void FogGenDistance_MatchesReferenceMetrics()
     {
-        float[] plane = { 0f, 0f, 2f, 0.5f };
+        float[] plane = [0f, 0f, 2f, 0.5f];
 
         // SPEC_ALPHA clamps the specular alpha (reference FIXME kept: clamp).
         Assert.Equal(0f, VshProgram.FogGenDistance(0, 99f, 9f, 9f, 9f, -0.5f, plane));
@@ -758,7 +755,7 @@ public sealed class Nv2AFogTexModesTests
 
         // PLANAR dots the plane plus w: 2*1 + 0.5 = 2.5; ABS_PLANAR mirrors it.
         Assert.Equal(2.5f, VshProgram.FogGenDistance(2, 99f, 0f, 0f, 1f, 0f, plane), 4);
-        float[] negPlane = { 0f, 0f, 2f, -2.5f };
+        float[] negPlane = [0f, 0f, 2f, -2.5f];
         Assert.Equal(-1.5f, VshProgram.FogGenDistance(2, 99f, 0f, 0f, 0.5f, 0f, negPlane), 4);
         Assert.Equal(1.5f, VshProgram.FogGenDistance(3, 99f, 0f, 0f, 0.5f, 0f, negPlane), 4);
 
@@ -776,14 +773,14 @@ public sealed class Nv2AFogTexModesTests
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
-        uint[][] withoutFog = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0, final: true) };
+        uint[][] withoutFog = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0xF, outAddress: 0, final: true)];
         VshProgram.Execute(withoutFog, 1, constants, inputs, outputs, out bool fogWritten);
         Assert.False(fogWritten);
         Assert.Equal(0f, outputs[5][0]);
 
-        uint[][] withFog = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true) };
+        uint[][] withFog = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMask: 0x4, outAddress: 5, final: true)];
         VshProgram.Execute(withFog, 1, constants, inputs, outputs, out fogWritten);
         Assert.True(fogWritten);
         Assert.Equal(1.0f, outputs[5][0]);
@@ -829,7 +826,7 @@ public sealed class Nv2AFogTexModesTests
         }
 
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -962,7 +959,7 @@ public sealed class Nv2AFogTexModesTests
             pushes.Add((0x1698u, F(99f)));
             pushes.Add((0x1A4Cu, F(0f)));
             PushDraw(pushes);
-            PushMethods(nv2A, memory, pushes.ToArray());
+            PushMethods(nv2A, memory, [.. pushes]);
 
             Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
             Assert.Contains("enable=False", nv2A.FogStateDebug);
@@ -1000,7 +997,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x09C4u, F(1f)));
         pushes.Add((0x1A4Cu, F(0f)));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(0xFFFFFFFFu, ReadPixel(memory, 2, 2));
     }
@@ -1051,7 +1048,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x03u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(1uL, nv2A.CombinerDraws);
@@ -1106,7 +1103,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E60u, 0x02u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.CombinerDraws);
         Assert.Equal(0xFF000000u, ReadPixel(memory, 2, 2));

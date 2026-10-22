@@ -88,7 +88,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Initializes the shell with an explicit settings store (tests and tools).</summary>
-    public MainWindowViewModel(SettingsStore settingsStore)
+    private MainWindowViewModel(SettingsStore settingsStore)
     {
         _settingsStore = settingsStore;
         Config = settingsStore.Load();
@@ -103,14 +103,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         Logs = new LogsViewModel(this);
         About = new AboutViewModel(this);
 
-        NavigationItems = new ObservableCollection<NavigationItem>
-        {
-            new(PageKind.Home, "Home", "Console status", AppIcons.Home, Home),
-            new(PageKind.Library, "Library", "Disc images", AppIcons.Library, Library),
-            new(PageKind.Settings, "Settings", "Configure XGrid", AppIcons.Settings, Settings),
-            new(PageKind.Logs, "Activity", "Emulator log", AppIcons.Logs, Logs),
-            new(PageKind.About, "About", "Build information", AppIcons.Info, About),
-        };
+        NavigationItems =
+        [
+            new NavigationItem(PageKind.Home, "Home", "Console status", AppIcons.Home, Home),
+            new NavigationItem(PageKind.Library, "Library", "Disc images", AppIcons.Library, Library),
+            new NavigationItem(PageKind.Settings, "Settings", "Configure XGrid", AppIcons.Settings, Settings),
+            new NavigationItem(PageKind.Logs, "Activity", "Emulator log", AppIcons.Logs, Logs),
+            new NavigationItem(PageKind.About, "About", "Build information", AppIcons.Info, About),
+        ];
         SelectedNavigationItem = NavigationItems[0];
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -126,25 +126,25 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public HomeViewModel Home { get; }
 
     /// <summary>Gets the library page.</summary>
-    public LibraryViewModel Library { get; }
+    private LibraryViewModel Library { get; }
 
     /// <summary>Gets the settings page.</summary>
     public SettingsViewModel Settings { get; }
 
     /// <summary>Gets the activity log page.</summary>
-    public LogsViewModel Logs { get; }
+    private LogsViewModel Logs { get; }
 
     /// <summary>Gets the about page.</summary>
-    public AboutViewModel About { get; }
+    private AboutViewModel About { get; }
 
     /// <summary>Gets the sidebar navigation items.</summary>
     public ObservableCollection<NavigationItem> NavigationItems { get; }
 
     /// <summary>Gets all activity log entries (newest last).</summary>
-    public ObservableCollection<LogEntry> LogEntries { get; } = new();
+    public ObservableCollection<LogEntry> LogEntries { get; } = [];
 
     /// <summary>Gets recently launched games (newest first).</summary>
-    public ObservableCollection<GameEntry> RecentGames { get; } = new();
+    public ObservableCollection<GameEntry> RecentGames { get; } = [];
 
     /// <summary>Gets the file dialog service.</summary>
     public FileDialogService Dialogs { get; } = new();
@@ -179,12 +179,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 return "Now playing";
             }
 
-            if (IsRunning)
-            {
-                return "Console running";
-            }
-
-            return CurrentGame is not null ? "Ready to play" : "Ready when you are";
+            return IsRunning ? "Console running" : CurrentGame is not null ? "Ready to play" : "Ready when you are";
         }
     }
 
@@ -198,14 +193,11 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
                 return "Add your Xbox BIOS image to bring the emulated console to life.";
             }
 
-            if (IsRunning)
-            {
-                return CurrentGame is not null
+            return IsRunning
+                ? CurrentGame is not null
                     ? CurrentGame.Title + " is powered on."
-                    : "The Xbox dashboard is live below.";
-            }
-
-            return CurrentGame is not null
+                    : "The Xbox dashboard is live below."
+                : CurrentGame is not null
                 ? "Power on again or choose another disc image."
                 : "Insert a disc image, or power on to reach the dashboard.";
         }
@@ -259,7 +251,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Stops the emulator and releases resources.</summary>
-    public void Shutdown()
+    private void Shutdown()
     {
         if (_shuttingDown)
         {

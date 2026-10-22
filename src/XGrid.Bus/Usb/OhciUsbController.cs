@@ -46,7 +46,7 @@ public interface IUsbMemory
 public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
 {
     /// <summary>Register window size (xemu registers a 256-byte OHCI region).</summary>
-    public const uint WindowSize = 0x100;
+    private const uint WindowSize = 0x100;
 
     /// <summary>Number of root hub ports (xemu xbox.c: num-ports=4).</summary>
     public const int PortCount = 4;
@@ -130,7 +130,6 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
 
     private readonly IUsbMemory _memory;
     private readonly uint[] _ports = new uint[PortCount];
-    private IUsbDeviceFunction? _function;
     private uint _ctl;
     private uint _status;
     private uint _intrStatus;
@@ -153,16 +152,16 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     private bool _busRunning;
     private ulong _frameRemainder;
     private uint _doneCount;
-    private readonly List<string> _transferLog = new();
-    private readonly Dictionary<uint, int> _regReads = new();
-    private readonly Dictionary<uint, int> _regWrites = new();
+    private readonly List<string> _transferLog = [];
+    private readonly Dictionary<uint, int> _regReads = [];
+    private readonly Dictionary<uint, int> _regWrites = [];
     private bool _pendingSetup;
     private bool _pendingIn;
     private IUsbDeviceFunction? _pendingFunction;
     private byte _pendingFunctionAddress;
-    private byte[] _pendingPayload = Array.Empty<byte>();
+    private byte[] _pendingPayload = [];
     private int _pendingOffset;
-    private byte[] _pendingOut = Array.Empty<byte>();
+    private byte[] _pendingOut = [];
 
     /// <summary>Creates the controller at the given MMIO base.</summary>
     public OhciUsbController(uint baseAddress, IUsbMemory memory)
@@ -174,7 +173,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>Gets the MMIO base address of this controller.</summary>
-    public uint BaseAddress { get; }
+    private uint BaseAddress { get; }
 
     /// <summary>Gets the device name reported to traces and diagnostics ("OHCI USB").</summary>
 #pragma warning disable CA1822
@@ -196,10 +195,10 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the device function attached to root port 0 (normally the daughterboard hub), if any.</summary>
     public IUsbDeviceFunction? Function
     {
-        get => _function;
+        get;
         set
         {
-            _function = value;
+            field = value;
             ReportPortZeroConnect();
         }
     }
@@ -314,12 +313,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
             writer.Write(entry.Value);
         }
 
-        writer.Write(_function is not null);
-        if (_function is ISnapshotable snapshotable)
+        writer.Write(Function is not null);
+        if (Function is ISnapshotable snapshotable)
         {
             snapshotable.SaveState(writer);
         }
-        else if (_function is not null)
+        else if (Function is not null)
         {
             throw new InvalidDataException("OHCI attached function is not snapshotable.");
         }
@@ -444,12 +443,12 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         bool hasFunction = reader.ReadBoolean();
-        if (hasFunction != (_function is not null))
+        if (hasFunction != (Function is not null))
         {
             throw new InvalidDataException("OHCI topology mismatch on snapshot load.");
         }
 
-        if (_function is ISnapshotable snapshotable)
+        if (Function is ISnapshotable snapshotable)
         {
             snapshotable.LoadState(reader);
         }
@@ -486,40 +485,34 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
             _regReads[offset] = reads + 1;
         }
 
-        if (offset >= WindowSize || (offset & 3) != 0)
-        {
-            return 0xFFFFFFFFu;
-        }
-
-        if (offset >= 0x54 && offset < 0x54 + ((uint)PortCount * 4))
-        {
-            return _ports[(offset - 0x54) >> 2] | PortPps;
-        }
-
-        return (offset >> 2) switch
-        {
-            0 => 0x10u,
-            1 => _ctl,
-            2 => _status,
-            3 => _intrStatus,
-            4 or 5 => _intr,
-            6 => Hcca,
-            7 => _perCur,
-            8 => ControlHead,
-            9 => _ctrlCur,
-            10 => _bulkHead,
-            11 => _bulkCur,
-            12 => _done,
-            13 => (_fit << 31) | (_fsmps << 16) | _fi,
-            14 => _frt << 31,
-            15 => _frameNumber,
-            16 => _pstart,
-            17 => _lst,
-            18 => _rhdescA,
-            19 => _rhdescB,
-            20 => _rhstatus,
-            _ => 0xFFFFFFFFu,
-        };
+        return offset >= WindowSize || (offset & 3) != 0
+            ? 0xFFFFFFFFu
+            : offset >= 0x54 && offset < 0x54 + ((uint)PortCount * 4)
+            ? _ports[(offset - 0x54) >> 2] | PortPps
+            : (offset >> 2) switch
+            {
+                0 => 0x10u,
+                1 => _ctl,
+                2 => _status,
+                3 => _intrStatus,
+                4 or 5 => _intr,
+                6 => Hcca,
+                7 => _perCur,
+                8 => ControlHead,
+                9 => _ctrlCur,
+                10 => _bulkHead,
+                11 => _bulkCur,
+                12 => _done,
+                13 => (_fit << 31) | (_fsmps << 16) | _fi,
+                14 => _frt << 31,
+                15 => _frameNumber,
+                16 => _pstart,
+                17 => _lst,
+                18 => _rhdescA,
+                19 => _rhdescB,
+                20 => _rhstatus,
+                _ => 0xFFFFFFFFu,
+            };
     }
 
     /// <summary>Writes an OHCI register at the given absolute address in the 256-byte window, counting the access; root-hub port offsets are routed to the port state machine, and out-of-window or non-dword-aligned offsets are ignored.</summary>
@@ -675,8 +668,8 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
         _pendingSetup = false;
         _pendingFunction = null;
         _pendingFunctionAddress = 0;
-        _pendingPayload = Array.Empty<byte>();
-        _pendingOut = Array.Empty<byte>();
+        _pendingPayload = [];
+        _pendingOut = [];
         _pendingOffset = 0;
         UpdateIrq();
     }
@@ -729,7 +722,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     {
         // The hub reports no power switching, so port 0 is powered by default
         // and an attached function reads connected without guest power writes.
-        if (_function is null)
+        if (Function is null)
         {
             return;
         }
@@ -1110,17 +1103,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Resolves the function addressed by an endpoint descriptor, routing through hubs.</summary>
     private IUsbDeviceFunction? ResolveFunction(byte address)
     {
-        if (_function is null)
-        {
-            return null;
-        }
-
-        if (_function.Address == address)
-        {
-            return _function;
-        }
-
-        return _function is IUsbDeviceHub hub ? hub.FindDevice(address) : null;
+        return Function is null
+            ? null
+            : Function.Address == address ? Function : Function is IUsbDeviceHub hub ? hub.FindDevice(address) : null;
     }
 
     /// <summary>
@@ -1130,12 +1115,9 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// </summary>
     private IUsbDeviceFunction? ResolveTarget(byte address, bool isPeriodic)
     {
-        if (!isPeriodic && _pendingSetup && _pendingFunction is not null && address == _pendingFunctionAddress)
-        {
-            return _pendingFunction;
-        }
-
-        return ResolveFunction(address);
+        return !isPeriodic && _pendingSetup && _pendingFunction is not null && address == _pendingFunctionAddress
+            ? _pendingFunction
+            : ResolveFunction(address);
     }
 
     private UsbTransferResult ServiceSetup(IUsbDeviceFunction target, byte address, uint cbp, out int consumed)
@@ -1158,7 +1140,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
         _pendingFunctionAddress = address;
         _pendingIn = (setup.RequestType & 0x80) != 0 && setup.Length > 0;
         _pendingPayload = payload;
-        _pendingOut = setup.Length > 0 && !_pendingIn ? new byte[setup.Length] : Array.Empty<byte>();
+        _pendingOut = setup.Length > 0 && !_pendingIn ? new byte[setup.Length] : [];
         _pendingOffset = 0;
         return UsbTransferResult.Ack;
     }
@@ -1260,7 +1242,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
                     return UsbTransferResult.Stall;
                 }
 
-                payload = Array.Empty<byte>();
+                payload = [];
                 result = UsbTransferResult.Ack;
             }
             else

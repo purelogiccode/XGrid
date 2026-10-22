@@ -12,12 +12,8 @@ namespace XGrid.Frontend.Tests;
 /// </summary>
 public sealed class EepromStateStoreTests : IDisposable
 {
-    private readonly string _folder;
-
-    public EepromStateStoreTests()
-    {
-        _folder = Path.Combine(Path.GetTempPath(), "xgrid-eeprom-" + Guid.NewGuid().ToString("N"));
-    }
+    private readonly string _folder =
+        Path.Combine(Path.GetTempPath(), "xgrid-eeprom-" + Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {

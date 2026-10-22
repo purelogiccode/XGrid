@@ -8,14 +8,9 @@ public sealed class PgraphTransformTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -176,7 +171,7 @@ public sealed class PgraphTransformTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static float[][] ZeroRegisters(int count)
@@ -279,11 +274,11 @@ public sealed class PgraphTransformTests
         methods.Add((0x17FCu, 0u));
         if (continuePush)
         {
-            PushMethodsContinue(nv2A, memory, methods.ToArray());
+            PushMethodsContinue(nv2A, memory, [.. methods]);
         }
         else
         {
-            PushMethods(nv2A, memory, methods.ToArray());
+            PushMethods(nv2A, memory, [.. methods]);
         }
     }
 
@@ -316,7 +311,7 @@ public sealed class PgraphTransformTests
     private static void WriteStripVertices(ArrayMemory memory)
     {
         (uint X, uint Y)[] vertices =
-        {
+        [
             (0u, 0u),
             (8u, 0u),
             (0u, 8u),
@@ -324,7 +319,7 @@ public sealed class PgraphTransformTests
             (15u, 8u),
             (8u, 15u),
             (15u, 15u),
-        };
+        ];
         for (int i = 0; i < vertices.Length; i++)
         {
             uint address = 0x2000u + ((uint)i * 16u);
@@ -470,7 +465,7 @@ public sealed class PgraphTransformTests
         methods.Add((0x1810u, (2u << 24) | 0u));
         methods.Add((0x1810u, (2u << 24) | 4u));
         methods.Add((0x1808u, 1u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(0, nv2A.DrawArrayRangeCount);
@@ -749,7 +744,7 @@ public sealed class PgraphTransformTests
         methods.Add((0x1800u, 0x00010000u));
         methods.Add((0x1808u, 0x00000002u));
         methods.Add((0x17FCu, 0u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
     }
 
     [Fact]
@@ -1046,7 +1041,7 @@ public sealed class PgraphTransformTests
         methods.Add((0x1810u, (2u << 24) | 0u));
         methods.Add((0x1810u, (2u << 24) | 4u));
         methods.Add((0x17FCu, 0u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(0xFFFFFFFFu, memory.ReadPhysical(0x3000u + (2u * 0x40u) + (2u * 4u)));
@@ -1064,7 +1059,7 @@ public sealed class PgraphTransformTests
         methods.Add((0x1810u, (2u << 24) | 0u));
         methods.Add((0x1810u, (2u << 24) | 3u));
         methods.Add((0x17FCu, 0u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.Equal(0xFFFFFFFFu, memory.ReadPhysical(0x3000u + (4u * 0x40u) + (4u * 4u)));
@@ -1082,7 +1077,7 @@ public sealed class PgraphTransformTests
         AddInlineVertex(methods, 0x41100000u, 0x3F800000u);
         AddInlineVertex(methods, 0x3F800000u, 0x41100000u);
         methods.Add((0x17FCu, 0u));
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
@@ -1268,7 +1263,7 @@ public sealed class PgraphTransformTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
@@ -1385,7 +1380,7 @@ public sealed class PgraphTransformTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
@@ -1668,11 +1663,11 @@ public sealed class PgraphTransformTests
             (0x0A2Cu, 0x42200000u));
 
         uint[][] program =
-        {
+        [
             Insn(mac: MacMov, aMux: MuxC, constIndex: 58, outR: 0, macMask: 0xF),
             Insn(mac: MacAdd, aMux: MuxR, aR: 0, cMux: MuxC, constIndex: 59, outMux: 0, outMask: 0xF, outAddress: 0,
                 final: true),
-        };
+        ];
         float[][] constants = ReadConstants(nv2A);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
@@ -2420,7 +2415,7 @@ public sealed class PgraphTransformTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
 
         Assert.Equal(1uL, nv2A.DrawsExecuted);
         Assert.True(nv2A.DrawnPixels > 0);
@@ -2500,11 +2495,11 @@ public sealed class PgraphTransformTests
         float ax, float ay, float bx, float by, float cx, float cy, uint zBits)
     {
         uint[] bits =
-        {
+        [
             BitConverter.SingleToUInt32Bits(ax), BitConverter.SingleToUInt32Bits(ay), zBits, 0x3F800000u,
             BitConverter.SingleToUInt32Bits(bx), BitConverter.SingleToUInt32Bits(by), zBits, 0x3F800000u,
             BitConverter.SingleToUInt32Bits(cx), BitConverter.SingleToUInt32Bits(cy), zBits, 0x3F800000u,
-        };
+        ];
         for (int i = 0; i < bits.Length; i++)
         {
             memory.WritePhysical(0x2000u + ((uint)i * 4u), bits[i]);
@@ -2675,6 +2670,6 @@ public sealed class PgraphTransformTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, methods.ToArray());
+        PushMethods(nv2A, memory, [.. methods]);
     }
 }

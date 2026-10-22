@@ -4,7 +4,7 @@ namespace XGrid.Nv2a;
 /// Optional direct-RAM view for host-side consumers that read guest RAM
 /// outside the CPU (the GL backend's texture fingerprint and upload paths).
 /// The address space is the authority: a consumer must reproduce the same
-/// bounds check <see cref="IGpuMemoryRamView.TryGetRamBytes"/> describes and
+/// bounds check <see cref="TryGetRamBytes"/> describes and
 /// fall back to <see cref="IGpuMemory.ReadPhysical"/> for anything else.
 /// </summary>
 public interface IGpuMemoryRamView
@@ -37,14 +37,18 @@ public interface IGpuMemoryRamView
 public interface IGpuMemoryFast : IGpuMemoryRamView
 {
     /// <summary>Opens a draw-wide GPU-write batch (suppression + page memo).</summary>
+    // ReSharper disable once UnusedMember.Global
     void BeginGpuBatch();
 
     /// <summary>Closes the batch opened by <see cref="BeginGpuBatch"/>.</summary>
+    // ReSharper disable once UnusedMember.Global
     void EndGpuBatch();
 
     /// <summary>Tries a direct 32-bit RAM read; false means use the legacy adapter.</summary>
+    // ReSharper disable once UnusedMember.Global
     bool TryReadPhysical(uint address, out uint value);
 
     /// <summary>Tries a direct 32-bit RAM write inside a batch; false means use the legacy adapter.</summary>
+    // ReSharper disable once UnusedMember.Global
     bool TryWritePhysical(uint address, uint value);
 }

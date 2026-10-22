@@ -7,10 +7,10 @@ namespace XGrid.Cpu.Tests;
 
 public sealed class BlockExecutionTests
 {
-    private static readonly byte[] Loop = { 0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xEB, 0xF8 };
+    private static readonly byte[] Loop = [0x40, 0x83, 0xF0, 0x35, 0x48, 0x90, 0xEB, 0xF8];
 
     // mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt (kernel-style poll loop).
-    private static readonly byte[] PollLoopBytes = { 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4 };
+    private static readonly byte[] PollLoopBytes = [0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];
 
     private const uint PageDirectory = 0x4000;
     private const uint PageTable = 0x5000;
@@ -221,9 +221,9 @@ public sealed class BlockExecutionTests
         // AdvanceIdle at its deadline, so the loop can only exit through a
         // fast-forwarded device event.
         byte[] code =
-        {
+        [
             0xFB, 0x90, 0x90, 0xFA, 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF3, 0xF4,
-        };
+        ];
 
         XboxCpu cpu = CpuHarness.Create(code);
         MapIdentity(cpu.Bus(), 0, 4);
@@ -266,23 +266,17 @@ public sealed class BlockExecutionTests
         Assert.Equal(0UL, offHost.Advanced);
     }
 
-    private sealed class PollIdleHost : IIdleSkipHost
+    private sealed class PollIdleHost(PhysicalMemory ram) : IIdleSkipHost
     {
-        private readonly PhysicalMemory _ram;
         private long? _deadline;
-
-        public PollIdleHost(PhysicalMemory ram)
-        {
-            _ram = ram;
-        }
 
         public ulong Advanced { get; private set; }
 
         public long? InitialDeadline { get; set; }
 
-        public uint? PollAddress { get; set; }
+        public uint? PollAddress { get; init; }
 
-        private byte PollValue { get; set; } = 1;
+        private byte PollValue { get; } = 1;
 
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
@@ -302,7 +296,7 @@ public sealed class BlockExecutionTests
                     _deadline = null;
                     if (PollAddress is { } poll)
                     {
-                        _ram.Write8(poll, PollValue);
+                        ram.Write8(poll, PollValue);
                     }
                 }
             }

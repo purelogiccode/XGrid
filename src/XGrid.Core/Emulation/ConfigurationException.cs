@@ -18,6 +18,7 @@ public sealed class ConfigurationException : Exception
     }
 
     /// <summary>Creates an exception with the default message.</summary>
+    // ReSharper disable once UnusedMember.Global
     public ConfigurationException()
     {
     }

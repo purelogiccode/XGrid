@@ -421,6 +421,7 @@ public enum Mnemonic
     Fnstsw = 138,
 
     /// <summary>Stores the x87 status word.</summary>
+    // ReSharper disable once UnusedMember.Global
     Fstsw = 139,
 
     /// <summary>Moves when below (CF is set).</summary>

@@ -25,7 +25,6 @@ public sealed class XInputGamepadReader : IDisposable
 
     private readonly XInputGetState? _getState;
     private IntPtr _library;
-    private int _userIndex = -1;
     private bool _disposed;
 
     /// <summary>Creates a reader, loading the XInput runtime if the platform has one.</summary>
@@ -38,10 +37,10 @@ public sealed class XInputGamepadReader : IDisposable
     public bool IsAvailable => _getState is not null && _library != IntPtr.Zero;
 
     /// <summary>Gets the user slot of the last connected controller, or -1.</summary>
-    public int UserIndex => _userIndex;
+    public int UserIndex { get; private set; } = -1;
 
     /// <summary>Gets whether a controller is currently connected and readable.</summary>
-    public bool IsConnected => _userIndex >= 0;
+    public bool IsConnected => UserIndex >= 0;
 
     /// <summary>
     /// Polls for controller state.
@@ -58,7 +57,7 @@ public sealed class XInputGamepadReader : IDisposable
 
         // Stick to the first slot that answered: re-scanning every poll would
         // make two connected controllers fight over slot order.
-        if (_userIndex >= 0 && TryPoll(_userIndex, out pad))
+        if (UserIndex >= 0 && TryPoll(UserIndex, out pad))
         {
             return true;
         }
@@ -70,11 +69,11 @@ public sealed class XInputGamepadReader : IDisposable
                 continue;
             }
 
-            _userIndex = user;
+            UserIndex = user;
             return true;
         }
 
-        _userIndex = -1;
+        UserIndex = -1;
         pad = HostPad.Neutral;
         return false;
     }

@@ -17,6 +17,7 @@ public sealed class RomDevice : IMmioDevice
     }
 
     /// <summary>Gets the image size in bytes.</summary>
+    // ReSharper disable once UnusedMember.Global
     public int Size => _data.Length;
 
     /// <summary>Reads <paramref name="size"/> bytes little-endian from the image at the offset of <paramref name="address"/> from the window base.</summary>
@@ -61,6 +62,7 @@ public sealed class RomAliasDevice : IMmioDevice
     }
 
     /// <summary>Gets the image size in bytes.</summary>
+    // ReSharper disable once UnusedMember.Global
     public int Size => _data.Length;
 
     /// <summary>Reads <paramref name="size"/> bytes little-endian from the image with the address offset masked to the power-of-two image size, so the image mirrors across the window.</summary>

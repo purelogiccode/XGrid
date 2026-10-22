@@ -11,9 +11,9 @@ namespace XGrid.Integration.Tests;
 public sealed class SnapshotRegistrationTests
 {
     private static readonly string[] ExpectedSectionTags =
-    {
+    [
         "CPU", "RAM", "BUS", "IDE", "NV2A", "ACI", "APU", "NET", "USB0", "USB1", "MACH",
-    };
+    ];
 
     private static List<string> ReadSectionTags(string path)
     {
@@ -55,10 +55,10 @@ public sealed class SnapshotRegistrationTests
     {
         var machine = new XboxMachine();
         ISnapshotable[] devices =
-        {
+        [
             machine.Bus, machine.Ide, machine.Nv2A, machine.Aci,
             machine.Apu, machine.Net, machine.Usb0, machine.Usb1,
-        };
+        ];
 
         foreach (ISnapshotable device in devices)
         {

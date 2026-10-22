@@ -17,8 +17,8 @@ public interface IIoPortDevice
 /// <summary>Flat 64 KiB I/O port space with dynamic device windows (last registration wins).</summary>
 public sealed class IoSpace : IIoBus
 {
-    private readonly List<Region> _regions = new();
-    private readonly Dictionary<ushort, int> _portAccesses = new();
+    private readonly List<Region> _regions = [];
+    private readonly Dictionary<ushort, int> _portAccesses = [];
 
     /// <summary>Gets the number of accesses seen per port (diagnostics; includes unmapped ports).</summary>
     public IReadOnlyDictionary<ushort, int> PortAccessCounts => _portAccesses;
@@ -137,22 +137,15 @@ public sealed class IoSpace : IIoBus
 
     private sealed record Region(ushort Start, ushort End, IIoPortDevice Device);
 
-    private sealed class Registration : IDisposable
+    private sealed class Registration(IoSpace space, Region region) : IDisposable
     {
-        private readonly IoSpace _space;
-        private Region? _region;
-
-        public Registration(IoSpace space, Region region)
-        {
-            _space = space;
-            _region = region;
-        }
+        private Region? _region = region;
 
         public void Dispose()
         {
             if (_region is not null)
             {
-                _space._regions.Remove(_region);
+                space._regions.Remove(_region);
                 _region = null;
             }
         }

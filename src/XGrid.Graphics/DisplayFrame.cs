@@ -10,7 +10,7 @@ public sealed class DisplayFrame
     private const int BmpHeaderSize = 14;
     private const int BmpInfoSize = 40;
 
-    private byte[] _pixels = Array.Empty<byte>();
+    private byte[] _pixels = [];
 
     /// <summary>Gets the frame width in pixels.</summary>
     public uint Width { get; private set; }

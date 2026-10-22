@@ -3,17 +3,10 @@ using XGrid.Core.Devices;
 
 namespace XGrid.Core.Tests;
 
-internal sealed class RecordingDevice : IEmulatedDevice
+internal sealed class RecordingDevice(string name, List<string> log) : IEmulatedDevice
 {
-    private readonly List<string> _log;
 
-    public RecordingDevice(string name, List<string> log)
-    {
-        Name = name;
-        _log = log;
-    }
-
-    public string Name { get; }
+    private string Name { get; } = name;
 
     public int ResetCount { get; private set; }
 
@@ -24,13 +17,13 @@ internal sealed class RecordingDevice : IEmulatedDevice
     public void Reset()
     {
         ResetCount++;
-        _log.Add($"{Name}:reset");
+        log.Add($"{Name}:reset");
     }
 
     public void Tick(ulong cycles)
     {
         TickCount++;
         TotalCycles += cycles;
-        _log.Add($"{Name}:tick:{cycles}");
+        log.Add($"{Name}:tick:{cycles}");
     }
 }

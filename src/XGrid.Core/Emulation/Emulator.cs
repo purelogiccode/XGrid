@@ -31,7 +31,7 @@ public sealed class Emulator : IEmulator
     public EmulatorConfiguration Configuration { get; }
 
     /// <summary>Gets the runtime options.</summary>
-    public EmulatorOptions Options { get; }
+    private EmulatorOptions Options { get; }
 
     /// <summary>Gets the emulated clock.</summary>
     public EmulatedClock Clock { get; }

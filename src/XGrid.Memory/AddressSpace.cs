@@ -11,9 +11,9 @@ namespace XGrid.Memory;
 public sealed class AddressSpace : IMemoryBus
 {
     private readonly List<AddressRegion> _regions = [];
-    private readonly Dictionary<uint, int> _unmappedCounts = new();
-    private readonly Dictionary<uint, int> _unmappedPageReads = new();
-    private readonly Dictionary<uint, int> _unmappedPageWrites = new();
+    private readonly Dictionary<uint, int> _unmappedCounts = [];
+    private readonly Dictionary<uint, int> _unmappedPageReads = [];
+    private readonly Dictionary<uint, int> _unmappedPageWrites = [];
 
     /// <summary>Creates an address space over the given RAM.</summary>
     public AddressSpace(PhysicalMemory ram, UnmappedAccessPolicy unmappedPolicy = UnmappedAccessPolicy.Sentinel)
@@ -91,49 +91,25 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {
-        if (address < Ram.Size)
-        {
-            return Ram.Read8(address);
-        }
-
-        if (TryGetRegion(address, out AddressRegion? region))
-        {
-            return (byte)region!.Device.Read(address, 1);
-        }
-
-        return (byte)UnmappedRead(address, 1);
+        return address < Ram.Size
+            ? Ram.Read8(address)
+            : TryGetRegion(address, out AddressRegion? region) ? (byte)region!.Device.Read(address, 1) : (byte)UnmappedRead(address, 1);
     }
 
     /// <summary>Reads a 16-bit little-endian value.</summary>
     public ushort Read16(uint address)
     {
-        if ((ulong)address + 2 <= Ram.Size)
-        {
-            return Ram.Read16(address);
-        }
-
-        if (TryGetRegion(address, out AddressRegion? region))
-        {
-            return (ushort)region!.Device.Read(address, 2);
-        }
-
-        return (ushort)UnmappedRead(address, 2);
+        return (ulong)address + 2 <= Ram.Size
+            ? Ram.Read16(address)
+            : TryGetRegion(address, out AddressRegion? region) ? (ushort)region!.Device.Read(address, 2) : (ushort)UnmappedRead(address, 2);
     }
 
     /// <summary>Reads a 32-bit little-endian value.</summary>
     public uint Read32(uint address)
     {
-        if ((ulong)address + 4 <= Ram.Size)
-        {
-            return Ram.Read32(address);
-        }
-
-        if (TryGetRegion(address, out AddressRegion? region))
-        {
-            return region!.Device.Read(address, 4);
-        }
-
-        return UnmappedRead(address, 4);
+        return (ulong)address + 4 <= Ram.Size
+            ? Ram.Read32(address)
+            : TryGetRegion(address, out AddressRegion? region) ? region!.Device.Read(address, 4) : UnmappedRead(address, 4);
     }
 
     /// <summary>Reads a 64-bit little-endian value as two 32-bit accesses.</summary>
@@ -222,13 +198,10 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Returns a writable span over RAM. Only valid for RAM addresses.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {
-        if (address + (ulong)length > Ram.Size)
-        {
-            throw new MemoryAccessException(
-                $"Span request outside RAM: address 0x{address:X8}, length {length}.");
-        }
-
-        return Ram.GetSpan(address, length);
+        return address + (ulong)length > Ram.Size
+            ? throw new MemoryAccessException(
+                $"Span request outside RAM: address 0x{address:X8}, length {length}.")
+            : Ram.GetSpan(address, length);
     }
 
     private void CheckWatch(uint address, int size, uint value)

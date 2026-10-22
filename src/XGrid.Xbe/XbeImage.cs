@@ -42,115 +42,98 @@ public sealed class XbeImage
     }
 
     /// <summary>A parsed section header with its raw bytes.</summary>
-    public readonly struct Section
+    /// <remarks>Creates a section record.</remarks>
+    public readonly struct Section(
+        string name, uint flags, uint virtualAddress, uint virtualSize,
+        uint rawSize, byte[] rawData)
     {
-        /// <summary>Creates a section record.</summary>
-        public Section(
-            string name, uint flags, uint virtualAddress, uint virtualSize,
-            uint rawSize, byte[] rawData)
-        {
-            Name = name;
-            Flags = flags;
-            VirtualAddress = virtualAddress;
-            VirtualSize = virtualSize;
-            RawSize = rawSize;
-            RawData = rawData;
-        }
 
         /// <summary>Gets the section name.</summary>
-        public string Name { get; }
+        public string Name { get; } = name;
 
         /// <summary>Gets the flag bits (1 = writable, 2 = preload, 4 = executable).</summary>
-        public uint Flags { get; }
+        public uint Flags { get; } = flags;
 
         /// <summary>Gets the virtual address.</summary>
-        public uint VirtualAddress { get; }
+        public uint VirtualAddress { get; } = virtualAddress;
 
         /// <summary>Gets the virtual (memory) size.</summary>
-        public uint VirtualSize { get; }
+        public uint VirtualSize { get; } = virtualSize;
 
         /// <summary>Gets the raw (file) size.</summary>
-        public uint RawSize { get; }
+        public uint RawSize { get; } = rawSize;
 
         /// <summary>Gets the raw section bytes.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public byte[] RawData { get; }
+        // ReSharper disable once UnusedMember.Global
+        public byte[] RawData { get; } = rawData;
     }
 
     /// <summary>A parsed library version entry.</summary>
-    public readonly struct LibraryVersion
+    /// <remarks>Creates a library version record.</remarks>
+    public readonly struct LibraryVersion(string name, ushort major, ushort minor, ushort build, ushort flags)
     {
-        /// <summary>Creates a library version record.</summary>
-        public LibraryVersion(string name, ushort major, ushort minor, ushort build, ushort flags)
-        {
-            Name = name;
-            Major = major;
-            Minor = minor;
-            Build = build;
-            Flags = flags;
-        }
 
         /// <summary>Gets the library name.</summary>
-        public string Name { get; }
+        public string Name { get; } = name;
 
         /// <summary>Gets the major version.</summary>
-        public ushort Major { get; }
+        public ushort Major { get; } = major;
 
         /// <summary>Gets the minor version.</summary>
-        public ushort Minor { get; }
+        public ushort Minor { get; } = minor;
 
         /// <summary>Gets the build version.</summary>
-        public ushort Build { get; }
+        public ushort Build { get; } = build;
 
         /// <summary>Gets the flag bits.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public ushort Flags { get; }
+        // ReSharper disable once UnusedMember.Global
+        public ushort Flags { get; } = flags;
     }
 
     /// <summary>Thread-local storage directory (24 bytes).</summary>
+    /// <remarks>Creates a TLS directory record.</remarks>
     [StructLayout(LayoutKind.Auto)]
-    public readonly struct TlsDirectory
+    // ReSharper disable once MemberCanBePrivate.Global
+    public readonly struct TlsDirectory(
+        uint dataStart, uint dataEnd, uint indexAddress, uint callbackAddress,
+        uint zeroFill, uint characteristics)
     {
-        /// <summary>Creates a TLS directory record.</summary>
-        public TlsDirectory(
-            uint dataStart, uint dataEnd, uint indexAddress, uint callbackAddress,
-            uint zeroFill, uint characteristics)
-        {
-            DataStart = dataStart;
-            DataEnd = dataEnd;
-            IndexAddress = indexAddress;
-            CallbackAddress = callbackAddress;
-            ZeroFill = zeroFill;
-            Characteristics = characteristics;
-        }
 
         /// <summary>Gets the TLS data start address.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint DataStart { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint DataStart { get; } = dataStart;
 
         /// <summary>Gets the TLS data end address.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint DataEnd { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint DataEnd { get; } = dataEnd;
 
         /// <summary>Gets the TLS index address.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint IndexAddress { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint IndexAddress { get; } = indexAddress;
 
         /// <summary>Gets the TLS callback address.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint CallbackAddress { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint CallbackAddress { get; } = callbackAddress;
 
         /// <summary>Gets the zero-fill size.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint ZeroFill { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint ZeroFill { get; } = zeroFill;
 
         /// <summary>Gets the characteristics.</summary>
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public uint Characteristics { get; }
+        // ReSharper disable once UnusedMember.Global
+        public uint Characteristics { get; } = characteristics;
     }
 
     /// <summary>Gets the image base address (usually 0x00010000).</summary>
-    public uint BaseAddress { get; private set; }
+    public uint BaseAddress { get; init; }
 
     /// <summary>Gets the detected image type.</summary>
     public ImageType Type { get; private set; }
@@ -202,8 +185,10 @@ public sealed class XbeImage
             throw new InvalidDataException("Not an XBE image.");
         }
 
-        var parsed = new XbeImage();
-        parsed.BaseAddress = ReadU32(image, 0x104);
+        var parsed = new XbeImage
+        {
+            BaseAddress = ReadU32(image, 0x104)
+        };
         uint headersSize = ReadU32(image, 0x108);
         if (headersSize > image.Length)
         {
@@ -225,12 +210,7 @@ public sealed class XbeImage
 
     private static ImageType DetectType(uint entry, uint thunk)
     {
-        if ((entry & 0xF0000000u) == 0x40000000u)
-        {
-            return ImageType.Chihiro;
-        }
-
-        return thunk >= 0x80000000u ? ImageType.Debug : ImageType.Retail;
+        return (entry & 0xF0000000u) == 0x40000000u ? ImageType.Chihiro : thunk >= 0x80000000u ? ImageType.Debug : ImageType.Retail;
     }
 
     private static uint EntryXor(ImageType type)
@@ -369,12 +349,9 @@ public sealed class XbeImage
         }
 
         uint offset = virtualAddress - BaseAddress;
-        if (offset >= (uint)length)
-        {
-            throw new InvalidDataException($"XBE {what} address 0x{virtualAddress:X8} is past the file.");
-        }
-
-        return offset;
+        return offset >= (uint)length
+            ? throw new InvalidDataException($"XBE {what} address 0x{virtualAddress:X8} is past the file.")
+            : offset;
     }
 
     private string ReadCString(ReadOnlySpan<byte> image, uint virtualAddress)

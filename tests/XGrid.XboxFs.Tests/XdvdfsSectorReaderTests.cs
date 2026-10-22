@@ -20,14 +20,9 @@ public sealed class XdvdfsSectorReaderTests
     private const string ExecutableName = "default.xbe";
 
     /// <summary>In-memory disc image, one byte array of 2048-byte sectors.</summary>
-    private sealed class MemoryDvdImage : IDvdImage
+    private sealed class MemoryDvdImage(int sectors = SectorCountMinimum) : IDvdImage
     {
-        private readonly byte[] _data;
-
-        public MemoryDvdImage(int sectors = SectorCountMinimum)
-        {
-            _data = new byte[sectors * SectorSize];
-        }
+        private readonly byte[] _data = new byte[sectors * SectorSize];
 
         public uint SectorCount => (uint)(_data.Length / SectorSize);
 

@@ -9,10 +9,10 @@ namespace XGrid.Cpu.Tests;
 public static class CpuTestRunner
 {
     /// <summary>Address where test code is loaded.</summary>
-    public const uint CodeAddress = 0x1000;
+    private const uint CodeAddress = 0x1000;
 
     /// <summary>Initial stack pointer.</summary>
-    public const uint StackAddress = 0x8000;
+    private const uint StackAddress = 0x8000;
 
     /// <summary>Runs the test and returns the result.</summary>
     public static CpuTestResult Run(CpuTest test, int maxInstructions = 10000)

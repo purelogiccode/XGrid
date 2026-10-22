@@ -12,12 +12,10 @@ namespace XGrid.Cpu;
 public sealed partial class XboxCpu
 {
     private IdleSkipDetector? _idle;
-    private int _idleSkipMinIterations = IdleSkipDetector.DefaultMinIterations;
-    private int _idleSkipChunkSteps = IdleSkipDefaultChunkSteps;
     private int _idleAdvanced;
 
     /// <summary>Default device-advance quantum (CPU cycles) per skip chunk.</summary>
-    public const int IdleSkipDefaultChunkSteps = 4096;
+    private const int IdleSkipDefaultChunkSteps = 4096;
 
     /// <summary>Gets or sets the host that supplies bulk device advance and stop conditions.</summary>
     public IIdleSkipHost? IdleSkipHost { get; set; }
@@ -56,16 +54,17 @@ public sealed partial class XboxCpu
     /// <summary>Gets or sets the consecutive validated iterations required before a skip trigger.</summary>
     public int IdleSkipMinIterations
     {
-        get => _idleSkipMinIterations;
-        set => _idleSkipMinIterations = Math.Max(1, value);
-    }
+        get;
+        set => field = Math.Max(1, value);
+    } = IdleSkipDetector.DefaultMinIterations;
 
     /// <summary>Gets or sets the maximum cycles advanced per skip chunk between stop-condition checks.</summary>
     public int IdleSkipChunkSteps
     {
-        get => _idleSkipChunkSteps;
-        set => _idleSkipChunkSteps = Math.Max(1, value);
-    }
+        get;
+        // ReSharper disable once UnusedMember.Global
+        init => field = Math.Max(1, value);
+    } = IdleSkipDefaultChunkSteps;
 
     /// <summary>Gets the number of skip triggers fired.</summary>
     public ulong IdleSkipTriggers => _idle?.Triggers ?? 0;
@@ -139,7 +138,7 @@ public sealed partial class XboxCpu
     /// <summary>Gets the top rejected loop heads by attributed steps (measurement table).</summary>
     public List<IdleSkipHeadStat> IdleSkipTopRejectedHeads(int maxCount)
     {
-        return _idle is null ? new List<IdleSkipHeadStat>() : _idle.TopRejectedHeads(maxCount);
+        return _idle is null ? [] : _idle.TopRejectedHeads(maxCount);
     }
 
     /// <summary>Gets the number of HLT instructions executed (probe diagnostic; guests are spin-park machines).</summary>
@@ -206,7 +205,7 @@ public sealed partial class XboxCpu
                 break;
             }
 
-            int chunk = Math.Min(_idleSkipChunkSteps, budget - skipped);
+            int chunk = Math.Min(IdleSkipChunkSteps, budget - skipped);
             if (host.StepsUntilNextDeadline is { } deadline)
             {
                 if (deadline <= 0)

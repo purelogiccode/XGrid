@@ -13,7 +13,6 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     private readonly Pic _master = new();
     private readonly Pic _slave = new();
     private readonly uint[] _pendingFlag = new uint[1];
-    private readonly nint _pendingAddress;
 
     /// <summary>Creates the PIC pair and registers its command/data ports.</summary>
     public Pic8259(IoSpace io)
@@ -22,14 +21,14 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
         GCHandle pendingPin = GCHandle.Alloc(
             _pendingFlag,
             GCHandleType.Pinned);
-        _pendingAddress = pendingPin.AddrOfPinnedObject();
+        PendingFlagAddress = pendingPin.AddrOfPinnedObject();
         io.Register(0x20, 2, new PortWindow(_master, UpdatePendingFlag));
         io.Register(0xA0, 2, new PortWindow(_slave, UpdatePendingFlag));
         Reset();
     }
 
     /// <summary>Gets the address of the 0/1 pending word emitted code polls (see <see cref="IInterruptSource.PendingFlagAddress"/>).</summary>
-    public nint PendingFlagAddress => _pendingAddress;
+    public nint PendingFlagAddress { get; }
 
     private void UpdatePendingFlag()
     {
@@ -147,34 +146,26 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
 
     private const int SnapshotVersion = 1;
 
-    private sealed class PortWindow : IIoPortDevice
+    private sealed class PortWindow(Pic pic, Action changed) : IIoPortDevice
     {
-        private readonly Pic _pic;
-        private readonly Action _changed;
-
-        public PortWindow(Pic pic, Action changed)
-        {
-            _pic = pic;
-            _changed = changed;
-        }
 
         public uint Read(ushort offset, int size)
         {
-            return offset == 0 ? _pic.ReadCommand() : _pic.ReadData();
+            return offset == 0 ? pic.ReadCommand() : pic.ReadData();
         }
 
         public void Write(ushort offset, int size, uint value)
         {
             if (offset == 0)
             {
-                _pic.WriteCommand((byte)value);
+                pic.WriteCommand((byte)value);
             }
             else
             {
-                _pic.WriteData((byte)value);
+                pic.WriteData((byte)value);
             }
 
-            _changed();
+            changed();
         }
     }
 

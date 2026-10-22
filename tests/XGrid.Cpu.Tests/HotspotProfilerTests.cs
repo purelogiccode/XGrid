@@ -15,17 +15,17 @@ namespace XGrid.Cpu.Tests;
 public sealed class HotspotProfilerTests
 {
     // nop; nop; jmp 0x1000 (EB FC lands nextEip 0x1004 - 4 back at the head).
-    private static readonly byte[] NopLoop = { 0x90, 0x90, 0xEB, 0xFC };
+    private static readonly byte[] NopLoop = [0x90, 0x90, 0xEB, 0xFC];
 
     // mov eax,[ram]; mov eax,[mmio]; mov [ram],eax; mov ax,[page-end]; hlt.
     private static readonly byte[] AccessSnippet =
-    {
+    [
         0xA1, 0x00, 0x20, 0x00, 0x00,
         0xA1, 0x00, 0x30, 0x00, 0x00,
         0xA3, 0x00, 0x20, 0x00, 0x00,
         0x66, 0xA1, 0xFF, 0x0F, 0x00, 0x00,
         0xF4,
-    };
+    ];
 
     [Fact]
     public void Observe_CountsMnemonicsHeadsAndFetches()
@@ -316,7 +316,7 @@ public sealed class HotspotProfilerTests
 
     private sealed class StubIdleHost : IIdleSkipHost
     {
-        public HashSet<uint> NonRam { get; } = new();
+        public HashSet<uint> NonRam { get; } = [];
 
         public bool IrqPendingAndEnabled => false;
 

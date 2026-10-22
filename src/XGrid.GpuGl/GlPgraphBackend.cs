@@ -24,7 +24,7 @@ namespace XGrid.GpuGl;
 public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 {
     private static readonly string[] UniformNames =
-    {
+    [
         "uConsts[0]",
         "uFogColor",
         "uFogEnable",
@@ -53,7 +53,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTex1",
         "uTex2",
         "uTex3",
-    };
+    ];
 
     private readonly WglContext _context;
     private readonly INativeContext _glContext;
@@ -69,7 +69,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly uint _vertexShader;
     private readonly uint _vao;
     private readonly Dictionary<string, GlProgram> _programs = new(StringComparer.Ordinal);
-    private readonly Dictionary<TextureKey, GlTextureEntry> _textures = new();
+    private readonly Dictionary<TextureKey, GlTextureEntry> _textures = [];
 
     // Packed per-draw uniform block (uTri[25], see PshGlslGenerator) so a draw
     // is ONE uniform upload instead of thirteen. Layout constants are the
@@ -214,22 +214,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private long _composedDraws;
     private GlBackendTimings _timings;
     private readonly bool _windowRequested;
-    private readonly bool _replaceSoftware;
     private bool _windowShown;
-    private long _windowPresents;
-    private string _windowStatus;
 
-    private sealed class GlProgram
+    private sealed class GlProgram(uint id)
     {
-        public GlProgram(uint id)
-        {
-            Id = id;
-            Locations = new Dictionary<string, int>(StringComparer.Ordinal);
-        }
+        public uint Id { get; } = id;
 
-        public uint Id { get; }
-
-        public Dictionary<string, int> Locations { get; }
+        public Dictionary<string, int> Locations { get; } = new(StringComparer.Ordinal);
 
         // Per-program uniform upload caches. GL uniform state lives on the
         // program object, so unchanged values can be skipped entirely; the
@@ -267,31 +258,25 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
     }
 
-    private sealed class GlTextureEntry
+    private sealed class GlTextureEntry(uint texture, uint fingerprint, int width, int height)
     {
-        public GlTextureEntry(uint texture, uint fingerprint, int width, int height)
-        {
-            Texture = texture;
-            Fingerprint = fingerprint;
-            Width = width;
-            Height = height;
-        }
-
-        public uint Texture { get; set; }
-        public uint Fingerprint { get; set; }
+        public uint Texture { get; set; } = texture;
+        public uint Fingerprint { get; set; } = fingerprint;
         // ReSharper disable once UnusedAutoPropertyAccessor.Local
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public int Width { get; }
+        // ReSharper disable once UnusedMember.Local
+        public int Width { get; } = width;
         // ReSharper disable once UnusedAutoPropertyAccessor.Local
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
-        public int Height { get; }
+        // ReSharper disable once UnusedMember.Local
+        public int Height { get; } = height;
 
         /// <summary>
         /// Guest addresses of the 16 fingerprint sample texels, resolved once
         /// per cache key (the address formula costs two integer divisions per
         /// texel; the menu re-fingerprints on every one of its 2.76M draws).
         /// </summary>
-        public uint[] SampleAddresses { get; set; } = Array.Empty<uint>();
+        public uint[] SampleAddresses { get; set; } = [];
 
         /// <summary>Word mask applied to a sampled texel (0xFFFF for 16-bit formats).</summary>
         public uint SampleMask { get; set; } = uint.MaxValue;
@@ -310,24 +295,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// draw, which showed up as submission cost on the menu's 2.76M draws.
     /// </summary>
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
-    private readonly struct TextureKey : IEquatable<TextureKey>
+    private readonly struct TextureKey(in PgraphTextureSlot slot, uint color, int width, int height, int pitch, bool linear) : IEquatable<TextureKey>
     {
-        private readonly uint _offset;
-        private readonly uint _color;
-        private readonly int _width;
-        private readonly int _height;
-        private readonly int _pitch;
-        private readonly int _linear;
-
-        public TextureKey(in PgraphTextureSlot slot, uint color, int width, int height, int pitch, bool linear)
-        {
-            _offset = slot.Offset;
-            _color = color;
-            _width = width;
-            _height = height;
-            _pitch = pitch;
-            _linear = linear ? 1 : 0;
-        }
+        private readonly uint _offset = slot.Offset;
+        private readonly uint _color = color;
+        private readonly int _width = width;
+        private readonly int _height = height;
+        private readonly int _pitch = pitch;
+        private readonly int _linear = linear ? 1 : 0;
 
         public bool Equals(TextureKey other)
         {
@@ -356,9 +331,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _memory = memory;
         _dirtyWatch = memory as IPresentDirtyWatch;
         _windowRequested = windowEnabled;
-        _replaceSoftware = replaceSoftware;
+        ReplaceMode = replaceSoftware;
         FlipReadbackEnabled = frameReadback;
-        _windowStatus = windowEnabled ? "pending first frame" : "off";
+        WindowStatus = windowEnabled ? "pending first frame" : "off";
         if (memory is IGpuMemoryRamView ramView && ramView.TryGetRamBytes(out byte[] ramBytes, out uint ramSize))
         {
             _ramBytes = ramBytes;
@@ -376,7 +351,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             QueryInteger(GetPName.MaxVertexUniformVectors, 224));
         int capacity = batchingDisabled ? 1 : Math.Clamp((maxVectors - 128) / 25, 1, MaxBatchTriangles);
         _batchCapacity = capacity;
-        _batchData = capacity > 1 ? new float[capacity * TriBlockFloats] : Array.Empty<float>();
+        _batchData = capacity > 1 ? new float[capacity * TriBlockFloats] : [];
 
         _vertexShader = CompileVertexShader(capacity);
         // Empty VAO only: every per-draw value travels in the uTri uniform
@@ -489,7 +464,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     }
 
     /// <summary>Gets whether this backend replaces the software rasterizer for the draws it honors (opt-in replacement mode).</summary>
-    public bool ReplaceMode => _replaceSoftware;
+    public bool ReplaceMode { get; }
 
     /// <summary>Mirrors one triangle into the FBO (mirror mode; the software rasterizer stays authoritative and runs as today).</summary>
     public void Draw(in PgraphDrawInfo info)
@@ -505,7 +480,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             return false;
         }
 
-        if (_replaceSoftware && _frameComposed)
+        if (ReplaceMode && _frameComposed)
         {
             // The frame was already handed back to the software rasterizer
             // (compatibility gap 8): every later draw must take the same
@@ -524,7 +499,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 // buffered host triangles first so the two writers keep the
                 // pre-batching draw order.
                 FlushBatch();
-                if (_replaceSoftware)
+                if (ReplaceMode)
                 {
                     // Declining a draw in replacement mode would otherwise
                     // lose every GL pixel of this frame (the flip serves the
@@ -692,7 +667,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     {
         width = _readbackWidth;
         height = _readbackHeight;
-        bgra = _readback ?? Array.Empty<byte>();
+        bgra = _readback ?? [];
         return _readback is not null;
     }
 
@@ -859,7 +834,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 _unsupportedModes++;
             }
 
-            if (_replaceSoftware)
+            if (ReplaceMode)
             {
                 // Replacement mode: an unhonored draw must come from the
                 // software path, never from a partly-mapped state.
@@ -1238,10 +1213,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     }
 
     /// <summary>Gets the number of frames presented to the live window. Diagnostics.</summary>
-    public long WindowPresents => _windowPresents;
+    public long WindowPresents { get; private set; }
 
     /// <summary>Gets the window-mode status summary. Diagnostics.</summary>
-    public string WindowStatus => _windowStatus;
+    public string WindowStatus { get; private set; }
 
     /// <summary>
     /// Presents the just-read-back frame to the visible window (opt-in
@@ -1258,11 +1233,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _windowShown = true;
             if (!_context.TryShowWindow(width, height, out string why))
             {
-                _windowStatus = $"window unavailable: {why}";
+                WindowStatus = $"window unavailable: {why}";
                 return;
             }
 
-            _windowStatus = $"window {width}x{height} vsync=off";
+            WindowStatus = $"window {width}x{height} vsync=off";
         }
 
         if (_fatalError is not null)
@@ -1291,9 +1266,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             0, (int)clientHeight, (int)clientWidth, 0,
             ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
         _context.SwapBuffers();
-        _windowPresents++;
+        WindowPresents++;
         _context.PumpMessages();
-        _context.SetTitle($"XGrid — flips={Flips} presented={_windowPresents} {width}x{height}");
+        _context.SetTitle($"XGrid — flips={Flips} presented={WindowPresents} {width}x{height}");
     }
 
     /// <summary>Drains window messages between emulation batches (window mode only).</summary>
@@ -2031,12 +2006,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private static uint TexelAddress(
         in PgraphTextureSlot slot, bool linear, uint bytes, int width, int height, int pitch, int x, int y)
     {
-        if (linear)
-        {
-            return slot.Offset + (uint)(y * pitch) + (uint)(x * (int)bytes);
-        }
-
-        return slot.Offset + (Nv2AMmio.SwizzleOffset(x, y, width, height) * bytes);
+        return linear
+            ? slot.Offset + (uint)(y * pitch) + (uint)(x * (int)bytes)
+            : slot.Offset + (Nv2AMmio.SwizzleOffset(x, y, width, height) * bytes);
     }
 
     private uint UploadTexture(

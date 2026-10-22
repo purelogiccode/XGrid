@@ -5,24 +5,18 @@ using System.Globalization;
 namespace XGrid.Bus.Usb;
 
 /// <summary>One parsed <c>--pad-script</c> event: a pad state applied at an exact step.</summary>
-public readonly struct PadScriptEvent
+/// <remarks>Creates a script event from its parts.</remarks>
+public readonly struct PadScriptEvent(PadInput input, ulong step, bool hold)
 {
-    /// <summary>Creates a script event from its parts.</summary>
-    public PadScriptEvent(PadInput input, ulong step, bool hold)
-    {
-        Input = input;
-        Step = step;
-        Hold = hold;
-    }
 
     /// <summary>Gets the pad state applied at <see cref="Step"/>.</summary>
-    public PadInput Input { get; }
+    public PadInput Input { get; } = input;
 
     /// <summary>Gets the emulated step at which the input is applied.</summary>
-    public ulong Step { get; }
+    public ulong Step { get; } = step;
 
     /// <summary>Gets whether the input latches until the next event (no auto-release).</summary>
-    public bool Hold { get; }
+    public bool Hold { get; } = hold;
 }
 
 /// <summary>

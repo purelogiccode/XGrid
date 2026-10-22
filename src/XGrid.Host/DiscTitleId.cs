@@ -92,12 +92,8 @@ public static class DiscTitleId
         titleName = string.Empty;
         try
         {
-            if (!XdvdfsSectorReader.TryReadRootFile(image, RootExecutableName, MaxExecutableBytes, out byte[] xbe))
-            {
-                return false;
-            }
-
-            return TryReadExecutable(xbe, out titleId, out titleName);
+            return XdvdfsSectorReader.TryReadRootFile(image, RootExecutableName, MaxExecutableBytes, out byte[] xbe)
+                && TryReadExecutable(xbe, out titleId, out titleName);
         }
         catch (Exception exception) when (exception is IOException
                                               or InvalidDataException
@@ -143,12 +139,7 @@ public static class DiscTitleId
                 continue;
             }
 
-            if (entry.Size <= 0 || entry.Size > MaxExecutableBytes)
-            {
-                return null;
-            }
-
-            return disc.ReadFile(entry);
+            return entry.Size <= 0 || entry.Size > MaxExecutableBytes ? null : disc.ReadFile(entry);
         }
 
         return null;

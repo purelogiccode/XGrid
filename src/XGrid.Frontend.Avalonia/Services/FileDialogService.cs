@@ -107,30 +107,30 @@ public sealed class FileDialogService
     }
 
     /// <summary>Common firmware filter.</summary>
-    public static IReadOnlyList<FilePickerFileType> FirmwareTypes { get; } = new[]
-    {
-        new FilePickerFileType("Firmware images") { Patterns = new[] { "*.bin", "*.rom", "*.bios" } },
-        new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-    };
+    public static IReadOnlyList<FilePickerFileType> FirmwareTypes { get; } =
+    [
+        new FilePickerFileType("Firmware images") { Patterns = ["*.bin", "*.rom", "*.bios"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
 
     /// <summary>Common disc-image filter.</summary>
-    public static IReadOnlyList<FilePickerFileType> DiscTypes { get; } = new[]
-    {
-        new FilePickerFileType("Xbox disc images") { Patterns = new[] { "*.iso", "*.chd", "*.xbe" } },
-        new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-    };
+    public static IReadOnlyList<FilePickerFileType> DiscTypes { get; } =
+    [
+        new FilePickerFileType("Xbox disc images") { Patterns = ["*.iso", "*.chd", "*.xbe"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
 
     /// <summary>Common hard-disk-image filter.</summary>
-    public static IReadOnlyList<FilePickerFileType> DiskTypes { get; } = new[]
-    {
-        new FilePickerFileType("Xbox disk images") { Patterns = new[] { "*.qcow2", "*.img", "*.vhd", "*.bin" } },
-        new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-    };
+    public static IReadOnlyList<FilePickerFileType> DiskTypes { get; } =
+    [
+        new FilePickerFileType("Xbox disk images") { Patterns = ["*.qcow2", "*.img", "*.vhd", "*.bin"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
 
     /// <summary>Save-state filter (<c>.xgs</c> snapshots).</summary>
-    public static IReadOnlyList<FilePickerFileType> StateTypes { get; } = new[]
-    {
-        new FilePickerFileType("XGrid save states") { Patterns = new[] { "*.xgs" } },
-        new FilePickerFileType("All files") { Patterns = new[] { "*" } },
-    };
+    public static IReadOnlyList<FilePickerFileType> StateTypes { get; } =
+    [
+        new FilePickerFileType("XGrid save states") { Patterns = ["*.xgs"] },
+        new FilePickerFileType("All files") { Patterns = ["*"] },
+    ];
 }

@@ -11,20 +11,15 @@ using XGrid.Frontend.Avalonia.Models;
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
 /// <summary>A selectable activity-log severity filter.</summary>
-public sealed class LogFilterOption
+/// <remarks>Creates a filter option.</remarks>
+public sealed class LogFilterOption(string label, LogLevel? level)
 {
-    /// <summary>Creates a filter option.</summary>
-    public LogFilterOption(string label, LogLevel? level)
-    {
-        Label = label;
-        Level = level;
-    }
 
     /// <summary>Gets the display label.</summary>
-    public string Label { get; }
+    public string Label { get; } = label;
 
     /// <summary>Gets the level to keep, or null for all levels.</summary>
-    public LogLevel? Level { get; }
+    public LogLevel? Level { get; } = level;
 }
 
 /// <summary>Activity page: filtered emulator log with copy and clear actions.</summary>
@@ -40,13 +35,13 @@ public sealed partial class LogsViewModel : PageViewModel
     public LogsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        Filters = new ObservableCollection<LogFilterOption>
-        {
-            new("All levels", null),
-            new("Info", LogLevel.Info),
-            new("Warnings", LogLevel.Warning),
-            new("Errors", LogLevel.Error),
-        };
+        Filters =
+        [
+            new LogFilterOption("All levels", null),
+            new LogFilterOption("Info", LogLevel.Info),
+            new LogFilterOption("Warnings", LogLevel.Warning),
+            new LogFilterOption("Errors", LogLevel.Error),
+        ];
         _selectedFilter = Filters[0];
         shell.LogEntries.CollectionChanged += OnEntriesChanged;
         Rebuild();
@@ -56,7 +51,7 @@ public sealed partial class LogsViewModel : PageViewModel
     public ObservableCollection<LogFilterOption> Filters { get; }
 
     /// <summary>Gets the filtered entries.</summary>
-    public ObservableCollection<LogEntry> Entries { get; } = new();
+    public ObservableCollection<LogEntry> Entries { get; } = [];
 
     /// <summary>Gets a value indicating whether the log is empty.</summary>
     public bool IsEmpty => Entries.Count == 0;

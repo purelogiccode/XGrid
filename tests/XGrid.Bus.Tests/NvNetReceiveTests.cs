@@ -45,9 +45,9 @@ public sealed class NvNetReceiveTests
     private const uint TxBaseAddr = 0x1000;
     private const uint RxBaseAddr = 0x2000;
 
-    private static readonly byte[] BroadcastMac = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-    private static readonly byte[] GuestMac = new byte[] { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
-    private static readonly byte[] OtherMac = new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55 };
+    private static readonly byte[] BroadcastMac = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+    private static readonly byte[] GuestMac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
+    private static readonly byte[] OtherMac = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
 
     private sealed class FakeMemory : INvNetMemory
     {
@@ -154,7 +154,7 @@ public sealed class NvNetReceiveTests
         var memory = new FakeMemory();
         var net = CreateReceiver(memory);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
-        byte[] frame = BuildFrame(BroadcastMac, new byte[] { 1, 2, 3, 4, 5, 6 });
+        byte[] frame = BuildFrame(BroadcastMac, [1, 2, 3, 4, 5, 6]);
         var backend = Assert.IsType<LoopbackNetworkBackend>(net.Backend);
         backend.SendPacket(frame);
 
@@ -182,8 +182,8 @@ public sealed class NvNetReceiveTests
         Assert.Equal(2u, net.RxRingCount);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
         PostRxBuffer(memory, RxBaseAddr + 8, 0x3100, 63);
-        byte[] first = BuildFrame(BroadcastMac, new byte[] { 0xAA });
-        byte[] second = BuildFrame(BroadcastMac, new byte[] { 0xBB, 0xCC });
+        byte[] first = BuildFrame(BroadcastMac, [0xAA]);
+        byte[] second = BuildFrame(BroadcastMac, [0xBB, 0xCC]);
         var backend = Assert.IsType<LoopbackNetworkBackend>(net.Backend);
         backend.SendPacket(first);
         backend.SendPacket(second);
@@ -206,7 +206,7 @@ public sealed class NvNetReceiveTests
         WriteMac(net, OtherMac);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
 
-        Assert.True(net.InjectFrame(BuildFrame(BroadcastMac, new byte[] { 9 })));
+        Assert.True(net.InjectFrame(BuildFrame(BroadcastMac, [9])));
         Assert.Equal(1, net.RxPackets);
     }
 
@@ -218,16 +218,16 @@ public sealed class NvNetReceiveTests
         net.Write(Base + PacketFilter, 4, 0x20);
         WriteMac(net, GuestMac);
         // Broadcast multicast address disables the multicast path (xemu-literal).
-        WriteMulticast(net, BroadcastMac, new byte[] { 0, 0, 0, 0, 0, 0 });
+        WriteMulticast(net, BroadcastMac, [0, 0, 0, 0, 0, 0]);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
 
-        Assert.True(net.PassesFilter(BuildFrame(GuestMac, new byte[] { 1 })));
-        Assert.False(net.PassesFilter(BuildFrame(OtherMac, new byte[] { 1 })));
+        Assert.True(net.PassesFilter(BuildFrame(GuestMac, [1])));
+        Assert.False(net.PassesFilter(BuildFrame(OtherMac, [1])));
 
-        Assert.True(net.InjectFrame(BuildFrame(GuestMac, new byte[] { 1 })));
+        Assert.True(net.InjectFrame(BuildFrame(GuestMac, [1])));
         // Re-post: the drop below must leave the fresh AVAIL descriptor untouched.
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
-        Assert.False(net.InjectFrame(BuildFrame(OtherMac, new byte[] { 2 })));
+        Assert.False(net.InjectFrame(BuildFrame(OtherMac, [2])));
         Assert.Equal(1, net.RxPackets);
         Assert.Equal(1, net.RxDropFilter);
         // The dropped frame leaves the AVAIL descriptor untouched and raises no IRQ.
@@ -243,7 +243,7 @@ public sealed class NvNetReceiveTests
         net.Write(Base + PacketFilter, 4, 0);
         WriteMac(net, OtherMac);
 
-        Assert.True(net.PassesFilter(BuildFrame(OtherMac, new byte[] { 1 })));
+        Assert.True(net.PassesFilter(BuildFrame(OtherMac, [1])));
     }
 
     [Fact]
@@ -257,11 +257,11 @@ public sealed class NvNetReceiveTests
         // so don't-care bytes must already be zero (forcedeth programs it so).
         WriteMulticast(
             net,
-            new byte[] { 0x01, 0x00, 0x5E, 0x00, 0x00, 0x00 },
-            new byte[] { 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00 });
+            [0x01, 0x00, 0x5E, 0x00, 0x00, 0x00],
+            [0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00]);
 
-        Assert.True(net.PassesFilter(BuildFrame(new byte[] { 0x01, 0x00, 0x5E, 0xAA, 0xBB, 0xCC }, new byte[] { 1 })));
-        Assert.False(net.PassesFilter(BuildFrame(new byte[] { 0x33, 0x33, 0x00, 0x00, 0x00, 0x01 }, new byte[] { 1 })));
+        Assert.True(net.PassesFilter(BuildFrame([0x01, 0x00, 0x5E, 0xAA, 0xBB, 0xCC], [1])));
+        Assert.False(net.PassesFilter(BuildFrame([0x33, 0x33, 0x00, 0x00, 0x00, 0x01], [1])));
     }
 
     [Fact]
@@ -270,8 +270,8 @@ public sealed class NvNetReceiveTests
         var memory = new FakeMemory();
         var net = CreateReceiver(memory);
 
-        Assert.False(net.PassesFilter(new byte[] { 1, 2, 3, 4, 5 }));
-        Assert.False(net.InjectFrame(new byte[] { 1, 2, 3, 4, 5 }));
+        Assert.False(net.PassesFilter([1, 2, 3, 4, 5]));
+        Assert.False(net.InjectFrame([1, 2, 3, 4, 5]));
         Assert.Equal(1, net.RxDropFilter);
     }
 
@@ -283,7 +283,7 @@ public sealed class NvNetReceiveTests
         memory.WriteDescriptor(RxBaseAddr, 0x3000, 63, 0);
         net.Write(Base + IrqMask, 4, IrqRxNoBuf);
 
-        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, new byte[] { 7 })));
+        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, [7])));
 
         Assert.Equal(1, net.RxDropNoBuf);
         Assert.Equal(IrqRxNoBuf, net.Read(Base + IrqStatus, 4));
@@ -299,7 +299,7 @@ public sealed class NvNetReceiveTests
         var net = CreateReceiver(memory);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 3);
 
-        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 })));
+        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, [1, 2, 3, 4, 5, 6, 7, 8])));
 
         Assert.Equal(1, net.RxDropNoBuf);
         Assert.Equal(0, net.RxPackets);
@@ -350,14 +350,14 @@ public sealed class NvNetReceiveTests
         memory.WriteDescriptor(RxBaseAddr, 0x3000, 63, 0);
         Assert.Equal("no-buf", net.CanReceiveReason());
 
-        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, new byte[] { 1 })));
+        Assert.False(net.InjectFrame(BuildFrame(BroadcastMac, [1])));
         Assert.Equal(1, net.RxDropNoBuf);
 
         // A gate-blocked inject (RX_START clear) counts cant_rx instead.
         var gated = new McpxNvNetDevice { DmaMemory = memory };
         gated.Write(Base + RxRingBase, 4, RxBaseAddr);
         gated.Write(Base + RxRingNext, 4, RxBaseAddr);
-        Assert.False(gated.InjectFrame(BuildFrame(BroadcastMac, new byte[] { 1 })));
+        Assert.False(gated.InjectFrame(BuildFrame(BroadcastMac, [1])));
         Assert.Equal(1, gated.CantReceiveCount);
         Assert.Equal(0, gated.RxDropNoBuf);
     }
@@ -371,7 +371,7 @@ public sealed class NvNetReceiveTests
         net.Write(Base + TxRingNext, 4, TxBaseAddr);
         net.Write(Base + 0x084, 4, 1);
         PostRxBuffer(memory, RxBaseAddr, 0x3100, 127);
-        byte[] payload = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        byte[] payload = [0xDE, 0xAD, 0xBE, 0xEF];
         byte[] frame = BuildFrame(BroadcastMac, payload);
         memory.WriteDescriptor(TxBaseAddr, 0x3000, (ushort)(frame.Length - 1), 0x8001);
         memory.WritePayload(0x3000, frame);
@@ -395,7 +395,7 @@ public sealed class NvNetReceiveTests
         var memory = new FakeMemory();
         var net = CreateReceiver(memory);
         memory.WriteDescriptor(RxBaseAddr, 0x3000, 63, 0);
-        byte[] frame = BuildFrame(BroadcastMac, new byte[] { 0x42 });
+        byte[] frame = BuildFrame(BroadcastMac, [0x42]);
 
         Assert.False(net.InjectFrame(frame));
         Assert.Equal(1, net.RxDropNoBuf);
@@ -413,7 +413,7 @@ public sealed class NvNetReceiveTests
         var memory = new FakeMemory();
         var net = CreateReceiver(memory);
         PostRxBuffer(memory, RxBaseAddr, 0x3000, 63);
-        byte[] frame = BuildFrame(BroadcastMac, new byte[] { 5 });
+        byte[] frame = BuildFrame(BroadcastMac, [5]);
         var backend = Assert.IsType<LoopbackNetworkBackend>(net.Backend);
         backend.SendPacket(frame);
 

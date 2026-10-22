@@ -104,12 +104,7 @@ public sealed class XdvdfsFileSystem : IDisposable
         ThrowIfDisposed();
         string normalized = Normalize(path);
         ExplorerNode? node = _explorer.GetNode(normalized);
-        if (node is null)
-        {
-            throw new FileNotFoundException($"File not found in image: '{path}'.");
-        }
-
-        return ReadNode(node);
+        return node is null ? throw new FileNotFoundException($"File not found in image: '{path}'.") : ReadNode(node);
     }
 
     /// <summary>Reads the given file entry.</summary>
@@ -122,12 +117,7 @@ public sealed class XdvdfsFileSystem : IDisposable
         }
 
         ExplorerNode? node = _explorer.GetNode(entry.FullPath);
-        if (node is null)
-        {
-            throw new FileNotFoundException($"File not found in image: '{entry.FullPath}'.");
-        }
-
-        return ReadNode(node);
+        return node is null ? throw new FileNotFoundException($"File not found in image: '{entry.FullPath}'.") : ReadNode(node);
     }
 
     /// <summary>Disposes the underlying XISOSharp explorer (idempotent).</summary>
@@ -161,12 +151,7 @@ public sealed class XdvdfsFileSystem : IDisposable
             offset += read;
         }
 
-        if (offset != data.Length)
-        {
-            throw new InvalidDataException($"Short file data for '{node.FullPath}'.");
-        }
-
-        return data;
+        return offset != data.Length ? throw new InvalidDataException($"Short file data for '{node.FullPath}'.") : data;
     }
 
     private static string Normalize(string path)

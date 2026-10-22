@@ -81,10 +81,10 @@ public sealed class PresentUploadTests
         Assert.True(PresentUpload.TryBuildUploadPixels(memory, surface, 3, 2, pitch, 4, out byte[]? rgba));
         Assert.NotNull(rgba);
         byte[] expected =
-        {
+        [
             0x0A, 0x14, 0x1E, 0xFF, 0x28, 0x28, 0x32, 0xE1, 0x50, 0x52, 0x54, 0xC8,
             0x78, 0x7A, 0x7C, 0xA0, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-        };
+        ];
         Assert.Equal(expected, rgba);
     }
 

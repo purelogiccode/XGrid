@@ -430,7 +430,7 @@ public sealed class Nv2aFixedFunctionLightingTests
 
         state.TrySetSpecularParams(0x09F4u, F(0f));
         Assert.Equal(2f, state.SpecularPower);
-        Assert.Equal(new[] { -1f, 1f, 0f, 0f, 0f, 0f }, state.GetSpecularParams().ToArray());
+        Assert.Equal([-1f, 1f, 0f, 0f, 0f, 0f], state.GetSpecularParams().ToArray());
     }
 
     [Fact]
@@ -529,21 +529,16 @@ public sealed class Nv2aFixedFunctionLightingTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.FixedFunctionLitDraws);
         Assert.Equal(1uL, nv2A.FixedFunctionLightedDraws);
         Assert.Equal(0xFFFFFF00u, ReadPixel(memory, 5, 5));
     }
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x20000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x20000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {

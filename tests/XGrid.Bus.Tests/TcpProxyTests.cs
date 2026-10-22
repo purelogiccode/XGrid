@@ -162,6 +162,6 @@ public sealed class TcpProxyTests
         using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         client.ReceiveTimeout = 5000;
         Assert.Throws<SocketException>(() => client.Connect(IPAddress.Loopback, port));
-        Assert.Throws<ObjectDisposedException>(() => proxy.Start());
+        Assert.Throws<ObjectDisposedException>(proxy.Start);
     }
 }

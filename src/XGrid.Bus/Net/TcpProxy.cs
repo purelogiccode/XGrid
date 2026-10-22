@@ -20,10 +20,9 @@ namespace XGrid.Bus.Net;
 public sealed class TcpProxy : IDisposable
 {
     private readonly TcpListener _listener;
-    private readonly List<Socket> _sockets = new();
+    private readonly List<Socket> _sockets = [];
     private readonly Lock _gate = new();
     private Thread? _acceptThread;
-    private int _boundPort;
     private long _connections;
     private long _failedConnections;
     private long _relayedBytes;
@@ -47,17 +46,17 @@ public sealed class TcpProxy : IDisposable
         TargetHost = targetHost;
         TargetPort = targetPort;
         _listener = new TcpListener(IPAddress.Loopback, listenPort);
-        _boundPort = listenPort;
+        ListenPort = listenPort;
     }
 
     /// <summary>Gets the bound loopback port (the real port after <see cref="Start"/> when constructed with 0).</summary>
-    public int ListenPort => _boundPort;
+    public int ListenPort { get; private set; }
 
     /// <summary>Gets the configured forward target host.</summary>
-    public string TargetHost { get; }
+    private string TargetHost { get; }
 
     /// <summary>Gets the configured forward target port.</summary>
-    public int TargetPort { get; }
+    private int TargetPort { get; }
 
     /// <summary>Gets the number of accepted client connections.</summary>
     public long Connections => Interlocked.Read(ref _connections);
@@ -78,7 +77,7 @@ public sealed class TcpProxy : IDisposable
         }
 
         _listener.Start();
-        _boundPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
+        ListenPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _acceptThread = new Thread(AcceptLoop)
         {
             IsBackground = true,
@@ -88,7 +87,7 @@ public sealed class TcpProxy : IDisposable
     }
 
     /// <summary>Stops the listener, closes live relays, and joins the accept thread.</summary>
-    public void Stop()
+    private void Stop()
     {
         _stopping = true;
         try
@@ -102,7 +101,7 @@ public sealed class TcpProxy : IDisposable
         Socket[] snapshot;
         lock (_gate)
         {
-            snapshot = _sockets.ToArray();
+            snapshot = [.. _sockets];
             _sockets.Clear();
         }
 

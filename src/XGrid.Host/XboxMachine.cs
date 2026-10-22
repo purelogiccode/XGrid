@@ -20,7 +20,7 @@ namespace XGrid.Host;
 public sealed class XboxMachine : IIdleSkipHost
 {
     /// <summary>Default retail RAM size (64 MB).</summary>
-    public const uint DefaultRamSize = 64u * 1024 * 1024;
+    private const uint DefaultRamSize = 64u * 1024 * 1024;
 
     /// <summary>V1 snapshot file magic ("XGS1").</summary>
     public const string SnapshotMagic = "XGS1";
@@ -39,7 +39,7 @@ public sealed class XboxMachine : IIdleSkipHost
     private ulong _nv2ARemainder;
     private bool _sevenEosQuirkParkActive;
     private ulong _sevenEosQuirkParkSinceTsc;
-    private readonly List<(string Tag, ISnapshotable Target)> _snapshotSections = new();
+    private readonly List<(string Tag, ISnapshotable Target)> _snapshotSections = [];
 
     /// <summary>Creates the machine with RAM, bus, and CPU wired together.</summary>
     public XboxMachine(uint ramSize = DefaultRamSize)
@@ -47,8 +47,11 @@ public sealed class XboxMachine : IIdleSkipHost
         Ram = new PhysicalMemory(ramSize);
         Memory = new AddressSpace(Ram);
         Bus = new XboxBus();
-        Cpu = new XboxCpu(Memory, Bus.Io) { InterruptSource = Bus.Pic };
-        Cpu.IdleSkipHost = this;
+        Cpu = new XboxCpu(Memory, Bus.Io)
+        {
+            InterruptSource = Bus.Pic,
+            IdleSkipHost = this
+        };
         Ide = new IdeController();
         Bus.Pci.Register(Ide);
         Ide.RegisterPorts(Bus.Io);
@@ -199,9 +202,11 @@ public sealed class XboxMachine : IIdleSkipHost
     public ulong SevenEosQuirkFires { get; private set; }
 
     /// <summary>Gets whether a BIOS image has been loaded.</summary>
+    // ReSharper disable once UnusedMember.Global
     public bool BiosLoaded => _bios is not null;
 
     /// <summary>Gets the padded flash image size in bytes (0 when no BIOS is loaded).</summary>
+    // ReSharper disable once UnusedMember.Global
     public uint BiosSize => (uint)(_bios?.Length ?? 0);
 
     /// <summary>Loads a BIOS image and optional 512-byte MCPX boot ROM, then maps flash and overlay.</summary>
@@ -461,12 +466,7 @@ public sealed class XboxMachine : IIdleSkipHost
             uint physical = Cpu.Mmu.Translate(
                 virtualAddress, isWrite: false, isInstruction: false,
                 out bool faulted, out _, sideEffects: false);
-            if (faulted)
-            {
-                return null;
-            }
-
-            return Memory.Read32(physical);
+            return faulted ? null : Memory.Read32(physical);
         }
 
         void WriteVa(uint virtualAddress, uint value)
@@ -712,28 +712,22 @@ public sealed class XboxMachine : IIdleSkipHost
     /// <summary>Core-owned machine scalars that live on <see cref="XboxMachine"/> itself
     /// (not in a device): the NV2A PTIMER fractional-cycle accumulator and the 007
     /// end-of-stream quirk detector state. Written as the trailing "MACH" section.</summary>
-    private sealed class MachineScalarsSnapshot : ISnapshotable
+    private sealed class MachineScalarsSnapshot(XboxMachine machine) : ISnapshotable
     {
         private const uint MachineStateVersion = 1;
 
-        private readonly XboxMachine _machine;
-
-        public MachineScalarsSnapshot(XboxMachine machine)
-        {
-            _machine = machine;
-        }
 
         public void SaveState(BinaryWriter writer)
         {
             ArgumentNullException.ThrowIfNull(writer);
 
             writer.Write(MachineStateVersion);
-            writer.Write(_machine._nv2ARemainder);
-            writer.Write(_machine.SevenEosQuirkEnabled);
-            writer.Write(_machine.SevenEosQuirkChecks);
-            writer.Write(_machine.SevenEosQuirkFires);
-            writer.Write(_machine._sevenEosQuirkParkActive);
-            writer.Write(_machine._sevenEosQuirkParkSinceTsc);
+            writer.Write(machine._nv2ARemainder);
+            writer.Write(machine.SevenEosQuirkEnabled);
+            writer.Write(machine.SevenEosQuirkChecks);
+            writer.Write(machine.SevenEosQuirkFires);
+            writer.Write(machine._sevenEosQuirkParkActive);
+            writer.Write(machine._sevenEosQuirkParkSinceTsc);
         }
 
         public void LoadState(BinaryReader reader)
@@ -747,12 +741,12 @@ public sealed class XboxMachine : IIdleSkipHost
                     $"Unsupported MACH state version {version} (expected {MachineStateVersion}).");
             }
 
-            _machine._nv2ARemainder = reader.ReadUInt64();
-            _machine.SevenEosQuirkEnabled = reader.ReadBoolean();
-            _machine.SevenEosQuirkChecks = reader.ReadUInt64();
-            _machine.SevenEosQuirkFires = reader.ReadUInt64();
-            _machine._sevenEosQuirkParkActive = reader.ReadBoolean();
-            _machine._sevenEosQuirkParkSinceTsc = reader.ReadUInt64();
+            machine._nv2ARemainder = reader.ReadUInt64();
+            machine.SevenEosQuirkEnabled = reader.ReadBoolean();
+            machine.SevenEosQuirkChecks = reader.ReadUInt64();
+            machine.SevenEosQuirkFires = reader.ReadUInt64();
+            machine._sevenEosQuirkParkActive = reader.ReadBoolean();
+            machine._sevenEosQuirkParkSinceTsc = reader.ReadUInt64();
         }
     }
 
@@ -762,32 +756,24 @@ public sealed class XboxMachine : IIdleSkipHost
     /// page-drop invalidation so cached code over DMA-written RAM can never
     /// go stale (§131 leg (d) invalidation inventory).
     /// </summary>
-    private sealed class PhysicalApuMemory : IApuMemory
+    private sealed class PhysicalApuMemory(AddressSpace memory, XboxCpu cpu) : IApuMemory
     {
-        private readonly AddressSpace _memory;
-        private readonly XboxCpu _cpu;
-
-        public PhysicalApuMemory(AddressSpace memory, XboxCpu cpu)
-        {
-            _memory = memory;
-            _cpu = cpu;
-        }
 
         public uint Read32(uint address)
         {
-            return _memory.Read32(address);
+            return memory.Read32(address);
         }
 
         public void Write32(uint address, uint value)
         {
-            _memory.Write32(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write32(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write8(uint address, byte value)
         {
-            _memory.Write8(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write8(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
     }
 
@@ -796,26 +782,18 @@ public sealed class XboxMachine : IIdleSkipHost
     /// invalidation inventory). Page-drops the decode cache like the other
     /// device shims.
     /// </summary>
-    private sealed class PhysicalNvNetMemory : INvNetMemory
+    private sealed class PhysicalNvNetMemory(AddressSpace memory, XboxCpu cpu) : INvNetMemory
     {
-        private readonly AddressSpace _memory;
-        private readonly XboxCpu _cpu;
-
-        public PhysicalNvNetMemory(AddressSpace memory, XboxCpu cpu)
-        {
-            _memory = memory;
-            _cpu = cpu;
-        }
 
         public byte ReadPhysical(uint address)
         {
-            return _memory.Read8(address);
+            return memory.Read8(address);
         }
 
         public void WritePhysical(uint address, byte value)
         {
-            _memory.Write8(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write8(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
     }
 
@@ -824,48 +802,40 @@ public sealed class XboxMachine : IIdleSkipHost
     /// invalidation inventory). Page-drops the decode cache like the other
     /// device shims.
     /// </summary>
-    private sealed class PhysicalUsbMemory : IUsbMemory
+    private sealed class PhysicalUsbMemory(AddressSpace memory, XboxCpu cpu) : IUsbMemory
     {
-        private readonly AddressSpace _memory;
-        private readonly XboxCpu _cpu;
-
-        public PhysicalUsbMemory(AddressSpace memory, XboxCpu cpu)
-        {
-            _memory = memory;
-            _cpu = cpu;
-        }
 
         public byte Read8(uint address)
         {
-            return _memory.Read8(address);
+            return memory.Read8(address);
         }
 
         public ushort Read16(uint address)
         {
-            return _memory.Read16(address);
+            return memory.Read16(address);
         }
 
         public uint Read32(uint address)
         {
-            return _memory.Read32(address);
+            return memory.Read32(address);
         }
 
         public void Write8(uint address, byte value)
         {
-            _memory.Write8(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write8(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write16(uint address, ushort value)
         {
-            _memory.Write16(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write16(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
 
         public void Write32(uint address, uint value)
         {
-            _memory.Write32(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write32(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
     }
 
@@ -877,25 +847,17 @@ public sealed class XboxMachine : IIdleSkipHost
     /// bit in the common case. Doubles as the present-upload dirty watch
     /// handle for a backend attached to this machine (§132 (a*), §135).
     /// </summary>
-    private sealed class PhysicalGpuMemory : IGpuMemory, IGpuMemoryFast, IPresentDirtyWatch
+    private sealed class PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu) : IGpuMemory, IGpuMemoryFast, IPresentDirtyWatch
     {
-        private readonly AddressSpace _memory;
-        private readonly XboxCpu _cpu;
         private bool _gpuBatch;
         private bool _pageMemoValid;
         private uint _pageMemo;
 
-        public PhysicalGpuMemory(AddressSpace memory, XboxCpu cpu)
-        {
-            _memory = memory;
-            _cpu = cpu;
-        }
-
-        public bool PresentDirty => _memory.Ram.PresentDirty;
+        public bool PresentDirty => memory.Ram.PresentDirty;
 
         public uint ReadPhysical(uint address)
         {
-            return _memory.Read32(address);
+            return memory.Read32(address);
         }
 
         public void WritePhysical(uint address, uint value)
@@ -903,17 +865,17 @@ public sealed class XboxMachine : IIdleSkipHost
             // Writer identity (§132 finding i): the software twin's own
             // surface writes must not trip the present-upload dirty bit;
             // only real guest (CPU/device DMA) writers count.
-            _memory.Ram.BeginGpuWriteSuppression();
+            memory.Ram.BeginGpuWriteSuppression();
             try
             {
-                _memory.Write32(address, value);
+                memory.Write32(address, value);
             }
             finally
             {
-                _memory.Ram.EndGpuWriteSuppression();
+                memory.Ram.EndGpuWriteSuppression();
             }
 
-            _cpu.InvalidateDecodeCachePage(address);
+            cpu.InvalidateDecodeCachePage(address);
         }
 
         /// <summary>
@@ -927,18 +889,18 @@ public sealed class XboxMachine : IIdleSkipHost
         {
             _gpuBatch = true;
             _pageMemoValid = false;
-            _memory.Ram.BeginGpuWriteSuppression();
+            memory.Ram.BeginGpuWriteSuppression();
         }
 
         public void EndGpuBatch()
         {
-            _memory.Ram.EndGpuWriteSuppression();
+            memory.Ram.EndGpuWriteSuppression();
             _gpuBatch = false;
         }
 
         public bool TryReadPhysical(uint address, out uint value)
         {
-            PhysicalMemory ram = _memory.Ram;
+            PhysicalMemory ram = memory.Ram;
             if (address < ram.Size && address <= ram.Size - 4u)
             {
                 value = BinaryPrimitives.ReadUInt32LittleEndian(ram.RawBytes.AsSpan((int)address, 4));
@@ -951,7 +913,7 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public bool TryGetRamBytes(out byte[] bytes, out uint size)
         {
-            PhysicalMemory ram = _memory.Ram;
+            PhysicalMemory ram = memory.Ram;
             bytes = ram.RawBytes;
             size = ram.Size;
             return true;
@@ -959,7 +921,7 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public bool TryWritePhysical(uint address, uint value)
         {
-            PhysicalMemory ram = _memory.Ram;
+            PhysicalMemory ram = memory.Ram;
             if (!_gpuBatch || address >= ram.Size || address > ram.Size - 4u)
             {
                 return false;
@@ -967,8 +929,8 @@ public sealed class XboxMachine : IIdleSkipHost
 
             // Bus-watch parity: the legacy AddressSpace path raises CheckWatch
             // for every write, so any overlap must take that path.
-            if (_memory.WatchEnd > _memory.WatchStart
-                && address >= _memory.WatchStart && address < _memory.WatchEnd)
+            if (memory.WatchEnd > memory.WatchStart
+                && address >= memory.WatchStart && address < memory.WatchEnd)
             {
                 return false;
             }
@@ -977,7 +939,7 @@ public sealed class XboxMachine : IIdleSkipHost
             uint page = address >> 12;
             if (!_pageMemoValid || page != _pageMemo)
             {
-                _cpu.InvalidateDecodeCachePage(address);
+                cpu.InvalidateDecodeCachePage(address);
                 _pageMemo = page;
                 _pageMemoValid = true;
             }
@@ -987,22 +949,22 @@ public sealed class XboxMachine : IIdleSkipHost
 
         public void ArmPresentWatch(uint address, uint length)
         {
-            _memory.Ram.ArmPresentWatch(address, length);
+            memory.Ram.ArmPresentWatch(address, length);
         }
 
         public void DisarmPresentWatch()
         {
-            _memory.Ram.DisarmPresentWatch();
+            memory.Ram.DisarmPresentWatch();
         }
 
         public void MarkPresentDirty()
         {
-            _memory.Ram.MarkPresentDirty();
+            memory.Ram.MarkPresentDirty();
         }
 
         public void ClearPresentDirty()
         {
-            _memory.Ram.ClearPresentDirty();
+            memory.Ram.ClearPresentDirty();
         }
     }
 
@@ -1011,26 +973,18 @@ public sealed class XboxMachine : IIdleSkipHost
     /// invalidation inventory). Page-drops the decode cache like the other
     /// device shims.
     /// </summary>
-    private sealed class AddressSpaceGuestMemory : IGuestMemory
+    private sealed class AddressSpaceGuestMemory(AddressSpace memory, XboxCpu cpu) : IGuestMemory
     {
-        private readonly AddressSpace _memory;
-        private readonly XboxCpu _cpu;
-
-        public AddressSpaceGuestMemory(AddressSpace memory, XboxCpu cpu)
-        {
-            _memory = memory;
-            _cpu = cpu;
-        }
 
         public byte ReadPhysical(uint address)
         {
-            return _memory.Read8(address);
+            return memory.Read8(address);
         }
 
         public void WritePhysical(uint address, byte value)
         {
-            _memory.Write8(address, value);
-            _cpu.InvalidateDecodeCachePage(address);
+            memory.Write8(address, value);
+            cpu.InvalidateDecodeCachePage(address);
         }
     }
 

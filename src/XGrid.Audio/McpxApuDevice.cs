@@ -49,7 +49,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public const uint BaseAddress = 0xFE800000;
 
     /// <summary>APU MMIO window size (PCI BAR0 size).</summary>
-    public const uint WindowSize = 0x00080000;
+    private const uint WindowSize = 0x00080000;
 
     private const uint IsTs = 0x1000;
     private const uint Ien = 0x1004;
@@ -188,9 +188,9 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint NotifierCountPerVoice = 4;
 
     // Voice list registers: top/current/next for 2D, 3D and MP (xemu voice_list_regs).
-    private static readonly uint[] VoiceListTop = { 0x2054, 0x2060, 0x206C };
-    private static readonly uint[] VoiceListCurrent = { 0x2058, 0x2064, 0x2070 };
-    private static readonly uint[] VoiceListNext = { 0x205C, 0x2068, 0x2074 };
+    private static readonly uint[] VoiceListTop = [0x2054, 0x2060, 0x206C];
+    private static readonly uint[] VoiceListCurrent = [0x2058, 0x2064, 0x2070];
+    private static readonly uint[] VoiceListNext = [0x205C, 0x2068, 0x2074];
 
     /// <summary>Voice-processor frame period (xemu EP_FRAME_US): 256 samples at 48 kHz.</summary>
     private const ulong FrameCycles = (733333333ul * 256ul) / 48000ul;
@@ -200,7 +200,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly IApuMemory _memory;
-    private readonly List<ushort> _pendingIdleVoices = new();
+    private readonly List<ushort> _pendingIdleVoices = [];
     private readonly ulong[] _voiceLocked = new ulong[MaxVoices / 64];
     private readonly uint[] _sslBase = new uint[MaxVoices * 2];
     private readonly byte[] _sslCount = new byte[MaxVoices * 2];
@@ -211,8 +211,6 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _inbufSgeHandle;
     private uint _outbufSgeHandle;
     private ulong _frameRemainder;
-    private bool _gpRunning;
-    private bool _epRunning;
     private uint _epFrameDiv;
     private uint _framesSinceWake;
 
@@ -253,10 +251,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public long DspBit3Raises { get; private set; }
 
     /// <summary>Gets whether the GP DSP engine is running (GPRST run bits set).</summary>
-    public bool GpRunning => _gpRunning;
+    public bool GpRunning { get; private set; }
 
     /// <summary>Gets whether the EP DSP engine is running (EPRST run bits set).</summary>
-    public bool EpRunning => _epRunning;
+    public bool EpRunning { get; private set; }
 
     /// <summary>Gets the interrupt status register, for diagnostics.</summary>
     public uint InterruptStatus => _regs[IsTs >> 2];
@@ -268,6 +266,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     public uint FrontEndControl => _regs[Fectl >> 2];
 
     /// <summary>Gets the voice-state page physical address, for diagnostics.</summary>
+    // ReSharper disable once UnusedMember.Global
     public uint VoicePageAddress => _regs[VpVaddr >> 2];
 
     /// <summary>Gets whether the APU interrupt line is asserted, for diagnostics.</summary>
@@ -276,7 +275,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets a bounded log of interrupt-relevant events, for diagnostics.</summary>
     public IReadOnlyList<string> EventLog => _eventLog;
 
-    private readonly List<string> _eventLog = new();
+    private readonly List<string> _eventLog = [];
 
     /// <summary>Returns the APU to its power-on state: clears registers, voice-lock and SSL state, empties the pending idle-voice queue, and deasserts the interrupt line.</summary>
     public void Reset()
@@ -292,8 +291,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _inbufSgeHandle = 0;
         _outbufSgeHandle = 0;
         _frameRemainder = 0;
-        _gpRunning = false;
-        _epRunning = false;
+        GpRunning = false;
+        EpRunning = false;
         _epFrameDiv = 0;
         _framesSinceWake = MinWakeGapFrames;
         SetAsserted(false);
@@ -339,8 +338,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_inbufSgeHandle);
         writer.Write(_outbufSgeHandle);
         writer.Write(_frameRemainder);
-        writer.Write(_gpRunning);
-        writer.Write(_epRunning);
+        writer.Write(GpRunning);
+        writer.Write(EpRunning);
         writer.Write(_epFrameDiv);
         writer.Write(_framesSinceWake);
         writer.Write(DspAbsorbs);
@@ -411,8 +410,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _frameRemainder = reader.ReadUInt64();
         if (version == SnapshotVersionV2)
         {
-            _gpRunning = (_regs[GpRst >> 2] & DspRunBits) == DspRunBits;
-            _epRunning = (_regs[EpRst >> 2] & DspRunBits) == DspRunBits;
+            GpRunning = (_regs[GpRst >> 2] & DspRunBits) == DspRunBits;
+            EpRunning = (_regs[EpRst >> 2] & DspRunBits) == DspRunBits;
             _epFrameDiv = 0;
             _framesSinceWake = MinWakeGapFrames;
             DspAbsorbs = 0;
@@ -420,8 +419,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
         else
         {
-            _gpRunning = reader.ReadBoolean();
-            _epRunning = reader.ReadBoolean();
+            GpRunning = reader.ReadBoolean();
+            EpRunning = reader.ReadBoolean();
             _epFrameDiv = reader.ReadUInt32();
             _framesSinceWake = reader.ReadUInt32();
             DspAbsorbs = reader.ReadInt64();
@@ -480,7 +479,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             _framesSinceWake++;
         }
 
-        if (!_gpRunning || !IsStateWordMapped())
+        if (!GpRunning || !IsStateWordMapped())
         {
             return;
         }
@@ -1058,11 +1057,11 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             if (isGp)
             {
-                _gpRunning = false;
+                GpRunning = false;
             }
             else
             {
-                _epRunning = false;
+                EpRunning = false;
             }
 
             if (wasRunning)
@@ -1080,11 +1079,11 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
         if (isGp)
         {
-            _gpRunning = true;
+            GpRunning = true;
         }
         else
         {
-            _epRunning = true;
+            EpRunning = true;
         }
 
         _framesSinceWake = MinWakeGapFrames;

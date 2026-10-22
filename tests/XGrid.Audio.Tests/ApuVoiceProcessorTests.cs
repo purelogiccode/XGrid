@@ -289,7 +289,7 @@ public sealed class ApuVoiceProcessorTests
 
     private sealed class FakeMemory : IApuMemory
     {
-        private readonly Dictionary<uint, byte> _ram = new();
+        private readonly Dictionary<uint, byte> _ram = [];
 
         public uint Read32(uint address)
         {

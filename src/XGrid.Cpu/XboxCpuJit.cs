@@ -22,7 +22,6 @@ namespace XGrid.Cpu;
 /// </summary>
 public sealed unsafe partial class XboxCpu
 {
-    private bool _jitEnabled;
     private JitBlockCache? _jitBlocks;
 
     /// <summary>Progress slot read by the fault path: members completed before the faulting one.</summary>
@@ -37,31 +36,25 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Gets the number of RunJitBlock entries (diagnostic).</summary>
     public ulong JitCallCount { get; private set; }
 
-    private long _jitRunnerTicks;
-
     /// <summary>Gets the accumulated time inside emitted runners, in Stopwatch ticks (diagnostic).</summary>
-    public long JitRunnerTicks => _jitRunnerTicks;
-
-    private long _jitOuterTicks;
+    public long JitRunnerTicks { get; private set; }
 
     /// <summary>Gets the accumulated RunJitBlock call time, in Stopwatch ticks (diagnostic).</summary>
-    public long JitOuterTicks => _jitOuterTicks;
-
-    private long _nonJitTicks;
+    public long JitOuterTicks { get; private set; }
 
     /// <summary>Gets the accumulated non-JIT execution time in <c>Execute</c>, in Stopwatch ticks (diagnostic).</summary>
-    public long NonJitTicks => _nonJitTicks;
+    public long NonJitTicks { get; private set; }
 
     /// <summary>Accumulates outer-loop timing while <c>--jit</c> is on (diagnostic).</summary>
-    internal void AddJitOuterTicks(long ticks)
+    private void AddJitOuterTicks(long ticks)
     {
-        _jitOuterTicks += ticks;
+        JitOuterTicks += ticks;
     }
 
     /// <summary>Accumulates outer-loop non-JIT timing while <c>--jit</c> is on (diagnostic).</summary>
-    internal void AddNonJitTicks(long ticks)
+    private void AddNonJitTicks(long ticks)
     {
-        _nonJitTicks += ticks;
+        NonJitTicks += ticks;
     }
 
     private long _jitSlowMembers;
@@ -69,10 +62,8 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Gets the number of emitted members that took the interpreter slow path (diagnostic).</summary>
     public long JitSlowMembers => _jitSlowMembers;
 
-    private long _jitMmioMembers;
-
     /// <summary>Gets the number of emitted members served through the device fast path (diagnostic, <c>--jit-mmio</c>).</summary>
-    public long JitMmioMembers => _jitMmioMembers;
+    public long JitMmioMembers { get; private set; }
 
     /// <summary>
     /// Gets or sets the coverage tally (opt-in diagnostic): why RunJitBlock
@@ -81,20 +72,14 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     public bool JitTally { get; set; }
 
-    private readonly long[] _jitYieldReasons = new long[5];
-
-    private readonly long[] _nonJitRunBuckets = new long[7];
-
-    private readonly long[] _nonJitMnemonics = new long[512];
-
     /// <summary>Gets the RunJitBlock yield reasons (pending, rejected, formBail, mismatch, noProgress).</summary>
-    public long[] JitYieldReasons => _jitYieldReasons;
+    public long[] JitYieldReasons { get; } = new long[5];
 
     /// <summary>Gets the non-JIT run-size buckets (1, 2-4, 5-16, 17-64, 65-256, 257-1024, 1025+).</summary>
-    public long[] NonJitRunBuckets => _nonJitRunBuckets;
+    public long[] NonJitRunBuckets { get; } = new long[7];
 
     /// <summary>Gets the per-mnemonic counts of instructions served through the non-JIT path.</summary>
-    public long[] NonJitMnemonics => _nonJitMnemonics;
+    public long[] NonJitMnemonics { get; } = new long[512];
 
     /// <summary>Gets the number of non-JIT runs (diagnostic).</summary>
     public ulong NonJitCalls { get; private set; }
@@ -103,7 +88,7 @@ public sealed unsafe partial class XboxCpu
     public ulong NonJitInstructions { get; private set; }
 
     /// <summary>Tallies one non-JIT run (called by <c>Execute</c> while the JIT is on).</summary>
-    internal void NoteNonJitRun(int ran)
+    private void NoteNonJitRun(int ran)
     {
         NonJitCalls++;
         NonJitInstructions += (ulong)ran;
@@ -113,32 +98,30 @@ public sealed unsafe partial class XboxCpu
         }
 
         int bucket = ran <= 1 ? 0 : ran <= 4 ? 1 : ran <= 16 ? 2 : ran <= 64 ? 3 : ran <= 256 ? 4 : ran <= 1024 ? 5 : 6;
-        _nonJitRunBuckets[bucket]++;
+        NonJitRunBuckets[bucket]++;
     }
 
     /// <summary>Per-mnemonic tally of members that took the interpreter fallback (XGRID_SLOW=1).</summary>
     public long[] SlowMemberCounts { get; } = new long[512];
 
     /// <summary>Tallies one non-JIT member mnemonic (called by the spec runner while the JIT is on).</summary>
-    internal void NoteNonJitMnemonic(Mnemonic mnemonic)
+    private void NoteNonJitMnemonic(Mnemonic mnemonic)
     {
         int index = (int)mnemonic;
         if ((uint)index < 512u)
         {
-            _nonJitMnemonics[index]++;
+            NonJitMnemonics[index]++;
         }
     }
 
     /// <summary>Gets the number of heads neither built nor rejected (diagnostic).</summary>
     public int JitPendingHeadCount => _jitBlocks?.CountPendingHeads() ?? 0;
 
-    private long _jitRevalidations;
-
     /// <summary>Gets the number of stale blocks kept alive by byte revalidation (diagnostic).</summary>
-    public long JitRevalidations => _jitRevalidations;
+    public long JitRevalidations { get; private set; }
 
     /// <summary>Gets the decode/block generation the JIT cache is operating under (diagnostic).</summary>
-    public ulong JitBlockGeneration => _blocks?.Generation ?? 0;
+    public ulong JitBlockGeneration => BlockStatistics?.Generation ?? 0;
 
     /// <summary>
     /// Gets or sets the maximum instructions one non-JIT (spec) run serves
@@ -149,10 +132,8 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     public int JitSpecSlice { get; set; } = 256;
 
-    private readonly long[] _jitRejectedMnemonics = new long[512];
-
     /// <summary>Gets the first-member mnemonics of permanently rejected heads (diagnostic).</summary>
-    public long[] JitRejectedMnemonics => _jitRejectedMnemonics;
+    public long[] JitRejectedMnemonics { get; } = new long[512];
 
     /// <summary>Tallies the mnemonic of a head whose first member has no native shape (diagnostic).</summary>
     private void NoteRejectedMnemonic(Mnemonic mnemonic)
@@ -160,7 +141,7 @@ public sealed unsafe partial class XboxCpu
         int index = (int)mnemonic;
         if ((uint)index < 512u)
         {
-            _jitRejectedMnemonics[index]++;
+            JitRejectedMnemonics[index]++;
         }
     }
 
@@ -241,7 +222,7 @@ public sealed unsafe partial class XboxCpu
     public bool JitSpinSkip { get; set; }
 
     /// <summary>Consecutive store-free STI blocks required before an idle-wait skip fires.</summary>
-    public const int JitSpinMinStreak = 32;
+    private const int JitSpinMinStreak = 32;
 
     /// <summary>
     /// Gets or sets the per-invocation runner timing (opt-in diagnostic): two
@@ -252,7 +233,7 @@ public sealed unsafe partial class XboxCpu
     public bool JitTiming { get; set; }
 
     /// <summary>Cap on guest steps advanced per idle-wait skip (two PIT ticks).</summary>
-    public const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
+    private const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
 
     private int _jitSpinStreak;
 
@@ -306,8 +287,7 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     public bool JitEnabled
     {
-        get => _jitEnabled;
-        set
+        get; set
         {
             if (value)
             {
@@ -315,14 +295,15 @@ public sealed unsafe partial class XboxCpu
                 _jitBlocks ??= new JitBlockCache();
                 _jitBlocks.Cleared = ClearRawChainTable;
                 _jitSlowMembers = 0;
-                _jitMmioMembers = 0;
+                JitMmioMembers = 0;
             }
 
-            _jitEnabled = value;
+            field = value;
         }
     }
 
     /// <summary>Drops every cached JIT block verdict (host-side; no guest state).</summary>
+    // ReSharper disable once UnusedMember.Global
     public void InvalidateJitBlocks()
     {
         _jitBlocks?.Invalidate();
@@ -342,17 +323,17 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     private int RunJitBlock(int budget)
     {
-        if (!_jitEnabled || budget <= 0)
+        if (!JitEnabled || budget <= 0)
         {
             return 0;
         }
 
         JitCallCount++;
         DecodeCache? cache = _decodeCache;
-        DecodedBlockCache? blocks = _blocks;
+        DecodedBlockCache? blocks = BlockStatistics;
         JitBlockCache? jit = _jitBlocks;
         if (cache is null || blocks is null || !blocks.SpecEnabled || jit is null
-            || _idle is not null || _hotspot is not null
+            || _idle is not null || HotspotObserver is not null
             || DecodeCacheVerify || BlockVerify || blocks.ShapeTallyEnabled
             || Mmu.Observer is not null)
         {
@@ -385,11 +366,11 @@ public sealed unsafe partial class XboxCpu
                 switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
                 {
                     case JitBlockCache.Verdict.Pending:
-                        _jitYieldReasons[0]++;
+                        JitYieldReasons[0]++;
 
                         return total;
                     case JitBlockCache.Verdict.Rejected:
-                        _jitYieldReasons[1]++;
+                        JitYieldReasons[1]++;
 
                         return total;
                     case JitBlockCache.Verdict.Stale:
@@ -401,7 +382,7 @@ public sealed unsafe partial class XboxCpu
                             // dropped by the invalidation clear, so republish
                             // it under the new generation.
                             jit.Refresh(fetchLinear, generation, block);
-                            _jitRevalidations++;
+                            JitRevalidations++;
                             RepublishRawChainBlock(block, generation);
                             break;
                         }
@@ -410,7 +391,7 @@ public sealed unsafe partial class XboxCpu
                         block = FormJitBlock(cache, jit, fetchLinear, generation);
                         if (block is null)
                         {
-                            _jitYieldReasons[2]++;
+                            JitYieldReasons[2]++;
 
                             return total;
                         }
@@ -420,7 +401,7 @@ public sealed unsafe partial class XboxCpu
                         block = FormJitBlock(cache, jit, fetchLinear, generation);
                         if (block is null)
                         {
-                            _jitYieldReasons[2]++;
+                            JitYieldReasons[2]++;
 
                             return total;
                         }
@@ -434,7 +415,7 @@ public sealed unsafe partial class XboxCpu
                 || block.OperandSize != operandSize
                 || block.AddressSize != addressSize)
             {
-                _jitYieldReasons[3]++;
+                JitYieldReasons[3]++;
 
                 return total;
             }
@@ -544,13 +525,9 @@ public sealed unsafe partial class XboxCpu
                             $"eflags={Context.Eflags:X} tsc={Context.Tsc} built={JitRawBlocksBuilt} inv={JitRawInvocations}" + Environment.NewLine);
                     }
                 }
-                else if (block.Runner is not null)
-                {
-                    served = block.Runner(this, block.Entries, budget - total);
-                }
                 else
                 {
-                    served = 0;
+                    served = block.Runner?.Invoke(this, block.Entries, budget - total) ?? 0;
                 }
             }
             catch (PageFaultSignal fault)
@@ -609,7 +586,7 @@ public sealed unsafe partial class XboxCpu
             if (JitTiming)
             {
                 long runnerTicks = System.Diagnostics.Stopwatch.GetTimestamp() - runnerStart;
-                _jitRunnerTicks += runnerTicks;
+                JitRunnerTicks += runnerTicks;
                 int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
                 _jitBucketTicks[bucket] += runnerTicks;
                 _jitBucketCounts[bucket]++;
@@ -638,7 +615,7 @@ public sealed unsafe partial class XboxCpu
             total += served;
             if (served == 0)
             {
-                _jitYieldReasons[4]++;
+                JitYieldReasons[4]++;
 
                 return total;
             }

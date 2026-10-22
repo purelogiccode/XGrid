@@ -16,29 +16,22 @@ public sealed class Nv2aSamplerFastTests
 {
     private const uint Base = Nv2AMmio.BaseAddress;
 
-    private class ArrayMemory : IGpuMemory
+    private class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
-
-        public byte[] Bytes => _data;
+        protected byte[] Bytes { get; } = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
-            _data[address] = (byte)value;
-            _data[address + 1] = (byte)(value >> 8);
-            _data[address + 2] = (byte)(value >> 16);
-            _data[address + 3] = (byte)(value >> 24);
+            Bytes[address] = (byte)value;
+            Bytes[address + 1] = (byte)(value >> 8);
+            Bytes[address + 2] = (byte)(value >> 16);
+            Bytes[address + 3] = (byte)(value >> 24);
         }
 
         public uint ReadPhysical(uint address)
         {
-            return (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) |
-                          (_data[address + 3] << 24));
+            return (uint)(Bytes[address] | (Bytes[address + 1] << 8) | (Bytes[address + 2] << 16) |
+                          (Bytes[address + 3] << 24));
         }
     }
 
@@ -56,9 +49,9 @@ public sealed class Nv2aSamplerFastTests
 
         public long FastWrites { get; private set; }
 
-        public long Batches { get; private set; }
+        private long Batches { get; set; }
 
-        public bool RamViewAvailable { get; set; } = true;
+        public bool RamViewAvailable { get; init; } = true;
 
         public void BeginGpuBatch()
         {
@@ -97,7 +90,7 @@ public sealed class Nv2aSamplerFastTests
         {
             if (!RamViewAvailable)
             {
-                bytes = Array.Empty<byte>();
+                bytes = [];
                 size = 0;
                 return false;
             }
@@ -159,7 +152,7 @@ public sealed class Nv2aSamplerFastTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static uint F(float value)
@@ -286,7 +279,7 @@ public sealed class Nv2aSamplerFastTests
         pushes.Add((0x1E60u, 0x01u));
         PushPassR0(pushes);
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         string formats = string.Join(";", nv2A.TextureFormatAttempts);
         string state = string.Join(";", nv2A.TextureStateStats);
@@ -417,7 +410,7 @@ public sealed class Nv2aSamplerFastTests
         pushes.Add((0x0348u, 0x0303u));
         pushes.Add((0x0350u, 0x8006u));
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         var frame = new uint[0x40 * 0x40];
         for (uint y = 0; y < 0x40; y++)
@@ -526,9 +519,9 @@ public sealed class Nv2aSamplerFastTests
     }
 
     private static readonly string[] DiagnosticModulateColors =
-    {
+    [
         "FF202020", "FF505050", "FF808080", "FFB0B0B0",
-    };
+    ];
 
     [Fact]
     public void CompiledModulateFill_MatchesGenericLoop()
@@ -624,15 +617,15 @@ public sealed class Nv2aSamplerFastTests
         pushes.Add((0x0288u, 0x0C0B000Fu));
         pushes.Add((0x028Cu, 0x0C011180u));
         uint[] rgbInputs =
-        {
+        [
             0xC149C14Au, 0x0D0D0000u, 0xCDCD0000u, 0xCDCD0000u,
             0xCDCD0000u, 0xCDCD0000u, 0xC10CC20Du, 0xC40520C1u,
-        };
+        ];
         uint[] rgbOutputs =
-        {
+        [
             0x000C30CDu, 0x000000D0u, 0x000000D0u, 0x000000D0u,
             0x000000D0u, 0x000000D0u, 0x000005CDu, 0x00000C00u,
-        };
+        ];
         for (uint stage = 0; stage < 8; stage++)
         {
             pushes.Add((0x0AC0u + (stage * 4u), rgbInputs[stage]));
@@ -642,7 +635,7 @@ public sealed class Nv2aSamplerFastTests
         }
 
         PushDraw(pushes);
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         var frame = new uint[0x40 * 0x40];
         for (uint y = 0; y < 0x40; y++)

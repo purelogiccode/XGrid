@@ -170,6 +170,6 @@ public sealed class CpuPagingTests
         cpu.Context.Idtr.Base = IdtAddress;
         cpu.Context.Idtr.Limit = 0x7FF;
 
-        Assert.Throws<UnsupportedInstructionException>(() => cpu.Step());
+        Assert.Throws<UnsupportedInstructionException>(cpu.Step);
     }
 }

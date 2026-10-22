@@ -28,13 +28,13 @@ public sealed class FixedFunctionVertexState
     public const int LightCount = 8;
 
     /// <summary>Byte distance between two light blocks in the <c>SET_LIGHT_*</c> window.</summary>
-    public const uint LightStride = 0x80u;
+    private const uint LightStride = 0x80u;
 
     /// <summary>First method of the <c>SET_LIGHT_AMBIENT_COLOR</c> window (8 lights x 32 words).</summary>
-    public const uint LightConstantBase = 0x1000u;
+    private const uint LightConstantBase = 0x1000u;
 
     /// <summary>First method of the <c>SET_SPECULAR_PARAMS</c> range (6 words).</summary>
-    public const uint SpecularParamsBase = 0x09E0u;
+    private const uint SpecularParamsBase = 0x09E0u;
 
     private readonly int[] _texGen = new int[TextureSlots * TexGenChannels];
     private readonly bool[] _textureMatrixEnable = new bool[TextureSlots];
@@ -94,7 +94,7 @@ public sealed class FixedFunctionVertexState
     public int DiffuseSource { get; set; }
 
     /// <summary>Material specular color source (<c>SET_COLOR_MATERIAL</c> bits 6-7).</summary>
-    public int SpecularSource { get; set; }
+    public int SpecularSource { get; private set; }
 
     /// <summary>Scene ambient color (<c>SET_SCENE_AMBIENT_COLOR</c>), the reference's <c>ltctxa[FR_AMB].xyz</c>.</summary>
     public float[] SceneAmbient { get; } = new float[3];
@@ -366,6 +366,7 @@ public sealed class FixedFunctionVertexState
     }
 
     /// <summary>Restores the reset values.</summary>
+    // ReSharper disable once UnusedMember.Global
     public void Reset()
     {
         Lighting = false;
@@ -401,6 +402,7 @@ public sealed class FixedFunctionVertexState
 
     /// <summary>Writes the state to a snapshot stream.</summary>
     /// <param name="writer">Destination stream.</param>
+    // ReSharper disable once UnusedMember.Global
     public void Write(BinaryWriter writer)
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -453,6 +455,7 @@ public sealed class FixedFunctionVertexState
 
     /// <summary>Reads the state from a snapshot stream.</summary>
     /// <param name="reader">Source stream.</param>
+    // ReSharper disable once UnusedMember.Global
     public void Read(BinaryReader reader)
     {
         ArgumentNullException.ThrowIfNull(reader);

@@ -109,16 +109,11 @@ internal sealed partial class WglContext : IDisposable
     {
         IntPtr address = WglGetProcAddress(name);
         long raw = address.ToInt64();
-        if (address == IntPtr.Zero || (raw >= 1 && raw <= 3) || raw == -1)
-        {
-            return GetProcAddress(_opengl32, name);
-        }
-
-        return address;
+        return address == IntPtr.Zero || (raw >= 1 && raw <= 3) || raw == -1 ? GetProcAddress(_opengl32, name) : address;
     }
 
     /// <summary>Gets whether the window has been made visible (window mode).</summary>
-    public bool IsVisible { get; private set; }
+    private bool IsVisible { get; set; }
 
     /// <summary>
     /// Makes the hidden window visible for live presentation (opt-in

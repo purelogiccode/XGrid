@@ -7,7 +7,7 @@ namespace XGrid.Storage.Tests;
 
 public sealed class DvdImageTests : IDisposable
 {
-    private readonly List<string> _tempFiles = new();
+    private readonly List<string> _tempFiles = [];
     private bool _disposed;
 
     [Fact]

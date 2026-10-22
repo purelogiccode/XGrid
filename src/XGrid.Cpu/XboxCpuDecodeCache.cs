@@ -14,19 +14,19 @@ namespace XGrid.Cpu;
 public sealed partial class XboxCpu
 {
     private DecodeCache? _decodeCache;
-    private DecodedBlockCache? _blocks;
 
     /// <summary>Gets or sets opt-in block cursor execution. Enabling implies the decode cache.</summary>
     public bool BlockExecutionEnabled
     {
-        get => _blocks is not null;
+        // ReSharper disable once UnusedMember.Global
+        get => BlockStatistics is not null;
         set
         {
             if (value)
             {
                 DecodeCacheEnabled = true;
-                _blocks ??= new DecodedBlockCache();
-                _decodeCache!.Blocks = _blocks;
+                BlockStatistics ??= new DecodedBlockCache();
+                _decodeCache!.Blocks = BlockStatistics;
             }
             else
             {
@@ -35,7 +35,7 @@ public sealed partial class XboxCpu
                     _decodeCache.Blocks = null;
                 }
 
-                _blocks = null;
+                BlockStatistics = null;
             }
         }
     }
@@ -56,17 +56,17 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool SpecExecutionEnabled
     {
-        get => _blocks?.SpecEnabled == true;
+        get => BlockStatistics?.SpecEnabled == true;
         set
         {
             if (value)
             {
                 BlockExecutionEnabled = true;
-                _blocks!.SpecEnabled = true;
+                BlockStatistics!.SpecEnabled = true;
             }
-            else if (_blocks is not null)
+            else if (BlockStatistics is not null)
             {
-                _blocks.SpecEnabled = false;
+                BlockStatistics.SpecEnabled = false;
             }
         }
     }
@@ -84,15 +84,14 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool EmitEnabled
     {
-        get => _emitEnabled;
-        set
+        get; set
         {
             if (value)
             {
                 SpecExecutionEnabled = true;
             }
 
-            _emitEnabled = value;
+            field = value;
         }
     }
 
@@ -105,18 +104,17 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool EmitInlineEnabled
     {
-        get => _emitInlineEnabled;
-        set
+        get; set
         {
             if (value)
             {
                 EmitEnabled = true;
             }
 
-            _emitInlineEnabled = value;
-            if (_blocks is not null)
+            field = value;
+            if (BlockStatistics is not null)
             {
-                _blocks.EmitInlineEnabled = value;
+                BlockStatistics.EmitInlineEnabled = value;
             }
         }
     }
@@ -130,18 +128,17 @@ public sealed partial class XboxCpu
     /// </summary>
     public bool EmitInlineCountersEnabled
     {
-        get => _emitInlineCountersEnabled;
-        set
+        get; set
         {
             if (value)
             {
                 EmitInlineEnabled = true;
             }
 
-            _emitInlineCountersEnabled = value;
-            if (_blocks is not null)
+            field = value;
+            if (BlockStatistics is not null)
             {
-                _blocks.EmitInlineCountersEnabled = value;
+                BlockStatistics.EmitInlineCountersEnabled = value;
             }
         }
     }
@@ -156,21 +153,16 @@ public sealed partial class XboxCpu
     public long EmitInlineTwinCalls => InlineTwinCalls;
 
     /// <summary>Gets the live block invalidation generation for emitted runners.</summary>
-    internal ulong BlockGeneration => _blocks?.Generation ?? 0;
-
-    private bool _emitEnabled;
-
-    private bool _emitInlineEnabled;
-
-    private bool _emitInlineCountersEnabled;
+    // ReSharper disable once UnusedMember.Global
+    internal ulong BlockGeneration => BlockStatistics?.Generation ?? 0;
 
     private readonly int[] _emitProgress = new int[BlockEmitter.ProgressLength];
 
     /// <summary>Gets host-only specialization statistics, or null when block execution is disabled.</summary>
-    public DecodedBlockCache? SpecStatistics => _blocks;
+    public DecodedBlockCache? SpecStatistics => BlockStatistics;
 
     /// <summary>Gets host-only block statistics, or null when disabled.</summary>
-    public DecodedBlockCache? BlockStatistics => _blocks;
+    public DecodedBlockCache? BlockStatistics { get; private set; }
 
     /// <summary>
     /// Gets or sets whether the decoded-instruction block cache is enabled
@@ -316,13 +308,13 @@ public sealed partial class XboxCpu
         bool crossesPage = (fetchLinear & 0xFFFu) + (uint)buffer.Length > 0x1000u;
 
         DecodeCacheEntry entry = default;
-        bool blockHit = _blocks is not null
-                        && _blocks.TryNext(cache, fetchLinear, Context.DefaultOperandSize,
+        bool blockHit = BlockStatistics is not null
+                        && BlockStatistics.TryNext(cache, fetchLinear, Context.DefaultOperandSize,
                             Context.DefaultAddressSize, out entry);
         if (blockHit || cache.TryGet(fetchLinear, Context.DefaultOperandSize, Context.DefaultAddressSize,
                 out entry))
         {
-            _hotspot?.NoteFetch(false);
+            HotspotObserver?.NoteFetch(false);
 
             // Per-byte idle-skip access notes (physicals from the entry) so
             // idle-skip verdicts stay exact without any bus traffic.
@@ -335,7 +327,7 @@ public sealed partial class XboxCpu
                 }
             }
 
-            if (DecodeCacheVerify || (BlockVerify && _blocks is not null))
+            if (DecodeCacheVerify || (BlockVerify && BlockStatistics is not null))
             {
                 for (int i = 0; i < buffer.Length; i++)
                 {
@@ -347,9 +339,9 @@ public sealed partial class XboxCpu
                     // A writer escaped the invalidation discipline: count the
                     // tripwire and decode fresh (self-healing).
                     cache.NoteVerifyFailure();
-                    if (BlockVerify && _blocks is not null)
+                    if (BlockVerify && BlockStatistics is not null)
                     {
-                        _blocks.NoteVerifyFailure();
+                        BlockStatistics.NoteVerifyFailure();
                         cache.DropPhysicalPage(entry.PhysicalBase >> 12);
                         if (entry.CrossSplit != 0 &&
                             (entry.SecondPhysicalBase >> 12) != (entry.PhysicalBase >> 12))
@@ -363,10 +355,10 @@ public sealed partial class XboxCpu
             }
 
             cache.NoteHit();
-            _hotspot?.NoteDecodeCacheHit();
-            if (blockHit && _blocks is { SpecEnabled: true })
+            HotspotObserver?.NoteDecodeCacheHit();
+            if (blockHit && BlockStatistics is { SpecEnabled: true })
             {
-                spec = _blocks.CurrentHandler;
+                spec = BlockStatistics.CurrentHandler;
             }
 
             return entry.Instruction;
@@ -390,7 +382,7 @@ public sealed partial class XboxCpu
     /// </summary>
     private int RunSpecBlock(int budget)
     {
-        DecodedBlockCache? blocks = _blocks;
+        DecodedBlockCache? blocks = BlockStatistics;
         DecodeCache? cache = _decodeCache;
         if (blocks is null || cache is null || budget <= 0)
         {
@@ -444,7 +436,7 @@ public sealed partial class XboxCpu
             // ordinary runs, not only under --jit-tally (which is inert).
             NoteNonJitMnemonic(instruction.Mnemonic);
 
-            _hotspot?.NoteFetch(false);
+            HotspotObserver?.NoteFetch(false);
 
             IdleSkipDetector? idle = _idle;
             if (idle is not null)
@@ -491,12 +483,9 @@ public sealed partial class XboxCpu
                         LastFaultVector = 14;
                         LastFaultEip = Context.Eip;
                         LastFaultErrorCode = fault.ErrorCode;
-                        if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
-                        {
-                            throw new UnhandledGuestException(14, Context.Eip);
-                        }
-
-                        return ran + 1;
+                        return !TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode)
+                            ? throw new UnhandledGuestException(14, Context.Eip)
+                            : ran + 1;
                     }
 
                     servedFresh = true;
@@ -507,7 +496,7 @@ public sealed partial class XboxCpu
             if (!servedFresh)
             {
                 cache.NoteHit();
-                _hotspot?.NoteDecodeCacheHit();
+                HotspotObserver?.NoteDecodeCacheHit();
             }
 
             if (!instruction.IsValid)
@@ -516,12 +505,9 @@ public sealed partial class XboxCpu
                 LastFaultVector = 6;
                 LastFaultEip = Context.Eip;
                 LastFaultErrorCode = 0;
-                if (!TryTransferToInterrupt(6, Context.Eip, false, 0))
-                {
-                    throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode);
-                }
-
-                return ran + 1;
+                return !TryTransferToInterrupt(6, Context.Eip, false, 0)
+                    ? throw new UnsupportedInstructionException(Context.Eip, instruction.Opcode)
+                    : ran + 1;
             }
 
             uint eipBefore = Context.Eip;
@@ -544,16 +530,13 @@ public sealed partial class XboxCpu
                 LastFaultVector = 14;
                 LastFaultEip = Context.Eip;
                 LastFaultErrorCode = fault.ErrorCode;
-                if (!TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode))
-                {
-                    throw new UnhandledGuestException(14, Context.Eip);
-                }
-
-                return ran + 1;
+                return !TryTransferToInterrupt(14, Context.Eip, true, fault.ErrorCode)
+                    ? throw new UnhandledGuestException(14, Context.Eip)
+                    : ran + 1;
             }
 
             idle?.Observe(instruction, eipBefore, Context.Eip);
-            _hotspot?.Observe(instruction, eipBefore, Context.Eip);
+            HotspotObserver?.Observe(instruction, eipBefore, Context.Eip);
             ran++;
 
             if (RunEmitTail(budget - ran, ref ran))
@@ -577,13 +560,13 @@ public sealed partial class XboxCpu
     /// <returns>True when the transfer path ran and the caller must return.</returns>
     private bool RunEmitTail(int remaining, ref int ran)
     {
-        if (!_emitEnabled || remaining <= 0 || _idle is not null || _hotspot is not null
+        if (!EmitEnabled || remaining <= 0 || _idle is not null || HotspotObserver is not null
             || DecodeCacheVerify || BlockVerify)
         {
             return false;
         }
 
-        DecodedBlockCache? blocks = _blocks;
+        DecodedBlockCache? blocks = BlockStatistics;
         DecodeCache? cache = _decodeCache;
         if (blocks is null || cache is null || !blocks.SpecEnabled)
         {
@@ -682,7 +665,7 @@ public sealed partial class XboxCpu
             // D3: one translate per page (the legacy per-byte loop stays for
             // profiler runs, whose per-byte TLB tallies own the fetch).
             crossSplit = 0x1000 - (int)(fetchLinear & 0xFFFu);
-            IHotspotObserver? observer = _hotspot;
+            IHotspotObserver? observer = HotspotObserver;
             if (observer is not null)
             {
                 observer.NoteFetchSlow();
@@ -700,14 +683,14 @@ public sealed partial class XboxCpu
             Context.DefaultAddressSize);
         DecodeCount++;
         cache.NoteMiss();
-        _hotspot?.NoteDecodeCacheMiss();
+        HotspotObserver?.NoteDecodeCacheMiss();
 
         if (crossesPage)
         {
             // Cross-page windows are cacheable when both pages are (the entry
             // carries the second base + split); the skip counter keeps the
             // uncacheable cases (profiler runs, non-RAM pages).
-            if (_hotspot is null && IsCacheableFetch(basePhysical) && IsCacheableFetch(secondPhysicalBase))
+            if (HotspotObserver is null && IsCacheableFetch(basePhysical) && IsCacheableFetch(secondPhysicalBase))
             {
                 cache.Insert(
                     fetchLinear,

@@ -149,7 +149,7 @@
       </Border>
 
       <ContentControl Grid.Row="1"
-                      Content="{Binding SelectedNavigationItem.Page}"
+                      Content="{Binding SelectedNavigationItem.Page, FallbackValue={x:Null}}"
                       Margin="28,20,28,24" />
     </Grid>
 

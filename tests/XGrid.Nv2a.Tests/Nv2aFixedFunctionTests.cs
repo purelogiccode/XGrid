@@ -44,14 +44,9 @@ public sealed class Nv2aFixedFunctionTests
 
     private const uint FogGenRadial = 1u;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x20000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x20000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {
@@ -703,7 +698,7 @@ public sealed class Nv2aFixedFunctionTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.FixedFunctionDraws);
         Assert.Equal(1uL, nv2A.FixedFunctionLitDraws);
@@ -744,7 +739,7 @@ public sealed class Nv2aFixedFunctionTests
             (0x0420u, 1u),
             (0x0424u, 1u),
         };
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         using var buffer = new System.IO.MemoryStream();
         using (var writer = new System.IO.BinaryWriter(buffer, System.Text.Encoding.UTF8, leaveOpen: true))
@@ -826,38 +821,36 @@ public sealed class Nv2aFixedFunctionTests
             (0x1E94u, 0x00000004u),
             (0x0314u, lightingEnable),
             (0x03BCu, lightMask),
+            // Composite = scale 4 on x/y, identity z/w; viewport offset (2,2).
+            (0x0680u, F(4f)),
+            (0x0684u, F(0f)),
+            (0x0688u, F(0f)),
+            (0x068Cu, F(0f)),
+            (0x0690u, F(0f)),
+            (0x0694u, F(4f)),
+            (0x0698u, F(0f)),
+            (0x069Cu, F(0f)),
+            (0x06A0u, F(0f)),
+            (0x06A4u, F(0f)),
+            (0x06A8u, F(1f)),
+            (0x06ACu, F(0f)),
+            (0x06B0u, F(0f)),
+            (0x06B4u, F(0f)),
+            (0x06B8u, F(0f)),
+            (0x06BCu, F(1f)),
+            (0x0A20u, F(2f)),
+            (0x0A24u, F(2f)),
+            (0x0A28u, F(0f)),
+            (0x0A2Cu, F(0f)),
+
+            // Element 0 is implied by BEGIN_END; the two pushes supply 1 and 2.
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u)
         };
 
-        // Composite = scale 4 on x/y, identity z/w; viewport offset (2,2).
-        pushes.Add((0x0680u, F(4f)));
-        pushes.Add((0x0684u, F(0f)));
-        pushes.Add((0x0688u, F(0f)));
-        pushes.Add((0x068Cu, F(0f)));
-        pushes.Add((0x0690u, F(0f)));
-        pushes.Add((0x0694u, F(4f)));
-        pushes.Add((0x0698u, F(0f)));
-        pushes.Add((0x069Cu, F(0f)));
-        pushes.Add((0x06A0u, F(0f)));
-        pushes.Add((0x06A4u, F(0f)));
-        pushes.Add((0x06A8u, F(1f)));
-        pushes.Add((0x06ACu, F(0f)));
-        pushes.Add((0x06B0u, F(0f)));
-        pushes.Add((0x06B4u, F(0f)));
-        pushes.Add((0x06B8u, F(0f)));
-        pushes.Add((0x06BCu, F(1f)));
-
-        pushes.Add((0x0A20u, F(2f)));
-        pushes.Add((0x0A24u, F(2f)));
-        pushes.Add((0x0A28u, F(0f)));
-        pushes.Add((0x0A2Cu, F(0f)));
-
-        // Element 0 is implied by BEGIN_END; the two pushes supply 1 and 2.
-        pushes.Add((0x17FCu, 5u));
-        pushes.Add((0x1800u, 0x00010000u));
-        pushes.Add((0x1808u, 0x00000002u));
-        pushes.Add((0x17FCu, 0u));
-
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
         return (nv2A, memory);
     }
 
@@ -939,7 +932,7 @@ public sealed class Nv2aFixedFunctionTests
             (0x1808u, 0x00000002u),
             (0x17FCu, 0u),
         };
-        PushMethods(nv2A, memory, pushes.ToArray());
+        PushMethods(nv2A, memory, [.. pushes]);
 
         Assert.Equal(1uL, nv2A.FixedFunctionDraws);
         Assert.Equal(0xFFFF0000u, ReadPixel(memory, 7, 5));

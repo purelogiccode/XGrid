@@ -13,22 +13,22 @@ namespace XGrid.Bus.Net;
 public sealed class LoopbackNetworkBackend : INetworkBackend, ISnapshotable
 {
     /// <summary>Maximum queued loopback frames before the oldest is dropped.</summary>
-    public const int MaxQueuedFrames = 64;
+    private const int MaxQueuedFrames = 64;
 
     /// <summary>Maximum transmitted-frame copies kept in the log.</summary>
-    public const int MaxLoggedFrames = 16;
+    private const int MaxLoggedFrames = 16;
 
     private readonly Queue<byte[]> _loopback = new();
-    private readonly List<byte[]> _sentLog = new();
+    private readonly List<byte[]> _sentLog = [];
 
     /// <summary>Gets the number of frames handed to the backend.</summary>
     public long SentPackets { get; private set; }
 
     /// <summary>Gets the total transmitted frame bytes.</summary>
-    public long SentBytes { get; private set; }
+    private long SentBytes { get; set; }
 
     /// <summary>Gets the number of loopback frames dropped because the queue was full.</summary>
-    public long DroppedPackets { get; private set; }
+    private long DroppedPackets { get; set; }
 
     /// <summary>Gets recent transmitted-frame copies (newest last), for diagnostics.</summary>
     public IReadOnlyList<byte[]> SentLog => _sentLog;

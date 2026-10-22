@@ -43,7 +43,7 @@ public sealed class SettingsStore
     }
 
     /// <summary>Gets the settings folder.</summary>
-    public string DirectoryPath { get; }
+    private string DirectoryPath { get; }
 
     /// <summary>Gets the settings file path.</summary>
     public string FilePath => Path.Combine(DirectoryPath, "settings.json");

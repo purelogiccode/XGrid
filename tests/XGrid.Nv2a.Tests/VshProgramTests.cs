@@ -99,7 +99,7 @@ public sealed class VshProgramTests
             t3 |= 1u;
         }
 
-        return new[] { 0u, t1, t2, t3 };
+        return [0u, t1, t2, t3];
     }
 
     private static float[][] ZeroRegisters(int count)
@@ -124,11 +124,11 @@ public sealed class VshProgramTests
     [Fact]
     public void Mov_ToPosition_WritesInput()
     {
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true)];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
@@ -139,15 +139,15 @@ public sealed class VshProgramTests
     public void Mad_WithConstant_MultipliesAndAdds()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMad, aMux: MuxV, v: 0, bMux: MuxC, cMux: MuxC, constIndex: 0, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
-        constants[0] = new[] { 2.0f, 2.0f, 2.0f, 2.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
+        constants[0] = [2.0f, 2.0f, 2.0f, 2.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -158,15 +158,15 @@ public sealed class VshProgramTests
     public void Dp4_BroadcastsDotProduct()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacDp4, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
-        constants[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
+        constants[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -177,15 +177,15 @@ public sealed class VshProgramTests
     public void Dp3_IgnoresW()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacDp3, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 100.0f };
-        constants[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 100.0f];
+        constants[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -196,14 +196,14 @@ public sealed class VshProgramTests
     public void SwizzleAndNegate_AreApplied()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMov, aMux: MuxV, v: 0, aSwz: Swizzle(1, 0, 3, 2), aNeg: true, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -214,15 +214,15 @@ public sealed class VshProgramTests
     public void WriteMask_PreservesUntouchedComponents()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0x3, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xC, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
-        constants[0] = new[] { 9.0f, 9.0f, 9.0f, 9.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
+        constants[0] = [9.0f, 9.0f, 9.0f, 9.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -235,7 +235,7 @@ public sealed class VshProgramTests
     public void PairedMacAndIlu_BothExecute()
     {
         uint[][] program =
-        {
+        [
             Insn(
                 mac: MacMul,
                 ilu: IluRcp,
@@ -250,12 +250,12 @@ public sealed class VshProgramTests
                 outAddress: 0,
                 macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
-        constants[0] = new[] { 4.0f, 4.0f, 4.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
+        constants[0] = [4.0f, 4.0f, 4.0f, 4.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -266,15 +266,15 @@ public sealed class VshProgramTests
     public void FinalBit_TerminatesProgram()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
             Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
-        constants[0] = new[] { 9.0f, 9.0f, 9.0f, 9.0f };
+        inputs[0] = [5.0f, 6.0f, 7.0f, 8.0f];
+        constants[0] = [9.0f, 9.0f, 9.0f, 9.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -285,16 +285,16 @@ public sealed class VshProgramTests
     public void ArlAndRelativeConstant_AddressesConstants()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacArl, aMux: MuxV, v: 0),
             Insn(mac: MacMov, aMux: MuxC, constIndex: 0, a0X: true, outR: 0, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 2.0f, 0.0f, 0.0f, 0.0f };
-        constants[2] = new[] { 7.0f, 7.0f, 7.0f, 7.0f };
+        inputs[0] = [2.0f, 0.0f, 0.0f, 0.0f];
+        constants[2] = [7.0f, 7.0f, 7.0f, 7.0f];
 
         VshProgram.Execute(program, 3, constants, inputs, outputs);
 
@@ -305,14 +305,14 @@ public sealed class VshProgramTests
     public void IluMov_WritesTempRegister()
     {
         uint[][] program =
-        {
+        [
             Insn(ilu: IluMov, cMux: MuxC, constIndex: 0, outR: 0, iluMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { 1.5f, 2.5f, 3.5f, 4.5f };
+        constants[0] = [1.5f, 2.5f, 3.5f, 4.5f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -322,11 +322,11 @@ public sealed class VshProgramTests
     [Fact]
     public void UnwrittenOutputs_DefaultToZeroWithUnitAlpha()
     {
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true)];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
+        inputs[0] = [1.0f, 2.0f, 3.0f, 4.0f];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
@@ -343,14 +343,14 @@ public sealed class VshProgramTests
     private static float[][] ExecuteIlu(int ilu, float x, float y, float z, float w)
     {
         uint[][] program =
-        {
+        [
             Insn(ilu: ilu, cMux: MuxC, constIndex: 0, outR: 1, iluMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { x, y, z, w };
+        constants[0] = [x, y, z, w];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -365,7 +365,7 @@ public sealed class VshProgramTests
     {
         float operand = BitConverter.UInt32BitsToSingle(operandBits);
         uint[][] program =
-        {
+        [
             Insn(
                 mac: MacMul,
                 aMux: MuxC,
@@ -378,11 +378,11 @@ public sealed class VshProgramTests
                 outMask: 0x7,
                 outAddress: 0,
                 final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { operand, operand, operand, operand };
+        constants[0] = [operand, operand, operand, operand];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
@@ -396,7 +396,7 @@ public sealed class VshProgramTests
     public void Mad_NonFiniteTimesZero_AddsConstant()
     {
         uint[][] program =
-        {
+        [
             Insn(
                 mac: MacMad,
                 aMux: MuxC,
@@ -411,13 +411,12 @@ public sealed class VshProgramTests
                 outMask: 0xF,
                 outAddress: 0,
                 final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[]
-            { float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity };
-        inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
+        constants[0] = [float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity];
+        inputs[0] = [5.0f, 6.0f, 7.0f, 8.0f];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
@@ -428,17 +427,17 @@ public sealed class VshProgramTests
     public void Min_WithNaN_MatchesGLSLComparisons()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMin, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacMin, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0xE, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
-        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        constants[0] = [float.NaN, float.NaN, float.NaN, float.NaN];
+        inputs[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -453,17 +452,17 @@ public sealed class VshProgramTests
     public void Max_WithNaN_MatchesGLSLComparisons()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMax, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacMax, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0xE, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
-        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        constants[0] = [float.NaN, float.NaN, float.NaN, float.NaN];
+        inputs[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -478,17 +477,17 @@ public sealed class VshProgramTests
     public void Min_WithSignedZeros_ReturnsFirstOperandWhenEqual()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMin, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacMin, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x6, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
-        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+        constants[0] = [-0.0f, -0.0f, -0.0f, -0.0f];
+        inputs[0] = [0.0f, 0.0f, 0.0f, 0.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -504,17 +503,17 @@ public sealed class VshProgramTests
     public void Max_WithSignedZeros_ReturnsFirstOperandWhenEqual()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacMax, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacMax, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x6, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
-        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+        constants[0] = [-0.0f, -0.0f, -0.0f, -0.0f];
+        inputs[0] = [0.0f, 0.0f, 0.0f, 0.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -530,19 +529,19 @@ public sealed class VshProgramTests
     public void Slt_WithNaN_ReturnsZero()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacSlt, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacSlt, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacSlt, aMux: MuxR, aR: 0, bMux: MuxV, v: 0, outR: 3, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 3, outMux: 0, outMask: 0x4, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
-        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        constants[0] = [float.NaN, float.NaN, float.NaN, float.NaN];
+        inputs[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 6, constants, inputs, outputs);
 
@@ -555,17 +554,17 @@ public sealed class VshProgramTests
     public void Slt_WithSignedZeros_ReturnsZero()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacSlt, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacSlt, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
-        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+        constants[0] = [-0.0f, -0.0f, -0.0f, -0.0f];
+        inputs[0] = [0.0f, 0.0f, 0.0f, 0.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -578,19 +577,19 @@ public sealed class VshProgramTests
     public void Sge_WithNaN_ReturnsZero()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacSge, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacSge, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacSge, aMux: MuxV, bMux: MuxV, v: 0, outR: 3, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 3, outMux: 0, outMask: 0x4, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { float.NaN, float.NaN, float.NaN, float.NaN };
-        inputs[0] = new[] { 1.0f, 1.0f, 1.0f, 1.0f };
+        constants[0] = [float.NaN, float.NaN, float.NaN, float.NaN];
+        inputs[0] = [1.0f, 1.0f, 1.0f, 1.0f];
 
         VshProgram.Execute(program, 6, constants, inputs, outputs);
 
@@ -603,17 +602,17 @@ public sealed class VshProgramTests
     public void Sge_WithSignedZeros_ReturnsOne()
     {
         uint[][] program =
-        {
+        [
             Insn(mac: MacSge, aMux: MuxC, constIndex: 0, bMux: MuxV, v: 0, outR: 1, macMask: 0xF),
             Insn(mac: MacSge, aMux: MuxV, v: 0, bMux: MuxC, constIndex: 0, outR: 2, macMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0x1, outAddress: 0),
             Insn(mac: MacMov, aMux: MuxR, aR: 2, outMux: 0, outMask: 0x2, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { -0.0f, -0.0f, -0.0f, -0.0f };
-        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, 0.0f };
+        constants[0] = [-0.0f, -0.0f, -0.0f, -0.0f];
+        inputs[0] = [0.0f, 0.0f, 0.0f, 0.0f];
 
         VshProgram.Execute(program, 4, constants, inputs, outputs);
 
@@ -744,7 +743,7 @@ public sealed class VshProgramTests
     public void PairedMacAndIlu_OutMuxIluWithOutR1_IluValueWins()
     {
         uint[][] program =
-        {
+        [
             Insn(
                 mac: MacMov,
                 ilu: IluMov,
@@ -758,12 +757,12 @@ public sealed class VshProgramTests
                 macMask: 0xF,
                 iluMask: 0xF),
             Insn(mac: MacMov, aMux: MuxR, aR: 1, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
-        };
+        ];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        constants[0] = new[] { 1.0f, 2.0f, 3.0f, 4.0f };
-        inputs[0] = new[] { 5.0f, 6.0f, 7.0f, 8.0f };
+        constants[0] = [1.0f, 2.0f, 3.0f, 4.0f];
+        inputs[0] = [5.0f, 6.0f, 7.0f, 8.0f];
 
         VshProgram.Execute(program, 2, constants, inputs, outputs);
 
@@ -773,11 +772,11 @@ public sealed class VshProgramTests
     [Fact]
     public void Position_TruncatesXyTowardZeroToSixteenthUnits()
     {
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true)];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 0.099f, -1.01f, 2.5f, 3.5f };
+        inputs[0] = [0.099f, -1.01f, 2.5f, 3.5f];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 
@@ -797,11 +796,11 @@ public sealed class VshProgramTests
     [InlineData(0x3F800000u, 0x3F800000u)]
     public void Position_ClampsWAwayFromZeroAndInfinity(uint wBits, uint expectedBits)
     {
-        uint[][] program = { Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true) };
+        uint[][] program = [Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true)];
         float[][] constants = ZeroRegisters(VshProgram.ConstantCount);
         float[][] inputs = ZeroRegisters(VshProgram.RegisterCount);
         float[][] outputs = ZeroRegisters(VshProgram.RegisterCount);
-        inputs[0] = new[] { 0.0f, 0.0f, 0.0f, BitConverter.UInt32BitsToSingle(wBits) };
+        inputs[0] = [0.0f, 0.0f, 0.0f, BitConverter.UInt32BitsToSingle(wBits)];
 
         VshProgram.Execute(program, 1, constants, inputs, outputs);
 

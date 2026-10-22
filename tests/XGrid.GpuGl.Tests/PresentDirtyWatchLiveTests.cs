@@ -19,7 +19,7 @@ namespace XGrid.GpuGl.Tests;
 /// Returns early (pass) when no GL context is available — same pattern as
 /// <see cref="PresentUploadLiveTests"/>.
 /// </summary>
-public sealed class PresentDirtyWatchLiveTests
+public sealed class PresentDirtyWatchLiveTests(ITestOutputHelper output)
 {
     private const uint SurfaceBase = 0x1000u;
     private const uint Width = 16;
@@ -30,14 +30,8 @@ public sealed class PresentDirtyWatchLiveTests
     // the readback R/B; MapClearColor maps r=(>>16) g=(>>8) b=(low)).
     private const uint GpuClearColor = 0xFF336699u;
 
-    private static readonly byte[] GpuClearBgra = { 0x99, 0x66, 0x33, 0xFF };
+    private static readonly byte[] GpuClearBgra = [0x99, 0x66, 0x33, 0xFF];
 
-    private readonly ITestOutputHelper _output;
-
-    public PresentDirtyWatchLiveTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     /// <summary>
     /// Product-adapter mirror: IGpuMemory + IPresentDirtyWatch over the
@@ -45,14 +39,9 @@ public sealed class PresentDirtyWatchLiveTests
     /// Program.MachineGpuMemory — suppression-scoped WritePhysical so the
     /// NV2A twin identity leg exercises the real writer path).
     /// </summary>
-    private sealed class WatchGpuMemory : IGpuMemory, IPresentDirtyWatch
+    private sealed class WatchGpuMemory(PhysicalMemory ram) : IGpuMemory, IPresentDirtyWatch
     {
-        private readonly AddressSpace _memory;
-
-        public WatchGpuMemory(PhysicalMemory ram)
-        {
-            _memory = new AddressSpace(ram);
-        }
+        private readonly AddressSpace _memory = new(ram);
 
         // ReSharper disable once UnusedMember.Local
         public PhysicalMemory Ram => _memory.Ram;
@@ -368,7 +357,7 @@ public sealed class PresentDirtyWatchLiveTests
             // The second twin fill wrote the new clear color into the
             // watched surface (suppressed -> stayed clean): the flip served
             // the GL-rendered content, never uploaded.
-            byte[] secondExpected = { 0x66, 0x33, 0x99, 0xFF };
+            byte[] secondExpected = [0x66, 0x33, 0x99, 0xFF];
             Assert.Equal(Repeat(secondExpected, second.Length / 4), second);
         }
         finally
@@ -382,7 +371,7 @@ public sealed class PresentDirtyWatchLiveTests
     {
         if (!GlBackendFactory.TryCreate(memory, out IPgraphBackend? backend, out string why))
         {
-            _output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
             return null;
         }
 
@@ -410,7 +399,7 @@ public sealed class PresentDirtyWatchLiveTests
     {
         const uint streamBase = 0x8000u;
         (uint Method, uint Parameter)[] methods =
-        {
+        [
             (0x0208u, 0x00000104u), // surface format: pitch type, color 4-byte
             (0x020Cu, 0x00000100u), // pitch 0x100
             (0x0200u, 0x00400000u), // clip H width=64
@@ -424,7 +413,7 @@ public sealed class PresentDirtyWatchLiveTests
             (0x1D90u, secondColor), // second clear value into the same surface
             (0x1D94u, 0x000000F0u),
             (0x012Cu, 0u), // second flip (must still serve)
-        };
+        ];
 
         uint address = streamBase;
         foreach ((uint method, uint parameter) in methods)

@@ -19,13 +19,13 @@ namespace XGrid.Cpu.Tests;
 public sealed class DecodeCacheTests
 {
     // nop; nop; mov eax,0x1234; hlt (8 bytes, no data accesses).
-    private static readonly byte[] StraightLine = { 0x90, 0x90, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xF4 };
+    private static readonly byte[] StraightLine = [0x90, 0x90, 0xB8, 0x34, 0x12, 0x00, 0x00, 0xF4];
 
     // nop; nop; jmp 0x1000 (EB FC lands nextEip 0x1004 - 4 back at the head).
-    private static readonly byte[] NopLoop = { 0x90, 0x90, 0xEB, 0xFC };
+    private static readonly byte[] NopLoop = [0x90, 0x90, 0xEB, 0xFC];
 
     // mov eax,[0x2000]; test eax,eax; jz 0x1000; hlt (kernel-style poll loop).
-    private static readonly byte[] PollLoop = { 0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4 };
+    private static readonly byte[] PollLoop = [0xA1, 0x00, 0x20, 0x00, 0x00, 0x85, 0xC0, 0x74, 0xF7, 0xF4];
 
     private const uint PageDirectory = 0x4000;
     private const uint PageTable = 0x5000;
@@ -627,7 +627,7 @@ public sealed class DecodeCacheTests
 
     private sealed class StubIdleHost : IIdleSkipHost
     {
-        public HashSet<uint> NonRam { get; } = new();
+        public HashSet<uint> NonRam { get; } = [];
 
         public bool IrqPendingAndEnabled => false;
 
@@ -648,23 +648,17 @@ public sealed class DecodeCacheTests
     /// start that fires the poll write when the advance reaches it (the
     /// IdleSkipTests shape, trimmed to what the verdict test needs).
     /// </summary>
-    private sealed class PollIdleHost : IIdleSkipHost
+    private sealed class PollIdleHost(PhysicalMemory ram) : IIdleSkipHost
     {
-        private readonly PhysicalMemory _ram;
         private long? _deadline;
-
-        public PollIdleHost(PhysicalMemory ram)
-        {
-            _ram = ram;
-        }
 
         public ulong Advanced { get; private set; }
 
         public long? InitialDeadline { get; set; }
 
-        public uint? PollAddress { get; set; }
+        public uint? PollAddress { get; init; }
 
-        private byte PollValue { get; set; } = 1;
+        private byte PollValue { get; } = 1;
 
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
@@ -684,7 +678,7 @@ public sealed class DecodeCacheTests
                     _deadline = null;
                     if (PollAddress is { } poll)
                     {
-                        _ram.Write8(poll, PollValue);
+                        ram.Write8(poll, PollValue);
                     }
                 }
             }

@@ -33,11 +33,11 @@ public sealed class OhciUsbTests
 
     private sealed class FakeUsbMemory : IUsbMemory
     {
-        private readonly Dictionary<uint, byte> _ram = new();
+        private readonly Dictionary<uint, byte> _ram = [];
 
-        public List<(uint Address, ushort Value)> Writes16 { get; } = new();
+        public List<(uint Address, ushort Value)> Writes16 { get; } = [];
 
-        public List<(uint Address, uint Value)> Writes32 { get; } = new();
+        public List<(uint Address, uint Value)> Writes32 { get; } = [];
 
         public byte Read8(uint address)
         {
@@ -289,7 +289,7 @@ public sealed class OhciUsbTests
 
         byte[] data = RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 }, null, 0x12);
+            [0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00], null, 0x12);
 
         Assert.Equal(0x12, data[0]);
         Assert.Equal(0x01, data[1]);
@@ -313,7 +313,7 @@ public sealed class OhciUsbTests
         };
         StartControl(ohci);
         memory.WriteBlock(0x1000, EdBytes(0, 0x1100, 0x1120));
-        memory.WriteBlock(0x2000, new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 });
+        memory.WriteBlock(0x2000, [0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00]);
         memory.WriteBlock(0x1100, TdBytes(1u << 21, 0x2000, 0x2007, 0x1120));
         ohci.Write(Base + 0x20, 4, 0x1000);
         ohci.Write(Base + HcCommandStatus, 4, 0x02);
@@ -370,13 +370,13 @@ public sealed class OhciUsbTests
 
         RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
 
         Assert.Equal(2u, ohci.DeviceAddress);
 
         RunControlTransfer(
             memory, ohci, 2,
-            new byte[] { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
 
         Assert.True(((XidGamepad)ohci.Function!).Configured);
     }
@@ -392,10 +392,10 @@ public sealed class OhciUsbTests
         StartControl(ohci);
         RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
         RunControlTransfer(
             memory, ohci, 2,
-            new byte[] { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
         Assert.True(((XidGamepad)ohci.Function!).Configured);
 
         ohci.Write(Base + HcRhPortStatus1, 4, 0x10);
@@ -427,7 +427,7 @@ public sealed class OhciUsbTests
         };
         StartControl(ohci);
         memory.WriteBlock(0x1000, EdBytes(64u << 16, 0x1100, 0x1400));
-        memory.WriteBlock(0x2000, new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 });
+        memory.WriteBlock(0x2000, [0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00]);
         memory.WriteBlock(0x1100, TdBytes(0, 0x2000, 0x2007, 0x1120));
         memory.WriteBlock(0x1120, TdBytes(2u << 19, 0x2010, 0x204F, 0x1140));
         memory.WriteBlock(0x1140, TdBytes(1u << 19, 0, 0, 0x1400));
@@ -451,7 +451,7 @@ public sealed class OhciUsbTests
         };
         StartControl(ohci);
         memory.WriteBlock(0x1000, EdBytes(64u << 16, 0x1100, 0x1400));
-        memory.WriteBlock(0x2000, new byte[] { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x30, 0x00 });
+        memory.WriteBlock(0x2000, [0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x30, 0x00]);
         memory.WriteBlock(0x1100, TdBytes(0, 0x2000, 0x2007, 0x1120));
         memory.WriteBlock(0x1120, TdBytes((2u << 19) | (1u << 18), 0x2010, 0x202F, 0x1130));
         memory.WriteBlock(0x1130, TdBytes((2u << 19) | (1u << 18), 0x2030, 0x203F, 0x1140));
@@ -478,7 +478,7 @@ public sealed class OhciUsbTests
         StartControl(ohci);
         memory.WriteBlock(0x1000, EdBytes(0, 0x1100, 0x1120));
         memory.WriteBlock(0x1100, TdBytes(0, 0x2000, 0x2007, 0x1120));
-        memory.WriteBlock(0x2000, new byte[] { 0xC0, 0x06, 0x00, 0xFF, 0x00, 0x00, 0x08, 0x00 });
+        memory.WriteBlock(0x2000, [0xC0, 0x06, 0x00, 0xFF, 0x00, 0x00, 0x08, 0x00]);
         ohci.Write(Base + 0x20, 4, 0x1000);
         ohci.Write(Base + HcCommandStatus, 4, 0x02);
 
@@ -529,32 +529,32 @@ public sealed class OhciUsbTests
 
         RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
         Assert.Equal(1, daughterboard.Address);
 
         RunControlTransfer(
             memory, ohci, 1,
-            new byte[] { 0x23, 0x03, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00 }, null, 0);
+            [0x23, 0x03, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00], null, 0);
         Assert.NotEqual(0, daughterboard.GetPortStatus(2) & 0x2);
 
         RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x05, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
         Assert.Equal(2, controllerHub.Address);
 
         RunControlTransfer(
             memory, ohci, 2,
-            new byte[] { 0x23, 0x03, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00 }, null, 0);
+            [0x23, 0x03, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00], null, 0);
         Assert.NotEqual(0, controllerHub.GetPortStatus(0) & 0x2);
 
         RunControlTransfer(
             memory, ohci, 0,
-            new byte[] { 0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 }, null, 0);
+            [0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00], null, 0);
         Assert.Equal(3, pad.Address);
 
         byte[] descriptor = RunControlTransfer(
             memory, ohci, 3,
-            new byte[] { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 }, null, 0x12);
+            [0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00], null, 0x12);
         Assert.Equal(0x5E, descriptor[8]);
         Assert.Equal(0x04, descriptor[9]);
         Assert.Equal(0x02, descriptor[10]);
@@ -654,6 +654,6 @@ public sealed class OhciUsbTests
 
         Assert.Equal(0u, memory.Read32(0x1100) >> 28);
         Assert.Equal(0x1400u, memory.Read32(0x1008) & 0xFFFFFFF0u);
-        return inLength > 0 ? memory.ReadBlock(0x2010, inLength) : Array.Empty<byte>();
+        return inLength > 0 ? memory.ReadBlock(0x2010, inLength) : [];
     }
 }

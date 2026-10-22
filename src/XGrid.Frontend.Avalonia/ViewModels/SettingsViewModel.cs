@@ -13,37 +13,31 @@ using XGrid.Frontend.Avalonia.Services;
 namespace XGrid.Frontend.Avalonia.ViewModels;
 
 /// <summary>One selectable option in a settings drop-down: a persisted key, a label and an optional hint.</summary>
-public sealed class KeyedOption
+/// <remarks>Creates an option.</remarks>
+/// <param name="key">Value persisted in the settings file.</param>
+/// <param name="label">Text shown in the drop-down.</param>
+/// <param name="hint">Optional availability/behavior hint shown next to the label.</param>
+public sealed class KeyedOption(string key, string label, string hint = "")
 {
-    /// <summary>Creates an option.</summary>
-    /// <param name="key">Value persisted in the settings file.</param>
-    /// <param name="label">Text shown in the drop-down.</param>
-    /// <param name="hint">Optional availability/behavior hint shown next to the label.</param>
-    public KeyedOption(string key, string label, string hint = "")
-    {
-        Key = key;
-        Label = label;
-        Hint = hint;
-    }
 
     /// <summary>Gets the persisted key.</summary>
-    public string Key { get; }
+    public string Key { get; } = key;
 
     /// <summary>Gets the display label.</summary>
-    public string Label { get; }
+    public string Label { get; } = label;
 
     /// <summary>Gets the availability/behavior hint (may be empty).</summary>
-    public string Hint { get; }
+    public string Hint { get; } = hint;
 }
 /// <summary>One per-title override row in the settings list.</summary>
 public sealed class TitleOverrideItem : ObservableObject
 {
-    private static readonly KeyedOption[] RendererChoices = new[]
-    {
-        new KeyedOption(string.Empty, "inherit"),
-        new KeyedOption(EmulatorSettings.RendererSoftware, "software"),
-        new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL"),
-    };
+    private static readonly KeyedOption[] RendererChoices =
+    [
+        new(string.Empty, "inherit"),
+        new(EmulatorSettings.RendererSoftware, "software"),
+        new(EmulatorSettings.RendererOpenGl, "OpenGL"),
+    ];
 
     private bool _fixedFunctionVertex;
     private bool _texFilterRegisters;
@@ -74,7 +68,7 @@ public sealed class TitleOverrideItem : ObservableObject
     public string Path { get; }
 
     /// <summary>Gets the certificate title name when this row is keyed by title id (may be empty).</summary>
-    public string TitleName { get; }
+    private string TitleName { get; }
 
     /// <summary>Gets the label shown in the list: the title name, the title id, or the file name.</summary>
     public string DisplayName
@@ -125,10 +119,7 @@ public sealed class TitleOverrideItem : ObservableObject
     public KeyedOption SelectedRenderer
     {
         get => _selectedRenderer;
-        set
-        {
-            SetProperty(ref _selectedRenderer, value);
-        }
+        set => SetProperty(ref _selectedRenderer, value);
     }
 
     /// <summary>Projects the row back into the persisted model.</summary>
@@ -221,21 +212,21 @@ public sealed partial class SettingsViewModel : PageViewModel
     public SettingsViewModel(MainWindowViewModel shell)
         : base(shell)
     {
-        NetworkOptions = new ObservableCollection<KeyedOption>
-        {
-            new("loopback", "Loopback (offline)"),
-            new("socket", "User-mode sockets"),
-        };
-        TextureFilterOptions = new ObservableCollection<KeyedOption>
-        {
-            new("legacy", "Legacy (nearest)"),
-            new("registers", "TEXFILTER (tent, LOD 0)"),
-        };
-        RendererOptions = new ObservableCollection<KeyedOption>
-        {
-            new(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
-            new(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
-        };
+        NetworkOptions =
+        [
+            new KeyedOption("loopback", "Loopback (offline)"),
+            new KeyedOption("socket", "User-mode sockets"),
+        ];
+        TextureFilterOptions =
+        [
+            new KeyedOption("legacy", "Legacy (nearest)"),
+            new KeyedOption("registers", "TEXFILTER (tent, LOD 0)"),
+        ];
+        RendererOptions =
+        [
+            new KeyedOption(EmulatorSettings.RendererSoftware, "Software rasterizer", "portable"),
+            new KeyedOption(EmulatorSettings.RendererOpenGl, "OpenGL backend", OperatingSystem.IsWindows() ? "Windows" : "Windows only"),
+        ];
         foreach (AccentPalette palette in AccentPalette.All)
         {
             AccentOptions.Add(new AccentOption(palette));
@@ -246,7 +237,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     }
 
     /// <summary>Gets the guest RAM choices.</summary>
-    public IReadOnlyList<int> RamOptions { get; } = new[] { 64, 128 };
+    public IReadOnlyList<int> RamOptions { get; } = [64, 128];
 
     /// <summary>Gets the selectable network backends.</summary>
     public ObservableCollection<KeyedOption> NetworkOptions { get; }
@@ -258,30 +249,22 @@ public sealed partial class SettingsViewModel : PageViewModel
     public ObservableCollection<KeyedOption> RendererOptions { get; }
 
     /// <summary>Gets the per-title overrides being edited.</summary>
-    public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = new();
+    public ObservableCollection<TitleOverrideItem> TitleOverrides { get; } = [];
 
     /// <summary>Gets a value indicating whether any per-title override exists.</summary>
     public bool HasTitleOverrides => TitleOverrides.Count > 0;
 
     /// <summary>Gets the accent swatches.</summary>
-    public ObservableCollection<AccentOption> AccentOptions { get; } = new();
+    public ObservableCollection<AccentOption> AccentOptions { get; } = [];
 
     /// <summary>Gets the library folders being edited.</summary>
-    public ObservableCollection<LibraryFolderItem> LibraryFolders { get; } = new();
+    public ObservableCollection<LibraryFolderItem> LibraryFolders { get; } = [];
 
     /// <summary>Gets the BIOS status label.</summary>
-    public string BiosStatusText
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(BiosPath))
-            {
-                return "No BIOS image selected — power-on is disabled.";
-            }
-
-            return File.Exists(BiosPath) ? "BIOS image found." : "BIOS file not found at this path.";
-        }
-    }
+    public string BiosStatusText =>
+        string.IsNullOrWhiteSpace(BiosPath)
+            ? "No BIOS image selected - power-on is disabled."
+            : File.Exists(BiosPath) ? "BIOS image found." : "BIOS file not found at this path.";
 
     /// <summary>Gets a value indicating whether the BIOS path is usable.</summary>
     public bool BiosPathValid => !string.IsNullOrWhiteSpace(BiosPath) && File.Exists(BiosPath);
@@ -378,8 +361,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             NetworkBackend = SelectedNetwork?.Key ?? "loopback",
             NetworkLinkUp = NetworkLinkUp,
             Accent = SelectedAccent?.Key ?? "Emerald",
-            LibraryFolders = LibraryFolders.Select(item => item.Path).ToList(),
-            RecentGames = new List<string>(Shell.Config.RecentGames),
+            LibraryFolders = [.. LibraryFolders.Select(item => item.Path)],
+            RecentGames = [.. Shell.Config.RecentGames],
         };
         foreach (TitleOverrideItem item in TitleOverrides)
         {

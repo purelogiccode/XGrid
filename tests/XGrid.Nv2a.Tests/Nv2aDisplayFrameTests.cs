@@ -24,14 +24,9 @@ public sealed class Nv2aDisplayFrameTests
     private const uint FlippedSurface = 0x4000u;
     private const uint DisplaySurface = 0x8000u;
 
-    private sealed class ArrayMemory : IGpuMemory
+    private sealed class ArrayMemory(int size = 0x10000) : IGpuMemory
     {
-        private readonly byte[] _data;
-
-        public ArrayMemory(int size = 0x10000)
-        {
-            _data = new byte[size];
-        }
+        private readonly byte[] _data = new byte[size];
 
         public void WritePhysical(uint address, uint value)
         {

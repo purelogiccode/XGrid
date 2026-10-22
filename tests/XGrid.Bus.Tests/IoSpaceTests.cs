@@ -54,7 +54,7 @@ public sealed class IoSpaceTests
 
     private sealed class StubPortDevice : IIoPortDevice
     {
-        public uint ReadValue { get; set; } = 0x42;
+        public uint ReadValue { get; init; } = 0x42;
 
         public uint LastValue { get; private set; }
 

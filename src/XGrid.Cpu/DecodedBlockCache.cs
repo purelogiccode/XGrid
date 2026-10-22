@@ -11,17 +11,15 @@ namespace XGrid.Cpu;
 public sealed class DecodedBlockCache
 {
     /// <summary>Maximum original instructions per block.</summary>
-    public const int MaxInstructions = 32;
+    private const int MaxInstructions = 32;
 
     /// <summary>Maximum retained blocks (and hence at most 131072 decoded references).</summary>
     public const int MaxBlocks = 4096;
 
-    private readonly Dictionary<uint, Block> _blocks = new();
+    private readonly Dictionary<uint, Block> _blocks = [];
     private Block? _current;
     private int _index;
     private uint _expectedLinear;
-    private XboxCpu.SpecHandler? _currentHandler;
-    private bool _specEnabled;
 
     /// <summary>
     /// Gets or sets whether formation resolves pre-specialized per-shape
@@ -31,20 +29,19 @@ public sealed class DecodedBlockCache
     /// </summary>
     public bool SpecEnabled
     {
-        get => _specEnabled;
-        set
+        get; set
         {
-            if (value && !_specEnabled)
+            if (value && !field)
             {
                 Invalidate();
             }
 
-            _specEnabled = value;
+            field = value;
         }
     }
 
     /// <summary>Gets the handler for the member just served by <see cref="TryNext"/> (null when disabled or fallback).</summary>
-    public XboxCpu.SpecHandler? CurrentHandler => _currentHandler;
+    public XboxCpu.SpecHandler? CurrentHandler { get; private set; }
 
     /// <summary>Gets block selections, not mnemonic-switch eliminations.</summary>
     public ulong Dispatches { get; private set; }
@@ -95,15 +92,14 @@ public sealed class DecodedBlockCache
     public ulong SpecRan { get; private set; }
 
     /// <summary>Maximum retained fallback-shape histogram entries.</summary>
-    public const int MaxFallbackShapes = 512;
+    private const int MaxFallbackShapes = 512;
 
-    private readonly Dictionary<XboxCpu.SpecShape, ulong> _fallbackShapes = new();
+    private readonly Dictionary<XboxCpu.SpecShape, ulong> _fallbackShapes = [];
 
     /// <summary>Maximum retained served-shape histogram entries.</summary>
-    public const int MaxServedShapes = 512;
+    private const int MaxServedShapes = 512;
 
-    private readonly Dictionary<XboxCpu.SpecShape, ulong> _servedShapes = new();
-    private bool _shapeTallyEnabled;
+    private readonly Dictionary<XboxCpu.SpecShape, ulong> _servedShapes = [];
 
     /// <summary>
     /// Gets or sets whether specialized-member serves are tallied by shape
@@ -112,11 +108,7 @@ public sealed class DecodedBlockCache
     /// byte-identical. While enabled the totals equal <see cref="ShapeHits"/>
     /// (fallback members are already tallied separately).
     /// </summary>
-    public bool ShapeTallyEnabled
-    {
-        get => _shapeTallyEnabled;
-        set => _shapeTallyEnabled = value;
-    }
+    public bool ShapeTallyEnabled { get; set; }
 
     /// <summary>Gets served-shape execution counts (empty unless <see cref="ShapeTallyEnabled"/>).</summary>
     public IReadOnlyDictionary<XboxCpu.SpecShape, ulong> ServedShapes => _servedShapes;
@@ -128,22 +120,21 @@ public sealed class DecodedBlockCache
     // so a chain edge can validate its target against the live generation even
     // when a store inside the current block invalidated decodes.
     private readonly ulong[] _generationSlot = GC.AllocateArray<ulong>(1, pinned: true);
-    private unsafe ulong* _generationPointer;
 
     /// <summary>Gets the pinned live-generation word (stable address).</summary>
     internal unsafe ulong* GenerationPointer
     {
         get
         {
-            if (_generationPointer is null)
+            if (field is null)
             {
                 fixed (ulong* slot = _generationSlot)
                 {
-                    _generationPointer = slot;
+                    field = slot;
                 }
             }
 
-            return _generationPointer;
+            return field;
         }
     }
 
@@ -201,7 +192,7 @@ public sealed class DecodedBlockCache
         _generationSlot[0] = Generation;
         _blocks.Clear();
         _current = null;
-        _currentHandler = null;
+        CurrentHandler = null;
     }
 
     /// <summary>Ends reuse after an interrupt or fault boundary.</summary>
@@ -213,7 +204,7 @@ public sealed class DecodedBlockCache
             _current = null;
         }
 
-        _currentHandler = null;
+        CurrentHandler = null;
     }
 
     /// <summary>Records a missed writer and abandons all derived state.</summary>
@@ -311,7 +302,7 @@ public sealed class DecodedBlockCache
             Redirects++;
             block = null;
             _current = null;
-            _currentHandler = null;
+            CurrentHandler = null;
         }
 
         if (block is null)
@@ -327,7 +318,7 @@ public sealed class DecodedBlockCache
                 if (block is null)
                 {
                     entry = default;
-                    _currentHandler = null;
+                    CurrentHandler = null;
                     return false;
                 }
 
@@ -354,10 +345,10 @@ public sealed class DecodedBlockCache
         }
 
         entry = block.Entries[_index];
-        _currentHandler = block.Handlers is { } handlers ? handlers[_index] : null;
-        if (_specEnabled)
+        CurrentHandler = block.Handlers is { } handlers ? handlers[_index] : null;
+        if (SpecEnabled)
         {
-            if (_currentHandler is null)
+            if (CurrentHandler is null)
             {
                 ShapeFallbacks++;
                 NoteFallbackShape(entry.Instruction);
@@ -365,7 +356,7 @@ public sealed class DecodedBlockCache
             else
             {
                 ShapeHits++;
-                if (_shapeTallyEnabled)
+                if (ShapeTallyEnabled)
                 {
                     NoteServedShape(entry.Instruction);
                 }
@@ -415,7 +406,7 @@ public sealed class DecodedBlockCache
 
         XboxCpu.SpecHandler?[]? handlers = null;
         bool allSpecialized = false;
-        if (_specEnabled)
+        if (SpecEnabled)
         {
             handlers = new XboxCpu.SpecHandler?[count];
             allSpecialized = true;
@@ -478,12 +469,8 @@ public sealed class DecodedBlockCache
         // is their mandatory opcode prefix, never a repeat) but are pure
         // straight-line data ops, so they continue like the whitelist below.
         // Every other Rep-prefixed instruction still terminates.
-        if (instruction.Rep != RepPrefix.None && !XboxCpu.IsMandatoryF3Scalar(instruction.Mnemonic))
-        {
-            return true;
-        }
-
-        return instruction.Mnemonic is not (
+        return (instruction.Rep != RepPrefix.None && !XboxCpu.IsMandatoryF3Scalar(instruction.Mnemonic))
+            || instruction.Mnemonic is not (
             Mnemonic.Nop or Mnemonic.Mov or Mnemonic.Push or Mnemonic.Pop or Mnemonic.Xchg or Mnemonic.Lea
             or Mnemonic.Add or Mnemonic.Or or Mnemonic.Adc or Mnemonic.Sbb or Mnemonic.And or Mnemonic.Sub
             or Mnemonic.Xor or Mnemonic.Cmp or Mnemonic.Inc or Mnemonic.Dec or Mnemonic.Test or Mnemonic.Not
@@ -571,7 +558,7 @@ public sealed class DecodedBlockCache
         out EmitTailRunner? runner)
     {
         Block? block = _current;
-        if (block is not null && _specEnabled && _index == 1 && block.AllSpecialized
+        if (block is not null && SpecEnabled && _index == 1 && block.AllSpecialized
             && block.Handlers is not null && block.EmitLinears is not null && block.Entries.Length >= 2
             && block.Visits >= EmitThreshold)
         {
@@ -698,6 +685,6 @@ public sealed class DecodedBlockCache
     {
         Redirects++;
         _current = null;
-        _currentHandler = null;
+        CurrentHandler = null;
     }
 }

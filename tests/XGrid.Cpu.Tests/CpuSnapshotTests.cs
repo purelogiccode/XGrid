@@ -28,7 +28,7 @@ public sealed class CpuSnapshotTests
 
         // Dirty every directly-settable field with unmistakable values.
         uint[] gprs =
-            { 0xA1A1A1A1, 0xB2B2B2B2, 0xC3C3C3C3, 0xD4D4D4D4, 0xE5E5E5E5, 0xF6F6F6F6, 0x17171717, 0x28282828 };
+            [0xA1A1A1A1, 0xB2B2B2B2, 0xC3C3C3C3, 0xD4D4D4D4, 0xE5E5E5E5, 0xF6F6F6F6, 0x17171717, 0x28282828];
         for (int i = 0; i < 8; i++)
         {
             cpu.Context.WriteRegister((Gpr)i, gprs[i]);
@@ -37,7 +37,7 @@ public sealed class CpuSnapshotTests
         cpu.Context.Eip = 0x12345678;
         cpu.Context.Eflags = 0x00003246;
 
-        ushort[] selectors = { 0x10, 0x08, 0x18, 0x20, 0x28, 0x30 };
+        ushort[] selectors = [0x10, 0x08, 0x18, 0x20, 0x28, 0x30];
         for (int i = 0; i < 6; i++)
         {
             cpu.Context.SetSegment((SegmentRegister)i, selectors[i], 0x10000000u + (uint)(i * 0x111111));
@@ -213,7 +213,7 @@ public sealed class CpuSnapshotTests
     {
         XboxCpu cpu = CpuHarness.Create(0xD6); // salc: invalid opcode, no IDT installed
 
-        Assert.Throws<UnsupportedInstructionException>(() => cpu.Step());
+        Assert.Throws<UnsupportedInstructionException>(cpu.Step);
         Assert.Equal(6, cpu.LastFaultVector);
         Assert.Equal(CpuHarness.CodeAddress, cpu.LastFaultEip);
         Assert.Equal(0u, cpu.LastFaultErrorCode);
@@ -227,7 +227,7 @@ public sealed class CpuSnapshotTests
         // Cause a different fault at a different EIP.
         cpu.Bus().Write8(0x2000, 0xD6);
         cpu.Context.Eip = 0x2000;
-        Assert.Throws<UnsupportedInstructionException>(() => cpu.Step());
+        Assert.Throws<UnsupportedInstructionException>(cpu.Step);
         Assert.Equal(0x2000u, cpu.LastFaultEip);
 
         stream.Position = 0;
@@ -264,7 +264,7 @@ public sealed class CpuSnapshotTests
     {
         const uint code = 0x5000;
         byte[] program =
-        {
+        [
             0xB9, 0x74, 0x01, 0x00, 0x00, // mov ecx, 0x174
             0x31, 0xC0, // xor eax, eax
             0x31, 0xD2, // xor edx, edx
@@ -274,7 +274,7 @@ public sealed class CpuSnapshotTests
             0xB9, 0x76, 0x01, 0x00, 0x00, // mov ecx, 0x176
             0x0F, 0x30, // wrmsr
             0xF4, // hlt
-        };
+        ];
 
         for (int i = 0; i < program.Length; i++)
         {
@@ -294,11 +294,11 @@ public sealed class CpuSnapshotTests
     {
         const uint code = 0x5100;
         byte[] program =
-        {
+        [
             0xB9, (byte)msr, (byte)(msr >> 8), (byte)(msr >> 16), (byte)(msr >> 24), // mov ecx, msr
             0x0F, 0x32, // rdmsr
             0xF4, // hlt
-        };
+        ];
 
         AddressSpace bus = cpu.Bus();
         for (int i = 0; i < program.Length; i++)
@@ -340,15 +340,9 @@ public sealed class CpuSnapshotTests
         cpu.Context.Idtr.Limit = 0x7FF;
     }
 
-    private sealed class SingleShotInterruptSource : IInterruptSource
+    private sealed class SingleShotInterruptSource(int vector) : IInterruptSource
     {
-        private readonly int _vector;
         private bool _fired;
-
-        public SingleShotInterruptSource(int vector)
-        {
-            _vector = vector;
-        }
 
         public int Acknowledge()
         {
@@ -358,7 +352,7 @@ public sealed class CpuSnapshotTests
             }
 
             _fired = true;
-            return _vector;
+            return vector;
         }
     }
 }
