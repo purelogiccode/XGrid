@@ -4,6 +4,24 @@ Every change to `master` (and every pull request) runs the same quality gates.
 Releases are produced from tags. No CI job needs game data, firmware, or the
 `References2/` oracle tree: the test suite is self-contained.
 
+## Prerequisites
+
+- **GitHub-hosted runners need Actions minutes.** This repository is private, so
+  standard runners are billed against the account's included minutes. If the
+  account has no payment method / spending limit configured, jobs fail at
+  startup with *"The job was not started because recent account payments have
+  failed or your spending limit needs to be increased."* Fix it in
+  **Settings → Billing & plans**, or make the repository public (standard
+  runners are free for public repositories), or point the workflows at
+  self-hosted runners.
+- **Code scanning, dependency review and build attestations need GitHub
+  Advanced Security on a private repository** (they are free on public
+  repositories). The InspectCode SARIF upload is best-effort
+  (`continue-on-error`), so its job still gates on findings without GHAS.
+- If the project stays private without GHAS, disable `codeql.yml` and
+  `dependency-review.yml` (or switch them to `workflow_dispatch`) until the
+  repository becomes public.
+
 ## Workflows
 
 | Workflow | Trigger | What it proves |
