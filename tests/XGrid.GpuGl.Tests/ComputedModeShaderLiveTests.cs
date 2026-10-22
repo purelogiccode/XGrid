@@ -133,6 +133,14 @@ public sealed class ComputedModeShaderLiveTests(ITestOutputHelper output)
         yield return ("dotstrcube-3", (0x11u << 5) | (0x11u << 10) | (0x12u << 15));
         yield return ("dotstr3d-3", (0x11u << 5) | (0x11u << 10) | (0x14u << 15));
         yield return ("cubemap-3", (0x11u << 5) | (0x11u << 10) | (0x02u << 15));
+
+        // The measured reflection-phase programs of xgu bump_cubemap_reflect
+        // (decisions §228): eight stages, PROJECT2D/CUBEMAP on slot 0, then
+        // two DOT_PRODUCT stages and DOT_REFLECT_SPECULAR. They are the rows
+        // the corpus actually runs, and they are eight-stage programs - the
+        // shape the driver is slowest to link.
+        yield return ("bump-reflect-m0332", 0x0332u);
+        yield return ("bump-reflect-m1332", 0x1332u);
     }
 
     /// <summary>A fully populated combiner: every stage enabled with distinct inputs, so every body has real expressions.</summary>

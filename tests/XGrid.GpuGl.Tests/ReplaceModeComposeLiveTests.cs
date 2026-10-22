@@ -336,8 +336,17 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
     /// guessed word), record a guest-word miss, and not be counted as a mode
     /// gap - the mode is implemented, the draw's words were absent.
     /// </summary>
+    /// <summary>
+    /// A cube-flagged PROJECT2D stage is SERVED even when the seam's carried
+    /// set is empty: the face texels are guest RAM the backend can read at the
+    /// address this draw samples (the same direct lane the HILO dot inputs
+    /// always used). Before §228 the cube path required every address in the
+    /// carried window and declined the whole draw, which is why the GL frame
+    /// of `xgu bump_cubemap_reflect` at its reflection phase was the clear
+    /// colour plus a black panel while the software frame was complete.
+    /// </summary>
     [Fact]
-    public void CubeStage_WithoutCarriedWords_IsDeclinedNotSampled()
+    public void CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords()
     {
         var memory = new ArrayMemory();
         bool created = GlBackendFactory.TryCreate(
@@ -350,20 +359,17 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
 
         try
         {
-            PgraphGuestTexelSet words = BuildCubeWords(memory, out PgraphTextureSlot cube);
+            _ = BuildCubeWords(memory, out PgraphTextureSlot cube);
             var combiner = new PshCombiner();
             backend.Clear(ClearInfo());
-            // The slot program is PROJECT2D on the cube stage, so with no
-            // carried words the backend has nothing to resolve the cube face
-            // with; the structural declines (zeta, float depth, depth test)
-            // are off for this shape, so the guest-word lane is the only
-            // reason left.
-            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 3, cube, new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>()))));
-            _ = words;
-            Assert.Contains("guestWordMisses=1", backend.DebugSummary, StringComparison.Ordinal);
-            Assert.Contains("guestWordDraws=0", backend.DebugSummary, StringComparison.Ordinal);
+            bool served = backend.TryDraw(
+                DrawInfo(combiner, shape: 3, cube, new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>())));
+            output.WriteLine(backend.DebugSummary);
+            Assert.True(served, backend.DebugSummary);
+            Assert.Contains("guestWordDraws=1", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("guestWordMisses=0", backend.DebugSummary, StringComparison.Ordinal);
             Assert.Contains("unsupported=0", backend.DebugSummary, StringComparison.Ordinal);
-            Assert.Contains("composedFrames=1", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.DoesNotContain("composedFrames=1", backend.DebugSummary, StringComparison.Ordinal);
         }
         finally
         {

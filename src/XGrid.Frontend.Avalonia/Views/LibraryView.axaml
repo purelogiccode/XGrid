@@ -121,6 +121,12 @@
                              FontWeight="SemiBold"
                              Classes="muted" />
                 </Border>
+                <TextBlock Text="{Binding TitleIdText}"
+                           IsVisible="{Binding HasDistinctTitleId}"
+                           Classes="muted"
+                           FontSize="10.5"
+                           VerticalAlignment="Center"
+                           ToolTip.Tip="Per-title settings key on this certificate title id." />
                 <TextBlock Text="{Binding SizeText}"
                            Classes="muted"
                            FontSize="12"

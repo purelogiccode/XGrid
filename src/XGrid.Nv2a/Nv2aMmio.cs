@@ -5009,9 +5009,19 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (RasterTimingEnabled)
             {
                 // Diagnostic: capture the distinct combiner configuration.
+                // The per-stage input/output words describe the STATE the guest
+                // programmed; a stage whose outputs write nothing is not part of
+                // the evaluated program, so the row also carries what those
+                // words actually READ (texture slots, vertex colours, temps) and
+                // whether any of them distinguishes this program from a simpler
+                // one. Two legends of one row used to be indistinguishable here:
+                // the menu renders 19,949,790 px with stages=8/only stage 0
+                // writing, which reads exactly like a one-stage modulate.
                 var cfg = new System.Text.StringBuilder();
                 cfg.Append(CultureInfo.InvariantCulture,
-                    $"stages={_combiner.StageCount} c={_combiner.Control:X8} f0={_combiner.Final0:X8} f1={_combiner.Final1:X8}");
+                    $"stages={_combiner.StageCount} c={_combiner.Control:X8} f0={_combiner.Final0:X8} f1={_combiner.Final1:X8}" +
+                    $" tm={_combiner.DecodeTexMode(0):X}{_combiner.DecodeTexMode(1):X}{_combiner.DecodeTexMode(2):X}{_combiner.DecodeTexMode(3):X}" +
+                    $" sf={_combiner.SpecFogFactor[0]:X8}/{_combiner.SpecFogFactor[1]:X8} {_combiner.DescribeReach()}");
                 for (int i = 0; i < _combiner.StageCount; i++)
                 {
                     cfg.Append(CultureInfo.InvariantCulture,

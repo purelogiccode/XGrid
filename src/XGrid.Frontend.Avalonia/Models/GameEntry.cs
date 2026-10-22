@@ -55,6 +55,30 @@ public sealed class GameEntry
     /// <summary>Gets the formatted size label.</summary>
     public string SizeText => FormatSize(SizeBytes);
 
+    /// <summary>
+    /// Gets the XBE certificate title id (the per-title configuration key),
+    /// or 0 when the container has none to read.
+    /// </summary>
+    /// <remarks>
+    /// Resolved at construction through <see cref="DiscTitleId.TryRead"/> - the
+    /// same resolver the emulator uses to match a `title:XXXXXXXX` override -
+    /// so a library row shows the identity a per-title setting will key on
+    /// (filed as the Track P follow-up in the §224 session notes). Every homebrew sample
+    /// that never sets a certificate id shares the placeholder below, which is
+    /// why the row keeps the file name as the distinguishing text.
+    /// </remarks>
+    public uint TitleId { get; private init; }
+
+    /// <summary>Gets the title id as the `title:XXXXXXXX` key fragment, or an empty string when unknown.</summary>
+    public string TitleIdText => TitleId == 0
+        ? string.Empty
+        : "Title " + TitleId.ToString("X8", CultureInfo.InvariantCulture);
+
+    /// <summary>Gets a value indicating whether this entry carries a distinct certificate title id.</summary>
+    public bool HasDistinctTitleId => TitleId != 0 && TitleId != PlaceholderTitleId;
+
+    private const uint PlaceholderTitleId = 0xFFFF0002u;
+
     /// <summary>Gets the containing folder.</summary>
     public string Folder => System.IO.Path.GetDirectoryName(Path) ?? string.Empty;
 
@@ -88,7 +112,13 @@ public sealed class GameEntry
                 title = ReadXbeTitle(path) ?? title;
             }
 
-            return new GameEntry(path, title, format, info.Length);
+            return new GameEntry(path, title, format, info.Length)
+            {
+                // Covers .xbe directly and every launchable image; a container
+                // the resolver cannot read (or a homebrew title with no
+                // certificate) leaves the id at 0 / the shared placeholder.
+                TitleId = XGrid.Host.DiscTitleId.TryRead(path, out uint titleId, out _) ? titleId : 0u,
+            };
         }
         catch (IOException)
         {

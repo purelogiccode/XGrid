@@ -185,6 +185,104 @@ public sealed class PshCombinerTests
         Assert.Equal(128f / 255f, r, 5);
     }
 
+    /// <summary>
+    /// The two 8-stage records the xgu bump_cubemap_reflect reflection phase
+    /// programs, verbatim from the measured combiner histogram (decisions
+    /// §228): `c=00011108 tm=0332` and `c=00011107 tm=1332`. They differ only
+    /// in stage 0's mode (PROJECT2D vs CUBEMAP), the texture slot each names
+    /// at stage 0, and the final colour inputs - exactly the distinction the
+    /// B3 slice has to see (one reads TM0-TM3, the other TM1-TM3).
+    /// DescribeReach must name the sampled slots the input words imply: T0
+    /// when a stage names it, and nothing for the second program because
+    /// none of its input words name a texture.
+    /// </summary>
+    [Theory]
+    // Stage 0's projector, stage 1 and the CD writes of stages 2-3 write R0/R1.
+    [InlineData(0x00011108u, 0x0332u, 0x02200500u)]
+    [InlineData(0x00011107u, 0x1332u, 0x0000000Cu)]
+    public void DescribeReach_NamesTheSlotsTheInputWordsRead(
+        uint control, uint stageProgram, uint stage0Inputs)
+    {
+        var combiner = new PshCombiner
+        {
+            Control = control,
+            StageProgram = stageProgram,
+            Final0 = 0x0C0B000Fu,
+            Final1 = 0x0C011180u,
+        };
+        // Stage 0 samples its slot (PROJECT2D / CUBEMAP) and writes R0. The
+        // measured words carry output bit 30, which is the shelved-constant
+        // select inside the mapping field, not part of the register address.
+        // TM0 is read because stage 0's projector resolves it (the software
+        // loop resolves every stage from its mode; an input word that names
+        // T0 is the measured word's own socket).
+        combiner.RgbInputs[0] = stage0Inputs;
+        combiner.AlphaInputs[0] = 0x00000000u;
+        combiner.RgbOutputs[0] = 0x000C30CDu | 0x40000000u;
+        combiner.AlphaOutputs[0] = 0x00000000u;
+
+        // Stages 1-8 hold the measured input words; only stage 1 writes R1.
+        // The dot stages (TM1/TM2 DOT_PRODUCT, TM3 REFLECT_SPECULAR) name
+        // their own coords, so their slots are sampled by the stage modes
+        // themselves - which is the point of the row.
+        combiner.RgbInputs[1] = 0x0D0D0000u;
+        combiner.RgbOutputs[1] = 0x000005C0u;
+        combiner.RgbInputs[2] = 0xCDCD0000u;
+        combiner.RgbOutputs[2] = 0x000000D0u;
+        combiner.RgbInputs[3] = 0xCDCD0000u;
+        combiner.RgbOutputs[3] = 0x000000D0u;
+        for (int stage = 4; stage < PshCombiner.MaxStages; stage++)
+        {
+            combiner.RgbInputs[stage] = 0xCDCD0000u;
+            combiner.RgbOutputs[stage] = 0u;
+        }
+
+        // DescribeReach is pinned field by field in PshCombinerReachTests;
+        // this test pins the two measured records' stage counts.
+        string reach = combiner.DescribeReach();
+        Assert.Contains("stg=4/", reach, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A stage whose output words write NO register (ro=ao=0) is not part of
+    /// the evaluated program: it must not contribute inputs, flags or
+    /// constants - that is the distinction a plain word dump cannot make
+    /// (the menu's 8-stage record's stages 4-7 carry arbitrary stale input
+    /// words and write nothing).
+    /// </summary>
+    [Fact]
+    public void DescribeReach_IgnoresStagesThatWriteNoRegister()
+    {
+        var combiner = new PshCombiner
+        {
+            Control = 0x00000001u,
+            StageProgram = 0x0001u,
+            Final0 = 0x0C0B000Fu,
+            Final1 = 0x0C011180u,
+        };
+        combiner.RgbInputs[0] = 0xC149C14Au;
+        combiner.RgbOutputs[0] = 0x000C30CDu;
+        for (int stage = 1; stage < PshCombiner.MaxStages; stage++)
+        {
+            combiner.RgbInputs[stage] = 0x04030201u;
+            combiner.AlphaInputs[stage] = 0x44434241u;
+            combiner.RgbOutputs[stage] = 0u;
+            combiner.AlphaOutputs[stage] = 0u;
+        }
+
+        string reach = combiner.DescribeReach();
+        Assert.Contains("stg=1/1", reach, StringComparison.Ordinal);
+        Assert.Contains("consts=0", reach, StringComparison.Ordinal);
+
+        // Only stage 1 writes a register, and its output word (0x000C30CD)
+        // names register 0 / GLB / 0xC, so the write itself survives: R0
+        // reaches the final block. What must NOT happen is the stale input
+        // words of stages 2-8 leaking sockets, flags or constants into the
+        // row.
+        Assert.Contains("tx=", reach, StringComparison.Ordinal);
+        Assert.Contains("stg=1/1", reach, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Stage_MuxMsbSelectsCd()
     {

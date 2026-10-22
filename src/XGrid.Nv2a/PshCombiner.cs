@@ -620,6 +620,248 @@ public sealed class PshCombiner : ISnapshotable
     }
 
     /// <summary>
+    /// Reports the read set of the evaluated program as one stable line, which a
+    /// dump of the programmed words cannot: <c>reach[tx=…]</c> names the texture
+    /// slots the input words read plus the slots a projector's own mode samples,
+    /// <c>stg=w/s</c> counts the stages whose output words write a register the
+    /// program can read, <c>src=</c> lists the input sources those stages and
+    /// the final block name (or <c>-</c>), <c>consts=</c> the C0/C1 inputs a
+    /// writing stage names, <c>flags=</c> the output-flag bits the writes pass
+    /// through (the decoded <c>&gt;&gt;12 &amp; 0xF8</c>), and <c>lerp=</c> the
+    /// final block's MUX/complement selects. Purely diagnostic: only the
+    /// <c>--gpu-time</c> combiner histogram row calls it. Two 8-stage records of
+    /// one corpus frame (19.9M and 12.4M pixels) differ this way, and before
+    /// this summary they were indistinguishable.
+    /// </summary>
+    /// <returns><c>reach[tx=…] stg=w/s src=… consts=… flags=… lerp=…</c>.</returns>
+    public string DescribeReach()
+    {
+        var sb = new System.Text.StringBuilder(96);
+        int stages = Math.Clamp(StageCount, 0, MaxStages);
+        int texConstants = 0;
+        int flagBits = 0;
+
+        // The final combiner's lerp reads a/b/c/d and its alpha reads g: an
+        // E/F product feeds them through the pseudo-register the read
+        // sampler names. Without a programmed final block the general
+        // combiner's R0 is the output (the initial r0.a comes from T0).
+        int finalReadMask = 0;
+        if (FinalEnabled)
+        {
+            finalReadMask |= 1 << (int)(Final0 & 0xFu);
+            finalReadMask |= 1 << (int)((Final0 >> 8) & 0xFu);
+            finalReadMask |= 1 << (int)((Final0 >> 16) & 0xFu);
+            finalReadMask |= 1 << (int)((Final0 >> 24) & 0xFu);
+            finalReadMask |= 1 << (int)((Final1 >> 8) & 0xFu);
+        }
+
+        int combinedRead = 0;
+
+        var slotRead = new bool[TextureSlots];
+        sb.Append("reach[tx=");
+        int written = 0;
+        for (int stage = 0; stage < stages; stage++)
+        {
+            uint ri = RgbInputs[stage];
+            uint ai = AlphaInputs[stage];
+            uint ro = RgbOutputs[stage];
+            uint ao = AlphaOutputs[stage];
+            int mode = DecodeTexMode(stage);
+            if (!IsModeValidForStage(mode, stage))
+            {
+                mode = TexModeNone;
+            }
+
+            // A stage samples TM<i> when an input word names T<i> - the texel
+            // is resolved for every slot whose mode is not NONE (the software
+            // loop and the shader both run the stage resolution first), and
+            // this column says what the row's program reads, not what the
+            // resolve touched. NONE inputs degrade to (0,0,0,1) and are never
+            // counted.
+            // The stage's own socket: a projector (PROJECT2D/3D, CUBEMAP)
+            // samples TM<i> from its coords whatever its input words name.
+            // The dot modes read their own stage's texel too, but only as the
+            // dot-map input another stage names - their measured words name
+            // register constants, so counting them would misreport the row.
+            if (mode is TexModeProject2D or TexModeProject3D or TexModeCubemap)
+            {
+                slotRead[stage] = true;
+            }
+
+            for (int shift = 24; shift >= 0; shift -= 8)
+            {
+                MarkTextureRead(slotRead, mode, Component(ri, shift));
+                MarkTextureRead(slotRead, mode, Component(ai, shift));
+            }
+
+            for (int shift = 24; shift >= 0; shift -= 8)
+            {
+                combinedRead |= 1 << (Component(ri, shift) & 0xF);
+                combinedRead |= 1 << (Component(ai, shift) & 0xF);
+            }
+
+            if (!StageWritesRegister(ro, ao))
+            {
+                continue;
+            }
+
+            written++;
+
+            // Only the flags the decoded register write actually reads: the
+            // write samplers select by (word >> 12) & 0xF8 (output mapping,
+            // MUX, dot flag, blue-to-alpha), never by bit 11 or the low
+            // nibble of the high byte.
+            flagBits |= FlagBits(ro) | FlagBits(ao);
+            texConstants += CountConstantInputs(ri) + CountConstantInputs(ai);
+        }
+
+        // What the output depends on: a programmed final block reads a/b/c/d
+        // and g (its own E/F product comes from its E*F inputs); without one
+        // the general combiner's R0 is the output and the initial r0.a is T0.
+        int reportedRead = combinedRead | finalReadMask;
+
+        // The final lerp's MUX and its AB/CD negation (xemu psh.c final
+        // combiner): bit 0x10 of Final1 is the MUX select, bit 0x40 picks the
+        // (1 - V1) / (1 - R0) complements, bit 0x20 the FP_TO_INT path. The
+        // produced shader keeps its own fixed choice, so the row reports what
+        // the state says and the corpus measures the rest.
+        int lerp = 0;
+        if (Final0 != 0u || Final1 != 0u)
+        {
+            uint cSource = Final1 >> 16;
+            lerp |= (cSource & 0xF0u) == 0x10u ? 1 : 0;
+            lerp |= (cSource & 0x0Fu) == 2u ? 2 : 0;
+            lerp |= (Final1 & 0x10u) != 0 ? 4 : 0;
+        }
+
+        for (int slot = 0; slot < TextureSlots; slot++)
+        {
+            if (slotRead[slot])
+            {
+                sb.Append(slot);
+            }
+        }
+
+        System.Globalization.CultureInfo culture = System.Globalization.CultureInfo.InvariantCulture;
+        sb.Append("] stg=");
+        sb.Append(written.ToString(culture));
+        sb.Append('/');
+        sb.Append(stages.ToString(culture));
+        sb.Append(" src=");
+        AppendSourceKinds(sb, reportedRead);
+        sb.Append(" consts=");
+        sb.Append(texConstants.ToString(culture));
+        sb.Append(" flags=");
+        sb.Append(flagBits.ToString("X2", culture));
+        sb.Append(" lerp=");
+        sb.Append(lerp.ToString(culture));
+        return sb.ToString();
+    }
+
+    /// <summary>Counts the C0/C1 inputs one combiner input word names (four packed bytes).</summary>
+    private static int CountConstantInputs(uint word)
+    {
+        int count = 0;
+        for (int shift = 24; shift >= 0; shift -= 8)
+        {
+            int source = Component(word, shift);
+            if (source is RegC0 or RegC1)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>The output flags the decoded register write reads (see the write samplers).</summary>
+    private static int FlagBits(uint word)
+    {
+        return (int)((word >> 12) & 0xF8u);
+    }
+
+    /// <summary>
+    /// Whether one stage's colour/alpha output words write a register the rest
+    /// of the program can read: AB, CD or MUX set to R0/R1 (or a V/T slot).
+    /// The other output ids (GEL, FOGCONST, 0x1-0x3, R&gt;=0xE) land in slots
+    /// the general combiner never reads, so such a stage computes nothing the
+    /// evaluated program depends on - the menu's 8-stage record programs
+    /// stages 4-7 that way.
+    /// </summary>
+    private static bool StageWritesRegister(uint rgbOut, uint alphaOut)
+    {
+        return WritesReadable(rgbOut) || WritesReadable(alphaOut);
+    }
+
+    private static bool WritesReadable(uint word)
+    {
+        return WritesReadableId((word >> 4) & 0xFu) || WritesReadableId(word & 0xFu) ||
+               WritesReadableId((word >> 8) & 0xFu);
+    }
+
+    private static bool WritesReadableId(uint id)
+    {
+        return id is 0x4u or 0x5u || (id >= 0x8u && id <= 0xDu);
+    }
+
+    /// <summary>Marks the texture slot a stage input reads, when the stage samples it.</summary>
+    private static void MarkTextureRead(bool[] slotRead, int mode, int source)
+    {
+        if (mode == TexModeNone || source < RegT0 || source >= RegT0 + TextureSlots)
+        {
+            return;
+        }
+
+        slotRead[source - RegT0] = true;
+    }
+
+    private static void AppendSourceKinds(System.Text.StringBuilder sb, int readMask)
+    {
+        bool first = true;
+        for (int reg = RegZero; reg <= RegEfProd; reg++)
+        {
+            // Registers 0x6/0x7 are unused ids and 0xE/0xF are final-only.
+            if (reg is 0x6 or 0x7 || (readMask & (1 << reg)) == 0)
+            {
+                continue;
+            }
+
+            if (!first)
+            {
+                sb.Append(',');
+            }
+
+            first = false;
+            sb.Append(reg switch
+            {
+                RegZero => "0",
+                RegC0 => "c0",
+                RegC1 => "c1",
+                RegFog => "fog",
+                RegV0 => "v0",
+                RegV1 => "v1",
+                RegT0 => "t0",
+                RegT0 + 1 => "t1",
+                RegT0 + 2 => "t2",
+                RegT0 + 3 => "t3",
+                RegR0 => "r0",
+                RegR1 => "r1",
+                _ => "r",
+            });
+        }
+
+        if (first)
+        {
+            sb.Append('-');
+        }
+    }
+
+    private static int Component(uint word, int shift)
+    {
+        return (int)((word >> shift) & 0xFFu);
+    }
+
+    /// <summary>
     /// Builds the per-draw constant table: pairs of RGBA floats for stages 0-7
     /// (FACTOR0/1, ARGB unpacked) plus the final pair (SPECFOGFACTOR0/1).
     /// Layout matches xemu's <c>consts[18]</c> uniform (<c>c0_i</c>/<c>c1_i</c> defines).

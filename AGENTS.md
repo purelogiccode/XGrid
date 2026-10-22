@@ -706,10 +706,47 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1821 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1836 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (twenty-ninth; the B3 corpus row runs its dot programs at
+4.4B, the GL path renders that frame as 4 colours, and the read-set diagnostic
+that makes the difference visible - decisions §228). No gate anchor moved.**
+
+- **§227's anchor was wrong, not its finding.** `xgu bump_cubemap_reflect` is
+  animated: at **4.4B** it spends the frame in `stages=8 c=00011108 tm=0332`
+  (19.9M px) and `stages=7 c=00011107 tm=1332` (12.4M px) - PROJECT2D on
+  slot 0, DOT_PRODUCT/CUBEMAP/REFLECT_SPECULAR on slots 1-3 - i.e. exactly the
+  B3 family. The dot program is absent at 0.2-1.4B and at 3B. Phase table:
+  `docs/research-notes/computed-mode-coverage.md`.
+- **`reach[...]` on the `--gpu-time` combiner rows.** Each config row now also
+  prints `tm=`/`sf=` and `PshCombiner.DescribeReach()` (`tx` slots the input
+  words read plus a projector's own slot, `stg` writing stages, `src` sockets,
+  `consts`, `flags` decoded, `lerp` final selects). A stage that writes no
+  register was previously indistinguishable from a one-stage program. Tests:
+  `PshCombinerReachTests` + `PshCombinerTests.DescribeReach_ReportsTheWritingStages`.
+- **The cube word lane reads RAM, not the carried window.**
+  `AppendCubeWords` declined every cube stage whose face texels were outside the
+  seam's 32-entry window; it now falls back to the same direct RAM lane the HILO
+  inputs use (plus `FindPooledWord` for a second cube slot in one command).
+  `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords` replaces §227's
+  decline test (served, `guestWordDraws=1`); `ComputedModeShaderLiveTests` also
+  compiles the two measured 8-stage programs on the driver. The row's own output
+  is unchanged (`guestWordDraws=0`).
+- **Open: the panel renders black.** GL replace presents **4 colours** at 4.4B
+  and **2** at 3.6B against software's 18,980 / 20,843, with `unsupported=0
+  fatal=0 composedFrames=0` - the FBO clear plus a black panel, i.e. a
+  fragment-expression gap (the 3.6B shape predates the dot program). Gap 12
+  carries the leads (BLUE_TO_ALPHA into R0 + the MUX-lsb select and the final
+  lerp negation; a 3.6B per-fragment differential first).
+- **Gates (this session, H1):** fast 1B triangle `B45254CA`/`7DAB63EB`/frame
+  `A1740DE0` (68/34), menu `34973510`/`F5D61C94`/frame `4EF1FBF6` (686/686);
+  GL fast triangle `4F1FCBC0`/frame `7A860ED7`, menu `B06BA6E5`/frame
+  `B6116DAE`, both `BackendUnsupported=0 fatal=0 composedFrames=0`; accurate 1B
+  triangle `812EA159`/`2F632483`/`A1740DE0` and menu `6AB39AB0`/`3D2740B8`/
+  `4EF1FBF6`. Suite 1821 -> **1836**, format clean.
 
 **Session 2026-10-22 (twenty-eighth; the computed-mode GL shaders never
 compiled - a dot-variable redeclaration, an unarmed texel capture, and the live

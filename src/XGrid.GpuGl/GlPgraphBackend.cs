@@ -2013,6 +2013,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private string _programUniformReport = string.Empty;
     private readonly uint[] _guestWordScratch = new uint[GuestWordPoolSize * 4];
     private readonly int[] _texPoolBase = new int[4];
+    private readonly uint[] _guestWordAddresses = new uint[GuestWordPoolSize];
+    private int _guestWordAddressCount;
 
     /// <summary>Gets the guest texel words the last applied draw resolved into the guest-word uniform pool. Diagnostics.</summary>
     public int GuestWordCount => _guestWordCount;
@@ -2036,6 +2038,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         if (slot == 0)
         {
             _guestWordCount = 0;
+            _guestWordAddressCount = 0;
             _texPoolClamped = false;
         }
 
@@ -2069,8 +2072,16 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         bool linear = Nv2AMmio.IsLinearTextureFormat(color);
         bool cubeSample = !linear && texture.CubeSamplingReady &&
                           (texture.Format & TextureFormatCubemapEnable) != 0 &&
-                          (IsCubeDirectionMode(mode) || mode == PshCombiner.TexModeProject2D);
-        bool hiloInput = IsHiloDotMode(mode);
+                          (IsCubeDirectionMode(mode) || mode == PshCombiner.TexModeProject2D ||
+                           // The dot stages read TM1/TM2 as DOT_PRODUCT: their
+                           // texel is the dot-map input, addressed in the
+                           // stage's own coords, and on this sample those
+                           // stages are cube-flagged. Without their words the
+                           // shader's StageDot reads a zero texel and the
+                           // whole eight-stage program renders black.
+                           mode is PshCombiner.TexModeDotProduct or PshCombiner.TexModeDotSt or
+                               PshCombiner.TexModeDotStr3D);
+        bool hiloInput = mode == PshCombiner.TexModeDotProduct;
         if (!cubeSample && !hiloInput)
         {
             return unchecked((int)texture.Offset);
@@ -2151,9 +2162,22 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 for (int x = 0; x < cols; x++)
                 {
                     uint address = CubeTexelAddress(in texture, faceBase, bytes, x, y);
-                    if (!FindCarriedWord(in carried, address, out uint word))
+                    if (!FindCarriedWord(in carried, address, out uint word) && !FindPooledWord(address, out word))
                     {
-                        return false;
+                        // Same lane the HILO dot words use: the word at the
+                        // address this draw will sample is RAM, and the seam's
+                        // set is a recent window of it, not the authority (the
+                        // guest cannot rerun a draw command, so the word at that
+                        // address when the draw runs is the word the hardware
+                        // sampled). The HILO path always read through here; the
+                        // cube path returned false, which declined every cube
+                        // stage whose faces the window did not enumerate - the
+                        // corpus row xgu bump_cubemap_reflect at its reflection
+                        // phase (decisions 228).
+                        if (!TryReadDirectWord(address, out word))
+                        {
+                            return false;
+                        }
                     }
 
                     PushGuestWord(address, word);
@@ -2255,6 +2279,30 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _guestWordValues[at + 2] = 0u;
         _guestWordValues[at + 3] = 0u;
         _guestWordCount++;
+        if (_guestWordAddressCount < _guestWordAddresses.Length)
+        {
+            _guestWordAddresses[_guestWordAddressCount++] = address;
+        }
+    }
+
+    /// <summary>
+    /// Finds a guest word added during this draw's own state application (the
+    /// cube faces and HILO inputs added before slot 0 re-created the pool).
+    /// The carried set is the authority for words the draw did not sample yet.
+    /// </summary>
+    private bool FindPooledWord(uint address, out uint word)
+    {
+        for (int i = 0; i < _guestWordAddressCount; i++)
+        {
+            if (_guestWordAddresses[i] == address)
+            {
+                word = _guestWordValues[i * 4];
+                return true;
+            }
+        }
+
+        word = 0u;
+        return false;
     }
 
     /// <summary>Binds a framebuffer through the binding shadow (the default framebuffer is 0 at context creation).</summary>

@@ -14424,3 +14424,143 @@ which is the invariant these fixes must keep.
 **Not changed:** no guest-visible state, no snapshot version, and the two GLSL
 goldens (`legacy.glsl`/`menu-1s.glsl`) contain no dot mode and are byte-identical,
 so the 1B menu/triangle GL goldens are re-run as the standing currency.
+
+## 228 Track B/E: the GL path's cube-mapped reflection frame is 4 colours - the corpus row runs its dot programs at 4.4B, and the word lane carried a window (2026-10-22, twenty-ninth session)
+
+**Track:** B (host GPU path), steered by Track E (corpus). **Headline:** the
+corpus row `xgu bump_cubemap_reflect` at its **reflection phase (4.4B)** renders
+**4 colours** through `--gpu gl --gpu-replace` against software's **18,980**,
+with `unsupported=0 fatal=0 composedFrames=0` - i.e. the backend accepted the
+draws and produced the clear colour plus one black panel. This session fixes one
+mechanism (the carried-window rule that declined cube stages), adds the
+diagnostic that makes the frame's programs legible, re-measures §227's "the row
+runs no dot program" at the phase where it does, and records what is still open,
+with the measured bytes so the next session does not repeat
+the sweep.
+
+## 1. The anchor was wrong in §227, not the finding
+
+§227 reported that this row's 3B program is `stages=1 tm=0000` and concluded the
+row exercises no dot mode. True at 3B - and the row is **animated**. The
+combiner histogram at 3B and at **4.4B** (same run flags: HDD+DVD, `--jit
+--jit-threshold 16 --jit-spin --jit-raw --gpu sw --gpu-time`):
+
+```text
+3B    n=896067  tm=11111C  (one stage, its own slot, mode 1 on slot 1 only)
+4.4B  n=19949790 stages=8 c=00011108 tm=0332 sf=FF3F3F3F/00000000 ...
+      n=12427684 stages=1 c=00000001 tm=11111C ...
+      n=11268535 stages=7 c=00011107 tm=1332 sf=FF3F3F3F/00000000 ...
+```
+
+At 4.4B the two dominant programs are the eight- and seven-stage
+**PROJECT2D + CUBEMAP?/DOT_PRODUCT/CUBEMAP/DOT_REFLECT_SPECULAR** records built
+to render the reflection - precisely the B3 family §226 put on the seam. Also
+measured, and **negative**: the dot-mode program is *absent* at 0.2, 0.4, 0.6,
+0.8, 1.0, 1.2 and 1.4B (all the boot animation's records). §228 is therefore
+about the **phase sweep** as much as about the backend.
+
+## 2. The diagnostic that made it legible
+
+`--gpu-time`'s combiner rows printed the programmed words; a stage that writes
+no register is indistinguishable from a one-stage program by those words alone.
+Each row now also prints `tm=` (the four texture modes), `sf=` (the final
+constant pair) and `PshCombiner.DescribeReach()`:
+
+```text
+reach[tx=<slots>] stg=<writing stages>/<stage count> src=<sockets>
+      consts=<C0/C1 inputs named> flags=<decoded output flags> lerp=<final selects>
+```
+
+`tx` is the slots whose names appear in the input words of the program (a
+projector's slot is resolved by its own mode); `stg` counts stages whose output
+words write a register the program can read (R0/R1 or a V/T slot - the measured
+words' `ro0=000C30CD` is register 0 under the real flag decode, not 0xC3);
+`src` is the socket set, `-` when none. The measured 1B menu's two records are
+now visibly different (`tm=0332` vs `tm=1332`, different final inputs), which is
+exactly the class of difference that was invisible before. Purely host-side: one
+string per distinct combiner config, only while the histogram is on. Tests:
+`PshCombinerReachTests` (3) + `PshCombinerTests.DescribeReach_ReportsTheWritingStages`.
+
+## 3. The carried set is a window, not the word source
+
+`GlPgraphBackend.AppendCubeWords` filled the guest-word pool from the seam's
+`PgraphGuestTexelSet` and **declined the draw** when any face texel was outside
+it. That set is `PgraphGuestTexelSet.PoolSize = 32` entries, most-recent-last:
+it is a window over what the software sampler touched, and a 256-face level-0
+cube is 393,216 texels - no window can carry them. `AppendDependentInputWords`
+(the 16-bit HILO input) has always fallen back to `TryReadDirectWord` (direct
+RAM lane, the same one the texture fingerprint uses). The cube path now does the
+same, and `FindPooledWord` prevents two cube slots of one draw command from
+re-appending slot 0's faces. A decline remains only when the address cannot be
+read at all.
+
+**Effect on the corpus row: negligible for the row's own output** (`draws=27451`,
+`guestWordDraws=0` - its dot stages carry no texture input of their own, so the
+cube pool is never built), **but the two new tests pin the contract**:
+`ReplaceModeComposeLiveTests.CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`
+(served, `guestWordDraws=1`, `guestWordMisses=0`) replaces the old
+`CubeStage_WithoutCarriedWords_IsDeclinedNotSampled` - the change §226 asked for
+and §227 could not land. `ComputedModeShaderLiveTests` also compiles the row's
+own two measured programs (`0x0332`, `0x1332`, eight stages) on the driver.
+
+## 4. Still open: the frame is 4 colours
+
+After §228's landing the same 4.4B leg is **byte-identical** (`59F1AB97…`, 4
+colours, 34.4% black), `guestWordDraws=0`. What the probes established:
+
+- The shape is the FBO's **clear** (`glClearColor`) plus a **black panel**; the
+  software frame is the same green background with the textured panel. The panel
+  is drawn, so its colour expression evaluates to black. The 3.6B leg is the
+  same shape with **2** colours (software: 20,843) - so the defect predates the
+  dot stages and affects the plain textured-panel program as well. Candidates:
+  the panel program's stage inputs, the cube sample path and the final lerp
+  (below); the 4.4B dot program adds a third program with the same symptom.
+- The eight-stage programs' stage 1-3 outputs name **register 0** in colour and
+  **GLB** in alpha, i.e. the reflected colour arrives through the **BLUE_TO_ALPHA
+  flag** into R0.a, which only the **MUX lsb** select uses. Both records' final
+  blocks read `A = T3, B = T3, C = R0, D = R0, G = 1` (`f0=0C0B000F`,
+  `f1=0C011180`, `sf=FF3F3F3F`) - the lerp is `(1 - R0)`. The produced shader
+  implements neither the MUX lsb select (its expression reads R0 even when the
+  selected stage wrote MUX to R1) nor the final negation, and the host render is
+  black where software is textured: that is **the next differential**, not a
+  guess.
+- The per-triangle interpolation preamble receives the vertices as
+  `T(3)..T(5)`/`T(9)..` slots; the software's full interpolation is in
+  `Nv2AMmio.FillTrianglePsh`, so a phase-matched probe should compare the two
+  expression by expression rather than per-program.
+
+Not attempted in this session: a per-fragment colour/depth differential would be
+needed to attribute the black to a stage, and building it is a probe the next
+session should budget for.
+
+## 5. Evidence this session (H1)
+
+| leg | RAM | CPU | frame | notes |
+|---|---|---|---|---|
+| tri 1B fast sw | `B45254CA…` | `7DAB63EB…` | `A1740DE0…` (68/34) | unchanged |
+| menu 1B fast sw | `34973510…` | `F5D61C94…` | `4EF1FBF6…` (686/686) | unchanged; combiner histogram gains `tm=`/`sf=`/`reach[...]` |
+| tri 1B fast gl | `4F1FCBC0…` | `7DAB63EB…` | `7A860ED7…` | unchanged |
+| menu 1B fast gl | `B06BA6E5…` | `F5D61C94…` | `B6116DAE…` | unchanged; `BackendUnsupported=0 fatal=0 composedFrames=0` |
+| tri 1B accurate sw | `812EA159…` | `2F632483…` | `A1740DE0…` | unchanged |
+| menu 1B accurate sw | `6AB39AB0…` | `3D2740B8…` | `4EF1FBF6…` | unchanged |
+| `xgu-bump_cubemap_reflect` 4.4B sw | - | (not SHA-compared) | 18,980 colours, 0% black, mean (57.4, 89.3, 34.2) | the phase anchor |
+| same, 4.4B gl+replace | - | - | `59F1AB97…`, **4 colours**, 34.4% black, mean (2.6, 53.8, 16.4) | unchanged by §228 - open |
+| same, 3.6B sw | - | - | 20,843 colours, mean (57.0, 97.7, 30.2) | reference-matching phase |
+| same, 3.6B gl+replace | - | - | **2 colours**, 30.7% black, mean (2.8, 56.8, 17.3) | the same defect, before the dot program runs |
+
+Suite 1830 -> **1836** (Nv2a +1 `DescribeReach_ReportsTheWritingStages` under
+two theory cases + 2 `PshCombinerReachTests`, GpuGl +1 live replace-mode case and
+the two extra live-compiled programs). No snapshot version change (no device
+state), so existing `.xgs` files stay valid.
+
+## 6. File list (what a successor should read first)
+
+- `src/XGrid.GpuGl/GlPgraphBackend.cs` - `AppendCubeWords`, `FindPooledWord`,
+  `ResolveGuestWordPool` (the cube/dot word lane).
+- `src/XGrid.Nv2a/PshCombiner.cs` - `DescribeReach` + `StageWritesRegister`
+  (read-set decode), next to `IsModeValidForStage`.
+- `docs/research-notes/computed-mode-coverage.md` - the phase table and the
+  anchor rule this row needs.
+- The measured combiner rows above are reproducible with
+  `--steps 4400000000 --gpu-time`.
+

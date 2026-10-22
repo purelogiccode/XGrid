@@ -1,4 +1,4 @@
-# Next session instructions (updated 2026-10-22 after the twenty-eighth session)
+# Next session instructions (updated 2026-10-22 after the twenty-ninth session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
@@ -30,7 +30,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the "Merge pull request #10" commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1830 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -82,9 +82,12 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1830 tests green** (session 28 added 9: a 99-program live GL compile gate +
-  the corrected/added replace-mode cases), build/format clean, ktest XGrid leg at
-  **792,800,535** steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
+- **1836 tests green** (session 29 added 6: `PshCombinerReachTests` x3, the
+  two-case `DescribeReach_ReportsTheWritingStages`, the live
+  `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, and two more
+  programs in the live compile gate), build/format clean, ktest XGrid leg at
+  **792,800,535** steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical;
+  not re-run in session 29 - no guest-visible change).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
   and all three are settings in the Avalonia frontend (§217, §221, §223).
@@ -164,6 +167,13 @@ is the same CPU engine the CLI measures.
 
 ## 2. Recommended next session - pick one
 
+### Option B-lead (Track B/E, §228): the GL path computes a black panel on `bump_cubemap_reflect`
+
+The row's own dot programs run at **4.4B** and the GL frame is the clear plus a
+black panel; the 3.6B leg shows the same with no dot program at all. This is the
+next measured slice (see Option B's "Slice 3" note for the leads and the
+acceptance); it needs a per-fragment differential, so budget a probe leg first.
+
 ### Option A (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
 
 The renderer presents the **flipped** surface, so nxdk `gamma`/`hello` (which
@@ -204,6 +214,26 @@ word-buffer upload per draw command - attempted and reverted unvalidated rather
 than shipped half-working. That buffer is the whole next slice; acceptance is
 the row at 3B reporting `unsupported=0` with its GL replace frame still
 `DA0750EE…` (= software) and both 1B GL goldens unchanged.
+
+**Slice 3 landed (§228): the row runs the dot programs and the GL frame is
+black.** Sample the row at **4.4B**, not 3B: there the frame is
+`stages=8 c=00011108 tm=0332` + `stages=7 c=00011107 tm=1332` (PROJECT2D +
+DOT_PRODUCT/CUBEMAP/REFLECT_SPECULAR). GL replace presents **4 colours / 34.4%
+black** against software's 18,980 / 0% (`unsupported=0 fatal=0
+composedFrames=0`), and at 3.6B the plain panel program alone renders **2
+colours** - so the black is a *computed* colour in the fragment path, not a
+decline, and it predates the dot stages. Landed: the cube word lane now reads
+RAM through the same direct lane as the HILO inputs (`guestWordDraws`),
+`FindPooledWord`, the two measured programs compiled live, and the `reach[...]`
+read-set column on the `--gpu-time` combiner rows. **Next probe, cheapest
+first:** a per-fragment colour/depth differential on the 3.6B panel program
+(sample the CPU's `FillTrianglePsh` values for the panel's texel and compare the
+shader's `t0`/stage outputs), then the two shader gaps already visible in the
+words - BLUE_TO_ALPHA into `R0.a` feeding the **MUX lsb** select (the shader's
+mux expression reads R0 even when the selected stage wrote MUX to R1) and the
+final lerp's negation (`f0=0C0B000F`/`f1=0C011180`, `sf=FF3F3F3F`): neither is
+implemented. Acceptance: the 4.4B GL replace frame gains the panel's colours
+(colours well above 4, black share down) with both 1B GL goldens unchanged.
 
 ### Option C (Track E): the two remaining corpus gaps
 
@@ -273,6 +303,14 @@ it without a measured pixel delta.
   measured so far has all lights off (§215b).
 - **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
   masks; the software fill does not (§219c).
+- **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
+  programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
+  (§228, `computed-mode-coverage.md`).
+- **Requiring the seam's carried window to contain a cube face** - the window
+  holds 32 words, a 256 face holds 393,216; the word at the address the draw
+  samples is the one the hardware read (§228).
+- **Treating an 8-stage combiner record as one program** - check `reach[...]`:
+  a stage whose output words write no register contributes nothing (§228).
 
 ## 4. Rules (non-negotiable)
 
@@ -355,7 +393,10 @@ dotnet run --project tools/frontend-smoke -- --renderer opengl
 
 `diag[fboReallocs= fboZetaDrops= clipXY= flipEmpty= presentUploads=
 flipStaleUploads= composedFrames= composedPixels= composedDraws= batchCalls=
-batchTris= batchCap=]`, `unsupTex[...]`, `readback=on|off`, `methods=`,
+batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
+`unsupTex[...]`, `readback=on|off`, `methods=`,
+**`--gpu-time` combiner rows now carry `tm=` / `sf=` / `reach[tx=… stg=… src=…
+consts=… flags=… lerp=…]`** (§228; `PshCombiner.DescribeReach`),
 **`filters=<min>/<mag>/<conv>`**, **`fixedFn=` / `fixedFnLit=` /
 `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
 `--tex-filter registers`, `--ffp`, `DiagnosticGenericSampler`/

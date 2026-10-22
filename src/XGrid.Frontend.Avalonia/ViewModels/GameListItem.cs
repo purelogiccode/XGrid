@@ -31,6 +31,12 @@ public sealed class GameListItem
     /// <summary>Gets the formatted size.</summary>
     public string SizeText => Game.SizeText;
 
+    /// <summary>Gets the certificate title id label (`Title XXXXXXXX`), empty when the image has none.</summary>
+    public string TitleIdText => Game.TitleIdText;
+
+    /// <summary>Gets a value indicating whether this row carries a distinct certificate title id.</summary>
+    public bool HasDistinctTitleId => Game.HasDistinctTitleId;
+
     /// <summary>Gets the containing folder.</summary>
     public string Folder => Game.Folder;
 
