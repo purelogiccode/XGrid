@@ -21,6 +21,20 @@ uniform int uTexDim[4];
 uniform int uTexBilinear[4];
 uniform int uTexConvolution[4];
 uniform vec4 uTexBorder[4];
+uniform uint uTexSwzMaskX[4];
+uniform uint uTexSwzMaskY[4];
+uniform int uTexMorton[4];
+uniform int uTexCubeOk[4];
+uniform int uTexCubeW[4];
+uniform int uTexCubeH[4];
+uniform int uTexCubeStride[4];
+uniform int uTexBase[4];
+uniform int uTexBytes[4];
+uniform ivec4 uTexFieldOff[4];
+uniform ivec4 uTexFieldW[4];
+uniform vec4 uTexFieldC[4];
+uniform int uDotMap[4];
+uniform vec3 uEyePos;
 uniform uint uShaderClip;
 uniform vec4 uTri[25];
 flat in int vTri;
@@ -133,6 +147,137 @@ vec4 SampleSlot(int slot, vec2 uv) {
   float w01 = (1.0 - wx) * wy;
   float w11 = wx * wy;
   return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);
+}
+uint SpreadZ(uint x) {
+  x = (x | (x << 16u)) & 0x0000FFFFu;
+  x = (x | (x << 8u)) & 0x00FF00FFu;
+  x = (x | (x << 4u)) & 0x0F0F0F0Fu;
+  x = (x | (x << 2u)) & 0x33333333u;
+  x = (x | (x << 1u)) & 0x55555555u;
+  return x;
+}
+uint SpreadO(uint x) {
+  x = (x | (x << 16u)) & 0x0000FFFFu;
+  x = (x | (x << 8u)) & 0x00FF00FFu;
+  x = (x | (x << 4u)) & 0x0F0F0F0Fu;
+  x = (x | (x << 2u)) & 0x33333333u;
+  x = (x | (x << 1u)) & 0x55555555u;
+  return x << 1u;
+}
+uint SwzBits(uint v, uint mask) {
+  uint r = 0u;
+  uint bit = 1u;
+  for (int i = 0; i < 32; i++) {
+    if ((mask & bit) != 0u) { if ((v & 0x80000000u) != 0u) r |= bit; v <<= 1u; }
+    bit <<= 1u;
+  }
+  return r;
+}
+int CubeFaceSelect(vec3 d, out vec2 st) {
+  float ax = abs(d.x); float ay = abs(d.y); float az = abs(d.z);
+  if (ax >= ay && ax >= az) {
+    if (d.x > 0.0) { st = vec2(((-d.z / ax) + 1.0) * 0.5, ((-d.y / ax) + 1.0) * 0.5); return 0; }
+    st = vec2(((d.z / ax) + 1.0) * 0.5, ((-d.y / ax) + 1.0) * 0.5); return 1;
+  }
+  if (ay >= ax && ay >= az) {
+    if (d.y > 0.0) { st = vec2(((d.x / ay) + 1.0) * 0.5, ((d.z / ay) + 1.0) * 0.5); return 2; }
+    st = vec2(((d.x / ay) + 1.0) * 0.5, ((-d.z / ay) + 1.0) * 0.5); return 3;
+  }
+  if (d.z > 0.0) { st = vec2(((d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 4; }
+  st = vec2(((-d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 5;
+}
+uint TexelWord(int addr) {
+  return 0u;
+}
+uint ChannelMask(int w) {
+  if (w == 1) return 1u;
+  if (w == 4) return 15u;
+  if (w == 5) return 31u;
+  if (w == 6) return 63u;
+  return 255u;
+}
+float DecodeField(int v, int w) {
+  if (w == 1) return float(v);
+  if (w == 4) return float(v) * (1.0 / 15.0);
+  if (w == 5) return float(v) * (1.0 / 31.0);
+  if (w == 6) return float(v) * (1.0 / 63.0);
+  return float(v) * (1.0 / 255.0);
+}
+vec4 DecodeGuestTexel(int slot, uint word) {
+  ivec4 off = ivec4(uTexFieldOff[slot]);
+  ivec4 w = ivec4(uTexFieldW[slot]);
+  vec4 c = uTexFieldC[slot];
+  vec4 d = vec4(c.r, c.g, c.b, c.a);
+  if (w.x > 0) { d.r = DecodeField(int((word >> uint(off.x)) & ChannelMask(w.x)), w.x); }
+  if (w.y > 0) { d.g = DecodeField(int((word >> uint(off.y)) & ChannelMask(w.y)), w.y); }
+  if (w.z > 0) { d.b = DecodeField(int((word >> uint(off.z)) & ChannelMask(w.z)), w.z); }
+  if (w.w > 0) { d.a = DecodeField(int((word >> uint(off.w)) & ChannelMask(w.w)), w.w); }
+  return d;
+}
+vec4 CubeTexel(int slot, int face, int tx, int ty) {
+  tx = clamp(tx, 0, uTexCubeW[slot] - 1);
+  ty = clamp(ty, 0, uTexCubeH[slot] - 1);
+  uint sx = uTexMorton[slot] == 1 ? (SpreadZ(uint(tx)) & uTexSwzMaskX[slot])
+                                   : (SwzBits(uint(tx), uTexSwzMaskX[slot]));
+  uint sy = uTexMorton[slot] == 1 ? (SpreadO(uint(ty)) & uTexSwzMaskY[slot])
+                                   : (SwzBits(uint(ty), uTexSwzMaskY[slot]));
+  int addr = uTexBase[slot] + (uTexCubeStride[slot] * face) + int((sx | sy) * uint(uTexBytes[slot]));
+  uint word = TexelWord(addr);
+  if (uTexBytes[slot] == 2) word &= 0xFFFFu;
+  return DecodeGuestTexel(slot, word);
+}
+vec4 SampleCubeSlot(int slot, vec3 d) {
+  if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);
+  vec2 st;
+  int face = CubeFaceSelect(d, st);
+  if (uTexBilinear[slot] != 1) {
+    return CubeTexel(slot, face, int(floor(st.x * float(uTexCubeW[slot]))),
+                     int(floor(st.y * float(uTexCubeH[slot]))));
+  }
+  float fx = (st.x * float(uTexCubeW[slot])) - 0.5;
+  float fy = (st.y * float(uTexCubeH[slot])) - 0.5;
+  int x0 = int(floor(fx)); int y0 = int(floor(fy));
+  float wx = fx - float(x0); float wy = fy - float(y0);
+  vec4 c00 = CubeTexel(slot, face, x0, y0);
+  vec4 c10 = CubeTexel(slot, face, x0 + 1, y0);
+  vec4 c01 = CubeTexel(slot, face, x0, y0 + 1);
+  vec4 c11 = CubeTexel(slot, face, x0 + 1, y0 + 1);
+  return (c00 * ((1.0 - wx) * (1.0 - wy))) + (c10 * (wx * (1.0 - wy)))
+       + (c01 * ((1.0 - wx) * wy)) + (c11 * (wx * wy));
+}
+float Sign1(float x) { return ((x * 255.0) - 128.0) / 127.0; }
+float Sign2(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 255.5) / 127.5 : (s + 0.5) / 127.5; }
+float Sign3(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 256.0) / 127.0 : s / 127.0; }
+float HemiD3D(float h) { return (h - 32768.0) / 32767.0; }
+float HemiGl(float h) { return h >= 32768.0 ? (h - 65535.5) / 32767.5 : (h + 0.5) / 32767.5; }
+float Hemi(float h) { return h >= 32768.0 ? (h - 65536.0) / 32767.0 : h / 32767.0; }
+float HemiZ(float h, float l) { return sqrt(max(0.0, 1.0 - (h * h) - (l * l))); }
+vec3 DotMap(int m, vec4 t) {
+  if (m == 1) return vec3(Sign1(t.r), Sign1(t.g), Sign1(t.b));
+  if (m == 2) return vec3(Sign2(t.r), Sign2(t.g), Sign2(t.b));
+  if (m == 3) return vec3(Sign3(t.r), Sign3(t.g), Sign3(t.b));
+  float hi = float((uint(t.a * 255.0) << 8u) | uint(t.r * 255.0));
+  float lo = float((uint(t.g * 255.0) << 8u) | uint(t.b * 255.0));
+  if (m == 4) return vec3(hi / 65535.0, lo / 65535.0, 1.0);
+  if (m == 5) { float h = HemiD3D(hi); float l = HemiD3D(lo); return vec3(h, l, HemiZ(h, l)); }
+  if (m == 6) { float h = HemiGl(hi); float l = HemiGl(lo); return vec3(h, l, HemiZ(h, l)); }
+  if (m == 7) { float h = Hemi(hi); float l = Hemi(lo); return vec3(h, l, HemiZ(h, l)); }
+  return vec3(t.r, t.g, t.b);
+}
+bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d) {
+  d = 0.0;
+  int map = uDotMap[stage];
+  if (map < 0 || map > 15) return false;
+  d = dot(coord, DotMap(map, inTexel));
+  return true;
+}
+vec4 SampleCubeOrRemap(int slot, vec3 d) {
+  if (uTexCube[slot] == 1) return SampleCubeSlot(slot, d);
+  return SampleSlot(slot, CubeRemap2D(d));
+}
+vec3 SpecularReflect(vec3 n, vec3 e) {
+  float scale = (2.0 * dot(n, e)) / dot(n, n);
+  return (scale * n) - e;
 }
 vec4 SampleConvolved(int slot, vec3 p) {
   if (uTexOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);

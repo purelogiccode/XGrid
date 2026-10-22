@@ -252,6 +252,79 @@ public sealed class PshGlslGeneratorTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DotAndCubeModes_EmitTranscribedMath_NotAStubTexel()
+    {
+        // B3 slice 1: the dot/reflection/cube helpers carry the software
+        // sampler's math (Nv2AMmio.TryComputeDot / ResolveDotReflection /
+        // TrySampleTextureCube / DecodeTextureTexel) as real GLSL, so the
+        // declined modes are no longer a stub texel. Rounding the float scale
+        // fixes nothing; each assertion is an expression the software path
+        // computes the same way.
+        PshCombiner state = MenuLikeCombiner();
+        // Stage 0: PROJECT2D, stage 1: DOT_PRODUCT, stage 2: DOT_PRODUCT,
+        // stage 3: DOT_REFLECT_SPECULAR (the cubemap sample's own program).
+        state.StageProgram = 0x01u | (0x11u << 5) | (0x11u << 10) | (0x0Cu << 15);
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+
+        // The spliced-constant dot: dot(pT.xyz, dotmap(input texel)).
+        Assert.Contains("bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d)", source, StringComparison.Ordinal);
+        Assert.Contains("d = dot(coord, DotMap(map, inTexel));", source, StringComparison.Ordinal);
+
+        // Dot maps 0-7, decoded from the texel with the reference sign
+        // functions (not a threshold on the float).
+        Assert.Contains("float Sign1(float x) { return ((x * 255.0) - 128.0) / 127.0; }", source, StringComparison.Ordinal);
+        Assert.Contains("float Sign3(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 256.0) / 127.0 : s / 127.0; }", source, StringComparison.Ordinal);
+        Assert.Contains("if (m == 4) return vec3(hi / 65535.0, lo / 65535.0, 1.0);", source, StringComparison.Ordinal);
+
+        // DOT_PRODUCT keeps the zero texel but still computes the chain.
+        Assert.Contains("if (!dotOk) { t1 = vec4(0.0, 0.0, 0.0, 1.0); } else { t1 = vec4(0.0); }", source,
+            StringComparison.Ordinal);
+
+        // The specular reflection: rv = 2*n*dot(n,e)/dot(n,n) - e with the
+        // eye from the specular slots' w components.
+        Assert.Contains("vec3 SpecularReflect(vec3 n, vec3 e)", source, StringComparison.Ordinal);
+        Assert.Contains("return (scale * n) - e;", source, StringComparison.Ordinal);
+        Assert.Contains("SpecularReflect(vec3(dotA, dotB, dotC), vec3(c1.w, c2.w, c3.w))", source,
+            StringComparison.Ordinal);
+
+        // Cube sampling: the face select order and the swizzled address.
+        Assert.Contains("int CubeFaceSelect(vec3 d, out vec2 st)", source, StringComparison.Ordinal);
+        Assert.Contains("uTexCubeStride[slot] * face", source, StringComparison.Ordinal);
+        Assert.Contains("(SpreadZ(uint(tx)) & uTexSwzMaskX[slot])", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CubeTexelDecode_IsTableDrivenFromTheSoftwareDecode()
+    {
+        // The shader must not hand-roll per-format channel math (that is how a
+        // dual-rasterizer decoder drifts): it reads the descriptor the software
+        // decode is tested against.
+        PshCombiner state = MenuLikeCombiner();
+        string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
+        Assert.Contains("uniform ivec4 uTexFieldOff[4];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform ivec4 uTexFieldW[4];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform vec4 uTexFieldC[4];", source, StringComparison.Ordinal);
+        Assert.Contains("d.r = DecodeField(int((word >> uint(off.x)) & ChannelMask(w.x)), w.x);", source,
+            StringComparison.Ordinal);
+        // An unused sampler is undefined in GLSL, so the cube path must not
+        // texelFetch a slot the guest left disabled.
+        Assert.Contains("if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CubeDotState_StaysOutOfTheProgramCacheKey()
+    {
+        // Per-draw state (extents, masks, decode descriptors, dot maps, eye)
+        // travels as uniforms: switching a texture mode never recompiles.
+        PshCombiner state = MenuLikeCombiner();
+        string key = PshGlslGenerator.BuildKey(legacy: false, state);
+        foreach (string uniform in new[] { "uTexCubeOk", "uTexSwzMaskX", "uTexFieldOff", "uDotMap", "uEyePos" })
+        {
+            Assert.DoesNotContain(uniform, key, StringComparison.Ordinal);
+        }
+    }
+
     private static int CountOccurrences(string text, string needle)
     {
         int count = 0;

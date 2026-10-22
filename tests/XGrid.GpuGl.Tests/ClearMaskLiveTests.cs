@@ -103,7 +103,7 @@ public sealed class ClearMaskLiveTests(ITestOutputHelper output)
         try
         {
             // A draw whose write mask blocks every channel loads that state.
-            Assert.True(backend.TryDraw(Draw(colorMask: 0u)), "draw declined");
+            Assert.True(backend.TryDraw(Draw(colorMask: 0u)), "draw declined: " + backend.DebugSummary);
 
             // The clear must still fill the surface (software FillSurface writes
             // the value verbatim), even though the last draw masked color off.

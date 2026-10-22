@@ -706,10 +706,45 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1812 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1821 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (twenty-seventh; B3 slice 1 - the computed cube/dot texel
+state reaches a GPU backend and the shader carries the math - decisions §226).
+No gate anchor moved; every change is host-side plus seam fields.**
+
+- **Ceiling measured first (§226).** `xgu-bump_cubemap_reflect` at 3B
+  `-Gpu gl -GpuReplace` declined 7 draws (`unsupTex[m0C=7 m11=14]`): the sample
+  computes its colour from DOT_PRODUCT on stages 1-2 and DOT_REFLECT_SPECULAR on
+  stage 3, so the GL backend could not sample 3 of its 4 stages.
+- **Landed.** `PgraphTextureSlot` carries the cube face extent (**TEXFMT
+  `BASE_SIZE`**, never TEXIMAGERECT - the §209a rule), the face stride and the
+  swizzle masks; `PgraphDrawInfo` carries the eye (`EyeX/Y/Z`, XF constant
+  `0x38`, `Nv2AMmio.EyePosition`); the generated shader transcribes the dot
+  chain, the `Sign1/2/3` + HILO dot maps, `CubeFaceSelect`, the tent-clamped
+  cube sample and `SpecularReflect` - all per-draw uniforms, so `BuildKey` never
+  splits and a mode switch never recompiles. The shader's texel decode is
+  **table-driven from `DescribeTextureDecode`**, proven equal to
+  `DecodeTextureTexel` for all 20 supported formats
+  (`TextureDecodeDescriptor_ReproducesTheSoftwareDecode`).
+- **The fetch is NOT landed, and the modes stay declined.** A cube face / HILO
+  word is a swizzled guest-RAM read, not a 2D row; `TexelWord()` is the one hole.
+  A guest-word uniform buffer was attempted and **reverted unvalidated** rather
+  than shipped: `CheckModesUnsupported` still declines and counts every dot/
+  bump mode, replacement mode still paints them in software (§220d), so a wrong
+  texel can never present. Next slice = that buffer.
+- **Evidence.** 1B accurate goldens PASS byte-identical (menu sw `4EF1FBF6…` /
+  gl `B6116DAE…`, diff 2602, counters 33632/686/686; triangle sw `A1740DE0…` /
+  gl `7A860ED7…`, diff 27849); cubemap 3B gl-replace byte-identical to baseline
+  (`DA0750EE…`, `19D576A8…`, `D5D38C64…`, `unsupported=7`); same-window 3-run
+  A/B wall 12.08/11.56/11.49 -> 11.62/11.64/11.51 s; ktest smoke PASS 7/7 at
+  792,800,535 steps, log byte-identical. Suite 1812 -> **1821**.
+- **Lesson recorded:** the live GL tests caught two real defects the unit diffs
+  could not (a malformed decode ternary, `SpecularReflect` reading `c1..c3` from
+  outside its scope). Shader changes need a real `CompileShader`, not a string
+  golden.
 **Session 2026-10-21 (twenty-second; the GL sampler decodes the texture
 address word, a composed replace-mode frame keeps both writers, and the
 frontend can step frames - decisions §220). Every gate anchor stayed

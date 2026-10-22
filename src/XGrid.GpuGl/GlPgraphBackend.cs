@@ -47,6 +47,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTexBilinear[0]",
         "uTexConvolution[0]",
         "uTexBorder[0]",
+        "uTexSwzMaskX[0]",
+        "uTexSwzMaskY[0]",
+        "uTexMorton[0]",
+        "uTexCubeOk[0]",
+        "uTexCubeW[0]",
+        "uTexCubeH[0]",
+        "uTexCubeStride[0]",
+        "uTexBase[0]",
+        "uTexBytes[0]",
+        "uDotMap[0]",
+        "uEyePos",
         "uShaderClip",
         "uTri[0]",
         "uTex0",
@@ -128,6 +139,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly int[] _texBilinear = new int[4];
     private readonly int[] _texConvolution = new int[4];
     private readonly float[] _texBorder = new float[4 * 4];
+    // Cube maps and the dot texture modes (B3 slice 1): the seam's per-slot
+    // swizzled-layout facts and the decoded dot maps, all uniforms so the
+    // program cache key never splits on them.
+    private readonly int[] _texSwzMaskX = new int[4];
+    private readonly int[] _texSwzMaskY = new int[4];
+    private readonly int[] _texMorton = new int[4];
+    private readonly int[] _texCubeOk = new int[4];
+    private readonly int[] _texCubeW = new int[4];
+    private readonly int[] _texCubeH = new int[4];
+    private readonly int[] _texCubeStride = new int[4];
+    private readonly int[] _texBase = new int[4];
+    private readonly int[] _texBytes = new int[4];
+    private readonly int[] _dotMap = new int[4];
+    private readonly float[] _eyePos = new float[3];
     private readonly float[] _scalarScratch = new float[14];
     private readonly float[] _texScratch = new float[56];
 
@@ -235,6 +260,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         public int TriLocation { get; set; } = -1;
 
         public float[] TexCache { get; } = new float[56];
+
+        /// <summary>Change stamp of the cube/dot/decode uniforms (not covered by <see cref="TexCache"/>).</summary>
+        public uint CubeModeStamp { get; set; }
 
         public float[] ConstCache { get; } = new float[72];
 
@@ -1357,6 +1385,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 case PshCombiner.TexModeDotStrCube:
                 case PshCombiner.TexModeBumpEnvMap:
                 case PshCombiner.TexModeBumpEnvMapLum:
+                    // These modes need raw guest texels the GL path cannot
+                    // sample: cube faces are a swizzled 6-face layout and the
+                    // dot maps read 16-bit HILO words. The shader carries the
+                    // transcribed math (see PshGlslGenerator) and every
+                    // per-draw input they need arrives through the seam, but
+                    // the guest words themselves stay a software read, so the
+                    // draw is declined and counted - never rendered wrong.
                     unsupported = true;
                     _unsupportedTexModeCounts[mode & 0x1F]++;
                     break;
@@ -1760,8 +1795,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private void ApplyTextures(GlProgram program, in PgraphDrawInfo info, PshCombiner? combiner, bool legacy)
     {
         _ = program;
-        _ = combiner;
         _ = legacy;
+        // The specular reflection dot mode reads the eye position; it stays
+        // uniform state so the program key never splits on it.
+        _eyePos[0] = info.EyeX;
+        _eyePos[1] = info.EyeY;
+        _eyePos[2] = info.EyeZ;
         for (int slot = 0; slot < PshCombiner.TextureSlots; slot++)
         {
             PgraphTextureSlot texture = info.GetTexture(slot);
@@ -1802,6 +1841,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _texWrapY[slot] = texture.SamplerWrapV;
             _texBilinear[slot] = texture.FilterBilinear ? 1 : 0;
             _texConvolution[slot] = texture.FilterConvolution;
+            // Swizzled-layout facts for the cube sampler and the dot modes:
+            // the extent the software sampler uses is TEXFMT BASE_SIZE (not
+            // TEXIMAGERECT, which is only read for linear formats), so the
+            // seam publishes it instead of the backend re-deriving it.
+            _texSwzMaskX[slot] = unchecked((int)texture.SwizzleMaskX);
+            _texSwzMaskY[slot] = unchecked((int)texture.SwizzleMaskY);
+            _texMorton[slot] = texture.MortonMasks ? 1 : 0;
+            _texCubeOk[slot] = texture.CubeSamplingReady && (texture.Format & TextureFormatCubemapEnable) != 0 ? 1 : 0;
+            _texCubeW[slot] = texture.CubeWidth;
+            _texCubeH[slot] = texture.CubeHeight;
+            _texCubeStride[slot] = unchecked((int)texture.CubeFaceStride);
+            _texBase[slot] = unchecked((int)texture.Offset);
+            _texBytes[slot] = (int)Nv2AMmio.TextureFormatBytesPerTexel(color);
+            _dotMap[slot] = combiner is null ? 0 : combiner.DecodeDotMap(slot);
             Nv2AMmio.DecodeBorderColor(
                 texture.BorderColor,
                 out _texBorder[(slot * 4) + 0], out _texBorder[(slot * 4) + 1],
@@ -2264,6 +2317,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
     private void SetTextureUniforms(GlProgram program)
     {
+        // The values that affect the 2D sampler share one change check (the
+        // 56-float cache). The cube/dot/decode uniforms ride on a stamp of
+        // their own, because the same 2D sampler re-used under a different
+        // texture mode is a different draw.
         float[] values = _texScratch;
         for (int i = 0; i < 4; i++)
         {
@@ -2283,7 +2340,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             values[43 + (i * 4)] = _texBorder[(i * 4) + 3];
         }
 
-        if (program.TexValid && SameValues(values, program.TexCache, 56))
+        // The cube/dot state must follow the draw even when the 2D state did
+        // not change, so it has its own change stamp.
+        uint modeStamp = CubeModeStamp();
+        bool texChanged = !program.TexValid || !SameValues(values, program.TexCache, 56) ||
+                          program.CubeModeStamp != modeStamp;
+        if (!texChanged)
         {
             return;
         }
@@ -2298,8 +2360,50 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(program.Location("uTexBilinear[0]"), 4u, ref _texBilinear[0]);
         _gl.Uniform1(program.Location("uTexConvolution[0]"), 4u, ref _texConvolution[0]);
         _gl.Uniform4(program.Location("uTexBorder[0]"), 4u, ref _texBorder[0]);
+        // Cube/dot uniforms ride on their own stamp (the 2D change check does
+        // not cover them). They are only reached by a program whose combiner
+        // carries a cube or dot texture mode - and those draws are declined
+        // until the guest-word lane lands - so a presentable 2D workload never
+        // pays these calls.
+        _gl.Uniform1(program.Location("uTexSwzMaskX[0]"), 4u, ref _texSwzMaskX[0]);
+        _gl.Uniform1(program.Location("uTexSwzMaskY[0]"), 4u, ref _texSwzMaskY[0]);
+        _gl.Uniform1(program.Location("uTexMorton[0]"), 4u, ref _texMorton[0]);
+        _gl.Uniform1(program.Location("uTexCubeOk[0]"), 4u, ref _texCubeOk[0]);
+        _gl.Uniform1(program.Location("uTexCubeW[0]"), 4u, ref _texCubeW[0]);
+        _gl.Uniform1(program.Location("uTexCubeH[0]"), 4u, ref _texCubeH[0]);
+        _gl.Uniform1(program.Location("uTexCubeStride[0]"), 4u, ref _texCubeStride[0]);
+        _gl.Uniform1(program.Location("uTexBase[0]"), 4u, ref _texBase[0]);
+        _gl.Uniform1(program.Location("uTexBytes[0]"), 4u, ref _texBytes[0]);
+        _gl.Uniform1(program.Location("uDotMap[0]"), 4u, ref _dotMap[0]);
+        _gl.Uniform3(program.Location("uEyePos"), _eyePos[0], _eyePos[1], _eyePos[2]);
+
         Array.Copy(values, program.TexCache, 56);
+        program.CubeModeStamp = modeStamp;
         program.TexValid = true;
+    }
+
+    /// <summary>Cheap stamp of every uniform the cube/dot sampler path reads (the 2D change check does not cover them).</summary>
+    private uint CubeModeStamp()
+    {
+        uint stamp = 2166136261u;
+        for (int i = 0; i < 4; i++)
+        {
+            stamp = (stamp ^ (uint)_texCubeOk[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texCubeW[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texCubeH[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texCubeStride[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texBase[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texBytes[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texSwzMaskX[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texSwzMaskY[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_texMorton[i]) * 16777619u;
+            stamp = (stamp ^ (uint)_dotMap[i]) * 16777619u;
+        }
+
+        stamp = (stamp ^ BitConverter.SingleToUInt32Bits(_eyePos[0])) * 16777619u;
+        stamp = (stamp ^ BitConverter.SingleToUInt32Bits(_eyePos[1])) * 16777619u;
+        stamp = (stamp ^ BitConverter.SingleToUInt32Bits(_eyePos[2])) * 16777619u;
+        return stamp;
     }
 
     private void PackVertices(in PgraphDrawInfo info, out int vertexCount)

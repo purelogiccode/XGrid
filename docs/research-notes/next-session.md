@@ -80,7 +80,8 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1812 tests green**, build/format clean, ktest XGrid leg at **792,800,535**
+- **1821 tests green** (session 27 added 9: 6 Nv2a seam + 3 generator
+  contracts), build/format clean, ktest XGrid leg at **792,800,535**
   steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
@@ -186,6 +187,21 @@ at **3B** is the one that trips, and `unsupTex[m0C=14 m11=28]` (§221e) says it 
 earlier stages. Honouring them in GLSL needs a cube-texture upload path plus the
 `ResolveDotReflection`/`TrySampleTextureCube` semantics transcribed. Measure
 first (the mode histogram exists now) before building it.
+
+**Slice 1 landed (§226): the computed state is on the seam and the shader has
+the math.** `PgraphTextureSlot` now carries the cube face extent (TEXFMT
+`BASE_SIZE`, never TEXIMAGERECT), the face stride and the swizzle masks;
+`PgraphDrawInfo` carries the eye position (`EyeX/Y/Z`, XF constant 0x38); the
+shader transcribes the dot chain, the sign/HILO dot maps, the face select, the
+tent-clamped cube sample and the specular reflection, all as uniforms (no
+recompile on a mode switch), and its texel decode is table-driven from
+`DescribeTextureDecode` **proven equal to `DecodeTextureTexel`** for every
+supported format. **The modes are still declined and counted**: the one missing
+piece is the guest texel word (`TexelWord()` is the hole), which needs a
+word-buffer upload per draw command - attempted and reverted unvalidated rather
+than shipped half-working. That buffer is the whole next slice; acceptance is
+the row at 3B reporting `unsupported=0` with its GL replace frame still
+`DA0750EE…` (= software) and both 1B GL goldens unchanged.
 
 ### Option C (Track E): the two remaining corpus gaps
 
@@ -313,7 +329,7 @@ dotnet format XGrid.sln --verify-no-changes --no-restore
 
 # gates
 pwsh -File scripts/gpu-slice1-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
-pwsh -File scripts/gpu-slice2-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
+pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/ktest-smoke.ps1 -SkipXemu
 
 # corpus / per-sample frames

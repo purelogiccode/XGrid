@@ -152,6 +152,24 @@ public static class PshGlslGenerator
         sb.Append("uniform int uTexBilinear[4];\n");
         sb.Append("uniform int uTexConvolution[4];\n");
         sb.Append("uniform vec4 uTexBorder[4];\n");
+        sb.Append("uniform uint uTexSwzMaskX[4];\n");
+        sb.Append("uniform uint uTexSwzMaskY[4];\n");
+        // Per-slot cube sampling + texel decode descriptors (B3 slice 1), all
+        // per-draw state so the program cache key never splits on them.
+        // uTexBase is int because the swizzled address arithmetic is int in
+        // the software sampler (a uint sum would wrap at 4 GiB).
+        sb.Append("uniform int uTexMorton[4];\n");
+        sb.Append("uniform int uTexCubeOk[4];\n");
+        sb.Append("uniform int uTexCubeW[4];\n");
+        sb.Append("uniform int uTexCubeH[4];\n");
+        sb.Append("uniform int uTexCubeStride[4];\n");
+        sb.Append("uniform int uTexBase[4];\n");
+        sb.Append("uniform int uTexBytes[4];\n");
+        sb.Append("uniform ivec4 uTexFieldOff[4];\n");
+        sb.Append("uniform ivec4 uTexFieldW[4];\n");
+        sb.Append("uniform vec4 uTexFieldC[4];\n");
+        sb.Append("uniform int uDotMap[4];\n");
+        sb.Append("uniform vec3 uEyePos;\n");
         sb.Append("uniform uint uShaderClip;\n");
         sb.Append(CultureInfo.InvariantCulture,
             $"uniform vec4 uTri[{triangleCapacity * 25}];\n");
@@ -295,6 +313,173 @@ public static class PshGlslGenerator
         sb.Append("  float w11 = wx * wy;\n");
         sb.Append("  return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);\n");
         sb.Append("}\n");
+        // ---- cube maps and the dot texture modes (B3 slice 1) ----
+        // Voxel-index bit spread: Nv2AMmio.InterleaveBits for the generic
+        // (non-Morton-pair) masks. Swizzled cube faces use the standard
+        // alternating pair on every measured sample, where SpreadMorton is
+        // the branchless equivalent; the loop stays so a non-standard mask
+        // cannot silently read the wrong texel.
+        sb.Append("uint SpreadZ(uint x) {\n");
+        sb.Append("  x = (x | (x << 16u)) & 0x0000FFFFu;\n");
+        sb.Append("  x = (x | (x << 8u)) & 0x00FF00FFu;\n");
+        sb.Append("  x = (x | (x << 4u)) & 0x0F0F0F0Fu;\n");
+        sb.Append("  x = (x | (x << 2u)) & 0x33333333u;\n");
+        sb.Append("  x = (x | (x << 1u)) & 0x55555555u;\n");
+        sb.Append("  return x;\n");
+        sb.Append("}\n");
+        sb.Append("uint SpreadO(uint x) {\n");
+        sb.Append("  x = (x | (x << 16u)) & 0x0000FFFFu;\n");
+        sb.Append("  x = (x | (x << 8u)) & 0x00FF00FFu;\n");
+        sb.Append("  x = (x | (x << 4u)) & 0x0F0F0F0Fu;\n");
+        sb.Append("  x = (x | (x << 2u)) & 0x33333333u;\n");
+        sb.Append("  x = (x | (x << 1u)) & 0x55555555u;\n");
+        sb.Append("  return x << 1u;\n");
+        sb.Append("}\n");
+        sb.Append("uint SwzBits(uint v, uint mask) {\n");
+        sb.Append("  uint r = 0u;\n");
+        sb.Append("  uint bit = 1u;\n");
+        sb.Append("  for (int i = 0; i < 32; i++) {\n");
+        sb.Append("    if ((mask & bit) != 0u) { if ((v & 0x80000000u) != 0u) r |= bit; v <<= 1u; }\n");
+        sb.Append("    bit <<= 1u;\n");
+        sb.Append("  }\n");
+        sb.Append("  return r;\n");
+        sb.Append("}\n");
+        // Nv2AMmio's cube face select: +X,-X,+Y,-Y,+Z,-Z picked by the major
+        // axis with >= ties, per-face [0,1] coords (xemu generate_texture order).
+        sb.Append("int CubeFaceSelect(vec3 d, out vec2 st) {\n");
+        sb.Append("  float ax = abs(d.x); float ay = abs(d.y); float az = abs(d.z);\n");
+        sb.Append("  if (ax >= ay && ax >= az) {\n");
+        sb.Append("    if (d.x > 0.0) { st = vec2(((-d.z / ax) + 1.0) * 0.5, ((-d.y / ax) + 1.0) * 0.5); return 0; }\n");
+        sb.Append("    st = vec2(((d.z / ax) + 1.0) * 0.5, ((-d.y / ax) + 1.0) * 0.5); return 1;\n");
+        sb.Append("  }\n");
+        sb.Append("  if (ay >= ax && ay >= az) {\n");
+        sb.Append("    if (d.y > 0.0) { st = vec2(((d.x / ay) + 1.0) * 0.5, ((d.z / ay) + 1.0) * 0.5); return 2; }\n");
+        sb.Append("    st = vec2(((d.x / ay) + 1.0) * 0.5, ((-d.z / ay) + 1.0) * 0.5); return 3;\n");
+        sb.Append("  }\n");
+        sb.Append("  if (d.z > 0.0) { st = vec2(((d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 4; }\n");
+        sb.Append("  st = vec2(((-d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 5;\n");
+        sb.Append("}\n");
+        // Cube face and dot-mode texels come from the raw guest words, which
+        // this backend cannot read: a uniform texel buffer of guest RAM would
+        // have to be re-uploaded per draw command. The one-word address
+        // arithmetic and the exact decode stay transcribed here so the path
+        // is ready for the buffer, and the draw-time gate keeps the branch
+        // unreachable (CheckModesUnsupported still declines every mode below
+        // with BackendUnsupported, and a declined draw is painted in software).
+        sb.Append("uint TexelWord(int addr) {\n");
+        sb.Append("  return 0u;\n");
+        sb.Append("}\n");
+        // Nv2AMmio.DecodedChannel: the exact unit-table value of an n-bit
+        // field (1, 4, 5, 6 or 8 bits).
+        sb.Append("uint ChannelMask(int w) {\n");
+        sb.Append("  if (w == 1) return 1u;\n");
+        sb.Append("  if (w == 4) return 15u;\n");
+        sb.Append("  if (w == 5) return 31u;\n");
+        sb.Append("  if (w == 6) return 63u;\n");
+        sb.Append("  return 255u;\n");
+        sb.Append("}\n");
+        sb.Append("float DecodeField(int v, int w) {\n");
+        sb.Append("  if (w == 1) return float(v);\n");
+        sb.Append("  if (w == 4) return float(v) * (1.0 / 15.0);\n");
+        sb.Append("  if (w == 5) return float(v) * (1.0 / 31.0);\n");
+        sb.Append("  if (w == 6) return float(v) * (1.0 / 63.0);\n");
+        sb.Append("  return float(v) * (1.0 / 255.0);\n");
+        sb.Append("}\n");
+        sb.Append("vec4 DecodeGuestTexel(int slot, uint word) {\n");
+        sb.Append("  ivec4 off = ivec4(uTexFieldOff[slot]);\n");
+        sb.Append("  ivec4 w = ivec4(uTexFieldW[slot]);\n");
+        sb.Append("  vec4 c = uTexFieldC[slot];\n");
+        sb.Append("  vec4 d = vec4(c.r, c.g, c.b, c.a);\n");
+        for (int ch = 0; ch < 4; ch++)
+        {
+            string comp = ch switch { 0 => "x", 1 => "y", 2 => "z", _ => "w" };
+            string dst = ch switch { 0 => "r", 1 => "g", 2 => "b", _ => "a" };
+            sb.Append(CultureInfo.InvariantCulture, $"  if (w.{comp} > 0) {{ d.{dst} = DecodeField(int((word >> uint(off.{comp})) & ChannelMask(w.{comp})), w.{comp}); }}\n");
+        }
+
+        sb.Append("  return d;\n");
+        sb.Append("}\n");
+        // One cube face texel by its swizzled address (TryReadCubeTexel): the
+        // coordinate clamps inside the face, the swizzle masks come from the
+        // seam (TEXFMT BASE_SIZE extent, never TEXIMAGERECT).
+        sb.Append("vec4 CubeTexel(int slot, int face, int tx, int ty) {\n");
+        sb.Append("  tx = clamp(tx, 0, uTexCubeW[slot] - 1);\n");
+        sb.Append("  ty = clamp(ty, 0, uTexCubeH[slot] - 1);\n");
+        sb.Append("  uint sx = uTexMorton[slot] == 1 ? (SpreadZ(uint(tx)) & uTexSwzMaskX[slot])\n");
+        sb.Append("                                   : (SwzBits(uint(tx), uTexSwzMaskX[slot]));\n");
+        sb.Append("  uint sy = uTexMorton[slot] == 1 ? (SpreadO(uint(ty)) & uTexSwzMaskY[slot])\n");
+        sb.Append("                                   : (SwzBits(uint(ty), uTexSwzMaskY[slot]));\n");
+        sb.Append("  int addr = uTexBase[slot] + (uTexCubeStride[slot] * face) + int((sx | sy) * uint(uTexBytes[slot]));\n");
+        sb.Append("  uint word = TexelWord(addr);\n");
+        sb.Append("  if (uTexBytes[slot] == 2) word &= 0xFFFFu;\n");
+        sb.Append("  return DecodeGuestTexel(slot, word);\n");
+        sb.Append("}\n");
+        // TrySampleTextureCube: the TEXFILTER tent clamps its four taps at the
+        // face edge (never blends across faces), nearest floors the centre.
+        sb.Append("vec4 SampleCubeSlot(int slot, vec3 d) {\n");
+        sb.Append("  if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);\n");
+        sb.Append("  vec2 st;\n");
+        sb.Append("  int face = CubeFaceSelect(d, st);\n");
+        sb.Append("  if (uTexBilinear[slot] != 1) {\n");
+        sb.Append("    return CubeTexel(slot, face, int(floor(st.x * float(uTexCubeW[slot]))),\n");
+        sb.Append("                     int(floor(st.y * float(uTexCubeH[slot]))));\n");
+        sb.Append("  }\n");
+        sb.Append("  float fx = (st.x * float(uTexCubeW[slot])) - 0.5;\n");
+        sb.Append("  float fy = (st.y * float(uTexCubeH[slot])) - 0.5;\n");
+        sb.Append("  int x0 = int(floor(fx)); int y0 = int(floor(fy));\n");
+        sb.Append("  float wx = fx - float(x0); float wy = fy - float(y0);\n");
+        sb.Append("  vec4 c00 = CubeTexel(slot, face, x0, y0);\n");
+        sb.Append("  vec4 c10 = CubeTexel(slot, face, x0 + 1, y0);\n");
+        sb.Append("  vec4 c01 = CubeTexel(slot, face, x0, y0 + 1);\n");
+        sb.Append("  vec4 c11 = CubeTexel(slot, face, x0 + 1, y0 + 1);\n");
+        sb.Append("  return (c00 * ((1.0 - wx) * (1.0 - wy))) + (c10 * (wx * (1.0 - wy)))\n");
+        sb.Append("       + (c01 * ((1.0 - wx) * wy)) + (c11 * (wx * wy));\n");
+        sb.Append("}\n");
+        // PshCombiner.Sign1 / Sign2 / Sign3 (the dot maps 1-3): the reference
+        // decodes a [0,1] texel component through its byte scale, not a
+        // threshold on the float itself.
+        sb.Append("float Sign1(float x) { return ((x * 255.0) - 128.0) / 127.0; }\n");
+        sb.Append("float Sign2(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 255.5) / 127.5 : (s + 0.5) / 127.5; }\n");
+        sb.Append("float Sign3(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 256.0) / 127.0 : s / 127.0; }\n");
+        sb.Append("float HemiD3D(float h) { return (h - 32768.0) / 32767.0; }\n");
+        sb.Append("float HemiGl(float h) { return h >= 32768.0 ? (h - 65535.5) / 32767.5 : (h + 0.5) / 32767.5; }\n");
+        sb.Append("float Hemi(float h) { return h >= 32768.0 ? (h - 65536.0) / 32767.0 : h / 32767.0; }\n");
+        sb.Append("float HemiZ(float h, float l) { return sqrt(max(0.0, 1.0 - (h * h) - (l * l))); }\n");
+        // PshCombiner.ApplyDotMap with the decoded map word for the stage.
+        sb.Append("vec3 DotMap(int m, vec4 t) {\n");
+        sb.Append("  if (m == 1) return vec3(Sign1(t.r), Sign1(t.g), Sign1(t.b));\n");
+        sb.Append("  if (m == 2) return vec3(Sign2(t.r), Sign2(t.g), Sign2(t.b));\n");
+        sb.Append("  if (m == 3) return vec3(Sign3(t.r), Sign3(t.g), Sign3(t.b));\n");
+        sb.Append("  float hi = float((uint(t.a * 255.0) << 8u) | uint(t.r * 255.0));\n");
+        sb.Append("  float lo = float((uint(t.g * 255.0) << 8u) | uint(t.b * 255.0));\n");
+        sb.Append("  if (m == 4) return vec3(hi / 65535.0, lo / 65535.0, 1.0);\n");
+        sb.Append("  if (m == 5) { float h = HemiD3D(hi); float l = HemiD3D(lo); return vec3(h, l, HemiZ(h, l)); }\n");
+        sb.Append("  if (m == 6) { float h = HemiGl(hi); float l = HemiGl(lo); return vec3(h, l, HemiZ(h, l)); }\n");
+        sb.Append("  if (m == 7) { float h = Hemi(hi); float l = Hemi(lo); return vec3(h, l, HemiZ(h, l)); }\n");
+        sb.Append("  return vec3(t.r, t.g, t.b);\n");
+        sb.Append("}\n");
+        // Nv2AMmio.TryComputeDot: dot(pT.xyz, dotmap(input texel)), where the
+        // input stage is the dependent-texture select (stage 1 always reads 0).
+        sb.Append("bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d) {\n");
+        sb.Append("  d = 0.0;\n");
+        sb.Append("  int map = uDotMap[stage];\n");
+        sb.Append("  if (map < 0 || map > 15) return false;\n");
+        sb.Append("  d = dot(coord, DotMap(map, inTexel));\n");
+        sb.Append("  return true;\n");
+        sb.Append("}\n");
+        sb.Append("vec4 SampleCubeOrRemap(int slot, vec3 d) {\n");
+        sb.Append("  if (uTexCube[slot] == 1) return SampleCubeSlot(slot, d);\n");
+        sb.Append("  return SampleSlot(slot, CubeRemap2D(d));\n");
+        sb.Append("}\n");
+        // Nv2AMmio.ResolveDotReflection (specular): eye = the specular slots'
+        // w components, rv = 2*n*dot(n,e)/dot(n,n) - e. The eye vector is an
+        // argument because the three coordinate quads are locals of the
+        // fragment body. |n|^2 == 0 has no reference answer; GLSL yields
+        // inf/NaN and the face select clamps.
+        sb.Append("vec3 SpecularReflect(vec3 n, vec3 e) {\n");
+        sb.Append("  float scale = (2.0 * dot(n, e)) / dot(n, n);\n");
+        sb.Append("  return (scale * n) - e;\n");
+        sb.Append("}\n");
         // Nv2AMmio.SampleConvolved: xemu apply_convolution_filter, nine
         // textureProj taps with the 1-2-1 kernel, one texel of the stage
         // apart. Only reachable when MIN is CONVOLUTION_2D_LOD0, which also
@@ -423,9 +608,10 @@ public static class PshGlslGenerator
                     sb.Append(CultureInfo.InvariantCulture, $"  {t} = vec4(0.0);\n");
                     break;
                 case PshCombiner.TexModeProject2D:
-                    // Cubemap-flagged: software cube-samples when the format
-                    // is 05/06 (slice-1 counts that as unsupported) or falls
-                    // back to none; slice 1 emits none either way.
+                    // Cubemap-flagged slots: software cube-samples a supported
+                    // swizzled format (SampleCubeSlot reproduces the face
+                    // select and swizzled address) and degrades to none
+                    // otherwise - uTexCubeOk carries which case applies.
                     // TEXFILTER: when MIN selects the convolution the software
                     // sampler runs SampleConvolved (nine textureProj taps,
                     // xemu apply_convolution_filter) instead of one sample.
@@ -433,7 +619,7 @@ public static class PshGlslGenerator
                     // of norm(pT.xyw)); a zero w keeps the undivided pair,
                     // exactly like Nv2AMmio.ResolveTexel.
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else if (uTexConvolution[{slot}] != 0) {{ {t} = SampleConvolved({slot}, {c}.xyw); }} else {{ {t} = SampleSlot({slot}, ({c}.w != 0.0) ? ({c}.xy / {c}.w) : {c}.xy); }}\n");
+                        $"  if (uTexCube[{slot}] == 1) {{ {t} = (uTexCubeOk[{slot}] == 1) ? SampleCubeSlot({slot}, vec3(1.0, {c}.y / {c}.w, -{c}.x / {c}.w)) : vec4(0.0, 0.0, 0.0, 1.0); }} else if (uTexConvolution[{slot}] != 0) {{ {t} = SampleConvolved({slot}, {c}.xyw); }} else {{ {t} = SampleSlot({slot}, ({c}.w != 0.0) ? ({c}.xy / {c}.w) : {c}.xy); }}\n");
                     break;
                 case PshCombiner.TexModeProject3D:
                     sb.Append(CultureInfo.InvariantCulture,
@@ -441,7 +627,7 @@ public static class PshGlslGenerator
                     break;
                 case PshCombiner.TexModeCubemap:
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (uTexCube[{slot}] == 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, CubeRemap2D({c}.xyz)); }}\n");
+                        $"  if (uTexCube[{slot}] == 1) {{ {t} = (uTexCubeOk[{slot}] == 1) ? SampleCubeSlot({slot}, {c}.xyz) : vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, CubeRemap2D({c}.xyz)); }}\n");
                     break;
                 case PshCombiner.TexModeDpndntAr:
                 case PshCombiner.TexModeDpndntGb:
@@ -452,10 +638,54 @@ public static class PshGlslGenerator
                     // Software stub: SetTexelZero.
                     sb.Append(CultureInfo.InvariantCulture, $"  {t} = vec4(0.0);\n");
                     break;
+                case PshCombiner.TexModeDotProduct:
+                case PshCombiner.TexModeDotZw:
+                    // Nv2AMmio: the stage's dot is computed for the chain but
+                    // the texel stays zero.
+                    AppendStageDot(sb, state, slot, "dotVal");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = vec4(0.0); }}\n");
+                    break;
+                case PshCombiner.TexModeDotSt:
+                    // u = stage (slot - 1)'s dot, v = this stage's dot.
+                    AppendStageDot(sb, state, slot - 1, "dotPrev");
+                    AppendStageDot(sb, state, slot, "dotVal");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOkA || !dotOkB) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotPrev, dotVal)); }}\n");
+                    break;
+                case PshCombiner.TexModeDotStr3D:
+                    // Software samples stageDots[1]/[2] (the mode is stage-3
+                    // only in the reference table).
+                    AppendStageDot(sb, state, 2, "dotA");
+                    AppendStageDot(sb, state, 1, "dotB");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOkA || !dotOkB) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotB, dotA)); }}\n");
+                    break;
+                case PshCombiner.TexModeDotStrCube:
+                    AppendDotPair(sb, state, slot);
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA, dotB, dotC)); }}\n");
+                    break;
+                case PshCombiner.TexModeDotRflctDiff:
+                    // n = (dot(slot-1), dot(slot), dot(slot+1)); the third is
+                    // xemu's dot%d_n, which the software sampler also forms by
+                    // dotting that stage's coords against its own input texel.
+                    AppendDotPair(sb, state, slot);
+                    AppendStageDot(sb, state, slot + 1, "dotC");
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA, dotB, dotC)); }}\n");
+                    break;
+                case PshCombiner.TexModeDotRflctSpec:
+                    // n = (dot(slot-2), dot(slot-1), dot(slot)), eye vector from
+                    // the specular slots' coords, rv = 2*n*(n.e)/|n|^2 - e.
+                    AppendDotPair(sb, state, slot);
+                    sb.Append(CultureInfo.InvariantCulture,
+                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ vec3 rv = SpecularReflect(vec3(dotA, dotB, dotC), vec3(c1.w, c2.w, c3.w)); {t} = SampleCubeOrRemap({slot}, rv); }}\n");
+                    break;
                 default:
-                    // Dot family / bump: slice-1 unsupported when valid for
-                    // the stage (BackendUnsupported counts at draw time);
-                    // deterministic none-texel here.
+                    // Remaining dot family (BRDF-adjacent) / bump: still
+                    // declared unsupported at draw time, so a deterministic
+                    // none-texel here can never reach a presented frame.
                     sb.Append(CultureInfo.InvariantCulture, $"  {t} = vec4(0.0, 0.0, 0.0, 1.0);\n");
                     break;
             }
@@ -476,6 +706,54 @@ public static class PshGlslGenerator
             ? ($"{prev}.a", $"{prev}.r")
             : ($"{prev}.g", $"{prev}.b");
         sb.Append(CultureInfo.InvariantCulture, $"  {t} = SampleSlot({slot}, vec2({u}, {v}));\n");
+    }
+
+    /// <summary>
+    /// Emits one stage's dot (Nv2AMmio.TryComputeDot) into variables named
+    /// <c>{target}</c> (the value) and <c>dotOk{A|B}</c> (whether the
+    /// dependent input resolved). The input texel is the stage select from
+    /// SHADERCTL (stage 1 always reads stage 0), so it must already have been
+    /// resolved - which it has, because texel resolution runs slot 0..3 in
+    /// order exactly like the software loop.
+    /// </summary>
+    private static void AppendStageDot(StringBuilder sb, PshCombiner state, int dotStage, string target)
+    {
+        int input = state.DecodeInputTex(dotStage);
+        string ok = target is "dotPrev" ? "dotOkB" : (target is "dotVal" ? "dotOkA" : "dotOk");
+        if (input is < 0 or >= PshCombiner.TextureSlots)
+        {
+            // Software degrades the whole mode to none: no dot value exists.
+            sb.Append(CultureInfo.InvariantCulture,
+                $"  float {target} = 0.0; bool {ok} = false;\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float {target} = 0.0; bool {ok} = StageDot({dotStage}, c{dotStage}.xyz, t{input}, {target});\n");
+    }
+
+    /// <summary>Emits the stage-triple dot pair a cube-direction mode needs: dot(stage-2) and dot(stage-1) into dotA/dotB.</summary>
+    private static void AppendDotPair(StringBuilder sb, PshCombiner state, int slot)
+    {
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float dotA = 0.0; float dotB = 0.0; float dotC = 0.0; bool dotOk = true;\n");
+        AppendStageDotInto(sb, state, slot - 2, "dotA");
+        AppendStageDotInto(sb, state, slot - 1, "dotB");
+        AppendStageDotInto(sb, state, slot, "dotC");
+    }
+
+    /// <summary>Accumulates one stage dot into an existing variable and ANDs its success into <c>dotOk</c>.</summary>
+    private static void AppendStageDotInto(StringBuilder sb, PshCombiner state, int dotStage, string target)
+    {
+        int input = state.DecodeInputTex(dotStage);
+        if (input is < 0 or >= PshCombiner.TextureSlots)
+        {
+            sb.Append("  dotOk = false;\n");
+            return;
+        }
+
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  {{ float d = 0.0; if (!StageDot({dotStage}, c{dotStage}.xyz, t{input}, d)) dotOk = false; else {target} = d; }}\n");
     }
 
     private static void AppendStage(StringBuilder sb, PshCombiner state, int stage, bool muxMsb)

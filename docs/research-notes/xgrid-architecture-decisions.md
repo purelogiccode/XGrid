@@ -14270,3 +14270,76 @@ unexplored shapes are cheap to add: MMX/SSE1 *rounding* corners
 (`cvtps2pi`/`cvtpi2ps` overflow), `FCW`-driven precision/rounding combinations
 beyond the two now covered, `LOOP`/`JECXZ` with 16-bit address size, and
 `cmpxchg8b` fault paths (which need a handler dump - currently out of scope).
+
+## 226 Track B: B3 slice 1 - the computed cube/dot texel state reaches a GPU backend, and the shader carries the math (2026-10-22, twenty-seventh session)
+
+**Track:** B (host GPU path). **Ceiling measured first:** the `xgu
+bump_cubemap_reflect` corpus row at 3B `-Gpu gl -GpuReplace` declined 7 draws
+(`BackendUnsupported=7`) and `unsupTex[m0C=7 m11=14]` (the §221e diagnostic), so
+its replacement-mode frames were composed from software - the GL backend could
+not touch two texture-mode families the sample used on 3 of its 4 stages.
+
+**What the two families actually need.** Reading `Nv2AMmio.ResolveTexel` against
+the GL seam showed that every *computed* input of a cube or dot texel already
+exists on the CPU side of the seam - only the texel *fetch* does not:
+
+| Input the math needs | Where it lived | Now |
+|---|---|---|
+| Cube face extent + face stride | `SamplerPlan.CubeWidth/Height/CubeFaceStride` (TEXFMT `BASE_SIZE`, not TEXIMAGERECT - the §209a rule) | `PgraphTextureSlot.CubeWidth/CubeHeight/CubeFaceStride`, 0 for a non-cube slot |
+| Swizzle masks / Morton pair | `SamplerPlan.SwizzleMaskX/Y/MortonMasks` | `PgraphTextureSlot.SwizzleMaskX/Y/MortonMasks` |
+| Dot map per stage | `PshCombiner.DecodeDotMap` (live combiner reference) | GL reads the live combiner at `ApplyTextures` |
+| Per-stage dot | `dot(pT.xyz, dotmap(input texel))`, input from `DecodeInputTex` | `StageDot` in the generated shader, same expression order |
+| Specular reflection camera | XF constant 0x38 via `NV097_SET_EYE_POSITION` | `PgraphDrawInfo.EyeX/Y/Z` + `Nv2AMmio.EyePosition` (one accessor) |
+| Texel decode | `DecodeTextureTexel`'s unit tables | `DescribeTextureDecode` descriptor + `DecodedChannel` **shared with the software decode** |
+
+**Landed.** The seam fields above; `PshGlslGenerator` emits the transcribed math
+(`DotMap` for maps 0-7 including the HILO hemisphere forms, `Sign1/2/3` copied
+from `PshCombiner`, `CubeFaceSelect`, `SampleCubeSlot` with the TEXFILTER tent
+clamped per face, `SpreadZ/SpreadO/SwzBits`, the descriptor-driven
+`DecodeGuestTexel`, `SpecularReflect` with the eye as an argument). All of it is
+**per-draw uniform state**, so `BuildKey` never splits on a texture mode and
+switching modes never recompiles.
+
+**The half that is NOT landed, stated plainly.** A cube face or a 16-bit HILO
+word is read from guest RAM by address that is neither a 2D image row nor a
+`texelFetch`-able layout, and `TexelWord()` is the one hole left in the shader
+(it returns 0). Closing it needs a guest-word uniform buffer re-uploaded per draw
+command; attempted, judged unvalidated and reverted rather than shipped
+half-working. So `CheckModesUnsupported` **still declines** every dot/reflection/
+bump mode and counts it (`_unsupportedTexModeCounts`), replacement mode still
+paints those draws in software (§220d), and a wrong-but-plausible texel can
+never reach a presented frame. The next slice is that buffer plus the flip to
+"supported" for the modes whose words it can carry.
+
+**Deliberate non-shortcut.** The shader's texel decode is not a hand-written
+per-format switch: `DescribeTextureDecode` describes the layout (per-channel bit
+offset/width + constants) and `PgraphBackendCubeDotSeamTests
+.TextureDecodeDescriptor_ReproducesTheSoftwareDecode` proves the descriptor
+applied to a word equals `DecodeTextureTexel` for all 20 supported formats x 5
+words. A second decoder that "looks right" is exactly how a dual-rasterizer
+drifts apart.
+
+### Evidence (this session, H1)
+
+- **Accurate 1B goldens PASS, byte-identical**: menu sw `4EF1FBF6…` / gl
+  `B6116DAE…` (diff 2602 px, maxDelta 1, violations 0, counters 33632/686/686),
+  triangle sw `A1740DE0…` / gl `7A860ED7…` (diff 27849, violations 0, counters
+  2706/68/34), `BackendUnsupported=0`, `composedFrames=0` on both.
+- **`xgu-bump_cubemap_reflect` 3B `-Gpu gl -GpuReplace` is byte-identical to the
+  pre-change baseline**: last frame `DA0750EE…`, RAM `19D576A8…`, CPU
+  `D5D38C64…`, `unsupported=7`, `unsupTex[m0C=7 m11=14]`, `composedFrames=7`.
+  Samewindow A/B (3 runs each, `--jit --jit-spin --jit-raw`): wall 12.08/11.56/
+  11.49 s base vs 11.62/11.64/11.51 s new; `drawMs` 228/243/247 vs 255/260/261 ms.
+  An earlier single 24.4 s reading was taken while a golden leg saturated the
+  host and does not reproduce on a quiet host.
+- **ktest smoke PASS 7/7** at **792,800,535** steps, 40,797-byte suite log
+  byte-identical.
+- **Suite 1812 -> 1821** (Nv2a +6 `PgraphBackendCubeDotSeamTests`, GpuGl +3
+  generator contract tests; the two GLSL string goldens were regenerated and the
+  live GL tests compile and link the new shader on NVIDIA 4.6).
+  No snapshot or format version change (no device state), so `.xgs` files stay
+  valid.
+- The live GL compile caught two real defects in the first draft (a malformed
+  decode ternary emitted 4 syntax errors; `SpecularReflect` referenced `c1..c3`
+  which are fragment-body locals) - both fixed before any run, which is why the
+  live tests are part of this slice rather than optional.

@@ -1059,6 +1059,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return index < MaxVertexShaderConstants && part is >= 0 and < 4 ? _transformConstants[index][part] : 0;
     }
 
+    /// <summary>
+    /// Gets the eye-space camera position the specular reflection texture mode
+    /// reads (XF constant <see cref="XfConstantEyePosition"/>, written by the
+    /// NV097_SET_EYE_POSITION range). The one accessor both the software
+    /// sampler and the GPU-backend seam use, so the two can never read
+    /// different cameras.
+    /// </summary>
+    public (float X, float Y, float Z) EyePosition => ReadEyePosition();
+
+    private (float X, float Y, float Z) ReadEyePosition()
+    {
+        return (
+            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][0]),
+            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][1]),
+            BitConverter.UInt32BitsToSingle(_transformConstants[XfConstantEyePosition][2]));
+    }
+
     /// <summary>Advances the PTIMER free-running counter by the given core-clock ticks.</summary>
     public void Advance(ulong coreTicks)
     {
@@ -5879,6 +5896,110 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Gets the value the texel decode assigns to an n-bit channel field: the
+    /// exact unit-table entry <see cref="DecodeTextureTexel"/> reads. Exposed
+    /// so a backend that decodes guest texels itself (the GL cube sampler)
+    /// reproduces the software channel values bit-for-bit instead of
+    /// re-deriving a per-channel division.
+    /// </summary>
+    /// <param name="bits">Channel field width: 1, 4, 5, 6 or 8.</param>
+    /// <param name="value">Raw field value.</param>
+    public static float DecodedChannel(int bits, int value)
+    {
+        return bits switch
+        {
+            1 => value & 1,
+            4 => Unit15[value & 0xF],
+            5 => Unit31[value & 0x1F],
+            6 => Unit63[value & 0x3F],
+            _ => Unit255[value & 0xFF],
+        };
+    }
+
+    /// <summary>
+    /// Describes a color format's texel layout the way <see cref="DecodeTextureTexel"/>
+    /// reads it: per channel a bit offset and a bit width into the raw word,
+    /// and whether the channel is a constant (0 or 1) rather than a field.
+    /// The channel order is R, G, B, A. A backend that decodes guest texels
+    /// itself (the GL cube sampler) reads the same descriptor, so the two
+    /// decoders cannot drift apart the way a hand-written shader copy would.
+    /// </summary>
+    /// <param name="color">Format id (TEXFMT bits 8-15).</param>
+    /// <param name="fields">12 ints: r/g/b/a offset, then r/g/b/a width (0 width = constant).</param>
+    /// <param name="constants">4 floats: the constant each channel takes when its width is 0.</param>
+    public static void DescribeTextureDecode(uint color, out int[] fields, out float[] constants)
+    {
+        fields = new int[8];
+        constants = new float[4];
+        switch (color)
+        {
+            case 0x3Au:
+            case 0x3Fu:
+                SetFields(fields, (0, 8), (8, 8), (16, 8), (24, 8));
+                break;
+            case 0x3Bu:
+            case 0x40u:
+                // B high byte, then G, R, A.
+                SetFields(fields, (8, 8), (16, 8), (24, 8), (0, 8));
+                break;
+            case 0x3Cu:
+            case 0x41u:
+                // R high byte, then G, B, A.
+                SetFields(fields, (24, 8), (16, 8), (8, 8), (0, 8));
+                break;
+            case 0x28u:
+            case 0x17u:
+                // G8B8: r/b = low byte, g/a = high byte.
+                SetFields(fields, (0, 8), (8, 8), (0, 8), (8, 8));
+                break;
+            case 0x29u:
+                SetFields(fields, (8, 8), (0, 8), (8, 8), (0, 8));
+                break;
+            case 0x02u:
+            case 0x10u:
+                SetFields(fields, (10, 5), (5, 5), (0, 5), (15, 1));
+                break;
+            case 0x03u:
+            case 0x1Cu:
+                SetFields(fields, (10, 5), (5, 5), (0, 5), (0, 0));
+                constants[3] = 1f;
+                break;
+            case 0x04u:
+            case 0x1Du:
+                SetFields(fields, (8, 4), (4, 4), (0, 4), (12, 4));
+                break;
+            case 0x05u:
+            case 0x11u:
+                SetFields(fields, (11, 5), (5, 6), (0, 5), (0, 0));
+                constants[3] = 1f;
+                break;
+            case 0x07u:
+            case 0x1Eu:
+                SetFields(fields, (16, 8), (8, 8), (0, 8), (0, 0));
+                constants[3] = 1f;
+                break;
+            default:
+                // A8R8G8B8 (and the X8 alpha-ignored variants the sampler never
+                // selects): a = high byte, r, g, b.
+                SetFields(fields, (16, 8), (8, 8), (0, 8), (24, 8));
+                break;
+        }
+    }
+
+    private static void SetFields(int[] fields, (int Offset, int Width) r, (int Offset, int Width) g,
+        (int Offset, int Width) b, (int Offset, int Width) a)
+    {
+        fields[0] = r.Offset;
+        fields[1] = g.Offset;
+        fields[2] = b.Offset;
+        fields[3] = a.Offset;
+        fields[4] = r.Width;
+        fields[5] = g.Width;
+        fields[6] = b.Width;
+        fields[7] = a.Width;
+    }
+
+    /// <summary>
     /// Decodes a raw texel for the supported color formats. Bit layouts follow
     /// the Vulkan format mapping in xemu's renderer (A1R5G5B5, A4R4G4B4,
     /// R5G6B5, A8R8G8B8 and the X8 alpha-ignored variants); SZ and LU variants
@@ -7150,6 +7271,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ResolveTextureFilter(slot, out bool bilinear, out int convolution);
         uint address = _textureAddress[slot];
+        // Swizzled-layout facts the software sampler derives from the per-fill
+        // plan (TEXFMT BASE_SIZE extent, Morton masks, cube face stride): a
+        // backend that decodes guest texels itself would otherwise have to
+        // re-derive them, and the extent rule is exactly the one §209a got
+        // wrong (TEXIMAGERECT over 256x256 faces).
+        ref readonly SamplerPlan plan = ref _samplerPlans[slot];
+        bool cube = (_textureFormat[slot] & TextureFormatCubemapEnable) != 0;
         return new PgraphTextureSlot(
             _textureOffset[slot], _textureFormat[slot], address,
             _textureControl0[slot], _textureControl1[slot], _textureImageRect[slot],
@@ -7157,7 +7285,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             convolution,
             SamplerWrapMode(DecodeTextureAddressU((int)address)),
             SamplerWrapMode(DecodeTextureAddressV((int)address)),
-            _textureBorderColor[slot]);
+            _textureBorderColor[slot],
+            plan.SwizzleMaskX,
+            plan.SwizzleMaskY,
+            plan.MortonMasks,
+            cube ? plan.CubeFaceStride : 0u,
+            cube ? plan.CubeWidth : 0,
+            cube ? plan.CubeHeight : 0);
     }
 
     /// <summary>
@@ -7175,6 +7309,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         in PshVertex a, in PshVertex b, in PshVertex c,
         uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint zetaBytes, bool combinerActive)
     {
+        (float eyeX, float eyeY, float eyeZ) = ReadEyePosition();
         return new PgraphDrawInfo(
             ToBackendVertex(a), ToBackendVertex(b), ToBackendVertex(c),
             clipX, clipY, clipW, clipH,
@@ -7186,7 +7321,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _shaderClipMode,
             _zFormatFloat,
             _colorSurfaceBase + PresentedColorOffset,
-            _surfacePitch & 0xFFFFu);
+            _surfacePitch & 0xFFFFu,
+            eyeX,
+            eyeY,
+            eyeZ);
     }
 
     private PgraphDrawInfo BuildLegacyDrawInfo(
@@ -7205,6 +7343,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             0f, 0f, 0f, 0f, 0f, 0f, 1f);
         var c = new PgraphVertex(cx, cy, cz, cw, cr, cg, cb, ca, 0f, 0f, 0f, 0f, cu, cv, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f,
             0f, 0f, 0f, 0f, 0f, 0f, 1f);
+        (float eyeX, float eyeY, float eyeZ) = ReadEyePosition();
         return new PgraphDrawInfo(
             a, b, c,
             clipX, clipY, clipW, clipH,
@@ -7216,7 +7355,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _shaderClipMode,
             _zFormatFloat,
             _colorSurfaceBase + PresentedColorOffset,
-            _surfacePitch & 0xFFFFu);
+            _surfacePitch & 0xFFFFu,
+            // Carried for a backend that inspects the record even on this path;
+            // the reference falls back to a zero camera outside a combiner, so
+            // the value is informational here and never drives a sample.
+            eyeX,
+            eyeY,
+            eyeZ);
     }
 
     private static PgraphVertex ToBackendVertex(in PshVertex v)

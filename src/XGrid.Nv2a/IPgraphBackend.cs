@@ -365,11 +365,19 @@ public readonly struct PgraphFragmentState(
 /// <param name="samplerWrapU">Resolved U address mode: 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border.</param>
 /// <param name="samplerWrapV">Resolved V address mode: 0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border.</param>
 /// <param name="borderColor">Raw NV097_SET_TEXTURE_BORDER_COLOR word (ARGB, xemu argb-pack order).</param>
+/// <param name="swizzleMaskX">Morton bit-spread mask for the texel x index (swizzled formats; the same mask the software sampler uses).</param>
+/// <param name="swizzleMaskY">Morton bit-spread mask for the texel y index.</param>
+/// <param name="mortonMasks">Whether the masks are the standard alternating Morton pair (branchless spread) rather than the generic interleave loop.</param>
+/// <param name="cubeFaceStride">Cube-face byte stride (faces contiguous, full mip chain rounded to 128 bytes; 0 when not a cube-sampling slot).</param>
+/// <param name="cubeWidth">Cube face width in texels (TEXFMT BASE_SIZE_U), 0 when not a cube-sampling slot.</param>
+/// <param name="cubeHeight">Cube face height in texels (TEXFMT BASE_SIZE_V).</param>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphTextureSlot(
     uint offset, uint format, uint address, uint control0, uint control1, uint imageRect,
     bool filterBilinear = false, int filterConvolution = 0,
-    int samplerWrapU = 0, int samplerWrapV = 0, uint borderColor = 0)
+    int samplerWrapU = 0, int samplerWrapV = 0, uint borderColor = 0,
+    uint swizzleMaskX = 0, uint swizzleMaskY = 0, bool mortonMasks = false,
+    uint cubeFaceStride = 0, int cubeWidth = 0, int cubeHeight = 0)
 {
 
     /// <summary>Gets the guest-physical texture base offset.</summary>
@@ -420,6 +428,48 @@ public readonly struct PgraphTextureSlot(
 
     /// <summary>Gets the raw NV097_SET_TEXTURE_BORDER_COLOR word (ARGB, xemu argb-pack order).</summary>
     public uint BorderColor { get; } = borderColor;
+
+    /// <summary>
+    /// Gets the Morton bit-spread mask for the texel x index of a swizzled
+    /// texture (the software sampler's <c>InterleaveBits(x, maskX)</c>).
+    /// A backend that decodes the guest's swizzled texels itself needs it to
+    /// reproduce the exact texel address, so the mask never has to be
+    /// recomputed from the extent (which the software path derives from TEXFMT
+    /// BASE_SIZE for swizzled formats, not from TEXIMAGERECT).
+    /// </summary>
+    public uint SwizzleMaskX { get; } = swizzleMaskX;
+
+    /// <summary>Gets the Morton bit-spread mask for the texel y index of a swizzled texture.</summary>
+    public uint SwizzleMaskY { get; } = swizzleMaskY;
+
+    /// <summary>
+    /// Gets whether <see cref="SwizzleMaskX"/>/<see cref="SwizzleMaskY"/> are the
+    /// standard alternating Morton pair. When true the spread is branchless;
+    /// when false the generic bit-interleave loop applies (same result, slower).
+    /// </summary>
+    public bool MortonMasks { get; } = mortonMasks;
+
+    /// <summary>
+    /// Gets the cube-face byte stride: faces are stored contiguously in the
+    /// guest's +X,-X,+Y,-Y,+Z,-Z order, each face a full mip chain rounded up
+    /// to the 128-byte face alignment. 0 when the slot is not cube-sampling
+    /// (a 0 cube extent means the same).
+    /// </summary>
+    public uint CubeFaceStride { get; } = cubeFaceStride;
+
+    /// <summary>Gets the cube face width in texels (TEXFMT BASE_SIZE_U); 0 when the slot is not cube-sampling.</summary>
+    public int CubeWidth { get; } = cubeWidth;
+
+    /// <summary>Gets the cube face height in texels (TEXFMT BASE_SIZE_V); 0 when the slot is not cube-sampling.</summary>
+    public int CubeHeight { get; } = cubeHeight;
+
+    /// <summary>
+    /// Gets whether this slot carries a complete cube-face description (a
+    /// non-zero face extent and stride). A backend that acts on this never has
+    /// to guess the software sampler's cube rules (swizzled formats only,
+    /// extent from TEXFMT BASE_SIZE rather than TEXIMAGERECT).
+    /// </summary>
+    public bool CubeSamplingReady => CubeWidth > 0 && CubeHeight > 0 && CubeFaceStride != 0;
 }
 
 /// <summary>
@@ -454,6 +504,9 @@ public readonly struct PgraphTextureSlot(
 /// <param name="zFormatFloat">Whether zeta values use the float format.</param>
 /// <param name="colorSurfaceAddress">Guest-physical color-surface pixel (0,0): surface base + presented color offset.</param>
 /// <param name="colorPitch">Color-surface row pitch in bytes (surface pitch low 16 bits).</param>
+/// <param name="eyex">Eye-space camera x (NV097_SET_EYE_POSITION), read by the specular reflection texture modes.</param>
+/// <param name="eyey">Eye-space camera y.</param>
+/// <param name="eyez">Eye-space camera z.</param>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphDrawInfo(
     in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
@@ -468,7 +521,10 @@ public readonly struct PgraphDrawInfo(
     uint shaderClipMode,
     bool zFormatFloat,
     uint colorSurfaceAddress,
-    uint colorPitch)
+    uint colorPitch,
+    float eyex = 0f,
+    float eyey = 0f,
+    float eyez = 0f)
 {
 
     /// <summary>Gets the first triangle vertex.</summary>
@@ -552,6 +608,20 @@ public readonly struct PgraphDrawInfo(
 
     /// <summary>Gets the color-surface row pitch in bytes (surface pitch low 16 bits).</summary>
     public uint ColorPitch { get; } = colorPitch;
+
+    /// <summary>
+    /// Gets the eye-space camera x (NV097_SET_EYE_POSITION). The specular
+    /// reflection texture mode reflects the eye vector `p - eye` about the
+    /// stage normal, so a backend that honors that mode needs the same camera
+    /// the software sampler reads.
+    /// </summary>
+    public float EyeX { get; } = eyex;
+
+    /// <summary>Gets the eye-space camera y.</summary>
+    public float EyeY { get; } = eyey;
+
+    /// <summary>Gets the eye-space camera z.</summary>
+    public float EyeZ { get; } = eyez;
 
     /// <summary>Gets the texture slot by index (0-3).</summary>
     public PgraphTextureSlot GetTexture(int slot)
