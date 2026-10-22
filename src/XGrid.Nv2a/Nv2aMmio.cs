@@ -471,7 +471,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly uint[] _guestTexelFrameAddresses = new uint[GuestTexelFrameCapacity];
     private readonly uint[] _guestTexelFrameWords = new uint[GuestTexelFrameCapacity];
     private int _guestTexelFrameCount;
-    private int _guestTexelFrameStart;
     private bool _guestTexelCapture;
 
     private const int GuestTexelCapacity = 64;
@@ -504,15 +503,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         return new PgraphGuestTexelSet(
-            new ArraySegment<uint>(_guestTexelFrameAddresses, _guestTexelFrameStart, _guestTexelFrameCount),
-            new ArraySegment<uint>(_guestTexelFrameWords, _guestTexelFrameStart, _guestTexelFrameCount));
+            new ArraySegment<uint>(_guestTexelFrameAddresses, 0, _guestTexelFrameCount),
+            new ArraySegment<uint>(_guestTexelFrameWords, 0, _guestTexelFrameCount));
     }
 
     /// <summary>Starts a new draw command: the per-command guest texel set starts empty again.</summary>
     public void BeginGuestTexelCommand()
     {
         _guestTexelFrameCount = 0;
-        _guestTexelFrameStart = 0;
     }
 
     /// <summary>
@@ -567,23 +565,29 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     {
         for (int i = 0; i < _guestTexelFrameCount; i++)
         {
-            int index = (_guestTexelFrameStart + i) % GuestTexelFrameCapacity;
-            if (_guestTexelFrameAddresses[index] == address)
+            if (_guestTexelFrameAddresses[i] == address)
             {
-                _guestTexelFrameWords[index] = word;
+                _guestTexelFrameWords[i] = word;
                 return;
             }
         }
 
         if (_guestTexelFrameCount == GuestTexelFrameCapacity)
         {
-            _guestTexelFrameStart = (_guestTexelFrameStart + 1) % GuestTexelFrameCapacity;
-            _guestTexelFrameCount--;
+            // Keep the most recent half, contiguously: GuestTexelsFor hands the
+            // window out as an ArraySegment, so it must never wrap (the earlier
+            // wrapping ring made start + count overrun the array once a draw
+            // command captured more than the window holds - a cube stage with
+            // many face texels does).
+            int keep = GuestTexelFrameCapacity / 2;
+            Array.Copy(
+                _guestTexelFrameAddresses, GuestTexelFrameCapacity - keep, _guestTexelFrameAddresses, 0, keep);
+            Array.Copy(_guestTexelFrameWords, GuestTexelFrameCapacity - keep, _guestTexelFrameWords, 0, keep);
+            _guestTexelFrameCount = keep;
         }
 
-        int slot = (_guestTexelFrameStart + _guestTexelFrameCount) % GuestTexelFrameCapacity;
-        _guestTexelFrameAddresses[slot] = address;
-        _guestTexelFrameWords[slot] = word;
+        _guestTexelFrameAddresses[_guestTexelFrameCount] = address;
+        _guestTexelFrameWords[_guestTexelFrameCount] = word;
         _guestTexelFrameCount++;
     }
 
@@ -5096,6 +5100,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                         $" ro{i}={_combiner.RgbOutputs[i]:X8} ao{i}={_combiner.AlphaOutputs[i]:X8}");
                 }
 
+                AppendTextureSlotSummary(cfg);
                 _diagCombinerConfig = cfg.ToString();
             }
         }
@@ -6203,109 +6208,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return table;
     }
 
-    /// <summary>
-    /// Gets the value the texel decode assigns to an n-bit channel field: the
-    /// exact unit-table entry <see cref="DecodeTextureTexel"/> reads. Exposed
-    /// so a backend that decodes guest texels itself (the GL cube sampler)
-    /// reproduces the software channel values bit-for-bit instead of
-    /// re-deriving a per-channel division.
-    /// </summary>
-    /// <param name="bits">Channel field width: 1, 4, 5, 6 or 8.</param>
-    /// <param name="value">Raw field value.</param>
-    public static float DecodedChannel(int bits, int value)
-    {
-        return bits switch
-        {
-            1 => value & 1,
-            4 => Unit15[value & 0xF],
-            5 => Unit31[value & 0x1F],
-            6 => Unit63[value & 0x3F],
-            _ => Unit255[value & 0xFF],
-        };
-    }
-
-    /// <summary>
-    /// Describes a color format's texel layout the way <see cref="DecodeTextureTexel"/>
-    /// reads it: per channel a bit offset and a bit width into the raw word,
-    /// and whether the channel is a constant (0 or 1) rather than a field.
-    /// The channel order is R, G, B, A. A backend that decodes guest texels
-    /// itself (the GL cube sampler) reads the same descriptor, so the two
-    /// decoders cannot drift apart the way a hand-written shader copy would.
-    /// </summary>
-    /// <param name="color">Format id (TEXFMT bits 8-15).</param>
-    /// <param name="fields">12 ints: r/g/b/a offset, then r/g/b/a width (0 width = constant).</param>
-    /// <param name="constants">4 floats: the constant each channel takes when its width is 0.</param>
-    public static void DescribeTextureDecode(uint color, out int[] fields, out float[] constants)
-    {
-        fields = new int[8];
-        constants = new float[4];
-        switch (color)
-        {
-            case 0x3Au:
-            case 0x3Fu:
-                SetFields(fields, (0, 8), (8, 8), (16, 8), (24, 8));
-                break;
-            case 0x3Bu:
-            case 0x40u:
-                // B high byte, then G, R, A.
-                SetFields(fields, (8, 8), (16, 8), (24, 8), (0, 8));
-                break;
-            case 0x3Cu:
-            case 0x41u:
-                // R high byte, then G, B, A.
-                SetFields(fields, (24, 8), (16, 8), (8, 8), (0, 8));
-                break;
-            case 0x28u:
-            case 0x17u:
-                // G8B8: r/b = low byte, g/a = high byte.
-                SetFields(fields, (0, 8), (8, 8), (0, 8), (8, 8));
-                break;
-            case 0x29u:
-                SetFields(fields, (8, 8), (0, 8), (8, 8), (0, 8));
-                break;
-            case 0x02u:
-            case 0x10u:
-                SetFields(fields, (10, 5), (5, 5), (0, 5), (15, 1));
-                break;
-            case 0x03u:
-            case 0x1Cu:
-                SetFields(fields, (10, 5), (5, 5), (0, 5), (0, 0));
-                constants[3] = 1f;
-                break;
-            case 0x04u:
-            case 0x1Du:
-                SetFields(fields, (8, 4), (4, 4), (0, 4), (12, 4));
-                break;
-            case 0x05u:
-            case 0x11u:
-                SetFields(fields, (11, 5), (5, 6), (0, 5), (0, 0));
-                constants[3] = 1f;
-                break;
-            case 0x07u:
-            case 0x1Eu:
-                SetFields(fields, (16, 8), (8, 8), (0, 8), (0, 0));
-                constants[3] = 1f;
-                break;
-            default:
-                // A8R8G8B8 (and the X8 alpha-ignored variants the sampler never
-                // selects): a = high byte, r, g, b.
-                SetFields(fields, (16, 8), (8, 8), (0, 8), (24, 8));
-                break;
-        }
-    }
-
-    private static void SetFields(int[] fields, (int Offset, int Width) r, (int Offset, int Width) g,
-        (int Offset, int Width) b, (int Offset, int Width) a)
-    {
-        fields[0] = r.Offset;
-        fields[1] = g.Offset;
-        fields[2] = b.Offset;
-        fields[3] = a.Offset;
-        fields[4] = r.Width;
-        fields[5] = g.Width;
-        fields[6] = b.Width;
-        fields[7] = a.Width;
-    }
 
     /// <summary>
     /// Decodes a raw texel for the supported color formats. Bit layouts follow
@@ -8430,6 +8332,43 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private int TextureDimensionality(int stage)
     {
         return (int)((_textureFormat[stage] & TextureFormatDimensionality) >> 6);
+    }
+
+    /// <summary>
+    /// Diagnostic (`--gpu-time`, combiner rows only): the per-slot texture
+    /// state a draw's sampler actually resolves. A combiner row that names a
+    /// texture mode cannot say whether the stage samples a 2D image, a cube
+    /// face or a volume, and the three take different code paths in both
+    /// executors - the 3D/-cube/2D distinction was invisible in every earlier
+    /// row. Prints <c>ts&lt;slot&gt;=&lt;format&gt;:d&lt;dim&gt;[:c][:x][:s]</c>
+    /// where c = cubemap enable, x = texture control0 enable, s = the swizzled
+    /// format the samplers back.
+    /// </summary>
+    private void AppendTextureSlotSummary(System.Text.StringBuilder cfg)
+    {
+        for (int slot = 0; slot < PshCombiner.TextureSlots; slot++)
+        {
+            if (_combiner.DecodeTexMode(slot) == PshCombiner.TexModeNone)
+            {
+                continue;
+            }
+
+            cfg.Append(CultureInfo.InvariantCulture, $" ts{slot}={_textureFormat[slot]:X8}:d{TextureDimensionality(slot)}");
+            if (IsTextureCubemap(slot))
+            {
+                cfg.Append(":c");
+            }
+
+            if ((_textureControl0[slot] & TextureControl0Enable) != 0)
+            {
+                cfg.Append(":x");
+            }
+
+            if (IsSupportedSwizzledFormat(slot))
+            {
+                cfg.Append(":s");
+            }
+        }
     }
 
     private bool IsSupportedSwizzledFormat(int stage)

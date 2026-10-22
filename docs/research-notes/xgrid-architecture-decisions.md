@@ -15177,3 +15177,130 @@ allocation that removes the slot traffic), not just less frequent. Before a
 session is spent, price it the §233a way - a call-level or per-member probe of
 one candidate transformation, with the exactness gates attached - because every
 other C lever has now been retired on a number.
+
+## 236 Track B/E: a cube face is a host 2D-array texture, and the black panel is gone (2026-10-22, thirty-sixth session)
+
+**Gap 12 closed on both row anchors: the GL replace frame of
+`xgu bump_cubemap_reflect` now equals the software frame within 1-2 pixels.**
+Four defects stood between the two engines, and three of them had never fired
+because the fourth made every cube stage read a zero word.
+
+### 1. What the row actually draws (measured, `--gpu-time` with the new `ts<n>=` field)
+
+`xgu bump_cubemap_reflect` needs HDD+DVD (a DVD-only leg never launches the disc
+XBE and shows the kernel's "requires service" screen - the trap in §208d, walked
+into again this session before the media set was corrected). At 4.4B its two
+dominant programs are:
+
+| record | px | slots |
+|---|---|---|
+| `stages=8 c=00011108 tm=0332` | 14.8M | `ts1=0661072E:d0:c:x` `ts2=0661072E:d0:c:x` `ts3=0001302A:d0:x` |
+| `stages=1 c=00000001 tm=11111C` | 12.4M | `ts0=08813A2A:d0:x:s` `ts1=0771072E:d0:c` `ts2=0771072E:d0:c` `ts3=08813A2E:d0:c:x:s` |
+
+The one-stage program's whole output is `T3` (`ri0=CB200000`, `ro0=00000040` =
+AB into V0, final `f0=00000004 f1=00001400` = pass V0 through): slot 3 is
+`DOT_REFLECT_SPECULAR` over a **cube-flagged 256x256 A8B8G8R8 (`0x3A`) stage**,
+i.e. the panel *is* the cube sample. `s` = a format the software cube sampler
+backs, `c` = the cubemap enable bit, `x` = control0 enable.
+
+### 2. The four defects
+
+1. **`ResolveGuestWordPool` returned early when the seam's carried set was
+   null** (`info.GuestTexels is null`), so a draw command whose software fill
+   captured no words never built a pool at all - and the shader's cube tap read
+   pool entry 0 of a zero-initialised uniform, i.e. black. The carried set is a
+   *window over what the software sampler touched*, never the authority (that is
+   what §228's direct-RAM lane already said for the HILO inputs).
+2. **The cube texel decoder in the shader was dead and wrong.** It read
+   `uTexFieldOff/W/C` - uniforms the backend **never uploaded** (no such seam
+   field exists) - into `d`, then returned a hardcoded
+   `vec4(A, R, G, 1)/255` computed from different channels, discarding `d`. A
+   cube texel would have had red = alpha, green = red, blue = green. Every cube
+   sample since §226 went through this.
+3. **The word pool could not hold a face.** `GuestWordPoolSize = 48` entries but
+   the shader declared `uGuestWord[96]` = 24 entries and `PoolWord` guarded
+   `base >= 48`, so entries 24-47 read past the uniform. And a 256x256 face is
+   393,216 texels: no window can carry it, so `AppendCubeWords` fell back to a
+   3x3 tap around the *first* sampled texel.
+4. **`GuestTexelsFor` handed a wrapping ring out as a contiguous
+   `ArraySegment`** - `new ArraySegment(…, _guestTexelFrameStart, count)` overran
+   the buffer (`ArgumentException`) the first time a draw command captured more
+   than 64 distinct words, which a cube stage does. This crashed the 4.4B leg
+   outright once the cube lane started capturing.
+
+### 3. The design: decode the faces, sample them as a texture
+
+A cube face is not a 2D image row, but it *is* six images - so the backend now
+decodes them, once per texture-content change, into a **GL 2D-array texture**
+(layer = face) through `Nv2AMmio.SwizzleAddressNT` +
+`Nv2AMmio.DecodeSwizzledTexelWord` - the same two calls
+`Nv2AMmio.TryReadCubeTexel` makes, so the two executors share the decoder and
+every face texel is addressable. The generated shader taps it with
+`texelFetch(uCube{slot}, ivec3(tx, ty, face), 0)` (units 4-7; `uCube0..3`).
+`PshGlslGenerator.GuestWordPoolSize` (24) is now the single pool constant and the
+pool holds only a **HILO dot input** - raw 16-bit bytes, which no decoded host
+texture can carry. `AppendCubeWords`, `CubeTexelAddress`,
+`DescribeTextureDecode`, `DecodedChannel`, the GLSL descriptor decode, the
+swizzle bit-spread helpers and five dead uniforms
+(`uTexFieldOff/W/C`, `uTexSwzMaskX/Y`, `uTexMorton`, `uTexBase`, `uTexBytes`,
+`uTexCubeStride`) are deleted; the cube gates now mirror the software
+(`CubeSamplingReady` && enable && bytes && cubemap), and an unresolved cube stage
+returns the software's `SetTexelNone` (0,0,0,1) instead of a white guess.
+
+**HILO is gated on the dot map, not the mode.** `ResolveGuestWordPool` used to
+require a pool for *every* `DOT_PRODUCT` stage, but only maps 4-7 consume the raw
+pair; maps 1-3 and 8-15 read the input's *sampled texel*, which the sampler has
+already produced. With that gate the eight-stage program needs no pool at all
+(`guestWordDraws=0`, `guestWordMisses=0`), and the row stopped composing in
+software (`composedFrames=0`, was 122).
+
+### 4. Evidence (H1, gate media)
+
+| leg | before | after |
+|---|---|---|
+| `--gpu sw` 4.4B `lastFrameSha` | `5A949A40` | `5A949A40` (unchanged) |
+| `--gpu gl --gpu-replace` 4.4B | `CF65CDC2` / 4 colours / 34.4% black | `CF65CDC2` (see below), 19,042 colours, 0% black |
+| sw vs gl 4.4B pixels | 300k+ differ | **2 differ of 307,200, maxDelta 3**, same 19,042 colours |
+| sw vs gl 3.6B pixels | 2 vs 21,041 colours | **1 differs of 307,200, maxDelta 4**, 21,041 both |
+| GL diag 4.4B | `unsupported=0 composedFrames=0` (frame was the clear) | `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0`, `draws=27451` |
+
+The GL frame's mean is `(57.4, 89.3, 34.2)` / 18,980 colours - exactly the §228
+software row - when read back through `--frame`; the harness's `lastFrameSha`
+differs from the software leg because the two runs' flip phases are not the same
+frame of the animation, which is why the pixel-pair table above is the claim and
+the SHAs are not.
+
+**Rows checked for collateral:** `xgu-vp_lighting` 3B GL still `E68070A3`,
+software `72B2F490` (§220's recorded pair), `kest` smoke 7/7 with the log
+byte-identical, and the 1B gates below.
+
+### 5. Gates (all byte-identical)
+
+- menu accurate 1B GL golden **PASS**: sw `4EF1FBF6`, gl `B6116DAE`, `diff=2602
+  violations=0 maxDelta=1`, counters `33632/686/686`, `BackendUnsupported=0`.
+- triangle slice-2 golden **PASS**: sw `A1740DE0`, gl `7A860ED7`, `diff=27849
+  violations=0`, counters `2706/68/34`.
+- fast 1B anchors exact: tri sw `B45254CA`/`7DAB63EB` (57,663,082 px), tri gl
+  `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94` (253,998,498 px), menu gl
+  `B06BA6E5`/`F5D61C94`.
+- ktest smoke PASS 7/7, `792,800,535` steps, suite log byte-identical.
+- Suite 1845 -> **1853** (Nv2a +2 net, GpuGl +4 net: the live cube decode pair,
+  the two generator tests and the descriptor/format-gate replacement).
+
+### 6. Still open (the honest remainder)
+
+- **A HILO dot input is still one word per stage** (`PoolWord(inSlot, 0)`): the
+  web of `uGuestWord` entries `AppendDependentInputWords` pushes is pointless
+  while the shader reads entry 0, so a HILO map (4-7) dot is a per-stage
+  constant. No measured row uses a HILO map - the row's dots are colour maps -
+  so this is filed, not fixed. The exact fix is the same shape as §236: decode
+  the input stage's *raw words* into a texture and sample it per fragment.
+- **The final-combiner MUX-lsb / negation** the §230 note blamed is *not* the
+  cause of anything measured: with the cube tap fixed, both programs match
+  software. The `MuxSelectExpr` implementation is `mod(floor(max(r0.a,0)*255),2)`
+  and the final lerp is `d + (c + (b-c)*a)` - both faithful to
+  `PshCombiner.Evaluate`; do not "fix" them without a failing differential.
+- The 8-stage program's HILO-free path is now the one to watch: its `tm=0332`
+  slot 1/2 cube stages sample through the array texture and its colour-map dots
+  read the sampled texel - the 2-pixel 4.4B agreement is the evidence that the
+  chain is right.

@@ -721,10 +721,59 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1845 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1853 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-sixth; the GL backend computes cube maps by decoding
+the guest's faces into a host array texture, and compatibility gap 12 is closed -
+decisions §236). Track B/E, correctness; every gate anchor byte-identical.**
+
+- **The defect chain (236a).** `xgu bump_cubemap_reflect`'s reflection panel was
+  black on the GL path. Four defects, each hidden by the first: (1)
+  `ResolveGuestWordPool` returned early on a **null** carried word set, so a draw
+  command whose software fill captured no words never built a pool and the cube
+  tap read pool entry 0 of a zero uniform; (2) the shader's cube decoder read
+  `uTexFieldOff/W/C` - uniforms the backend **never uploaded** - and then
+  returned the wrong channels anyway; (3) the pool was 48 entries against the
+  shader's 24-entry array, and a 256x256 face is 393,216 texels (no window fits);
+  (4) `GuestTexelsFor` handed a **wrapping ring** out as a contiguous
+  `ArraySegment`, which crashed the 4.4B leg (`ArgumentException`) once a cube
+  stage captured more than 64 words.
+- **The design (236b).** A cube stage now samples a host **`sampler2DArray`**
+  (`uCube0..3`, units 4-7) that the backend decodes from the six swizzled faces
+  with `Nv2AMmio.SwizzleAddressNT` + `DecodeSwizzledTexelWord` - the software
+  sampler's own two calls - so every face texel is addressable and the two
+  executables share one decoder. Deleted: `AppendCubeWords`,
+  `CubeTexelAddress`, `DescribeTextureDecode`, `DecodedChannel`, the GLSL
+  descriptor decode, the swizzle bit-spread helpers and nine dead uniforms. An
+  unresolved cube stage returns the software's `SetTexelNone`, never white.
+- **HILO is gated on the dot map (236c).** `ResolveGuestWordPool` required a pool
+  for *every* `DOT_PRODUCT` stage; only maps 4-7 consume the raw pair, and the
+  colour maps read the already-sampled texel. With the gate the row's eight-stage
+  program is served with `guestWordDraws=0 guestWordMisses=0` and
+  `composedFrames=0` (was 122 of 156 frames painted in software).
+- **Evidence (236d, H1).** GL replace vs software, same flags: 4.4B **2 pixels of
+  307,200 differ (maxDelta 3)**, 19,042 colours both; 3.6B **2 pixels
+  (maxDelta 3)**, 21,041 both. Before: 4 and 2 colours against 18,980 / 20,843.
+  `unsupported=0 fatal=0`, `draws=27451`. `xgu vp_lighting` 3B still `E68070A3`
+  (GL) / `72B2F490` (sw).
+- **Gates.** Menu accurate 1B GL golden PASS (sw `4EF1FBF6` / gl `B6116DAE`,
+  `diff=2602 violations=0 maxDelta=1`, counters 33,632/686/686); triangle
+  slice-2 PASS (`A1740DE0` / `7A860ED7`, `diff=27849`); fast 1B exact on all four
+  legs (tri sw `B45254CA`/`7DAB63EB`, tri gl `4F1FCBC0`/`7DAB63EB`, menu sw
+  `34973510`/`F5D61C94`, menu gl `B06BA6E5`/`F5D61C94`); ktest smoke PASS 7/7 at
+  792,800,535 steps, log byte-identical. Suite **1845 -> 1853**.
+- **New diagnostics:** the `--gpu-time` combiner row carries `ts<n>=` (each
+  referenced slot's `TEXFMT:dim[:c][:x][:s]`), which is what made "slot 3 is a
+  cube-flagged `0x3A`" visible; and the row's `guestWordDraws/Misses` now mean
+  only "a HILO input word was needed".
+- **Filed, not fixed:** a HILO dot input is one word per stage (`PoolWord(inSlot,
+  0)`), i.e. a per-stage constant; no measured row uses a HILO map. The exact
+  shape is §236's: decode the input stage's raw words into a texture. The
+  MUX-lsb/final-lerp "leads" in §230 were **not** the cause - both programs match
+  software now - so do not change them without a failing differential.
 
 **Session 2026-10-22 (thirty-fourth; the display source under a GPU backend is now
 decided by what the display controller scans, and the C7 encoder is priced out -

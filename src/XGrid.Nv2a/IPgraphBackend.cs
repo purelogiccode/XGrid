@@ -399,6 +399,13 @@ public readonly struct PgraphGuestTexelSet
     /// <summary>Gets the number of carried words.</summary>
     public int Count => Addresses.Count;
 
+    /// <summary>
+    /// Gets an empty set: a draw command whose software fill sampled no guest
+    /// word. It is not a decline - a cube face is decoded from guest RAM by the
+    /// backend, and only the pool-backed HILO inputs need carried words.
+    /// </summary>
+    public static PgraphGuestTexelSet Empty => default;
+
     /// <summary>Gets the carried addresses.</summary>
     public ArraySegment<uint> Addresses { get; }
 

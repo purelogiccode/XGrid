@@ -22,6 +22,17 @@ namespace XGrid.GpuGl;
 /// </summary>
 public static class PshGlslGenerator
 {
+    /// <summary>
+    /// How many guest texel words one draw's computed dot-texel pool can
+    /// carry. The fragment shader's guest-word array is sized from this
+    /// constant (<c>GuestWordPoolSize * 4</c> uints: one word plus three of
+    /// padding per entry, so the compiler never folds the array), so it is a
+    /// budget constant the backend must not exceed. Cube faces no longer use
+    /// it - they are decoded into a 2D-array texture - so the pool only ever
+    /// holds a HILO dot stage's 16-bit input words.
+    /// </summary>
+    public const int GuestWordPoolSize = 24;
+
     /// <summary>Builds the shader-cache key for a combiner snapshot + path.</summary>
     public static string BuildKey(bool legacy, PshCombiner state)
     {
@@ -152,29 +163,19 @@ public static class PshGlslGenerator
         sb.Append("uniform int uTexBilinear[4];\n");
         sb.Append("uniform int uTexConvolution[4];\n");
         sb.Append("uniform vec4 uTexBorder[4];\n");
-        sb.Append("uniform uint uTexSwzMaskX[4];\n");
-        sb.Append("uniform uint uTexSwzMaskY[4];\n");
-        // Per-slot cube sampling + texel decode descriptors (B3 slice 1), all
-        // per-draw state so the program cache key never splits on them.
-        // uTexBase is int because the swizzled address arithmetic is int in
-        // the software sampler (a uint sum would wrap at 4 GiB).
-        sb.Append("uniform int uTexMorton[4];\n");
+        // Per-slot cube state: whether the stage resolves to a face texture,
+        // and the face extent the tap clamps inside. All per-draw uniforms, so
+        // the program cache key never splits on them.
         sb.Append("uniform int uTexCubeOk[4];\n");
         sb.Append("uniform int uTexCubeW[4];\n");
         sb.Append("uniform int uTexCubeH[4];\n");
-        sb.Append("uniform int uTexCubeStride[4];\n");
-        sb.Append("uniform int uTexBase[4];\n");
-        sb.Append("uniform int uTexBytes[4];\n");
-        sb.Append("uniform ivec4 uTexFieldOff[4];\n");
-        sb.Append("uniform ivec4 uTexFieldW[4];\n");
-        sb.Append("uniform vec4 uTexFieldC[4];\n");
         sb.Append("uniform int uDotMap[4];\n");
-        // B3 slice 2: the guest texel words the computed cube/dot modes sample.
-        // A cube face or a 16-bit HILO pair is a swizzled guest-RAM word no host
-        // texture can address, so the seam carries the words and each stage
-        // indexes them through its pool base (entries of three vec4: the word,
-        // then zero padding, so the compiler never folds an array of uint).
-        sb.Append("uniform uint uGuestWord[96];\n");
+        // B3 slice 2: the guest texel words the computed dot modes sample (a
+        // 16-bit HILO pair is raw bytes, not a decoded colour, so no host
+        // texture can carry it). Cube faces do NOT come through here: they are
+        // decoded into a 2D-array texture (see CubeTexel), so every face texel
+        // resolves instead of the 3x3 window a word pool could carry.
+        sb.Append(CultureInfo.InvariantCulture, $"uniform uint uGuestWord[{GuestWordPoolSize * 4}];\n");
         sb.Append("uniform int uTexPoolBase[4];\n");
         // BUMPENVMAP: per-stage matrix (x,y,z,w = m0,m1,m2,m3) and the
         // luminance-variant scale/offset pair, all per-draw uniforms.
@@ -195,6 +196,14 @@ public static class PshGlslGenerator
         sb.Append("uniform sampler2D uTex1;\n");
         sb.Append("uniform sampler2D uTex2;\n");
         sb.Append("uniform sampler2D uTex3;\n");
+        // Cube stages sample a host 2D-array texture the backend decodes from
+        // the guest's swizzled faces with Nv2AMmio.DecodeSwizzledTexelWord (the
+        // software sampler's own decoder), so the two executors cannot drift and
+        // every face texel is addressable - not just a carried window.
+        sb.Append("uniform sampler2DArray uCube0;\n");
+        sb.Append("uniform sampler2DArray uCube1;\n");
+        sb.Append("uniform sampler2DArray uCube2;\n");
+        sb.Append("uniform sampler2DArray uCube3;\n");
         sb.Append("out vec4 fragColor;\n\n");
 
         // PshCombiner.ApplyInputMapping / ApplyOutputMapping (C# semantics).
@@ -326,36 +335,6 @@ public static class PshGlslGenerator
         sb.Append("  return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);\n");
         sb.Append("}\n");
         // ---- cube maps and the dot texture modes (B3 slice 1) ----
-        // Voxel-index bit spread: Nv2AMmio.InterleaveBits for the generic
-        // (non-Morton-pair) masks. Swizzled cube faces use the standard
-        // alternating pair on every measured sample, where SpreadMorton is
-        // the branchless equivalent; the loop stays so a non-standard mask
-        // cannot silently read the wrong texel.
-        sb.Append("uint SpreadZ(uint x) {\n");
-        sb.Append("  x = (x | (x << 16u)) & 0x0000FFFFu;\n");
-        sb.Append("  x = (x | (x << 8u)) & 0x00FF00FFu;\n");
-        sb.Append("  x = (x | (x << 4u)) & 0x0F0F0F0Fu;\n");
-        sb.Append("  x = (x | (x << 2u)) & 0x33333333u;\n");
-        sb.Append("  x = (x | (x << 1u)) & 0x55555555u;\n");
-        sb.Append("  return x;\n");
-        sb.Append("}\n");
-        sb.Append("uint SpreadO(uint x) {\n");
-        sb.Append("  x = (x | (x << 16u)) & 0x0000FFFFu;\n");
-        sb.Append("  x = (x | (x << 8u)) & 0x00FF00FFu;\n");
-        sb.Append("  x = (x | (x << 4u)) & 0x0F0F0F0Fu;\n");
-        sb.Append("  x = (x | (x << 2u)) & 0x33333333u;\n");
-        sb.Append("  x = (x | (x << 1u)) & 0x55555555u;\n");
-        sb.Append("  return x << 1u;\n");
-        sb.Append("}\n");
-        sb.Append("uint SwzBits(uint v, uint mask) {\n");
-        sb.Append("  uint r = 0u;\n");
-        sb.Append("  uint bit = 1u;\n");
-        sb.Append("  for (int i = 0; i < 32; i++) {\n");
-        sb.Append("    if ((mask & bit) != 0u) { if ((v & 0x80000000u) != 0u) r |= bit; v <<= 1u; }\n");
-        sb.Append("    bit <<= 1u;\n");
-        sb.Append("  }\n");
-        sb.Append("  return r;\n");
-        sb.Append("}\n");
         // Nv2AMmio's cube face select: +X,-X,+Y,-Y,+Z,-Z picked by the major
         // axis with >= ties, per-face [0,1] coords (xemu generate_texture order).
         sb.Append("int CubeFaceSelect(vec3 d, out vec2 st) {\n");
@@ -371,7 +350,7 @@ public static class PshGlslGenerator
         sb.Append("  if (d.z > 0.0) { st = vec2(((d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 4; }\n");
         sb.Append("  st = vec2(((-d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 5;\n");
         sb.Append("}\n");
-        // Cube face and dot-mode texels come from the raw guest words the seam
+        // Cube face and dot-mode texels come from raw guest words the seam
         // carried for this draw (B3 slice 2). The software sampler's guest
         // address (swizzled face / linear row / Morton spread, all from the
         // seam) is the key into the program's word pool; the pool's first
@@ -379,56 +358,31 @@ public static class PshGlslGenerator
         // fragment whose word the draw did not carry reads 0 (which only a
         // declined draw could reach - the backend gates on the same set).
         sb.Append("uint PoolWord(int slot, int entry) {\n");
-        sb.Append("  int base = uTexPoolBase[slot] + entry;\n");
-        sb.Append("  if (base < 0 || base >= 48) { return 0u; }\n");
+        sb.Append(CultureInfo.InvariantCulture, $"  int base = uTexPoolBase[slot] + entry;\n");
+        sb.Append(CultureInfo.InvariantCulture, $"  if (base < 0 || base >= {GuestWordPoolSize}) {{ return 0u; }}\n");
         sb.Append("  return uGuestWord[base * 4];\n");
         sb.Append("}\n");
-        // Nv2AMmio.DecodedChannel: the exact unit-table value of an n-bit
-        // field (1, 4, 5, 6 or 8 bits).
-        sb.Append("uint ChannelMask(int w) {\n");
-        sb.Append("  if (w == 1) return 1u;\n");
-        sb.Append("  if (w == 4) return 15u;\n");
-        sb.Append("  if (w == 5) return 31u;\n");
-        sb.Append("  if (w == 6) return 63u;\n");
-        sb.Append("  return 255u;\n");
+        // One cube face texel: the backend decoded every face of the stage's
+        // swizzled guest cube into this 2D-array texture (layer = face), so the
+        // coordinate clamps inside the face and no window limits the sample
+        // (Nv2AMmio.TryReadCubeTexel's clamp, minus its RAM walk).
+        sb.Append("vec4 FetchCubeTexel(int slot, ivec3 t) {\n");
+        sb.Append("  if (slot == 0) return texelFetch(uCube0, t, 0);\n");
+        sb.Append("  if (slot == 1) return texelFetch(uCube1, t, 0);\n");
+        sb.Append("  if (slot == 2) return texelFetch(uCube2, t, 0);\n");
+        sb.Append("  return texelFetch(uCube3, t, 0);\n");
         sb.Append("}\n");
-        sb.Append("float DecodeField(int v, int w) {\n");
-        sb.Append("  if (w == 1) return float(v);\n");
-        sb.Append("  if (w == 4) return float(v) * (1.0 / 15.0);\n");
-        sb.Append("  if (w == 5) return float(v) * (1.0 / 31.0);\n");
-        sb.Append("  if (w == 6) return float(v) * (1.0 / 63.0);\n");
-        sb.Append("  return float(v) * (1.0 / 255.0);\n");
-        sb.Append("}\n");
-        sb.Append("vec4 DecodeGuestTexel(int slot, uint word) {\n");
-        sb.Append("  ivec4 off = ivec4(uTexFieldOff[slot]);\n");
-        sb.Append("  ivec4 w = ivec4(uTexFieldW[slot]);\n");
-        sb.Append("  vec4 c = uTexFieldC[slot];\n");
-        sb.Append("  vec4 d = vec4(c.r, c.g, c.b, c.a);\n");
-        for (int ch = 0; ch < 4; ch++)
-        {
-            string comp = ch switch { 0 => "x", 1 => "y", 2 => "z", _ => "w" };
-            string dst = ch switch { 0 => "r", 1 => "g", 2 => "b", _ => "a" };
-            sb.Append(CultureInfo.InvariantCulture, $"  if (w.{comp} > 0) {{ d.{dst} = DecodeField(int((word >> uint(off.{comp})) & ChannelMask(w.{comp})), w.{comp}); }}\n");
-        }
-
-        sb.Append("  return vec4(float(word >> 24u) / 255.0, float((word >> 16u) & 0xFFu) / 255.0, float((word >> 8u) & 0xFFu) / 255.0, 1.0);\n");
-        sb.Append("}\n");
-        // One cube face texel (Nv2AMmio.TryReadCubeTexel): the coordinate
-        // clamps inside the face and the swizzle masks come from the seam
-        // (TEXFMT BASE_SIZE extent, never TEXIMAGERECT). Pool entry
-        // face*w*h + y*w + x holds the word the software sampler decoded at
-        // the same address; an entry the draw did not carry reads 0.
         sb.Append("vec4 CubeTexel(int slot, int face, int tx, int ty) {\n");
         sb.Append("  tx = clamp(tx, 0, uTexCubeW[slot] - 1);\n");
         sb.Append("  ty = clamp(ty, 0, uTexCubeH[slot] - 1);\n");
-        sb.Append("  uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);\n");
-        sb.Append("  if (uTexBytes[slot] == 2) word &= 0xFFFFu;\n");
-        sb.Append("  return DecodeGuestTexel(slot, word);\n");
+        sb.Append("  return FetchCubeTexel(slot, ivec3(tx, ty, face));\n");
         sb.Append("}\n");
         // TrySampleTextureCube: the TEXFILTER tent clamps its four taps at the
         // face edge (never blends across faces), nearest floors the centre.
+        // A stage the sampler cannot resolve is Nv2AMmio.SetTexelNone
+        // (0,0,0,1) - the software answer - never a guessed white.
         sb.Append("vec4 SampleCubeSlot(int slot, vec3 d) {\n");
-        sb.Append("  if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);\n");
+        sb.Append("  if (uTexCubeOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);\n");
         sb.Append("  vec2 st;\n");
         sb.Append("  int face = CubeFaceSelect(d, st);\n");
         sb.Append("  if (uTexBilinear[slot] != 1) {\n");

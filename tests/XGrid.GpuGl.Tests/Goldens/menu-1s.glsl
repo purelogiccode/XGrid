@@ -21,18 +21,9 @@ uniform int uTexDim[4];
 uniform int uTexBilinear[4];
 uniform int uTexConvolution[4];
 uniform vec4 uTexBorder[4];
-uniform uint uTexSwzMaskX[4];
-uniform uint uTexSwzMaskY[4];
-uniform int uTexMorton[4];
 uniform int uTexCubeOk[4];
 uniform int uTexCubeW[4];
 uniform int uTexCubeH[4];
-uniform int uTexCubeStride[4];
-uniform int uTexBase[4];
-uniform int uTexBytes[4];
-uniform ivec4 uTexFieldOff[4];
-uniform ivec4 uTexFieldW[4];
-uniform vec4 uTexFieldC[4];
 uniform int uDotMap[4];
 uniform uint uGuestWord[96];
 uniform int uTexPoolBase[4];
@@ -48,6 +39,10 @@ uniform sampler2D uTex0;
 uniform sampler2D uTex1;
 uniform sampler2D uTex2;
 uniform sampler2D uTex3;
+uniform sampler2DArray uCube0;
+uniform sampler2DArray uCube1;
+uniform sampler2DArray uCube2;
+uniform sampler2DArray uCube3;
 out vec4 fragColor;
 
 float InMap(float x, int m) {
@@ -153,31 +148,6 @@ vec4 SampleSlot(int slot, vec2 uv) {
   float w11 = wx * wy;
   return (t00 * w00) + (t10 * w10) + (t01 * w01) + (t11 * w11);
 }
-uint SpreadZ(uint x) {
-  x = (x | (x << 16u)) & 0x0000FFFFu;
-  x = (x | (x << 8u)) & 0x00FF00FFu;
-  x = (x | (x << 4u)) & 0x0F0F0F0Fu;
-  x = (x | (x << 2u)) & 0x33333333u;
-  x = (x | (x << 1u)) & 0x55555555u;
-  return x;
-}
-uint SpreadO(uint x) {
-  x = (x | (x << 16u)) & 0x0000FFFFu;
-  x = (x | (x << 8u)) & 0x00FF00FFu;
-  x = (x | (x << 4u)) & 0x0F0F0F0Fu;
-  x = (x | (x << 2u)) & 0x33333333u;
-  x = (x | (x << 1u)) & 0x55555555u;
-  return x << 1u;
-}
-uint SwzBits(uint v, uint mask) {
-  uint r = 0u;
-  uint bit = 1u;
-  for (int i = 0; i < 32; i++) {
-    if ((mask & bit) != 0u) { if ((v & 0x80000000u) != 0u) r |= bit; v <<= 1u; }
-    bit <<= 1u;
-  }
-  return r;
-}
 int CubeFaceSelect(vec3 d, out vec2 st) {
   float ax = abs(d.x); float ay = abs(d.y); float az = abs(d.z);
   if (ax >= ay && ax >= az) {
@@ -193,43 +163,22 @@ int CubeFaceSelect(vec3 d, out vec2 st) {
 }
 uint PoolWord(int slot, int entry) {
   int base = uTexPoolBase[slot] + entry;
-  if (base < 0 || base >= 48) { return 0u; }
+  if (base < 0 || base >= 24) { return 0u; }
   return uGuestWord[base * 4];
 }
-uint ChannelMask(int w) {
-  if (w == 1) return 1u;
-  if (w == 4) return 15u;
-  if (w == 5) return 31u;
-  if (w == 6) return 63u;
-  return 255u;
-}
-float DecodeField(int v, int w) {
-  if (w == 1) return float(v);
-  if (w == 4) return float(v) * (1.0 / 15.0);
-  if (w == 5) return float(v) * (1.0 / 31.0);
-  if (w == 6) return float(v) * (1.0 / 63.0);
-  return float(v) * (1.0 / 255.0);
-}
-vec4 DecodeGuestTexel(int slot, uint word) {
-  ivec4 off = ivec4(uTexFieldOff[slot]);
-  ivec4 w = ivec4(uTexFieldW[slot]);
-  vec4 c = uTexFieldC[slot];
-  vec4 d = vec4(c.r, c.g, c.b, c.a);
-  if (w.x > 0) { d.r = DecodeField(int((word >> uint(off.x)) & ChannelMask(w.x)), w.x); }
-  if (w.y > 0) { d.g = DecodeField(int((word >> uint(off.y)) & ChannelMask(w.y)), w.y); }
-  if (w.z > 0) { d.b = DecodeField(int((word >> uint(off.z)) & ChannelMask(w.z)), w.z); }
-  if (w.w > 0) { d.a = DecodeField(int((word >> uint(off.w)) & ChannelMask(w.w)), w.w); }
-  return vec4(float(word >> 24u) / 255.0, float((word >> 16u) & 0xFFu) / 255.0, float((word >> 8u) & 0xFFu) / 255.0, 1.0);
+vec4 FetchCubeTexel(int slot, ivec3 t) {
+  if (slot == 0) return texelFetch(uCube0, t, 0);
+  if (slot == 1) return texelFetch(uCube1, t, 0);
+  if (slot == 2) return texelFetch(uCube2, t, 0);
+  return texelFetch(uCube3, t, 0);
 }
 vec4 CubeTexel(int slot, int face, int tx, int ty) {
   tx = clamp(tx, 0, uTexCubeW[slot] - 1);
   ty = clamp(ty, 0, uTexCubeH[slot] - 1);
-  uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);
-  if (uTexBytes[slot] == 2) word &= 0xFFFFu;
-  return DecodeGuestTexel(slot, word);
+  return FetchCubeTexel(slot, ivec3(tx, ty, face));
 }
 vec4 SampleCubeSlot(int slot, vec3 d) {
-  if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);
+  if (uTexCubeOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);
   vec2 st;
   int face = CubeFaceSelect(d, st);
   if (uTexBilinear[slot] != 1) {

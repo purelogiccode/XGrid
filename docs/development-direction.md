@@ -6,12 +6,14 @@ day-to-day agent entry point; this file is the priority order every agent follow
 
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
-**Status 2026-10-22 late (34th session, §234): the product display source now
-follows the display controller under a GPU backend (direct-framebuffer guests
-show their own buffer in the OpenGL renderer), and the C7 "own the encoder"
-option is priced and rejected: a 3.2x faster encoder is ~7% of the triangle wall,
-below the stage bar, and a trace emitter's block-boundary ceiling is derived at ~3-5% (§235). C7's lever is the engine shape.** Track order unchanged; the
-next C work is the engine-shape decision (§0 kill/reassess, `next-session.md`).
+**Status 2026-10-22 late (36th session, §236): compatibility gap 12 is CLOSED -
+the GL backend decodes a cube stage's six swizzled faces into a host 2D-array
+texture (`sampler2DArray`), so `xgu bump_cubemap_reflect`'s reflection panel
+renders on the GPU and agrees with software within 2 pixels of 307,200 at both of
+its anchors. The word pool now carries only a HILO dot input's raw pair, and only
+when the stage's dot map is 4-7. Track B's bounded item is done: B stops here
+until C has a measured result.** Track order unchanged; the next C work is the
+engine-shape decision (§0 kill/reassess, `next-session.md`).
 
 **Operator decision.** The long-run objective is **xemu-class performance or
 better** on the same content. The 2026-10-20 correction was right to put the
@@ -45,10 +47,12 @@ structural.
    SHAs/counters on both titles, flag-off byte-identical, ktest log
    byte-identical. The old C3-x/C3-y/C3-z list is closed; this is a new
    program, not a resumption of 2-3% slices.
-2. **B — bounded finish of the in-flight B3 slice.** The GL product renderer
-   still paints the computed-mode panel black (gap 12). Finish the texel-word
-   fetch + MUX-lsb/final-lerp differential, then stop B until C4 has a
-   measured result. Do not start new B fidelity rows.
+2. **B — bounded finish of the in-flight B3 slice — DONE 2026-10-22 (§236).**
+   The GL product renderer's computed-mode panel was black because a cube stage
+   had no word source; it now samples a host 2D-array texture decoded from the
+   guest's swizzled faces and agrees with software within 2 pixels of 307,200 at
+   both of the row's anchors. **B stops here** until C has a measured result; no
+   new B fidelity rows.
 3. **E — corpus steers.** Keep the matrix; add the performance rows
    (Msteps/s, wall per presented frame) and the xemu comparison where it is a
    valid oracle. No new corpus breadth beyond the standing rows until C4 lands.
@@ -207,10 +211,11 @@ host audio (APU DSP execution first).
    1B) or a measured reassessment after two structural iterations. The
    software rasterizer stays the exact-mode gate renderer and differential
    oracle; the GL path stays the fast-mode product renderer.
-2. **B — bounded B3 finish.** The GL product renderer's computed-mode panel is
-   black (gap 12): texel-word fetch + MUX-lsb/final-lerp differential. Then
-   stop; no new B fidelity rows until C4 has a measured result. The present
-   path itself is closed (readback opt-in, batching, sampler parity,
+2. **B — bounded B3 finish — CLOSED 2026-10-22 (§236).** A cube stage samples a
+   host 2D-array texture decoded from the guest's swizzled faces, so the GL
+   product renderer's computed-mode panel renders and agrees with software within
+   2 pixels of 307,200. No new B fidelity rows until C has a measured result. The
+   present path itself is closed (readback opt-in, batching, sampler parity,
    replace-mode composition).
 3. **E — compatibility corpus.** `docs/compatibility.md` + the harness +
    performance rows (Msteps/s, wall per presented frame). Every row has a
@@ -386,8 +391,10 @@ gate (same-window A/B ≥10% wall or ≥20% engine, exact 1B differentials).
 - Headless FBO (`--gpu sw`) is the gate currency. Never mix (full-frame replace
   or no frame), no async (emulation-thread only).
 - The GL backend is the fast-mode product renderer (Track B). Readback is a
-  gate/screenshot facility, not a per-frame cost. The present path is closed;
-  the only open B item is B3 fidelity (gap 12), and it is bounded.
+  gate/screenshot facility, not a per-frame cost. The present path is closed, and
+  so is the bounded B3 item (gap 12, §236): a cube stage is a decoded host
+  2D-array texture, and a HILO dot input is the only remaining word-pool holdout
+  (one word per stage; no measured row uses one).
 - Swapchain is latency, not throughput. O1 headless stays default; O2 opt-in
   `--window` (pure interop, vsync off) only on the brief's triggers; O3 needs an
   operator single-dependency override; O4 Vulkan is a non-goal (even xemu's

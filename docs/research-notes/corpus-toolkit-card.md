@@ -29,7 +29,7 @@ command lives there); this card is the orientation layer, kept in sync with it.
 | nxdk usb | 1B | **new (§229)**: guest USB stack enumerates the hub, prints VID/PID on the display export | `nxdk-usb-sample.md` |
 | xgu vp_lighting | 3B | renders; TEXFILTER parity sw-vs-gl within 1 step | `computed-mode-coverage.md` |
 | xgu alpha_blending | 4.6B | renders; oracle match once phase-matched | `compatibility.md` |
-| xgu bump_cubemap_reflect | **4.4B** (dots) / 3.6B (panel) | sw renders 18,980 / 20,843 colours; **gl replace 4 / 2 colours** - open (gap 12) | `computed-mode-coverage.md`, §228 |
+| xgu bump_cubemap_reflect | **4.4B** (dots) / 3.6B (panel) | **closed 2026-10-22 (§236):** GL replace == software within 2 px of 307,200 at both anchors (a cube stage is a decoded host 2D-array texture); sw 19,042 / 21,041 colours | `computed-mode-coverage.md`, §228 |
 | xgu bumpenv_ripple | 5.0-5.6B | renders black - gap 10 (app state) | `compatibility.md` |
 | xgu swizzle_texture | 3B | renders; samples `0x3A` with zero misses | `compatibility.md` |
 | xgu distance_fog_ffp / spheremap_ffp | 3B + `-Ffp` | fixed-function scenes render (flat without the flag) | `compatibility.md` |

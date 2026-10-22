@@ -296,7 +296,7 @@ public sealed class PshGlslGeneratorTests
         Assert.Contains("bool StageDot(int stage, vec3 coord, vec4 inTexel, int inSlot, out float d)", source, StringComparison.Ordinal);
         Assert.Contains("d = dot(coord, DotMap(map, inTexel));", source, StringComparison.Ordinal);
         Assert.Contains("uint pair = PoolWord(inSlot, 0);", source, StringComparison.Ordinal);
-        Assert.Contains("uniform uint uGuestWord[96];", source, StringComparison.Ordinal);
+        Assert.Contains($"uniform uint uGuestWord[{PshGlslGenerator.GuestWordPoolSize * 4}];", source, StringComparison.Ordinal);
         Assert.Contains("uniform int uTexPoolBase[4];", source, StringComparison.Ordinal);
 
         // Dot maps 0-7, decoded from the texel with the reference sign
@@ -322,40 +322,44 @@ public sealed class PshGlslGeneratorTests
         Assert.Contains("SpecularReflect(vec3(dotA3, dotB3, dotC3), vec3(c1.w, c2.w, c3.w))", source,
             StringComparison.Ordinal);
 
-        // Cube sampling: the face select order, and the per-face/texel word the
-        // backend carried (entry = face*w*h + y*w + x), never a stub zero.
+        // Cube sampling: the face select order, and one tap of the host
+        // 2D-array texture the backend decoded from the guest's swizzled faces
+        // (layer = face), never a stub zero or a carried-window word.
         Assert.Contains("int CubeFaceSelect(vec3 d, out vec2 st)", source, StringComparison.Ordinal);
-        Assert.Contains("uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);", source,
-            StringComparison.Ordinal);
+        Assert.Contains("if (slot == 1) return texelFetch(uCube1, t, 0);", source, StringComparison.Ordinal);
+        Assert.Contains("return FetchCubeTexel(slot, ivec3(tx, ty, face));", source, StringComparison.Ordinal);
         Assert.DoesNotContain("uint TexelWord(int addr)", source, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A cube face is a host 2D-array texture the backend decodes with the
+    /// software sampler's own decoder, so the shader must not re-implement the
+    /// per-format channel math (that is how a dual-rasterizer decoder drifts -
+    /// the removed descriptor path returned the wrong channels and never
+    /// fired). An unresolved cube stage is the software's None texel, never a
+    /// guessed white.
+    /// </summary>
     [Fact]
-    public void CubeTexelDecode_IsTableDrivenFromTheSoftwareDecode()
+    public void CubeTexelDecode_IsAHostArrayFetch_NotAShaderFormatDecode()
     {
-        // The shader must not hand-roll per-format channel math (that is how a
-        // dual-rasterizer decoder drifts): it reads the descriptor the software
-        // decode is tested against.
         PshCombiner state = MenuLikeCombiner();
         string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
-        Assert.Contains("uniform ivec4 uTexFieldOff[4];", source, StringComparison.Ordinal);
-        Assert.Contains("uniform ivec4 uTexFieldW[4];", source, StringComparison.Ordinal);
-        Assert.Contains("uniform vec4 uTexFieldC[4];", source, StringComparison.Ordinal);
-        Assert.Contains("d.r = DecodeField(int((word >> uint(off.x)) & ChannelMask(w.x)), w.x);", source,
-            StringComparison.Ordinal);
-        // An unused sampler is undefined in GLSL, so the cube path must not
-        // texelFetch a slot the guest left disabled.
-        Assert.Contains("if (uTexCubeOk[slot] != 1) return vec4(1.0, 1.0, 1.0, 1.0);", source, StringComparison.Ordinal);
+        Assert.Contains("uniform sampler2DArray uCube0;", source, StringComparison.Ordinal);
+        Assert.Contains("uniform sampler2DArray uCube3;", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("uTexFieldOff", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DecodeGuestTexel", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DecodeField", source, StringComparison.Ordinal);
+        Assert.Contains("if (uTexCubeOk[slot] != 1) return vec4(0.0, 0.0, 0.0, 1.0);", source, StringComparison.Ordinal);
     }
 
     [Fact]
     public void CubeDotState_StaysOutOfTheProgramCacheKey()
     {
-        // Per-draw state (extents, masks, decode descriptors, dot maps, eye)
-        // travels as uniforms: switching a texture mode never recompiles.
+        // Per-draw state (extents, masks, dot maps, eye) travels as uniforms:
+        // switching a texture mode never recompiles.
         PshCombiner state = MenuLikeCombiner();
         string key = PshGlslGenerator.BuildKey(legacy: false, state);
-        foreach (string uniform in new[] { "uTexCubeOk", "uTexSwzMaskX", "uTexFieldOff", "uDotMap", "uEyePos" })
+        foreach (string uniform in new[] { "uTexCubeOk", "uTexSwzMaskX", "uCube0", "uDotMap", "uEyePos" })
         {
             Assert.DoesNotContain(uniform, key, StringComparison.Ordinal);
         }

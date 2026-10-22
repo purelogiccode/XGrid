@@ -47,15 +47,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTexBilinear[0]",
         "uTexConvolution[0]",
         "uTexBorder[0]",
-        "uTexSwzMaskX[0]",
-        "uTexSwzMaskY[0]",
-        "uTexMorton[0]",
         "uTexCubeOk[0]",
         "uTexCubeW[0]",
         "uTexCubeH[0]",
-        "uTexCubeStride[0]",
-        "uTexBase[0]",
-        "uTexBytes[0]",
         "uDotMap[0]",
         "uGuestWord[0]",
         "uTexPoolBase[0]",
@@ -69,6 +63,10 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         "uTex1",
         "uTex2",
         "uTex3",
+        "uCube0",
+        "uCube1",
+        "uCube2",
+        "uCube3",
     ];
 
     private readonly WglContext _context;
@@ -120,6 +118,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly GlTextureEntry?[] _lastTextureEntry = new GlTextureEntry?[PshCombiner.TextureSlots];
     private readonly bool[] _lastTextureValid = new bool[PshCombiner.TextureSlots];
     private readonly uint[] _boundTexture = new uint[PshCombiner.TextureSlots];
+    private readonly uint[] _boundCubeTexture = new uint[PshCombiner.TextureSlots];
     private int _activeTextureUnit = -1;
 
     // Direct RAM word reads for texture fingerprints (IGpuMemoryRamView lane);
@@ -144,18 +143,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     private readonly int[] _texBilinear = new int[4];
     private readonly int[] _texConvolution = new int[4];
     private readonly float[] _texBorder = new float[4 * 4];
-    // Cube maps and the dot texture modes (B3 slice 1): the seam's per-slot
-    // swizzled-layout facts and the decoded dot maps, all uniforms so the
-    // program cache key never splits on them.
-    private readonly int[] _texSwzMaskX = new int[4];
-    private readonly int[] _texSwzMaskY = new int[4];
-    private readonly int[] _texMorton = new int[4];
+    // Cube maps and the dot texture modes (B3 slice 1): whether the stage
+    // resolves to a face texture, its extent, and the decoded dot maps - all
+    // uniforms so the program cache key never splits on them. The faces
+    // themselves are a host 2D-array texture (see UploadCubeTexture).
     private readonly int[] _texCubeOk = new int[4];
     private readonly int[] _texCubeW = new int[4];
     private readonly int[] _texCubeH = new int[4];
-    private readonly int[] _texCubeStride = new int[4];
-    private readonly int[] _texBase = new int[4];
-    private readonly int[] _texBytes = new int[4];
     private readonly int[] _dotMap = new int[4];
     private readonly float[] _eyePos = new float[3];
     private readonly float[] _bumpMatrix = new float[3 * 4];
@@ -305,6 +299,17 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     {
         public uint Texture { get; set; } = texture;
         public uint Fingerprint { get; set; } = fingerprint;
+
+        /// <summary>
+        /// The stage's six swizzled guest faces decoded into a GL 2D-array
+        /// texture (layer = face), 0 when the stage is not a sampleable cube.
+        /// A cube face is not a 2D image row, so it cannot ride the linear
+        /// upload; this one is decoded on the host through
+        /// <see cref="Nv2AMmio.DecodeSwizzledTexelWord"/> - the software
+        /// sampler's own decoder - and re-decoded only when the fingerprint
+        /// says the guest content changed.
+        /// </summary>
+        public uint CubeTexture { get; set; }
         // ReSharper disable once UnusedAutoPropertyAccessor.Local
         // ReSharper disable once UnusedAutoPropertyAccessor.Global
         // ReSharper disable once UnusedMember.Local
@@ -323,6 +328,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         /// <summary>Word mask applied to a sampled texel (0xFFFF for 16-bit formats).</summary>
         public uint SampleMask { get; set; } = uint.MaxValue;
+
+        /// <summary>Guest content stamp the cube decode was produced from.</summary>
+        public uint CubeFingerprint { get; set; }
     }
 
     /// <summary>
@@ -1435,11 +1443,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// <summary>
     /// Returns true when a valid-stage texture mode is still unsupported by the
     /// GL path. The computed cube/dot modes (DOT_*/DOT_RFLCT_*/DOT_STR_*, and
-    /// PROJECT2D/CUBEMAP on a cube-flagged supported format) are no longer
-    /// declined here: B3 slice 2 carries their guest texel words across the
-    /// seam and the shader transcribes their math, so they render on the GPU.
-    /// BUMPENVMAP stays declined (its perturbed coordinate plus the luminance
-    /// scale is the next slice).
+    /// PROJECT2D/CUBEMAP on a cube-flagged supported format) are served: the
+    /// shader transcribes their math and a cube stage samples the host
+    /// 2D-array texture the backend decodes from the guest's faces (§236).
+    /// BUMPENVMAP is served from its per-stage matrix/luminance uniforms.
+    /// A PROJECT3D stage over a **volume** texture is declined: the software
+    /// sampler reads a swizzled volume slice and the GL path has no volume
+    /// source, so it would silently paint black where the software paints a
+    /// texel - the draw goes to software instead (a composed frame, never a
+    /// guessed one).
     /// </summary>
     private bool CheckModesUnsupported(in PgraphDrawInfo info, PshCombiner combiner, out bool cubeVolume)
     {
@@ -1455,6 +1467,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
             switch (mode)
             {
+                case PshCombiner.TexModeProject3D:
+                    if (((info.GetTexture(slot).Format & 0xC0u) >> 6) == 3u)
+                    {
+                        _unsupportedTexModeCounts[mode & 0x1F]++;
+                        cubeVolume = true;
+                        unsupported = true;
+                    }
+
+                    break;
                 case PshCombiner.TexModeBumpEnvMap:
                 case PshCombiner.TexModeBumpEnvMapLum:
                 case PshCombiner.TexModeDotProduct:
@@ -1466,13 +1487,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 case PshCombiner.TexModeDotStrCube:
                 case PshCombiner.TexModeProject2D:
                 case PshCombiner.TexModeCubemap:
-                case PshCombiner.TexModeProject3D:
-                    _unsupportedTexModeCounts[mode & 0x1F] += 0;
-                    // Served: the computed cube/dot modes carry their guest
-                    // words through the seam and the bump modes read the
-                    // per-stage matrix/luminance uniforms. A draw whose words
-                    // were not carried is declined by ApplyDrawState (never
-                    // sampled from a guess).
+                    // Served: the computed cube/dot modes read the decoded cube
+                    // array texture and the sampled input texel, and the bump
+                    // modes read the per-stage matrix/luminance uniforms. A
+                    // draw whose HILO word did not fit the pool is declined by
+                    // ApplyDrawState (never sampled from a guess).
                     _ = info;
                     break;
             }
@@ -1772,6 +1791,12 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(glProgram.Location("uTex1"), 1);
         _gl.Uniform1(glProgram.Location("uTex2"), 2);
         _gl.Uniform1(glProgram.Location("uTex3"), 3);
+        // Cube faces ride their own 2D-array samplers on units 4-7 so a stage
+        // can be sampled as a cube and as a 2D image in the same program.
+        _gl.Uniform1(glProgram.Location("uCube0"), 4);
+        _gl.Uniform1(glProgram.Location("uCube1"), 5);
+        _gl.Uniform1(glProgram.Location("uCube2"), 6);
+        _gl.Uniform1(glProgram.Location("uCube3"), 7);
         _programUniformReport = string.Join(",", glProgram.Locations.Keys);
         _gl.UseProgram(0);
         _currentProgram = 0;
@@ -1911,19 +1936,9 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             _texWrapY[slot] = texture.SamplerWrapV;
             _texBilinear[slot] = texture.FilterBilinear ? 1 : 0;
             _texConvolution[slot] = texture.FilterConvolution;
-            // Swizzled-layout facts for the cube sampler and the dot modes:
-            // the extent the software sampler uses is TEXFMT BASE_SIZE (not
-            // TEXIMAGERECT, which is only read for linear formats), so the
-            // seam publishes it instead of the backend re-deriving it.
-            _texSwzMaskX[slot] = unchecked((int)texture.SwizzleMaskX);
-            _texSwzMaskY[slot] = unchecked((int)texture.SwizzleMaskY);
-            _texMorton[slot] = texture.MortonMasks ? 1 : 0;
-            _texCubeOk[slot] = texture.CubeSamplingReady && (texture.Format & TextureFormatCubemapEnable) != 0 ? 1 : 0;
             _texCubeW[slot] = texture.CubeWidth;
             _texCubeH[slot] = texture.CubeHeight;
-            _texCubeStride[slot] = unchecked((int)texture.CubeFaceStride);
-            _texBytes[slot] = (int)Nv2AMmio.TextureFormatBytesPerTexel(color);
-            _texBase[slot] = ResolveGuestWordPool(in texture, in info, color, slot, combiner, clampStages);
+            ResolveGuestWordPool(in texture, in info, slot, combiner, clampStages);
             _dotMap[slot] = combiner is null ? 0 : combiner.DecodeDotMap(slot);
             Nv2AMmio.DecodeBorderColor(
                 texture.BorderColor,
@@ -1932,6 +1947,14 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
             _texCube[slot] = (texture.Format & TextureFormatCubemapEnable) != 0 ? 1 : 0;
             _texDim[slot] = (int)((texture.Format & 0xC0u) >> 6);
+            // A cube stage samples a host 2D-array texture, so it needs a
+            // sampleable extent and the enable bit - never a word pool. The
+            // software's gate is TrySampleCubeDirection (supported swizzled
+            // format) + TrySampleTextureCube (enable, extent, bytes), both
+            // already folded into CubeSamplingReady/bytes here.
+            bool cubeOk = texture.CubeSamplingReady && enabled && bytes != 0 &&
+                          (texture.Format & TextureFormatCubemapEnable) != 0;
+            _texCubeOk[slot] = cubeOk ? 1 : 0;
             if (!sampleOk)
             {
                 _lastTextureValid[slot] = false;
@@ -1976,6 +1999,25 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 entry.Fingerprint = fingerprint;
             }
 
+            if (cubeOk)
+            {
+                // Same change discipline as the 2D upload: decode the six
+                // swizzled faces once and re-decode only when the guest
+                // content moved.
+                if (entry.CubeTexture == 0 || entry.CubeFingerprint != fingerprint)
+                {
+                    uint oldCube = entry.CubeTexture;
+                    entry.CubeTexture = UploadCubeTexture(in texture, color, bytes);
+                    entry.CubeFingerprint = fingerprint;
+                    if (oldCube != 0)
+                    {
+                        _gl.DeleteTextures(1, ref oldCube);
+                    }
+
+                    InvalidateTextureBinding();
+                }
+            }
+
             _lastTextureKey[slot] = key;
             _lastTextureEntry[slot] = entry;
             _lastTextureValid[slot] = true;
@@ -1994,18 +2036,36 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 _gl.BindTexture(TextureTarget.Texture2D, entry.Texture);
                 _boundTexture[slot] = entry.Texture;
             }
+
+            if (cubeOk)
+            {
+                int unit = 4 + slot;
+                if (_activeTextureUnit != unit)
+                {
+                    _gl.ActiveTexture((TextureUnit)(0x84C0u + (uint)unit));
+                    _activeTextureUnit = unit;
+                }
+
+                if (_boundCubeTexture[slot] != entry.CubeTexture)
+                {
+                    _gl.BindTexture(TextureTarget.Texture2DArray, entry.CubeTexture);
+                    _boundCubeTexture[slot] = entry.CubeTexture;
+                }
+            }
         }
 
         return !_texPoolClamped;
     }
 
     /// <summary>
-    /// How many guest texel words one draw's computed cube/dot texel pool can
-    /// carry. The fragment shader's guest-word array is sized once per program
-    /// from this constant; a draw whose computed modes need more words than
-    /// fit is declined (never sampled wrong), so it is a budget constant.
+    /// How many guest texel words one draw's computed HILO dot pool can carry.
+    /// The fragment shader's guest-word array is sized once per program from
+    /// <see cref="PshGlslGenerator.GuestWordPoolSize"/> (the one source), so a
+    /// draw whose modes need more words than fit is declined (never sampled
+    /// wrong). Cube faces do not use the pool any more - they ride a host
+    /// 2D-array texture - so this only ever holds a 16-bit HILO input word.
     /// </summary>
-    internal const int GuestWordPoolSize = 48;
+    internal const int GuestWordPoolSize = PshGlslGenerator.GuestWordPoolSize;
 
     private readonly uint[] _guestWordValues = new uint[GuestWordPoolSize * 4];
     private int _guestWordCount;
@@ -2026,13 +2086,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     public long GuestWordDraws { get; private set; }
 
     /// <summary>
-    /// Resolves the guest texel words one stage's computed cube/dot mode samples
-    /// into this draw's pool and returns the stage's pool base. The shader reads
+    /// Resolves the guest texel words one stage's HILO dot mode samples into
+    /// this draw's pool and returns the stage's pool base. The shader reads
     /// pool entry k of slot s at <c>uGuestWord[((uTexPoolBase[s] + k) * 4) + c]</c>.
     /// Marks the draw's stages clamped (the caller declines it) when the words
-    /// are not all in the seam's carried set.
+    /// do not fit the pool.
     /// </summary>
-    private int ResolveGuestWordPool(in PgraphTextureSlot texture, in PgraphDrawInfo info, uint color, int slot,
+    /// <remarks>
+    /// Cube faces are NOT resolved here: a face is a host 2D-array texture
+    /// (see <see cref="UploadCubeTexture"/>), so every texel of every face is
+    /// sampleable instead of the handful a word window could carry. The pool
+    /// therefore only ever holds a 16-bit HILO input word, which is raw bytes
+    /// and has no decoded-colour form.
+    /// </remarks>
+    private void ResolveGuestWordPool(in PgraphTextureSlot texture, in PgraphDrawInfo info, int slot,
         PshCombiner? combiner, bool clampStages)
     {
         if (slot == 0)
@@ -2043,16 +2110,15 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         }
 
         _texPoolBase[slot] = 0;
-        if (combiner is not PshCombiner live || info.GuestTexels is null)
+        if (combiner is not PshCombiner live)
         {
-            return unchecked((int)texture.Offset);
+            return;
         }
 
         if (clampStages)
         {
             int already = live.DecodeTexMode(slot);
-            if (PshCombiner.IsModeValidForStage(already, slot) &&
-                (IsCubeDirectionMode(already) || already == PshCombiner.TexModeProject2D || IsHiloDotMode(already)))
+            if (PshCombiner.IsModeValidForStage(already, slot) && IsHiloDotMode(already))
             {
                 // A later triangle of the same draw command sampled inside a
                 // texture-bound program: its computed modes need words this
@@ -2060,143 +2126,47 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 _texPoolClamped = true;
             }
 
-            return unchecked((int)texture.Offset);
+            return;
         }
 
         int mode = live.DecodeTexMode(slot);
-        if (!PshCombiner.IsModeValidForStage(mode, slot))
+        if (!PshCombiner.IsModeValidForStage(mode, slot) || mode != PshCombiner.TexModeDotProduct)
         {
-            return unchecked((int)texture.Offset);
+            return;
         }
 
-        bool linear = Nv2AMmio.IsLinearTextureFormat(color);
-        bool cubeSample = !linear && texture.CubeSamplingReady &&
-                          (texture.Format & TextureFormatCubemapEnable) != 0 &&
-                          (IsCubeDirectionMode(mode) || mode == PshCombiner.TexModeProject2D ||
-                           // The dot stages read TM1/TM2 as DOT_PRODUCT: their
-                           // texel is the dot-map input, addressed in the
-                           // stage's own coords, and on this sample those
-                           // stages are cube-flagged. Without their words the
-                           // shader's StageDot reads a zero texel and the
-                           // whole eight-stage program renders black.
-                           mode is PshCombiner.TexModeDotProduct or PshCombiner.TexModeDotSt or
-                               PshCombiner.TexModeDotStr3D);
-        bool hiloInput = mode == PshCombiner.TexModeDotProduct;
-        if (!cubeSample && !hiloInput)
+        // Only the HILO dot maps (4-7) consume the input's raw 16-bit pair.
+        // The colour maps (1-3, 8-15) read the input stage's *sampled texel*,
+        // which the sampler already produced, so a DOT_PRODUCT stage over a
+        // colour map needs no guest word at all - requiring one declined every
+        // eight-stage dot program of the corpus row and painted the frame in
+        // software.
+        if (live.DecodeDotMap(slot) is < 4 or > 7)
         {
-            return unchecked((int)texture.Offset);
+            return;
         }
 
-        PgraphGuestTexelSet carried = info.GuestTexels.Value;
+        // An absent carried set is an empty one: the words the guest cannot
+        // re-sample are read through the direct RAM lane (the software
+        // sampler touched them when it ran this draw command), so a draw is
+        // declined only when the pool cannot hold them.
+        PgraphGuestTexelSet carried = info.GuestTexels ?? default;
         int start = _guestWordCount;
-        bool ok = cubeSample
-            ? AppendCubeWords(in carried, in texture, color)
-            : (mode == PshCombiner.TexModeDotProduct && AppendDependentInputWords(in carried, slot, live));
-        if (!ok)
+        if (!AppendDependentInputWords(in carried, slot, live))
         {
             _guestWordCount = start;
             _texPoolClamped = true;
             GuestWordMisses++;
-            return unchecked((int)texture.Offset);
+            return;
         }
 
         _texPoolBase[slot] = start;
         GuestWordDraws++;
-        return unchecked((int)texture.Offset);
-    }
-    /// <summary>
-    /// The texture modes that sample a cube-flagged stage as a DIRECTION
-    /// (Nv2AMmio.ResolveTexel): CUBEMAP mode, and the PROJECT2D cubemap form
-    /// where the direction is remap2DToCube(pT.xyw) = norm(1, y/w, -x/w). Note
-    /// PROJECT2D (0x01) is deliberately NOT in this set even on a cubemap
-    /// stage: the software sampler only cube-samples it as a direction
-    /// through that remap, which the shader's PROJECT2D branch already
-    /// reproduces with SampleCubeSlot - the distinction the pool resolution
-    /// needs is "does this mode's texel come from a face at all", and both
-    /// the CUBEMAP and PROJECT2D cube forms do.
-    /// </summary>
-    private static bool IsCubeStage(in PgraphTextureSlot t) => t.CubeSamplingReady && (t.Format & TextureFormatCubemapEnable) != 0;
-
-    private static bool IsCubeDirectionMode(int mode)
-    {
-        return mode is PshCombiner.TexModeCubemap or PshCombiner.TexModeDotStrCube or
-            PshCombiner.TexModeDotRflctDiff or PshCombiner.TexModeDotRflctSpec;
     }
 
     private static bool IsHiloDotMode(int mode)
     {
         return mode == PshCombiner.TexModeDotProduct;
-    }
-
-    /// <summary>
-    /// Appends the cube stage's level-0 face texels around the face the draw's
-    /// triangle was sampled on. A direction mode resolves a direction per
-    /// fragment, so the face and the texel move within the triangle; the
-    /// carried window is the sampled texel plus a margin of the same face (3x3
-    /// texels, then the whole face when it is small enough for the pool) and
-    /// only the faces the software sampling touched. A fragment whose word is
-    /// outside that window resolves to index 0 and samples the texel at the
-    /// window origin; the corpus rows measure whether that residual is ever hit
-    /// (guest word misses) before the modes are declared supported.
-    /// </summary>
-    private bool AppendCubeWords(in PgraphGuestTexelSet carried, in PgraphTextureSlot texture, uint color)
-    {
-        int w = texture.CubeWidth;
-        int h = texture.CubeHeight;
-        int bytes = (int)Nv2AMmio.TextureFormatBytesPerTexel(color);
-        if (w <= 0 || h <= 0 || bytes is not (2 or 4))
-        {
-            return false;
-        }
-
-        int texels = w * h;
-        bool wholeFaces = texels * 6 <= GuestWordPoolSize;
-        int faces = wholeFaces ? 6 : 1;
-        for (int face = 0; face < faces; face++)
-        {
-            uint faceBase = texture.Offset + (texture.CubeFaceStride * (uint)face);
-            int rows = wholeFaces ? h : Math.Min(h, 3);
-            int cols = wholeFaces ? w : Math.Min(w, 3);
-            for (int y = 0; y < rows; y++)
-            {
-                for (int x = 0; x < cols; x++)
-                {
-                    uint address = CubeTexelAddress(in texture, faceBase, bytes, x, y);
-                    if (!FindCarriedWord(in carried, address, out uint word) && !FindPooledWord(address, out word))
-                    {
-                        // Same lane the HILO dot words use: the word at the
-                        // address this draw will sample is RAM, and the seam's
-                        // set is a recent window of it, not the authority (the
-                        // guest cannot rerun a draw command, so the word at that
-                        // address when the draw runs is the word the hardware
-                        // sampled). The HILO path always read through here; the
-                        // cube path returned false, which declined every cube
-                        // stage whose faces the window did not enumerate - the
-                        // corpus row xgu bump_cubemap_reflect at its reflection
-                        // phase (decisions 228).
-                        if (!TryReadDirectWord(address, out word))
-                        {
-                            return false;
-                        }
-                    }
-
-                    PushGuestWord(address, word);
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>The software sampler's swizzled cube address for one face texel (Nv2AMmio.TryReadCubeTexel).</summary>
-    private static uint CubeTexelAddress(in PgraphTextureSlot texture, uint faceBase, int bytes, int x, int y)
-    {
-        // One texel address, one implementation: Nv2AMmio.SwizzleAddressNT
-        // serializes the exact interleave Nv2AMmio.TryReadCubeTexel walks
-        // (Morton pair or the generic bit loop), so this cannot drift from it.
-        uint texelIndex = Nv2AMmio.SwizzleAddressNT(x, y, texture.SwizzleMaskX, texture.SwizzleMaskY,
-            texture.MortonMasks);
-        return faceBase + (texelIndex * (uint)bytes);
     }
 
     /// <summary>
@@ -2320,6 +2290,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     {
         _activeTextureUnit = -1;
         Array.Clear(_boundTexture);
+        Array.Clear(_boundCubeTexture);
         Array.Clear(_lastTextureValid);
     }
 
@@ -2475,6 +2446,68 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
                 _gl.TexImage2D(
                     TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
                     (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
+            }
+        }
+
+        TextureUploads++;
+        return texture;
+    }
+
+    /// <summary>
+    /// Decodes one cube stage into a GL 2D-array texture: layer = face, texel
+    /// (x, y) = the swizzled guest word at the address the software sampler
+    /// reads for that face texel (<see cref="Nv2AMmio.SwizzleAddressNT"/> +
+    /// <see cref="Nv2AMmio.DecodeSwizzledTexelWord"/> - the same two calls
+    /// <c>Nv2AMmio.TryReadCubeTexel</c> makes), so the shader's cube tap and
+    /// the software tap are one decode. A word pool could only carry a window
+    /// of a face; this carries every texel of all six, which is what a 256x256
+    /// reflection cube needs.
+    /// </summary>
+    private uint UploadCubeTexture(in PgraphTextureSlot slot, uint color, uint bytes)
+    {
+        int width = slot.CubeWidth;
+        int height = slot.CubeHeight;
+        const int Faces = 6;
+        byte[] rgba = new byte[width * height * Faces * 4];
+        for (int face = 0; face < Faces; face++)
+        {
+            uint faceBase = slot.Offset + (slot.CubeFaceStride * (uint)face);
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    uint texelIndex = Nv2AMmio.SwizzleAddressNT(
+                        x, y, slot.SwizzleMaskX, slot.SwizzleMaskY, slot.MortonMasks);
+                    uint address = faceBase + (texelIndex * bytes);
+                    uint word = _memory.ReadPhysical(address);
+                    int at = ((((face * height) + y) * width) + x) * 4;
+                    if (!Nv2AMmio.DecodeSwizzledTexelWord(color, bytes, word, out float r, out float g,
+                            out float b, out float a))
+                    {
+                        continue;
+                    }
+
+                    rgba[at] = (byte)((Math.Clamp(r, 0f, 1f) * 255f) + 0.5f);
+                    rgba[at + 1] = (byte)((Math.Clamp(g, 0f, 1f) * 255f) + 0.5f);
+                    rgba[at + 2] = (byte)((Math.Clamp(b, 0f, 1f) * 255f) + 0.5f);
+                    rgba[at + 3] = (byte)((Math.Clamp(a, 0f, 1f) * 255f) + 0.5f);
+                }
+            }
+        }
+
+        _gl.GenTextures(1, out uint texture);
+        _gl.BindTexture(TextureTarget.Texture2DArray, texture);
+        _gl.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        unsafe
+        {
+            fixed (byte* pRgba = rgba)
+            {
+                _gl.TexImage3D(
+                    TextureTarget.Texture2DArray, 0, (int)InternalFormat.Rgba8,
+                    (uint)width, (uint)height, Faces, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pRgba);
             }
         }
 
@@ -2738,20 +2771,13 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         _gl.Uniform1(program.Location("uTexBilinear[0]"), 4u, ref _texBilinear[0]);
         _gl.Uniform1(program.Location("uTexConvolution[0]"), 4u, ref _texConvolution[0]);
         _gl.Uniform4(program.Location("uTexBorder[0]"), 4u, ref _texBorder[0]);
-        // Cube/dot uniforms ride on their own stamp (the 2D change check does
-        // not cover them). They are only reached by a program whose combiner
-        // carries a cube or dot texture mode - and those draws are declined
-        // until the guest-word lane lands - so a presentable 2D workload never
-        // pays these calls.
-        _gl.Uniform1(program.Location("uTexSwzMaskX[0]"), 4u, ref _texSwzMaskX[0]);
-        _gl.Uniform1(program.Location("uTexSwzMaskY[0]"), 4u, ref _texSwzMaskY[0]);
-        _gl.Uniform1(program.Location("uTexMorton[0]"), 4u, ref _texMorton[0]);
+        // Cube uniforms ride on their own stamp (the 2D change check does not
+        // cover them). They are only reached by a program whose combiner
+        // carries a cube texture mode, so a presentable 2D workload never pays
+        // these calls.
         _gl.Uniform1(program.Location("uTexCubeOk[0]"), 4u, ref _texCubeOk[0]);
         _gl.Uniform1(program.Location("uTexCubeW[0]"), 4u, ref _texCubeW[0]);
         _gl.Uniform1(program.Location("uTexCubeH[0]"), 4u, ref _texCubeH[0]);
-        _gl.Uniform1(program.Location("uTexCubeStride[0]"), 4u, ref _texCubeStride[0]);
-        _gl.Uniform1(program.Location("uTexBase[0]"), 4u, ref _texBase[0]);
-        _gl.Uniform1(program.Location("uTexBytes[0]"), 4u, ref _texBytes[0]);
         _gl.Uniform1(program.Location("uDotMap[0]"), 4u, ref _dotMap[0]);
         _gl.Uniform3(program.Location("uEyePos"), _eyePos[0], _eyePos[1], _eyePos[2]);
         _gl.Uniform4(program.Location("uBumpMatrix[0]"), 3u, ref _bumpMatrix[0]);
@@ -2768,7 +2794,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     /// <see cref="GuestWordPoolSize"/> entries wide, so only the first
     /// <c>count</c> entries are sent: the slots' pool bases index it, and a
     /// draw with no computed mode uploads nothing (no stage then reads a word).
-    /// The cube extents/bytes ride along because the pool lookup needs them.
+    /// The cube extents ride along because the face clamp reads them (the cube
+    /// texels themselves are the host array texture).
     /// </summary>
     private void SetGuestWordUniforms(GlProgram program)
     {
@@ -2782,10 +2809,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         Array.Copy(_guestWordValues, pool, count * 4);
         _gl.Uniform4(program.Location("uGuestWord[0]"), (uint)(count * 4), ref pool[0]);
         _gl.Uniform1(program.Location("uTexPoolBase[0]"), 4u, ref _texPoolBase[0]);
-        _gl.Uniform1(program.Location("uTexCubeOk[0]"), 4u, ref _texCubeOk[0]);
-        _gl.Uniform1(program.Location("uTexCubeW[0]"), 4u, ref _texCubeW[0]);
-        _gl.Uniform1(program.Location("uTexCubeH[0]"), 4u, ref _texCubeH[0]);
-        _gl.Uniform1(program.Location("uTexBytes[0]"), 4u, ref _texBytes[0]);
     }
 
     /// <summary>Cheap stamp of every uniform the cube/dot sampler path reads (the 2D change check does not cover them).</summary>
@@ -2797,12 +2820,6 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             stamp = (stamp ^ (uint)_texCubeOk[i]) * 16777619u;
             stamp = (stamp ^ (uint)_texCubeW[i]) * 16777619u;
             stamp = (stamp ^ (uint)_texCubeH[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texCubeStride[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texBase[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texBytes[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texSwzMaskX[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texSwzMaskY[i]) * 16777619u;
-            stamp = (stamp ^ (uint)_texMorton[i]) * 16777619u;
             stamp = (stamp ^ (uint)_dotMap[i]) * 16777619u;
         }
 

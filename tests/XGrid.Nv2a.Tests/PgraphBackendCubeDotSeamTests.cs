@@ -262,39 +262,58 @@ public sealed class PgraphBackendCubeDotSeamTests
     }
 
     /// <summary>
-    /// The shader's texel decode and the software decode are one table: every
-    /// supported format's descriptor, applied to a word, reproduces
-    /// <see cref="Nv2AMmio.DecodeTextureTexel"/> exactly.
+    /// A cube face decodes through one decoder - <see
+    /// cref="Nv2AMmio.DecodeSwizzledTexelWord"/>, the software sampler's - for
+    /// every format the cube path backs, and the two byte orders stay
+    /// distinct. This is the invariant the GL 2D-array cube decode relies on
+    /// (it calls exactly this member per face texel).
     /// </summary>
-    [Fact]
-    public void TextureDecodeDescriptor_ReproducesTheSoftwareDecode()
+    [Theory]
+    [InlineData(0x05u)]
+    [InlineData(0x06u)]
+    [InlineData(0x3Au)]
+    [InlineData(0x3Bu)]
+    [InlineData(0x3Cu)]
+    public void CubeFaceTexelWord_DecodesThroughTheSoftwareDecoder(uint format)
     {
-        uint[] formats =
-        [
-            0x00u, 0x02u, 0x03u, 0x04u, 0x05u, 0x07u, 0x10u, 0x11u, 0x17u, 0x1Cu,
-            0x1Du, 0x1Eu, 0x28u, 0x29u, 0x3Au, 0x3Bu, 0x3Cu, 0x3Fu, 0x40u, 0x41u,
-        ];
         uint[] words = [0x00000000u, 0xFFFFFFFFu, 0x12345678u, 0x80000001u, 0x00FF00FFu];
-
-        foreach (uint format in formats)
+        foreach (uint word in words)
         {
-            Nv2AMmio.DescribeTextureDecode(format, out int[] fields, out float[] constants);
-            foreach (uint word in words)
-            {
-                Nv2AMmio.DecodeTextureTexel(format, word, out float r, out float g, out float b, out float a);
-                float[] expected = [r, g, b, a];
-                for (int ch = 0; ch < 4; ch++)
-                {
-                    int offset = fields[ch];
-                    int width = fields[4 + ch];
-                    float actual = width == 0
-                        ? constants[ch]
-                        : Nv2AMmio.DecodedChannel(width, (int)((word >> offset) & ((1u << width) - 1u)));
-                    Assert.True(
-                        expected[ch] == actual,
-                        $"format 0x{format:X2} word 0x{word:X8} channel {ch}: software {expected[ch]} vs descriptor {actual}");
-                }
-            }
+            Assert.True(Nv2AMmio.DecodeSwizzledTexelWord(format, 4u, word, out float r, out float g, out float b, out float a));
+            Nv2AMmio.DecodeTextureTexel(format, word, out float er, out float eg, out float eb, out float ea);
+            Assert.Equal((er, eg, eb, ea), (r, g, b, a));
         }
+
+        // A 16-bit stage masks the upper half of the read word, so the same
+        // face texel decodes identically whatever the neighbour bytes hold.
+        Assert.True(Nv2AMmio.DecodeSwizzledTexelWord(0x05u, 2u, 0xDEAD1234u, out float r16, out float g16, out float b16, out float a16));
+        Nv2AMmio.DecodeTextureTexel(0x05u, 0x1234u, out float er16, out float eg16, out float eb16, out float ea16);
+        Assert.Equal((er16, eg16, eb16, ea16), (r16, g16, b16, a16));
+    }
+
+    /// <summary>
+    /// The cube gate is the software sampler's, not the cubemap-enable bit: a
+    /// cube-flagged TEXFMT whose color format
+    /// <c>Nv2AMmio.TrySampleCubeDirection</c> does not back publishes no face
+    /// layout, so a backend cannot decode faces the software refuses. The GL
+    /// path's cube array texture is decoded from exactly these seam fields.
+    /// </summary>
+    /// <param name="color">Texture color-format id (TEXFMT bits 8-15).</param>
+    [Theory]
+    [InlineData(0x00u)]
+    [InlineData(0x02u)]
+    [InlineData(0x1Eu)]
+    public void CubeFlaggedUnsupportedFormat_ReportsNoCubeLayout(uint color)
+    {
+        uint format = (color << 8) | (4u << 20) | (4u << 24) | 4u;
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new RecordingBackend();
+        nv2A.Backend = backend;
+        WriteVertices(memory);
+        Push(nv2A, memory, StreamWithDamage(format, 0x40000000u, 0u, 0u, 0u));
+
+        Assert.NotNull(backend.Last);
+        Assert.False(backend.Last!.Value.Texture0.CubeSamplingReady);
+        Assert.Equal(0u, backend.Last!.Value.Texture0.CubeFaceStride);
     }
 }

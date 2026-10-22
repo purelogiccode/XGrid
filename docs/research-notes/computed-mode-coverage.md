@@ -75,9 +75,26 @@ share a flag word). Measured on this row at 3.6B:
 | panel `stages=1 c=00000001 tm=11111C` (5.7M px) | `00` | `0:00` |
 
 So the union came from **stage 0's** RGB word alone; stages 1-7 write only
-no-op output ids. Nothing in the panel program's flags explains the black panel
-- the leads stay texture content and the dot chain, plus the final-lerp
-negation the shader still does not implement (gap 12).
+no-op output ids.
+
+## Resolution (2026-10-22, §236): the flags were never the cause
+
+Neither the MUX-lsb select nor a final-lerp negation was at fault. The panel was
+black because a **cube stage had no texel source**: the word pool that carried
+cube faces was skipped entirely when the draw command carried no words, the
+shader's decode of a pooled word read uniforms the backend never uploaded, and a
+256x256 face could never fit the window anyway. A cube stage is now a host
+2D-array texture decoded from the guest's six swizzled faces, so:
+
+| anchor | software | GL replace (§236) | difference |
+|---|---|---|---|
+| 4.4B (dot programs) | 19,042 colours / 0% black | 19,042 colours / 0% black | **2 px of 307,200, maxDelta 3** |
+| 3.6B (panel) | 21,041 colours / (58.0, 98.7, 29.8) | same | **2 px of 307,200, maxDelta 3** |
+
+The per-slot record the row prints now includes the texture state
+(`ts<n>=<TEXFMT>:d<dim>[:c][:x][:s]`), which is what identified slot 3 as a
+cube-flagged `0x3A` stage - add it to any future row you analyse.
+
 
 ## Method notes (for the next phase sweep)
 

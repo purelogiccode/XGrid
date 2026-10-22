@@ -73,8 +73,8 @@ per-sample evidence).
 | **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `B6116DAE` (policy) | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **7.5 s** vs 11.3 s sw (gate media) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
-| **xgu `bump_cubemap_reflect`, GL replace (§228 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`, gap 12) | GL replace at **4.4B presents 4 colours / 34.4% black** (software 18,980 / 0%) and at **3.6B 2 colours** (software 20,843): the FBO clear plus a black panel, `unsupported=0 fatal=0 composedFrames=0` - the black colour is computed, so this is a fragment-expression gap, detail in gap 12 | n/a | the panel renders black on the GL path (gap 12, open); the cube-stage word lane and the two measured programs' live compile landed in §228 | sw 4.4B 18,980 colours / mean (57.4, 89.3, 34.2); gl 4.4B `59F1AB97…` 4 colours / (2.6, 53.8, 16.4); sw 3.6B 20,843 / gl 3.6B 2 | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
-| **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized; **§227:** the dot-mode programs now compile and the GL backend renders them itself - the 3B row reports `unsupported=0 fatal=0 programs=9` and presents the GPU frame, but this row's *executed* combiner carries only `PROJECT2D`/`0x03` (`stages=1 texmodes=0000`), so no dot mode ever runs here (gap 12 has no corpus coverage) | n/a | §227 closes the compile failure that made the whole frame software; the presented frame is now the GL image (`5174B1EB…` at 3B), `composedFrames=0`. Gap 12 (computed cube/dot texel fetch) stays open and unexercised | 3B `-Gpu gl -GpuReplace`: `unsupported=0`, `fatal=0`, 41 flips; CPU `D5D38C64` (unchanged); RAM `B96187E6` (the GL writer's image) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
+| **xgu `bump_cubemap_reflect`, GL replace (§236 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`) | **gap 12 CLOSED (2026-10-22, §236):** the cube stage samples a host 2D-array texture decoded from the guest's six swizzled faces, so GL replace now presents the reflection panel. At 4.4B the GL frame is 19,042 colours / 0% black and differs from the software frame by **2 pixels of 307,200 (maxDelta 3)**; at 3.6B by **1 pixel (maxDelta 4)**, 21,041 colours both. `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0` | n/a | none on the render path; a HILO dot-map input (maps 4-7) is still one word per stage - no measured row uses one | sw 4.4B 18,980 colours / mean (57.4, 89.3, 34.2); gl 4.4B 19,042 / 0% black; sw+gl 3.6B 21,041 / (58.0, 98.7, 29.8) | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
+| **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized, and since §236 the cube stage samples its decoded host array texture, so the dot family renders on the GPU too. At 3B this row's executed combiner is still the one-stage `PROJECT2D`/`0x03` shape (`stages=1 texmodes=0000`), so the panel is the GPU image and `unsupported=0 fatal=0 programs=9` | n/a | none on the render path; gap 12 closed at 4.4B (see the row above) | 3B `-Gpu gl -GpuReplace`: `unsupported=0`, `fatal=0`; CPU `D5D38C64` (unchanged) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
 | **xgu `vp_lighting`, TEXFILTER parity** | same | yes | yes, own scene from ~3B | replace mode, **`pixels=0`** (no fallback): the GL fragment shader runs the tent/convolution/wrap path | n/a | none; the flag moves both renderers by the same ~6.5% and they agree within one 8-bit step in both states (§220c) | gl legacy `E68070A3` vs sw `72B2F490` (dmean 0.00/0.01/0.01, maxDelta 1); gl registers `A9E09139` vs sw `CF698444` (same); CPU `0380C502` in all four | `-Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace [-TexFilter registers]` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
@@ -397,83 +397,41 @@ nothing) and both renderers are pinned by
 `Nv2aZetaClearLayoutTests.{ZetaClear_IgnoresTheStencilWriteMask,
 ColorClear_IgnoresTheColorWriteMask}`.
 
-### 12. The GL backend cannot compute a cube or dot texel - **state LANDED, fetch OPEN (2026-10-22, §226)**
+### 12. The GL backend cannot compute a cube or dot texel - **CLOSED 2026-10-22 (§236)**
 
-The corpus row that shows this is `xgu bump_cubemap_reflect`: its program is
-PROJECT2D + DOT_PRODUCT on stages 1-2 + DOT_REFLECT_SPECULAR on stage 3 (three
-of four stages), so at 3B `-Gpu gl -GpuReplace` the row declined 7 draws
-(`unsupTex[m0C=7 m11=14]`) and composed those frames from software.
+**Closed.** A cube stage samples a host 2D-array texture that the backend decodes
+from the guest's six swizzled faces with `Nv2AMmio.DecodeSwizzledTexelWord` (the
+software sampler's own decoder), so `xgu bump_cubemap_reflect`'s reflection panel
+now renders on the GPU: at 4.4B the GL replace frame is 19,042 colours / 0% black
+and differs from the software frame by **2 pixels of 307,200** (maxDelta 3); at
+3.6B by **2 pixels** (maxDelta 3, 21,041 colours on both). The frame is the clear
+plus the panel no longer.
 
-Every *computed input* those modes need now reaches the backend (§226):
-`PgraphTextureSlot` carries the cube face extent/stride and the swizzle masks
-(from the same plan the software sampler uses, so the §209a extent rule cannot be
-re-derived wrongly), `PgraphDrawInfo` carries the eye position, and the dot maps
-come from the live combiner. The generated shader carries the transcribed math
-(dot chain, sign/HILO dot maps, face select, tent-clamped cube sampling,
-specular reflection) behind uniforms, so no program recompiles on a mode switch.
+Four defects had to go, invisible to each other while the first made every cube
+sample read a zero word (details: decisions §236):
 
-What is still missing is the texel *fetch*: a cube face and a 16-bit HILO word
-are guest RAM read by a swizzled address, not a 2D image row, so the shader's
-`TexelWord()` is still the one hole. **The backend therefore still declines and
-counts these modes**, and replacement mode still paints them in software - the
-frame is complete, not wrong. Closing it needs a guest-word uniform buffer
-uploaded per draw command; that was attempted and reverted this session rather
-than shipped unvalidated. Acceptance for the next slice: the same row reports
-`unsupported=0` and its GL replace frame is byte-identical to the software frame
-(`DA0750EE…`), with the 1B menu/triangle GL goldens unchanged.
+1. a null carried word set skipped the pool resolution entirely, so a draw
+   command whose software fill captured no words never had a pool at all;
+2. the shader's cube decoder read `uTexFieldOff/W/C` - uniforms the backend never
+   uploaded - and then returned the wrong channels anyway (red = alpha,
+   green = red, blue = green, alpha = 1);
+3. the word pool was 48 entries against the shader's 24-entry array, and a
+   256x256 face (393,216 texels) can never fit a window;
+4. `GuestTexelsFor` handed a wrapping ring out as a contiguous `ArraySegment`,
+   which crashed the leg as soon as a cube stage captured more than 64 words.
 
-**Update 2026-10-22 (§227): the row proves even less than §226 claimed.** The
-generated programs for the `DOT_PRODUCT` family did **not compile** (a dot
-variable was redeclared per stage and a guard read an undeclared `dotOk`), so
-`TryDraw` counted a fatal and painted the frames in software. Fixed, and a live
-compile gate now covers every dot/reflection/str combination
-(`ComputedModeShaderLiveTests`: 99 programs on the driver). It also showed that
-this row's *executed* combiner never carries those modes: the dot-mode draws run
-with the combiner disabled or as the one-stage `PROJECT2D` variant
-(`stages=1 control=00000001 texmodes=0000` at 3B; the modes that do execute are
-`PROJECT2D` and mode `0x03`), so gap 12 has **no corpus sample that exercises
-it** - a synthetic seam test is the only covered path, and a real dot-mode
-sample or an ISOs probe is needed before this gap can be closed by measurement.
+`uCube0..3` (`sampler2DArray`, units 4-7) replace the cube word lane. The guest
+word pool now carries only a HILO dot input's raw 16-bit pair, and it is resolved
+only when that stage's dot map is 4-7: the colour maps (1-3, 8-15) read the
+already-sampled texel, and requiring a pool for them declined every eight-stage
+dot program of the row (122 of 156 frames painted in software). Still open,
+filed: a HILO map's dot is one word per stage (a per-stage constant) - no
+measured row uses a HILO map.
 
-**Update 2026-10-22 (§228): the row DOES run the dot programs - at 4.4B.** §227
-sampled the wrong step. With the read-set summary now on the `--gpu-time`
-combiner rows, the same sample at 4.4B spends its frame in two records that carry
-the family: `stages=8 c=00011108 tm=0332` (19.9M px) and
-`stages=7 c=00011107 tm=1332` (12.4M px) - PROJECT2D on slot 0, then
-DOT_PRODUCT / CUBEMAP / DOT_REFLECT_SPECULAR on slots 1-3. So this row is the
-B3 acceptance sample after all, anchored at **4.4B** (the dot program is absent
-at 0.2-1.4B and at 3B; the phase table is
-`docs/research-notes/computed-mode-coverage.md`).
-
-**Update 2026-10-22 (§230): the flag union comes from one stage, not several.**
-The `--gpu-time` combiner row now also prints `flags@=<stage>:<flags>` (runs of
-consecutive writing stages that share a flag word). At 3.6B both dot-family
-records report `flags=C0 flags@=0:C0,1-7:00` / `flags@=0:C0,1-6:00` - stage 0's
-RGB word is the entire union and the stages that write only no-op output ids
-carry nothing - while the panel program reports `flags=00 flags@=0:00`. That
-disposes of the "reflected colour travels in alpha through BLUE_TO_ALPHA on
-several stages" reading: the open leads are the texture content and the dot
-chain, plus the final-lerp negation the shader still does not implement
-(decisions §230).
-
-What that phase shows, measured: `--gpu gl --gpu-replace` presents **4 colours**
-at 4.4B and **2** at 3.6B (34.4% / 30.7% black) while software presents 18,980 /
-20,843 - the FBO's clear plus a black panel, with `unsupported=0 fatal=0
-composedFrames=0`, i.e. the backend *accepted* every draw and computed a black
-colour. The panel is drawn, so this is a **fragment-expression gap on the GL
-path**, not a declined draw.
-
-Landed toward it: the cube-stage word lane no longer requires the seam's
-32-entry carried window to enumerate every face texel - it reads the word at the
-address the draw samples through the same direct RAM lane the HILO inputs always
-used (`CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`), and the
-row's own two measured programs are compiled on the driver by the live gate.
-**Still open:** the black panel's attribution - the eight-stage records' stage
-1-3 outputs carry the reflected colour in **alpha** through the BLUE_TO_ALPHA
-flag into R0, which only the MUX-lsb select consumes, and the shader implements
-neither that select nor the final lerp's negation; and the plain panel program
-(3.6B, 2 colours) fails before any dot stage runs. A per-fragment
-colour/depth differential on the 3.6B leg is the cheapest next probe.
+**The 3.6B pair is the acceptance check:**
+`pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3600000000 [-Gpu gl -GpuReplace]`
+(HDD+DVD; a DVD-only leg never launches the disc XBE and shows the kernel's
+"requires service" screen - the §208d trap).
 
 ### 13. The GL renderer showed the boot animation for a direct-framebuffer guest - **CLOSED 2026-10-22 (§234)**
 
@@ -583,7 +541,12 @@ sequence (an operator-visible route), not more steps.
 - **Texture formats / shader shapes:** whatever the dashboard's menu uses
   (modulate + a few lighting shapes) plus the xgu samples' byte-order formats,
   a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
-  unobserved. **Filtering:** the software sampler honors MIN/MAG as a tent and
+  unobserved. **Computed modes:** since §236 a cube stage is a host 2D-array
+  texture decoded from the guest's swizzled faces, so the GL backend computes
+  cube sampling exactly (1-2 pixels from software at the corpus row's two
+  anchors) instead of declining it; a HILO dot-map input is still one word per
+  stage and no measured row uses one.
+  **Filtering:** the software sampler honors MIN/MAG as a tent and
   convolves only for MIN = CONVOLUTION_2D_LOD0, behind `--tex-filter registers`
   (default off, gap 7 - cheap and anchor-neutral since §210); the GL backend
   implements the same tent, convolution, decoded wrap modes and border colour
