@@ -14810,16 +14810,29 @@ was reverted.
 **232g What the non-JIT time *is* (measured).** A temporary per-mnemonic `Step`
 tally at 300M steps reads `Mov:207k Add:54k Inc:51k Jcc:36k Xor:28k Dec:26k
 Push:15k Cmp:7k Call:5k Pop:5k` - ordinary instructions, no port I/O in the top
-ten - while those ~430k Steps plus the spec runs cost ~1.5 s. And a
+ten - while those ~430k Steps plus the spec runs cost ~1.5 s. A
 `--jit-threshold` sweep (1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s) shows the
-build-vs-interpret trade-off is shallow and already near its optimum. The cost
-is therefore **per-call dispatch of a large cold-code population**: 55,221
-heads never reach the build threshold, and 523k non-JIT runs serve ~10 members
-each (277 ns/member including the call overhead), while the block/JIT paths
-add 1.1 s of head lookup/formation/chain bookkeeping on top. The only
-structural lever left in C is **C5 trace/superblock formation that does not
-grow `outerMs - runnerMs`**; it must be measured against `nonJitMs` and that
-bookkeeping line, not against a mnemonic assumption.
+build-vs-interpret trade-off is shallow and already near its optimum. The
+`--jit-tally` run-size histogram is the decisive datum (1B triangle, `runs=` is
+the count of non-JIT runs serving 1, 2-4, 5-16, 17-64, 65-256, ... members):
+
+```
+Jit tail calls=523062 instructions=5796990 runs=489927,877,4177,6863,21218,0,0
+Jit tail top=Mov:1,497,331 Jcc:468,284 Add:349,250 Cmp:266,326 Push:187,032
+             Nop:172,453 Inc:161,595 Fstp:142,116 ...
+```
+
+**489,927 of 523,062 non-JIT entries serve exactly ONE instruction** (93.5%),
+so the cost is not cold-code bodies and not a mnemonic mix: it is the
+**one-instruction round trip** through `RunJitBlock` -> `RunNonJit` ->
+`RunSpecBlock`'s failed block formation -> back. 523k round trips at ~1.4 us
+each is the ~0.75 s of `Step` time. The next Track C stage should therefore
+attack that hop first (cache the "no block formable at this head" verdict for
+the generation instead of re-decoding on every visit, or serve the slice from
+`RunNonJit` on a miss), and only then consider traces: measure against
+`nonJitMs` and keep `outerMs - runnerMs` flat. Note the `--jit-tally` flag is
+**not** inert (the CLI prints `Jit yield`, `Jit tail` and `Jit rejected`); the
+stale comment in `RunSpecBlock` says otherwise.
 
 **Gates (this session, H1, final build):** accurate 1B menu `4EF1FBF6` (sw) /
 `B6116DAE` (gl), diff 2602, violations 0, counters 33632/686/686; accurate

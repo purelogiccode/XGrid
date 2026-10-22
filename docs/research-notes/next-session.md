@@ -197,14 +197,20 @@ but **wall-neutral**, and a per-mnemonic `Step` tally shows the non-JIT time is
 spent on ordinary Mov/Add/Inc/Jcc instructions (232g), i.e. on **per-call
 dispatch of a large cold-code population** - 55,221 heads never reach the build
 threshold and 523k non-JIT runs serve ~10 members each - plus 1.1 s of
-`RunJitBlock` head lookup/formation/chain bookkeeping. A `--jit-threshold` sweep
-(1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s) shows the build-vs-interpret
-trade-off is shallow and already near its optimum. **Shape:** form a trace (a
-hot successor chain) as one native body with the state carried across blocks,
-and make the cold path cheaper *without* adding per-member or per-block
-bookkeeping - the acceptance line is `nonJitMs` down >=20% **and**
-`outerMs - runnerMs` not growing. Every 1B SHA/counter must stay exact and the
-ktest log byte-identical. If two structural iterations miss 3x engine, C7 (a
+`RunJitBlock` head lookup/formation/chain bookkeeping. **The `--jit-tally`
+run-size histogram pins the shape: `runs=489927,877,4177,6863,21218,0,0` -
+93.5% of the 523k non-JIT entries serve exactly ONE instruction** (decisions
+232g). So the cost is the one-instruction round trip `RunJitBlock` ->
+`RunNonJit` -> `RunSpecBlock`'s failed block formation -> back, ~1.4 us each,
+not a cold-code body and not a trace opportunity. **Shape, in order:**
+(1) remember "no block is formable at this head" for the generation instead of
+re-decoding on every visit (a negative verdict, keyed like
+`JitBlockCache.Rejected` with a retry-at-visits guard so a transient
+decode-cache miss cannot hide a block forever), and/or let `RunNonJit` serve
+its slice on a miss; (2) only then consider a trace, with the state carried
+across blocks. Acceptance for either: `nonJitMs` down >=20% **and**
+`outerMs - runnerMs` not growing, every 1B SHA/counter exact, ktest log
+byte-identical. If two structural iterations miss 3x engine, C7 (a
 reassessment, including the native-core option) is the next decision.
 
 ### Option B-lead (bounded finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`

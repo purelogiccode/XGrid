@@ -432,8 +432,8 @@ public sealed partial class XboxCpu
             SpecHandler? spec = blocks.CurrentHandler;
 
             // Diagnostic tally (cheap: one array bump per non-JIT member); it
-            // feeds the env-gated "Jit tail" report so the tail is visible in
-            // ordinary runs, not only under --jit-tally (which is inert).
+            // feeds the "Jit tail" report, which prints under --jit-tally or
+            // XGRID_JIT_TAIL=1.
             NoteNonJitMnemonic(instruction.Mnemonic);
 
             HotspotObserver?.NoteFetch(false);
