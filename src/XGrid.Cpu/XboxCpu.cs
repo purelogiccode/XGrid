@@ -187,6 +187,7 @@ public sealed partial class XboxCpu
             else
             {
                 instruction = FetchDecodeCached(_decodeCache, buffer, out SpecHandler? spec);
+
                 if (spec is not null && instruction.IsValid)
                 {
                     // Slice 1 (§139): the cursor's pre-specialized body for
@@ -272,14 +273,13 @@ public sealed partial class XboxCpu
                 // below own the miss (and the bootstrap fills the cache).
                 long jitStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 int jitRan = RunJitBlock(maxInstructions - executed);
+                AddJitOuterTicks(System.Diagnostics.Stopwatch.GetTimestamp() - jitStart);
                 if (jitRan > 0)
                 {
-                    AddJitOuterTicks(System.Diagnostics.Stopwatch.GetTimestamp() - jitStart);
                     executed += jitRan;
                     continue;
                 }
 
-                AddJitOuterTicks(System.Diagnostics.Stopwatch.GetTimestamp() - jitStart);
                 long nonJitStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 int nonJitRan = RunNonJit(maxInstructions - executed);
                 AddNonJitTicks(System.Diagnostics.Stopwatch.GetTimestamp() - nonJitStart);

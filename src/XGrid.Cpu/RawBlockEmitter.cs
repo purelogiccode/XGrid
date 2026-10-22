@@ -120,10 +120,20 @@ internal static unsafe class RawBlockEmitter
 
     /// <summary>
     /// Tries to build a raw runner for the planned members. Returns 0 when the
-    /// host cannot run raw code.
+    /// host cannot run raw code. <paramref name="chainEntry"/> receives the
+    /// in-frame chain target (0 when the block is not chainable or the address
+    /// could not be resolved), which is what the chain table publishes: a chain
+    /// jump enters it with the source's frame in place, so the target skips the
+    /// whole prologue.
     /// </summary>
-    public static nint TryBuild(uint headEip, ReadOnlySpan<JitMemberPlan> plans, bool mmioFast, bool chainable)
+    public static nint TryBuild(
+        uint headEip,
+        ReadOnlySpan<JitMemberPlan> plans,
+        bool mmioFast,
+        bool chainable,
+        out nint chainEntry)
     {
+        chainEntry = 0;
         if (!RawCodeMemory.IsSupported || plans.Length == 0)
         {
             return 0;
@@ -151,7 +161,13 @@ internal static unsafe class RawBlockEmitter
             }
 
             var ctx = new EmitContext(headEip, plans.ToArray(), mmioFast, chainable);
-            return ctx.Build();
+            nint entry = ctx.Build();
+            if (entry != 0)
+            {
+                chainEntry = ctx.ChainEntry;
+            }
+
+            return entry;
         }
         catch (Exception ex)
         {
@@ -174,8 +190,13 @@ internal static unsafe class RawBlockEmitter
         private Label _ret;
         private Label _leave;
         private Label _faultRet;
+        private Label _chainIn;
+        private Label _body;
         private bool _flagsLive;
         private bool _memberHelper;
+
+        /// <summary>Gets the in-frame chain target resolved by <see cref="Build"/> (0 when not chainable).</summary>
+        public nint ChainEntry { get; private set; }
 
         public nint Build()
         {
@@ -183,7 +204,19 @@ internal static unsafe class RawBlockEmitter
             _ret = _a.CreateLabel(string.Empty);
             _leave = _a.CreateLabel(string.Empty);
             _faultRet = _a.CreateLabel(string.Empty);
+            _chainIn = _a.CreateLabel(string.Empty);
+            _body = _a.CreateLabel(string.Empty);
             EmitPrologue();
+            if (chainable)
+            {
+                // The external entry falls through into the body; a chain jump
+                // enters at _chainIn, which skips the prologue entirely (the
+                // source's frame, state slots and guest registers are live).
+                _a.jmp(_body);
+                _a.Label(ref _chainIn);
+                EmitChainEntry();
+                _a.Label(ref _body);
+            }
 
             uint eip = headEip;
             for (int i = 0; i < plans.Length; i++)
@@ -204,8 +237,27 @@ internal static unsafe class RawBlockEmitter
                 return 0;
             }
 
+
+
             var writer = new BufferCodeWriter(memory, 64 * 1024);
-            _a.Assemble(writer, (ulong)memory);
+
+            AssemblerResult result = _a.Assemble(
+                writer,
+                (ulong)memory,
+                BlockEncoderOptions.ReturnNewInstructionOffsets);
+            if (chainable)
+            {
+                // Resolve the in-frame chain target. GetLabelRIP returns an
+                // absolute RIP; a value outside this block's own code means the
+                // API contract changed, in which case the block simply is not
+                // published as a chain target (the safe degradation).
+                ulong chainRip = result.GetLabelRIP(in _chainIn, 0);
+                if (chainRip >= (ulong)memory && chainRip < (ulong)memory + (ulong)writer.Position)
+                {
+                    ChainEntry = (nint)chainRip;
+                }
+            }
+
             if (string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_DUMP"), "1", StringComparison.Ordinal))
             {
                 Dump(headEip: headEip, memory, writer.Position);
@@ -323,6 +375,33 @@ internal static unsafe class RawBlockEmitter
             _flagsLive = true;
         }
 
+        /// <summary>
+        /// In-frame chain entry (C5 slice 1): a chain jump from another raw
+        /// block arrives here with that block's frame in place - same
+        /// <see cref="FrameSize"/>, same slot layout - and the guest registers
+        /// still live in the host registers. The source has already advanced
+        /// the frame EIP to this block's head, published F_EFLAGS/F_CTRL, set
+        /// F_BUDGET to the remaining budget, published this block's entries
+        /// and zeroed the frame's served counter. Only the host FLAGS need
+        /// reloading: the source's chain probe clobbered them, and F_EFLAGS is
+        /// authoritative on every edge (the source materialized it first).
+        /// </summary>
+        private void EmitChainEntry()
+        {
+            Assembler a = _a;
+            a.mov(R64(Register.R11), Slot(F_STATE));
+
+            // Compile-time liveness must be forced: the prologue just set it
+            // true, but this path's FLAGS were clobbered by the source's probe.
+            _flagsLive = false;
+            EmitLoadFlags();
+
+            // The source published the guest registers before its chain probe,
+            // so reload them exactly as the prologue does.
+            a.mov(R64(Register.R9), Field(Register.R11, OffRegisters));
+            LoadGuestRegisters(a, Register.R9);
+        }
+
         private static void LoadGuestRegisters(Assembler a, Register baseRegister)
         {
             a.mov(R32(Register.EAX), Field(baseRegister, 0));
@@ -361,8 +440,11 @@ internal static unsafe class RawBlockEmitter
             EmitMaterializeFlags();
 
             a.Label(ref _exit);
-            EmitStoreGuestState();
 
+            // Publish the guest state on every return path (a chained target
+            // reloads the registers from it at its in-frame entry, exactly as
+            // the prologue would).
+            EmitStoreGuestState();
             if (chainable)
             {
                 EmitChainAttempt();
@@ -423,13 +505,18 @@ internal static unsafe class RawBlockEmitter
         }
 
         /// <summary>
-        /// Direct block chaining: the source has already published its guest
-        /// state and EIP, so a matching table entry lets it tail-jump to the
-        /// target's native entry with the target's arguments in the Win64
-        /// registers. The target's epilogue returns to the original
+        /// Direct block chaining: a matching table entry lets the block jump to
+        /// the target's in-frame chain entry, which continues in this same
+        /// frame (identical layout) instead of tearing it down and running the
+        /// target's prologue. The target's epilogue returns to the original
         /// <c>RunJitBlock</c> caller; the served carry keeps the accounting
-        /// exact across the chain. Any failed check falls through to the
-        /// normal return path (the caller serves the next block itself).
+        /// exact across the chain. Any failed check falls through to the normal
+        /// return path (the caller serves the next block itself).
+        ///
+        /// <para>Every register used here is host scratch (R8-R11, RDI, RSI,
+        /// RBP): the guest GPRs are already published by the epilogue's
+        /// <c>EmitStoreGuestState</c>, and the target's chain entry reloads them
+        /// from there exactly as the prologue would.</para>
         ///
         /// <para>The entry poll contract is preserved: with IF set the block
         /// only chains when the interrupt source exposes a cheap 0/1 pending
@@ -459,61 +546,56 @@ internal static unsafe class RawBlockEmitter
 
             // Direct-mapped lookup by the next guest EIP.
             a.mov(R32(Register.R10D), Slot(F_EIP));
-            a.mov(R32(Register.EAX), R32(Register.R10D));
-            a.imul(R32(Register.EAX), R32(Register.EAX), unchecked((int)RawChainHash.Multiplier));
-            a.shr(R32(Register.EAX), RawChainHash.IndexShift);
-            a.shl(R32(Register.EAX), 5); // sizeof(RawChainEntry) = 32
+            a.mov(R32(Register.R8D), R32(Register.R10D));
+            a.imul(R32(Register.R8D), R32(Register.R8D), unchecked((int)RawChainHash.Multiplier));
+            a.shr(R32(Register.R8D), RawChainHash.IndexShift);
+            a.shl(R32(Register.R8D), 5); // sizeof(RawChainEntry) = 32
             a.mov(R64(Register.RDI), Field(Register.R11, OffChainTable));
-            a.add(R64(Register.RDI), R64(Register.RAX));
+            a.add(R64(Register.RDI), R64(Register.R8));
 
-            a.mov(R32(Register.EAX), MemOp(Register.RDI, null, 1, 0)); // Valid
-            a.test(R32(Register.EAX), R32(Register.EAX));
+            a.mov(R32(Register.R8D), MemOp(Register.RDI, null, 1, 0)); // Valid
+            a.test(R32(Register.R8D), R32(Register.R8D));
             a.je(_ret);
             a.cmp(MemOp(Register.RDI, null, 1, 4), R32(Register.R10D)); // Eip
             a.jne(_ret);
             a.mov(R64(Register.R9), Field(Register.R11, OffGeneration)); // live generation pointer
             a.test(R64(Register.R9), R64(Register.R9));
             a.je(_ret);
-            a.mov(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
-            a.cmp(R32(Register.EAX), MemOp(Register.RDI, null, 1, 8)); // entry Generation
+            a.mov(R32(Register.R8D), MemOp(Register.R9, null, 1, 0));
+            a.cmp(R32(Register.R8D), MemOp(Register.RDI, null, 1, 8)); // entry Generation
             a.jne(_ret);
 
             // remaining = F_BUDGET - F_SERVED (the budget is already net of
             // every prior chained block; the served carry is accounting only).
             // Signed compare: a negative remainder must return, not read as a
-            // huge unsigned budget.
-            a.mov(R32(Register.EAX), Slot(F_BUDGET));
-            a.sub(R32(Register.EAX), Slot(F_SERVED));
-            a.cmp(R32(Register.EAX), MemOp(Register.RDI, null, 1, 12)); // Members
+            // huge unsigned budget. RSI is host scratch.
+            a.mov(R32(Register.ESI), Slot(F_BUDGET));
+            a.sub(R32(Register.ESI), Slot(F_SERVED));
+            a.cmp(R32(Register.ESI), MemOp(Register.RDI, null, 1, 12)); // Members
             a.jl(_ret);
 
             // The source's served members move into the carry.
             a.mov(R64(Register.R9), Field(Register.R11, OffChainServed));
-            a.mov(R32(Register.ECX), Slot(F_SERVED));
-            a.add(MemOp(Register.R9, null, 1, 0), R32(Register.ECX));
+            a.mov(R32(Register.R8D), Slot(F_SERVED));
+            a.add(MemOp(Register.R9, null, 1, 0), R32(Register.R8D));
 
-            // Diagnostic: count the chain jump (R10 is free after the EIP
-            // compare; the budget stays in EAX until the argument load).
+            // Diagnostic: count the chain jump.
             a.mov(R64(Register.R9), Field(Register.R11, OffChainCount));
             a.mov(R32(Register.R10D), MemOp(Register.R9, null, 1, 0));
             a.lea(R32(Register.R10D), MemOp(Register.R10, null, 1, 1));
             a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.R10D));
 
-            // Target arguments, then a tail-jump into its prologue.
-            a.mov(R32(Register.R9D), R32(Register.EAX));
-            a.mov(R64(Register.RCX), Slot(F_CPU));
-            a.mov(R64(Register.RDX), Slot(F_STATE));
+            // Target slots for the in-frame chain entry. The frame is not torn
+            // down: the target continues in this same frame (identical layout)
+            // at its own chain entry, which reloads the guest state and flags.
+            // EIP is already the target's head (the probe matched it) and the
+            // carry now holds this block's served count.
+            a.mov(Slot(F_BUDGET), R32(Register.ESI));
             a.mov(R64(Register.R8), MemOp(Register.RDI, null, 1, 24)); // Entries
-            a.mov(R64(Register.R10), MemOp(Register.RDI, null, 1, 16)); // Target
-            a.add(R64(Register.RSP), FrameSize);
-            a.pop(R64(Register.R15));
-            a.pop(R64(Register.R14));
-            a.pop(R64(Register.R13));
-            a.pop(R64(Register.R12));
-            a.pop(R64(Register.RDI));
-            a.pop(R64(Register.RSI));
-            a.pop(R64(Register.RBP));
-            a.pop(R64(Register.RBX));
+            a.mov(Slot(F_ENTRIES), R64(Register.R8));
+            a.mov(R64(Register.R10), MemOp(Register.RDI, null, 1, 16)); // Target (chain entry)
+            a.xor(R32(Register.R8D), R32(Register.R8D));
+            a.mov(Slot(F_SERVED), R32(Register.R8D));
             a.jmp(R64(Register.R10));
         }
 

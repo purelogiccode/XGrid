@@ -1,5 +1,31 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-22 LATE (thirty-third session, 233) - C5 slice 1 LANDED (-3
+> to -4% wall, exact); the wall is now priced per stage and C's cheap levers are
+> closed.** Two host-side changes: the IL runner is built on demand (a raw block
+> only needs it when the step budget cannot cover the block; `ilBuildMs` 72 -> 1,
+> `formMs` 1026 -> 846) and every raw block emits an **in-frame chain entry** so
+> a chain jump keeps the source's frame instead of tearing it down and re-running
+> the target's prologue (`outerMs` 4477 -> 4353). Interleaved 1B A/B: triangle
+> `gl+replace` 6.951 -> 6.660 s (-4.2%, 3/3), menu 20.991 -> 20.356 s (-3.0%,
+> 3/3), all four fast anchors and both accurate goldens byte-identical.
+> **The per-stage price (233a) supersedes 232b/232g's reading:** of the 6.9 s
+> triangle wall, the native runner is 3.39 s (6.25 ns/member), **formation 1.03 s
+> - 682 ms of it Iced `Assemble` at 377 ns per emitted instruction** (2,585
+> blocks / 19,175 members / 1.9M instructions), the boot `Step` path 1.01 s
+> (every step a decode miss), **the GL submission ~1.0 s executed inside the
+> guest's NV2A FIFO stores**, the non-GPU interpreter ~0.4 s and cold JIT entries
+> only **68 ms** - so "the one-instruction round trip" is no longer a stage, and
+> the interpreter outlier is Track B, not C. **The charter's kill criterion
+> ("if C4+C5 miss 3x engine after two structural iterations, stop and
+> reassess, including the native-core option") is now met**: C4 measured null
+> (232a/232f) and C5 slice 1 is a 3-4% wall win. The next C step is a
+> **decision** (own the encoder, slim the per-member code, or change the engine
+> shape), not another slice - see `next-session.md` §2 Option A. Measured
+> negatives this session: keeping the guest registers live across a chain edge
+> diverges (233d); shared cold stubs are worth -60/-160 ms (233e); caching ROM
+> decodes has a 250 ms ceiling (233a).
+
 > **STATUS 2026-10-22 LATE (thirty-second session, 232) - C4 slice 1 measured
 > NULL and reverted; read-only-ROM decode caching measured null too; C5 trace
 > formation is the last structural lever.** The host-pointer translate probe

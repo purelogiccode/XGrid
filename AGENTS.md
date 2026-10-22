@@ -726,6 +726,61 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-22 (thirty-third; C5 slice 1 landed - the IL runner is built on
+demand and a chain jump keeps the source's frame - and the whole wall priced per
+stage for the first time - decisions §233). Track C: -3 to -4% wall, exact.**
+
+- **Priced before building (233a).** A temporary call-level probe split
+  `Cpu.Execute` on the 1B triangle `gl+replace` leg: native runner **3393 ms**
+  (6.25 ns/member), **formation 1026 ms** (682 of it Iced `Assemble` at 377 ns
+  per emitted instruction; 2,585 blocks / 19,175 members / 1.9M instructions),
+  boot `Step` path **1012 ms** (every step a decode miss), **GL submission
+  ~1000 ms executed inside the guest's NV2A FIFO stores** (405k stores at
+  `0xFD800000`, 2.4 us each - the sw leg shows the same region at 1.76 s with
+  `rasterPsh=4.46 s`), non-GPU interpreter ~400 ms, and cold `RunJitBlock`
+  entries only **68 ms** (523k x 132 ns). Two older "next levers" died on that
+  number: the one-instruction round trip is 68 ms, not ~0.75 s, and caching ROM
+  decodes has a **250 ms ceiling** (the fetch+decode is 345 ms of which 359k of
+  498k decodes are non-RAM) - consistent with 232f's measured null.
+- **Landed (a): lazy IL runner.** Every block built a DynamicMethod even when a
+  raw runner existed; the IL runner is only reachable when the step budget
+  cannot cover the block. `JitBlock.Plans` is retained and the build moved to
+  the invoke path. `ilBuildMs` 72 -> 1, `formMs` 1026 -> 846. Raw-less blocks
+  (exact mode, non-raw hosts, the ~12 unencodable heads) still build eagerly,
+  so rejection semantics are unchanged.
+- **Landed (b): the in-frame chain entry (233c).** A chain jump used to publish
+  the state, probe, tear the frame down and re-enter the target's prologue
+  (~82 instructions per 4.4-member edge). Each raw block now emits `_chainIn`
+  after its prologue; the edge writes `F_BUDGET`/`F_ENTRIES`, zeroes `F_SERVED`
+  and jumps there, and the target continues in the same frame (reloading flags
+  and guest registers). `EmitChainAttempt` was rewritten to touch host scratch
+  registers only. The entry is resolved with
+  `BlockEncoderOptions.ReturnNewInstructionOffsets` + `GetLabelRIP`, range
+  checked, and published in the chain table instead of the function pointer.
+  `outerMs` 4477 -> 4353; **interleaved 1B A/B: triangle 6.951 -> 6.660 s
+  (-4.2%, 3/3), menu 20.991 -> 20.356 s (-3.0%, 3/3)**, all four fast anchors
+  and both accurate goldens byte-identical.
+- **Measured negative (233d):** keeping the guest registers live across the
+  edge (also skipping the state publish) **diverges** - 1B RAM `EED915B5` vs
+  `4F1FCBC0` (CPU exact), first difference at 30.5M steps in a kernel structure
+  written by a block that chains through port I/O. With `XGRID_RAW_CHAIN=0` both
+  builds agree, so the frame sharing is fine and the register-liveness
+  assumption is not. Priced negatives (233e): per-block shared cold stubs
+  -60 ms, global -160 ms.
+- **Gates:** accurate menu golden PASS (sw `4EF1FBF6` / gl `B6116DAE`, diff
+  2602, violations 0, counters 33632/686/686) and triangle PASS (sw `A1740DE0` /
+  gl `7A860ED7`, diff 27849, 2706/68/34); fast 1B exact on four legs (triangle
+  sw `B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl `4F1FCBC0`/`7DAB63EB`,
+  menu sw `34973510`/`F5D61C94` 253,998,498 px, menu gl `B06BA6E5`/`F5D61C94`);
+  ktest smoke PASS 7/7 at **792,800,535** steps, log `CA5D3867` (40,797 B)
+  byte-identical. Suite **1836** green (one transient Nv2a GL flake on the first
+  run, green on re-run), format clean. No snapshot change (host-side only).
+- **Where it leaves C:** the charter's own kill criterion is met (C4 null, C5
+  -3/-4%); the remaining gap to xemu is ~5.5x and the only material levers are
+  the encoder (377 ns/instruction), the per-member code volume (99 instructions
+  per guest instruction) or a different engine shape. `next-session.md` §2
+  Option A makes that a decision, with the prices attached.
+
 **Session 2026-10-22 (thirty-second; C4 priced by implementing it and reverted
 as a measured null, the non-JIT wall decomposed to the boot ROM decode, the
 interrupt poll unified, and a lost store translate slot fixed - decisions

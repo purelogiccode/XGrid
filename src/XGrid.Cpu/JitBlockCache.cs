@@ -31,6 +31,7 @@ internal sealed class JitBlock(
     ulong generation,
     int memberCount,
     DecodeCacheEntry[] entries,
+    JitMemberPlan[] plans,
     JitRun? runner,
     RawRun? rawRunner,
     nint rawEntry,
@@ -61,8 +62,20 @@ internal sealed class JitBlock(
     /// <summary>Gets the member decode entries (CallSpec fallback instructions).</summary>
     public DecodeCacheEntry[] Entries { get; } = entries;
 
-    /// <summary>Gets the IL runner (null when the block is raw-only).</summary>
-    public JitRun? Runner { get; } = runner;
+    /// <summary>Gets the planned members (kept so a deferred IL runner can be emitted later).</summary>
+    internal JitMemberPlan[] Plans { get; } = plans;
+
+    /// <summary>
+    /// Gets or sets the IL runner. Null until the tail path needs it: a block
+    /// with a native runner only falls back to the IL emitter when the
+    /// remaining step budget cannot cover every member, which is rare, so the
+    /// DynamicMethod build is deferred out of the formation cost
+    /// (C5 slice 1). Always set at formation when the block has no native
+    /// runner (exact mode, a host without raw code, or a shape the raw
+    /// emitter cannot encode).
+    /// </summary>
+    public JitRun? Runner { get; set; } = runner;
+
 
     /// <summary>Gets the C3 raw runner function pointer (0 when absent).</summary>
     public RawRun? RawRunner { get; } = rawRunner;

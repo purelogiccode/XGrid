@@ -527,7 +527,22 @@ public sealed unsafe partial class XboxCpu
                 }
                 else
                 {
-                    served = block.Runner?.Invoke(this, block.Entries, budget - total) ?? 0;
+                    // A native block without the budget to run in full needs
+                    // the IL tail runner; build it now (once per block) if the
+                    // formation deferred it. A build failure leaves the runner
+                    // null, which yields exactly as any unservable block does.
+                    JitRun? ilRunner = block.Runner;
+                    if (ilRunner is null)
+                    {
+                        ilRunner = JitEmitter.Build(
+                            block.HeadLinear,
+                            block.Plans,
+                            JitExact,
+                            JitMmioFast);
+                        block.Runner = ilRunner;
+                    }
+
+                    served = ilRunner?.Invoke(this, block.Entries, budget - total) ?? 0;
                 }
             }
             catch (PageFaultSignal fault)
@@ -902,14 +917,17 @@ public sealed unsafe partial class XboxCpu
 
         RawRun? rawRunner = null;
         nint rawPointer = 0;
+        nint rawChainEntry = 0;
         JitRun? runner;
+
         if (JitRawBlocks && !JitExact)
         {
             rawPointer = RawBlockEmitter.TryBuild(
                 headEip,
                 plans.AsSpan(0, count),
                 JitMmioFast,
-                chainable: RawChainEnabled && !hasSti);
+                chainable: RawChainEnabled && !hasSti,
+                out rawChainEntry);
             if (rawPointer != 0)
             {
                 rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
@@ -917,15 +935,24 @@ public sealed unsafe partial class XboxCpu
             }
         }
 
-        // The IL runner is also built: a raw block is only usable when the
-        // remaining budget covers every member, and the caller must have
-        // something to serve the tail with (a yield would desynchronise the
-        // step and TSC accounting).
-        runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
-        if (runner is null)
+        // The IL runner is built only when the block has no native runner: a
+        // raw block falls back to it only when the remaining budget cannot
+        // cover every member (rare), so its DynamicMethod build is deferred to
+        // the invoke path (C5 slice 1) and removed from the formation cost.
+        // A raw-less block still needs it here, and a head the IL emitter
+        // cannot build is still a permanent rejection (unchanged semantics).
+        if (rawRunner is null)
         {
-            jit.Store(headLinear, generation, null);
-            return null;
+            runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+            if (runner is null)
+            {
+                jit.Store(headLinear, generation, null);
+                return null;
+            }
+        }
+        else
+        {
+            runner = null;
         }
 
         // The entries array is pinned for the block's lifetime: the raw runner
@@ -936,14 +963,14 @@ public sealed unsafe partial class XboxCpu
 
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            pinnedEntries, runner, rawRunner, rawPointer, hasSti, hasStore);
+            pinnedEntries, plans.AsSpan(0, count).ToArray(), runner, rawRunner, rawChainEntry, hasSti, hasStore);
         if (RawTraceEnabled)
         {
             RawTrace($"  form head={headEip:X5} raw={rawPointer != 0} count={count} hasStore={hasStore} chainEnabled={RawChainEnabled} runnerNull={rawRunner is null}");
         }
         jit.Store(headLinear, generation, block);
 
-        if (rawRunner is not null && RawChainEnabled && !hasSti)
+        if (rawRunner is not null && RawChainEnabled && !hasSti && rawChainEntry != 0)
         {
             // The entry carries the target's native entry, pinned entries and
             // member count; the source resolves it by the next guest EIP.
@@ -953,7 +980,7 @@ public sealed unsafe partial class XboxCpu
                 headEip,
                 generation,
                 count,
-                rawPointer,
+                rawChainEntry,
                 entriesPointer);
         }
 

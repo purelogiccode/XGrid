@@ -1,31 +1,22 @@
-# Next session instructions (updated 2026-10-22 late, after C4 slice 1 measured NULL: read §1/§2 before starting any Track C work)
+# Next session instructions (updated 2026-10-22 late, after C5 slice 1 landed: read §1 before starting any Track C work)
 
 **Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
 course correction: xemu-class performance is the long-run objective, Track C
 re-opened, C4-C6), §1-§3 (priority stack, measured position, milestone ladder),
 `docs/research-notes/jit-track-charter.md` (the C4-C6 status block),
-`AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §229 (the `nxdk/usb`
-corpus row + the corrected H1 toolchain verdict) + §228 (the B3 row's 4.4B phase
-anchor, the `reach[...]` read-set column, the cube word lane) + §227 (the
-computed-mode shaders never compiled; the live compile gate) + §226 (B3 slice 1)
-+ §225 (CPU correctness campaign) + §224 (per-title renderer, one GPU-memory
-adapter, `KeyedOption`) + §223 (renderer policy seam, snapshot requests on the
-emulation thread, frontend smoke harness) + §222 (CHD title id) + §221 (the GPU
-renderer as a frontend setting) + §220 (GL sampler decode, replace-mode
-composition, frame stepping) + §219 (GL TEXFILTER parity, clear write masks,
-per-title overrides V2) + §218 (APU `NV_PAPU_XGSCNT`) + §217 (per-title
-overrides + EEPROM state) + §216 (PTIMER 0.8.137) + §215 (fixed-function
-lighting) + §213 (the fixed-function vertex stage, `--ffp`) + §212/§210
-(TEXFILTER) + §211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display model) +
-§207 (corpus), `docs/compatibility.md` (matrix + harness + the gaps the corpus
-found), `docs/research-notes/corpus-phase-anchors.md` (a row's step count is
-part of its identity), `docs/research-notes/nxdk-usb-sample.md` (the newest
-corpus row), `docs/research-notes/computed-mode-coverage.md` (the B3 phase
-table), `docs/research-notes/usage-histogram.md` (measured NV097 / TEXFILTER /
-sampler address-mode usage), `docs/research-notes/nv097-coverage.md`
-(method-presence gap), `docs/research-notes/gpu-reference-map.md`,
-`docs/research-notes/jit-track-charter.md` (status),
+**`docs/research-notes/xgrid-architecture-decisions.md` §233 (the per-stage
+price of the whole wall - this is the map; every "next lever" claim in older
+notes is superseded by it)** + §232 (C4 null, the non-JIT decomposition) + §231
+(the course correction) + §229/§228/§227/§226 (the B3 corpus row and its
+computed-mode work) + §225 (CPU correctness campaign) + §224 + §223 + §222 +
+§221 + §220 + §219 + §218 + §217 + §216 + §215 + §213 + §212/§210 (TEXFILTER) +
+§211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display model) + §207 (corpus),
+`AGENTS.md` (session notes + current state), `docs/compatibility.md`,
+`docs/research-notes/corpus-phase-anchors.md` (a row's step count is part of its
+identity), `docs/research-notes/nxdk-usb-sample.md`,
+`docs/research-notes/computed-mode-coverage.md` (the B3 phase table),
+`docs/research-notes/usage-histogram.md`,
+`docs/research-notes/nv097-coverage.md`, `docs/research-notes/gpu-reference-map.md`,
 `docs/research-notes/rasterizer-inventory.md`, `tools/cpu-oracle/README.md`,
 then this file. (If a name above does not resolve, the file was renamed - search
 `docs/research-notes/` rather than skipping it.)
@@ -34,7 +25,7 @@ then this file. (If a name above does not resolve, the file was renamed - search
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest + MSYS2 toolchain
-git log --oneline -1        # expect: the course-correction commit ("docs: re-aim ...")
+git log --oneline -1        # expect: the C5 slice-1 commit ("cpu: C5 slice 1 ...")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
 dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
@@ -43,7 +34,8 @@ dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
 **Two machines share this tree** (`docs/hosts.md`). Start with
 `host-doctor.ps1` and read its VERDICT before trusting any number in this file:
 semantic anchors (SHAs/counters) must match everywhere, performance anchors
-(walls) only compare within one machine and one window.
+(walls) only compare within one machine and one window. **Wall noise on H1 is
++-3-5%**: a claim needs >=3 interleaved pairs and 3/3 sign agreement (233).
 
 Expected 1B fast-mode anchors (**gate media**: the triangle needs HDD + DVD;
 `host-doctor.ps1` names them - `wt-data\chain-199l\hdd.qcow2` is the HDD used by
@@ -51,16 +43,16 @@ the gate scripts on H1):
 
 | leg (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | RAM | CPU | wall (H1) |
 |---|---|---|---|
-| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 31-54 s (load); 32.5 s measured |
+| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 29.8 s measured this session |
 | menu + `--tex-filter registers` | `EE8F69FB…` | `F5D61C94…` | ~32 s |
-| menu + `--ffp` | `CC2A94DF…` | `F5D61C94…` | ~59 s (the FFP layer draws 121M more px) |
+| menu + `--ffp` | `CC2A94DF…` | `F5D61C94…` | ~59 s |
 | triangle BTFF (HDD + DVD, `--frame-first`) | `0117A5E2…` | `7DAB63EB…` | ~11.2 s |
 | triangle, plain (HDD + DVD, no `--frame*`) | `CB95C006…` | `B8EF1021…` | ~10.5 s |
-| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | 11.5 s measured (frame `A1740DE0`, 68/34) |
+| triangle, `scripts/raster-leg.ps1 -Workload tri` | `B45254CA…` | `7DAB63EB…` | 10.4 s measured (frame `A1740DE0`, 68/34, 57,663,082 px) |
 | triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
-| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | 7.9 s, frame `7A860ED7…` |
-| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | 24.3 s, frame `B6116DAE…` |
+| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | 6.66 s, frame `7A860ED7…` |
+| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | 20.36 s, frame `B6116DAE…` |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
 | `xgu-bump_cubemap_reflect` 3B BTFF | `DDB59317…` | `D5D38C64…` | ~12 s |
@@ -82,21 +74,11 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 `2F632483…`, menu RAM `6AB39AB0…` / CPU `3D2740B8…`; both frames `A1740DE0…` and
 `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
 (policy diff, never byte-exact; both reproduce with `diff=2602` / `diff=27849`,
-`violations=0`, `maxDelta=1`, `BackendUnsupported=0` - re-run in session 29).
+`violations=0`, `maxDelta=1`, `BackendUnsupported=0` - re-run this session).
 
-**The menu RAM SHAs moved in §218:** the APU `NV_PAPU_XGSCNT` register now returns
-`ep_frame_div * 32`, the dashboard reads it and stores it (§218). `51B56687 ->
-34973510` (fast), `19FEA0EA -> EE8F69FB` (`--tex-filter registers`),
-`87BF40DA -> CC2A94DF` (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate).
-
-- **1836 tests green** (measured 2026-10-22 late; session 32 added the store-probe regression, session 29 the
-  `PshCombinerReachTests`, the two-case `DescribeReach_ReportsTheWritingStages`,
-  the live `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, the
-  extra programs in the live compile gate, and `GameEntryTests` x3 for the
-  library title id),
-  build/format clean. The ktest XGrid leg was **not** re-run in session 29 (no
-  guest-visible change; it stands at **792,800,535** steps, suite log 40,797 B,
-  SHA `CA5D3867…`).
+- **1836 tests green**, build/format clean. The ktest XGrid leg is
+  **792,800,535** steps, suite log 40,797 B, SHA `CA5D3867…` (re-run this
+  session, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
   and all three are settings in the Avalonia frontend (§217, §221, §223).
@@ -104,256 +86,197 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
   `gpu-reference-map.md`. Method gaps: `nv097-coverage.md` (regenerate after
   Nv2a edits; it is a snapshot).
 
-## 0b. What the last sessions landed - do not redo it
+## 0b. What the last session landed - do not redo it
 
--1. **C4 slice 1 is priced and REVERTED (decisions 232a, 2026-10-22 late).** The
-   host-pointer translate probe was implemented and measured: interleaved 1B
-   A/B menu wall 21.01 -> 21.05 s (`runnerMs` 15,872 -> 16,026), triangle
-   6.89 -> 6.77 s (`runnerMs` 3,407 -> 3,382) - noise, SHAs exact. **The
-   probe is not the raw path's wall; do not re-attempt it without a new
-   measurement.** §1 now carries the measured wall decomposition.
--0. **Two things landed on top of it (same session, decisions 232c/232d):**
-   `XboxCpu.PollInterrupt()` (the PIC's pinned pending word instead of a
-   per-instruction `Acknowledge()` call in `Step`/`RunSpecBlock`; exact, wall
-   delta below resolution) and the raw store probe's lost translate slot
-   (CR0.WP load clobbering R10D -> a store into a read-only page with WP clear
-   wrote slot 0's frame; fixed + regression test that fails pre-fix).
+0. **C5 slice 1 (§233, 2026-10-22 late).** Two exact host-side changes:
+   (a) the IL runner is built on demand instead of at formation
+   (`JitBlock.Plans` + a lazy build in the invoke path; `ilBuildMs` 72 -> 1,
+   `formMs` 1026 -> 846); (b) an **in-frame chain entry** per raw block
+   (`_chainIn`, resolved with `BlockEncoderOptions.ReturnNewInstructionOffsets`
+   + `GetLabelRIP`, published in the chain table instead of the function
+   pointer): a chain jump keeps the source's frame instead of tearing it down
+   and re-running the target's prologue. `outerMs` 4477 -> 4353; interleaved 1B
+   A/B **triangle `gl+replace` 6.951 -> 6.660 s (-4.2%, 3/3)**, **menu
+   `gl+replace` 20.991 -> 20.356 s (-3.0%, 3/3)**, all four fast anchors and
+   both accurate goldens byte-identical. **Do not "optimize" the chain edge
+   further without reading §233d:** keeping the guest registers live across the
+   edge (skipping the state publish + reload) *diverges* at 30.5M steps.
+1. **C4 slice 1 is priced and REVERTED (decisions 232a).** The host-pointer
+   translate probe was implemented and measured neutral. Do not re-attempt.
+2. **C4b (read-only ROM decode caching) is priced and REVERTED (232f).** The
+   new price (233a) says the whole `Step` fetch+decode is 345 ms at 1B and only
+   ~250 ms of it is ROM - **the lever is closed on a number now, not a hunch.**
+3. **`XboxCpu.PollInterrupt()`** (232c) and the raw store probe's lost translate
+   slot (232d) are in.
+4. **`nxdk/usb` is a corpus row and H1 builds nxdk rows (§229).**
+5. **Library rows carry the certificate title id (§228)**; per-title renderer
+   (§224); renderer policy seam + threaded snapshots (§223); CHD title id
+   (§222); GL sampler decode / replace-mode composition / frame stepping
+   (§220); GL TEXFILTER parity (§219); APU `NV_PAPU_XGSCNT` (§218); PTIMER
+   (§216); fixed-function stage + lighting (§213/§215); the B3 seam state and
+   the live compile gate (§226/§227).
 
-0. **The course correction (§231, 2026-10-22).** Operator: xemu-class
-   performance or better is the long-run objective; Track C is re-opened and
-   leads (C4 flat memory model/soft TLB, C5 trace/superblock formation, C6
-   device/MMIO fast path); B3 is the only bounded B item; E steers with
-   performance rows; P's host audio runs parallel. `docs/development-direction.md`
-   §0 is canonical.
-1. **The B3 row's real phase + read set (§228).** `xgu bump_cubemap_reflect`
-   runs its dot programs at **4.4B** (`tm=0332`/`1332`, 19.9M/12.4M px), not at
-   3B. The `--gpu-time` combiner rows print `tm=`, `sf=` and
-   `PshCombiner.DescribeReach()` (`reach[tx= stg= src= consts= flags= lerp=]`).
-   The cube word lane reads guest RAM through the direct lane instead of
-   requiring the 32-entry carried window. The GL frame at that phase is still
-   **4 colours** (2 at 3.6B): a computed black panel - see Option B-lead.
-2. **`nxdk/usb` is a corpus row and H1 builds nxdk rows (§229).**
-   `host-doctor.ps1` now checks MSYS2 (`C:\msys64`) as well as PATH; nxdk is at
-   `D:\nxdk` (`a6c31ee`). `scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
-   The sample enumerates the hub with its own USB stack and prints
-   `Device connected on USB hub port 1 (VID: 0409 PID: 55aa)` on the display
-   export.
-3. **Library rows carry the certificate title id (§228).** `GameEntry.TitleId`
-   via `XGrid.Host.DiscTitleId` (the same resolver the per-title overrides use),
-   `TitleIdText`/`HasDistinctTitleId`; the Library view shows `Title XXXXXXXX`
-   only for a distinct id (homebrew shares the `FFFF0002` placeholder).
-4. **CPU correctness campaign (§225).** Nine interpreter/decoder fixes from a
-   333 -> 629-case oracle, each pinned; rules in `tools/cpu-oracle/README.md`.
-5. **Per-title renderer, one GPU-memory adapter (§224).**
-   `TitleOverride.Renderer`; `XboxMachine.GpuMemory`; `KeyedOption` collapse.
-6. **Renderer policy seam + threaded snapshots + smoke harness (§223).**
-   `RendererPolicy.Decide`/`Describe`/`Normalize`; snapshot save/load queued onto
-   the emulation thread; `tools/frontend-smoke` drives a real `EmulatorSession`.
-7. **CHD title id (§222)** (`XdvdfsSectorReader` over any `IDvdImage`) and the
-   GPU renderer as a frontend setting (§221). **§220**: GL sampler decode,
-   replace-mode one-writer composition, frame stepping. **§219**: GL TEXFILTER
-   parity, clear masks, per-title overrides V2. **§226/§227**: the B3 seam
-   state, the live compile gate, the armed texel capture.
+## 1. Where the wall is now (measured per stage, 233a - the map)
 
-## 1. Where the remaining wall is (measured, not guessed)
+**Triangle 1B `gl+replace` = 6.66 s, decomposed by a call-level probe
+(`XGRID_JIT_PROBE` was temporary; the numbers stand):**
 
-**Triangle 1B `gl+replace` = 6.9 s, decomposed (decisions 232b/232f/232g):**
-`RunJitBlock` **4.53 s** (native runner 3.42 s + **1.1 s** head lookup /
-formation / chain bookkeeping) + `RunNonJit` **2.25 s** + device `Advance`
-7 ms. Inside `RunNonJit`: 523k `RunSpecBlock` calls serving 5.31M members at
-**277 ns/member**, and 489k `Step`s at **1.6 us/instruction**. **Both priced
-candidates for that time measured null:** the host-pointer translate probe
-(232a) and read-only-ROM decode caching (232f: `nonRamSkips` 359,476 -> 0,
-misses 497,806 -> 138,487, SHAs identical, `nonJitMs` and wall flat). A
-per-mnemonic `Step` tally is ordinary Mov/Add/Inc/Jcc (232g), so the cost is
-**per-call dispatch of a large cold-code population** (55,221 heads below the
-build threshold, 523k non-JIT runs at ~10 members each) plus the 1.1 s of
-outer bookkeeping - and the `--jit-threshold` sweep (1/4/8/16/64 ->
-9.27/7.86/7.32/6.99/6.79 s) says that trade-off is already near its optimum.
-The raw runner's own steady state is **~6.3 ns/served member** (menu ~18.6 ns)
-and is *not* the probe (232a).
+| stage | ms | share | what it is |
+|---|---|---|---|
+| native raw runner | 3393 | 49% | 543M members at **6.25 ns/member** |
+| formation | 1026 | 15% | 2,597 blocks; **682 ms is Iced `Assemble`** |
+| `Step` path (boot) | 1012 | 15% | 489k steps, *every one a decode miss* |
+| GL submission | ~1000 | 14% | 405k stores to `0xFD800000`, 2.4 µs each |
+| interpreter (non-GPU) | ~400 | 6% | 5.3M members at 259 ns |
+| cold JIT entries | 68 | 1% | 523k entries at **132 ns** |
 
-**Menu `gl+replace`**: 20.8 s in the latest A/B window = `RunJitBlock` 17.50 s
-(runner 15.89 s + 1.6 s bookkeeping) + `RunNonJit` 3.23 s over **818k non-JIT
-calls** (the same one-instruction round trip, 2.7x the triangle's count) +
-`advanceMs=16`; `executeMs=20,769` so essentially the whole wall is
-`Cpu.Execute`. **Menu `sw`**: ~30.7 s (raster ~11.5 s).
-**xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
-(real-time band; no xemu oracle), so the gap is still ~5.7x / ~15x. **The
-remaining levers, in measured order:** (1) the boot ROM / non-RAM decode path
-(0.54 s, exact, self-contained); (2) more code served by native blocks instead
-of `RunNonJit` (2.25 s, i.e. C5 trace/superblock formation - but note the
-1.1 s of outer bookkeeping it must not grow); (3) guest-memory latency in the
-raw path (not yet separated from the emitter's own cost).
-
-**Through the real frontend session (H1, 1B, gate media, §221d/§223):** software
-**34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black pixel
-count; the 40 s-pair throughput probe reads +9.8%/+8.2%.
+- **The one-instruction round trip is 68 ms, not the ~0.75 s 232g credited.**
+  Caching "no block formable here" is no longer a stage.
+- **Formation is the biggest addressable item and it is the encoder.** Emitted
+  code = 2,585 blocks / 19,175 members / **1,904,074 Iced instructions**
+  (99 per guest member, 397 bytes), and `Assembler.Assemble` costs **377 ns per
+  instruction** (Iced's `BlockEncoder` multi-pass). Blocks average 7.4 members,
+  so the fixed prologue/epilogue is ~109 instructions/block and the marginal
+  cost ~104/member.
+- **The interpreter's 2.4 µs `mov [mem],reg` outlier is the GPU**: those stores
+  are NV2A FIFO writes that run the GL backend's submission (§205 `drawMs`)
+  inside the guest's method write. It is Track B, not interpreter overhead.
+- **The boot (first 100M steps) is 2.28 s of the 6.9 s wall**: formation 515
+  (1,116 of the 2,585 blocks), `Step` 663, spec 306, runner 699.
+- **Menu `gl+replace`** ~20.4 s: the same shape with 2.7x the non-JIT calls.
+- **xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
+  (real-time band), so the gap is still **~5.5x / ~15x**.
 
 ## 2. Recommended next session - pick one
 
-### Option C-lead (Track C): C5 trace/superblock formation - the only structural lever left in C
+### Option A (Track C, C7 reassessment): the charter's own stop condition is met
 
-**The two priced candidates are both measured out** (decisions 232a/232f): the
-host-pointer translate probe and read-only-ROM decode caching are each exact
-but **wall-neutral**, and a per-mnemonic `Step` tally shows the non-JIT time is
-spent on ordinary Mov/Add/Inc/Jcc instructions (232g), i.e. on **per-call
-dispatch of a large cold-code population** - 55,221 heads never reach the build
-threshold and 523k non-JIT runs serve ~10 members each - plus 1.1 s of
-`RunJitBlock` head lookup/formation/chain bookkeeping. **The `--jit-tally`
-run-size histogram pins the shape: `runs=489927,877,4177,6863,21218,0,0` -
-93.5% of the 523k non-JIT entries serve exactly ONE instruction** (decisions
-232g). So the cost is the one-instruction round trip `RunJitBlock` ->
-`RunNonJit` -> `RunSpecBlock`'s failed block formation -> back, ~1.4 us each,
-not a cold-code body and not a trace opportunity. **Shape, in order:**
-(1) remember "no block is formable at this head" for the generation instead of
-re-decoding on every visit (a negative verdict, keyed like
-`JitBlockCache.Rejected` with a retry-at-visits guard so a transient
-decode-cache miss cannot hide a block forever), and/or let `RunNonJit` serve
-its slice on a miss; (2) only then consider a trace, with the state carried
-across blocks. Acceptance for either: `nonJitMs` down >=20% **and**
-`outerMs - runnerMs` not growing, every 1B SHA/counter exact, ktest log
-byte-identical. If two structural iterations miss 3x engine, C7 (a
-reassessment, including the native-core option) is the next decision.
+C4 measured null (232a/232f) and C5 slice 1 is **-3 to -4% wall** (§233). The
+charter's kill criterion ("if C4+C5 miss 3x engine after two structural
+iterations, stop and reassess, including the native-core option") is therefore
+**triggered**; the next C work should be a *decision*, not another slice. The
+priced facts a decision needs are all in §233:
 
-### Option B-lead (bounded finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
+- the runner's 6.25 ns/member is per-member work, not transitions (refining the
+  chain edge from ~82 to ~40 instructions bought 1 ns/jump);
+- formation is 377 ns/Iced-instruction, and the emitted code is 99
+  instructions per guest instruction;
+- the remaining interpreter cost is the guest's own device traffic.
 
-The row's own dot programs run at **4.4B** and the GL frame is the clear plus a
-black panel; the **3.6B** leg shows the same with no dot program at all
-(`tm=11111C`), so the defect predates the computed modes. Leads already visible
-in the state: the 3.6B program is one stage whose slot-0 texture and final lerp
-(`f0=00000004`, `f1=00001400`) decide the panel; the 4.4B dot records put the
-reflected colour in **alpha** through BLUE_TO_ALPHA into R0, which only the
-**MUX-lsb** select consumes (the shader's mux expression reads R0 regardless),
-and their final lerp (`f0=0C0B000F`, `f1=0C011180`, `sf=FF3F3F3F`) is not
-implemented at all. **Cheapest first step:** a per-fragment colour/depth
-differential on the 3.6B panel program - dump the CPU's `FillTrianglePsh`
-texel/combiner values for one panel fragment and compare them with the shader's
-`t0`/stage outputs (a temporary probe, stripped before any A/B). Acceptance: the
-4.4B GL replace frame gains the panel's colours (well above 4 colours, black
-share down toward software's 0%) with both 1B GL goldens unchanged.
+So the three real options are: **(i) own the encoder** (a `FastAssembler` with
+fixed-size rel32 branches and one pass - the emitter uses ~40 `Assembler`
+methods, so it is a contained but real rewrite; price it by measuring
+`assembleMs` on a spike), **(ii) slim the per-member code** (the fast path is
+~15 of 99 instructions; the rest is probe/guard/slow paths - the measured
+shared-stub saving is only -60 ms per block, -160 ms global, §233e), or
+**(iii) a different engine shape** (a native core / threaded code, which is the
+"native-core option" the charter names). Do not start (i) without a spike that
+shows `Assemble` is the 682 ms it is measured to be.
 
-### Option A (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
+### Option B (bounded B3 finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
-The renderer presents the **flipped** surface, so nxdk `gamma`/`hello`/`usb`
-(which write the framebuffer and never flip, §208) show nothing in GL mode while
-the software renderer shows their scanout. `TryCopyScanoutFrameFromMemory` exists
-(§221c) but is only used *before* the first backend frame. Fix shape: when the
-guest's PCRTC start/pitch describe a buffer the backend did not render, fall back
-to the software scanout for that frame instead of dropping it (the display
-capture is a host-side read; it needs a deliberate policy statement and a
-caretaker for `presentUploads`). Acceptance: `boot-to-first-frame.ps1 -Sample
-gamma -Gpu gl -GpuReplace` shows the same colours as the `-Gpu sw` row; the two
-gate titles' GL frames stay byte-identical.
+Unchanged from last session and still the only bounded B item: the row's dot
+programs run at **4.4B** and the GL frame is the clear plus a black panel; the
+**3.6B** leg shows the same with no dot program (`tm=11111C`), so the defect
+predates the computed modes. Leads: the 3.6B program is one stage whose slot-0
+texture and final lerp (`f0=00000004`, `f1=00001400`) decide the panel; the 4.4B
+dot records put the reflected colour in **alpha** through BLUE_TO_ALPHA into R0,
+which only the **MUX-lsb** select consumes, and their final lerp
+(`f0=0C0B000F`, `f1=0C011180`, `sf=FF3F3F3F`) is not implemented at all.
+**Cheapest first step:** a per-fragment colour/depth differential on the 3.6B
+panel program (temporary probe, stripped before any A/B). Acceptance: the 4.4B
+GL replace frame gains the panel's colours with both 1B GL goldens unchanged.
 
-### Option C (Track E): the remaining corpus gaps
+### Option C (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
+
+`gamma`/`hello`/`usb` write the framebuffer and never flip, so GL mode shows
+nothing while software shows their scanout. `TryCopyScanoutFrameFromMemory`
+exists (§221c) but is only used *before* the first backend frame. Fix shape:
+when PCRTC start/pitch describe a buffer the backend did not render, fall back to
+the software scanout for that frame. Acceptance: `boot-to-first-frame.ps1
+-Sample gamma -Gpu gl -GpuReplace` shows the software row's colours; both 1B GL
+goldens stay byte-identical.
+
+### Option D (Track E): the remaining corpus gaps
 
 - **A USB hot-plug row** (§229 filed): `nxdk/usb` prints only on connect; a
-  disconnect event needs a hot-plug hook on `UsbHub` (the pad-script analogue),
-  then the same sample asserts the disconnect line too.
-- **Gap 10, `bumpenv_ripple`'s app state** (§211): needs the gap-9 frame oracle
-  (xemu screendump - `scripts/xemu-screendump.ps1` has the working pieces).
+  disconnect event needs a hot-plug hook on `UsbHub`, then the same sample
+  asserts the disconnect line too.
+- **Gap 10, `bumpenv_ripple`'s app state** (§211): needs the gap-9 frame oracle.
 - The cull winding on `bumpenv_ripple`'s quads, and the remaining DXT/paletted/
   mipmapped texture paths (unobserved by the corpus).
 
-### Option D (Track B): replace-mode depth
-
-The composition policy is colour-only; a mixed frame keeps guest zeta from the
-software half. Composing depth is possible but needs its own differential. Do
-not start it without a measured pixel delta.
-
-### Filed, lower value - do not start while C4 is open
+### Filed, lower value
 
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
 - A GL *window* renderer in the frontend (the offscreen FBO + readback path is
-  the product path).
-- Mirror mode in the frontend (it still runs the software rasterizer).
+  the product path). Mirror mode in the frontend.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
-- **The C4 host-pointer translate probe** (§232a): implemented, measured on an
-  interleaved same-window A/B, **neutral** (menu `runnerMs` 15,872 -> 16,026,
-  triangle 3,407 -> 3,382; walls within noise, SHAs exact). The probe's
-  dependent L1 loads are hidden by the out-of-order engine.
+- **Keeping the guest registers live across a chain edge** (§233d): the
+  in-frame chain must keep the state publish + register reload; removing them
+  diverges at 30.5M steps (RAM `EED915B5` vs `4F1FCBC0`, CPU exact).
+- **Shared cold stubs** (§233e): per-block ~-60 ms, global ~-160 ms. Priced out.
+- **A cheaper formation path that is not the encoder**: nothing else is left -
+  `Assemble` is 682 of the 916 ms of raw emission.
+- **Caching ROM decodes to fix the boot `Step` path** (§233a/232f): ceiling
+  ~250 ms (3.6%), measured null once already.
+- **The C4 host-pointer translate probe** (§232a): neutral, SHAs exact.
 - **Env-gated emitter ablations as a pricing tool** (§232e): they change guest
-  behavior (a flat-identity probe ablation "won" 34% on a diverged guest; a
-  flags ablation failed to build and measured the IL engine instead). Price
-  with a stashed build and interleaved legs; `runnerMs`/`outerMs`/`nonJitMs`
-  and `Host timing executeMs/advanceMs` are the stage gates.
-- **Read-only-ROM decode caching** (§232f): implemented in full (ROM windows
-  classified, no store tracking, overlay-disable flush), `nonRamSkips`
-  359,476 -> 0 and decode misses -359k, **wall and `nonJitMs` flat**, SHAs
-  identical. The boot ROM fetch was not the non-JIT cost. Reverted.
-- **Explaining the non-JIT time by mnemonic** (§232g): the tally is ordinary
-  Mov/Add/Inc/Jcc, no port I/O in the top ten - the cost is the per-call
-  dispatch of cold code, not the instruction mix or the decode.
-- **Sub-2% performance slices** - the 2026-10-22 re-open is for structural
-  stages (C4-C6); C3-y, the 1024-slot xlat cache, block fusion and the
-  E-series emission are measured out. A C4-C6 stage needs a same-window
-  >=10% wall or >=20% engine result, not a polish pass.
+  behavior. Price with a stashed build and interleaved legs.
+- **Explaining the non-JIT time by mnemonic** (§232g): it is ordinary
+  Mov/Add/Inc/Jcc; the cost is per-call dispatch, and that dispatch is 68 ms.
+- **Sub-2% performance slices** - banned. A C stage needs a same-window >=10%
+  wall or >=20% engine result (or, for C7, an explicit decision).
 - **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
-  programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
-  (§228, `corpus-phase-anchors.md`).
-- **Requiring the seam's carried window to contain a cube face** - the window
-  holds 32 words, a 256² face holds 65,536 texels; the word at the address the
-  draw samples is the one the hardware read (§228).
-- **Treating an 8-stage combiner record as one program** - check `reach[...]`:
-  a stage whose output words write no register contributes nothing (§228).
-- **Reading the convolution kernel field alone as "convolve"**: MIN must be
-  `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a).
-- **Expecting a tent to change a gate title's frame** - both sample at texel
-  centers (§210d; the GL registers leg is byte-identical too, §220c).
+  programs live at 4.4B (`corpus-phase-anchors.md`).
+- **Requiring the seam's carried window to contain a cube face** (§228).
+- **Treating an 8-stage combiner record as one program** (§228).
+- **Reading the convolution kernel field alone as "convolve"** (§210a).
+- **Expecting a tent to change a gate title's frame** (§210d).
 - **Blaming `bumpenv_ripple`'s black frame on the texture format or the bump
   direction chain** (§211a-211e).
 - **Reading a swizzled texture's extent from `TEXIMAGERECT`** (§209a).
-- **Reading the raw texture-address word** - 1 is wrap, 2 is mirror, 4 is
-  border (§220b).
+- **Reading the raw texture-address word** - 1 is wrap, 2 is mirror, 4 is border.
 - **DVD-only triangle legs** - they never launch the disc XBE (§208d).
-- **Running snapshot save/load on the UI thread** - a load resets backend state
-  (§223b).
-- **Adding SSE2 opcodes to the CPU oracle** - the Xbox CPU is a Pentium III
-  (§225). **Reading absolute low addresses in an oracle case** (§225).
+- **Running snapshot save/load on the UI thread** (§223b).
+- **Adding SSE2 opcodes to the CPU oracle** - the Xbox CPU is a Pentium III.
+- **Trusting `glClear` to match a PGRAPH clear** (§219c).
+- **`Get-Command clang` proving the nxdk toolchain is missing** (§229).
+- **Passing a quoted comma list to `-Samples`** - use `@("mesh","gamma")`.
 - A texture-buffer object for the per-triangle block; state-fingerprint batch
   boundaries; per-draw probes (sample 1-in-64 or ablate).
 - O5 counter batching, C3-y bookkeeping, the 1024-slot data translate cache,
   relay/E-series emission, block fusion - all measured, all out.
-- **"Mode 0 means the draw is degenerate"** (§213c). **"A lit fixed-function
-  draw implies an enabled light"** (§215b). **Indexing a hashtable by
-  `HashSet.Add()`'s return value** (it returns `bool`) - use a sorted hash.
-- **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
-  masks; the software fill does not (§219c).
-- **`Get-Command clang` proving the nxdk toolchain is missing** - it only reads
-  PATH; MSYS2 installs under `C:\msys64` (§229).
-- **Passing a quoted comma list to `-Samples`** - PowerShell binds it as one
-  name (`"mesh,gamma"`); use `@("mesh","gamma")`.
 
 ## 4. Rules (non-negotiable)
 
 - **Steering rule.** Every proposal states the track it serves (C/B/E/P/D) and
   the measured ceiling behind its acceptance.
-- **Track C is re-opened (2026-10-22) and leads.** C4-C6 are the authorized
-  structural stages; incremental sub-2% codegen slices remain banned.
-  Interpreter *correctness* work is still allowed (that is what §225 was).
+- **Track C leads** but is at a decision point (§2 Option A). Incremental
+  sub-2% codegen slices remain banned. Interpreter *correctness* work is still
+  allowed.
 - **Two-tier validation.** Accurate mode is currency. Any shared-code or default
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` +
   flag-off byte-identical, plus the fast-mode gates. Host-side-only diagnostics
   still need the 1B goldens (both backends) + ktest smoke. A GL-submission
   change additionally needs both 1B frame goldens byte-identical and the
-  mirror-mode run (no `--gpu-replace`). A **flagged** behavior change must show
-  the default path byte-identical and the flag-on delta measured. A CPU
-  instruction change must keep the CPU oracle and `XGrid.Cpu.Tests` green.
-  Frontend work builds `src/XGrid.Frontend.Avalonia` (it references
-  `XGrid.GpuGl`, so the solution build must stay platform-clean) and does not
-  re-run the core gates, but it must not change core behavior.
+  mirror-mode run. A **flagged** behavior change must show the default path
+  byte-identical and the flag-on delta measured. A CPU instruction change must
+  keep the CPU oracle and `XGrid.Cpu.Tests` green. **A raw-emitter change must
+  reproduce all four fast 1B anchors and the ktest log** - and, if it moves
+  anything, bisect with `XGRID_BLOCK_TRACE`/`--ramdump` + a stashed baseline
+  build (that is how 233d was caught in 40 minutes).
 - **Strip probe instrumentation before any A/B leg** (and before committing).
 - **1B runs only from a full solution build.**
 - Do **not** flip `--jit`/`--jit-raw`/`--tex-filter`/`--ffp`/renderer defaults
   without an operator decision.
-- No real Xbox games in gates; `data/test-samples/` is gate currency. `References2/`
-  is read-only. Leave `Directory.Packages.props` alone.
+- No real Xbox games in gates; `data/test-samples/` is gate currency.
+  `References2/` is read-only. Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v8, audio v3).
-- Write it up: a decisions section (§230+) with the measured table, charter +
+- Write it up: a decisions section (§233+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
@@ -364,15 +287,16 @@ fingerprints live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before
 trusting any wall-clock number. `References2/` is the single verified reference
 store (`scripts/refs-manifest.ps1 -Verify`).
 
-- **H1 (this machine):** Windows 11, NVIDIA GL 4.6.0 (610.88), ~90 GB free on C:
+- **H1 (this machine):** Windows 11, NVIDIA GL 4.6.0 (610.88), ~87 GB free on C:
   (keep media copies on D: anyway). The nxdk toolchain is **installed** inside
-  MSYS2 (`C:\msys64`: clang, lld, llvm-dlltool, make, bison, flex, cmake) with
-  nxdk at `D:\nxdk` (`a6c31ee`), so nxdk corpus rows **do** build here:
-  `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
-- **Walls on H1 at 1B (fast mode, same window as session 29):** triangle
-  11.5-12.2 s sw / 7.9 s `gl+replace`; menu 32.5-33.0 s sw / 24.3 s
-  `gl+replace`. Treat these as ratios within one window, never as absolutes
-  across hosts.
+  MSYS2 (`C:\msys64`) with nxdk at `D:\nxdk` (`a6c31ee`), so nxdk corpus rows
+  build here: `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
+- **Walls on H1 at 1B (fast mode, this session's window):** triangle
+  10.4 s sw / 6.66 s `gl+replace`; menu 29.8 s sw / 20.36 s `gl+replace`.
+  Treat these as ratios within one window, never as absolutes across hosts.
+- **A/B recipe that works here:** `git stash` -> build -> copy
+  `src/XGrid.Cli/bin/Release/net10.0` to `%TEMP%\xgrid-base-bin` ->
+  `git stash pop` -> build -> run both binaries interleaved (3 pairs minimum).
 
 ## 6. Commands
 
@@ -389,12 +313,15 @@ pwsh -File scripts/gpu-slice1-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/ktest-smoke.ps1 -SkipXemu
 
+# performance legs (raster-leg prints one METRIC line)
+pwsh -File scripts/raster-leg.ps1 -Workload tri
+pwsh -File scripts/raster-leg.ps1 -Workload menu
+pwsh -File scripts/raster-leg.ps1 -Workload tri -Gpu gl -GpuReplace -Extra @("--jit-timing")
+
 # corpus / per-sample frames (mind the phase anchor)
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 4400000000
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3600000000 -Gpu gl -GpuReplace
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample usb -Steps 1000000000
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace -TexFilter registers
-pwsh -File scripts/raster-leg.ps1 -Workload tri -TexFilter legacy
 
 # nxdk rows
 pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")
@@ -415,16 +342,16 @@ flipStaleUploads= composedFrames= composedPixels= composedDraws= batchCalls=
 batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
 `unsupTex[...]`, `readback=on|off`, `methods=`,
 **`--gpu-time` combiner rows carry `tm=` / `sf=` / `reach[tx=… stg=… src=…
-consts=… flags=… flags@=… lerp=…]`** (§228 + §230; `PshCombiner.DescribeReach`
-- `flags@=` names the writing stage, or run of stages, that carries each flag
-word, so a MUX/blue-to-alpha bit on a stage nothing reads is visible),
+consts=… flags=… flags@=… lerp=…]`** (§228 + §230),
 **`filters=<min>/<mag>/<conv>`**, **`fixedFn=` / `fixedFnLit=` /
 `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
 `--tex-filter registers`, `--ffp`, `DiagnosticGenericSampler`/
 `DiagnosticGenericFill`, `--raw-shapes`, `XGRID_RAW_PROFILE=1` +
-`XGRID_RAW_CHAIN=0`, `XGRID_RAW_SKIP_HEADS`,
+`XGRID_RAW_CHAIN=0` (chain A/B switch), `XGRID_RAW_SKIP_HEADS`,
 `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`, `XGRID_RAW_DUMP=1`,
-`--jit-timing`, `--jit-tally`, `--bench`, `--frame-first`, `frames=`/`pcrtc=` on
-the `Frame` line, `--frame-display` (the product surface - the only one that
-shows `debugPrint` output), `--pgraph <path> --pgraph-max <n>`, `--eip-hist`,
+`XGRID_WATCH_START`/`XGRID_WATCH_END` + `XGRID_WATCH_TRACE=1` (a write trace;
+under the raw engine the reported EIP is the frame's, not necessarily the exact
+instruction - use `--ramdump` + `fc /b` to localize), `--jit-timing`,
+`--jit-tally`, `--bench`, `--frame-first`, `frames=`/`pcrtc=` on the `Frame`
+line, `--frame-display`, `--pgraph <path> --pgraph-max <n>`, `--eip-hist`,
 `--eeprom-out`, and the frontend's `Renderer:` power-on line.

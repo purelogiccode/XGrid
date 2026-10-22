@@ -14847,3 +14847,135 @@ GOLDEN PASS. Fast 1B anchors exact: menu sw `34973510`/`F5D61C94`, menu gl
 `4F1FCBC0`/`7DAB63EB`. ktest smoke PASS 7/7 at **792,800,535** steps with the
 40,797-byte log `CA5D3867` byte-identical. Suite 1835 -> **1836**; format
 clean.
+
+## 233 Track C: C5 slice 1 - formation deferral + the in-frame chain entry, and the first per-stage price of the whole wall (2026-10-22, thirty-third session)
+
+**Track C, stage C5 (formation), first two slices landed; both exact.** The
+session started by *pricing* the wall with a call-level probe instead of
+guessing (see 233a), which retired two of the three levers `next-session.md`
+listed and re-attributed a third. The two slices below are what survived the
+pricing.
+
+**233a The wall, priced per stage (1B, H1, triangle `--gpu gl --gpu-replace`).**
+A temporary probe (`XGRID_JIT_PROBE=1`) split `Cpu.Execute` by call site. All
+numbers are the same run: `executeMs=6882`.
+
+| stage | ms | notes |
+|---|---|---|
+| `RunJitBlock` | 4477 | `calls=558,578`, `invocations=767,413` |
+| - native runner | 3393 | `543,018,321` raw members = 6.25 ns/member |
+| - formation (`FormJitBlock`) | 1026 | 8,249 calls, 2,597 built |
+| - - raw emission | 916 | 682 `Assembler.Assemble` + 196 emit loop + 10 alloc |
+| - - IL emission | 72 | every raw block also built a DynamicMethod |
+| - - transient bails | ~45 | 5,652 walks that ran out of cached entries |
+| `RunNonJit` | 2410 | `calls=523,062` |
+| - `Step` path | 1012 | 488,970 calls at 2.05 us |
+| - - fetch + decode | 600 | **every** Step is a decode-cache miss |
+| - - execute | 360 | device I/O at boot |
+| - `RunSpecBlock` | 1398 | 34,092 calls, 5.3M members at 259 ns |
+| cold `RunJitBlock` entries | 68 | 523,062 calls at 132 ns - **not** the cost |
+
+Three conclusions, each of which changes a plan:
+
+1. **The one-instruction round trip that 232g nominated as C5's first target
+   costs 68 ms, not the ~0.75 s it was credited with.** A cold `RunJitBlock`
+   entry (prologue + memo + dictionary lookup + yield) is 132 ns.
+2. **Formation is the real non-runner item: 1026 ms (15% of the wall), and
+   916 ms of it is Iced.** The emitted code is 2,585 blocks / 19,175 members /
+   1,904,074 Iced instructions (99 per guest member, 397 bytes) = 7.6 MB, and
+   `Assembler.Assemble` runs at **377 ns per instruction** (multi-pass
+   `BlockEncoder`). Blocks average 7.4 members, so the fixed prologue/epilogue
+   is ~109 instructions per block and the marginal cost is ~104 per member.
+3. **The `mov r32,[mem]` 2.4 us outlier in the interpreter is the GPU, not the
+   CPU.** Per-mnemonic/per-shape tallies put ~1.0 s in 405k 32-bit stores to
+   `0xFD800000` (the NV2A USER FIFO) at ~2.4 us each; the same leg under
+   `--gpu sw` shows 1.76 s there with `rasterPsh=4.46 s`. That is the GL
+   backend's submission cost (§205 `drawMs`), executed inside the guest's
+   method write. The CPU engine's own interpreter work is ~0.4 s.
+4. **The boot phase is 2.28 s of the 6.9 s wall** (first 100M steps):
+   formation 515 ms (1,116 of the 2,585 blocks are built there), `Step` 663,
+   spec 306, runner 699. The `Step` fetch is 219 ms + decode 126 ms at 1B
+   (359,476 of 497,806 decodes are non-RAM boot-ROM fetches), so **caching ROM
+   decodes can be worth at most ~250 ms (3.6%)** - the ceiling agrees with
+   232f's measured null, and the lever is now closed on a price, not a hunch.
+
+**233b Slice 1: the IL runner is built on demand.** `JitEmitter.Build` was
+called for every block even when a raw runner had been emitted; the IL runner
+is only reachable when the remaining step budget cannot cover the block
+(`budget - total < MemberCount`), which never happens on a normal run. A raw
+block now stores its plans (`JitBlock.Plans`) and builds the DynamicMethod in
+the invoke path, once, only if that tail case is ever hit; a raw-less block
+(every `--jit-exact` run, a host without raw code, and the ~12 heads the raw
+emitter cannot encode) still builds it at formation, so rejection semantics are
+unchanged. `ilBuildMs` 72 -> 1, `formMs` 1026 -> 846.
+
+**233c Slice 2: the in-frame chain entry.** A chain jump used to publish the
+guest state, probe the table, tear the frame down (8 pops + `add rsp`) and
+re-enter the target's *prologue* (8 pushes + slot init + flags/TSC/EIP loads +
+8 register loads) - ~82 instructions per edge for 4.4 members
+(`rawChained=124,218,685`). Every raw block now emits a second entry,
+`_chainIn`, placed after its prologue; the chain edge writes the target's
+`F_BUDGET`/`F_ENTRIES`, zeroes `F_SERVED` and jumps there, and the target
+continues in the same frame with the same state pointer. The chain entry
+reloads the host FLAGS from `F_EFLAGS` (the probe clobbers them; the source
+materialized them at `_exit`) and reloads the guest registers from the
+published state. `EmitChainAttempt` was rewritten to touch host scratch
+registers only (R8-R11, RDI, RSI, RBP) so the guest GPRs are not part of the
+probe's contract. The chain entry is resolved with
+`Assembler.Assemble(..., BlockEncoderOptions.ReturnNewInstructionOffsets)` +
+`AssemblerResult.GetLabelRIP`, guarded by a range check so a block whose label
+cannot be resolved is simply not published as a chain target.
+
+Same-window A/B (interleaved pairs, 1B, gate media, `--gpu gl --gpu-replace`):
+
+| leg | base | new | delta | SHAs |
+|---|---|---|---|---|
+| triangle wall | 6.951 s | 6.660 s | **-4.2%** (3/3) | `4F1FCBC0`/`7DAB63EB` both |
+| menu wall | 20.991 s | 20.356 s | **-3.0%** (3/3) | `B06BA6E5`/`F5D61C94` both |
+
+`outerMs` 4477 -> 4353 on the triangle (`-124 ms`); the runner itself is
+unchanged, so the whole win is the chain edge at ~1 ns per jump.
+
+**233d Measured negative: the chain edge cannot keep the guest registers live.**
+The first version also skipped the state publish and the target's register
+reload (the guest GPRs are in fixed host registers on both sides of the edge).
+It is **not** exact: 1B triangle RAM `EED915B5` vs `4F1FCBC0` (CPU SHA exact),
+first difference at 30,500,000 steps - one dword inside a kernel structure at
+`0x800359AC` (`0xD0020010` vs `0x80014710`), written by a block that chains
+through `out dx, al`/`in al, dx` and a kernel call. With chaining off both
+builds agree exactly (`081128C6` at 30.5M), so the divergence is the
+register-liveness assumption, not the frame sharing. The publish + reload
+stays; do not remove it without a new differential.
+
+**233e Measured negatives (pricing only; do not re-attempt).**
+- **Shared cold stubs** (one helper-slow-path stub per block, or a global one):
+  per member the cold path is ~60 of the ~104 instructions, but a 7.4-member
+  block has only ~4.4 memory members, so per-block stubs save ~9% of emitted
+  code (-60 ms) and global stubs ~24% (-160 ms) once the per-member slot write,
+  call and fault re-check are paid. Both are below the stage bar.
+- **A cheaper encoder is the only way to move formation materially**: 377
+  ns/instruction is Iced's `BlockEncoder` doing 2-3 passes; there is no flag
+  that removes it, and replacing it means owning label fixups for the ~40
+  `Assembler` methods the emitter uses.
+- **Reaching the interpreter's `Step` cost through the decode cache** is worth
+  <=250 ms (233a) and was already measured null in 232f.
+
+**Gates (this session, H1, final build).** Accurate 1B menu golden PASS
+(sw `4EF1FBF6`, gl `B6116DAE`, diff 2602, violations 0, maxDelta 1, counters
+33632/686/686, `BackendUnsupported=0`); accurate triangle golden PASS
+(sw `A1740DE0`, gl `7A860ED7`, diff 27849, counters 2706/68/34). Fast 1B
+anchors exact on four legs: triangle sw `B45254CA`/`7DAB63EB` (57,663,082 px),
+triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94`
+(253,998,498 px), menu gl `B06BA6E5`/`F5D61C94`. ktest smoke PASS 7/7 at
+**792,800,535** steps, suite log `CA5D3867` (40,797 B) byte-identical.
+Suite **1836** green (one transient `XGrid.Nv2a.Tests` failure on the first
+full run, green on re-run - a GL-context flake under load, not a regression).
+Format clean. No snapshot version change (host-side only: no device state, no
+guest-visible behaviour; `.xgs` stays Nv2a v8 / audio v3).
+
+**Methodology note (keep).** For an A/B on this host, build the baseline once
+and copy the CLI output directory (`git stash` -> build -> copy
+`src/XGrid.Cli/bin/Release/net10.0` -> `git stash pop` -> build), then run both
+binaries interleaved. Rebuilding between legs costs more than it saves and
+perturbs the window; the wall noise here is +-3-5% so 3 pairs is the minimum
+and 3/3 sign agreement is the claim.
