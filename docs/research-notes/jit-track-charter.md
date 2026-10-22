@@ -1,22 +1,28 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
 > **STATUS 2026-10-22 LATE (thirty-second session, 232) - C4 slice 1 measured
-> NULL and reverted; the measured levers are now the boot ROM decode and the
-> non-JIT share.** The host-pointer translate probe was implemented (per-slot
+> NULL and reverted; read-only-ROM decode caching measured null too; C5 trace
+> formation is the last structural lever.** The host-pointer translate probe
+> was implemented (per-slot
 > RAM host base, exact non-RAM fallback) and priced on interleaved 1B A/B:
 > menu wall 21.01 -> 21.05 s (`runnerMs` 15,872 -> 16,026), triangle 6.89 ->
 > 6.77 s (`runnerMs` 3,407 -> 3,382) - noise, SHAs exact. The probe is NOT the
 > raw path's wall. The triangle's 6.9 s is now decomposed (232b):
 > `RunJitBlock` 4.53 s (native 3.42 s + 1.1 s head lookup/formation/chain) +
-> `RunNonJit` 2.25 s, and the non-JIT cost is **decode**, not the mnemonics -
-> `nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
-> all inside the first 100M steps, priced at **~0.54 s/run** (7.8% of the
-> triangle wall). Landed instead: the unified interrupt poll (232c) and the
-> store probe's lost translate slot (232d). **C4 as specified is closed**; the
-> next Track C candidates are the read-only-ROM decode path and C5 trace
-> formation measured against `nonJitMs` (see `next-session.md` §2). Method
-> note (232e): price stages with stashed interleaved A/B legs, never with
-> env-gated ablations that change guest behavior.
+> `RunNonJit` 2.25 s. The non-JIT cost was priced twice and **both candidates
+> measured null**: read-only-ROM decode caching removed 359,476 non-cacheable
+> fetches (`nonRamSkips` -> 0) with the wall and `nonJitMs` flat (232f), and a
+> per-mnemonic `Step` tally is ordinary Mov/Add/Inc/Jcc (232g) - the cost is
+> **per-call dispatch of a large cold-code population** (55,221 heads below the
+> build threshold; 523k non-JIT runs at ~10 members each) plus 1.1 s of outer
+> lookup/formation/chain bookkeeping. The `--jit-threshold` sweep is flat
+> (1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s), so the only structural lever
+> left in C is **C5 trace formation measured against `nonJitMs` without
+> growing `outerMs - runnerMs`** (see `next-session.md` §2). Landed instead: the
+> unified interrupt poll (232c) and the store probe's lost translate slot
+> (232d). **C4 and C4b are closed.** Method note (232e): price stages with
+> stashed interleaved A/B legs, never with env-gated ablations that change guest
+> behavior.
 
 > **STATUS 2026-10-22 (thirty-first session, course correction) - Track C is
 > RE-OPENED by operator decision: the long-run objective is xemu-class

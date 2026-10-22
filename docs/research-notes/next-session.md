@@ -157,18 +157,21 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Triangle 1B `gl+replace` = 6.9 s, decomposed (decisions 232b):**
+**Triangle 1B `gl+replace` = 6.9 s, decomposed (decisions 232b/232f/232g):**
 `RunJitBlock` **4.53 s** (native runner 3.42 s + **1.1 s** head lookup /
 formation / chain bookkeeping) + `RunNonJit` **2.25 s** + device `Advance`
 7 ms. Inside `RunNonJit`: 523k `RunSpecBlock` calls serving 5.31M members at
-**277 ns/member**, and 489k `Step`s at **1.6 us/instruction**. The non-JIT
-mnemonic mix is ordinary Mov/Jcc/Add/Cmp/Nop - the cost is **decode**:
-`nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
-**all inside the first 100M steps**. `IsCacheableFetch` refuses non-RAM
-physicals, so every ROM instruction fetches its 15-byte window one bus read at
-a time. Priced **~0.54 s/run = 7.8% of the triangle wall, 2.4% of the menu,
-~22% of the 100M boot leg**. The raw runner's own steady state is
-**~6.3 ns/served member** (menu ~18.6 ns) and is *not* the probe (232a).
+**277 ns/member**, and 489k `Step`s at **1.6 us/instruction**. **Both priced
+candidates for that time measured null:** the host-pointer translate probe
+(232a) and read-only-ROM decode caching (232f: `nonRamSkips` 359,476 -> 0,
+misses 497,806 -> 138,487, SHAs identical, `nonJitMs` and wall flat). A
+per-mnemonic `Step` tally is ordinary Mov/Add/Inc/Jcc (232g), so the cost is
+**per-call dispatch of a large cold-code population** (55,221 heads below the
+build threshold, 523k non-JIT runs at ~10 members each) plus the 1.1 s of
+outer bookkeeping - and the `--jit-threshold` sweep (1/4/8/16/64 ->
+9.27/7.86/7.32/6.99/6.79 s) says that trade-off is already near its optimum.
+The raw runner's own steady state is **~6.3 ns/served member** (menu ~18.6 ns)
+and is *not* the probe (232a).
 
 **Menu `gl+replace`**: ~20.8-21.0 s in the latest window; CPU engine ~17-18 s
 of it (85%), GL submission ~0.7 s. **Menu `sw`**: ~30.7 s (raster ~11.5 s).
@@ -186,29 +189,23 @@ count; the 40 s-pair throughput probe reads +9.8%/+8.2%.
 
 ## 2. Recommended next session - pick one
 
-### Option C-lead (Track C): the boot ROM / non-RAM decode path (the one measured 0.54 s)
+### Option C-lead (Track C): C5 trace/superblock formation - the only structural lever left in C
 
-`nonRamSkips=359,476` of 497,806 decode misses, top pages `0xFFFFFFxx`, all
-in the first 100M steps, each ROM instruction paying a 15-byte byte-at-a-time
-bus fetch (~1.5 us) because `IsCacheableFetch` refuses non-RAM physicals
-(gotcha iii). **Shape:** classify *read-only* physical windows (the flash
-`RomDevice`/`RomAliasDevice`/`RomOverlayDevice` all ignore writes) as
-cacheable code, let `DecodeCache.Insert` keep such entries without the tracked
-bitset (`MarkActive` is skipped - a read-only page can never need a store
-drop), and full-flush when the MCPC overlay is disabled (`OnRomOverlayDisabled`)
-and on reset. Acceptance: ROM code becomes decode-cached *and* blockable (the
-JIT may form blocks over it); the 100M boot leg drops by >=0.4 s and the
-triangle 1B wall by >=0.45 s with byte-identical SHAs/frames/counters and a
-byte-identical ktest log. **Price first** with a same-window A/B (232e: never
-with an env-gated ablation that changes guest behavior).
-
-### Option C2: C5 trace/superblock formation, measured against `RunNonJit`
-
-2.25 s of the triangle's 6.9 s is served outside native blocks, and another
-1.1 s is `RunJitBlock` head lookup/formation/chain bookkeeping. A trace that
-chains hot successors into one native body must therefore *not* add per-block
-bookkeeping: measure `outerMs - runnerMs` before and after. Acceptance:
-`nonJitMs` drops by >=20% with every 1B SHAs/counter exact.
+**The two priced candidates are both measured out** (decisions 232a/232f): the
+host-pointer translate probe and read-only-ROM decode caching are each exact
+but **wall-neutral**, and a per-mnemonic `Step` tally shows the non-JIT time is
+spent on ordinary Mov/Add/Inc/Jcc instructions (232g), i.e. on **per-call
+dispatch of a large cold-code population** - 55,221 heads never reach the build
+threshold and 523k non-JIT runs serve ~10 members each - plus 1.1 s of
+`RunJitBlock` head lookup/formation/chain bookkeeping. A `--jit-threshold` sweep
+(1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s) shows the build-vs-interpret
+trade-off is shallow and already near its optimum. **Shape:** form a trace (a
+hot successor chain) as one native body with the state carried across blocks,
+and make the cold path cheaper *without* adding per-member or per-block
+bookkeeping - the acceptance line is `nonJitMs` down >=20% **and**
+`outerMs - runnerMs` not growing. Every 1B SHA/counter must stay exact and the
+ktest log byte-identical. If two structural iterations miss 3x engine, C7 (a
+reassessment, including the native-core option) is the next decision.
 
 ### Option B-lead (bounded finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
@@ -274,6 +271,13 @@ not start it without a measured pixel delta.
   flags ablation failed to build and measured the IL engine instead). Price
   with a stashed build and interleaved legs; `runnerMs`/`outerMs`/`nonJitMs`
   and `Host timing executeMs/advanceMs` are the stage gates.
+- **Read-only-ROM decode caching** (§232f): implemented in full (ROM windows
+  classified, no store tracking, overlay-disable flush), `nonRamSkips`
+  359,476 -> 0 and decode misses -359k, **wall and `nonJitMs` flat**, SHAs
+  identical. The boot ROM fetch was not the non-JIT cost. Reverted.
+- **Explaining the non-JIT time by mnemonic** (§232g): the tally is ordinary
+  Mov/Add/Inc/Jcc, no port I/O in the top ten - the cost is the per-call
+  dispatch of cold code, not the instruction mix or the decode.
 - **Sub-2% performance slices** - the 2026-10-22 re-open is for structural
   stages (C4-C6); C3-y, the 1024-slot xlat cache, block fusion and the
   E-series emission are measured out. A C4-C6 stage needs a same-window

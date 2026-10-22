@@ -14700,7 +14700,7 @@ performance campaign, result), `AGENTS.md` (development direction + session
 note), `docs/research-notes/next-session.md`,
 `docs/research-notes/jit-track-charter.md` (Phase 3b).
 
-## 232 C4 priced and reverted, the non-JIT wall decomposed, the interrupt poll unified, and a lost store translate slot fixed (2026-10-22, thirty-second session)
+## 232 C4 and C4b priced and reverted, the non-JIT wall decomposed to cold-code dispatch, the interrupt poll unified, and a lost store translate slot fixed (2026-10-22, thirty-second session)
 
 **Track C, stage C4 (flat memory model / soft TLB). Priced, implemented,
 measured, reverted: the data-translate probe is NOT the raw path's wall.**
@@ -14792,6 +14792,34 @@ behind a stash-able build and running **interleaved same-window legs** -
 `runnerMs`/`outerMs`/`nonJitMs` from `--jit-timing` are the stage gates, and
 `Host timing executeMs` vs `advanceMs` proves whether device time is inside
 `Cpu.Execute` or not.
+
+**232f C4b (read-only ROM decode) also measured NULL and was reverted.** With
+232b's pricing in hand the fix was implemented in full: `IReadOnlyMemoryWindow`
+on `RomDevice`/`RomAliasDevice`/`RomOverlayDevice` (their reads are pure and
+their writes are ignored), `AddressSpace.IsReadOnlyCodeWindow`, an
+`Insert(..., readOnlyWindow:)` path in the decode cache that skips the
+tracked-page guard and the store-drop bitset (nothing can ever rewrite those
+bytes), and a decode+block flush when the MCPX overlay is disabled (that is
+the one event that changes the bytes behind the window). Measured at 1B on the
+triangle: `nonRamSkips` 359,476 -> **0**, decode misses 497,806 -> **138,487**,
+hitShare 0.9143 -> **0.9747**, every SHA identical - and `nonJitMs` 2,293 ->
+2,329 (flat), wall 6.82 s vs 6.77-6.91 s (flat). **So the boot ROM's
+byte-at-a-time fetch was not what the non-JIT time was spent on**; the change
+was reverted.
+
+**232g What the non-JIT time *is* (measured).** A temporary per-mnemonic `Step`
+tally at 300M steps reads `Mov:207k Add:54k Inc:51k Jcc:36k Xor:28k Dec:26k
+Push:15k Cmp:7k Call:5k Pop:5k` - ordinary instructions, no port I/O in the top
+ten - while those ~430k Steps plus the spec runs cost ~1.5 s. And a
+`--jit-threshold` sweep (1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s) shows the
+build-vs-interpret trade-off is shallow and already near its optimum. The cost
+is therefore **per-call dispatch of a large cold-code population**: 55,221
+heads never reach the build threshold, and 523k non-JIT runs serve ~10 members
+each (277 ns/member including the call overhead), while the block/JIT paths
+add 1.1 s of head lookup/formation/chain bookkeeping on top. The only
+structural lever left in C is **C5 trace/superblock formation that does not
+grow `outerMs - runnerMs`**; it must be measured against `nonJitMs` and that
+bookkeeping line, not against a mnemonic assumption.
 
 **Gates (this session, H1, final build):** accurate 1B menu `4EF1FBF6` (sw) /
 `B6116DAE` (gl), diff 2602, violations 0, counters 33632/686/686; accurate

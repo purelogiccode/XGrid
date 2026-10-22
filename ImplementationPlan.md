@@ -129,12 +129,16 @@ usable). Current order:
    16,026, triangle 3,407 → 3,382, walls within noise, SHAs exact). The
    measured wall decomposition (§232b) puts the triangle's 6.9 s at
    `RunJitBlock` 4.53 s (native 3.42 + 1.1 bookkeeping) + `RunNonJit` 2.25 s,
-   and the non-JIT cost is *decode*: `nonRamSkips=359,476` boot-ROM fetches at
-   ~1.5 µs each, priced **0.54 s/run** (7.8% triangle). Next stages: **C4b**
-   read-only-ROM decode path (that 0.54 s), **C5** trace/superblock formation
-   measured against `nonJitMs`, **C6** device/MMIO fast path (slice 1, the
-   unified interrupt poll, landed as architecture). Each stage: same-window
-   A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters, flag-off
+   and the non-JIT cost is **not** decode: the read-only-ROM decode path
+   (C4b) was implemented in full and measured null too (`nonRamSkips`
+   359,476 → 0, wall and `nonJitMs` flat, SHAs identical) - it is per-call
+   dispatch of a large cold-code population (55,221 heads below the build
+   threshold; 523k non-JIT runs at ~10 members each) plus 1.1 s of outer
+   lookup/formation/chain bookkeeping. **C4 and C4b are closed.** Next stage:
+   **C5** trace/superblock formation measured against `nonJitMs` without
+   growing `outerMs - runnerMs`; then **C6** device/MMIO fast path (slice 1,
+   the unified interrupt poll, landed as architecture). Each stage:
+   same-window A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters, flag-off
    byte-identical, ktest log byte-identical.
 2. **Track B — bounded B3 finish.** The present path is closed (readback
    opt-in, batching, sampler parity, replace-mode composition); the only open

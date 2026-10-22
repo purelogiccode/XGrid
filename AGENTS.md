@@ -739,13 +739,17 @@ interrupt poll unified, and a lost store translate slot fixed - decisions
   timing`): `RunJitBlock` 4.53 s (native 3.42 s + 1.1 s head lookup /
   formation / chain) + `RunNonJit` 2.25 s (523k `RunSpecBlock` calls serving
   5.31M members at 277 ns each, and 489k `Step`s at 1.6 us each) + device
-  `Advance` 7 ms. The non-JIT cost is **decode**, not the mnemonics:
-  `nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
-  all inside the first 100M steps - the decode cache refuses non-RAM pages
-  (gotcha iii), so each ROM instruction fetches 15 bytes one bus read at a
-  time. **Priced at ~0.54 s/run = 7.8% triangle / 2.4% menu / ~22% of the
-  100M boot leg** - filed, not landed (below the >=10% stage gate, and the
-  fix needs a read-only-region classification + overlay-disable flush).
+  `Advance` 7 ms. **Both priced candidates for that non-JIT time measured
+  null:** read-only-ROM decode caching (implemented in full - ROM windows
+  classified, no store tracking, overlay flush - `nonRamSkips` 359,476 -> 0,
+  decode misses -359k, wall and `nonJitMs` flat, SHAs identical; reverted) and
+  a per-mnemonic `Step` tally that reads ordinary Mov/Add/Inc/Jcc. The cost is
+  **per-call dispatch of a large cold-code population** (55,221 heads below
+  the build threshold, 523k non-JIT runs at ~10 members each) plus the 1.1 s of
+  outer bookkeeping; the `--jit-threshold` sweep (1/4/8/16/64 ->
+  9.27/7.86/7.32/6.99/6.79 s) is already at its optimum. **C5 trace formation
+  measured against `nonJitMs` (without growing `outerMs - runnerMs`) is the
+  only structural lever left in C** - decisions 232f/232g.
 - **C6 slice 1 landed: one interrupt-poll contract.** `Step` and
   `RunSpecBlock` called the device model's `Acknowledge()` per instruction;
   new `XboxCpu.PollInterrupt()` (partial `XboxCpuInterrupts.cs`) loads the
