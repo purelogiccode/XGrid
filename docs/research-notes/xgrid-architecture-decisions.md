@@ -14959,6 +14959,14 @@ stays; do not remove it without a new differential.
   `Assembler` methods the emitter uses.
 - **Reaching the interpreter's `Step` cost through the decode cache** is worth
   <=250 ms (233a) and was already measured null in 232f.
+- **Slimming the per-member emitted code as a wall lever** is contradicted by
+  this session's own A/B: cutting the chain edge from ~82 to ~40 instructions
+  bought **1 ns per edge** (124M edges, -124 ms), i.e. the runner's 6.25
+  ns/member is **not front-end/instruction-count bound**. The remaining
+  per-member bookkeeping (TSC tick + EIP advance + served increment = 6 of the
+  ~20 fast-path instructions) is therefore not worth a refactor without a
+  measurement that says otherwise; a `--jit-timing` bucket A/B is the cheapest
+  way to check before touching the 14 `EmitServedIncrement` sites.
 
 **Gates (this session, H1, final build).** Accurate 1B menu golden PASS
 (sw `4EF1FBF6`, gl `B6116DAE`, diff 2602, violations 0, maxDelta 1, counters
@@ -14968,10 +14976,20 @@ anchors exact on four legs: triangle sw `B45254CA`/`7DAB63EB` (57,663,082 px),
 triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94`
 (253,998,498 px), menu gl `B06BA6E5`/`F5D61C94`. ktest smoke PASS 7/7 at
 **792,800,535** steps, suite log `CA5D3867` (40,797 B) byte-identical.
-Suite **1836** green (one transient `XGrid.Nv2a.Tests` failure on the first
-full run, green on re-run - a GL-context flake under load, not a regression).
-Format clean. No snapshot version change (host-side only: no device state, no
-guest-visible behaviour; `.xgs` stays Nv2a v8 / audio v3).
+Suite **1836 -> 1837** green (one transient `XGrid.Nv2a.Tests` failure on the
+first full run, green on re-run - a GL-context flake under load, not a
+regression). The new test is
+`RawJitTests.ChainedBlocks_CarryFlagsAcrossTheChainEdge`: a chained loop whose
+second block starts with a `Jcc`, which reads the host FLAGS directly and so
+depends on the chain entry's reload; it **fails pre-fix** (EFLAGS 2 vs 3,
+EIP 0x46 vs 0x06 when the reload is replaced by a compile-time "flags live"
+claim). Format clean. No snapshot version change (host-side only: no device
+state, no guest-visible behaviour; `.xgs` stays Nv2a v8 / audio v3).
+Engine-shape spot checks at 30M steps (triangle, HDD+DVD): `--jit --jit-exact`
+is bit-exact against the accurate control (`4D628AFE`/`D8FA4ABF`) - the lazy IL
+runner preserves the exact-mode contract - and `--jit-raw --jit-mmio` matches
+the plain raw leg (`D0493F45`/`D8FA4ABF`), so the device fast path still works
+across the new chain entry.
 
 **Methodology note (keep).** For an A/B on this host, build the baseline once
 and copy the CLI output directory (`git stash` -> build -> copy

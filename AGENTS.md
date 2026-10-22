@@ -721,7 +721,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1836 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1837 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
@@ -773,8 +773,11 @@ stage for the first time - decisions §233). Track C: -3 to -4% wall, exact.**
   sw `B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl `4F1FCBC0`/`7DAB63EB`,
   menu sw `34973510`/`F5D61C94` 253,998,498 px, menu gl `B06BA6E5`/`F5D61C94`);
   ktest smoke PASS 7/7 at **792,800,535** steps, log `CA5D3867` (40,797 B)
-  byte-identical. Suite **1836** green (one transient Nv2a GL flake on the first
-  run, green on re-run), format clean. No snapshot change (host-side only).
+  byte-identical. Suite **1836 -> 1837** green (one transient Nv2a GL flake on
+  the first run, green on re-run); the new
+  `ChainedBlocks_CarryFlagsAcrossTheChainEdge` pins the chain entry's flag
+  reload (a `Jcc`-first chained target) and fails pre-fix. Format clean. No
+  snapshot change (host-side only).
 - **Where it leaves C:** the charter's own kill criterion is met (C4 null, C5
   -3/-4%); the remaining gap to xemu is ~5.5x and the only material levers are
   the encoder (377 ns/instruction), the per-member code volume (99 instructions
