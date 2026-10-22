@@ -2,33 +2,37 @@
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §227 (the computed-mode
-shaders never compiled; the live compile gate; the seam capture was unarmed) +
-§226 (B3 slice 1) + §225 (CPU correctness campaign) + §224 (per-title renderer,
-one GPU-memory adapter, `KeyedOption`) + §223 (renderer policy seam, snapshot
-requests on the emulation thread, frontend smoke harness) + §222 (CHD title id) +
-§221 (the GPU renderer as a frontend setting) + §220 (GL sampler decode,
-replace-mode composition, frame stepping) + §219 (GL TEXFILTER parity, clear
-write masks, per-title overrides V2) + §218 (APU `NV_PAPU_XGSCNT`) + §217
-(per-title overrides + EEPROM state) + §216 (PTIMER 0.8.137) + §215
-(fixed-function lighting) + §213 (the fixed-function vertex stage, `--ffp`) +
-§212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display
-model) + §207 (corpus), `docs/compatibility.md` (matrix + harness + the gaps the
-corpus found), `docs/research-notes/usage-histogram.md` (measured NV097 /
-TEXFILTER / sampler address-mode usage),
-`docs/research-notes/nv097-coverage.md` (method-presence gap; the fixed-function
-lighting rows moved to `handled` with §215),
-`docs/research-notes/gpu-reference-map.md`,
+`docs/research-notes/xgrid-architecture-decisions.md` §229 (the `nxdk/usb`
+corpus row + the corrected H1 toolchain verdict) + §228 (the B3 row's 4.4B phase
+anchor, the `reach[...]` read-set column, the cube word lane) + §227 (the
+computed-mode shaders never compiled; the live compile gate) + §226 (B3 slice 1)
++ §225 (CPU correctness campaign) + §224 (per-title renderer, one GPU-memory
+adapter, `KeyedOption`) + §223 (renderer policy seam, snapshot requests on the
+emulation thread, frontend smoke harness) + §222 (CHD title id) + §221 (the GPU
+renderer as a frontend setting) + §220 (GL sampler decode, replace-mode
+composition, frame stepping) + §219 (GL TEXFILTER parity, clear write masks,
+per-title overrides V2) + §218 (APU `NV_PAPU_XGSCNT`) + §217 (per-title
+overrides + EEPROM state) + §216 (PTIMER 0.8.137) + §215 (fixed-function
+lighting) + §213 (the fixed-function vertex stage, `--ffp`) + §212/§210
+(TEXFILTER) + §211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display model) +
+§207 (corpus), `docs/compatibility.md` (matrix + harness + the gaps the corpus
+found), `docs/research-notes/corpus-phase-anchors.md` (a row's step count is
+part of its identity), `docs/research-notes/nxdk-usb-sample.md` (the newest
+corpus row), `docs/research-notes/computed-mode-coverage.md` (the B3 phase
+table), `docs/research-notes/usage-histogram.md` (measured NV097 / TEXFILTER /
+sampler address-mode usage), `docs/research-notes/nv097-coverage.md`
+(method-presence gap), `docs/research-notes/gpu-reference-map.md`,
 `docs/research-notes/jit-track-charter.md` (status),
 `docs/research-notes/rasterizer-inventory.md`, `tools/cpu-oracle/README.md`,
-then this file.
+then this file. (If a name above does not resolve, the file was renamed - search
+`docs/research-notes/` rather than skipping it.)
 
 ## 0. Verify the start state before touching anything
 
 ```powershell
-pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest
-git log --oneline -1        # expect: the "Merge pull request #10" commit
-git status --short          # must be clean
+pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest + MSYS2 toolchain
+git log --oneline -1        # expect: the tv229 commit ("nxdk/usb corpus row ...")
+git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
 dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
 ```
@@ -44,50 +48,51 @@ the gate scripts on H1):
 
 | leg (`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu sw`) | RAM | CPU | wall (H1) |
 |---|---|---|---|
-| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 31-54 s (load); 33.17 s measured |
+| menu (HDD + pad script) | `34973510…` | `F5D61C94…` | 31-54 s (load); 32.5 s measured |
 | menu + `--tex-filter registers` | `EE8F69FB…` | `F5D61C94…` | ~32 s |
 | menu + `--ffp` | `CC2A94DF…` | `F5D61C94…` | ~59 s (the FFP layer draws 121M more px) |
 | triangle BTFF (HDD + DVD, `--frame-first`) | `0117A5E2…` | `7DAB63EB…` | ~11.2 s |
 | triangle, plain (HDD + DVD, no `--frame*`) | `CB95C006…` | `B8EF1021…` | ~10.5 s |
-| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | ~10.9 s |
+| triangle, `scripts/raster-leg.ps1 -Workload tri` (HDD + DVD) | `B45254CA…` | `7DAB63EB…` | 11.5 s measured (frame `A1740DE0`, 68/34) |
 | triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
+| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | 7.9 s, frame `7A860ED7…` |
+| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | 24.3 s, frame `B6116DAE…` |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
 | `xgu-bump_cubemap_reflect` 3B BTFF | `DDB59317…` | `D5D38C64…` | ~12 s |
-| `xgu-bump_cubemap_reflect` 3B BTFF **`-Gpu gl -GpuReplace`** | `19D576A8…` | `D5D38C64…` | ~10.4 s; frame `DA0750EE…` (= sw), `composedFrames=7` |
+| `xgu-bump_cubemap_reflect` **4.4B** gl+replace (§228) | - | - | frame `59F1AB97…` = **4 colours** (software `36A4C2A8…`, 18,980) - open |
+| `xgu-bump_cubemap_reflect` **3.6B** gl+replace (§228) | - | - | **2 colours** vs software's 20,843 - same defect, pre-dot |
 | `xgu-vp_lighting` 3B BTFF | `162DAFF1…` | `0380C502…` | ~9.5 s |
 | `xgu-bumpenv_ripple` 5B, plain (no `--frame-first`) | `AA10223C…` | `1AB9F002…` | ~12.6 s |
+| `nxdk/usb` 1B BTFF (§229) | `ACDB5720…` | `1590C697…` | 8.2 s, display `119AFA48…` (its text) |
 
 A fast-mode **RAM** SHA is only meaningful with its exact flag set:
 `--frame-first` caps batches at 2M steps while it hunts the first flip, which
 moves interrupt delivery and therefore the RAM *and* the CPU SHA (§209e), and a
 DVD-only triangle leg never launches the disc's XBE at all (§208d - it measures
 the boot animation). Compare BTFF rows with BTFF rows and `raster-leg` rows with
-`raster-leg` rows. A `-Gpu gl` row's RAM SHA reflects the backend's own writes
-(the §220d composition writes the FBO image into guest RAM); its **frame** is
-the anchor.
+`raster-leg` rows. A `-Gpu gl` row's RAM SHA reflects the backend's own writes;
+its **frame** is the anchor.
 
 Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 `2F632483…`, menu RAM `6AB39AB0…` / CPU `3D2740B8…`; both frames `A1740DE0…` and
 `4EF1FBF6…`. GL frame fingerprints: menu `B6116DAE…`, triangle `7A860ED7…`
-(policy diff, never byte-exact). Both GL goldens were re-run **after** the
-single-adapter change (§221a/§224) and reproduce these exactly (`diff=2602` /
-`diff=27849`, `violations=0`, `maxDelta=1`, `BackendUnsupported=0`).
+(policy diff, never byte-exact; both reproduce with `diff=2602` / `diff=27849`,
+`violations=0`, `maxDelta=1`, `BackendUnsupported=0` - re-run in session 29).
 
 **The menu RAM SHAs moved in §218:** the APU `NV_PAPU_XGSCNT` register now returns
-`ep_frame_div * 32` (the reference behaviour), the dashboard reads it and stores
-the value, so every menu RAM image differs by that stored word while the CPU
-SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
-`19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
-(`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
+`ep_frame_div * 32`, the dashboard reads it and stores it (§218). `51B56687 ->
+34973510` (fast), `19FEA0EA -> EE8F69FB` (`--tex-filter registers`),
+`87BF40DA -> CC2A94DF` (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate).
 
-- **1836 tests green** (session 29 added 6: `PshCombinerReachTests` x3, the
+- **1836 tests green** (session 29 added 9: `PshCombinerReachTests` x3, the
   two-case `DescribeReach_ReportsTheWritingStages`, the live
-  `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, and two more
-  programs in the live compile gate), build/format clean, ktest XGrid leg at
-  **792,800,535** steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical;
-  not re-run in session 29 - no guest-visible change).
+  `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, two more programs
+  in the live compile gate, and `GameEntryTests` x3 for the library title id),
+  build/format clean. The ktest XGrid leg was **not** re-run in session 29 (no
+  guest-visible change; it stands at **792,800,535** steps, suite log 40,797 B,
+  SHA `CA5D3867…`).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
   and all three are settings in the Avalonia frontend (§217, §221, §223).
@@ -97,184 +102,113 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 
 ## 0b. What the last sessions landed - do not redo it
 
-1. **CPU correctness campaign (§225).** `tools/cpu-oracle/` went 333 -> 629
-   cases and found nine defects, each fixed and pinned: `PMINSW`/`PMAXSW` were
-   compared unsigned (decoded as invented `Pminuw`/`Pmaxuw`); `PSRAW`/`PSRAD`
-   saturating counts sign-filled from the low element only; `XLAT` was not
-   decoded; 16-bit `[SI]`/`[DI]` consumed a bogus disp16 (a decoder bug that
-   desynchronized the stream); x87 NaN stores flipped the sign and dropped the
-   payload; the `FUCOM` family latched IE for a quiet NaN; `FSQRT` of a negative
-   value left C2 clear; `MINPS`/`MAXPS`/`MINSS`/`MAXSS` returned the destination
-   on equal operands; and three corpus cases read an absolute low address. Rules
-   are in `tools/cpu-oracle/README.md` (page-relative cases, no SSE2 - the CPU is
-   a Pentium III). The oracle test sizes its memory from the case count.
-2. **Per-title renderer, one GPU-memory adapter (§224).**
-   `TitleOverride.Renderer` (`software`/`opengl`, null inherits) lets the
-   settings row offer `inherit`/`software`/`OpenGL` per title;
-   `XboxMachine.GpuMemory` publishes the adapter the NV2A uses (the CLI wraps
-   nothing); `NetworkOption`/`TextureFilterOption`/`RendererOption` collapsed
-   into `KeyedOption`; the Avalonia `AVLN5001` warnings are fixed.
-3. **Renderer policy seam + threaded snapshots + smoke harness (§223).**
-   `RendererPolicy.Decide`/`Describe`/`Normalize` is the pure platform policy,
-   `GraphicsBackendHost.TryAttach`/`Detach` the side effects; snapshot save/load
-   is queued and served on the emulation thread (a load resets GL backend state);
-   `tools/frontend-smoke` drives a real `EmulatorSession` headlessly. In-app
-   throughput: software 1.014B/1.021B steps vs OpenGL 1.121B/1.106B
-   (+9.8%/+8.2%), same picture, 72 MB `.xgs` round trip with GL attached.
-4. **CHD title id (§222).** `XGrid.XboxFs.XdvdfsSectorReader` walks the XDVDFS
-   volume over any `IDvdImage` (descriptor at partition sector 32, magic at
-   +0x00/+0x7EC, root table at +20/+24, `14 + nameLen` entries, the `0xFFFF`
-   sector-pad sentinel, XGD disc-offset probe list); `DiscTitleId` resolves
-   `.chd` through `ChdDvdImage.Open` + `TryReadImage(IDvdImage, …)`.
-   Cross-checked against the XISOSharp path on six real ISOs. **No CHD exists on
-   H1**, so the container hand-off is test-covered but not run end to end.
-   Doc correction: `xisosharp.md`'s trailing-magic offset is `+0x7EC`.
-5. **The GPU renderer is a frontend setting (§221).** Settings → Renderer:
-   software (default) or OpenGL. `EmulatorSession.AttachRenderer` (via
-   `GraphicsBackendHost`) creates the headless WGL context **on the emulation
-   thread** in replacement mode with `frameReadback: true`, logs the probe line,
-   and falls back to software with a logged reason on any failure (non-Windows,
-   probe, GL version). `DetachRenderer` clears `Nv2A.Backend` and disposes in the
-   `finally`. The display follows the renderer; `TryCopyScanoutFrameFromMemory`
-   reads the RAM scanout **before** the first backend frame (direct-framebuffer
-   guests that never flip). Measured at 1B: 34.8 s software vs 24.7 s OpenGL.
-6. **GL sampler decode + composition (§220).** The seam carries resolved
-   `SamplerWrapU/V` (0 wrap, 1 mirror, 2 clamp, 3 clamp-to-border), `BorderColor`
-   and the resolved TEXFILTER pair from `ResolveTextureFilter`; the shader emits
-   `SampleTap`/`SampleTent`/`SampleConvolved` behind
-   `uTexBilinear`/`uTexConvolution`/`uTexBorder`, the PROJECT2D w divide and the
-   clip origin on both axes. A declined replace-mode draw composes the FBO into
-   guest RAM (`ColorSurfaceAddress`/`ColorPitch`) and the frame continues in
-   software; **depth/stencil are not composed**. Track P frame stepping (F7 /
-   Shift+F7, 8M-instruction budget).
-7. **§219 (previous session).** GL TEXFILTER parity (gap 7), clear masks
-   (`ClearMaskLiveTests`), per-title overrides V2 keyed by `title:XXXXXXXX`, and
-   the original flip-drop composition (§219b, superseded by §220d).
-8. **§228/§229 (last session).** The B3 row's phase anchor (4.4B), the
-   `reach[...]` read-set column on the combiner histogram, the cube word lane,
-   the library rows' certificate title id, and the `nxdk/usb` corpus row with the
-   corrected H1 toolchain verdict (MSYS2 builds nxdk samples:
-   `pwsh -File scripts/build-nxdk-samples.ps1 -Samples usb`).
+1. **The B3 row's real phase + read set (§228).** `xgu bump_cubemap_reflect`
+   runs its dot programs at **4.4B** (`tm=0332`/`1332`, 19.9M/12.4M px), not at
+   3B. The `--gpu-time` combiner rows print `tm=`, `sf=` and
+   `PshCombiner.DescribeReach()` (`reach[tx= stg= src= consts= flags= lerp=]`).
+   The cube word lane reads guest RAM through the direct lane instead of
+   requiring the 32-entry carried window. The GL frame at that phase is still
+   **4 colours** (2 at 3.6B): a computed black panel - see Option B-lead.
+2. **`nxdk/usb` is a corpus row and H1 builds nxdk rows (§229).**
+   `host-doctor.ps1` now checks MSYS2 (`C:\msys64`) as well as PATH; nxdk is at
+   `D:\nxdk` (`a6c31ee`). `scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
+   The sample enumerates the hub with its own USB stack and prints
+   `Device connected on USB hub port 1 (VID: 0409 PID: 55aa)` on the display
+   export.
+3. **Library rows carry the certificate title id (§228).** `GameEntry.TitleId`
+   via `XGrid.Host.DiscTitleId` (the same resolver the per-title overrides use),
+   `TitleIdText`/`HasDistinctTitleId`; the Library view shows `Title XXXXXXXX`
+   only for a distinct id (homebrew shares the `FFFF0002` placeholder).
+4. **CPU correctness campaign (§225).** Nine interpreter/decoder fixes from a
+   333 -> 629-case oracle, each pinned; rules in `tools/cpu-oracle/README.md`.
+5. **Per-title renderer, one GPU-memory adapter (§224).**
+   `TitleOverride.Renderer`; `XboxMachine.GpuMemory`; `KeyedOption` collapse.
+6. **Renderer policy seam + threaded snapshots + smoke harness (§223).**
+   `RendererPolicy.Decide`/`Describe`/`Normalize`; snapshot save/load queued onto
+   the emulation thread; `tools/frontend-smoke` drives a real `EmulatorSession`.
+7. **CHD title id (§222)** (`XdvdfsSectorReader` over any `IDvdImage`) and the
+   GPU renderer as a frontend setting (§221). **§220**: GL sampler decode,
+   replace-mode one-writer composition, frame stepping. **§219**: GL TEXFILTER
+   parity, clear masks, per-title overrides V2. **§226/§227**: the B3 seam
+   state, the live compile gate, the armed texel capture.
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Menu `gl+replace`**: GL submission ~1.05 s, CPU engine ~17 s, block builds
+**Menu `gl+replace`**: GL submission ~0.7 s, CPU engine ~17 s, block builds
 ~1.4 s, interpreter ~2.5 s, boot ~2 s, readback ~0.8 s only when a frame is
-captured. **Menu `sw` (the frontend default)**: ~34 s at 1B, of which the
-software rasterizer is ~11.5 s. **Triangle `gl+replace`** ~7.5 s (10.9 s sw on
-gate media). Track C stays frozen.
+captured. **Menu `sw` (the frontend default)**: ~32 s at 1B, of which the
+software rasterizer is ~11.5 s. **Triangle `gl+replace`** ~7.5-7.9 s (11.5 s sw
+on gate media). Track C stays frozen.
 
 **Through the real frontend session (H1, 1B, gate media, §221d/§223):** software
 **34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black pixel
-count; the 40 s-pair throughput probe reads +9.8%/+8.2%. The app is still
-`Run(65536)`-batched with a 30 Hz display capture, so the remaining product cost
-is the same CPU engine the CLI measures.
+count; the 40 s-pair throughput probe reads +9.8%/+8.2%.
 
 ## 2. Recommended next session - pick one
 
 ### Option B-lead (Track B/E, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
 The row's own dot programs run at **4.4B** and the GL frame is the clear plus a
-black panel; the 3.6B leg shows the same with no dot program at all. This is the
-next measured slice (see Option B's "Slice 3" note for the leads and the
-acceptance); it needs a per-fragment differential, so budget a probe leg first.
+black panel; the **3.6B** leg shows the same with no dot program at all
+(`tm=11111C`), so the defect predates the computed modes. Leads already visible
+in the state: the 3.6B program is one stage whose slot-0 texture and final lerp
+(`f0=00000004`, `f1=00001400`) decide the panel; the 4.4B dot records put the
+reflected colour in **alpha** through BLUE_TO_ALPHA into R0, which only the
+**MUX-lsb** select consumes (the shader's mux expression reads R0 regardless),
+and their final lerp (`f0=0C0B000F`, `f1=0C011180`, `sf=FF3F3F3F`) is not
+implemented at all. **Cheapest first step:** a per-fragment colour/depth
+differential on the 3.6B panel program - dump the CPU's `FillTrianglePsh`
+texel/combiner values for one panel fragment and compare them with the shader's
+`t0`/stage outputs (a temporary probe, stripped before any A/B). Acceptance: the
+4.4B GL replace frame gains the panel's colours (well above 4 colours, black
+share down toward software's 0%) with both 1B GL goldens unchanged.
 
 ### Option A (Track P/B, filed limit): the GL renderer cannot show a direct-framebuffer guest
 
-The renderer presents the **flipped** surface, so nxdk `gamma`/`hello` (which
-write the framebuffer and never flip, §208) show nothing in GL mode while the
-software renderer shows their scanout. `TryCopyScanoutFrameFromMemory` already
-exists (§221c) but is only used *before* the first backend frame. Fix shape: when
-the guest's PCRTC start/pitch describe a buffer the backend did not render, fall
-back to the software scanout for that frame instead of dropping it (the display
-capture is a host-side read, so this is not "mixing" in the guest-visible sense,
-but it needs a deliberate policy statement and a caretaker for
-`presentUploads`). Acceptance: `boot-to-first-frame.ps1 -Sample gamma -Gpu gl
--GpuReplace` shows the same colours as the `-Gpu sw` row; the two gate titles' GL
-frames stay byte-identical.
+The renderer presents the **flipped** surface, so nxdk `gamma`/`hello`/`usb`
+(which write the framebuffer and never flip, §208) show nothing in GL mode while
+the software renderer shows their scanout. `TryCopyScanoutFrameFromMemory` exists
+(§221c) but is only used *before* the first backend frame. Fix shape: when the
+guest's PCRTC start/pitch describe a buffer the backend did not render, fall back
+to the software scanout for that frame instead of dropping it (the display
+capture is a host-side read; it needs a deliberate policy statement and a
+caretaker for `presentUploads`). Acceptance: `boot-to-first-frame.ps1 -Sample
+gamma -Gpu gl -GpuReplace` shows the same colours as the `-Gpu sw` row; the two
+gate titles' GL frames stay byte-identical.
 
-### Option B (Track B): B3 method coverage - zero `unsup` rows
+### Option C (Track E): the remaining corpus gaps
 
-The GL backend declines a deliberate list of texture modes
-(`CheckModesUnsupported`: DOT_PRODUCT/DOT_ZW/DOT_ST, DOT_REFLECT_DIFF/SPEC,
-DOT_STR3D/CUBE, BUMPENVMAP/LUM, and the cube/volume success paths). At 1B the
-corpus rows are all in the boot animation with `unsupported=0`; the cubemap row
-at **3B** is the one that trips, and `unsupTex[m0C=14 m11=28]` (§221e) says it is
-**two** mode families: DOT_REFLECT_SPECULAR on stage 3 and DOT_PRODUCT on two
-earlier stages. Honouring them in GLSL needs a cube-texture upload path plus the
-`ResolveDotReflection`/`TrySampleTextureCube` semantics transcribed. Measure
-first (the mode histogram exists now) before building it.
-
-**Slice 1 landed (§226): the computed state is on the seam and the shader has
-the math.** `PgraphTextureSlot` now carries the cube face extent (TEXFMT
-`BASE_SIZE`, never TEXIMAGERECT), the face stride and the swizzle masks;
-`PgraphDrawInfo` carries the eye position (`EyeX/Y/Z`, XF constant 0x38); the
-shader transcribes the dot chain, the sign/HILO dot maps, the face select, the
-tent-clamped cube sample and the specular reflection, all as uniforms (no
-recompile on a mode switch), and its texel decode is table-driven from
-`DescribeTextureDecode` **proven equal to `DecodeTextureTexel`** for every
-supported format. **The modes are still declined and counted**: the one missing
-piece is the guest texel word (`TexelWord()` is the hole), which needs a
-word-buffer upload per draw command - attempted and reverted unvalidated rather
-than shipped half-working. That buffer is the whole next slice; acceptance is
-the row at 3B reporting `unsupported=0` with its GL replace frame still
-`DA0750EE…` (= software) and both 1B GL goldens unchanged.
-
-**Slice 3 landed (§228): the row runs the dot programs and the GL frame is
-black.** Sample the row at **4.4B**, not 3B: there the frame is
-`stages=8 c=00011108 tm=0332` + `stages=7 c=00011107 tm=1332` (PROJECT2D +
-DOT_PRODUCT/CUBEMAP/REFLECT_SPECULAR). GL replace presents **4 colours / 34.4%
-black** against software's 18,980 / 0% (`unsupported=0 fatal=0
-composedFrames=0`), and at 3.6B the plain panel program alone renders **2
-colours** - so the black is a *computed* colour in the fragment path, not a
-decline, and it predates the dot stages. Landed: the cube word lane now reads
-RAM through the same direct lane as the HILO inputs (`guestWordDraws`),
-`FindPooledWord`, the two measured programs compiled live, and the `reach[...]`
-read-set column on the `--gpu-time` combiner rows. **Next probe, cheapest
-first:** a per-fragment colour/depth differential on the 3.6B panel program
-(sample the CPU's `FillTrianglePsh` values for the panel's texel and compare the
-shader's `t0`/stage outputs), then the two shader gaps already visible in the
-words - BLUE_TO_ALPHA into `R0.a` feeding the **MUX lsb** select (the shader's
-mux expression reads R0 even when the selected stage wrote MUX to R1) and the
-final lerp's negation (`f0=0C0B000F`/`f1=0C011180`, `sf=FF3F3F3F`): neither is
-implemented. Acceptance: the 4.4B GL replace frame gains the panel's colours
-(colours well above 4, black share down) with both 1B GL goldens unchanged.
-
-### Option C (Track E): the two remaining corpus gaps
-
-- **Gap 10, `bumpenv_ripple`'s app state** (§211): diagnosed to a colour-clear
-  frame with a nearer-than-everything zeta clear; needs the gap-9 oracle to know
-  what state the reference ends up in. The cheapest start is gap 9 (xemu
-  screendump over stdio/QMP - `scripts/xemu-screendump.ps1` has the working
-  pieces and the open read-loop problem), then a per-frame differential.
-- **Second-emulator oracle** (gap 9): `xemu -display xemu` + F12 screenshot, or
-  the redirected-stdio QMP read loop. This one unlocks both gap 10 and a menu
-  oracle.
-- **The cull winding on `bumpenv_ripple`'s quads** (§211f), and the remaining
-  DXT/paletted/mipmapped texture paths (unobserved by the corpus).
+- **A USB hot-plug row** (§229 filed): `nxdk/usb` prints only on connect; a
+  disconnect event needs a hot-plug hook on `UsbHub` (the pad-script analogue),
+  then the same sample asserts the disconnect line too.
+- **Gap 10, `bumpenv_ripple`'s app state** (§211): needs the gap-9 frame oracle
+  (xemu screendump - `scripts/xemu-screendump.ps1` has the working pieces).
+- The cull winding on `bumpenv_ripple`'s quads, and the remaining DXT/paletted/
+  mipmapped texture paths (unobserved by the corpus).
 
 ### Option D (Track B): replace-mode depth
 
-The composition policy is colour-only: a frame that mixes GL and software
-writers keeps guest zeta from the software half, so the GL geometry's depth is
-lost. Composing depth is possible (read the depth/stencil renderbuffer and write
-it into guest zeta in the surface's Z16/Z24S8 layout) but needs its own
-differential - `bumpenv_ripple` (gap 10) or a synthetic seam test. Do not start
-it without a measured pixel delta.
+The composition policy is colour-only; a mixed frame keeps guest zeta from the
+software half. Composing depth is possible but needs its own differential. Do
+not start it without a measured pixel delta.
 
-### Filed, lower value - do not start while A/B are open
+### Filed, lower value - do not start while B-lead is open
 
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
-- Title-id display in the library rows (the CHD reader landed in §222).
-- Faithful VGA read-back, texture fingerprint exactness, the 2-pixel k1
-  interleave - all measured below the noise floor (§204/§205/§208).
-- A GL *window* renderer in the frontend: the offscreen FBO + readback path is
-  the product path; a second window would need input routing for no gain.
-- Mirror mode in the frontend: it still runs the software rasterizer for every
-  draw, so it buys no speed.
+- A GL *window* renderer in the frontend (the offscreen FBO + readback path is
+  the product path).
+- Mirror mode in the frontend (it still runs the software rasterizer).
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
+  programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
+  (§228, `corpus-phase-anchors.md`).
+- **Requiring the seam's carried window to contain a cube face** - the window
+  holds 32 words, a 256² face holds 65,536 texels; the word at the address the
+  draw samples is the one the hardware read (§228).
+- **Treating an 8-stage combiner record as one program** - check `reach[...]`:
+  a stage whose output words write no register contributes nothing (§228).
 - **Reading the convolution kernel field alone as "convolve"**: MIN must be
   `CONVOLUTION_2D_LOD0` (7) (`psh.c:204`); `2/2/1` is a tent (§210a).
 - **Expecting a tent to change a gate title's frame** - both sample at texel
@@ -285,37 +219,23 @@ it without a measured pixel delta.
 - **Reading the raw texture-address word** - 1 is wrap, 2 is mirror, 4 is
   border (§220b).
 - **DVD-only triangle legs** - they never launch the disc XBE (§208d).
-- **"A GL backend needs a foreign window, so it cannot be embedded"** - the
-  headless backend is an offscreen FBO; the frontend uses it with no window and
-  no conditional compilation (§221).
 - **Running snapshot save/load on the UI thread** - a load resets backend state
-  (GL) and the context belongs to the emulation thread (§223b).
-- **Adding SSE2 opcodes to the CPU oracle** - the Xbox CPU is a Pentium III, so
-  the `66`-prefixed 128-bit packed-integer forms, `PADDQ`/`PSUBQ`/`MOVDQA`/
-  `PSHUFD` and `MOVD xmm` are *correctly* `UnsupportedInstruction` (§225).
-- **Reading absolute low addresses in an oracle case** - the CI harness reuses
-  one memory image across cases while the oracle maps a fresh one, so such a
-  case measures the previous case. Keep every case page-relative (§225).
-- **Treating an x87 quiet-NaN compare as invalid** - `FUCOM`/`FUCOMI` only
-  signal for a *signaling* NaN (§225).
+  (§223b).
+- **Adding SSE2 opcodes to the CPU oracle** - the Xbox CPU is a Pentium III
+  (§225). **Reading absolute low addresses in an oracle case** (§225).
 - A texture-buffer object for the per-triangle block; state-fingerprint batch
   boundaries; per-draw probes (sample 1-in-64 or ablate).
 - O5 counter batching, C3-y bookkeeping, the 1024-slot data translate cache,
   relay/E-series emission, block fusion - all measured, all out.
-- **"Mode 0 means the draw is degenerate"** - the dashboard's 22,207 mode-0
-  draws render a real background layer (§213c).
-- **Assuming a lit fixed-function draw implies an enabled light** - every leg
-  measured so far has all lights off (§215b).
+- **"Mode 0 means the draw is degenerate"** (§213c). **"A lit fixed-function
+  draw implies an enabled light"** (§215b). **Indexing a hashtable by
+  `HashSet.Add()`'s return value** (it returns `bool`) - use a sorted hash.
 - **Trusting `glClear` to match a PGRAPH clear** - it honors the draw write
   masks; the software fill does not (§219c).
-- **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
-  programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
-  (§228, `computed-mode-coverage.md`).
-- **Requiring the seam's carried window to contain a cube face** - the window
-  holds 32 words, a 256 face holds 393,216; the word at the address the draw
-  samples is the one the hardware read (§228).
-- **Treating an 8-stage combiner record as one program** - check `reach[...]`:
-  a stage whose output words write no register contributes nothing (§228).
+- **`Get-Command clang` proving the nxdk toolchain is missing** - it only reads
+  PATH; MSYS2 installs under `C:\msys64` (§229).
+- **Passing a quoted comma list to `-Samples`** - PowerShell binds it as one
+  name (`"mesh,gamma"`); use `@("mesh","gamma")`.
 
 ## 4. Rules (non-negotiable)
 
@@ -342,11 +262,11 @@ it without a measured pixel delta.
   is read-only. Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v8, audio v3).
-- Write it up: a decisions section (§226+) with the measured table, charter +
+- Write it up: a decisions section (§230+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
-## 5. Host state - two machines (2026-10-21)
+## 5. Host state - two machines (2026-10-22)
 
 **Development runs on two machines sharing this Dropbox tree.** Their
 fingerprints live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before
@@ -357,12 +277,11 @@ store (`scripts/refs-manifest.ps1 -Verify`).
   (keep media copies on D: anyway). The nxdk toolchain is **installed** inside
   MSYS2 (`C:\msys64`: clang, lld, llvm-dlltool, make, bison, flex, cmake) with
   nxdk at `D:\nxdk` (`a6c31ee`), so nxdk corpus rows **do** build here:
-  `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")` (a quoted comma
-  list binds as one name).
-- **Walls on H1 at 1B (fast mode, quiet host):** triangle ~10.5-11.2 s sw /
-  ~7.5 s `gl+replace`; menu ~33 s sw / ~24 s `gl+replace` (frontend session
-  34.8 s sw / 24.7 s gl). Treat these as ratios within one window, never as
-  absolutes across hosts.
+  `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
+- **Walls on H1 at 1B (fast mode, same window as session 29):** triangle
+  11.5-12.2 s sw / 7.9 s `gl+replace`; menu 32.5-33.0 s sw / 24.3 s
+  `gl+replace`. Treat these as ratios within one window, never as absolutes
+  across hosts.
 
 ## 6. Commands
 
@@ -374,18 +293,20 @@ dotnet test  XGrid.sln -c Release --nologo --no-build
 dotnet format XGrid.sln --no-restore
 dotnet format XGrid.sln --verify-no-changes --no-restore
 
-# gates
+# gates (pass the HDD; the default path in the scripts may not exist on H1)
 pwsh -File scripts/gpu-slice1-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/gpu-slice2-triangle-golden.ps1 -Hdd wt-data\chain-199l\hdd.qcow2
 pwsh -File scripts/ktest-smoke.ps1 -SkipXemu
 
-# corpus / per-sample frames
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3000000000
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -TexFilter registers
+# corpus / per-sample frames (mind the phase anchor)
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 4400000000
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps 3600000000 -Gpu gl -GpuReplace
+pwsh -File scripts/boot-to-first-frame.ps1 -Sample usb -Steps 1000000000
 pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace -TexFilter registers
-pwsh -File scripts/boot-to-first-frame.ps1 -Sample xgu-spheremap_ffp -Steps 3000000000 -Ffp
 pwsh -File scripts/raster-leg.ps1 -Workload tri -TexFilter legacy
+
+# nxdk rows
+pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")
 
 # CPU differential
 python tools/cpu-oracle/oracle.py --list
@@ -402,7 +323,7 @@ dotnet run --project tools/frontend-smoke -- --renderer opengl
 flipStaleUploads= composedFrames= composedPixels= composedDraws= batchCalls=
 batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
 `unsupTex[...]`, `readback=on|off`, `methods=`,
-**`--gpu-time` combiner rows now carry `tm=` / `sf=` / `reach[tx=… stg=… src=…
+**`--gpu-time` combiner rows carry `tm=` / `sf=` / `reach[tx=… stg=… src=…
 consts=… flags=… lerp=…]`** (§228; `PshCombiner.DescribeReach`),
 **`filters=<min>/<mag>/<conv>`**, **`fixedFn=` / `fixedFnLit=` /
 `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
@@ -411,5 +332,6 @@ consts=… flags=… lerp=…]`** (§228; `PshCombiner.DescribeReach`),
 `XGRID_RAW_CHAIN=0`, `XGRID_RAW_SKIP_HEADS`,
 `XGRID_BLOCK_TRACE[_FROM/_TO/_HEAD]`, `XGRID_SLOW=1`, `XGRID_RAW_DUMP=1`,
 `--jit-timing`, `--jit-tally`, `--bench`, `--frame-first`, `frames=`/`pcrtc=` on
-the `Frame` line, `--pgraph <path> --pgraph-max <n>`, `--eip-hist`,
+the `Frame` line, `--frame-display` (the product surface - the only one that
+shows `debugPrint` output), `--pgraph <path> --pgraph-max <n>`, `--eip-hist`,
 `--eeprom-out`, and the frontend's `Renderer:` power-on line.
