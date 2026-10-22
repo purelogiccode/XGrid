@@ -123,17 +123,17 @@ better** (operator decision 2026-10-22). Hard rules:
    SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-22 late, 1B fast mode, H1):** menu 20.8-21.0 s
-`gl+replace` / 30.7 s sw (raster ~11.5 s); triangle 6.77 s `gl+replace` /
-10.6 s sw. **The triangle's wall is decomposed (decisions §232b):**
-`RunJitBlock` 4.53 s (native 3.42 + 1.1 head lookup/formation/chain) +
-`RunNonJit` 2.25 s (523k spec runs at 277 ns/member + 489k `Step`s at 1.6 µs)
-+ device `Advance` 7 ms. The non-JIT cost is *decode*: 359,476 boot-ROM
-fetches (`0xFFFFFFxx`, all in the first 100M steps) at ~1.5 µs each because
-the decode cache refuses non-RAM pages — **priced 0.54 s/run (7.8% of the
-triangle wall)**. **C4's host-pointer probe measured NULL and was reverted**
-(§232a). xemu triangle ≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈ 733M
-steps, so the real-time band is 1.36 s at 1B. ktest 2B is already ahead
+**Position (2026-10-22 late, after §237, 1B fast mode, H1):** menu 20.16 s
+`gl+replace` / 30.1 s sw (raster ~11.2 s); triangle 6.24 s `gl+replace` /
+10.34-10.42 s sw. **The triangle's wall is decomposed (decisions §233a, §237):**
+`RunJitBlock` 3.98 s (native 3.24 + 0.75 head lookup/formation/chain, ~0.68 of
+it Iced `Assemble`) + `RunNonJit` 2.19 s (33k `RunSpecBlock` runs at ~375 ns
+per member + 136k `Step`s at ~1.3 µs) + device `Advance` 6 ms. **The boot ROM is
+no longer part of that:** its fetches are a cached image-window class and run as
+blocks (`nonRamSkips` 359,476 → 0, §237), so the boot phase is 2.04 s of the
+6.24 s wall (was 2.28). **C4's host-pointer probe measured NULL and was
+reverted** (§232a). xemu triangle ≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈
+733M steps, so the real-time band is 1.36 s at 1B. ktest 2B is already ahead
 (XGrid 9-10 s vs xemu 15 s). Report ns/served member + wall per presented
 frame, not 1B walls alone, and price stages with stashed interleaved A/B legs
 (§232e).
@@ -721,10 +721,73 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1857 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1863 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
+- **§237 (2026-10-22 late): the boot ROM is a cached, blocked image window.**
+  `IImmutableImageDevice` + `AddressSpace.TryGetImmutableImageWindow` classify
+  flash/BIOS/mirror/overlay fetches; the decode cache holds them in a key set
+  with no store path and drops them wholesale on the host actions that move an
+  image; blocks form over them (and re-form when the decode defaults move with
+  the CPU mode). Measured **-6.4% triangle `gl+replace`** (6.672 -> 6.242 s) /
+  -1.5% menu / -10.6% on the 100M boot phase, `nonRamSkips` 359,476 -> 0,
+  `nonJitCalls` 523k -> 169k, every 1B SHA/counter/frame byte-identical. It also
+  **repriced the "superblock for the boot" lever out** (the ROM share of the
+  non-JIT population is 9%, not 100%); the largest non-JIT line is now
+  `RunSpecBlock` at ~375 ns/member.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-seventh; the boot ROM is now a cached, blocked image
+window - the §2 "superblock for the boot" lever measured at -6.4% and repriced -
+decisions §237). Track C; one slice, every gate anchor byte-identical.**
+
+- **What was missing.** `DecodeCache` refused every physical above
+  `MaxTrackedPhysical` (0x20000000) because its store-invalidation bitset only
+  indexes base RAM, so the MCPX boot ROM at `0xFFFFFFxx` was never cached
+  (`nonRamSkips=359,476` at 1B, all in the first 100M steps) and `FormJitBlock`
+  could not walk one member there - every ROM instruction paid a `Step` (~2 us).
+- **Landed.** A new `IImmutableImageDevice` marker on `RomDevice`/`RomAliasDevice`/
+  `RomOverlayDevice`; `AddressSpace.TryGetImmutableImageWindow` accepts a window
+  only when the winning region (priority-aware, so the MCPX overlay over the flash
+  alias resolves correctly) is such a device; the cache holds those decodes in a
+  key set with **no store path** (`FlushImmutableImages`), a store into a recorded
+  window drops them conservatively, the overlay-disable event calls the narrow
+  `InvalidateDecodeCacheImageWindow`, `Reset`/snapshot load reach it through
+  `Mmu.Flush`, and `RunJitBlock` **drops a block whose decode defaults no longer
+  match** the current mode (`JitBlockCache.NoteStale` also clears the memo slot)
+  so a 16-bit real-mode block at a head later fetched in 32-bit re-forms instead
+  of yielding forever.
+- **Measured (interleaved 1B A/B, gate media).** triangle `gl+replace` 6.672 ->
+  **6.242 s (-6.4%, 3/3)**, menu `gl+replace` 20.456 -> **20.158 s (-1.5%, 3/3)**,
+  triangle `sw` -0.7% (2/3, rasterizer-bound), 100M boot phase 2.276 -> **2.035 s
+  (-10.6%)**. `nonRamSkips` 359,476 -> 0, one-instruction non-JIT runs 434,309 ->
+  136,149, `nonJitCalls` 523,062 -> 169,430, `nonJitMs` 2291 -> 2078, decode
+  `hitShare` 0.9143 -> 0.9747, `imageFills=157`. **The repricing:** §2's ceiling
+  assumed all 3.65M non-JIT instructions were ROM fetches; 317k are (9%), so the
+  lever was worth 6.4%, not 8-13% - the boot's remainder is 55,215 RAM heads
+  below the 16-visit build threshold (an Iced formation price, §234e).
+- **Gates.** Accurate 1B menu slice-1 golden PASS (sw `4EF1FBF6`, gl `B6116DAE`,
+  diff 2602, violations 0, counters 33632/686/686) and triangle slice-2 PASS
+  (sw `A1740DE0`, gl `7A860ED7`, diff 27849, 2706/68/34). **All four fast 1B
+  anchors byte-identical** (triangle sw `B45254CA`/`7DAB63EB`, triangle gl
+  `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94`, menu gl
+  `B06BA6E5`/`F5D61C94`; pixels 57,663,082 / 253,998,498). ktest smoke PASS 7/7
+  at **792,800,535** steps, log `CA5D3867` (40,797 B) byte-identical. Corpus spot
+  checks reproduce `nxdk/usb` 1B `ACDB5720`/`1590C697`, `xgu-vp_lighting` 3B
+  `162DAFF1`/`0380C502`, `xgu-bump_cubemap_reflect` 3.6B `5ACD06FF`/`C848610E`.
+  The strongest exactness leg: 1B `--decode-cache --decode-verify` (interpreter
+  plus the cache, the JIT bails under verify) reproduces the **accurate anchors**
+  `812EA159`/`2F632483` with `verifyFailures=0`. Suite **1857 -> 1863** (5 of the
+  6 new tests fail on the pre-change source). Format clean. Host-side only: no
+  snapshot version change (Nv2a v9, audio v3 unchanged).
+- **Trap recorded (§237 §4).** A fast-mode RAM SHA can move mid-boot with no
+  semantic change: `--jit-spin` counts store-free STI *blocks*, so a different
+  block population moves where device time is lumped. This session's change moves
+  the triangle's 99.5M-step value and heals by 1B; the base build reproduces it by
+  changing `--jit-threshold` alone. Diff with `--jit-spin` off before diagnosing.
+- **Next.** `RunSpecBlock`'s ~375 ns/member (~2.0 s of the 6.24 s triangle wall) is
+  the largest non-JIT line and the only remaining C item that is neither measured
+  null nor priced out - `next-session.md` §2.
 
 **Session 2026-10-22 (thirty-sixth; the GL backend computes cube maps by decoding
 the guest's faces into a host array texture, and compatibility gap 12 is closed -

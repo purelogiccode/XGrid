@@ -15337,3 +15337,162 @@ dispatch).
 - `src/XGrid.Nv2a/IPgraphBackend.cs` - `PgraphTextureSlot.CubeSamplingReady`
   (`CubeWidth/Height` + `CubeFaceStride`, which is 0 for a format the software
   cube sampler does not back) and `PgraphGuestTexelSet.Empty`.
+
+## 237 Track C: the boot ROM is a cached, blocked image window - the §2 "superblock" lever measured at 6.4% and repriced (2026-10-22, thirty-seventh session)
+
+**The decode cache now caches instruction fetches from immutable image windows
+(flash/BIOS, its mirror, the MCPX ROM overlay), and the JIT forms blocks over
+them.** That closes the last "uncacheable fetch" class in the engine
+(`nonRamSkips` 359,476 -> 0 at 1B) and removes the boot ROM's per-instruction
+`Step` population (434,309 one-instruction non-JIT runs -> 80,531 at 100M). The
+measured wall gain is **-6.4% on the triangle `gl+replace` leg** and -1.5% on the
+menu, with every 1B SHA/counter/frame byte-identical; the §2 ceiling estimate
+(8% `sw` / 13% `gl`) was wrong because it assumed *all* non-JIT instructions were
+ROM fetches when 9% of them are.
+
+### 1. What was missing, and what the price actually was
+
+`DecodeCache` refused every physical `>= MaxTrackedPhysical (0x20000000)` because
+its store-invalidation bitset only indexes base RAM, so the MCPX boot ROM at
+`0xFFFFFFxx` was never cached (`nonRamSkips=359,476` at 1B, all in the first
+100M steps) and `FormJitBlock` could not walk a single member there - every ROM
+head bailed transiently, and each ROM instruction cost one `Step` (~2 us).
+
+`next-session.md` §2 Option A (ii) priced the lever as "if blocks served those
+3.65M non-JIT instructions at ~10 ns, the boot loses ~0.85 s = 8% `sw` / 13%
+`gl+replace`". **That arithmetic silently assumed 100% of the non-JIT population
+was ROM.** Measured this session at 100M steps: of 3,654,056 non-JIT
+instructions, **317k are ROM**; the other 3.34M are RAM cold code served by
+`RunSpecBlock` (12,804 runs of 65-256 members). The ROM share is 9%, so the
+lever's ceiling was ~0.43 s, not 0.85 s - which is exactly what it delivered.
+
+### 2. The design
+
+- **Classification, not a range test.** `AddressSpace.TryGetImmutableImageWindow`
+  consults the region table and accepts a window only when its device implements
+  the new `IImmutableImageDevice` marker (`RomDevice`, `RomAliasDevice`,
+  `RomOverlayDevice`) *and* no higher-priority region owns the address (the MCPX
+  overlay sits over the flash alias at `priority: 1`). A store to MMIO therefore
+  never looks like an image window, which matters: `NoteStorePhysical` runs on
+  every guest store.
+- **A class of its own in the cache.** Image entries live in `_imageKeys` (a key
+  set, not the reverse physical index) and are dropped wholesale by
+  `FlushImmutableImages()`. They are never in `ActivePageBits`, so the C3 raw
+  store guard is untouched.
+- **Store path.** A guest store into a recorded image window calls the same
+  wholesale flush. The devices ignore writes today (`RomDevice.Write` is a no-op;
+  the flash command set is Phase 6), so the store cannot change the bytes -
+  dropping the entries is over-invalidation by design and costs one window test
+  per store when no image entry exists (the common case, one field read).
+- **Host actions that move an image** flush explicitly: the MCPX overlay being
+  disabled (`XboxMachine.OnRomOverlayDisabled`, the exact `0xFFF00000..0x100000000`
+  flip), `Reset` (it re-enables the overlay; `Cpu.Reset -> Mmu.Flush` already
+  clears the cache), and snapshot load (same path).
+- **Mode changes re-form.** A block's decode defaults are part of its identity,
+  but the head cache is keyed by linear address only: a 16-bit real-mode block at
+  `0xFFFFFFxx` would be "served" at the same head after CS.D flips to 32-bit and
+  yield forever. `RunJitBlock` now drops the mismatched block
+  (`JitBlockCache.NoteStale`, which also clears the direct-mapped memo slot) so
+  the next visit re-forms it under the current mode.
+
+### 3. Measured (H1, gate media, 1B unless noted; interleaved pairs)
+
+| leg | base | new | delta | SHAs |
+|---|---|---|---|---|
+| triangle `gl+replace` | 6.672 / 6.758 / 6.564 s | 6.242 / 6.236 / 6.410 s | **-6.4%** (3/3) | `4F1FCBC0`/`7DAB63EB` both |
+| triangle `sw` | 10.543 / 10.361 / 10.421 s | 10.343 / 10.008 / 10.418 s | -0.7% (2/3, noise) | `B45254CA`/`7DAB63EB` both |
+| menu `gl+replace` | 21.453 / 20.328 / 20.456 s | 20.168 / 20.012 / 20.158 s | -1.5% (3/3) | `B06BA6E5`/`F5D61C94` both |
+| menu `sw` | (single) 30.1 s | - | - | `34973510`/`F5D61C94` |
+| boot phase, 100M `gl+replace` | 2.276 s | 2.035 s | **-10.6%** | RAM `08B3760F` -> `A52EBE41` (fast-mode spin drift, see 4) |
+
+Engine shape at 1B (triangle `gl+replace`, diagnostic on), before -> after:
+
+| counter | base | new |
+|---|---|---|
+| `nonJitMs` | 2291 | **2078** (2190 with `--jit-timing` on) |
+| `nonJitCalls` | 523,062 | **169,430** (-68%) |
+| `nonJitInstructions` | 5,796,990 | 5,478,026 |
+| `outerMs` | 4242-4297 | 3952-4310 |
+| `calls` (RunJitBlock entries) | 558,578 | 204,953 |
+| `rawServed` | 543,018,321 | 543,337,249 |
+| decode `misses` / `nonRamSkips` | 497,806 / 359,476 | **138,487 / 0** |
+| decode `hitShare` | 0.9143 | 0.9747 |
+| `imageFills` / `imageEntries` | n/a | 157 / 0 |
+| non-JIT run sizes (`--jit-tally`) | 434,309 / 289 / 888 / 1,617 / 12,669 | 136,149 / 877 / 4,179 / 6,872 / 21,353 |
+
+The ROM code is 157 distinct instruction heads (it is a 512-byte loop body), so
+the whole boot-ROM population is served by a handful of blocks. `imageEntries=0`
+at the end of a run because an ordinary **full** flush (page-table stores and
+mapping changes during the boot) already dropped them: `imageFlushes` counts the
+*dedicated* image drops only (the store hook and `OnRomOverlayDisabled`, which now
+calls the narrow `InvalidateDecodeCacheImageWindow`), and that hook keeps the rule
+exact for a workload whose ROM entries are still live at that moment.
+
+`RASTER`/`NV2A`/frame counters are identical on every leg: `draws=2706
+frames=68 stalls=34 pixels=57,663,082` (triangle `sw`), `draws=33632 frames=686
+stalls=686 pixels=253,998,498` (menu), and the GL legs report
+`BackendUnsupported=0 composedFrames=0` unchanged.
+
+### 4. A measured trap: fast-mode RAM anchors are spin-skip sensitive
+
+At **99.5M** steps the triangle's fast-mode RAM SHA moves
+(`B0A0695C` -> `41908094`) with this change and heals by 1B. It is not a
+correctness bug: on the **base build**, `--jit-threshold 256` produces exactly
+the new build's 100M value (`A52EBE41`), and disabling `--jit-spin` (or running
+`--jit-exact`) makes base and new byte-identical at every step count tested
+(1M..1B). The spin skip counts consecutive store-free STI *blocks*, so a different
+block population moves the point where device time is lumped - it is
+non-bit-exact by construction (declared in `JitSpinSkip`'s docs). **Do not treat
+a mid-boot fast-mode RAM delta as a regression without first re-running the same
+leg with `--jit-spin` off and with a different `--jit-threshold` on the base
+build.**
+
+### 5. Gates (H1, final build)
+
+- Accurate 1B menu slice-1 golden PASS: sw `4EF1FBF6`, gl `B6116DAE`,
+  `diff=2602 violations=0 maxDelta=1`, counters 33632/686/686.
+- Accurate 1B triangle slice-2 golden PASS: sw `A1740DE0`, gl `7A860ED7`,
+  `diff=27849 violations=0`, counters 2706/68/34.
+- Fast 1B anchors **byte-identical** (no re-record needed): triangle sw
+  `B45254CA`/`7DAB63EB` (57,663,082 px), triangle gl `4F1FCBC0`/`7DAB63EB`, menu
+  sw `34973510`/`F5D61C94` (253,998,498 px), menu gl `B06BA6E5`/`F5D61C94`.
+- ktest smoke PASS 7/7 at **792,800,535** steps, suite log `CA5D3867`
+  (40,797 B) byte-identical.
+- **The image class is byte-exact, proven on the interpreter path**: 1B
+  `--decode-cache --decode-verify` (the JIT bails when verify is on, so this is
+  the interpreter plus the cache) reproduces the **accurate-mode anchors**
+  (`812EA159`/`2F632483`) with `verifyFailures=0`, `nonRamSkips=0`,
+  `imageFills=157`; base and new also agree at 100M with the same flags
+  (`106DC8C9`/`C42830AB`). That leg also shows the 1B RAM/CPU anchors are
+  independent of the image entries: the full-flush stream drops them mid-boot,
+  and the ROM code never runs afterwards.
+- Corpus spot checks reproduce their documented anchors exactly: `nxdk/usb` 1B
+  `ACDB5720`/`1590C697` display `119AFA48`; `xgu-vp_lighting` 3B
+  `162DAFF1`/`0380C502` frame `72B2F490`; `xgu-bump_cubemap_reflect` 3.6B
+  `5ACD06FF`/`C848610E` frame `BFC41A59`.
+- Suite **1857 -> 1863** (`ImageWindowFetchTests`, 6 tests). **Five of the six
+  fail on the pre-change source** (verified by temporarily reverting the
+  classifier: `nonRamSkips` fills, no block forms, the store flush never runs)
+  and `JitModeChange_Reforms...` fails on the pre-change `RunJitBlock` behaviour
+  (`served=197, total=200: the head did not re-form`). Format clean.
+
+### 6. Where this leaves Track C (the honest repricing)
+
+- **The boot is no longer "uncacheable fetches".** The 1B triangle leg with
+  `--jit-timing` now reads `executeMs=6183` = `outerMs=3981` (`runnerMs=3235` +
+  746 of formation/chain/bookkeeping, ~682 of it Iced `Assemble`) +
+  `nonJitMs=2190`, and the non-JIT half is **33k `RunSpecBlock` runs serving
+  ~5.34M instructions at ~375 ns** plus 136k `Step`s (~180 ms). The RAM cold code
+  is the interpreter's own switch; §2's "272 ns per non-JIT instruction" estimate
+  was dominated by the ROM `Step`s that are now blocks.
+- **The lever named "a superblock for the boot" is measured out**: with the
+  ROM class landed the boot still costs ~1.9 s at 1B, and its remaining mass is
+  55,215 heads that never reach the 16-visit build threshold (169k non-JIT calls
+  left but only 1,122 blocks). Forming them would cost ~326 us each (Iced
+  `Assemble`); that is the encoder price (§234e, ~7%), not a cache bug.
+- **Filed for the next session:** (a) `RunSpecBlock`'s per-member cost - the
+  largest single non-JIT item and the only one left that is not blocked by a
+  price; a `--jit-threshold`-neutral way to serve 8-30-member runs is the shape
+  to look for (trace formation was priced out at 3-5%, §235, because it removes
+  *block-boundary* population, not this one); (b) the HILO dot-map word source
+  (§236's filed remainder) stays filed - no row uses it.

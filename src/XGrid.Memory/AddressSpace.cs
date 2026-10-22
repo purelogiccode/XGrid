@@ -88,6 +88,46 @@ public sealed class AddressSpace : IMemoryBus
         return best is not null;
     }
 
+    /// <summary>
+    /// Returns whether the address is served by an <see cref="IImmutableImageDevice"/>
+    /// window and reports that window's bounds. The decode cache uses this to
+    /// cache instruction fetches from ROM/flash images (§237): those bytes only
+    /// change on an explicit host action (the MCPX overlay being disabled, a
+    /// snapshot load, or a new image), each of which flushes the cache, so no
+    /// per-store invalidation is needed. Reads must be side-effect free — the
+    /// marker interface guarantees that.
+    /// </summary>
+    /// <param name="address">The physical address to classify.</param>
+    /// <param name="windowBase">Receives the window's first address.</param>
+    /// <param name="windowSize">Receives the window's size in bytes.</param>
+    /// <returns>True when the address lies in an immutable image window.</returns>
+    public bool TryGetImmutableImageWindow(uint address, out uint windowBase, out uint windowSize)
+    {
+        for (int i = 0; i < _regions.Count; i++)
+        {
+            AddressRegion candidate = _regions[i];
+            if (candidate.Device is not IImmutableImageDevice || !candidate.Contains(address))
+            {
+                continue;
+            }
+
+            if (!TryGetRegion(address, out AddressRegion? winner) || !ReferenceEquals(winner, candidate))
+            {
+                // A higher-priority window owns this address (e.g. the MCPX
+                // overlay over the flash alias): not an image read.
+                continue;
+            }
+
+            windowBase = candidate.BaseAddress;
+            windowSize = candidate.Size;
+            return true;
+        }
+
+        windowBase = 0;
+        windowSize = 0;
+        return false;
+    }
+
     /// <summary>Reads one byte.</summary>
     public byte Read8(uint address)
     {

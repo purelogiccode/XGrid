@@ -410,12 +410,26 @@ public sealed unsafe partial class XboxCpu
                 }
             }
 
-            if (block is null
-                || block.HeadEip != Context.Eip
+            if (block is null)
+            {
+                JitYieldReasons[3]++;
+
+                return total;
+            }
+
+            if (block.HeadEip != Context.Eip
                 || block.OperandSize != operandSize
                 || block.AddressSize != addressSize)
             {
+                // The cached block was formed under different decode defaults
+                // (CS moved between 16- and 32-bit code, or the linear key
+                // collided with a different EIP after a segment change): drop
+                // it so the next visit re-forms under the current mode instead
+                // of yielding at this head forever (§237 - the boot ROM runs
+                // 16-bit real mode and the same addresses are later fetched
+                // 32-bit).
                 JitYieldReasons[3]++;
+                jit.NoteStale(fetchLinear);
 
                 return total;
             }

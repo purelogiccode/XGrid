@@ -250,6 +250,16 @@ internal sealed class JitBlockCache
             entry.RetryAtVisits = 0;
             _heads[headLinear] = entry;
         }
+
+        // The memo must not keep serving a block this head no longer owns
+        // (a caller can drop a block between visits, §237).
+        int slot = (int)(headLinear & (MemoSize - 1));
+        if (_memoHead[slot] == headLinear)
+        {
+            _memoHead[slot] = 0;
+            _memoGeneration[slot] = 0;
+            _memoBlock[slot] = null;
+        }
     }
 
     /// <summary>Stores a built block (or a permanent rejection when <paramref name="block"/> is null).</summary>

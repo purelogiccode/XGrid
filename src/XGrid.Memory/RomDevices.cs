@@ -2,8 +2,26 @@ using System;
 
 namespace XGrid.Memory;
 
+/// <summary>
+/// Marks a device whose window serves a host-side byte image that guest
+/// stores can never change (they are ignored or never reach it): a flash/BIOS
+/// window, its mirror, or the MCPX ROM overlay.
+/// </summary>
+/// <remarks>
+/// The decode cache (§131) may cache an instruction fetch from such a window
+/// without a store-invalidation path, because the only way those bytes move is
+/// an explicit host action — the overlay being disabled, a snapshot load, or a
+/// new image being mapped — and every one of those flushes the cache
+/// explicitly. Keep this interface off any device that a guest store can
+/// modify, and off any window whose reads have side effects (both would make
+/// cached decode bytes stale).
+/// </remarks>
+public interface IImmutableImageDevice
+{
+}
+
 /// <summary>Read-only memory window backed by a byte image (flash/ROM).</summary>
-public sealed class RomDevice : IMmioDevice
+public sealed class RomDevice : IMmioDevice, IImmutableImageDevice
 {
     private readonly byte[] _data;
     private readonly uint _baseAddress;
@@ -41,7 +59,7 @@ public sealed class RomDevice : IMmioDevice
 }
 
 /// <summary>Read-only window that mirrors a power-of-two image across a larger address window.</summary>
-public sealed class RomAliasDevice : IMmioDevice
+public sealed class RomAliasDevice : IMmioDevice, IImmutableImageDevice
 {
     private readonly byte[] _data;
     private readonly uint _baseAddress;
@@ -86,7 +104,7 @@ public sealed class RomAliasDevice : IMmioDevice
 }
 
 /// <summary>Overlay window that reveals an underlying device when disabled (MCPX boot ROM).</summary>
-public sealed class RomOverlayDevice : IMmioDevice
+public sealed class RomOverlayDevice : IMmioDevice, IImmutableImageDevice
 {
     private readonly byte[] _overlay;
     private readonly uint _baseAddress;

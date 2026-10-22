@@ -128,18 +128,23 @@ usable). Current order:
    REVERTED as a null result** (decisions §232a: menu `runnerMs` 15,872 →
    16,026, triangle 3,407 → 3,382, walls within noise, SHAs exact). The
    measured wall decomposition (§232b) puts the triangle's 6.9 s at
-   `RunJitBlock` 4.53 s (native 3.42 + 1.1 bookkeeping) + `RunNonJit` 2.25 s,
-   and the non-JIT cost is **not** decode: the read-only-ROM decode path
-   (C4b) was implemented in full and measured null too (`nonRamSkips`
-   359,476 → 0, wall and `nonJitMs` flat, SHAs identical) - it is per-call
-   dispatch of a large cold-code population (55,221 heads below the build
-   threshold; 523k non-JIT runs at ~10 members each) plus 1.1 s of outer
-   lookup/formation/chain bookkeeping. **C4 and C4b are closed.** Next stage:
-   **C5** trace/superblock formation measured against `nonJitMs` without
-   growing `outerMs - runnerMs`; then **C6** device/MMIO fast path (slice 1,
-   the unified interrupt poll, landed as architecture). Each stage:
-   same-window A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters, flag-off
-   byte-identical, ktest log byte-identical.
+   `RunJitBlock` 4.53 s (native 3.42 + 1.1 bookkeeping) + `RunNonJit` 2.25 s.
+   **§237 LANDED the image-window slice:** instruction fetches from flash/BIOS/
+   mirror/MCPX-overlay windows are now cached and blocked (a new
+   `IImmutableImageDevice` class with no store path, wholesale flush on the host
+   actions that move an image, and a mode-change re-formation of a block whose
+   decode defaults moved). `nonRamSkips` 359,476 → 0, one-instruction non-JIT
+   runs 434k → 136k, `nonJitCalls` 523k → 169k, measured **-6.4% triangle
+   `gl+replace`, -1.5% menu, -10.6% on the 100M boot phase**, every 1B
+   SHA/counter/frame byte-identical. It also **repriced the "superblock for the
+   boot" lever**: the ROM share of the non-JIT population was 9%, not 100%, so
+   the ceiling was 6.4% and the remaining boot mass is 55k RAM heads below the
+   build threshold (an encoder price, §234e). **C4 and C4b are closed.** Next
+   stage: `RunSpecBlock`'s ~375 ns/member (now the largest non-JIT item, §237
+   §6); then **C6** device/MMIO fast path (slice 1, the unified interrupt poll,
+   landed as architecture). Each stage: same-window A/B ≥10% wall or ≥20%
+   engine, exact 1B SHAs/counters, flag-off byte-identical, ktest log
+   byte-identical.
 2. **Track B — bounded B3 finish — CLOSED 2026-10-22 (§236).** The present path
    was already closed (readback opt-in, batching, sampler parity, replace-mode
    composition); the computed-mode panel (gap 12) is now closed too - a cube
@@ -3111,6 +3116,17 @@ Shaders
 
 ## Track C — Performance
 
+> **Status 2026-10-22 late (§237): the image-window slice landed.** Instruction
+> fetches from immutable image windows (flash/BIOS, its mirror, the MCPX ROM
+> overlay) are now a decode-cache class of their own and are served by native
+> blocks: `nonRamSkips` 359,476 → 0, one-instruction non-JIT runs 434k → 136k,
+> `nonJitCalls` 523k → 169k, measured **-6.4% triangle `gl+replace` / -1.5% menu /
+> -10.6% on the 100M boot phase**, every 1B SHA/counter/frame byte-identical.
+> The same measurement **reprized the "superblock for the boot" lever out**: the
+> ROM share of the non-JIT population is 9%, not 100%, and the remaining boot
+> mass is 55k RAM heads below the build threshold (an encoder price). The next C
+> item is `RunSpecBlock`'s ~375 ns/member (decisions §237 §6).
+>
 > **Status 2026-10-22 (course correction): Track C leads again.** Operator:
 > xemu-class performance or better is the long-run objective. The present path
 > is done and the engine is ~17 s of the 24.3 s menu `gl+replace` wall / dominant

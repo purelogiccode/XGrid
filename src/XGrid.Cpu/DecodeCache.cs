@@ -92,8 +92,12 @@ public readonly struct DecodeCacheEntry(
 /// <para>
 /// Decoded-instruction block cache (§131 leg (d)): keyed by linear fetch
 /// address (kernel aliases of one physical page are distinct keys — gotcha v),
-/// filled only from single-page RAM fetch windows (cross-page and non-RAM
-/// windows are never cached — gotchas iii/iv), invalidated conservatively.
+/// filled from single-page fetch windows. Base-RAM windows are cached with
+/// page-granular store invalidation (gotchas iii/iv for the uncacheable
+/// cases). Read-only image windows (flash/BIOS, its mirror, the MCPX ROM
+/// overlay — §237) are cached without a store path: no guest store can change
+/// those bytes, so they are dropped wholesale by an explicit flush
+/// (<see cref="FlushImmutableImages"/>) when the host changes the image state.
 /// </para>
 /// <para>
 /// Invalidation contract: an entry may be served only while (a) the linear
@@ -103,7 +107,9 @@ public readonly struct DecodeCacheEntry(
 /// load, Reset) plus full flushes on CPU stores to tracked page-table pages;
 /// (b) is preserved by page-granular drops on every CPU store and every
 /// device/host physical write (CPU store sites + the five XboxMachine adapter
-/// shims + the EOS quirk). Host-side measurement state: not part of the
+/// shims + the EOS quirk), and for image windows by
+/// <see cref="FlushImmutableImages"/> on the host actions that move them.
+/// Host-side measurement state: not part of the
 /// guest; the ENABLED flag lives on <c>XboxCpu</c> and is untouched by
 /// Reset/snapshot like the profiler and fetch-fast flags.
 /// </para>
@@ -117,11 +123,13 @@ public sealed class DecodeCache
     public const int MaxEntries = 131072;
 
     /// <summary>
-    /// Highest exclusive physical address eligible for caching (512 MB):
-    /// every base-RAM physical in every real configuration is below it, and
-    /// every MMIO window and RAM-alias window (0x0C000000/0x80000000/0xF0000000)
-    /// is above it, so the check alone excludes MMIO fetches; the idle-skip
-    /// host's IsRam classification is consulted as a second gate.
+    /// Highest exclusive physical address eligible for page-tracked caching
+    /// (512 MB): every base-RAM physical in every real configuration is below
+    /// it, and every MMIO window and RAM-alias window (0x0C000000/0x80000000/
+    /// 0xF0000000) is above it, so the check alone excludes MMIO fetches; the
+    /// idle-skip host's IsRam classification is consulted as a second gate.
+    /// Physicals above it are only cacheable when the bus classifies them as an
+    /// immutable image window (§237).
     /// </summary>
     public const uint MaxTrackedPhysical = 0x20000000;
 
@@ -130,6 +138,13 @@ public sealed class DecodeCache
 
     private readonly Dictionary<uint, DecodeCacheEntry> _entries = [];
     private readonly Dictionary<uint, List<uint>> _byPhysicalPage = [];
+
+    // Immutable image entries (§237): no store invalidation is possible, so
+    // they carry a key set instead of a reverse physical index and are dropped
+    // wholesale by FlushImmutableImages. The window list is what a store site
+    // tests against (typically one entry: the flash/overlay window).
+    private readonly HashSet<uint> _imageKeys = [];
+    private readonly List<(uint Base, uint Size)> _imageWindows = [];
 
     /// <summary>Gets the active-physical-page bitset (C3 raw store guard pins it).</summary>
     internal ulong[] ActivePageBits { get; } = new ulong[ActivePageWords];
@@ -154,6 +169,15 @@ public sealed class DecodeCache
 
     /// <summary>Gets the number of physical pages actually cleared by store invalidation.</summary>
     public ulong PageDrops { get; private set; }
+
+    /// <summary>Gets the number of immutable-image entries inserted (flash/ROM windows, §237).</summary>
+    public ulong ImageFills { get; private set; }
+
+    /// <summary>Gets the number of wholesale image-entry drops (host image state changed).</summary>
+    public ulong ImageFlushes { get; private set; }
+
+    /// <summary>Gets the number of immutable-image entries currently cached.</summary>
+    public int ImageCount => _imageKeys.Count;
 
     /// <summary>Gets the number of effective full flushes (mapping changes, PT-page stores, cap).</summary>
     public ulong FullFlushes { get; private set; }
@@ -186,6 +210,16 @@ public sealed class DecodeCache
     /// links it into the physical-page reverse map. Reaching
     /// <see cref="MaxEntries"/> flushes the table first (bounded memory).
     /// </summary>
+    /// <param name="fetchLinear">The linear fetch address (the key).</param>
+    /// <param name="instruction">The decoded instruction.</param>
+    /// <param name="physicalBase">The physical address of fetch-window byte 0.</param>
+    /// <param name="secondPhysicalBase">The second page's physical for a cross-page window (0 otherwise).</param>
+    /// <param name="crossSplit">The fetch-window offset where the second page starts (0 for single-page).</param>
+    /// <param name="sourceWindow">The 15-byte fetch window the decode came from.</param>
+    /// <param name="operandSize">The decode-time operand-size default.</param>
+    /// <param name="addressSize">The decode-time address-size default.</param>
+    /// <param name="imageWindowBase">The immutable image window's first address, or 0 for a page-tracked (RAM) fetch.</param>
+    /// <param name="imageWindowSize">The immutable image window's size in bytes (0 for a page-tracked fetch).</param>
     public void Insert(
         uint fetchLinear,
         in DecodedInstruction instruction,
@@ -194,7 +228,9 @@ public sealed class DecodeCache
         int crossSplit,
         ReadOnlySpan<byte> sourceWindow,
         int operandSize,
-        int addressSize)
+        int addressSize,
+        uint imageWindowBase = 0,
+        uint imageWindowSize = 0)
     {
         if (sourceWindow.Length < Decoder.MaxInstructionLength)
         {
@@ -207,21 +243,25 @@ public sealed class DecodeCache
             Flush();
         }
 
+        bool image = imageWindowSize != 0;
         uint physicalPage = physicalBase >> 12;
-        if (physicalPage >= TrackedPages)
-        {
-            // Defense in depth: the CPU only inserts base-RAM fetches, but an
-            // alias-window or MMIO physical must never enter the table (the
-            // active-page bitset could not track it for store drops).
-            SkippedNonRam++;
-            return;
-        }
-
         uint secondPage = secondPhysicalBase >> 12;
-        if (crossSplit != 0 && secondPage >= TrackedPages)
+        if (!image)
         {
-            SkippedNonRam++;
-            return;
+            if (physicalPage >= TrackedPages)
+            {
+                // Defense in depth: the CPU only inserts base-RAM fetches, but an
+                // alias-window or MMIO physical must never enter the table (the
+                // active-page bitset could not track it for store drops).
+                SkippedNonRam++;
+                return;
+            }
+
+            if (crossSplit != 0 && secondPage >= TrackedPages)
+            {
+                SkippedNonRam++;
+                return;
+            }
         }
 
         // Replacement may follow verify failure or a changed decode default.
@@ -229,18 +269,34 @@ public sealed class DecodeCache
         if (_entries.TryGetValue(fetchLinear, out DecodeCacheEntry previous))
         {
             Blocks?.Invalidate();
-            if ((previous.PhysicalBase >> 12) != physicalPage)
+            bool previousImage = (previous.PhysicalBase >> 12) >= TrackedPages;
+            if (previousImage)
+            {
+                _imageKeys.Remove(fetchLinear);
+            }
+
+            if (!previousImage && (previous.PhysicalBase >> 12) != physicalPage)
             {
                 DropPhysicalPage(previous.PhysicalBase >> 12);
             }
 
-            if (previous.CrossSplit != 0 && (previous.SecondPhysicalBase >> 12) != physicalPage)
+            if (!previousImage && previous.CrossSplit != 0 && (previous.SecondPhysicalBase >> 12) != physicalPage)
             {
                 DropPhysicalPage(previous.SecondPhysicalBase >> 12);
             }
         }
 
-        if (!_entries.TryGetValue(fetchLinear, out DecodeCacheEntry _))
+        if (image)
+        {
+            _imageKeys.Add(fetchLinear);
+            if (!_imageWindows.Contains((imageWindowBase, imageWindowSize)))
+            {
+                _imageWindows.Add((imageWindowBase, imageWindowSize));
+            }
+
+            ImageFills++;
+        }
+        else if (!_entries.ContainsKey(fetchLinear))
         {
             if (!_byPhysicalPage.TryGetValue(physicalPage, out List<uint>? keys))
             {
@@ -374,8 +430,76 @@ public sealed class DecodeCache
 
         _entries.Clear();
         _byPhysicalPage.Clear();
+        _imageKeys.Clear();
+        _imageWindows.Clear();
         Array.Clear(ActivePageBits);
         FullFlushes++;
+    }
+
+    /// <summary>
+    /// Drops every immutable-image entry (flash/BIOS mirror/overlay, §237).
+    /// The host calls this whenever the image content behind a cached window
+    /// can change: the MCPX ROM overlay being disabled, a snapshot load, or a
+    /// Reset — i.e. any state change a guest store cannot cause. Guest stores
+    /// reach it through <see cref="NoteStoreToImageWindow"/>, which is sound by
+    /// over-invalidation (a store into a read-only image window is ignored by
+    /// the device, so the bytes are unchanged and dropping the entries only
+    /// costs a re-decode).
+    /// </summary>
+    public void FlushImmutableImages()
+    {
+        if (_imageKeys.Count == 0)
+        {
+            return;
+        }
+
+        Blocks?.Invalidate();
+        foreach (uint key in _imageKeys)
+        {
+            _entries.Remove(key);
+        }
+
+        _imageKeys.Clear();
+        _imageWindows.Clear();
+        ImageFlushes++;
+    }
+
+    /// <summary>
+    /// Store-site hook for the immutable-image class: when the store touches a
+    /// window that has cached entries, drop them (see
+    /// <see cref="FlushImmutableImages"/>). The common case is one field read —
+    /// no image entry is cached, or the address is base RAM.
+    /// </summary>
+    /// <param name="physical">The store's physical address.</param>
+    /// <param name="sizeInBits">The store width in bits.</param>
+    /// <returns>True when image entries were dropped.</returns>
+    public bool NoteStoreToImageWindow(uint physical, int sizeInBits)
+    {
+        if (_imageKeys.Count == 0)
+        {
+            return false;
+        }
+
+        // Half-open [physical, physical + size) per window end address; the
+        // last store byte is what has to fall inside.
+        ulong last = (ulong)physical + (uint)((sizeInBits / 8) - 1);
+        bool inside = false;
+        foreach ((uint windowBase, uint windowSize) in _imageWindows)
+        {
+            if (physical >= windowBase && last < (ulong)windowBase + windowSize)
+            {
+                inside = true;
+                break;
+            }
+        }
+
+        if (!inside)
+        {
+            return false;
+        }
+
+        FlushImmutableImages();
+        return true;
     }
 
     private void MarkActive(uint physicalPage)

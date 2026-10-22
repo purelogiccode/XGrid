@@ -27,10 +27,10 @@ public sealed class AddressRegion
     public string Name { get; }
 
     /// <summary>Gets the first address of the window.</summary>
-    private uint BaseAddress { get; }
+    internal uint BaseAddress { get; }
 
     /// <summary>Gets the window size in bytes.</summary>
-    private uint Size { get; }
+    internal uint Size { get; }
 
     /// <summary>Gets the backing device.</summary>
     public IMmioDevice Device { get; }

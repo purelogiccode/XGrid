@@ -1,5 +1,27 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-22 LATE (thirty-seventh session, 237) - the image-window
+> slice LANDED (-6.4% triangle `gl+replace`, exact) and it reprices the boot
+> lever out.** Instruction fetches from immutable image windows (flash/BIOS, its
+> mirror, the MCPX ROM overlay) are now a decode-cache class of their own
+> (`IImmutableImageDevice` + `AddressSpace.TryGetImmutableImageWindow`, no store
+> path, wholesale flush on the host actions that move an image) **and the JIT
+> forms blocks over them** - a stale block whose decode defaults moved (16-bit
+> real mode -> 32-bit CS.D at the same linear head) is dropped and re-formed
+> instead of yielding forever. At 1B: `nonRamSkips` 359,476 -> 0, one-instruction
+> non-JIT runs 434,309 -> 136,149, `nonJitCalls` 523,062 -> 169,430,
+> `nonJitMs` 2291 -> 2078. Interleaved A/B: triangle `gl+replace` 6.672 -> 6.242 s
+> (-6.4%, 3/3), menu 20.456 -> 20.158 s (-1.5%, 3/3), triangle `sw` -0.7% (noise,
+> the rasterizer dominates), boot phase (100M) 2.276 -> 2.035 s (-10.6%); **all
+> four fast 1B anchors, both accurate goldens and the ktest log byte-identical**.
+> **The repricing is the headline for C:** §2 Option A (ii) had assumed *all*
+> 3.65M non-JIT instructions were ROM fetches; 317k are (9%), so the lever's
+> ceiling was 6.4%, not 8-13%. The remaining boot mass is 55,215 RAM heads below
+> the 16-visit build threshold (an Iced formation price), and the largest
+> non-JIT line is now `RunSpecBlock` at ~375 ns/member (~2.0 s of the 6.24 s
+> triangle wall). A **mid-boot fast-mode RAM delta is not a regression**: the
+> `--jit-spin` skip is block-population sensitive (237 §4).
+
 > **STATUS 2026-10-22 LATE (thirty-third session, 233) - C5 slice 1 LANDED (-3
 > to -4% wall, exact); the wall is now priced per stage and C's cheap levers are
 > closed.** Two host-side changes: the IL runner is built on demand (a raw block
@@ -528,10 +550,21 @@ Stages:
 | Stage | Work | Target |
 |---|---|---|
 | **C4** | ~~Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe~~ **MEASURED NULL 2026-10-22 late (232a), reverted** | ~~≥2× menu engine, ≥1.5× triangle~~ |
-| **C4b** | Read-only-ROM decode path: classify read-only physical windows as cacheable code, skip the tracked-page bitset for them, flush on overlay-disable/reset (priced 0.54 s/run, 232b) | ≥0.45 s off the 1B triangle / 100M boot |
+| **C4b** | ~~Read-only-ROM decode path: classify read-only physical windows as cacheable code, skip the tracked-page bitset for them, flush on overlay-disable/reset~~ **LANDED as the image-window class 2026-10-22 late (§237)** - decode caching alone was measured null (232f); the win is that blocks now *form* over the ROM: `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k, **-6.4% triangle `gl+replace`**, exact 1B anchors | met (6.4% wall, 9% non-JIT engine) |
 | **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first; keep `outerMs - runnerMs` flat | ≥1.3× engine |
 | **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | ≥10% menu wall |
 | **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
+
+**§237 follow-up (2026-10-22 late).** C4b is closed *and repriced*: the ROM share
+of the non-JIT population is 317k of 3.65M instructions (9%), so "a superblock
+for the boot" was a 6.4% lever, not 8-13%; the rest of the boot is 55,215 RAM
+heads below the 16-visit build threshold (523k → 169k non-JIT calls, only 1,122
+blocks), whose remaining cost is formation (~326 µs of Iced `Assemble` each) —
+the encoder price, not a cache gap. The largest non-JIT line is now
+`RunSpecBlock` at ~375 ns/member (~2.0 s of the 6.24 s triangle `gl+replace`
+wall), which is the next C item; it is *not* trace-formation territory (§235
+priced that at 3-5% because a trace removes block-boundary population, not this
+one).
 
 **C7 decision inputs (2026-10-22 late, §234e).** The charter's kill criterion is
 met (C4 measured null, C5 slice 1 is -3/-4%), so the next C work is the decision,

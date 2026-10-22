@@ -647,6 +647,12 @@ public sealed class XboxMachine : IIdleSkipHost
         {
             _overlay.Enabled = false;
         }
+
+        // The window's bytes just changed under the same addresses: an image
+        // decode entry cached from the overlay would now be stale (§237).
+        // Guest stores cannot cause this, so it needs its own flush (Reset and
+        // snapshot load reach it through Mmu.Flush, which is a superset).
+        Cpu.InvalidateDecodeCacheImageWindow();
     }
 
     private void OnNv2aInterrupt(bool asserted)

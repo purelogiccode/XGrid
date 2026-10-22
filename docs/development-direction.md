@@ -6,6 +6,20 @@ day-to-day agent entry point; this file is the priority order every agent follow
 
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
+**Status 2026-10-22 late (37th session, §237): the boot ROM is a cached, blocked
+image window.** Instruction fetches from immutable image windows (flash/BIOS, its
+mirror, the MCPX ROM overlay) are now a decode-cache class of their own with no
+store path (wholesale flush on the host actions that move an image), and the JIT
+forms blocks over them: `nonRamSkips` 359,476 -> 0, one-instruction non-JIT runs
+434k -> 136k, measured **-6.4% triangle `gl+replace` / -1.5% menu `gl+replace` /
+-10.6% on the 100M boot phase**, every 1B SHA/counter/frame byte-identical. The
+same measurement **reprized the "superblock for the boot" lever out**: the ROM
+share of the non-JIT population is 9% (317k of 3.65M instructions), so the
+ceiling was 6.4%, not the 8-13% §2 estimated; the remaining boot mass is 55k RAM
+heads below the build threshold, i.e. an encoder price (§234e). Track C's next
+item is `RunSpecBlock`'s ~375 ns/member, now the largest non-JIT line. Track B
+stays closed (gap 12 closed in §236).
+
 **Status 2026-10-22 late (36th session, §236): compatibility gap 12 is CLOSED -
 the GL backend decodes a cube stage's six swizzled faces into a host 2D-array
 texture (`sampler2DArray`), so `xgu bump_cubemap_reflect`'s reflection panel

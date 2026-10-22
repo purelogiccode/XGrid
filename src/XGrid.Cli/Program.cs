@@ -2044,6 +2044,9 @@ internal static class Program
                 $"pageDrops={machine.Cpu.DecodeCachePageDrops} fullFlushes={machine.Cpu.DecodeCacheFullFlushes} " +
                 $"crossPageSkips={machine.Cpu.DecodeCacheSkippedCrossPage} " +
                 $"nonRamSkips={machine.Cpu.DecodeCacheSkippedNonRam} " +
+                $"imageFills={machine.Cpu.DecodeCacheImageFills} " +
+                $"imageFlushes={machine.Cpu.DecodeCacheImageFlushes} " +
+                $"imageEntries={machine.Cpu.DecodeCacheImageEntries} " +
                 $"verifyFailures={machine.Cpu.DecodeCacheVerifyFailures}");
             if (machine.Cpu.DecodeCacheNonRamPages is { } nonRamPages)
             {

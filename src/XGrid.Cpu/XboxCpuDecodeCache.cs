@@ -258,6 +258,15 @@ public sealed partial class XboxCpu
     /// <summary>Gets the number of fetch windows skipped because the physical was non-RAM.</summary>
     public ulong DecodeCacheSkippedNonRam => _decodeCache?.SkippedNonRam ?? 0;
 
+    /// <summary>Gets the number of immutable-image decode entries inserted (flash/ROM windows, §237).</summary>
+    public ulong DecodeCacheImageFills => _decodeCache?.ImageFills ?? 0;
+
+    /// <summary>Gets the number of wholesale immutable-image entry drops (§237).</summary>
+    public ulong DecodeCacheImageFlushes => _decodeCache?.ImageFlushes ?? 0;
+
+    /// <summary>Gets the number of immutable-image decode entries currently cached (§237).</summary>
+    public int DecodeCacheImageEntries => _decodeCache?.ImageCount ?? 0;
+
     /// <summary>Gets the non-cacheable fetch pages when XGRID_NONRAM=1 (diagnostic).</summary>
     public System.Collections.Generic.IReadOnlyDictionary<uint, long>? DecodeCacheNonRamPages =>
         _decodeCache?.NonRamPages;
@@ -274,6 +283,19 @@ public sealed partial class XboxCpu
     {
         FlushFromHost++;
         _decodeCache?.Flush();
+    }
+
+    /// <summary>
+    /// Drops the immutable-image decode entries (flash/BIOS/mirror/overlay,
+    /// §237) without touching the page-tracked RAM entries. The host API for a
+    /// state change that moves an image window's bytes: the MCPX ROM overlay
+    /// being disabled is the only such event, and a full flush would also work
+    /// (it is a superset) — the narrow one keeps the boot's RAM decodes and
+    /// makes the `imageFlushes` counter mean what it says.
+    /// </summary>
+    public void InvalidateDecodeCacheImageWindow()
+    {
+        _decodeCache?.FlushImmutableImages();
     }
 
     /// <summary>
@@ -688,9 +710,19 @@ public sealed partial class XboxCpu
         if (crossesPage)
         {
             // Cross-page windows are cacheable when both pages are (the entry
-            // carries the second base + split); the skip counter keeps the
+            // carries the second base + split). Both pages must share one class
+            // and, for an image window, one window (a RAM page and an image
+            // page never share an entry). The skip counter keeps the
             // uncacheable cases (profiler runs, non-RAM pages).
-            if (HotspotObserver is null && IsCacheableFetch(basePhysical) && IsCacheableFetch(secondPhysicalBase))
+            DecodeFetchClass first = ClassifyFetch(basePhysical, out uint imageBase, out uint imageSize);
+            DecodeFetchClass second = ClassifyFetch(
+                secondPhysicalBase,
+                out uint secondImageBase,
+                out uint secondImageSize);
+            bool oneWindow = first == second
+                             && (first != DecodeFetchClass.Image
+                                 || (imageBase == secondImageBase && imageSize == secondImageSize));
+            if (HotspotObserver is null && oneWindow && first != DecodeFetchClass.Uncacheable)
             {
                 cache.Insert(
                     fetchLinear,
@@ -700,50 +732,84 @@ public sealed partial class XboxCpu
                     crossSplit,
                     buffer,
                     Context.DefaultOperandSize,
-                    Context.DefaultAddressSize);
+                    Context.DefaultAddressSize,
+                    first == DecodeFetchClass.Image ? imageBase : 0,
+                    first == DecodeFetchClass.Image ? imageSize : 0);
             }
             else
             {
                 cache.NoteSkippedCrossPage();
             }
         }
-        else if (IsCacheableFetch(basePhysical))
-        {
-            cache.Insert(
-                fetchLinear,
-                instruction,
-                basePhysical,
-                0,
-                0,
-                buffer,
-                Context.DefaultOperandSize,
-                Context.DefaultAddressSize);
-        }
         else
         {
-            cache.NoteSkippedNonRam();
-            cache.NoteNonRamPage(basePhysical);
+            DecodeFetchClass kind = ClassifyFetch(basePhysical, out uint imageBase, out uint imageSize);
+            if (kind != DecodeFetchClass.Uncacheable)
+            {
+                cache.Insert(
+                    fetchLinear,
+                    instruction,
+                    basePhysical,
+                    0,
+                    0,
+                    buffer,
+                    Context.DefaultOperandSize,
+                    Context.DefaultAddressSize,
+                    kind == DecodeFetchClass.Image ? imageBase : 0,
+                    kind == DecodeFetchClass.Image ? imageSize : 0);
+            }
+            else
+            {
+                cache.NoteSkippedNonRam();
+                cache.NoteNonRamPage(basePhysical);
+            }
         }
 
         return instruction;
     }
 
-    /// <summary>
-    /// RAM gate for cache fills: base-RAM physicals only (the bound alone
-    /// excludes every MMIO window and RAM-alias window on the Xbox map), plus
-    /// the idle-skip host's classification as a second gate (null host = flat
-    /// test RAM). Non-RAM fetches (flash/BIOS, MMIO) are never cached so no
-    /// device register read can go stale behind the cache (gotcha iii).
-    /// </summary>
-    private bool IsCacheableFetch(uint physical)
+    /// <summary>How a fetch window's physical can be cached (or not) by the decode cache.</summary>
+    private enum DecodeFetchClass
     {
-        if (physical >= DecodeCache.MaxTrackedPhysical)
+        /// <summary>MMIO, a RAM alias, or another side-effecting window: never cached.</summary>
+        Uncacheable,
+
+        /// <summary>Base RAM: page-granular store invalidation.</summary>
+        Ram,
+
+        /// <summary>
+        /// An immutable image window (flash/BIOS, its mirror, the MCPX ROM
+        /// overlay): dropped wholesale on the host actions that move the image
+        /// (§237).
+        /// </summary>
+        Image,
+    }
+
+    /// <summary>
+    /// Fetch classification for cache fills: base-RAM physicals are
+    /// page-tracked; physicals inside an <see cref="XGrid.Memory.IImmutableImageDevice"/>
+    /// window are image-cached (the guest cannot write those bytes, see
+    /// <see cref="DecodeCache.FlushImmutableImages"/>); every other physical
+    /// (MMIO, RAM aliases) is never cached, so no device register read can go
+    /// stale behind the cache (gotcha iii).
+    /// </summary>
+    /// <param name="physical">The fetch window's physical address.</param>
+    /// <param name="imageWindowBase">Receives the image window's base for an image window (0 otherwise).</param>
+    /// <param name="imageWindowSize">Receives the image window's size for an image window (0 otherwise).</param>
+    private DecodeFetchClass ClassifyFetch(uint physical, out uint imageWindowBase, out uint imageWindowSize)
+    {
+        imageWindowBase = 0;
+        imageWindowSize = 0;
+        if (physical < DecodeCache.MaxTrackedPhysical)
         {
-            return false;
+            IIdleSkipHost? host = IdleSkipHost;
+            return host?.IsRam(physical) != false ? DecodeFetchClass.Ram : DecodeFetchClass.Uncacheable;
         }
 
-        IIdleSkipHost? host = IdleSkipHost;
-        return host?.IsRam(physical) != false;
+        return _ramSpace is not null
+               && _ramSpace.TryGetImmutableImageWindow(physical, out imageWindowBase, out imageWindowSize)
+            ? DecodeFetchClass.Image
+            : DecodeFetchClass.Uncacheable;
     }
 
     /// <summary>
@@ -784,6 +850,12 @@ public sealed partial class XboxCpu
         {
             cache?.DropPhysicalPage(lastPage);
         }
+
+        // §237: an image-window entry has no page-tracked reverse index (the
+        // guest cannot change those bytes); the store is still routed through
+        // one window test so a cached decode can never outlive a change the
+        // window's device did apply. No image entry cached: one field read.
+        cache?.NoteStoreToImageWindow(physical, sizeInBits);
     }
 
     /// <summary>
