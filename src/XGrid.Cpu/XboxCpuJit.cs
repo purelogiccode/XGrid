@@ -424,7 +424,7 @@ public sealed unsafe partial class XboxCpu
             // per member inside the runner instead (mirroring Step's order).
             if (!JitExact && InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
             {
-                int vector = InterruptSource.Acknowledge();
+                int vector = PollInterrupt();
                 if (vector >= 0)
                 {
                     Context.Tsc++;

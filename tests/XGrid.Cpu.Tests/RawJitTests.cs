@@ -139,6 +139,67 @@ public sealed class RawJitTests
         Assert.True(raw.JitRawBlocksBuilt > 0, $"no raw blocks were built (built={raw.JitRawBlocksBuilt} inv={raw.JitRawInvocations} served={raw.JitServedTotal})");
     }
 
+    /// <summary>
+    /// A direct store into a read-only page with CR0.WP clear is legal on x86
+    /// and must write the page the store translated to. The emitter's
+    /// writability probe loads CR0.WP into R10D, which still held the
+    /// translate-cache slot the physical-page load indexes: before the reload
+    /// (decisions 232) the store read slot 0's physical page and landed on the
+    /// wrong frame. The program warms the slot with a load from the same
+    /// read-only page, then stores to it, so the buggy path lands on physical
+    /// 0x2000 while the interpreter writes the mapped 0x3000.
+    /// </summary>
+    [Fact]
+    public void ReadOnlyPageStoreWithWriteProtectClear_WritesTheTranslatedPage()
+    {
+        // loop: mov eax,[0x2000]; mov [0x2000],ebx; dec ecx; jnz loop; hlt
+        byte[] code =
+        [
+            0xA1, 0x00, 0x20, 0x00, 0x00,
+            0x89, 0x1D, 0x00, 0x20, 0x00, 0x00,
+            0x49,
+            0x75, 0xF2,
+            0xF4,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        // Let the interpreter warm the translate slot, then hand the loop to
+        // the raw runner (the default slice would interpret the whole loop).
+        raw.JitSpecSlice = 4;
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            // Code page identity, the data page read-only, a stack page.
+            Map4K(cpu.Bus(), 0x1000, 0x1000, writable: true);
+            Map4K(cpu.Bus(), 0x2000, 0x3000, writable: false);
+            Map4K(cpu.Bus(), 0x7000, 0x7000, writable: true);
+            cpu.Context.Cr3 = PageDirectory;
+            cpu.Context.Cr0 = ControlRegisterBits.Cr0ProtectedMode | ControlRegisterBits.Cr0Paging;
+            cpu.Mmu.Flush();
+            cpu.Context.Esp = 0x7F00;
+            cpu.Ram().Write32(0x2000, 0x11111111);
+            cpu.Ram().Write32(0x3000, 0x22222222);
+        }
+
+        Preset(plain);
+        Preset(raw);
+        plain.Context.Ebx = 0xDEADBEEF;
+        raw.Context.Ebx = 0xDEADBEEF;
+        plain.Context.Ecx = 3;
+        raw.Context.Ecx = 3;
+        plain.Execute(1_000);
+        raw.Execute(1_000);
+        AssertSame(plain, raw);
+        Assert.Equal(0xDEADBEEFu, plain.Ram().Read32(0x3000));
+        Assert.Equal(plain.Ram().Read32(0x3000), raw.Ram().Read32(0x3000));
+        Assert.Equal(0x11111111u, raw.Ram().Read32(0x2000));
+        // The buggy slot-0 read lands the store on physical 0 instead.
+        Assert.Equal(0u, raw.Ram().Read32(0x0000));
+        Assert.True(raw.JitRawBlocksBuilt > 0, "no raw blocks were built");
+        Assert.True(raw.JitRawServedMembers > 0, "no raw block ran");
+        Assert.Equal(0, raw.RawSlowMemoryMembers);
+    }
+
     [Fact]
     public void MemoryForms_MatchesInterpreter()
     {
@@ -980,6 +1041,18 @@ public sealed class RawJitTests
         {
             bus.Write32(PageTable + (vpn * 4), (vpn << 12) | 3u);
         }
+    }
+
+    private static void Map4K(AddressSpace bus, uint virtualAddress, uint physicalAddress, bool writable)
+    {
+        uint pdeAddress = PageDirectory + ((virtualAddress >> 22) & 0x3FF) * 4;
+        if ((bus.Read32(pdeAddress) & 1u) == 0)
+        {
+            bus.Write32(pdeAddress, PageTable | 3u);
+        }
+
+        uint pteAddress = PageTable + ((virtualAddress >> 12) & 0x3FF) * 4;
+        bus.Write32(pteAddress, (physicalAddress & 0xFFFFF000u) | 1u | (writable ? 2u : 0u));
     }
 
     private static void EnablePaging(XboxCpu cpu)

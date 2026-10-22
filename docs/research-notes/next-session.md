@@ -1,4 +1,4 @@
-# Next session instructions (updated 2026-10-22 after the course correction: xemu-class performance leads)
+# Next session instructions (updated 2026-10-22 late, after C4 slice 1 measured NULL: read §1/§2 before starting any Track C work)
 
 **Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
 course correction: xemu-class performance is the long-run objective, Track C
@@ -37,7 +37,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the course-correction commit ("docs: re-aim ...")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1835 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -89,7 +89,7 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 34973510` (fast), `19FEA0EA -> EE8F69FB` (`--tex-filter registers`),
 `87BF40DA -> CC2A94DF` (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate).
 
-- **1835 tests green** (measured 2026-10-22; session 29 added the
+- **1836 tests green** (measured 2026-10-22 late; session 32 added the store-probe regression, session 29 the
   `PshCombinerReachTests`, the two-case `DescribeReach_ReportsTheWritingStages`,
   the live `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, the
   extra programs in the live compile gate, and `GameEntryTests` x3 for the
@@ -105,6 +105,19 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
   Nv2a edits; it is a snapshot).
 
 ## 0b. What the last sessions landed - do not redo it
+
+-1. **C4 slice 1 is priced and REVERTED (decisions 232a, 2026-10-22 late).** The
+   host-pointer translate probe was implemented and measured: interleaved 1B
+   A/B menu wall 21.01 -> 21.05 s (`runnerMs` 15,872 -> 16,026), triangle
+   6.89 -> 6.77 s (`runnerMs` 3,407 -> 3,382) - noise, SHAs exact. **The
+   probe is not the raw path's wall; do not re-attempt it without a new
+   measurement.** §1 now carries the measured wall decomposition.
+-0. **Two things landed on top of it (same session, decisions 232c/232d):**
+   `XboxCpu.PollInterrupt()` (the PIC's pinned pending word instead of a
+   per-instruction `Acknowledge()` call in `Step`/`RunSpecBlock`; exact, wall
+   delta below resolution) and the raw store probe's lost translate slot
+   (CR0.WP load clobbering R10D -> a store into a read-only page with WP clear
+   wrote slot 0's frame; fixed + regression test that fails pre-fix).
 
 0. **The course correction (§231, 2026-10-22).** Operator: xemu-class
    performance or better is the long-run objective; Track C is re-opened and
@@ -144,14 +157,28 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
-**Menu `gl+replace`**: GL submission ~0.7 s, CPU engine ~17 s, block builds
-~1.4 s, interpreter ~2.5 s, boot ~2 s, readback ~0.8 s only when a frame is
-captured. **Menu `sw` (the frontend default)**: ~32 s at 1B, of which the
-software rasterizer is ~11.5 s. **Triangle `gl+replace`** ~7.5-7.9 s (11.5 s sw
-on gate media). **The engine is the lead wall again (2026-10-22):** xemu-class
-is 1.20 s on the triangle (830 Msteps/s) and 1.36 s on the menu (real-time
-band), so the gap is ~6.6× / ~17.8×; ktest 2B is already ahead (9-10 s vs
-15 s). The C4-C6 program is the lead; do not start a sub-2% slice.
+**Triangle 1B `gl+replace` = 6.9 s, decomposed (decisions 232b):**
+`RunJitBlock` **4.53 s** (native runner 3.42 s + **1.1 s** head lookup /
+formation / chain bookkeeping) + `RunNonJit` **2.25 s** + device `Advance`
+7 ms. Inside `RunNonJit`: 523k `RunSpecBlock` calls serving 5.31M members at
+**277 ns/member**, and 489k `Step`s at **1.6 us/instruction**. The non-JIT
+mnemonic mix is ordinary Mov/Jcc/Add/Cmp/Nop - the cost is **decode**:
+`nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
+**all inside the first 100M steps**. `IsCacheableFetch` refuses non-RAM
+physicals, so every ROM instruction fetches its 15-byte window one bus read at
+a time. Priced **~0.54 s/run = 7.8% of the triangle wall, 2.4% of the menu,
+~22% of the 100M boot leg**. The raw runner's own steady state is
+**~6.3 ns/served member** (menu ~18.6 ns) and is *not* the probe (232a).
+
+**Menu `gl+replace`**: ~20.8-21.0 s in the latest window; CPU engine ~17-18 s
+of it (85%), GL submission ~0.7 s. **Menu `sw`**: ~30.7 s (raster ~11.5 s).
+**xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
+(real-time band; no xemu oracle), so the gap is still ~5.7x / ~15x. **The
+remaining levers, in measured order:** (1) the boot ROM / non-RAM decode path
+(0.54 s, exact, self-contained); (2) more code served by native blocks instead
+of `RunNonJit` (2.25 s, i.e. C5 trace/superblock formation - but note the
+1.1 s of outer bookkeeping it must not grow); (3) guest-memory latency in the
+raw path (not yet separated from the emitter's own cost).
 
 **Through the real frontend session (H1, 1B, gate media, §221d/§223):** software
 **34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black pixel
@@ -159,19 +186,29 @@ count; the 40 s-pair throughput probe reads +9.8%/+8.2%.
 
 ## 2. Recommended next session - pick one
 
-### Option C-lead (Track C, re-opened): C4 - the flat memory model / soft TLB
+### Option C-lead (Track C): the boot ROM / non-RAM decode path (the one measured 0.54 s)
 
-The engine is ~17 s of the 24.3 s menu `gl+replace` wall and dominant on the
-7.5-7.9 s triangle wall; the raw emitter's memory members still run the
-data-translate probe per access, and §199n measured that dependent-load chain
-as the top menu cost (the menu mix is ~50% MovLoad/MovStore). **First step is a
-probe, not a rewrite:** ablate the probe on a 100M menu leg (a temporary switch
-that assumes the page is RAM after the first hit) and measure the ceiling; if
-it is <10% wall, stop and re-scope. If it is real, land a direct host-pointer
-RAM page table with an exact non-RAM/MMIO fallback. Acceptance: ≥2× engine on
-the menu (or ≥1.5× triangle) with exact 1B SHAs/counters, flag-off
-byte-identical, ktest log byte-identical; report ns/served member + wall per
-presented frame. `--jit-timing`/`--gpu-time` are the stage gates.
+`nonRamSkips=359,476` of 497,806 decode misses, top pages `0xFFFFFFxx`, all
+in the first 100M steps, each ROM instruction paying a 15-byte byte-at-a-time
+bus fetch (~1.5 us) because `IsCacheableFetch` refuses non-RAM physicals
+(gotcha iii). **Shape:** classify *read-only* physical windows (the flash
+`RomDevice`/`RomAliasDevice`/`RomOverlayDevice` all ignore writes) as
+cacheable code, let `DecodeCache.Insert` keep such entries without the tracked
+bitset (`MarkActive` is skipped - a read-only page can never need a store
+drop), and full-flush when the MCPC overlay is disabled (`OnRomOverlayDisabled`)
+and on reset. Acceptance: ROM code becomes decode-cached *and* blockable (the
+JIT may form blocks over it); the 100M boot leg drops by >=0.4 s and the
+triangle 1B wall by >=0.45 s with byte-identical SHAs/frames/counters and a
+byte-identical ktest log. **Price first** with a same-window A/B (232e: never
+with an env-gated ablation that changes guest behavior).
+
+### Option C2: C5 trace/superblock formation, measured against `RunNonJit`
+
+2.25 s of the triangle's 6.9 s is served outside native blocks, and another
+1.1 s is `RunJitBlock` head lookup/formation/chain bookkeeping. A trace that
+chains hot successors into one native body must therefore *not* add per-block
+bookkeeping: measure `outerMs - runnerMs` before and after. Acceptance:
+`nonJitMs` drops by >=20% with every 1B SHAs/counter exact.
 
 ### Option B-lead (bounded finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
@@ -228,10 +265,19 @@ not start it without a measured pixel delta.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- **The C4 host-pointer translate probe** (§232a): implemented, measured on an
+  interleaved same-window A/B, **neutral** (menu `runnerMs` 15,872 -> 16,026,
+  triangle 3,407 -> 3,382; walls within noise, SHAs exact). The probe's
+  dependent L1 loads are hidden by the out-of-order engine.
+- **Env-gated emitter ablations as a pricing tool** (§232e): they change guest
+  behavior (a flat-identity probe ablation "won" 34% on a diverged guest; a
+  flags ablation failed to build and measured the IL engine instead). Price
+  with a stashed build and interleaved legs; `runnerMs`/`outerMs`/`nonJitMs`
+  and `Host timing executeMs/advanceMs` are the stage gates.
 - **Sub-2% performance slices** - the 2026-10-22 re-open is for structural
   stages (C4-C6); C3-y, the 1024-slot xlat cache, block fusion and the
   E-series emission are measured out. A C4-C6 stage needs a same-window
-  ≥10% wall or ≥20% engine result, not a polish pass.
+  >=10% wall or >=20% engine result, not a polish pass.
 - **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
   programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
   (§228, `corpus-phase-anchors.md`).

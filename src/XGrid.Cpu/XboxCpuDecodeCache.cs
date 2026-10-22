@@ -415,7 +415,7 @@ public sealed partial class XboxCpu
 
             if (InterruptSource is not null && (Context.Eflags & FlagBits.If) != 0)
             {
-                int vector = InterruptSource.Acknowledge();
+                int vector = PollInterrupt();
                 if (vector >= 0)
                 {
                     Context.Halted = false;

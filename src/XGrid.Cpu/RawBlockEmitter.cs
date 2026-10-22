@@ -2609,6 +2609,13 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R32(Register.R10D), Field(Register.R11, OffCr0Wp));
                 a.test(R32(Register.R10D), R32(Register.R10D));
                 a.jne(slow);
+
+                // The CR0.WP probe above clobbered R10D, which still holds the
+                // translate-cache slot the physical-page load below indexes:
+                // without this reload a writable-direct store to a read-only
+                // page with WP clear reads the wrong slot (decisions 232).
+                a.mov(R32(Register.R10D), R32(Register.R8D));
+                a.and(R32(Register.R10D), (int)XboxCpu.DataXlatMask);
                 a.Label(ref writable);
             }
 

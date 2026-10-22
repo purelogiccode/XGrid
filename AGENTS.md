@@ -123,13 +123,20 @@ better** (operator decision 2026-10-22). Hard rules:
    SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-22, 1B fast mode, H1):** menu 24.3 s `gl+replace` (CPU
-engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s, GL ~0.7 s,
-readback only when capturing), triangle 7.5-7.9 s `gl+replace` / 11.5 s sw;
-menu sw ~32 s (raster ~11.5 s). xemu triangle ≈830 Msteps/s = 1.2 s at 1B;
-1 guest-second ≈ 733M steps, so the real-time band is 1.36 s at 1B. ktest 2B
-is already ahead (XGrid 9-10 s vs xemu 15 s). The engine is the lead lever
-again; report ns/served member + wall per presented frame, not 1B walls alone.
+**Position (2026-10-22 late, 1B fast mode, H1):** menu 20.8-21.0 s
+`gl+replace` / 30.7 s sw (raster ~11.5 s); triangle 6.77 s `gl+replace` /
+10.6 s sw. **The triangle's wall is decomposed (decisions §232b):**
+`RunJitBlock` 4.53 s (native 3.42 + 1.1 head lookup/formation/chain) +
+`RunNonJit` 2.25 s (523k spec runs at 277 ns/member + 489k `Step`s at 1.6 µs)
++ device `Advance` 7 ms. The non-JIT cost is *decode*: 359,476 boot-ROM
+fetches (`0xFFFFFFxx`, all in the first 100M steps) at ~1.5 µs each because
+the decode cache refuses non-RAM pages — **priced 0.54 s/run (7.8% of the
+triangle wall)**. **C4's host-pointer probe measured NULL and was reverted**
+(§232a). xemu triangle ≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈ 733M
+steps, so the real-time band is 1.36 s at 1B. ktest 2B is already ahead
+(XGrid 9-10 s vs xemu 15 s). Report ns/served member + wall per presented
+frame, not 1B walls alone, and price stages with stashed interleaved A/B legs
+(§232e).
 
 ## Build / test / format
 
@@ -709,12 +716,60 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1835 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1836 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
-**Session 2026-10-22 (thirty-first; course correction — xemu-class performance
+**Session 2026-10-22 (thirty-second; C4 priced by implementing it and reverted
+as a measured null, the non-JIT wall decomposed to the boot ROM decode, the
+interrupt poll unified, and a lost store translate slot fixed - decisions
+§232). Track C stage C4 measured, not landed.**
+
+- **C4 slice 1 was implemented, measured and reverted.** The probe now has a
+  host-pointer page table (per-slot RAM host base, 0 for non-RAM, physical
+  path kept for `--jit-mmio`, RAM bound dropped because a slot is only filled
+  for a page that is entirely RAM). Interleaved 1B A/B: menu wall 21.01 ->
+  21.05 s (`runnerMs` 15,872 -> 16,026), triangle 6.89 -> 6.77 s
+  (`runnerMs` 3,407 -> 3,382) - **noise**, with every SHA/counter exact. The
+  probe's three dependent L1 loads are hidden by the out-of-order engine, so
+  the raw path's ~6.3 ns/served member is not the probe. Reverted per the
+  no-polish-pass rule; recorded as a measured negative.
+- **Where the triangle's 6.9 s actually goes** (`--jit-timing` + `Host
+  timing`): `RunJitBlock` 4.53 s (native 3.42 s + 1.1 s head lookup /
+  formation / chain) + `RunNonJit` 2.25 s (523k `RunSpecBlock` calls serving
+  5.31M members at 277 ns each, and 489k `Step`s at 1.6 us each) + device
+  `Advance` 7 ms. The non-JIT cost is **decode**, not the mnemonics:
+  `nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
+  all inside the first 100M steps - the decode cache refuses non-RAM pages
+  (gotcha iii), so each ROM instruction fetches 15 bytes one bus read at a
+  time. **Priced at ~0.54 s/run = 7.8% triangle / 2.4% menu / ~22% of the
+  100M boot leg** - filed, not landed (below the >=10% stage gate, and the
+  fix needs a read-only-region classification + overlay-disable flush).
+- **C6 slice 1 landed: one interrupt-poll contract.** `Step` and
+  `RunSpecBlock` called the device model's `Acknowledge()` per instruction;
+  new `XboxCpu.PollInterrupt()` (partial `XboxCpuInterrupts.cs`) loads the
+  PIC's pinned pending word and calls the controller only when a vector may be
+  pending. Exact by construction; wall delta below the 2% resolution, landed
+  as architecture (the emitted blocks already polled this way).
+- **Correctness fix (§232d).** The raw store probe's CR0.WP check clobbered
+  R10D - the translate-cache slot the physical-page load indexes - so a store
+  into a **read-only page with CR0.WP clear** wrote slot 0's frame (physical 0
+  in the new test) instead of the mapped page. The kernel runs with WP set,
+  which is why no gate ever hit it. Fixed + `ReadOnlyPageStoreWithWriteProtect
+  Clear_WritesTheTranslatedPage` (fails pre-fix: `Read32(0) == 0xDEADBEEF`).
+- **Methodology recorded (§232e):** env-gated emitter ablations are worthless
+  when they change guest behavior (the flat-probe ablation ran "34% faster"
+  on a diverged guest; a flags ablation fell back to the IL engine). Price a
+  stage with interleaved same-window A/B legs on a stashed build instead.
+- **Gates:** accurate menu `4EF1FBF6`/`B6116DAE` + counters 33632/686/686,
+  accurate triangle `A1740DE0`/`7A860ED7` + 2706/68/34 (both GOLDEN PASS,
+  violations 0); fast 1B anchors exact on four legs (menu `34973510`/
+  `B06BA6E5`, triangle `B45254CA`/`4F1FCBC0`, CPUs `F5D61C94`/`7DAB63EB`);
+  ktest smoke PASS 7/7 at **792,800,535** steps, log `CA5D3867` byte-identical.
+  Suite 1835 -> **1836**; format clean.
+
+**Session 2026-10-22 (thirty-first; course correction - xemu-class performance
 is the long-run objective, Track C re-opened). Diagnostic/planning only; no code
 change.** The operator set the long-run goal to xemu-class or better. The
 measured position meets the freeze's own re-open condition: the CPU engine is

@@ -1,5 +1,23 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-22 LATE (thirty-second session, 232) - C4 slice 1 measured
+> NULL and reverted; the measured levers are now the boot ROM decode and the
+> non-JIT share.** The host-pointer translate probe was implemented (per-slot
+> RAM host base, exact non-RAM fallback) and priced on interleaved 1B A/B:
+> menu wall 21.01 -> 21.05 s (`runnerMs` 15,872 -> 16,026), triangle 6.89 ->
+> 6.77 s (`runnerMs` 3,407 -> 3,382) - noise, SHAs exact. The probe is NOT the
+> raw path's wall. The triangle's 6.9 s is now decomposed (232b):
+> `RunJitBlock` 4.53 s (native 3.42 s + 1.1 s head lookup/formation/chain) +
+> `RunNonJit` 2.25 s, and the non-JIT cost is **decode**, not the mnemonics -
+> `nonRamSkips=359,476` of 497,806 misses, top pages `0xFFFFFFxx` (boot ROM),
+> all inside the first 100M steps, priced at **~0.54 s/run** (7.8% of the
+> triangle wall). Landed instead: the unified interrupt poll (232c) and the
+> store probe's lost translate slot (232d). **C4 as specified is closed**; the
+> next Track C candidates are the read-only-ROM decode path and C5 trace
+> formation measured against `nonJitMs` (see `next-session.md` §2). Method
+> note (232e): price stages with stashed interleaved A/B legs, never with
+> env-gated ablations that change guest behavior.
+
 > **STATUS 2026-10-22 (thirty-first session, course correction) - Track C is
 > RE-OPENED by operator decision: the long-run objective is xemu-class
 > performance or better.** The freeze's own re-open condition is met: the CPU
@@ -477,10 +495,11 @@ Stages:
 
 | Stage | Work | Target |
 |---|---|---|
-| **C4** | Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe | ≥2× menu engine, ≥1.5× triangle |
-| **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first | ≥1.3× engine |
-| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix | ≥10% menu wall |
-| **C7** | Reassess if C4+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
+| **C4** | ~~Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe~~ **MEASURED NULL 2026-10-22 late (232a), reverted** | ~~≥2× menu engine, ≥1.5× triangle~~ |
+| **C4b** | Read-only-ROM decode path: classify read-only physical windows as cacheable code, skip the tracked-page bitset for them, flush on overlay-disable/reset (priced 0.54 s/run, 232b) | ≥0.45 s off the 1B triangle / 100M boot |
+| **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first; keep `outerMs - runnerMs` flat | ≥1.3× engine |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | ≥10% menu wall |
+| **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
 
 Each stage: same-window A/B (≥10% wall or ≥20% engine), exact 1B
 SHAs/counters, flag-off byte-identical, ktest log byte-identical. Report

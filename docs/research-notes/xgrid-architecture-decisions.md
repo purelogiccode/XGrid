@@ -14699,3 +14699,105 @@ score only moves with landed work).
 performance campaign, result), `AGENTS.md` (development direction + session
 note), `docs/research-notes/next-session.md`,
 `docs/research-notes/jit-track-charter.md` (Phase 3b).
+
+## 232 C4 priced and reverted, the non-JIT wall decomposed, the interrupt poll unified, and a lost store translate slot fixed (2026-10-22, thirty-second session)
+
+**Track C, stage C4 (flat memory model / soft TLB). Priced, implemented,
+measured, reverted: the data-translate probe is NOT the raw path's wall.**
+The documented first step was an ablation; two ablation styles were tried and
+both are unusable (see 232e), so the stage was priced by implementing it:
+a host-pointer page table (RawState.XlatHost, 256 slots, one entry per
+translate-cache slot holding the page's RAM host base, 0 for a page that is
+not wholly RAM, recomputed at raw attach so a warm cache survives the pin).
+The emitted probe became tag check + one 8-byte pointer load + `test/jz` +
+offset, with the physical-address path kept only for `--jit-mmio`
+(`--jit-mmio`) and the RAM bound check dropped because a slot is only filled
+for a page that is entirely RAM and the page-cross check keeps the access
+inside that page.
+
+Same-window A/B (interleaved, 1B, gate media, `--gpu gl --gpu-replace`):
+
+| leg | base wall / runnerMs | host-pointer wall / runnerMs | verdict |
+|---|---|---|---|
+| menu | 21.009 s / 15,872 ms | 21.054 s / 16,026 ms | +0.2% |
+| triangle | 6.891 s / 3,407 ms | 6.771 s / 3,382 ms | -1.7% |
+
+Both within host noise, and every semantic anchor was exact on both builds
+(menu RAM `B06BA6E5`/CPU `F5D61C94`, triangle RAM `4F1FCBC0`/CPU `7DAB63EB`,
+`served=860,984,379` / `543,558,307`, `slowMem=1,996,335` / `1,353,220`).
+**Conclusion: the three dependent L1 loads of the physical probe are hidden by
+the out-of-order engine; the ~6.3 ns/served member the raw runner costs is not
+the probe.** The change was reverted per the "no polish pass" rule; the
+negative is recorded so it is not re-attempted. (Third iteration of the same
+lesson: 199d block fusion, 199k bookkeeping, now 232a.)
+
+**232b The triangle's 1B wall, decomposed (measured, 1B, H1).** `wall=6.9 s`
+is `RunJitBlock` 4.53 s + `RunNonJit` 2.25 s + device `Advance` 7 ms
+(`Host timing`); inside `RunJitBlock` the native runner is 3.42 s and 1.1 s is
+head lookup / formation / chain bookkeeping. Inside `RunNonJit`:
+
+- `RunSpecBlock`: 523,062 calls, 5.31M members, 1.47 s = **277 ns/member**.
+- `Step`: 488,970 calls, 0.78 s = **1.6 us/instruction**.
+
+The non-JIT mnemonic mix is ordinary (`Mov` 1.50M, `Jcc` 0.47M, `Add` 0.35M,
+`Cmp` 0.27M, `Push` 0.19M, `Nop` 0.17M, `Inc` 0.16M, `Fstp` 0.14M) - those
+are not expensive instructions, they are being decoded the expensive way:
+`Decode cache ... nonRamSkips=359,476` of 497,806 misses, and the top
+non-cacheable fetch pages are `0xFFFFFFxx` (the boot ROM window), each hit
+~25k times, **all inside the first 100M steps** (measured: `nonRamSkips` is
+already 359,476 at 100M and flat at 300M/1B). `IsCacheableFetch` refuses any
+physical `>= MaxTrackedPhysical` or non-RAM (gotcha iii: no device register
+read may go stale behind a cache), so every ROM instruction fetches 15 bytes
+one `Memory.Read8` at a time through the bus. **Priced: ~0.54 s per run =
+7.8% of the triangle wall, 2.4% of the menu, ~22% of the 100M boot leg.**
+Not landed: it does not clear the >=10% stage gate, and the fix (a
+read-only-region classification so flash/ROM pages may be cached, plus an
+overlay-disable flush) touches the decode cache's invalidation contract - it
+is filed as the next concrete C5/C6 candidate with its measurement, not as a
+polish pass.
+
+**232c C6 slice 1: one interrupt-poll contract (landed).** `Step` and
+`RunSpecBlock` called the device model's `IInterruptSource.Acknowledge()`
+once per *instruction* while the emitted IL/raw blocks already polled the
+PIC's pinned 0/1 pending word (`IInterruptSource.PendingFlagAddress`). New
+`XboxCpu.PollInterrupt()` (partial file `XboxCpuInterrupts.cs`) loads that
+word and only calls `Acknowledge()` when a vector may be pending; the word is
+maintained by `Pic8259` on every state change (raise, mask/EOI write, reset,
+snapshot load), so a zero reading is exact and the call - which mutates the
+controller - is never skipped when it has work. Measured on the non-JIT
+timers: `RunSpecBlock` 1.53 s -> 1.44 s, `Step` 0.77 s -> 0.78 s (noise);
+wall delta is below the 2% resolution, so this is landed as an *architecture*
+fix (one poll contract, no per-instruction virtual call into the device
+model), not as a wall win. All four 1B fast anchors, both accurate-mode
+goldens and the ktest log are byte-identical.
+
+**232d The raw store probe lost its translate slot when CR0.WP was clear
+(correctness fix).** The store probe's WP parity check loads `CR0.WP` into
+R10D - the register that still holds the translate-cache *slot* the following
+physical-page load indexes. With `CR0.WP=1` the branch to `slow` fires and
+hides it; with `CR0.WP=0` a store to a **read-only page** fell through and
+read slot 0's physical page, landing the write on the wrong frame (in the
+regression test: physical 0 instead of the mapped 0x3000). The Xbox kernel
+runs with WP set, which is why no gate ever hit it. Fixed by reloading the
+slot from R8D (the vpn) after the CR0 load; `ReadOnlyPageStoreWithWriteProtectClear_WritesTheTranslatedPage` fails on the pre-fix source
+(`Read32(0) == 0xDEADBEEF`) and passes after.
+
+**232e Measurement methodology (recorded because it cost time).**
+Env-gated "ablation" switches inside the emitter are worthless when they
+change guest behavior: the flat-identity probe ablation ran 34% faster only
+because the guest diverged (`served` 702M vs 861M), and a flags-publish
+ablation silently failed `rawBuildFails=6205` and fell back to the IL path
+(it measured the IL engine, not the change). Price a stage by implementing it
+behind a stash-able build and running **interleaved same-window legs** -
+`runnerMs`/`outerMs`/`nonJitMs` from `--jit-timing` are the stage gates, and
+`Host timing executeMs` vs `advanceMs` proves whether device time is inside
+`Cpu.Execute` or not.
+
+**Gates (this session, H1, final build):** accurate 1B menu `4EF1FBF6` (sw) /
+`B6116DAE` (gl), diff 2602, violations 0, counters 33632/686/686; accurate
+triangle `A1740DE0` / `7A860ED7`, diff 27849, counters 2706/68/34 - both
+GOLDEN PASS. Fast 1B anchors exact: menu sw `34973510`/`F5D61C94`, menu gl
+`B06BA6E5`/`F5D61C94`, triangle sw `B45254CA`/`7DAB63EB`, triangle gl
+`4F1FCBC0`/`7DAB63EB`. ktest smoke PASS 7/7 at **792,800,535** steps with the
+40,797-byte log `CA5D3867` byte-identical. Suite 1835 -> **1836**; format
+clean.

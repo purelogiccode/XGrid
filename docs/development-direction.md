@@ -145,6 +145,20 @@ that serves none of B/E/P is rejected even if it is interesting.
 
 ## 1. Priority stack (in order)
 
+**Status 2026-10-22 late (§232): C4 measured NULL; the levers are now measured,
+not assumed.** The host-pointer translate probe was implemented and priced on an
+interleaved 1B A/B (menu `runnerMs` 15,872 → 16,026, triangle 3,407 → 3,382,
+walls within noise, SHAs exact) and reverted. The triangle's 6.9 s is
+`RunJitBlock` 4.53 s (native 3.42 + 1.1 bookkeeping) + `RunNonJit` 2.25 s, and
+the non-JIT cost is *decode*: 359,476 boot-ROM fetches (`0xFFFFFFxx`, all inside
+the first 100M steps) at ~1.5 µs each because the decode cache refuses non-RAM
+pages — **priced 0.54 s/run, 7.8% of the triangle wall**. Landed: the unified
+interrupt poll (C6 slice 1, architecture; wall delta below resolution) and a
+correctness fix for a raw store that lost its translate slot when CR0.WP was
+clear. Next: **C4b** read-only-ROM decode path, then C5 trace formation
+(measured against `nonJitMs`), then C6. Price stages with stashed interleaved
+A/B legs, never with env-gated ablations that change guest behavior (§232e).
+
 **Status 2026-10-22 (course correction): Track C is re-opened and leads; B3 is
 a bounded finish; E steers; P runs parallel.** The engine is ~17 s of the
 24.3 s menu `gl+replace` wall and dominant on the 7.5-7.9 s triangle wall; the

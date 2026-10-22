@@ -123,18 +123,25 @@ the lead; the 2026-10-20 product-path-first order is retained as history (the
 present path landed, the corpus is 22 rows / 17 samples, the product surface is
 usable). Current order:
 
-1. **Track C — performance (lead, re-opened 2026-10-22).** C4 flat memory
-   model/soft TLB, C5 trace/superblock formation, C6 device/MMIO fast path.
-   The engine is ~17 s of the 24.3 s menu `gl+replace` wall (~70%) and dominant
-   on the 7.5-7.9 s triangle wall; xemu-class is 1.20 s / 1.36 s at 1B, a
-   ~6.6× / ~17.8× gap. Each stage: same-window A/B ≥10% wall or ≥20% engine,
-   exact 1B SHAs/counters, flag-off byte-identical, ktest log byte-identical.
+1. **Track C — performance (lead, re-opened 2026-10-22).** **C4 (host-pointer
+   translate probe) was implemented, measured on an interleaved 1B A/B and
+   REVERTED as a null result** (decisions §232a: menu `runnerMs` 15,872 →
+   16,026, triangle 3,407 → 3,382, walls within noise, SHAs exact). The
+   measured wall decomposition (§232b) puts the triangle's 6.9 s at
+   `RunJitBlock` 4.53 s (native 3.42 + 1.1 bookkeeping) + `RunNonJit` 2.25 s,
+   and the non-JIT cost is *decode*: `nonRamSkips=359,476` boot-ROM fetches at
+   ~1.5 µs each, priced **0.54 s/run** (7.8% triangle). Next stages: **C4b**
+   read-only-ROM decode path (that 0.54 s), **C5** trace/superblock formation
+   measured against `nonJitMs`, **C6** device/MMIO fast path (slice 1, the
+   unified interrupt poll, landed as architecture). Each stage: same-window
+   A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters, flag-off
+   byte-identical, ktest log byte-identical.
 2. **Track B — bounded B3 finish.** The present path is closed (readback
    opt-in, batching, sampler parity, replace-mode composition); the only open
    item is the computed-mode panel (gap 12: texel-word fetch + MUX-lsb/final
-   lerp). Finish it, then stop until C4 has a measured result.
+   lerp). Finish it, then stop.
 3. **Track E — compatibility corpus.** 22 rows / 17 samples; add performance
-   rows; no new breadth until C4 lands.
+   rows; no new breadth beyond the standing rows.
 4. **Track P — product completeness (parallel).** Host audio remains the large
    gap; pad/save states/per-title config/renderer are landed. Do not displace C.
 5. **Track D — measured >2% only.**
