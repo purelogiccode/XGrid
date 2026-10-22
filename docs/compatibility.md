@@ -1,11 +1,18 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **rows re-measured 2026-10-21 after §208 (display model).** Every row now
-carries the product-path frame (`displaySha` = the CRTC scanout) next to the
-flipped-surface gate anchor, and the triangle's fast anchor is the gate media
-(HDD+DVD) after the §208d correction. Earlier: first measured rows 2026-10-20,
-refreshed after §205 (draw-command
-batching) with both backends per sample.** This is the steering document for
+Status: **every row re-verified 2026-10-22 late after §237/§238** (the image-window
+decode class and the non-JIT run slice): all 1B rows reproduce their `ram`/`cpu`
+pairs and frame/scanout/display SHAs exactly, and the deep rows reproduce at
+their own anchors (`xgu-vp_lighting` 3B, `xgu-bump_cubemap_reflect` 3B/3.6B/4.4B,
+`xgu-alpha_blending` 3B, `xgu-swizzle_texture` 3B, `xgu-bumpenv_ripple` 5B,
+`xgu-distance_fog_ffp` and `xgu-spheremap_ffp` 3B off/on, `nxdk/usb` 1B). Walls
+moved with §237/§238 (e.g. the dashboard leg 30.9 -> 29.5 s, the triangle
+`gl+replace` 6.67 -> 6.08 s); SHAs did not. One stale anchor was corrected while
+re-verifying: the dashboard row's fast RAM is `AF1FF8ED…` (the recorded
+`51B56687…` predates §218's APU `XGSCNT` change; the base build reproduces
+`AF1FF8ED` too). Earlier: rows re-measured 2026-10-21 after §208 (display model),
+and 2026-10-20 after §205 (draw-command batching) with both backends per sample.**
+This is the steering document for
 fidelity work, not a gate document. A row is evidence from a recorded run; gates
 stay in `docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
 
@@ -70,9 +77,9 @@ per-sample evidence).
 
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
-| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `51B56687` / CPU `F5D61C94`; last frame `4EF1FBF6`; gl `B6116DAE` (policy) | `-Sample dashboard` |
+| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `AF1FF8ED` / CPU `F5D61C94` (`--frame-first` leg); last frame `4EF1FBF6`; scanout `51658B3D`; gl `B6116DAE` (policy) | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
-| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **7.5 s** vs 11.3 s sw (gate media) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
+| **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **6.08 s** vs 10.45 s sw (gate media, after §237/§238) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
 | **xgu `bump_cubemap_reflect`, GL replace (§236 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`) | **gap 12 CLOSED (2026-10-22, §236):** the cube stage samples a host 2D-array texture decoded from the guest's six swizzled faces, so GL replace now presents the reflection panel. At 4.4B the GL frame is 19,042 colours / 0% black and differs from the software frame by **2 pixels of 307,200 (maxDelta 3)**; at 3.6B by **1 pixel (maxDelta 4)**, 21,041 colours both. `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0` | n/a | none on the render path; a HILO dot-map input (maps 4-7) is still one word per stage - no measured row uses one | sw 4.4B 18,980 colours / mean (57.4, 89.3, 34.2); gl 4.4B 19,042 / 0% black; sw+gl 3.6B 21,041 / (58.0, 98.7, 29.8) | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
 | **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized, and since §236 the cube stage samples its decoded host array texture, so the dot family renders on the GPU too. At 3B this row's executed combiner is still the one-stage `PROJECT2D`/`0x03` shape (`stages=1 texmodes=0000`), so the panel is the GPU image and `unsupported=0 fatal=0 programs=9` | n/a | none on the render path; gap 12 closed at 4.4B (see the row above) | 3B `-Gpu gl -GpuReplace`: `unsupported=0`, `fatal=0`; CPU `D5D38C64` (unchanged) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
 | **xgu `vp_lighting`, TEXFILTER parity** | same | yes | yes, own scene from ~3B | replace mode, **`pixels=0`** (no fallback): the GL fragment shader runs the tent/convolution/wrap path | n/a | none; the flag moves both renderers by the same ~6.5% and they agree within one 8-bit step in both states (§220c) | gl legacy `E68070A3` vs sw `72B2F490` (dmean 0.00/0.01/0.01, maxDelta 1); gl registers `A9E09139` vs sw `CF698444` (same); CPU `0380C502` in all four | `-Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace [-TexFilter registers]` |
