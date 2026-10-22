@@ -511,7 +511,7 @@ public sealed class Nv2aSamplerFastTests
     public void CompiledModulateFill_RendersTextureColors()
     {
         FillResult fast = RenderModulateFill(generic: false);
-        var colors = new System.Collections.Generic.HashSet<uint>(fast.Frame);
+        var colors = new HashSet<uint>(fast.Frame);
         colors.Remove(0u);
         string[] values = new string[colors.Count];
         int index = 0;
@@ -520,7 +520,7 @@ public sealed class Nv2aSamplerFastTests
             values[index++] = value.ToString("X8");
         }
 
-        System.Array.Sort(values, StringComparer.Ordinal);
+        Array.Sort(values, StringComparer.Ordinal);
         Assert.Equal(DiagnosticModulateColors, values);
         Assert.True(fast.Compiled, "the compiled modulate fill must engage");
     }

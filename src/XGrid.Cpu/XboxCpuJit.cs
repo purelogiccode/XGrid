@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using XGrid.Memory;
 
 namespace XGrid.Cpu;
 
@@ -359,7 +360,6 @@ public sealed unsafe partial class XboxCpu
         }
 
         ulong generation = blocks.Generation;
-        bool rawTrace = _rawTrace;
 
         // Loop invariants: nothing servable inside RunJitBlock can change CS
         // (segment loads are excluded from planned members and CallSpec), so
@@ -785,7 +785,7 @@ public sealed unsafe partial class XboxCpu
         out DecodeCacheEntry entry)
     {
         entry = default;
-        bool crossesPage = (fetchLinear & 0xFFFu) + (uint)Decoder.MaxInstructionLength > 0x1000u;
+        bool crossesPage = (fetchLinear & 0xFFFu) + Decoder.MaxInstructionLength > 0x1000u;
         Span<byte> window = stackalloc byte[Decoder.MaxInstructionLength];
         try
         {
@@ -804,7 +804,7 @@ public sealed unsafe partial class XboxCpu
         {
             return false;
         }
-        catch (XGrid.Memory.MemoryAccessException)
+        catch (MemoryAccessException)
         {
             return false;
         }
@@ -925,7 +925,7 @@ public sealed unsafe partial class XboxCpu
 
         RawRun? rawRunner = null;
         nint rawPointer = 0;
-        JitRun? runner = null;
+        JitRun? runner;
         if (JitRawBlocks && !JitExact)
         {
             rawPointer = RawBlockEmitter.TryBuild(

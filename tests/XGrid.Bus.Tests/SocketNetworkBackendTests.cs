@@ -4,6 +4,9 @@ using System.Net.Sockets;
 using XGrid.Bus.Net;
 using Xunit;
 
+// The spin-wait lambda runs synchronously before the using scope disposes the backend.
+// ReSharper disable AccessToDisposedClosure
+
 namespace XGrid.Bus.Tests;
 
 public sealed class SocketNetworkBackendTests

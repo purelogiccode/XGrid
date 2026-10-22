@@ -32,8 +32,10 @@ public sealed class UnsupportedInstructionException : Exception
     }
 
     /// <summary>Gets the instruction pointer where the opcode was encountered.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public uint Eip { get; }
 
     /// <summary>Gets the first opcode byte.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public byte Opcode { get; }
 }

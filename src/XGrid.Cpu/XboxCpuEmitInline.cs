@@ -322,7 +322,7 @@ public sealed partial class XboxCpu
             segment,
             memory.HasBase ? (int)memory.Base : -1,
             memory.HasIndex ? (int)memory.Index : -1,
-            (int)memory.Scale,
+            memory.Scale,
             memory.Displacement,
             registerIndex,
             immediate,

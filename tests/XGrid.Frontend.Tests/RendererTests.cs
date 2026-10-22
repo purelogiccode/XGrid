@@ -82,7 +82,7 @@ public sealed class GraphicsBackendHostTests
     [Fact]
     public void TheMachineExposesTheGpuMemoryAdapterABackendNeeds()
     {
-        var machine = new XboxMachine(64u * 1024u * 1024u);
+        var machine = new XboxMachine();
 
         Assert.NotNull(machine.Nv2A.GpuMemory);
     }
@@ -90,7 +90,7 @@ public sealed class GraphicsBackendHostTests
     [Fact]
     public void SoftwareSelectionNeverAttachesABackend()
     {
-        var machine = new XboxMachine(64u * 1024u * 1024u);
+        var machine = new XboxMachine();
 
         bool attached = GraphicsBackendHost.TryAttach(machine, new EmulatorSettings(), out string detail);
 
@@ -113,7 +113,7 @@ public sealed class GraphicsBackendHostTests
             return;
         }
 
-        var machine = new XboxMachine(64u * 1024u * 1024u);
+        var machine = new XboxMachine();
         var settings = new EmulatorSettings { Renderer = RendererPolicy.OpenGl };
 
         bool attached = GraphicsBackendHost.TryAttach(machine, settings, out string detail);

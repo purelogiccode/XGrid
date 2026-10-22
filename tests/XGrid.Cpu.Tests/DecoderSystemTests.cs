@@ -6,7 +6,7 @@ public sealed class DecoderSystemTests
 {
     private static DecodedInstruction Decode(params byte[] code)
     {
-        return Decoder.Decode(code, 32, 32);
+        return Decoder.Decode(code);
     }
 
     [Fact]

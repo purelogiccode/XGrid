@@ -61,8 +61,6 @@ public sealed class ApuFrameCounterTests
     {
         private readonly Dictionary<uint, byte> _ram = new();
 
-        public byte Read8(uint address) => _ram.GetValueOrDefault(address, (byte)0);
-
         public void Write8(uint address, byte value) => _ram[address] = value;
 
         public uint Read32(uint address)

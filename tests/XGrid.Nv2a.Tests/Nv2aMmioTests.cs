@@ -26,7 +26,7 @@ public sealed class Nv2AMmioTests
     [Fact]
     public void Pfb_ReportsRamSizeAndCfgDefault()
     {
-        var nv2A = new Nv2AMmio(64u * 1024 * 1024);
+        var nv2A = new Nv2AMmio();
 
         Assert.Equal(64u * 1024 * 1024, nv2A.Read(Base + 0x10020Cu, 4));
         Assert.Equal(0x03070103u, nv2A.Read(Base + 0x100200u, 4));

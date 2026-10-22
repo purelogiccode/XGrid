@@ -365,16 +365,16 @@
                 <Border Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
                   <TextBlock Text="Arrows" Classes="keycap" />
                 </Border>
-                <TextBlock Grid.Column="1" Text="D-pad" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="1" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="D-pad" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
+                <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
                   <TextBlock Text="A S D F" Classes="keycap" />
                 </Border>
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="A / B / X / Y" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="2" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
+                <Border Grid.Row="2" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
                   <TextBlock Text="Enter · Back" Classes="keycap" />
                 </Border>
                 <TextBlock Grid.Row="2" Grid.Column="1" Text="Start · Back" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />
-                <Border Grid.Row="3" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
+                <Border Grid.Row="3" Grid.Column="0" Background="{DynamicResource XgSurfaceAltBrush}" CornerRadius="6" Padding="7,2">
                   <TextBlock Text="Q E · Z C" Classes="keycap" />
                 </Border>
                 <TextBlock Grid.Row="3" Grid.Column="1" Text="White / black · triggers" Classes="hint" Margin="10,0,0,0" VerticalAlignment="Center" />

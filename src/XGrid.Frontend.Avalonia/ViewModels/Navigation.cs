@@ -49,7 +49,7 @@ public enum PageKind
 }
 
 /// <summary>A sidebar destination plus its page view model.</summary>
-public sealed partial class NavigationItem : ObservableObject
+public sealed class NavigationItem : ObservableObject
 {
     /// <summary>Creates a navigation item.</summary>
     public NavigationItem(PageKind kind, string title, string subtitle, Geometry icon, PageViewModel page)

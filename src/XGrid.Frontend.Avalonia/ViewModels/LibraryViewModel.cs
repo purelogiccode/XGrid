@@ -111,11 +111,13 @@ public sealed partial class LibraryViewModel : PageViewModel
         OnPropertyChanged(nameof(HasNoFolders));
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnSearchTextChanged(string value)
     {
         ApplyFilter();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsScanningChanged(bool value)
     {
         OnPropertyChanged(nameof(IsEmpty));

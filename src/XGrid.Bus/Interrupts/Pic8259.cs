@@ -13,17 +13,16 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
     private readonly Pic _master = new();
     private readonly Pic _slave = new();
     private readonly uint[] _pendingFlag = new uint[1];
-    private readonly GCHandle _pendingPin;
     private readonly nint _pendingAddress;
 
     /// <summary>Creates the PIC pair and registers its command/data ports.</summary>
     public Pic8259(IoSpace io)
     {
         ArgumentNullException.ThrowIfNull(io);
-        _pendingPin = GCHandle.Alloc(
+        GCHandle pendingPin = GCHandle.Alloc(
             _pendingFlag,
             GCHandleType.Pinned);
-        _pendingAddress = _pendingPin.AddrOfPinnedObject();
+        _pendingAddress = pendingPin.AddrOfPinnedObject();
         io.Register(0x20, 2, new PortWindow(_master, UpdatePendingFlag));
         io.Register(0xA0, 2, new PortWindow(_slave, UpdatePendingFlag));
         Reset();
@@ -307,11 +306,11 @@ public sealed class Pic8259 : IXboxDevice, IInterruptSource, ISnapshotable
             {
                 if ((value & 0x80) != 0 && (value & 0x40) != 0)
                 {
-                    EoiSpecific((int)(value & 7));
+                    EoiSpecific((value & 7));
                 }
                 else if ((value & 0x80) != 0 && (value & 0x40) == 0)
                 {
-                    RotatePriority((int)(value & 7));
+                    RotatePriority((value & 7));
                 }
                 else
                 {

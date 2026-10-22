@@ -120,7 +120,7 @@ public sealed class SevenEosQuirkTests
         memory[0x10180u] = 0u;
         bool wrote = false;
 
-        Assert.False(SevenEosQuirk.TryApply(Read, (va, value) => wrote = true));
+        Assert.False(SevenEosQuirk.TryApply(Read, (_, _) => wrote = true));
         Assert.False(wrote);
         return;
 
@@ -137,7 +137,7 @@ public sealed class SevenEosQuirkTests
         memory.Remove(0x10118u);
         bool wrote = false;
 
-        Assert.False(SevenEosQuirk.TryApply(Read, (va, value) => wrote = true));
+        Assert.False(SevenEosQuirk.TryApply(Read, (_, _) => wrote = true));
         Assert.False(wrote);
         return;
 

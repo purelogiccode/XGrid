@@ -5,6 +5,10 @@ using System.Threading;
 using XGrid.Bus.Net;
 using Xunit;
 
+// The spin-wait lambdas and the echo thread only run before the using scope
+// disposes the listener/socket, and the thread is joined in the finally block.
+// ReSharper disable AccessToDisposedClosure
+
 namespace XGrid.Bus.Tests;
 
 public sealed class TcpProxyTests

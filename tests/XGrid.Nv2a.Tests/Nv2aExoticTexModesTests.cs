@@ -211,7 +211,6 @@ public sealed class Nv2AExoticTexModesTests
         pushes.Add((slotBase + 0x1Cu, (width << 16) | height));
     }
 
-    private const uint CubeMapFormat = (1u << 16) | (2u << 6) | (0x06u << 8) | 4u;
 
     /// <summary>
     /// Builds a swizzled cube TEXFMT word the way xgu/nxdk programs it:
@@ -277,11 +276,6 @@ public sealed class Nv2AExoticTexModesTests
         PshCombiner.CubeRemapTo2D(-1f, 0.25f, -0.5f, out u, out v);
         Assert.Equal(-0.5f, u);
         Assert.Equal(0.25f, v);
-    }
-
-    private static void PushCubeDraw(Nv2AMmio nv2A, ArrayMemory memory, float dx, float dy, float dz)
-    {
-        PushCubeDraw(nv2A, memory, dx, dy, dz, CubeMapFormat, 2u, 2u);
     }
 
     private static void PushCubeDraw(

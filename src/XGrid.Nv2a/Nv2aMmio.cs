@@ -2108,13 +2108,13 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return ReadPmc(offset - PmcBase);
         }
 
-        if (offset >= PbusBase && offset < PbusBase + 0x1000u)
+        if (offset - PbusBase < 0x1000u)
         {
             CountRead(PbusBase);
             return ReadPbus(offset - PbusBase);
         }
 
-        if (offset >= PfifoBase && offset < PfifoBase + PfifoSize)
+        if (offset - PfifoBase < PfifoSize)
         {
             CountRead(PfifoBase);
             return ReadPfifo(offset - PfifoBase);
@@ -2188,14 +2188,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        if (offset >= PbusBase && offset < PbusBase + 0x1000u)
+        if (offset - PbusBase < 0x1000u)
         {
             CountWrite(PbusBase);
             WritePbus(offset - PbusBase, value);
             return;
         }
 
-        if (offset >= PfifoBase && offset < PfifoBase + PfifoSize)
+        if (offset - PfifoBase < PfifoSize)
         {
             CountWrite(PfifoBase);
             WritePfifo(offset - PfifoBase, value);
@@ -2282,8 +2282,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     _pmcIntrEnLog.Add(value);
                 }
 
-                break;
-            default:
                 break;
         }
 
@@ -2399,13 +2397,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case PtimerTime1:
                 SetPtimerTime(
-                    ((ulong)(value & PtimerClockHighMask) << 32) | (PtimerRegTime() & PtimerRegTimeLowMask));
+                    ((value & PtimerClockHighMask) << 32) | (PtimerRegTime() & PtimerRegTimeLowMask));
                 break;
             case PtimerAlarm0:
                 _ptimerAlarmTime = PtimerNextAlarmTime(PtimerRegTime(), value);
                 LatchPtimerAlarm();
-                break;
-            default:
                 break;
         }
     }
@@ -2444,24 +2440,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// reached, re-arming it for the next low-word wrap (reference
     /// <c>ptimer_alarm_fired</c> + <c>get_next_alarm_time</c>).
     /// </summary>
-    /// <returns>True when a pending bit was raised.</returns>
-    private bool LatchPtimerAlarm(bool requireEnabled = true)
+    private void LatchPtimerAlarm(bool requireEnabled = true)
     {
         if (requireEnabled && (_ptimerEnabled & 1u) == 0)
         {
-            return false;
+            return;
         }
 
         ulong now = PtimerRegTime();
         if (!IsPtimerAlarmReached(now, _ptimerAlarmTime))
         {
-            return false;
+            return;
         }
 
         _ptimerPending |= 1u;
         _ptimerAlarmTime = PtimerNextAlarmTime(now, _ptimerAlarmTime);
         UpdateIrq();
-        return true;
     }
 
     /// <summary>Advances the alarm check by the core ticks the render core just consumed.</summary>
@@ -2681,8 +2675,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 _vgaCrtcWritten = true;
                 break;
 
-            default:
-                break;
         }
     }
 
@@ -2694,7 +2686,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         (uint)(_vgaCrtc[0x13] | ((_vgaCrtc[0x19] & 0xE0) << 3) | ((_vgaCrtc[0x25] & 0x20) << 6)) << 3;
 
     /// <summary>Gets the active display width in pixels (QEMU vga_get_resolution).</summary>
-    public uint DisplayWidth => ((uint)_vgaCrtc[0x01] + 1u) * 8u;
+    public uint DisplayWidth => (_vgaCrtc[0x01] + 1u) * 8u;
 
     /// <summary>Gets the active display height in pixels (QEMU vga_get_resolution).</summary>
     public uint DisplayHeight =>
@@ -2737,8 +2729,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case PcrtcStart:
                 _pcrtcStart = value & 0x07FFFFFFu;
                 break;
-            default:
-                break;
         }
 
         UpdateIrq();
@@ -2772,8 +2762,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case PramdacGeneralControl:
                 _generalControl = value;
-                break;
-            default:
                 break;
         }
     }
@@ -2929,7 +2917,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return true;
         }
 
-        return (ulong)offset + ((ulong)pitch * height) <= (ulong)limit + 1;
+        return offset + ((ulong)pitch * height) <= (ulong)limit + 1;
     }
 
     private void RunPusher()
@@ -3024,7 +3012,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     channel,
                     state & DmaStateMethod,
                     (state & DmaStateSubchannel) >> 13,
-                    (state & DmaStateMethodType) == 0,
                     word);
                 if (processed < 0)
                 {
@@ -3133,7 +3120,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _pfifo[PfifoCache1DmaState / 4] = state;
     }
 
-    private int RunPuller(uint channel, uint method, uint subchannel, bool increment, uint parameter)
+    private int RunPuller(uint channel, uint method, uint subchannel, uint parameter)
     {
         if (((_pfifo[PfifoCache1Pull0 / 4] & Pull0Access) == 0) ||
             ((_pfifo[PfifoCache1Status / 4] & PfifoCache1StatusLowMark) != 0))
@@ -3506,8 +3493,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case MethodTransformConstantLoad:
                 TransformConstantLoadDebug = parameter;
                 break;
-            default:
-                break;
         }
 
         if (method >= MethodVertexFormatBase && method <= MethodVertexFormatEnd &&
@@ -3567,7 +3552,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _fixedFunction.SetTexGen((int)(index / 4u), (int)(index % 4u), parameter);
         }
 
-        if (method >= MethodTextureMatrixEnable && method < MethodTextureMatrixEnable + (uint)MaxTextureSlots)
+        if (method >= MethodTextureMatrixEnable && method < MethodTextureMatrixEnable + MaxTextureSlots)
         {
             _fixedFunction.SetTextureMatrixEnable(
                 (int)(method - MethodTextureMatrixEnable), parameter);
@@ -3674,8 +3659,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                             _bumpOffsets[slot - 1] = BitConverter.UInt32BitsToSingle(parameter);
                         }
 
-                        break;
-                    default:
                         break;
                 }
             }
@@ -3962,7 +3945,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private int ActiveTransformProgramStart()
     {
-        return (int)Math.Min(_transformProgramStart, (uint)MaxTransformProgramLength);
+        return (int)Math.Min(_transformProgramStart, MaxTransformProgramLength);
     }
 
     private int ActiveTransformProgramLength(int start)
@@ -5165,8 +5148,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     break;
                 }
 
-            default:
-                break;
         }
     }
 
@@ -5527,11 +5508,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             long width = plan.Width > 0 ? plan.Width : 1;
             long height = plan.Height > 0 ? plan.Height : 1;
             long pitch = plan.Pitch > 0 ? plan.Pitch : 0;
-            bound = (long)plan.Offset + ((height - 1) * pitch) + ((width - 1) * plan.FastBytes);
+            bound = plan.Offset + ((height - 1) * pitch) + ((width - 1) * plan.FastBytes);
         }
         else
         {
-            bound = (long)plan.Offset + ((long)(plan.SwizzleMaskX | plan.SwizzleMaskY) * plan.FastBytes);
+            bound = plan.Offset + ((plan.SwizzleMaskX | plan.SwizzleMaskY) * plan.FastBytes);
         }
 
         return bound is < 0 or > uint.MaxValue ? uint.MaxValue : (uint)bound;
@@ -6823,7 +6804,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                (ulong)width * height <= MaxPresentPixels &&
                lineOffset >= width * bytesPerPixel &&
                lineOffset <= 0x4000u &&
-               (ulong)start + ((ulong)(height - 1) * lineOffset) + (width * bytesPerPixel) <= RamSize;
+               start + ((ulong)(height - 1) * lineOffset) + (width * bytesPerPixel) <= RamSize;
     }
 
     /// <summary>
@@ -7146,7 +7127,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         float clampedDepth = Math.Clamp(depth, 0f, 1f);
-        bool depthPass = true;
+        bool depthPass;
         if (depthActive)
         {
             DepthTestedPixels++;
@@ -8302,7 +8283,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         // The framebuffer read for the blend source is a direct RAM word when
         // the fill's whole address span is inside RAM (the same test the
         // adapter reader performs, hoisted per fill).
-        long maxDest = (long)colorBase + ((long)y1 * pitch) + ((long)x1 * 4u);
+        long maxDest = colorBase + ((long)y1 * pitch) + ((long)x1 * 4u);
         bool directDest = ramLimit != 0 && maxDest <= ramLimit;
         ref byte ramBase = ref MemoryMarshal.GetArrayDataReference(ram);
 
@@ -8744,10 +8725,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                             texel = stage0Plan.FastBytes == 4 ? ReadGpu(taddr) : ReadGpu(taddr) & 0xFFFFu;
                         }
 
-                        float ta0;
                         if (decodeKind == 0)
                         {
-                            ta0 = Unit255[(int)((texel >> 24) & 0xFFu)];
                             t0r = Unit255[(int)((texel >> 16) & 0xFFu)];
                             t0g = Unit255[(int)((texel >> 8) & 0xFFu)];
                             t0b = Unit255[(int)(texel & 0xFFu)];
@@ -8757,11 +8736,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                             t0r = Unit15[(int)((texel >> 8) & 0xFu)];
                             t0g = Unit15[(int)((texel >> 4) & 0xFu)];
                             t0b = Unit15[(int)(texel & 0xFu)];
-                            ta0 = Unit15[(int)((texel >> 12) & 0xFu)];
                         }
                         else
                         {
-                            DecodeTextureTexel(color, texel, out t0r, out t0g, out t0b, out ta0);
+                            DecodeTextureTexel(color, texel, out t0r, out t0g, out t0b, out _);
                         }
 
                         TrackTextureCoords(sx, sy);
@@ -9096,7 +9074,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         bool compiledLighting = false;
         bool lightingSampleStage0 = false;
         int lightingReason = 0x100000;
-        System.Array.Clear(_lightTexels);
+        Array.Clear(_lightTexels);
         if (bytes != 4)
         {
             lightingReason |= 1;

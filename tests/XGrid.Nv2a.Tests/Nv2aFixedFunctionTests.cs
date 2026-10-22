@@ -39,7 +39,6 @@ public sealed class Nv2aFixedFunctionTests
     private const int BackSpecular = 8;
     private const int TexCoord0 = 9;
 
-    private const uint SkinModeOff = 0u;
     private const uint SkinModeWeights1 = 1u;
     private const uint SkinModeWeights2Matrices2 = 2u;
 
@@ -168,7 +167,7 @@ public sealed class Nv2aFixedFunctionTests
         return outputs;
     }
 
-    private static (float[][] Constants, float[][] Inputs, float[][] Outputs) Run(
+    private static (float[][] Inputs, float[][] Outputs) Run(
         FixedFunctionVertexState state,
         bool fogEnable = false,
         uint fogGenMode = FogGenRadial)
@@ -177,7 +176,7 @@ public sealed class Nv2aFixedFunctionTests
         float[][] inputs = Inputs();
         float[][] outputs = Outputs();
         FixedFunctionVertex.Execute(state, constants, inputs, outputs, fogEnable, (int)fogGenMode);
-        return (constants, inputs, outputs);
+        return (inputs, outputs);
     }
 
     [Fact]
@@ -417,7 +416,7 @@ public sealed class Nv2aFixedFunctionTests
     [Fact]
     public void Execute_UnlitPathCopiesTheDiffuseAttributeThrough()
     {
-        (_, float[][] inputs, float[][] outputs) = Run(new FixedFunctionVertexState());
+        (float[][] inputs, float[][] outputs) = Run(new FixedFunctionVertexState());
 
         Assert.Equal(inputs[Diffuse][0], outputs[Diffuse][0]);
         Assert.Equal(inputs[BackDiffuse][3], outputs[BackDiffuse][3]);
@@ -427,7 +426,7 @@ public sealed class Nv2aFixedFunctionTests
     [Fact]
     public void Execute_SpecularDisabledWritesOpaqueBlack()
     {
-        (_, _, float[][] outputs) = Run(new FixedFunctionVertexState());
+        (_, float[][] outputs) = Run(new FixedFunctionVertexState());
 
         Assert.Equal(0f, outputs[Specular][0]);
         Assert.Equal(0f, outputs[Specular][1]);
@@ -444,7 +443,7 @@ public sealed class Nv2aFixedFunctionTests
             SeparateSpecular = false,
         };
 
-        (_, float[][] inputs, float[][] outputs) = Run(state);
+        (float[][] inputs, float[][] outputs) = Run(state);
 
         Assert.Equal(inputs[Diffuse][0] + inputs[Specular][0], outputs[Diffuse][0]);
         Assert.Equal(inputs[Specular][2], outputs[Specular][2]);
@@ -460,7 +459,7 @@ public sealed class Nv2aFixedFunctionTests
             AlphaFromMaterialSpecular = false,
         };
 
-        (_, _, float[][] outputs) = Run(state);
+        (_, float[][] outputs) = Run(state);
 
         Assert.Equal(1f, outputs[Specular][3]);
     }
@@ -499,7 +498,7 @@ public sealed class Nv2aFixedFunctionTests
     [Fact]
     public void Execute_DisabledFogWritesZeroDistance()
     {
-        (_, _, float[][] outputs) = Run(new FixedFunctionVertexState());
+        (_, float[][] outputs) = Run(new FixedFunctionVertexState());
 
         Assert.Equal(0f, outputs[FogCoord][0]);
     }
@@ -607,7 +606,7 @@ public sealed class Nv2aFixedFunctionTests
         state.MaterialEmission[2] = 0.5f;
         state.MaterialAlpha = 0.75f;
 
-        (_, float[][] inputs, float[][] outputs) = Run(state);
+        (float[][] inputs, float[][] outputs) = Run(state);
 
         // sceneAmbient * materialEmission + sceneAmbient
         Assert.Equal(1.5f, outputs[Diffuse][0]);
@@ -652,7 +651,7 @@ public sealed class Nv2aFixedFunctionTests
     {
         FixedFunctionVertexState state = new() { Lighting = true };
 
-        (_, _, float[][] outputs) = Run(state);
+        (_, float[][] outputs) = Run(state);
 
         Assert.Equal(0f, outputs[Specular][0]);
         Assert.Equal(1f, outputs[Specular][3]);
@@ -718,7 +717,7 @@ public sealed class Nv2aFixedFunctionTests
         // An enabled light runs the reference's light loop; every light color
         // defaults to zero here, so the surface stays black but the counter
         // keeps light usage measurable (fixedFnLights= on the CLI line).
-        (Nv2AMmio nv2A, ArrayMemory memory) = DrawFixedFunction(lightingEnable: 1u, lightMask: 0x00000001u);
+        (Nv2AMmio nv2A, _) = DrawFixedFunction(lightingEnable: 1u, lightMask: 0x00000001u);
 
         Assert.Equal(1uL, nv2A.FixedFunctionDraws);
         Assert.Equal(1uL, nv2A.FixedFunctionLitDraws);

@@ -217,7 +217,7 @@ internal static unsafe class RawBlockEmitter
             }
 
             var writer = new BufferCodeWriter(memory, 64 * 1024);
-            _a.Assemble(writer, (ulong)memory, BlockEncoderOptions.None);
+            _a.Assemble(writer, (ulong)memory);
             if (string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_DUMP"), "1", StringComparison.Ordinal))
             {
                 Dump(headEip: _headEip, memory, writer.Position);
@@ -243,8 +243,8 @@ internal static unsafe class RawBlockEmitter
                     output.Append(instruction.IP.ToString("X16")).Append(": ").Append(instruction.ToString()).Append('\n');
                 }
 
-                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xgrid-raw-" + headEip.ToString("X8") + ".txt");
-                System.IO.File.WriteAllText(path, output.ToString());
+                string path = Path.Combine(Path.GetTempPath(), "xgrid-raw-" + headEip.ToString("X8") + ".txt");
+                File.WriteAllText(path, output.ToString());
             }
             catch (IOException)
             {
@@ -1046,7 +1046,7 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.AluRM:
-                    EmitAluMemorySource(plan, index);
+                    EmitAluMemorySource(plan);
                     break;
 
                 case JitKind.AluMR:
@@ -1064,7 +1064,7 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.JmpRel:
-                    EmitSetEip(unchecked(eip + (uint)plan.Length + (uint)plan.Immediate));
+                    EmitSetEip(unchecked(eip + (uint)plan.Length + plan.Immediate));
                     EmitServedIncrement();
                     // Normalize the frame flags on this exit edge (the
                     // epilogue does not re-materialize).
@@ -1538,7 +1538,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), unchecked((int)(eip + (uint)plan.Length)));
             a.mov(RamAt(), R32(Register.R8D));
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
-            EmitSetEip(unchecked(eip + (uint)plan.Length + (uint)plan.Immediate));
+            EmitSetEip(unchecked(eip + (uint)plan.Length + plan.Immediate));
             EmitServedIncrement();
             EmitMaterializeFlags();
             a.jmp(_exit);
@@ -2145,25 +2145,25 @@ internal static unsafe class RawBlockEmitter
             _flagsLive = true;
         }
 
-        private static void EmitSetccOp(Assembler a, XGrid.Cpu.ConditionCode condition, AssemblerRegister8 destination)
+        private static void EmitSetccOp(Assembler a, ConditionCode condition, AssemblerRegister8 destination)
         {
             switch (condition)
             {
-                case XGrid.Cpu.ConditionCode.Overflow: a.seto(destination); break;
-                case XGrid.Cpu.ConditionCode.NotOverflow: a.setno(destination); break;
-                case XGrid.Cpu.ConditionCode.Below: a.setb(destination); break;
-                case XGrid.Cpu.ConditionCode.AboveOrEqual: a.setae(destination); break;
-                case XGrid.Cpu.ConditionCode.Equal: a.sete(destination); break;
-                case XGrid.Cpu.ConditionCode.NotEqual: a.setne(destination); break;
-                case XGrid.Cpu.ConditionCode.BelowOrEqual: a.setbe(destination); break;
-                case XGrid.Cpu.ConditionCode.Above: a.seta(destination); break;
-                case XGrid.Cpu.ConditionCode.Sign: a.sets(destination); break;
-                case XGrid.Cpu.ConditionCode.NotSign: a.setns(destination); break;
-                case XGrid.Cpu.ConditionCode.Parity: a.setp(destination); break;
-                case XGrid.Cpu.ConditionCode.NotParity: a.setnp(destination); break;
-                case XGrid.Cpu.ConditionCode.Less: a.setl(destination); break;
-                case XGrid.Cpu.ConditionCode.GreaterOrEqual: a.setge(destination); break;
-                case XGrid.Cpu.ConditionCode.LessOrEqual: a.setle(destination); break;
+                case ConditionCode.Overflow: a.seto(destination); break;
+                case ConditionCode.NotOverflow: a.setno(destination); break;
+                case ConditionCode.Below: a.setb(destination); break;
+                case ConditionCode.AboveOrEqual: a.setae(destination); break;
+                case ConditionCode.Equal: a.sete(destination); break;
+                case ConditionCode.NotEqual: a.setne(destination); break;
+                case ConditionCode.BelowOrEqual: a.setbe(destination); break;
+                case ConditionCode.Above: a.seta(destination); break;
+                case ConditionCode.Sign: a.sets(destination); break;
+                case ConditionCode.NotSign: a.setns(destination); break;
+                case ConditionCode.Parity: a.setp(destination); break;
+                case ConditionCode.NotParity: a.setnp(destination); break;
+                case ConditionCode.Less: a.setl(destination); break;
+                case ConditionCode.GreaterOrEqual: a.setge(destination); break;
+                case ConditionCode.LessOrEqual: a.setle(destination); break;
                 default: a.setg(destination); break;
             }
         }
@@ -2364,7 +2364,7 @@ internal static unsafe class RawBlockEmitter
         {
             Assembler a = _a;
             a.pushfq();
-            a.mov(R32(Register.R10D), unchecked((int)~(uint)FlagBits.Of));
+            a.mov(R32(Register.R10D), unchecked((int)~FlagBits.Of));
             a.and(MemOp(Register.RSP, null, 1, 0), R32(Register.R10D));
             a.popfq();
         }
@@ -2379,7 +2379,7 @@ internal static unsafe class RawBlockEmitter
             a.and(R32(Register.R10D), 0x1F);
             a.cmp(R32(Register.R10D), 1);
             a.jbe(skip);
-            a.mov(R32(Register.R10D), unchecked((int)~(uint)FlagBits.Of));
+            a.mov(R32(Register.R10D), unchecked((int)~FlagBits.Of));
             a.and(MemOp(Register.RSP, null, 1, 0), R32(Register.R10D));
             a.Label(ref skip);
             a.popfq();
@@ -2476,7 +2476,7 @@ internal static unsafe class RawBlockEmitter
         {
             Assembler a = _a;
             EmitLoadFlags();
-            uint target = unchecked(eip + (uint)plan.Length + (uint)plan.Immediate);
+            uint target = unchecked(eip + (uint)plan.Length + plan.Immediate);
             uint fallThrough = unchecked(eip + (uint)plan.Length);
             Label taken = a.CreateLabel(string.Empty);
             EmitJccOp(plan.Condition, taken);
@@ -2779,7 +2779,7 @@ internal static unsafe class RawBlockEmitter
             // steps, decisions 202).
             _flagsLive = false;
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: false);
+            EmitMemoryHelper(plan, isStore: false);
             EmitMoveFromScratch(plan.Size, plan.RegIndex);
 
             // Merge point: the fast path arrives with the host flags dead
@@ -2867,7 +2867,7 @@ internal static unsafe class RawBlockEmitter
             // device block's reload.
             _flagsLive = false;
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: true);
+            EmitMemoryHelper(plan, isStore: true);
 
             // Merge point (see EmitLoad): F_EFLAGS is authoritative on both
             // the fast and slow paths; the host FLAGS must not be trusted.
@@ -2877,7 +2877,7 @@ internal static unsafe class RawBlockEmitter
         }
 
         /// <summary>Read-modify-write source form: <c>op reg, [mem]</c>.</summary>
-        private void EmitAluMemorySource(in JitMemberPlan plan, int index)
+        private void EmitAluMemorySource(in JitMemberPlan plan)
         {
             Assembler a = _a;
             EmitMaterializeFlags();
@@ -2890,7 +2890,7 @@ internal static unsafe class RawBlockEmitter
             a.jmp(done);
 
             a.Label(ref slow);
-            EmitMemoryHelper(plan, index, isStore: false);
+            EmitMemoryHelper(plan, isStore: false);
             EmitAluScratch(plan);
 
             a.Label(ref done);
@@ -3265,7 +3265,7 @@ internal static unsafe class RawBlockEmitter
         /// read/write helper (which faults precisely), reload. Leaves a load
         /// result in R8D and consumes a staged store value from RSI.
         /// </summary>
-        private void EmitMemoryHelper(in JitMemberPlan plan, int index, bool isStore)
+        private void EmitMemoryHelper(in JitMemberPlan plan, bool isStore)
         {
             Assembler a = _a;
             // RDI, not R10: the flag materializer and the TSC bookkeeping in

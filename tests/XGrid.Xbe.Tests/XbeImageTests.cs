@@ -88,22 +88,22 @@ public sealed class XbeImageTests
         byte[] image = new byte[0x1000];
         WriteAscii(image, 0x00, "XBEH");
         WriteU32(image, 0x104, Base);
-        WriteU32(image, 0x108, (uint)headersSize);
+        WriteU32(image, 0x108, headersSize);
         WriteU32(image, 0x110, 0x178u);
         WriteU32(image, 0x10C, 0u);
-        WriteU32(image, 0x118, (uint)(Base + 0x200));
-        WriteU32(image, 0x11C, (uint)sectionCount);
-        WriteU32(image, 0x120, (uint)(Base + 0x300));
+        WriteU32(image, 0x118, (Base + 0x200));
+        WriteU32(image, 0x11C, sectionCount);
+        WriteU32(image, 0x120, (Base + 0x300));
         entry = 0x11000u;
         WriteU32(image, 0x128, entry ^ EntryXor(type));
-        WriteU32(image, 0x12C, (uint)(Base + 0x380));
+        WriteU32(image, 0x12C, (Base + 0x380));
         thunk = type == XbeImage.ImageType.Debug ? 0x3FA1F152u : 0x00011000u;
         uint storedThunk = type == XbeImage.ImageType.Debug
             ? 0x80100000u
             : thunk ^ ThunkXor(type);
         WriteU32(image, 0x158, storedThunk);
         WriteU32(image, 0x160, 1u);
-        WriteU32(image, 0x164, (uint)(Base + 0x340));
+        WriteU32(image, 0x164, (Base + 0x340));
 
         const int cert = 0x200;
         WriteU32(image, cert + 0x08, 0x12345678u);
@@ -116,7 +116,7 @@ public sealed class XbeImageTests
         WriteU32(image, table + 0x08, 0x200u);
         WriteU32(image, table + 0x0C, 0x400u);
         WriteU32(image, table + 0x10, 0x200u);
-        WriteU32(image, table + 0x14, (uint)(Base + 0x360));
+        WriteU32(image, table + 0x14, (Base + 0x360));
         WriteAscii(image, 0x360, ".text");
 
         WriteAscii(image, 0x340, "XAPILIB");

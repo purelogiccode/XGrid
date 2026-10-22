@@ -98,13 +98,6 @@ public sealed class Nv2aFixedFunctionLightingTests
         return outputs;
     }
 
-    private static void SetLightColor(float[] destination, float x, float y, float z)
-    {
-        destination[0] = x;
-        destination[1] = y;
-        destination[2] = z;
-    }
-
     private static void AssertVector(ReadOnlySpan<float> actual, float x, float y, float z)
     {
         Assert.Equal(3, actual.Length);

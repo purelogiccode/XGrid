@@ -154,7 +154,7 @@
     </Grid>
 
     <!-- ===================== Toast ===================== -->
-    <Border Grid.ColumnSpan="2"
+    <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
             Classes="toast"
             IsVisible="{Binding IsToastVisible}"
             HorizontalAlignment="Right"

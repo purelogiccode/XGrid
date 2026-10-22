@@ -66,6 +66,7 @@ internal sealed class JitBlock
     public int AddressSize { get; }
 
     /// <summary>Gets the decode/block generation the block was built for.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public ulong Generation { get; }
 
     /// <summary>Gets the number of members the runner serves (at most <see cref="JitEmitter.MaxMembers"/>).</summary>
@@ -298,9 +299,9 @@ internal sealed class JitBlockCache
     public void Invalidate()
     {
         _heads.Clear();
-        System.Array.Clear(_memoBlock);
-        System.Array.Clear(_memoHead);
-        System.Array.Clear(_memoGeneration);
+        Array.Clear(_memoBlock);
+        Array.Clear(_memoHead);
+        Array.Clear(_memoGeneration);
         Cleared?.Invoke();
     }
 

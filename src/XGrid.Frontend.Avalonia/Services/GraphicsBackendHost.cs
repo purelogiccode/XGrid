@@ -57,8 +57,6 @@ public static class GraphicsBackendHost
                     + " (the OpenGL backend needs a Windows host; the request was ignored)";
                 return false;
 
-            default:
-                break;
         }
 
         IGpuMemory? memory = machine.Nv2A.GpuMemory;

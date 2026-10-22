@@ -4621,7 +4621,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister16(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (ushort)(uint)(int)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
+            (ushort)(uint)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4629,7 +4629,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (uint)(int)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
+            (uint)(sbyte)cpu.Context.ReadRegister8(instruction.Operand2.RegisterIndex));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4637,7 +4637,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister16(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (ushort)(uint)(int)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
+            (ushort)(uint)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4645,7 +4645,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (uint)(int)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
+            (uint)(short)cpu.Context.ReadRegister16((Gpr)instruction.Operand2.RegisterIndex));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4653,7 +4653,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister16(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (ushort)(uint)(int)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
+            (ushort)(uint)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4661,7 +4661,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (uint)(int)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
+            (uint)(sbyte)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 8));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4669,7 +4669,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister16(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (ushort)(uint)(int)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
+            (ushort)(uint)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 
@@ -4677,7 +4677,7 @@ public sealed partial class XboxCpu
     {
         cpu.Context.WriteRegister(
             (Gpr)instruction.Operand1.RegisterIndex,
-            (uint)(int)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
+            (uint)(short)cpu.ReadMemory(cpu.ComputeAddress(instruction.Operand2.Memory), 16));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 }

@@ -137,7 +137,7 @@ public sealed class JitTests
 
         (XboxCpu plain, RecordingDevice plainDevice) = CreateMmio(code, jit: false, exact: false);
         (XboxCpu jit, RecordingDevice jitDevice) = CreateMmio(code, jit: true, exact: false);
-        (XboxCpu exact, RecordingDevice exactDevice) = CreateMmio(code, jit: true, exact: true);
+        (XboxCpu exact, _) = CreateMmio(code, jit: true, exact: true);
 
         plain.Execute(1000);
         jit.Execute(1000);
@@ -1492,7 +1492,7 @@ public sealed class JitTests
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 2:
-                    code.Add((byte)new byte[] { 0x01, 0x29, 0x21, 0x09, 0x31, 0x39, 0x11, 0x19 }[random.Next(8)]);
+                    code.Add(new byte[] { 0x01, 0x29, 0x21, 0x09, 0x31, 0x39, 0x11, 0x19 }[random.Next(8)]);
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 3:
@@ -1536,7 +1536,7 @@ public sealed class JitTests
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 12:
-                    code.Add((byte)new byte[] { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38 }[random.Next(8)]);
+                    code.Add(new byte[] { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38 }[random.Next(8)]);
                     code.Add((byte)(0xC0 | (random.Next(8) << 3) | random.Next(8)));
                     break;
                 case 13:

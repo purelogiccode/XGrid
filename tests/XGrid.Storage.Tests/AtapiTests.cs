@@ -482,7 +482,7 @@ public sealed class AtapiTests
 
         Assert.Equal(AtaDevice.PacketLogCapacity, drive.PacketLog.Count);
         const int first = total - AtaDevice.PacketLogCapacity;
-        Assert.Equal($"FF:{first >> 8:X2}{first & 0xFF:X2}000000", drive.PacketLog[0]);
+        Assert.Equal($"FF:00{first & 0xFF:X2}000000", drive.PacketLog[0]);
         const int last = total - 1;
         Assert.Equal($"FF:{last >> 8:X2}{last & 0xFF:X2}000000", drive.PacketLog[^1]);
     }

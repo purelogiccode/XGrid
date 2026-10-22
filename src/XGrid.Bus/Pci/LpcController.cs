@@ -217,8 +217,6 @@ public sealed class LpcController : PciDevice, IIoPortDevice
             case 0x02:
                 Pm1Enable = (ushort)value;
                 break;
-            default:
-                break;
         }
     }
 

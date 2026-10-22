@@ -339,15 +339,15 @@ public sealed class UsbHub : IUsbDeviceHub, ISnapshotable
                 payload = Slice(HubStatus, setup.Length);
                 return UsbTransferResult.Ack;
             case (0xA3, 0x00) when setup.Index >= 1 && setup.Index <= PortCount:
-                payload = PortStatus((int)setup.Index - 1, setup.Length);
+                payload = PortStatus(setup.Index - 1, setup.Length);
                 return UsbTransferResult.Ack;
             case (0x20, 0x01):
             case (0x20, 0x03):
                 return setup.Value <= 1 ? UsbTransferResult.Ack : UsbTransferResult.Stall;
             case (0x23, 0x03) when setup.Index >= 1 && setup.Index <= PortCount:
-                return SetPortFeature((int)setup.Index - 1, setup.Value);
+                return SetPortFeature(setup.Index - 1, setup.Value);
             case (0x23, 0x01) when setup.Index >= 1 && setup.Index <= PortCount:
-                return ClearPortFeature((int)setup.Index - 1, setup.Value);
+                return ClearPortFeature(setup.Index - 1, setup.Value);
             case (0x02, 0x01) when setup.Value != 0 || setup.Index == 0x81:
                 return UsbTransferResult.Ack;
             default:

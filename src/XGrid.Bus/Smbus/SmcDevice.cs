@@ -138,8 +138,6 @@ public sealed class SmcDevice : SmbusDevice, ISnapshotable
             case 0x1B:
                 _scratch = value;
                 break;
-            default:
-                break;
         }
 
         return true;

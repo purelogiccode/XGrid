@@ -186,7 +186,7 @@ internal static unsafe class RawHelpers
             // state forward (handlers read Eip for return addresses and relative
             // targets and Eflags for string direction) and copy the result back.
             RawState* state = (RawState*)statePointer;
-            cpu.Context.Eip = (uint)*state->Eip;
+            cpu.Context.Eip = *state->Eip;
             cpu.Context.Eflags = *state->Eflags;
             cpu.Context.Tsc = *state->Tsc;
 
@@ -214,7 +214,7 @@ internal static unsafe class RawHelpers
                 cpu.RawExecuteInstruction(in instruction);
             }
 
-            *state->Eip = (uint)cpu.Context.Eip;
+            *state->Eip = cpu.Context.Eip;
             *state->Eflags = cpu.Context.Eflags;
             *state->Tsc = cpu.Context.Tsc;
         }

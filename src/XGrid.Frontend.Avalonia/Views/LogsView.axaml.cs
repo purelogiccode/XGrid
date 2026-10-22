@@ -42,7 +42,7 @@ public partial class LogsView : UserControl
             return;
         }
 
-        LogEntry? last = viewModel.Entries[^1];
+        LogEntry last = viewModel.Entries[^1];
         Dispatcher.UIThread.Post(() => LogList.ScrollIntoView(last));
     }
 }

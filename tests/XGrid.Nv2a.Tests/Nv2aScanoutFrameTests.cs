@@ -279,6 +279,6 @@ public sealed class Nv2aScanoutFrameTests
         Assert.Same(memory, nv2A.GpuMemory);
 
         // A test fake with no memory reports null rather than a fabricated lane.
-        Assert.Null(new Nv2AMmio(64u * 1024 * 1024, "NV2A").GpuMemory);
+        Assert.Null(new Nv2AMmio().GpuMemory);
     }
 }

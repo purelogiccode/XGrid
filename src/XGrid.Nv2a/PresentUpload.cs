@@ -19,7 +19,6 @@ public static class PresentUpload
 {
     private const uint ColorBytes32 = 4u;
     private const uint MaxPresentDimension = 4096u;
-    private const ulong MaxPresentPixels = (ulong)MaxPresentDimension * MaxPresentDimension;
 
     /// <summary>
     /// Builds the upload buffer for one presented surface.
@@ -60,22 +59,18 @@ public static class PresentUpload
         }
 
         ulong rowBytes = (ulong)width * colorBytes;
-        if ((ulong)pitch < rowBytes)
+        if (pitch < rowBytes)
         {
             return false;
         }
 
         ulong count = (ulong)width * height;
-        if (count > MaxPresentPixels)
-        {
-            return false;
-        }
 
         // The whole walk must stay inside the 32-bit address space (same
         // overflow discipline as the software copy's RamSize guard, minus the
         // size itself, which this seam does not carry).
         ulong span = ((ulong)height - 1u) * pitch;
-        if (span > uint.MaxValue || (ulong)surfaceAddress + span + (rowBytes - 1u) > uint.MaxValue)
+        if (span > uint.MaxValue || surfaceAddress + span + (rowBytes - 1u) > uint.MaxValue)
         {
             return false;
         }

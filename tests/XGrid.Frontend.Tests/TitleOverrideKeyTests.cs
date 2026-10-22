@@ -47,7 +47,7 @@ public sealed class TitleOverrideKeyTests
         // A different folder and file name still resolve the title override.
         TitleOverride? found = settings.FindTitleOverride(@"D:\redump\Halo - Combat Evolved.iso", HaloTitleId);
         Assert.NotNull(found);
-        Assert.Equal("registers", found!.TextureFilter);
+        Assert.Equal("registers", found.TextureFilter);
 
         // Without a title id only the path key can match - and there is none.
         Assert.Null(settings.FindTitleOverride(@"D:\redump\Halo - Combat Evolved.iso"));

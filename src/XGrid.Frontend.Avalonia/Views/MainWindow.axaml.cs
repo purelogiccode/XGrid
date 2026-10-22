@@ -162,8 +162,6 @@ public partial class MainWindow : Window
                 ExecuteShellCommand(static viewModel => _ = viewModel.LoadStateCommand.ExecuteAsync(null));
                 e.Handled = true;
                 return;
-            default:
-                break;
         }
 
         if (DataContext is not MainWindowViewModel { IsRunning: true })
@@ -207,7 +205,7 @@ public partial class MainWindow : Window
 
     private bool IsTypingTarget()
     {
-        return FocusManager?.GetFocusedElement() is TextBox or ComboBox or Slider;
+        return FocusManager.GetFocusedElement() is TextBox or ComboBox or Slider;
     }
 
     private void ExecuteShellCommand(Action<MainWindowViewModel> command)

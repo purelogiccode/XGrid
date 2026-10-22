@@ -145,7 +145,7 @@ public sealed class XdvdfsSectorReaderTests
     {
         var image = new MemoryDvdImage((int)((discSeek / SectorSize) + SectorCountMinimum));
         long baseSector = discSeek / SectorSize;
-        uint rootTableSize = padFirstSector ? 2u * (uint)SectorSize : (uint)SectorSize;
+        uint rootTableSize = padFirstSector ? 2u * SectorSize : SectorSize;
 
         // Volume descriptor: magic at 0x00 and at +0x7EC, root geometry at +20/+24.
         Span<byte> descriptor = image.Sector((uint)(baseSector + XdvdfsSectorReader.VolumeDescriptorSector));

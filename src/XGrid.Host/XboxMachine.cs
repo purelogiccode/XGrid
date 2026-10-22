@@ -45,7 +45,7 @@ public sealed class XboxMachine : IIdleSkipHost
     public XboxMachine(uint ramSize = DefaultRamSize)
     {
         Ram = new PhysicalMemory(ramSize);
-        Memory = new AddressSpace(Ram, UnmappedAccessPolicy.Sentinel);
+        Memory = new AddressSpace(Ram);
         Bus = new XboxBus();
         Cpu = new XboxCpu(Memory, Bus.Io) { InterruptSource = Bus.Pic };
         Cpu.IdleSkipHost = this;
@@ -381,7 +381,7 @@ public sealed class XboxMachine : IIdleSkipHost
     /// </summary>
     bool IIdleSkipHost.IsRam(uint physicalAddress)
     {
-        uint ramSize = (uint)Ram.Size;
+        uint ramSize = Ram.Size;
         if (physicalAddress < ramSize)
         {
             return true;

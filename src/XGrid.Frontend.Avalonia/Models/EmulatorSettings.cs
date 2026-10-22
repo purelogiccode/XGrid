@@ -109,7 +109,7 @@ public sealed class EmulatorSettings
     /// <param name="key">Override dictionary key.</param>
     public static bool IsTitleIdKey(string key)
     {
-        return key is not null && key.StartsWith(TitleIdKeyPrefix, StringComparison.OrdinalIgnoreCase);
+        return key.StartsWith(TitleIdKeyPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Parses an override key written by <see cref="TitleIdKey"/>.</summary>
@@ -141,7 +141,7 @@ public sealed class EmulatorSettings
             return null;
         }
 
-        if (titleId is uint id && TitleOverrides.TryGetValue(TitleIdKey(id), out TitleOverride? byTitle))
+        if (titleId is { } id && TitleOverrides.TryGetValue(TitleIdKey(id), out TitleOverride? byTitle))
         {
             return byTitle;
         }
@@ -197,7 +197,7 @@ public sealed class EmulatorSettings
             return effective;
         }
 
-        if (title.FixedFunctionVertex is bool fixedFunction)
+        if (title.FixedFunctionVertex is { } fixedFunction)
         {
             effective.FixedFunctionVertex = fixedFunction;
         }
@@ -216,7 +216,7 @@ public sealed class EmulatorSettings
                 : RendererSoftware;
         }
 
-        if (title.RamMb is int ram)
+        if (title.RamMb is { } ram)
         {
             effective.RamMb = ram is 128 ? 128 : 64;
         }
@@ -275,46 +275,41 @@ public sealed class EmulatorSettings
             Accent = "Emerald";
         }
 
-        LibraryFolders ??= new List<string>();
-        RecentGames ??= new List<string>();
         LibraryFolders.RemoveAll(string.IsNullOrWhiteSpace);
         RecentGames.RemoveAll(string.IsNullOrWhiteSpace);
 
         var overrides = new Dictionary<string, TitleOverride>(StringComparer.OrdinalIgnoreCase);
-        if (TitleOverrides is not null)
+        foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
         {
-            foreach (KeyValuePair<string, TitleOverride> pair in TitleOverrides)
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || pair.Value.IsEmpty)
             {
-                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null || pair.Value.IsEmpty)
-                {
-                    continue;
-                }
-
-                TitleOverride value = pair.Value;
-                value.TextureFilter = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal)
-                    ? "registers"
-                    : string.Equals(value.TextureFilter, "legacy", StringComparison.Ordinal)
-                        ? "legacy"
-                        : null;
-                value.Renderer = string.Equals(value.Renderer, RendererOpenGl, StringComparison.Ordinal)
-                    ? RendererOpenGl
-                    : string.Equals(value.Renderer, RendererSoftware, StringComparison.Ordinal)
-                        ? RendererSoftware
-                        : null;
-                if (value.RamMb is int ram && ram is not (64 or 128))
-                {
-                    value.RamMb = null;
-                }
-
-                // A title key that does not parse can never match a launch;
-                // dropping it is better than expanding it into a bogus path.
-                if (IsTitleIdKey(pair.Key) && !TryParseTitleIdKey(pair.Key, out _))
-                {
-                    continue;
-                }
-
-                overrides[CanonicalTitleKey(pair.Key)] = value;
+                continue;
             }
+
+            TitleOverride value = pair.Value;
+            value.TextureFilter = string.Equals(value.TextureFilter, "registers", StringComparison.Ordinal)
+                ? "registers"
+                : string.Equals(value.TextureFilter, "legacy", StringComparison.Ordinal)
+                    ? "legacy"
+                    : null;
+            value.Renderer = string.Equals(value.Renderer, RendererOpenGl, StringComparison.Ordinal)
+                ? RendererOpenGl
+                : string.Equals(value.Renderer, RendererSoftware, StringComparison.Ordinal)
+                    ? RendererSoftware
+                    : null;
+            if (value.RamMb is { } ram && ram is not (64 or 128))
+            {
+                value.RamMb = null;
+            }
+
+            // A title key that does not parse can never match a launch;
+            // dropping it is better than expanding it into a bogus path.
+            if (IsTitleIdKey(pair.Key) && !TryParseTitleIdKey(pair.Key, out _))
+            {
+                continue;
+            }
+
+            overrides[CanonicalTitleKey(pair.Key)] = value;
         }
 
         TitleOverrides = overrides;

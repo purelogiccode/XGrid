@@ -104,7 +104,7 @@ public sealed class FatxFileSystem
 
         uint maxCluster = (partitionSectors - SuperblockSectors) / clusterSectors;
         bool wide = maxCluster > WideThreshold;
-        uint dataStart = FindDataStart(disk, partitionLba, clusterSectors, maxCluster, wide);
+        uint dataStart = FindDataStart(disk, partitionLba, maxCluster, wide);
         return new FatxFileSystem(
             disk, partitionLba, partitionSectors, clusterSectors, dataStart, maxCluster, wide);
     }
@@ -167,7 +167,7 @@ public sealed class FatxFileSystem
     }
 
     private static uint FindDataStart(
-        IDiskImage disk, uint baseLba, uint clusterSectors, uint maxCluster, bool wide)
+        IDiskImage disk, uint baseLba, uint maxCluster, bool wide)
     {
         Span<byte> sector = stackalloc byte[512];
         for (uint lba = baseLba + SuperblockSectors; lba < baseLba + SuperblockSectors + 4096; lba++)

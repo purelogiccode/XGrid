@@ -35,14 +35,14 @@ public sealed class Qcow2DiskImageTests
 
     private static void WriteTestImage(string path)
     {
-        const ulong l2Offset = (ulong)ClusterSize;
-        const ulong dataOffset = 2ul * (ulong)ClusterSize;
+        const ulong l2Offset = ClusterSize;
+        const ulong dataOffset = 2ul * ClusterSize;
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         Span<byte> header = stackalloc byte[104];
         BinaryPrimitives.WriteUInt32BigEndian(header, 0x514649FBu);
         BinaryPrimitives.WriteUInt32BigEndian(header[4..], 2u);
-        BinaryPrimitives.WriteUInt32BigEndian(header[20..], (uint)ClusterBits);
-        BinaryPrimitives.WriteUInt64BigEndian(header[24..], (ulong)(2 * ClusterSize));
+        BinaryPrimitives.WriteUInt32BigEndian(header[20..], ClusterBits);
+        BinaryPrimitives.WriteUInt64BigEndian(header[24..], (2 * ClusterSize));
         BinaryPrimitives.WriteUInt32BigEndian(header[36..], 1u);
         BinaryPrimitives.WriteUInt64BigEndian(header[40..], 104ul);
         stream.Write(header);
@@ -55,7 +55,7 @@ public sealed class Qcow2DiskImageTests
         Span<byte> l2Entry = stackalloc byte[8];
         BinaryPrimitives.WriteUInt64BigEndian(l2Entry, dataOffset | 0x01ul);
         stream.Write(l2Entry);
-        BinaryPrimitives.WriteUInt64BigEndian(l2Entry, dataOffset + (ulong)ClusterSize);
+        BinaryPrimitives.WriteUInt64BigEndian(l2Entry, dataOffset + ClusterSize);
         stream.Write(l2Entry);
 
         stream.Position = (long)dataOffset;

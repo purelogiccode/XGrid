@@ -32,6 +32,9 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     // Register offsets (xemu nvnet_regs.h).
     private const uint IrqStatus = 0x000;
+
+    /// <summary>Word index of <see cref="IrqStatus"/> (<c>IrqStatus >> 2</c>; the offset is zero).</summary>
+    private const int IrqStatusIndex = 0;
     private const uint IrqMask = 0x004;
     private const uint TxControl = 0x084;
     private const uint TxStatus = 0x088;
@@ -293,7 +296,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         if (Backend is not LoopbackNetworkBackend loopback)
         {
             throw new InvalidDataException(
-                $"nvnet snapshot requires the loopback backend (live={Backend?.GetType().Name ?? "null"}). Sockets are not restorable.");
+                $"nvnet snapshot requires the loopback backend (live={Backend.GetType().Name}). Sockets are not restorable.");
         }
 
         writer.Write(SnapshotVersion);
@@ -359,7 +362,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         if (Backend is not LoopbackNetworkBackend loopback)
         {
             throw new InvalidDataException(
-                $"nvnet snapshot load requires the loopback backend (live={Backend?.GetType().Name ?? "null"}). Sockets are not restorable.");
+                $"nvnet snapshot load requires the loopback backend (live={Backend.GetType().Name}). Sockets are not restorable.");
         }
 
         int version = reader.ReadInt32();
@@ -852,7 +855,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
                 if ((value & TxRxBit1) != 0)
                 {
-                    _regs[IrqStatus >> 2] = 0;
+                    _regs[IrqStatusIndex] = 0;
                     UpdateIrq();
                 }
                 else if (value == 0)
@@ -965,7 +968,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
             if (packetSent)
             {
-                _regs[IrqStatus >> 2] |= IrqTx;
+                _regs[IrqStatusIndex] |= IrqTx;
                 UpdateIrq();
             }
         }
@@ -982,7 +985,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         ulong span = (ulong)TxRingCount * DescriptorSize;
         uint next = _regs[TxRingNext >> 2];
         uint current = next;
-        if (current < baseAddr || (ulong)current + DescriptorSize > (ulong)baseAddr + span)
+        if (current < baseAddr || (ulong)current + DescriptorSize > baseAddr + span)
         {
             current = baseAddr;
         }
@@ -997,7 +1000,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         uint baseAddr = _regs[TxRingBase >> 2];
         ulong span = (ulong)TxRingCount * DescriptorSize;
         uint next = _regs[TxRingCurrent >> 2] + DescriptorSize;
-        if ((ulong)next >= (ulong)baseAddr + span)
+        if (next >= baseAddr + span)
         {
             next = baseAddr;
         }
@@ -1012,7 +1015,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         uint baseAddr = _regs[RxRingBase >> 2];
         ulong span = (ulong)RxRingCount * DescriptorSize;
         uint next = _regs[RxRingNext >> 2];
-        if (next < baseAddr || (ulong)next + DescriptorSize > (ulong)baseAddr + span)
+        if (next < baseAddr || (ulong)next + DescriptorSize > baseAddr + span)
         {
             next = baseAddr;
         }
@@ -1034,7 +1037,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         uint baseAddr = _regs[RxRingBase >> 2];
         ulong span = (ulong)RxRingCount * DescriptorSize;
         uint next = _regs[RxRingCurrent >> 2] + DescriptorSize;
-        if ((ulong)next >= (ulong)baseAddr + span)
+        if (next >= baseAddr + span)
         {
             next = baseAddr;
         }
@@ -1048,7 +1051,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         // when no buffer is available (QEMU holds the packet). The forcedeth
         // driver replenishes rings off the RX_NOBUF interrupt, so a silent drop
         // would wedge it; raise the specified IRQ and hold the frame instead.
-        _regs[IrqStatus >> 2] |= IrqRxNoBuf;
+        _regs[IrqStatusIndex] |= IrqRxNoBuf;
         UpdateIrq();
         RxDropNoBuf++;
         if (_pendingFrame is null)
@@ -1084,7 +1087,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         AdvanceNextRx();
         RxPackets++;
         RxBytes += frame.Length;
-        _regs[IrqStatus >> 2] |= IrqRx;
+        _regs[IrqStatusIndex] |= IrqRx;
         UpdateIrq();
         return true;
     }
@@ -1096,7 +1099,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _phy[PhyAnlpar] = (ushort)(_phy[PhyAnlpar] & ~AnlparAck);
         _regs[AdapterControl >> 2] &= ~AdapterLinkUp;
         _regs[MiiStatus >> 2] |= MiiLinkChange;
-        _regs[IrqStatus >> 2] |= IrqMiiEvent;
+        _regs[IrqStatusIndex] |= IrqMiiEvent;
         LinkChanges++;
         UpdateIrq();
     }
@@ -1113,7 +1116,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
         _phy[PhyBmsr] = (ushort)(_phy[PhyBmsr] | BmsrLinkStatus);
         _regs[AdapterControl >> 2] |= AdapterLinkUp;
         _regs[MiiStatus >> 2] |= MiiLinkChange;
-        _regs[IrqStatus >> 2] |= IrqMiiEvent;
+        _regs[IrqStatusIndex] |= IrqMiiEvent;
         _autoNegPending = false;
         LinkChanges++;
         UpdateIrq();
@@ -1191,7 +1194,7 @@ public sealed class McpxNvNetDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private void UpdateIrq()
     {
         // xemu update_irq: assert when any status bit is masked on.
-        bool asserted = (_regs[IrqStatus >> 2] & _regs[IrqMask >> 2]) != 0;
+        bool asserted = (_regs[IrqStatusIndex] & _regs[IrqMask >> 2]) != 0;
         if (asserted == InterruptAsserted)
         {
             return;

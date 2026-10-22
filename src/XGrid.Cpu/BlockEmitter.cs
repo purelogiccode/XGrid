@@ -369,7 +369,7 @@ internal static class BlockEmitter
                 il.Emit(OpCodes.Ldc_I4, j);
                 il.Emit(OpCodes.Ldelema, typeof(DecodeCacheEntry));
                 il.Emit(OpCodes.Ldflda, EntryInstruction);
-                il.EmitCall(OpCodes.Call, (MethodInfo)handlers[j]!.Method, null);
+                il.EmitCall(OpCodes.Call, handlers[j]!.Method, null);
             }
 
             il.Emit(OpCodes.Ldloc, served);

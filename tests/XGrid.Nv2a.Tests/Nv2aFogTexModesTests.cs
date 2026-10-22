@@ -994,7 +994,7 @@ public sealed class Nv2AFogTexModesTests
         pushes.Add((0x1E40u, 0x00000C00u));
         PushPassR0(pushes);
         pushes.Add((0x029Cu, 0x2601u));
-        pushes.Add((0x02A0u, (uint)VshProgram.FogGenSpecAlpha));
+        pushes.Add((0x02A0u, VshProgram.FogGenSpecAlpha));
         pushes.Add((0x02A4u, 1u));
         pushes.Add((0x09C0u, F(1f)));
         pushes.Add((0x09C4u, F(1f)));

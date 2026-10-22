@@ -279,7 +279,11 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
         public uint Texture { get; set; }
         public uint Fingerprint { get; set; }
+        // ReSharper disable once UnusedAutoPropertyAccessor.Local
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public int Width { get; }
+        // ReSharper disable once UnusedAutoPropertyAccessor.Local
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public int Height { get; }
 
         /// <summary>
@@ -287,7 +291,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
         /// per cache key (the address formula costs two integer divisions per
         /// texel; the menu re-fingerprints on every one of its 2.76M draws).
         /// </summary>
-        public uint[] SampleAddresses { get; set; } = System.Array.Empty<uint>();
+        public uint[] SampleAddresses { get; set; } = Array.Empty<uint>();
 
         /// <summary>Word mask applied to a sampled texel (0xFFFF for 16-bit formats).</summary>
         public uint SampleMask { get; set; } = uint.MaxValue;
@@ -1226,7 +1230,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     {
         if (_fbo != 0 && _dirtyWatch is not null)
         {
-            ulong span = (ulong)record.Pitch * (ulong)record.Height;
+            ulong span = (ulong)record.Pitch * record.Height;
             _dirtyWatch.ArmPresentWatch(
                 record.SurfaceAddress,
                 span > uint.MaxValue ? uint.MaxValue : (uint)span);
@@ -1838,7 +1842,7 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
 
             bool linearFlag = linear;
             var key = new TextureKey(in texture, color, width, height, pitch, linearFlag);
-            GlTextureEntry? entry = null;
+            GlTextureEntry? entry;
             bool created = false;
             if (_lastTextureValid[slot] && _lastTextureKey[slot].Equals(key))
             {

@@ -124,7 +124,7 @@ public sealed class FarControlTests
     [Fact]
     public void FarJumpImmediate_DecodesOperands()
     {
-        DecodedInstruction instruction = Decoder.Decode([0xEA, 0x00, 0x00, 0x20, 0x00, 0x08, 0x00], 32, 32);
+        DecodedInstruction instruction = Decoder.Decode([0xEA, 0x00, 0x00, 0x20, 0x00, 0x08, 0x00]);
 
         Assert.Equal(Mnemonic.JmpFar, instruction.Mnemonic);
         Assert.Equal(0x00200000u, instruction.Operand1.Immediate);
@@ -134,7 +134,7 @@ public sealed class FarControlTests
     [Fact]
     public void FarCallMemory_Decodes()
     {
-        DecodedInstruction instruction = Decoder.Decode([0xFF, 0x1D, 0x00, 0x20, 0x00, 0x00], 32, 32);
+        DecodedInstruction instruction = Decoder.Decode([0xFF, 0x1D, 0x00, 0x20, 0x00, 0x00]);
 
         Assert.Equal(Mnemonic.CallFar, instruction.Mnemonic);
         Assert.Equal(OperandKind.Memory, instruction.Operand1.Kind);
@@ -143,6 +143,6 @@ public sealed class FarControlTests
     [Fact]
     public void FarCallRegisterForm_IsUnsupported()
     {
-        Assert.Equal(Mnemonic.Unsupported, Decoder.Decode([0xFF, 0xD8], 32, 32).Mnemonic);
+        Assert.Equal(Mnemonic.Unsupported, Decoder.Decode([0xFF, 0xD8]).Mnemonic);
     }
 }

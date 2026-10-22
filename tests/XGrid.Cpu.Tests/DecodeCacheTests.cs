@@ -666,16 +666,11 @@ public sealed class DecodeCacheTests
 
         private byte PollValue { get; set; } = 1;
 
-        private HashSet<uint> NonRam { get; } = new();
-
         public long? StepsUntilNextDeadline => _deadline ??= InitialDeadline;
 
         public bool IrqPendingAndEnabled => false;
 
-        public bool IsRam(uint physicalAddress)
-        {
-            return !NonRam.Contains(physicalAddress);
-        }
+        public bool IsRam(uint _) => true;
 
         public void AdvanceIdle(ulong steps)
         {

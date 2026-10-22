@@ -310,14 +310,6 @@ public sealed class Nv2aDisplayFrameTests
         Assert.Equal(480u, nv2A.DisplayHeight);
     }
 
-    /// <summary>Reads a CRTC register back through the guest-visible PRMCIO word.</summary>
-    private static byte ReadCrtc(Nv2AMmio nv2A, byte index)
-    {
-        nv2A.Write(Base + Prmcio + 0x3D4u, 1, index);
-        uint word = nv2A.Read(Base + Prmcio + 0x3D4u, 4);
-        return (byte)(word >> 8);
-    }
-
     [Fact]
     public void DisplayGeometry_AndCrtcState_SurviveASnapshot()
     {

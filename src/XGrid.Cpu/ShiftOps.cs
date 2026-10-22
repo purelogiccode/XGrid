@@ -311,7 +311,7 @@ public static class ShiftOps
         }
 
         ulong wide = size == 16
-            ? (ulong)destination | ((ulong)source << 16) | ((ulong)destination << 32)
+            ? destination | ((ulong)source << 16) | ((ulong)destination << 32)
             : ((ulong)destination << 32) | source;
         result = size == 16
             ? (uint)(((wide << count) >> 32) & mask)
@@ -366,8 +366,8 @@ public static class ShiftOps
         }
 
         ulong wide = size == 16
-            ? (ulong)destination | ((ulong)source << 16) | ((ulong)destination << 32)
-            : (ulong)destination | ((ulong)source << 32);
+            ? destination | ((ulong)source << 16) | ((ulong)destination << 32)
+            : destination | ((ulong)source << 32);
         result = (uint)((wide >> count) & mask);
 
         uint flags = eflags & ~(FlagBits.Cf | FlagBits.Pf | FlagBits.Zf | FlagBits.Sf | FlagBits.Of);

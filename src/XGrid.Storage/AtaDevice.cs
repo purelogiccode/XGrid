@@ -103,7 +103,7 @@ public sealed class AtaDevice : ISnapshotable
     {
         packet[..PacketSize].CopyTo(_packet);
         _packetDma = true;
-        DispatchPacket(raiseIrq: false);
+        DispatchPacket();
         if (_phase == Phase.PacketData)
         {
             _phase = Phase.PacketDataDma;
@@ -873,7 +873,7 @@ public sealed class AtaDevice : ISnapshotable
         if (_phase == Phase.PacketDma)
         {
             _packetDma = true;
-            DispatchPacket(raiseIrq: false);
+            DispatchPacket();
             if (_phase == Phase.PacketData)
             {
                 _phase = Phase.PacketDataDma;
@@ -882,11 +882,11 @@ public sealed class AtaDevice : ISnapshotable
             return;
         }
 
-        DispatchPacket(raiseIrq: true);
+        DispatchPacket();
     }
 
     /// <summary>Dispatches a received 12-byte ATAPI packet (QEMU ide_atapi_cmd, empty-drive subset).</summary>
-    private void DispatchPacket(bool raiseIrq)
+    private void DispatchPacket()
     {
         _packetIndex = 0;
         _dmaLarge = null;

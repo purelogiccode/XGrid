@@ -222,7 +222,7 @@ public sealed class AddressSpace : IMemoryBus
     /// <summary>Returns a writable span over RAM. Only valid for RAM addresses.</summary>
     public Span<byte> GetSpan(uint address, int length)
     {
-        if ((ulong)address + (ulong)length > Ram.Size)
+        if (address + (ulong)length > Ram.Size)
         {
             throw new MemoryAccessException(
                 $"Span request outside RAM: address 0x{address:X8}, length {length}.");

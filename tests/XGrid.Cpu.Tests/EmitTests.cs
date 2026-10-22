@@ -719,20 +719,20 @@ public sealed class EmitTests
         bytes.Clear();
         bytes[0] = 0x8B;
         bytes[1] = 0x03; // mov eax,[ebx]
-        DecodedInstruction load = Decoder.Decode(bytes, 32, 32);
+        DecodedInstruction load = Decoder.Decode(bytes);
         Assert.NotNull(XboxCpu.ResolveInlineHandler(load));
 
         bytes.Clear();
         bytes[0] = 0x01;
         bytes[1] = 0xD8; // add eax,ebx (handler yes, twin no)
-        DecodedInstruction alu = Decoder.Decode(bytes, 32, 32);
+        DecodedInstruction alu = Decoder.Decode(bytes);
         Assert.NotNull(XboxCpu.ResolveSpec(alu));
         Assert.Null(XboxCpu.ResolveInlineHandler(alu));
 
         bytes.Clear();
         bytes[0] = 0xF3;
         bytes[1] = 0xAB; // rep stosd (no handler, no twin)
-        DecodedInstruction rep = Decoder.Decode(bytes, 32, 32);
+        DecodedInstruction rep = Decoder.Decode(bytes);
         Assert.Null(XboxCpu.ResolveSpec(rep));
         Assert.Null(XboxCpu.ResolveInlineHandler(rep));
     }

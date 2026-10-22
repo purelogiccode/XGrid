@@ -2598,7 +2598,7 @@ public static class Decoder
     {
         memory = default;
 
-        bool hasBase = false;
+        bool hasBase;
         Gpr baseRegister = default;
         bool hasIndex = false;
         Gpr indexRegister = default;
@@ -2801,7 +2801,7 @@ public static class Decoder
 
     private static uint SignExtend8(uint value)
     {
-        return unchecked((uint)(int)(sbyte)value);
+        return unchecked((uint)(sbyte)value);
     }
 
     private static uint SegmentIndex(byte opcode)

@@ -266,7 +266,7 @@ public sealed class ApuVoiceProcessorTests
         apu.Write(Base + PioSetAntecedentVoice, 4, 1 << 16);
         apu.Write(Base + PioSetCurrentVoice, 4, voice);
         apu.Write(Base + PioSetVoiceCfgFmt, 4, FmtDataType);
-        apu.Write(Base + PioSetVoiceSslA, 4, ((uint)sslACount) | (0u << 8));
+        apu.Write(Base + PioSetVoiceSslA, 4, sslACount);
         apu.Write(Base + PioSetVoiceSslB, 4, 0);
         apu.Write(Base + PioVoiceOn, 4, voice);
     }

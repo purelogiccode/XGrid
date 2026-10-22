@@ -400,7 +400,7 @@ public sealed class SseTests
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x12, 0x05, 0x00, 0x20, 0x00, 0x00);
         cpu.Ram().Write64(Data,
-            (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
+            (BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
         cpu.Context.WriteXmm128(0, Floats(1, 2, 3, 4).Low, Floats(1, 2, 3, 4).High);
 
         cpu.Step();
@@ -416,7 +416,7 @@ public sealed class SseTests
     {
         XboxCpu cpu = CpuHarness.Create(0x0F, 0x16, 0x05, 0x00, 0x20, 0x00, 0x00);
         cpu.Ram().Write64(Data,
-            (ulong)(BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
+            (BitConverter.SingleToUInt32Bits(5f) | ((ulong)BitConverter.SingleToUInt32Bits(6f) << 32)));
         cpu.Context.WriteXmm128(0, Floats(1, 2, 3, 4).Low, Floats(1, 2, 3, 4).High);
 
         cpu.Step();

@@ -127,10 +127,7 @@ public sealed class TitleOverrideItem : ObservableObject
         get => _selectedRenderer;
         set
         {
-            if (value is not null)
-            {
-                SetProperty(ref _selectedRenderer, value);
-            }
+            SetProperty(ref _selectedRenderer, value);
         }
     }
 
@@ -590,11 +587,10 @@ public sealed partial class SettingsViewModel : PageViewModel
             case "dvd":
                 DvdPath = string.Empty;
                 break;
-            default:
-                break;
         }
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnBiosPathChanged(string value)
     {
         OnPropertyChanged(nameof(BiosStatusText));

@@ -1101,8 +1101,6 @@ internal static class JitEmitter
                 il.Emit(OpCodes.Ldc_I4, unchecked((int)plan.Immediate));
                 il.Emit(OpCodes.Stloc, a2);
                 break;
-            default:
-                break;
         }
     }
 

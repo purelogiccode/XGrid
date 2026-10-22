@@ -6,7 +6,7 @@ using XGrid.Frontend.Avalonia.Views;
 
 namespace XGrid.Frontend.Avalonia;
 
-public partial class App : Application
+public class App : Application
 {
     public override void Initialize()
     {

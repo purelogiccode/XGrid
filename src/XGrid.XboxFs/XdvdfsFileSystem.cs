@@ -49,6 +49,7 @@ public sealed class XdvdfsFileSystem : IDisposable
         public string FullPath { get; }
 
         /// <summary>Gets the raw attribute byte.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public byte Attributes { get; }
 
         /// <summary>Gets the partition-relative first data sector.</summary>

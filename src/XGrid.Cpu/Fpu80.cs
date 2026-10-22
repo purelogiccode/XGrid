@@ -130,7 +130,7 @@ public readonly struct Fpu80 : IEquatable<Fpu80>
             return IsNegative ? -0.0 : 0.0;
         }
 
-        double magnitude = Math.ScaleB((double)Significand, Exponent - ExponentBias - 63);
+        double magnitude = Math.ScaleB(Significand, Exponent - ExponentBias - 63);
         return IsNegative ? -magnitude : magnitude;
     }
 

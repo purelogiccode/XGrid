@@ -1029,7 +1029,7 @@ internal static class Program
             if (hotspot is not null && hotspotPath is not null)
             {
                 hotspot.WriteReport(Console.Out, 15);
-                hotspot.SaveReport(hotspotPath, 25);
+                hotspot.SaveReport(hotspotPath);
                 Console.WriteLine($"Hotspot report {hotspotPath} total={hotspot.TotalInstructions}");
             }
 
@@ -1494,7 +1494,7 @@ internal static class Program
         uint width = machine.Nv2A.PresentedWidth;
         uint height = machine.Nv2A.PresentedHeight;
         uint bpp = machine.Nv2A.PresentedColorBpp;
-        uint ramSize = (uint)machine.Ram.Size;
+        uint ramSize = machine.Ram.Size;
         if (width == 0 || width > 4096 || height == 0 || height > 4096 ||
             (bpp != 1 && bpp != 2 && bpp != 4) || pitch < width * bpp ||
             address + (height - 1) * pitch + width * bpp > ramSize)
@@ -1516,7 +1516,7 @@ internal static class Program
 
     private static ulong RunBatch(XboxMachine machine, ulong remaining)
     {
-        int batch = remaining > (ulong)int.MaxValue ? int.MaxValue : (int)remaining;
+        int batch = remaining > int.MaxValue ? int.MaxValue : (int)remaining;
         return batch <= 0 ? 0 : (ulong)machine.Run(batch);
     }
 
@@ -2663,7 +2663,7 @@ internal static class Program
             return 1;
         }
 
-        if (!Host.DiscTitleId.TryRead(path, out uint titleId, out string titleName))
+        if (!DiscTitleId.TryRead(path, out uint titleId, out string titleName))
         {
             Console.Error.WriteLine(
                 $"No XBE title id read from '{path}' (unsupported or unreadable image; a CHD has no XDVDFS reader yet).");
@@ -2798,7 +2798,7 @@ internal static class Program
                 text.Append(',');
             }
 
-            text.Append(Enum.GetName(typeof(XGrid.Cpu.Mnemonic), top[i].Index)
+            text.Append(Enum.GetName(typeof(Mnemonic), top[i].Index)
                 ?? top[i].Index.ToString(CultureInfo.InvariantCulture));
             text.Append(':');
             text.Append(top[i].Count.ToString(CultureInfo.InvariantCulture));

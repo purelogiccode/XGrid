@@ -187,7 +187,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     /// <summary>Gets the raw root-hub port status register, for diagnostics.</summary>
     public uint GetPortStatus(int index)
     {
-        return (uint)index < (uint)PortCount ? _ports[index] : 0;
+        return (uint)index < PortCount ? _ports[index] : 0;
     }
 
     /// <summary>Gets the number of register accesses, for diagnostics.</summary>
@@ -620,8 +620,6 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
                 SetHubStatus(value);
                 break;
 
-            default:
-                break;
         }
     }
 
@@ -712,8 +710,6 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
                 RootHubReset();
                 break;
 
-            default:
-                break;
         }
     }
 
@@ -916,7 +912,7 @@ public sealed class OhciUsbController : IMmioDevice, IXboxDevice, ISnapshotable
     {
         if ((_ctl & CtlPle) != 0 && Hcca != 0)
         {
-            uint head = _memory.Read32(Hcca + ((uint)(_frameNumber & 0x1F) * 4));
+            uint head = _memory.Read32(Hcca + ((_frameNumber & 0x1F) * 4));
             ServiceEdList(head & DptrMask, isPeriodic: true);
         }
 

@@ -380,8 +380,6 @@ public static class VshProgram
                     break;
                 }
 
-            default:
-                break;
         }
 
         return result;

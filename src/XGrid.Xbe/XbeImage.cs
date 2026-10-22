@@ -73,6 +73,7 @@ public sealed class XbeImage
         public uint RawSize { get; }
 
         /// <summary>Gets the raw section bytes.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public byte[] RawData { get; }
     }
 
@@ -102,6 +103,7 @@ public sealed class XbeImage
         public ushort Build { get; }
 
         /// <summary>Gets the flag bits.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public ushort Flags { get; }
     }
 
@@ -123,21 +125,27 @@ public sealed class XbeImage
         }
 
         /// <summary>Gets the TLS data start address.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint DataStart { get; }
 
         /// <summary>Gets the TLS data end address.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint DataEnd { get; }
 
         /// <summary>Gets the TLS index address.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint IndexAddress { get; }
 
         /// <summary>Gets the TLS callback address.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint CallbackAddress { get; }
 
         /// <summary>Gets the zero-fill size.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint ZeroFill { get; }
 
         /// <summary>Gets the characteristics.</summary>
+        // ReSharper disable once UnusedAutoPropertyAccessor.Global
         public uint Characteristics { get; }
     }
 

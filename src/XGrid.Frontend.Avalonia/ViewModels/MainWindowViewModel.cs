@@ -276,7 +276,6 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         Shutdown();
-        GC.SuppressFinalize(this);
     }
 
     /// <summary>Navigates to a destination.</summary>
@@ -331,7 +330,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
             ShowToast("Settings saved");
             _ = Library.RefreshAsync();
         }
-        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             AddLog(LogLevel.Error, "Could not save settings: " + exception.Message);
             ShowToast("Could not save settings");
@@ -358,7 +357,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _settingsStore.Save(Config);
         }
-        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             AddLog(LogLevel.Warning, "Could not save the library folder: " + exception.Message);
         }
@@ -445,7 +444,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
 
             NavigateTo(PageKind.Home);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.IO.IOException
+        catch (Exception exception) when (exception is InvalidOperationException or IOException
                                               or UnauthorizedAccessException or ArgumentException)
         {
             IsRunning = false;
@@ -635,12 +634,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         return name + " " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss", CultureInfo.InvariantCulture);
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnSelectedNavigationItemChanged(NavigationItem? value)
     {
         OnPropertyChanged(nameof(PageTitle));
         OnPropertyChanged(nameof(PageCaption));
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(PowerButtonText));
@@ -653,6 +654,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         LoadStateCommand.NotifyCanExecuteChanged();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnIsPausedChanged(bool value)
     {
         OnPropertyChanged(nameof(PauseButtonText));
@@ -660,11 +662,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         StepInstructionsCommand.NotifyCanExecuteChanged();
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnStatusDetailChanged(string value)
     {
         OnPropertyChanged(nameof(HomeDetail));
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnCurrentGameChanged(GameEntry? value)
     {
         OnPropertyChanged(nameof(CurrentGameTitle));
@@ -834,7 +838,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _settingsStore.Save(Config);
         }
-        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             AddLog(LogLevel.Warning, "Could not save recent games: " + exception.Message);
         }

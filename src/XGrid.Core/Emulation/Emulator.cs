@@ -27,6 +27,7 @@ public sealed class Emulator : IEmulator
     public EmulatorState State { get; private set; } = EmulatorState.Created;
 
     /// <summary>Gets the validated configuration.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public EmulatorConfiguration Configuration { get; }
 
     /// <summary>Gets the runtime options.</summary>

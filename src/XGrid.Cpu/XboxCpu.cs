@@ -1976,7 +1976,7 @@ public sealed partial class XboxCpu
         {
             case 8:
                 {
-                    uint product = (uint)Context.ReadRegister8(0) * (source & 0xFFu);
+                    uint product = Context.ReadRegister8(0) * (source & 0xFFu);
                     Context.WriteRegister16(Gpr.Eax, (ushort)product);
                     Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFF00u) != 0);
                     break;
@@ -1984,7 +1984,7 @@ public sealed partial class XboxCpu
 
             case 16:
                 {
-                    uint product = (uint)Context.ReadRegister16(Gpr.Eax) * (source & 0xFFFFu);
+                    uint product = Context.ReadRegister16(Gpr.Eax) * (source & 0xFFFFu);
                     Context.WriteRegister16(Gpr.Eax, (ushort)product);
                     Context.WriteRegister16(Gpr.Edx, (ushort)(product >> 16));
                     Context.Eflags = SetMultiplyFlags(Context.Eflags, (product & 0xFFFF0000u) != 0);
@@ -2385,11 +2385,11 @@ public sealed partial class XboxCpu
 
         if (instruction.Operand2.Size == 8)
         {
-            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFu : (uint)(int)(sbyte)value;
+            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFu : (uint)(sbyte)value;
         }
         else
         {
-            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFFFu : (uint)(int)(short)value;
+            value = instruction.Mnemonic == Mnemonic.Movzx ? value & 0xFFFFu : (uint)(short)value;
         }
 
         WriteOperand(instruction.Operand1, value);
@@ -2616,8 +2616,6 @@ public sealed partial class XboxCpu
             case 0x176:
                 _sysenterEip = value;
                 break;
-            default:
-                break;
         }
     }
 
@@ -2692,7 +2690,7 @@ public sealed partial class XboxCpu
 
         bool decrement = (Context.Eflags & FlagBits.Df) != 0;
         int delta = size / 8;
-        ulong totalBytes = (ulong)count * (ulong)delta;
+        ulong totalBytes = count * (ulong)delta;
         uint srcIndex = ReadIndex(Gpr.Esi, addressSize);
         uint dstIndex = ReadIndex(Gpr.Edi, addressSize);
 
@@ -2703,7 +2701,7 @@ public sealed partial class XboxCpu
             ulong span = totalBytes - (ulong)delta;
             if (!decrement)
             {
-                if ((ulong)srcIndex + totalBytes > 0x10000u || (ulong)dstIndex + totalBytes > 0x10000u)
+                if (srcIndex + totalBytes > 0x10000u || dstIndex + totalBytes > 0x10000u)
                 {
                     return false;
                 }
@@ -2717,14 +2715,14 @@ public sealed partial class XboxCpu
         {
             ulong span = totalBytes - (ulong)delta;
             if (srcIndex < span || dstIndex < span
-                || (ulong)srcIndex + (ulong)delta > 0x1_0000_0000u
-                || (ulong)dstIndex + (ulong)delta > 0x1_0000_0000u)
+                || srcIndex + (ulong)delta > 0x1_0000_0000u
+                || dstIndex + (ulong)delta > 0x1_0000_0000u)
             {
                 return false;
             }
         }
-        else if ((ulong)srcIndex + totalBytes > 0x1_0000_0000u
-            || (ulong)dstIndex + totalBytes > 0x1_0000_0000u)
+        else if (srcIndex + totalBytes > 0x1_0000_0000u
+            || dstIndex + totalBytes > 0x1_0000_0000u)
         {
             return false;
         }
@@ -2742,12 +2740,12 @@ public sealed partial class XboxCpu
             ulong spanBytes = totalBytes - (ulong)delta;
             uint srcLo = dsBase + (decrement ? (uint)(srcIndex - spanBytes) : srcIndex);
             uint dstLo = esBase + (decrement ? (uint)(dstIndex - spanBytes) : dstIndex);
-            if ((ulong)dstLo + totalBytes > _ramSize || IsWatched(dstLo, (uint)totalBytes))
+            if (dstLo + totalBytes > _ramSize || IsWatched(dstLo, (uint)totalBytes))
             {
                 return false;
             }
 
-            if (move && (ulong)srcLo + totalBytes > _ramSize)
+            if (move && srcLo + totalBytes > _ramSize)
             {
                 return false;
             }
@@ -3140,7 +3138,7 @@ public sealed partial class XboxCpu
                 return ram.Read64(address);
             }
 
-            return (ulong)Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
+            return Memory.Read32(address) | ((ulong)Memory.Read32(address + 4) << 32);
         }
 
         if (!CrossesPage(address, 64))
@@ -3152,7 +3150,7 @@ public sealed partial class XboxCpu
                 return ram.Read64(physical);
             }
 
-            return (ulong)Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
+            return Memory.Read32(physical) | ((ulong)Memory.Read32(physical + 4) << 32);
         }
 
         ulong value = 0;
@@ -3279,7 +3277,7 @@ public sealed partial class XboxCpu
         PhysicalMemory? ram = _ramDirect;
         if (!Mmu.IsEnabled)
         {
-            if (ram is not null && (ulong)address + (ulong)length <= _ramSize)
+            if (ram is not null && address + (ulong)length <= _ramSize)
             {
                 ram.GetReadOnlySpan(address, length).CopyTo(destination);
                 return;
@@ -3301,7 +3299,7 @@ public sealed partial class XboxCpu
                 uint linear = address + (uint)offset;
                 int chunk = Math.Min(length - offset, (int)(0x1000u - (linear & 0xFFFu)));
                 uint physical = TranslateLinear(linear, isWrite: false, isInstruction: false);
-                if ((ulong)physical + (ulong)chunk <= _ramSize)
+                if (physical + (ulong)chunk <= _ramSize)
                 {
                     ram.GetReadOnlySpan(physical, chunk).CopyTo(destination.Slice(offset, chunk));
                 }
@@ -3343,7 +3341,7 @@ public sealed partial class XboxCpu
         PhysicalMemory? ram = _ramDirect;
         if (!Mmu.IsEnabled)
         {
-            if (ram is not null && (ulong)address + (ulong)length <= _ramSize && !IsWatched(address, (uint)length))
+            if (ram is not null && address + (ulong)length <= _ramSize && !IsWatched(address, (uint)length))
             {
                 int offset = 0;
                 while (offset < length)
@@ -3375,7 +3373,7 @@ public sealed partial class XboxCpu
                 uint linear = address + (uint)offset;
                 int chunk = Math.Min(length - offset, (int)(0x1000u - (linear & 0xFFFu)));
                 uint physical = TranslateLinear(linear, isWrite: true, isInstruction: false);
-                if ((ulong)physical + (ulong)chunk <= _ramSize && !IsWatched(physical, (uint)chunk))
+                if (physical + (ulong)chunk <= _ramSize && !IsWatched(physical, (uint)chunk))
                 {
                     NoteStorePhysical(physical, chunk * 8);
                     ram.WriteSpan(physical, source.Slice(offset, chunk));
@@ -3645,7 +3643,7 @@ public sealed partial class XboxCpu
         uint address = ComputeAddress(operand.Memory);
         return operand.Size switch
         {
-            32 => Fpu80.FromSingleBits((uint)ReadMemory(address, 32)),
+            32 => Fpu80.FromSingleBits(ReadMemory(address, 32)),
             64 => Fpu80.FromDoubleBits(ReadMemory64(address)),
             _ => ReadMemoryFpu80(address),
         };
@@ -4619,9 +4617,9 @@ public sealed partial class XboxCpu
             case Mnemonic.Pmaxub:
                 return MapBytes(left, right, static (x, y) => Math.Max(x, y));
             case Mnemonic.Pminsw:
-                return MapWords(left, right, static (x, y) => (ushort)((short)x < (short)y ? x : y));
+                return MapWords(left, right, static (x, y) => ((short)x < (short)y ? x : y));
             case Mnemonic.Pmaxsw:
-                return MapWords(left, right, static (x, y) => (ushort)((short)x > (short)y ? x : y));
+                return MapWords(left, right, static (x, y) => ((short)x > (short)y ? x : y));
             case Mnemonic.Psadbw:
                 {
                     int sum = 0;
@@ -4630,7 +4628,7 @@ public sealed partial class XboxCpu
                         sum += Math.Abs((int)((left >> (8 * i)) & 0xFF) - (int)((right >> (8 * i)) & 0xFF));
                     }
 
-                    return (ulong)(ushort)sum;
+                    return (ushort)sum;
                 }
 
             case Mnemonic.Packsswb:

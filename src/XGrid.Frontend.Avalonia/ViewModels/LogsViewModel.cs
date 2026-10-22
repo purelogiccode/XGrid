@@ -104,6 +104,7 @@ public sealed partial class LogsViewModel : PageViewModel
         OnPropertyChanged(nameof(IsEmpty));
     }
 
+    // ReSharper disable once UnusedParameterInPartialMethod
     partial void OnSelectedFilterChanged(LogFilterOption? value)
     {
         Rebuild();

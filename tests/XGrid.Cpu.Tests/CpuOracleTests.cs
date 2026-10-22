@@ -169,7 +169,7 @@ public sealed class CpuOracleTests
     /// </summary>
     private static uint MemorySizeFor(int caseCount)
     {
-        long needed = Math.Max(MemorySize, PageBase + ((long)caseCount * PageStride) + PageStride);
+        long needed = Math.Max(MemorySize, PageBase + (caseCount * PageStride) + PageStride);
         return (uint)((needed + 0xFFF) & ~0xFFFL);
     }
 

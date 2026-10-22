@@ -378,7 +378,7 @@ public sealed class DeviceSnapshotTests
                 controller.Write(0xFED00000 + 0x04, 4, 0x80);
                 controller.Write(0xFED00000 + 0x18, 4, 0x00FFF000);
                 controller.Write(0xFED00000 + 0x20, 4, 0x00FF0000);
-                controller.Advance((ulong)XboxBus.CpuClockHz);
+                controller.Advance(XboxBus.CpuClockHz);
                 controller.Read(0xFED00000 + 0x0C, 4);
             });
     }

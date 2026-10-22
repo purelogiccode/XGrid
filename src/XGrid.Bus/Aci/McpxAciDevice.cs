@@ -427,8 +427,6 @@ public sealed class McpxAciDevice : IMmioDevice, IXboxDevice, ISnapshotable
                 block.Sr |= (byte)(value & ~(SrRoMask | SrWclearMask));
                 block.Sr &= (byte)~(value & SrWclearMask);
                 break;
-            default:
-                break;
         }
     }
 

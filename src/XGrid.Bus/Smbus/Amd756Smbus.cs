@@ -336,8 +336,6 @@ public sealed class Amd756Smbus : PciDevice, IIoPortDevice
                 _blockData[_blockIndex++ & 31] = value;
                 break;
 
-            default:
-                break;
         }
     }
 

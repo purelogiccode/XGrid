@@ -16,6 +16,7 @@ public sealed class CpuTestResult
     }
 
     /// <summary>Gets the test name.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public string Name { get; }
 
     /// <summary>Gets whether the test passed.</summary>

@@ -122,7 +122,7 @@ public static class DiscTitleId
         {
             XbeImage parsed = XbeImage.Load(image);
             titleId = parsed.TitleId;
-            titleName = parsed.TitleName?.Trim() ?? string.Empty;
+            titleName = parsed.TitleName.Trim();
             return titleId != 0;
         }
         catch (InvalidDataException)

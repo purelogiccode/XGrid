@@ -79,7 +79,7 @@ public sealed class DisplayFrame
         using var writer = new BinaryWriter(stream);
         writer.Write((byte)'B');
         writer.Write((byte)'M');
-        writer.Write((uint)(BmpHeaderSize + BmpInfoSize + imageBytes));
+        writer.Write((BmpHeaderSize + BmpInfoSize + imageBytes));
         writer.Write((ushort)0);
         writer.Write((ushort)0);
         writer.Write((uint)(BmpHeaderSize + BmpInfoSize));

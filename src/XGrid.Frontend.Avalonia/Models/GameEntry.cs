@@ -111,7 +111,7 @@ public sealed class GameEntry
             }
 
             XbeImage image = XbeImage.Load(File.ReadAllBytes(path));
-            string title = image.TitleName?.Trim() ?? string.Empty;
+            string title = image.TitleName.Trim();
             return title.Length == 0 ? null : title;
         }
         catch (InvalidDataException)

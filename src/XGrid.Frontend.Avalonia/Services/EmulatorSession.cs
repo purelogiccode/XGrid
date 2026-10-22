@@ -129,6 +129,7 @@ public sealed class EmulatorSession : IDisposable
     /// no reader yet and reports false) and returns it.
     /// </summary>
     /// <param name="imagePath">Disc image or executable path.</param>
+    /// <param name="titleId">Parsed XBE title id on success.</param>
     /// <param name="titleName">Certificate title name on success.</param>
     public static bool TryResolveTitle(string? imagePath, out uint titleId, out string titleName)
     {
@@ -314,7 +315,6 @@ public sealed class EmulatorSession : IDisposable
     }
 
     /// <summary>
-    /// <summary>
     /// Consumes the executed instructions from the step budget and re-closes
     /// the pause gate when the step is done (frame reached or budget spent).
     /// Only meaningful while paused; a running session ignores the budget.
@@ -476,7 +476,7 @@ public sealed class EmulatorSession : IDisposable
             Log?.Invoke(this, FormattableString.Invariant(
                 $"Console powered on · {settings.RamMb} MB RAM · {DescribeCpu(settings)} \u00B7 {DescribeGraphics(settings)}"));
             gpuBackend = AttachRenderer(machine, settings);
-            if (_titleId is uint runningTitleId)
+            if (_titleId is { } runningTitleId)
             {
                 string suffix = _titleOverrideApplied ? " (per-title override applied)" : string.Empty;
                 string name = _titleName.Length == 0 ? string.Empty : " \u00B7 " + _titleName;

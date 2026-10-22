@@ -1,0 +1,9 @@
+<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <!-- Float equality is intentional in an emulator: x87/SSE compare predicates,
+       GPU state fingerprints and zero checks are bit-exact by definition. -->
+  <s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/=CompareOfFloatsByEqualityOperator/@EntryIndexedValue">DO_NOT_SHOW</s:String>
+  <!-- The codebase uses Xbox-domain abbreviations (Nv2a, Mcpx, Xid, RR/RI, F_CPU)
+       that the default word-splitting rule reads as inconsistent. The names are
+       shared by the namespaces, projects and research notes; keep them. -->
+  <s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/=InconsistentNaming/@EntryIndexedValue">DO_NOT_SHOW</s:String>
+</wpf:ResourceDictionary>

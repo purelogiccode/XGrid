@@ -278,7 +278,7 @@ public sealed class PhysicalMemory : ISnapshotable, IPresentDirtyWatch
 
     private int CheckedRange(uint address, int length)
     {
-        if (length < 0 || (ulong)address + (ulong)length > Size)
+        if (length < 0 || address + (ulong)length > Size)
         {
             throw new MemoryAccessException(
                 $"RAM access out of range: address 0x{address:X8}, length {length}, size 0x{Size:X8}.");

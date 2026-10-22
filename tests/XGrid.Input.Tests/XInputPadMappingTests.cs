@@ -131,7 +131,7 @@ public sealed class XInputPadMappingTests
     public void FullState_MapsEveryFieldAtOnce()
     {
         HostPad pad = XInputPadMapping.Map(
-            (ushort)(XInputPadMapping.DpadRight | XInputPadMapping.Start | XInputPadMapping.ButtonA),
+            (XInputPadMapping.DpadRight | XInputPadMapping.Start | XInputPadMapping.ButtonA),
             0,
             200,
             16000,

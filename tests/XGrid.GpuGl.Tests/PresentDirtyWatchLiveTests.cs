@@ -369,7 +369,7 @@ public sealed class PresentDirtyWatchLiveTests
             // watched surface (suppressed -> stayed clean): the flip served
             // the GL-rendered content, never uploaded.
             byte[] secondExpected = { 0x66, 0x33, 0x99, 0xFF };
-            Assert.Equal(Repeat(secondExpected, (int)second.Length / 4), second);
+            Assert.Equal(Repeat(secondExpected, second.Length / 4), second);
         }
         finally
         {

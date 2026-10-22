@@ -323,7 +323,7 @@ public sealed class PshCombiner : ISnapshotable
     }
 
     /// <summary>Gets the active general-combiner stage count, clamped to 8.</summary>
-    public int StageCount => (int)Math.Min(Control & 0xFFu, (uint)MaxStages);
+    public int StageCount => (int)Math.Min(Control & 0xFFu, MaxStages);
 
     /// <summary>Gets whether the final combiner is programmed (either CW word nonzero).</summary>
     public bool FinalEnabled => (Final0 | Final1) != 0;
@@ -445,8 +445,8 @@ public sealed class PshCombiner : ISnapshotable
     /// </summary>
     public static void DecodeHilo(float r, float g, float b, float a, out float hi, out float lo)
     {
-        hi = (float)(((uint)(a * 255f) << 8) | (uint)(r * 255f));
-        lo = (float)(((uint)(g * 255f) << 8) | (uint)(b * 255f));
+        hi = (((uint)(a * 255f) << 8) | (uint)(r * 255f));
+        lo = (((uint)(g * 255f) << 8) | (uint)(b * 255f));
     }
 
     /// <summary>D3D signed 16-bit decode (xemu sign1 extended): (h - 0x8000)/0x7FFF.</summary>
@@ -815,7 +815,7 @@ public sealed class PshCombiner : ISnapshotable
         r = dx + (cx + ((bx - cx) * ax));
         g = dy + (cy + ((by - cy) * ay));
         b = dz + (cz + ((bz - cz) * az));
-        a = MapComponent(ReadFinalAlpha(regs, efx, efy, efz, fog, consts, gReg, gChan), gMod);
+        a = MapComponent(ReadFinalAlpha(regs, efz, fog, consts, gReg, gChan), gMod);
     }
 
     /// <summary>
@@ -987,9 +987,6 @@ public sealed class PshCombiner : ISnapshotable
         float v1R = Math.Clamp(abR + cdR, -1f, 1f);
         float v1G = Math.Clamp(abG + cdG, -1f, 1f);
         float v1B = Math.Clamp(abB + cdB, -1f, 1f);
-        r0R = abR;
-        r0G = abG;
-        r0B = abB;
 
         // Add stage: R0 = clamp(V0 * max(V1, 0) + 1 * C0) (the Zero input
         // through the unsigned-invert mapping is exactly 1).
@@ -1297,7 +1294,7 @@ public sealed class PshCombiner : ISnapshotable
         r = dx + (cx + ((bx - cx) * ax));
         g = dy + (cy + ((by - cy) * ay));
         b = dz + (cz + ((bz - cz) * az));
-        a = ReadFinalAlphaPlanned(6, regs, efx, efy, efz, fog, consts);
+        a = ReadFinalAlphaPlanned(6, regs, efz, fog, consts);
     }
 
     private void EvalStagePlanned(int stage, bool isAlpha, Span<float> regs, float[] fog, float[][] consts)
@@ -1453,7 +1450,7 @@ public sealed class PshCombiner : ISnapshotable
         }
     }
 
-    private float ReadFinalAlphaPlanned(int slot, Span<float> regs, float efx, float efy, float efz, float[] fog,
+    private float ReadFinalAlphaPlanned(int slot, Span<float> regs, float efz, float[] fog,
         float[][] consts)
     {
         // Alpha channel select: BLUE reads .b, ALPHA reads .a (ReadFinalAlpha).
@@ -1585,7 +1582,7 @@ public sealed class PshCombiner : ISnapshotable
         return ReadComponent(regs, fog, consts, MaxStages, reg, chan, component);
     }
 
-    private float ReadFinalAlpha(Span<float> regs, float efx, float efy, float efz, float[] fog, float[][] consts,
+    private float ReadFinalAlpha(Span<float> regs, float efz, float[] fog, float[][] consts,
         int reg, int chan)
     {
         // Alpha channel select: BLUE reads .b, ALPHA reads .a.

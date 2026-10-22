@@ -447,6 +447,7 @@ public readonly struct PgraphTextureSlot
     public uint Format { get; }
 
     /// <summary>Gets the raw address word decoded by the U/V address-mode helpers.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public uint Address { get; }
 
     /// <summary>Gets the raw control word 0 (enable in bit 30).</summary>
@@ -786,6 +787,7 @@ public readonly struct PgraphSurfaceRecord
     public uint ColorBytes { get; }
 
     /// <summary>Gets the presented-frame sequence number.</summary>
+    // ReSharper disable once UnusedAutoPropertyAccessor.Global
     public ulong Frame { get; }
 
     /// <summary>Gets the resolved guest-physical byte address of the presented surface (DMA color-context base + color offset). Carried for the present-upload path; consumers must not change behavior on it yet.</summary>

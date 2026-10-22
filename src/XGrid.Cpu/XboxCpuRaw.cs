@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using XGrid.Core.Devices;
 using XGrid.Memory;
@@ -20,7 +19,6 @@ namespace XGrid.Cpu;
 /// </summary>
 public sealed unsafe partial class XboxCpu
 {
-    private readonly List<GCHandle> _rawPins = [];
     private bool _rawArraysPinned;
     private uint* _rawRegisters;
     private uint* _rawXlatTag;
@@ -107,7 +105,7 @@ public sealed unsafe partial class XboxCpu
             _rawStateTemplate.XlatMask = DataXlatMask;
             _rawStateTemplate.Eip = (uint*)(_rawScratch + ScratchEip);
             _rawStateTemplate.Eflags = (uint*)(_rawScratch + ScratchEflags);
-            _rawStateTemplate.Tsc = (ulong*)(_rawScratch + ScratchTsc);
+            _rawStateTemplate.Tsc = _rawScratch + ScratchTsc;
             _rawStateTemplate.Progress = (int*)(_rawScratch + ScratchProgress);
             _rawStateTemplate.ChainTable = _rawChainTable;
             _rawStateTemplate.ChainServed = (int*)(_rawScratch + ScratchChain);
@@ -443,9 +441,9 @@ public sealed unsafe partial class XboxCpu
     private T* PinArray<T>(T[] array)
         where T : unmanaged
     {
-        GCHandle pin = GCHandle.Alloc(array, GCHandleType.Pinned);
-        _rawPins.Add(pin);
-        return (T*)pin.AddrOfPinnedObject();
+        // The pinning handle is intentionally not stored: the handle table owns
+        // it for the CPU's lifetime, which keeps the array stable for raw code.
+        return (T*)GCHandle.Alloc(array, GCHandleType.Pinned).AddrOfPinnedObject();
     }
 
     /// <summary>

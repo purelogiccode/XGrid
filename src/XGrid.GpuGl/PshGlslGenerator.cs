@@ -748,7 +748,6 @@ public static class PshGlslGenerator
                 return chan ? "r1.a" : SwizzleComponent("r1", component);
             case PshCombiner.RegV1R0Sum:
                 return V1R0SumExpr(state, component);
-            case PshCombiner.RegEfProd:
             default:
                 return "0.0";
         }

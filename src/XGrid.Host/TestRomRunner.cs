@@ -62,7 +62,7 @@ public sealed class TestRomRunner : IDisposable
             throw new ArgumentException("Test ROM image must not be empty.", nameof(image));
         }
 
-        if ((ulong)baseAddress + (ulong)image.Length > Machine.Ram.Size)
+        if (baseAddress + (ulong)image.Length > Machine.Ram.Size)
         {
             throw new ArgumentOutOfRangeException(nameof(baseAddress), "Test ROM image does not fit in RAM.");
         }
@@ -103,7 +103,7 @@ public sealed class TestRomRunner : IDisposable
         while (executed < steps && !Machine.Cpu.Context.Halted)
         {
             ulong remaining = steps - executed;
-            int batch = remaining > (ulong)int.MaxValue ? int.MaxValue : (int)remaining;
+            int batch = remaining > int.MaxValue ? int.MaxValue : (int)remaining;
             int done = Machine.Run(batch);
             if (done <= 0)
             {

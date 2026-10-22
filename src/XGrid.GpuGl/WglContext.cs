@@ -143,7 +143,7 @@ internal sealed partial class WglContext : IDisposable
         const uint swpNoZOrder = 0x0004u;
         const uint swpNoActivate = 0x0010u;
         const int swShow = 5;
-        _ = SetWindowLongPtrW(_hwnd, gwlStyle, new IntPtr(unchecked((long)wsOverlappedWindow)));
+        _ = SetWindowLongPtrW(_hwnd, gwlStyle, new IntPtr(unchecked(wsOverlappedWindow)));
         var rect = default(Rect);
         rect.Right = (int)clientWidth;
         rect.Bottom = (int)clientHeight;
