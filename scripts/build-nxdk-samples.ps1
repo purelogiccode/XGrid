@@ -14,6 +14,8 @@
 #   pwsh -File scripts/build-nxdk-samples.ps1                 # build the default set
 #   pwsh -File scripts/build-nxdk-samples.ps1 -Clone          # clone nxdk first
 #   pwsh -File scripts/build-nxdk-samples.ps1 -Samples mesh,gamma
+# PowerShell binds a comma list as ONE string when it is quoted ("mesh,gamma"
+# is a single sample name): pass -Samples @("mesh","gamma") for several.
 #
 # Prerequisites on Windows (MSYS2, installs into C:\msys64):
 #   pacman -S --needed git make bison flex cmake \
@@ -28,7 +30,7 @@ param(
     [string]$NxdkDir = "D:\nxdk",
     [string]$MsysRoot = "C:\msys64",
     [string]$OutDir = "data\test-samples\corpus",
-    [string[]]$Samples = @("hello", "led", "mesh", "gamma", "gamma-fade", "triangle"),
+    [string[]]$Samples = @("hello", "led", "mesh", "gamma", "gamma-fade", "triangle", "xaudio", "usb"),
     [string]$Repo = "https://github.com/XboxDev/nxdk",
     [switch]$Clone
 )

@@ -735,6 +735,13 @@ that makes the difference visible - decisions §228). No gate anchor moved.**
   decline test (served, `guestWordDraws=1`); `ComputedModeShaderLiveTests` also
   compiles the two measured 8-stage programs on the driver. The row's own output
   is unchanged (`guestWordDraws=0`).
+- **Corpus breadth: `nxdk/usb` is a row, and H1 builds nxdk rows after all
+  (§229).** `host-doctor.ps1` probed PATH only, so it reported clang/make absent
+  while MSYS2 at `C:\msys64` has the whole toolchain (nxdk `D:\nxdk`, `a6c31ee`);
+  it now checks the MSYS2 default install ("BUILDABLE via MSYS2") and
+  `docs/hosts.md` is corrected. `nxdk/usb` at 1B enumerates the daughterboard
+  hub with its own USB stack and prints `Device connected on USB hub port 1
+  (VID: 0409 PID: 55aa)` on the display export (rows: `nxdk-usb-sample.md`).
 - **Open: the panel renders black.** GL replace presents **4 colours** at 4.4B
   and **2** at 3.6B against software's 18,980 / 20,843, with `unsupported=0
   fatal=0 composedFrames=0` - the FBO clear plus a black panel, i.e. a

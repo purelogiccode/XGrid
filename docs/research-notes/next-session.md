@@ -150,6 +150,11 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 7. **§219 (previous session).** GL TEXFILTER parity (gap 7), clear masks
    (`ClearMaskLiveTests`), per-title overrides V2 keyed by `title:XXXXXXXX`, and
    the original flip-drop composition (§219b, superseded by §220d).
+8. **§228/§229 (last session).** The B3 row's phase anchor (4.4B), the
+   `reach[...]` read-set column on the combiner histogram, the cube word lane,
+   the library rows' certificate title id, and the `nxdk/usb` corpus row with the
+   corrected H1 toolchain verdict (MSYS2 builds nxdk samples:
+   `pwsh -File scripts/build-nxdk-samples.ps1 -Samples usb`).
 
 ## 1. Where the remaining wall is (measured, not guessed)
 
@@ -348,10 +353,12 @@ fingerprints live in `docs/hosts.md`; run `scripts/host-doctor.ps1` before
 trusting any wall-clock number. `References2/` is the single verified reference
 store (`scripts/refs-manifest.ps1 -Verify`).
 
-- **H1 (this machine):** Windows 11, NVIDIA GL 4.6.0 (610.88), C: has limited
-  free space - keep media copies on D:. `clang`/`make` are absent, so the nxdk
-  corpus rows cannot be rebuilt here (build them on a host with MSYS2 +
-  `scripts/build-nxdk-samples.ps1`).
+- **H1 (this machine):** Windows 11, NVIDIA GL 4.6.0 (610.88), ~90 GB free on C:
+  (keep media copies on D: anyway). The nxdk toolchain is **installed** inside
+  MSYS2 (`C:\msys64`: clang, lld, llvm-dlltool, make, bison, flex, cmake) with
+  nxdk at `D:\nxdk` (`a6c31ee`), so nxdk corpus rows **do** build here:
+  `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")` (a quoted comma
+  list binds as one name).
 - **Walls on H1 at 1B (fast mode, quiet host):** triangle ~10.5-11.2 s sw /
   ~7.5 s `gl+replace`; menu ~33 s sw / ~24 s `gl+replace` (frontend session
   34.8 s sw / 24.7 s gl). Treat these as ratios within one window, never as

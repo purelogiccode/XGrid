@@ -14564,3 +14564,40 @@ state), so existing `.xgs` files stay valid.
 - The measured combiner rows above are reproducible with
   `--steps 4400000000 --gpu-time`.
 
+## 229 Track E: the nxdk `usb` sample is a corpus row, and H1 builds nxdk rows after all (2026-10-22, twenty-ninth session)
+
+**Track:** E (corpus breadth). One new row, one host-tooling correction, no
+product change; every gate anchor is unchanged.
+
+**The host was never missing the toolchain - the probe was.** `host-doctor.ps1`
+ran `Get-Command clang/make/bash`, which only looks at PATH, and MSYS2 installs
+them under `C:\msys64\mingw64\bin` / `C:\msys64\usr\bin`. H1 has clang, lld,
+llvm-dlltool, make, bison, flex and cmake, nxdk is at `D:\nxdk` (`a6c31ee`), and
+`scripts/build-nxdk-samples.ps1 -Samples usb` builds a sample in seconds. The
+doctor now also checks the MSYS2 default install and reports "BUILDABLE via
+MSYS2"; `docs/hosts.md` is corrected (its "blocked on H1" note had been repeated
+across sessions).
+
+**The row.** `nxdk/usb` initialises the guest's own USB host stack
+(`usbh_core_init`), installs connect/disconnect callbacks and polls the hubs
+forever. At 1B (HDD + DVD, fast mode) it presents 34 boot-animation flips, runs
+no text draws (its output is `debugPrint`, i.e. the scanout buffer, compatibility
+gap 1), and the **display export reads**:
+
+```text
+Plug and unplug USB devices to print the USB device VID and PID
+Device connected on USB hub port 1 (VID: 0409 PID: 55aa)
+```
+
+so a guest stack other than the dashboard's XPP enumerated the daughterboard hub
+through XGrid's OHCI port connect + control transfers and received
+`UsbHub.DeviceDescriptor` (VID `0x0409`, PID `0x55AA`). Because the descriptor is
+part of the device model, the printed line - and therefore `displaySha` - is a
+deterministic assertion of the USB surface from the guest side. Row, anchors and
+the run record: `docs/research-notes/nxdk-usb-sample.md` and the matrix in
+`docs/compatibility.md`.
+
+**What it does not cover:** the sample prints only on connect, so a disconnect
+event is not exercised (a hot-plug hook on the hub does not exist yet - filed);
+`usbh_pooling_hubs` runs to the step budget without fault, which makes a
+later-step row cheap if a disconnect path lands.

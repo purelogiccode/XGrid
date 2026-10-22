@@ -66,8 +66,23 @@ foreach ($tool in 'git', 'gcc', 'clang', 'make', 'bash') {
     if ($c) { Write-Host ("  {0,-12} {1}" -f $tool, $c.Source) }
     else { Write-Host ("  {0,-12} MISSING" -f $tool) -ForegroundColor DarkGray }
 }
-if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
-    $warnings.Add('clang/make absent: the nxdk corpus rows (M-B) cannot be built on this machine')
+# nxdk needs clang/make/llvm-dlltool. They are usually installed inside MSYS2
+# (C:\msys64) rather than on PATH, so check the default install as well - the
+# old PATH-only probe reported them absent on a machine where
+# scripts/build-nxdk-samples.ps1 builds fine (the §228 session found this).
+$msysRoot = 'C:\msys64'
+$nxdkTools = @(
+    (Join-Path $msysRoot 'mingw64\bin\clang.exe'),
+    (Join-Path $msysRoot 'usr\bin\make.exe'),
+    (Join-Path $msysRoot 'mingw64\bin\llvm-dlltool.exe')
+)
+$missingNxdk = @($nxdkTools | Where-Object { -not (Test-Path $_) })
+if ($missingNxdk.Count -eq 0 -and -not (Get-Command clang -ErrorAction SilentlyContinue)) {
+    Write-Host '  nxdk         via MSYS2 default install (add C:\msys64\mingw64\bin and C:\msys64\usr\bin to PATH to use it directly)'
+    Write-Host '  -> the nxdk corpus rows (M-B) are BUILDABLE here: scripts/build-nxdk-samples.ps1'
+}
+elseif ($missingNxdk.Count -gt 0) {
+    $warnings.Add('clang/make/llvm-dlltool absent (PATH and ' + $msysRoot + '): the nxdk corpus rows (M-B) cannot be built on this machine')
 }
 
 # --- disk --------------------------------------------------------------------

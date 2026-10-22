@@ -37,7 +37,7 @@ Captured 2026-10-20 by `scripts/host-doctor.ps1`.
 | PowerShell | 7.6.6 |
 | .NET SDK | 10.0.301 |
 | Free disk | C: 81.2 GB · D: 435.6 GB · H: 4.48 TB |
-| Toolchain | git, gcc (mingw64) present; **clang, make, bash absent** |
+| Toolchain | git, gcc (mingw64) on PATH; **nxdk toolchain present inside MSYS2** at `C:\msys64` (clang, lld, llvm-dlltool, make, bison, flex, cmake) - not on PATH (2026-10-22) |
 | `References2` | 9 sets, 43,153 files — manifest PASS |
 | Real-ISO corpus | `H:\Tests\XBOXTest`, 37 ISOs (benchmark-only) |
 | Gate media | all present (`hdd.qcow2`, `triangle.iso`, samples, BIOS/MCPX/EEPROM) |
@@ -46,8 +46,12 @@ Captured 2026-10-20 by `scripts/host-doctor.ps1`.
 Notes:
 - The old plan text "C: has only ~5 GB free — keep media copies on D:" does not
   describe H1 (81 GB free). Do not propagate it.
-- nxdk corpus rows (M-B) are **blocked on H1**: no clang/make. `C:\msys64`
-  exists, so the fix is a package install, not a toolchain project.
+- nxdk corpus rows (M-B) **build on H1** (confirmed 2026-10-22): the toolchain
+  (clang, lld, llvm-dlltool, make, bison, flex, cmake) lives inside MSYS2 at
+  `C:\msys64`, nxdk is at `D:\nxdk` (`a6c31ee`), and
+  `scripts/build-nxdk-samples.ps1` drives both; `host-doctor.ps1` now checks the
+  MSYS2 default install instead of PATH only (it used to report "clang/make
+  absent" on this machine).
 
 ## H2 — (other machine, identity to be confirmed)
 
@@ -124,6 +128,7 @@ CPU SHA and every frame SHA identical — controlled pre/post A/B, see decisions
 3. **H2 fingerprint** (tomorrow). Fill the H2 table, then delete the banner.
    If H2's `References2` fails the manifest, that machine's copy is the damaged
    one — do not "fix" H1 from it.
-4. **nxdk toolchain.** Install clang/make on whichever machine will own the M-B
-   corpus rows. `C:\msys64` already exists on H1 and C: has 81 GB free, so the
-   old "must install on D:" constraint no longer binds.
+4. **nxdk toolchain - DONE on H1 (2026-10-22).** M-B rows build with
+   `scripts/build-nxdk-samples.ps1` (MSYS2 `C:\msys64`, nxdk `D:\nxdk`);
+   `nxdk/usb` is a row now (`docs/research-notes/nxdk-usb-sample.md`). H2 needs
+   the same packages before it can build M-B rows.
