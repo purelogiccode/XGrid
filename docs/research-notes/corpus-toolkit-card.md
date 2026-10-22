@@ -52,7 +52,7 @@ command lives there); this card is the orientation layer, kept in sync with it.
    `BTFF` + the JSON in `wt-data/btff/`.
 3. Confirm the phase with `--gpu-time` (`tm=`/`reach[...]`) and with
    `--frame-display` when the sample writes the scanout (`debugPrint`).
-4. Add the row to `docs/compatibility.md` with its command, anchor and anchors;
+4. Add the row to `docs/compatibility.md` (command, step anchor, SHAs, verdict);
    add a phase-anchor line to `corpus-phase-anchors.md` if the sample animates.
 5. A fidelity claim needs the histogram (`usage-histogram.md`) or the row itself;
    otherwise it is a rendering claim without evidence.
