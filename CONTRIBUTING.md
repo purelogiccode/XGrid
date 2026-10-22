@@ -24,6 +24,11 @@ Cxbx-Reloaded, or xqemu. Extract facts, then implement independently.
 
 ## Workflow
 
+CI is disabled (private repository on a GitHub Free account), so the workflow
+below **is** the gate — run it before every commit. `docs/ci.md` lists the full
+set (InspectCode, package audit, coverage floors, deterministic build) as local
+equivalents.
+
 ```powershell
 dotnet build XGrid.sln -c Release
 dotnet test XGrid.sln -c Release

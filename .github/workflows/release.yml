@@ -1,11 +1,23 @@
 name: Release
 
-# Push a tag like v1.2.3 to verify the tree on all three OSes, publish
-# self-contained binaries for every platform, generate an SBOM, attest build
-# provenance and create the GitHub release.
+# Verify the tree on all three OSes, publish self-contained binaries for every
+# platform, generate an SBOM, attest build provenance and create the GitHub
+# release.
+#
+# DISABLED (2026-10-22) with the rest of CI: Actions is unavailable on this
+# private repository's GitHub Free account, so pushing a v* tag no longer starts
+# a release. While disabled, publish locally (docs/ci.md "Releases") or restore
+# the commented trigger block. A manual run also works if the workflow is
+# dispatched with a v* tag selected as the ref (the release job uses
+# github.ref_name as the tag). See docs/ci.md.
 on:
-  push:
-    tags: ["v*"]
+  # Manual only: no push: tags trigger.
+  workflow_dispatch:
+
+# --- Restore this block (and remove the placeholder above) to release on tags ---
+# on:
+#   push:
+#     tags: ["v*"]
 
 permissions:
   contents: read

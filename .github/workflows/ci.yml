@@ -1,15 +1,25 @@
 name: CI
 
+# CI IS DISABLED (2026-10-22). This repository is private and the account's
+# GitHub Free plan has no GitHub Actions available for it, so the workflow no
+# longer starts by itself. Nothing was deleted - every job, script and pinned
+# version is intact. To re-enable, restore the trigger block below and delete the
+# `workflow_dispatch:` placeholder. See docs/ci.md.
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-  merge_group:
+  # Manual only: no push, pull_request, merge_group or schedule triggers.
   workflow_dispatch:
-  schedule:
-    # Nightly full matrix (03:17 UTC) so regressions surface without a push.
-    - cron: "17 3 * * *"
+
+# --- Restore this block (and remove the placeholder above) to enable CI again ---
+# on:
+#   push:
+#     branches: [master]
+#   pull_request:
+#     branches: [master]
+#   merge_group:
+#   workflow_dispatch:
+#   schedule:
+#     # Nightly full matrix (03:17 UTC) so regressions surface without a push.
+#     - cron: "17 3 * * *"
 
 # Least privilege by default; jobs opt into the extra scopes they need.
 permissions:
@@ -304,6 +314,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # Master builds: self-contained binaries for every release platform.
   # Tagged releases are produced by release.yml.
+  # With CI disabled the only trigger is workflow_dispatch, so this job is
+  # dormant (its guard below requires a push to master); it returns as soon as
+  # the push trigger is restored.
   # ---------------------------------------------------------------------------
   package:
     name: Package (${{ matrix.rid }})

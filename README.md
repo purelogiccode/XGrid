@@ -1,8 +1,9 @@
 # XGrid
 
-[![CI](https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/purelogiccode/XGrid/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/purelogiccode/XGrid/actions/workflows/codeql.yml)
-[![Release](https://github.com/purelogiccode/XGrid/actions/workflows/release.yml/badge.svg)](https://github.com/purelogiccode/XGrid/actions/workflows/release.yml)
+> **CI is disabled.** This repository is private and the account's GitHub Free
+> plan has no GitHub Actions available for it, so `.github/workflows/` is
+> manual-only. Every gate still runs — locally: see
+> [Build and test](#build-and-test) and `docs/ci.md`.
 
 XGrid is a cross-platform original Xbox emulator written in C#/.NET, built as a clean-room
 reimplementation of documented Xbox hardware behavior. It is not a port of xemu,
@@ -10,7 +11,8 @@ Cxbx-Reloaded, or xqemu.
 
 ## Status
 
-Phase 0 (project bootstrap): solution, projects, tests, analyzers, and CI are being established.
+Phase 0 (project bootstrap): solution, projects, tests, analyzers and quality gates are in
+place; CI is disabled (see above) and those gates run locally.
 
 ## Goals
 
@@ -25,7 +27,7 @@ Phase 0 (project bootstrap): solution, projects, tests, analyzers, and CI are be
 ## Documentation
 
 - `ImplementationPlan.md` - full implementation plan (Part II is the detailed phase plan)
-- `docs/ci.md` - continuous integration, quality gates and the release process
+- `docs/ci.md` - continuous integration (currently disabled), the quality gates, their local equivalents and the release process
 - `docs/research-notes/` - extracted facts from reference projects and the licensing inventory
 
 ## Repository layout
@@ -46,6 +48,10 @@ dotnet build XGrid.sln -c Release
 dotnet test XGrid.sln -c Release
 dotnet format XGrid.sln --verify-no-changes
 ```
+
+These commands are the gate while CI is disabled. `docs/ci.md` lists the rest of
+it (InspectCode, package audit, coverage floors, deterministic build) as local
+equivalents, and what has to be restored before the workflows run again.
 
 ## Desktop frontend
 

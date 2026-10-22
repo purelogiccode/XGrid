@@ -144,6 +144,11 @@ frame, not 1B walls alone, and price stages with stashed interleaved A/B legs
 - `dotnet build XGrid.sln -c Release --nologo --no-restore`
 - `dotnet test XGrid.sln -c Release --nologo --no-build`
 - `dotnet format XGrid.sln --no-restore` then `--verify-no-changes`
+- **GitHub Actions is DISABLED** (2026-10-22; private repository on a GitHub Free
+  account): every workflow in `.github/workflows/` is `workflow_dispatch`-only, so
+  nothing runs on push, PR or tag. Nothing was deleted — re-enabling is one
+  commented-in trigger block per workflow. Run the gates above locally; the full
+  runbook (InspectCode, package audit, coverage floors, releases) is `docs/ci.md`.
 
 Warnings are errors (`TreatWarningsAsErrors`); nullable enabled; implicit usings disabled
 (add explicit `using` directives). Analyzer rules: CA1822 requires `Name`-style properties to

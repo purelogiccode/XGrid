@@ -1,13 +1,22 @@
 name: CodeQL
 
+# DISABLED (2026-10-22) with the rest of CI: Actions is unavailable on this
+# private repository's GitHub Free account (CodeQL also needs GitHub Advanced
+# Security on a private repo). Restore the commented trigger block to re-enable.
+# See docs/ci.md.
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-  schedule:
-    # Weekly deep scan (Mondays, 04:42 UTC) alongside the nightly CI matrix.
-    - cron: "42 4 * * 1"
+  # Manual only: no push, pull_request or schedule triggers.
+  workflow_dispatch:
+
+# --- Restore this block (and remove the placeholder above) to enable CodeQL ---
+# on:
+#   push:
+#     branches: [master]
+#   pull_request:
+#     branches: [master]
+#   schedule:
+#     # Weekly deep scan (Mondays, 04:42 UTC) alongside the nightly CI matrix.
+#     - cron: "42 4 * * 1"
 
 permissions:
   actions: read
