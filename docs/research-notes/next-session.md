@@ -86,10 +86,11 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 34973510` (fast), `19FEA0EA -> EE8F69FB` (`--tex-filter registers`),
 `87BF40DA -> CC2A94DF` (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate).
 
-- **1836 tests green** (session 29 added 9: `PshCombinerReachTests` x3, the
-  two-case `DescribeReach_ReportsTheWritingStages`, the live
-  `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, two more programs
-  in the live compile gate, and `GameEntryTests` x3 for the library title id),
+- **1835 tests green** (measured 2026-10-22; session 29 added the
+  `PshCombinerReachTests`, the two-case `DescribeReach_ReportsTheWritingStages`,
+  the live `CubeStage_ReadsFaceTexelsFromGuestRam_WithoutCarriedWords`, the
+  extra programs in the live compile gate, and `GameEntryTests` x3 for the
+  library title id),
   build/format clean. The ktest XGrid leg was **not** re-run in session 29 (no
   guest-visible change; it stands at **792,800,535** steps, suite log 40,797 B,
   SHA `CA5D3867…`).

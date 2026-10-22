@@ -26,7 +26,7 @@ Releases are produced from tags. No CI job needs game data, firmware, or the
 
 | Workflow | Trigger | What it proves |
 |---|---|---|
-| `ci.yml` / **build-test** | push, PR, merge queue, nightly, manual | Release build with warnings-as-errors and the full test suite on **Windows, GNU/Linux and macOS** (1812 tests). GNU/Linux also collects coverage. |
+| `ci.yml` / **build-test** | push, PR, merge queue, nightly, manual | Release build with warnings-as-errors and the full test suite on **Windows, GNU/Linux and macOS** (1835 tests). GNU/Linux also collects coverage. |
 | `ci.yml` / **determinism** | same | Two clean builds produce byte-identical assemblies (deterministic build). |
 | `ci.yml` / **format** | same | `dotnet format --verify-no-changes`. |
 | `ci.yml` / **inspectcode** | same | ReSharper InspectCode at `WARNING` severity reports **zero** findings; SARIF goes to the Security tab. |

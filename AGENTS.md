@@ -706,7 +706,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1836 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1835 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
