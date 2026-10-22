@@ -1,35 +1,371 @@
 name: CI
 
-# Disabled during active development: runs only when triggered manually.
-# Windows-only while the project targets Windows first; Linux/mac jobs
-# return when release binaries are needed.
 on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  merge_group:
   workflow_dispatch:
+  schedule:
+    # Nightly full matrix (03:17 UTC) so regressions surface without a push.
+    - cron: "17 3 * * *"
+
+# Least privilege by default; jobs opt into the extra scopes they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
   CI: "true"
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build + test on every supported OS. GNU/Linux also collects coverage.
+  # ---------------------------------------------------------------------------
   build-test:
-    name: Build and test (windows-latest)
-    runs-on: windows-latest
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: Build (warnings are errors)
+        run: dotnet build XGrid.sln -c Release --no-restore --nologo
+
+      - name: Test (coverage)
+        if: runner.os == 'Linux'
+        run: >
+          dotnet test XGrid.sln -c Release --no-build --no-restore --nologo
+          --collect:"XPlat Code Coverage"
+          --logger "trx"
+          --results-directory TestResults
+          --blame-hang --blame-hang-timeout 20m
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: >
+          dotnet test XGrid.sln -c Release --no-build --no-restore --nologo
+          --logger "trx"
+          --results-directory TestResults
+          --blame-hang --blame-hang-timeout 20m
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Deterministic build: two clean builds must produce identical assemblies.
+  # ---------------------------------------------------------------------------
+  determinism:
+    name: Deterministic build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: Build (first pass)
+        run: dotnet build XGrid.sln -c Release --no-restore --nologo
+
+      - name: Hash assemblies (first pass)
+        run: |
+          find src -type f -name '*.dll' -path '*/bin/Release/net10.0/*' -print0 \
+            | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/first.txt"
+
+      - name: Clean
+        run: dotnet clean XGrid.sln -c Release --nologo
+
+      - name: Build (second pass)
+        run: dotnet build XGrid.sln -c Release --no-restore --nologo
+
+      - name: Compare hashes
+        run: |
+          find src -type f -name '*.dll' -path '*/bin/Release/net10.0/*' -print0 \
+            | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/second.txt"
+          if ! diff -u "$RUNNER_TEMP/first.txt" "$RUNNER_TEMP/second.txt"; then
+            echo "Build is not deterministic: assemblies differ between clean builds." >&2
+            exit 1
+          fi
+          echo "Deterministic build verified ($(wc -l < "$RUNNER_TEMP/first.txt") assemblies)."
+
+  # ---------------------------------------------------------------------------
+  # Formatting gate (one OS is enough; `dotnet format` is deterministic).
+  # ---------------------------------------------------------------------------
+  format:
+    name: Format verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: dotnet format --verify-no-changes
+        run: dotnet format XGrid.sln --no-restore --verify-no-changes --verbosity minimal
+
+  # ---------------------------------------------------------------------------
+  # InspectCode (ReSharper command-line) at WARNING severity, uploaded to the
+  # Security tab as SARIF.
+  # ---------------------------------------------------------------------------
+  inspectcode:
+    name: InspectCode (warnings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
 
       - name: Restore
         run: dotnet restore XGrid.sln
 
       - name: Build
-        run: dotnet build XGrid.sln -c Release --no-restore
+        run: dotnet build XGrid.sln -c Release --no-restore --nologo
 
-      - name: Test
-        run: dotnet test XGrid.sln -c Release --no-build --no-restore
+      - name: Install InspectCode
+        run: |
+          dotnet tool install --global JetBrains.ReSharper.GlobalTools --version 2026.2.3.1
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-      - name: Format verification
-        run: dotnet format XGrid.sln --verify-no-changes --no-restore
+      - name: Run InspectCode
+        run: >
+          jb inspectcode XGrid.sln
+          --output=inspectcode.sarif
+          --format=Sarif
+          --severity=WARNING
+          --no-build
+          --no-updates
+
+      - name: Gate on findings
+        run: python3 .github/scripts/inspectcode_gate.py inspectcode.sarif
+
+      - name: Upload SARIF artifact
+        if: always() && hashFiles('inspectcode.sarif') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: inspectcode-sarif
+          path: inspectcode.sarif
+          retention-days: 14
+
+      - name: Upload to code scanning
+        if: always() && hashFiles('inspectcode.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: inspectcode.sarif
+          category: inspectcode
+
+  # ---------------------------------------------------------------------------
+  # Merge the per-project Cobertura reports and enforce coverage floors.
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage report
+    needs: build-test
+    if: needs.build-test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Linux test results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-ubuntu-latest
+          path: coverage-input
+
+      - name: Install ReportGenerator
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Generate report
+        run: >
+          reportgenerator
+          "-reports:coverage-input/**/coverage.cobertura.xml"
+          "-targetdir:coverage-report"
+          "-reporttypes:Html;HtmlSummary;TextSummary;Cobertura"
+
+      - name: Publish coverage summary
+        if: always() && hashFiles('coverage-report/Summary.txt') != ''
+        run: |
+          {
+            echo "### Code coverage"
+            echo ""
+            echo '```'
+            sed -n '1,16p' coverage-report/Summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce coverage floors (60% lines / 50% branches)
+        run: python3 .github/scripts/coverage_gate.py coverage-report/Summary.txt 60 50
+
+      - name: Upload coverage report
+        if: always() && hashFiles('coverage-report/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # NuGet vulnerability audit (official SDK command; no third-party service).
+  # ---------------------------------------------------------------------------
+  security-audit:
+    name: Package audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: Audit vulnerable packages
+        run: |
+          dotnet list XGrid.sln package --vulnerable --include-transitive --format json > package-audit.json
+          python3 .github/scripts/vulnerable_gate.py package-audit.json
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-audit
+          path: package-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Master builds: self-contained binaries for every release platform.
+  # Tagged releases are produced by release.yml.
+  # ---------------------------------------------------------------------------
+  package:
+    name: Package (${{ matrix.rid }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build-test, format, inspectcode]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, linux-x64, osx-x64, osx-arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Publish CLI
+        run: >
+          dotnet publish src/XGrid.Cli/XGrid.Cli.csproj -c Release -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None -p:DebugSymbols=false
+          -o "publish/cli/${{ matrix.rid }}"
+
+      - name: Publish frontend
+        run: >
+          dotnet publish src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None -p:DebugSymbols=false
+          -o "publish/frontend/${{ matrix.rid }}"
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for app in cli frontend; do
+            dir="publish/$app/${{ matrix.rid }}"
+            find "$dir" -type f \( -name '*.pdb' -o -name '*.xml' \) -delete
+            cp LICENSE README.md "$dir/"
+            if [[ "${{ matrix.rid }}" == win-* ]]; then
+              (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/dist/XGrid-$app-${{ matrix.rid }}.zip" .)
+            else
+              tar -czf "dist/XGrid-$app-${{ matrix.rid }}.tar.gz" -C "$dir" .
+            fi
+          done
+          cd dist
+          find . -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 \
+            | sort -z | xargs -0 sha256sum > "SHA256SUMS-${{ matrix.rid }}.txt"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: xgrid-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

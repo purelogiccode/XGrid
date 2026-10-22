@@ -1,0 +1,202 @@
+name: Release
+
+# Push a tag like v1.2.3 to verify the tree on all three OSes, publish
+# self-contained binaries for every platform, generate an SBOM, attest build
+# provenance and create the GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  CI: "true"
+
+jobs:
+  # A tag must pass the same build + test gate as a branch before it ships.
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore
+        run: dotnet restore XGrid.sln
+
+      - name: Build
+        run: dotnet build XGrid.sln -c Release --no-restore --nologo
+
+      - name: Test
+        run: >
+          dotnet test XGrid.sln -c Release --no-build --no-restore --nologo
+          --logger "trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results-${{ matrix.os }}
+          path: TestResults
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # SBOM for the tagged source tree (SPDX JSON).
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom-spdx
+          upload-artifact: true
+          upload-release-assets: false
+
+  # Self-contained CLI + frontend for each release platform.
+  publish:
+    name: Publish (${{ matrix.rid }})
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, linux-x64, osx-x64, osx-arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Publish CLI
+        run: >
+          dotnet publish src/XGrid.Cli/XGrid.Cli.csproj -c Release -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None -p:DebugSymbols=false
+          -o "publish/cli/${{ matrix.rid }}"
+
+      - name: Publish frontend
+        run: >
+          dotnet publish src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None -p:DebugSymbols=false
+          -o "publish/frontend/${{ matrix.rid }}"
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for app in cli frontend; do
+            dir="publish/$app/${{ matrix.rid }}"
+            find "$dir" -type f \( -name '*.pdb' -o -name '*.xml' \) -delete
+            cp LICENSE README.md "$dir/"
+            printf '%s\n' "${GITHUB_REF_NAME}" > "$dir/VERSION"
+            if [[ "${{ matrix.rid }}" == win-* ]]; then
+              (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/dist/XGrid-$app-${{ matrix.rid }}.zip" .)
+            else
+              tar -czf "dist/XGrid-$app-${{ matrix.rid }}.tar.gz" -C "$dir" .
+            fi
+          done
+          cd dist
+          find . -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 \
+            | sort -z | xargs -0 sha256sum > "SHA256SUMS-${{ matrix.rid }}.txt"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: xgrid-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Create GitHub release
+    needs: [publish, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xgrid-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-spdx
+          path: dist
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%P\n' \
+            | sort \
+            | xargs sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "XGrid $TAG" \
+              --generate-notes \
+              --verify-tag
+          fi

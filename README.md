@@ -1,5 +1,9 @@
 # XGrid
 
+[![CI](https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/XGrid/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/purelogiccode/XGrid/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/purelogiccode/XGrid/actions/workflows/codeql.yml)
+[![Release](https://github.com/purelogiccode/XGrid/actions/workflows/release.yml/badge.svg)](https://github.com/purelogiccode/XGrid/actions/workflows/release.yml)
+
 XGrid is a cross-platform original Xbox emulator written in C#/.NET, built as a clean-room
 reimplementation of documented Xbox hardware behavior. It is not a port of xemu,
 Cxbx-Reloaded, or xqemu.
@@ -21,6 +25,7 @@ Phase 0 (project bootstrap): solution, projects, tests, analyzers, and CI are be
 ## Documentation
 
 - `ImplementationPlan.md` - full implementation plan (Part II is the detailed phase plan)
+- `docs/ci.md` - continuous integration, quality gates and the release process
 - `docs/research-notes/` - extracted facts from reference projects and the licensing inventory
 
 ## Repository layout
