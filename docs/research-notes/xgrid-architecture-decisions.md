@@ -15304,3 +15304,36 @@ byte-identical, and the 1B gates below.
   slot 1/2 cube stages sample through the array texture and its colour-map dots
   read the sampled texel - the 2-pixel 4.4B agreement is the evidence that the
   chain is right.
+
+### 7. Priced for the next session: forming blocks over ROM pages
+
+The 100M-step `--jit-timing` run of the gate triangle on this build reads
+`outerMs=1221`, `runnerMs=701`, `nonJitMs=995` over `nonJitCalls=449,772`
+serving `nonJitInstructions=3,654,056` - **272 ns per instruction served by the
+non-JIT path**, 82% of the boot's execute time, in 8.1-instruction calls. The
+decode cache refuses every one of those fetches (`physical >= MaxTrackedPhysical
+= 0x20000000`; the boot fetches are `0xFFFFFFxx`), so no block ever forms over
+them. Serving them at the raw path's ~10 ns would remove ~0.85 s at 1B: **~8% of
+the triangle `sw` wall and ~13% of `gl+replace`**, over the C-stage bar.
+
+Design constraints found while scoping (not implemented): a ROM entry needs a
+"no store invalidation" class plus a full flush on any guest write into the ROM
+window (the flash part is writable in principle), and the active-page bitset only
+indexes base RAM, so `MarkActive`/`IsActive` must skip it. This is the only
+remaining lever whose *untried* mechanism is not contradicted by a measured
+negative (232f's null was decode caching, i.e. the fetch, not the per-call
+dispatch).
+
+### 8. File list (what a successor should read first)
+
+- `src/XGrid.GpuGl/PshGlslGenerator.cs` - `CubeTexel`/`FetchCubeTexel`, the
+  `uCube0..3` sampler declarations, `SampleCubeSlot`'s software-None degrade.
+- `src/XGrid.GpuGl/GlPgraphBackend.cs` - `UploadCubeTexture`, the cube
+  bind/change discipline in `ApplyTextures`, `ResolveGuestWordPool` (HILO only),
+  `CheckModesUnsupported` (the volume decline).
+- `src/XGrid.Nv2a/Nv2aMmio.cs` - `DecodeSwizzledTexelWord` + `SwizzleAddressNT`
+  (the shared decoder), `AddFrameGuestTexel`/`GuestTexelsFor` (the contiguous
+  word window), `AppendTextureSlotSummary` (the `ts<n>=` diagnostic).
+- `src/XGrid.Nv2a/IPgraphBackend.cs` - `PgraphTextureSlot.CubeSamplingReady`
+  (`CubeWidth/Height` + `CubeFaceStride`, which is 0 for a format the software
+  cube sampler does not back) and `PgraphGuestTexelSet.Empty`.

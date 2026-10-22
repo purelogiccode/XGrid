@@ -774,6 +774,13 @@ decisions §236). Track B/E, correctness; every gate anchor byte-identical.**
   shape is §236's: decode the input stage's raw words into a texture. The
   MUX-lsb/final-lerp "leads" in §230 were **not** the cause - both programs match
   software now - so do not change them without a failing differential.
+- **Priced for the next session (Track C, option ii):** the boot's non-JIT path
+  is `nonJitMs=995` of `outerMs=1221` at 100M steps over `nonJitCalls=449,772`
+  serving 3,654,056 instructions (272 ns each). Forming blocks over **ROM pages**
+  (the decode cache refuses `physical >= 0x20000000` today) is the only remaining
+  lever with an over-the-bar ceiling: ~0.85 s = ~8% of the triangle `sw` wall /
+  ~13% of `gl+replace`. Constraints and the write path are in
+  `next-session.md` §2.
 
 **Session 2026-10-22 (thirty-fourth; the display source under a GPU backend is now
 decided by what the display controller scans, and the C7 encoder is priced out -

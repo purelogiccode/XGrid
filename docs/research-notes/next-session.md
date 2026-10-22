@@ -165,8 +165,20 @@ measurement attached**:
   1.15 s of it in the first 100M steps). The cache line that refuses non-RAM
   pages is priced at ~250 ms; the rest is `RunSpecBlock` (1.4 s over 34k calls,
   259 ns/member) and the one-instruction decode. **A superblock for the boot
-  (form blocks in ROM pages) is the only untried shape here** - and note
-  §232f's null result was about *decode caching*, not formation.
+  (form blocks in ROM pages) is the only untried shape here.** Its ceiling,
+  measured on the current build at 100M steps with `--jit-timing`:
+  `outerMs=1221`, `runnerMs=701`, **`nonJitMs=995` over `nonJitCalls=449,772`
+  serving `nonJitInstructions=3,654,056`** (8.1 per call, i.e. 272 ns per
+  instruction served). If blocks served those 3.65M instructions at the raw
+  path's ~10 ns, the boot would lose ~0.85 s: **~8% of the 10.6 s triangle `sw`
+  wall, ~13% of the 6.6 s `gl+replace` wall** - over the C bar, unlike every
+  other remaining lever. Design constraints found while scoping it: the decode
+  cache refuses `physical >= 0x20000000` (`MaxTrackedPhysical`) *and* its
+  store-invalidation bitset only indexes base RAM, so a ROM entry needs its own
+  "no store invalidation" class plus a full flush on any guest write into the
+  ROM window (the flash part is writable in principle) - and the boot fetches
+  are `0xFFFFFFxx` (the MCPX ROM region). Verify the write path before assuming
+  ROM is immutable.
 - **(iii) A different execution model** (threaded code / a native core), the only
   option whose argument is not "fewer instructions". Price it the §233a way
   before a rewrite: a per-member probe of one candidate transformation with the
@@ -216,6 +228,9 @@ a failing differential.
 - **Keeping the guest registers live across a chain edge** (§233d).
 - **Shared cold stubs** (§233e): per-block ~-60 ms, global ~-160 ms.
 - **Caching ROM decodes** (§233a/232f): ceiling ~250 ms, measured null once.
+  (Note: *forming blocks* over ROM pages is a different lever - it removes the
+  per-call dispatch, not the fetch - and its measured ceiling is ~0.85 s of the
+  triangle wall; see §2 Option A (ii).)
 - **The C4 host-pointer translate probe** (§232a): neutral, SHAs exact.
 - **Env-gated emitter ablations as a pricing tool** (§232e).
 - **Sub-2% performance slices** - banned.
