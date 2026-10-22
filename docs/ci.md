@@ -34,6 +34,12 @@ suite is self-contained.
 Every automatic trigger now sits in a commented `# --- Restore … ---` block at the
 top of its workflow file, next to the replaced `on: workflow_dispatch`.
 
+Belt and braces, if you also want GitHub itself to refuse Actions for this
+repository: **Settings → Actions → General → Disable actions**. The in-repo trigger
+strip is what keeps the workflows from starting on push/PR/tag and it travels with
+every clone, so it is the durable part; the repository setting is the second lock
+and has to be undone before `workflow_dispatch` works again.
+
 ## Re-enabling CI
 
 Prerequisites come first:
