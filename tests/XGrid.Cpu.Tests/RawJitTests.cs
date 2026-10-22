@@ -865,6 +865,49 @@ public sealed class RawJitTests
     }
 
     [Fact]
+    public void ChainedBlocks_CarryFlagsAcrossTheChainEdge()
+    {
+        // The in-frame chain entry (decisions 233c) skips the target's
+        // prologue, so it must reload the host FLAGS from F_EFLAGS itself.
+        // The branch in block B is the discriminator: a Jcc member reads the
+        // host FLAGS directly (no reload of its own), so ZF must survive the
+        // chain edge from block A's `cmp`.
+        // 0x1000: cmp eax,ebx ; jne 0x1005 ; nop
+        // 0x1005: jz  0x1008  ; nop        ; inc eax ; jmp 0x1000
+        byte[] code =
+        [
+            0x39, 0xD8,
+            0x75, 0x01,
+            0x90,
+            0x74, 0x01,
+            0x90,
+            0x40,
+            0xEB, 0xF5,
+        ];
+
+        XboxCpu plain = CreatePlain(code);
+        XboxCpu raw = CreateRaw(code);
+        Preset(plain);
+        Preset(raw);
+
+        // eax == ebx -> cmp sets ZF, so `jne` falls through and B's `jz` is the
+        // branch that consumes the flag that crossed the edge.
+        foreach (XboxCpu cpu in new[] { plain, raw })
+        {
+            cpu.Context.Eax = 0;
+            cpu.Context.Ebx = 0;
+            cpu.Context.Ecx = 0;
+        }
+
+        plain.Execute(4000);
+        raw.Execute(4000);
+
+        AssertSame(plain, raw);
+        Assert.True(raw.JitRawChainedBlocks > 0, "no block chains fired");
+        Assert.True(raw.Context.Eax > 1, "the loop did not run");
+    }
+
+    [Fact]
     public void ChainedBlocks_MatchInterpreter_AndCountChains()
     {
         // 0x1000: jmp 0x1003 ; 0x1003: inc eax ; jmp 0x1000.
