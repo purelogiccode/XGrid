@@ -14997,3 +14997,127 @@ and copy the CLI output directory (`git stash` -> build -> copy
 binaries interleaved. Rebuilding between legs costs more than it saves and
 perturbs the window; the wall noise here is +-3-5% so 3 pairs is the minimum
 and 3/3 sign agreement is the claim.
+
+## 234 Track P/B: the display source under a GPU backend - backend frames only for surfaces the backend rendered, and the C7 encoder priced out (2026-10-22, thirty-fourth session)
+
+**Two deliverables, both measured.** (1) The desktop product no longer shows a
+stale 3D frame for a direct-framebuffer guest when the OpenGL renderer is
+selected: `TryCopyDisplayFrame` decides between the backend readback and the RAM
+scanout from what the display controller is *actually* scanning. (2) The C7
+decision `next-session.md` §2 Option A asked for now has its number - the encoder
+is a ~7% wall lever, not a 5x one - so C7 owns the engine shape, not the
+assembler.
+
+**234a The defect, measured first.** With `--gpu gl --gpu-replace`, the nxdk
+samples that write the framebuffer themselves presented the **boot animation's
+last frame** instead of their own output: `boot-to-first-frame.ps1 -Sample gamma
+-Gpu gl -GpuReplace` reported `displaySha=18C7CC83` while the software leg
+reported `D3EBF420` (the gradient, 768 colours). Same shape for `hello`
+(`18C7CC83` instead of its text `72D33DC2`) and `usb` (`18C7CC83` instead of
+`119AFA48`). Cause: `TryCopyDisplayFrame` returned `Backend.ReadbackPresented`
+unconditionally when a backend was attached, and the backend's last readback is
+a picture of the *3D colour surface of the last flip* - a different buffer from
+the one PCRTC scans after the XBE takes over the display.
+
+**234b The rule: membership in the recently-presented ring.** A trace of the
+real flip and CRTC streams (`XGRID_TRACE_PRESENT=1`, temporary) shows what the
+display controller does:
+
+- **triangle**: a three-buffer chain `0x3BD4000 -> 0x3D00000 -> 0x3E2C000`,
+  and PCRTC start is always programmed to the buffer the *previous* flip
+  presented - i.e. the scanout trails the last flip by exactly one buffer
+  (`surface=3D00000 pcrtc=3BD4000` at 1B).
+- **gamma**: 34 animation flips present `0x32A4000`; the XBE then programs
+  `PCRTC start=0` and `0x3C84000` (its last flip) and finally `0x39E0040` - its
+  own framebuffer, which no flip ever presented.
+
+So "the backend's frame is the picture on screen" is a membership test, not an
+equality test. `Nv2AMmio` now keeps a **4-entry ring of recently presented
+surfaces** (address, width, height, pitch, bytes per pixel), recorded in
+`CapturePresentedFrame`, and `TryCopyDisplayFrame` with a backend attached:
+
+1. resolves the CRTC geometry (`TryGetDisplayGeometry`);
+2. if it matches a ring entry -> the backend's readback (never mixed);
+3. if it does not -> the RAM scanout (`CopySurfacePixels` of PCRTC start), i.e.
+   what a TV attached to the console would show;
+4. no CRTC mode yet -> the backend's readback (pre-flip boot behaviour).
+
+Why four: the measured chains are 2-3 buffers deep with the scanout one flip
+behind, so two entries cover both titles; four leaves room for a title that
+displays two frames late. This is deliberately a *display-source* rule, not a
+pixel-ownership rule: in mirror mode the RAM scanout of a buffer the backend
+rendered is stale, so the rule only switches when the buffer is provably not a
+backend surface. `DisplaySourceDebug` (`backend` / `memory-scanout`) reports the
+decision on the CLI's `Frame`/`FrameDisplay` lines.
+
+**Snapshot.** The ring is device state (it survives a save/load, so a loaded
+session does not turn a backend frame into a black scanout), so `Nv2a` snapshot
+version **v8 -> v9**. Every older `.xgs` is invalid; the only consumer in-tree
+is the deferred `scripts/gpu-slice3-007.ps1` probe.
+
+**234c Corpus evidence (1B, gate media, GL replace vs the software row).** Same
+command, one flag different:
+
+| sample | before (`displaySha`) | after | software row | verdict |
+|---|---|---|---|---|
+| `gamma` | `18C7CC83` (animation) | **`D3EBF420`** | `D3EBF420` | fixed - gradient visible |
+| `hello` | `18C7CC83` | **`72D33DC2`** | `72D33DC2` | fixed - text visible |
+| `usb` | `18C7CC83` | **`119AFA48`** | `119AFA48` | fixed - USB line visible |
+| `led` | `18C7CC83` | `18C7CC83` | `18C7CC83` | **negative control**: its scanout is a presented surface, so the backend frame is correct |
+| `mesh` | `A7442AB1` (backend) | `A7442AB1` | `7328A99F` (scanout) | unchanged - it flips 3D content; the GL frame is the flip image (`source=backend`) |
+| triangle 1B GL | `7A860ED7` (`--frame`) | `7A860ED7` (`--frame-display` too) | `A1740DE0` (software) | `source=backend`, unchanged |
+
+`mesh` and `triangle` are the regression proof: a title that flips keeps the
+backend frame (its PCRTC start is in the ring), so the fix does not quietly
+switch the gate media to software scanout. `ram`/`cpu` SHAs are unchanged on
+every sample (`gamma` `B6E0AB63`/`C3371A8C`, `hello` `E25AB214`/`C3371A8C`,
+`usb` `7441E22C`/`1590C697`, `led` `F6D5A331`/`1C98838F`, `mesh`
+`675EB385`/`6DA19D89`) - the change is host-side only.
+
+**234d The frontend lost its private fallback.** `EmulatorSession` carried a
+`_backendFrameSeen` latch that served the RAM scanout *before* the first backend
+frame - the same decision, made in the wrong place (it could not see a later
+mode change). Both renderers now call `TryCopyDisplayFrame` and nothing else;
+the duplicated flag, its reset and its dead fallback branch are gone. The
+`RendererTests` contract still holds (no mode, no flip -> no frame). Verified through the real session with the git-ignored harness (`tools/frontend-smoke`, dashboard, fast mode, 20 s each): **software** 894.9M steps / 528 frames / 306,817 non-black px, **OpenGL replace** 858.3M steps / 287 frames / **the same 306,817 non-black px**, both with a 72 MB `.xgs` save/load round trip and `faulted=False`. That harness also **did not compile** before this session (`RendererPolicy.IsOpenGl` was made private in §217 and the tool sat outside the solution, so nothing caught the rot); it is fixed and **added to `XGrid.sln`** so the gates build it.
+
+**234e The C7 encoder price - the open number from §233/next-session Option A.**
+The question was the ratio between `Assembler.Assemble` (359-377 ns per Iced
+instruction measured in the real 1B run) and a single-pass encode of the same
+instruction list, i.e. what a `FastAssembler` with fixed-size rel32 branches
+would cost. `tests/XGrid.Cpu.Tests/EncoderSpikeTests` measures it on a
+block-shaped list (1,013 instructions: prologue, 40 member expansions from the
+measured mix, epilogue) and asserts that the single-pass path reproduces the
+assembler's bytes exactly:
+
+| path | ns/instruction | note |
+|---|---:|---|
+| `Assembler.Assemble` | **390** | multi-pass `BlockEncoder` (product: 359-377) |
+| `Encoder.Encode` (resolved list) | **120** | 108 with a discarding writer |
+| `Encoder.Encode`, one instruction per `Encoder.Create` | 170 | the Create dominates |
+| `Decoder.Decode` (reference) | 34 | Iced's decoder is ~3.5x its per-instruction encoder |
+
+**Ratio 3.2x.** Projecting onto §233a: `Assemble` is 682 ms of the triangle's
+1,026 ms formation (10.2% of the 6.66 s wall), so a 3.2x encoder turns it into
+~213 ms - **~7% of the triangle wall and ~3% of the menu wall**. That is below
+the C-stage bar (>=10% wall) and two orders of magnitude away from the 5.5x gap,
+and it would buy nothing on the *engine* (the runner's 6.25 ns/member is
+untouched). **Decision: do not own the encoder.** C7's lever is the engine
+shape (option iii), not the assembler; the spike test stays as the pinned
+`Assemble` == single-pass equivalence plus the recurring price. One caveat for
+the record: a hand-written encoder that beat Iced's per-instruction cost by 10x
+would still only take formation to ~70 ms (~8.9% of the wall), so the conclusion
+is robust to the encoder's constant factor.
+
+**234f Gates (H1, this session's final build).** Accurate 1B menu golden PASS -
+sw `4EF1FBF6`, gl `B6116DAE`, diff 2602 px, violations 0, maxDelta 1, counters
+33632/686/686, `BackendUnsupported=0`; accurate triangle golden PASS - sw
+`A1740DE0`, gl `7A860ED7`, diff 27849, counters 2706/68/34. Fast 1B anchors:
+triangle sw `B45254CA`/`7DAB63EB` (57,663,082 px), menu sw `34973510`/`F5D61C94`
+(253,998,498 px) - exact. Suite **1837 -> 1845** (+7 `Nv2aDisplaySourceTests`,
++1 `EncoderSpikeTests`); the new display tests were proven fail-pre-fix (with
+the old backend branch the two "serve the scanout" cases fail). Format clean.
+`ktest-smoke.ps1 -SkipXemu` PASS 7/7 at **792,800,535** steps, suite log
+`CA5D3867` (40,797 B) byte-identical.
+
+

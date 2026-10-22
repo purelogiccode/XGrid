@@ -6,6 +6,13 @@ day-to-day agent entry point; this file is the priority order every agent follow
 
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
+**Status 2026-10-22 late (34th session, §234): the product display source now
+follows the display controller under a GPU backend (direct-framebuffer guests
+show their own buffer in the OpenGL renderer), and the C7 "own the encoder"
+option is priced and rejected: a 3.2x faster encoder is ~7% of the triangle wall,
+below the stage bar. C7's lever is the engine shape.** Track order unchanged; the
+next C work is the engine-shape decision (§0 kill/reassess, `next-session.md`).
+
 **Operator decision.** The long-run objective is **xemu-class performance or
 better** on the same content. The 2026-10-20 correction was right to put the
 product surface and the corpus ahead of synthetic optimization, and that work

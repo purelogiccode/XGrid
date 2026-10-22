@@ -63,7 +63,10 @@ Avalonia frontend): the display controller's scanout, decoded from the VGA CRTC
 since §208. `lastFrameSha` is the last **flipped** 3D surface and stays the gate
 anchor; on a double-buffered title the two differ by one buffer
 (`surface - pcrtc = 0x12C000`, one 640x480x4 page). For every row below
-`displaySha == scanoutSha` - the model reproduces the raw scanout exactly.
+`displaySha == scanoutSha` - the model reproduces the raw scanout exactly - and
+with a GPU backend attached `displaySha` is the backend readback for a buffer a
+flip presented and the RAM scanout otherwise (§234; the GL rows below carry the
+per-sample evidence).
 
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
@@ -75,12 +78,12 @@ anchor; on a double-buffered title the two differ by one buffer
 | **xgu `vp_lighting`, TEXFILTER parity** | same | yes | yes, own scene from ~3B | replace mode, **`pixels=0`** (no fallback): the GL fragment shader runs the tent/convolution/wrap path | n/a | none; the flag moves both renderers by the same ~6.5% and they agree within one 8-bit step in both states (§220c) | gl legacy `E68070A3` vs sw `72B2F490` (dmean 0.00/0.01/0.01, maxDelta 1); gl registers `A9E09139` vs sw `CF698444` (same); CPU `0380C502` in all four | `-Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace [-TexFilter registers]` |
 | **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
 | **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
-| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout/display `7328A99F` | `-Sample mesh` |
-| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420`; **display `D3EBF420`** | `-Sample gamma` |
+| **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout/display `7328A99F`; **GL replace frame `A7442AB1` = the flip image (`source=backend`, §234)** | `-Sample mesh` |
+| **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420`; **display `D3EBF420`**; GL replace `D3EBF420` (§234) | `-Sample gamma` |
 | **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same as `gamma` | 0 extra draws | n/a | same | RAM `ED83DC23` / CPU `D0A7BB8A`; scanout `2BC1C443`; **display `2BC1C443`** | `-Sample gamma-fade` |
-| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2`; **display `72D33DC2`** (the text) | `-Sample hello` |
-| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83`; **display `18C7CC83`** | `-Sample led` |
-| **nxdk `usb`** (§229) | nxdk `a6c31ee` `samples/usb`, built by `scripts/build-nxdk-samples.ps1` | yes | no new flip: `debugPrint` writes the scanout (gap 1) | 0 extra text draws; the guest's own USB host stack (`usbh_core_init`) enumerates the daughterboard hub and prints **`Device connected on USB hub port 1 (VID: 0409 PID: 55aa)`** on the display export | n/a | the text is only in the scanout/display export (flipped surface black); decode-line is deterministic (hard-coded hub descriptor) | RAM `ACDB5720` / CPU `1590C697`; last frame `18C7CC83`; scanout/display `119AFA48` at 1B | `-Sample usb` |
+| **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2`; **display `72D33DC2`**; GL replace `72D33DC2` (§234) (the text) | `-Sample hello` |
+| **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83`; **display `18C7CC83`**; GL replace `18C7CC83` (backend frame, §234) | `-Sample led` |
+| **nxdk `usb`** (§229) | nxdk `a6c31ee` `samples/usb`, built by `scripts/build-nxdk-samples.ps1` | yes | no new flip: `debugPrint` writes the scanout (gap 1) | 0 extra text draws; the guest's own USB host stack (`usbh_core_init`) enumerates the daughterboard hub and prints **`Device connected on USB hub port 1 (VID: 0409 PID: 55aa)`** on the display export | n/a | the text is only in the scanout/display export (flipped surface black); decode-line is deterministic (hard-coded hub descriptor) | RAM `ACDB5720` / CPU `1590C697`; last frame `18C7CC83`; scanout/display `119AFA48` at 1B; GL replace `119AFA48` (§234) | `-Sample usb` |
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
@@ -472,6 +475,37 @@ neither that select nor the final lerp's negation; and the plain panel program
 (3.6B, 2 colours) fails before any dot stage runs. A per-fragment
 colour/depth differential on the 3.6B leg is the cheapest next probe.
 
+### 13. The GL renderer showed the boot animation for a direct-framebuffer guest - **CLOSED 2026-10-22 (§234)**
+
+With the OpenGL renderer selected (the product's fast path), the nxdk samples
+that write the framebuffer themselves presented the **boot animation's last
+frame**: `-Sample gamma -Gpu gl -GpuReplace` exported `18C7CC83` while the
+software leg exported its gradient `D3EBF420`; `hello` and `usb` lost their text
+the same way. The display model (gap 1) was not at fault - the *source selection*
+was: with a backend attached, `TryCopyDisplayFrame` returned the backend's
+per-flip readback unconditionally, and that readback is the 3D colour surface of
+the last flip, not the buffer PCRTC scans after the XBE takes over.
+
+Closed by making the display source a property of the display controller instead
+of the renderer (§234): `Nv2AMmio` keeps a 4-entry ring of recently presented
+surfaces, and `TryCopyDisplayFrame` serves the backend readback only while the
+CRTC geometry matches a ring entry (the scanout normally trails the last flip by
+one buffer), the RAM scanout otherwise. `DisplaySourceDebug` prints
+`backend`/`memory-scanout`.
+
+Measured at 1B, GL replace (`displaySha`, and the software row it must match):
+
+| sample | before | after | software | source |
+|---|---|---|---|---|
+| `gamma` | `18C7CC83` | **`D3EBF420`** | `D3EBF420` | memory-scanout |
+| `hello` | `18C7CC83` | **`72D33DC2`** | `72D33DC2` | memory-scanout |
+| `usb` | `18C7CC83` | **`119AFA48`** | `119AFA48` | memory-scanout |
+| `led` (control) | `18C7CC83` | `18C7CC83` | `18C7CC83` | backend |
+| `mesh` | `A7442AB1` | `A7442AB1` | `7328A99F` (scanout) | backend |
+| triangle 1B | `7A860ED7` | `7A860ED7` | `A1740DE0` | backend |
+
+Every guest `ram`/`cpu` SHA is unchanged, so this is host-side display only.
+
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
 
@@ -564,3 +598,4 @@ sequence (an operator-visible route), not more steps.
 
 The two "blocked" rows are the cheapest breadth win: the toolchain turns four
 existing source samples into four rows.
+

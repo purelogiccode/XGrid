@@ -533,6 +533,18 @@ Stages:
 | **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | ≥10% menu wall |
 | **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
 
+**C7 decision inputs (2026-10-22 late, §234e).** The charter's kill criterion is
+met (C4 measured null, C5 slice 1 is -3/-4%), so the next C work is the decision,
+and its two cheapest numbers are now measured: (i) **owning the encoder is a ~7%
+wall lever** - `Assembler.Assemble` 390 ns/instruction vs a single-pass
+`Encoder.Encode` 120 ns (3.2x), and `Assemble` is 682 ms of the triangle's
+1,026 ms formation, so the whole rewrite buys ~7% triangle / ~3% menu, below the
+stage bar; (ii) the runner's 6.25 ns/member is **not** instruction-count bound
+(the chain-edge refactor cut ~82 instructions per edge for 1 ns, §233d), and
+shared cold stubs priced at -160 ms global (§233e). What remains is **(iii) the
+engine shape** - a trace/native core or a different execution model - which
+`next-session.md` §2 carries as the open decision with the stage table attached.
+
 Each stage: same-window A/B (≥10% wall or ≥20% engine), exact 1B
 SHAs/counters, flag-off byte-identical, ktest log byte-identical. Report
 ns/served member + wall per presented frame. The target band is triangle

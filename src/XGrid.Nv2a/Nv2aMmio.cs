@@ -132,6 +132,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private const uint MethodFlipStall = 0x130u;
     private const uint MaxPresentDimension = 4096u;
     private const ulong MaxPresentPixels = (ulong)MaxPresentDimension * MaxPresentDimension;
+
+    /// <summary>
+    /// How many recently presented surfaces the display-source decision keeps.
+    /// The gated triangle's flip chain is a three-buffer ring whose PCRTC start
+    /// trails the last flip by one buffer, and a double-buffered title trails by
+    /// the same one, so two entries would cover every measured title; four leaves
+    /// room for a title that displays two frames late.
+    /// </summary>
+    private const int PresentedSurfaceRingSize = 4;
     private const uint MethodSetContextDmaSemaphore = 0x1A4u;
     private const uint MethodSetSemaphoreOffset = 0x1D6Cu;
     private const uint MethodBackEndWriteSemaphoreRelease = 0x1D70u;
@@ -721,6 +730,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _presentedBytes;
     private bool _presentedValid;
     private ulong _presentedFrame;
+
+    /// <summary>
+    /// Recently presented surfaces (address, extent, pitch, bytes per pixel) in a
+    /// circular buffer whose next write slot is <see cref="_recentPresentedNext"/>.
+    /// The display controller scans PCRTC START, and that base normally trails the
+    /// last flip by one buffer (a double- or triple-buffered flip chain), so "the
+    /// scanout is a buffer the GPU rendered" is a membership test against a small
+    /// ring, not an equality test against the last flip.
+    /// <see cref="TryCopyDisplayFrame"/> uses it to decide whether an attached
+    /// backend's readback is the picture on screen.
+    /// </summary>
+    private readonly uint[] _recentPresentedAddress = new uint[PresentedSurfaceRingSize];
+    private readonly uint[] _recentPresentedWidth = new uint[PresentedSurfaceRingSize];
+    private readonly uint[] _recentPresentedHeight = new uint[PresentedSurfaceRingSize];
+    private readonly uint[] _recentPresentedPitch = new uint[PresentedSurfaceRingSize];
+    private readonly uint[] _recentPresentedBytes = new uint[PresentedSurfaceRingSize];
+    private int _recentPresentedNext;
     private readonly uint[] _vertexFormat = new uint[16];
     private readonly uint[] _vertexArrayOffset = new uint[16];
     private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
@@ -1137,7 +1163,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         $"surface={_presentedOffset:X} {_presentedWidth}x{_presentedHeight} pitch={_presentedPitch} " +
         $"pcrtc={DisplayStartAddress:X} valid={_presentedValid} frame={_presentedFrame} " +
         $"crtc={DisplayWidth}x{DisplayHeight}+{DisplayLineOffset} bpp={DisplayBytesPerPixel} " +
-        $"display={DisplayStartAddress:X}";
+        $"display={DisplayStartAddress:X} source={DisplaySourceDebug}";
+
+    /// <summary>
+    /// Gets which buffer <see cref="TryCopyDisplayFrame"/> serves: the backend's
+    /// readback for a surface it rendered, the RAM scanout for a buffer no flip
+    /// presented (a direct-framebuffer program's own output), or the software
+    /// display controller when no backend is attached. Diagnostics.
+    /// </summary>
+    public string DisplaySourceDebug =>
+        Backend is null
+            ? "memory"
+            : GpuMemory is not null &&
+              TryGetDisplayGeometry(out uint start, out uint width, out uint height, out uint lineOffset, out uint bytes) &&
+              !IsRecentlyPresentedSurface(start, width, height, lineOffset, bytes)
+                ? "memory-scanout"
+                : "backend";
 
     /// <summary>Gets the flip read buffer index. Diagnostics.</summary>
     public uint FlipReadDebug { get; private set; }
@@ -1371,6 +1412,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _presentedBytes = 0;
         _presentedValid = false;
         _presentedFrame = 0;
+        Array.Clear(_recentPresentedAddress);
+        Array.Clear(_recentPresentedWidth);
+        Array.Clear(_recentPresentedHeight);
+        Array.Clear(_recentPresentedPitch);
+        Array.Clear(_recentPresentedBytes);
+        _recentPresentedNext = 0;
         FramesPresented = 0;
         FlipStalls = 0;
         _alphaTestEnable = false;
@@ -1610,6 +1657,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         writer.Write(_presentedBytes);
         writer.Write(_presentedValid);
         writer.Write(_presentedFrame);
+        writer.Write(_recentPresentedNext);
+        for (int i = 0; i < PresentedSurfaceRingSize; i++)
+        {
+            writer.Write(_recentPresentedAddress[i]);
+            writer.Write(_recentPresentedWidth[i]);
+            writer.Write(_recentPresentedHeight[i]);
+            writer.Write(_recentPresentedPitch[i]);
+            writer.Write(_recentPresentedBytes[i]);
+        }
+
         writer.Write(FramesPresented);
         writer.Write(FlipStalls);
         WriteUints(writer, _vertexFormat);
@@ -1909,6 +1966,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _presentedBytes = reader.ReadUInt32();
         _presentedValid = reader.ReadBoolean();
         _presentedFrame = reader.ReadUInt64();
+        _recentPresentedNext = reader.ReadInt32();
+        for (int i = 0; i < PresentedSurfaceRingSize; i++)
+        {
+            _recentPresentedAddress[i] = reader.ReadUInt32();
+            _recentPresentedWidth[i] = reader.ReadUInt32();
+            _recentPresentedHeight[i] = reader.ReadUInt32();
+            _recentPresentedPitch[i] = reader.ReadUInt32();
+            _recentPresentedBytes[i] = reader.ReadUInt32();
+        }
+
         FramesPresented = reader.ReadUInt64();
         FlipStalls = reader.ReadUInt64();
         ReadUints(reader, _vertexFormat);
@@ -2159,7 +2226,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 8;
+    private const int Nv2ASnapshotVersion = 9;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -7045,7 +7112,45 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _presentedHeight = height;
             _presentedPitch = pitch;
             _presentedBytes = bytes;
+            RecordPresentedSurface();
         }
+    }
+
+    /// <summary>Records the just-presented surface in the recent-presented ring.</summary>
+    private void RecordPresentedSurface()
+    {
+        _recentPresentedAddress[_recentPresentedNext] = _presentedOffset;
+        _recentPresentedWidth[_recentPresentedNext] = _presentedWidth;
+        _recentPresentedHeight[_recentPresentedNext] = _presentedHeight;
+        _recentPresentedPitch[_recentPresentedNext] = _presentedPitch;
+        _recentPresentedBytes[_recentPresentedNext] = _presentedBytes;
+        _recentPresentedNext = (_recentPresentedNext + 1) % PresentedSurfaceRingSize;
+    }
+
+    /// <summary>
+    /// Gets whether a display geometry describes one of the recently presented
+    /// surfaces (the same address, extent, pitch and depth a flip carried).
+    /// </summary>
+    /// <remarks>
+    /// A scanout buffer the GPU never rendered belongs to a program that writes
+    /// the framebuffer directly; a scanout that matches a flip is the buffer the
+    /// backend's presented image corresponds to.
+    /// </remarks>
+    private bool IsRecentlyPresentedSurface(uint address, uint width, uint height, uint pitch, uint bytes)
+    {
+        for (int i = 0; i < PresentedSurfaceRingSize; i++)
+        {
+            if (_recentPresentedAddress[i] == address &&
+                _recentPresentedWidth[i] == width &&
+                _recentPresentedHeight[i] == height &&
+                _recentPresentedPitch[i] == pitch &&
+                _recentPresentedBytes[i] == bytes)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Copies the latest presented frame as BGRA bytes (one byte per channel).</summary>
@@ -7127,7 +7232,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// buffer is PCRTC START read with the CRTC pitch; until the guest programs a
     /// mode this falls back to the flipped surface so early boot still shows the
     /// 3D output. A GPU backend owns the presented image, so it is never mixed
-    /// with the software scanout.
+    /// with the software scanout - but only while the scanout is a surface the
+    /// backend actually rendered (see <see cref="IsRecentlyPresentedSurface"/>):
+    /// a program that switches PCRTC to its own buffer leaves the backend's last
+    /// frame showing a buffer that is no longer on screen, and its pixels exist
+    /// only in guest RAM.
     /// </remarks>
     /// <returns>False when neither a display mode nor a presented frame is available.</returns>
     public bool TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra)
@@ -7135,13 +7244,33 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         width = 0;
         height = 0;
         bgra = [];
+        uint start = 0;
+        uint displayWidth = 0;
+        uint displayHeight = 0;
+        uint lineOffset = 0;
+        uint bytesPerPixel = 0;
+        bool geometry = GpuMemory is not null &&
+            TryGetDisplayGeometry(out start, out displayWidth, out displayHeight, out lineOffset, out bytesPerPixel);
+
         if (Backend is not null)
         {
+            if (geometry &&
+                !IsRecentlyPresentedSurface(start, displayWidth, displayHeight, lineOffset, bytesPerPixel) &&
+                CopySurfacePixels(start, displayWidth, displayHeight, lineOffset, bytesPerPixel, DisplayFifteenBit, out bgra))
+            {
+                // The display controller scans a buffer no flip ever presented:
+                // a direct-framebuffer program's output, which only exists in
+                // guest RAM. Serving the backend's last frame here would show a
+                // picture of a buffer that is no longer on screen.
+                width = displayWidth;
+                height = displayHeight;
+                return true;
+            }
+
             return Backend.ReadbackPresented(out width, out height, out bgra);
         }
 
-        if (GpuMemory is not null &&
-            TryGetDisplayGeometry(out uint start, out uint displayWidth, out uint displayHeight, out uint lineOffset, out uint bytesPerPixel) &&
+        if (geometry &&
             CopySurfacePixels(start, displayWidth, displayHeight, lineOffset, bytesPerPixel, DisplayFifteenBit, out bgra))
         {
             width = displayWidth;

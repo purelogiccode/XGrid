@@ -721,10 +721,62 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1837 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1845 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-fourth; the display source under a GPU backend is now
+decided by what the display controller scans, and the C7 encoder is priced out -
+decisions §234). Track P/B product fix, exact; no gate anchor moved.**
+
+- **The bug (234a).** With the OpenGL renderer, the nxdk samples that write the
+  framebuffer themselves (`gamma`, `hello`, `usb`) showed the boot animation's
+  last frame: `-Sample gamma -Gpu gl -GpuReplace` presented `18C7CC83` while the
+  software leg presented its gradient `D3EBF420`. `TryCopyDisplayFrame` returned
+  the backend readback whenever a backend was attached, and that readback is a
+  picture of the *3D colour surface of the last flip* - a different buffer from
+  the one PCRTC scans once the XBE takes over the display.
+- **The rule (234b).** `Nv2AMmio` keeps a 4-entry ring of **recently presented
+  surfaces** (address/extent/pitch/depth, recorded at `CapturePresentedFrame`) and
+  `TryCopyDisplayFrame` serves the backend frame only when the CRTC geometry
+  matches a ring entry, the RAM scanout otherwise. Measured first with a
+  temporary `XGRID_TRACE_PRESENT` trace: the triangle is a three-buffer chain
+  whose PCRTC trails the last flip by one buffer (`surface=3D00000
+  pcrtc=3BD4000`), and `gamma`'s XBE ends by pointing PCRTC at `0x39E0040`, which
+  no flip ever presented. `DisplaySourceDebug` prints `backend` or
+  `memory-scanout`. **Nv2a snapshot v8 -> v9** (the ring is device state).
+- **Evidence (234c).** GL replace at 1B: `gamma` `D3EBF420`, `hello` `72D33DC2`,
+  `usb` `119AFA48` - all now equal to their software rows; `led` `18C7CC83` is
+  the negative control (its scanout *is* a presented surface); `mesh`
+  `A7442AB1` and the triangle's `--frame-display` (= `--frame` `7A860ED7`,
+  `source=backend`) are the regression proof that a flipping title keeps the GPU
+  frame. Guest `ram`/`cpu` SHAs unchanged on every sample.
+- **Frontend (234d).** `EmulatorSession`'s private `_backendFrameSeen` fallback
+  (a second copy of the same decision, blind to later mode changes) is gone;
+  both renderers call `TryCopyDisplayFrame`. Verified through the real session
+  with `tools/frontend-smoke` (dashboard, fast mode, 20 s): **software** 894.9M
+  steps / 528 frames / 306,817 non-black px and **OpenGL replace** 858.3M steps
+  / 287 frames / the same 306,817 px, both with a 72 MB `.xgs` round trip and
+  `faulted=False`. That harness did not compile before this session
+  (`RendererPolicy.IsOpenGl` is private since §217, and the tool was outside the
+  solution so nothing caught it): fixed, and **added to `XGrid.sln`**.
+- **C7 encoder, priced and rejected (234e).** New
+  `tests/XGrid.Cpu.Tests/EncoderSpikeTests` measures a block-shaped list:
+  `Assembler.Assemble` **390 ns/instruction**, single-pass `Encoder.Encode`
+  **120 ns**, Iced's decoder 34 ns - **ratio 3.2x**, and it pins that the
+  single-pass path reproduces the assembler's bytes exactly. On §233a's stage
+  table `Assemble` is 682 ms of the triangle's 1,026 ms formation, so a 3.2x
+  encoder is **~7% of the triangle wall / ~3% of the menu wall**: below the C
+  stage's 10% bar and unrelated to the 5.5x gap. **Do not own the encoder**; C7's
+  lever is the engine shape.
+- **Gates (234f).** Accurate 1B menu golden PASS (sw `4EF1FBF6` / gl `B6116DAE`,
+  diff 2602, violations 0, counters 33632/686/686) and triangle PASS (sw
+  `A1740DE0` / gl `7A860ED7`, diff 27849, 2706/68/34); fast 1B anchors exact
+  (triangle `B45254CA`/`7DAB63EB` 57,663,082 px, menu `34973510`/`F5D61C94`
+  253,998,498 px); suite **1837 -> 1845**, the two scanout-serving tests proven
+  fail-pre-fix; ktest smoke PASS 7/7 at **792,800,535** steps, log `CA5D3867`
+  (40,797 B) byte-identical. Format clean.
 
 **Session 2026-10-22 (thirty-third; C5 slice 1 landed - the IL runner is built on
 demand and a chain jump keeps the source's frame - and the whole wall priced per
@@ -1062,9 +1114,11 @@ CHD title id). Two slices, gate currency untouched, suite 1738 -> 1757.**
   mix, never a silent downgrade. `DetachRenderer` clears `Nv2A.Backend` and
   disposes the context in the session's `finally`.
   The display source follows the renderer: software keeps the RAM scanout,
-  OpenGL shows the backend readback, and the one shape with no backend frame
-  (direct-framebuffer guests that never flip) is read through the new
-  `Nv2AMmio.TryCopyScanoutFrameFromMemory` lane *until* the first backend frame.
+  OpenGL shows the backend readback **only while the display controller scans a
+  surface a flip presented** (a 4-entry recently-presented ring; §234), and a
+  direct-framebuffer guest's own buffer is read from RAM in both modes. The
+  pre-§234 `TryCopyScanoutFrameFromMemory` "until the first backend frame" latch
+  is no longer the decision point.
   **Measured through the real `EmulatorSession` on gate media, 1B:** software
   34.8 s / 687 flips / 306,817 non-black px; OpenGL 24.7 s / 688 flips / the same
   pixel count, |dmean| ≈ 0.005 (2,385 of 307,200 px differ, mostly the one-flip

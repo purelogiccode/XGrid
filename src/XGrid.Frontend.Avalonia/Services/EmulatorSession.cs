@@ -76,11 +76,10 @@ public sealed class EmulatorSession : IDisposable
     // Renderer state. The GPU backend (when the profile selects OpenGL) is
     // created, used and disposed on the emulation thread: a WGL context is
     // current on the thread that made it, and the emulation thread is the only
-    // one allowed to touch guest or backend state. `_gpuRendererActive` selects
-    // the display source; `_backendFrameSeen` latches the first backend present
-    // so the pre-flip window can still show the RAM scanout.
-    private bool _gpuRendererActive;
-    private bool _backendFrameSeen;
+    // one allowed to touch guest or backend state. The display source itself is
+    // decided by Nv2AMmio.TryCopyDisplayFrame (backend readback for a surface
+    // the backend rendered, the RAM scanout for a direct-framebuffer program's
+    // own buffer), so the session keeps no renderer flag of its own.
 
     /// <summary>Raised on the emulation thread when a new presented frame is available.</summary>
     public event EventHandler<FramePacket>? FrameReady;
@@ -161,8 +160,6 @@ public sealed class EmulatorSession : IDisposable
         Interlocked.Exchange(ref _frames, 0);
         _lastPresentedFrame = 0;
         _lastDisplayCapture = 0;
-        _backendFrameSeen = false;
-        _gpuRendererActive = false;
         _nextProgressLog = ProgressLogInterval;
         _paused = false;
         _running = true;
@@ -665,7 +662,6 @@ public sealed class EmulatorSession : IDisposable
     /// </summary>
     private IPgraphBackend? AttachRenderer(XboxMachine machine, EmulatorSettings settings)
     {
-        _gpuRendererActive = false;
         bool attached = GraphicsBackendHost.TryAttach(machine, settings, out string detail);
         Log?.Invoke(this, "Renderer: " + detail);
         if (!attached)
@@ -673,7 +669,6 @@ public sealed class EmulatorSession : IDisposable
             return null;
         }
 
-        _gpuRendererActive = true;
         return machine.Nv2A.Backend;
     }
 
@@ -686,7 +681,6 @@ public sealed class EmulatorSession : IDisposable
     {
         if (backend is null)
         {
-            _gpuRendererActive = false;
             return;
         }
 
@@ -699,10 +693,6 @@ public sealed class EmulatorSession : IDisposable
             // Teardown is best-effort: a context that is already gone must not
             // mask the session's real stop reason.
             Log?.Invoke(this, "Renderer: OpenGL teardown failed (" + exception.Message + ").");
-        }
-        finally
-        {
-            _gpuRendererActive = false;
         }
     }
 
@@ -777,41 +767,13 @@ public sealed class EmulatorSession : IDisposable
         _lastDisplayCapture = now;
         Interlocked.Exchange(ref _frames, unchecked((long)presented));
 
-        // Display source. Software: the display controller's scanout in RAM
-        // (what a TV shows), falling back to the flipped surface. GPU: the
-        // backend's per-flip readback, because the backend's pixels live in
-        // its own surface and the guest's RAM color surface was never drawn.
-        bool captured;
-        uint width;
-        uint height;
-        byte[] bgra;
-        if (_gpuRendererActive)
-        {
-            captured = machine.Nv2A.TryCopyDisplayFrame(out width, out height, out bgra);
-            if (captured)
-            {
-                _backendFrameSeen = true;
-            }
-            else if (!_backendFrameSeen)
-            {
-                // No backend frame yet (or ever). Programs that write the
-                // framebuffer directly never flip, so the only pixels they
-                // produce are in RAM: show that scanout rather than nothing.
-                // Once the backend has presented, this lane is never used, so
-                // a backend frame is never mixed with RAM pixels.
-                captured = machine.Nv2A.TryCopyScanoutFrameFromMemory(out width, out height, out bgra);
-            }
-            else
-            {
-                width = 0;
-                height = 0;
-                bgra = [];
-            }
-        }
-        else
-        {
-            captured = machine.Nv2A.TryCopyDisplayFrame(out width, out height, out bgra);
-        }
+        // Display source. `TryCopyDisplayFrame` is the one decision point: with
+        // a GPU backend attached it serves the backend's per-flip readback for a
+        // surface the backend rendered, and the RAM scanout for a buffer the
+        // backend never rendered (a direct-framebuffer program's output, which
+        // exists only in RAM). Without a backend it is the display controller's
+        // scanout, falling back to the flipped surface.
+        bool captured = machine.Nv2A.TryCopyDisplayFrame(out uint width, out uint height, out byte[] bgra);
 
         if (captured && width > 0 && height > 0 && bgra.Length >= width * height * 4)
         {

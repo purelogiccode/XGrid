@@ -127,13 +127,19 @@ internal static class Program
         error = string.Empty;
         if (args.Length > 0)
         {
-            if (!RendererPolicy.IsOpenGl(args[0]) && !string.Equals(args[0], RendererPolicy.Software, StringComparison.Ordinal))
+            // The setting's vocabulary is 'software' / 'opengl'; the harness also
+            // accepts the CLI's 'gl' spelling, so normalize before comparing.
+            string requested = string.Equals(args[0], "gl", StringComparison.Ordinal)
+                ? RendererPolicy.OpenGl
+                : RendererPolicy.Normalize(args[0]);
+            if (!string.Equals(requested, RendererPolicy.OpenGl, StringComparison.Ordinal) &&
+                !string.Equals(requested, RendererPolicy.Software, StringComparison.Ordinal))
             {
                 error = "renderer must be 'software' or 'gl'";
                 return false;
             }
 
-            renderer = args[0];
+            renderer = requested;
         }
 
         if (args.Length > 1 && !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds))
