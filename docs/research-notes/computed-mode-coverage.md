@@ -60,6 +60,25 @@ rerun a draw command, so the word at that address when the draw runs is the
 word the hardware sampled. A decline remains the answer only when the address
 is not readable at all.
 
+## Which stage carries the flags (added 2026-10-22, §230)
+
+`reach[...]` reports the union of the output-flag bits the writing stages pass
+through; it cannot say *which* stage does, and a MUX/blue-to-alpha bit carried
+by a stage whose write nothing reads is not exercised. The row now also prints
+`flags@=<first>[-<last>]:<flags>,…` (runs of consecutive writing stages that
+share a flag word). Measured on this row at 3.6B:
+
+| record | `flags=` | `flags@=` |
+|---|---|---|
+| `stages=8 c=00011108 tm=0332` (19.9M px) | `C0` | `0:C0,1-7:00` |
+| `stages=7 c=00011107 tm=1332` (12.4M px) | `C0` | `0:C0,1-6:00` |
+| panel `stages=1 c=00000001 tm=11111C` (5.7M px) | `00` | `0:00` |
+
+So the union came from **stage 0's** RGB word alone; stages 1-7 write only
+no-op output ids. Nothing in the panel program's flags explains the black panel
+- the leads stay texture content and the dot chain, plus the final-lerp
+negation the shader still does not implement (gap 12).
+
 ## Method notes (for the next phase sweep)
 
 - `scripts/boot-to-first-frame.ps1 -Sample xgu-bump_cubemap_reflect -Steps N`

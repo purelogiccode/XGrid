@@ -628,18 +628,30 @@ public sealed class PshCombiner : ISnapshotable
     /// the final block name (or <c>-</c>), <c>consts=</c> the C0/C1 inputs a
     /// writing stage names, <c>flags=</c> the output-flag bits the writes pass
     /// through (the decoded <c>&gt;&gt;12 &amp; 0xF8</c>), and <c>lerp=</c> the
-    /// final block's MUX/complement selects. Purely diagnostic: only the
-    /// <c>--gpu-time</c> combiner histogram row calls it. Two 8-stage records of
-    /// one corpus frame (19.9M and 12.4M pixels) differ this way, and before
-    /// this summary they were indistinguishable.
+    /// final block's MUX/complement selects, and <c>flags@=</c> which writing
+    /// stage (or run of consecutive stages) carries which flag word. Purely
+    /// diagnostic: only the <c>--gpu-time</c> combiner histogram row calls it.
+    /// Two 8-stage records of one corpus frame (19.9M and 12.4M pixels) differ
+    /// this way, and before this summary they were indistinguishable.
     /// </summary>
-    /// <returns><c>reach[tx=…] stg=w/s src=… consts=… flags=… lerp=…</c>.</returns>
+    /// <returns><c>reach[tx=…] stg=w/s src=… consts=… flags=… flags@=… lerp=…</c>.</returns>
     public string DescribeReach()
     {
         var sb = new System.Text.StringBuilder(96);
         int stages = Math.Clamp(StageCount, 0, MaxStages);
         int texConstants = 0;
         int flagBits = 0;
+        // Runs of consecutive writing stages that share an output-flag word,
+        // reported stage by stage so a MUX / BLUE_TO_ALPHA carried by a stage
+        // whose write is dead cannot be mistaken for an exercised bit.
+        // "No run open" is -1, never 0: 0 is a real flag word (a stage with no
+        // flags), and stackalloc'd storage starts uninitialised.
+        int[] flagRunFirst = new int[MaxStages + 1];
+        int[] flagRunLast = new int[MaxStages + 1];
+        int[] flagRunFlags = new int[MaxStages + 1];
+        flagRunFirst.AsSpan().Fill(-1);
+        flagRunFlags.AsSpan().Fill(-1);
+        int flagRunCount = 0;
 
         // The final combiner's lerp reads a/b/c/d and its alpha reads g: an
         // E/F product feeds them through the pseudo-register the read
@@ -711,8 +723,24 @@ public sealed class PshCombiner : ISnapshotable
             // write samplers select by (word >> 12) & 0xF8 (output mapping,
             // MUX, dot flag, blue-to-alpha), never by bit 11 or the low
             // nibble of the high byte.
-            flagBits |= FlagBits(ro) | FlagBits(ao);
+            int stageFlags = FlagBits(ro) | FlagBits(ao);
+            flagBits |= stageFlags;
             texConstants += CountConstantInputs(ri) + CountConstantInputs(ai);
+
+            // Which writing stage carries which flag: a program whose only
+            // MUX/blue-to-alpha stage writes a dead register cannot exercise
+            // those bits, and a row that reports only the union reads as if it
+            // did (the B3 row's 8-stage record: stage 0's RGB word is the
+            // whole union, stages 1-7 write only no-op output ids). Captured
+            // as runs of consecutive writing stages that share a flag word.
+            if (stageFlags != flagRunFlags[flagRunCount])
+            {
+                flagRunCount++;
+                flagRunFlags[flagRunCount] = stageFlags;
+                flagRunFirst[flagRunCount] = stage;
+            }
+
+            flagRunLast[flagRunCount] = stage;
         }
 
         // What the output depends on: a programmed final block reads a/b/c/d
@@ -753,6 +781,30 @@ public sealed class PshCombiner : ISnapshotable
         sb.Append(texConstants.ToString(culture));
         sb.Append(" flags=");
         sb.Append(flagBits.ToString("X2", culture));
+        sb.Append(" flags@=");
+        if (flagRunCount == 0)
+        {
+            sb.Append('-');
+        }
+
+        for (int run = 1; run <= flagRunCount; run++)
+        {
+            if (run > 1)
+            {
+                sb.Append(',');
+            }
+
+            sb.Append(flagRunFirst[run].ToString(culture));
+            if (flagRunLast[run] != flagRunFirst[run])
+            {
+                sb.Append('-');
+                sb.Append(flagRunLast[run].ToString(culture));
+            }
+
+            sb.Append(':');
+            sb.Append(flagRunFlags[run].ToString("X2", culture));
+        }
+
         sb.Append(" lerp=");
         sb.Append(lerp.ToString(culture));
         return sb.ToString();

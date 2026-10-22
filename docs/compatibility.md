@@ -442,6 +442,17 @@ B3 acceptance sample after all, anchored at **4.4B** (the dot program is absent
 at 0.2-1.4B and at 3B; the phase table is
 `docs/research-notes/computed-mode-coverage.md`).
 
+**Update 2026-10-22 (§230): the flag union comes from one stage, not several.**
+The `--gpu-time` combiner row now also prints `flags@=<stage>:<flags>` (runs of
+consecutive writing stages that share a flag word). At 3.6B both dot-family
+records report `flags=C0 flags@=0:C0,1-7:00` / `flags@=0:C0,1-6:00` - stage 0's
+RGB word is the entire union and the stages that write only no-op output ids
+carry nothing - while the panel program reports `flags=00 flags@=0:00`. That
+disposes of the "reflected colour travels in alpha through BLUE_TO_ALPHA on
+several stages" reading: the open leads are the texture content and the dot
+chain, plus the final-lerp negation the shader still does not implement
+(decisions §230).
+
 What that phase shows, measured: `--gpu gl --gpu-replace` presents **4 colours**
 at 4.4B and **2** at 3.6B (34.4% / 30.7% black) while software presents 18,980 /
 20,843 - the FBO's clear plus a black panel, with `unsupported=0 fatal=0

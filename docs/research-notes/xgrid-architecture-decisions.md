@@ -14601,3 +14601,62 @@ the run record: `docs/research-notes/nxdk-usb-sample.md` and the matrix in
 event is not exercised (a hot-plug hook on the hub does not exist yet - filed);
 `usbh_pooling_hubs` runs to the step budget without fault, which makes a
 later-step row cheap if a disconnect path lands.
+
+## 230 Track B/E: `reach[...]` now names the stage that carries each flag word (2026-10-22, thirtieth session)
+
+**Track:** E (diagnostics that steer fidelity work). Diagnostic-only: the
+`--gpu-time` combiner histogram row grows a column, no draw path changes, no
+gate anchor can move.
+
+**Why.** §228's `reach[...]` reported the **union** of the output-flag bits the
+writing stages pass through (`flags=`). Two kinds of program look identical
+under a union and behave differently: one where the stage carrying
+`MUX`/`BLUE_TO_ALPHA` is the stage whose write the final block actually reads,
+and one where the only MUX-carrying stage writes a register nothing reads. The
+B3-family question ("does this row exercise the MUX-lsb select / the final lerp
+negation?") needs the second distinction, not the union.
+
+**What landed.** `PshCombiner.DescribeReach()` gained
+`flags@=<first>[-<last>]:<flags>,…`: runs of consecutive **writing** stages
+(those `StageWritesRegister` accepts) that share an output-flag word, in stage
+order. Three details the first draft got wrong and the tests now pin:
+
+1. `FlagBits` is `(word >> 12) & 0xF8`, so a flag bit must be written at bits
+   12-15 *and* must OR a non-zero nibble - `0x540` shifts to `0x000`, i.e. a
+   word with no high bit set reports no flags (`PshCombinerReachTests`).
+2. The **alpha** word is OR-ed in unmasked (`FlagBits(ao)` keeps bit 0x40 even
+   though alpha stages never use MUX): an alpha MUX write contributes `0x40` to
+   the union exactly like a colour BLUE_TO_ALPHA write. Test fixtures keep the
+   alpha word 0.
+3. A run table must not treat "no run open" as "flags 0": the first version
+   used `stackalloc` (uninitialised) and merged every stage into one `0:00` run.
+   The sentinel is -1.
+
+**Measured on the B3 row** (`xgu bump_cubemap_reflect`, 3.6B, HDD + DVD, fast
+mode, `--gpu-time`). The row's own 8- and 7-stage records put **every** flag on
+**stage 0**, and stages 1-7 - which write only no-op output ids - carry none:
+
+```text
+c=00011108 tm=0332  stg=8/8  flags=C0 flags@=0:C0,1-7:00
+c=00011107 tm=1332  stg=7/7  flags=C0 flags@=0:C0,1-6:00
+```
+
+So the earlier note that these records carry `BLUE_TO_ALPHA` on "several
+stages" was exactly the readability trap this column removes: the union `C0`
+comes from **one** stage's RGB word (`ro0=000C30CD` -> `(word >> 12) & 0xF8`
+= `0xC0`, i.e. BLUE_TO_ALPHA | CD_DOT), and the seven stages that write only
+no-op output ids carry no flags at all - a union with no stage attribution used
+to read as "several stages do this". The dot-trial column stays honest about
+what it does not say: the shader's `MuxSelectExpr` honours the MUX flag but the
+final lerp's negation (`lerp=4`) is still unimplemented (gap 12's second lead),
+and `flags@` shows the MUX-carrying stage is stage 0's, not the panel's. The
+panel program (`tm=11111C`) reports `flags=00 flags@=0:00`, so no flag bit
+explains the black panel: the remaining leads are texture content and the dot
+chain.
+
+**Blast radius.** `DescribeReach` is called only from the `--gpu-time`
+diagnostic. Guest RAM/CPU SHAs, frames and every device counter are unchanged
+(the row's BTFF record reproduces: software 3.6B last frame `BFC41A59…`,
+`cpu=C848610E`, 2,728 draws; the delivered anchors are unaffected by a
+diagnostic string). Suite 1836 -> **1837** (the new
+`DescribeReach_ReportsWhichStageCarriesEachFlagWord`), build and format clean.

@@ -711,6 +711,29 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-22 (thirtieth; `reach[...]` names the stage that carries each
+combiner output flag - decisions §230). Diagnostic only; no gate anchor moved.**
+
+- `PshCombiner.DescribeReach()` gained `flags@=<first>[-<last>]:<flags>,…`:
+  runs of consecutive **writing** stages that share an output-flag word, so a
+  MUX / BLUE_TO_ALPHA bit carried by a stage whose write nothing reads is no
+  longer indistinguishable from one the program actually exercises. Three
+  things the unit test pins: `FlagBits` needs a bit in 12-15 *and* a non-zero
+  masked nibble; the alpha word is OR-ed unmasked (an alpha MUX write adds
+  `0x40`); and the run sentinel must be -1 (`stackalloc` left "no run open"
+  reading as "flags 0").
+- **Measured on the B3 row** (`xgu bump_cubemap_reflect` 3.6B, `--gpu-time`):
+  both dot-family records report `flags=C0 flags@=0:C0,1-7:00` / `1-6:00`, the
+  panel program `flags=00`. The flag union is stage 0's alone, which disposes of
+  gap 12's "carried in alpha through BLUE_TO_ALPHA on several stages" reading -
+  the open leads there are texture content, the dot chain and the final-lerp
+  negation (documented, still unimplemented). Per-fragment GL probes are not
+  reached by this CLI (no save-at/continue adjacency, no in-draw hook).
+- Gates: suite 1836 -> **1837**, build + format clean; the diagnostic cannot
+  change guest RAM/CPU SHAs, frames or counters (the corpus row's BTFF record
+  reproduces: 3.6B software last frame `BFC41A59…`, `cpu=C848610E`). No snapshot
+  or GLSL-golden change.
+
 **Session 2026-10-22 (twenty-ninth; the B3 corpus row runs its dot programs at
 4.4B, the GL path renders that frame as 4 colours, and the read-set diagnostic
 that makes the difference visible - decisions §228). No gate anchor moved.**

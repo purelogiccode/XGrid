@@ -59,6 +59,58 @@ public sealed class PshCombinerReachTests
         Assert.Contains("lerp=0", reach, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The stage the union of output flags comes from. The B3 row's 8-stage
+    /// record carries BLUE_TO_ALPHA on several stages but only the last one
+    /// (the stage that writes R0) reaches the final block; a row that reported
+    /// only the union would claim six stages exercise the bit. Encoded as runs
+    /// of consecutive writing stages sharing a flag word:
+    /// <c>flags@=&lt;first&gt;[-&lt;last&gt;]:&lt;flags&gt;,…</c>.
+    /// </summary>
+    [Fact]
+    public void DescribeReach_ReportsWhichStageCarriesEachFlagWord()
+    {
+        // Four R0-writing stages (MUX id 0xC in bits 8-11): 0 and 2 carry no
+        // flag, 1 carries blue-to-alpha (0x40), 3 carries blue-to-alpha plus
+        // the MUX bit (0x04) on its MUX colour write - only stage 3's MUX bit
+        // reaches the final block, so a union alone would read as if two
+        // stages exercised it. Flag bits live in bits 12-15. (The alpha word
+        // stays 0 throughout: FlagBits ORs the RGB and alpha words, and an
+        // alpha MUX write would add its own unmasked 0x40.)
+        Variant named = new("named", s =>
+        {
+            s.RgbOutputs[0] = 0x0050000Cu;
+            s.RgbOutputs[1] = 0x0054000Cu;
+            s.RgbOutputs[2] = 0x0050000Cu;
+            s.RgbOutputs[3] = 0x005C000Cu | (0x04u << 12) | (0x04u << 15);
+        }, "flags=E0 flags@=0:00,1:40,2:00,3:E0 ");
+
+        // Consecutive stages that share a flag word collapse into one run.
+        Variant run = new("run", s =>
+        {
+            s.RgbOutputs[0] = 0x0054000Cu;
+            s.RgbOutputs[1] = 0x0054000Cu;
+        }, "flags=40 flags@=0-1:40 ");
+
+        // No writer at all: an empty column instead of a misleading 00.
+        Variant none = new("none", _ => { }, "flags=00 flags@=- ");
+
+        foreach (Variant variant in new[] { named, run, none })
+        {
+            var combiner = new PshCombiner { Control = 0x00011108u, StageProgram = 0x0332u };
+            combiner.RgbInputs[0] = 0x0D0D0000u;
+            combiner.RgbInputs[1] = 0x0D0D0000u;
+            variant.Set(combiner);
+            Assert.Contains(variant.Expected, combiner.DescribeReach(), StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>One stage-flag configuration and the <c>flags@=</c> text it must produce.</summary>
+    /// <param name="Name">Label for the assertion message.</param>
+    /// <param name="Set">Writes the stage output words.</param>
+    /// <param name="Expected">The <c>flags=… flags@=… </c> substring expected.</param>
+    private sealed record Variant(string Name, Action<PshCombiner> Set, string Expected);
+
     /// <summary>A program with no texture socket and one writer reports an empty slot column.</summary>
     [Fact]
     public void DescribeReach_EmptyWhenNoStageNamesATexture()

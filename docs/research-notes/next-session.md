@@ -324,7 +324,9 @@ flipStaleUploads= composedFrames= composedPixels= composedDraws= batchCalls=
 batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
 `unsupTex[...]`, `readback=on|off`, `methods=`,
 **`--gpu-time` combiner rows carry `tm=` / `sf=` / `reach[tx=… stg=… src=…
-consts=… flags=… lerp=…]`** (§228; `PshCombiner.DescribeReach`),
+consts=… flags=… flags@=… lerp=…]`** (§228 + §230; `PshCombiner.DescribeReach`
+- `flags@=` names the writing stage, or run of stages, that carries each flag
+word, so a MUX/blue-to-alpha bit on a stage nothing reads is visible),
 **`filters=<min>/<mag>/<conv>`**, **`fixedFn=` / `fixedFnLit=` /
 `fixedFnLights=`**, `PresentedFrameDebug`, `Nv2AMmio.VgaCrtcDebug`,
 `--tex-filter registers`, `--ffp`, `DiagnosticGenericSampler`/
