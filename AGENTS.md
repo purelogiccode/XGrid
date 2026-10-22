@@ -770,8 +770,11 @@ byte-identical - decisions §238). Track C, one constant, exact.**
 - **Combined session position (base -> now):** triangle `gl+replace`
   **6.672 -> 6.081 s (-8.9%)**, menu `gl+replace` **20.456 -> 19.762 s (-3.4%)**,
   100M boot phase **2.276 -> 1.813 s (-20.3%, both legs with `--jit-timing`)**.
-  Next: the `TryMemo`-handoff probe in `RunSpecBlock` (§237 §6 / §238 §4) before
-  any implementation.
+  **The `TryMemo`-handoff was probed in the same session and rejected:** only
+  4.2-4.9% of the non-JIT members sit at a head that already has a block
+  (50,550/1,190,276 at 100M, 127,173/2,618,986 at 1B) = ~1.2% of the wall, so the
+  remaining mass is the 55k *unbuilt* heads (a formation price). What is left for
+  Track C is the engine shape, not another slice.
 
 **Session 2026-10-22 (thirty-seventh; the boot ROM is now a cached, blocked image
 window - the §2 "superblock for the boot" lever measured at -6.4% and repriced -

@@ -217,6 +217,10 @@ engine shape (option iii of the old §2), not another slice.
 
 - **Lowering `--jit-slice` to 16/4 because `nonJitMs` keeps falling** (§238): the
   extra formation eats it; 64 is the wall minimum (measured at 100M and 1B).
+- **A `RunSpecBlock` handoff at built heads** (§238 §4, probed this session): only
+  4.2-4.9% of the non-JIT members sit at a head that already has a block
+  (50,550/1,190,276 at 100M, 127,173/2,618,986 at 1B) = ~1.2% of the wall. The
+  remaining mass is the 55k *unbuilt* heads (a formation price).
 - **`AddressSpace.TryGetRegion`-free range tests for the image class**: a store
   to `0xFD000000` (NV2A FIFO, 405k/1B) would flush the cache every time. Use the
   region/priority classification (§237).

@@ -15555,11 +15555,18 @@ construction (the JIT is off in them) and passed earlier in the session.
   ~2.62M at 1B (down from 3.34M / 5.48M), and the next step of the same curve
   (16) costs more in formation than it returns. Lowering it further needs a
   cheaper formation (the encoder price, §234e) or the handoff shape §237 §6
-  filed: return from the spec run *when a built block begins at the current
-  head* instead of at a fixed count. That is measurable with the same probe
-  (count members executed at `TryMemo`-hit heads) before any implementation.
-  Note the per-member cost of what remains went *up* (~375 -> ~590 ns): the short
-  runs that are left are device-heavy, which is consistent with §233a's finding
-  that the interpreter's `mov [mem],reg` outlier is the GPU.
+  filed. Note the per-member cost of what remains went *up* (~375 -> ~590 ns):
+  the short runs that are left are device-heavy, which is consistent with §233a's
+  finding that the interpreter's `mov [mem],reg` outlier is the GPU.
+- **The handoff shape is priced and rejected (measured this session).** A
+  temporary probe counted the `RunSpecBlock` members whose head already has a
+  built block (`JitBlockCache.TryMemo` hit, i.e. what returning from the spec run
+  at that head would hand to the runner): **50,550 of 1,190,276 members at 100M
+  (4.2%) and 127,173 of 2,618,986 at 1B (4.9%)**. At ~590 -> ~6 ns per member that
+  is ~75 ms at 1B, **~1.2% of the triangle wall** - below the stage bar, so it was
+  not implemented. The remaining non-JIT mass really is at the **55k unbuilt
+  heads** (`yieldReasons[0]` 188k pending, 16.8k rejected), which is a formation
+  price, not a re-probe cadence problem. Do not retry the handoff without a new
+  measurement that contradicts this.
 - `--jit-slice` stays a CLI knob; the library and CLI defaults are both 64 now, so
   a gate leg without the flag runs what was measured here.
