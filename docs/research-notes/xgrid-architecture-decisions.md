@@ -15067,6 +15067,18 @@ command, one flag different:
 | `mesh` | `A7442AB1` (backend) | `A7442AB1` | `7328A99F` (scanout) | unchanged - it flips 3D content; the GL frame is the flip image (`source=backend`) |
 | triangle 1B GL | `7A860ED7` (`--frame`) | `7A860ED7` (`--frame-display` too) | `A1740DE0` (software) | `source=backend`, unchanged |
 
+**Full corpus sweep (all 14 staged rows, 1B, GL replace, `-Corpus`).** Every row
+PASSes. The direct-framebuffer rows now export their own output: `gamma`
+`D3EBF420`, `gamma-fade` `2BC1C443`, `hello` `72D33DC2`, `usb` `119AFA48`,
+`xaudio` `8A969D86` - each equal to its software row. `led` `18C7CC83` stays on
+the backend frame (its scanout *is* a presented surface). The scene rows keep it
+too and reproduce their recorded GL anchors: `mesh` `A7442AB1`,
+`xgu vp_lighting` 3B `E68070A3` (§220c) and `xgu bump_cubemap_reflect` 3B
+`5174B1EB` (§227), both `source=backend`. The four xgu rows at **1B** now show
+black: their XBE has programmed its own display base (`pcrtc=3AA8000`) but has
+not drawn into it yet at that step, so black is the faithful picture - the
+animation's last frame was a buffer the guest had already replaced.
+
 `mesh` and `triangle` are the regression proof: a title that flips keeps the
 backend frame (its PCRTC start is in the ring), so the fix does not quietly
 switch the gate media to software scanout. `ram`/`cpu` SHAs are unchanged on

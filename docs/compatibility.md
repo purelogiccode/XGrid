@@ -501,10 +501,16 @@ Measured at 1B, GL replace (`displaySha`, and the software row it must match):
 | `hello` | `18C7CC83` | **`72D33DC2`** | `72D33DC2` | memory-scanout |
 | `usb` | `18C7CC83` | **`119AFA48`** | `119AFA48` | memory-scanout |
 | `led` (control) | `18C7CC83` | `18C7CC83` | `18C7CC83` | backend |
+| `gamma-fade` | `18C7CC83` | **`2BC1C443`** | `2BC1C443` | memory-scanout |
+| `xaudio` | `18C7CC83` | **`8A969D86`** | `8A969D86` | memory-scanout |
 | `mesh` | `A7442AB1` | `A7442AB1` | `7328A99F` (scanout) | backend |
 | triangle 1B | `7A860ED7` | `7A860ED7` | `A1740DE0` | backend |
 
 Every guest `ram`/`cpu` SHA is unchanged, so this is host-side display only.
+`-Corpus -Gpu gl -GpuReplace` at 1B: all 14 rows PASS; the xgu scene rows keep
+their recorded GL anchors (`vp_lighting` 3B `E68070A3`, `bump_cubemap_reflect`
+3B `5174B1EB`, both `source=backend`), and the xgu rows at 1B show black because
+their XBE has switched the display base to its own (not yet drawn) framebuffer.
 
 
 ## Measured rows (2026-10-20, refreshed after §206g/§207)
