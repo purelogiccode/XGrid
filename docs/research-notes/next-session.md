@@ -1,7 +1,10 @@
-# Next session instructions (updated 2026-10-22 after the twenty-ninth session)
+# Next session instructions (updated 2026-10-22 after the course correction: xemu-class performance leads)
 
-**Read in this order:** `docs/development-direction.md` (course correction +
-measured position), `AGENTS.md` (session notes + current state),
+**Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
+course correction: xemu-class performance is the long-run objective, Track C
+re-opened, C4-C6), §1-§3 (priority stack, measured position, milestone ladder),
+`docs/research-notes/jit-track-charter.md` (the C4-C6 status block),
+`AGENTS.md` (session notes + current state),
 `docs/research-notes/xgrid-architecture-decisions.md` §229 (the `nxdk/usb`
 corpus row + the corrected H1 toolchain verdict) + §228 (the B3 row's 4.4B phase
 anchor, the `reach[...]` read-set column, the cube word lane) + §227 (the
@@ -31,10 +34,10 @@ then this file. (If a name above does not resolve, the file was renamed - search
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest + MSYS2 toolchain
-git log --oneline -1        # expect: the tv229 commit ("nxdk/usb corpus row ...")
+git log --oneline -1        # expect: the course-correction commit ("docs: re-aim ...")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1836 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1835 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -103,6 +106,12 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 0b. What the last sessions landed - do not redo it
 
+0. **The course correction (§231, 2026-10-22).** Operator: xemu-class
+   performance or better is the long-run objective; Track C is re-opened and
+   leads (C4 flat memory model/soft TLB, C5 trace/superblock formation, C6
+   device/MMIO fast path); B3 is the only bounded B item; E steers with
+   performance rows; P's host audio runs parallel. `docs/development-direction.md`
+   §0 is canonical.
 1. **The B3 row's real phase + read set (§228).** `xgu bump_cubemap_reflect`
    runs its dot programs at **4.4B** (`tm=0332`/`1332`, 19.9M/12.4M px), not at
    3B. The `--gpu-time` combiner rows print `tm=`, `sf=` and
@@ -139,7 +148,10 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 ~1.4 s, interpreter ~2.5 s, boot ~2 s, readback ~0.8 s only when a frame is
 captured. **Menu `sw` (the frontend default)**: ~32 s at 1B, of which the
 software rasterizer is ~11.5 s. **Triangle `gl+replace`** ~7.5-7.9 s (11.5 s sw
-on gate media). Track C stays frozen.
+on gate media). **The engine is the lead wall again (2026-10-22):** xemu-class
+is 1.20 s on the triangle (830 Msteps/s) and 1.36 s on the menu (real-time
+band), so the gap is ~6.6× / ~17.8×; ktest 2B is already ahead (9-10 s vs
+15 s). The C4-C6 program is the lead; do not start a sub-2% slice.
 
 **Through the real frontend session (H1, 1B, gate media, §221d/§223):** software
 **34.8 s** vs OpenGL **24.7 s** (-29%), 687 vs 688 flips, same non-black pixel
@@ -147,7 +159,21 @@ count; the 40 s-pair throughput probe reads +9.8%/+8.2%.
 
 ## 2. Recommended next session - pick one
 
-### Option B-lead (Track B/E, §228): the GL path computes a black panel on `bump_cubemap_reflect`
+### Option C-lead (Track C, re-opened): C4 - the flat memory model / soft TLB
+
+The engine is ~17 s of the 24.3 s menu `gl+replace` wall and dominant on the
+7.5-7.9 s triangle wall; the raw emitter's memory members still run the
+data-translate probe per access, and §199n measured that dependent-load chain
+as the top menu cost (the menu mix is ~50% MovLoad/MovStore). **First step is a
+probe, not a rewrite:** ablate the probe on a 100M menu leg (a temporary switch
+that assumes the page is RAM after the first hit) and measure the ceiling; if
+it is <10% wall, stop and re-scope. If it is real, land a direct host-pointer
+RAM page table with an exact non-RAM/MMIO fallback. Acceptance: ≥2× engine on
+the menu (or ≥1.5× triangle) with exact 1B SHAs/counters, flag-off
+byte-identical, ktest log byte-identical; report ns/served member + wall per
+presented frame. `--jit-timing`/`--gpu-time` are the stage gates.
+
+### Option B-lead (bounded finish, §228): the GL path computes a black panel on `bump_cubemap_reflect`
 
 The row's own dot programs run at **4.4B** and the GL frame is the clear plus a
 black panel; the **3.6B** leg shows the same with no dot program at all
@@ -193,7 +219,7 @@ The composition policy is colour-only; a mixed frame keeps guest zeta from the
 software half. Composing depth is possible but needs its own differential. Do
 not start it without a measured pixel delta.
 
-### Filed, lower value - do not start while B-lead is open
+### Filed, lower value - do not start while C4 is open
 
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
 - A GL *window* renderer in the frontend (the offscreen FBO + readback path is
@@ -202,6 +228,10 @@ not start it without a measured pixel delta.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- **Sub-2% performance slices** - the 2026-10-22 re-open is for structural
+  stages (C4-C6); C3-y, the 1024-slot xlat cache, block fusion and the
+  E-series emission are measured out. A C4-C6 stage needs a same-window
+  ≥10% wall or ≥20% engine result, not a polish pass.
 - **Reading a corpus sample at 3B** - `xgu bump_cubemap_reflect`'s dot-mode
   programs live at 4.4B; 0.2-3B only reaches the boot animation and the panel
   (§228, `corpus-phase-anchors.md`).
@@ -240,10 +270,11 @@ not start it without a measured pixel delta.
 
 ## 4. Rules (non-negotiable)
 
-- **Steering rule.** Every proposal states the track it serves (B/E/P/D) and the
-  measured ceiling behind its acceptance.
-- **Track C is frozen.** No new codegen while Track B/E/P are open (interpreter
-  *correctness* work is still allowed - that is what §225 was).
+- **Steering rule.** Every proposal states the track it serves (C/B/E/P/D) and
+  the measured ceiling behind its acceptance.
+- **Track C is re-opened (2026-10-22) and leads.** C4-C6 are the authorized
+  structural stages; incremental sub-2% codegen slices remain banned.
+  Interpreter *correctness* work is still allowed (that is what §225 was).
 - **Two-tier validation.** Accurate mode is currency. Any shared-code or default
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` +
   flag-off byte-identical, plus the fast-mode gates. Host-side-only diagnostics

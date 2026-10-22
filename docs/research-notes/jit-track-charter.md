@@ -1,5 +1,19 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-22 (thirty-first session, course correction) - Track C is
+> RE-OPENED by operator decision: the long-run objective is xemu-class
+> performance or better.** The freeze's own re-open condition is met: the CPU
+> engine is ~17 s of the 24.3 s menu `gl+replace` wall (~70%) and the dominant
+> part of the 7.5-7.9 s triangle wall. Measured gap: triangle ~6.6x to xemu's
+> 1.20 s at 1B (830 Msteps/s); menu ~17.8x to the 1.36 s real-time band (xemu
+> has no menu oracle); ktest 2B is already ahead (9-10 s vs 15 s). The new
+> program is **C4** flat memory model/soft TLB, **C5** trace/superblock
+> formation, **C6** device/MMIO fast path (Phase 3b below). C3-x/y/z is closed;
+> incremental sub-2% slices remain banned. Each stage: same-window A/B >=10%
+> wall or >=20% engine, exact 1B SHAs/counters, flag-off byte-identical, ktest
+> log byte-identical. Kill/reassess if C4+C5 miss 3x engine after two
+> structural iterations. Canonical order: `docs/development-direction.md` §0.
+
 > **STATUS 2026-10-21 (twenty-second session, 220) - Track C stays frozen; the
 > session was CPU *correctness*, not throughput.** The independent x86
 > differential (`tools/cpu-oracle/`) widened from 333 to 629 cases and found nine
@@ -451,7 +465,27 @@ state reload without a second emitter. The measured remainder (§199n) is the
 helper-routed shape mix, per-member bookkeeping and the data-translate probe —
 see the re-weighted order in the status block. The Phase-3 *target* is
 re-stated as **ns per served member** (triangle 18.5 → ~8–10 ns, menu 61 →
-~30 ns on `gl+replace`) rather than 1B walls.
+~30 ns on `gl+replace`) rather than 1B walls. **2026-10-22:** the target was
+met (8.8 ns triangle / 31.6 ns menu) but is not xemu-class (~1.2 ns/step); the
+Phase-3 program is closed and the continuation is **Phase 3b (C4-C6)** below.
+
+**Phase 3b — structural performance, C4-C6 (re-opened 2026-10-22).**
+The engine is the wall again (~17 s of the 24.3 s menu `gl+replace` wall,
+dominant on the 7.5-7.9 s triangle wall). The remaining cost is the
+data-translate probe, per-block entry/exit and the menu's helper/device mix.
+Stages:
+
+| Stage | Work | Target |
+|---|---|---|
+| **C4** | Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe | ≥2× menu engine, ≥1.5× triangle |
+| **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first | ≥1.3× engine |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix | ≥10% menu wall |
+| **C7** | Reassess if C4+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
+
+Each stage: same-window A/B (≥10% wall or ≥20% engine), exact 1B
+SHAs/counters, flag-off byte-identical, ktest log byte-identical. Report
+ns/served member + wall per presented frame. The target band is triangle
+≤1.2 s / menu ≤1.36 s at 1B.
 
 **Phase 4 — fast-mode playability (parallel-capable after Phase 2 passes).**
 GPU offload coverage, presentation pacing, audio sync (APU mixer/host
@@ -462,7 +496,9 @@ the sw wall (menu 48% / triangle 39%), and present pacing is the playability
 gate (686 flips/1B = 11.7 fps with GL). So Phase 4's first slice is the
 `--gpu gl --gpu-replace` per-frame path (submission batching, present/readback
 pacing) plus the rasterizer's structural per-pixel cost — not more CPU
-codegen.
+codegen. **2026-10-22:** the GL present path landed (~1.3 s of the menu wall,
+readback opt-in); the CPU engine is the largest item again, so this note is
+superseded by Phase 3b.
 
 ## 5. Validation and gates (two-tier)
 

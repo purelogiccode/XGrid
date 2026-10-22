@@ -83,50 +83,53 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
-## Development direction (required; course-corrected 2026-10-20)
+## Development direction (required; course-corrected 2026-10-22)
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
 `docs/research-notes/jit-track-charter.md`; corpus plan:
 `docs/research-notes/compatibility-corpus.md`; sample matrix:
-`docs/compatibility.md`. Hard rules:
+`docs/compatibility.md`. **The long-run objective is xemu-class performance or
+better** (operator decision 2026-10-22). Hard rules:
 
-1. **Track B (host GPU present path) leads.** The product frontend
-   (`XGrid.Frontend.Avalonia`, `ea8b38f`) renders on the software rasterizer and
-   is GPU-bound. `--gpu gl --gpu-replace` exists but nets only 2.2 s on the menu
-   (31.1 vs 33.3 s): ~9.9 s of GL draw/readback/present. The per-flip readback is
-   1.6 ms (≈1.1 s/1B), so ~8.8 s is unexplained. **First slice: measure the split
-   (submission / readback / present), then remove the readback from
-   fast-mode/window present** (keep it for gates, screenshots, `--frame`).
-   Acceptance: menu fast+gl ≤ 24 s, triangle ≤ 6 s, `BackendUnsupported=0`,
-   guest SHAs/counters exact. The 2-pixel k1 interleave is demoted (≥2%
-   acceptance, bounded ceiling).
-2. **Track E (corpus) is the fidelity steering signal.** Gate currency stays
-   `data/test-samples/`, but fidelity work needs observed usage: maintain
-   `docs/compatibility.md` (boot stage, first frame, known gap, step anchor) and
-   a boot-to-first-frame harness; widen the sample set with legal
-   homebrew/demos (nxdk samples — toolchain is the host blocker, xgu examples,
-   nxdk_vsh_tests, OpenXDK). Real ISOs stay benchmark-only. **No NV2A/APU
-   fidelity polish beyond the matrix + a sample histogram.**
-3. **Track P (product completeness) runs in parallel:** host audio sink,
-   physical gamepad binding, save-state V1, per-title config. The frontend is
-   currently sw-only, keyboard-only, silent, stateless.
-4. **Track C (CPU engine) is frozen.** C3-x hit its target; C3-y/xlat measured
-   neutral and were reverted; C3-z is deferred (2–3%). Only action: the
-   operator's `--jit`/`--jit-raw` default-flip decision (the frontend already
-   defaults both on). Report ns/served member + wall per presented frame, not
-   1B-step walls (530M triangle steps are idle-spin).
+1. **Track C (performance) leads; the 2026-10-20 freeze is lifted.** The GL
+   present path is done (~1.3 s of the menu wall, was ~9.9 s), but the CPU
+   engine is ~17 s of the 24.3 s menu `gl+replace` wall (~70%) and the dominant
+   part of the 7.5-7.9 s triangle wall — >50% of a measured wall, the stated
+   re-open condition. Measured gap: triangle ~6.6× to xemu's 1.2 s at 1B; menu
+   ~17.8× to the 1.36 s real-time band (no xemu menu oracle). Program: **C4**
+   flat memory model/soft TLB, **C5** trace/superblock formation, **C6**
+   device/MMIO fast path. Each stage: same-window A/B ≥10% wall or ≥20%
+   engine, exact 1B SHAs/counters on both titles, flag-off byte-identical,
+   ktest log byte-identical. Incremental sub-2% slices remain banned. If C4+C5
+   miss 3× engine after two structural iterations, stop and reassess.
+2. **Track B is a bounded B3 finish.** The GL product renderer still paints the
+   computed-mode panel black (gap 12): texel-word fetch + MUX-lsb/final-lerp
+   differential. Finish that, then stop; no new B fidelity rows until C4 has a
+   measured result. The present path itself is closed (readback opt-in,
+   batching, sampler parity, replace-mode composition).
+3. **Track E (corpus) steers.** Gate currency stays `data/test-samples/`.
+   Maintain `docs/compatibility.md` (22 rows / 17 samples) and the
+   boot-to-first-frame harness; add performance rows (Msteps/s, wall per
+   presented frame) and the xemu comparison where it is a valid oracle. No new
+   corpus breadth beyond the standing rows until C4 lands. Real ISOs stay
+   benchmark-only. **No NV2A/APU fidelity polish beyond the matrix + a sample
+   histogram.**
+4. **Track P (product completeness) runs in parallel, not blocking.** Host
+   audio is the largest remaining product gap (APU GP/EP DSP execution + a PCM
+   sink); pad binding, save states, per-title config, renderer choice, frame
+   stepping and persistent EEPROM are landed. Do not let P displace C.
 5. **Track D only with a measured >2% ceiling** (page-end wait, bookkeeping).
 6. **Gates unchanged.** Accurate mode is currency: median-of-3, exact
    SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-20, 1B fast mode, quiet host):** triangle 8.69 s sw /
-6.49 s gl+replace, menu 33.3 s sw / 31.1 s gl+replace; xemu ≈830 Msteps/s on
-the triangle (~7× gap), the menu is ~27× real time. 1 guest-second ≈ 733M
-steps. The software rasterizer is 12.0 s of the menu wall; the GL path replaces
-it but still has ~9.9 s of draw/readback/present overhead (readback alone is
-~1.6 ms/flip) — measure the split, then remove the readback. That is the lead
-lever.
+**Position (2026-10-22, 1B fast mode, H1):** menu 24.3 s `gl+replace` (CPU
+engine ~17 s, block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s, GL ~0.7 s,
+readback only when capturing), triangle 7.5-7.9 s `gl+replace` / 11.5 s sw;
+menu sw ~32 s (raster ~11.5 s). xemu triangle ≈830 Msteps/s = 1.2 s at 1B;
+1 guest-second ≈ 733M steps, so the real-time band is 1.36 s at 1B. ktest 2B
+is already ahead (XGrid 9-10 s vs xemu 15 s). The engine is the lead lever
+again; report ns/served member + wall per presented frame, not 1B walls alone.
 
 ## Build / test / format
 
@@ -710,6 +713,25 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-first; course correction — xemu-class performance
+is the long-run objective, Track C re-opened). Diagnostic/planning only; no code
+change.** The operator set the long-run goal to xemu-class or better. The
+measured position meets the freeze's own re-open condition: the CPU engine is
+~17 s of the 24.3 s menu `gl+replace` wall (~70%) and the dominant part of the
+7.5-7.9 s triangle wall; the gap is ~6.6× (triangle vs xemu's 1.2 s at 1B) and
+~17.8× (menu vs the 1.36 s real-time band; xemu has no menu oracle). New
+program: **C4** flat memory model/soft TLB, **C5** trace/superblock formation,
+**C6** device/MMIO fast path, each gated on a same-window A/B (≥10% wall or
+≥20% engine), exact 1B SHAs/counters, flag-off byte-identical and a
+byte-identical ktest log. B3 (gap 12) is the only bounded B item; E steers with
+performance rows; P's host audio runs parallel. Docs updated:
+`docs/development-direction.md` §0/§1/§2/§3/§4/§5/§6,
+`ImplementationPlan.md` (top priority list, performance campaign, phases
+15/16/18, result), `docs/research-notes/next-session.md`,
+`docs/research-notes/jit-track-charter.md` (Phase 3b), decisions §231.
+Completion score stays **77.7%**
+(no landed work; the rule is the score only moves with landed work).
 
 **Session 2026-10-22 (thirtieth; `reach[...]` names the stage that carries each
 combiner output flag - decisions §230). Diagnostic only; no gate anchor moved.**

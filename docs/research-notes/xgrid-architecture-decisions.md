@@ -14660,3 +14660,42 @@ diagnostic. Guest RAM/CPU SHAs, frames and every device counter are unchanged
 `cpu=C848610E`, 2,728 draws; the delivered anchors are unaffected by a
 diagnostic string). Suite 1836 -> **1837** (the new
 `DescribeReach_ReportsWhichStageCarriesEachFlagWord`), build and format clean.
+
+## 231 Course correction: xemu-class performance is the long-run objective; Track C re-opened (2026-10-22, thirty-first session)
+
+**Operator decision.** The long-run objective is **xemu-class performance or
+better** on the same content. This supersedes the 2026-10-20 ordering (Track
+B/E/P before further Track C work) and the Track C freeze.
+
+**Why now: the freeze's own re-open condition is met.** The 2026-10-20
+correction said "re-open only if Track B lands and the engine is again >50% of
+a measured wall." Track B's present path landed (§§204/205/219/220/221/223: GL
+submission ~0.7 s, readback opt-in, batching, sampler parity, replace-mode
+composition), and the measured 1B position is:
+
+| workload | wall | CPU engine | xemu / real-time | gap |
+|---|---:|---:|---:|---:|
+| menu `gl+replace` | 24.3 s | ~17 s (~70%) | 1.36 s (real-time band) | ~17.8× |
+| triangle `gl+replace` | 7.5-7.9 s | dominant | 1.20 s (xemu 830 Msteps/s) | ~6.6× |
+| ktest 2B | 9-10 s | CPU-bound | 15 s (xemu) | XGrid ahead |
+
+**New program.** C4 flat memory model/soft TLB (remove the per-access
+data-translate probe; direct host-pointer RAM pages with an exact non-RAM/MMIO
+fallback), C5 trace/superblock formation (hot successors in one native trace,
+state across blocks, poll at every boundary), C6 device/MMIO fast path (hot
+NV2A method dispatch and the menu's device mix). Each stage: same-window A/B
+≥10% wall or ≥20% engine, exact 1B SHAs/counters, flag-off byte-identical,
+ktest log byte-identical. C7 reassesses if C4+C5 miss 3× engine after two
+structural iterations. C3-x/y/z is closed; sub-2% slices stay banned.
+
+**Scope discipline.** B3 (gap 12) is the only bounded B item: finish the
+texel-word fetch + MUX-lsb/final-lerp differential, then stop. E steers with
+performance rows; P's host audio runs parallel and does not displace C. The
+completion score stays 77.7% until a performance slice lands (the rule: the
+score only moves with landed work).
+
+**Docs updated:** `docs/development-direction.md` §0/§1/§2/§3/§4/§5/§6,
+`ImplementationPlan.md` (top priority list, assessment phases 15/16/18,
+performance campaign, result), `AGENTS.md` (development direction + session
+note), `docs/research-notes/next-session.md`,
+`docs/research-notes/jit-track-charter.md` (Phase 3b).

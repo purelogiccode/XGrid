@@ -1,10 +1,77 @@
-# XGrid — Development Direction (canonical, revised 2026-10-20)
+# XGrid — Development Direction (canonical, revised 2026-10-22)
 
 Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 0. Course correction (2026-10-20)
+## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
+
+**Operator decision.** The long-run objective is **xemu-class performance or
+better** on the same content. The 2026-10-20 correction was right to put the
+product surface and the corpus ahead of synthetic optimization, and that work
+landed: the GL present path is ~1.3 s of the menu wall (was ~9.9 s), the corpus
+is 22 rows over 17 samples, and the frontend renders on the host GPU. But it
+froze Track C, and the measured position now fails the freeze's own re-open
+condition: **the CPU engine is ~17 s of the 24.3 s menu `gl+replace` wall
+(~70%) and the dominant part of the 7.5-7.9 s triangle wall**, so the engine is
+again >50% of a measured wall. Performance is no longer the last engineering
+track.
+
+**The measured gap (1B, H1, gate media).**
+
+| workload | xemu / real-time band | XGrid now | gap |
+|---|---:|---:|---:|
+| triangle `gl+replace` | 1.20 s (xemu 830 Msteps/s) | 7.5-7.9 s | ~6.6× |
+| menu `gl+replace` | 1.36 s (real-time band; xemu has no menu oracle) | 24.3 s | ~17.8× |
+| ktest 2B (CPU-bound) | 15 s (xemu) | 9-10 s | XGrid already ahead |
+
+The triangle's wall is ~7.9 ns per guest step vs xemu's ~1.2 ns; the engine's
+served-member cost is 8.8 ns (triangle) / 31.6 ns (menu), so the menu's gap is
+the helper/device mix. A 2-3% slice cannot close either; the program is
+structural.
+
+**New order.**
+
+1. **C — performance (lead, re-opened).** C4 flat memory model / soft TLB,
+   C5 trace/superblock formation, C6 device/MMIO fast path. Each stage is
+   gated on a same-window A/B (≥10% wall or ≥20% engine), exact 1B
+   SHAs/counters on both titles, flag-off byte-identical, ktest log
+   byte-identical. The old C3-x/C3-y/C3-z list is closed; this is a new
+   program, not a resumption of 2-3% slices.
+2. **B — bounded finish of the in-flight B3 slice.** The GL product renderer
+   still paints the computed-mode panel black (gap 12). Finish the texel-word
+   fetch + MUX-lsb/final-lerp differential, then stop B until C4 has a
+   measured result. Do not start new B fidelity rows.
+3. **E — corpus steers.** Keep the matrix; add the performance rows
+   (Msteps/s, wall per presented frame) and the xemu comparison where it is a
+   valid oracle. No new corpus breadth beyond the standing rows until C4 lands.
+4. **P — product (parallel, not blocking).** Host audio remains the largest
+   product gap; it needs APU GP/EP DSP execution + a PCM sink. Run it parallel
+   to C or after C4's first measured stage; do not let it displace C.
+5. **D — only with a measured >2% ceiling.** Unchanged.
+6. **Gates — unchanged and non-negotiable.** Accurate mode is currency; the
+   performance program never relaxes the ceremony.
+
+**Price every stage first.** Each stage starts with a 100M-step ablation that
+prices its ceiling (the §199n pattern: elide the mechanism, measure the wall).
+If the ceiling is <10% wall, stop and re-scope rather than land a polish pass.
+C5 must re-measure the block-fusion negative (§199d) at trace granularity: if
+the per-block poll/state cost is not the bottleneck, skip it.
+
+**Kill/reassess.** If C4+C5 do not reach ≥3× engine improvement after two
+structural iterations, stop and reassess the approach (memory model, trace
+formation, or a native core) rather than polishing. The xemu-class target is
+the aim, not a promise; the measured stage results decide.
+
+**Why not B first?** B3 is a correctness item for one homebrew row; C is
+~70-90% of every product wall and the stated long-run objective. B3 is bounded
+and stays in flight only because leaving the GL renderer visibly wrong is
+worse than finishing it.
+
+## 0b. Previous correction (2026-10-20) — retained as history
+
+**Superseded by §0 (2026-10-22).** The 2026-10-20 rationale is kept because it
+explains why the product/corpus work happened first.
 
 **The goal, restated.** A "xemu-like emulator" is four things, in user-value
 order: (1) **breadth** — a growing set of real titles boots, renders, and stays
@@ -35,7 +102,7 @@ emulator plateau: a very accurate, very well-tested demo.
   nine interpreter/decoder fixes found by the independent oracle, with no
   throughput claim and no gate anchor moved.
 
-**What changes.**
+**What changed (2026-10-20; historical — superseded by §0).**
 
 1. **Track B leads; its first slice is the present path, not the fill loop.**
    The product surface (`XGrid.Frontend.Avalonia`) renders on `--gpu sw` and is
@@ -72,11 +139,17 @@ emulator plateau: a very accurate, very well-tested demo.
 5. **Track D only with a measured >2% ceiling.** D3b page-end wait and
    bookkeeping remain candidates, not commitments.
 
-**Steering rule.** Every proposal states which track it serves and the measured
-ceiling behind its acceptance. A task that serves none of B/E/P is rejected even
-if it is interesting.
+**Steering rule (2026-10-20; the current rule is §0).** Every proposal states
+which track it serves and the measured ceiling behind its acceptance. A task
+that serves none of B/E/P is rejected even if it is interesting.
 
 ## 1. Priority stack (in order)
+
+**Status 2026-10-22 (course correction): Track C is re-opened and leads; B3 is
+a bounded finish; E steers; P runs parallel.** The engine is ~17 s of the
+24.3 s menu `gl+replace` wall and dominant on the 7.5-7.9 s triangle wall; the
+long-run target is xemu-class (triangle 1.2 s, menu 1.36 s at 1B). The
+2026-10-20 status blocks below are retained as history.
 
 **Status 2026-10-22 (22nd session, §§220-221):** the frontend's renderer is a
 setting - software (default) or the headless host-GPU OpenGL backend, which
@@ -105,25 +178,28 @@ within one 8-bit step in both filter states. Track P gained a frame-step
 control (F7 / Shift+F7). Suite 1725; the largest remaining product gap is still
 host audio (APU DSP execution first).
 
-1. **B — host GPU present path (lead).** Measure the split first (draw
-   submission / readback / present) with `--gpu-time`; then fast-mode present
-   must blit to the window/surface without a CPU readback. Readback stays only
-   for gate runs, `--frame`, and screenshots. Acceptance: menu fast+gl ≤ 24 s,
-   triangle fast+gl ≤ 6 s at 1B, `BackendUnsupported=0`, guest SHAs and every
-   counter identical to the sw run. Then B3 method coverage on the corpus
-   (zero `unsup` rows, guest counters identical). Keep the software rasterizer:
-   it is the exact-mode gate renderer and the differential oracle.
-2. **E — compatibility corpus.** `docs/compatibility.md` + the harness +
-   ≥8 samples (section 3, M-B) or no fidelity work. Acceptance: every row has a
-   reproducible run command and a step anchor; a fidelity landing cites the row
-   it fixes and the histogram that proves usage.
-3. **P — product completeness (parallel).** Host audio output, gamepad
-   binding, save-state V1 (the `.xgs` format is versioned), per-title config,
-   pause/step UI. Acceptance: the Avalonia app plays a sample with sound, a
-   physical pad, and save/load, without the CLI.
-4. **C — CPU engine: maintenance only.** The default-flip decision (operator)
-   and bug fixes only. No new codegen slices. Re-open only if Track B lands and
-   the engine is again >50% of a measured wall.
+1. **C — performance (lead, re-opened 2026-10-22).** C4 flat memory
+   model/soft TLB, C5 trace/superblock formation, C6 device/MMIO fast path.
+   Acceptance per stage: same-window A/B ≥10% wall or ≥20% engine, exact 1B
+   SHAs/counters on both titles, flag-off byte-identical, ktest log
+   byte-identical. Exit: the xemu-class band (triangle ≤1.2 s, menu ≤1.36 s at
+   1B) or a measured reassessment after two structural iterations. The
+   software rasterizer stays the exact-mode gate renderer and differential
+   oracle; the GL path stays the fast-mode product renderer.
+2. **B — bounded B3 finish.** The GL product renderer's computed-mode panel is
+   black (gap 12): texel-word fetch + MUX-lsb/final-lerp differential. Then
+   stop; no new B fidelity rows until C4 has a measured result. The present
+   path itself is closed (readback opt-in, batching, sampler parity,
+   replace-mode composition).
+3. **E — compatibility corpus.** `docs/compatibility.md` + the harness +
+   performance rows (Msteps/s, wall per presented frame). Every row has a
+   reproducible command and a step anchor; a fidelity landing cites the row it
+   fixes and the histogram that proves usage. No new corpus breadth beyond the
+   standing 22 rows / 17 samples until C4 lands.
+4. **P — product completeness (parallel, not blocking).** Host audio output is
+   the remaining large item (APU GP/EP DSP execution + a PCM sink); pad
+   binding, save-state V1, per-title config, renderer choice, frame stepping
+   and persistent EEPROM are landed. Do not let P displace C.
 5. **D — cheap wins with a measured ceiling.** Page-end wait, bookkeeping.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency.
 
@@ -139,6 +215,15 @@ DVD-only leg, which never launches the disc's XBE. On gate media (HDD+DVD) the
 same legs cost **11.3 s sw / 7.5 s `gl+replace`** at 1B on H1 (2,706 draws /
 68 frames / 57.7M px). Read the table as the boot-animation workload it actually
 measured; M-A's triangle target needs re-basing before it is chased.
+
+**Re-aim 2026-10-22:** the present path is done and the CPU engine is the wall
+again. Current H1 position: menu `gl+replace` **24.3 s** (CPU engine ~17 s,
+block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s, GL ~0.7 s; readback only
+when capturing), triangle `gl+replace` **7.5-7.9 s**, menu `sw` ~32 s (raster
+~11.5 s), triangle `sw` 11.5 s. xemu-class is **1.20 s** on the triangle (830
+Msteps/s) and **1.36 s** on the menu (real-time band; xemu has no menu oracle),
+so the gap is **~6.6x / ~17.8x**. ktest 2B is already ahead (9-10 s vs xemu
+15 s). **M-D is now the lead milestone, not the last one.**
 
 | leg | wall | raster | xemu reference | gap |
 |---|---:|---:|---|---:|
@@ -207,7 +292,12 @@ is a ratio, not a milestone.
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
   ~33 s) before recording M-A. If the menu is still over, per-triangle batching
   is the structural step. **The in-app GL display landed 2026-10-22 (§220):** the
-  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default. The in-app switch is +9.8%/+8.2% guest throughput on the dashboard with every gate anchor unchanged (§223).`n- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
+  frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default. The in-app switch is +9.8%/+8.2% guest throughput on the dashboard with every gate anchor unchanged (§223).
+  **Closed/re-based 2026-10-22:** the present path is done (readback opt-in,
+  batching, sampler parity, replace-mode composition); the menu is at the M-A
+  boundary (~24 s), and the triangle ≤6 s target was measured on the wrong media
+  (§208d) and is re-based. M-A is no longer the lead.
+- **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +
   `--frame-display` export it, and the Avalonia frontend samples it at ~30 Hz,
@@ -215,8 +305,8 @@ is a ratio, not a milestone.
   `--frame` still exports the last flipped surface, so no frame anchor moved.
   The same session corrected the triangle's media (§208d): every triangle leg
   that used DVD only was measuring the boot animation.
-- **M-B (Track E, corpus) - MET 2026-10-20.** 14 rows over 10 distinct samples,
-  every row reproducible: `scripts/build-nxdk-samples.ps1` builds the nxdk
+- **M-B (Track E, corpus) - MET 2026-10-20; now 22 rows over 17 samples
+  (2026-10-22).** Every row reproducible: `scripts/build-nxdk-samples.ps1` builds the nxdk
   samples from a pinned upstream commit (`a6c31ee`) and
   `scripts/boot-to-first-frame.ps1 -Corpus` re-measures them. Beyond
   dashboard/triangle/ktest: `mesh` (textured 3D with VS/PS shaders - mipmap use
@@ -237,9 +327,11 @@ is a ratio, not a milestone.
 
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
-- **M-D (xemu-class):** triangle ≤ 1.5 s, menu ≤ 4 s at 1B with the fast engine;
-  measured against xemu where an oracle exists. M-D is *after* A/B/C, not
-  before.
+- **M-D (xemu-class) — the lead milestone as of 2026-10-22:** triangle
+  ≤ 1.2 s (xemu 830 Msteps/s), menu ≤ 1.36 s (real-time band) at 1B with the
+  fast engine; measured against xemu where an oracle exists. This is now the
+  long-run objective and the C4-C6 program's exit; it is no longer "after
+  A/B/C". ktest 2B already beats xemu (9-10 s vs 15 s).
 
 ## 4. Rules
 
@@ -264,14 +356,17 @@ Fast mode (`--jit`, opt-in) is a separate engine: MMIO program order and fault
 precision retained; TSC/step/IRQ observability relaxed to block granularity;
 deterministic per binary+script; never gate currency; one engine per run (no
 mixing). `--jit-exact` is the bit-exact debug variant. The raw emitter (Iced,
-MIT) is authorized and landed; it is frozen by section 0.4.
+MIT) is authorized and landed; it is the base of the C4-C6 program re-opened by
+§0. Incremental sub-2% slices remain banned; every C4-C6 stage needs the §0
+gate (same-window A/B ≥10% wall or ≥20% engine, exact 1B differentials).
 
 **GPU / present.**
 
 - Headless FBO (`--gpu sw`) is the gate currency. Never mix (full-frame replace
   or no frame), no async (emulation-thread only).
 - The GL backend is the fast-mode product renderer (Track B). Readback is a
-  gate/screenshot facility, not a per-frame cost.
+  gate/screenshot facility, not a per-frame cost. The present path is closed;
+  the only open B item is B3 fidelity (gap 12), and it is bounded.
 - Swapchain is latency, not throughput. O1 headless stays default; O2 opt-in
   `--window` (pure interop, vsync off) only on the brief's triggers; O3 needs an
   operator single-dependency override; O4 Vulkan is a non-goal (even xemu's
@@ -298,8 +393,9 @@ the historical precedent, not a pattern to extend).
   `docs/refs-manifest.json`. Never work around a missing reference; do not
   reintroduce an out-of-tree reference backup (`D:\xgrid-refs-restore\` is
   retired by operator decision 2026-10-20).
-- No new codegen slices while Track C is frozen (section 0.4). Interpreter
-  *correctness* fixes (oracle-found) are not codegen slices.
+- No new codegen **micro-slices** while the C4-C6 program is open; C4-C6 are
+  the authorized structural stages (section 0). Interpreter *correctness* fixes
+  (oracle-found) are not codegen slices.
 - No micro-optimization below a measured 2% ceiling.
 - No "borrow" of xemu source; facts only, reimplemented clean-room.
 
@@ -312,8 +408,11 @@ the historical precedent, not a pattern to extend).
 - Frontend changes: `dotnet build src/XGrid.Frontend.Avalonia -c Release` +
   project format clean; UI-only work does not re-run core gates, but it must not
   touch core/CLI/test files.
-- Every Track B/E/P landing updates `ImplementationPlan.md` status,
+- Every Track B/E/P/C landing updates `ImplementationPlan.md` status,
   `docs/compatibility.md` (when it changes a sample row), and the session notes.
+- Every C4-C6 performance landing reports **ns/served member + wall per
+  presented frame**, the same-window A/B, and the exact 1B differentials; 1B
+  walls alone are continuity anchors, not a performance claim.
 - Session start on any machine: `pwsh -File scripts/host-doctor.ps1` (fingerprint,
   free space, gate media, toolchain, `References2` integrity). A session that
   skips it owns whatever environment surprise it hits.
