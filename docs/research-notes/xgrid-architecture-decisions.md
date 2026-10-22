@@ -15496,3 +15496,70 @@ build.**
   to look for (trace formation was priced out at 3-5%, §235, because it removes
   *block-boundary* population, not this one); (b) the HILO dot-map word source
   (§236's filed remainder) stays filed - no row uses it.
+
+## 238 Track C: the non-JIT run slice is 64 (was 256) - a 2-4% wall slice found by sweeping an untuned constant (2026-10-22, thirty-eighth session)
+
+**`JitSpecSlice` had never been swept.** It bounds how many instructions one
+non-JIT (spec) run serves before the engine gets another chance at the head, and
+its 256 was picked in the pre-raw engine (§194) to stop a single run swallowing a
+whole region. With blocks and the image windows now in place (237) that number
+was costing more than it saved: a 256-member run crosses many heads the engine
+never gets to offer a block for.
+
+### 1. The sweep (100M steps, triangle, `--gpu gl --gpu-replace --jit-timing`)
+
+| `--jit-slice` | wall | `nonJitMs` | `nonJitInstructions` | blocks | `outerMs` |
+|---|---|---|---|---|---|
+| 256 | 2.048 s | 814 | 3,335,092 | 1,122 | 1223 |
+| **64** | **1.813 s** | 481 | 1,190,276 | 1,203 | 1320 |
+| 16 | 1.840 s | 411 | 546,242 | 1,399 | 1417 |
+| 4 | 1.912 s | 368 | 313,653 | 1,751 | 1530 |
+
+`nonJitMs` keeps falling all the way to 4, but the extra formation (blocks
+1,122 -> 1,751, `outerMs` 1223 -> 1530) eats the gain: **64 is the wall minimum**
+(-11.5% on the boot phase at 100M). The 1B triangle agrees (16/32/128 are all
+within noise of 64: 5.76/6.25, 6.25/6.04, 6.05/6.17 against 64's 6.08).
+
+### 2. Measured at 1B (interleaved pairs, gate media)
+
+| leg | slice 256 | slice 64 | delta | SHAs |
+|---|---|---|---|---|
+| triangle `gl+replace` | 6.477 / 6.204 / 6.312 s (med 6.312) | 6.081 / 5.921 / 6.098 s (med **6.081**) | **-3.7%** (3/3) | `4F1FCBC0`/`7DAB63EB` both |
+| menu `gl+replace` | 20.155 / 20.199 / 22.081 s (med 20.199) | 19.762 / 19.691 / 20.010 s (med **19.762**) | **-2.2%** (3/3) | `B06BA6E5`/`F5D61C94` both |
+
+Engine shape at 1B (triangle `gl+replace`, `--jit-timing --jit-tally`), slice
+256 -> 64: `nonJitInstructions` **5,478,026 -> 2,618,986 (-52%)**,
+`nonJitMs` 2190 -> **1650 (-25%)**, `nonJitCalls` 169,430 -> 182,142 (shorter
+runs mean more calls), `blocks` 2,603 -> 2,812 and `outerMs` 3981 -> 4297
+(formation pays for it), `runnerMs` unchanged at 3235. Net wall -0.23 s.
+
+Combined with §237 the session moved the headline legs from **6.672 -> 6.081 s
+(-8.9%)** on the triangle and **20.456 -> 19.762 s (-3.4%)** on the menu.
+
+### 3. Why it is exact
+
+The slice only decides *how long* a run may get before the engine re-probes the
+head; it cannot change which instructions execute or their order. Every
+instruction still runs through the decode cache (or a block) with the same
+boundaries, and the boundary poll position is unchanged because `RunSpecBlock`
+polls per member either way. Verified: all four fast 1B anchors byte-identical
+(triangle sw `B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl `4F1FCBC0`, menu sw
+`34973510`/`F5D61C94` 253,998,498 px, menu gl `B06BA6E5`), and four corpus rows
+reproduce their documented RAM/CPU pairs (`nxdk/usb` 1B, `xgu-vp_lighting` 3B,
+`xgu-bump_cubemap_reflect` 3.6B and 4.4B). The accurate goldens are untouched by
+construction (the JIT is off in them) and passed earlier in the session.
+
+### 4. Filed
+
+- The remaining non-JIT mass at slice 64 is ~1.19M instructions at 100M and
+  ~2.62M at 1B (down from 3.34M / 5.48M), and the next step of the same curve
+  (16) costs more in formation than it returns. Lowering it further needs a
+  cheaper formation (the encoder price, §234e) or the handoff shape §237 §6
+  filed: return from the spec run *when a built block begins at the current
+  head* instead of at a fixed count. That is measurable with the same probe
+  (count members executed at `TryMemo`-hit heads) before any implementation.
+  Note the per-member cost of what remains went *up* (~375 -> ~590 ns): the short
+  runs that are left are device-heavy, which is consistent with §233a's finding
+  that the interpreter's `mov [mem],reg` outlier is the GPU.
+- `--jit-slice` stays a CLI knob; the library and CLI defaults are both 64 now, so
+  a gate leg without the flag runs what was measured here.

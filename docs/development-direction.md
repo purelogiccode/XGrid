@@ -6,19 +6,23 @@ day-to-day agent entry point; this file is the priority order every agent follow
 
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
-**Status 2026-10-22 late (37th session, §237): the boot ROM is a cached, blocked
-image window.** Instruction fetches from immutable image windows (flash/BIOS, its
-mirror, the MCPX ROM overlay) are now a decode-cache class of their own with no
-store path (wholesale flush on the host actions that move an image), and the JIT
-forms blocks over them: `nonRamSkips` 359,476 -> 0, one-instruction non-JIT runs
-434k -> 136k, measured **-6.4% triangle `gl+replace` / -1.5% menu `gl+replace` /
--10.6% on the 100M boot phase**, every 1B SHA/counter/frame byte-identical. The
-same measurement **reprized the "superblock for the boot" lever out**: the ROM
-share of the non-JIT population is 9% (317k of 3.65M instructions), so the
-ceiling was 6.4%, not the 8-13% §2 estimated; the remaining boot mass is 55k RAM
-heads below the build threshold, i.e. an encoder price (§234e). Track C's next
-item is `RunSpecBlock`'s ~375 ns/member, now the largest non-JIT line. Track B
-stays closed (gap 12 closed in §236).
+**Status 2026-10-22 late (38th session, §237 + §238): two exact Track C slices,
+-8.9% / -3.4% on the headline legs.** (1) The boot ROM is a cached, blocked image
+window: instruction fetches from flash/BIOS/mirror/overlay windows are a
+decode-cache class of their own with no store path (wholesale flush on the host
+actions that move an image), and the JIT forms blocks over them -
+`nonRamSkips` 359,476 -> 0, one-instruction non-JIT runs 434k -> 136k. (2) The
+non-JIT run slice `JitSpecSlice` went 256 -> 64 after its first-ever sweep
+(`nonJitInstructions` 5.48M -> 2.62M; `nonJitMs` keeps falling to slice 4 but
+formation eats it). Measured together: **triangle `gl+replace` 6.672 -> 6.081 s
+(-8.9%)**, menu `gl+replace` 20.456 -> 19.762 s (-3.4%), 100M boot phase
+2.276 -> 1.813 s (-20.3%), every 1B SHA/counter/frame and every corpus row
+byte-identical. §237 also **reprized the "superblock for the boot" lever out**:
+the ROM share of the non-JIT population is 9%, not the 100% §2 assumed, so its
+ceiling was 6.4%; the remaining boot mass is 55k RAM heads below the build
+threshold (an encoder price, §234e). Track C's next item is the `RunSpecBlock`
+handoff probe (`TryMemo` hit at the current head), priced before implemented.
+Track B stays closed (gap 12 closed in §236).
 
 **Status 2026-10-22 late (36th session, §236): compatibility gap 12 is CLOSED -
 the GL backend decodes a cube stage's six swizzled faces into a host 2D-array

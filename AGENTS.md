@@ -123,15 +123,15 @@ better** (operator decision 2026-10-22). Hard rules:
    SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-22 late, after §237, 1B fast mode, H1):** menu 20.16 s
-`gl+replace` / 30.1 s sw (raster ~11.2 s); triangle 6.24 s `gl+replace` /
-10.34-10.42 s sw. **The triangle's wall is decomposed (decisions §233a, §237):**
-`RunJitBlock` 3.98 s (native 3.24 + 0.75 head lookup/formation/chain, ~0.68 of
-it Iced `Assemble`) + `RunNonJit` 2.19 s (33k `RunSpecBlock` runs at ~375 ns
-per member + 136k `Step`s at ~1.3 µs) + device `Advance` 6 ms. **The boot ROM is
-no longer part of that:** its fetches are a cached image-window class and run as
-blocks (`nonRamSkips` 359,476 → 0, §237), so the boot phase is 2.04 s of the
-6.24 s wall (was 2.28). **C4's host-pointer probe measured NULL and was
+**Position (2026-10-22 late, after §237/§238, 1B fast mode, H1):** menu 19.76 s
+`gl+replace` / 29.7 s sw (raster ~10.8 s); triangle 6.08 s `gl+replace` /
+10.45 s sw. **The triangle's wall is decomposed (decisions §233a, §237, §238):**
+`RunJitBlock` 4.30 s (native 3.24 + 1.06 head lookup/formation/chain, ~0.7 of it
+Iced `Assemble`) + `RunNonJit` 1.65 s (48k `RunSpecBlock` runs at ~590 ns per
+member + 134k `Step`s at ~1.3 µs) + device `Advance` 6 ms. **The boot ROM is no
+longer part of that:** its fetches are a cached image-window class and run as
+blocks (`nonRamSkips` 359,476 → 0, §237), so the boot phase is 1.81 s of the
+6.08 s wall (was 2.28). **C4's host-pointer probe measured NULL and was
 reverted** (§232a). xemu triangle ≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈
 733M steps, so the real-time band is 1.36 s at 1B. ktest 2B is already ahead
 (XGrid 9-10 s vs xemu 15 s). Report ns/served member + wall per presented
@@ -723,19 +723,55 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
   once; conflicts were purged 2026-10-09). Baseline: **1863 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
-- **§237 (2026-10-22 late): the boot ROM is a cached, blocked image window.**
-  `IImmutableImageDevice` + `AddressSpace.TryGetImmutableImageWindow` classify
-  flash/BIOS/mirror/overlay fetches; the decode cache holds them in a key set
-  with no store path and drops them wholesale on the host actions that move an
-  image; blocks form over them (and re-form when the decode defaults move with
-  the CPU mode). Measured **-6.4% triangle `gl+replace`** (6.672 -> 6.242 s) /
-  -1.5% menu / -10.6% on the 100M boot phase, `nonRamSkips` 359,476 -> 0,
-  `nonJitCalls` 523k -> 169k, every 1B SHA/counter/frame byte-identical. It also
-  **repriced the "superblock for the boot" lever out** (the ROM share of the
-  non-JIT population is 9%, not 100%); the largest non-JIT line is now
-  `RunSpecBlock` at ~375 ns/member.
+- **§237 + §238 (2026-10-22 late): the boot ROM is a cached, blocked image
+  window, and the non-JIT run slice is 64.** `IImmutableImageDevice` +
+  `AddressSpace.TryGetImmutableImageWindow` classify flash/BIOS/mirror/overlay
+  fetches; the decode cache holds them in a key set with no store path and drops
+  them wholesale on the host actions that move an image; blocks form over them
+  (and re-form when the decode defaults move with the CPU mode).
+  `JitSpecSlice` then went 256 -> 64 (never swept before; `nonJitMs` falls to 4
+  but formation eats it). Measured together: **triangle `gl+replace`
+  6.672 -> 6.081 s (-8.9%)**, menu `gl+replace` 20.456 -> 19.762 s (-3.4%),
+  100M boot phase 2.276 -> 1.813 s (-20.3%), `nonRamSkips` 359,476 -> 0,
+  `nonJitInstructions` 5.48M -> 2.62M, every 1B SHA/counter/frame and every
+  corpus row byte-identical. §237 also **repriced the "superblock for the boot"
+  lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-eighth; the non-JIT run slice went 256 -> 64 after a
+sweep that had never been done - another -3.7% / -2.2% with every fast anchor
+byte-identical - decisions §238). Track C, one constant, exact.**
+
+- **The sweep.** `JitSpecSlice` bounds how many instructions one non-JIT run
+  serves before the engine gets another chance at the head; its 256 came from the
+  pre-raw engine (§194). At 100M (`--gpu gl --gpu-replace --jit-timing`):
+  slice 256/64/16/4 -> wall 2.048/1.813/1.840/1.912 s, `nonJitMs`
+  814/481/411/368, blocks 1122/1203/1399/1751. `nonJitMs` keeps falling to 4 but
+  formation eats it: **64 is the wall minimum.**
+- **Measured at 1B (interleaved pairs).** triangle `gl+replace` 6.312 -> **6.081 s
+  (-3.7%, 3/3)**, menu `gl+replace` 20.199 -> **19.762 s (-2.2%, 3/3)**. Engine
+  shape: `nonJitInstructions` 5,478,026 -> **2,618,986 (-52%)**, `nonJitMs`
+  2190 -> **1650 (-25%)**, `nonJitCalls` 169,430 -> 182,142 (shorter runs, more
+  calls), blocks 2,603 -> 2,812 / `outerMs` 3981 -> 4297 (formation pays for it).
+  Per-member cost of what remains rose ~375 -> ~590 ns: the short runs left are
+  device-heavy, matching §233a's GPU-inside-the-interpreter finding.
+- **Both defaults now agree (64)** - `XboxCpu.JitSpecSlice` and the CLI's
+  `jitSlice`, so a gate leg without `--jit-slice` runs what was measured. Do not
+  push it to 16 on the `nonJitMs` number alone.
+- **Gates.** All four fast 1B anchors byte-identical with the new default
+  (triangle sw `B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl
+  `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94` 253,998,498 px, menu gl
+  `B06BA6E5`/`F5D61C94`), four corpus rows reproduce their documented pairs
+  (`usb` 1B `ACDB5720`/`1590C697`, `vp_lighting` 3B `162DAFF1`/`0380C502`,
+  `bump_cubemap_reflect` 3.6B `5ACD06FF`/`C848610E` and 4.4B
+  `D90376B9`/`EBAC6B99`), suite green, format clean. The accurate goldens do not
+  involve the JIT and passed after §237.
+- **Combined session position (base -> now):** triangle `gl+replace`
+  **6.672 -> 6.081 s (-8.9%)**, menu `gl+replace` **20.456 -> 19.762 s (-3.4%)**,
+  100M boot phase **2.276 -> 1.813 s (-20.3%, both legs with `--jit-timing`)**.
+  Next: the `TryMemo`-handoff probe in `RunSpecBlock` (§237 §6 / §238 §4) before
+  any implementation.
 
 **Session 2026-10-22 (thirty-seventh; the boot ROM is now a cached, blocked image
 window - the §2 "superblock for the boot" lever measured at -6.4% and repriced -

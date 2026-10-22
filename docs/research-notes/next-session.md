@@ -1,20 +1,21 @@
-# Next session instructions (updated 2026-10-22 late, after §237: the boot ROM is a cached, blocked image window - the "superblock for the boot" lever is measured at 6.4% and repriced out)
+# Next session instructions (updated 2026-10-22 late, after §238: the non-JIT run slice went 256 -> 64 for another -3.7% / -2.2%, and §237 made the boot ROM a cached, blocked image window)
 
 **Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
 course correction: xemu-class performance is the long-run objective, Track C
-re-opened, C4-C6, now with the §237 status line), §1-§3 (priority stack,
+re-opened, C4-C6, now with the §237/§238 status line), §1-§3 (priority stack,
 measured position, milestone ladder),
 `docs/research-notes/jit-track-charter.md` (the Phase 3b status block incl. the
 C7 decision inputs),
-**`docs/research-notes/xgrid-architecture-decisions.md` §237 (the image-window
-class, the measured table, the fast-mode spin-skip trap, the repricing)**,
-§236 (the cube 2D-array decode), §235 (trace formation priced out), §234 (the
-display source under a GPU backend + the encoder price), §233 (the per-stage
-price of the whole wall - this is the map), §232 (C4 null, the non-JIT
-decomposition) + §231 (the course correction) + §230/§228/§227/§226 (the B3
-history) + §225 (CPU correctness campaign) + §224 + §223 + §222 + §221 + §220 +
-§219 + §218 + §217 + §216 + §215 + §213 + §212/§210 (TEXFILTER) + §211 (gap 10
-diagnosed) + §209 (cubemap) + §208 (display model) + §207 (corpus),
+**`docs/research-notes/xgrid-architecture-decisions.md` §238 (the `JitSpecSlice`
+sweep - two constants, one A/B, 2-4%)**, **§237 (the image-window class, the
+measured table, the fast-mode spin-skip trap, the repricing)**, §236 (the cube
+2D-array decode), §235 (trace formation priced out), §234 (the display source
+under a GPU backend + the encoder price), §233 (the per-stage price of the whole
+wall - this is the map), §232 (C4 null, the non-JIT decomposition) + §231 (the
+course correction) + §230/§228/§227/§226 (the B3 history) + §225 (CPU
+correctness campaign) + §224 + §223 + §222 + §221 + §220 + §219 + §218 + §217 +
+§216 + §215 + §213 + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
+(cubemap) + §208 (display model) + §207 (corpus),
 `AGENTS.md` (session notes + current state), `docs/compatibility.md`,
 `docs/research-notes/corpus-phase-anchors.md` (a row's step count is part of its
 identity), `docs/research-notes/nxdk-usb-sample.md`,
@@ -55,8 +56,8 @@ the gate scripts on H1). These did **not** move in §237:
 | triangle, `scripts/raster-leg.ps1 -Workload tri` | `B45254CA…` | `7DAB63EB…` | 10.3-10.5 s (frame `A1740DE0`, 68/34, 57,663,082 px) |
 | triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
-| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | **6.24 s** (was 6.67), frame `7A860ED7…`, `source=backend` |
-| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | **20.16 s** (was 20.46), frame `B6116DAE…` |
+| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | **6.08 s** (was 6.67), frame `7A860ED7…`, `source=backend` |
+| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | **19.76 s** (was 20.46), frame `B6116DAE…` |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
 | `xgu-bump_cubemap_reflect` 3B BTFF | `DDB59317…` | `D5D38C64…` | ~12 s |
@@ -109,18 +110,23 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 0b. What the last session landed - do not redo it
 
-0. **§237: image windows are cached and blocked.** `IImmutableImageDevice` +
+0. **§238: `JitSpecSlice` is 64 (was 256)**, in both the library and the CLI.
+   A non-JIT run of 256 members crossed many hot heads the engine never got to
+   offer a block for. Measured -3.7% triangle `gl+replace` / -2.2% menu (3/3) and
+   -11.5% on the 100M boot phase, every 1B anchor and corpus row byte-identical.
+   **The sweep is in the decisions note**: `nonJitMs` keeps falling to slice 4 but
+   formation eats it, so 64 is the wall minimum - do not "optimize" it to 16.
+1. **§237: image windows are cached and blocked.** `IImmutableImageDevice` +
    `AddressSpace.TryGetImmutableImageWindow` classify flash/BIOS/mirror/overlay
    fetches; `DecodeCache` holds them in a key set with no store path
    (`FlushImmutableImages`), a store into the window drops them conservatively,
    the MCPX overlay disable and `Reset` flush them, and `RunJitBlock` re-forms a
    block whose decode defaults no longer match (with the memo slot cleared).
-   Measured -6.4% triangle `gl+replace`, -1.5% menu `gl+replace`, -10.6% on the
-   100M boot phase, every 1B SHA/counter/frame byte-identical. **`nonRamSkips`
-   is 0 on a fast run now** - do not "restore" it, and do not re-add a
-   physical-range test in place of the region classification (an MMIO store must
-   never look like an image window).
-1. **§236: gap 12 closed** - a cube stage samples a host `sampler2DArray`
+   Measured -6.4% triangle `gl+replace` at the time (now folded into the numbers
+   above). **`nonRamSkips` is 0 on a fast run now** - do not "restore" it, and do
+   not re-add a physical-range test in place of the region classification (an
+   MMIO store must never look like an image window).
+2. **§236: gap 12 closed** - a cube stage samples a host `sampler2DArray`
    (`uCube0..3`, units 4-7) decoded from the guest's swizzled faces;
    `GuestWordPoolSize` (24) carries only a HILO dot input's raw pair (dot maps
    4-7). Do not re-add a word-pool cube path.
@@ -140,21 +146,24 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 1. Where the wall is now (measured, §233a's map with §237 applied)
 
-**Triangle 1B `gl+replace` = 6.24 s** (was 6.67; a `--jit-timing --jit-tally`
-run on the same build reads `wall=6.192 executeMs=6183`):
+**Triangle 1B `gl+replace` = 6.08 s** (was 6.67 before this session; a
+`--jit-timing --jit-tally` run on the current build reads `wall=5.968
+executeMs=5960`):
 
 | stage | ms | share | what it is |
 |---|---|---|---|
-| `RunJitBlock` (`outerMs`) | 3981 | 64% | 767k invocations |
-| - native raw runner (`runnerMs`) | 3235 | 52% | 543M members at **5.95 ns/member** |
-| - formation + chain + bookkeeping | 746 | 12% | 2,603 blocks; **~682 ms is Iced `Assemble`** |
-| `RunNonJit` (`nonJitMs`) | 2190 | 35% | 169k calls, 5.48M instructions |
-| - `RunSpecBlock` (~33k runs) | ~2000 | 32% | ~5.34M members at **~375 ns** (interpreter dispatch) |
-| - `Step` (136k calls) | ~180 | 3% | ~1.3 us each (was 523k calls) |
+| `RunJitBlock` (`outerMs`) | 4297 | 72% | 783k invocations |
+| - native raw runner (`runnerMs`) | 3235 | 54% | 547M members at **5.9 ns/member** |
+| - formation + chain + bookkeeping | 1062 | 18% | 2,812 blocks; **~700 ms is Iced `Assemble`** |
+| `RunNonJit` (`nonJitMs`) | 1650 | 28% | 182k calls, 2.62M instructions |
+| - `RunSpecBlock` (~48k runs) | ~1470 | 25% | ~2.48M members at **~590 ns** (device-heavy runs) |
+| - `Step` (134k calls) | ~180 | 3% | ~1.3 us each (was 523k calls) |
 
-GL submission (~1000 ms, 405k user-FIFO stores at 2.4 us) is *inside* the rows
-above, not an extra row; the raw runner's share of it is what makes its 5.95 ns
-per member.
+GL submission (~1000 ms, 405k user-FIFO stores at 2.4 µs) is *inside* the rows
+above, not an extra row; the raw runner's share of it is what makes its 5.9 ns
+per member. §238's slice change moved the non-JIT side from `nonJitMs` 2190 /
+5.48M instructions to **1650 / 2.62M** and paid for it in formation
+(`outerMs` 3981 -> 4297, blocks 2,603 -> 2,812).
 
 - **The boot (first 100M steps) is 2.04 s of the 6.24 s wall** (was 2.28 s).
 - **Menu `gl+replace`** 20.16 s: the same shape with 2.7x the non-JIT calls.
@@ -206,6 +215,8 @@ engine shape (option iii of the old §2), not another slice.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- **Lowering `--jit-slice` to 16/4 because `nonJitMs` keeps falling** (§238): the
+  extra formation eats it; 64 is the wall minimum (measured at 100M and 1B).
 - **`AddressSpace.TryGetRegion`-free range tests for the image class**: a store
   to `0xFD000000` (NV2A FIFO, 405k/1B) would flush the cache every time. Use the
   region/priority classification (§237).
@@ -315,6 +326,8 @@ pwsh -File scripts/ktest-smoke.ps1 -SkipXemu
 pwsh -File scripts/raster-leg.ps1 -Workload tri
 pwsh -File scripts/raster-leg.ps1 -Workload menu
 pwsh -File scripts/raster-leg.ps1 -Workload tri -Gpu gl -GpuReplace -Extra @("--jit-timing")
+# the §238 slice sweep (one constant, four runs; wall + nonJitMs + blocks):
+#   --jit-slice 256/64/16/4 with --jit-timing --jit-tally
 
 # decode-cache / image-window evidence (§237)
 pwsh -File scripts/raster-leg.ps1 -Workload tri -Gpu gl -GpuReplace -Extra @("--decode-verify")
@@ -353,7 +366,8 @@ batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
 `unsupTex[...]`, `readback=on|off`, `methods=`,
 **`imageFills=` / `imageFlushes=` / `imageEntries=` on the `Decode cache` line
 (§237: distinct image-window decodes, wholesale drops, live count; a fast run
-ends at `imageFlushes=1 imageEntries=0` because the overlay disable drops them)**,
+ends at `imageFlushes=0 imageEntries=0` because an ordinary full flush drops them
+during the boot)**, **`slice=` on the JIT line (§238; the default is 64)**,
 **`source=backend|memory-scanout`** on the `Frame`/`FrameDisplay`/
 `FrameScanout` lines (`Nv2AMmio.DisplaySourceDebug`, §234),
 **`--gpu-time` combiner rows carry `tm=` / `sf=` / `ts<n>=<TEXFMT>:d<dim>[:c][:x][:s]` /

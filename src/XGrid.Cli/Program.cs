@@ -121,7 +121,11 @@ internal static class Program
         bool rawShapes = false;
         bool jitTiming = false;
         int jitThreshold = 8;
-        int jitSlice = 256;
+
+        // 64 (§238): a 256-member non-JIT run crosses many hot heads the engine
+        // never gets to offer a block for; the gate titles measure 2-4% better
+        // wall at 64 with identical 1B SHAs (the library default matches).
+        int jitSlice = 64;
         bool bench = false;
         string? benchName = null;
         string gpuBackend = "sw";

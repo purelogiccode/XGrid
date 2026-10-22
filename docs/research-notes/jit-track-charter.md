@@ -1,5 +1,18 @@
 # Fast-mode execution engine (JIT track) - charter (2026-10-18, operator-approved)
 
+> **STATUS 2026-10-22 LATE (thirty-eighth session, 238) - the non-JIT run slice
+> went 256 -> 64 (first sweep of an untuned constant): -3.7% triangle / -2.2%
+> menu, exact.** `JitSpecSlice` bounds how long a non-JIT run gets before the
+> engine re-probes the head, and 256 (from the pre-raw engine, §194) let a run
+> cross many hot heads the engine never got to offer a block for. Sweep at 100M:
+> 256/64/16/4 -> wall 2.048/1.813/1.840/1.912 s, `nonJitMs` 814/481/411/368,
+> blocks 1122/1203/1399/1751 - `nonJitMs` keeps falling but formation eats it, so
+> **64 is the wall minimum**. At 1B: triangle `gl+replace` 6.312 -> 6.081 s
+> (-3.7%, 3/3), menu 20.199 -> 19.762 s (-2.2%, 3/3), `nonJitInstructions`
+> 5.48M -> 2.62M, `nonJitMs` 2190 -> 1650, every fast anchor and corpus row
+> byte-identical. Library and CLI defaults both 64. **With §237 the session is
+> -8.9% / -3.4%.** Next: the `TryMemo`-handoff probe in `RunSpecBlock`.
+
 > **STATUS 2026-10-22 LATE (thirty-seventh session, 237) - the image-window
 > slice LANDED (-6.4% triangle `gl+replace`, exact) and it reprices the boot
 > lever out.** Instruction fetches from immutable image windows (flash/BIOS, its

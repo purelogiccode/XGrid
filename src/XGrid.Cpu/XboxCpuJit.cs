@@ -128,9 +128,15 @@ public sealed unsafe partial class XboxCpu
     /// before the fast-mode engine gets another chance at the head. Without
     /// a cap, a single spec run can swallow a whole ~20K-instruction region
     /// and every buildable head inside it (the menu's rendering regions at
-    /// 1B: 93% of the unserved mass sat in such runs).
+    /// 1B: 93% of the unserved mass sat in such runs). Default 64: the
+    /// 2026-10-22 §238 sweep on the gate titles found 256 (the old default)
+    /// left 2.15M non-JIT instructions on the table — each 256-member run
+    /// crosses many hot heads the engine never gets to offer a block for.
+    /// 64/16/4 at 100M gave `nonJitMs` 481/411/368 against 814 at 256, and at
+    /// 1B 64 is the wall optimum (16/32/128 are within noise but build more
+    /// blocks); see decisions §238.
     /// </summary>
-    public int JitSpecSlice { get; set; } = 256;
+    public int JitSpecSlice { get; set; } = 64;
 
     /// <summary>Gets the first-member mnemonics of permanently rejected heads (diagnostic).</summary>
     public long[] JitRejectedMnemonics { get; } = new long[512];
