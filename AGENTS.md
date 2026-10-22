@@ -749,7 +749,9 @@ interrupt poll unified, and a lost store translate slot fixed - decisions
   outer bookkeeping; the `--jit-threshold` sweep (1/4/8/16/64 ->
   9.27/7.86/7.32/6.99/6.79 s) is already at its optimum. **C5 trace formation
   measured against `nonJitMs` (without growing `outerMs - runnerMs`) is the
-  only structural lever left in C** - decisions 232f/232g.
+  only structural lever left in C** - decisions 232f/232g. The menu shows the
+  same shape: 20.8 s = `RunJitBlock` 17.50 s (runner 15.89) + `RunNonJit`
+  3.23 s over 818k non-JIT calls (2.7x the triangle's count).
 - **C6 slice 1 landed: one interrupt-poll contract.** `Step` and
   `RunSpecBlock` called the device model's `Acknowledge()` per instruction;
   new `XboxCpu.PollInterrupt()` (partial `XboxCpuInterrupts.cs`) loads the

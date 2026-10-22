@@ -14731,10 +14731,15 @@ the probe.** The change was reverted per the "no polish pass" rule; the
 negative is recorded so it is not re-attempted. (Third iteration of the same
 lesson: 199d block fusion, 199k bookkeeping, now 232a.)
 
-**232b The triangle's 1B wall, decomposed (measured, 1B, H1).** `wall=6.9 s`
+**232b The wall, decomposed (measured, 1B, H1).** The triangle: `wall=6.9 s`
 is `RunJitBlock` 4.53 s + `RunNonJit` 2.25 s + device `Advance` 7 ms
 (`Host timing`); inside `RunJitBlock` the native runner is 3.42 s and 1.1 s is
-head lookup / formation / chain bookkeeping. Inside `RunNonJit`:
+head lookup / formation / chain bookkeeping. The menu (`gl+replace`, one of
+the A/B legs): `wall=20.8 s`, `executeMs=20,769` (so essentially all of it is
+inside `Cpu.Execute`), `advanceMs=16`, `RunJitBlock` 17.50 s (runner 15.89 s
++ 1.6 s bookkeeping) and `RunNonJit` 3.23 s over **818k non-JIT calls** - the
+same one-instruction round trip at 2.7x the triangle's call count (232g), and
+`served=860,984,379` of 1B steps. Inside the triangle's `RunNonJit`:
 
 - `RunSpecBlock`: 523,062 calls, 5.31M members, 1.47 s = **277 ns/member**.
 - `Step`: 488,970 calls, 0.78 s = **1.6 us/instruction**.

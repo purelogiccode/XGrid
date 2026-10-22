@@ -173,8 +173,11 @@ outer bookkeeping - and the `--jit-threshold` sweep (1/4/8/16/64 ->
 The raw runner's own steady state is **~6.3 ns/served member** (menu ~18.6 ns)
 and is *not* the probe (232a).
 
-**Menu `gl+replace`**: ~20.8-21.0 s in the latest window; CPU engine ~17-18 s
-of it (85%), GL submission ~0.7 s. **Menu `sw`**: ~30.7 s (raster ~11.5 s).
+**Menu `gl+replace`**: 20.8 s in the latest A/B window = `RunJitBlock` 17.50 s
+(runner 15.89 s + 1.6 s bookkeeping) + `RunNonJit` 3.23 s over **818k non-JIT
+calls** (the same one-instruction round trip, 2.7x the triangle's count) +
+`advanceMs=16`; `executeMs=20,769` so essentially the whole wall is
+`Cpu.Execute`. **Menu `sw`**: ~30.7 s (raster ~11.5 s).
 **xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
 (real-time band; no xemu oracle), so the gap is still ~5.7x / ~15x. **The
 remaining levers, in measured order:** (1) the boot ROM / non-RAM decode path
