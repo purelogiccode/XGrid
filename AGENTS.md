@@ -721,7 +721,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1853 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1857 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
@@ -764,7 +764,7 @@ decisions §236). Track B/E, correctness; every gate anchor byte-identical.**
   slice-2 PASS (`A1740DE0` / `7A860ED7`, `diff=27849`); fast 1B exact on all four
   legs (tri sw `B45254CA`/`7DAB63EB`, tri gl `4F1FCBC0`/`7DAB63EB`, menu sw
   `34973510`/`F5D61C94`, menu gl `B06BA6E5`/`F5D61C94`); ktest smoke PASS 7/7 at
-  792,800,535 steps, log byte-identical. Suite **1845 -> 1853**.
+  792,800,535 steps, log byte-identical. Suite **1845 -> 1857**.
 - **New diagnostics:** the `--gpu-time` combiner row carries `ts<n>=` (each
   referenced slot's `TEXFMT:dim[:c][:x][:s]`), which is what made "slot 3 is a
   cube-flagged `0x3A`" visible; and the row's `guestWordDraws/Misses` now mean

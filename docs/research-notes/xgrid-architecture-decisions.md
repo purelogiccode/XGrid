@@ -15284,7 +15284,7 @@ byte-identical, and the 1B gates below.
   `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94` (253,998,498 px), menu gl
   `B06BA6E5`/`F5D61C94`.
 - ktest smoke PASS 7/7, `792,800,535` steps, suite log byte-identical.
-- Suite 1845 -> **1853** (Nv2a +2 net, GpuGl +4 net: the live cube decode pair,
+- Suite 1845 -> **1857** (Nv2a +2 net, GpuGl +8 net: the live cube decode rows,
   the two generator tests and the descriptor/format-gate replacement).
 
 ### 6. Still open (the honest remainder)

@@ -39,13 +39,14 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
     /// A 2x2 A8R8G8B8 cube (six faces, 128-byte face stride) with distinct
     /// texel words, plus the seam set carrying exactly those words.
     /// </summary>
-    private static PgraphGuestTexelSet BuildCubeWords(IGpuMemory memory, out PgraphTextureSlot texture)
+    private static PgraphGuestTexelSet BuildCubeWords(IGpuMemory memory, out PgraphTextureSlot texture,
+        uint color = 0x06u)
     {
         const int faceSize = 2;
         const uint stride = 128u;
         texture = new PgraphTextureSlot(
             offset: CubeOffset,
-            format: 0x00000600u | 0x4u | (2u << 20) | (2u << 24),
+            format: (color << 8) | 0x4u | (2u << 20) | (2u << 24),
             address: 0u,
             control0: 1u << 30,
             control1: 0u,
@@ -65,6 +66,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         var addresses = new uint[24];
         var words = new uint[24];
         int at = 0;
+        uint bytes = Nv2AMmio.TextureFormatBytesPerTexel(color);
         for (uint face = 0; face < 6; face++)
         {
             for (uint y = 0; y < faceSize; y++)
@@ -72,7 +74,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
                 for (uint x = 0; x < faceSize; x++)
                 {
                     uint swizzled = x | (y << 1);
-                    uint address = CubeOffset + (stride * face) + (swizzled * 4u);
+                    uint address = CubeOffset + (stride * face) + (swizzled * bytes);
                     uint word = 0x80000000u | (0x20u * face << 16) | (0x30u * y << 8) | (0x40u * x);
                     memory.WritePhysical(address, word);
                     addresses[at] = address;
@@ -343,8 +345,14 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
     /// word-pool path produced once a face outgrew its window (compatibility
     /// gap 12, `xgu bump_cubemap_reflect`).
     /// </summary>
-    [Fact]
-    public void CubeStage_SamplesTheDecodedFaces_NotAWordWindow()
+    /// <param name="color">Texture color-format id: every format the cube path backs.</param>
+    [Theory]
+    [InlineData(0x05u)]
+    [InlineData(0x06u)]
+    [InlineData(0x3Au)]
+    [InlineData(0x3Bu)]
+    [InlineData(0x3Cu)]
+    public void CubeStage_SamplesTheDecodedFaces_NotAWordWindow(uint color)
     {
         var memory = new ArrayMemory();
         bool created = GlBackendFactory.TryCreate(
@@ -358,7 +366,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         try
         {
             var combiner = new PshCombiner();
-            _ = BuildCubeWords(memory, out PgraphTextureSlot cube);
+            _ = BuildCubeWords(memory, out PgraphTextureSlot cube, color);
             backend.Clear(ClearInfo());
 
             // An empty carried set is the shape the real guest produces: the
@@ -379,14 +387,16 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
 
             // The triangle covers half the 4x4 surface, and the constant +Z
             // direction samples one face texel in every covered fragment. The
-            // covered pixel must be that texel's colour decoded by the software
-            // sampler's own decoder (face 4, texel 1,1 of the 2x2 face) - not
-            // the clear colour, and not black, which is what the word-window
-            // path produced once the face outgrew the pool.
+            // covered pixels must be that texel's colour decoded by the software
+            // sampler's own decoder (face 4, texel 1,1 of the 2x2 face) - the
+            // per-format check of the "one decoder, two executors" rule, in the
+            // byte order the framebuffer readback uses (B,G,R,A).
+            uint bytes = Nv2AMmio.TextureFormatBytesPerTexel(color);
             uint texelIndex = Nv2AMmio.SwizzleAddressNT(
                 1, 1, cube.SwizzleMaskX, cube.SwizzleMaskY, cube.MortonMasks);
-            uint word = memory.ReadPhysical(CubeOffset + (cube.CubeFaceStride * 4u) + (texelIndex * 4u));
-            Nv2AMmio.DecodeTextureTexel(0x06u, word, out float er, out float eg, out float eb, out float ea);
+            uint word = memory.ReadPhysical(CubeOffset + (cube.CubeFaceStride * 4u) + (texelIndex * bytes));
+            Assert.True(Nv2AMmio.DecodeSwizzledTexelWord(
+                color, bytes, word, out float er, out float eg, out float eb, out float ea));
             byte expectedB = (byte)((eb * 255f) + 0.5f);
             byte expectedG = (byte)((eg * 255f) + 0.5f);
             byte expectedR = (byte)((er * 255f) + 0.5f);

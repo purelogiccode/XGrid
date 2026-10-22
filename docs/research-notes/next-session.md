@@ -31,7 +31,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the §236 commit ("nv2a/gpugl: ... cube array texture ...")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1853 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1857 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -90,7 +90,7 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 (policy diff, never byte-exact; both reproduce with `diff=2602` / `diff=27849`,
 `violations=0`, `maxDelta=1`, `BackendUnsupported=0`).
 
-- **1853 tests green**, build/format clean. The ktest XGrid leg is
+- **1857 tests green**, build/format clean. The ktest XGrid leg is
   **792,800,535** steps, suite log 40,797 B, SHA `CA5D3867…` (re-run this
   session, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
