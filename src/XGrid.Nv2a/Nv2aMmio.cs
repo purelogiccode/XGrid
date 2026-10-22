@@ -897,6 +897,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         {
             field = value;
             _observeMethods = value is { ObserveMethods: true };
+            // A backend honors the computed cube/dot texture modes by
+            // resolving their texels from the guest words the software sampler
+            // reads; capture them for exactly as long as such a backend is
+            // attached (a software-only run pays nothing). Without this the
+            // seam's set is empty and every computed draw is declined.
+            _guestTexelCapture = value is not null;
         }
     }
 

@@ -1,19 +1,21 @@
-# Next session instructions (updated 2026-10-22 after the twenty-sixth session)
+# Next session instructions (updated 2026-10-22 after the twenty-eighth session)
 
 **Read in this order:** `docs/development-direction.md` (course correction +
 measured position), `AGENTS.md` (session notes + current state),
-`docs/research-notes/xgrid-architecture-decisions.md` §225 (CPU correctness
-campaign) + §224 (per-title renderer, one GPU-memory adapter, `KeyedOption`) +
-§223 (renderer policy seam, snapshot requests on the emulation thread, frontend
-smoke harness) + §222 (CHD title id) + §221 (the GPU renderer as a frontend
-setting) + §220 (GL sampler decode, replace-mode composition, frame stepping) +
-§219 (GL TEXFILTER parity, clear write masks, per-title overrides V2) + §218
-(APU `NV_PAPU_XGSCNT`) + §217 (per-title overrides + EEPROM state) + §216
-(PTIMER 0.8.137) + §215 (fixed-function lighting) + §213 (the fixed-function
-vertex stage, `--ffp`) + §212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209
-(cubemap) + §208 (display model) + §207 (corpus), `docs/compatibility.md` (matrix
-+ harness + the gaps the corpus found), `docs/research-notes/usage-histogram.md`
-(measured NV097 / TEXFILTER / sampler address-mode usage),
+`docs/research-notes/xgrid-architecture-decisions.md` §227 (the computed-mode
+shaders never compiled; the live compile gate; the seam capture was unarmed) +
+§226 (B3 slice 1) + §225 (CPU correctness campaign) + §224 (per-title renderer,
+one GPU-memory adapter, `KeyedOption`) + §223 (renderer policy seam, snapshot
+requests on the emulation thread, frontend smoke harness) + §222 (CHD title id) +
+§221 (the GPU renderer as a frontend setting) + §220 (GL sampler decode,
+replace-mode composition, frame stepping) + §219 (GL TEXFILTER parity, clear
+write masks, per-title overrides V2) + §218 (APU `NV_PAPU_XGSCNT`) + §217
+(per-title overrides + EEPROM state) + §216 (PTIMER 0.8.137) + §215
+(fixed-function lighting) + §213 (the fixed-function vertex stage, `--ffp`) +
+§212/§210 (TEXFILTER) + §211 (gap 10 diagnosed) + §209 (cubemap) + §208 (display
+model) + §207 (corpus), `docs/compatibility.md` (matrix + harness + the gaps the
+corpus found), `docs/research-notes/usage-histogram.md` (measured NV097 /
+TEXFILTER / sampler address-mode usage),
 `docs/research-notes/nv097-coverage.md` (method-presence gap; the fixed-function
 lighting rows moved to `handled` with §215),
 `docs/research-notes/gpu-reference-map.md`,
@@ -28,7 +30,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the "Merge pull request #10" commit
 git status --short          # must be clean
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1812 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1830 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -80,9 +82,9 @@ SHA, both frames and every counter are unchanged. `51B56687 -> 34973510` (fast),
 `19FEA0EA -> EE8F69FB` (`--tex-filter registers`), `87BF40DA -> CC2A94DF`
 (`--ffp`), `01BE5D64 -> 6AB39AB0` (accurate). The triangle does not read it.
 
-- **1821 tests green** (session 27 added 9: 6 Nv2a seam + 3 generator
-  contracts), build/format clean, ktest XGrid leg at **792,800,535**
-  steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
+- **1830 tests green** (session 28 added 9: a 99-program live GL compile gate +
+  the corrected/added replace-mode cases), build/format clean, ktest XGrid leg at
+  **792,800,535** steps (suite log 40,797 B, SHA `CA5D3867…`, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
   and all three are settings in the Avalonia frontend (§217, §221, §223).

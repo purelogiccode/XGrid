@@ -49,13 +49,13 @@ internal static class GlProbe
         try
         {
             program = gl.CreateProgram();
-            vertexShader = Compile(gl, ShaderType.VertexShader, VertexSource, "vertex", ref why);
+            vertexShader = Compile(gl, ShaderType.VertexShader, VertexSource, "vertex", out why);
             if (vertexShader == 0)
             {
                 return false;
             }
 
-            fragmentShader = Compile(gl, ShaderType.FragmentShader, FragmentSource, "fragment", ref why);
+            fragmentShader = Compile(gl, ShaderType.FragmentShader, FragmentSource, "fragment", out why);
             if (fragmentShader == 0)
             {
                 return false;
@@ -210,15 +210,74 @@ internal static class GlProbe
         }
     }
 
-    private static uint Compile(GL gl, ShaderType type, string source, string label, ref string why)
+    /// <summary>
+    /// Compiles and links one vertex/fragment pair on the current context and
+    /// returns null on success or the driver log on failure (never throws).
+    /// Exists so a test can prove a generated shader is accepted by a real
+    /// driver: a string comparison cannot catch a redeclaration, an undeclared
+    /// identifier or a uniform budget overrun.
+    /// </summary>
+    /// <param name="gl">The GL entry points.</param>
+    /// <param name="vertexSource">Vertex shader source.</param>
+    /// <param name="fragmentSource">Fragment shader source.</param>
+    /// <returns>The failure log, or null.</returns>
+    public static string? TryBuildProgram(GL gl, string vertexSource, string fragmentSource)
     {
+        ArgumentNullException.ThrowIfNull(gl);
+        uint vertex = 0;
+        uint fragment = 0;
+        uint program = 0;
+        try
+        {
+            vertex = Compile(gl, ShaderType.VertexShader, vertexSource, "vertex", out string why);
+            if (vertex == 0)
+            {
+                return why;
+            }
+
+            fragment = Compile(gl, ShaderType.FragmentShader, fragmentSource, "fragment", out why);
+            if (fragment == 0)
+            {
+                return why;
+            }
+
+            program = gl.CreateProgram();
+            gl.AttachShader(program, vertex);
+            gl.AttachShader(program, fragment);
+            gl.LinkProgram(program);
+            gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
+            return linked != 0 ? null : "link: " + gl.GetProgramInfoLog(program).Replace('\n', ' ');
+        }
+        finally
+        {
+            if (program != 0)
+            {
+                gl.DeleteProgram(program);
+            }
+
+            if (vertex != 0)
+            {
+                gl.DeleteShader(vertex);
+            }
+
+            if (fragment != 0)
+            {
+                gl.DeleteShader(fragment);
+            }
+        }
+    }
+
+    /// <summary>Compiles one shader, returning its id or 0 with the driver log in <paramref name="why"/>.</summary>
+    private static uint Compile(GL gl, ShaderType type, string source, string label, out string why)
+    {
+        why = string.Empty;
         uint shader = gl.CreateShader(type);
         gl.ShaderSource(shader, source);
         gl.CompileShader(shader);
         gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
         if (compiled == 0)
         {
-            why = $"probe {label} compile: {gl.GetShaderInfoLog(shader).Replace('\n', ' ')}";
+            why = $"{label} compile: {gl.GetShaderInfoLog(shader).Replace('\n', ' ')}";
             gl.DeleteShader(shader);
             return 0;
         }

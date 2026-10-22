@@ -8,6 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The live GL rows drive the real backend and its probe helper
+         (GlProbe.TryBuildProgram) instead of a second copy of the driver
+         calls; nothing here widens the public surface. -->
+    <InternalsVisibleTo Include="XGrid.GpuGl.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\XGrid.Memory\XGrid.Memory.csproj" />
     <ProjectReference Include="..\XGrid.Nv2a\XGrid.Nv2a.csproj" />
   </ItemGroup>

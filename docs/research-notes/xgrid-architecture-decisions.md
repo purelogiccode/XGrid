@@ -14343,3 +14343,84 @@ drifts apart.
   decode ternary emitted 4 syntax errors; `SpecularReflect` referenced `c1..c3`
   which are fragment-body locals) - both fixed before any run, which is why the
   live tests are part of this slice rather than optional.
+
+## 227 Track B: the computed-mode fragment shaders never compiled - the generator redeclared its dot variables, and no test compiled a shader (2026-10-22, twenty-eighth session)
+
+**Track:** B (host GPU path). **The finding first, because it invalidates a
+§226 claim:** every fragment program whose combiner carries a
+non-cube `DOT_PRODUCT`/`DOT_ZW` stage failed to **compile on the driver**. The
+generated body declares the stage's dot as
+`float dotVal = 0.0; bool dotOkA = StageDot(...)` and then guards the texel with
+`if (!dotOk)`, a name that is never declared. A combiner with two such stages
+(the `xgu bump_cubemap_reflect` row's own program: PROJECT2D, DOT_PRODUCT x2,
+DOT_REFLECT_SPECULAR) redeclares `dotVal`/`dotOkA` in the same function scope,
+which the driver also rejects. `GlPgraphBackend.EnsureProgram` throws on a
+compile failure and `TryDraw` counts it as a fatal, so in `--gpu-replace` the
+**whole frame** was painted by software: the row's `fatal="fragment shader
+compile: ... undefined variable dotOk"`. §226 reported this slice's evidence on
+a row that was declining 7 draws; the sample still renders (its presented frame
+is the software anchor) but nothing of it came from the GPU.
+
+**Why no gate saw it.** `PshGlslGeneratorTests` compares **strings** against
+`Goldens/*.glsl`, and the dot/cube assertions checked exactly the lines that
+contained the defect (`if (!dotOk) ...` was asserted as *expected* text). Neither
+gate title uses a dot mode, so the 1B menu/triangle goldens are byte-identical
+with the bug present. A generated shader is only proven by a driver, which is
+now a gate.
+
+**Landed.**
+
+1. **Per-stage dot variables.** `AppendStageDot` names the value and its success
+   flag from the caller's target (`dotVal{slot}`/`dotVal{slot}Ok`,
+   `dotPrev{slot}`/`dotS2_{slot}`/`dotS1_{slot}`, and the cube triple
+   `dotA{slot}`/`dotB{slot}`/`dotC{slot}`), and every guard reads the flag that
+   the same stage declared. `AppendDotTripleInto` replaces `AppendDotPair` and
+   emits all three cube-direction dots in one scope with distinct names, so two
+   cube-direction modes in one combiner cannot collide either. The
+   `DOT_RFLCT_DIFF` path now reads `(slot-2, slot-1, slot)` like
+   `DOT_RFLCT_SPEC` (it used `(slot-1, slot, slot+1)`, an out-of-range read for
+   a stage-3 combiner).
+2. **The gate that would have caught it.**
+   `ComputedModeShaderLiveTests.EveryComputedStageCombination_CompilesAndLinks`
+   builds the generator's source for every dot/reflection/str mode in every
+   legal stage, the adjacent two-dot pairs, the cube-direction forms and the
+   cubemap row's own program, at block capacities 1, 8 and 32, and compiles and
+   links each one on the real driver (`GlProbe.TryBuildProgram`, the compile
+   helper the probe already used, now shared). 99 programs, all accepted on
+   NVIDIA 4.6. The readback/guest-word fixtures were corrected with it: a draw
+   whose slot-0 mode is 1 (not `PROJECT2D`) reads no guest word at all, so it is
+   *served* - the old fixture expected a decline there, which §226's own tests
+   encoded; the decline path is now its own case
+   (`CubeStage_WithoutCarriedWords_IsDeclinedNotSampled`, `guestWordMisses=1`,
+   `composedFrames=1`).
+3. **Evidence that these tests must compile, not compare.** The first draft of
+   this session's fix emitted `dotVal1`/`dotVal2` for the two `DOT_PRODUCT` stages
+   and still read `dotOk` in their guards - a purely textual rewrite passed
+   every string assertion and the driver rejected it with the same three errors.
+4. **The seam's capture was never armed.** `Nv2AMmio.EnableGuestTexelCapture`
+   existed but nothing called it, so `PgraphDrawInfo.GuestTexels` was always
+   null and every computed cube/dot draw was declined for want of words (`guestWordDraws=0`).
+   `Nv2AMmio.Backend`'s setter now arms the capture for exactly as long as a
+   backend is attached; a software-only run keeps it off (the pre-setter branch
+   is unchanged there).
+
+**Measured.** The `xgu bump_cubemap_reflect` 3B `-Gpu gl -GpuReplace` row
+(HDD+DVD, fast mode, `--steps 3000000000`):
+before this session the row reported `unsupported=1 fatal=1` (`fragment shader
+compile: ... undefined variable dotOk`) and **failed** on this run (`wall=11.22 s`,
+last frame `18C7CC83…`, `pixels=0`) - every frame was composed from software.
+After the fix the programs compile (`programs=9`, `fatal=0`, `unsupported=0`,
+`composedFrames=0`) and the presented frame is the GL image (`5174B1EB…`, 41
+flips, 10.7-12.2 s). **The GL frame is a two-colour image, and that is correct
+for what this row runs:** its executed combiner is `stages=1 control=00000001`
+with `texmodes=0000` (slot 0 `PROJECT2D`, mode 1/`CUBEMAP` on the other stages in
+other draws), and its fenced dot program (`control=0x11108`, `stageProgram=0x10C60`
+= PROJECT2D + DOT_PRODUCT + DOT_REFLECT_SPECULAR) never runs with the combiner
+active. So the corpus row that §226 named as the B3 acceptance target **does not
+exercise the dot modes at all** - gap 12 is covered by the synthetic seam tests
+only. The software row is unchanged (`DA0750EE…`, `DDB59317…`, `D5D38C64…`),
+which is the invariant these fixes must keep.
+
+**Not changed:** no guest-visible state, no snapshot version, and the two GLSL
+goldens (`legacy.glsl`/`menu-1s.glsl`) contain no dot mode and are byte-identical,
+so the 1B menu/triangle GL goldens are re-run as the standing currency.

@@ -427,6 +427,20 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
     public long BackendUnsupported { get; private set; }
 
     /// <summary>
+    /// Compiles and links one shader pair on this backend's context, returning
+    /// the driver log on failure. Test seam for the generated computed-mode
+    /// shaders: a string golden cannot prove a program is accepted by a real
+    /// driver (a redeclaration compiled fine as text and failed here).
+    /// </summary>
+    /// <param name="vertexSource">Vertex shader source.</param>
+    /// <param name="fragmentSource">Fragment shader source.</param>
+    /// <returns>The failure log, or null on success.</returns>
+    internal string? BuildProgramForTest(string vertexSource, string fragmentSource)
+    {
+        return GlProbe.TryBuildProgram(_gl, vertexSource, fragmentSource);
+    }
+
+    /// <summary>
     /// Gets or sets whether a flip reads the FBO back to CPU memory. The
     /// readback is a gate/screenshot facility (CLI <c>--frame</c>, the
     /// frontend's display copy), not a per-frame cost: it forces a full GPU
@@ -1443,7 +1457,8 @@ public sealed class GlPgraphBackend : IPgraphBackend, IDisposable
             {
                 case PshCombiner.TexModeBumpEnvMap:
                 case PshCombiner.TexModeBumpEnvMapLum:
-                case PshCombiner.TexModeDotProduct:                case PshCombiner.TexModeDotZw:
+                case PshCombiner.TexModeDotProduct:
+                case PshCombiner.TexModeDotZw:
                 case PshCombiner.TexModeDotSt:
                 case PshCombiner.TexModeDotRflctDiff:
                 case PshCombiner.TexModeDotRflctSpec:

@@ -106,16 +106,17 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
 
     /// <summary>
     /// The draw the backend cannot honor. <paramref name="shape"/>: 0 = a
-    /// test/depth shape the backend rejects (structural), 1 = a cube stage
-    /// that needs guest words the seam did not carry, 2 = the same stage WITH
-    /// its words (a draw the backend serves - the control that proves the set
-    /// is what makes the difference).
+    /// test/depth shape the backend rejects (structural), 1 = a 2D stage that
+    /// reads no guest word (served), 2 = the cube-flagged stage WITH its
+    /// words (served, the control that proves the set is what makes the
+    /// difference), 3 = the same cube-flagged PROJECT2D stage without words
+    /// (declined).
     /// </summary>
     private static PgraphDrawInfo DrawInfo(PshCombiner combiner, int shape, in PgraphTextureSlot cube,
         PgraphGuestTexelSet words)
     {
         combiner.Control = 2u;
-        combiner.StageProgram = shape == 0 ? 0x01u : 0x09u;
+        combiner.StageProgram = shape is 0 or 2 or 3 ? 0x01u : 0x09u;
         combiner.Final0 = 0x00000000u;
         combiner.Final1 = 0x00000001u;
         var vertex = new PgraphVertex(
@@ -152,7 +153,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
             zFormatFloat: shape == 0,
             colorSurfaceAddress: Surface,
             colorPitch: Pitch,
-            guestTexels: shape == 1 ? new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>()) : words);
+            guestTexels: shape is 1 or 3 ? new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>()) : words);
     }
 
     private static PgraphClearInfo ClearInfo()
@@ -273,12 +274,14 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
             PgraphGuestTexelSet words = BuildCubeWords(memory, out PgraphTextureSlot cube);
             backend.Clear(ClearInfo());
 
-            // Without the words: declined (the software path composes the frame).
-            // The draw is not counted as a mode gap (the mode IS implemented);
-            // the guest-word lane records that it had no words to offer.
-            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 1, cube, words)));
-            Assert.Contains("guestWordMisses=1", backend.DebugSummary, StringComparison.Ordinal);
-            Assert.DoesNotContain("guestWordDraws=1", backend.DebugSummary, StringComparison.Ordinal);
+            // Shape 1 (kind-1 modulate, mode 0x09 = slot-0 mode 1, not
+            // PROJECT2D) reads no guest word at all: it is served with or
+            // without carried words, and is not counted as a mode gap. The
+            // cube-stage decline path is covered by
+            // CubeStage_WithoutCarriedWords_IsDeclinedNotSampled.
+            Assert.True(backend.TryDraw(DrawInfo(combiner, shape: 1, cube, words)), backend.DebugSummary);
+            Assert.Contains("guestWordMisses=0", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("guestWordDraws=0", backend.DebugSummary, StringComparison.Ordinal);
             Assert.Contains("unsupported=0", backend.DebugSummary, StringComparison.Ordinal);
         }
         finally
@@ -304,7 +307,7 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
             var combiner = new PshCombiner();
             PgraphGuestTexelSet words = BuildCubeWords(memory2, out PgraphTextureSlot cube);
             served.Clear(ClearInfo());
-            Assert.True(served.TryDraw(DrawInfo(combiner, shape: 2, cube, words)));
+            Assert.True(served.TryDraw(DrawInfo(combiner, shape: 2, cube, words)), served.DebugSummary);
             output.WriteLine(served.DebugSummary);
             Assert.Contains("guestWordDraws=1", served.DebugSummary, StringComparison.Ordinal);
             Assert.Contains("guestWordMisses=0", served.DebugSummary, StringComparison.Ordinal);
@@ -321,6 +324,50 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         finally
         {
             if (served is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The decline half of the guest-word lane: a cube-flagged PROJECT2D
+    /// stage whose draw carries no words must go to software (never sample a
+    /// guessed word), record a guest-word miss, and not be counted as a mode
+    /// gap - the mode is implemented, the draw's words were absent.
+    /// </summary>
+    [Fact]
+    public void CubeStage_WithoutCarriedWords_IsDeclinedNotSampled()
+    {
+        var memory = new ArrayMemory();
+        bool created = GlBackendFactory.TryCreate(
+            memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
+        if (!created || backend is null)
+        {
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            return;
+        }
+
+        try
+        {
+            PgraphGuestTexelSet words = BuildCubeWords(memory, out PgraphTextureSlot cube);
+            var combiner = new PshCombiner();
+            backend.Clear(ClearInfo());
+            // The slot program is PROJECT2D on the cube stage, so with no
+            // carried words the backend has nothing to resolve the cube face
+            // with; the structural declines (zeta, float depth, depth test)
+            // are off for this shape, so the guest-word lane is the only
+            // reason left.
+            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 3, cube, new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>()))));
+            _ = words;
+            Assert.Contains("guestWordMisses=1", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("guestWordDraws=0", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("unsupported=0", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("composedFrames=1", backend.DebugSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (backend is IDisposable disposable)
             {
                 disposable.Dispose();
             }

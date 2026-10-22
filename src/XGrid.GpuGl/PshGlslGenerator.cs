@@ -671,46 +671,47 @@ public static class PshGlslGenerator
                 case PshCombiner.TexModeDotProduct:
                 case PshCombiner.TexModeDotZw:
                     // Nv2AMmio: the stage's dot is computed for the chain but
-                    // the texel stays zero.
-                    AppendStageDot(sb, state, slot, "dotVal");
+                    // the texel stays zero. The dot value/flag are named per
+                    // slot: stage 1 and stage 2 both compute their own dot in
+                    // this same function scope.
+                    AppendStageDot(sb, state, slot, $"dotVal{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = vec4(0.0); }}\n");
+                        $"  if (!dotVal{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = vec4(0.0); }}\n");
                     break;
                 case PshCombiner.TexModeDotSt:
                     // u = stage (slot - 1)'s dot, v = this stage's dot.
-                    AppendStageDot(sb, state, slot - 1, "dotPrev");
-                    AppendStageDot(sb, state, slot, "dotVal");
+                    AppendStageDot(sb, state, slot - 1, $"dotPrev{slot}");
+                    AppendStageDot(sb, state, slot, $"dotVal{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOkA || !dotOkB) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotPrev, dotVal)); }}\n");
+                        $"  if (!dotPrev{slot}Ok || !dotVal{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotPrev{slot}, dotVal{slot})); }}\n");
                     break;
                 case PshCombiner.TexModeDotStr3D:
                     // Software samples stageDots[1]/[2] (the mode is stage-3
                     // only in the reference table).
-                    AppendStageDot(sb, state, 2, "dotA");
-                    AppendStageDot(sb, state, 1, "dotB");
+                    AppendStageDot(sb, state, 2, $"dotS2_{slot}");
+                    AppendStageDot(sb, state, 1, $"dotS1_{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOkA || !dotOkB) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotB, dotA)); }}\n");
+                        $"  if (!dotS2_{slot}Ok || !dotS1_{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleSlot({slot}, vec2(dotS1_{slot}, dotS2_{slot})); }}\n");
                     break;
                 case PshCombiner.TexModeDotStrCube:
-                    AppendDotPair(sb, state, slot);
+                    AppendDotTripleInto(sb, state, slot - 2, slot - 1, slot, $"dotA{slot}", $"dotB{slot}", $"dotC{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA, dotB, dotC)); }}\n");
+                        $"  if (!dotA{slot}Ok || !dotB{slot}Ok || !dotC{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA{slot}, dotB{slot}, dotC{slot})); }}\n");
                     break;
                 case PshCombiner.TexModeDotRflctDiff:
-                    // n = (dot(slot-1), dot(slot), dot(slot+1)); the third is
+                    // n = (dot(slot-2), dot(slot-1), dot(slot)); the third is
                     // xemu's dot%d_n, which the software sampler also forms by
                     // dotting that stage's coords against its own input texel.
-                    AppendDotPair(sb, state, slot);
-                    AppendStageDot(sb, state, slot + 1, "dotC");
+                    AppendDotTripleInto(sb, state, slot - 2, slot - 1, slot, $"dotA{slot}", $"dotB{slot}", $"dotC{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA, dotB, dotC)); }}\n");
+                        $"  if (!dotA{slot}Ok || !dotB{slot}Ok || !dotC{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ {t} = SampleCubeOrRemap({slot}, vec3(dotA{slot}, dotB{slot}, dotC{slot})); }}\n");
                     break;
                 case PshCombiner.TexModeDotRflctSpec:
                     // n = (dot(slot-2), dot(slot-1), dot(slot)), eye vector from
                     // the specular slots' coords, rv = 2*n*(n.e)/|n|^2 - e.
-                    AppendDotPair(sb, state, slot);
+                    AppendDotTripleInto(sb, state, slot - 2, slot - 1, slot, $"dotA{slot}", $"dotB{slot}", $"dotC{slot}");
                     sb.Append(CultureInfo.InvariantCulture,
-                        $"  if (!dotOk) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ vec3 rv = SpecularReflect(vec3(dotA, dotB, dotC), vec3(c1.w, c2.w, c3.w)); {t} = SampleCubeOrRemap({slot}, rv); }}\n");
+                        $"  if (!dotA{slot}Ok || !dotB{slot}Ok || !dotC{slot}Ok) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }} else {{ vec3 rv = SpecularReflect(vec3(dotA{slot}, dotB{slot}, dotC{slot}), vec3(c1.w, c2.w, c3.w)); {t} = SampleCubeOrRemap({slot}, rv); }}\n");
                     break;
                 default:
                     // Remaining dot family (BRDF-adjacent) / bump: still
@@ -771,16 +772,21 @@ public static class PshGlslGenerator
 
     /// <summary>
     /// Emits one stage's dot (Nv2AMmio.TryComputeDot) into variables named
-    /// <c>{target}</c> (the value) and <c>dotOk{A|B}</c> (whether the
-    /// dependent input resolved). The input texel is the stage select from
-    /// SHADERCTL (stage 1 always reads stage 0), so it must already have been
-    /// resolved - which it has, because texel resolution runs slot 0..3 in
-    /// order exactly like the software loop.
+    /// <c>{target}</c> (the value) and <c>{target}Ok</c> (whether the
+    /// dependent input resolved). The caller supplies a per-stage target: two
+    /// stages in one combiner each compute their own dot in the same function
+    /// scope, and a shared name is a redeclaration the driver rejects (the
+    /// previous version emitted <c>dotVal</c>/<c>dotOkA</c> twice and read an
+    /// undeclared <c>dotOk</c>, so every DOT_PRODUCT program failed to
+    /// compile). The input texel is the stage select from SHADERCTL (stage 1
+    /// always reads stage 0), so it must already have been resolved - which it
+    /// has, because texel resolution runs slot 0..3 in order exactly like the
+    /// software loop.
     /// </summary>
     private static void AppendStageDot(StringBuilder sb, PshCombiner state, int dotStage, string target)
     {
+        string ok = DotOkName(target);
         int input = state.DecodeInputTex(dotStage);
-        string ok = target is "dotPrev" ? "dotOkB" : (target is "dotVal" ? "dotOkA" : "dotOk");
         if (input is < 0 or >= PshCombiner.TextureSlots)
         {
             // Software degrades the whole mode to none: no dot value exists.
@@ -793,28 +799,43 @@ public static class PshGlslGenerator
             $"  float {target} = 0.0; bool {ok} = StageDot({dotStage}, c{dotStage}.xyz, t{input}, {input}, {target});\n");
     }
 
-    /// <summary>Emits the stage-triple dot pair a cube-direction mode needs: dot(stage-2) and dot(stage-1) into dotA/dotB.</summary>
-    private static void AppendDotPair(StringBuilder sb, PshCombiner state, int slot)
+    /// <summary>The success flag that pairs with one dot value variable.</summary>
+    private static string DotOkName(string target)
     {
-        sb.Append(CultureInfo.InvariantCulture,
-            $"  float dotA = 0.0; float dotB = 0.0; float dotC = 0.0; bool dotOk = true;\n");
-        AppendStageDotInto(sb, state, slot - 2, "dotA");
-        AppendStageDotInto(sb, state, slot - 1, "dotB");
-        AppendStageDotInto(sb, state, slot, "dotC");
+        return target + "Ok";
     }
 
-    /// <summary>Accumulates one stage dot into an existing variable and ANDs its success into <c>dotOk</c>.</summary>
+    /// <summary>
+    /// Emits the given stages' dots into <paramref name="d1"/>..<paramref name="d3"/>
+    /// (declaring them here, at their own scope, so several cube-direction
+    /// modes in one combiner cannot redeclare the same names). Each stage's
+    /// success flag is <c>{target}Ok</c>. A select that resolves no stage is
+    /// "not ok", which is what the software degrade means.
+    /// </summary>
+    private static void AppendDotTripleInto(StringBuilder sb, PshCombiner state,
+        int s1, int s2, int s3, string d1, string d2, string d3)
+    {
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  float {d1} = 0.0; float {d2} = 0.0; float {d3} = 0.0;" +
+            $" bool {DotOkName(d1)} = true; bool {DotOkName(d2)} = true; bool {DotOkName(d3)} = true;\n");
+        AppendStageDotInto(sb, state, s1, d1);
+        AppendStageDotInto(sb, state, s2, d2);
+        AppendStageDotInto(sb, state, s3, d3);
+    }
+
+    /// <summary>Accumulates one stage dot into an existing variable and ANDs its success into that variable's ok flag.</summary>
     private static void AppendStageDotInto(StringBuilder sb, PshCombiner state, int dotStage, string target)
     {
         int input = state.DecodeInputTex(dotStage);
+        string ok = DotOkName(target);
         if (input is < 0 or >= PshCombiner.TextureSlots)
         {
-            sb.Append("  dotOk = false;\n");
+            sb.Append(CultureInfo.InvariantCulture, $"  {ok} = false;\n");
             return;
         }
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"  {{ float d = 0.0; if (!StageDot({dotStage}, c{dotStage}.xyz, t{input}, {input}, d)) dotOk = false; else {target} = d; }}\n");
+            $"  {{ float d = 0.0; if (!StageDot({dotStage}, c{dotStage}.xyz, t{input}, {input}, d)) {ok} = false; else {target} = d; }}\n");
     }
 
     private static void AppendStage(StringBuilder sb, PshCombiner state, int stage, bool muxMsb)

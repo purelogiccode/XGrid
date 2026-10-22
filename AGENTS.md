@@ -711,6 +711,52 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
 
+**Session 2026-10-22 (twenty-eighth; the computed-mode GL shaders never
+compiled - a dot-variable redeclaration, an unarmed texel capture, and the live
+compile gate that now covers both - decisions §227). No gate anchor moved; the
+changes are host-side plus one `Nv2AMmio` setter.**
+
+- **The row's own program failed to compile (§227).** `PshGlslGenerator` emitted
+  `float dotVal = 0.0; bool dotOkA = StageDot(...)` per dot stage and then
+  guarded the texel with an undeclared `dotOk`; a combiner with two
+  `DOT_PRODUCT` stages (`xgu bump_cubemap_reflect`'s own program) also
+  redeclared `dotVal`/`dotOkA`. `EnsureProgram` throws on a compile failure, so
+  the backend counted a fatal and `--gpu-replace` painted the **whole frame** in
+  software. §226 reported that row as a passing slice on a frame that was never
+  GL's. Dot variables/flags are now named per stage
+  (`dotVal{slot}Ok`, `dotA{slot}Ok`, …), `AppendDotTripleInto` replaced
+  `AppendDotPair` (no collision between two cube-direction modes), and
+  `DOT_RFLCT_DIFF` reads `(slot-2, slot-1, slot)` like `DOT_RFLCT_SPEC`.
+- **The gate that catches it.** `ComputedModeShaderLiveTests` builds every
+  dot/reflection/str mode in every legal stage, the adjacent two-dot pairs and
+  the cubemap row's program at block capacities 1/8/32 and **compiles+links each
+  on the driver** through the shared `GlProbe.TryBuildProgram` (the probe's own
+  helper; `InternalsVisibleTo XGrid.GpuGl.Tests`). 99 programs, all accepted on
+  NVIDIA 4.6. A string golden cannot see a redeclaration - the session's first
+  draft passed every string assertion and still failed the driver.
+- **The seam's texel capture was never armed.** `EnableGuestTexelCapture` had no
+  caller, so `GuestTexels` was always null and every computed draw would have
+  been declined for want of words. `Nv2AMmio.Backend`'s setter now arms it only
+  while a backend is attached (a software-only run is unchanged).
+- **What the row actually exercises (measured, and negative):** the 3B
+  `-Gpu gl -GpuReplace` leg now reports `fatal=0 unsupported=0 programs=9
+  composedFrames=0` and presents the GL frame (`5174B1EB…`, wall 10.7-12.2 s),
+  but its *executed* combiner is `stages=1 control=00000001 texmodes=0000`
+  (`PROJECT2D` plus mode `0x03` only) - the `DOT_PRODUCT`/`DOT_REFLECT_SPECULAR`
+  modes never run, so the GL frame is a two-colour image by construction (not a
+  regression: before the fix the same frame came from a software fallback that
+  produced the richer `DA0750EE…` image, and the software leg is unchanged).
+  Gap 12 has **no corpus coverage**; the synthetic seam tests are its only path.
+- **Gates:** 1B accurate menu golden PASS byte-identical (sw `4EF1FBF6…`, gl
+  `B6116DAE…`, diff 2602 px / violations 0 / maxDelta 1, `BackendUnsupported=0`,
+  counters 33632/686/686); triangle slice-2 PASS (sw `A1740DE0…`, gl
+  `7A860ED7…`); ktest smoke PASS 7/7 at 792,800,535 steps; suite 1821 -> **1830**;
+  format clean. No snapshot or GLSL-golden change.
+- **Also fixed:** the live replace-mode fixture expected a decline for a draw
+  whose slot-0 mode is 1 (not `PROJECT2D`); that shape reads no guest word and
+  is served - the decline path is now its own case (now a real cube-stage draw
+  with an empty carried set, `guestWordMisses=1`, `composedFrames=1`).
+
 **Session 2026-10-22 (twenty-seventh; B3 slice 1 - the computed cube/dot texel
 state reaches a GPU backend and the shader carries the math - decisions §226).
 No gate anchor moved; every change is host-side plus seam fields.**

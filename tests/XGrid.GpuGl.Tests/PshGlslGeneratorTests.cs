@@ -305,15 +305,21 @@ public sealed class PshGlslGeneratorTests
         Assert.Contains("float Sign3(float x) { float s = x * 255.0; return s >= 128.0 ? (s - 256.0) / 127.0 : s / 127.0; }", source, StringComparison.Ordinal);
         Assert.Contains("if (m == 4) return vec3(hi / 65535.0, lo / 65535.0, 1.0);", source, StringComparison.Ordinal);
 
-        // DOT_PRODUCT keeps the zero texel but still computes the chain.
-        Assert.Contains("if (!dotOk) { t1 = vec4(0.0, 0.0, 0.0, 1.0); } else { t1 = vec4(0.0); }", source,
+        // DOT_PRODUCT keeps the zero texel but still computes the chain, and
+        // every dot value/flag is named per stage: stage 1 and stage 2 both
+        // compute a dot in the same function scope, and a shared name is a
+        // redeclaration the driver rejects (this program failed to compile).
+        Assert.Contains("if (!dotVal1Ok) { t1 = vec4(0.0, 0.0, 0.0, 1.0); } else { t1 = vec4(0.0); }", source,
             StringComparison.Ordinal);
+        Assert.Contains("if (!dotVal2Ok) { t2 = vec4(0.0, 0.0, 0.0, 1.0); } else { t2 = vec4(0.0); }", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("bool dotOk", source, StringComparison.Ordinal);
 
         // The specular reflection: rv = 2*n*dot(n,e)/dot(n,n) - e with the
         // eye from the specular slots' w components.
         Assert.Contains("vec3 SpecularReflect(vec3 n, vec3 e)", source, StringComparison.Ordinal);
         Assert.Contains("return (scale * n) - e;", source, StringComparison.Ordinal);
-        Assert.Contains("SpecularReflect(vec3(dotA, dotB, dotC), vec3(c1.w, c2.w, c3.w))", source,
+        Assert.Contains("SpecularReflect(vec3(dotA3, dotB3, dotC3), vec3(c1.w, c2.w, c3.w))", source,
             StringComparison.Ordinal);
 
         // Cube sampling: the face select order, and the per-face/texel word the
