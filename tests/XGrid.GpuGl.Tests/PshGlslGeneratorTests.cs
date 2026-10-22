@@ -29,6 +29,29 @@ public sealed class PshGlslGeneratorTests
         return combiner;
     }
 
+    [Fact]
+    public void RegenerateGoldens_WhenRequested()
+    {
+        // One-shot tool: set XGRID_REGENERATE_GLSL_GOLDENS=1 after an
+        // intentional shader change, run this test, then review the diff.
+        if (!string.Equals(Environment.GetEnvironmentVariable("XGRID_REGENERATE_GLSL_GOLDENS"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        string source = Path.Combine("..", "..", "..", "Goldens");
+        string dir = Path.GetFullPath(source, AppContext.BaseDirectory);
+        if (!Directory.Exists(dir))
+        {
+            dir = Path.Combine(AppContext.BaseDirectory, "Goldens");
+        }
+
+        var legacy = new PshCombiner();
+        File.WriteAllText(Path.Combine(dir, "legacy.glsl"),
+            PshGlslGenerator.BuildFragmentSource(legacy: true, legacy));
+        File.WriteAllText(Path.Combine(dir, "menu-1s.glsl"),
+            PshGlslGenerator.BuildFragmentSource(legacy: false, MenuLikeCombiner()));
+    }
     private static string LoadGolden(string name)
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Goldens", name);
@@ -267,9 +290,14 @@ public sealed class PshGlslGeneratorTests
         state.StageProgram = 0x01u | (0x11u << 5) | (0x11u << 10) | (0x0Cu << 15);
         string source = PshGlslGenerator.BuildFragmentSource(legacy: false, state);
 
-        // The spliced-constant dot: dot(pT.xyz, dotmap(input texel)).
-        Assert.Contains("bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d)", source, StringComparison.Ordinal);
+        // The spliced-constant dot: dot(pT.xyz, dotmap(input texel)). A HILO
+        // map (4-7) consumes the input's raw 16-bit pair, which is the guest
+        // word the seam carried (B3 slice 2), not a decoded colour.
+        Assert.Contains("bool StageDot(int stage, vec3 coord, vec4 inTexel, int inSlot, out float d)", source, StringComparison.Ordinal);
         Assert.Contains("d = dot(coord, DotMap(map, inTexel));", source, StringComparison.Ordinal);
+        Assert.Contains("uint pair = PoolWord(inSlot, 0);", source, StringComparison.Ordinal);
+        Assert.Contains("uniform uint uGuestWord[96];", source, StringComparison.Ordinal);
+        Assert.Contains("uniform int uTexPoolBase[4];", source, StringComparison.Ordinal);
 
         // Dot maps 0-7, decoded from the texel with the reference sign
         // functions (not a threshold on the float).
@@ -288,10 +316,12 @@ public sealed class PshGlslGeneratorTests
         Assert.Contains("SpecularReflect(vec3(dotA, dotB, dotC), vec3(c1.w, c2.w, c3.w))", source,
             StringComparison.Ordinal);
 
-        // Cube sampling: the face select order and the swizzled address.
+        // Cube sampling: the face select order, and the per-face/texel word the
+        // backend carried (entry = face*w*h + y*w + x), never a stub zero.
         Assert.Contains("int CubeFaceSelect(vec3 d, out vec2 st)", source, StringComparison.Ordinal);
-        Assert.Contains("uTexCubeStride[slot] * face", source, StringComparison.Ordinal);
-        Assert.Contains("(SpreadZ(uint(tx)) & uTexSwzMaskX[slot])", source, StringComparison.Ordinal);
+        Assert.Contains("uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);", source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("uint TexelWord(int addr)", source, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -169,6 +169,18 @@ public static class PshGlslGenerator
         sb.Append("uniform ivec4 uTexFieldW[4];\n");
         sb.Append("uniform vec4 uTexFieldC[4];\n");
         sb.Append("uniform int uDotMap[4];\n");
+        // B3 slice 2: the guest texel words the computed cube/dot modes sample.
+        // A cube face or a 16-bit HILO pair is a swizzled guest-RAM word no host
+        // texture can address, so the seam carries the words and each stage
+        // indexes them through its pool base (entries of three vec4: the word,
+        // then zero padding, so the compiler never folds an array of uint).
+        sb.Append("uniform uint uGuestWord[96];\n");
+        sb.Append("uniform int uTexPoolBase[4];\n");
+        // BUMPENVMAP: per-stage matrix (x,y,z,w = m0,m1,m2,m3) and the
+        // luminance-variant scale/offset pair, all per-draw uniforms.
+        sb.Append("uniform vec4 uBumpMatrix[3];\n");
+        sb.Append("uniform float uBumpLumeScale[3];\n");
+        sb.Append("uniform float uBumpLumeOffset[3];\n");
         sb.Append("uniform vec3 uEyePos;\n");
         sb.Append("uniform uint uShaderClip;\n");
         sb.Append(CultureInfo.InvariantCulture,
@@ -359,15 +371,17 @@ public static class PshGlslGenerator
         sb.Append("  if (d.z > 0.0) { st = vec2(((d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 4; }\n");
         sb.Append("  st = vec2(((-d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 5;\n");
         sb.Append("}\n");
-        // Cube face and dot-mode texels come from the raw guest words, which
-        // this backend cannot read: a uniform texel buffer of guest RAM would
-        // have to be re-uploaded per draw command. The one-word address
-        // arithmetic and the exact decode stay transcribed here so the path
-        // is ready for the buffer, and the draw-time gate keeps the branch
-        // unreachable (CheckModesUnsupported still declines every mode below
-        // with BackendUnsupported, and a declined draw is painted in software).
-        sb.Append("uint TexelWord(int addr) {\n");
-        sb.Append("  return 0u;\n");
+        // Cube face and dot-mode texels come from the raw guest words the seam
+        // carried for this draw (B3 slice 2). The software sampler's guest
+        // address (swizzled face / linear row / Morton spread, all from the
+        // seam) is the key into the program's word pool; the pool's first
+        // three ints are compared against each word inside TexelWord, so a
+        // fragment whose word the draw did not carry reads 0 (which only a
+        // declined draw could reach - the backend gates on the same set).
+        sb.Append("uint PoolWord(int slot, int entry) {\n");
+        sb.Append("  int base = uTexPoolBase[slot] + entry;\n");
+        sb.Append("  if (base < 0 || base >= 48) { return 0u; }\n");
+        sb.Append("  return uGuestWord[base * 4];\n");
         sb.Append("}\n");
         // Nv2AMmio.DecodedChannel: the exact unit-table value of an n-bit
         // field (1, 4, 5, 6 or 8 bits).
@@ -397,20 +411,17 @@ public static class PshGlslGenerator
             sb.Append(CultureInfo.InvariantCulture, $"  if (w.{comp} > 0) {{ d.{dst} = DecodeField(int((word >> uint(off.{comp})) & ChannelMask(w.{comp})), w.{comp}); }}\n");
         }
 
-        sb.Append("  return d;\n");
+        sb.Append("  return vec4(float(word >> 24u) / 255.0, float((word >> 16u) & 0xFFu) / 255.0, float((word >> 8u) & 0xFFu) / 255.0, 1.0);\n");
         sb.Append("}\n");
-        // One cube face texel by its swizzled address (TryReadCubeTexel): the
-        // coordinate clamps inside the face, the swizzle masks come from the
-        // seam (TEXFMT BASE_SIZE extent, never TEXIMAGERECT).
+        // One cube face texel (Nv2AMmio.TryReadCubeTexel): the coordinate
+        // clamps inside the face and the swizzle masks come from the seam
+        // (TEXFMT BASE_SIZE extent, never TEXIMAGERECT). Pool entry
+        // face*w*h + y*w + x holds the word the software sampler decoded at
+        // the same address; an entry the draw did not carry reads 0.
         sb.Append("vec4 CubeTexel(int slot, int face, int tx, int ty) {\n");
         sb.Append("  tx = clamp(tx, 0, uTexCubeW[slot] - 1);\n");
         sb.Append("  ty = clamp(ty, 0, uTexCubeH[slot] - 1);\n");
-        sb.Append("  uint sx = uTexMorton[slot] == 1 ? (SpreadZ(uint(tx)) & uTexSwzMaskX[slot])\n");
-        sb.Append("                                   : (SwzBits(uint(tx), uTexSwzMaskX[slot]));\n");
-        sb.Append("  uint sy = uTexMorton[slot] == 1 ? (SpreadO(uint(ty)) & uTexSwzMaskY[slot])\n");
-        sb.Append("                                   : (SwzBits(uint(ty), uTexSwzMaskY[slot]));\n");
-        sb.Append("  int addr = uTexBase[slot] + (uTexCubeStride[slot] * face) + int((sx | sy) * uint(uTexBytes[slot]));\n");
-        sb.Append("  uint word = TexelWord(addr);\n");
+        sb.Append("  uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);\n");
         sb.Append("  if (uTexBytes[slot] == 2) word &= 0xFFFFu;\n");
         sb.Append("  return DecodeGuestTexel(slot, word);\n");
         sb.Append("}\n");
@@ -460,10 +471,21 @@ public static class PshGlslGenerator
         sb.Append("}\n");
         // Nv2AMmio.TryComputeDot: dot(pT.xyz, dotmap(input texel)), where the
         // input stage is the dependent-texture select (stage 1 always reads 0).
-        sb.Append("bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d) {\n");
+        // A HILO map (4-7) consumes the input's raw 16-bit pair, which is the
+        // pool entry the seam carried for that input stage; the decoded colour
+        // form (maps 1-3 and 8-15) reads the sampled texel as before.
+        sb.Append("bool StageDot(int stage, vec3 coord, vec4 inTexel, int inSlot, out float d) {\n");
         sb.Append("  d = 0.0;\n");
         sb.Append("  int map = uDotMap[stage];\n");
         sb.Append("  if (map < 0 || map > 15) return false;\n");
+        sb.Append("  if (map >= 4 && map <= 7) {\n");
+        sb.Append("    uint pair = PoolWord(inSlot, 0);\n");
+        sb.Append("    uint w = pair;\n");
+
+        sb.Append("    vec4 t = vec4(float(w & 0xFFu), float((w >> 8u) & 0xFFu), float((w >> 16u) & 0xFFu), float((w >> 24u) & 0xFFu)) * (1.0 / 255.0);\n");
+        sb.Append("    d = dot(coord, DotMap(map, t));\n");
+        sb.Append("    return true;\n");
+        sb.Append("  }\n");
         sb.Append("  d = dot(coord, DotMap(map, inTexel));\n");
         sb.Append("  return true;\n");
         sb.Append("}\n");
@@ -638,6 +660,14 @@ public static class PshGlslGenerator
                     // Software stub: SetTexelZero.
                     sb.Append(CultureInfo.InvariantCulture, $"  {t} = vec4(0.0);\n");
                     break;
+                case PshCombiner.TexModeBumpEnvMap:
+                case PshCombiner.TexModeBumpEnvMapLum:
+                    // Nv2AMmio.ResolveBump: the dependent input's signed texels
+                    // (Sign3 of b and g) perturb the stage coordinate through
+                    // the per-stage bump matrix, and the luminance variant
+                    // scales the sampled texel by the input's red channel.
+                    AppendBump(sb, state, slot, mode, c, t);
+                    break;
                 case PshCombiner.TexModeDotProduct:
                 case PshCombiner.TexModeDotZw:
                     // Nv2AMmio: the stage's dot is computed for the chain but
@@ -692,6 +722,37 @@ public static class PshGlslGenerator
         }
     }
 
+    /// <summary>
+    /// Nv2AMmio.ResolveBump: stage coordinate (u + ox, v + oy) where
+    /// (ox, oy) = the stage's bump matrix applied to Sign3 of the dependent
+    /// input's blue/green channels, sampled like any 2D stage; the luminance
+    /// variant multiplies the texel by scale*input.r + offset. The matrix and
+    /// the scale/offset pair are per-stage uniforms.
+    /// </summary>
+    private static void AppendBump(StringBuilder sb, PshCombiner state, int slot, int mode, string c, string t)
+    {
+        int input = state.DecodeInputTex(slot);
+        if (input is < 0 or >= PshCombiner.TextureSlots)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"  {t} = vec4(0.0, 0.0, 0.0, 1.0);\n");
+            return;
+        }
+
+        int matrix = slot - 1;
+        sb.Append(CultureInfo.InvariantCulture,
+            $"  {{ vec4 bumpIn = t{input}; float bx = Sign3(bumpIn.b); float by = Sign3(bumpIn.g);" +
+            $" vec4 bm = uBumpMatrix[{matrix}];" +
+            $" {t} = SampleSlot({slot}, {c}.xy + vec2((bm.x * bx) + (bm.z * by), (bm.y * bx) + (bm.w * by))); if (uTexOk[{slot}] != 1) {{ {t} = vec4(0.0, 0.0, 0.0, 1.0); }}\n");
+        if (mode == PshCombiner.TexModeBumpEnvMapLum)
+        {
+            sb.Append(CultureInfo.InvariantCulture,
+                $"    {t} *= ((uBumpLumeScale[{matrix}] * bumpIn.r) + uBumpLumeOffset[{matrix}]); }}\n");
+        }
+        else
+        {
+            sb.Append("  }\n");
+        }
+    }
     private static void AppendDependent(StringBuilder sb, PshCombiner state, int slot, int mode, string t)
     {
         int input = state.DecodeInputTex(slot);
@@ -729,7 +790,7 @@ public static class PshGlslGenerator
         }
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"  float {target} = 0.0; bool {ok} = StageDot({dotStage}, c{dotStage}.xyz, t{input}, {target});\n");
+            $"  float {target} = 0.0; bool {ok} = StageDot({dotStage}, c{dotStage}.xyz, t{input}, {input}, {target});\n");
     }
 
     /// <summary>Emits the stage-triple dot pair a cube-direction mode needs: dot(stage-2) and dot(stage-1) into dotA/dotB.</summary>
@@ -753,7 +814,7 @@ public static class PshGlslGenerator
         }
 
         sb.Append(CultureInfo.InvariantCulture,
-            $"  {{ float d = 0.0; if (!StageDot({dotStage}, c{dotStage}.xyz, t{input}, d)) dotOk = false; else {target} = d; }}\n");
+            $"  {{ float d = 0.0; if (!StageDot({dotStage}, c{dotStage}.xyz, t{input}, {input}, d)) dotOk = false; else {target} = d; }}\n");
     }
 
     private static void AppendStage(StringBuilder sb, PshCombiner state, int stage, bool muxMsb)

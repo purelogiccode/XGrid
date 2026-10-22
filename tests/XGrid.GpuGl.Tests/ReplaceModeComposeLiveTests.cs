@@ -5,12 +5,24 @@ using Xunit.Abstractions;
 
 namespace XGrid.GpuGl.Tests;
 
+/// <summary>Temporary debug log for live-run reasoning (file, because test output is buffered per test).</summary>
+internal static class DebugLog
+{
+    public static void Write(string text)
+    {
+        System.IO.File.AppendAllText("./xgrid-live-debug.txt", text + Environment.NewLine);
+    }
+}
+
 /// <summary>
 /// Live replace-mode composition tests (compatibility gap 8): a draw the GL
 /// backend declines must not lose the frame's GL pixels. The backend composes
 /// its FBO into the guest color surface once per frame, the software
 /// rasterizer continues on that image, and the flip uploads it back instead of
-/// serving the partial FBO. Returns early (pass) when no GL context exists.
+/// serving the partial FBO. Two decline shapes are covered: a structurally
+/// unsupported one (zeta-byte count) and a draw whose computed cube/dot modes
+/// need guest texel words the seam did not carry (B3 slice 2). Returns early
+/// (pass) when no GL context exists.
 /// </summary>
 public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
 {
@@ -20,6 +32,58 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
     private const uint Width = 4u;
     private const uint Height = 4u;
 
+    /// <summary>Cube texture base for the guest-word row (past the surface, inside the fake RAM).</summary>
+    private const uint CubeOffset = 0x7000u;
+
+    /// <summary>
+    /// A 2x2 A8R8G8B8 cube (six faces, 128-byte face stride) with distinct
+    /// texel words, plus the seam set carrying exactly those words.
+    /// </summary>
+    private static PgraphGuestTexelSet BuildCubeWords(IGpuMemory memory, out PgraphTextureSlot texture)
+    {
+        const int faceSize = 2;
+        const uint stride = 128u;
+        texture = new PgraphTextureSlot(
+            offset: CubeOffset,
+            format: 0x00000600u | 0x4u | (2u << 20) | (2u << 24),
+            address: 0u,
+            control0: 1u << 30,
+            control1: 0u,
+            imageRect: 0u,
+            filterBilinear: false,
+            filterConvolution: 0,
+            samplerWrapU: 0,
+            samplerWrapV: 0,
+            borderColor: 0u,
+            swizzleMaskX: 0x1u,
+            swizzleMaskY: 0x2u,
+            mortonMasks: true,
+            cubeFaceStride: stride,
+            cubeWidth: faceSize,
+            cubeHeight: faceSize);
+
+        var addresses = new uint[24];
+        var words = new uint[24];
+        int at = 0;
+        for (uint face = 0; face < 6; face++)
+        {
+            for (uint y = 0; y < faceSize; y++)
+            {
+                for (uint x = 0; x < faceSize; x++)
+                {
+                    uint swizzled = x | (y << 1);
+                    uint address = CubeOffset + (stride * face) + (swizzled * 4u);
+                    uint word = 0x80000000u | (0x20u * face << 16) | (0x30u * y << 8) | (0x40u * x);
+                    memory.WritePhysical(address, word);
+                    addresses[at] = address;
+                    words[at] = word;
+                    at++;
+                }
+            }
+        }
+
+        return new PgraphGuestTexelSet(addresses, words);
+    }
 
     private sealed class ArrayMemory : IGpuMemory
     {
@@ -40,12 +104,18 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         }
     }
 
-    private static PgraphDrawInfo DrawInfo(PshCombiner combiner, bool unsupported)
+    /// <summary>
+    /// The draw the backend cannot honor. <paramref name="shape"/>: 0 = a
+    /// test/depth shape the backend rejects (structural), 1 = a cube stage
+    /// that needs guest words the seam did not carry, 2 = the same stage WITH
+    /// its words (a draw the backend serves - the control that proves the set
+    /// is what makes the difference).
+    /// </summary>
+    private static PgraphDrawInfo DrawInfo(PshCombiner combiner, int shape, in PgraphTextureSlot cube,
+        PgraphGuestTexelSet words)
     {
-        // A combiner whose slot 1 is BUMPENVMAP is a slice-1-unsupported mode:
-        // TryDraw declines it and the Nv2a would paint it in software.
         combiner.Control = 2u;
-        combiner.StageProgram = unsupported ? (0x01u | (0x06u << 5)) : 0x01u;
+        combiner.StageProgram = shape == 0 ? 0x01u : 0x09u;
         combiner.Final0 = 0x00000000u;
         combiner.Final1 = 0x00000001u;
         var vertex = new PgraphVertex(
@@ -61,26 +131,28 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         var fragment = new PgraphFragmentState(
             alphaTestEnable: false, alphaFunc: 0u, alphaRef: 0u,
             blendEnable: false, blendSrcFactor: 0u, blendDstFactor: 0u, blendColor: 0u, blendEquation: 0u,
-            depthTestEnable: false, depthFunc: 0u, depthMask: false,
+            depthTestEnable: shape == 0, depthFunc: shape == 0 ? 3u : 0u, depthMask: false,
             colorMask: 0x01010101u,
             stencilTestEnable: false, stencilWriteMask: 0u, stencilFunc: 0u, stencilRef: 0u,
             stencilReadMask: 0u, stencilOpFail: 0u, stencilOpZfail: 0u, stencilOpZpass: 0u,
             zclipActive: false, zclipMin: 0f, zclipMax: 1f, zclipCull: false);
-        var texture = new PgraphTextureSlot(
+        var empty = new PgraphTextureSlot(
             0u, 0u, 0u, 0u, 0u, 0u, filterBilinear: false, filterConvolution: 0);
+        PgraphTextureSlot stage0 = shape == 0 ? empty : cube;
         return new PgraphDrawInfo(
             vertex, vertex, vertex,
             clipX: 0u, clipY: 0u, clipW: Width, clipH: Height,
-            colorBytes: 4u, zetaBytes: 0u,
+            colorBytes: 4u, zetaBytes: shape == 0 ? 4u : 0u,
             combinerActive: true,
             fragment,
-            texture, texture, texture, texture,
+            stage0, empty, empty, empty,
             combiner,
             fogEnable: false, fogR: 0f, fogG: 0f, fogB: 0f, fogA: 0f,
             shaderClipMode: 0u,
-            zFormatFloat: false,
+            zFormatFloat: shape == 0,
             colorSurfaceAddress: Surface,
-            colorPitch: Pitch);
+            colorPitch: Pitch,
+            guestTexels: shape == 1 ? new PgraphGuestTexelSet(Array.Empty<uint>(), Array.Empty<uint>()) : words);
     }
 
     private static PgraphClearInfo ClearInfo()
@@ -127,21 +199,25 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
         try
         {
             var combiner = new PshCombiner();
+            PgraphGuestTexelSet words = BuildCubeWords(memory, out PgraphTextureSlot cube);
 
             // 1. A clear fills the FBO with the frame's background colour.
             backend.Clear(ClearInfo());
 
-            // 2. A draw the backend cannot honor hands the frame back: the
-            //    FBO (the clear) must land in guest RAM before the software
-            //    fill runs.
-            Assert.False(backend.TryDraw(DrawInfo(combiner, unsupported: true)));
+            // 2. A structurally unsupported clear must not leave a stale FBO
+            //    standing in for the frame (the software path fills that
+            //    buffer), and a draw the backend cannot honor then hands the
+            //    frame back: the FBO's valid content must land in guest RAM
+            //    before the software fill runs.
+            backend.Clear(ClearInfo());
+            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 0, cube, words)));
             Assert.Equal(Width * Height, (uint)CountComposedPixels(memory));
             Assert.Contains("composedFrames=1", backend.DebugSummary, StringComparison.Ordinal);
             Assert.Contains($"composedPixels={Width * Height}", backend.DebugSummary, StringComparison.Ordinal);
 
             // 3. Every later draw of the same frame takes the software writer,
             //    even a shape the backend could have rendered.
-            Assert.False(backend.TryDraw(DrawInfo(combiner, unsupported: false)));
+            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 2, cube, words)));
             Assert.Contains("composedDraws=1", backend.DebugSummary, StringComparison.Ordinal);
 
             // 4. The flip re-uploads the composed guest image and serves it.
@@ -158,15 +234,93 @@ public sealed class ReplaceModeComposeLiveTests(ITestOutputHelper output)
             Assert.Contains("flipStaleUploads=1", backend.DebugSummary, StringComparison.Ordinal);
             for (int i = 0; i < bgra.Length; i += 4)
             {
-                Assert.Equal(0x99, bgra[i]);     // B
-                Assert.Equal(0x66, bgra[i + 1]); // G
-                Assert.Equal(0x33, bgra[i + 2]); // R
-                Assert.Equal(0xFF, bgra[i + 3]); // A
+                Assert.Equal(0x99, bgra[i]);      // B
+                Assert.Equal(0x66, bgra[i + 1]);  // G
+                Assert.Equal(0x33, bgra[i + 2]);  // R
+                Assert.Equal(0xFF, bgra[i + 3]);  // A
             }
         }
         finally
         {
             if (backend is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The guest-word lane (B3 slice 2): a cube stage is SERVED when the seam
+    /// carried its words and DECLINED - never sampled from a guess - when it
+    /// did not. Both draws go through the same backend and the same textures;
+    /// only the carried set differs.
+    /// </summary>
+    [Fact]
+    public void CubeStage_ServedWithCarriedWords_DeclinedWithout()
+    {
+        var memory = new ArrayMemory();
+        bool created = GlBackendFactory.TryCreate(
+            memory, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? backend, out string why);
+        if (!created || backend is null)
+        {
+            output.WriteLine("no GL context (" + why + "); live row not exercised.");
+            return;
+        }
+
+        try
+        {
+            var combiner = new PshCombiner();
+            PgraphGuestTexelSet words = BuildCubeWords(memory, out PgraphTextureSlot cube);
+            backend.Clear(ClearInfo());
+
+            // Without the words: declined (the software path composes the frame).
+            // The draw is not counted as a mode gap (the mode IS implemented);
+            // the guest-word lane records that it had no words to offer.
+            Assert.False(backend.TryDraw(DrawInfo(combiner, shape: 1, cube, words)));
+            Assert.Contains("guestWordMisses=1", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.DoesNotContain("guestWordDraws=1", backend.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("unsupported=0", backend.DebugSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (backend is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+
+        // Fresh backend for the served leg (the first one composed its frame).
+        var memory2 = new ArrayMemory();
+        bool created2 = GlBackendFactory.TryCreate(
+            memory2, windowEnabled: false, replaceSoftware: true, out IPgraphBackend? served, out string why2);
+        if (!created2 || served is null)
+        {
+            output.WriteLine("no GL context (" + why2 + "); served leg not exercised.");
+            return;
+        }
+
+        try
+        {
+            var combiner = new PshCombiner();
+            PgraphGuestTexelSet words = BuildCubeWords(memory2, out PgraphTextureSlot cube);
+            served.Clear(ClearInfo());
+            Assert.True(served.TryDraw(DrawInfo(combiner, shape: 2, cube, words)));
+            output.WriteLine(served.DebugSummary);
+            Assert.Contains("guestWordDraws=1", served.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("guestWordMisses=0", served.DebugSummary, StringComparison.Ordinal);
+            Assert.Contains("unsupported=0", served.DebugSummary, StringComparison.Ordinal);
+            Assert.DoesNotContain("composedFrames=1", served.DebugSummary, StringComparison.Ordinal);
+
+            // The frame is the GPU's: the flip serves the FBO, not an upload.
+            served.Flip(new PgraphSurfaceRecord(Width, Height, 4u, 1ul, Surface, Pitch));
+            Assert.True(served.ReadbackPresented(out uint width, out uint height, out _));
+            Assert.Equal(Width, width);
+            Assert.Equal(Height, height);
+            Assert.Contains("presentUploads=0", served.DebugSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (served is IDisposable disposable)
             {
                 disposable.Dispose();
             }

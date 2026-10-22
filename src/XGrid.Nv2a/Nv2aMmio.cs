@@ -433,8 +433,180 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[][] _pshCoords = [new float[4], new float[4], new float[4], new float[4]];
     private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
     private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
+    // Per-slot "last tap" record for the computed cube/dot modes (B3 slice 2):
+    // DependentInputAddress only publishes a guest address while this record
+    // still matches the live sampler plan and holds an in-range, non-border
+    // texel, so it can never point at a different texel than the one decoded.
+    private readonly float[] _samplerLastU = new float[MaxTextureSlots];
+    private readonly float[] _samplerLastV = new float[MaxTextureSlots];
+    private readonly int[] _samplerLastX = new int[MaxTextureSlots];
+    private readonly int[] _samplerLastY = new int[MaxTextureSlots];
+    private readonly SamplerPlan[] _samplerLastPlan = new SamplerPlan[MaxTextureSlots];
+    private readonly bool[] _samplerLastValid = new bool[MaxTextureSlots];
     // Per-draw sampler plans (rebuilt in EnterTextureState for both draw paths).
     private readonly SamplerPlan[] _samplerPlans = new SamplerPlan[MaxTextureSlots];
+
+    // Guest texel words for the computed cube/dot texture modes (B3 slice 2).
+    // The software sampler reads them through GpuMemory while a draw command
+    // runs; this ring keeps a per-draw-command history so a GPU backend can
+    // resolve the same words without a second guest-memory reader. An entry is
+    // only ever handed to a backend for an address that was read under the
+    // current PGRAPH state, and each record carries the state it was read
+    // under, so a stale word can never be used.
+    private readonly uint[] _guestTexelAddresses = new uint[GuestTexelCapacity];
+    private readonly uint[] _guestTexelWords = new uint[GuestTexelCapacity];
+    private int _guestTexelCount;
+    private ulong _guestTexelStateStamp;
+    private ulong _guestTexelCapturedStamp;
+    private bool _guestTexelCapturedValid;
+    private readonly uint[] _guestTexelFrameAddresses = new uint[GuestTexelFrameCapacity];
+    private readonly uint[] _guestTexelFrameWords = new uint[GuestTexelFrameCapacity];
+    private int _guestTexelFrameCount;
+    private int _guestTexelFrameStart;
+    private bool _guestTexelCapture;
+
+    private const int GuestTexelCapacity = 64;
+    private const int GuestTexelFrameCapacity = 64;
+
+    /// <summary>
+    /// Switches the per-draw guest texel capture on: from now on every cube face
+    /// texel and 16-bit HILO word the software sampler reads is recorded under
+    /// the current PGRAPH state, and <see cref="GuestTexelsFor"/> hands a backend
+    /// the draw command's own words. Only a backend that honors the computed
+    /// cube/dot modes enables it (the GPU path; the software-only run pays one
+    /// predicted branch per sample).
+    /// </summary>
+    public void EnableGuestTexelCapture()
+    {
+        _guestTexelCapture = true;
+    }
+
+    /// <summary>
+    /// Gets the guest texel words the software sampler read under the current
+    /// PGRAPH state, most recent last, or null when nothing was read in that
+    /// state. A draw command's own sets land here because the software fill
+    /// runs before the backend's replacement-mode decision for the same draw.
+    /// </summary>
+    public PgraphGuestTexelSet? GuestTexelsFor()
+    {
+        if (_guestTexelFrameCount == 0)
+        {
+            return null;
+        }
+
+        return new PgraphGuestTexelSet(
+            new ArraySegment<uint>(_guestTexelFrameAddresses, _guestTexelFrameStart, _guestTexelFrameCount),
+            new ArraySegment<uint>(_guestTexelFrameWords, _guestTexelFrameStart, _guestTexelFrameCount));
+    }
+
+    /// <summary>Starts a new draw command: the per-command guest texel set starts empty again.</summary>
+    public void BeginGuestTexelCommand()
+    {
+        _guestTexelFrameCount = 0;
+        _guestTexelFrameStart = 0;
+    }
+
+    /// <summary>
+    /// Records one guest texel word the sampler is about to decode. The state
+    /// stamp makes a capture from another state unusable (a texture offset or
+    /// format change invalidates every earlier word).
+    /// </summary>
+    private void CaptureGuestTexel(uint address, uint word)
+    {
+        if (!_guestTexelCapture)
+        {
+            return;
+        }
+
+        if (!_guestTexelCapturedValid || _guestTexelCapturedStamp != _guestTexelStateStamp)
+        {
+            _guestTexelCount = 0;
+            _guestTexelCapturedStamp = _guestTexelStateStamp;
+            _guestTexelCapturedValid = true;
+        }
+
+        // Latest wins for the same address (a texture whose content the guest
+        // overwrote between draws must hand over the newer word).
+        for (int i = 0; i < _guestTexelCount; i++)
+        {
+            if (_guestTexelAddresses[i] == address)
+            {
+                _guestTexelWords[i] = word;
+                AddFrameGuestTexel(address, word);
+                return;
+            }
+        }
+
+        if (_guestTexelCount == GuestTexelCapacity)
+        {
+            // A draw command that reads more distinct words than the ring holds
+            // keeps the most recent ones; the backend declines a draw whose
+            // address fell out (never a wrong sample).
+            int move = _guestTexelCount - (GuestTexelCapacity / 2);
+            Array.Copy(_guestTexelAddresses, move, _guestTexelAddresses, 0, GuestTexelCapacity - move);
+            Array.Copy(_guestTexelWords, move, _guestTexelWords, 0, GuestTexelCapacity - move);
+            _guestTexelCount -= move;
+        }
+
+        _guestTexelAddresses[_guestTexelCount] = address;
+        _guestTexelWords[_guestTexelCount] = word;
+        _guestTexelCount++;
+        AddFrameGuestTexel(address, word);
+    }
+
+    private void AddFrameGuestTexel(uint address, uint word)
+    {
+        for (int i = 0; i < _guestTexelFrameCount; i++)
+        {
+            int index = (_guestTexelFrameStart + i) % GuestTexelFrameCapacity;
+            if (_guestTexelFrameAddresses[index] == address)
+            {
+                _guestTexelFrameWords[index] = word;
+                return;
+            }
+        }
+
+        if (_guestTexelFrameCount == GuestTexelFrameCapacity)
+        {
+            _guestTexelFrameStart = (_guestTexelFrameStart + 1) % GuestTexelFrameCapacity;
+            _guestTexelFrameCount--;
+        }
+
+        int slot = (_guestTexelFrameStart + _guestTexelFrameCount) % GuestTexelFrameCapacity;
+        _guestTexelFrameAddresses[slot] = address;
+        _guestTexelFrameWords[slot] = word;
+        _guestTexelFrameCount++;
+    }
+
+    /// <summary>
+    /// Updates the guest texel state stamp. Every register the swizzled/linear
+    /// address arithmetic of the computed modes reads is folded in, so a word
+    /// captured under another texture state can never be handed to a backend.
+    /// </summary>
+    private void UpdateGuestTexelStateStamp()
+    {
+        ulong stamp = 1469598103934665603ul;
+        for (int i = 0; i < MaxTextureSlots; i++)
+        {
+            stamp = StampWord(stamp, _textureOffset[i]);
+            stamp = StampWord(stamp, _textureFormat[i]);
+            stamp = StampWord(stamp, _textureControl0[i]);
+            stamp = StampWord(stamp, _textureControl1[i]);
+            stamp = StampWord(stamp, _textureImageRect[i]);
+            stamp = StampWord(stamp, _textureFilter[i]);
+        }
+
+        if (stamp != _guestTexelStateStamp)
+        {
+            _guestTexelStateStamp = stamp;
+            _guestTexelCapturedValid = false;
+        }
+
+        static ulong StampWord(ulong hash, uint word)
+        {
+            return (hash ^ word) * 1099511628211ul;
+        }
+    }
 
     /// <summary>Gets the per-configuration fill/pixel counts (`--gpu-time` diagnostic).</summary>
     public Dictionary<string, (long Draws, long Pixels)> CombinerConfigStats { get; } = new(StringComparer.Ordinal);
@@ -1059,12 +1231,29 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return index < MaxVertexShaderConstants && part is >= 0 and < 4 ? _transformConstants[index][part] : 0;
     }
 
+
+
+    /// <summary>
+    /// Gets the per-stage BUMPENVMAP state the software sampler's
+    /// <c>ResolveBump</c> reads (matrix rows + the luminance pair), copied once
+    /// per draw so the GPU-backend seam publishes the same numbers instead of
+    /// re-decoding the registers.
+    /// </summary>
+    public PgraphBumpState BumpState =>
+        new(
+            [
+                _bumpMatrices[0][0], _bumpMatrices[0][1], _bumpMatrices[0][2], _bumpMatrices[0][3],
+                _bumpMatrices[1][0], _bumpMatrices[1][1], _bumpMatrices[1][2], _bumpMatrices[1][3],
+                _bumpMatrices[2][0], _bumpMatrices[2][1], _bumpMatrices[2][2], _bumpMatrices[2][3],
+            ],
+            [.. _bumpScales],
+            [.. _bumpOffsets]);
+
     /// <summary>
     /// Gets the eye-space camera position the specular reflection texture mode
-    /// reads (XF constant <see cref="XfConstantEyePosition"/>, written by the
-    /// NV097_SET_EYE_POSITION range). The one accessor both the software
-    /// sampler and the GPU-backend seam use, so the two can never read
-    /// different cameras.
+    /// reads (XF constant 0x38, written by the NV097_SET_EYE_POSITION range).
+    /// The one accessor both the software sampler and the GPU-backend seam use,
+    /// so the two can never read different cameras.
     /// </summary>
     public (float X, float Y, float Z) EyePosition => ReadEyePosition();
 
@@ -4597,6 +4786,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         backend.BeginDrawBatch();
+        BeginGuestTexelCommand();
         try
         {
             FlushDrawCommand();
@@ -5174,6 +5364,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
         int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
+        RecordSamplerTap(plan, u, v, rawX, rawY, x, y, wrapped: true);
         TrackTextureCoords(x, y);
 
         uint bytesPerTexel = plan.BytesPerTexel;
@@ -5211,6 +5402,38 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return CountSample(address, texel, r, g, b);
     }
 
+    private void RecordSamplerTap(SamplerPlan plan, float u, float v, int rawX, int rawY, int x, int y,
+        bool wrapped)
+    {
+        int slot = plan.Slot;
+        _samplerLastU[slot] = u;
+        _samplerLastV[slot] = v;
+        _samplerLastX[slot] = rawX;
+        _samplerLastY[slot] = rawY;
+        _samplerLastPlan[slot] = plan;
+        _samplerLastValid[slot] = wrapped;
+    }
+
+    private void RecordSamplerTapFloat(SamplerPlan plan, float u, float v)
+    {
+        int slot = plan.Slot;
+        _samplerLastU[slot] = u;
+        _samplerLastV[slot] = v;
+        _samplerLastPlan[slot] = plan;
+        _samplerLastValid[slot] = false;
+    }
+
+    private void RecordSamplerTapRaw(SamplerPlan plan, float u, float v, int rawX, int rawY)
+    {
+        int slot = plan.Slot;
+        _samplerLastU[slot] = u;
+        _samplerLastV[slot] = v;
+        _samplerLastX[slot] = rawX;
+        _samplerLastY[slot] = rawY;
+        _samplerLastPlan[slot] = plan;
+        _samplerLastValid[slot] = false;
+    }
+
     /// <summary>
     /// Rasterizer slice: specialized sampler for the two per-fill shapes the
     /// titles actually run (linear 4-byte and Morton-swizzled 4-byte texels,
@@ -5227,6 +5450,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         int rawY = (int)MathF.Floor(plan.Linear ? v : v * plan.Height);
         int x = WrapFast(rawX, plan.Width, plan.FastWrapU, plan.WrapMaskU, plan.MirrorMaskU);
         int y = WrapFast(rawY, plan.Height, plan.FastWrapV, plan.WrapMaskV, plan.MirrorMaskV);
+        RecordSamplerTap(plan, u, v, rawX, rawY, x, y, wrapped: true);
         uint address;
         if (plan.Linear)
         {
@@ -5269,6 +5493,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         float fy = (plan.Linear ? v : v * plan.Height) - 0.5f;
         int x0 = (int)MathF.Floor(fx);
         int y0 = (int)MathF.Floor(fy);
+        RecordSamplerTapRaw(plan, u, v, x0, y0);
         float wx = fx - x0;
         float wy = fy - y0;
         if (!TryReadPlannedTexel(in plan, x0, y0, out float r00, out float g00, out float b00, out float a00,
@@ -6151,7 +6376,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             ? (SpreadMortonBits((uint)tx) & plan.CubeMaskX) | ((SpreadMortonBits((uint)ty) << 1) & plan.CubeMaskY)
             : InterleaveBits((uint)tx, plan.CubeMaskX) | InterleaveBits((uint)ty, plan.CubeMaskY);
         uint address = _textureOffset[slot] + (plan.CubeFaceStride * (uint)face) + (swizzled * bytes);
-        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+        return TryDecodeSwizzledTexel(memory, address, color, bytes, out r, out g, out b, out a);
     }
 
     /// <summary>
@@ -6227,7 +6452,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             ? (SpreadMortonBits((uint)tx) & plan.CubeMaskX) | ((SpreadMortonBits((uint)ty) << 1) & plan.CubeMaskY)
             : InterleaveBits((uint)tx, plan.CubeMaskX) | InterleaveBits((uint)ty, plan.CubeMaskY);
         uint address = _textureOffset[plan.Slot] + (plan.CubeFaceStride * (uint)face) + (swizzled * bytes);
-        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+        return TryDecodeSwizzledTexel(memory, address, color, bytes, out r, out g, out b, out a);
     }
 
     /// <summary>
@@ -6273,7 +6498,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         int y = WrapCoordinate((int)MathF.Floor(v * height), height, ToWrapMode(DecodeTextureAddressV((int)address)));
         int z = WrapCoordinate((int)MathF.Floor(w * depth), depth, ToWrapMode(DecodeTextureAddressP((int)address)));
         address = _textureOffset[slot] + (SwizzleOffset3D(x, y, z, width, height, depth) * bytes);
-        return TryDecodeSwizzledTexel(memory, address, color, out r, out g, out b, out a);
+        return TryDecodeSwizzledTexel(memory, address, color, bytes, out r, out g, out b, out a);
     }
 
     /// <summary>
@@ -6315,20 +6540,52 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <see cref="DecodeTextureTexel"/> so the cube/volume paths can never
     /// silently disagree with the 2D path about a format's channel order.
     /// </summary>
-    private static bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, out float r, out float g,
+    private bool TryDecodeSwizzledTexel(IGpuMemory memory, uint address, uint color, uint bytes, out float r,
+        out float g, out float b, out float a)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        if (bytes is not (2u or 4u))
+        {
+            return false;
+        }
+
+        // One read, two consumers: the software decode below and (when a
+        // backend honors the computed cube/dot modes) the seam's guest texel
+        // set, so a GPU backend sees exactly the word this path decoded.
+        uint texel = memory.ReadPhysical(address);
+        CaptureGuestTexel(address, texel);
+        return DecodeSwizzledTexelWord(color, bytes, texel, out r, out g, out b, out a);
+    }
+
+    /// <summary>
+    /// Decodes one raw swizzled texel word (cube face, volume slice or the HILO
+    /// input word of the dot modes) with the same format rules as the 2D path.
+    /// Exposed so the GPU backend's guest-word lane and the software sampler
+    /// share one decoder instead of two drifting copies.
+    /// </summary>
+    /// <param name="color">Texture color-format id (TEXFMT bits 8-15).</param>
+    /// <param name="bytes">Texel size in bytes (2 or 4).</param>
+    /// <param name="texel">The raw guest word (a 16-bit format masks the low half).</param>
+    /// <param name="r">Decoded red.</param>
+    /// <param name="g">Decoded green.</param>
+    /// <param name="b">Decoded blue.</param>
+    /// <param name="a">Decoded alpha.</param>
+    /// <returns>False when the format is not backed by the sampler.</returns>
+    public static bool DecodeSwizzledTexelWord(uint color, uint bytes, uint texel, out float r, out float g,
         out float b, out float a)
     {
         r = 1f;
         g = 1f;
         b = 1f;
         a = 1f;
-        uint bytes = TextureFormatBytesPerTexel(color);
         if (bytes is not (2u or 4u))
         {
             return false;
         }
 
-        uint texel = memory.ReadPhysical(address);
         if (bytes == 2u)
         {
             texel &= 0xFFFFu;
@@ -6475,6 +6732,25 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// The same interleave from precomputed masks: <paramref name="morton"/>
+    /// selects the branchless spread for the standard alternating pair (the
+    /// exact result of the generic loop). This is the single implementation of
+    /// the swizzled texel index, shared by the software sampler and a GPU
+    /// backend that resolves the same guest word address.
+    /// </summary>
+    /// <param name="x">Texel x index.</param>
+    /// <param name="y">Texel y index.</param>
+    /// <param name="maskX">Mask for the x bits (from ComputeSwizzleMasks).</param>
+    /// <param name="maskY">Mask for the y bits.</param>
+    /// <param name="morton">Whether the masks are the standard alternating pair.</param>
+    /// <returns>The swizzled texel index (multiply by bytes per texel for the address).</returns>
+    public static uint SwizzleAddressNT(int x, int y, uint maskX, uint maskY, bool morton)
+    {
+        return morton
+            ? (SpreadMortonBits((uint)x) & maskX) | ((SpreadMortonBits((uint)y) << 1) & maskY)
+            : InterleaveBits((uint)x, maskX) | InterleaveBits((uint)y, maskY);
+    }
+    /// <summary>
     /// Volume (3D) swizzle offset: the same interleaved-mask construction as
     /// the 2D swizzle with the z bits woven in after x and y (xemu
     /// <c>generate_swizzle_masks</c> / <c>unswizzle_box</c>).
@@ -6523,7 +6799,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <c>InterleaveBits(value, 0x55555555)</c>; the caller masks to the
     /// plan's actual mask. Branchless, unlike the per-bit loop it replaces.
     /// </summary>
-    private static uint SpreadMortonBits(uint value)
+    internal static uint SpreadMortonBits(uint value)
     {
         value &= 0xFFFFu;
         value = (value | (value << 8)) & 0x00FF00FFu;
@@ -6533,7 +6809,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         return value;
     }
 
-    private static uint InterleaveBits(uint value, uint mask)
+    internal static uint InterleaveBits(uint value, uint mask)
     {
         uint result = 0u;
         uint maskBit = 1u;
@@ -7324,7 +7600,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             _surfacePitch & 0xFFFFu,
             eyeX,
             eyeY,
-            eyeZ);
+            eyeZ,
+            // The computed cube/dot modes read guest words; a backend owns the
+            // draw command's own set (captured under the current PGRAPH state)
+            // or gets null and declines those modes.
+            _guestTexelCapture ? GuestTexelsFor() : null,
+            BumpState);
     }
 
     private PgraphDrawInfo BuildLegacyDrawInfo(
@@ -7361,7 +7642,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             // the value is informational here and never drives a sample.
             eyeX,
             eyeY,
-            eyeZ);
+            eyeZ,
+            guestTexels: null,
+            BumpState);
     }
 
     private static PgraphVertex ToBackendVertex(in PshVertex v)
@@ -7798,6 +8081,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         _currentTextureState = index;
         BuildSamplerPlans();
+        UpdateGuestTexelStateStamp();
     }
 
     private void TrackTextureCoords(float u, float v)
@@ -8053,6 +8337,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private bool SampleInto(int stage, float u, float v, float[] texel)
     {
+        RecordSamplerTapFloat(_samplerPlans[stage], u, v);
         if (TrySampleTexture(stage, u, v, out float r, out float g, out float b, out float a))
         {
             texel[0] = r;
@@ -8269,11 +8554,80 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             UnsupportedDotMaps++;
         }
 
+        // A dot map that consumes the HILO half (4-7) reads the dependent
+        // input texel as a 16-bit pair, not as decoded colour: the guest word
+        // is the one value a GPU backend cannot reconstruct from the float
+        // texel, so it is captured here for the seam (B3 slice 2).
+        if (map is >= 4 and <= 7)
+        {
+            CaptureGuestTexel(DependentInputAddress(stage), HiloWord(previous));
+        }
+
         PshCombiner.ApplyDotMap(map, previous[0], previous[1], previous[2], previous[3], out float mx, out float my,
             out float mz);
         float[] coord = coords[stage];
         dot = (coord[0] * mx) + (coord[1] * my) + (coord[2] * mz);
         return true;
+    }
+
+    /// <summary>
+    /// The HILO 32-bit word <see cref="PshCombiner.ApplyDotMap"/> builds from a
+    /// decoded texel's four channels (high half = alpha/r, low half = g/b).
+    /// The inverse of the decode when every channel came from an 8-bit field,
+    /// which is the only layout the HILO maps are used with.
+    /// </summary>
+    /// <param name="texel">Decoded texel (r, g, b, a).</param>
+    /// <returns>The packed HILO word.</returns>
+    public static uint HiloWord(float[] texel)
+    {
+        uint hi = ((uint)(texel[3] * 255f) << 8) | (uint)(texel[0] * 255f);
+        uint lo = ((uint)(texel[1] * 255f) << 8) | (uint)(texel[2] * 255f);
+        return hi | (lo << 16);
+    }
+
+    /// <summary>
+    /// The guest address the dependent input of <paramref name="stage"/> was
+    /// sampled at on the most recent sample, or 0 when the alignment cannot be
+    /// proved. Mirrors the 2D sampler's address arithmetic exactly (linear
+    /// pitch walk vs swizzled interleave, TexelAddress).
+    /// </summary>
+    /// <param name="stage">Combiner stage whose input texel is wanted.</param>
+    /// <returns>The guest address, or 0.</returns>
+    private uint DependentInputAddress(int stage)
+    {
+        int input = _combiner.DecodeInputTex(stage);
+        if (input is < 0 or >= PshCombiner.TextureSlots)
+        {
+            return 0u;
+        }
+
+        ref readonly SamplerPlan plan = ref _samplerPlans[input];
+        int x = _samplerLastX[input];
+        int y = _samplerLastY[input];
+        bool aligned = plan.Width > 0 && plan.Height > 0 && plan.BytesPerTexel is 2u or 4u &&
+                       SemanticallyEqual(plan, _samplerLastPlan[input]) && _samplerLastValid[input] &&
+                       x < plan.Width && y < plan.Height && x >= 0 && y >= 0;
+        if (!aligned)
+        {
+            return 0u;
+        }
+
+        if (plan.Linear)
+        {
+            return plan.Offset + (uint)((y * plan.Pitch) + (x * (int)plan.BytesPerTexel));
+        }
+
+        uint swizzled = plan.MortonMasks
+            ? (SpreadMortonBits((uint)x) & plan.SwizzleMaskX) | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY)
+            : InterleaveBits((uint)x, plan.SwizzleMaskX) | InterleaveBits((uint)y, plan.SwizzleMaskY);
+        return plan.Offset + (swizzled * plan.BytesPerTexel);
+    }
+
+    private static bool SemanticallyEqual(SamplerPlan a, SamplerPlan b)
+    {
+        return a.Offset == b.Offset && a.Linear == b.Linear && a.Width == b.Width && a.Height == b.Height &&
+               a.BytesPerTexel == b.BytesPerTexel && a.Pitch == b.Pitch && a.SwizzleMaskX == b.SwizzleMaskX &&
+               a.SwizzleMaskY == b.SwizzleMaskY && a.MortonMasks == b.MortonMasks && a.Slot == b.Slot;
     }
 
     /// <summary>

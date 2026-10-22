@@ -352,6 +352,86 @@ public readonly struct PgraphFragmentState(
     public bool ZclipCull { get; } = zclipCull;
 }
 
+/// <summary>
+/// One guest texel word read the computed cube/dot texture modes need
+/// (B3 slice 2): a swizzled cube face texel or a 16-bit HILO word is a guest
+/// RAM read at an address no host texture object can address, so the seam
+/// carries the words themselves - the product's one guest-memory reader
+/// (<see cref="Nv2AMmio"/>, through <c>IGpuMemory</c>) resolves each address
+/// and the backend compares the top of its stack against the address it needs.
+/// The set stays small because consecutive draws read the same cube faces
+/// (the reflection direction changes per fragment, the faces do not).
+/// </summary>
+/// <remarks>Initializes one carried guest texel word.</remarks>
+/// <param name="address">Guest-physical byte address the software sampler reads.</param>
+/// <param name="word">The 32-bit word at that address (a 16-bit format masks on use).</param>
+[StructLayout(LayoutKind.Auto)]
+public readonly struct PgraphGuestTexel(uint address, uint word)
+{
+    /// <summary>Gets the guest-physical byte address the software sampler reads.</summary>
+    public uint Address { get; } = address;
+
+    /// <summary>Gets the 32-bit little-endian word at <see cref="Address"/>.</summary>
+    public uint Word { get; } = word;
+}
+
+/// <summary>
+/// The guest texel words one draw command's computed texture modes read. The
+/// backend resolves the same addresses it would sample (cube face swizzle, HILO
+/// input texel) against the top of this record at draw time; a miss means the
+/// set was sized too small and the draw is declined rather than sampled wrong.
+/// </summary>
+[StructLayout(LayoutKind.Auto)]
+public readonly struct PgraphGuestTexelSet
+{
+    /// <summary>Gets the constant pool size: the most recent entries a draw may reference.</summary>
+    public const int PoolSize = 32;
+
+    /// <summary>Initializes the carried set from a contiguous address/word run.</summary>
+    /// <param name="addresses">The addresses, most recently added last.</param>
+    /// <param name="words">The word at each address, same order.</param>
+    public PgraphGuestTexelSet(ArraySegment<uint> addresses, ArraySegment<uint> words)
+    {
+        Addresses = addresses;
+        Words = words;
+    }
+
+    /// <summary>Gets the number of carried words.</summary>
+    public int Count => Addresses.Count;
+
+    /// <summary>Gets the carried addresses.</summary>
+    public ArraySegment<uint> Addresses { get; }
+
+    /// <summary>Gets the carried words, matching <see cref="Addresses"/>.</summary>
+    public ArraySegment<uint> Words { get; }
+}
+
+/// <summary>
+/// The BUMPENVMAP per-stage state the software sampler's <c>ResolveBump</c>
+/// reads: stages 1-3 each carry a 2x2 matrix (x,y = row 0/1 against the
+/// dependent input's blue channel; z,w = row 0/1 against green) and the
+/// luminance variant's scale/offset pair (<c>texel *= scale * input.r + offset</c>).
+/// A GPU backend gets the same values through the seam instead of re-reading
+/// the PGRAPH registers.
+/// </summary>
+/// <remarks>Initializes the bump state.</remarks>
+/// <param name="matrix">Twelve coefficients: stage 1-3, four each (x, y, z, w).</param>
+/// <param name="luminanceScale">Three luminance scales (stages 1-3).</param>
+/// <param name="luminanceOffset">Three luminance offsets (stages 1-3).</param>
+[StructLayout(LayoutKind.Auto)]
+public readonly struct PgraphBumpState(
+    float[] matrix, float[] luminanceScale, float[] luminanceOffset)
+{
+    /// <summary>Gets the matrix coefficients: stage 1-3, four per stage.</summary>
+    public float[] Matrix { get; } = matrix;
+
+    /// <summary>Gets the luminance scales (stages 1-3).</summary>
+    public float[] LuminanceScale { get; } = luminanceScale;
+
+    /// <summary>Gets the luminance offsets (stages 1-3).</summary>
+    public float[] LuminanceOffset { get; } = luminanceOffset;
+}
+
 /// <summary>One texture sampler slot's resolved registers for one draw.</summary>
 /// <remarks>Initializes a texture-slot snapshot from the live per-stage texture registers.</remarks>
 /// <param name="offset">Guest-physical texture base offset.</param>
@@ -507,6 +587,8 @@ public readonly struct PgraphTextureSlot(
 /// <param name="eyex">Eye-space camera x (NV097_SET_EYE_POSITION), read by the specular reflection texture modes.</param>
 /// <param name="eyey">Eye-space camera y.</param>
 /// <param name="eyez">Eye-space camera z.</param>
+/// <param name="guestTexels">Guest texel words the computed cube/dot texture modes read (null when none apply).</param>
+/// <param name="bump">The BUMPENVMAP per-stage matrices and luminance pairs.</param>
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PgraphDrawInfo(
     in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
@@ -524,7 +606,9 @@ public readonly struct PgraphDrawInfo(
     uint colorPitch,
     float eyex = 0f,
     float eyey = 0f,
-    float eyez = 0f)
+    float eyez = 0f,
+    PgraphGuestTexelSet? guestTexels = null,
+    PgraphBumpState bump = default)
 {
 
     /// <summary>Gets the first triangle vertex.</summary>
@@ -622,6 +706,30 @@ public readonly struct PgraphDrawInfo(
 
     /// <summary>Gets the eye-space camera z.</summary>
     public float EyeZ { get; } = eyez;
+
+    /// <summary>
+    /// Gets the guest texel words the computed cube/dot texture modes read for
+    /// this draw, or null when the combiner needs none. The backend may only
+    /// reference an address whose final guest state it has been handed: the set
+    /// is built from the draw command that is about to run (see
+    /// <see cref="Nv2AMmio.GuestTexelsFor"/>) or from this draw command's own
+    /// tail once the flush resolved its texcoords. A draw that samples anything
+    /// outside the set must decline, never read a stale entry.
+    /// </summary>
+    public PgraphGuestTexelSet? GuestTexels { get; } = guestTexels;
+
+    /// <summary>
+    /// Gets the BUMPENVMAP per-stage state (matrices + the luminance scale and
+    /// offset pairs) the software <c>ResolveBump</c> applies, so a backend
+    /// perturbs the coordinate and scales the texel with the same numbers.
+    /// <see cref="PgraphBumpState.Matrix"/> is null when the source did not
+    /// carry it; readers treat that as all zeros.
+    /// </summary>
+    public PgraphBumpState Bump { get; } = bump.Matrix is null ? EmptyBump : bump;
+
+    private static readonly float[] EmptyBump12 = new float[12];
+    private static readonly float[] EmptyBump3 = new float[3];
+    private static readonly PgraphBumpState EmptyBump = new(EmptyBump12, EmptyBump3, EmptyBump3);
 
     /// <summary>Gets the texture slot by index (0-3).</summary>
     public PgraphTextureSlot GetTexture(int slot)

@@ -34,6 +34,11 @@ uniform ivec4 uTexFieldOff[4];
 uniform ivec4 uTexFieldW[4];
 uniform vec4 uTexFieldC[4];
 uniform int uDotMap[4];
+uniform uint uGuestWord[96];
+uniform int uTexPoolBase[4];
+uniform vec4 uBumpMatrix[3];
+uniform float uBumpLumeScale[3];
+uniform float uBumpLumeOffset[3];
 uniform vec3 uEyePos;
 uniform uint uShaderClip;
 uniform vec4 uTri[25];
@@ -186,8 +191,10 @@ int CubeFaceSelect(vec3 d, out vec2 st) {
   if (d.z > 0.0) { st = vec2(((d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 4; }
   st = vec2(((-d.x / az) + 1.0) * 0.5, ((-d.y / az) + 1.0) * 0.5); return 5;
 }
-uint TexelWord(int addr) {
-  return 0u;
+uint PoolWord(int slot, int entry) {
+  int base = uTexPoolBase[slot] + entry;
+  if (base < 0 || base >= 48) { return 0u; }
+  return uGuestWord[base * 4];
 }
 uint ChannelMask(int w) {
   if (w == 1) return 1u;
@@ -212,17 +219,12 @@ vec4 DecodeGuestTexel(int slot, uint word) {
   if (w.y > 0) { d.g = DecodeField(int((word >> uint(off.y)) & ChannelMask(w.y)), w.y); }
   if (w.z > 0) { d.b = DecodeField(int((word >> uint(off.z)) & ChannelMask(w.z)), w.z); }
   if (w.w > 0) { d.a = DecodeField(int((word >> uint(off.w)) & ChannelMask(w.w)), w.w); }
-  return d;
+  return vec4(float(word >> 24u) / 255.0, float((word >> 16u) & 0xFFu) / 255.0, float((word >> 8u) & 0xFFu) / 255.0, 1.0);
 }
 vec4 CubeTexel(int slot, int face, int tx, int ty) {
   tx = clamp(tx, 0, uTexCubeW[slot] - 1);
   ty = clamp(ty, 0, uTexCubeH[slot] - 1);
-  uint sx = uTexMorton[slot] == 1 ? (SpreadZ(uint(tx)) & uTexSwzMaskX[slot])
-                                   : (SwzBits(uint(tx), uTexSwzMaskX[slot]));
-  uint sy = uTexMorton[slot] == 1 ? (SpreadO(uint(ty)) & uTexSwzMaskY[slot])
-                                   : (SwzBits(uint(ty), uTexSwzMaskY[slot]));
-  int addr = uTexBase[slot] + (uTexCubeStride[slot] * face) + int((sx | sy) * uint(uTexBytes[slot]));
-  uint word = TexelWord(addr);
+  uint word = PoolWord(slot, ((face * uTexCubeH[slot]) + ty) * uTexCubeW[slot] + tx);
   if (uTexBytes[slot] == 2) word &= 0xFFFFu;
   return DecodeGuestTexel(slot, word);
 }
@@ -264,10 +266,17 @@ vec3 DotMap(int m, vec4 t) {
   if (m == 7) { float h = Hemi(hi); float l = Hemi(lo); return vec3(h, l, HemiZ(h, l)); }
   return vec3(t.r, t.g, t.b);
 }
-bool StageDot(int stage, vec3 coord, vec4 inTexel, out float d) {
+bool StageDot(int stage, vec3 coord, vec4 inTexel, int inSlot, out float d) {
   d = 0.0;
   int map = uDotMap[stage];
   if (map < 0 || map > 15) return false;
+  if (map >= 4 && map <= 7) {
+    uint pair = PoolWord(inSlot, 0);
+    uint w = pair;
+    vec4 t = vec4(float(w & 0xFFu), float((w >> 8u) & 0xFFu), float((w >> 16u) & 0xFFu), float((w >> 24u) & 0xFFu)) * (1.0 / 255.0);
+    d = dot(coord, DotMap(map, t));
+    return true;
+  }
   d = dot(coord, DotMap(map, inTexel));
   return true;
 }
