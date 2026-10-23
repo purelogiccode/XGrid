@@ -268,6 +268,42 @@
       "acceptance": ">=10% triangle wall on 3/3 interleaved pairs, exact anchors, byte-identical ktest log; else record the negative and hand the target to D8 option (e)",
       "price": "boot is 1.93 s triangle / 1.62 s menu (33%/10% of the walls); encoder 8.0%/4.9% and trace 3-5% are the known levers",
       "evidence": []
+    },
+    {
+      "id": "G1",
+      "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
+      "plan": "E5c",
+      "status": "queued",
+      "depends": [
+        "D8"
+      ],
+      "acceptance": "73 recorded methods handled or declined with a measured reason, DXT/paletted/mipmap/multistage formats decoded, software 1B anchors and ktest log byte-identical, notices rows for every ported file",
+      "price": "~4.7k C LOC, 4-6 sessions; compatibility item, not the draw cost (device stage 41.6% menu / 10.9% triangle)",
+      "evidence": []
+    },
+    {
+      "id": "G2",
+      "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
+      "plan": "E5c",
+      "status": "queued",
+      "depends": [
+        "G1"
+      ],
+      "acceptance": "22-row matrix re-verified or re-baselined with the policy diff (violations=0, maxDelta<=1), BackendUnsupported=0 fatal=0 and the expected composedFrames, batching/sampler/composition/display-source preserved, software anchors and ktest log byte-identical",
+      "price": "~11.2k C LOC, 5-8 sessions; menu device 6.57 s pre-D5, triangle 0.62 s",
+      "evidence": []
+    },
+    {
+      "id": "G3",
+      "title": "Consolidated gate re-baseline for the ported NV2A",
+      "plan": "E5c",
+      "status": "queued",
+      "depends": [
+        "G2"
+      ],
+      "acceptance": "both 1B fast legs, all four accurate goldens, the 22 corpus rows, the ktest smoke and scripts/package-verify.ps1 verified in one commit; new anchors recorded in status.json/compatibility.md",
+      "price": "2-3 sessions; the one place GL frames and documented anchors may move",
+      "evidence": []
     }
   ],
   "done": [

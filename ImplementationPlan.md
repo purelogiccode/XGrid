@@ -3,7 +3,7 @@
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
 **Current status (2026-10-23):** M-D / **D8 - Engine-shape decision v2: the per-member/edge and boot probe** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper).
+**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper), G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
@@ -124,20 +124,26 @@ closes the band. That is the arithmetic D8 exists to resolve.
 | D1 | C6 draw-flush half: compile or cache the active transform program | done 2026-10-23 (§241) | — | ≥10% wall or ≥20% engine; exact anchors; no vertex output change |
 | D2 | C7 engine-shape decision | done 2026-10-23 (§242) | D1 | a written decision with a measured ceiling per option |
 | D3 | Menu-only wall decomposition and the top menu item | done 2026-10-23 (§243, negative: the hoist alone is -8.0%) | D2 | the menu-only ~13 s is decomposed and the top item is priced |
-| D4 | Conditional: implement the engine shape selected by D8 | blocked until D8 selects an option and it clears the bar | D2, D8 | ≥20% engine or ≥10% wall on 3/3 interleaved pairs |
+| D4 | Conditional: implement the engine shape selected by D8 | parked (negative; reopens only if D8 selects a candidate) | D2, D8 | ≥20% engine or ≥10% wall on 3/3 interleaved pairs |
 | D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
 | D6 | Device remainder: compiled transform evaluator + fill path | queued after D8 | D5 | ≥10% menu wall; exact anchors; executor fallback |
 | D7 | Boot path: make the first 100M steps cheaper | queued after D8 | D5 | ≥10% triangle wall; exact anchors; ktest log identical |
 | D8 | Engine-shape decision v2: the per-member/edge and boot probe | **active** | D5 | a measured attribution table + one selected option with a ceiling |
+| G1 | NV2A PGRAPH core port (xemu 0.8.139 `pgraph/`) | queued after D7 | D8 | 73 recorded methods handled/declined; formats decoded; software anchors exact |
+| G2 | GL renderer port (xemu `pgraph/gl` + the glsl pieces it needs) | queued after G1 | G1 | 22 rows re-verified/re-baselined; batching/sampler/composition preserved |
+| G3 | Consolidated gate re-baseline for the ported NV2A | queued after G2 | G2 | all anchors + corpus + ktest + package gate in one place |
 | P1 | Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#) | done 2026-10-23 (§246) | — | the ported DSP executes the guest microcode and a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | done 2026-10-23 (R1.1: 4-RID packages + license review + release notes) | — | reproducible packages + GPL-2.0/third-party license review |
 
-The queue is **D8 → D6 → D7** (WIP = 1; D8 first because it is a cheap
-measurement that decides whether the next spend is engine work or a target
-restatement). The product gaps that are not on this queue: the VP mixer /
-AC'97 codec (audible output) and the 4x4 retail probe's kernel-idle wait; both
-are recorded in E6 and `docs/research-notes/next-session.md` and are picked up
-as separate tasks, not folded into a performance slice.
+The queue is **D8 → D6 → D7 → G1 → G2 → G3** (WIP = 1; D8 first because it is
+a cheap measurement that decides whether the next spend is engine work or a
+target restatement). G1-G3 are the optional wholesale NV2A port in E5c: queued
+because the operator asked for it, scoped as a compatibility milestone, and
+explicitly not the path to the band. The product gaps that are not on this queue:
+the VP mixer / AC'97 codec (audible output) and the 4x4 retail probe's
+kernel-idle wait; both are recorded in E6 and
+`docs/research-notes/next-session.md` and are picked up as separate tasks, not
+folded into a performance slice.
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -385,6 +391,91 @@ the bar on paper.
 combination the split justifies, exact anchors, byte-identical ktest log. If the
 measured ceiling stays below 10%, record the negative and hand the target to
 D8's option (d).
+
+## E5c. G1-G3 - the optional wholesale NV2A/PGRAPH port (queued 2026-10-23, after D8)
+
+**What it is.** A full port of xemu 0.8.139's NV2A path into managed C#: the
+PGRAPH core (method dispatch, state, formats) followed by the GL renderer
+(submission, surface/texture cache, shader pipeline). It is legal (GPL-2.0, same
+family) and allowed by `docs/porting-policy.md`; the reason it is *queued* and
+not *started* is measured value.
+
+**Why it is not the performance fix.** The device stage is **41.6% of the menu
+wall but 10.9% of the triangle's** (D3.1). An xemu-class device path would take
+the menu from 15.6-17.5 s to roughly 11-12 s and the triangle from 5.72-6.15 s
+to roughly 5.5 s - because the runners (12.8 s menu / 3.43 s triangle) and the
+boot (1.93 s triangle) are untouched. The band still needs D8's engine decision.
+What the port *does* buy is compatibility breadth: the 73 `recorded` NV097
+methods (61 in vertex submission 30, raster modes/queries 24, context DMA 7),
+DXT/paletted/mipmap/multistage formats, and exact surface/texture cache
+semantics.
+
+**Scope and price** (counted from `References2/xemu-0.8.139/hw/xbox/nv2a`,
+34,480 C LOC / 92 files):
+
+| part | C LOC | XGrid today | action |
+|---|---:|---|---|
+| top-level `nv2a.c`, `pfifo.c`, `pmc/pcrtc/prmcio/prmvio/pfb/pbus/ptimer`, `nv2a_regs.h` | ~4.4k | `Nv2aMmio.cs` has the pusher, blocks, PCRTC/PRMCIO, IRQ | adapt the missing register/IRQ semantics |
+| PGRAPH core `pgraph.c`, `texture.c`, `s3tc.c`, `vertex.c`, `swizzle.c`, headers | ~4.7k | method switch + `PshCombiner` + `VshProgram(Plan)` + fixed-function | **G1** |
+| GL renderer `pgraph/gl/` | 6,348 | `XGrid.GpuGl` 5.2k (our own backend) | **G2** |
+| GLSL generators `pgraph/glsl/` | 4,895 | already transcribed into `PshCombiner`/`VshProgram`/`FixedFunctionVertex` | port only the parts G2 needs; do not duplicate semantics |
+| Vulkan `pgraph/vk/` | 12,596 | none | **out of scope** |
+
+**Total in scope: ~16k C LOC → ~20k C#, 13-20 sessions** including seam
+adaptation and the consolidated re-baseline. Calibration: the DSP port was
+~4.5k LOC in ~3 sessions because it had 929 differential vectors; this path has
+frames and state only.
+
+**Invariants (all three tasks):**
+- The **software rasterizer stays**. xemu has no software path (`gl/`, `vk/`,
+  `null/` only), and the software frames are the accurate-mode gate currency, so
+  it remains the oracle and the default renderer.
+- XGrid's seams stay: `IMmioDevice`, `IGpuMemory`, `IPgraphBackend`; the port
+  adapts to them, it does not bring QEMU's `MemoryRegion`/thread model.
+- Every ported file carries SPDX + `Ported from` + a `THIRD_PARTY_NOTICES.md`
+  row (`scripts/package-verify.ps1` enforces it).
+- Software 1B anchors, the four accurate goldens and the ktest log stay
+  byte-identical; only GL frames may be re-baselined, and only with the policy
+  diff (`violations=0`, `maxDelta<=1` where the software frame is the oracle).
+
+### G1 - PGRAPH core: method dispatch, state and formats
+
+**Price:** ~4.7k C LOC, 4-6 sessions. It is the compatibility half: it closes
+the recorded method groups and the texture/vertex format gaps. It does not
+change the draw/fill cost (that is G2).
+
+**Acceptance:** the 73 `recorded` methods are either handled or explicitly
+declined with a measured reason and a corpus/histogram citation; DXT, paletted,
+mipmapped and multistage vertex/texture formats decode; the software rasterizer
+still reproduces the 1B accurate goldens and the ktest log is byte-identical;
+notices rows for every ported file. **Fallback:** keep the current switch for
+any method whose port would change a gate frame; a method that no row exercises
+is not worth a regression.
+
+### G2 - GL renderer: submission, surface/texture cache and shader pipeline
+
+**Price:** ~11.2k C LOC (gl 6.3k + the glsl pieces G2 needs), 5-8 sessions. This
+is the half that could move the menu device cost (6.57 s pre-D5) and it is where
+the §205 batching, §219a/§220c sampler parity, §220d composition and §234
+display-source rules live - all of which must survive.
+
+**Acceptance:** the 22-row matrix re-verified or re-baselined with the policy
+diff; `BackendUnsupported=0 fatal=0` and the expected `composedFrames`;
+`--gpu gl --gpu-replace` still presents the software anchor where the row says
+so; batching retained (or a measured reason it is slower); software anchors and
+ktest log byte-identical. **Guard:** any row that regresses more than the policy
+allows blocks the merge, not the row.
+
+### G3 - Consolidated gate re-baseline and differential harness
+
+**Price:** 2-3 sessions. G1/G2 each keep the software anchors exact, so this is
+the one place where the GL frames, the 22 corpus rows and the documented anchors
+may move together; doing it once avoids per-task re-baseline churn.
+
+**Acceptance:** both 1B fast legs, all four accurate goldens, the 22 corpus
+rows, the ktest smoke and `scripts/package-verify.ps1` (PACKAGE PASS) verified
+in one commit; the new anchors recorded in `docs/status.json`, `docs/compatibility.md`
+and the task evidence; no mixed engine and no stale GLSL goldens.
 
 ## E6. P1 / R1 — parallel product and release
 

@@ -7,16 +7,18 @@
 > distributable build. The active task is **D8** (engine-shape decision v2:
 > per-member/edge + boot attribution, then a written decision), queued behind it
 > **D6** (device remainder: compiled transform evaluator + fill path) and **D7**
-> (boot: the first 100M steps are 33% of the triangle wall). The reason is in
-> `ImplementationPlan.md` E1/E5b: zeroing every non-runner stage still leaves the
-> triangle's 3.43 s runner 2.9x off the 1.20 s band, and the boot alone (1.93 s)
-> is 1.6x it, so the negative table cannot close the target. **Porting is not
-> license-limited** (xemu/QEMU are GPL-2.0 like XGrid): D8 may select a ported
-> reference shape (QEMU/xemu TCG, xemu PGRAPH draw path) as full managed C#, and
-> every port keeps the SPDX/`Ported from`/notices rules in
-> `docs/porting-policy.md`. Gates are unchanged; all anchors still exact.
-> **Remaining product gap: the VP mixer** (`vp.c`) and the AC97 codec; it needs
-> its own task, do not reopen P1.
+> (boot: the first 100M steps are 33% of the triangle wall), then the optional
+> port milestone **G1 -> G2 -> G3** (wholesale xemu NV2A/PGRAPH path: core
+> semantics, GL renderer, consolidated re-baseline; scope and price in
+> `ImplementationPlan.md` E5c). The reason is in `ImplementationPlan.md`
+> E1/E5b: zeroing every non-runner stage still leaves the triangle's 3.43 s
+> runner 2.9x off the 1.20 s band, and the boot alone (1.93 s) is 1.6x it, so the
+> negative table cannot close the target. **Porting is not license-limited**
+> (xemu/QEMU are GPL-2.0 like XGrid): D8 may select a ported reference shape
+> (QEMU/xemu TCG, xemu PGRAPH draw path) as full managed C#, and every port
+> keeps the SPDX/`Ported from`/notices rules in `docs/porting-policy.md`. Gates
+> are unchanged; all anchors still exact. **Remaining product gap: the VP mixer**
+> (`vp.c`) and the AC97 codec; it needs its own task, do not reopen P1.
 
 > **STATUS 2026-10-23 (46th session) - P1 is COMPLETE and R1 is next.** The
 > xemu 0.8.139 APU DSP port is finished for its price: state/memory/arithmetic/

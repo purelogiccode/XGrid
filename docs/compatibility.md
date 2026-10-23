@@ -562,9 +562,10 @@ sequence (an operator-visible route), not more steps.
 - **Kernel surface:** covered by ktest (378 tests).
 - **3D pipeline:** thin - one static triangle plus the dashboard's menu stream.
   No textured mesh, no mipmaps, no multistream/DMA vertex, no animated title.
-  `nv097-coverage.md` puts the method gap at 108 handled / 93 recorded, with the
-  immediate-mode vertex family (`0x1500-0x16FF`) and the raster modes as the
-  largest recorded-only groups.
+  `nv097-coverage.md` puts the method gap at 128 handled / 73 recorded, the
+  largest recorded-only groups being vertex submission (`0x1500-0x16FF`, 30),
+  raster modes/queries (24) and context DMA (7); the G1-G3 port milestone
+  (`ImplementationPlan.md` E5c) is the queued answer to that gap.
 - **Texture formats / shader shapes:** whatever the dashboard's menu uses
   (modulate + a few lighting shapes) plus the xgu samples' byte-order formats,
   a cube map and a normal-map bump chain; DXT/paletted/mipmapped sampling are
