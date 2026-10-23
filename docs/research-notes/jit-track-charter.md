@@ -61,6 +61,23 @@
 > diverges (233d); shared cold stubs are worth -60/-160 ms (233e); caching ROM
 > decodes has a 250 ms ceiling (233a).
 
+> **STATUS 2026-10-22 VERY LATE (thirty-ninth session, 239-240) - the engine is
+> latency-bound, the device stage is the payout.** 239 removed 11 emitted
+> instructions per served member (the raw emitter no longer writes EIP/TSC/served
+> per member; a straight-line block publishes them once per edge) and the engine
+> moved only 6.3 -> 6.1 ns/member with the wall flat - so code volume is NOT the
+> raw runner's limiter. 240 then measured the stage nobody had priced: 1.31 s of
+> the 6.1 s triangle wall is inside 44,030 device writes, split 766 ms of draw
+> flushes (interpreted vertex program 413-435 ms, GL submission 173-181 ms, setup
+> 61-66, attribute fetch 34-36) + ~540 ms of surface clears. Filling a 32-bit
+> clear through `Span<uint>.Fill` instead of one `WriteGpu` per pixel cut the
+> device time to 816 ms and both headline legs by ~10.6% (triangle 6.31 -> 5.61 s,
+> menu 22.43 -> 19.98 s) with every anchor exact. **Track C's CPU-side lever is
+> now *edge* removal (the 4-member loop's chain edge is ~60 host instructions per
+> iteration); its proven lever is the device stage, whose largest unowned item is
+> the vertex-program interpreter.** C4 is closed (null, 232a); C5 slice 1 landed
+> (233); the encoder stays unowned (234e).
+
 > **STATUS 2026-10-22 LATE (thirty-second session, 232) - C4 slice 1 measured
 > NULL and reverted; read-only-ROM decode caching measured null too; C5 trace
 > formation is the last structural lever.** The host-pointer translate probe

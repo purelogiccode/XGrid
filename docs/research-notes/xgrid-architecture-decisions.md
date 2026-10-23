@@ -15570,3 +15570,117 @@ construction (the JIT is off in them) and passed earlier in the session.
   measurement that contradicts this.
 - `--jit-slice` stays a CLI knob; the library and CLI defaults are both 64 now, so
   a gate leg without the flag runs what was measured here.
+
+## 239 Track C: the raw emitter's per-member bookkeeping is static - 11 emitted instructions per guest instruction become one publish per edge, and the wall does not move (2026-10-22, thirty-ninth session)
+
+**What it was.** Every native member emitted `EmitSetEip` (2), `EmitTscTick` (3),
+`EmitAdvanceEip` (3) and `EmitServedIncrement` (3) around its body: 11 of the
+~30 host instructions a memory member carried, and two store-forwarding chains
+through the frame slots. A raw block is straight-line (every `Jcc`/`Jmp`/
+`Call`/`Ret` is a block terminator, so a member's index, its EIP and the number
+of TSC ticks it has taken are compile-time constants at every point in it).
+
+**What landed.** `EmitPublishAccounting(tscTicks, served, eip)` publishes the
+static values once per *edge* - an exit (`_exit`/`_ret`), a helper call
+(`EmitSyncGuestStateForHelper`), a parked FPU/MMX/SSE helper, or the linear
+fall-through. `F_TSC` now holds the block's entry TSC (the base) for its whole
+life and `F_TSC_NOW` the published `base + ticks`; `EmitStoreGuestState` copies
+`F_TSC_NOW` into the context. A chain edge hands the base over
+(`F_TSC = F_TSC_NOW`) and still zeroes `F_SERVED`, so the target's accounting
+is relative to its own entry. Deleted: `EmitSetEip`, `EmitAdvanceEip`,
+`EmitTscTick`, `EmitServedIncrement` and their 40-odd call sites.
+
+**The one trap (found by the differential, not by the tests).** A delivered
+in-block interrupt poll ticks TSC **twice** - the member's own tick plus the
+delivery boundary step `RunJitBlock` accounts for - so `EmitPostPoll`'s pending
+path must publish `_membersDone + 2` ticks and `_membersDone + 1` served. With
+`+ 1` the first 28M steps lost exactly one tick per pending delivery (109 of
+them): RAM identical, CPU SHA moved, wall unchanged. Localised by dumping
+`--save-state` from the stashed base build and the new build and diffing 68 MB:
+**two bytes, at the TSC field** (`00 E1` vs `FE DF`), then by a temporary
+delivery diagnostic that showed `BOUND=5 PEND=109` in *both* builds. Note the
+base build also logged 109 "raw delta != served" cases: those are the same
+deliveries, and the base *compensates* them with the second tick.
+
+**Measured (interleaved, gate media, 1B).** `runnerMs` 3,401-3,539 ->
+3,310-3,401 (ns/served member 6.3 -> 6.1, **engine ~-3%**); wall 6.25-6.63 s
+against the base's 6.27-6.94 (3 pairs: 0.93 / 0.99 / 1.00 - **no wall claim**).
+At 100M the boot phase read `outerMs` 945 -> 819 (-13%) with the wall flat.
+
+**Why the wall did not move, and what that means for Track C.** Removing ~35% of
+the emitted instructions bought ~3% of the engine: **the raw runner is not
+instruction-issue-bound.** The per-member cost is latency - the memory probe's
+three dependent translate-cache loads (the C4 host-pointer probe measured the
+same null, §232a) and the chain edge's serial publish/probe (the register
+liveness shortcut measured divergent, §233d). C's remaining levers therefore
+have to remove *edges*, not instructions: the hot shape is a 4-member block
+(`MovLoad`, `MovStore`, `DecR`, `Jcc`) whose chain edge costs ~60 host
+instructions per iteration (§233a's map, now with the member mix:
+**MovLoad 29.0%, MovStore 26.1%, DecR 21.9%** of 428M profiled members).
+
+**Exactness.** All four fast 1B anchors byte-identical (triangle sw
+`B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw
+`34973510`/`F5D61C94`, menu gl `B06BA6E5`/`F5D61C94`); 28M-step `.xgs` images
+byte-identical between the stashed base and the new build; suite green. A
+mid-boot fast-mode RAM flake at 100M (`08B3760F` vs `A52EBE41`, 2 NaN-sign
+bytes) is **pre-existing and block-population sensitive** - the *base* build
+reproduces it with `--jit-threshold 8` (2 of 4 runs) - per §237 §4.
+
+## 240 Track C/B: measure the device stage, then fill a clear with spans - 1.31 s of the triangle wall was 20 ns per cleared pixel (2026-10-22, thirty-ninth session)
+
+**The measurement that found it.** A temporary probe around `Nv2aMmio.Write`
+(plus a draw-flush probe and VSH/attribute/`FillTrianglePsh` splits) read the
+triangle 1B `gl+replace` leg as **1.31 s of 6.1 s inside 44,030 device writes**:
+
+| item | ms | detail |
+|---|---|---|
+| draw flushes | 766 | 2,706 flushes (283 us each), 63,524 vertices, 27,209 triangles |
+| - vertex program interpreter | 413-435 | 1,762,191 VS instructions (27.7/vertex, max program 28) |
+| - `FillTrianglePsh` (GL submit) | 173-181 | the backend's own `drawMs` |
+| - draw setup (combiner/texture) | 61-66 | `EnterTextureState` + `BuildConsts` + `RebuildPlan` |
+| - attribute fetch | 34-36 | 16 slots x 4 components per vertex |
+| - vertex epilogue | ~70 | fog, `NaNToOne`, `PshVertex` |
+| everything else | ~540 | the **6,455 surface clears** |
+
+**The clear cost was the fill, not the clear.** `FillSurface` wrote a 32-bit
+rect one `WriteGpu` (interface call + bounds check) per pixel, ~20 ns/px. Inside
+`GpuWriteBatch` the fast adapter's write is *exactly* a 4-byte RAM store, and
+`IGpuMemoryFast.TryGetRamBytes` hands out the same array, so the 4-byte aligned
+in-range case now fills whole rows through `Span<uint>.Fill`. Everything else
+(16/8-bit merge, unaligned offset or pitch, out-of-range partial fill) keeps the
+per-pixel loop, so the overflow semantics are unchanged.
+`SurfaceClear_FastFillLane_MatchesPerPixelFill` runs the same clear through a
+fast adapter and a plain one and compares the whole RAM image, including a
+`pitch` of `0x42` that must decline the fast lane.
+
+**Measured (gate media, 1B).** Device-write time **1,306 -> 816 ms**. Interleaved
+pairs, SHAs byte-identical everywhere:
+
+| leg | base | new | delta |
+|---|---|---|---|
+| triangle `gl+replace` | 6.31 / 6.43 / 6.34 s | **5.61 / 5.74 / 5.73 s** | **-10.6%** (3/3) |
+| menu `gl+replace` | 22.43 / 20.76 s | **19.98 / 18.82 s** | **-10.6% / -9.4%** |
+
+Triangle gl frame `7A860ED7` = the recorded anchor (the accurate menu golden
+also passed byte-identically: sw `4EF1FBF6`, gl `B6116DAE`, diff 2602,
+violations 0, counters 33632/686/686).
+
+**Priced and rejected in the same window (measured nulls).**
+
+- **The VSH allocation storm is not the VSH cost.** `VshProgram.Execute`
+  allocated its 17-array register file plus 3-5 `float[4]` per instruction
+  (~55 per vertex, ~3.5M per 1B leg). A per-thread register file + rotating
+  temporary pool removed every one of them and the time did not move
+  (413 -> 426 ms); reusing the per-draw `constants`/`inputs`/`outputs` scratch
+  (224 arrays per flush, ~606k per leg) likewise. Reverted: the interpreter's
+  cost is its own work (~245 ns per VS instruction), not GC. A real win needs
+  the transform stage compiled (or moved to the backend), which is a Track B
+  item, not a scratch-buffer one.
+- **The remaining device time is draw flushes** (816 ms total, 766 in flushes),
+  dominated by that interpreter. That is where a Track B/D slice would start;
+  do not re-try allocation work.
+
+**Diagnostics to re-add when needed:** device write/clear/draw-flush/VSH timing
+is one temporary `Stopwatch` pair per site (the counts - `writes=44,030`,
+`clears=6,455`, `verts=63,524`, `vsInsn=1,762,191` - come from the existing
+counters). Strip it before any A/B leg (§232e).

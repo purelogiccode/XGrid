@@ -123,20 +123,25 @@ better** (operator decision 2026-10-22). Hard rules:
    SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-22 late, after §237/§238, 1B fast mode, H1):** menu 19.76 s
-`gl+replace` / 29.7 s sw (raster ~10.8 s); triangle 6.08 s `gl+replace` /
-10.45 s sw. **The triangle's wall is decomposed (decisions §233a, §237, §238):**
-`RunJitBlock` 4.30 s (native 3.24 + 1.06 head lookup/formation/chain, ~0.7 of it
-Iced `Assemble`) + `RunNonJit` 1.65 s (48k `RunSpecBlock` runs at ~590 ns per
-member + 134k `Step`s at ~1.3 µs) + device `Advance` 6 ms. **The boot ROM is no
-longer part of that:** its fetches are a cached image-window class and run as
-blocks (`nonRamSkips` 359,476 → 0, §237), so the boot phase is 1.81 s of the
-6.08 s wall (was 2.28). **C4's host-pointer probe measured NULL and was
-reverted** (§232a). xemu triangle ≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈
-733M steps, so the real-time band is 1.36 s at 1B. ktest 2B is already ahead
-(XGrid 9-10 s vs xemu 15 s). Report ns/served member + wall per presented
-frame, not 1B walls alone, and price stages with stashed interleaved A/B legs
-(§232e).
+**Position (2026-10-22 very late, after §§239/240, 1B fast mode, H1):** menu
+**18.8-20.0 s** `gl+replace` / 30.35 s sw (raster ~11.2 s); triangle **5.61-5.74 s**
+`gl+replace` / 10.03 s sw. **The device stage was measured this session and is
+14% of the triangle wall (§240):** 816 ms of device writes, 766 of them in the
+2,706 draw flushes (interpreted vertex program **413-435 ms**, GL submission
+173-181 ms, setup 61-66, attribute fetch 34-36) and the rest in the surface
+clears, which now fill through spans (1.31 s -> 0.82 s, -10.6% on both headline
+legs). **The CPU engine is unchanged in shape:** `RunJitBlock` ~4.4 s
+(`runnerMs` ~3.35 s for 547M members at **6.1 ns/member**, formation/chain ~1.0 s)
++ `RunNonJit` ~1.81 s (2.62M instructions, device-heavy short runs) + 816 ms of
+device work inside them; §239 removed 11 emitted instructions per member for
+**-3% engine and 0% wall**, which proves the runner is latency-bound, not
+instruction-bound - so C's next lever has to remove *edges* (the chain edge is
+~60 host instructions per 4-member loop iteration), not instructions. **C4's
+host-pointer probe measured NULL and was reverted** (§232a). xemu triangle
+≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈ 733M steps, so the real-time band is
+1.36 s at 1B. ktest 2B is already ahead (XGrid 9-10 s vs xemu 15 s). Report
+ns/served member + wall per presented frame, not 1B walls alone, and price stages
+with stashed interleaved A/B legs (§232e).
 
 ## Build / test / format
 
@@ -721,7 +726,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1863 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1865 tests green**,
   `dotnet build`/`format --verify-no-changes` clean.
 - **§237 + §238 (2026-10-22 late): the boot ROM is a cached, blocked image
   window, and the non-JIT run slice is 64.** `IImmutableImageDevice` +
@@ -738,6 +743,59 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-22 (thirty-ninth; the device stage was measured for the first
+time, and a clear now fills through spans - **-10.6% triangle / -10.6% / -9.4%
+menu** on the headline `gl+replace` legs with every anchor byte-identical -
+decisions §§239-240). Track C/B, two slices, one measured null.**
+
+- **The measurement came first, and it repriced the wall.** A temporary probe
+  around `Nv2aMmio.Write` read the triangle 1B `gl+replace` leg as **1.31 s of
+  6.1 s inside 44,030 device writes**: 766 ms in the 2,706 draw flushes (of which
+  the vertex-program interpreter is **413-435 ms** for 63,524 vertices at 27.7
+  VS instructions each, `FillTrianglePsh`/GL 173-181 ms, setup 61-66, attribute
+  fetch 34-36, epilogue ~70) and **~540 ms in the 6,455 surface clears**.
+- **§240 landed: a 32-bit clear fills rows through `Span<uint>.Fill`.** Inside a
+  `GpuWriteBatch` the fast adapter's write *is* a 4-byte RAM store and
+  `IGpuMemoryFast.TryGetRamBytes` hands out the same array, so the exactly
+  in-range, 4-byte aligned case no longer pays one interface call plus a bounds
+  check per pixel (~20 ns/px). Everything else - 16/8-bit merge, unaligned
+  offset/pitch, out-of-range partial fill - keeps the per-pixel loop.
+  `SurfaceClear_FastFillLane_MatchesPerPixelFill` compares a fast-adapter clear
+  against a plain one over the whole RAM image (and pins the `pitch=0x42`
+  decline). Device-write time **1,306 -> 816 ms**; triangle `gl+replace`
+  **6.31/6.43/6.34 -> 5.61/5.74/5.73 s (-10.6%, 3/3)**, menu
+  **22.43/20.76 -> 19.98/18.82 s (-10.6%/-9.4%)**, SHAs and frames exact.
+- **§239 landed: the raw emitter's EIP/TSC/served are static per edge.** A block
+  is straight-line, so 11 emitted instructions per member (EIP set+advance, TSC
+  tick, served increment, two store-forwarding chains) became one
+  `EmitPublishAccounting` per edge; `F_TSC` is the block's entry base and
+  `F_TSC_NOW` the published value. Measured **engine -3%** (`runnerMs` 3,401 ->
+  3,310, ns/member 6.3 -> 6.1) and **wall flat** (3 pairs: 0.93/0.99/1.00) - the
+  runner is **latency-bound, not instruction-bound**, which is the session's
+  most useful negative for Track C. The trap: a delivered in-block poll ticks TSC
+  *twice*, so the pending path publishes `_membersDone + 2`; with `+1` the first
+  28M steps lose one tick per pending delivery (109 of them) and the CPU SHA
+  moves while RAM stays identical. Found by byte-diffing 68 MB `--save-state`
+  images of the stashed base and the new build (2 bytes at the TSC field).
+- **Measured nulls (reverted):** making `VshProgram.Execute` allocation-free
+  (per-thread register file + temporary pool: ~3.5M allocations per 1B leg
+  removed, 413 -> 426 ms) and reusing the per-draw constant/input/output scratch
+  (~606k) both changed nothing. The VS interpreter's cost is its own work
+  (~245 ns per instruction), not GC.
+- **Gates.** Accurate menu golden PASS (sw `4EF1FBF6` / gl `B6116DAE`, diff 2602,
+  violations 0, counters 33632/686/686) and triangle PASS (sw `A1740DE0` / gl
+  `7A860ED7`, diff 27849, 2706/68/34); fast 1B anchors exact on all four legs
+  (triangle sw `B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl
+  `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`/`F5D61C94` 253,998,498 px, menu gl
+  `B06BA6E5`/`F5D61C94`); ktest smoke PASS 7/7 at **792,800,535** steps, log
+  `CA5D3867` (40,797 B) byte-identical. Suite **1863 -> 1865**. No snapshot
+  change (host-side only; Nv2a v9, audio v3).
+- **Next:** the draw-flush half of the same stage is the largest unowned CPU-side
+  item left (766 ms, of which the interpreted vertex program is 413-435 ms);
+  `next-session.md` §2 Option A. A 100M-step mid-boot RAM flake (`08B3760F` vs
+  `A52EBE41`, two NaN-sign bytes) is pre-existing and block-population sensitive
+  - the base build reproduces it with `--jit-threshold 8`.
 
 **Session 2026-10-22 (thirty-eighth; the non-JIT run slice went 256 -> 64 after a
 sweep that had never been done - another -3.7% / -2.2% with every fast anchor

@@ -1,5 +1,15 @@
 # Software rasterizer per-pixel inventory - XGrid NV2A (`--gpu sw`, the default)
 
+> **Status 2026-10-22 (239/240) - no rasterizer change; the *surface clear* fill
+> is no longer per-pixel.** `FillSurface` (the colour/zeta clear writer the
+> rasterizer shares with the GL path) used to store one 32-bit pixel per
+> `WriteGpu` call, i.e. an interface dispatch plus a bounds check per pixel; a
+> 4-byte aligned, exactly in-range rect now fills whole rows through
+> `Span<uint>.Fill` and everything else keeps the loop (decisions 240). The
+> clears were ~540 ms of the triangle 1B `gl+replace` wall and are ~40 ms now;
+> the `sw` legs' `rasterPsh` is unaffected (menu 11.15 s, triangle 4.55 s at 1B,
+> every anchor byte-identical). Nothing else in this inventory moved.
+
 > **Status 2026-10-21 (§211) - no rasterizer change this session; one opt-in
 > sampler correction.** `xgu bumpenv_ripple`'s black frame (compatibility gap 10)
 > was diagnosed as *state*: the per-frame quads take their colour from `T1`

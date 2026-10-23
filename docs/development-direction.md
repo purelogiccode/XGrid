@@ -6,6 +6,24 @@ day-to-day agent entry point; this file is the priority order every agent follow
 
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
+**Status 2026-10-22 very late (39th session, §§239-240): the device stage was
+measured for the first time and one half of it landed.** A temporary probe priced
+the triangle 1B `gl+replace` leg as **1.31 s of 6.1 s inside 44,030 device
+writes** - 766 ms in the 2,706 draw flushes (interpreted vertex program 413-435
+ms, GL submission 173-181 ms, setup 61-66, attribute fetch 34-36, epilogue ~70)
+and ~540 ms in the 6,455 surface clears. (1) §240: a 32-bit clear now fills rows
+through `Span<uint>.Fill` instead of one `WriteGpu` per pixel - device time
+**1,306 -> 816 ms**, **triangle `gl+replace` 6.31/6.43/6.34 -> 5.61/5.74/5.73 s
+(-10.6%, 3/3)**, menu 22.43/20.76 -> 19.98/18.82 s (-10.6%/-9.4%). (2) §239: the
+raw emitter's EIP/TSC/served became static per edge (11 emitted instructions per
+member removed) - **-3% engine, 0% wall**, which is the session's decisive
+negative: the raw runner is **latency-bound, not instruction-bound**, so C's next
+lever must remove *edges* (the chain edge is ~60 host instructions per 4-member
+loop iteration), not instructions. Every 1B anchor, both accurate goldens, both
+GL frames and the ktest log are byte-identical. **The largest unowned CPU-side
+item left is the interpreted vertex program inside the draw flush (413-435 ms,
+next-session.md §2 Option A).**
+
 **Status 2026-10-22 late (38th session, §237 + §238): two exact Track C slices,
 -8.9% / -3.4% on the headline legs.** (1) The boot ROM is a cached, blocked image
 window: instruction fetches from flash/BIOS/mirror/overlay windows are a
@@ -20,9 +38,7 @@ formation eats it). Measured together: **triangle `gl+replace` 6.672 -> 6.081 s
 byte-identical. §237 also **reprized the "superblock for the boot" lever out**:
 the ROM share of the non-JIT population is 9%, not the 100% §2 assumed, so its
 ceiling was 6.4%; the remaining boot mass is 55k RAM heads below the build
-threshold (an encoder price, §234e). Track C's next item is the `RunSpecBlock`
-handoff probe (`TryMemo` hit at the current head), priced before implemented.
-Track B stays closed (gap 12 closed in §236).
+threshold (an encoder price, §234e). Track B stays closed (gap 12 closed in §236).
 
 **Status 2026-10-22 late (36th session, §236): compatibility gap 12 is CLOSED -
 the GL backend decodes a cube stage's six swizzled faces into a host 2D-array
@@ -48,14 +64,14 @@ track.
 
 | workload | xemu / real-time band | XGrid now | gap |
 |---|---:|---:|---:|
-| triangle `gl+replace` | 1.20 s (xemu 830 Msteps/s) | 7.5-7.9 s | ~6.6× |
-| menu `gl+replace` | 1.36 s (real-time band; xemu has no menu oracle) | 24.3 s | ~17.8× |
+| triangle `gl+replace` | 1.20 s (xemu 830 Msteps/s) | 5.61-5.74 s | ~4.7× |
+| menu `gl+replace` | 1.36 s (real-time band; xemu has no menu oracle) | 18.8-20.0 s | ~14× |
 | ktest 2B (CPU-bound) | 15 s (xemu) | 9-10 s | XGrid already ahead |
 
-The triangle's wall is ~7.9 ns per guest step vs xemu's ~1.2 ns; the engine's
-served-member cost is 8.8 ns (triangle) / 31.6 ns (menu), so the menu's gap is
-the helper/device mix. A 2-3% slice cannot close either; the program is
-structural.
+The triangle's wall is ~5.7 ns per guest step vs xemu's ~1.2 ns; the engine's
+served-member cost is 6.1 ns (triangle) and the device stage inside the same
+members is another 816 ms (§240), so the menu's gap is the helper/device mix. A
+2-3% slice cannot close either; the program is structural.
 
 **New order.**
 
@@ -64,7 +80,11 @@ structural.
    gated on a same-window A/B (≥10% wall or ≥20% engine), exact 1B
    SHAs/counters on both titles, flag-off byte-identical, ktest log
    byte-identical. The old C3-x/C3-y/C3-z list is closed; this is a new
-   program, not a resumption of 2-3% slices.
+   program, not a resumption of 2-3% slices. **C6 has now paid (§240: the clear
+   fill, -10.6% on both headline legs) and the rest of the device stage is priced
+   (766 ms of draw flushes, 413-435 ms of it the interpreted vertex program);
+   C4 measured null (§232a) and §239 proved the runner is latency- not
+   instruction-bound, so the CPU-side lever left is *edge* removal.**
 2. **B — bounded finish of the in-flight B3 slice — DONE 2026-10-22 (§236).**
    The GL product renderer's computed-mode panel was black because a cube stage
    had no word source; it now samples a host 2D-array texture decoded from the

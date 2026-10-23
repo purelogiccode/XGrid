@@ -143,10 +143,21 @@ usable). Current order:
    non-JIT population was 9%, not 100%, so its ceiling was 6.4% and the remaining
    boot mass is 55k RAM heads below the build threshold (an encoder price, §234e).
    **C4 and C4b are closed.** Next stage: the `RunSpecBlock` `TryMemo`-handoff
-   probe (price it first - ~2.5M members still run through the interpreter);
-   then **C6** device/MMIO fast path (slice 1, the unified interrupt poll, landed
-   as architecture). Each stage: same-window A/B ≥10% wall or ≥20% engine, exact
-   1B SHAs/counters, flag-off byte-identical, ktest log byte-identical.
+   probe was **priced and rejected** (§238 §4: 4.2-4.9% of non-JIT members sit at
+   a built head = ~1.2% of the wall), and **§239 closed the code-volume question**:
+   removing the raw emitter's per-member EIP/TSC/served bookkeeping (11 emitted
+   instructions per member, static per edge instead) moved the engine 6.3 → 6.1
+   ns/member and the wall not at all, so the runner is **latency-bound, not
+   instruction-bound**. **§240 then measured and won the device stage**: 1.31 s of
+   the triangle 1B `gl+replace` wall was inside 44,030 device writes (766 ms draw
+   flushes, ~540 ms surface clears); a 32-bit clear now fills rows through
+   `Span<uint>.Fill` (device time **1,306 → 816 ms**), giving **triangle
+   6.31/6.43/6.34 → 5.61/5.74/5.73 s (-10.6%, 3/3)** and **menu 22.43/20.76 →
+   19.98/18.82 s (-10.6%/-9.4%)** with every anchor byte-identical. **C6 is the
+   paying track now**; the largest unowned item is the interpreted vertex program
+   inside the draw flush (413-435 ms). Each stage: same-window A/B ≥10% wall or
+   ≥20% engine, exact 1B SHAs/counters, flag-off byte-identical, ktest log
+   byte-identical.
 2. **Track B — bounded B3 finish — CLOSED 2026-10-22 (§236).** The present path
    was already closed (readback opt-in, batching, sampler parity, replace-mode
    composition); the computed-mode panel (gap 12) is now closed too - a cube
@@ -3118,6 +3129,19 @@ Shaders
 
 ## Track C — Performance
 
+> **Status 2026-10-22 very late (§239/§240): the code-volume question closed
+> negative and the device stage paid -10.6% on both headline legs.** §239 turned
+> the raw emitter's per-member EIP/TSC/served bookkeeping (11 emitted instructions
+> per member) into one static publish per edge: the engine moved 6.3 → 6.1
+> ns/member and the wall not at all, so the raw runner is **latency-bound, not
+> instruction-bound** and C's CPU-side lever is *edge* removal. §240 measured the
+> device stage for the first time (1.31 s of 6.1 s: 766 ms draw flushes incl.
+> 413-435 ms of interpreted vertex program, ~540 ms surface clears) and cut the
+> clear half by filling 32-bit rects through `Span<uint>.Fill`: device time
+> **1,306 → 816 ms**, **triangle `gl+replace` 6.31/6.43/6.34 → 5.61/5.74/5.73 s
+> (-10.6%, 3/3)**, **menu 22.43/20.76 → 19.98/18.82 s (-10.6%/-9.4%)**, every 1B
+> SHA/counter/frame, both accurate goldens and the ktest log byte-identical.
+>
 > **Status 2026-10-22 late (§237/§238): two exact slices, -8.9% / -3.4%.** (1)
 > Instruction fetches from immutable image windows (flash/BIOS, its mirror, the
 > MCPX ROM overlay) are a decode-cache class of their own and are served by native

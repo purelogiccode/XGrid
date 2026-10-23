@@ -1,14 +1,17 @@
-# Next session instructions (updated 2026-10-22 late, after §238: the non-JIT run slice went 256 -> 64 for another -3.7% / -2.2%, and §237 made the boot ROM a cached, blocked image window)
+# Next session instructions (updated 2026-10-22 very late, after §239/§240: the device stage was measured, its clear fill went through spans for **-10.6% / -10.6%** on the two headline legs, and the raw runner's per-member bookkeeping became static for a measured 3% engine / 0% wall)
 
 **Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
 course correction: xemu-class performance is the long-run objective, Track C
-re-opened, C4-C6, now with the §237/§238 status line), §1-§3 (priority stack,
+re-opened, C4-C6, now with the §239/§240 status line), §1-§3 (priority stack,
 measured position, milestone ladder),
 `docs/research-notes/jit-track-charter.md` (the Phase 3b status block incl. the
 C7 decision inputs),
-**`docs/research-notes/xgrid-architecture-decisions.md` §238 (the `JitSpecSlice`
-sweep - two constants, one A/B, 2-4%)**, **§237 (the image-window class, the
-measured table, the fast-mode spin-skip trap, the repricing)**, §236 (the cube
+**`docs/research-notes/xgrid-architecture-decisions.md` §240 (the device-stage
+measurement + the clear-fill slice: 1.31 s -> 0.82 s, -10.6% wall)**, **§239 (the
+raw emitter's static edge accounting: -3% engine, 0% wall, and why that means C
+must remove *edges*)**, §238 (the `JitSpecSlice` sweep - two constants, one A/B,
+2-4%), **§237 (the image-window class, the measured table, the fast-mode
+spin-skip trap, the repricing)**, §236 (the cube
 2D-array decode), §235 (trace formation priced out), §234 (the display source
 under a GPU backend + the encoder price), §233 (the per-stage price of the whole
 wall - this is the map), §232 (C4 null, the non-JIT decomposition) + §231 (the
@@ -30,10 +33,10 @@ then this file. (If a name above does not resolve, the file was renamed - search
 
 ```powershell
 pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 manifest + MSYS2 toolchain
-git log --oneline -1        # expect: the §237 commit ("cpu: ... image windows ...")
+git log --oneline -1        # expect: the §240 commit ("nv2a: a 32-bit clear fills rows through a span")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1863 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1865 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -56,8 +59,8 @@ the gate scripts on H1). These did **not** move in §237:
 | triangle, `scripts/raster-leg.ps1 -Workload tri` | `B45254CA…` | `7DAB63EB…` | 10.3-10.5 s (frame `A1740DE0`, 68/34, 57,663,082 px) |
 | triangle + `--tex-filter registers` | `B45254CA…` | `7DAB63EB…` | ~11.7 s |
 | triangle + `--ffp` | `B45254CA…` | `7DAB63EB…` | ~14.9 s (frame identical too) |
-| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | **6.08 s** (was 6.67), frame `7A860ED7…`, `source=backend` |
-| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | **19.76 s** (was 20.46), frame `B6116DAE…` |
+| triangle `--gpu gl --gpu-replace` 1B | `4F1FCBC0…` | `7DAB63EB…` | **5.61-5.74 s** (was 6.08; §240), frame `7A860ED7…`, `source=backend` |
+| menu `--gpu gl --gpu-replace` 1B | `B06BA6E5…` | `F5D61C94…` | **18.8-20.0 s** (was 19.76; §240), frame `B6116DAE…` |
 | `xgu-spheremap_ffp` 3B BTFF | off `B5747761…` / on `8062CFB5…` | `F0075C2F…` (both) | ~9 / ~14 s |
 | `xgu-distance_fog_ffp` 3B BTFF | off `AFF08085…` / on `12BAD517…` | `571363B4…` (both) | ~9 / ~30 s |
 | `xgu-bump_cubemap_reflect` 3B BTFF | `DDB59317…` | `D5D38C64…` | ~12 s |
@@ -81,9 +84,11 @@ writes; its **frame** is the anchor.
 
 **A mid-boot fast-mode RAM delta is NOT a regression by itself (§237 §4).** The
 `--jit-spin` idle skip lumps device time, so a change in *block population* moves
-where it fires: this session's change moves the triangle's 99.5M-step RAM SHA and
-heals by 1B. Diff such a report with `--jit-spin` off and with a different
-`--jit-threshold` on the base build before diagnosing anything.
+where it fires. Both §238 and §239 move the triangle's 100M-step RAM SHA and heal
+by 1B; the *base* build reproduces the same 100M flake (2 NaN-sign bytes,
+`08B3760F` vs `A52EBE41`) with `--jit-threshold 8`, so diff such a report with
+`--jit-spin` off and with a different `--jit-threshold` on the base build before
+diagnosing anything.
 
 **Display-source rows (1B, `-Gpu gl -GpuReplace`, §234).** `displaySha` equals
 the software row for a direct-framebuffer guest and the backend frame for a
@@ -98,7 +103,7 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 (policy diff, never byte-exact; both reproduce with `diff=2602` / `diff=27849`,
 `violations=0`, `maxDelta=1`, `BackendUnsupported=0`).
 
-- **1863 tests green**, build/format clean. The ktest XGrid leg is
+- **1865 tests green**, build/format clean. The ktest XGrid leg is
   **792,800,535** steps, suite log 40,797 B, SHA `CA5D3867…` (re-run this
   session, byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
@@ -110,6 +115,17 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 
 ## 0b. What the last session landed - do not redo it
 
+0. **§240: the device stage was measured, and a 32-bit clear now fills rows
+   through a `Span<uint>`** instead of one `WriteGpu` (interface call + bounds
+   check) per pixel. Device-write time 1,306 -> 816 ms; **triangle `gl+replace`
+   6.31/6.43/6.34 -> 5.61/5.74/5.73 s (-10.6%, 3/3)**, menu 22.43/20.76 ->
+   19.98/18.82 s (-10.6%/-9.4%), SHAs and frames byte-identical. The per-pixel
+   loop is still the fallback for 16/8-bit, unaligned or out-of-range rects - do
+   not delete it, and do not widen the fast lane without re-reading §240.
+0. **§239: the raw emitter's EIP/TSC/served are static per edge.** Do not
+   re-introduce per-member `SetEip`/`TscTick`/`ServedIncrement`: the wall does not
+   move (measured), and the pending-poll path must publish `_membersDone + 2`
+   ticks (the delivery boundary's own tick) or the CPU SHA drifts.
 0. **§238: `JitSpecSlice` is 64 (was 256)**, in both the library and the CLI.
    A non-JIT run of 256 members crossed many hot heads the engine never got to
    offer a block for. Measured -3.7% triangle `gl+replace` / -2.2% menu (3/3) and
@@ -144,57 +160,54 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
    PTIMER (§216); fixed-function stage + lighting (§213/§215); the B3 seam state
    and the live compile gate (§226/§227).
 
-## 1. Where the wall is now (measured, §233a's map with §237 applied)
+## 1. Where the wall is now (measured, §233a's map with §239/§240 applied)
 
-**Triangle 1B `gl+replace` = 6.08 s** (was 6.67 before this session; a
-`--jit-timing --jit-tally` run on the current build reads `wall=5.968
-executeMs=5960`):
+**Triangle 1B `gl+replace` = 5.61-5.74 s** (was 6.08 before §240):
 
 | stage | ms | share | what it is |
 |---|---|---|---|
-| `RunJitBlock` (`outerMs`) | 4297 | 72% | 783k invocations |
-| - native raw runner (`runnerMs`) | 3235 | 54% | 547M members at **5.9 ns/member** |
-| - formation + chain + bookkeeping | 1062 | 18% | 2,812 blocks; **~700 ms is Iced `Assemble`** |
-| `RunNonJit` (`nonJitMs`) | 1650 | 28% | 182k calls, 2.62M instructions |
-| - `RunSpecBlock` (~48k runs) | ~1470 | 25% | ~2.48M members at **~590 ns** (device-heavy runs) |
-| - `Step` (134k calls) | ~180 | 3% | ~1.3 us each (was 523k calls) |
+| `RunJitBlock` (`outerMs`) | ~4,400 | ~75% | 783k invocations |
+| - native raw runner (`runnerMs`) | ~3,350 | ~57% | 547M members at **~6.1 ns/member** |
+| - formation + chain + bookkeeping | ~1,000 | ~17% | 2,812 blocks; **~700 ms is Iced `Assemble`** |
+| `RunNonJit` (`nonJitMs`) | ~1,810 | ~31% | 182k calls, 2.62M instructions |
+| - `RunSpecBlock` (~48k runs) | ~1,470 | ~25% | ~2.48M members at **~590 ns** (device-heavy runs) |
+| - `Step` (134k calls) | ~180 | 3% | ~1.3 us each |
+| **device writes** (inside the rows above) | **816** | **14%** | 44,030 writes; 766 ms is the 2,706 draw flushes |
 
-GL submission (~1000 ms, 405k user-FIFO stores at 2.4 µs) is *inside* the rows
-above, not an extra row; the raw runner's share of it is what makes its 5.9 ns
-per member. §238's slice change moved the non-JIT side from `nonJitMs` 2190 /
-5.48M instructions to **1650 / 2.62M** and paid for it in formation
-(`outerMs` 3981 -> 4297, blocks 2,603 -> 2,812).
+The draw flushes break down as: **vertex-program interpreter 413-435 ms**
+(63,524 vertices, 1,762,191 VS instructions = 27.7 per vertex, ~245 ns each),
+`FillTrianglePsh` (GL submission) 173-181 ms, draw setup 61-66 ms, attribute
+fetch 34-36 ms, vertex epilogue ~70 ms. The clears that used to take ~540 ms are
+now ~40 ms.
 
-- **The boot (first 100M steps) is 2.04 s of the 6.24 s wall** (was 2.28 s).
-- **Menu `gl+replace`** 20.16 s: the same shape with 2.7x the non-JIT calls.
+- **The boot (first 100M steps) is ~1.9 s of the wall.**
+- **Menu `gl+replace`** ~19.8 s: the same shape with 2.7x the non-JIT calls and
+  ~2.7x the device writes.
 - **xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
-  (real-time band), so the gap is still **~5.2x / ~15x**.
-- **What is left of the boot**: 55,215 heads that never reach the 16-visit build
-  threshold (1,122 blocks form). Forming them costs ~326 us each (Iced), which is
-  the encoder price (§234e, ~7%) - so the boot's remainder is *not* a cache
-  problem.
+  (real-time band), so the gap is now **~4.7x / ~14x**.
 
 ## 2. Recommended next session - pick one
 
-### Option A (Track C): `RunSpecBlock`'s 259 ns/member is now the largest non-JIT item
+### Option A (Track C/B): the interpreted vertex program is 428 ms of the triangle and ~x2.7 of the menu
 
-It is the only remaining item that is neither measured null nor priced out. The
-shape to look for is a way to serve **8-30-member runs** without paying a
-`DynamicMethod`/raw build per head, because those runs are exactly the 55k heads
-below the threshold. Constraints already measured: the `--jit-threshold` sweep
-(1/4/8/16/64 -> 9.27/7.86/7.32/6.99/6.79 s at 100M on the old build) is at its
-optimum, the encoder is ~7% (§234e), trace formation removes block-boundary
-population, not this one (§235), and shared cold stubs are -160 ms (§233e).
-Price any candidate the §232e way (stashed interleaved A/B legs, never an
-env-gated ablation that changes guest behavior).
+It is the largest single item left inside a measured wall (7% of the triangle,
+more of the menu) and it is *not* allocation (measured null, §240): it is the
+interpreter's own work at ~245 ns per 10-15 host operations per VS instruction.
+The shape to look for is a compiled or cached form of the *active transform
+program* (one host delegate per token, or a hoisted operand predecode) that does
+not change any float operation - the row's own program is only 28 instructions,
+so a per-program compiled evaluator is a bounded item. Gate on the 1B frame
+goldens (`A1740DE0`, `B6116DAE`, `7A860ED7`) + the corpus sw-vs-gl pairs (§236).
 
-### Option B (Track C, the honest re-check): is the 6.25 ns/member runner number still the floor?
+### Option B (Track C): remove an *edge*, not an instruction
 
-With `nonJitMs` at ~2.1 s and the runner at 3.4 s, the pair is 88% of the wall. A
-100M-step `--jit-timing` run plus `XGRID_RAW_PROFILE=1` (with
-`XGRID_RAW_CHAIN=0`) reproduces the shape in one command each; if the mix has not
-moved since §199n (~50% MovLoad/MovStore, 14% DecR, 14% Alu), the answer is the
-engine shape (option iii of the old §2), not another slice.
+§239 proved the raw runner is not instruction-bound (-35% code volume, -3% time).
+The hot shape is a 4-member block (`MovLoad` 29.0%, `MovStore` 26.1%, `DecR`
+21.9%) whose chain edge is ~60 host instructions per iteration. Measure a
+self-loop fast path (a `Jcc` whose target is the block's own head re-enters the
+body in place when the remaining budget allows) before building it: the poll
+contract is per *block invocation*, so a self-loop changes the poll granularity -
+decide that against xemu first.
 
 ### Option C (Track E): the remaining corpus gaps
 
@@ -215,6 +228,13 @@ engine shape (option iii of the old §2), not another slice.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
 
+- **Removing the raw emitter's per-member bookkeeping because it is 35% of the
+  code volume** (§239): -3% engine, 0% wall. The runner is latency-bound, not
+  issue-bound.
+- **Allocation work in `VshProgram.Execute`** (§240): a per-thread register file
+  plus a temporary pool removes ~3.5M allocations per 1B leg and the time does
+  not move (413 -> 426 ms); the per-draw `constants`/`inputs`/`outputs` scratch
+  (~606k allocations) is the same null. The interpreter's own work is the cost.
 - **Lowering `--jit-slice` to 16/4 because `nonJitMs` keeps falling** (§238): the
   extra formation eats it; 64 is the wall minimum (measured at 100M and 1B).
 - **A `RunSpecBlock` handoff at built heads** (§238 §4, probed this session): only
@@ -265,6 +285,9 @@ engine shape (option iii of the old §2), not another slice.
   the measured ceiling behind its acceptance.
 - **Track C leads** but the cheap levers are gone (see §2). Incremental sub-2%
   codegen slices remain banned. Interpreter *correctness* work is still allowed.
+  **A device-stage slice is now Track C's proven ground**: §240's clear fill was
+  10% of both headline legs, and the draw-flush half of the same stage is priced
+  (766 ms) and unowned.
 - **Two-tier validation.** Accurate mode is currency. Any shared-code or default
   change needs median-of-3 + exact SHAs/counters + `verifyFailures=0` +
   flag-off byte-identical, plus the fast-mode gates. Host-side-only diagnostics
@@ -287,8 +310,8 @@ engine shape (option iii of the old §2), not another slice.
   device a guest store can change). Leave `Directory.Packages.props` alone.
 - Direct development only (no wave runner, no worktrees, no detached servers).
 - A **snapshot version bump invalidates every `.xgs`** (now Nv2a v9, audio v3).
-  §237 is host-side only: no snapshot change.
-- Write it up: a decisions section (§238+) with the measured table, charter +
+  §239/§240 are host-side only: no snapshot change.
+- Write it up: a decisions section (§241+) with the measured table, charter +
   inventory status headers, `AGENTS.md` session note, and a fresh copy of this
   file.
 
@@ -304,9 +327,9 @@ store (`scripts/refs-manifest.ps1 -Verify`).
   MSYS2 (`C:\msys64`) with nxdk at `D:\nxdk` (`a6c31ee`), so nxdk corpus rows
   build here: `pwsh -File scripts/build-nxdk-samples.ps1 -Samples @("usb")`.
 - **Walls on H1 at 1B (fast mode, this session's window):** triangle
-  10.3-10.5 s `sw` / 6.24-6.41 s `gl+replace`; menu 30.1 s `sw` / 20.2-20.5 s
-  `gl+replace`. Accurate mode (no JIT): triangle 44.4 s `sw` / 44.0 s `gl`,
-  menu 62.2 s `sw` / 65.6 s `gl`.
+  **10.03 s** `sw` / **5.61-5.74 s** `gl+replace`; menu **30.35 s** `sw` /
+  **18.8-20.0 s** `gl+replace`. Accurate mode (no JIT): triangle 44.4 s `sw` /
+  44.0 s `gl`, menu 63.0 s `sw` / 69.6 s `gl`.
 - **A/B recipe that works here:** `git stash` -> build -> copy
   `src/XGrid.Cli/bin/Release/net10.0` to `%TEMP%\xgrid-base-bin` ->
   `git stash pop` -> build -> run both binaries interleaved (3 pairs minimum).
@@ -372,6 +395,12 @@ batchTris= batchCap= guestWordDraws= guestWordMisses= guestWordDeclined=]`,
 (§237: distinct image-window decodes, wholesale drops, live count; a fast run
 ends at `imageFlushes=0 imageEntries=0` because an ordinary full flush drops them
 during the boot)**, **`slice=` on the JIT line (§238; the default is 64)**,
+**device-stage timing (§240) is not in the tree: it is one temporary
+`Stopwatch` pair per site - `Nv2aMmio.Write`, `FlushDraw`, `VshProgram.Execute`,
+`FillTrianglePsh`, `FetchVertexAttribute`, draw setup - accumulated into statics
+and printed from the `NV2A raster seconds` line. The counts come from the
+existing counters (`writes=`, `clears=`, `verts=`, `vsInsn=`, `draws=`). Strip
+it before any A/B leg**,
 **`source=backend|memory-scanout`** on the `Frame`/`FrameDisplay`/
 `FrameScanout` lines (`Nv2AMmio.DisplaySourceDebug`, §234),
 **`--gpu-time` combiner rows carry `tm=` / `sf=` / `ts<n>=<TEXFMT>:d<dim>[:c][:x][:s]` /
