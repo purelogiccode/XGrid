@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "P1",
-    "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
+    "id": "R1",
+    "title": "Release: packaging, installer, licensing review",
     "plan": "E6",
     "status": "active",
     "started": "2026-10-23",
-    "attempts": 1,
-    "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
-    "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink."
+    "attempts": 0,
+    "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",
+    "price": "not on the M-D critical path"
   },
   "position": {
     "host": "H1",
@@ -20,7 +20,7 @@
     "legs": {
       "triangle_gl_replace": {
         "wall": "5.72-6.15 s",
-        "ram": "B45254CA",
+        "ram": "4F1FCBC0",
         "cpu": "7DAB63EB",
         "frame": "7A860ED7"
       },
@@ -56,9 +56,9 @@
     }
   },
   "result": {
-    "points": 84.43,
+    "points": 85.23,
     "weight": 108,
-    "percent": 78.2
+    "percent": 78.9
   },
   "phases": [
     {
@@ -149,7 +149,7 @@
       "p": 12,
       "name": "APU (audio)",
       "weight": 4,
-      "done": 55,
+      "done": 75,
       "track": "LLE core (real console chain)"
     },
     {
@@ -232,22 +232,10 @@
   ],
   "queue": [
     {
-      "id": "P1",
-      "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
-      "plan": "E6",
-      "status": "active",
-      "depends": [],
-      "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
-      "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink.",
-      "evidence": [
-        "port: the xemu 0.8.139 interpreter is now managed C# - Dsp56300Core.Execution (fetch/decode, PC, DO/REP, stack, interrupt pipeline, effective address, condition codes), .Alu (ALU + MAC/MPY families, 24-bit read/limit), .Instructions (104 non-parallel handlers), .ParallelMove (pm_0..pm_8), Dsp56300Opcodes (187-row decode table + 256-entry ALU dispatch + MatchMMMRRR); Step/Run execute. Differential: tools/dsp-oracle compiles the reference interpreter from References2 (read-only) with out-of-range guards and generates 929 vectors (3 per decode entry, 2 per defined ALU opcode, 240 random 8-word programs, 24 interrupt-pipeline cases) into tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt; 9 new tests replay them (state + registers + memory hash), 51 Audio tests green, suite 1884 -> 1893, build 0 warnings, format clean. Reference quirks reproduced and documented: emu_pm_1's unconditional registers[numreg1] store (also writes the virtual A/B register) and emu_macr_p_x1_y0_b rounding before the accumulator load (behaves as mac). No gate moved (the interpreter is not wired to the machine yet): triangle gl+replace 1B ramSha256 4F1FCBC0/cpu 7DAB63EB, menu gl+replace 1B B06BA6E5/F5D61C94, BackendUnsupported=0."
-      ]
-    },
-    {
       "id": "R1",
       "title": "Release: packaging, installer, licensing review",
       "plan": "E6",
-      "status": "queued",
+      "status": "active",
       "depends": [],
       "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",
       "price": "not on the M-D critical path",
@@ -331,6 +319,13 @@
       "date": "2026-10-23",
       "evidence": "port: the xemu 0.8.139 interpreter is now managed C# - Dsp56300Core.Execution (fetch/decode, PC, DO/REP, stack, interrupt pipeline, effective address, condition codes), .Alu (ALU + MAC/MPY families, 24-bit read/limit), .Instructions (104 non-parallel handlers), .ParallelMove (pm_0..pm_8), Dsp56300Opcodes (187-row decode table + 256-entry ALU dispatch + MatchMMMRRR); Step/Run execute. Differential: tools/dsp-oracle compiles the reference interpreter from References2 (read-only) with out-of-range guards and generates 929 vectors (3 per decode entry, 2 per defined ALU opcode, 240 random 8-word programs, 24 interrupt-pipeline cases) into tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt; 9 new tests replay them (state + registers + memory hash), 51 Audio tests green, suite 1884 -> 1893, build 0 warnings, format clean. Reference quirks reproduced and documented: emu_pm_1's unconditional registers[numreg1] store (also writes the virtual A/B register) and emu_macr_p_x1_y0_b rounding before the accumulator load (behaves as mac). No gate moved (the interpreter is not wired to the machine yet): triangle gl+replace 1B ramSha256 4F1FCBC0/cpu 7DAB63EB, menu gl+replace 1B B06BA6E5/F5D61C94, BackendUnsupported=0.",
       "commitMessage": "audio: port the DSP56300 instruction decoder and handlers (P1.2)"
+    },
+    {
+      "id": "P1",
+      "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
+      "date": "2026-10-23",
+      "evidence": "port: McpxApuDsp/McpxApuDspPair port xemu 0.8.139 gp_ep.c (64 KB GP/EP sub-windows, proc_rst_write reset/bootstrap, scatter/gather scratch + FIFO rings over the guest SGE tables, peripheral halt/interrupt/DMA at 0xFFFFC4-C5/D4-D7, the GP/EP frame loop with a 1M-cycle safety ceiling, float_to_24b), wired behind the opt-in ApuDspCore option; APU snapshot v4 appends a length-prefixed DSP payload (v2/v3 still load). P1.4: IAudioBackend + WaveAudioBackend (48 kHz 16-bit stereo, patched RIFF header), EP output FIFO 0 sunk with silence written back to the guest ring (ep_sink_samples), CLI --apu-dsp and --audio-out (implies --apu-dsp). Real-microcode bug found and fixed: InvalidateOpcodeCache cleared the 0xFFFFFFFF nop tag sentinel (274,495 undefined instructions and 28 cycle-limit hits -> 0/0; regression test fails pre-fix). Evidence: --apu-dsp is guest-identical on both 1B gates (menu gl B06BA6E5/F5D61C94, 29 GP frames; triangle gl 4F1FCBC0/7DAB63EB, 26 GP frames; 0 undefined, 0 ceiling hits, no fault); default path exact fast anchors (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, triangle sw B45254CA/7DAB63EB 57,663,082 px, menu sw 34973510/F5D61C94 253,998,498 px), accurate goldens A1740DE0/3FC4B419 (2706/68/34) and 4EF1FBF6/6BE6325F (33632/686/686) GOLDEN PASS with violations 0, ktest log CA5D3867 (40,797 B) byte-identical at 792,800,535 steps, SMOKE PASS 7/7. Suite 1893 -> 1922, build 0 warnings, format clean; frontend smoke 306,817 non-black px, 71.7 MB save/load round trip, faulted=False. Phase 12 (APU) 55 -> 75%, score 78.2 -> 78.9% (85.23 of 108). Remaining host-audio gap: the VP mixer (vp.c) and the AC97 codec path; the sink path is proven by a 16-sample stereo voice through the real EP FIFO/DMA ring.",
+      "commitMessage": "audio: port the APU GP/EP frame glue and the PCM sink (P1.3, P1.4)"
     }
   ],
   "negatives": [

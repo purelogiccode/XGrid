@@ -1,19 +1,26 @@
-# Next session instructions (updated 2026-10-23, after the GPL-2.0/porting decision and the DSP foundation slice; the previous §243 handoff is retained below)
+# Next session instructions (updated 2026-10-23, after P1 closed: the GP/EP frame glue and the PCM sink landed; the previous §243 handoff is retained below)
 
-> **STATUS 2026-10-23 (44th session) - GPL-2.0, xemu 0.8.139 and the DSP port
-> foundation.** XGrid is now **GPL-2.0** (`COPYING`/`LICENSE`); porting from
-> xemu/QEMU/Cxbx/xqemu is allowed with notices, but the project stays **full
-> managed C#** (no QEMU/xemu native library, no C/C++ emulator code in the
-> build). `References2/xemu-0.8.139` is the primary source; its APU/DSP subtree
-> is byte-identical to 0.8.137 and the NV2A delta is catalogued in
-> `docs/research-notes/xemu-0.8.139.md`. The active task is **P1**: the
-> state/memory/bootstrap/56-bit-arithmetic/DMA slice is ported
-> (`src/XGrid.Audio/Dsp/`), tests are green, and the interpreter + GP/EP glue +
-> PCM sink are the next slices. The xemu 0.8.139 menu oracle is real:
-> `docs/research-notes/xemu-menu-oracle.md` (0.8.139 boots the XBMC dashboard
-> from `data/xemu`; the old "xemu deadlocks" note was specific to the
-> 0.8.136/0.8.137 media). Binding policy: `docs/porting-policy.md`; provenance:
-> `THIRD_PARTY_NOTICES.md`.
+> **STATUS 2026-10-23 (46th session) - P1 is COMPLETE and R1 is next.** The
+> xemu 0.8.139 APU DSP port is finished for its price: state/memory/arithmetic/
+> DMA (P1.1), the interpreter (P1.2), the `gp_ep.c` frame glue behind the
+> `ApuDspCore` option (P1.3) and the EP-output PCM sink (`IAudioBackend` +
+> `WaveAudioBackend`, CLI `--audio-out`, P1.4).  The opt-in core executes the
+> dashboard's real microcode (29 GP frames, 0 undefined instructions, 0 cycle
+> hits) and is guest-identical to the bridge on both 1B gates.  All gates are
+> byte-identical: fast anchors triangle gl `4F1FCBC0`/`7DAB63EB` / menu gl
+> `B06BA6E5`/`F5D61C94` / triangle sw `B45254CA`/`7DAB63EB` (57,663,082 px) /
+> menu sw `34973510`/`F5D61C94` (253,998,498 px); accurate goldens `A1740DE0`/
+> `3FC4B419` and `4EF1FBF6`/`6BE6325F`; ktest log `CA5D3867` (40,797 B) at
+> 792,800,535 steps, SMOKE PASS 7/7.  Suite **1922**, phase score **78.9%**.
+> **The remaining host-audio gap is the VP mixer** (`vp.c`): it is what would
+> make the gate titles audible, and the AC97 codec path is not modeled.  A new
+> task is needed to own it; do not reopen P1.
+
+> **STATUS 2026-10-23 (45th session) - the DSP interpreter (P1.2).** RETAINED FOR HISTORY: the decoder/handlers are ported and
+> differentially exact on 929 vectors (`tools/dsp-oracle`); the GP/EP glue and
+> the PCM sink followed in P1.3/P1.4 (see the block above).  The xemu 0.8.139
+> menu oracle is real: `docs/research-notes/xemu-menu-oracle.md`.  Binding
+> policy: `docs/porting-policy.md`; provenance: `THIRD_PARTY_NOTICES.md`.
 
 > **Routine change (2026-10-22):** the current task, queue and status are in
 > `docs/status.json`. Start every session with
@@ -270,7 +277,9 @@ decide that against xemu first.
 - Mip selection (LOD computation); the corpus has no mipmapped sample yet.
 - A GL *window* renderer in the frontend (the offscreen FBO + readback path is
   the product path). Mirror mode in the frontend.
-- Host audio (APU GP/EP DSP execution + a PCM sink) - Track P's largest item.
+- Host audio: the DSP core + frame glue + PCM sink landed in P1 (§246); the
+  **VP mixer** (`vp.c`: ADPCM/SVF/HRTF/envelopes/pitch/3D) is the remaining
+  audible-output item and needs its own task. The AC97 codec path is not modeled.
 - The HILO dot-map input one-word-per-stage limitation (§236) - no row uses it.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement

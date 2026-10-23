@@ -138,9 +138,9 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 1).
+**Current status (2026-10-23):** M-D / **R1 - Release: packaging, installer, licensing review** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
+**Phase score:** 78.9% (85.23 of 108). **Next:** .
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
@@ -805,6 +805,49 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-23 (forty-sixth; the GP/EP frame glue runs the guest's real
+DSP microcode and the EP output FIFO feeds a host PCM sink - P1.3 and P1.4 land,
+every gate anchor byte-identical).**
+
+- **P1.3 landed (`McpxApuDsp`/`McpxApuDspPair`, `ApuDspCore` option).** The
+  `gp_ep.c` glue is ported: the GP/EP 64 KB sub-windows (X/mixbuf/Y/P + the
+  reset register), `proc_rst_write` (reset on a cleared run bit, bootstrap on the
+  rising edge of both), `scatter_gather_rw`/`circular_scatter_gather_rw` over the
+  guest SGE tables, the FIFO base/end/cur rings (global registers 0x3024/0x4024),
+  the peripheral space (0xFFFFC4 halt, 0xFFFFC5 interrupt word, 0xFFFFD4-D7 DMA)
+  and the frame loop (START_FRAME, halt clear, `run(1000)` until halt, a 1M-cycle
+  safety ceiling). `ProcessDspFrame` passes the pre-increment `ep_frame_div` so
+  the EP runs on frames 0, 8, 16... like `se_frame`. APU snapshot **v4**
+  appends a length-prefixed DSP payload; v2/v3 still load, so no `.xgs` is
+  invalidated.
+- **P1.4 landed (`IAudioBackend`, `WaveAudioBackend`, CLI `--audio-out`).** The
+  EP output FIFO 0 is submitted to the host backend and silence is written to
+  the guest ring (`ep_sink_samples`); the WAVE backend records 48 kHz/16-bit
+  stereo PCM with a patched RIFF header. `--audio-out` implies `--apu-dsp`.
+- **The real microcode found a real bug.** The first `--apu-dsp` boot ran 29 GP
+  frames with **274,495 undefined instructions** and 28 cycle-limit hits: the
+  first un-decoded word was `nop` at PC 0x3FA. `InvalidateOpcodeCache` (every
+  bootstrap/P write) cleared the tag cache to zeros, and 0 is `nop`, so the
+  first fetch looked like a cache hit on a null entry and the PC never advanced.
+  Fixed by re-filling the 0xFFFFFFFF sentinel; `InvalidateOpcodeCache_KeepsThe
+  NopSentinel` fails pre-fix. After the fix: **0 undefined, 0 ceiling hits, PC
+  back at 0** on every frame.
+- **Evidence.** The opt-in path is guest-identical on both gate titles at 1B:
+  menu `gl+replace` `B06BA6E5`/`F5D61C94` (29 GP frames), triangle
+  `4F1FCBC0`/`7DAB63EB` (26 GP frames), same NV2A counters, no fault. Default
+  path unchanged: fast 1B triangle gl `4F1FCBC0`/`7DAB63EB`, menu gl
+  `B06BA6E5`/`F5D61C94`, triangle sw `B45254CA`/`7DAB63EB` 57,663,082 px, menu
+  sw `34973510`/`F5D61C94` 253,998,498 px; accurate goldens `A1740DE0`/
+  `3FC4B419` (2706/68/34) and `4EF1FBF6`/`6BE6325F` (33632/686/686) PASS,
+  violations 0; ktest log `CA5D3867` (40,797 B) byte-identical at 792,800,535
+  steps, SMOKE PASS 7/7. Suite 1893 -> **1922**, build 0 warnings, format clean.
+  Phase 12 (APU) 55% -> 75%; score 78.9% (85.23 of 108).
+- **Filed:** the VP mixer (`vp.c`) is what would make the gates audible (the
+  dashboard starts the GP for 29 boot frames and never the EP, so `--audio-out`
+  writes an empty-but-valid WAV on the gate media); the sink path itself is
+  proven by a 16-sample stereo voice through the real EP FIFO/DMA ring. The
+  AC97 codec path is not modeled.
 
 **Session 2026-10-23 (forty-fifth; the DSP56300 interpreter is ported - the
 decoder, the parallel moves and all 388 handler bodies - and it is

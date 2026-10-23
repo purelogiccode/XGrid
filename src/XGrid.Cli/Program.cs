@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
+using XGrid.Audio;
 using XGrid.Bus.Net;
 using XGrid.Bus.Smbus;
 using XGrid.Bus.Usb;
@@ -84,6 +85,7 @@ internal static class Program
         string? ramDumpPath = null;
         string? raminPath = null;
         string? eepromOutPath = null;
+        string? audioOutPath = null;
         string? saveStatePath = null;
         ulong saveAt = 0;
         bool hasSaveAt = false;
@@ -102,6 +104,7 @@ internal static class Program
         bool idleSkipProbe = false;
         string texFilter = "legacy";
         bool fixedFunction = false;
+        bool apuDspCore = false;
         bool fetchFast = false;
         bool decodeCache = true;
         bool decodeVerify = false;
@@ -289,6 +292,13 @@ internal static class Program
                 case "--ffp":
                     fixedFunction = true;
                     break;
+                case "--apu-dsp":
+                    apuDspCore = true;
+                    break;
+                case "--audio-out":
+                    audioOutPath = NextValue(args, ref i);
+                    apuDspCore = true;
+                    break;
                 case "--tex-filter":
                     texFilter = NextValue(args, ref i);
                     if (texFilter is not ("legacy" or "registers"))
@@ -417,6 +427,7 @@ internal static class Program
         }
 
         XboxMachine? machine = null;
+        WaveAudioBackend? audioOut = null;
         try
         {
             machine = new XboxMachine(ramMb * 1024 * 1024);
@@ -448,6 +459,21 @@ internal static class Program
             machine.SevenEosQuirkEnabled = !noEosQuirk;
             machine.Nv2A.TextureFilterRegisters = string.Equals(texFilter, "registers", StringComparison.Ordinal);
             machine.Nv2A.FixedFunctionTransform = fixedFunction;
+            machine.Apu.ApuDspCore = apuDspCore;
+            if (apuDspCore)
+            {
+                Console.WriteLine(
+                    "APU DSP core=on (GP/EP microcode executed; scratch/FIFO DMA through the guest SGE tables)");
+            }
+
+            if (audioOutPath is not null)
+            {
+                audioOut = new WaveAudioBackend(audioOutPath);
+                machine.Apu.AudioBackend = audioOut;
+                Console.WriteLine(
+                    $"APU audio out={audioOutPath} (48000 Hz 16-bit stereo PCM; --audio-out implies --apu-dsp)");
+            }
+
             Console.WriteLine(
                 $"007 EOS quirk={(machine.SevenEosQuirkEnabled ? "on" : "off")} (TitleId 0x4541000D EOS 2->0)");
             if (fixedFunction)
@@ -1123,6 +1149,7 @@ internal static class Program
                 }
             }
 
+            CloseAudio();
             return 0;
 
             void ApplyPadIfDue(ulong at)
@@ -1154,11 +1181,13 @@ internal static class Program
                 PrintState(machine, 0, dumps);
             }
 
+            CloseAudio();
             return 2;
         }
         catch (MemoryAccessException exception)
         {
             Console.Error.WriteLine($"Memory error: {exception.Message}");
+            CloseAudio();
             return 3;
         }
         catch (UnhandledGuestException exception)
@@ -1169,12 +1198,26 @@ internal static class Program
                 PrintState(machine, 0, dumps);
             }
 
+            CloseAudio();
             return 5;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"Cannot read firmware: {exception.Message}");
+            CloseAudio();
             return 4;
+        }
+
+        void CloseAudio()
+        {
+            if (audioOut is null)
+            {
+                return;
+            }
+
+            audioOut.Dispose();
+            Console.WriteLine(
+                $"APU audio bytes={audioOut.BytesWritten} frames={audioOut.Frames} file={audioOutPath}");
         }
     }
 
@@ -2250,6 +2293,19 @@ internal static class Program
             $"APU ist={machine.Apu.InterruptStatus:X8} ien={machine.Apu.InterruptEnable:X8} " +
             $"fectl={machine.Apu.FrontEndControl:X8} asserted={machine.Apu.InterruptAsserted} " +
             $"reads={machine.Apu.ReadCount} writes={machine.Apu.WriteCount} voiceOff={machine.Apu.VoiceOffCompletions}");
+        if (machine.Apu.Dsp is { } dsp)
+        {
+            Console.WriteLine(
+                $"APU DSP gpFrames={dsp.Gp.Frames} gpUndefined={dsp.Gp.Core.UndefinedInstructions} " +
+                $"gpFirstUndefPc=0x{dsp.Gp.Core.FirstUndefinedPc:X} gpFirstUndef=0x{dsp.Gp.Core.FirstUndefinedInstruction:X6} " +
+                $"gpPc=0x{dsp.Gp.Core.State.Pc:X} gpPram0=0x{dsp.Gp.Core.State.Pram[0]:X6} " +
+                $"gpsaddr=0x{machine.Apu.Read(McpxApuDevice.BaseAddress + 0x2040, 4):X8} " +
+                $"gpsmax={machine.Apu.Read(McpxApuDevice.BaseAddress + 0x20D4, 4)} " +
+                $"gpLimitHits={dsp.Gp.FrameCycleLimitHits} gpScratchMiss={dsp.Gp.ScratchOutOfRange} " +
+                $"epFrames={dsp.Ep.Frames} epUndefined={dsp.Ep.Core.UndefinedInstructions} " +
+                $"epSunk={dsp.Ep.SunkBytes}");
+        }
+
         foreach (string entry in machine.Apu.EventLog)
         {
             Console.WriteLine($"APU log: {entry}");
@@ -2832,7 +2888,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine(
-            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
+            "  boot --bios <path> [--mcpx <path>] [--eeprom <path>] [--hdd <path>] [--dvd <path>] [--steps N] [--trace N] [--trace-start N] [--dump addr[,len]] [--ramdump <path>] [--ramin <path>] [--eeprom-out <path>] [--save-state <path> [--save-at N]] [--load-state <path>] [--break addr] [--break-log addr]... [--ram MB] [--fb <path>] [--frame <path>] [--frame-first <path>] [--frame-scanout <path>] [--frame-display <path>] [--writedump <dir>] [--pad-buttons <set> --pad-analog <hex> --pad-sticks <lx,ly,rx,ry> [--pad-step N] [--pad-script <set@step[+hold],...>]] [--eip-hist N] [--net-backend <loopback|socket>] [--net-inject <hex>] [--net-link <up|down>] [--no-007-eos-quirk] [--idle-skip] [--idle-skip-probe] [--fetch-fast] [--decode-cache|--no-decode-cache] [--decode-verify] [--block-exec] [--block-verify] [--spec-exec] [--shape-tally] [--emit] [--emit-inline] [--emit-diag] [--jit] [--jit-mmio] [--jit-spin] [--jit-raw] [--raw-shapes] [--jit-timing] [--hotspot <csv>] [--gpu sw|gl] [--gpu-replace] [--gpu-time] [--window] [--ffp] [--apu-dsp] [--audio-out <path>] [--tex-filter legacy|registers] [--bench] [--bench-name <name>]");
         Console.WriteLine("                   Load firmware and execute up to N instructions");
         Console.WriteLine(
             "                   Decode cache defaults on; --no-decode-cache restores legacy fetch/decode.");

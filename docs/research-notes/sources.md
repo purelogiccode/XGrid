@@ -43,6 +43,8 @@ license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are 
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Instructions.cs` | xemu 0.8.139 `interp/dsp_emu.c.inc` | GPL-2+ | Ported (non-parallel instruction handlers). |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.ParallelMove.cs` | xemu 0.8.139 `interp/dsp_emu.c.inc` | GPL-2+ | Ported (parallel-move handlers). |
 | `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `interp/dsp_cpu.c` / `dsp_emu.c.inc` | GPL-2+ | Ported (decode and ALU dispatch tables). |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Snapshot.cs` | xemu 0.8.139 `dsp_c.c` (`dsp_c_sync_to_vm`/`dsp_c_sync_from_vm`) + `dsp_cpu.h` | GPL-2+ | Ported (complete core state save/restore). |
+| `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | Ported (GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`). |
 | `tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt` | generated from the xemu 0.8.139 reference interpreter | GPL-2+ (derived data) | Differential vectors; regenerate with `tools/dsp-oracle/build.ps1 -Regenerate`. |
 | `tools/dsp-oracle/` | xemu 0.8.139 `interp/` (compiled from `References2/` at run time) | GPL-2+ | Development-only oracle; not part of the build or distribution. |
 

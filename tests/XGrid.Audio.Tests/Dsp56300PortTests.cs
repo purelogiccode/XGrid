@@ -103,6 +103,24 @@ public sealed class Dsp56300PortTests
     }
 
     [Fact]
+    public void InvalidateOpcodeCache_KeepsTheNopSentinel()
+    {
+        // A bootstrap (and a P-memory write) invalidates the decode cache; the
+        // tag-cache sentinel must survive it, because 0x000000 is `nop`, not an
+        // empty slot. The frame glue hit this on the real dashboard microcode:
+        // every nop decoded as undefined and the PC never advanced.
+        var core = new Dsp56300Core(isGp: true);
+        core.InvalidateOpcodeCache();
+        core.State.Pram[0] = 0x000000;
+        core.State.Pram[1] = 0x0C0000;
+
+        core.Step();
+
+        Assert.Equal(0, (int)core.UndefinedInstructions);
+        Assert.Equal(1u, core.State.Pc);
+    }
+
+    [Fact]
     public void Dma_WritesFifoFromXMemory()
     {
         var core = new Dsp56300Core(isGp: false);

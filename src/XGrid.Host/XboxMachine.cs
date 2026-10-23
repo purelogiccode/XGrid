@@ -770,6 +770,11 @@ public sealed class XboxMachine : IIdleSkipHost
             return memory.Read32(address);
         }
 
+        public byte Read8(uint address)
+        {
+            return memory.Read8(address);
+        }
+
         public void Write32(uint address, uint value)
         {
             memory.Write32(address, value);

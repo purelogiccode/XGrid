@@ -271,7 +271,7 @@ public sealed class DspBridgeTests
         using var output = new MemoryStream();
         using var writer = new BinaryWriter(output);
 
-        Assert.Equal(3, reader.ReadInt32());
+        Assert.Equal(4, reader.ReadInt32());
         writer.Write(2);
 
         const int regCount = 0x80000 / 4;
@@ -319,7 +319,12 @@ public sealed class DspBridgeTests
         reader.ReadInt64();
 
         long remaining = reader.BaseStream.Length - reader.BaseStream.Position;
-        writer.Write(reader.ReadBytes((int)remaining));
+        byte[] rest = reader.ReadBytes((int)remaining);
+
+        // V4 appends an optional DSP-core payload; a bridge-mode save writes
+        // only the absent flag as its last byte.
+        Assert.Equal(0, rest[^1]);
+        writer.Write(rest, 0, rest.Length - 1);
         writer.Flush();
         return output.ToArray();
     }

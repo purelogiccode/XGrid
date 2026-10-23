@@ -16222,3 +16222,99 @@ scratch, FIFO windows, the GP/EP frame loop, DMA) behind an `ApuDspCore` option,
 default stays the existing bridge until the goldens are byte-identical.  The
 interpreter's `ExceptionDebugging` default must flip to `false` there so a guest
 `ill` raises the illegal interrupt instead of throwing.
+
+## 246 P1.3/P1.4: the GP/EP frame glue runs the real guest microcode, and the EP output FIFO feeds a host PCM sink (2026-10-23, forty-sixth session) - P1.3, P1.4
+
+**The slice boundary.**  P1.3 is `gp_ep.c` + the `dsp.c`/`dsp_c.c` run-loop glue:
+the GP/EP 64 KB sub-windows, `proc_rst_write`, the scatter/gather scratch and
+FIFO rings, the peripheral halt/interrupt/DMA registers, the DMA wiring and the
+frame loop.  P1.4 is the output path: the EP output FIFO 0 to an
+`IAudioBackend`.  The VP mixer that would make the gate titles audible is **not**
+in P1's price (the price names the DSP files only) and stays filed.
+
+### 1. What landed
+
+- **`src/XGrid.Audio/Dsp/McpxApuDsp.cs`** (new, GPL-2+ combined work): one
+  `McpxApuDsp` per processor plus a `McpxApuDspPair` for the shared frame loop.
+  - the 64 KB window decode is the reference switch exactly: GP X 0x0000-0x3FFF,
+    GP mix buffer 0x5000-0x5FFF (X 0x1400), GP Y 0x6000-0x7FFF, GP P
+    0xA000-0xEFFF; EP X 0x0000-0x2FFF (0xC00 words), EP Y 0x6000-0x63FF
+    (0x100 words), EP P 0xA000-0xEFFF; everything else is the processor's own
+    register file, with `GPRST`/`EPRST` at 0xFFFC.
+  - `proc_rst_write`: clearing either run bit resets the core; the rising edge of
+    both bootstraps 0x800 program words through the scratch SGE table and strips
+    the dirty high byte (`dsp_c_bootstrap`).
+  - `scatter_gather_rw` (one SGE entry per 4 KB page, page-relative copy, a word
+    fast path) and `circular_scatter_gather_rw` (ring wrap at `end`), with the
+    FIFO base/end/cur registers in the *global* APU window (0x3024/0x4024
+    families) and the SGE bases at GPSADDR/GPFADDR/EPSADDR/EPFADDR.
+  - peripheral space (0xFFFF80-0xFFFFFF): 0xFFFFC4 bit 0 halts, 0xFFFFC5 is the
+    interrupt word (bit 1 frame start, bit 7 DMA EOL), 0xFFFFD4-D7 are the DMA
+    registers; a read of an unmapped peripheral returns 0xABABA.
+  - the frame loop: `interrupts |= START_FRAME`, clear the halt request and the
+    cycle counter, then `run(1000)` until the microcode halts (the reference's
+    realtime loop).  A runaway program would hang the emulator, so a
+    `FrameCycleLimit` (1M cycles, ~15x the nominal frame) bounds it and counts.
+  - `FloatTo24` transcribes `float_to_24b` (the 8x scaling, the two clamps, ties
+    to even, NaN -> 0, matching the x86 `lrint` the reference compiles to).
+- **`McpxApuDevice`**: the opt-in `ApuDspCore` property creates the pair, routes
+  both sub-windows and the reset registers, and replaces the bridge in
+  `ProcessDspFrame` (the pre-increment `ep_frame_div` is passed, matching
+  `se_frame`'s order).  The bridge stays the default and is untouched.
+- **`IAudioBackend` + `WaveAudioBackend`** (new, XGrid): the EP output FIFO 0 is
+  submitted to the backend and silence is written to the guest ring
+  (`ep_sink_samples`); the WAVE backend records 48 kHz/16-bit stereo PCM with a
+  patched RIFF header.  CLI `--apu-dsp` and `--audio-out <path>` (the latter
+  implies the former), and the APU diagnostic line prints GP/EP frames, undefined
+  instructions, cycle-limit hits, scratch misses and sunk bytes.
+- **Snapshots**: `Dsp56300Core.SaveState/LoadState` (the complete architectural
+  state, including the carried cycle budget) and APU snapshot **v4**, which
+  appends a length-prefixed DSP payload when the core is enabled.  v2/v3 load
+  unchanged, so no existing `.xgs` is invalidated.
+
+### 2. The bug the real microcode found
+
+The first `--apu-dsp` boot ran 29 GP frames with **274,495 undefined
+instructions** and 28 cycle-limit hits.  `Pram[0]` held the real microcode
+(`0x0BF080`) and the first undefined word was `0x000000` at PC 0x3FA: `nop`.
+`InitializeTables` fills the 256-entry tag cache with the 0xFFFFFFFF sentinel
+because 0 is a valid instruction, but `InvalidateOpcodeCache` (called by every
+bootstrap and P-memory write) cleared it back to zeros, so the first fetch of
+`nop` looked like a cache hit on a null entry, `Undefined()` left
+`CurrentInstructionLength = 0`, and the PC never advanced.  The fix re-fills the
+sentinel on invalidate; `Dsp56300PortTests.InvalidateOpcodeCache_KeepsTheNopSentinel`
+pins it (fails pre-fix: PC stays 0, one undefined).  After the fix: **0 undefined,
+0 limit hits, PC back at 0**, every frame.
+
+### 3. Evidence (H1)
+
+- **The opt-in path is guest-identical on both gate titles at 1B**: menu
+  `gl+replace` `B06BA6E5`/`F5D61C94` (29 GP frames), triangle `gl+replace`
+  `4F1FCBC0`/`7DAB63EB` (26 GP frames), 0 undefined, 0 cycle-limit hits, no
+  fault; NV2A counters identical (33638/1402/696/686/686 and 2706/0/6455/68/34).
+  The dashboard's boot audio starts the GP and stops it after 29 frames; the
+  guest never starts the EP on this media, so `--audio-out` writes a valid but
+  empty WAV (44-byte header) - the sink path itself is proven by
+  `AudioSinkTests.VoiceStream_ProducesPcmThroughTheHostSink`, which runs a
+  16-sample stereo voice through the real EP FIFO ring/DMA/sink and compares the
+  32 PCM bytes, and by `WaveBackend_WritesARiffFileWithThePcm`.
+- **No gate moved (default path)**: fast 1B triangle `gl+replace`
+  `4F1FCBC0`/`7DAB63EB`, menu `gl+replace` `B06BA6E5`/`F5D61C94`, triangle `sw`
+  `B45254CA`/`7DAB63EB` 57,663,082 px, menu `sw` `34973510`/`F5D61C94`
+  253,998,498 px; accurate goldens `A1740DE0`/`3FC4B419` (2706/68/34) and
+  `4EF1FBF6`/`6BE6325F` (33632/686/686) PASS with violations 0; ktest suite log
+  `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps, SMOKE PASS 7/7.
+- Suite 1893 -> **1922** (P1.3/P1.4: 24 glue tests + 3 sink tests + the nop
+  regression), build 0 warnings, format clean.
+- Phase 12 (APU) 55% -> 75%; score 78.2% -> **78.9%** (85.23 of 108).
+
+### 4. What is still missing for audible host audio
+
+The VP mixer (`vp.c`: ADPCM/SVF/HRTF/envelopes/pitch/3D) is what produces the
+mixbins the GP consumes; the gate titles start the GP but never the EP, and the
+AC97 codec path (guest-RAM ring -> codec DMA) is not modeled either.  The
+faithful xemu host tap is the EP output FIFO (S/PDIF encoder path), which is what
+P1.4 wired.  A product audio feature therefore needs: the VP mixer, the EP
+microcode actually started by the guest (or an AC97 codec model reading the GP
+ring), and a real-time host device backend behind `IAudioBackend` (the WAVE
+backend is the test/record sink).

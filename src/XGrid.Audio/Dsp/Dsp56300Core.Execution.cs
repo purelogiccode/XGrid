@@ -172,11 +172,23 @@ public sealed partial class Dsp56300Core
     /// <summary>Gets the number of instructions the decoder could not resolve.</summary>
     public long UndefinedInstructions { get; private set; }
 
+    /// <summary>Gets the first instruction word the decoder could not resolve.</summary>
+    public uint FirstUndefinedInstruction { get; private set; }
+
+    /// <summary>Gets the program counter of the first unresolved instruction.</summary>
+    public uint FirstUndefinedPc { get; private set; }
+
     /// <summary>Gets the number of parallel-move instructions executed.</summary>
     public long ParallelMoveInstructions { get; private set; }
 
     private void Undefined()
     {
+        if (UndefinedInstructions == 0)
+        {
+            FirstUndefinedInstruction = State.CurrentInstruction;
+            FirstUndefinedPc = State.Pc;
+        }
+
         UndefinedInstructions++;
         State.CurrentInstructionLength = 0;
         State.InstrCycle += 100;
@@ -415,7 +427,11 @@ public sealed partial class Dsp56300Core
     {
         Array.Fill(_pramOpcode, (short)-1);
         Array.Clear(_opcodeLookup);
-        Array.Clear(_opcodeLookupInstruction);
+
+        // Zero is a valid instruction word (nop), so the tag cache needs a
+        // sentinel that no 24-bit instruction can equal; clearing it would make
+        // the first fetch of 0x000000 look like a cache hit on a null entry.
+        Array.Fill(_opcodeLookupInstruction, 0xFFFFFFFFu);
     }
 
     private void WriteReg(uint numreg, uint value)

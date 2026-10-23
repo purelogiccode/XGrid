@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using XGrid.Audio.Dsp;
 using XGrid.Core.Devices;
 using XGrid.Core.Snapshots;
 using XGrid.Memory;
 
 namespace XGrid.Audio;
 
-/// <summary>Guest physical memory access used by the APU for notifier status and voice state.</summary>
+/// <summary>Guest physical memory access used by the APU for notifier status, voice state and DSP DMA.</summary>
 public interface IApuMemory
 {
     /// <summary>Reads a 32-bit little-endian value from guest physical memory.</summary>
@@ -19,6 +20,15 @@ public interface IApuMemory
 
     /// <summary>Writes a byte to guest physical memory.</summary>
     void Write8(uint address, byte value);
+
+    /// <summary>
+    /// Reads a byte from guest physical memory. The default extracts the
+    /// addressed lane of the containing word so an existing adapter keeps
+    /// working; a memory bus should override it with a direct byte read.
+    /// </summary>
+    /// <param name="address">The guest physical address.</param>
+    /// <returns>The byte.</returns>
+    byte Read8(uint address) => (byte)(Read32(address & ~3u) >> (int)((address & 3u) * 8));
 }
 
 /// <summary>
@@ -42,8 +52,13 @@ public interface IApuMemory
 /// DSP subunit service request (serviced by the guest's own IRQ5 ISR/worker/FB restart
 /// chain). Scratch access is gated on the guest's GPSADDR SGE table actually mapping the
 /// mailbox page, so unprogrammed titles can never be touched.
+/// Setting <see cref="ApuDspCore"/> replaces that bridge with the ported xemu 0.8.139
+/// DSP56300 core plus the GP/EP frame glue (<see cref="McpxApuDspPair"/>): the guest
+/// microcode executes, the sub-windows map X/Y/P memory, the scratch and FIFO DMA
+/// windows copy through the guest's SGE tables, and the peripheral halt/interrupt/DMA
+/// registers are live. It is opt-in until the goldens are re-recorded.
 /// </summary>
-public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
+public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IApuDspRegisters
 {
     /// <summary>APU MMIO window base (fixed by the MCPX, not BAR-programmed by the guest).</summary>
     public const uint BaseAddress = 0xFE800000;
@@ -207,6 +222,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly int[] _sslIndex = new int[MaxVoices];
     private readonly int[] _sslSeg = new int[MaxVoices];
     private readonly ulong[] _frameVisited = new ulong[MaxVoices / 64];
+    private McpxApuDspPair? _dsp;
+    private IAudioBackend? _audioBackend;
     private uint _sslBasePage;
     private uint _inbufSgeHandle;
     private uint _outbufSgeHandle;
@@ -223,6 +240,40 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Raised when the APU PCI interrupt line changes state.</summary>
     public event Action<bool>? InterruptChanged;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the GP/EP DSP sub-windows run the
+    /// ported xemu 0.8.139 DSP56300 core instead of the frame-driven bridge.
+    /// </summary>
+    /// <remarks>
+    /// Off by default: the bridge is the measured gate path, so every golden stays
+    /// byte-identical until the core path is re-recorded. Enabling it creates both
+    /// DSPs in their power-on state; set it before the guest boots (a sub-window
+    /// write that happened earlier is not replayed).
+    /// </remarks>
+    public bool ApuDspCore
+    {
+        get => _dsp is not null;
+        set
+        {
+            if (value == (_dsp is not null))
+            {
+                return;
+            }
+
+            if (value)
+            {
+                _dsp = new McpxApuDspPair(_memory, this);
+                _dsp.Ep.SampleSink = _audioBackend is null ? null : SubmitSamples;
+            }
+            else
+            {
+                _dsp = null;
+            }
+
+            Log(value ? "APU DSP core on" : "APU DSP core off");
+        }
+    }
 
     /// <summary>Gets the device name used in traces and diagnostics (<c>MCPX APU</c>).</summary>
 #pragma warning disable CA1822
@@ -249,6 +300,27 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the number of DSP subunit service (ISTS bit3) raises, for diagnostics.</summary>
     public long DspBit3Raises { get; private set; }
+
+    /// <summary>Gets the DSP pair when <see cref="ApuDspCore"/> is enabled (diagnostics and tests).</summary>
+    public McpxApuDspPair? Dsp => _dsp;
+
+    /// <summary>
+    /// Gets or sets the host PCM sink. When set and <see cref="ApuDspCore"/> is
+    /// enabled, the EP output FIFO 0 is submitted here (xemu
+    /// <c>ep_sink_samples</c>) and silence is written to the guest buffer.
+    /// </summary>
+    public IAudioBackend? AudioBackend
+    {
+        get => _audioBackend;
+        set
+        {
+            _audioBackend = value;
+            if (_dsp is not null)
+            {
+                _dsp.Ep.SampleSink = value is null ? null : SubmitSamples;
+            }
+        }
+    }
 
     /// <summary>Gets whether the GP DSP engine is running (GPRST run bits set).</summary>
     public bool GpRunning { get; private set; }
@@ -295,6 +367,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         EpRunning = false;
         _epFrameDiv = 0;
         _framesSinceWake = MinWakeGapFrames;
+        _dsp?.Reset();
         SetAsserted(false);
     }
 
@@ -355,6 +428,27 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             writer.Write(entry);
         }
+
+        // V4: the optional DSP-core state. A length-prefixed payload lets a
+        // reader without the option enabled skip it.
+        if (_dsp is not null)
+        {
+            writer.Write(true);
+            using var payload = new MemoryStream();
+            using (var dspWriter = new BinaryWriter(payload, System.Text.Encoding.UTF8, leaveOpen: true))
+            {
+                _dsp.SaveState(dspWriter);
+                dspWriter.Flush();
+            }
+
+            byte[] bytes = payload.ToArray();
+            writer.Write(bytes.Length);
+            writer.Write(bytes);
+        }
+        else
+        {
+            writer.Write(false);
+        }
     }
 
     /// <summary>Restores the register file, voice-processor state, and counters.</summary>
@@ -365,7 +459,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != SnapshotVersion && version != SnapshotVersionV2)
+        if (version != SnapshotVersion && version != SnapshotVersionV3 && version != SnapshotVersionV2)
         {
             throw new InvalidDataException($"Unsupported APU snapshot version {version}.");
         }
@@ -444,10 +538,38 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         {
             _eventLog.Add(reader.ReadString());
         }
+
+        if (version >= SnapshotVersion)
+        {
+            bool hasDsp = reader.ReadBoolean();
+            if (hasDsp)
+            {
+                int length = reader.ReadInt32();
+                if (length < 0 || length > MaxDspSnapshotBytes)
+                {
+                    throw new InvalidDataException("Bad APU DSP snapshot length.");
+                }
+
+                byte[] payload = reader.ReadBytes(length);
+                if (payload.Length != length)
+                {
+                    throw new InvalidDataException("Truncated APU DSP snapshot.");
+                }
+
+                if (_dsp is not null)
+                {
+                    using var stream = new MemoryStream(payload);
+                    using var dspReader = new BinaryReader(stream);
+                    _dsp.LoadState(dspReader);
+                }
+            }
+        }
     }
 
-    private const int SnapshotVersion = 3;
+    private const int SnapshotVersion = 4;
+    private const int SnapshotVersionV3 = 3;
     private const int SnapshotVersionV2 = 2;
+    private const int MaxDspSnapshotBytes = 4 * 1024 * 1024;
 
     /// <summary>
     /// Advances voice-processor frame timing. Each frame walks the voice lists, advances
@@ -466,17 +588,28 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
-    /// Advances the GP/EP DSP engines one frame. A running GP engine absorbs a
+    /// Advances the GP/EP DSP engines one frame. With <see cref="ApuDspCore"/>
+    /// enabled the ported frame glue runs the guest microcode (the GP every
+    /// frame, the EP once per eight); otherwise a running GP engine absorbs a
     /// pending mixer block through its scratch mapping and raises the DSP subunit
-    /// service request (ISTS bit3) on a debounced submission wake; the EP engine
-    /// only advances its frame divider here (its FIFO drain needs an S/PDIF sink).
+    /// service request (ISTS bit3) on a debounced submission wake, and the EP
+    /// engine only advances its frame divider here (its FIFO drain needs a sink).
     /// </summary>
     private void ProcessDspFrame()
     {
+        // xemu's ep_frame_div is used by mcpx_apu_dsp_frame before se_frame
+        // increments it, so the DSP frame sees the pre-increment value.
+        uint epFrameDiv = _epFrameDiv;
         _epFrameDiv++;
         if (_framesSinceWake < MinWakeGapFrames)
         {
             _framesSinceWake++;
+        }
+
+        if (_dsp is not null)
+        {
+            _dsp.Frame(epFrameDiv, default);
+            return;
         }
 
         if (!GpRunning || !IsStateWordMapped())
@@ -704,7 +837,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         VoiceOffCompletions++;
     }
 
-    /// <summary>Reads one register from the 512 KB APU window at the given absolute address; the VP PIO-free register always reports the queue empty (xemu-faithful) and sub-word reads extract the addressed byte lane.</summary>
+    /// <summary>Reads one register from the 512 KB APU window at the given absolute address; the VP PIO-free register always reports the queue empty (xemu-faithful), the GP/EP sub-windows read the DSP memory map when the core is enabled, and sub-word reads extract the addressed byte lane.</summary>
     /// <param name="address">Absolute address inside the APU window.</param>
     /// <param name="size">Access size in bytes (1, 2, or 4).</param>
     /// <returns>The register value truncated and shifted to the addressed lane.</returns>
@@ -712,17 +845,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
     {
         uint offset = address - BaseAddress;
         ReadCount++;
-        uint word = offset switch
-        {
-            // xemu's VP does not simulate the PIO queue and always reports it empty.
-            VpPioFree => PioFreeCount,
-            // The EP frame counter, in mixed samples (xemu apu.c:
-            // ep_frame_div * NUM_SAMPLES_PER_FRAME). The guest watches it as a
-            // playback clock, so it must advance with the frame divider.
-            XgsCnt => _epFrameDiv * SamplesPerFrame,
-            < WindowSize => _regs[offset >> 2],
-            _ => 0,
-        };
+        uint word = ReadWord(offset);
         uint shift = (offset & 3u) * 8;
         return size switch
         {
@@ -730,6 +853,30 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             2 => (word >> (int)shift) & 0xFFFFu,
             _ => word,
         };
+    }
+
+    private uint ReadWord(uint offset)
+    {
+        if (offset == VpPioFree)
+        {
+            // xemu's VP does not simulate the PIO queue and always reports it empty.
+            return PioFreeCount;
+        }
+
+        if (offset == XgsCnt)
+        {
+            // The EP frame counter, in mixed samples (xemu apu.c:
+            // ep_frame_div * NUM_SAMPLES_PER_FRAME). The guest watches it as a
+            // playback clock, so it must advance with the frame divider.
+            return _epFrameDiv * SamplesPerFrame;
+        }
+
+        if (_dsp is not null && McpxApuDspPair.Contains(offset))
+        {
+            return _dsp.ReadWindow(offset);
+        }
+
+        return offset < WindowSize ? _regs[offset >> 2] : 0;
     }
 
     /// <summary>Writes one register in the 512 KB APU window at the given absolute address; sub-word writes read-modify-write only the addressed byte lane and out-of-window writes are ignored.</summary>
@@ -753,7 +900,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
             2 => 0xFFFFu << (int)shift,
             _ => uint.MaxValue,
         };
-        WriteRegister(aligned, size == 4 ? value : (_regs[aligned >> 2] & ~mask) | ((value << (int)shift) & mask));
+        WriteRegister(aligned, size == 4 ? value : (ReadWord(aligned) & ~mask) | ((value << (int)shift) & mask));
     }
 
     private void WriteRegister(uint offset, uint value)
@@ -778,16 +925,24 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
                 break;
             case GpRst:
                 DspResetWrite(isGp: true, _regs[offset >> 2], value);
+                _dsp?.Gp.WriteWindow(offset - McpxApuDsp.GpWindowBase, value);
                 _regs[offset >> 2] = value;
                 break;
             case EpRst:
                 DspResetWrite(isGp: false, _regs[offset >> 2], value);
+                _dsp?.Ep.WriteWindow(offset - McpxApuDsp.EpWindowBase, value);
                 _regs[offset >> 2] = value;
                 _epFrameDiv = 0;
                 break;
             default:
                 if (offset >= 0x20000 && WriteVoiceProcessor(offset - 0x20000, value))
                 {
+                    break;
+                }
+
+                if (_dsp is not null && McpxApuDspPair.Contains(offset))
+                {
+                    _dsp.WriteWindow(offset, value);
                     break;
                 }
 
@@ -1197,5 +1352,30 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         _eventLog.Add(entry);
+    }
+
+    /// <summary>Feeds the EP output FIFO to the host sink (xemu <c>ep_sink_samples</c>).</summary>
+    private bool SubmitSamples(byte[] buffer, int offset, int length)
+    {
+        if (_audioBackend is null)
+        {
+            return false;
+        }
+
+        _audioBackend.Submit(new ReadOnlySpan<byte>(buffer, offset, length));
+        return true;
+    }
+
+    uint IApuDspRegisters.Read(uint offset)
+    {
+        return offset < WindowSize ? _regs[offset >> 2] : 0;
+    }
+
+    void IApuDspRegisters.Write(uint offset, uint value)
+    {
+        if (offset < WindowSize)
+        {
+            _regs[offset >> 2] = value;
+        }
     }
 }

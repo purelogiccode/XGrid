@@ -58,6 +58,8 @@ distributed emulator binaries.  Their notices remain in the package sources.
 | `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` + `dsp_emu.c.inc` | GPL-2+ | Decode table (`nonparallel_opcodes`) and ALU dispatch table. |
 | `src/XGrid.Audio/Dsp/DspExceptions.cs` | XGrid | GPL-2+ | Fault types for the interpreter (no reference counterpart). |
 | `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Ported 56-bit arithmetic helpers. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Snapshot.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_c.c` + `interp/dsp_cpu.h` | GPL-2+ | Complete core state save/restore (the sync-to/from-VM field set). |
+| `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`. |
 | `tools/dsp-oracle/` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/` (compiled at run time, never redistributed) | GPL-2+ | Development-only differential oracle; not part of the build or distribution. |
 
 When a module is ported, add a row here and a matching entry in
