@@ -1,7 +1,7 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 1).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
@@ -263,10 +263,15 @@ is GPL-2.0 and the port is full managed C#; the reference is
 - [x] **P1.1 Port the DSP state, memory map, bootstrap, 56-bit arithmetic and
   DMA.** `Dsp56300State`, `Dsp56300Core`, `Dsp56300Arithmetic`, `DspDma`; tests
   in `Dsp56300PortTests`; no gate path changed.
-- [ ] **P1.2 Port the instruction decoder and handlers.** `dsp_cpu.c` +
+- [x] **P1.2 Port the instruction decoder and handlers.** `dsp_cpu.c` +
   `interp/dsp_emu.c.inc`: the opcode table, the parallel-move rules and the
-  handler bodies. Add a differential test per handler group; keep the existing
-  APU bridge until the ported core passes.
+  handler bodies. `Dsp56300Core.Execution` (fetch/decode, PC, DO/REP, stack,
+  interrupts, effective addresses, condition codes), `.Alu`, `.Instructions`,
+  `.ParallelMove` and `Dsp56300Opcodes` (187-row decode table + 256-entry ALU
+  dispatch). `tools/dsp-oracle` compiles the reference interpreter from
+  `References2/` and generates 929 differential vectors replayed by
+  `Dsp56300DifferentialTests` (51 Audio tests green). The existing APU bridge is
+  untouched until P1.3 wires the core.
 - [ ] **P1.3 Port the GP/EP frame glue.** `gp_ep.c`: `proc_rst_write`,
   scatter/gather scratch, FIFO windows, the GP/EP frame loop and the DMA
   wiring. Add the `ApuDspCore` option; default stays the current bridge until

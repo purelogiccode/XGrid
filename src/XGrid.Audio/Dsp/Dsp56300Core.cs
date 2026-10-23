@@ -9,12 +9,11 @@ using System.Runtime.InteropServices;
 namespace XGrid.Audio.Dsp;
 
 /// <summary>
-/// DSP56300 core: state, reset, memory map and the bootstrap path.  The
-/// instruction interpreter is the next porting slice; this type deliberately
-/// exposes <see cref="Step"/> so the integration can be tested before the
-/// decoder lands.
+/// DSP56300 core: state, reset, memory map, the bootstrap path and the
+/// instruction interpreter (ported from the xemu C interpreter; see the
+/// <c>Dsp56300Core.*</c> partial files).
 /// </summary>
-public sealed class Dsp56300Core
+public sealed partial class Dsp56300Core
 {
     /// <summary>Initializes a new instance of the <see cref="Dsp56300Core"/> class.</summary>
     /// <param name="isGp">True for the GP DSP, false for the EP DSP.</param>
@@ -22,6 +21,7 @@ public sealed class Dsp56300Core
     {
         State = new Dsp56300State(isGp);
         State.Reset();
+        InitializeTables();
     }
 
     /// <summary>Gets the core state.</summary>
@@ -61,6 +61,7 @@ public sealed class Dsp56300Core
             }
         }
 
+        InvalidateOpcodeCache();
         return cleared;
     }
 
@@ -109,7 +110,6 @@ public sealed class Dsp56300Core
     public void WriteMemory(int space, uint address, uint value)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, 0x01000000u, nameof(address));
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(value, 0x01000000u, nameof(value));
 
         switch (space)
         {
@@ -141,8 +141,7 @@ public sealed class Dsp56300Core
                 State.Yram[address] = value;
                 return;
             case Dsp56300State.SpaceP:
-                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(address, (uint)Dsp56300State.PramSize, nameof(address));
-                State.Pram[address] = value;
+                WriteMemoryP(address, value);
                 return;
             default:
                 throw new ArgumentOutOfRangeException(nameof(space));
@@ -170,38 +169,9 @@ public sealed class Dsp56300Core
         }
     }
 
-    /// <summary>Recomputes SSH/SSL from the current stack pointer.</summary>
-    public void ComputeSshSsl()
-    {
-        int stack = (int)(State.Registers[Dsp56300State.RegSp] & 0xF);
-        State.Registers[Dsp56300State.RegSsh] = State.Stack[0][stack];
-        State.Registers[Dsp56300State.RegSsl] = State.Stack[1][stack];
-    }
-
     /// <summary>Executes one instruction.</summary>
-    /// <remarks>
-    /// The decoder is the next porting slice.  Keeping this method explicit
-    /// makes the integration seam testable without pretending the interpreter
-    /// already runs.
-    /// </remarks>
     public void Step()
     {
-        throw new NotSupportedException(
-            "The DSP56300 instruction interpreter is not ported yet; the next slice ports dsp_cpu.c/dsp_emu.c.inc.");
-    }
-
-    /// <summary>Runs for at most <paramref name="cycles"/> cycles.</summary>
-    /// <param name="cycles">The cycle budget.</param>
-    public void Run(int cycles)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(cycles);
-        int remaining = cycles;
-        while (remaining > 0)
-        {
-            Step();
-            int consumed = State.InstrCycle == 0 ? 1 : State.InstrCycle;
-            remaining -= consumed;
-            State.CycleCount += (uint)consumed;
-        }
+        ExecuteInstruction();
     }
 }

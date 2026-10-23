@@ -117,6 +117,9 @@ public sealed class Dsp56300State
     /// <summary>Loop counter register index.</summary>
     public const int RegLc = 0x3F;
 
+    /// <summary>Saved loop counter register index (xemu <c>DSP_REG_LCSAVE</c>).</summary>
+    public const int RegLcSave = 0x30;
+
     // Status-register bit positions.
     /// <summary>Carry bit.</summary>
     public const int SrC = 0;
@@ -138,6 +141,12 @@ public sealed class Dsp56300State
 
     /// <summary>Limit bit.</summary>
     public const int SrL = 6;
+
+    /// <summary>Interrupt priority level bit 0.</summary>
+    public const int SrI0 = 8;
+
+    /// <summary>Interrupt priority level bit 1.</summary>
+    public const int SrI1 = 9;
 
     /// <summary>Scaling mode 0 bit.</summary>
     public const int SrS0 = 10;

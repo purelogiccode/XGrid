@@ -50,8 +50,15 @@ distributed emulator binaries.  Their notices remain in the package sources.
 |---|---|---|---|
 | `src/XGrid.Audio/Dsp/DspDma.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_dma.c` + `dsp_dma.h` | LGPL-2+ (xemu file header) | Ported. |
 | `src/XGrid.Audio/Dsp/Dsp56300State.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.h` + `dsp_cpu_regs.h` | GPL-2+ | Ported state/constants. |
-| `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Core state, reset, memory, 56-bit arithmetic; the instruction interpreter is the next slice. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Core state, reset, memory, bootstrap. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Execution.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Instruction fetch/decode, PC, DO/REP, stack, interrupts, effective addresses. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Alu.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Accumulator ALU, MAC/MPY families, 24-bit read/limit. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Instructions.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Non-parallel instruction handlers. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.ParallelMove.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_emu.c.inc` | GPL-2+ | Parallel-move handlers (`emu_pm_0`..`emu_pm_8`). |
+| `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` + `dsp_emu.c.inc` | GPL-2+ | Decode table (`nonparallel_opcodes`) and ALU dispatch table. |
+| `src/XGrid.Audio/Dsp/DspExceptions.cs` | XGrid | GPL-2+ | Fault types for the interpreter (no reference counterpart). |
 | `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Ported 56-bit arithmetic helpers. |
+| `tools/dsp-oracle/` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/` (compiled at run time, never redistributed) | GPL-2+ | Development-only differential oracle; not part of the build or distribution. |
 
 When a module is ported, add a row here and a matching entry in
 `docs/research-notes/sources.md`.

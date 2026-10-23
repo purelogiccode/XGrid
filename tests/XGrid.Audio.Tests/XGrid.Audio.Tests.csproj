@@ -29,6 +29,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\XGrid.Audio\XGrid.Audio.csproj" />
     <ProjectReference Include="..\..\src\XGrid.Core\XGrid.Core.csproj" />
   </ItemGroup>

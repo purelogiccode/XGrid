@@ -16,6 +16,9 @@ TestResults/
 BenchmarkDotNet.Artifacts/
 coverage/
 
+# Development tool scratch output (the dsp oracle builds the reference copy here)
+tools/dsp-oracle/build/
+
 # OS
 .DS_Store
 Thumbs.db

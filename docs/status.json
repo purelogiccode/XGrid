@@ -9,7 +9,7 @@
     "plan": "E6",
     "status": "active",
     "started": "2026-10-23",
-    "attempts": 0,
+    "attempts": 1,
     "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
     "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink."
   },
@@ -239,7 +239,9 @@
       "depends": [],
       "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
       "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink.",
-      "evidence": []
+      "evidence": [
+        "port: the xemu 0.8.139 interpreter is now managed C# - Dsp56300Core.Execution (fetch/decode, PC, DO/REP, stack, interrupt pipeline, effective address, condition codes), .Alu (ALU + MAC/MPY families, 24-bit read/limit), .Instructions (104 non-parallel handlers), .ParallelMove (pm_0..pm_8), Dsp56300Opcodes (187-row decode table + 256-entry ALU dispatch + MatchMMMRRR); Step/Run execute. Differential: tools/dsp-oracle compiles the reference interpreter from References2 (read-only) with out-of-range guards and generates 929 vectors (3 per decode entry, 2 per defined ALU opcode, 240 random 8-word programs, 24 interrupt-pipeline cases) into tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt; 9 new tests replay them (state + registers + memory hash), 51 Audio tests green, suite 1884 -> 1893, build 0 warnings, format clean. Reference quirks reproduced and documented: emu_pm_1's unconditional registers[numreg1] store (also writes the virtual A/B register) and emu_macr_p_x1_y0_b rounding before the accumulator load (behaves as mac). No gate moved (the interpreter is not wired to the machine yet): triangle gl+replace 1B ramSha256 4F1FCBC0/cpu 7DAB63EB, menu gl+replace 1B B06BA6E5/F5D61C94, BackendUnsupported=0."
+      ]
     },
     {
       "id": "R1",
@@ -322,6 +324,13 @@
       "date": "2026-10-23",
       "evidence": "1B menu gl+replace interleaved pairs vs stashed 520c9d2: -10.33 / -17.20 / -10.29% wall (median -10.33%, 3/3 >= 10%; outerMs -10.6/-17.0/-11.4%); 3 more pairs -11.21/-8.52/-10.20% (6-pair median -10.31%, 6/6 negative). Triangle gl+replace -0.70/-2.27/-2.02% (no regression). Fast 1B anchors byte-identical: menu gl B06BA6E5/F5D61C94 33638/1402/696/686/686 culled 41035, triangle gl 4F1FCBC0/7DAB63EB, menu sw 34973510 (253,998,498 px), triangle sw B45254CA (57,663,082 px). Accurate 1B goldens byte-identical to base on all four legs: menu sw 4EF1FBF6 / gl 6BE6325F, triangle sw A1740DE0 / gl 3FC4B419 (diff=1852 violations=0 maxDelta=1). ktest 4E03A park at 792,800,535 steps, log CA5D3867 (40,797 B) byte-identical, ktest_diff SMOKE PASS 7/7. Suite 1874 -> 1878, build 0 warnings, format clean. No snapshot change.",
       "commitMessage": "nv2a: hoist the fill path and share the draw-command record (D5)"
+    },
+    {
+      "id": "P1.2",
+      "title": "Port the DSP56300 instruction decoder and handlers (dsp_cpu.c + dsp_emu.c.inc)",
+      "date": "2026-10-23",
+      "evidence": "port: the xemu 0.8.139 interpreter is now managed C# - Dsp56300Core.Execution (fetch/decode, PC, DO/REP, stack, interrupt pipeline, effective address, condition codes), .Alu (ALU + MAC/MPY families, 24-bit read/limit), .Instructions (104 non-parallel handlers), .ParallelMove (pm_0..pm_8), Dsp56300Opcodes (187-row decode table + 256-entry ALU dispatch + MatchMMMRRR); Step/Run execute. Differential: tools/dsp-oracle compiles the reference interpreter from References2 (read-only) with out-of-range guards and generates 929 vectors (3 per decode entry, 2 per defined ALU opcode, 240 random 8-word programs, 24 interrupt-pipeline cases) into tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt; 9 new tests replay them (state + registers + memory hash), 51 Audio tests green, suite 1884 -> 1893, build 0 warnings, format clean. Reference quirks reproduced and documented: emu_pm_1's unconditional registers[numreg1] store (also writes the virtual A/B register) and emu_macr_p_x1_y0_b rounding before the accumulator load (behaves as mac). No gate moved (the interpreter is not wired to the machine yet): triangle gl+replace 1B ramSha256 4F1FCBC0/cpu 7DAB63EB, menu gl+replace 1B B06BA6E5/F5D61C94, BackendUnsupported=0.",
+      "commitMessage": "audio: port the DSP56300 instruction decoder and handlers (P1.2)"
     }
   ],
   "negatives": [

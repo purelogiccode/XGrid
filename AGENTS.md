@@ -138,7 +138,7 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 1).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
@@ -805,6 +805,47 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-23 (forty-fifth; the DSP56300 interpreter is ported - the
+decoder, the parallel moves and all 388 handler bodies - and it is
+differentially exact against the xemu 0.8.139 reference on 929 vectors; P1.2
+lands, every gate anchor unchanged).**
+
+- **The oracle came first (`tools/dsp-oracle`).** The reference interpreter is
+  self-contained, so the session compiled it standalone (host gcc, `References2/`
+  read-only, six out-of-range guards added to a build copy) and used it as the
+  differential: `gen_vectors.py` synthesizes three words per decode-table entry,
+  two per defined ALU opcode, 240 random eight-word programs and 24
+  interrupt-pipeline cases (1086 cases, 929 kept - the rest leave the
+  reference's addressable memory), and the 121 KB golden file
+  `tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt` replays them through the
+  port.  `build.ps1 -Regenerate` rebuilds both.
+- **The port.** `Dsp56300Core` is partial now: `Execution` (fetch/decode, PC,
+  DO/REP, stack, interrupt pipeline, effective addresses, condition codes),
+  `Alu` (add/sub/cmp/cmpm/and/or/eor/tfr/adc/sbc, shifts/rotates,
+  `mpy`/`mpyr`/`mac`/`macr`, the 24-bit read/limit), `Instructions` (104
+  non-parallel handlers) and `ParallelMove` (`pm_0`..`pm_8`), plus
+  `Dsp56300Opcodes` (187-row decode table + 256-entry ALU dispatch +
+  `MatchMMMRRR`).  `Step`/`Run` execute; the APU bridge is untouched until P1.3.
+- **Two reference quirks the vectors forced, both documented in the port:**
+  `emu_pm_1`'s `registers[numreg1] = save_1` sits *outside* its `else`, so a
+  parallel move also writes the virtual A/B register; and
+  `emu_macr_p_x1_y0_b` rounds before loading the accumulator, so it behaves as a
+  plain `mac`.  The vectors also caught an XGrid bug: the 256-entry decode cache
+  used `0` as "empty" and `0` is `nop`, so every zero word decoded as undefined.
+- **Evidence.** `XGrid.Audio.Tests` 42 -> **51** (9 differential facts), suite
+  **1884 -> 1893**, build 0 warnings, format clean.  No gate moved (the core is
+  not on the machine path): 1B `gl+replace` fast anchors reproduced exactly -
+  triangle `4F1FCBC0`/`7DAB63EB`, menu `B06BA6E5`/`F5D61C94`,
+  `BackendUnsupported=0`.  ktest was not re-run for the same reason (the
+  CPU/device path is untouched; the sibling XISOSharp repo is also absent on
+  this host).  The BTFF triangle RAM SHA (`8AE82781`) is the `--frame*` leg, not
+  the plain `4F1FCBC0` one.
+- **Next.** P1.3: wire the core into `McpxApuDevice` through the `gp_ep.c` frame
+  glue (`proc_rst_write`, scratch scatter/gather, FIFO windows, the GP/EP frame
+  loop, DMA) behind an `ApuDspCore` option; flip `ExceptionDebugging` off there
+  so a guest `ill` raises the interrupt instead of throwing.  Then P1.4 (PCM
+  sink).  Decisions §245.
 
 **Session 2026-10-23 (forty-fourth; XGrid relicensed to GPL-2.0, xemu 0.8.139
 adopted as the primary port source, and the APU DSP state/DMA foundation

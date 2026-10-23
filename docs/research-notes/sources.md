@@ -37,7 +37,14 @@ license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are 
 | `src/XGrid.Audio/Dsp/DspDma.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_dma.c` / `dsp_dma.h` | LGPL-2+ | Ported (DMA engine). |
 | `src/XGrid.Audio/Dsp/Dsp56300State.cs` | xemu 0.8.139 `interp/dsp_cpu.h` / `dsp_cpu_regs.h` | GPL-2+ | Ported (state + constants). |
 | `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Ported (56-bit arithmetic). |
-| `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Core state/reset/memory; interpreter is the next slice. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Core state/reset/memory/bootstrap. |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Execution.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Ported (fetch/decode, PC, DO/REP, stack, interrupts, effective addresses). |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Alu.cs` | xemu 0.8.139 `interp/dsp_emu.c.inc` | GPL-2+ | Ported (ALU, MAC/MPY families, 24-bit read/limit). |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.Instructions.cs` | xemu 0.8.139 `interp/dsp_emu.c.inc` | GPL-2+ | Ported (non-parallel instruction handlers). |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.ParallelMove.cs` | xemu 0.8.139 `interp/dsp_emu.c.inc` | GPL-2+ | Ported (parallel-move handlers). |
+| `src/XGrid.Audio/Dsp/Dsp56300Opcodes.cs` | xemu 0.8.139 `interp/dsp_cpu.c` / `dsp_emu.c.inc` | GPL-2+ | Ported (decode and ALU dispatch tables). |
+| `tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt` | generated from the xemu 0.8.139 reference interpreter | GPL-2+ (derived data) | Differential vectors; regenerate with `tools/dsp-oracle/build.ps1 -Regenerate`. |
+| `tools/dsp-oracle/` | xemu 0.8.139 `interp/` (compiled from `References2/` at run time) | GPL-2+ | Development-only oracle; not part of the build or distribution. |
 
 See `THIRD_PARTY_NOTICES.md` for the full list and `docs/porting-policy.md` for
 the workflow.

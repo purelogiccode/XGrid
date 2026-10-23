@@ -16139,4 +16139,86 @@ fetch reads only what the program uses, and the vertex-side scratch is stable.
 it is not this task's mandate. The next queued item is **P1** (host audio), which
 does not compete for this code.
 
+## 245 P1.2: the DSP56300 interpreter is ported and differentially exact - the decoder, the parallel moves and 388 handler bodies run against the xemu reference (2026-10-23, forty-fifth session) - P1.2
 
+**Why a differential and not hand-checked tests.**  P1.1 landed the state, the
+memory map, the bootstrap, the 56-bit arithmetic and the DMA, with the
+interpreter left as a `NotSupportedException`.  P1.2 is the largest port in the
+project (51 KB of `dsp_cpu.c` plus a 239 KB `dsp_emu.c.inc`), and a hand-written
+expected value per handler would only prove that the port agrees with the
+person who wrote the test.  The reference is self-contained enough to compile
+standalone, so the session built the reference itself as the oracle.
+
+### 1. The oracle (`tools/dsp-oracle`)
+
+- `prepare.py` copies `interp/dsp_cpu.c` into `tools/dsp-oracle/build/` and
+  replaces the six places where the reference asserts (and, in a release build,
+  reads out of bounds) with guards that set a flag: out-of-range P/X/Y reads and
+  writes, the `pram_opcache[pc]` index, the NULL return from `lookup_opcode` and
+  the invalid-opcode assert.  Nothing else changes.
+- `shims/` supplies `qemu/osdep.h`, `qemu/bswap.h` and a no-op `trace.h`, so the
+  interpreter links with the host gcc (`build.ps1`).  The reference sources stay
+  in `References2/` and are never copied into the tree or the build.
+- `oracle.c` replays a case file (registers, X/Y/P/mix-buffer words, pending
+  interrupts, step count) and prints the state plus an FNV-1a hash of X, Y, P,
+  the mix buffer and the stack.
+- `gen_vectors.py` synthesizes cases from the reference's own tables: three
+  words per `nonparallel_opcodes[]` entry with a handler (wildcards filled from
+  the case RNG), two words per defined `opcodes_alu[]` entry with a random
+  parallel-move field (all 16 `opcodes_parmove[]` arms), 240 random eight-word
+  programs (1-24 steps) and 24 interrupt-pipeline cases (each vector, six step
+  budgets).  1086 cases, 929 kept; 157 are dropped because execution leaves the
+  reference's addressable memory.
+- The state setup is a deterministic xorshift32 stream from the seed, mirrored
+  in `Dsp56300DifferentialTests.SetupState`; the golden file stores only the
+  registers that differ from that initial state (121 KB instead of 546 KB).
+
+### 2. The port
+
+`Dsp56300Core` is now partial: `Execution` (fetch/decode, PC, DO/REP, stack,
+interrupt pipeline, effective addresses, condition codes, register writes),
+`Alu` (the add/sub/cmp/cmpm/and/or/eor/tfr/adc/sbc and shift/rotate families,
+`mpy`/`mpyr`/`mac`/`macr`, the 24-bit read/limit), `Instructions` (the 104
+non-parallel handlers) and `ParallelMove` (`pm_0`..`pm_8`).  The reference
+writes one C function per opcode variant; the port keeps one method per family
+plus the reference's one-line wrappers, so every C name still maps to a C#
+method.  `Dsp56300Opcodes` holds the 187-row decode table (same 24-character
+templates, same `MatchMMMRRR` predicate), the 256-entry ALU dispatch table and
+the interrupt vectors.  `Step()` and `Run()` now execute instead of throwing.
+
+### 3. What the differential found
+
+1. **`emu_pm_1`'s store is unconditional.**  The reference's `else` brace closes
+   before `dsp->registers[numreg1] = save_1;`, so the parallel move writes the
+   virtual `DSP_REG_A`/`DSP_REG_B` register *in addition to* A0/A1/A2.  A
+   straight reading of the indentation puts the store in the `else`; the
+   vectors disagreed on exactly one register (0x0E) until the port matched the
+   compiled behavior.
+2. **`emu_macr_p_x1_y0_b` rounds before it loads the accumulator** (an upstream
+   ordering bug), so the rounding is lost and the handler behaves as a plain
+   `mac`.  `_alu[0xEB]` reproduces it; the other 31 `macr` variants round after
+   the add.
+3. **An XGrid bug in the port itself:** the 256-entry decode cache used `0` as
+   "empty", and `0` is `nop`, so every all-zero word decoded as undefined until
+   the sentinel became `0xFFFFFFFF`.
+
+### 4. Evidence
+
+- `tests/XGrid.Audio.Tests` 42 -> **51** (9 differential facts: decode table,
+  ALU/parallel-move table, programs, interrupt pipeline, all vectors, REP, DO,
+  JSR/RTS, undefined instruction); suite 1884 -> **1893**, build 0 warnings,
+  format clean.
+- No gate moved: the interpreter is not wired into `McpxApuDevice` yet (P1.3).
+  Fast 1B `gl+replace` anchors reproduced byte-identically: triangle
+  `4F1FCBC0`/`7DAB63EB`, menu `B06BA6E5`/`F5D61C94`, `BackendUnsupported=0`.
+- The BTFF triangle leg's RAM SHA (`8AE82781`) is not comparable: the harness
+  runs `--frame-first` plus the other frame exports, and the documented
+  `--frame-first` anchor is `0117A5E2` (the plain leg is `4F1FCBC0`).
+
+### 5. Next
+
+P1.3 wires the core into the APU: `gp_ep.c` (`proc_rst_write`, scatter/gather
+scratch, FIFO windows, the GP/EP frame loop, DMA) behind an `ApuDspCore` option,
+default stays the existing bridge until the goldens are byte-identical.  The
+interpreter's `ExceptionDebugging` default must flip to `false` there so a guest
+`ill` raises the illegal interrupt instead of throwing.
