@@ -60,6 +60,12 @@ distributed emulator binaries.  Their notices remain in the package sources.
 | `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/dsp_cpu.c` | GPL-2+ | Ported 56-bit arithmetic helpers. |
 | `src/XGrid.Audio/Dsp/Dsp56300Core.Snapshot.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_c.c` + `interp/dsp_cpu.h` | GPL-2+ | Complete core state save/restore (the sync-to/from-VM field set). |
 | `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`. |
+| `src/XGrid.Nv2a/PshCombiner.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/psh.c` (GPL-2+; itself derived from Cxbx `PixelShader.cpp` and Xeon `XBD3DPixelShader.cpp`) | GPL-2+ | Register-combiner stage decode and evaluation. |
+| `src/XGrid.Nv2a/VshProgram.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/glsl/vsh-prog.c` + `vsh_regs.h` (GPL-2+; itself derived from Cxbx `VertexShader.cpp` and Dxbx `uPushBuffer.pas`) | GPL-2+ | Transform-program decode and execution. |
+| `src/XGrid.Nv2a/VshProgramPlan.cs` | XGrid `VshProgram.cs`, itself ported from xemu 0.8.139 `glsl/vsh-prog.c` | GPL-2+ | Predecoded, allocation-free form of the same program semantics. |
+| `src/XGrid.Nv2a/FixedFunctionVertex.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/glsl/vsh-ff.c` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function transform, texgen, lighting and position epilogue. |
+| `src/XGrid.Nv2a/FixedFunctionVertexState.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` + `glsl/vsh.c` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Latched fixed-function register state. |
+| `src/XGrid.Nv2a/SpecularPowerCurve.cs` | xemu 0.8.137 `hw/xbox/nv2a/pgraph/pgraph.c` `reconstruct_specular_power` (LGPL-2+; no semantic delta in 0.8.139) | LGPL-2+ | Fixed-function specular-exponent reconstruction and coefficient tables. |
 | `tools/dsp-oracle/` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/interp/` (compiled at run time, never redistributed) | GPL-2+ | Development-only differential oracle; not part of the build or distribution. |
 
 When a module is ported, add a row here and a matching entry in

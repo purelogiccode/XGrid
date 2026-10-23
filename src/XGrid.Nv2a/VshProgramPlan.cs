@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Derived from VshProgram.cs, which is ported from xemu 0.8.139
+// hw/xbox/nv2a/pgraph/glsl/vsh-prog.c.
+
 using System;
 
 namespace XGrid.Nv2a;

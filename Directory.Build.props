@@ -9,6 +9,9 @@
     <Deterministic>true</Deterministic>
     <NeutralLanguage>en</NeutralLanguage>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The product version: one source for the CLI, the frontend About page and
+         the release packages (scripts/package.ps1 reads this property). -->
+    <Version>0.1.0</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Tests and benchmarks are exempt: xUnit fact names are the documentation. -->
     <GenerateDocumentationFile Condition="$(MSBuildProjectName.Contains('.Tests'))">false</GenerateDocumentationFile>

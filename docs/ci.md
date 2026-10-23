@@ -99,25 +99,33 @@ see below.
 
 `release.yml` publishes from a tag and is manual-only while CI is disabled.
 
-**Preferred while disabled — publish locally** (the same commands the workflow
-runs, per RID) and attach the archives to a `gh release create` yourself:
+**Preferred while disabled — build the release tree locally.** `scripts/package.ps1`
+is the checked-in equivalent of the workflow's publish job: for every RID it
+publishes both applications self-contained, strips symbols/docs, adds
+`COPYING`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, the release notes and `VERSION`,
+archives with fixed timestamps and writes `SHA256SUMS-<rid>.txt`,
+`SHA256SUMS.txt` and `package-manifest.json`. It runs the acceptance gate
+(`scripts/package-verify.ps1`) at the end unless `-NoVerify` is passed.
 
 ```powershell
-$rid = "win-x64"
-dotnet publish src/XGrid.Cli/XGrid.Cli.csproj -c Release -r $rid `
-  --self-contained true -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:DebugType=None -p:DebugSymbols=false -o "publish/cli/$rid"
-dotnet publish src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release -r $rid `
-  --self-contained true -p:PublishSingleFile=true `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:DebugType=None -p:DebugSymbols=false -o "publish/frontend/$rid"
+# all four release RIDs; cross-publishing works from any host
+pwsh -File scripts/package.ps1 -Version 0.1.0
+# or a subset while iterating
+pwsh -File scripts/package.ps1 -Rids win-x64 -NoVerify
 ```
 
-Strip `*.pdb`/`*.xml`, copy `LICENSE` and `README.md` into each folder, write a
-`VERSION` file, archive (`.zip` on Windows, `.tar.gz` elsewhere) and produce
-`SHA256SUMS-<rid>.txt`. `release.yml` does exactly this for `win-x64`,
-`linux-x64`, `osx-x64` and `osx-arm64`.
+The release notes for a version live in `docs/release-notes/v<version>.md` and
+are copied into each archive as `RELEASE-NOTES.md`; `package.ps1` refuses to run
+without them. The licensing obligations behind the file set are in
+`docs/release-licensing-review.md` — in particular a GPL-2.0 binary must ship
+`COPYING` and the third-party notices, and the tagged source must be available
+with the binaries.
+
+`release.yml` does exactly this for `win-x64`, `linux-x64`, `osx-x64` and
+`osx-arm64`, then attaches the archives to a GitHub release. A **manual** run of
+`release.yml` also works while disabled, provided it is dispatched with a `v*`
+tag selected as the ref (GitHub's *Run workflow* → *Use workflow from* → tag):
+the release job uses `github.ref_name` as the tag, so the tag must already exist.
 
 **After re-enabling** (restore the `push: tags: ["v*"]` trigger):
 
@@ -130,19 +138,16 @@ git push origin v0.1.0
 
 1. verifies the tagged tree on Windows, Linux and macOS;
 2. publishes `XGrid.Cli` and `XGrid.Frontend.Avalonia` self-contained for
-   `win-x64`, `linux-x64`, `osx-x64` and `osx-arm64`;
-3. strips symbols/docs and adds `LICENSE`, `README.md` and `VERSION`;
+   `win-x64`, `linux-x64`, `osx-x64` and `osx-arm64` at the tag's version;
+3. strips symbols/docs and adds `COPYING`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+   `README.md`, `RELEASE-NOTES.md` and `VERSION`;
 4. archives (`.zip` on Windows, `.tar.gz` elsewhere) and writes per-RID
    `SHA256SUMS-*.txt`;
 5. generates an SPDX JSON SBOM with `anchore/sbom-action`;
 6. attests build provenance with `actions/attest-build-provenance`;
-7. creates the release with generated notes and all assets
+7. creates the release from `docs/release-notes/v<version>.md` (generated notes
+   when that file is absent) with all assets
    (re-running the workflow uploads with `--clobber`).
-
-A **manual** run of `release.yml` also works while disabled, provided it is
-dispatched with a `v*` tag selected as the ref (GitHub's *Run workflow* →
-*Use workflow from* → tag): the release job uses `github.ref_name` as the tag, so
-the tag must already exist.
 
 The `release` job uses the `release` environment. Configure required reviewers
 on that environment in the repository settings if releases should be approved.

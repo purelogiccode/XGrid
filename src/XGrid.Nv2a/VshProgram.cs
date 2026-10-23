@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Ported from xemu 0.8.139 hw/xbox/nv2a/pgraph/glsl/vsh-prog.c and vsh_regs.h.
+// Original copyright (c) 2012 espes; (c) 2014 Jannik Vogel; (c) 2025 Matt Borgerson;
+// the reference itself derives from Cxbx VertexShader.cpp (c) 2004 Aaron Robinson,
+// Kingofc and Dxbx uPushBuffer.pas (c) 2007 Shadow_tj, PatrickvL.
+
 using System;
 
 namespace XGrid.Nv2a;

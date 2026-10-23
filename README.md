@@ -36,6 +36,8 @@ The gates are run locally (CI is disabled; see `docs/ci.md`).
 
 - `ImplementationPlan.md` - full implementation plan (Part II is the detailed phase plan)
 - `docs/ci.md` - continuous integration (currently disabled), the quality gates, their local equivalents and the release process
+- `docs/release-licensing-review.md` - GPL-2.0 and third-party licensing review behind the packaged release
+- `docs/release-notes/` - release notes, one file per version
 - `docs/research-notes/` - extracted facts from reference projects and the licensing inventory
 
 ## Repository layout
@@ -74,6 +76,20 @@ a settings surface (firmware, storage, memory, performance, network), an activit
 and runtime accent themes. Headless `XGrid.Cli` remains the default for gate and
 automation runs. See `src/XGrid.Frontend.Avalonia/README.md` and
 `docs/research-notes/avalonia-frontend.md`.
+
+## Release packages
+
+The release tree (CLI + frontend, self-contained for Windows, Linux and macOS,
+with the GPL-2.0 license set, release notes, checksums and a manifest) is built
+by one command:
+
+```powershell
+pwsh -File scripts/package.ps1
+```
+
+Release notes live in `docs/release-notes/`; the licensing obligations behind the
+packaged file set are reviewed in `docs/release-licensing-review.md`. The
+`release.yml` workflow runs the same steps when CI is re-enabled.
 
 ## Firmware
 

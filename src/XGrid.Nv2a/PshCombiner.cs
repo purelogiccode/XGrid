@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Ported from xemu 0.8.139 hw/xbox/nv2a/pgraph/glsl/psh.c.
+// Original copyright (c) 2013 espes; (c) 2015 Jannik Vogel; (c) 2020-2025 Matt Borgerson;
+// the reference itself derives from Cxbx PixelShader.cpp (c) 2004 Aaron Robinson,
+// Kingofc and Xeon XBD3DPixelShader.cpp (c) 2003 _SF_.
+
 using System;
 using System.IO;
 using XGrid.Core.Snapshots;

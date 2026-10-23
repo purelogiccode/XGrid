@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: LGPL-2.0-or-later
+// Ported from xemu 0.8.137 hw/xbox/nv2a/pgraph/pgraph.c (reconstruct_specular_power
+// and its coefficient tables); the 0.8.139 file has no semantic delta.
+// Original copyright (c) 2012 espes; (c) 2015 Jannik Vogel; (c) 2018-2025 Matt Borgerson.
+
 using System;
 
 namespace XGrid.Nv2a;

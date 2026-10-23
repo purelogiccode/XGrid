@@ -15,4 +15,5 @@ notices.  The provenance and license of every reference project and every
 ported module is recorded in THIRD_PARTY_NOTICES.md and
 docs/research-notes/sources.md.  The project as a whole is distributed under
 GPL-2.0; some ported files are GPL-2.0-or-later and are included here under
-GPL-2.0.
+GPL-2.0.  Files ported from LGPL-2.0-or-later sources are included under the
+GNU GPL version 2 as permitted by LGPL-2.0 section 3.

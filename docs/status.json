@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "R1",
-    "title": "Release: packaging, installer, licensing review",
-    "plan": "E6",
-    "status": "active",
+    "id": "NONE",
+    "title": "No eligible queued task; add one to docs/status.json",
+    "plan": "",
+    "status": "complete",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",
-    "price": "not on the M-D critical path"
+    "acceptance": "",
+    "price": ""
   },
   "position": {
     "host": "H1",
@@ -56,9 +56,9 @@
     }
   },
   "result": {
-    "points": 85.23,
+    "points": 86.34,
     "weight": 108,
-    "percent": 78.9
+    "percent": 79.9
   },
   "phases": [
     {
@@ -226,22 +226,11 @@
       "p": 23,
       "name": "Release",
       "weight": 3,
-      "done": 18,
+      "done": 55,
       "track": "Performance & finish"
     }
   ],
-  "queue": [
-    {
-      "id": "R1",
-      "title": "Release: packaging, installer, licensing review",
-      "plan": "E6",
-      "status": "active",
-      "depends": [],
-      "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",
-      "price": "not on the M-D critical path",
-      "evidence": []
-    }
-  ],
+  "queue": [],
   "done": [
     {
       "id": "P1.0",
@@ -326,6 +315,13 @@
       "date": "2026-10-23",
       "evidence": "port: McpxApuDsp/McpxApuDspPair port xemu 0.8.139 gp_ep.c (64 KB GP/EP sub-windows, proc_rst_write reset/bootstrap, scatter/gather scratch + FIFO rings over the guest SGE tables, peripheral halt/interrupt/DMA at 0xFFFFC4-C5/D4-D7, the GP/EP frame loop with a 1M-cycle safety ceiling, float_to_24b), wired behind the opt-in ApuDspCore option; APU snapshot v4 appends a length-prefixed DSP payload (v2/v3 still load). P1.4: IAudioBackend + WaveAudioBackend (48 kHz 16-bit stereo, patched RIFF header), EP output FIFO 0 sunk with silence written back to the guest ring (ep_sink_samples), CLI --apu-dsp and --audio-out (implies --apu-dsp). Real-microcode bug found and fixed: InvalidateOpcodeCache cleared the 0xFFFFFFFF nop tag sentinel (274,495 undefined instructions and 28 cycle-limit hits -> 0/0; regression test fails pre-fix). Evidence: --apu-dsp is guest-identical on both 1B gates (menu gl B06BA6E5/F5D61C94, 29 GP frames; triangle gl 4F1FCBC0/7DAB63EB, 26 GP frames; 0 undefined, 0 ceiling hits, no fault); default path exact fast anchors (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, triangle sw B45254CA/7DAB63EB 57,663,082 px, menu sw 34973510/F5D61C94 253,998,498 px), accurate goldens A1740DE0/3FC4B419 (2706/68/34) and 4EF1FBF6/6BE6325F (33632/686/686) GOLDEN PASS with violations 0, ktest log CA5D3867 (40,797 B) byte-identical at 792,800,535 steps, SMOKE PASS 7/7. Suite 1893 -> 1922, build 0 warnings, format clean; frontend smoke 306,817 non-black px, 71.7 MB save/load round trip, faulted=False. Phase 12 (APU) 55 -> 75%, score 78.2 -> 78.9% (85.23 of 108). Remaining host-audio gap: the VP mixer (vp.c) and the AC97 codec path; the sink path is proven by a 16-sample stereo voice through the real EP FIFO/DMA ring.",
       "commitMessage": "audio: port the APU GP/EP frame glue and the PCM sink (P1.3, P1.4)"
+    },
+    {
+      "id": "R1",
+      "title": "Release: packaging, installer, licensing review",
+      "date": "2026-10-23",
+      "evidence": "release tree: scripts/package.ps1 publishes the CLI and frontend self-contained for win-x64/linux-x64/osx-x64/osx-arm64 (8 archives, 32.7-47.7 MB) at 0.1.0 with COPYING (GPL-2.0, 17,880 B) + LICENSE + THIRD_PARTY_NOTICES.md + RELEASE-NOTES.md + VERSION, sorted fixed-timestamp archives, SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json; reproducibility: two independent runs of the same commit produced 8/8 byte-identical archives, and the recipe was re-run on the reviewed tree with the same result (the binaries embed 0.1.0+<commit> in InformationalVersion by design, so a new commit changes every archive; each run writes per-archive SHA-256 into SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json); acceptance gate scripts/package-verify.ps1 fails the pre-fix recipe with 22 problems (no COPYING/THIRD_PARTY_NOTICES/RELEASE-NOTES/manifest/checksums, VERSION v0.1.0 vs 0.1.0, XML docs shipped) and passes the new tree (17 ported files recorded, per-RID MZ/ELF/Mach-O magic, checksum+manifest cross-check, packaged CLI --version = XGrid 0.1.0); license review docs/release-licensing-review.md findings F1-F6: F1 the full license set now ships in every archive (release.yml was LICENSE+README only), F2 one version source in Directory.Build.props (the CLI printed 0.1.0 while assemblies were 1.0.0) plus VERSION/manifest/checksums, F3 six NV2A transcriptions (PshCombiner, VshProgram, VshProgramPlan, FixedFunctionVertex, FixedFunctionVertexState, SpecularPowerCurve) gain SPDX + original copyright + notices rows and the gate now fails any src file declaring Ported from/Derived from without both, F4 0.8.137 citations made version-accurate, F5 OS installer deferred by scope decision (portable archives, no install-time state), F6 unsigned/notarized status and the macOS quarantine command documented; release notes docs/release-notes/v0.1.0.md; release.yml, docs/ci.md and README aligned; build 0 warnings, 1922 tests green, format clean; no emulator path changed so the 1B anchors are carried (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, accurate 4EF1FBF6/B6116DAE and A1740DE0/7A860ED7, ktest 792,800,535 steps log CA5D3867); phase 23 Release 18 -> 55%, score 78.9 -> 79.9% (86.34 of 108)",
+      "commitMessage": "release: package the CLI and frontend for four RIDs with a licensing gate (R1)"
     }
   ],
   "negatives": [

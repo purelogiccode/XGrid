@@ -138,10 +138,9 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **R1 - Release: packaging, installer, licensing review** (active, attempt 0).
-**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.9% (85.23 of 108). **Next:** .
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
+**Current status (2026-10-23):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
+**Phase score:** 79.9% (86.34 of 108).
+**Do not retry without a new measurement:** see docs/status.json for all 16.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:

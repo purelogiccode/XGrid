@@ -17,7 +17,13 @@ namespace XGrid.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.1.0";
+    /// <summary>
+    /// Product version, taken from the assembly so a packaged build
+    /// (`-p:Version=...`, see scripts/package.ps1) reports the version of the
+    /// package it came from instead of a second hard-coded constant.
+    /// </summary>
+    private static readonly string Version =
+        (typeof(Program).Assembly.GetName().Version ?? new Version(0, 0, 0)).ToString(3);
 
     private static int Main(string[] args)
     {

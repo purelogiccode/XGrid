@@ -2,7 +2,9 @@
 bin/
 obj/
 publish/
+publish-probe/
 artifacts/
+dist/
 
 # IDE
 .vs/

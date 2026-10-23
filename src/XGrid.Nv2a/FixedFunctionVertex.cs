@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: LGPL-2.0-or-later
+// Ported from xemu 0.8.137 hw/xbox/nv2a/pgraph/glsl/vsh-ff.c (the 0.8.139 file
+// has no semantic delta; see docs/research-notes/xemu-0.8.139.md).
+// Original copyright (c) 2015 espes; (c) 2015 Jannik Vogel; (c) 2020-2025 Matt Borgerson.
+
 using System;
 
 namespace XGrid.Nv2a;

@@ -122,6 +122,7 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugType=None -p:DebugSymbols=false
+          -p:Version="${GITHUB_REF_NAME#v}"
           -o "publish/cli/${{ matrix.rid }}"
 
       - name: Publish frontend
@@ -131,6 +132,7 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugType=None -p:DebugSymbols=false
+          -p:Version="${GITHUB_REF_NAME#v}"
           -o "publish/frontend/${{ matrix.rid }}"
 
       - name: Archive
@@ -140,8 +142,12 @@ jobs:
           for app in cli frontend; do
             dir="publish/$app/${{ matrix.rid }}"
             find "$dir" -type f \( -name '*.pdb' -o -name '*.xml' \) -delete
-            cp LICENSE README.md "$dir/"
-            printf '%s\n' "${GITHUB_REF_NAME}" > "$dir/VERSION"
+            # GPL-2.0: the license text, the project notice and the third-party
+            # notices must travel with every binary (docs/release-licensing-review.md).
+            cp LICENSE COPYING THIRD_PARTY_NOTICES.md README.md "$dir/"
+            notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+            if [[ -f "$notes" ]]; then cp "$notes" "$dir/RELEASE-NOTES.md"; fi
+            printf '%s\n' "${GITHUB_REF_NAME#v}" > "$dir/VERSION"
             if [[ "${{ matrix.rid }}" == win-* ]]; then
               (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/dist/XGrid-$app-${{ matrix.rid }}.zip" .)
             else
@@ -207,8 +213,14 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
+            notes=()
+            if [[ -f "docs/release-notes/$TAG.md" ]]; then
+              notes=(--notes-file "docs/release-notes/$TAG.md")
+            else
+              notes=(--generate-notes)
+            fi
             gh release create "$TAG" dist/* \
               --title "XGrid $TAG" \
-              --generate-notes \
+              "${notes[@]}" \
               --verify-tag
           fi
