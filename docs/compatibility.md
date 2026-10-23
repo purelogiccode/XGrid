@@ -25,17 +25,33 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
   the error that rule prevents).
 - Rows do not gate merges. The gates are the accurate-mode 1B goldens and the
   ktest smoke; this matrix decides *what fidelity work is worth doing*.
-- Real Xbox ISOs are **not** rows. They are benchmark-only (fast-mode wall /
-  xemu comparison) per the real-content policy.
+- Real Xbox ISOs are **not rows**. They are local compatibility/benchmark
+  probes (`docs/research-notes/real-game-probes.md`): never committed, never
+  gates, and a row is added only after a run reaches a gameplay frame or a
+  documented wait.
 - Update a row in the same change that alters its behavior, with the commit and
   the measured evidence.
 - A fidelity landing must cite the row it fixes and the histogram that proves
   the usage. No row and no histogram means no NV2A/APU fidelity work.
 - Method-presence side of the histogram: `docs/research-notes/nv097-coverage.md`
-  (xemu 0.8.137 method table vs `Nv2aMmio`). **Usage side:**
+  (xemu 0.8.137/0.8.139 method table vs `Nv2aMmio`). **Usage side:**
   `docs/research-notes/usage-histogram.md` (measured NV097 streams for the gate
   sample and a benchmark probe). Reference orientation:
   `docs/research-notes/gpu-reference-map.md`.
+
+### Local real-game probes
+
+The operator's `D:\Samples\XBOXReady` ISOs are tracked in
+`docs/research-notes/real-game-probes.md`.  First results (2026-10-23):
+
+- **007 - Agent Under Fire (USA)**: boots; at 5B steps the EIP is `0x0001FC66`
+  (the loaded XBE), 201 flips, 2,672 draws, no fault.  The first frame is still
+  the boot animation; gameplay is not yet claimed.
+- **4x4 Evo 2 (USA)**: boots; at 5B steps the EIP is `0x8001A68C` (kernel idle),
+  no fault, 219 flips.  It is waiting, not executing game code - the first
+  real-game compatibility gap to triage.
+
+These are probes, not rows.  The gate media remains `data/test-samples/`.
 
 ## The harness (one invocation per row)
 
