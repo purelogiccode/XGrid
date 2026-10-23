@@ -11,7 +11,7 @@
     "started": "2026-10-23",
     "attempts": 0,
     "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
-    "price": "xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Port in slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink. No gate anchor moves until the ported path is wired behind a flag."
+    "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink."
   },
   "position": {
     "host": "H1",
@@ -238,7 +238,7 @@
       "status": "active",
       "depends": [],
       "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
-      "price": "xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Port in slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink. No gate anchor moves until the ported path is wired behind a flag.",
+      "price": "porting task, not a performance slice: the 10% wall / 20% engine gate does not apply. Price = module boundary + test surface. xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink.",
       "evidence": []
     },
     {

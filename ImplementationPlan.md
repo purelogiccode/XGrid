@@ -247,6 +247,11 @@ all four accurate goldens byte-identical to the stashed base build
 
 ## E6. P1 / R1 — parallel product and release
 
+**P1 is a porting task, not a performance slice.** The 10% wall / 20% engine
+price gate does **not** apply. The "price" is the module boundary and the test
+surface; the acceptance is that the ported xemu 0.8.139 DSP executes the guest
+microcode and a real voice stream produces PCM, with no gate regression.
+
 **P1 is the xemu 0.8.139 DSP port** (operator decision 2026-10-23). The project
 is GPL-2.0 and the port is full managed C#; the reference is
 `References2/xemu-0.8.139/hw/xbox/mcpx/apu/dsp/`, with the provenance rules in
