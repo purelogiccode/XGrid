@@ -15781,3 +15781,106 @@ version change (Nv2a v9).
 **Diagnostics.** The price probe was temporary and removed; the plan exposes only
 `VshProgramPlan.InstructionCount` (the decoded instruction count of a token
 list), which the differential and the device tests use.
+
+## 242 C7 engine-shape decision: the raw engine stays and the next slice is the device path that has a price (2026-10-23, forty-first session) - D2
+
+**The decision.** The charter's C7 kill criterion is met (C4 measured null, C5
+slice 1 is -3/-4%), so this session re-measured the wall and the engine shape on
+the post-D1 build, re-read every price the negatives table holds, and wrote the
+decision table. **Decision: option (a) - keep the raw engine and take the
+device/draw-flush path. C's engine-shape program is closed.** D3 (the menu
+decomposition) is promoted; D4 (implement a new engine shape) stays conditional
+on a per-member probe that shows >=20% engine.
+
+### 1. The wall and the engine shape re-measured (D2.1)
+
+Same build (HEAD, D1 landed in `8b697c9`), same window, 1B, gate media,
+`--jit --jit-threshold 16 --jit-spin --jit-raw --gpu gl --gpu-replace
+--jit-timing`:
+
+| leg | wall | `executeMs` | `runnerMs` | formation+chain | `nonJitMs` | members | ns/member |
+|---|---|---|---|---|---|---|---|
+| triangle | **5.839 s** | 5,829 | 3,425 (**58.7%**) | 991 (17.0%) | 1,400 (24.0%) | 546,719,982 | **6.26** |
+| menu | **16.448 s** | 16,426 | 12,801 (**77.8%**) | 1,716 (10.4%) | 1,882 (11.4%) | 866,634,024 | **14.77** |
+
+Both fast anchors are exact (triangle RAM `4F1FCBC0` / CPU `7DAB63EB`, 2,706
+draws / 6,455 clears / 68 flips / 34 stalls, 41,035 culled; menu RAM `B06BA6E5` /
+CPU `F5D61C94`, 33,638 draws / 686 flips / 686 stalls), so the recorded position
+holds: **5.72-6.15 s triangle, 15.6-17.5 s menu**, i.e. **4.87x / 12.1x** from
+the 1.20 s / 1.36 s band.
+
+Two facts from that pair drive everything below:
+
+- **The engine is the wall on the menu.** `RunJitBlock` is 14.5 s of 16.4 s and
+  the raw runner alone is 12.8 s (77.8%).
+- **The menu-only mass is the engine, not the device.** The menu-minus-triangle
+  wall is 10.609 s, of which the runner delta is **9,376 ms (88.4%)**, formation
+  +725 ms and `nonJit` +482 ms: the menu serves 2.3x the members at 2.36x the
+  per-member cost.
+
+### 2. Every price, re-read against this build (D2.1)
+
+| price | source | current measurement | share of the current wall | verdict |
+|---|---|---|---|---|
+| encoder (`Assembler.Assemble` vs a single-pass encode) | §234e, spike re-run this session | `EncoderSpikeTests`: **415.4 vs 122.2 ns/instruction (3.4x)**; formation+chain 991 / 1,716 ms, and §233a put 66.5% of formation in `Assemble` (~660 / ~1,140 ms at most) | saves ~466 ms triangle (**8.0%**) / ~805 ms menu (**4.9%**) | below the 10% bar; N4 stands |
+| trace / block-boundary population | §235, re-counted on this build's counters | triangle 783,073 cold entries x 132 ns + 124,621,105 chain edges x 2 ns = **352.6 ms**; menu 2,998,124 x 132 + 160,220,926 x 2 = **716.2 ms** | **6.04%** / **4.35%**, and that is an upper bound (a trace removes chain edges and some cold entries, not all of both) | below the bar; N3 stands - the wall fell, so the share rose from 3-5%, and is still short |
+| code volume removed | §239 | -11 emitted instructions per member = -3% engine, 0% wall | 0% wall | stands; N5 |
+| device stage | §240 + §241 | 816 ms measured on the triangle before D1; D1 removed 220 ms of the transform interpreter (422 -> 202); the menu's transform stage is 2,600 ms after D1 | **~596 ms triangle (10.2%)**, **>=2,600 ms menu (>=15.8%)**, >=3.6 s (>=22%) with §205's measured ~1.0 s GL submission | **the only price at or above the bar** |
+| C4 host-pointer probe | §232a | null (menu runner 15,872 -> 16,026 ms, triangle 3,407 -> 3,382) | 0 | stands; N1 |
+
+The device row is arithmetic on measured stage times, not a new probe: 816 -
+(422 - 202) = 596 ms = transform 202 + GL submission 177 + setup 63 + attribute
+fetch 35 + epilogue 70 + clears ~50 (the §240 split with D1's halving applied).
+The next slice re-prices its own target before it builds (the §240/§241 pattern).
+
+### 3. The decision table (D2.2)
+
+| option | measured ceiling | cost | risk | kill criterion |
+|---|---|---|---|---|
+| **(a) keep the current engine and take the device/draw-flush path** | remaining device stage **~596 ms triangle (10.2%)** and **>=2,600 ms menu (>=15.8%)** for the transform stage alone, **>=3.6 s (>=22%)** with the measured GL submission; the menu's setup/attribute/epilogue are not separately measured (D5's first step). On the triangle each remaining item is 35-180 ms (0.6-3.0%), so its only above-bar shape is the whole flush combined | incremental: 1-3 sessions per slice with the §240/§241 pattern (temporary stage probe -> price -> smallest change -> exact anchors); D5 is the next one | **low**: host-side only; the last two slices kept every 1B SHA, counter, frame and the ktest log byte-identical | a slice that measures <10% wall / <20% engine is a recorded negative; the two landed slices prove the bar is reachable in this stage |
+| **(b) a trace / native core** | the whole block-boundary population is **352.6 ms (6.04%) / 716.2 ms (4.35%)**, and a trace removes only part of it | 2-4 sessions over the existing raw emitter (`jit-trace-emitter-design.md`) plus re-validation | medium-high: block fusion measured **+40% wall** and it disabled the spin skip (N8); the poll contract is per block boundary (§193) | met by measurement (<=6.0% / <=4.4%); do not retry without a new measurement showing a larger boundary population |
+| **(c) a different execution model (native core)** | the addressable population is the runner, **3,425 ms (58.7%) / 12,801 ms (77.8%)** - but every measured transformation inside it returned zero: the C4 host-pointer probe (N1), the code-volume cut (N5: -35% code, -3% engine, 0% wall), the chain-edge cut (-50% edge instructions, 1 ns/edge, §233d), and keeping the guest registers live across an edge is not exact (§233d). **The priced ceiling today is 0%; the remainder is per-member dependent-load latency that no designed transformation addresses** | months: a second engine, or a rewrite of the raw emitter's memory/handoff model, single-brain | **high**: the current raw emitter needed three correctness campaigns (17 latent bugs, §199g-§199i) to be bit-exact on both titles; a new core restarts that with no measured payoff | a per-member probe of **one** candidate transformation must show >=20% engine before any build; two iterations, each gated, then stop and record (the charter's criterion) |
+
+### 4. The decision and its rationale (D2.3)
+
+**Option (a).** Four measured reasons:
+
+1. **Only (a) has a ceiling at or above the bar.** The device stage is 10.2% of
+   the triangle wall and >=15.8-22% of the menu's, and two slices of it are the
+   two largest wins of the last two sessions (§240 clear fill -10.6% on both
+   headline legs; §241 transform plan -24.8/-30.4/-32.8% on the menu).
+2. **Every engine-shape option is measured below the bar:** encoder 8.0% / 4.9%,
+   trace <=6.0% / <=4.4%, code volume 0% wall, the C4 memory probe null. The
+   runner is latency-bound (§239: -35% code volume bought -3% time), so "less
+   code" is measured out, and both "cheaper per member" mechanisms were measured
+   (the probe null, the register-liveness edge inexact).
+3. **A native core cannot be priced, and rule 2 forbids building without a
+   price.** The only untried shape is a rewrite whose payoff is unmeasured, so
+   its ceiling column reads 0% priced, not 59%. D4 records the probe that would
+   price it.
+4. **This is a sequencing decision, not a claim that the engine is adequate.**
+   The band is 4.87x/12.1x away and the menu-only mass is 88% runner. The
+   decision takes the priced item first and makes the next engine decision
+   depend on a measurement (D3's decomposition, D4's probe), not on an
+   aspiration. C7's kill criterion is met and is recorded as met: the engine
+   stays the raw emitter plus the IL fallback.
+
+**What would reopen (c):** (i) a per-member probe of one candidate
+transformation that shows >=20% engine, or (ii) a D3 decomposition that finds a
+menu-only item with a larger measured ceiling than the device stage. Neither
+exists today.
+
+### 5. Where this leaves M-D and the queue
+
+- M-D's exit clause is "the target band, **or a measured reassessment after the
+  D2 decision**". This note is that reassessment: the band is not met, and the
+  measured path is the device stage (D5) plus the menu decomposition (D3), with
+  the engine rewrite conditional (D4).
+- **D3 promoted** (menu-only decomposition; §1 above already says its top item
+  is the raw runner, so D3's job is to price one transformation, not to
+  re-describe the shape).
+- **D5 stays queued** behind D1: the remaining device/MMIO (hot NV2A method
+  dispatch and the menu's device mix); its first step is the same stage probe.
+- No code changed in this session. Every number above is from the current build
+  and from the negatives table's own prices; the suite, build and format gates
+  are green.

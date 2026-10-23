@@ -582,8 +582,8 @@ Stages:
 | **C4** | ~~Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe~~ **MEASURED NULL 2026-10-22 late (232a), reverted** | ~~≥2× menu engine, ≥1.5× triangle~~ |
 | **C4b** | ~~Read-only-ROM decode path: classify read-only physical windows as cacheable code, skip the tracked-page bitset for them, flush on overlay-disable/reset~~ **LANDED as the image-window class 2026-10-22 late (§237)** - decode caching alone was measured null (232f); the win is that blocks now *form* over the ROM: `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k, **-6.4% triangle `gl+replace`**, exact 1B anchors | met (6.4% wall, 9% non-JIT engine) |
 | **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first; keep `outerMs - runnerMs` flat | **slice 1 landed (§233: -4.2% triangle / -3.0% menu); the full trace removes ~350 ms of boundary population = 3-5% of the wall (§235), below the stage bar** |
-| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | **clear-fill slice landed (§240: device time 1,306 → 816 ms, -10.6% on both headline legs); next is the draw-flush half (766 ms, 413-435 ms the interpreted vertex program)** |
-| **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | **criterion met (C4 null, C5 -3/-4%); decision due after the draw-flush slice — the encoder (~7%) and code volume (0% wall) are priced out, so the choice is the engine shape** |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | **clear-fill slice landed (§240: device time 1,306 → 816 ms, -10.6% on both headline legs); the draw-flush half landed (§241 / D1: the transform program is planned once per draw, 422 → 202 ms triangle / 7,134 → 2,600 ms menu); the remainder (menu transform 2.6 s + submission/setup/attribute/epilogue) is D5** |
+| **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | **DECIDED 2026-10-23 (§242): option (a) - keep the raw engine and take the device/draw-flush path; the engine-shape program is closed. The decision table's ceilings, re-read on the post-D1 build: encoder 8.0% triangle / 4.9% menu, trace boundary population 6.04% / 4.35%, code volume 0% wall, C4 probe null, device stage 10.2% triangle / >=15.8% menu. A native core has no measured mechanism, so D4 stays conditional on a per-member probe (>=20% engine, two iterations, then stop)** |
 
 **§237 follow-up (2026-10-22 late).** C4b is closed *and repriced*: the ROM share
 of the non-JIT population is 317k of 3.65M instructions (9%), so "a superblock
@@ -617,6 +617,17 @@ stage bar; (ii) the runner's 6.25 ns/member is **not** instruction-count bound
 (the chain-edge refactor cut ~82 instructions per edge for 1 ns, §233d), and
 shared cold stubs priced at -160 ms global (§233e), and the boundary population a trace removes is ~350 ms of the runner = **3-5% of the wall** (§235). What remains is **\(iii\) the engine shape** - a trace/native core or a different execution model - which
 `next-session.md` §2 carries as the open decision with the stage table attached.
+
+**C7 decided (2026-10-23, §242 / D2).** Option **(a): keep the raw engine and
+take the device/draw-flush path**; C's engine-shape program is closed on its own
+kill criterion. Re-read on the post-D1 build (triangle 5.839 s / menu 16.448 s,
+anchors exact): encoder 415.4 vs 122.2 ns/instruction (3.4x) = 8.0% / 4.9%;
+trace boundary population 352.6 / 716.2 ms = 6.04% / 4.35%; code volume 0% wall;
+C4 probe null; device stage ~596 ms triangle (10.2%) and >=2,600 ms menu
+(>=15.8%). No engine-shape option is above the bar and the native core has no
+measured mechanism, so it cannot be priced (rule 2). D4 stays conditional on a
+per-member probe showing >=20% engine, two iterations, then stop; D3 (menu
+decomposition) is promoted and D5 (remaining device/MMIO) stays queued.
 
 Each stage: same-window A/B (≥10% wall or ≥20% engine), exact 1B
 SHAs/counters, flag-off byte-identical, ktest log byte-identical. Report

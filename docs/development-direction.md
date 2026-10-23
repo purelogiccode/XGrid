@@ -7,9 +7,9 @@ day-to-day agent entry point; this file is the priority order every agent follow
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D2 - C7 engine-shape decision** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **D3 - Menu-only wall decomposition and the top menu item** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
+**Phase score:** 78.2% (84.43 of 108). **Next:** D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
 <!-- STATUS:END -->
 
@@ -75,13 +75,14 @@ track.
 
 | workload | xemu / real-time band | XGrid now | gap |
 |---|---:|---:|---:|
-| triangle `gl+replace` | 1.20 s (xemu 830 Msteps/s) | 5.61-5.74 s | ~4.7× |
-| menu `gl+replace` | 1.36 s (real-time band; xemu has no menu oracle) | 18.8-20.0 s | ~14× |
+| triangle `gl+replace` | 1.20 s (xemu 830 Msteps/s) | 5.72-6.15 s | ~4.9× |
+| menu `gl+replace` | 1.36 s (real-time band; xemu has no menu oracle) | 15.6-17.5 s | ~12× |
 | ktest 2B (CPU-bound) | 15 s (xemu) | 9-10 s | XGrid already ahead |
 
-The triangle's wall is ~5.7 ns per guest step vs xemu's ~1.2 ns; the engine's
-served-member cost is 6.1 ns (triangle) and the device stage inside the same
-members is another 816 ms (§240), so the menu's gap is the helper/device mix. A
+The triangle's wall is ~5.8 ns per guest step vs xemu's ~1.2 ns; the engine's
+served-member cost is 6.26 ns (triangle) and 14.77 ns (menu, measured 2026-10-23
+in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 +
+§241), so the menu's gap is the helper/device mix plus its 2.3x member count. A
 2-3% slice cannot close either; the program is structural.
 
 **New order.**
@@ -91,15 +92,18 @@ members is another 816 ms (§240), so the menu's gap is the helper/device mix. A
    gated on a same-window A/B (≥10% wall or ≥20% engine), exact 1B
    SHAs/counters on both titles, flag-off byte-identical, ktest log
    byte-identical. The old C3-x/C3-y/C3-z list is closed; this is a new
-   program, not a resumption of 2-3% slices. **C6 has now paid (§240: the clear
-   fill, -10.6% on both headline legs) and the rest of the device stage is priced
-   (766 ms of draw flushes, 413-435 ms of it the interpreted vertex program);
+   program, not a resumption of 2-3% slices. **C6 has paid twice (§240 the clear
+   fill, -10.6% on both headline legs; §241/D1 the transform program plan,
+   -24.8/-30.4/-32.8% on the menu) and the rest of the device stage is priced
+   (~596 ms of the triangle wall, >=2.6 s of the menu's transform stage alone);
    C4 measured null (§232a) and §239 proved the runner is latency- not
-   instruction-bound, so the CPU-side lever left is *edge* removal.**
-   **C7 is due after the draw-flush slice:** the encoder (~7%) and the
-   code-volume question (§239, 0% wall) are priced out, so the decision is the
-   engine shape (trace/native core or a different execution model), not another
-   micro-slice.
+   instruction-bound.**
+   **C7 is decided (2026-10-23, §242):** option (a) — keep the raw engine and
+   take the device/draw-flush path. The engine-shape program is closed: the
+   encoder (~8%/5%), trace formation (≤6%/≤4.4%), code volume (0% wall) and the
+   C4 probe (null) are all below the bar, and a native core has no measured
+   mechanism, so it cannot be priced. **D3 (menu decomposition) is next; D4
+   (a new engine shape) is conditional on a per-member probe ≥20% engine.**
 2. **B — bounded finish of the in-flight B3 slice — DONE 2026-10-22 (§236).**
    The GL product renderer's computed-mode panel was black because a cube stage
    had no word source; it now samples a host 2D-array texture decoded from the
@@ -241,9 +245,23 @@ triangle 1B `gl+replace` wall inside 44,030 device writes: 766 ms draw flushes,
 time 1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%). **Next: the
 draw-flush half** (766 ms, of which 413-435 ms is the interpreted vertex
 program), then the **C7 engine-shape decision** — the encoder (~7%) and the
-code-volume question (§239, 0% wall) are already priced out. Price stages with
-stashed interleaved A/B legs, never with env-gated ablations that change guest
-behavior (§232e).
+code-volume question (§239, 0% wall) are already priced out.
+
+**Status 2026-10-23 (41st session, §§241–242): the draw-flush half landed and
+C7 is decided — option (a), keep the raw engine and take the device path.**
+D1 (§241) compiles the active transform program once per draw (`VshProgramPlan`):
+the transform stage 422 → 202 ms triangle and 7,134 → 2,600 ms menu, menu wall
+**-24.8/-30.4/-32.8%** (3/3) with every anchor byte-identical; the triangle wall
+is -4.02% median (its wall is pacing-bound, not transform-bound). D2 (§242)
+re-read every price on the post-D1 build — triangle 5.839 s (runner 58.7%,
+6.26 ns/member), menu 16.448 s (runner 77.8%, 14.77 ns/member), anchors exact,
+gap 4.87x/12.1x — and wrote the decision table: encoder 8.0%/4.9%, trace
+boundary population 6.04%/4.35%, code volume 0% wall, C4 probe null, device
+stage 10.2% triangle / ≥15.8% menu. **Only option (a) is above the bar; the
+engine-shape program is closed, D3 (menu decomposition) is promoted and D4 (a
+new engine shape) is conditional on a per-member probe ≥20% engine.** Price
+stages with stashed interleaved A/B legs, never with env-gated ablations that
+change guest behavior (§232e).
 
 **Status 2026-10-22 (course correction): Track C is re-opened and leads; B3 is
 a bounded finish; E steers; P runs parallel.** The engine is ~17 s of the
