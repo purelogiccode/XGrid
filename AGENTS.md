@@ -117,10 +117,10 @@ The full contract is `docs/repofleet-worker.md`.
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D3 - Menu-only wall decomposition and the top menu item** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **D5 - Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
+**Phase score:** 78.2% (84.43 of 108). **Next:** P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 15.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -784,6 +784,49 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-23 (forty-second; the menu-only wall is decomposed with stage
+timers for the first time - 57% of it is the device stage - and the top item is
+priced by building it: the draw-flush hoist measures **-8.03 / -9.90 / -7.87%**
+(3/3) and is **reverted** as below the 10% bar - decisions §243). Track D/C, no
+code landed, one measured negative (`D3`).**
+
+- **The decomposition (D3.1).** Temporary host-only `Stopwatch` probes (removed
+  before the commit, the §240 pattern) on both 1B `gl+replace` legs. Menu wall
+  **15.0-15.2 s this window** (recorded band 15.6-17.5) = **device 6.57 s
+  (41.6%)** + engine non-device 9.4 s (59%); software raster **0** (replace
+  mode), GL readback **0**, boot 1.6-1.9 s (10-12%) shared with the triangle.
+  The menu's device writes: **flushes 6.15 s** (35,040), other register writes
+  0.42 s, clears 0.07 s. Inside the flush: **transform plan 2.2-2.5 s**
+  (11.4M unique vertices), **attribute fetch 0.9-1.2 s** (16 slots/vertex),
+  epilogue ~0.3 s, per-draw setup 0.26 s, **fill path 2.7-3.1 s** - 10,727,820
+  `FillTrianglePsh` calls for 2,733,736 drawn triangles, so **8.0M of 10.7M
+  calls produce no pixels**. Triangle for contrast: wall 5.67 s, device 619 ms
+  (10.9%), flush 570 ms, transform 204, fill 373, fetch 38.
+- **The menu-only mass is device-first** (+9.3 s = 57% device / 43% engine),
+  the opposite of §242's arithmetic (it assumed the device stage was >=2.6 s;
+  it is 6.57 s). The engine's non-device runner (9.4 s) stays unpriced: every
+  transformation in §242's table is measured below the bar (N1/N5/N8/N9).
+- **D3.3: the fill-path item was priced by building it**, four exact parts
+  (reject-before-setup in `Triangle`, per-draw register-file/map reuse, a
+  `VshProgramPlan.ReadInputMask` read-slot fetch mask, and `Execute` loading
+  its operands into a 16-byte struct instead of the `_a/_b/_c` arrays). Three
+  interleaved pairs: **14.996 -> 13.786 (-8.03%), 15.238 -> 13.728 (-9.90%),
+  14.899 -> 13.729 (-7.87%)**; `executeMs` -7.6%, `runnerMs` 12,604 -> 10,617
+  (**-15.8%**); every 1B anchor exact (menu `B06BA6E5`/`F5D61C94`,
+  33,638/1,402/696/686/686, culled 41,035, GL 2,733,736 tris,
+  `BackendUnsupported=0`; `VshProgramPlanTests` 8/8 including the 400-program
+  fuzz). **Below 10% wall and 20% engine -> reverted**, recorded as the negative
+  `D3` with the price; the combined slice (+ per-draw `PgraphDrawInfo` cache,
+  ~0.3-0.4 s) prices at ~-10.5% and is D5's first step.
+- **Gates:** no code changed (tree byte-identical to `f469218`). Fast 1B
+  anchors re-verified: menu `B06BA6E5`/`F5D61C94`, triangle
+  `4F1FCBC0`/`7DAB63EB` (2,706/6,455/68/34) at 5.669 s; build 0 warnings, suite
+  green, format clean. A 100M-step boot leg reads 1.62 s (menu) / 1.93 s
+  (triangle) with 39 ms of device writes and one flush - that is the shared
+  boot share, not title work.
+- **Note for the next session:** `runnerMs` is not printed unless
+  `--jit-timing` is passed; the A/B legs must carry it to read the engine bar.
 
 **Session 2026-10-22 (thirty-ninth; the device stage was measured for the first
 time, and a clear now fills through spans - **-10.6% triangle / -10.6% / -9.4%

@@ -15884,3 +15884,136 @@ exists today.
 - No code changed in this session. Every number above is from the current build
   and from the negatives table's own prices; the suite, build and format gates
   are green.
+
+## 243 D3: the menu-only wall decomposed - 57% of it is the device stage, and the draw-flush hoist prices at -8.0% (2026-10-23, forty-second session) - D3
+
+**Why this was the next item.** §242 promoted D3 (the menu-only decomposition)
+and closed the engine-shape program: every engine transformation is measured
+below the bar, the device stage is the only priced path, and D3's job was to
+find whether a menu-only item has a larger *measured* ceiling than the device
+stage. This session measured the whole wall per stage (D3.1), ranked and priced
+the top items (D3.2), and built the smallest form of the top one to price it
+exactly (D3.3). The slice measured **-8.0% (3/3)** - below the 10% wall bar - so
+it was reverted and the negative is recorded with its price.
+
+### 1. The decomposition (D3.1) - stage timers, not a guess
+
+Temporary host-only probes (a `Stopwatch` pair per site, printed from the
+`NV2A stage probe` line; removed before the commit, the §240 pattern). Gate
+media, 1B, fast mode, `--gpu gl --gpu-replace --jit-timing`. The probe costs
+~50 ms with the coarse sites only (write / flush / setup / clear); the
+per-vertex and per-fill sites cost ~1.6 s and were used only for the split
+(their shares are noted +-15%).
+
+| stage | menu | triangle | menu-only |
+|---|---|---|---|
+| wall (this window, interleaved base legs) | **14.90-15.24 s** (recorded band 15.6-17.5) | **5.67 s** | **+9.3 s** |
+| `Cpu.Execute` (`executeMs`) | 15,020-15,589 ms | 5,583 ms | +9.6 s |
+| - `RunJitBlock` (`outerMs`) | 13,181-13,718 ms | 4,353 ms | +8.9 s |
+| -- native raw runner (`runnerMs`) | 12,604 ms (78%) | 3,331-3,467 ms (59%) | +9.2 s |
+| -- formation / chain / head | 1,676-1,755 ms | 1,096-1,223 ms | +0.6 s |
+| - `RunNonJit` (`nonJitMs`) | 1,733-1,844 ms | 1,294-1,386 ms | +0.5 s |
+| **device writes (inclusive)** | **6,569 ms (41.6%)** | **619 ms (10.9%)** | **+5.95 s** |
+| - draw flushes | 6,147 ms (38.9%), 35,040 flushes | 570 ms, 2,706 | +5.58 s |
+| - clears | 69 ms (1,390 clears) | 12 ms (6,495) | +0.06 s |
+| - other register writes | ~422 ms (54,566 writes total) | ~49 ms (44,030) | +0.37 s |
+| software raster (`rasterPsh`) | **0** (replace mode, `pixels=0`) | 0 | 0 |
+| GL readback | **0** (`readback=off`) | 0 | 0 |
+| boot (first 100M steps, shared) | **1.62 s (10.3%)** | 1.93 s | 0 (same boot) |
+
+The menu's draw flush splits (sampled, +-15%): **transform plan 2.2-2.5 s**
+(11.4M unique vertices, 12.1 VS instructions each), **attribute fetch
+0.9-1.2 s** (16 slots fetched per vertex), **vertex epilogue ~0.3 s**, **fill
+path 2.7-3.1 s** (10,727,820 `FillTrianglePsh` calls for 2,733,736 drawn
+triangles = 3.9 calls per draw; 5,079,950 are degenerate or culled and ~2.9M
+are fully clipped, so **8.0M of 10.7M calls produce no pixels**), of which the
+GL submission is `drawMs=597` + `flushMs=123` and the per-draw setup
+(transform scratch + combiner plan) is 259 ms. The triangle's same flush is 570
+ms: transform 204, fill 373, fetch 38, epilogue 11, setup 68.
+
+**Two facts drive everything below.** (a) The menu-only mass is **57% device**
+(+5.95 s) and 43% engine non-device (+4 s), i.e. the opposite of §242's
+arithmetic, which assumed the device stage was only >=2.6 s: it is **6.57 s,
+41.6% of the whole menu wall**. (b) The menu's `--jit-spin` skips only 128.6M
+steps (the triangle skips 450.7M), so the menu executes almost all of its 1B
+steps as real work: 866.6M served members, 2.998M block invocations, 33,638
+draw commands and 686 flips.
+
+### 2. Rank and price (D3.2)
+
+| item | size | ceiling / capture | verdict |
+|---|---|---|---|
+| engine non-device runner | 9.4 s (59%), 4 s menu-only | **0% priced**: §242's table (encoder 4.9% menu, trace 4.4%, code volume 0%, C4 probe null, N1/N5/N8/N9) | below the bar; D4's per-member probe is its reopen condition |
+| draw flush - transform plan | 2.2-2.5 s (14-16%) | only a compiled evaluator captures it; a 65-70% capture = 1.5-1.7 s (9.5-10.7%) | at/below the bar, high risk, re-opens D1 |
+| draw flush - fill path | 2.7-3.1 s (17-20%) | 8.0M of 10.7M calls produce no pixels; a real implementation is section 3 | **-8.0% measured** (below the bar) |
+| draw flush - attribute fetch | 0.9-1.2 s (6-7%) | a read-slot mask removes the unread slots (12-13 of 16) = 0.6-0.9 s | below the bar alone; landed inside section 3's price |
+| boot (shared) | 1.6-1.9 s (10-12%) | already priced and taken (§237 -6.4%, §238 -2.2%) | no new lever |
+
+So the top menu-only item is the **draw flush** (5.58 s menu-only), and the
+largest *addressable* piece inside it is the fill path - which is what section 3
+priced by building it.
+
+### 3. The priced slice, built and measured (D3.3)
+
+The smallest coherent implementation of the fill-path item, four exact parts,
+all host-side:
+
+1. **Reject before the setup.** `RejectTriangle` runs the degenerate, cull-face
+   and clip-rect predicates (the ones `FillTrianglePsh` starts with, same
+   counters) before the fill's per-triangle setup, so the 8.0M dead triangles
+   never enter it.
+2. **Per-draw scratch.** The 192-entry constant file, the input/output register
+   files and the transformed-vertex map became fields refilled per draw
+   command instead of 224 arrays allocated per flush.
+3. **Read-slot mask.** `VshProgramPlan.ReadInputMask` (built during `Create`
+   from every input source) lets the fetch loop skip slots the program never
+   reads; the fog fallback's v0/v4/v5 are folded in when fog is enabled. The
+   fixed-function path keeps the full mask.
+4. **Operand locals.** `VshProgramPlan.Execute` loads its three sources into a
+   16-byte `Operand` struct instead of the `_a`/`_b`/`_c` arrays (12 stores +
+   12 loads per VS instruction removed), with every float expression - the
+   `Multiply` zero rule, the `Dot` accumulation order from `0`, the `Dph`
+   grouping - transcribed literally.
+
+**Measured, 3 interleaved same-window pairs (menu 1B `gl+replace`, base build
+stashed and rebuilt):**
+
+| pair | base | slice | delta | `executeMs` |
+|---|---|---|---|---|
+| 1 | 14.996 s | 13.786 s | **-8.03%** | 15,589 -> 14,411 (-7.6%) |
+| 2 | 15.238 s | 13.728 s | **-9.90%** | 15,020 -> 13,982 (-6.9%) |
+| 3 | 14.899 s | 13.729 s | **-7.87%** | 15,291 -> 14,098 (-7.8%) |
+
+Median **-8.03%, 3/3**; the raw runner moved 12,604 -> 10,617 ms (-15.8%) and
+`outerMs` 14,359 -> 12,095 (-15.8%) in comparable single runs. **Every anchor
+was exact**: menu RAM `B06BA6E5` / CPU `F5D61C94`, 33,638 draws / 1,402 skipped /
+696 clears / 686 flips / 686 stalls / culled 41,035, GL 2,733,736 triangles,
+`BackendUnsupported=0`; the plan's bit-exact differential (`VshProgramPlanTests`,
+8 tests including the 400-program fuzz over MAC x ILU x swizzle/negate x masks)
+passed with the rewrite.
+
+**Verdict: below both bars** (10% wall / 20% engine; -8.0% / -7.6%). Reverted.
+The price is recorded so the next slice does not have to re-derive it.
+
+### 4. What would cross the bar
+
+The arithmetic, from the measured stage times: this slice takes 1.2-1.5 s of
+the fill path's 2.7-3.1 s. The next two pieces inside the same item are
+**caching the per-draw `PgraphDrawInfo` state** (the fragment state, four
+texture slots, eye position and bump state are invariant within a draw command;
+~0.3-0.4 s = 2.5%) and the transform plan's compiled form (~1.5 s, 9.5%,
+high risk). This slice plus the draw-info cache prices at **~-10.5%**, i.e. the
+10% bar is reachable - but only as a larger, combined slice than D3's mandate
+("the smallest implementation" of one item).
+
+**Reopen condition (recorded as the D3 negative):** a combined draw-flush slice
+= this measured price + the per-draw draw-info cache, measuring >=10% wall on
+3/3 interleaved pairs with exact anchors. That is D5's first step, not D3's.
+
+### 5. Gates
+
+No code changed (the slice was reverted): the tree is `f469218` byte-identical.
+Fast 1B anchors re-verified in this window on both legs - menu RAM `B06BA6E5` /
+CPU `F5D61C94` (33,638/1,402/696/686/686, culled 41,035), triangle RAM
+`4F1FCBC0` / CPU `7DAB63EB` (2,706/6,455/68/34, culled 41,035, wall 5.669 s in
+the 5.61-5.74 band). Build clean (0 warnings), suite green, format clean.

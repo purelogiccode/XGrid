@@ -1,4 +1,4 @@
-# Next session instructions (updated 2026-10-22 very late, after §239/§240: the device stage was measured, its clear fill went through spans for **-10.6% / -10.6%** on the two headline legs, and the raw runner's per-member bookkeeping became static for a measured 3% engine / 0% wall)
+# Next session instructions (updated 2026-10-23, after §243: the menu-only wall was decomposed with stage timers - 57% of it is the device stage - and the draw-flush hoist was priced by building it at **-8.03 / -9.90 / -7.87%** (3/3) and reverted as below the 10% bar)
 
 > **Routine change (2026-10-22):** the current task, queue and status are in
 > `docs/status.json`. Start every session with
@@ -191,6 +191,30 @@ now ~40 ms.
 - **The boot (first 100M steps) is ~1.9 s of the wall.**
 - **Menu `gl+replace`** ~19.8 s: the same shape with 2.7x the non-JIT calls and
   ~2.7x the device writes.
+
+### §243 - the menu-only wall, measured (2026-10-23)
+
+The menu's 1B `gl+replace` wall (15.0-15.2 s in that window) decomposes as
+**device 6.57 s (41.6%) + engine non-device 9.4 s (59%)**, with the software
+rasterizer **0** (replace mode) and GL readback **0**; the shared boot is
+1.6-1.9 s (10-12%) inside both titles. The device writes are draw flushes
+**6.15 s** (35,040 flushes: transform plan 2.2-2.5, fill path 2.7-3.1,
+attribute fetch 0.9-1.2, vertex epilogue 0.3, per-draw setup 0.26), other
+register writes 0.42 s and clears 0.07 s. The fill path is called 10,727,820
+times for 2,733,736 drawn triangles - **8.0M calls produce no pixels** (5.08M
+degenerate/culled, 2.9M fully clipped). The triangle's same stages: wall
+5.67 s, device 619 ms, flush 570, transform 204, fill 373, fetch 38. The
+**menu-only mass (+9.3 s) is 57% device**, not engine-first as §242's
+arithmetic assumed.
+
+The fill-path item was priced by implementing it (reject-before-setup,
+per-draw register-file reuse, `VshProgramPlan.ReadInputMask` fetch mask, plan
+operand struct instead of `_a/_b/_c`): **-8.03 / -9.90 / -7.87%** wall (3/3),
+`executeMs` -7.6%, `runnerMs` -15.8%, every anchor exact - **below the 10% bar,
+so reverted** (negative `D3`). Adding the per-draw `PgraphDrawInfo` state cache
+(~0.3-0.4 s, 2.5%) prices the combined slice at ~**-10.5%**: that is D5's
+first step, and the reopen condition for `D3`.
+
 - **xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
   (real-time band), so the gap is now **~4.7x / ~14x**.
 
@@ -235,6 +259,14 @@ decide that against xemu first.
 - The HILO dot-map input one-word-per-stage limitation (§236) - no row uses it.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
+
+- **The menu draw-flush hoist alone** (§243, `D3`): reject-before-setup +
+  per-draw register files + read-slot fetch mask + plan operand locals measured
+  **-8.03 / -9.90 / -7.87%** wall (3/3), `executeMs` -7.6%, `runnerMs` -15.8%,
+  every anchor exact - below the 10% bar, reverted. Reopen only as a combined
+  slice that adds the per-draw `PgraphDrawInfo` cache (~0.3-0.4 s) and measures
+  >=10% on 3/3 interleaved pairs. **Print `--jit-timing` on A/B legs** or the
+  engine bar cannot be read (`runnerMs` is otherwise 0).
 
 - **Removing the raw emitter's per-member bookkeeping because it is 35% of the
   code volume** (§239): -3% engine, 0% wall. The runner is latency-bound, not

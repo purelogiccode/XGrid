@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D3 - Menu-only wall decomposition and the top menu item** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **D5 - Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
+**Phase score:** 78.2% (84.43 of 108). **Next:** P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 15.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -195,14 +195,33 @@ is 88% raw runner, which is why D3 is promoted and D4 keeps the per-member probe
 as its reopen condition. No code changed; suite 1874 green (1,864 in the
 solution-level run plus `XGrid.Graphics.Tests`' 10), build and format clean.
 
-## E4. D3 — menu-only wall (ACTIVE, depends D2)
+## E4. D3 — menu-only wall (DONE 2026-10-23 as a NEGATIVE; §243)
 
-- [ ] **D3.1 Decompose.** Menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s
+- [x] **D3.1 Decompose.** Menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s
   is menu-only. Split it into CPU engine, device, GL, raster and boot; use the
   stage timers, not a guess.
-- [ ] **D3.2 Rank and price.** Take the top menu-only item; write the ceiling.
-- [ ] **D3.3 Land or negative.** Only with the gate; otherwise record the
+- [x] **D3.2 Rank and price.** Take the top menu-only item; write the ceiling.
+- [x] **D3.3 Land or negative.** Only with the gate; otherwise record the
   negative.
+
+**Result (§243):** the decomposition is measured with temporary stage probes
+(removed before the commit): the menu's 1B `gl+replace` wall is **15.0-15.2 s
+in this window** (recorded band 15.6-17.5) = **device 6.57 s (41.6%)** + engine
+non-device 9.4 s (59%), raster **0** (replace mode), GL readback **0**, and the
+shared boot 1.6-1.9 s (10-12%) inside both. The menu-only mass (+9.3 s) is
+**57% device** (+5.95 s: flushes 5.58, other writes 0.37, clears 0.06) and 43%
+engine (+4.0 s). Inside the menu's 6.15 s draw flush: transform plan 2.2-2.5 s,
+attribute fetch 0.9-1.2 s, vertex epilogue ~0.3 s, per-draw setup 0.26 s, and
+the fill path 2.7-3.1 s - 10,727,820 fills for 2,733,736 drawn triangles, i.e.
+**8.0M of 10.7M calls produce no pixels**. The top item is the draw flush; its
+fill-path piece was priced by **building it**: reject-before-setup, per-draw
+scratch reuse, a read-slot fetch mask and operand locals in the plan measure
+**-8.03 / -9.90 / -7.87% wall (3/3)** and -7.6% `executeMs` (-15.8%
+`runnerMs`) with every 1B anchor exact - **below the 10% wall and 20% engine
+bars**, so it was reverted and recorded as the negative `D3`. Adding the
+per-draw `PgraphDrawInfo` cache (~0.3-0.4 s, 2.5%) prices the combined slice at
+~-10.5%, which is D5's first step. Build clean, suite green, format clean; no
+code changed.
 
 ## E5. D5 — remaining device/MMIO (QUEUED, depends D1)
 
@@ -239,6 +258,7 @@ solution-level run plus `XGrid.Graphics.Tests`' 10), build and format clean.
 | N12 | GPU "landed" without a live compile | §227: the shaders never compiled | never; the gate is DoD |
 | N13 | full corpus after every slice | two sweeps in one day | milestone close or a shared sampler/decoder change |
 | N14 | docs-only status rewrites | next-session 24 touches, AGENTS 23, decisions 22 | never; status.json + generated blocks |
+| D3 | menu draw-flush hoist (reject-before-setup + per-draw scratch + read-slot mask + plan operand locals) | 3 interleaved pairs **-8.03 / -9.90 / -7.87%** wall, `executeMs` -7.6% (`runnerMs` -15.8%); every 1B anchor exact; reverted | a combined slice with the per-draw draw-info cache measures >=10% wall |
 
 ## E8. Definition of done (per task type)
 

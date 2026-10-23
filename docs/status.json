@@ -4,14 +4,14 @@
   "objective": "xemu-class performance or better on the same content (operator decision 2026-10-22)",
   "current": {
     "milestone": "M-D",
-    "id": "D3",
-    "title": "Menu-only wall decomposition and the top menu item",
-    "plan": "E4",
+    "id": "D5",
+    "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
+    "plan": "E5",
     "status": "active",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "the menu wall (18.8-20.0 s) is decomposed into CPU engine, device, GL and raster; the top menu-only item is priced; land only if >=10% wall or >=20% engine",
-    "price": "menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s is menu-only; the decomposition is the first step"
+    "acceptance": ">=10% menu wall; exact counters; no guest change",
+    "price": "the draw-flush half is D1; the remaining device stage (method dispatch) is unpriced"
   },
   "position": {
     "host": "H1",
@@ -232,18 +232,6 @@
   ],
   "queue": [
     {
-      "id": "D3",
-      "title": "Menu-only wall decomposition and the top menu item",
-      "plan": "E4",
-      "status": "active",
-      "depends": [
-        "D2"
-      ],
-      "acceptance": "the menu wall (18.8-20.0 s) is decomposed into CPU engine, device, GL and raster; the top menu-only item is priced; land only if >=10% wall or >=20% engine",
-      "price": "menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s is menu-only; the decomposition is the first step",
-      "evidence": []
-    },
-    {
       "id": "D4",
       "title": "Conditional: implement the engine shape chosen in D2",
       "plan": "E3",
@@ -259,7 +247,7 @@
       "id": "D5",
       "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
       "plan": "E5",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "D1"
       ],
@@ -443,6 +431,13 @@
       "date": "2026-10-22",
       "evidence": "next-session 24 touches, AGENTS 23, decisions 22 in one day; the same status rewritten",
       "reopen": "never; status.json plus generated blocks"
+    },
+    {
+      "id": "D3",
+      "title": "Menu-only wall decomposition and the top menu item",
+      "date": "2026-10-23",
+      "evidence": "menu 1B gl+replace decomposed by temporary stage probes: wall 15.0-15.2 s (this window) = device 6.57 s (41.6%; flushes 6.15 = transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26; other writes 0.42; clears 0.07) + engine non-device 9.4 s (59%); raster 0 (replace), readback 0, boot 1.6-1.9 s shared. Menu-only mass +9.3 s = 57% device + 43% engine. Top item priced by building the draw-flush hoist (reject-before-setup, per-draw scratch, read-slot fetch mask, plan operand locals): 3 interleaved pairs 14.996->13.786 (-8.03%), 15.238->13.728 (-9.90%), 14.899->13.729 (-7.87%), executeMs -7.6%, runnerMs 12,604->10,617 (-15.8%); menu RAM B06BA6E5/CPU F5D61C94, 33638/1402/696/686/686, culled 41035, GL 2733736 tris, BackendUnsupported=0 exact; VshProgramPlanTests 8/8. Below the 10% wall / 20% engine bar -> reverted; triangle 1B 4F1FCBC0/7DAB63EB 5.669 s exact.",
+      "reopen": "a combined draw-flush slice (this measured price + the per-draw PgraphDrawInfo state cache, ~0.3-0.4 s = 2.5%, priced ~-10.5%) measures >=10% wall on 3/3 interleaved pairs with exact 1B anchors - D5's first step"
     }
   ],
   "rules": {
