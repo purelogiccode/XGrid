@@ -15684,3 +15684,100 @@ violations 0, counters 33632/686/686).
 is one temporary `Stopwatch` pair per site (the counts - `writes=44,030`,
 `clears=6,455`, `verts=63,524`, `vsInsn=1,762,191` - come from the existing
 counters). Strip it before any A/B leg (§232e).
+## 241 Track C: the transform program is compiled once per draw - the menu's vertex stage was 7.1 s of its 20.9 s wall and the plan takes 63% of it (2026-10-23, fortieth session)
+
+**Why this was the next item.** §240 measured the device stage for the first
+time: 816 ms of the triangle's 1B wall after the clear fill, 766 ms of it in
+draw flushes, of which the interpreted transform program was 413-435 ms (the
+remaining flush items are GL submission 173-181, setup 61-66, attribute fetch
+34-36, epilogue ~70). D1's price asked for a re-measured ceiling before the
+build. A temporary `Stopwatch` pair around `VshProgram.Execute` inside
+`FlushProgramDraw` (env-gated, removed before the commit) read both gate legs at
+1B `gl+replace`:
+
+| leg | vertices | VS instructions | VS interpreter | wall | share |
+|---|---|---|---|---|---|
+| triangle | 63,524 | 1,762,191 (27.7/vertex) | 422-506 ms | 5.79-6.14 s | 7.3-8.2% |
+| menu | 11,439,040 | 138,269,607 (12.1/vertex) | 7,134-7,336 ms | 20.9-21.9 s | 33.8-34.9% |
+
+**The literal 100M-step leg cannot price this stage.** At 100M steps the
+triangle executes **one** draw (1 vertex) and the menu one draw: the 100M phase
+is kernel boot + the first presentation, not the title's draw stream. The stage
+timer at 1B is the measurement (D1.1 allows it: "or time it with the existing
+stage probe"), and the 413-435 ms/1B figure from §240 reproduced at 422 ms.
+
+**The implementation (241a).** `VshProgramPlan` (`src/XGrid.Nv2a/VshProgramPlan.cs`)
+decodes an active program window once into `Instruction[]` - predecoded opcode
+enums, three `Source` descriptors (kind, register/input index, unclamped constant
+base + relative bit, negate, four swizzle indices), the paired/unpaired MAC
+masks and the ORB fields - and executes it with a plan-owned 16-register file and
+five operand/result scratch vectors. `Nv2aMmio` keeps one plan per
+(program-version, start, length) and rebuilds it when any of the three moves, so
+the per-flush `uint[programLength][]` copy is gone as well. Every float
+expression is the interpreter's own code: the plan calls `VshProgram.Multiply`,
+`Dot`, `Fill`, `Min`, `Max`, `ClampAwayZeroInf`, `RoundScreenCoords`,
+`WriteMasked` and `WriteFogMasked` (now `internal`), so no arithmetic changed;
+`Execute` stays the reference implementation. The per-call order (A, B, C load;
+MAC then ILU; paired r1 write, paired MAC mask suppression when `outR == 1`;
+ARL; ORB block with the oFog/oA0 special cases; epilogue) is transcribed
+literally.
+
+**Correctness first (241b).** `VshProgramPlanTests` compares the plan against
+the interpreter **bit-for-bit on all 16 output registers plus `fogWritten`** over
+every MAC opcode 0-15 x every ILU opcode 0-7 (including the undefined ones, which
+must both write nothing), all 256 swizzle/negate combinations on three operands,
+ARL-relative constants and the oA0 write path, every oFog mask and both ORB
+muxes, the paired register-1 rule for `outR` 0-15, the first-final-token stop,
+the 136-instruction clamp, and a seeded 400-program random fuzz over edge values
+(0, -0, NaN, +/-inf, denormals). Two mutations were proven to fail the gate: the
+paired `outR == 1` mask rule (2 tests) and dropping the plan's version check (the
+device test `ProgramRewrite_InvalidatesTheCompiledTransform`, which compares a
+rewritten channel against a fresh one).
+
+**Measured (241c / 241d, H1, 1B, gate media, `gl+replace`).** Menu
+`gl+replace`, 3 interleaved same-window pairs against the stashed base build:
+
+| pair | base | new | delta | `outerMs` |
+|---|---|---|---|---|
+| 1 | 20.793 s | 15.639 s | -24.8% | 18,555 -> 13,850 |
+| 2 | 22.857 s | 15.909 s | -30.4% | 20,422 -> 14,139 |
+| 3 | 25.988 s | 17.459 s | -32.8% | 23,360 -> 15,432 |
+
+**-24.8% / -30.4% / -32.8% wall (3/3)** and **-25% / -31% / -34% engine**, both
+above the bars. The absolute new menu wall reads **15.956 s** (base 20.8-26.0 s
+on this host; the recorded band was 18.8-20.0 s). The transform stage itself went
+**7,134 -> 2,600 ms** (-64%) with `ms=`, i.e. the wall saving is *larger* than
+the timed interpreter share: the interpreter also allocated ~17 `float[4]` per
+call (194M allocations per 1B menu leg) whose collection is not inside the timed
+region. That is the reverse of §240's triangle-side allocation null, which was
+measured at 63k calls; at 11.4M calls the GC share is real. Record: the plan is
+allocation-free per vertex, the interpreter is not.
+
+The triangle `gl+replace`, 10 interleaved pairs: **mean paired delta -3.26%**,
+median wall 6.148 -> 5.901 s (**-4.02%**) but **newWins 5/10** - the effect is
+at the host's noise floor for this leg. `nonJitMs` (where the device work sits,
+see §232f) fell 1,612/1,671/1,604 -> 1,435/1,288/1,407 ms (-11% / -23% / -12%,
+3/3) and the transform stage itself went **422 -> 202 ms (-52%)**. So the
+triangle's *draw-flush stage* clears the >=20% engine bar while its *wall* does
+not move measurably: the triangle's wall is pacing/raster-bound at this stage
+(68 frames over 1B steps, ~41k culled triangles, GL submission dominating the
+flush), not transform-bound. That is a C7 input: further work on the triangle's
+draw path cannot pay more than ~0.4 s of its 5.9 s.
+
+**Exactness (241e).** All four fast 1B anchors byte-identical (triangle sw
+`B45254CA`/`7DAB63EB` 57,663,082 px, triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw
+`34973510`/`F5D61C94` 253,998,498 px, menu gl `B06BA6E5`/`F5D61C94`) and every
+counter identical (triangle 2706/6455/68/34, programLoad 8, constLoad 100,
+culled 41,035; menu 33,638/696/686/686, programLoad 12, constLoad 2, skipped
+1,402). Accurate goldens PASS byte-identically: menu sw `4EF1FBF6` / gl
+`B6116DAE` (diff 2,602, violations 0, maxDelta 1, 33,632/686/686), triangle sw
+`A1740DE0` / gl `7A860ED7` (diff 27,849, violations 0, 2,706/68/34), with
+`BackendUnsupported=0 fatal=0 composedFrames=0`. ktest smoke PASS 7/7 at
+792,800,535 steps, log `CA5D3867` (40,797 B) byte-identical. Corpus:
+`xgu vp_lighting` 3B `162DAFF1`/`0380C502`, `xgu bump_cubemap_reflect` 3.6B
+`5ACD06FF`/`C848610E`. Suite 1865 -> **1874**. Host-side only: no snapshot
+version change (Nv2a v9).
+
+**Diagnostics.** The price probe was temporary and removed; the plan exposes only
+`VshProgramPlan.InstructionCount` (the decoded instruction count of a token
+list), which the differential and the device tests use.

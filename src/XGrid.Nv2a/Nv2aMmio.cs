@@ -758,6 +758,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private uint _transformProgramStart;
     private uint _transformExecutionMode;
     private uint _transformProgramCxtWriteEn;
+
+    // Compiled transform-program cache (host-only, never snapshotted). The plan
+    // is rebuilt only when the resident program, its start or its length moves;
+    // _transformProgramVersion bumps on every program write, reset and state load.
+    private VshProgramPlan? _vshPlan;
+    private int _vshPlanVersion = -1;
+    private int _vshPlanStart = -1;
+    private int _vshPlanLength = -1;
+    private int _transformProgramVersion;
     private readonly FixedFunctionVertexState _fixedFunction = new();
     private readonly List<uint> _inlineElements = [];
     private readonly List<uint> _inlineWords = [];
@@ -991,6 +1000,27 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the accumulated combiner fill-path wall time (seconds). Diagnostics.</summary>
     public double RasterPshSeconds => _rasterPshTicks / (double)Stopwatch.Frequency;
+
+    /// <summary>
+    /// Gets the compiled transform program for the active program window,
+    /// rebuilding it only when the resident program, its start or its length
+    /// changed. Host-only: never snapshotted, never affects guest state.
+    /// </summary>
+    private VshProgramPlan EnsureVshPlan(int programStart, int programLength)
+    {
+        VshProgramPlan? plan = _vshPlan;
+        if (plan is null || _vshPlanVersion != _transformProgramVersion ||
+            _vshPlanStart != programStart || _vshPlanLength != programLength)
+        {
+            plan = VshProgramPlan.Create(_transformProgram, programStart, programLength);
+            _vshPlan = plan;
+            _vshPlanVersion = _transformProgramVersion;
+            _vshPlanStart = programStart;
+            _vshPlanLength = programLength;
+        }
+
+        return plan;
+    }
 
     /// <summary>Gets the register-combiner state summary. Diagnostics.</summary>
     public string CombinerStateDebug =>
@@ -1534,6 +1564,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         TransformProgramLoadDebug = 0;
         _transformProgramStart = 0;
+        _transformProgramVersion++;
         _transformExecutionMode = 0;
         _transformProgramCxtWriteEn = 0;
         _fixedFunction.Reset();
@@ -1997,6 +2028,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         _transformProgramStart = reader.ReadUInt32();
         _transformExecutionMode = reader.ReadUInt32();
         _transformProgramCxtWriteEn = reader.ReadUInt32();
+        _transformProgramVersion++;
         _fixedFunction.Read(reader);
         TransformProgramLoadDebug = reader.ReadUInt32();
         TransformConstantLoadDebug = reader.ReadUInt32();
@@ -4201,6 +4233,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         _transformProgram[TransformProgramLoadDebug][slot & 3u] = value;
+        _transformProgramVersion++;
         if ((slot & 3u) == 3u)
         {
             TransformProgramLoadDebug++;
@@ -5064,11 +5097,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        uint[][] program = [];
+        VshProgramPlan? plan = null;
         if (!fixedFunction)
         {
-            program = new uint[programLength][];
-            Array.Copy(_transformProgram, programStart, program, 0, programLength);
+            plan = EnsureVshPlan(programStart, programLength);
         }
 
         uint bytes = ColorBytesPerPixel(_surfaceFormat & 0xFu);
@@ -5271,7 +5303,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             }
             else
             {
-                VshProgram.Execute(program, programLength, constants, inputs, outputs, out fogWritten);
+                // The compiled plan runs the same interpreter semantics (pinned
+                // bit-for-bit by VshProgramPlanTests); VshProgram.Execute stays
+                // the reference implementation.
+                plan!.Execute(constants, inputs, outputs, out fogWritten);
             }
 
             // Device-depth normalization (xemu clipRange.y): Xbox shaders emit

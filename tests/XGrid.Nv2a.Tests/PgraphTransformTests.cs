@@ -604,6 +604,108 @@ public sealed class PgraphTransformTests
         Assert.Equal(0xFFFF8040u, memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u)));
     }
 
+    /// <summary>
+    /// The compiled transform program is cached on the resident program. A
+    /// guest rewrite (the same slots, loaded again) must invalidate it: the
+    /// second draw has to render what a device that only ever saw the new
+    /// program renders, not the stale plan.
+    /// </summary>
+    [Fact]
+    public void ProgramRewrite_InvalidatesTheCompiledTransform()
+    {
+        const uint ProgramLoadState = 0x1E9Cu;
+        (uint Method, uint Parameter)[] prologue =
+        [
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+        ];
+        (uint Method, uint Parameter)[] constantState =
+        [
+            (0x1EA4u, 0u),
+            (0x0B80u, 0x3F800000u),
+            (0x0B84u, 0x3F000000u),
+            (0x0B88u, 0x3E800000u),
+            (0x0B8Cu, 0x3F800000u),
+        ];
+        // Program A: oD0 = c0 then oPos = v0 (screen-space passthrough).
+        // Program B: oD0 = v1 (= (0,0,0,1), a different colour) then the same
+        // position, so the sampled pixel must change when the rewrite lands.
+        uint[][] programATokens =
+        [
+            Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 3),
+            Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+        ];
+        uint[][] programBTokens =
+        [
+            Insn(mac: MacMov, aMux: MuxV, v: 1, outMux: 0, outMask: 0xF, outAddress: 3),
+            Insn(mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true),
+        ];
+
+        static (uint Method, uint Parameter)[] Program(uint[][] tokens)
+        {
+            var methods = new List<(uint Method, uint Parameter)>();
+            for (int instruction = 0; instruction < tokens.Length; instruction++)
+            {
+                for (uint word = 0; word < 4u; word++)
+                {
+                    methods.Add((0x0B00u + (uint)(instruction * 16) + (word * 4u), tokens[instruction][word]));
+                }
+            }
+
+            return [.. methods];
+        }
+
+        (uint Method, uint Parameter)[] programA = Program(programATokens);
+        (uint Method, uint Parameter)[] programB = Program(programBTokens);
+        (uint Method, uint Parameter)[] draw =
+        [
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1808u, 0x00000002u),
+            (0x17FCu, 0u),
+        ];
+
+        static void WriteTriangle(ArrayMemory memory)
+        {
+            uint[] vertices =
+            [
+                0x40000000u, 0x40000000u, 0x00000000u, 0x3F800000u,
+                0x41400000u, 0x40000000u, 0x00000000u, 0x3F800000u,
+                0x40000000u, 0x41400000u, 0x00000000u, 0x3F800000u,
+            ];
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                memory.WritePhysical(0x2000u + ((uint)i * 4u), vertices[i]);
+            }
+        }
+
+        static uint Pixel(ArrayMemory memory) => memory.ReadPhysical(0x3000u + (3u * 0x40u) + (3u * 4u));
+
+        // Channel A: program A, draw, then rewrite the same slots with program B and draw again.
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        WriteTriangle(memory);
+        PushMethods(nv2A, memory, [.. prologue, .. constantState, (ProgramLoadState, 0u), .. programA, .. draw]);
+        uint firstPixel = Pixel(memory);
+        PushMethodsContinue(nv2A, memory,
+            [.. prologue, (ProgramLoadState, 0u), .. programB, .. draw]);
+        uint rewrittenPixel = Pixel(memory);
+
+        // Channel B: a fresh device that only ever loads program B.
+        (Nv2AMmio fresh, ArrayMemory freshMemory) = CreateChannel();
+        WriteTriangle(freshMemory);
+        PushMethods(fresh, freshMemory,
+            [.. prologue, .. constantState, (ProgramLoadState, 0u), .. programB, .. draw]);
+        uint freshPixel = Pixel(freshMemory);
+
+        Assert.NotEqual(firstPixel, rewrittenPixel);
+        Assert.Equal(freshPixel, rewrittenPixel);
+    }
+
     [Fact]
     public void ElementDraw_SamplesSwizzledTexture()
     {

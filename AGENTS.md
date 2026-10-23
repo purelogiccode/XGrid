@@ -117,9 +117,9 @@ The full contract is `docs/repofleet-worker.md`.
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active, attempt 0).
-**Position (H1, 1B, fast):** triangle gl+replace 5.61-5.74 s / sw 10.03 s; menu gl+replace 18.8-20.0 s / sw 30.35 s; gap ~4.7x / ~14x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** D2 (C7 engine-shape decision), D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink).
+**Current status (2026-10-23):** M-D / **D2 - C7 engine-shape decision** (active, attempt 0).
+**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 78.2% (84.43 of 108). **Next:** D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
 <!-- STATUS:END -->
 

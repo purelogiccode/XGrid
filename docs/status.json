@@ -1,17 +1,17 @@
 {
   "schema": 1,
-  "updated": "2026-10-22",
+  "updated": "2026-10-23",
   "objective": "xemu-class performance or better on the same content (operator decision 2026-10-22)",
   "current": {
     "milestone": "M-D",
-    "id": "D1",
-    "title": "C6 draw-flush half: compile or cache the active transform program",
-    "plan": "E2",
+    "id": "D2",
+    "title": "C7 engine-shape decision",
+    "plan": "E3",
     "status": "active",
-    "started": "2026-10-22",
+    "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
-    "price": "766 ms of draw flushes at 1B (413-435 ms interpreted vertex program) = 14% of the triangle gl+replace wall; re-measure the ceiling with a 100M-step ablation before implementing"
+    "acceptance": "a written decision table with a measured ceiling, cost, risk and kill criterion for each option; one option chosen and recorded in the decisions file",
+    "price": "encoder ~7% triangle / ~3% menu; code volume 0% wall; boundary population 3-5%; device stage 766 ms (all measured)"
   },
   "position": {
     "host": "H1",
@@ -19,22 +19,22 @@
     "mode": "fast",
     "legs": {
       "triangle_gl_replace": {
-        "wall": "5.61-5.74 s",
+        "wall": "5.72-6.15 s",
         "ram": "B45254CA",
         "cpu": "7DAB63EB",
         "frame": "7A860ED7"
       },
       "triangle_sw": {
-        "wall": "10.03 s"
+        "wall": "10.21 s"
       },
       "menu_gl_replace": {
-        "wall": "18.8-20.0 s",
+        "wall": "15.6-17.5 s",
         "ram": "B06BA6E5",
         "cpu": "F5D61C94",
         "frame": "B6116DAE"
       },
       "menu_sw": {
-        "wall": "30.35 s"
+        "wall": "27.01 s"
       }
     },
     "accurate": {
@@ -46,8 +46,8 @@
       "menu_frame": "4EF1FBF6"
     },
     "gap": {
-      "triangle_x": 4.7,
-      "menu_x": 14.0
+      "triangle_x": 4.9,
+      "menu_x": 11.7
     },
     "ktest": {
       "steps": 792800535,
@@ -61,48 +61,184 @@
     "percent": 78.2
   },
   "phases": [
-    { "p": 0, "name": "Bootstrap", "weight": 1, "done": 100, "track": "LLE core (real console chain)" },
-    { "p": 1, "name": "Core", "weight": 2, "done": 100, "track": "LLE core (real console chain)" },
-    { "p": 2, "name": "Memory", "weight": 3, "done": 100, "track": "LLE core (real console chain)" },
-    { "p": 3, "name": "CPU (x86 PIII)", "weight": 11, "done": 96, "track": "LLE core (real console chain)" },
-    { "p": 4, "name": "MMU", "weight": 3, "done": 100, "track": "LLE core (real console chain)" },
-    { "p": 5, "name": "Bus & IRQ", "weight": 6, "done": 85, "track": "LLE core (real console chain)" },
-    { "p": 6, "name": "MCPX", "weight": 6, "done": 80, "track": "LLE core (real console chain)" },
-    { "p": 7, "name": "Firmware & Boot", "weight": 5, "done": 90, "track": "LLE core (real console chain)" },
-    { "p": 8, "name": "Storage", "weight": 5, "done": 86, "track": "LLE core (real console chain)" },
-    { "p": 9, "name": "XBE Loader", "weight": 3, "done": 90, "track": "LLE core (real console chain)" },
-    { "p": 10, "name": "Kernel Interface", "weight": 2, "done": 5, "track": "LLE core (real console chain)" },
-    { "p": 11, "name": "NV2A (GPU)", "weight": 15, "done": 93, "track": "LLE core (real console chain)" },
-    { "p": 12, "name": "APU (audio)", "weight": 4, "done": 55, "track": "LLE core (real console chain)" },
-    { "p": 13, "name": "USB & Controllers", "weight": 4, "done": 70, "track": "LLE core (real console chain)" },
-    { "p": 14, "name": "Networking", "weight": 4, "done": 70, "track": "LLE core (real console chain)" },
-    { "p": 15, "name": "CPU JIT", "weight": 11, "done": 90, "track": "Performance & finish" },
-    { "p": 16, "name": "CPU Optimization", "weight": 3, "done": 35, "track": "Performance & finish" },
-    { "p": 17, "name": "Memory Optimization", "weight": 2, "done": 40, "track": "Performance & finish" },
-    { "p": 18, "name": "GPU Optimization", "weight": 4, "done": 78, "track": "Performance & finish" },
-    { "p": 19, "name": "Debugger", "weight": 3, "done": 30, "track": "Performance & finish" },
-    { "p": 20, "name": "Automated Testing", "weight": 3, "done": 82, "track": "Performance & finish" },
-    { "p": 21, "name": "CLI & Frontend", "weight": 3, "done": 75, "track": "Performance & finish" },
-    { "p": 22, "name": "Save States & Replay", "weight": 2, "done": 30, "track": "Performance & finish" },
-    { "p": 23, "name": "Release", "weight": 3, "done": 18, "track": "Performance & finish" }
+    {
+      "p": 0,
+      "name": "Bootstrap",
+      "weight": 1,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 1,
+      "name": "Core",
+      "weight": 2,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 2,
+      "name": "Memory",
+      "weight": 3,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 3,
+      "name": "CPU (x86 PIII)",
+      "weight": 11,
+      "done": 96,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 4,
+      "name": "MMU",
+      "weight": 3,
+      "done": 100,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 5,
+      "name": "Bus & IRQ",
+      "weight": 6,
+      "done": 85,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 6,
+      "name": "MCPX",
+      "weight": 6,
+      "done": 80,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 7,
+      "name": "Firmware & Boot",
+      "weight": 5,
+      "done": 90,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 8,
+      "name": "Storage",
+      "weight": 5,
+      "done": 86,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 9,
+      "name": "XBE Loader",
+      "weight": 3,
+      "done": 90,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 10,
+      "name": "Kernel Interface",
+      "weight": 2,
+      "done": 5,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 11,
+      "name": "NV2A (GPU)",
+      "weight": 15,
+      "done": 93,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 12,
+      "name": "APU (audio)",
+      "weight": 4,
+      "done": 55,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 13,
+      "name": "USB & Controllers",
+      "weight": 4,
+      "done": 70,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 14,
+      "name": "Networking",
+      "weight": 4,
+      "done": 70,
+      "track": "LLE core (real console chain)"
+    },
+    {
+      "p": 15,
+      "name": "CPU JIT",
+      "weight": 11,
+      "done": 90,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 16,
+      "name": "CPU Optimization",
+      "weight": 3,
+      "done": 35,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 17,
+      "name": "Memory Optimization",
+      "weight": 2,
+      "done": 40,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 18,
+      "name": "GPU Optimization",
+      "weight": 4,
+      "done": 78,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 19,
+      "name": "Debugger",
+      "weight": 3,
+      "done": 30,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 20,
+      "name": "Automated Testing",
+      "weight": 3,
+      "done": 82,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 21,
+      "name": "CLI & Frontend",
+      "weight": 3,
+      "done": 75,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 22,
+      "name": "Save States & Replay",
+      "weight": 2,
+      "done": 30,
+      "track": "Performance & finish"
+    },
+    {
+      "p": 23,
+      "name": "Release",
+      "weight": 3,
+      "done": 18,
+      "track": "Performance & finish"
+    }
   ],
   "queue": [
-    {
-      "id": "D1",
-      "title": "C6 draw-flush half: compile or cache the active transform program",
-      "plan": "E2",
-      "status": "active",
-      "depends": [],
-      "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
-      "price": "766 ms of draw flushes at 1B (413-435 ms interpreted vertex program) = 14% of the triangle gl+replace wall; re-measure the ceiling with a 100M-step ablation before implementing",
-      "evidence": []
-    },
     {
       "id": "D2",
       "title": "C7 engine-shape decision",
       "plan": "E3",
-      "status": "queued",
-      "depends": ["D1"],
+      "status": "active",
+      "depends": [
+        "D1"
+      ],
       "acceptance": "a written decision table with a measured ceiling, cost, risk and kill criterion for each option; one option chosen and recorded in the decisions file",
       "price": "encoder ~7% triangle / ~3% menu; code volume 0% wall; boundary population 3-5%; device stage 766 ms (all measured)",
       "evidence": []
@@ -112,7 +248,9 @@
       "title": "Menu-only wall decomposition and the top menu item",
       "plan": "E4",
       "status": "queued",
-      "depends": ["D2"],
+      "depends": [
+        "D2"
+      ],
       "acceptance": "the menu wall (18.8-20.0 s) is decomposed into CPU engine, device, GL and raster; the top menu-only item is priced; land only if >=10% wall or >=20% engine",
       "price": "menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s is menu-only; the decomposition is the first step",
       "evidence": []
@@ -122,7 +260,9 @@
       "title": "Conditional: implement the engine shape chosen in D2",
       "plan": "E3",
       "status": "blocked",
-      "depends": ["D2"],
+      "depends": [
+        "D2"
+      ],
       "acceptance": "only starts if D2 chooses it and the price is >=10% wall or >=20% engine; two-iteration kill criterion; exact differentials",
       "price": "to be written by D2",
       "evidence": []
@@ -132,7 +272,9 @@
       "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
       "plan": "E5",
       "status": "queued",
-      "depends": ["D1"],
+      "depends": [
+        "D1"
+      ],
       "acceptance": ">=10% menu wall; exact counters; no guest change",
       "price": "the draw-flush half is D1; the remaining device stage (method dispatch) is unpriced",
       "evidence": []
@@ -164,28 +306,48 @@
       "title": "A 32-bit surface clear fills rows through Span<uint>.Fill",
       "date": "2026-10-22",
       "evidence": "device time 1,306 -> 816 ms; triangle gl+replace 5.61/5.74/5.73 s (-10.6%, 3/3); menu 19.98/18.82 s; every 1B SHA/counter/frame exact",
-      "commits": ["e955b64", "42e161b"]
+      "commits": [
+        "e955b64",
+        "42e161b"
+      ]
     },
     {
       "id": "C5.1",
       "title": "C5 slice 1: lazy IL runner + in-frame chain entry",
       "date": "2026-10-22",
       "evidence": "triangle -4.2% / menu -3.0% (3/3); all four fast anchors and both accurate goldens byte-identical",
-      "commits": ["8dc8429", "1ef1b8d", "de652dd"]
+      "commits": [
+        "8dc8429",
+        "1ef1b8d",
+        "de652dd"
+      ]
     },
     {
       "id": "C4b.1",
       "title": "Image-window decode class: fetch and block flash/BIOS/mirror/overlay",
       "date": "2026-10-22",
       "evidence": "nonRamSkips 359,476 -> 0; nonJitCalls 523k -> 169k; triangle -6.4%; exact 1B anchors",
-      "commits": ["415d87a", "5355e2d"]
+      "commits": [
+        "415d87a",
+        "5355e2d"
+      ]
     },
     {
       "id": "B3.1",
       "title": "Gap 12 closed: a cube stage samples a host 2D-array texture",
       "date": "2026-10-22",
       "evidence": "the corpus row agrees with software within 2 pixels of 307,200 at both anchors; the word-pool code is deleted",
-      "commits": ["766c28d", "bfb2933"]
+      "commits": [
+        "766c28d",
+        "bfb2933"
+      ]
+    },
+    {
+      "id": "D1",
+      "title": "C6 draw-flush half: compile or cache the active transform program",
+      "date": "2026-10-23",
+      "evidence": "price: the interpreted transform program is 422-506 ms (triangle, 7.3-8.2% of 5.8-6.1 s) and 7,134-7,336 ms (menu, 33.8-34.9% of 20.9-21.9 s); the 100M leg cannot price it (1 draw there). VshProgramPlan predecodes the active program once per (version,start,length) and runs it with a plan-owned register file and scratch (no per-vertex allocation, the interpreter's own float helpers): transform stage 422->202 ms / 7,134->2,600 ms. Menu gl+replace 1B 3 pairs -24.8/-30.4/-32.8% wall and outerMs -25/-31/-34%; triangle 10 pairs -4.02% median (5/10 signs, host noise; nonJitMs -11/-23/-12%). Exact anchors tri sw B45254CA/7DAB63EB 57,663,082 px, tri gl 4F1FCBC0/7DAB63EB, menu sw 34973510/F5D61C94 253,998,498 px, menu gl B06BA6E5/F5D61C94; accurate goldens menu 4EF1FBF6/B6116DAE (diff 2602 violations 0) and triangle A1740DE0/7A860ED7 (diff 27849); BackendUnsupported=0 composedFrames=0; ktest PASS 7/7 at 792,800,535 steps log CA5D3867 byte-identical; corpus vp_lighting 3B 162DAFF1/0380C502 and bump_cubemap_reflect 3.6B 5ACD06FF/C848610E; suite 1865->1874",
+      "commitMessage": "nv2a: compile the transform program once per draw (D1)"
     }
   ],
   "negatives": [

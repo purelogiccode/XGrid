@@ -1,9 +1,9 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active, attempt 0).
-**Position (H1, 1B, fast):** triangle gl+replace 5.61-5.74 s / sw 10.03 s; menu gl+replace 18.8-20.0 s / sw 30.35 s; gap ~4.7x / ~14x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** D2 (C7 engine-shape decision), D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink).
+**Current status (2026-10-23):** M-D / **D2 - C7 engine-shape decision** (active, attempt 0).
+**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 78.2% (84.43 of 108). **Next:** D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
 <!-- STATUS:END -->
 
@@ -94,7 +94,7 @@ milestone is not "done" on a single leg.
 | P1 | Host audio: APU GP/EP DSP execution + PCM sink | queued | — | a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | queued | — | reproducible packages + license review |
 
-## E2. D1 — C6 draw-flush half (ACTIVE)
+## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
 **Why this is the active task:** the device stage is 1.31 s of the 6.1 s
 triangle wall; 766 ms of that is draw flushes, and 413-435 ms is the interpreted
@@ -113,28 +113,39 @@ landed (§240).
 
 **Steps:**
 
-- [ ] **D1.1 Price the draw-flush half.** Run a 100M-step ablation that removes
+- [x] **D1.1 Price the draw-flush half.** Run a 100M-step ablation that removes
   the VS interpreter from the flush (or time it with the existing stage probe).
   Record the ceiling in `docs/status.json` (D1.price). Acceptance: the ceiling
   is ≥10% wall or ≥20% engine. If not, stop and record a new negative.
-- [ ] **D1.2 Freeze the baseline.** Capture the triangle and menu 1B anchors, the
+- [x] **D1.2 Freeze the baseline.** Capture the triangle and menu 1B anchors, the
   draw/flip counters, and a draw-flush trace (the 2,706 flushes, vertex counts,
   program ids). This is the differential baseline.
-- [ ] **D1.3 Write the differential first.** A test that runs the same draw
+- [x] **D1.3 Write the differential first.** A test that runs the same draw
   stream through the interpreter and the new path and compares every vertex
   output bit-for-bit; a frame golden (`A1740DE0`, `B6116DAE`, `7A860ED7`); a
   corpus row (`xgu vp_lighting` 3B, `xgu bump_cubemap_reflect` 3.6B).
-- [ ] **D1.4 Implement the smallest compiled/cached form.** One host delegate
+- [x] **D1.4 Implement the smallest compiled/cached form.** One host delegate
   per token or a hoisted operand predecode; no float operation change; keep the
   interpreter as the fallback. Do not rewrite the program loader.
-- [ ] **D1.5 Validate.** Build + tests + format; triangle and menu 1B
+- [x] **D1.5 Validate.** Build + tests + format; triangle and menu 1B
   SHAs/counters exact; both accurate goldens; ktest log byte-identical;
   `BackendUnsupported=0`; both GL frames.
-- [ ] **D1.6 Measure.** At least 3 interleaved same-window pairs; report
+- [x] **D1.6 Measure.** At least 3 interleaved same-window pairs; report
   draw-flush ms, ns/vertex, wall, and the 3/3 sign. A single run is not a claim.
-- [ ] **D1.7 Close.** Add the done item to `docs/status.json` with the evidence
+- [x] **D1.7 Close.** Add the done item to `docs/status.json` with the evidence
   and commit hashes; run `pwsh -File scripts/status.ps1 -Check -Sync`; commit
   code + tests + status + graph in one commit. Then promote D2.
+
+**Result (§241):** the 100M-step leg cannot price this stage (the triangle has
+one draw there), so the stage probe at 1B is the measurement: the interpreted
+transform program is **422-506 ms of the triangle's 5.8-6.1 s** (7.3-8.2%) and
+**7,134-7,336 ms of the menu's 20.9-21.9 s** (33.8-34.9%). `VshProgramPlan`
+(predecoded instructions, plan-owned scratch, the interpreter's own float
+helpers) takes it to **202 ms / 2,600 ms**; the menu wall A/B is **-24.8% /
+-30.4% / -32.8% (3/3)** with `outerMs` **-25% / -31% / -34%**, the triangle wall
+is -4.02% median with 5/10 signs (noise floor; `nonJitMs` -11/-23/-12%) while its
+stage time halves. Every 1B SHA/counter, both accurate goldens and the ktest log
+are byte-identical. Numbers and caveats: §241.
 
 **Stop conditions:** the ceiling is <10% wall or <20% engine; the differential
 cannot be made bit-exact; two implementation attempts fail the acceptance test.

@@ -11,8 +11,9 @@ namespace XGrid.Nv2a;
 /// </summary>
 public static class VshProgram
 {
+
     /// <summary>Maximum instruction count (NV2A_MAX_TRANSFORM_PROGRAM_LENGTH).</summary>
-    private const int MaxInstructions = 136;
+    public const int MaxInstructions = 136;
 
     /// <summary>Number of constant registers (NV2A_VERTEXSHADER_CONSTANTS).</summary>
     public const int ConstantCount = 192;
@@ -109,6 +110,7 @@ public static class VshProgram
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(outputs);
 
+
         var registers = new float[RegisterCount][];
         for (int i = 0; i < RegisterCount; i++)
         {
@@ -130,6 +132,7 @@ public static class VshProgram
             int ilu = Field(token, 1, 25, 3);
             if (mac != 0 || ilu != 0)
             {
+
                 ExecuteToken(token, mac, ilu, constants, inputs, outputs, registers, ref address, ref fogWritten);
             }
 
@@ -143,7 +146,7 @@ public static class VshProgram
         outputs[0][3] = ClampAwayZeroInf(outputs[0][3]);
     }
 
-    private static void ExecuteToken(
+    internal static void ExecuteToken(
         uint[] token,
         int mac,
         int ilu,
@@ -239,7 +242,7 @@ public static class VshProgram
         }
     }
 
-    private static float[]? ComputeMac(int mac, float[] a, float[] b, float[] c)
+    internal static float[]? ComputeMac(int mac, float[] a, float[] b, float[] c)
     {
         var result = new float[4];
         switch ((Mac)mac)
@@ -318,7 +321,7 @@ public static class VshProgram
         return result;
     }
 
-    private static float[] ComputeIlu(int ilu, float[] c)
+    internal static float[] ComputeIlu(int ilu, float[] c)
     {
         var result = new float[4];
         switch ((Ilu)ilu)
@@ -385,7 +388,7 @@ public static class VshProgram
         return result;
     }
 
-    private static float[] ReadInput(
+    internal static float[] ReadInput(
         uint[] token,
         int mux,
         int registerIndex,
@@ -431,7 +434,7 @@ public static class VshProgram
         return result;
     }
 
-    private static int ConstantIndex(uint[] token, int address)
+    internal static int ConstantIndex(uint[] token, int address)
     {
         int raw = Field(token, 1, 13, 8);
         int index = ((((raw >> 5) & 7) - 3) * 32) + (raw & 31) + D3DScmCorrection;
@@ -443,12 +446,12 @@ public static class VshProgram
         return Math.Clamp(index, 0, ConstantCount - 1);
     }
 
-    private static float[] ReadRegister(float[][] registers, float[][] outputs, int index)
+    internal static float[] ReadRegister(float[][] registers, float[][] outputs, int index)
     {
         return index == 12 ? outputs[0] : registers[index];
     }
 
-    private static void WriteMasked(float[] destination, float[] value, int mask)
+    internal static void WriteMasked(float[] destination, float[] value, int mask)
     {
         // Hardware mask order is bit-reversed against the component index:
         // bit 3 writes x, bit 2 writes y, bit 1 writes z, bit 0 writes w
@@ -470,7 +473,7 @@ public static class VshProgram
     /// source swizzle; Cxbx redirects non-x oFog masks to x the same way).
     /// Only oFog.x feeds the fog-distance equation.
     /// </summary>
-    private static void WriteFogMasked(float[] destination, float[] value, int mask)
+    internal static void WriteFogMasked(float[] destination, float[] value, int mask)
     {
         int count = 0;
         for (int bit = 0; bit < 4; bit++)
@@ -550,7 +553,7 @@ public static class VshProgram
         return float.IsNaN(factor) ? 1f : factor;
     }
 
-    private static void Multiply(float[] a, float[] b, float[] result)
+    internal static void Multiply(float[] a, float[] b, float[] result)
     {
         for (int i = 0; i < 4; i++)
         {
@@ -558,7 +561,7 @@ public static class VshProgram
         }
     }
 
-    private static void Dot(float[] a, float[] b, int count, float[] result)
+    internal static void Dot(float[] a, float[] b, int count, float[] result)
     {
         float sum = 0.0f;
         for (int i = 0; i < count; i++)
@@ -572,7 +575,7 @@ public static class VshProgram
         result[3] = sum;
     }
 
-    private static void Fill(float[] destination, float value)
+    internal static void Fill(float[] destination, float value)
     {
         destination[0] = value;
         destination[1] = value;
@@ -580,7 +583,7 @@ public static class VshProgram
         destination[3] = value;
     }
 
-    private static float ClampAwayZeroInf(float value)
+    internal static float ClampAwayZeroInf(float value)
     {
         return value > 0.0f || BitConverter.SingleToUInt32Bits(value) == 0
             ? Math.Clamp(value, BitConverter.UInt32BitsToSingle(0x1F800000u),
@@ -589,33 +592,33 @@ public static class VshProgram
             BitConverter.UInt32BitsToSingle(0x9F800000u));
     }
 
-    private static float Min(float x, float y)
+    internal static float Min(float x, float y)
     {
         return y < x ? y : x;
     }
 
-    private static float Max(float x, float y)
+    internal static float Max(float x, float y)
     {
         return y > x ? y : x;
     }
 
-    private static float Clamp(float value, float minimum, float maximum)
+    internal static float Clamp(float value, float minimum, float maximum)
     {
         return Min(Max(value, minimum), maximum);
     }
 
-    private static void RoundScreenCoords(float[] position)
+    internal static void RoundScreenCoords(float[] position)
     {
         position[0] = MathF.Truncate(position[0] * 16.0f) / 16.0f;
         position[1] = MathF.Truncate(position[1] * 16.0f) / 16.0f;
     }
 
-    private static bool IsScalarIlu(int ilu)
+    internal static bool IsScalarIlu(int ilu)
     {
         return ilu is (int)Ilu.Rcp or (int)Ilu.Rcc or (int)Ilu.Rsq or (int)Ilu.Exp or (int)Ilu.Log;
     }
 
-    private static int Field(uint[] token, int subtoken, int startBit, int bitLength)
+    internal static int Field(uint[] token, int subtoken, int startBit, int bitLength)
     {
         return (int)((token[subtoken] >> startBit) & ~(0xFFFFFFFFu << bitLength));
     }
