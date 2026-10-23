@@ -2,7 +2,7 @@
 
 A treemap of XGrid's code-completion, matching the ImplementationPlan
 assessment (see `ImplementationPlan.md` -> "Project completion assessment").
-Last refreshed **2026-10-22**: weighted **77.7%** (83.89 of 108 weight-points,
+Last refreshed **2026-10-22**: weighted **78.2%** (84.43 of 108 weight-points,
 24 phases).
 
 ## The canonical view: solid

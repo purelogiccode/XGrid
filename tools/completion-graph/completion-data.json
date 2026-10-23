@@ -1,6 +1,6 @@
 {
   "generated": "2026-10-22",
-  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-22 for §§226-230: the B3 computed-mode GPU seam + transcribed shader math, the live driver compile gate, the cube word lane, the reach[...]/flags@ combiner read-set diagnostics and the nxdk/usb corpus row (22 rows over 17 samples), plus the full CI/release pipeline (81bc8b3) and the zero-warning/zero-inspectcode-findings tree (8840073/2b7d144); the previous refresh covered §§206-225: XInput pad + save states §206, the display model §208, the corpus §§207-210, TEXFILTER §§210/219a/220c, the fixed-function vertex stage + lighting §§213/215, PTIMER §216, per-title overrides + persistent EEPROM §§217/219d/224, the GL sampler decode + replace-mode composition §220, the GPU renderer as a frontend setting §§221/223, the CHD title id §222 and the CPU correctness campaign §225)",
+  "source": "ImplementationPlan.md - Project completion assessment (2026-10-19; refreshed 2026-10-22 (39th session) for the C4/C5/C6 performance slices §§237-240: instruction fetches from immutable image windows, the non-JIT run slice at 64, the raw emitter's static per-edge EIP/TSC/served accounting and the device-stage clear fill through Span<uint> (-10.6% on both headline legs, every anchor byte-identical); the previous refresh covered §§234/236: the GPU display-source rule and the closed B3 computed-mode panel (gap 12, a cube stage sampled as a decoded host 2D-array texture), and earlier §§226-230: the B3 computed-mode GPU seam + transcribed shader math, the live driver compile gate, the cube word lane, the reach[...]/flags@ combiner read-set diagnostics and the nxdk/usb corpus row (22 rows over 17 samples), plus the full CI/release pipeline (81bc8b3) and the zero-warning/zero-inspectcode-findings tree (8840073/2b7d144); the refresh before that covered §§206-225: XInput pad + save states §206, the display model §208, the corpus §§207-210, TEXFILTER §§210/219a/220c, the fixed-function vertex stage + lighting §§213/215, PTIMER §216, per-title overrides + persistent EEPROM §§217/219d/224, the GL sampler decode + replace-mode composition §220, the GPU renderer as a frontend setting §§221/223, the CHD title id §222 and the CPU correctness campaign §225)",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
     {
@@ -76,7 +76,7 @@
           "p": 11,
           "name": "NV2A (GPU)",
           "weight": 15,
-          "done": 92
+          "done": 93
         },
         {
           "p": 12,
@@ -105,7 +105,7 @@
           "p": 15,
           "name": "CPU JIT",
           "weight": 11,
-          "done": 88
+          "done": 90
         },
         {
           "p": 16,
@@ -123,7 +123,7 @@
           "p": 18,
           "name": "GPU Optimization",
           "weight": 4,
-          "done": 76
+          "done": 78
         },
         {
           "p": 19,
@@ -135,13 +135,13 @@
           "p": 20,
           "name": "Automated Testing",
           "weight": 3,
-          "done": 81
+          "done": 82
         },
         {
           "p": 21,
           "name": "CLI & Frontend",
           "weight": 3,
-          "done": 73
+          "done": 75
         },
         {
           "p": 22,
