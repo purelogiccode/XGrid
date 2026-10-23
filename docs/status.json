@@ -6,8 +6,10 @@
     "milestone": "M-D",
     "id": "D1",
     "title": "C6 draw-flush half: compile or cache the active transform program",
+    "plan": "E2",
     "status": "active",
     "started": "2026-10-22",
+    "attempts": 0,
     "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
     "price": "766 ms of draw flushes at 1B (413-435 ms interpreted vertex program) = 14% of the triangle gl+replace wall; re-measure the ceiling with a 100M-step ablation before implementing"
   },
@@ -288,6 +290,7 @@
   ],
   "rules": {
     "wip": 1,
+    "maxAttempts": 2,
     "price_before_build": true,
     "acceptance_test_first": true,
     "definition_of_done": true,

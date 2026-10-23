@@ -1,7 +1,7 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active).
+**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.61-5.74 s / sw 10.03 s; menu gl+replace 18.8-20.0 s / sw 30.35 s; gap ~4.7x / ~14x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** D2 (C7 engine-shape decision), D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
@@ -255,10 +255,11 @@ Record the negative and stop.
 
 **Start:**
 
-- **RepoFleet:** the admin's task command is generated with
-  `pwsh -File scripts/status.ps1 -Prompt`; the worker contract is
-  `docs/repofleet-worker.md`. The command names the active task and points
-  back here; do not restate the rules in RepoFleet.
+- **RepoFleet (remote):** the task command is static:
+  `pwsh -File scripts/status.ps1 -Next` prints the active task and the exact
+  close commands; `-Complete`/`-Negative` advance the queue. Queue the same
+  command once per task; RepoFleet serializes one active task per repository.
+  The full contract is `docs/repofleet-worker.md`.
 1. `pwsh -File scripts/host-doctor.ps1` — read the VERDICT.
 2. `pwsh -File scripts/status.ps1 -Check -Show` - the active task and the queue;
    a red check stops the session.
@@ -295,6 +296,8 @@ Record the negative and stop.
   regenerate instead.
 - RepoFleet commits remaining changes as `<title> (RepoFleet task #N)`; commit
   yourself so the message follows this protocol, and the harness pushes.
+- Use the close command printed by `-Next` (`-Complete`/`-Negative`) so the
+  queue advances; a task left active is retried by the next slot.
 
 ## E11. Adding or reopening a task
 

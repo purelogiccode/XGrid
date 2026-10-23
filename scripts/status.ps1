@@ -1,28 +1,38 @@
-# status.ps1 - one source of truth for the project's current status.
+# status.ps1 - one source of truth for the project's current status and worker sequence.
 #
 # docs/status.json holds the current task, position, phase scores, queue, done
-# items and measured negatives. This script validates it and (with -Sync)
-# regenerates the status blocks in the three canonical docs plus the completion
-# graph data/artifacts. Run it at every session start and close.
+# items and measured negatives. This script validates it, advances the worker
+# sequence, and (with -Sync) regenerates the status blocks and the graph.
 #
 # Usage:
-#   pwsh -File scripts/status.ps1 -Check     # validate (default)
-#   pwsh -File scripts/status.ps1 -Show      # current task + queue
-#   pwsh -File scripts/status.ps1 -Prompt    # ready-to-paste RepoFleet task command
-#   pwsh -File scripts/status.ps1 -Sync      # validate + write blocks + graph
-#   pwsh -File scripts/status.ps1 -Sync -NoGraph   # blocks only
+#   pwsh -File scripts/status.ps1 -Check              # validate (default)
+#   pwsh -File scripts/status.ps1 -Show               # current task + queue
+#   pwsh -File scripts/status.ps1 -Prompt             # ready-to-paste task command
+#   pwsh -File scripts/status.ps1 -Next               # worker: claim/print the active task
+#   pwsh -File scripts/status.ps1 -Complete -Evidence "<evidence>" -CommitMessage "<area>: <summary> (D1)"
+#   pwsh -File scripts/status.ps1 -Negative -Evidence "<measurement>" -Reopen "<condition>"
+#   pwsh -File scripts/status.ps1 -Sync               # validate + write blocks + graph
+#   pwsh -File scripts/status.ps1 -Sync -NoGraph      # blocks only
 param(
     [switch]$Check,
     [switch]$Sync,
     [switch]$Show,
     [switch]$Prompt,
+    [switch]$Next,
+    [switch]$Complete,
+    [switch]$Negative,
+    [string]$Evidence = "",
+    [string]$CommitMessage = "",
+    [string]$Reopen = "only with a new measurement",
+    [string]$DataPath = "",
+    [switch]$NoSync,
     [switch]$NoGraph
 )
 $ErrorActionPreference = 'Stop'
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 
 $root = Split-Path -Parent $PSScriptRoot
-$statusPath = Join-Path $root 'docs/status.json'
+$statusPath = if ([string]::IsNullOrWhiteSpace($DataPath)) { Join-Path $root 'docs/status.json' } else { $DataPath }
 $graphPath = Join-Path $root 'tools/completion-graph/completion-data.json'
 $planPath = Join-Path $root 'ImplementationPlan.md'
 $docs = @(
@@ -35,6 +45,146 @@ if (-not (Test-Path $statusPath)) { throw "missing $statusPath" }
 $status = Get-Content $statusPath -Raw | ConvertFrom-Json
 $failures = [System.Collections.Generic.List[string]]::new()
 function Fail([string]$message) { $script:failures.Add($message) }
+function Save-Status {
+    $script:status.updated = (Get-Date -Format 'yyyy-MM-dd')
+    $script:status | ConvertTo-Json -Depth 10 | Set-Content -Path $script:statusPath -Encoding utf8
+}
+
+# ---------- sequence helpers ----------
+function Get-ClosedIds {
+    $closed = @{}
+    foreach ($d in $script:status.done) { $closed[[string]$d.id] = $true }
+    foreach ($n in $script:status.negatives) { $closed[[string]$n.id] = $true }
+    return $closed
+}
+function Get-EligibleTask {
+    $closed = Get-ClosedIds
+    foreach ($q in $script:status.queue) {
+        if ($q.status -ne 'queued') { continue }
+        $ok = $true
+        foreach ($dep in @($q.depends)) {
+            if ($dep -and -not $closed.ContainsKey([string]$dep)) { $ok = $false; break }
+        }
+        if ($ok) { return $q }
+    }
+    return $null
+}
+function Set-CurrentFromQueue($q) {
+    $q.status = 'active'
+    $script:status.current = [ordered]@{
+        milestone = [string]$script:status.current.milestone
+        id = [string]$q.id
+        title = [string]$q.title
+        plan = [string]$q.plan
+        status = 'active'
+        started = [string]$script:status.updated
+        attempts = 0
+        acceptance = [string]$q.acceptance
+        price = [string]$q.price
+    }
+}
+function Set-CurrentComplete {
+    $script:status.current = [ordered]@{
+        milestone = [string]$script:status.current.milestone
+        id = 'NONE'
+        title = 'No eligible queued task; add one to docs/status.json'
+        plan = ''
+        status = 'complete'
+        started = [string]$script:status.updated
+        attempts = 0
+        acceptance = ''
+        price = ''
+    }
+}
+function Get-TaskPrompt($q, [int]$attempt) {
+    $plan = [string]$q.plan
+    $done = 'pwsh -File scripts/status.ps1 -Complete -Evidence "<numbers/anchors>" -CommitMessage "<area>: <summary> (' + $q.id + ')"'
+    $neg = 'pwsh -File scripts/status.ps1 -Negative -Evidence "<measurement>" -Reopen "<condition>"'
+    @(
+        "Title: XGrid $($q.id) - $($q.title)",
+        "Attempt: $attempt of $($script:status.rules.maxAttempts)",
+        "Repository: CSharp_XboxEmulator",
+        "",
+        "Work only on the active task in docs/status.json ($($q.id)). Read ImplementationPlan.md -> Execution plan (current) -> $plan ($($q.id)) and follow its checkboxes in order.",
+        "1. Start with ``pwsh -File scripts/status.ps1 -Check -Show``; if the check fails, stop and report. Do not start any other task or a docs refresh.",
+        "2. Price first: the first unchecked box is the price measurement. If the ceiling is <10% wall or <20% engine, run the negative close below and stop.",
+        "3. If the ceiling clears the bar, follow the remaining checkboxes exactly: acceptance test first, smallest implementation, exact 1B anchors, 3 interleaved pairs, the definition of done.",
+        "4. Do not retry a measured negative (docs/status.json negatives); cite a new measurement or stop.",
+        "5. Close with the matching command below. Commit code + tests + status + graph in one commit. Commit yourself so the message follows this protocol; if you leave changes uncommitted, the harness commits them as ``<title> (RepoFleet task #N)``.",
+        "6. Finish with: task id, what changed, evidence (numbers/anchors), and any stop condition.",
+        "",
+        "Close (done): $done",
+        "Close (negative): $neg",
+        "",
+        "Acceptance: $($q.acceptance)",
+        "Price/ceiling: $($q.price)"
+    )
+}
+
+# ---------- lifecycle (before validation: these mutate the status) ----------
+$doSync = [bool]$Sync
+$nextTask = $null
+if ($Complete -or $Negative) {
+    if ([string]::IsNullOrWhiteSpace($Evidence)) { throw "-Evidence is required for -Complete/-Negative" }
+    $active = @($status.queue | Where-Object { $_.status -eq 'active' })
+    if ($active.Count -ne 1) { throw "expected exactly one active task, found $($active.Count)" }
+    $q = $active[0]
+    if ($Complete) {
+        $message = if ([string]::IsNullOrWhiteSpace($CommitMessage)) { "this commit ($($q.id))" } else { $CommitMessage }
+        $doneItem = [ordered]@{
+            id = [string]$q.id
+            title = [string]$q.title
+            date = [string]$status.updated
+            evidence = $Evidence
+            commitMessage = $message
+        }
+        $status.done = @($status.done) + $doneItem
+    } else {
+        $negItem = [ordered]@{
+            id = [string]$q.id
+            title = [string]$q.title
+            date = [string]$status.updated
+            evidence = $Evidence
+            reopen = $Reopen
+        }
+        $status.negatives = @($status.negatives) + $negItem
+    }
+    $status.queue = @($status.queue | Where-Object { $_.id -ne $q.id })
+    $promoted = Get-EligibleTask
+    if ($promoted) { Set-CurrentFromQueue $promoted } else { Set-CurrentComplete }
+    Save-Status
+    $doSync = $true
+    Write-Host "Closed $($q.id) as $(if ($Complete) { 'done' } else { 'negative' }); next: $($status.current.id) - $($status.current.title)"
+}
+if ($Next) {
+    $active = @($status.queue | Where-Object { $_.status -eq 'active' })
+    if ($active.Count -eq 0) {
+        $promoted = Get-EligibleTask
+        if ($promoted) {
+            Set-CurrentFromQueue $promoted
+            $active = @($promoted)
+            $doSync = $true
+        }
+    }
+    if ($active.Count -eq 0) {
+        Write-Host "SEQUENCE COMPLETE: no eligible queued task. Add one to docs/status.json."
+        exit 0
+    }
+    if ($active.Count -gt 1) { throw "more than one active task; run -Check" }
+    $q = $active[0]
+    if ($q.id -ne $status.current.id) { throw "current.id '$($status.current.id)' does not match the active queue item '$($q.id)'" }
+    $q | Add-Member -NotePropertyName attempts -NotePropertyValue ([int]$q.attempts + 1) -Force
+    Set-CurrentFromQueue $q
+    $status.current['attempts'] = $q.attempts
+    $status.current['started'] = $status.updated
+    Save-Status
+    if ($q.attempts -gt [int]$status.rules.maxAttempts) {
+        Write-Host "STOP: $($q.id) has been attempted $($q.attempts - 1) times. Do not start another attempt."
+        Write-Host "Run: pwsh -File scripts/status.ps1 -Negative -Evidence `"<what failed>`" -Reopen `"<condition>`""
+        exit 0
+    }
+    $nextTask = $q
+}
 
 # ---------- data checks ----------
 $phaseIds = @{}
@@ -62,7 +212,15 @@ if ([Math]::Abs($computedPercent - [double]$status.result.percent) -gt 0.05) {
 
 $queueIds = @{}
 $active = @($status.queue | Where-Object { $_.status -eq 'active' })
-if ($active.Count -ne 1) { Fail "exactly one active queue item is required, found $($active.Count)" }
+$isComplete = $status.current.status -eq 'complete'
+if ($isComplete) {
+    if ($active.Count -ne 0) { Fail "current is complete but $($active.Count) queue item(s) are active" }
+} else {
+    if ($active.Count -ne 1) { Fail "exactly one active queue item is required, found $($active.Count)" }
+    elseif ($active[0].id -ne $status.current.id) {
+        Fail "current.id '$($status.current.id)' does not match the active queue item '$($active[0].id)'"
+    }
+}
 foreach ($q in $status.queue) {
     if ([string]::IsNullOrWhiteSpace([string]$q.id)) { Fail 'queue item without id' }
     elseif ($queueIds.ContainsKey([string]$q.id)) { Fail "duplicate queue id $($q.id)" }
@@ -70,16 +228,19 @@ foreach ($q in $status.queue) {
     if ([string]::IsNullOrWhiteSpace([string]$q.acceptance)) { Fail "queue $($q.id): no acceptance test" }
     if ([string]::IsNullOrWhiteSpace([string]$q.price)) { Fail "queue $($q.id): no price/ceiling" }
 }
-if ($active.Count -eq 1 -and $active[0].id -ne $status.current.id) {
-    Fail "current.id '$($status.current.id)' does not match the active queue item '$($active[0].id)'"
-}
+$closedIds = Get-ClosedIds
 foreach ($q in $status.queue) {
     foreach ($dep in @($q.depends)) {
-        if ($dep -and -not $queueIds.ContainsKey([string]$dep)) { Fail "queue $($q.id): depends on missing $dep" }
+        if ($dep -and -not $queueIds.ContainsKey([string]$dep) -and -not $closedIds.ContainsKey([string]$dep)) {
+            Fail "queue $($q.id): depends on missing $dep"
+        }
     }
 }
-if ([string]::IsNullOrWhiteSpace([string]$status.current.acceptance)) { Fail 'current.acceptance is empty' }
-if ([string]::IsNullOrWhiteSpace([string]$status.current.price)) { Fail 'current.price is empty' }
+if (-not $isComplete) {
+    if ([string]::IsNullOrWhiteSpace([string]$status.current.acceptance)) { Fail 'current.acceptance is empty' }
+    if ([string]::IsNullOrWhiteSpace([string]$status.current.price)) { Fail 'current.price is empty' }
+    if ([string]::IsNullOrWhiteSpace([string]$status.current.plan)) { Fail 'current.plan is empty' }
+}
 
 # Every queued task must be named in the detailed execution plan (E1/E2..E6).
 $planText = [System.IO.File]::ReadAllText($planPath)
@@ -97,7 +258,8 @@ foreach ($q in $status.queue) {
 
 foreach ($d in $status.done) {
     if ([string]::IsNullOrWhiteSpace([string]$d.evidence)) { Fail "done $($d.id): no evidence" }
-    if (@($d.commits).Count -eq 0) { Fail "done $($d.id): no commits" }
+    $hasCommit = (@($d.commits).Count -gt 0) -or (-not [string]::IsNullOrWhiteSpace([string]$d.commitMessage))
+    if (-not $hasCommit) { Fail "done $($d.id): no commits or commitMessage" }
 }
 foreach ($n in $status.negatives) {
     if ([string]::IsNullOrWhiteSpace([string]$n.evidence)) { Fail "negative $($n.id): no evidence" }
@@ -105,27 +267,13 @@ foreach ($n in $status.negatives) {
     if ($planText -notmatch [regex]::Escape([string]$n.id)) { Fail "negative $($n.id): not named in the execution plan" }
 }
 
-# ---------- RepoFleet task prompt ----------
+# ---------- read-only prompt ----------
 if ($Prompt) {
-    $t = $status.current
-    $plan = [string]$t.plan
-    if ([string]::IsNullOrWhiteSpace($plan)) { $plan = 'E2' }
-    $lines = @(
-        "Title: XGrid $($t.id) - $($t.title)",
-        "Repository: CSharp_XboxEmulator",
-        "",
-        "Work only on the active task in docs/status.json ($($t.id)). Read ImplementationPlan.md -> Execution plan (current) -> $plan ($($t.id)) and follow its checkboxes in order.",
-        "1. Start with ``pwsh -File scripts/status.ps1 -Check -Show``; if the check fails, stop and report. Do not start D2/D3/D5/P1/R1 or a docs refresh.",
-        "2. Price first: the first unchecked box is the price measurement. If the ceiling is <10% wall or <20% engine, record a new negative in docs/status.json, run ``pwsh -File scripts/status.ps1 -Check -Sync``, commit only the status change, and stop.",
-        "3. If the ceiling clears the bar, follow the remaining checkboxes exactly: acceptance test first, smallest implementation, exact 1B anchors, 3 interleaved pairs, the definition of done.",
-        "4. Do not retry a measured negative (docs/status.json negatives); cite a new measurement or stop.",
-        "5. Close with ``pwsh -File scripts/status.ps1 -Check -Sync``. Commit code + tests + status + graph in one commit: ``<area>: <summary> ($($t.id))``. Commit yourself so the message follows this protocol; if you leave changes uncommitted, the harness commits them as ``<title> (RepoFleet task #N)``.",
-        "6. Finish with: task id, what changed, evidence (numbers/anchors), and any stop condition.",
-        "",
-        "Acceptance: $($t.acceptance)",
-        "Price/ceiling: $($t.price)"
-    )
-    $lines -join "`n"
+    if ($isComplete) {
+        Write-Host "SEQUENCE COMPLETE: no eligible queued task. Add one to docs/status.json."
+        exit 0
+    }
+    (Get-TaskPrompt $status.current ([int]$status.current.attempts + 1)) -join "`n"
     exit 0
 }
 
@@ -152,6 +300,13 @@ foreach ($p in $status.phases) {
 # ---------- status block ----------
 function Get-StatusBlock {
     $steps = if ([long]$status.position.steps -eq 1000000000) { '1B' } else { "$($status.position.steps) steps" }
+    if ($isComplete) {
+        return @(
+            "**Current status ($($status.updated)):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.",
+            "**Phase score:** $($status.result.percent)% ($($status.result.points) of $($status.result.weight)).",
+            "**Do not retry without a new measurement:** see docs/status.json for all $($status.negatives.Count)."
+        )
+    }
     $next = @($status.queue |
         Where-Object { $_.status -eq 'queued' } |
         Select-Object -First 4 |
@@ -159,13 +314,12 @@ function Get-StatusBlock {
     $neg = @($status.negatives |
         Select-Object -First 6 |
         ForEach-Object { "$($_.id) $($_.title)" })
-    $lines = @(
-        "**Current status ($($status.updated)):** $($status.current.milestone) / **$($status.current.id) - $($status.current.title)** ($($status.current.status)).",
+    @(
+        "**Current status ($($status.updated)):** $($status.current.milestone) / **$($status.current.id) - $($status.current.title)** ($($status.current.status), attempt $($status.current.attempts)).",
         "**Position ($($status.position.host), $($steps), $($status.position.mode)):** triangle gl+replace $($status.position.legs.triangle_gl_replace.wall) / sw $($status.position.legs.triangle_sw.wall); menu gl+replace $($status.position.legs.menu_gl_replace.wall) / sw $($status.position.legs.menu_sw.wall); gap ~$($status.position.gap.triangle_x)x / ~$($status.position.gap.menu_x)x.",
         "**Phase score:** $($status.result.percent)% ($($status.result.points) of $($status.result.weight)). **Next:** $($next -join ', ').",
         "**Do not retry without a new measurement:** $($neg -join ', '). See docs/status.json for all $($status.negatives.Count)."
     )
-    return $lines
 }
 
 $pattern = '(?s)(<!-- STATUS:BEGIN[^>]*-->).*?(<!-- STATUS:END -->)'
@@ -174,7 +328,7 @@ foreach ($doc in $docs) {
     $text = [System.IO.File]::ReadAllText($doc)
     $match = [regex]::Match($text, $pattern)
     if (-not $match.Success) { Fail "$([System.IO.Path]::GetFileName($doc)): missing STATUS block markers"; continue }
-    if ($Sync) {
+    if ($doSync -and -not $NoSync) {
         $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
         $block = (Get-StatusBlock) -join $nl
         $block = $block.Replace('$', '$$')
@@ -183,13 +337,17 @@ foreach ($doc in $docs) {
         [System.IO.File]::WriteAllText($doc, $text, [System.Text.UTF8Encoding]::new($false))
         $match = [regex]::Match($text, $pattern)
     }
-    if ($match.Success -and $match.Value -notmatch [regex]::Escape([string]$status.current.id)) {
-        Fail "$([System.IO.Path]::GetFileName($doc)): status block does not name $($status.current.id)"
+    if ($match.Success -and -not $NoSync) {
+        if ($isComplete) {
+            if ($match.Value -notmatch 'SEQUENCE COMPLETE') { Fail "$([System.IO.Path]::GetFileName($doc)): status block is not complete" }
+        } elseif ($match.Value -notmatch [regex]::Escape([string]$status.current.id)) {
+            Fail "$([System.IO.Path]::GetFileName($doc)): status block does not name $($status.current.id)"
+        }
     }
 }
 
 # ---------- completion graph ----------
-if ($Sync) {
+if ($doSync -and -not $NoSync) {
     $trackNames = @('LLE core (real console chain)', 'Performance & finish')
     $tracks = @()
     foreach ($trackName in $trackNames) {
@@ -230,7 +388,11 @@ if ($Sync) {
 
 # ---------- show ----------
 if ($Show -or $failures.Count -gt 0) {
-    Write-Host "Current: $($status.current.milestone) / $($status.current.id) - $($status.current.title) [$($status.current.status)]"
+    if ($isComplete) {
+        Write-Host "Current: SEQUENCE COMPLETE - no eligible queued task"
+    } else {
+        Write-Host "Current: $($status.current.milestone) / $($status.current.id) - $($status.current.title) [$($status.current.status), attempt $($status.current.attempts)]"
+    }
     Write-Host "Position: triangle $($status.position.legs.triangle_gl_replace.wall) gl+replace, menu $($status.position.legs.menu_gl_replace.wall); gap ~$($status.position.gap.triangle_x)x / ~$($status.position.gap.menu_x)x"
     Write-Host "Score: $($status.result.percent)% ($($status.result.points) of $($status.result.weight))"
     Write-Host 'Queue:'
@@ -245,4 +407,12 @@ if ($failures.Count -gt 0) {
     foreach ($f in $failures) { Write-Host "FAIL: $f" }
     exit 1
 }
-Write-Host "status OK: $($status.current.id) active, $($status.result.percent)% ($($status.result.points) of $($status.result.weight)), $($status.queue.Count) queue items, $($status.negatives.Count) measured negatives"
+if ($nextTask) {
+    (Get-TaskPrompt $nextTask ([int]$nextTask.attempts)) -join "`n"
+    exit 0
+}
+if ($isComplete) {
+    Write-Host "status OK: SEQUENCE COMPLETE, $($status.result.percent)% ($($status.result.points) of $($status.result.weight)), $($status.negatives.Count) measured negatives"
+} else {
+    Write-Host "status OK: $($status.current.id) active, $($status.result.percent)% ($($status.result.points) of $($status.result.weight)), $($status.queue.Count) queue items, $($status.negatives.Count) measured negatives"
+}
