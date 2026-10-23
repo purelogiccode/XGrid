@@ -750,6 +750,50 @@ public readonly struct PgraphDrawInfo(
             _ => throw new ArgumentOutOfRangeException(nameof(slot)),
         };
     }
+
+    /// <summary>
+    /// Returns this draw command's state with a different triangle: the
+    /// fragment state, texture slots, combiner, fog, shader clip mode, zeta
+    /// format, color surface, eye and bump state all carry over, so a backend
+    /// consuming the successive triangles of one draw command does not have to
+    /// re-derive them. Only the vertices, the clip rectangle and the
+    /// per-command guest texel set are replaced.
+    /// </summary>
+    /// <param name="a">The first triangle vertex.</param>
+    /// <param name="b">The second triangle vertex.</param>
+    /// <param name="c">The third triangle vertex.</param>
+    /// <param name="clipX">The clip rectangle origin x.</param>
+    /// <param name="clipY">The clip rectangle origin y.</param>
+    /// <param name="clipW">The clip rectangle width.</param>
+    /// <param name="clipH">The clip rectangle height.</param>
+    /// <param name="colorBytes">The color bytes per pixel.</param>
+    /// <param name="zetaBytes">The zeta bytes per pixel.</param>
+    /// <param name="combinerActive">Whether the final combiner is enabled.</param>
+    /// <param name="guestTexels">The guest texel words this draw may reference.</param>
+    /// <returns>The draw record for the given triangle.</returns>
+    public PgraphDrawInfo WithTriangle(
+        in PgraphVertex a, in PgraphVertex b, in PgraphVertex c,
+        uint clipX, uint clipY, uint clipW, uint clipH,
+        uint colorBytes, uint zetaBytes, bool combinerActive, PgraphGuestTexelSet? guestTexels)
+    {
+        return new PgraphDrawInfo(
+            in a, in b, in c,
+            clipX, clipY, clipW, clipH,
+            colorBytes, zetaBytes, combinerActive,
+            Fragment,
+            Texture0, Texture1, Texture2, Texture3,
+            Combiner,
+            FogEnable, FogR, FogG, FogB, FogA,
+            ShaderClipMode,
+            ZFormatFloat,
+            ColorSurfaceAddress,
+            ColorPitch,
+            EyeX,
+            EyeY,
+            EyeZ,
+            guestTexels,
+            Bump);
+    }
 }
 
 /// <summary>One surface clear the software path actually performed.</summary>

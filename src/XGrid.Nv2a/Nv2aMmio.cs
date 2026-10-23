@@ -442,6 +442,30 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly float[][] _pshCoords = [new float[4], new float[4], new float[4], new float[4]];
     private readonly float[] _pshStageDots = new float[PshCombiner.TextureSlots];
     private readonly int[] _pshTexModes = new int[PshCombiner.TextureSlots];
+
+    // Per-draw transform-program scratch (D5): the vertex constant file, the
+    // input/output register files and the transformed-vertex map are refilled
+    // per draw command instead of being allocated per flush (that was 224
+    // arrays per flush - ~7.8M per 1B menu leg, plus their collection).
+    private readonly float[][] _vsConstants;
+    private readonly float[][] _vsInputs;
+    private readonly float[][] _vsOutputs;
+    private readonly Dictionary<int, PshVertex> _vsTransformed = [];
+
+    // Per-draw-command backend draw record (D5): the fragment state, the four
+    // texture slots, the eye position and the bump state cannot change between
+    // the triangles of one draw command (no guest method runs inside a flush),
+    // so they are built once per flush instead of once per triangle.
+    private PgraphDrawInfo _drawInfoTemplate;
+    private long _drawInfoTemplateCommand = -1;
+    private long _drawCommandId;
+
+    // Every input slot (v0..v15), for the fixed-function stage which reads the
+    // whole file, and the slots a program leaves unread but the fog fallback
+    // still consumes when it leaves oFog unwritten: v0 (object position),
+    // v4 (specular alpha) and v5 (fog coordinate).
+    private const int AllVertexAttributeMask = (1 << VshProgram.RegisterCount) - 1;
+    private const int FogFallbackInputMask = (1 << 0) | (1 << 4) | (1 << 5);
     // Per-slot "last tap" record for the computed cube/dot modes (B3 slice 2):
     // DependentInputAddress only publishes a guest address while this record
     // still matches the live sampler plan and holds an in-range, non-border
@@ -874,6 +898,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         for (int i = 0; i < VertexAttributeCount; i++)
         {
             _inlineValues[i] = new float[VertexAttributeComponentCount];
+        }
+
+        _vsConstants = new float[VshProgram.ConstantCount][];
+        for (int i = 0; i < _vsConstants.Length; i++)
+        {
+            _vsConstants[i] = new float[4];
+        }
+
+        _vsInputs = new float[VshProgram.RegisterCount][];
+        _vsOutputs = new float[VshProgram.RegisterCount][];
+        for (int i = 0; i < VshProgram.RegisterCount; i++)
+        {
+            _vsInputs[i] = new float[4];
+            _vsOutputs[i] = new float[4];
         }
 
         for (int i = 0; i < _bumpMatrices.Length; i++)
@@ -5076,6 +5114,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     private void FlushProgramDraw(VertexFetchMode mode)
     {
+        // One draw command: the backend draw record's per-command template is
+        // only reused by the triangles of this call.
+        _drawCommandId++;
+
         // Transform execution mode FIXED (0) runs the fixed-function vertex
         // stage instead of a vertex program: the guest uploads matrices into
         // the XF constant context instead of loading a program, so no program
@@ -5121,25 +5163,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
-        var constants = new float[VshProgram.ConstantCount][];
+        float[][] constants = _vsConstants;
         for (int i = 0; i < constants.Length; i++)
         {
-            constants[i] = new float[4];
-            for (int j = 0; j < 4; j++)
-            {
-                constants[i][j] = BitConverter.UInt32BitsToSingle(_transformConstants[i][j]);
-            }
+            float[] constant = constants[i];
+            uint[] source = _transformConstants[i];
+            constant[0] = BitConverter.UInt32BitsToSingle(source[0]);
+            constant[1] = BitConverter.UInt32BitsToSingle(source[1]);
+            constant[2] = BitConverter.UInt32BitsToSingle(source[2]);
+            constant[3] = BitConverter.UInt32BitsToSingle(source[3]);
         }
 
-        var inputs = new float[VshProgram.RegisterCount][];
-        var outputs = new float[VshProgram.RegisterCount][];
-        for (int i = 0; i < inputs.Length; i++)
+        float[][] inputs = _vsInputs;
+        float[][] outputs = _vsOutputs;
+        Dictionary<int, PshVertex> transformed = _vsTransformed;
+        transformed.Clear();
+
+        // Fetch only the input slots the program can read (the plan's source
+        // mask), plus the fixed-function fallback's v0/v4/v5 fog inputs. An
+        // unread slot's value is never observed, so skipping it is exact; the
+        // fixed-function stage reads the whole file.
+        int fetchMask = fixedFunction ? AllVertexAttributeMask : plan!.ReadInputMask;
+        if (_fogEnable)
         {
-            inputs[i] = new float[4];
-            outputs[i] = new float[4];
+            fetchMask |= FogFallbackInputMask;
         }
-
-        var transformed = new Dictionary<int, PshVertex>();
 
         uint[] elements = mode == VertexFetchMode.Elements ? [.. _inlineElements] : [];
         DrawsExecuted++;
@@ -5282,6 +5330,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
             for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
             {
+                if ((fetchMask & (1 << slot)) == 0)
+                {
+                    continue;
+                }
+
                 if (mode == VertexFetchMode.Inline)
                 {
                     CopyInlineVertex(index, slot, inputs[slot]);
@@ -5366,6 +5419,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             PshVertex vc = Vertex(c);
             if (combinerActive)
             {
+                if (RejectTriangle(in va, in vb, in vc, clipX, clipY, clipW, clipH))
+                {
+                    return;
+                }
+
                 FillTrianglePsh(va, vb, vc, clipX, clipY, clipW, clipH, bytes, pitch, combinerConsts);
                 return;
             }
@@ -5376,6 +5434,61 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 vc.X, vc.Y, vc.Z, vc.W, vc.DiffuseR, vc.DiffuseG, vc.DiffuseB, vc.DiffuseA, vc.U0, vc.V0,
                 clipX, clipY, clipW, clipH, bytes, pitch);
         }
+    }
+
+    /// <summary>
+    /// Runs the three predicates <see cref="FillTrianglePsh"/> starts with -
+    /// degenerate area, cull face and an empty clip window - before the fill's
+    /// per-triangle setup, so a triangle that cannot produce a pixel does not
+    /// pay for the write batch, the fragment-constant refresh or the draw
+    /// record. The expressions (and the cull counter) are the fill's own, and
+    /// the fill repeats them, so behavior is unchanged for any caller.
+    /// </summary>
+    private bool RejectTriangle(
+        in PshVertex a, in PshVertex b, in PshVertex c,
+        uint clipX, uint clipY, uint clipW, uint clipH)
+    {
+        float area = ((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y));
+        if (area == 0f)
+        {
+            return true;
+        }
+
+        if (ShouldCull(area))
+        {
+            TrianglesCulled++;
+            return true;
+        }
+
+        uint x0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.X, b.X), c.X));
+        uint x1 = (uint)Math.Min((float)clipX + clipW - 1, Math.Max(Math.Max(a.X, b.X), c.X));
+        uint y0 = (uint)Math.Max(0f, Math.Min(Math.Min(a.Y, b.Y), c.Y));
+        uint y1 = (uint)Math.Min((float)clipY + clipH - 1, Math.Max(Math.Max(a.Y, b.Y), c.Y));
+        return x1 < x0 || y1 < y0;
+    }
+
+    /// <summary>
+    /// Builds the backend draw record for one triangle from the draw command's
+    /// template: only the vertices, the clip rectangle and the per-command
+    /// guest texel set are per triangle, so the fragment state, the four
+    /// texture slots, the eye position and the bump state are derived once per
+    /// flush (they cannot change while a flush runs).
+    /// </summary>
+    private PgraphDrawInfo BuildCachedDrawInfo(
+        in PshVertex a, in PshVertex b, in PshVertex c,
+        uint clipX, uint clipY, uint clipW, uint clipH, uint bytes, uint zetaBytes)
+    {
+        if (_drawInfoTemplateCommand != _drawCommandId)
+        {
+            _drawInfoTemplate = BuildDrawInfo(
+                in a, in b, in c, clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true);
+            _drawInfoTemplateCommand = _drawCommandId;
+        }
+
+        return _drawInfoTemplate.WithTriangle(
+            ToBackendVertex(in a), ToBackendVertex(in b), ToBackendVertex(in c),
+            clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true,
+            _guestTexelCapture ? GuestTexelsFor() : null);
     }
 
     private void CopyInlineVertex(int index, int attribute, float[] destination)
@@ -9437,7 +9550,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         IPgraphBackend? backend = Backend;
         if (backend is not null)
         {
-            PgraphDrawInfo backendInfo = BuildDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes, combinerActive: true);
+            PgraphDrawInfo backendInfo = BuildCachedDrawInfo(a, b, c, clipX, clipY, clipW, clipH, bytes, zetaBytes);
             if (backend.ReplaceMode)
             {
                 if (backend.TryDraw(backendInfo))

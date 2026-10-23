@@ -179,15 +179,13 @@ public sealed class VshProgramPlan
 
     private readonly Instruction[] _instructions;
     private readonly float[][] _registers;
-    private readonly float[] _a = new float[4];
-    private readonly float[] _b = new float[4];
-    private readonly float[] _c = new float[4];
     private readonly float[] _mac = new float[4];
     private readonly float[] _ilu = new float[4];
 
-    private VshProgramPlan(Instruction[] instructions)
+    private VshProgramPlan(Instruction[] instructions, int readInputMask)
     {
         _instructions = instructions;
+        ReadInputMask = readInputMask;
         _registers = new float[VshProgram.RegisterCount][];
         for (int i = 0; i < _registers.Length; i++)
         {
@@ -197,6 +195,14 @@ public sealed class VshProgramPlan
 
     /// <summary>Gets the number of predecoded instructions the plan executes.</summary>
     public int InstructionCount => _instructions.Length;
+
+    /// <summary>
+    /// Gets the input-register slots (bit <c>n</c> = v<c>n</c>) the program
+    /// reads from, i.e. the slots its instruction sources mux from the input
+    /// file. A fetcher may skip every other slot: the plan never loads a slot
+    /// outside this mask, so an unread slot's value is never observed.
+    /// </summary>
+    public int ReadInputMask { get; }
 
     /// <summary>
     /// Decodes <paramref name="length"/> instructions of <paramref name="program"/>
@@ -215,6 +221,7 @@ public sealed class VshProgramPlan
         int count = Math.Min(length, VshProgram.MaxInstructions);
         var instructions = new Instruction[count];
         int written = 0;
+        int readInputMask = 0;
         for (int slot = 0; slot < count; slot++)
         {
             uint[] token = program[start + slot];
@@ -223,7 +230,9 @@ public sealed class VshProgramPlan
             int ilu = VshProgram.Field(token, 1, 25, 3);
             if (mac != 0 || ilu != 0)
             {
-                instructions[written++] = Decode(token, mac, ilu);
+                Instruction instruction = Decode(token, mac, ilu);
+                instructions[written++] = instruction;
+                readInputMask |= InputBit(instruction.A) | InputBit(instruction.B) | InputBit(instruction.C);
             }
 
             if (final)
@@ -237,7 +246,12 @@ public sealed class VshProgramPlan
             Array.Resize(ref instructions, written);
         }
 
-        return new VshProgramPlan(instructions);
+        return new VshProgramPlan(instructions, readInputMask);
+    }
+
+    private static int InputBit(in Source source)
+    {
+        return source.Kind == SourceKind.Input ? 1 << source.Index : 0;
     }
 
     /// <summary>
@@ -278,15 +292,15 @@ public sealed class VshProgramPlan
         for (int slot = 0; slot < instructions.Length; slot++)
         {
             ref readonly Instruction instruction = ref instructions[slot];
-            LoadSource(in instruction.A, address, constants, inputs, outputs, _a);
-            LoadSource(in instruction.B, address, constants, inputs, outputs, _b);
-            LoadSource(in instruction.C, address, constants, inputs, outputs, _c);
+            Operand a = LoadSource(in instruction.A, address, constants, inputs, outputs);
+            Operand b = LoadSource(in instruction.B, address, constants, inputs, outputs);
+            Operand c = LoadSource(in instruction.C, address, constants, inputs, outputs);
 
-            bool hasMacResult = ComputeMac(instruction.Mac, _a, _b, _c, _mac);
+            bool hasMacResult = ComputeMac(instruction.Mac, in a, in b, in c, _mac);
             bool hasIluResult = instruction.Ilu != IluOp.None;
             if (hasIluResult)
             {
-                ComputeIlu(instruction.Ilu, _c, _ilu);
+                ComputeIlu(instruction.Ilu, in c, _ilu);
             }
 
             if (instruction.Paired)
@@ -304,14 +318,14 @@ public sealed class VshProgramPlan
                 }
                 else if (instruction.Mac == MacOp.Arl)
                 {
-                    address = (int)Math.Floor(_a[0] + 0.001f);
+                    address = (int)Math.Floor(a.X + 0.001f);
                 }
             }
             else
             {
                 if (instruction.Mac == MacOp.Arl)
                 {
-                    address = (int)Math.Floor(_a[0] + 0.001f);
+                    address = (int)Math.Floor(a.X + 0.001f);
                 }
                 else if (hasMacResult)
                 {
@@ -441,13 +455,35 @@ public sealed class VshProgramPlan
         return index == AddressRegister ? outputs[0] : registers[index];
     }
 
-    private void LoadSource(
+    /// <summary>
+    /// One loaded source operand. The plan keeps its three operands as a
+    /// 16-byte value each instead of writing them into per-plan register-file
+    /// arrays (12 stores and 12 loads per instruction removed); the arithmetic
+    /// below transcribes the interpreter's expressions literally.
+    /// </summary>
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private readonly struct Operand
+    {
+        public Operand(float x, float y, float z, float w)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            W = w;
+        }
+
+        public readonly float X;
+        public readonly float Y;
+        public readonly float Z;
+        public readonly float W;
+    }
+
+    private Operand LoadSource(
         in Source source,
         int address,
         float[][] constants,
         float[][] inputs,
-        float[][] outputs,
-        float[] destination)
+        float[][] outputs)
     {
         float[] values;
         switch (source.Kind)
@@ -466,43 +502,70 @@ public sealed class VshProgramPlan
                 break;
         }
 
-        destination[0] = source.Negate ? -values[source.X] : values[source.X];
-        destination[1] = source.Negate ? -values[source.Y] : values[source.Y];
-        destination[2] = source.Negate ? -values[source.Z] : values[source.Z];
-        destination[3] = source.Negate ? -values[source.W] : values[source.W];
+        return new Operand(
+            source.Negate ? -values[source.X] : values[source.X],
+            source.Negate ? -values[source.Y] : values[source.Y],
+            source.Negate ? -values[source.Z] : values[source.Z],
+            source.Negate ? -values[source.W] : values[source.W]);
     }
 
-    private static bool ComputeMac(MacOp op, float[] a, float[] b, float[] c, float[] result)
+    private static void Multiply(in Operand a, in Operand b, float[] result)
+    {
+        result[0] = a.X == 0.0f || b.X == 0.0f ? 0.0f : a.X * b.X;
+        result[1] = a.Y == 0.0f || b.Y == 0.0f ? 0.0f : a.Y * b.Y;
+        result[2] = a.Z == 0.0f || b.Z == 0.0f ? 0.0f : a.Z * b.Z;
+        result[3] = a.W == 0.0f || b.W == 0.0f ? 0.0f : a.W * b.W;
+    }
+
+    private static void Dot(in Operand a, in Operand b, int count, float[] result)
+    {
+        float sum = 0.0f;
+        sum += a.X * b.X;
+        sum += a.Y * b.Y;
+        sum += a.Z * b.Z;
+        if (count == 4)
+        {
+            sum += a.W * b.W;
+        }
+
+        result[0] = sum;
+        result[1] = sum;
+        result[2] = sum;
+        result[3] = sum;
+    }
+
+    private static bool ComputeMac(MacOp op, in Operand a, in Operand b, in Operand c, float[] result)
     {
         switch (op)
         {
             case MacOp.Mov:
-                Array.Copy(a, result, 4);
+                result[0] = a.X;
+                result[1] = a.Y;
+                result[2] = a.Z;
+                result[3] = a.W;
                 break;
             case MacOp.Mul:
-                VshProgram.Multiply(a, b, result);
+                Multiply(in a, in b, result);
                 break;
             case MacOp.Add:
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] = a[i] + c[i];
-                }
-
+                result[0] = a.X + c.X;
+                result[1] = a.Y + c.Y;
+                result[2] = a.Z + c.Z;
+                result[3] = a.W + c.W;
                 break;
             case MacOp.Mad:
-                VshProgram.Multiply(a, b, result);
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] += c[i];
-                }
-
+                Multiply(in a, in b, result);
+                result[0] += c.X;
+                result[1] += c.Y;
+                result[2] += c.Z;
+                result[3] += c.W;
                 break;
             case MacOp.Dp3:
-                VshProgram.Dot(a, b, 3, result);
+                Dot(in a, in b, 3, result);
                 break;
             case MacOp.Dph:
                 {
-                    float sum = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]) + b[3];
+                    float sum = (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z) + b.W;
                     result[0] = sum;
                     result[1] = sum;
                     result[2] = sum;
@@ -511,41 +574,37 @@ public sealed class VshProgramPlan
                 }
 
             case MacOp.Dp4:
-                VshProgram.Dot(a, b, 4, result);
+                Dot(in a, in b, 4, result);
                 break;
             case MacOp.Dst:
                 result[0] = 1.0f;
-                result[1] = a[1] * b[1];
-                result[2] = a[2];
-                result[3] = b[3];
+                result[1] = a.Y * b.Y;
+                result[2] = a.Z;
+                result[3] = b.W;
                 break;
             case MacOp.Min:
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] = VshProgram.Min(a[i], b[i]);
-                }
-
+                result[0] = VshProgram.Min(a.X, b.X);
+                result[1] = VshProgram.Min(a.Y, b.Y);
+                result[2] = VshProgram.Min(a.Z, b.Z);
+                result[3] = VshProgram.Min(a.W, b.W);
                 break;
             case MacOp.Max:
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] = VshProgram.Max(a[i], b[i]);
-                }
-
+                result[0] = VshProgram.Max(a.X, b.X);
+                result[1] = VshProgram.Max(a.Y, b.Y);
+                result[2] = VshProgram.Max(a.Z, b.Z);
+                result[3] = VshProgram.Max(a.W, b.W);
                 break;
             case MacOp.Slt:
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] = a[i] < b[i] ? 1.0f : 0.0f;
-                }
-
+                result[0] = a.X < b.X ? 1.0f : 0.0f;
+                result[1] = a.Y < b.Y ? 1.0f : 0.0f;
+                result[2] = a.Z < b.Z ? 1.0f : 0.0f;
+                result[3] = a.W < b.W ? 1.0f : 0.0f;
                 break;
             case MacOp.Sge:
-                for (int i = 0; i < 4; i++)
-                {
-                    result[i] = a[i] >= b[i] ? 1.0f : 0.0f;
-                }
-
+                result[0] = a.X >= b.X ? 1.0f : 0.0f;
+                result[1] = a.Y >= b.Y ? 1.0f : 0.0f;
+                result[2] = a.Z >= b.Z ? 1.0f : 0.0f;
+                result[3] = a.W >= b.W ? 1.0f : 0.0f;
                 break;
             default:
                 return false;
@@ -554,37 +613,40 @@ public sealed class VshProgramPlan
         return true;
     }
 
-    private static void ComputeIlu(IluOp op, float[] c, float[] result)
+    private static void ComputeIlu(IluOp op, in Operand c, float[] result)
     {
         switch (op)
         {
             case IluOp.Mov:
-                Array.Copy(c, result, 4);
+                result[0] = c.X;
+                result[1] = c.Y;
+                result[2] = c.Z;
+                result[3] = c.W;
                 break;
             case IluOp.Rcp:
-                VshProgram.Fill(result, 1.0f / c[0]);
+                VshProgram.Fill(result, 1.0f / c.X);
                 break;
             case IluOp.Rcc:
-                VshProgram.Fill(result, VshProgram.ClampAwayZeroInf(1.0f / c[0]));
+                VshProgram.Fill(result, VshProgram.ClampAwayZeroInf(1.0f / c.X));
                 break;
             case IluOp.Rsq:
                 VshProgram.Fill(
                     result,
-                    c[0] == 0.0f
+                    c.X == 0.0f
                         ? float.PositiveInfinity
-                        : float.IsInfinity(c[0])
+                        : float.IsInfinity(c.X)
                             ? 0.0f
-                            : 1.0f / MathF.Sqrt(MathF.Abs(c[0])));
+                            : 1.0f / MathF.Sqrt(MathF.Abs(c.X)));
                 break;
             case IluOp.Exp:
-                result[0] = MathF.Pow(2.0f, MathF.Floor(c[0]));
-                result[1] = c[0] - MathF.Floor(c[0]);
-                result[2] = MathF.Pow(2.0f, c[0]);
+                result[0] = MathF.Pow(2.0f, MathF.Floor(c.X));
+                result[1] = c.X - MathF.Floor(c.X);
+                result[2] = MathF.Pow(2.0f, c.X);
                 result[3] = 1.0f;
                 break;
             case IluOp.Log:
                 {
-                    float magnitude = MathF.Abs(c[0]);
+                    float magnitude = MathF.Abs(c.X);
                     if (magnitude == 0.0f)
                     {
                         result[0] = float.NegativeInfinity;
@@ -607,9 +669,9 @@ public sealed class VshProgramPlan
             case IluOp.Lit:
                 {
                     const float epsilon = 1.0f / 256.0f;
-                    float w = VshProgram.Clamp(c[3], -(128.0f - epsilon), 128.0f - epsilon);
-                    float x = VshProgram.Max(c[0], 0.0f);
-                    float y = VshProgram.Max(c[1], 0.0f);
+                    float w = VshProgram.Clamp(c.W, -(128.0f - epsilon), 128.0f - epsilon);
+                    float x = VshProgram.Max(c.X, 0.0f);
+                    float y = VshProgram.Max(c.Y, 0.0f);
                     result[0] = 1.0f;
                     result[1] = x;
                     result[2] = x > 0.0f ? MathF.Pow(2.0f, w * MathF.Log2(y)) : 0.0f;

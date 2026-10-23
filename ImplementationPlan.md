@@ -1,9 +1,9 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D5 - Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: APU GP/EP DSP execution + PCM sink** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
+**Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
@@ -88,9 +88,9 @@ milestone is not "done" on a single leg.
 |---|---|---|---|---|
 | D1 | C6 draw-flush half: compile or cache the active transform program | done 2026-10-23 (§241) | — | ≥10% wall or ≥20% engine; exact anchors; no vertex output change |
 | D2 | C7 engine-shape decision | done 2026-10-23 (§242) | D1 | a written decision with a measured ceiling per option |
-| D3 | Menu-only wall decomposition and the top menu item | **active** | D2 | the menu-only ~13 s is decomposed and the top item is priced |
+| D3 | Menu-only wall decomposition and the top menu item | done 2026-10-23 (§243, negative: the hoist alone is -8.0%) | D2 | the menu-only ~13 s is decomposed and the top item is priced |
 | D4 | Conditional: implement the engine shape chosen in D2 | blocked - D2 chose (a); only a ≥20% per-member probe reopens it | D2 | only if D2 chooses it and the price clears the bar |
-| D5 | Remaining device/MMIO: hot NV2A method dispatch | queued | D1 | ≥10% menu wall; exact counters |
+| D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
 | P1 | Host audio: APU GP/EP DSP execution + PCM sink | queued | — | a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | queued | — | reproducible packages + license review |
 
@@ -223,11 +223,27 @@ per-draw `PgraphDrawInfo` cache (~0.3-0.4 s, 2.5%) prices the combined slice at
 ~-10.5%, which is D5's first step. Build clean, suite green, format clean; no
 code changed.
 
-## E5. D5 — remaining device/MMIO (QUEUED, depends D1)
+## E5. D5 — remaining device/MMIO (DONE 2026-10-23; §244)
 
-- [ ] **D5.1 Price the hot NV2A method dispatch and the menu's device mix.** The
-  draw-flush half is D1; this is the rest.
-- [ ] **D5.2 Land or negative.** ≥10% menu wall; exact counters.
+- [x] **D5.1 Price the hot NV2A method dispatch and the menu's device mix.** The
+  draw-flush half is D1; this is the rest. The price is §243's: its measured
+  -8.0% (3/3) plus the per-draw `PgraphDrawInfo` cache = ~-10.5% as a combined
+  slice, so the combined slice was built and measured rather than re-derived.
+- [x] **D5.2 Land or negative.** ≥10% menu wall; exact counters.
+
+**Result (§244):** the combined draw-flush slice landed - reject-before-setup,
+per-draw vertex scratch, the plan's read-slot fetch mask, operand locals in
+`VshProgramPlan.Execute`, and a per-draw-command backend record rebuilt through
+`PgraphDrawInfo.WithTriangle`. Menu `gl+replace` 1B interleaved pairs:
+**-10.33 / -17.20 / -10.29%** on the acceptance triple (median -10.33%, 3/3
+above the bar); six pairs read a -10.31% median, 6/6 negative. Triangle
+`gl+replace` -0.70 / -2.27 / -2.02% (no regression, no claim - it is
+pacing-bound). Every fast anchor byte-identical (menu gl `B06BA6E5`/`F5D61C94`,
+triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw `34973510`, triangle sw `B45254CA`),
+all four accurate goldens byte-identical to the stashed base build
+(`4EF1FBF6` / `6BE6325F` / `A1740DE0` / `3FC4B419`), ktest log `CA5D3867`
+(40,797 B) byte-identical at 792,800,535 steps and SMOKE PASS 7/7, suite
+1874 -> 1878. No snapshot change.
 
 ## E6. P1 / R1 — parallel product and release
 
@@ -4049,7 +4065,7 @@ slices are measured in fast mode with verified guest-work equivalence
 | **C4** | ~~Flat memory model / soft TLB: remove the per-access translate probe from the raw emitter's memory members; direct host-pointer RAM pages with an exact fallback for non-RAM/MMIO~~ | ~~≥2× engine on the menu, ≥1.5× triangle (same-window A/B)~~ **MEASURED NULL 2026-10-22 (§232a), reverted** |
 | **C4b** | Read-only image windows: classify flash/BIOS/mirror/MCPX-overlay fetches as cacheable code, no store path, wholesale flush on a host image move; blocks form over them | **LANDED (§237): `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k, triangle `gl+replace` -6.4%; exact 1B anchors** |
 | **C5** | Trace/superblock formation: follow hot successors into one native trace, keep state across blocks, poll at every block boundary (the §193 wakeup contract) | **slice 1 landed (§233): -4.2% triangle / -3.0% menu; the full trace removes ~350 ms of boundary population = 3-5% of the wall (§235), below the stage bar** |
-| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, §232c) | **clear-fill slice landed (§240: device time 1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%) and the draw-flush half landed (§241 / D1: the transform program is planned once per draw, 422 → 202 ms triangle and 7,134 → 2,600 ms menu, menu wall -24.8/-30.4/-32.8%); the remainder is the menu's transform stage (2.6 s) plus submission/setup/attribute/epilogue, which D5 owns** |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, §232c) | **clear-fill slice landed (§240: device time 1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%), the draw-flush half landed (§241 / D1: the transform program is planned once per draw, 422 → 202 ms triangle and 7,134 → 2,600 ms menu, menu wall -24.8/-30.4/-32.8%), and the fill-path/record slice landed (§244 / D5: reject-before-setup, per-draw vertex scratch, read-slot fetch mask, operand locals, per-draw `PgraphDrawInfo` - menu wall -10.33/-17.20/-10.29%); the remainder is the menu's transform stage (2.2-2.5 s), priced at 9.5-10.7% for a compiled evaluator and not owned** |
 | **C7** | Reassess: if C4+C5 miss 3× engine after two structural iterations, stop and reassess (including the native-core option) | **DECIDED 2026-10-23 (§242 / D2): option (a) - keep the raw engine and take the device/draw-flush path; C's engine-shape program is closed. Re-read on the post-D1 build: encoder 8.0% triangle / 4.9% menu, trace boundary population 6.04% / 4.35%, code volume 0% wall, C4 probe null, device stage 10.2% triangle / >=15.8% menu. D4 stays conditional on a per-member probe (>=20% engine, two iterations)** |
 
 Gate rules unchanged: accurate mode is gate currency; headless `--gpu sw`

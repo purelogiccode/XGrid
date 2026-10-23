@@ -412,6 +412,86 @@ public sealed class VshProgramPlanTests
             Registers(VshProgram.RegisterCount, 64, edge: true));
     }
 
+    /// <summary>
+    /// The plan reports which input slots its sources mux from, which is what
+    /// lets the device fetch only those slots (D5). The mask names exactly the
+    /// slots the program reads: a program that reads v0, v4 and v11 reports
+    /// those three and nothing else.
+    /// </summary>
+    [Fact]
+    public void ReadInputMask_ReportsExactlyTheInputSlotsTheProgramReads()
+    {
+        uint[][] program =
+        [
+            Insn(mac: MacMov, aMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMul, aMux: MuxR, aR: 1, bMux: MuxV, v: 4, outR: 2, macMask: 0xF),
+            Insn(mac: MacMad, aMux: MuxR, aR: 2, bMux: MuxC, constIndex: 7, cMux: MuxV, v: 11, outR: 3,
+                macMask: 0xF, final: true),
+        ];
+
+        VshProgramPlan plan = VshProgramPlan.Create(program, 0, program.Length);
+        Assert.Equal((1 << 0) | (1 << 4) | (1 << 11), plan.ReadInputMask);
+
+        // Register/constant-only sources read no input slot at all.
+        uint[][] constantOnly =
+        [
+            Insn(mac: MacMov, aMux: MuxC, constIndex: 1, outR: 1, macMask: 0xF),
+            Insn(mac: MacAdd, aMux: MuxR, aR: 1, bMux: MuxC, constIndex: 2, outR: 2, macMask: 0xF,
+                final: true),
+        ];
+        Assert.Equal(0, VshProgramPlan.Create(constantOnly, 0, constantOnly.Length).ReadInputMask);
+    }
+
+    /// <summary>
+    /// The mask is safe by construction: every input slot it leaves out can be
+    /// overwritten with arbitrary garbage (including NaN and infinities) and the
+    /// plan's outputs stay bit-identical, because no instruction source reads
+    /// those slots. If the mask under-reported a read slot, this fails.
+    /// </summary>
+    [Fact]
+    public void ReadInputMask_ScramblingUnreadSlotsCannotChangeTheOutputs()
+    {
+        uint[][] program =
+        [
+            Insn(mac: MacMov, aMux: MuxV, v: 0, outR: 1, macMask: 0xF),
+            Insn(mac: MacMul, aMux: MuxR, aR: 1, bMux: MuxV, v: 7, outR: 2, macMask: 0xF),
+            Insn(mac: MacAdd, aMux: MuxR, aR: 2, bMux: MuxC, constIndex: 3, outR: 3, macMask: 0xF,
+                final: true),
+        ];
+        uint[][] full = BuildWithDumpTail(program, program.Length);
+        VshProgramPlan plan = VshProgramPlan.Create(full, 0, full.Length);
+        float[][] constants = Registers(VshProgram.ConstantCount, 71, edge: true);
+        float[][] inputs = Registers(VshProgram.RegisterCount, 72, edge: true);
+
+        float[][] baseline = Registers(VshProgram.RegisterCount, 7, edge: false);
+        plan.Execute(constants, inputs, baseline, out bool baselineFog);
+
+        float[][] scrambledInputs = Copy(inputs);
+        for (int slot = 0; slot < VshProgram.RegisterCount; slot++)
+        {
+            if ((plan.ReadInputMask & (1 << slot)) != 0)
+            {
+                continue;
+            }
+
+            scrambledInputs[slot] = Registers(1, 100 + slot, edge: true)[0];
+        }
+
+        float[][] after = Registers(VshProgram.RegisterCount, 7, edge: false);
+        plan.Execute(constants, scrambledInputs, after, out bool afterFog);
+
+        Assert.Equal(baselineFog, afterFog);
+        for (int register = 0; register < VshProgram.RegisterCount; register++)
+        {
+            for (int component = 0; component < 4; component++)
+            {
+                Assert.Equal(
+                    BitConverter.SingleToUInt32Bits(baseline[register][component]),
+                    BitConverter.SingleToUInt32Bits(after[register][component]));
+            }
+        }
+    }
+
     [Fact]
     public void Plan_MatchesInterpreter_OnRandomPrograms()
     {

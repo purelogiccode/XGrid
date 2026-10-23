@@ -16017,3 +16017,126 @@ Fast 1B anchors re-verified in this window on both legs - menu RAM `B06BA6E5` /
 CPU `F5D61C94` (33,638/1,402/696/686/686, culled 41,035), triangle RAM
 `4F1FCBC0` / CPU `7DAB63EB` (2,706/6,455/68/34, culled 41,035, wall 5.669 s in
 the 5.61-5.74 band). Build clean (0 warnings), suite green, format clean.
+
+## 244 D5: the combined draw-flush slice lands at -10.3% menu wall - the fill-path hoist plus the per-draw record (2026-10-23, forty-third session) - D5
+
+**Why this was the next item.** §242 closed the engine-shape program and made
+the device/draw-flush path the only priced one; §243 then decomposed the menu
+wall (device 6.57 s of a 15.0-15.2 s wall) and priced the fill-path hoist it
+built at **-8.0% (3/3)** - below the 10% wall bar - with the note that the same
+slice plus the per-draw `PgraphDrawInfo` cache prices at **~-10.5%**, i.e. the
+bar is reachable as a *combined* slice. That combination is D5's first step, and
+this session built it.
+
+There is no new ceiling to measure: the price was built once already (§243:
+-8.03 / -9.90 / -7.87%), and the second half was priced from its own work
+(fragment state + four texture slots + eye + bump state, the last of which
+allocated three arrays per triangle). The session therefore re-derived the
+combined slice and measured it on 1B `gl+replace` interleaved pairs.
+
+### 1. What landed (D5.1)
+
+Five host-side parts, none guest-visible:
+
+1. **Reject before the setup** (`Nv2AMmio.RejectTriangle`). The fill's first
+   three predicates - degenerate area, cull face (same `TrianglesCulled`
+   increment) and an empty clip window - now run in `Triangle` *before*
+   `FillTrianglePsh`, so the ~8.0M of 10.7M menu fills that produce no pixels
+   never pay for the write batch, the fragment-constant refresh or the draw
+   record. `FillTrianglePsh` keeps its own copies of the predicates, so a direct
+   caller sees unchanged behavior.
+2. **Per-draw scratch.** The 192-entry vertex-constant file, the 16-entry
+   input/output register files and the transformed-vertex map are fields
+   refilled per draw command instead of 224 arrays allocated per flush
+   (`_vsConstants` / `_vsInputs` / `_vsOutputs` / `_vsTransformed`).
+3. **Read-slot fetch mask** (`VshProgramPlan.ReadInputMask`). The plan
+   accumulates the input slots its instruction sources mux from during `Create`
+   and the fetch loop skips every other slot; the fixed-function stage keeps the
+   full mask, and the fog fallback's v0/v4/v5 are folded in when fog is enabled
+   because `FogGenDistance` reads them when the program leaves oFog unwritten.
+4. **Operand locals** (`VshProgramPlan.Execute`). The three sources load into a
+   16-byte `readonly struct Operand` instead of the per-plan `_a`/`_b`/`_c`
+   float arrays (12 stores + 12 loads per VS instruction removed), with the
+   interpreter's arithmetic transcribed literally: the `Multiply` zero rule, the
+   dot accumulation from `0` in x,y,z,(w) order, the `Dph` grouping and the ILU
+   bodies. `VshProgram` stays the reference implementation and every float
+   expression is pinned bit-for-bit by the existing differential.
+5. **Per-draw backend record** (`Nv2AMmio.BuildCachedDrawInfo` +
+   `PgraphDrawInfo.WithTriangle`). The fragment state, the four texture slots
+   (each one a `ResolveTextureFilter` decode), the eye position and the bump
+   state are invariant across one draw command - no guest method can run inside a
+   flush - so they are built once per flush and each triangle only replaces the
+   vertices, the clip rectangle and the per-command guest-texel set. The
+   template is stamped with a monotonic draw-command id (`_drawCommandId`,
+   bumped at the top of `FlushProgramDraw`), so the next command always rebuilds.
+   `BumpState` alone allocated three arrays per call, i.e. ~8.1M per 1B menu leg.
+
+### 2. Measured (D5.2, H1, 1B, gate media, `gl+replace`, interleaved pairs)
+
+The base build is the stashed `520c9d2` CLI; each pair runs base then new in the
+same window (`scripts/raster-leg.ps1` legs, 1B steps):
+
+| pair | base | new | delta | `outerMs` |
+|---|---|---|---|---|
+| m1/1 | 31.312 s | 28.077 s | **-10.33%** | -10.60% |
+| m1/2 | 26.826 s | 22.212 s | **-17.20%** | -17.04% |
+| m1/3 | 24.744 s | 22.199 s | **-10.29%** | -11.41% |
+| m2/1 | 24.959 s | 22.160 s | **-11.21%** | -11.64% |
+| m2/2 | 24.324 s | 22.251 s | -8.52% | -8.72% |
+| m2/3 | 24.343 s | 21.861 s | **-10.20%** | -10.41% |
+
+**The first triple is 3/3 above the 10% wall bar (-10.33% median); six pairs
+read a -10.31% median with 5 of 6 above it and 6/6 negative.** That is the bar
+met at the price §243 predicted (-10.5%), nothing more. The host was loaded in
+this window (absolute walls 24-31 s against the recorded 15.6-17.5 s band), so
+only the paired ratios are read.
+
+The triangle `gl+replace` leg, same pairs: **-0.70% / -2.27% / -2.02%** (anchors
+exact) - no regression, and no claim: §241 already showed that leg is
+pacing/submission-bound.
+
+### 3. Exactness (D5.2)
+
+- **Fast 1B anchors byte-identical**: menu gl `B06BA6E5` / CPU `F5D61C94`
+  (33,638 draws / 1,402 skipped / 696 clears / 686 flips / 686 stalls, culled
+  41,035); triangle gl `4F1FCBC0` / `7DAB63EB`; **both software legs too** -
+  menu sw `34973510` / `F5D61C94` (253,998,498 px), triangle sw `B45254CA` /
+  `7DAB63EB` (57,663,082 px).
+- **Accurate 1B goldens byte-identical to the stashed base build** on all four
+  legs: menu sw `4EF1FBF6`, menu gl `6BE6325F`, triangle sw `A1740DE0`, triangle
+  gl `3FC4B419`, with identical counters on every leg (menu 33,632 / 695 clears
+  / 686 / 686; triangle 2,706 / 6,455 / 68 / 34). The golden policy also passes:
+  `diff=1852 violations=0 outsideBand=0 maxDelta=1`.
+- **ktest smoke**: the XGrid leg stops at the 4E03A park after **792,800,535**
+  steps and the suite log is byte-identical (`CA5D3867`, 40,797 B) to the
+  accepted baseline; `ktest_diff.py` against the stored xemu oracle is **SMOKE
+  PASS 7/7** (051/282 PASS, 224/231 XGrid-ahead, 071/319/344 known failures).
+  The smoke *script* needs the sibling `CSharp_XISOSharp` `XISOSharp.exe` to
+  rebuild the subset ISO, which this worker may not read, so the ISO from the
+  last full run (`wt-data/ktest-smoke/xgrid`, same patched XBE and subset
+  config) was booted with the script's own XGrid command instead.
+- **Tests 1874 -> 1878**: `VshProgramPlanTests.ReadInputMask_ReportsExactly...`
+  and `...ScramblingUnreadSlotsCannotChangeTheOutputs` (the mask's safety
+  property: every slot it omits can be scrambled - NaN, infinities - without
+  moving an output bit), `PgraphBackendSeamTests.
+  DrawCommand_TrianglesShareTheRecordStateAndTheNextCommandRebuilds` (two
+  triangles of one command see one state; the next command's TEXFMT change
+  reaches the record), and
+  `PgraphTransformTests.ElementDraw_ReadsOnlyTheInputSlotsTheProgramReads`
+  (unread slot data cannot change the pixel, with a positive control that reads
+  it). Build 0 warnings, suite green, format clean.
+- Host-side only: **no snapshot version change** (Nv2a v9, audio v3).
+
+### 4. What this leaves
+
+The menu's device stage is still the largest owned item, and the *transform*
+plan (2.2-2.5 s at §243's stage split, 11.4M unique vertices at 12.1 VS
+instructions each) is now the only part of the draw flush that has not been
+hoisted: the fill path took this slice, the record is cached, the attribute
+fetch reads only what the program uses, and the vertex-side scratch is stable.
+§243 priced a compiled transform evaluator's capture at 1.5-1.7 s =
+9.5-10.7% menu wall, "high risk", and explicitly at-or-below the bar on its own;
+it is not this task's mandate. The next queued item is **P1** (host audio), which
+does not compete for this code.
+
+

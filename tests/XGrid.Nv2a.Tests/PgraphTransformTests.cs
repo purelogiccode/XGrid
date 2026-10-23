@@ -605,6 +605,73 @@ public sealed class PgraphTransformTests
     }
 
     /// <summary>
+    /// The vertex fetch reads only the input slots the resident program muxes
+    /// from (the plan's read-slot mask): an unread slot's vertex-array data
+    /// cannot change the drawn pixel, while a program that does read that slot
+    /// renders the value it holds - the positive control that the setup can
+    /// observe the slot at all.
+    /// </summary>
+    [Fact]
+    public void ElementDraw_ReadsOnlyTheInputSlotsTheProgramReads()
+    {
+        static uint SamplePixel(bool readSlot1, float slot1Value)
+        {
+            (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+            WriteTriangleVertices(memory, 0u);
+            for (uint component = 0; component < 4u; component++)
+            {
+                memory.WritePhysical(0x2400u + (component * 4u), BitConverter.SingleToUInt32Bits(slot1Value));
+            }
+
+            uint[] color = readSlot1
+                ? Insn(mac: MacMov, aMux: MuxV, v: 1, outMux: 0, outMask: 0xF, outAddress: 3)
+                : Insn(mac: MacMov, aMux: MuxC, constIndex: 0, outMux: 0, outMask: 0xF, outAddress: 3);
+            uint[] position = Insn(
+                mac: MacMov, aMux: MuxV, v: 0, outMux: 0, outMask: 0xF, outAddress: 0, final: true);
+
+            PushMethods(
+                nv2A,
+                memory,
+                (0x0208u, 0x00000104u),
+                (0x020Cu, 0x00000040u),
+                (0x0210u, 0x00003000u),
+                (0x0200u, 0x00100000u),
+                (0x0204u, 0x00100000u),
+                (0x1720u, 0x00002000u),
+                (0x1760u, 0x00001042u),
+                (0x1724u, 0x00002400u),
+                (0x1764u, 0x00000042u),
+                (0x1E9Cu, 0u),
+                (0x0B00u, color[0]),
+                (0x0B04u, color[1]),
+                (0x0B08u, color[2]),
+                (0x0B0Cu, color[3]),
+                (0x0B10u, position[0]),
+                (0x0B14u, position[1]),
+                (0x0B18u, position[2]),
+                (0x0B1Cu, position[3]),
+                (0x1EA4u, 0u),
+                (0x0B80u, 0x3F800000u),
+                (0x0B84u, 0x3F000000u),
+                (0x0B88u, 0x3E800000u),
+                (0x0B8Cu, 0x3F800000u),
+                (0x17FCu, 5u),
+                (0x1800u, 0x00010000u),
+                (0x1808u, 0x00000002u),
+                (0x17FCu, 0u));
+
+            Assert.Equal(1uL, nv2A.DrawsExecuted);
+            return memory.ReadPhysical(0x3000u + (5u * 0x40u) + (5u * 4u));
+        }
+
+        // The program reads v0 only: slot 1's array data is irrelevant.
+        Assert.Equal(SamplePixel(readSlot1: false, 0.25f), SamplePixel(readSlot1: false, 0.75f));
+
+        // Positive control: a program that reads v1 renders the slot's value.
+        Assert.NotEqual(SamplePixel(readSlot1: true, 0.25f), SamplePixel(readSlot1: true, 0.75f));
+    }
+
+    /// <summary>
     /// The compiled transform program is cached on the resident program. A
     /// guest rewrite (the same slots, loaded again) must invalidate it: the
     /// second draw has to render what a device that only ever saw the new

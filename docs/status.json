@@ -4,14 +4,14 @@
   "objective": "xemu-class performance or better on the same content (operator decision 2026-10-22)",
   "current": {
     "milestone": "M-D",
-    "id": "D5",
-    "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
-    "plan": "E5",
+    "id": "P1",
+    "title": "Host audio: APU GP/EP DSP execution + PCM sink",
+    "plan": "E6",
     "status": "active",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "same-window A/B >=10% menu wall (>=20% device/engine) on 3 interleaved 1B gl+replace pairs; exact menu RAM B06BA6E5 / CPU F5D61C94 and counters 33638/1402/696/686/686; triangle 4F1FCBC0/7DAB63EB unchanged; no guest-visible change; ktest log byte-identical",
-    "price": "D3 decomposed the menu device stage: 6.57 s of a 15.0-15.2 s 1B gl+replace wall (41.6%): flushes 6.15 s (transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26), other writes 0.42, clears 0.07. D3 priced the combined draw-flush slice at ~-10.5% (its 8.0-9.9% plus the per-draw PgraphDrawInfo cache ~0.3-0.4 s = 2.5%) - that is D5's first step; re-measure at 1B with 3 interleaved pairs before implementing."
+    "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
+    "price": "product gap; no oracle yet; scope after the DSP model is measured"
   },
   "position": {
     "host": "H1",
@@ -232,22 +232,10 @@
   ],
   "queue": [
     {
-      "id": "D5",
-      "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
-      "plan": "E5",
-      "status": "active",
-      "depends": [
-        "D1"
-      ],
-      "acceptance": "same-window A/B >=10% menu wall (>=20% device/engine) on 3 interleaved 1B gl+replace pairs; exact menu RAM B06BA6E5 / CPU F5D61C94 and counters 33638/1402/696/686/686; triangle 4F1FCBC0/7DAB63EB unchanged; no guest-visible change; ktest log byte-identical",
-      "price": "D3 decomposed the menu device stage: 6.57 s of a 15.0-15.2 s 1B gl+replace wall (41.6%): flushes 6.15 s (transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26), other writes 0.42, clears 0.07. D3 priced the combined draw-flush slice at ~-10.5% (its 8.0-9.9% plus the per-draw PgraphDrawInfo cache ~0.3-0.4 s = 2.5%) - that is D5's first step; re-measure at 1B with 3 interleaved pairs before implementing.",
-      "evidence": []
-    },
-    {
       "id": "P1",
       "title": "Host audio: APU GP/EP DSP execution + PCM sink",
       "plan": "E6",
-      "status": "queued",
+      "status": "active",
       "depends": [],
       "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
       "price": "product gap; no oracle yet; scope after the DSP model is measured",
@@ -319,6 +307,13 @@
       "date": "2026-10-23",
       "evidence": "decision (a): keep the raw engine and take the device/draw-flush path; re-read at 1B gl+replace on the post-D1 build: triangle 5.839 s (runner 3,425 ms = 58.7%, 6.26 ns/member, formation+chain 991, nonJit 1,400; ram 4F1FCBC0/cpu 7DAB63EB, 2706/6455/68/34) and menu 16.448 s (runner 12,801 ms = 77.8%, 14.77 ns/member, formation+chain 1,716, nonJit 1,882; ram B06BA6E5/cpu F5D61C94, 33638/686/686); gap 4.87x/12.1x; prices: encoder 415.4 vs 122.2 ns/instruction (3.4x) = 8.0% triangle / 4.9% menu, trace boundary population 352.6/716.2 ms = 6.04%/4.35%, code volume 0% wall, device stage ~596 ms triangle (10.2%) and >=2,600 ms menu (>=15.8%, >=22% with the measured GL submission); only (a) is at or above the bar, C's engine-shape program is closed on its own kill criterion, D3 promoted, D4 stays conditional on a per-member probe showing >=20% engine (two iterations, then stop); no code changed; suite 1874 green, build and format clean; decisions 242",
       "commitMessage": "docs: decide C7 keeps the raw engine and takes the device path (D2)"
+    },
+    {
+      "id": "D5",
+      "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
+      "date": "2026-10-23",
+      "evidence": "1B menu gl+replace interleaved pairs vs stashed 520c9d2: -10.33 / -17.20 / -10.29% wall (median -10.33%, 3/3 >= 10%; outerMs -10.6/-17.0/-11.4%); 3 more pairs -11.21/-8.52/-10.20% (6-pair median -10.31%, 6/6 negative). Triangle gl+replace -0.70/-2.27/-2.02% (no regression). Fast 1B anchors byte-identical: menu gl B06BA6E5/F5D61C94 33638/1402/696/686/686 culled 41035, triangle gl 4F1FCBC0/7DAB63EB, menu sw 34973510 (253,998,498 px), triangle sw B45254CA (57,663,082 px). Accurate 1B goldens byte-identical to base on all four legs: menu sw 4EF1FBF6 / gl 6BE6325F, triangle sw A1740DE0 / gl 3FC4B419 (diff=1852 violations=0 maxDelta=1). ktest 4E03A park at 792,800,535 steps, log CA5D3867 (40,797 B) byte-identical, ktest_diff SMOKE PASS 7/7. Suite 1874 -> 1878, build 0 warnings, format clean. No snapshot change.",
+      "commitMessage": "nv2a: hoist the fill path and share the draw-command record (D5)"
     }
   ],
   "negatives": [

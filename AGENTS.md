@@ -119,9 +119,9 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D5 - Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: APU GP/EP DSP execution + PCM sink** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 78.2% (84.43 of 108). **Next:** P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
+**Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
@@ -786,6 +786,49 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes — newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-23 (forty-third; the combined draw-flush slice lands at
+-10.33/-17.20/-10.29% menu wall - decisions §244). Track D/C, one slice landed,
+every gate anchor byte-identical.**
+
+- **What landed (D5).** §243 had priced its fill-path hoist at -8.0% (below the
+  10% bar) and noted that the same slice plus the per-draw `PgraphDrawInfo`
+  cache prices at ~-10.5%; that combined slice is D5's first step and it is now
+  in: `Nv2AMmio.RejectTriangle` (degenerate/cull/clip-window predicates before
+  the fill's setup, same counters), per-draw vertex scratch (`_vsConstants`,
+  `_vsInputs`/`_vsOutputs`, `_vsTransformed` - 224 arrays per flush removed),
+  `VshProgramPlan.ReadInputMask` (the fetch loop skips slots the program never
+  muxes; the fixed-function stage keeps all 16 and the fog fallback's v0/v4/v5
+  are folded in), `VshProgramPlan.Execute` operand locals (a 16-byte
+  `readonly struct Operand` instead of `_a`/`_b`/`_c`, arithmetic transcribed
+  literally and still pinned bit-for-bit by `VshProgramPlanTests`), and
+  `BuildCachedDrawInfo` + `PgraphDrawInfo.WithTriangle` (fragment state, four
+  texture slots, eye and bump state built once per draw command, stamped by
+  `_drawCommandId`; `BumpState` alone was three arrays per triangle).
+- **Measurement (1B menu `gl+replace`, interleaved pairs against the stashed
+  `520c9d2` CLI).** Acceptance triple **-10.33 / -17.20 / -10.29%** (median
+  -10.33%, 3/3 above the bar), `outerMs` -10.6 / -17.0 / -11.4%; three more
+  pairs -11.21 / -8.52 / -10.20% (six-pair median -10.31%, 6/6 negative). The
+  host was loaded (menu walls 24-31 s vs the recorded 15.6-17.5 band), so only
+  paired ratios are read. Triangle `gl+replace` -0.70 / -2.27 / -2.02% (no
+  regression, no claim - it is submission/pacing-bound, §241).
+- **Gates.** Fast 1B anchors byte-identical on all four legs (menu gl
+  `B06BA6E5`/`F5D61C94`, triangle gl `4F1FCBC0`/`7DAB63EB`, menu sw
+  `34973510`/`F5D61C94` 253,998,498 px, triangle sw `B45254CA`/`7DAB63EB`
+  57,663,082 px; menu counters 33,638/1,402/696/686/686, culled 41,035). All
+  four accurate 1B goldens are byte-identical to the stashed base build (menu
+  sw `4EF1FBF6`, menu gl `6BE6325F`, triangle sw `A1740DE0`, triangle gl
+  `3FC4B419`) with identical counters, and the golden policy passes
+  (`diff=1852 violations=0 maxDelta=1`). ktest: 4E03A park at **792,800,535**
+  steps, suite log `CA5D3867` (40,797 B) byte-identical, `ktest_diff.py` SMOKE
+  PASS 7/7 (the smoke *script* needs the sibling `CSharp_XISOSharp` tool, which
+  this worker may not read, so the last run's ISO was booted with the script's
+  own XGrid command). Suite 1874 -> **1878**, build 0 warnings, format clean.
+  No snapshot change (host-side only; Nv2a v9, audio v3).
+- **Next.** The menu's transform plan (2.2-2.5 s, 11.4M vertices at 12.1 VS
+  instructions) is the only draw-flush item left; a compiled evaluator was
+  priced at 9.5-10.7% menu wall and "high risk" (§243) and is not owned. The
+  queue moves to **P1** (host audio).
 
 **Session 2026-10-23 (forty-second; the menu-only wall is decomposed with stage
 timers for the first time - 57% of it is the device stage - and the top item is

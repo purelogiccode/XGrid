@@ -60,6 +60,8 @@ public sealed class PgraphBackendSeamTests
 
         public List<uint> FlipSurfaceAddresses { get; } = [];
 
+        public List<PgraphDrawInfo> Records { get; } = [];
+
         public void Method(uint subchannel, uint method, uint parameter)
         {
             _ = subchannel;
@@ -74,6 +76,7 @@ public sealed class PgraphBackendSeamTests
             LastTexture0 = info.Texture0;
             LastTexture2 = info.Texture2;
             HasLastTexture = true; Draws++;
+            Records.Add(info);
         }
 
         public void Clear(in PgraphClearInfo info)
@@ -104,6 +107,7 @@ public sealed class PgraphBackendSeamTests
             Clears = 0;
             Flips = 0;
             BackendUnsupported = 0;
+            Records.Clear();
             ResetCount++;
         }
     }
@@ -467,6 +471,103 @@ public sealed class PgraphBackendSeamTests
         Assert.Equal(0, backend.Clears);
         Assert.Equal(0, backend.Flips);
         Assert.Equal(0, backend.BackendUnsupported);
+    }
+
+    /// <summary>
+    /// Writes six vertices in two triangles (slot 0, stride 0x10) for the
+    /// draw-command record tests.
+    /// </summary>
+    private static void WriteSixVertices(IGpuMemory memory)
+    {
+        (float X, float Y)[] positions =
+        [
+            (4f, 4f), (12f, 4f), (4f, 12f),
+            (12f, 4f), (12f, 12f), (4f, 12f),
+        ];
+        for (int i = 0; i < positions.Length; i++)
+        {
+            uint address = 0x2000u + ((uint)i * 0x10u);
+            memory.WritePhysical(address, BitConverter.SingleToUInt32Bits(positions[i].X));
+            memory.WritePhysical(address + 4u, BitConverter.SingleToUInt32Bits(positions[i].Y));
+            memory.WritePhysical(address + 8u, 0u);
+            memory.WritePhysical(address + 12u, 0x3F800000u);
+        }
+    }
+
+    /// <summary>
+    /// Two draw commands of two triangles each, with the final combiner
+    /// enabled. Each command carries the draw-command state the backend's
+    /// record must reflect; the commands differ in TEXFMT slot 0.
+    /// </summary>
+    private static (uint Method, uint Parameter)[] TwoCommandCombinerStream(uint firstFormat, uint secondFormat)
+    {
+        return
+        [
+            (0x0208u, 0x00000104u),
+            (0x020Cu, 0x00000040u),
+            (0x0210u, 0x00003000u),
+            (0x0200u, 0x00100000u),
+            (0x0204u, 0x00100000u),
+            (0x1720u, 0x00002000u),
+            (0x1760u, 0x00001042u),
+            (0x1E9Cu, 0u),
+            (0x0B00u, 0u),
+            (0x0B04u, 0x0020001Bu),
+            (0x0B08u, 0x0836006Cu),
+            (0x0B0Cu, 0x0000F800u),
+            (0x1B04u, firstFormat),
+            (0x1E60u, 0x01u),
+            (0x0288u, 0x000C0C00u),
+            (0x028Cu, 0x00002000u),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1800u, 0x00030002u),
+            (0x1808u, 0x00000004u),
+            (0x1808u, 0x00000005u),
+            (0x17FCu, 0u),
+            (0x1B04u, secondFormat),
+            (0x17FCu, 5u),
+            (0x1800u, 0x00010000u),
+            (0x1800u, 0x00030002u),
+            (0x1808u, 0x00000004u),
+            (0x1808u, 0x00000005u),
+            (0x17FCu, 0u),
+        ];
+    }
+
+    /// <summary>
+    /// Every triangle of one draw command sees the same draw-command state
+    /// (fragment state, texture slots, combiner, fog, eye, color surface) and
+    /// differs only in its own vertices; the next command rebuilds the record,
+    /// so a state change between commands can never be served from the earlier
+    /// template.
+    /// </summary>
+    [Fact]
+    public void DrawCommand_TrianglesShareTheRecordStateAndTheNextCommandRebuilds()
+    {
+        (Nv2AMmio nv2A, ArrayMemory memory) = CreateChannel();
+        var backend = new RecordingBackend();
+        nv2A.Backend = backend;
+        WriteSixVertices(memory);
+        PushMethods(nv2A, memory, TwoCommandCombinerStream(0x00001200u, 0x00001201u));
+
+        Assert.Equal(2uL, nv2A.CombinerDraws);
+        Assert.Equal(4, backend.Draws);
+        PgraphDrawInfo first = backend.Records[0];
+        PgraphDrawInfo second = backend.Records[1];
+        Assert.Equal(first.Fragment, second.Fragment);
+        Assert.Equal(first.Texture0, second.Texture0);
+        Assert.Equal(first.Texture2, second.Texture2);
+        Assert.Equal(first.ClipX, second.ClipX);
+        Assert.Equal(first.ColorSurfaceAddress, second.ColorSurfaceAddress);
+        Assert.Equal(first.EyeX, second.EyeX);
+        Assert.NotEqual(first.A.X, second.A.X);
+        Assert.Equal(0x00001200u, first.Texture0.Format);
+
+        // The second command's record carries its own TEXFMT, not the first
+        // command's template.
+        Assert.Equal(0x00001201u, backend.Records[2].Texture0.Format);
+        Assert.Equal(0x00001201u, backend.Records[3].Texture0.Format);
     }
 
     [Fact]
