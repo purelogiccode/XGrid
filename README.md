@@ -5,14 +5,22 @@
 > manual-only. Every gate still runs — locally: see
 > [Build and test](#build-and-test) and `docs/ci.md`.
 
-XGrid is a cross-platform original Xbox emulator written in C#/.NET, built as a clean-room
-reimplementation of documented Xbox hardware behavior. It is not a port of xemu,
-Cxbx-Reloaded, or xqemu.
+XGrid is a cross-platform original Xbox emulator written in **C#/.NET**. It is
+licensed under the **GNU General Public License, version 2** (`COPYING`) and may
+port code from GPL-compatible reference projects, primarily **xemu 0.8.139** and
+its QEMU base. Ported files retain their original copyright and license notices;
+see `THIRD_PARTY_NOTICES.md` and `docs/porting-policy.md`.
+
+The emulator itself stays **full managed C#**: no QEMU/xemu native library is
+embedded, and no C/C++ emulator code is part of the build.
 
 ## Status
 
-Phase 0 (project bootstrap): solution, projects, tests, analyzers and quality gates are in
-place; CI is disabled (see above) and those gates run locally.
+The LLE console chain boots: MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard XBE.
+The NV2A runs a software rasterizer and a host-GL backend; the CPU has an
+accurate interpreter and a fast raw-JIT engine; the Avalonia frontend and CLI
+are usable. Host audio and real-game compatibility are the active product gaps.
+The gates are run locally (CI is disabled; see `docs/ci.md`).
 
 ## Goals
 
@@ -74,5 +82,9 @@ their own legally obtained files.
 
 ## License
 
-A project license has not been finalized yet; see `LICENSE`. Third-party reference licenses are
-recorded in `docs/research-notes/sources.md`.
+XGrid is free software under the **GNU General Public License, version 2**.
+See `COPYING` for the full text and `LICENSE` for the project notice.
+Third-party reference projects and ported modules are recorded in
+`THIRD_PARTY_NOTICES.md`, `docs/porting-policy.md` and
+`docs/research-notes/sources.md`. Ported files keep their original copyright
+and license notices.

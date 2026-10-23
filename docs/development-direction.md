@@ -7,7 +7,7 @@ day-to-day agent entry point; this file is the priority order every agent follow
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **P1 - Host audio: APU GP/EP DSP execution + PCM sink** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
@@ -16,6 +16,20 @@ day-to-day agent entry point; this file is the priority order every agent follow
 > The generated block above is the current status; the narrative below is
 > history. The execution plan and the task queue are in `ImplementationPlan.md`
 > -> "Execution plan (current)".
+
+**2026-10-23 operator decision: GPL-2.0, port xemu/QEMU, full C#.** XGrid is
+now licensed under **GPL-2.0** (`COPYING`) and may port code from xemu, QEMU and
+the other GPL-compatible references, preserving every notice. The project stays
+**full managed C#** - no QEMU/xemu native library and no C/C++ emulator code in
+the build. `References2/xemu-0.8.139` is the primary source. The first port is
+the **APU GP/EP DSP** (`hw/xbox/mcpx/apu/dsp/`), which is the active P1; the
+state/memory/arithmetic/DMA slice is in, and the interpreter + GP/EP glue +
+PCM sink follow. The CPU TCG is **not** a port target: the raw emitter is
+already bit-exact and faster than xemu on the CPU-bound ktest; the gap is the
+boot/device/GPU path. The working xemu 0.8.139 menu oracle is
+`docs/research-notes/xemu-menu-oracle.md` (the old "xemu deadlocks" note was
+specific to the 0.8.136/0.8.137 media). Binding policy:
+`docs/porting-policy.md`; provenance: `THIRD_PARTY_NOTICES.md`.
 
 **Status 2026-10-22 very late (39th session, §§239-240): the device stage was
 measured for the first time and one half of it landed.** A temporary probe priced
@@ -114,8 +128,9 @@ in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 
    (Msteps/s, wall per presented frame) and the xemu comparison where it is a
    valid oracle. No new corpus breadth beyond the standing rows while C leads.
 4. **P — product (parallel, not blocking).** Host audio remains the largest
-   product gap; it needs APU GP/EP DSP execution + a PCM sink. Run it parallel
-   to C; do not let it displace C.
+   product gap. P1 is now an explicit **xemu 0.8.139 DSP port** (state/DMA in,
+   interpreter + GP/EP glue + PCM sink next), not a clean-room rewrite. Run it
+   parallel to C; do not let it displace C.
 5. **D — only with a measured >2% ceiling.** Unchanged.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency; the
    performance program never relaxes the ceremony.
@@ -163,8 +178,8 @@ emulator plateau: a very accurate, very well-tested demo.
 - Accurate mode is gate currency; fast mode is a separate engine validated by
   bit-exact 1B differentials (charter §5). Every default flip keeps the
   median-of-3 + exact SHA/counter ceremony.
-- Reference-first: xemu 0.8.137 primary; independent CPU oracle
-  (`tools/cpu-oracle`, Unicorn/TCG); non-GPL clean-room.
+- Reference-first: xemu 0.8.139 primary (0.8.137/0.8.136 prior); independent
+  CPU oracle (`tools/cpu-oracle`, Unicorn/TCG); GPL-2.0 with ported-code notices.
 - The device *set* is complete (MCPX, PCI, IDE/ATAPI, USB-OHCI + XID, SMC,
   SMBus, EEPROM, PIC/PIT/RTC, APU, nvnet, NV2A). Only depth remains.
 - The CPU engine (raw emitter, chaining, fault contract) stays landed and
@@ -316,9 +331,10 @@ host audio (APU DSP execution first).
    fixes and the histogram that proves usage. No new corpus breadth beyond the
    standing 22 rows / 17 samples while C leads.
 4. **P — product completeness (parallel, not blocking).** Host audio output is
-   the remaining large item (APU GP/EP DSP execution + a PCM sink); pad
-   binding, save-state V1, per-title config, renderer choice, frame stepping
-   and persistent EEPROM are landed. Do not let P displace C.
+   the remaining large item; P1 is the **xemu 0.8.139 DSP port** (state/DMA in,
+   interpreter + GP/EP glue + PCM sink next). Pad binding, save-state V1,
+   per-title config, renderer choice, frame stepping and persistent EEPROM are
+   landed. Do not let P displace C.
 5. **D — cheap wins with a measured ceiling.** Page-end wait, bookkeeping.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency.
 
@@ -513,10 +529,11 @@ the historical precedent, not a pattern to extend).
 
 ## 5. Hard non-goals
 
-- **License stays non-GPL.** No QEMU/xemu code translation; GPL is not the
-  TCG-port vehicle (charter §1/§6). New deps: only Iced (MIT, Phase 3) approved
-  so far; otherwise the NuGet rule stands (precedent: `Xunit.SkippableFact`
-  rejected; plain `[Fact]` + WGL-guard instead).
+- **License is GPL-2.0; porting is allowed.** XGrid may port code from
+  xemu/QEMU/Cxbx/xqemu under their GPL-compatible licenses, preserving the
+  notices. It must **not** embed QEMU/xemu as a native library or add C/C++
+  emulator code to the build; port the algorithms to managed C#. See
+  `docs/porting-policy.md`.
 - No `References2/` deletes/moves/rewrites ever. Its single canonical store is
   `References2/` itself; verify with `scripts/refs-manifest.ps1 -Verify` against
   `docs/refs-manifest.json`. Never work around a missing reference; do not
@@ -526,7 +543,9 @@ the historical precedent, not a pattern to extend).
   the authorized structural stages (section 0). Interpreter *correctness* fixes
   (oracle-found) are not codegen slices.
 - No micro-optimization below a measured 2% ceiling.
-- No "borrow" of xemu source; facts only, reimplemented clean-room.
+- No native QEMU/xemu embedding; port source to managed C# and record the
+  provenance. New dependencies still follow the NuGet rule (precedent:
+  `Xunit.SkippableFact` rejected; plain `[Fact]` + WGL-guard instead).
 
 ## 6. Standing gates
 

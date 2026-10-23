@@ -1,4 +1,19 @@
-# Next session instructions (updated 2026-10-23, after §243: the menu-only wall was decomposed with stage timers - 57% of it is the device stage - and the draw-flush hoist was priced by building it at **-8.03 / -9.90 / -7.87%** (3/3) and reverted as below the 10% bar)
+# Next session instructions (updated 2026-10-23, after the GPL-2.0/porting decision and the DSP foundation slice; the previous §243 handoff is retained below)
+
+> **STATUS 2026-10-23 (44th session) - GPL-2.0, xemu 0.8.139 and the DSP port
+> foundation.** XGrid is now **GPL-2.0** (`COPYING`/`LICENSE`); porting from
+> xemu/QEMU/Cxbx/xqemu is allowed with notices, but the project stays **full
+> managed C#** (no QEMU/xemu native library, no C/C++ emulator code in the
+> build). `References2/xemu-0.8.139` is the primary source; its APU/DSP subtree
+> is byte-identical to 0.8.137 and the NV2A delta is catalogued in
+> `docs/research-notes/xemu-0.8.139.md`. The active task is **P1**: the
+> state/memory/bootstrap/56-bit-arithmetic/DMA slice is ported
+> (`src/XGrid.Audio/Dsp/`), tests are green, and the interpreter + GP/EP glue +
+> PCM sink are the next slices. The xemu 0.8.139 menu oracle is real:
+> `docs/research-notes/xemu-menu-oracle.md` (0.8.139 boots the XBMC dashboard
+> from `data/xemu`; the old "xemu deadlocks" note was specific to the
+> 0.8.136/0.8.137 media). Binding policy: `docs/porting-policy.md`; provenance:
+> `THIRD_PARTY_NOTICES.md`.
 
 > **Routine change (2026-10-22):** the current task, queue and status are in
 > `docs/status.json`. Start every session with

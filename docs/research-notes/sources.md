@@ -1,36 +1,56 @@
 # Reference Sources and Licensing Inventory
 
 Date reviewed: 2026-10-08; extended 2026-10-13 (Copetti, envytools, nv2a-trace, xemu-Playtest-v2 added);
-2026-10-20 xemu 0.8.137 adopted as the primary snapshot (0.8.136 retained as the prior snapshot)
-Policy: XGrid is a clean-room reimplementation. These notes record factual hardware/format
-knowledge (addresses, register maps, struct layouts, protocol constants, algorithms). No source
-code from any reference project is copied into XGrid unless its license explicitly permits it and
-the reuse is recorded below.
+2026-10-20 xemu 0.8.137 adopted as the primary snapshot; **2026-10-23 xemu 0.8.139
+adopted as the primary snapshot and XGrid relicensed to GPL-2.0 with a porting
+policy.**
+Policy: XGrid is **GPL-2.0** and may port source code from GPL-compatible
+reference projects. These notes record both factual hardware/format knowledge and
+the provenance of ported code. Every ported file keeps its original copyright and
+license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are in
+`docs/porting-policy.md`.
 
 ## Project inventory
 
 | Project | Version/Snapshot | Upstream | License | Code copied? |
 |---|---|---|---|---|
-| xemu | **0.8.137 (primary since 2026-10-20)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
-| xemu (prior snapshot) | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
-| xemu-Playtest-v2 | local snapshot 2026-09 (QEMU 10.2.0 base) | xemu in-development fork (Sega Chihiro arcade bring-up); no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | No — facts only |
-| Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | No — facts only |
-| xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | No — facts only |
+| xemu | **0.8.139 (primary since 2026-10-23)** | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | **Yes — ported/derived where noted** |
+| xemu (prior snapshot) | 0.8.137 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | **Yes — ported/derived where noted** |
+| xemu (prior snapshot) | 0.8.136 | https://github.com/xemu-project/xemu | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks |
+| QEMU (xemu base) | 10.2.0 | https://www.qemu.org | GPL-2.0; some files GPL-2.0-or-later | **Yes — ported/derived where noted**; not embedded as a native dependency |
+| xemu-Playtest-v2 | local snapshot 2026-09 (QEMU 10.2.0 base) | xemu in-development fork (Sega Chihiro arcade bring-up); no upstream URL recorded | GPL-2.0 overall; per-file LGPL-2+, MIT, GPL-2+ | Facts and cross-checks |
+| Cxbx-Reloaded | master | https://github.com/Cxbx-Reloaded/Cxbx-Reloaded | GPL-2.0 (some files LGPL-2) | **Yes — ported/derived where noted** |
+| xqemu | master (QEMU 4.0 base) | https://github.com/xqemu/xqemu | GPL-2.0 (mixed per-file) | **Yes — ported/derived where noted** |
 | XboxDevWiki | offline dump 2026-10-12 | https://xboxdevwiki.net | none declared | No — facts only |
 | Copetti — Xbox Architecture | local snapshot | https://www.copetti.org/writings/consoles/xbox/ (text: github.com/flipacholas/Architecture-of-consoles) | **CC BY 4.0** (attribution required) | No — facts only |
-| envytools | master snapshot | https://github.com/envytools/envytools | **MIT** | No — facts only |
-| nv2a-trace | master snapshot | https://github.com/XboxDev/nv2a-trace | **MIT** | No — facts only |
+| envytools | master snapshot | https://github.com/envytools/envytools | **MIT** | Facts and ported tables where noted |
+| nv2a-trace | master snapshot | https://github.com/XboxDev/nv2a-trace | **MIT** | Facts and ported tables where noted |
 | XISOSharp | current master | https://github.com/purelogiccode/XISOSharp | **MIT** | Approved for direct dependency integration (see below) |
 | Silk.NET | pinned when first added (GPU slice 1) | https://github.com/dotnet/Silk.NET | **MIT** | Approved for direct dependency (operator 2026-10-13; see below) |
 | Avalonia (Desktop/Fluent/Inter) | 11.3.22 (frontend) | https://github.com/AvaloniaUI/Avalonia | **MIT** | Approved for the desktop frontend (operator-requested 2026-10-20; see below) |
 | CommunityToolkit.Mvvm | 8.4.2 (frontend) | https://github.com/CommunityToolkit/dotnet | **MIT** | Approved for the desktop frontend (see below) |
 
+## Ported modules
+
+| XGrid file | Source | License | Status |
+|---|---|---|---|
+| `src/XGrid.Audio/Dsp/DspDma.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/dsp_dma.c` / `dsp_dma.h` | LGPL-2+ | Ported (DMA engine). |
+| `src/XGrid.Audio/Dsp/Dsp56300State.cs` | xemu 0.8.139 `interp/dsp_cpu.h` / `dsp_cpu_regs.h` | GPL-2+ | Ported (state + constants). |
+| `src/XGrid.Audio/Dsp/Dsp56300Arithmetic.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Ported (56-bit arithmetic). |
+| `src/XGrid.Audio/Dsp/Dsp56300Core.cs` | xemu 0.8.139 `interp/dsp_cpu.c` | GPL-2+ | Core state/reset/memory; interpreter is the next slice. |
+
+See `THIRD_PARTY_NOTICES.md` for the full list and `docs/porting-policy.md` for
+the workflow.
+
 ## Restoring the vendored set (References2/)
 
 Downloaded 2026-10-12 (extract into `References2/`; GitHub zips carry these
 root folder names):
-- xemu 0.8.137 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.137.zip (primary)
+- xemu 0.8.139 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.139.zip (primary)
+- xemu 0.8.137 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.137.zip (prior snapshot)
 - xemu 0.8.136 - https://github.com/xemu-project/xemu/archive/refs/tags/v0.8.136.zip (prior snapshot)
+- QEMU 10.2.0 - the QEMU base vendored inside `xemu-0.8.139/`; upstream
+  https://www.qemu.org (GPL-2.0). Do not add it as a separate native dependency.
 - xemu-Playtest-v2 — no upstream URL recorded (operator-supplied local snapshot); ask the operator.
 - Cxbx-Reloaded (master) — https://github.com/Cxbx-Reloaded/Cxbx-Reloaded/archive/refs/heads/master.zip
 - xqemu (master) — https://github.com/xqemu/xqemu/archive/refs/heads/master.zip
@@ -54,16 +74,19 @@ root folder names):
 
 ## Per-project license detail
 
-### xemu 0.8.137 (primary snapshot, adopted 2026-10-20)
-- QEMU 10.2.0 base; recent upstream snapshot (11,352 files). The 0.8.136 tree stays vendored
-  as the prior snapshot for historical citations.
+### xemu 0.8.139 (primary snapshot, adopted 2026-10-23)
+- QEMU 10.2.0 base; the 0.8.137 and 0.8.136 trees stay vendored as prior snapshots.
 - License split is unchanged: top-level `COPYING` = GPL-2.0; `hw/xbox/**` per-file LGPL-2+ /
-  MIT / GPL-2+; the `mcpx/apu/dsp/**` subtree (now including `dsp_jit.c` and `interp/`) is
-  GPL-2+, as are the GLSL shader generators. Verdict: read for facts only.
-- **Delta vs 0.8.136:** 150 of 167 `hw/xbox` files differ. The material addition is the APU
-  DSP: `mcpx/apu/dsp/` carries a full GP/EP interpreter (`interp/`, 1,176-line `dsp_cpu.c`),
-  an optional JIT (`dsp_jit.c`, selected by `g_config.audio.use_dsp_jit`), a 441-line
-  `gp_ep.c`, and the HRTF/ADPCM/SVF tables; `nv2a/` also differs (88/97 files).
+  MIT / GPL-2+; the `mcpx/apu/dsp/**` subtree (including `dsp_jit.c` and `interp/`) is
+  GPL-2+, as are the GLSL shader generators. XGrid is GPL-2.0 and may port these files
+  with their notices; see `THIRD_PARTY_NOTICES.md` and `docs/porting-policy.md`.
+- The primary APU DSP port source is `hw/xbox/mcpx/apu/dsp/` (0.8.139); the C
+  interpreter (`dsp_c.c`, `interp/dsp_cpu.c`, `interp/dsp_emu.c.inc`, `dsp_dma.c`,
+  `gp_ep.c`) is the reference for the C# port.
+- **Delta vs 0.8.137:** 37 `hw/xbox` files differ, concentrated in `nv2a/`
+  (see `docs/research-notes/xemu-0.8.139.md`); the APU/DSP subtree is
+  byte-identical. The older 0.8.137 vs 0.8.136 delta was 150 of 167 `hw/xbox`
+  files and added the APU DSP interpreter.
 - See `docs/research-notes/xemu-0.8.137.md` for the catalogued delta and
   `docs/research-notes/xemu.md` for the 0.8.136-era facts that remain valid where the file
   is unchanged.
@@ -78,8 +101,18 @@ root folder names):
     `nv2a/pgraph/thirdparty/gloffscreen/*`.
   - **GPL-2+**: `mcpx/apu/dsp/*` (adapted from Hatari), `nv2a/pgraph/glsl/psh.c`,
     `nv2a/pgraph/glsl/vsh-prog.c/h`, `nv2a/pgraph/vsh_regs.h`.
-- The QEMU base itself is GPL-2.0. XGrid must not depend on QEMU.
-- Verdict: read for facts only. Do not copy code/tables/comments.
+- The QEMU base itself is GPL-2.0. XGrid does not embed QEMU as a native
+  dependency; QEMU algorithms may be ported to managed C# under the GPL-2.0
+  policy.
+
+### QEMU 10.2.0 (xemu base)
+- Vendored inside `References2/xemu-0.8.139/`; top-level `COPYING` = GPL-2.0,
+  with some files GPL-2.0-or-later.
+- XGrid may port QEMU algorithms to managed C#. It must not link QEMU or
+  embed its native code; see `docs/porting-policy.md`.
+- The CPU TCG is **not** a porting target: XGrid's raw emitter is already
+  bit-exact and faster than xemu on the CPU-bound ktest. The gap is the
+  boot/device/GPU path.
 
 ### xemu-Playtest-v2 (in-development Chihiro fork)
 - Operator-supplied local snapshot; **QEMU 10.2.0** base (`QEMU_VERSION`), xemu UI/settings
@@ -89,7 +122,8 @@ root folder names):
   `pgraph/cost.c`, `seed.c`, `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the
   un-tuned baseline vendored as `hw/xbox/nv2a-stock/` (`diff -ru` isolates the perf delta);
   `xid-light-gun.c`; SMBus `adm1032`/`cx25871`/`fs454`/`xcalibur`; 5 newer NV097 methods.
-- License: xemu-family (GPL-2.0 overall; per-file LGPL-2+/MIT/GPL-2+). Verdict: facts only.
+- License: xemu-family (GPL-2.0 overall; per-file LGPL-2+/MIT/GPL-2+). Verdict: facts
+  and cross-checks; port source where a tuned-GPU behavior is needed.
 - See `docs/research-notes/xemu-playtest-v2.md`.
 
 ### Xermu - WITHDRAWN (never a real reference)
@@ -105,13 +139,15 @@ root folder names):
 - Root `COPYING` = GPLv2; most headers GPL-2.0-or-later; a few GPL-2.0-only.
 - `src/devices/video/swizzle.cpp` is LGPL-2 (from QEMU/Nouveau); QEMU USB core files are
   MIT/GPL-compatible dual-licensed. README states xqemu-derived code is GPL-2.0.
-- Verdict: read for facts only (XBE structs, ordinal semantics, NV2A maps, XDVDFS layout).
+- Verdict: facts and port source (XBE structs, ordinal semantics, NV2A maps,
+  XDVDFS layout). Ported files keep the GPL-2.0/LGPL-2 notices.
 
 ### xqemu (master)
 - Root `COPYING` = GPLv2; per-file mix: `xbox.c`, `xbox_pci.c`, `nv2a.c`, `nv2a_pgraph.c`,
   `nv2a_shaders.c/h`, `nv2a_int.h`, `acpi_xbox.c`, `xid.c`, `adpcm*.h` are LGPL-2.1-or-later;
   `nv2a_vsh.c/h`, `nv2a_psh.c`, `dsp/` are GPL-2+; `smbus_xbox_smc.c`, `amd_smbus.c/h` MIT.
-- Verdict: read for facts only.
+- Verdict: facts and port source. Ported files keep the GPL-2.0/LGPL-2.1+
+  notices.
 
 ### Copetti — Xbox Architecture (local snapshot)
 - `References2/CopettiDocumentation/xbox-architecture.md` (+ `.html`, `images/`).

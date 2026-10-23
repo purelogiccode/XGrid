@@ -3,26 +3,35 @@
 ## Reference-first process (required)
 
 Before implementing or debugging hardware behavior, **consult the reference projects first**
-to confirm layout, IDs, registers, and semantics. Extract facts, never copy code.
+to confirm layout, IDs, registers, and semantics. **XGrid is GPL-2.0**: extract facts and
+port code from GPL-compatible references where it speeds development, preserving every
+original copyright/license notice. The binding rules are `docs/porting-policy.md`; the
+provenance log is `THIRD_PARTY_NOTICES.md`. The project stays **full managed C#** — no
+QEMU/xemu native library, no C/C++ emulator code in the build.
 
-- `References2/xemu-0.8.137` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
-  source, adopted 2026-10-20** (0.8.136 stays vendored as the prior snapshot). Key paths:
+- `References2/xemu-0.8.139` — LLE reference (MCPX, PCI, IDE, SMBus, NV2A, APU/DSP). **Primary
+  source, adopted 2026-10-23** (0.8.137 and 0.8.136 stay vendored as prior snapshots). Key paths:
   `hw/xbox/nv2a/` (GPU pipeline/registers), `hw/xbox/mcpx/` (APU/ACI/nvnet),
   `hw/xbox/mcpx/apu/dsp/` (GP/EP DSP interpreter + optional JIT),
   `hw/xbox/smbus_xbox_smc.c` (SMC protocol), `hw/xbox/xbox_pci.c` (PCI topology/IDs).
-  Delta vs 0.8.136: `docs/research-notes/xemu-0.8.137.md`.
+  The QEMU 10.2.0 base is vendored inside the same tree; QEMU algorithms may be
+  ported to C# but QEMU is never linked.
+- `References2/xemu-0.8.137` / `xemu-0.8.136` — prior snapshots; use 0.8.139 unless a
+  regression needs the older behavior.
 - `References2/xemu-Playtest-v2` — **in-development xemu fork for Sega Chihiro (arcade)**
   on a QEMU 10.2.0 base. Its NV2A is the *tuned GPU* (`pgraph/cost.c`, `seed.c`,
   `writeback.c`, `gl/probe.c`, `glsl/uniform-cache.c`) with the un-tuned baseline at
   `hw/xbox/nv2a-stock/` — `diff -ru` isolates the whole perf delta (GPU-backend
   performance-track facts). Full `chihiro/` subsystem, `xid-light-gun.c`, new SMBus
-  devices, 5 newer NV097 methods. Cross-check only; 0.8.137 stays the primary
+  devices, 5 newer NV097 methods. Cross-check and port source; 0.8.139 stays the primary
   (see `docs/research-notes/xemu-playtest-v2.md`).
-- `References2/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths).
+- `References2/xqemu-master` — older QEMU-based LLE reference (useful for simpler code paths);
+  GPL-2.0, port source allowed with notices.
 - `References2/Cxbx-Reloaded-master` — HLE, but its kernel headers are the NT-layout reference:
   `src/core/kernel/common/types.h` (KTHREAD/KWAIT_BLOCK/KAPC offsets, e.g. KTHREAD+0x2C = State).
   Cxbx is also the shader reference (`nv2a_psh.cpp` / `nv2a_vsh.cpp`) — `xemu` `glsl/psh.c` +
   `glsl/vsh-prog.c` are GPL-2+ and are the more complete oracle for the fragment/vertex stages.
+  GPL-2.0; port source allowed with notices.
 - ~~`References2/Xermu-main`~~ — **WITHDRAWN.** An earlier draft listed a standalone C#
   emulator that was never in the workspace. Operator confirmed 2026-10-13 the primary LLE
   reference is `References2/xemu-0.8.137`. `docs/research-notes/xermu.md` was deleted; historical
@@ -53,6 +62,16 @@ to confirm layout, IDs, registers, and semantics. Extract facts, never copy code
 - `References2/CopettiDocumentation` — CC BY 4.0 (attribution required if reused) high-level
   console architecture essay (notes: `docs/research-notes/copetti.md`). Orientation /
   onboarding / design cross-check only — never a register-level oracle.
+
+**Porting policy (2026-10-23).** XGrid is GPL-2.0 and may port code from xemu,
+QEMU, Cxbx, xqemu, envytools and nv2a-trace. The project stays **full managed
+C#**: port algorithms, do not embed QEMU/xemu or add C/C++ emulator code. A
+ported file keeps its original copyright/license notice, gets an SPDX line and a
+`Ported from <project> <version> <path>` line, and is recorded in
+`THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full workflow
+is `docs/porting-policy.md`. The first port target is the xemu 0.8.139 APU GP/EP
+DSP; the CPU TCG is explicitly not a target (the raw emitter is already
+bit-exact and faster than xemu on the CPU-bound ktest).
 
 **Never delete, move, or rewrite anything inside `References2/` — no file, no subfolder,
 ever.** It is the vendored oracle set every wave depends on. It has been emptied twice:
@@ -119,7 +138,7 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **P1 - Host audio: APU GP/EP DSP execution + PCM sink** (active, attempt 0).
+**Current status (2026-10-23):** M-D / **P1 - Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** R1 (Release: packaging, installer, licensing review).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
@@ -769,8 +788,8 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1865 tests green**,
-  `dotnet build`/`format --verify-no-changes` clean.
+  once; conflicts were purged 2026-10-09). Baseline: **1884 tests green**,
+  `dotnet build`/`format --verify-no-changes` clean (2026-10-23).
 - **§237 + §238 (2026-10-22 late): the boot ROM is a cached, blocked image
   window, and the non-JIT run slice is 64.** `IImmutableImageDevice` +
   `AddressSpace.TryGetImmutableImageWindow` classify flash/BIOS/mirror/overlay
@@ -785,7 +804,46 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   corpus row byte-identical. §237 also **repriced the "superblock for the boot"
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
-## Session notes — newest first (wave runner retired 2026-10-15).
+## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-23 (forty-fourth; XGrid relicensed to GPL-2.0, xemu 0.8.139
+adopted as the primary port source, and the APU DSP state/DMA foundation
+lands).** Operator decision: the project may port xemu/QEMU code, but stays
+**full managed C#**; the CPU TCG is explicitly not a target.
+
+- **License and policy.** `COPYING` is the GPL-2.0 text; `LICENSE` is the
+  project notice; `THIRD_PARTY_NOTICES.md` records every reference and ported
+  module; `docs/porting-policy.md` is the binding workflow. `README.md`,
+  `sources.md`, `AGENTS.md` and `development-direction.md` now say GPL-2.0 and
+  allow porting with notices. The old "license stays non-GPL" and
+  "facts only / never copy" rules are superseded.
+- **xemu 0.8.139 is primary.** `References2/xemu-0.8.139` (commit `aa54c34`,
+  2026-10-21) is vendored; the APU/DSP subtree is byte-identical to 0.8.137, and
+  the NV2A delta is catalogued in `docs/research-notes/xemu-0.8.139.md` (37
+  `hw/xbox` files, concentrated in `nv2a/`, plus new `debug.c`/`debug_gl.h`/
+  `null/renderer.h`).
+- **xemu menu oracle is real.** xemu 0.8.139 boots the XBMC dashboard from
+  `data/xemu` with `Complex_4627.bin`, `mcpx_1.0.bin`, `eeprom.bin` and
+  `xbox_hdd.qcow2`; the screenshot is `data/xemu/xemu-0.8.139-oracle.png`.
+  `docs/research-notes/xemu-menu-oracle.md` records the config and the
+  correction: the old "xemu deadlocks at the animation wait" note was specific
+  to the 0.8.136/0.8.137 media, not xemu generally. `scripts/xemu-oracle.ps1`
+  reproduces the capture.
+- **DSP port slice 1.** `src/XGrid.Audio/Dsp/` now has `Dsp56300State`
+  (registers/memory/interrupt state), `Dsp56300Core` (reset, X/Y/P memory map,
+  bootstrap, interrupts), `Dsp56300Arithmetic` (56-bit add/sub/abs/shift/mul/
+  round/sign-extend) and `DspDma` (the xemu 0.8.139 DMA list walker). The
+  instruction interpreter (`dsp_cpu.c` + `dsp_emu.c.inc`) and the GP/EP frame
+  glue are the next P1 slices; the existing APU bridge stays the default until
+  the ported path passes.
+- **Evidence.** `XGrid.Audio` build 0 warnings; `XGrid.Audio.Tests` **42**
+  green (6 new `Dsp56300PortTests`: reset defaults, memory map/mix-buffer alias,
+  bootstrap high-byte strip, interrupt pending/counter, arithmetic, DMA FIFO
+  write). No gate anchor moved: the ported types are not on the machine path.
+  `docs/status.json` records `P1.0` done and keeps P1 active.
+- **Next.** Port the decoder/handlers (`P1.2`), then `gp_ep.c` (`P1.3`), then
+  the PCM sink (`P1.4`). Do not start a QEMU TCG port: the raw emitter is
+  already bit-exact and faster than xemu on the CPU-bound ktest.
 
 **Session 2026-10-23 (forty-third; the combined draw-flush slice lands at
 -10.33/-17.20/-10.29% menu wall - decisions §244). Track D/C, one slice landed,
@@ -2682,7 +2740,8 @@ walls (24.3 s menu / 10.1 s triangle) and MMIO slow-path members (118.9M /
 Long-run goal: at least xemu-class performance. Governing doc:
 `docs/research-notes/jit-track-charter.md` (dual-mode contract; Phase 1
 DynamicMethod block JIT authorized; Phase 3 raw emitter gated on Phase 1–2
-evidence; kill criteria; two-tier validation; license stays non-GPL). The
+evidence; kill criteria; two-tier validation; license is GPL-2.0 since
+2026-10-23). The
 accurate mode remains gate currency; fast mode (`--jit`) is never gate
 currency and is validated by sync-point differentials + `--jit-exact`
 bit-exact debugging. Next work item: Phase 0 bench + `--jit-verify` harness.

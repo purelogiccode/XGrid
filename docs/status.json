@@ -1,17 +1,17 @@
 {
   "schema": 1,
   "updated": "2026-10-23",
-  "objective": "xemu-class performance or better on the same content (operator decision 2026-10-22)",
+  "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
     "id": "P1",
-    "title": "Host audio: APU GP/EP DSP execution + PCM sink",
+    "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
     "plan": "E6",
     "status": "active",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
-    "price": "product gap; no oracle yet; scope after the DSP model is measured"
+    "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
+    "price": "xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Port in slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink. No gate anchor moves until the ported path is wired behind a flag."
   },
   "position": {
     "host": "H1",
@@ -233,12 +233,12 @@
   "queue": [
     {
       "id": "P1",
-      "title": "Host audio: APU GP/EP DSP execution + PCM sink",
+      "title": "Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#)",
       "plan": "E6",
       "status": "active",
       "depends": [],
-      "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
-      "price": "product gap; no oracle yet; scope after the DSP model is measured",
+      "acceptance": "the ported xemu 0.8.139 DSP core executes the guest microcode and a real voice stream produces PCM through a host sink; no gate regression; product smoke; full managed C#; GPL-2.0 notices",
+      "price": "xemu 0.8.139 DSP is about 300 KB of C: dsp_cpu.c 51 KB, dsp_emu.c.inc 239 KB, dsp_dma.c 13 KB, gp_ep.c 18 KB. Port in slices: state/memory/arithmetic/DMA (landed), decoder/interpreter, GP/EP frame glue, PCM sink. No gate anchor moves until the ported path is wired behind a flag.",
       "evidence": []
     },
     {
@@ -253,6 +253,14 @@
     }
   ],
   "done": [
+    {
+      "id": "P1.0",
+      "title": "GPL-2.0 relicense + porting policy + xemu 0.8.139 menu oracle + DSP state/arithmetic/DMA port",
+      "date": "2026-10-23",
+      "evidence": "COPYING/LICENSE/THIRD_PARTY_NOTICES/docs/porting-policy; xemu 0.8.139 boots the XBMC dashboard from data/xemu (screenshot data/xemu/xemu-0.8.139-oracle.png; docs/research-notes/xemu-menu-oracle.md); Dsp56300State/Dsp56300Core/Dsp56300Arithmetic/DspDma ported from xemu 0.8.139; solution build 0 warnings, solution 1884 tests green (6 new Dsp56300PortTests), format clean",
+      "commits": [],
+      "commitMessage": "license: adopt GPL-2.0 and port the xemu 0.8.139 DSP foundation (P1.0)"
+    },
     {
       "id": "C6.1",
       "title": "A 32-bit surface clear fills rows through Span<uint>.Fill",
