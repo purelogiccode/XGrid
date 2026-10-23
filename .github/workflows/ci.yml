@@ -339,41 +339,9 @@ jobs:
             Directory.Packages.props
             **/*.csproj
 
-      - name: Publish CLI
-        run: >
-          dotnet publish src/XGrid.Cli/XGrid.Cli.csproj -c Release -r ${{ matrix.rid }}
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugType=None -p:DebugSymbols=false
-          -o "publish/cli/${{ matrix.rid }}"
-
-      - name: Publish frontend
-        run: >
-          dotnet publish src/XGrid.Frontend.Avalonia/XGrid.Frontend.Avalonia.csproj -c Release -r ${{ matrix.rid }}
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:DebugType=None -p:DebugSymbols=false
-          -o "publish/frontend/${{ matrix.rid }}"
-
-      - name: Archive
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          for app in cli frontend; do
-            dir="publish/$app/${{ matrix.rid }}"
-            find "$dir" -type f \( -name '*.pdb' -o -name '*.xml' \) -delete
-            cp LICENSE README.md "$dir/"
-            if [[ "${{ matrix.rid }}" == win-* ]]; then
-              (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/dist/XGrid-$app-${{ matrix.rid }}.zip" .)
-            else
-              tar -czf "dist/XGrid-$app-${{ matrix.rid }}.tar.gz" -C "$dir" .
-            fi
-          done
-          cd dist
-          find . -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 \
-            | sort -z | xargs -0 sha256sum > "SHA256SUMS-${{ matrix.rid }}.txt"
+      - name: Build the release tree
+        shell: pwsh
+        run: ./scripts/package.ps1 -Rids ${{ matrix.rid }}
 
       - name: Upload package
         uses: actions/upload-artifact@v7

@@ -786,8 +786,19 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   trip; the CLI's 1B menu leg is the ceiling at **33.95 s -> 23.46 s (-30.9%)**.
   The software default is byte-identical everywhere (all four 1B anchors exact,
   ktest log byte-identical).
+- **Release tree (R1.1, 2026-10-23):** `scripts/package.ps1` publishes the CLI
+  and the frontend self-contained for `win-x64`/`linux-x64`/`osx-x64`/`osx-arm64`,
+  ships `COPYING` + `LICENSE` + `THIRD_PARTY_NOTICES.md` + the version's release
+  notes + `VERSION`, and writes per-RID and combined SHA-256 lists plus
+  `package-manifest.json`; `scripts/package-verify.ps1` is the acceptance gate
+  (license set, notices coverage of every ported file, archive contents, per-RID
+  executable magic, checksums/manifest, packaged CLI `--version`). The product
+  version has one source (`Directory.Build.props`, `<Version>0.1.0</Version>`) and
+  the CLI prints its assembly version. The GPL-2.0 review is
+  `docs/release-licensing-review.md`, notes are `docs/release-notes/`, and no OS
+  installer is produced (portable archives; code signing/notarization deferred).
 - Build note: keep the repo out of Dropbox sync (parallel sync corrupted files
-  once; conflicts were purged 2026-10-09). Baseline: **1884 tests green**,
+  once; conflicts were purged 2026-10-09). Baseline: **1922 tests green**,
   `dotnet build`/`format --verify-no-changes` clean (2026-10-23).
 - **§237 + §238 (2026-10-22 late): the boot ROM is a cached, blocked image
   window, and the non-JIT run slice is 64.** `IImmutableImageDevice` +

@@ -20,14 +20,14 @@ day-to-day agent entry point; this file is the priority order every agent follow
 now licensed under **GPL-2.0** (`COPYING`) and may port code from xemu, QEMU and
 the other GPL-compatible references, preserving every notice. The project stays
 **full managed C#** - no QEMU/xemu native library and no C/C++ emulator code in
-the build. `References2/xemu-0.8.139` is the primary source. The first port is
-the **APU GP/EP DSP** (`hw/xbox/mcpx/apu/dsp/`), which is the active P1; the
-state/memory/arithmetic/DMA slice is in, and the interpreter + GP/EP glue +
-PCM sink follow. The CPU TCG is **not** a port target: the raw emitter is
-already bit-exact and faster than xemu on the CPU-bound ktest; the gap is the
-boot/device/GPU path. The working xemu 0.8.139 menu oracle is
-`docs/research-notes/xemu-menu-oracle.md` (the old "xemu deadlocks" note was
-specific to the 0.8.136/0.8.137 media). Binding policy:
+the build. `References2/xemu-0.8.139` is the primary source. The first port, the
+**APU GP/EP DSP** (`hw/xbox/mcpx/apu/dsp/`), is **landed** (P1.2-P1.4: the
+interpreter, the GP/EP frame glue and a 48 kHz PCM sink); the VP mixer
+(`apu/vp/`) and the AC'97 codec path are what make it audible next. The CPU TCG
+is **not** a port target: the raw emitter is already bit-exact and faster than
+xemu on the CPU-bound ktest; the gap is the boot/device/GPU path. The working
+xemu 0.8.139 menu oracle is `docs/research-notes/xemu-menu-oracle.md` (the old
+"xemu deadlocks" note was specific to the 0.8.136/0.8.137 media). Binding policy:
 `docs/porting-policy.md`; provenance: `THIRD_PARTY_NOTICES.md`.
 
 **Status 2026-10-22 very late (39th session, §§239-240): the device stage was
@@ -126,10 +126,10 @@ in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 
 3. **E — corpus steers.** Keep the matrix; add the performance rows
    (Msteps/s, wall per presented frame) and the xemu comparison where it is a
    valid oracle. No new corpus breadth beyond the standing rows while C leads.
-4. **P — product (parallel, not blocking).** Host audio remains the largest
-   product gap. P1 is now an explicit **xemu 0.8.139 DSP port** (state/DMA in,
-   interpreter + GP/EP glue + PCM sink next), not a clean-room rewrite. Run it
-   parallel to C; do not let it displace C.
+4. **P — product (parallel, not blocking).** The **APU DSP port is landed**
+   (P1.2-P1.4: interpreter, GP/EP glue, 48 kHz PCM sink). The largest remaining
+   product gap is audible output: the **VP mixer** and the AC'97 codec path.
+   Run it parallel to C; do not let it displace C.
 5. **D — only with a measured >2% ceiling.** Unchanged.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency; the
    performance program never relaxes the ceremony.
@@ -550,6 +550,9 @@ the historical precedent, not a pattern to extend).
 
 - `dotnet build XGrid.sln -c Release`, `dotnet test`, `dotnet format
   --verify-no-changes` clean; warnings are errors.
+- Release changes: `scripts/package.ps1` on every affected RID and
+  `scripts/package-verify.ps1` green (`PACKAGE PASS`); the tree must be clean so
+  the manifest records the commit, and the version's release notes must exist.
 - ktest smoke 7/7 (~5 min, 792,800,535 steps bit-reproducible) + menu/triangle
   1B golden pairs before any perf/default-flip merge.
 - Frontend changes: `dotnet build src/XGrid.Frontend.Avalonia -c Release` +

@@ -79,7 +79,8 @@ queued -> priced -> active -> validating -> done
 
 **Target:** triangle `gl+replace` ≤ 1.20 s and menu ≤ 1.36 s at 1B, with the
 fast engine, measured against xemu where an oracle exists.
-**Current:** triangle 5.61-5.74 s, menu 18.8-20.0 s; gap ~4.7x / ~14x.
+**Current:** the generated position block at the top of this file is the source
+(1B fast: triangle 5.72-6.15 s, menu 15.6-17.5 s; ~4.9x / ~11.7x from the band).
 **Exit:** the target band, or a measured reassessment after the D2 decision. The
 milestone is not "done" on a single leg.
 
@@ -92,6 +93,14 @@ milestone is not "done" on a single leg.
 | D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
 | P1 | Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#) | done 2026-10-23 (§246) | — | the ported DSP executes the guest microcode and a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | done 2026-10-23 (R1.1: 4-RID packages + license review + release notes) | — | reproducible packages + GPL-2.0/third-party license review |
+
+**The queue is empty (SEQUENCE COMPLETE).** P1 (§246) and R1 (R1.1) closed on
+2026-10-23. What comes next needs an operator decision: the M-D performance band
+(triangle ≤ 1.20 s / menu ≤ 1.36 s at 1B, currently 5.6-6.2 s / 15.6-17.5 s), the
+remaining product gaps (VP mixer and AC'97 codec for audible output; the 4x4
+retail probe's kernel-idle wait), or the deferred release items (OS installer,
+code signing). Add the chosen task to `docs/status.json`; do not start one
+without it.
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -295,7 +304,27 @@ The CPU TCG is **not** a P1 target. XGrid's raw emitter is already bit-exact on
 both 1B gates and faster than xemu on the CPU-bound ktest; the measured gap is
 the boot/device/GPU path, not the core interpreter.
 
-WIP = 1: R1 is the active task; the P1 audio port is closed (§246).
+WIP = 1: the queue is empty as of 2026-10-23 (P1 and R1 closed); the next task
+is an operator decision recorded in `docs/status.json` (see the milestone table).
+
+**E6 result (2026-10-23, R1.1):** the release tree is real and verified.
+Packaging: `scripts/package.ps1` publishes both applications self-contained
+for `win-x64`, `linux-x64`, `osx-x64` and `osx-arm64` (8 archives, 32.7-47.7 MB),
+adds the complete GPL-2.0 set (`COPYING`, `LICENSE`,
+`THIRD_PARTY_NOTICES.md`, the release notes, `README.md`, `VERSION`) and writes
+`SHA256SUMS-<rid>.txt`, `SHA256SUMS.txt` and `package-manifest.json`; the recipe
+reproduces all 8 archives byte-identically for the same commit. Acceptance:
+`scripts/package-verify.ps1` (license text, notices coverage of every
+`// Ported from`/`// Derived from` file, archive contents, per-RID executable
+magic, checksum/manifest agreement, packaged CLI `--version`) fails the old
+recipe with 22 problems and passes the tree. Licensing:
+`docs/release-licensing-review.md` (findings F1-F6, operator actions for GPL-2
+§3 source availability, store channel and signing). Notes:
+`docs/release-notes/v0.1.0.md`. `release.yml` and `ci.yml` (its package job) run
+the same recipe, and `docs/ci.md` documents it. **Remaining in the phase:** an OS
+installer and code signing / notarization, both deferred by the review's F5/F6
+(portable archives need no install-time state; signing needs operator
+certificates).
 
 ## E7. Measured negatives (binding — do not retry)
 
@@ -357,6 +386,15 @@ WIP = 1: R1 is the active task; the P1 audio port is closed (§246).
   task is core.
 - [ ] Settings/save/load/input still work; a screenshot or a session log is the
   evidence.
+
+**Release:**
+
+- [ ] `scripts/package.ps1` produces every affected RID and the tree is clean
+  (`package-manifest.json` `dirty=false`).
+- [ ] `scripts/package-verify.ps1` reports `PACKAGE PASS` (license set, notices,
+  archive contents, per-RID magic, checksums, CLI `--version`).
+- [ ] The version's `docs/release-notes/v<version>.md` exists and is in every
+  archive; the licensing review covers any new reference/package.
 
 ## E9. Session checklist
 

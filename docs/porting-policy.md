@@ -12,7 +12,8 @@ and `THIRD_PARTY_NOTICES.md` are the binding records.
   `// SPDX-License-Identifier: <original>` at the top and a
   `// Ported from <project> <version> <path>` line below it.
 - Files that are GPL-2.0-or-later may be included under GPL-2.0; files that are
-  GPL-2.0-only stay GPL-2.0-only.  Do not relicense a ported file.
+  GPL-2.0-only stay GPL-2.0-only.  Do not relicense a ported file.  LGPL-2.0-or-later
+  files are included under GPL-2.0 through LGPL-2.0 section 3, as `LICENSE` states.
 - The project as a whole is GPL-2.0.  A distribution that contains a
   GPL-2.0-only file is therefore GPL-2.0, not GPL-3.0.
 - Update `THIRD_PARTY_NOTICES.md` and `docs/research-notes/sources.md` in the
@@ -61,20 +62,23 @@ Never copy firmware, BIOS, MCPX ROM, EEPROM or game data into the repository.
 5. **Add a differential test.**  Prefer a test that fails on the old code or a
    known-good table from the reference.  A ported module needs at least one
    behavior test, not just a compile.
-6. **Record the provenance.**  SPDX header, `Ported from ...`, notices table,
-   sources table.
+6. **Record the provenance.**  SPDX header, `Ported from ...` (or
+   `Derived from ...`), notices table, sources table.  `scripts/package-verify.ps1`
+   fails when a `src/**` file declares a port without either the SPDX line or the
+   notices row, so the policy is checked, not remembered.
 7. **Gate it.**  `dotnet build`, `dotnet test`, `dotnet format
    --verify-no-changes`; for emulator behavior, the 1B goldens and ktest smoke
-   in `docs/research-notes/next-session.md`.
+   in `docs/research-notes/next-session.md`; for a release, `scripts/package.ps1`
+   plus `scripts/package-verify.ps1`.
 
 ## 5. Priority order for ports
 
-1. **APU GP/EP DSP** (xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/`) - host audio and
-   real-game audio; the active P1.
+1. **APU GP/EP DSP** (xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/`) - **landed**
+   (P1.2-P1.4, `McpxApuDsp` + `WaveAudioBackend`, opt-in `--apu-dsp`).
 2. **NV2A missing methods and shader semantics** (xemu 0.8.139 `pgraph/`) -
    compatibility breadth.
-3. **APU VP mixer / PCM sink** (xemu 0.8.139 `apu/vp/`, `apu/apu.c`) - the
-   output path that makes the DSP audible.
+3. **APU VP mixer** (xemu 0.8.139 `apu/vp/`) and the AC'97 codec path - the
+   output path that makes the DSP audible; the next audio port.
 4. **QEMU device/CPU algorithms** only where xemu delegates to QEMU and the
    behavior is not already covered.
 

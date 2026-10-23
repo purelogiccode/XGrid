@@ -19,18 +19,27 @@ embedded, and no C/C++ emulator code is part of the build.
 The LLE console chain boots: MCPX ROM -> 1BL -> 2BL -> kernel -> dashboard XBE.
 The NV2A runs a software rasterizer and a host-GL backend; the CPU has an
 accurate interpreter and a fast raw-JIT engine; the Avalonia frontend and CLI
-are usable. Host audio and real-game compatibility are the active product gaps.
-The gates are run locally (CI is disabled; see `docs/ci.md`).
+are usable and ship as self-contained packages. The APU voice processor and the
+ported xemu 0.8.139 GP/EP DSP core execute the guest microcode (the VP mixer and
+the AC'97 codec path are still missing, so output is not yet audible).
+
+**Real games:** two retail ISOs boot with no fault (007 - Agent Under Fire runs
+its own XBE code; 4x4 Evo 2 still parks in the kernel idle loop), but no real
+title has reached a claimed gameplay frame. The verified surface is the homebrew
+corpus and the compatibility matrix in `docs/compatibility.md`; local retail
+probes are recorded in `docs/research-notes/real-game-probes.md`. The gates are
+run locally (CI is disabled; see `docs/ci.md`).
 
 ## Goals
 
-- C#/.NET 9+, NativeAOT-compatible core where practical
-- Windows, Linux, and macOS support
-- Custom Pentium III CPU emulation with an interpreter first and a JIT later
+- C#/.NET 10, NativeAOT-compatible core where practical
+- Windows, Linux, and macOS support, with reproducible self-contained packages
+- Custom Pentium III CPU emulation: accurate interpreter plus a raw x86-64 JIT
 - Xbox MCPX, NV2A, APU, IDE, USB, SMBus and related hardware
 - FATX and XDVDFS support, XBE loading
-- Vulkan graphics backend (OpenGL optional)
+- Graphics backends: portable software rasterizer and host OpenGL (Vulkan later)
 - Debugger, tracing, deterministic tests, and fuzzing
+- Reproducible releases with a reviewed license set (`docs/release-licensing-review.md`)
 
 ## Documentation
 

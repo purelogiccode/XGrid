@@ -25,7 +25,7 @@ suite is self-contained.
 | `ci.yml` / **inspectcode** | same | ReSharper InspectCode at `WARNING` severity reports **zero** findings; SARIF goes to the Security tab. |
 | `ci.yml` / **coverage** | same | Merges all 14 Cobertura reports and enforces **60% line / 50% branch** floors. |
 | `ci.yml` / **security-audit** | same | `dotnet list package --vulnerable --include-transitive` finds no advisories. |
-| `ci.yml` / **package** | push to `master` | Self-contained CLI + frontend for `win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`, with checksums. Dormant while CI is disabled (its guard requires a push to `master`). |
+| `ci.yml` / **package** | push to `master` | `scripts/package.ps1` (the same release tree as `release.yml`) for `win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`: self-contained CLI + frontend with the GPL-2.0 license set, checksums and the package manifest, verified by `scripts/package-verify.ps1`. Dormant while CI is disabled (its guard requires a push to `master`). |
 | `codeql.yml` | push, PR, weekly | CodeQL `security-and-quality` analysis for C#. |
 | `dependency-review.yml` | PR | Fails a PR that introduces a high-severity vulnerable dependency. PR-only, so it is not useful as a manual run. |
 | `release.yml` | tag `v*` | Re-verifies all three OSes, publishes every RID, generates an SPDX SBOM, attests build provenance, writes checksums and creates the GitHub release. |

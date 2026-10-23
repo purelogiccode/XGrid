@@ -71,8 +71,9 @@ frames, and the full CLI log.
    guest is likely waiting on a DVD read or a pad edge.  The existing
    `--pad-script` can test the input hypothesis.
 3. For 007, run to ~20-60B steps (snapshot at 5B first) and check whether the
-   game reaches gameplay and audio.  The APU DSP port (P1) is the likely audio
-   gate.
+   game reaches gameplay and audio.  The GP/EP DSP port (P1.3/P1.4) is in, so
+   the remaining audio gates are the **VP mixer** (`vp.c`) and the AC'97 codec
+   path - expect silence even when the DSP runs.
 4. Add a real-game row to `docs/compatibility.md` only after a run reaches a
    gameplay frame or a documented wait; a boot-animation-only run is a probe,
    not a compatibility row.

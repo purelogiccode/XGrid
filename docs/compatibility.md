@@ -51,6 +51,13 @@ The operator's `D:\Samples\XBOXReady` ISOs are tracked in
   no fault, 219 flips.  It is waiting, not executing game code - the first
   real-game compatibility gap to triage.
 
+**Answer for the compatibility question:** XGrid boots retail discs but **does
+not yet claim playable real games**. Both probes reach the loaded game image (or
+a wait) with no fault, but neither reaches a gameplay frame: 007 is still showing
+the boot animation at 5B steps and 4x4 Evo 2 sits in the kernel idle loop. The
+verified, measured surface is the homebrew corpus above (17 samples); real-game
+rows are added only after a run reaches a gameplay frame or a documented wait.
+
 These are probes, not rows.  The gate media remains `data/test-samples/`.
 
 ## The harness (one invocation per row)
