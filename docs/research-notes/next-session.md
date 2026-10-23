@@ -1,4 +1,22 @@
-# Next session instructions (updated 2026-10-23, after P1 closed: the GP/EP frame glue and the PCM sink landed; the previous §243 handoff is retained below)
+# Next session instructions (updated 2026-10-23, after R1 closed: the release tree and licensing review landed; the performance queue is D8 -> D6 -> D7)
+
+> **STATUS 2026-10-23 (47th session) - the release task R1 is COMPLETE and the
+> performance queue is set.** R1.1 shipped a reproducible 4-RID release tree
+> (`scripts/package.ps1` + `scripts/package-verify.ps1`, 8 archives, license set,
+> checksums, manifest; `docs/release-licensing-review.md`), so the project has a
+> distributable build. The active task is **D8** (engine-shape decision v2:
+> per-member/edge + boot attribution, then a written decision), queued behind it
+> **D6** (device remainder: compiled transform evaluator + fill path) and **D7**
+> (boot: the first 100M steps are 33% of the triangle wall). The reason is in
+> `ImplementationPlan.md` E1/E5b: zeroing every non-runner stage still leaves the
+> triangle's 3.43 s runner 2.9x off the 1.20 s band, and the boot alone (1.93 s)
+> is 1.6x it, so the negative table cannot close the target. **Porting is not
+> license-limited** (xemu/QEMU are GPL-2.0 like XGrid): D8 may select a ported
+> reference shape (QEMU/xemu TCG, xemu PGRAPH draw path) as full managed C#, and
+> every port keeps the SPDX/`Ported from`/notices rules in
+> `docs/porting-policy.md`. Gates are unchanged; all anchors still exact.
+> **Remaining product gap: the VP mixer** (`vp.c`) and the AC97 codec; it needs
+> its own task, do not reopen P1.
 
 > **STATUS 2026-10-23 (46th session) - P1 is COMPLETE and R1 is next.** The
 > xemu 0.8.139 APU DSP port is finished for its price: state/memory/arithmetic/
@@ -241,6 +259,12 @@ first step, and the reopen condition for `D3`.
   (real-time band), so the gap is now **~4.7x / ~14x**.
 
 ## 2. Recommended next session - pick one
+
+> **Queue mapping (2026-10-23):** the options below are superseded by
+> `docs/status.json`: Option A is **D6** (compiled transform evaluator, priced
+> 9.5-10.7% menu), Option B's edge-removal idea is one of **D8**'s candidates,
+> and the active task is **D8** (measurement + decision). Option C stays the
+> corpus backlog. Do not start A or B before D8 selects it.
 
 ### Option A (Track C/B): the interpreted vertex program is 428 ms of the triangle and ~x2.7 of the menu
 

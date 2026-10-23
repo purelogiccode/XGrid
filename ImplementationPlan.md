@@ -1,9 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 16.
+**Current status (2026-10-23):** M-D / **D8 - Engine-shape decision v2: the per-member/edge and boot probe** (active, attempt 0).
+**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -81,26 +82,62 @@ queued -> priced -> active -> validating -> done
 fast engine, measured against xemu where an oracle exists.
 **Current:** the generated position block at the top of this file is the source
 (1B fast: triangle 5.72-6.15 s, menu 15.6-17.5 s; ~4.9x / ~11.7x from the band).
-**Exit:** the target band, or a measured reassessment after the D2 decision. The
-milestone is not "done" on a single leg.
+**Exit:** the target band, or a written restatement from D8 if no measured engine
+option clears the bar. The milestone is not "done" on a single leg.
+
+### The budget the target implies (measured 2026-10-23)
+
+D2 (post-D1) and D3's stage timers, 1B fast `gl+replace`, gate media. Device
+writes are *inclusive* (they execute inside the non-JIT runs), so the rows do not
+sum.
+
+| stage | triangle | menu | note |
+|---|---:|---:|---|
+| wall | 5.72-6.15 s | 15.6-17.5 s | target 1.20 / 1.36 s |
+| native raw runner | 3.43 s (59%) | 12.80 s (78%) | 6.26 / 14.77 ns per served member |
+| formation + chain | ~1.1 s | ~1.7 s | Iced `Assemble` is ~66% of formation |
+| non-JIT short runs | ~1.3 s | ~1.8 s | device work runs inside these |
+| - device writes | 0.62 s | 6.57 s pre-D5 | draw flushes are the bulk |
+| boot, steps 0-100M | **1.93 s** | 1.62 s | shared by every 1B leg |
+
+**What the target actually requires:** 1B ≤ 1.20 s means the boot must cost
+≤ 0.20 s and the remaining 900M steps ≤ 1.00 s (**≤ 1.11 ns/step** including
+device and non-JIT). Today the 900M steady state is ~3.9 s triangle (4.3 ns/step)
+and ~14.0 s menu (15.6 ns/step), and the native runner is 6.3 / 14.8 ns per
+served member. **The boot alone is 1.6x the triangle target, and the triangle's
+runner alone is 2.9x it** - so no combination of the priced single-digit slices
+closes the band. That is the arithmetic D8 exists to resolve.
+
+### Reporting currency (binding)
+
+- Primary: **ns per served member** (steady state = the 1B leg minus the 100M
+  leg), **wall per presented frame**, and **real-time ratio** (guest steps per
+  host second / 733M).
+- 1B walls remain continuity anchors, never the only evidence. Every A/B leg
+  carries `--jit-timing` and the 100M leg so a boot/device win is reported as
+  such instead of being read as an engine win (D3's lesson).
+- A task is "on track" only if it moves a primary metric, or if it delivers a
+  measured decision that changes the target.
 
 | id | task | status | depends | acceptance |
 |---|---|---|---|---|
 | D1 | C6 draw-flush half: compile or cache the active transform program | done 2026-10-23 (§241) | — | ≥10% wall or ≥20% engine; exact anchors; no vertex output change |
 | D2 | C7 engine-shape decision | done 2026-10-23 (§242) | D1 | a written decision with a measured ceiling per option |
 | D3 | Menu-only wall decomposition and the top menu item | done 2026-10-23 (§243, negative: the hoist alone is -8.0%) | D2 | the menu-only ~13 s is decomposed and the top item is priced |
-| D4 | Conditional: implement the engine shape chosen in D2 | blocked - D2 chose (a); only a ≥20% per-member probe reopens it | D2 | only if D2 chooses it and the price clears the bar |
+| D4 | Conditional: implement the engine shape selected by D8 | blocked until D8 selects an option and it clears the bar | D2, D8 | ≥20% engine or ≥10% wall on 3/3 interleaved pairs |
 | D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
+| D6 | Device remainder: compiled transform evaluator + fill path | queued after D8 | D5 | ≥10% menu wall; exact anchors; executor fallback |
+| D7 | Boot path: make the first 100M steps cheaper | queued after D8 | D5 | ≥10% triangle wall; exact anchors; ktest log identical |
+| D8 | Engine-shape decision v2: the per-member/edge and boot probe | **active** | D5 | a measured attribution table + one selected option with a ceiling |
 | P1 | Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#) | done 2026-10-23 (§246) | — | the ported DSP executes the guest microcode and a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | done 2026-10-23 (R1.1: 4-RID packages + license review + release notes) | — | reproducible packages + GPL-2.0/third-party license review |
 
-**The queue is empty (SEQUENCE COMPLETE).** P1 (§246) and R1 (R1.1) closed on
-2026-10-23. What comes next needs an operator decision: the M-D performance band
-(triangle ≤ 1.20 s / menu ≤ 1.36 s at 1B, currently 5.6-6.2 s / 15.6-17.5 s), the
-remaining product gaps (VP mixer and AC'97 codec for audible output; the 4x4
-retail probe's kernel-idle wait), or the deferred release items (OS installer,
-code signing). Add the chosen task to `docs/status.json`; do not start one
-without it.
+The queue is **D8 → D6 → D7** (WIP = 1; D8 first because it is a cheap
+measurement that decides whether the next spend is engine work or a target
+restatement). The product gaps that are not on this queue: the VP mixer /
+AC'97 codec (audible output) and the 4x4 retail probe's kernel-idle wait; both
+are recorded in E6 and `docs/research-notes/next-session.md` and are picked up
+as separate tasks, not folded into a performance slice.
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -253,6 +290,102 @@ all four accurate goldens byte-identical to the stashed base build
 (40,797 B) byte-identical at 792,800,535 steps and SMOKE PASS 7/7, suite
 1874 -> 1878. No snapshot change.
 
+## E5b. D6/D7/D8 - the M-D continuation (queued 2026-10-23)
+
+**Why this section exists.** D5 closed the item D2 promoted, and the measured
+budget in E1 says the current shape cannot reach the band: the triangle's native
+runner alone is 3.43 s (2.9x the whole 1.20 s target), its boot alone is 1.93 s
+(1.6x), and the menu's runner is 12.80 s (9.4x the 1.36 s target). Every engine
+transformation measured so far is below the 10% wall / 20% engine bar, so the
+next move is not another slice. It is (a) the two build items that are priced
+today, and (b) a new measurement that lets the engine decision be reopened with
+a number instead of a guess. D2 left exactly that hook open (D4 reopens on a
+>=20% engine probe). Order: **D8 -> D6 -> D7**, WIP = 1.
+
+### D8 - Engine-shape decision v2 (measurement + written decision)
+
+**Price:** a measurement task; it claims no wall. It exists because the priced
+levers cannot close E1's arithmetic, so the next spend must be decided by data.
+The working target is **steady-state <=2 ns per served member** (the 1.20 s band
+implies ~1.1 ns/step on the post-boot 900M steps, device and non-JIT included),
+and the boot must fall from 1.93 s to <=0.20 s for the triangle target to exist
+at all.
+
+**Measure**, on gate media, fast mode, `--jit-timing`, at 100M **and** 1B, for
+both titles:
+
+1. **Runner attribution** - ns per served member split by block length
+   (1-4 / 5-8 / 9+ members), by entry vs chained, and by member class (memory
+   load/store, ALU, branch). §242/§243 say ~55% of the menu mix is
+   MovLoad/MovStore and ~14% DecR; the probe must attribute the 6.26 / 14.77 ns
+   instead of assuming it.
+2. **Edge census** - chained edges vs entries, members per edge, and the static
+   host instruction count per edge (the emitter knows it; add a counter to the
+   emission path, not a Stopwatch per member).
+3. **Boot split (0-100M)** - formation (`Assemble` vs IL), non-JIT, runner,
+   device, and the 55,215 heads below the build threshold with their per-head
+   formation cost by source (RAM / ROM / immutable image).
+4. **Steady state (100M-1B delta)** - the same cells, so the boot does not hide
+   engine work.
+
+**Acceptance:** the four tables for both titles, plus a written decision that
+selects exactly one of:
+ (a) **self-loop / edge elimination** - the hot 4-member loop pays ~60 host
+     instructions per edge at ~6 ns/member (§239); price a self-loop fast path
+     and its poll-contract cost;
+ (b) **short-block trace or fusion** - N8 (-82% invocations, +40% wall) and N3
+     (3-5%) are binding; a new design must name which of their costs it removes;
+ (c) **memory-probe / data-path reshape** - N1 (host pointers) and N9 (1024-slot
+     cache) are binding; a new design must not be either of them;
+ (d) **port the reference's engine/device shape** - xemu/QEMU are GPL-2.0, so
+     porting is legal and now the default when the reference implements the
+     module (`docs/porting-policy.md`). Candidates, each priced separately:
+     QEMU/xemu `tcg/` block translation for the CPU, and xemu's
+     `hw/xbox/nv2a/pgraph/` draw path (the device stage is 6.57 s of the menu
+     wall) or its GL renderer. A port is full managed C#, keeps the notices, and
+     needs a bounded prototype before the full module;
+ (e) **restate the target** - if no option clears the bar, write that down and
+     replace the 1B band with the supported-corpus target (steady-state ns per
+     presented frame).
+The selected option carries a ceiling estimate and a stage plan; >=20% engine
+(or >=10% wall) is the build bar. Option (d) is a port, not a performance slice:
+its price is the module boundary + the prototype's measured cost, and it may be
+chosen for correctness/completeness even when its wall share is below the bar.
+
+**DoD:** temporary probes removed before the commit unless they cost nothing and
+stay behind `--jit-timing`; no guest-visible change; both 1B fast anchors and
+all four accurate goldens exact; the decision recorded in `docs/status.json` and
+this plan.
+
+### D6 - Device remainder: compiled transform execution and the fill path
+
+**Price:** the compiled transform evaluator was priced at **9.5-10.7% menu
+wall** (§243, flagged high risk); the fill-path hoist already landed in D5.
+Post-D1 the menu transform is 2.2-2.5 s of the wall; the triangle transform is
+~202 ms, so this is a menu item.
+
+**Acceptance:** >=10% menu wall on 3/3 interleaved pairs (or >=20% `executeMs`
+when the wall is host-noise bound), `--jit-timing` on every leg, exact anchors,
+`BackendUnsupported=0 composedFrames=0`, both 1B GL frames byte-identical, and
+the 400-program fuzz plus the per-vertex bit-identity against `VshProgramPlan`.
+**Fallback:** keep `VshProgramPlan` as the executor; a compiled form is a
+replacement, never a second semantic source.
+
+### D7 - The boot: the first 100M steps are 33% of the triangle wall
+
+**Price:** boot is **1.93 s triangle / 1.62 s menu** (D3.1), and 1.20 s cannot be
+met with a 1.93 s boot. The known levers are the encoder (8.0% triangle / 4.9%
+menu, N4) and trace formation (3-5%, N3); both are below the bar alone, so this
+task measures first: split the boot by stage (item 3 of D8) and price the
+unbuilt-head population by source class. A combined lever (encoder + a
+prebuilt/plan cache for immutable image code) is the only shape that can clear
+the bar on paper.
+
+**Acceptance:** >=10% triangle wall on 3/3 interleaved pairs from whatever
+combination the split justifies, exact anchors, byte-identical ktest log. If the
+measured ceiling stays below 10%, record the negative and hand the target to
+D8's option (d).
+
 ## E6. P1 / R1 — parallel product and release
 
 **P1 is a porting task, not a performance slice.** The 10% wall / 20% engine
@@ -300,12 +433,14 @@ is GPL-2.0 and the port is full managed C#; the reference is
   version now has one source (`Directory.Build.props`), and the CLI prints its
   assembly version.
 
-The CPU TCG is **not** a P1 target. XGrid's raw emitter is already bit-exact on
-both 1B gates and faster than xemu on the CPU-bound ktest; the measured gap is
-the boot/device/GPU path, not the core interpreter.
+The CPU TCG is **not** a P1 target, but it is **not excluded by licensing**: the
+project is GPL-2.0, same as xemu/QEMU. It is a sized option in D8 because the raw
+emitter is already bit-exact on both 1B gates and faster than xemu on the
+CPU-bound ktest; the measured gap is the boot/short-block/device shape, and D8
+prices a TCG-shaped port against the edge/formation options.
 
-WIP = 1: the queue is empty as of 2026-10-23 (P1 and R1 closed); the next task
-is an operator decision recorded in `docs/status.json` (see the milestone table).
+WIP = 1: the queue is **D8 → D6 → D7** (see E1/E5b); `docs/status.json` is the
+authority.
 
 **E6 result (2026-10-23, R1.1):** the release tree is real and verified.
 Packaging: `scripts/package.ps1` publishes both applications self-contained
@@ -536,12 +671,14 @@ the primary snapshot until the 0.8.137 adoption on 2026-10-20). Do not add
 Xermu to any list, and do not treat historical citations to it (including
 `xgrid-architecture-decisions.md`) as facts.
 
-**Licensing rule:** no source code is copied from xemu, Cxbx, or xqemu (GPL/LGPL).
-Only facts are extracted. XISOSharp (MIT) may be referenced as a dependency; preserve
-its notices and the extract-xiso advertising clause if any code is adapted. envytools and
-nv2a-trace are MIT and Copetti is CC BY 4.0 — still facts-only by default: record any reuse
-in `sources.md` (and attribute Copetti) before using it. Never commit copyrighted firmware,
-EEPROMs, BIOS images, or game data.
+**Licensing rule (SUPERSEDED 2026-10-23 - see `docs/porting-policy.md`):** XGrid
+is GPL-2.0 and may port code from xemu, QEMU, Cxbx and xqemu with their notices;
+the earlier "no source code is copied / facts only" rule no longer applies. The
+still-binding constraints are: full managed C# (no QEMU/xemu native code in the
+build) and the provenance rules (SPDX + `Ported from` + `THIRD_PARTY_NOTICES.md`
++ `sources.md`). XISOSharp (MIT) remains a dependency with its notices; Copetti
+is CC BY 4.0 and needs attribution if its content (not just facts) is reused.
+Never commit copyrighted firmware, EEPROMs, BIOS images, or game data.
 
 ### Reference study deliverables
 
@@ -4758,8 +4895,10 @@ FWAIT does not yet deliver #MF for unmasked x87 exceptions.
   namespaces, `LangVersion latest`, `TreatWarningsAsErrors true`, deterministic builds.
 - **Style**: no comments except where behavior is non-obvious; no `#region`; public API documented
   with XML docs. Hot paths follow plan section 31 (no LINQ/boxing/allocation).
-- **Licensing**: consult `docs/research-notes/sources.md`. Never copy reference code. XISOSharp
-  (MIT) is the only permitted third-party library, behind an interface/adapter.
+- **Licensing** (superseded 2026-10-23): XGrid is GPL-2.0 and may port code from
+  xemu/QEMU/Cxbx under `docs/porting-policy.md` (SPDX + `Ported from` + notices).
+  XISOSharp (MIT) is a dependency behind an interface/adapter and keeps its
+  notices; other third-party packages are listed in `THIRD_PARTY_NOTICES.md`.
 - **Definition of done per phase**: builds clean; all tests pass; new public APIs documented;
   analyzers/format clean; acceptance criteria met; research note updated if a fact changed.
 - **Test naming**: `Method_Scenario_Expected`. Devices get a register/state test; parsers get

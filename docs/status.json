@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "NONE",
-    "title": "No eligible queued task; add one to docs/status.json",
-    "plan": "",
-    "status": "complete",
+    "id": "D8",
+    "title": "Engine-shape decision v2: the per-member/edge and boot probe",
+    "plan": "E5b",
+    "status": "active",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": "",
-    "price": ""
+    "acceptance": "a measured attribution table (runner by block length/member class, edge census, boot split, steady-state delta) for both titles + one selected option with a ceiling and stage plan",
+    "price": "a measurement task; it decides whether the next spend is engine work or a target restatement"
   },
   "position": {
     "host": "H1",
@@ -230,7 +230,46 @@
       "track": "Performance & finish"
     }
   ],
-  "queue": [],
+  "queue": [
+    {
+      "id": "D8",
+      "title": "Engine-shape decision v2: the per-member/edge and boot probe",
+      "plan": "E5b",
+      "status": "active",
+      "depends": [
+        "D5"
+      ],
+      "acceptance": "a measured attribution table (runner by block length/member class, edge census, boot split, steady-state delta) for both titles + one selected option with a ceiling and stage plan",
+      "price": "a measurement task; it decides whether the next spend is engine work or a target restatement",
+      "evidence": []
+    },
+    {
+      "id": "D6",
+      "title": "Device remainder: compiled transform execution and the fill path",
+      "plan": "E5b",
+      "status": "queued",
+      "depends": [
+        "D5",
+        "D8"
+      ],
+      "acceptance": ">=10% menu wall on 3/3 interleaved pairs (or >=20% executeMs), exact anchors, BackendUnsupported=0 composedFrames=0, both 1B GL frames byte-identical, 400-program fuzz + per-vertex bit-identity",
+      "price": "compiled transform evaluator priced at 9.5-10.7% menu wall (S243); post-D1 transform is 2.2-2.5 s of the menu wall",
+      "evidence": []
+    },
+    {
+      "id": "D7",
+      "title": "Boot path: make the first 100M steps cheaper",
+      "plan": "E5b",
+      "status": "queued",
+      "depends": [
+        "D5",
+        "D8"
+      ],
+      "acceptance": ">=10% triangle wall on 3/3 interleaved pairs, exact anchors, byte-identical ktest log; else record the negative and hand the target to D8 option (e)",
+      "price": "boot is 1.93 s triangle / 1.62 s menu (33%/10% of the walls); encoder 8.0%/4.9% and trace 3-5% are the known levers",
+      "evidence": []
+    }
+  ],
   "done": [
     {
       "id": "P1.0",

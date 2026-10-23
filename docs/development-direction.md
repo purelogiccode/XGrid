@@ -7,9 +7,10 @@ day-to-day agent entry point; this file is the priority order every agent follow
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 16.
+**Current status (2026-10-23):** M-D / **D8 - Engine-shape decision v2: the per-member/edge and boot probe** (active, attempt 0).
+**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
 > The generated block above is the current status; the narrative below is
@@ -111,12 +112,19 @@ in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 
    (~596 ms of the triangle wall, >=2.6 s of the menu's transform stage alone);
    C4 measured null (§232a) and §239 proved the runner is latency- not
    instruction-bound.**
-   **C7 is decided (2026-10-23, §242):** option (a) — keep the raw engine and
-   take the device/draw-flush path. The engine-shape program is closed: the
-   encoder (~8%/5%), trace formation (≤6%/≤4.4%), code volume (0% wall) and the
-   C4 probe (null) are all below the bar, and a native core has no measured
-   mechanism, so it cannot be priced. **D3 (menu decomposition) is next; D4
-   (a new engine shape) is conditional on a per-member probe ≥20% engine.**
+   **C7 was decided (2026-10-23, §242):** option (a) — keep the raw engine and
+   take the device/draw-flush path. That path paid twice more (D1 §241, D5
+   §244: the combined draw-flush slice -10.3% menu, 6/6 pairs), and the queue is
+   now **D8 → D6 → D7** (ImplementationPlan E1/E5b, `docs/status.json`):
+   **D8** re-measures the per-member/edge and boot attribution with a hard
+   target (steady-state ≤2 ns/member) and selects one option — including, now
+   that the license point is settled, **porting the reference's engine/device
+   shape** (QEMU/xemu TCG, xemu PGRAPH draw path); **D6** is the priced device
+   remainder (compiled transform evaluator, 9.5-10.7% menu); **D7** attacks the
+   boot (1.93 s triangle = 33% of that wall, 1.6× the whole 1.20 s target).
+   The arithmetic in E1 is the reason: zeroing every non-runner stage still
+   leaves the triangle's 3.43 s runner 2.9× off the band, so the engine decision
+   must be reopened with data, not closed by the negative table.
 2. **B — bounded finish of the in-flight B3 slice — DONE 2026-10-22 (§236).**
    The GL product renderer's computed-mode panel was black because a cube stage
    had no word source; it now samples a host 2D-array texture decoded from the
@@ -137,16 +145,19 @@ in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 
 **Price every stage first.** Each stage starts with a 100M-step ablation that
 prices its ceiling (the §199n pattern: elide the mechanism, measure the wall).
 If the ceiling is <10% wall, stop and re-scope rather than land a polish pass.
-**C5 slice 1 landed and the full trace was priced at 3-5% (§235), so the
-block-fusion re-measure is moot; the next stage is the draw-flush half.**
+**The draw-flush half landed (D1 + D5); the next stage is D8's measurement, not
+another slice** - the trace was priced at 3-5% (§235) and the engine's remaining
+levers are all below the bar on their own measurements.
 
-**Kill/reassess.** If C4+C5 do not reach ≥3× engine improvement after two
-structural iterations, stop and reassess the approach (memory model, trace
-formation, or a native core) rather than polishing. The xemu-class target is
-the aim, not a promise; the measured stage results decide. **Status 2026-10-22
-very late:** the criterion is met (C4 null, C5 slice 1 -3/-4%); C6's device
-stage paid -10.6%, so the reassessment is scheduled after the draw-flush half —
-the last priced CPU-side item.
+**Kill/reassess.** If the engine program does not reach ≥3× engine improvement
+after two structural iterations, stop and reassess the approach (memory model,
+trace formation, or a ported reference core) rather than polishing. The
+xemu-class target is the aim, not a promise; the measured stage results decide.
+**Status 2026-10-23:** C4 null and C5 slice 1 -3/-4% met the first criterion; C6
+then paid -10.6%, D1 -25/-31% menu and D5 -10.3%. The reassessment is **D8**: a
+per-member/edge/boot attribution with a hard steady-state target and a written
+decision, where "port the reference's shape" (GPL-2.0, full managed C#) is a
+first-class option.
 
 **Why not B first?** B3 is a correctness item for one homebrew row; C is
 ~70-90% of every product wall and the stated long-run objective. B3 is bounded

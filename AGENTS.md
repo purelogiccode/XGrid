@@ -69,9 +69,11 @@ C#**: port algorithms, do not embed QEMU/xemu or add C/C++ emulator code. A
 ported file keeps its original copyright/license notice, gets an SPDX line and a
 `Ported from <project> <version> <path>` line, and is recorded in
 `THIRD_PARTY_NOTICES.md` + `docs/research-notes/sources.md`. The full workflow
-is `docs/porting-policy.md`. The first port target is the xemu 0.8.139 APU GP/EP
-DSP; the CPU TCG is explicitly not a target (the raw emitter is already
-bit-exact and faster than xemu on the CPU-bound ktest).
+is `docs/porting-policy.md`. **There is no license wall**: xemu and QEMU are
+GPL-2.0, the same license family as XGrid, so any bounded module may be ported
+as full managed C# with the provenance rules. The DSP port is the model; a CPU
+TCG port is *allowed* but is a sized option (D8), not a default - the raw emitter
+is already bit-exact and faster than xemu on the CPU-bound ktest.
 
 **Never delete, move, or rewrite anything inside `References2/` — no file, no subfolder,
 ever.** It is the vendored oracle set every wave depends on. It has been emptied twice:
@@ -138,9 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 16.
+**Current status (2026-10-23):** M-D / **D8 - Engine-shape decision v2: the per-member/edge and boot probe** (active, attempt 0).
+**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -150,19 +153,22 @@ Canonical order: `docs/development-direction.md`; fast-mode charter:
 better** (operator decision 2026-10-22). Hard rules:
 
 1. **Track C (performance) leads; the 2026-10-20 freeze is lifted.** The GL
-   present path is done (~1.3 s of the menu wall, was ~9.9 s), and §§237–240
-   moved the headline legs to **triangle `gl+replace` 5.61-5.74 s / menu
-   18.8-20.0 s** at 1B — a ~4.7× / ~14× gap to xemu's 1.2 s and the 1.36 s
+   present path is done (~1.3 s of the menu wall, was ~9.9 s), and the campaign
+   has moved the headline legs to **triangle `gl+replace` 5.72-6.15 s / menu
+   15.6-17.5 s** at 1B — a ~4.9x / ~11.7x gap to xemu's 1.2 s and the 1.36 s
    real-time band. The CPU/device engine is still the dominant share. Program:
    **C4** flat memory model/soft TLB (**measured null, §232a**), **C4b** image
    windows (**landed, §237**), **C5** trace formation (**slice 1, §233**; the
-   full trace is priced at 3-5%, §235), **C6** device/MMIO fast path (**clear
-   fill landed, §240**; next is the draw-flush half, 766 ms of which 413-435 ms
-   is the interpreted vertex program), then the **C7** engine-shape decision.
-   Each stage: same-window A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters
+   full trace is priced at 3-5%, §235), **C6** device/MMIO and draw flush
+   (**clears -10.6% §240, transform plan -25/-31% menu D1 §241, combined
+   draw-flush -10.3% menu D5 §244**), then the **D8** engine-shape decision v2
+   (measurement first; see `ImplementationPlan.md` E1/E5b). The budget decides
+   it: the triangle's runner alone is 2.9x the target and its boot alone is 1.6x,
+   so the queue is **D8 -> D6 -> D7** and D8 may select a ported reference shape
+   (GPL-2.0, full managed C#) as well as edge/trace/memory designs.
+   Each stage: same-window A/B >=10% wall or >=20% engine, exact 1B SHAs/counters
    on both titles, flag-off byte-identical, ktest log byte-identical.
-   Incremental sub-2% slices remain banned. The C7 reassessment is due after the
-   draw-flush slice.
+   Incremental sub-2% slices remain banned.
 2. **Track B is closed (§236).** The GL product renderer's computed-mode panel
    now renders: a cube stage samples a host 2D-array texture decoded from the
    guest's swizzled faces (gap 12), agreeing with software within 2 pixels of

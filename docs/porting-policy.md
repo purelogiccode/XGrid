@@ -31,6 +31,25 @@ and `THIRD_PARTY_NOTICES.md` are the binding records.
 - Existing native *APIs* (OpenGL through Silk.NET, XInput, host audio) are
   allowed; they are host APIs, not an embedded emulator.
 
+**There is no license wall.**  xemu is GPL-2.0 (per-file GPL-2+/LGPL-2+/MIT) and
+the QEMU base is GPL-2.0, i.e. the same license family as XGrid.  Any bounded
+module in `References2/` may be ported - CPU, devices, NV2A, APU, whatever the
+task needs - subject only to the provenance rules (§1, §4) and the **full
+managed C#** rule above.  The former "facts only / clean-room" framing is
+superseded; it must not be cited as a reason to avoid a port.
+
+**Port before rewrite.**  When a GPL-compatible reference implements the module,
+porting its structure is the default and a fresh design needs a reason (the
+reference is wrong, unmaintained, or its shape does not fit the seam).  The DSP
+port is the model: the reference's decoder and handler bodies were taken
+verbatim in semantics, and the differential vectors prove it.
+
+**Price a port like any other slice.**  A port is not free: it is read, adapted,
+tested and kept in sync with the reference.  Large ports (the CPU TCG, the NV2A
+PGRAPH draw path) need a priced prototype or a measured per-stage target before
+the full port, exactly like a performance slice.  The license makes the port
+*legal*; the plan still has to make it *worth doing*.
+
 ## 3. Allowed sources
 
 | Source | Version | License | Use |
@@ -76,12 +95,25 @@ Never copy firmware, BIOS, MCPX ROM, EEPROM or game data into the repository.
 1. **APU GP/EP DSP** (xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/`) - **landed**
    (P1.2-P1.4, `McpxApuDsp` + `WaveAudioBackend`, opt-in `--apu-dsp`).
 2. **NV2A missing methods and shader semantics** (xemu 0.8.139 `pgraph/`) -
-   compatibility breadth.
+   compatibility breadth; the draw path (`draw.c`, `surface.c`, the GL
+   renderer) is also the device-stage candidate for D6.
 3. **APU VP mixer** (xemu 0.8.139 `apu/vp/`) and the AC'97 codec path - the
    output path that makes the DSP audible; the next audio port.
-4. **QEMU device/CPU algorithms** only where xemu delegates to QEMU and the
+4. **CPU engine** - xemu/QEMU `tcg/` is **allowed** and is one of D8's priced
+   options, not a default.  The measured reason it is not already the plan: the
+   raw emitter is bit-exact, faster than xemu on the CPU-bound ktest, and a C#
+   TCG port is a large program whose per-instruction cost is unproven in
+   managed code.  D8 must price it against the trace/edge/memory-probe options
+   before anyone starts it.
+5. **QEMU device/CPU algorithms** only where xemu delegates to QEMU and the
    behavior is not already covered.
 
-Do not start a CPU TCG port: XGrid's raw emitter is already bit-exact on both
-gates and faster than xemu on the CPU-bound ktest.  The measured gap is the
-boot/device/GPU path, not the core interpreter.
+The CPU engine decision is a **measurement**, not a license question: the port
+is legal because both projects are GPL-2.0, and the plan chooses it only if the
+prototype beats the current engine on the gate workloads.
+
+Do not start a full CPU TCG port **without D8's price**: it is legal (GPL-2.0),
+but it is a large program and XGrid's raw emitter is already bit-exact on both
+gates and faster than xemu on the CPU-bound ktest.  The gap is the
+boot/device/short-block shape, not the core interpreter; D8 decides whether a
+TCG-shaped design (or a cheaper edge/formation design) is the way to attack it.
