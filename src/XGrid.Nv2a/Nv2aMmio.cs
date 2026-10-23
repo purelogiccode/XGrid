@@ -4417,6 +4417,24 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        // Inside a GPU write batch the fast adapter's write is a plain 4-byte
+        // RAM store, so a 32-bit clear can fill whole rows through a span
+        // instead of paying one interface call plus a bounds check per pixel
+        // (measured ~20 ns/pixel, ~0.5 s of a 1B-step triangle leg - the
+        // clears were its whole cost). Only the exactly in-range, 4-byte
+        // aligned case takes the fast lane; everything else keeps the
+        // per-pixel loop and its partial-fill-on-overflow behaviour.
+        if (bytes == 4
+            && (offset & 3u) == 0
+            && (pitch & 3u) == 0
+            && _memoryFast is not null
+            && _memoryFast.TryGetRamBytes(out byte[]? ramBytes, out uint ramSize)
+            && (ulong)offset + ((ulong)ymax * pitch) + ((ulong)xmax * bytes) + bytes <= ramSize)
+        {
+            FillSurfaceRows(ramBytes, offset, pitch, xmin, ymin, xmax, ymax, pixel);
+            return;
+        }
+
         for (uint y = ymin; y <= ymax; y++)
         {
             uint row = offset + (y * pitch);
@@ -4440,6 +4458,31 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     WriteGpu(address & ~3u, (current & ~mask) | ((pixel << (int)shift) & mask));
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Fills a 32-bit clear rect through the RAM view: one span fill per row,
+    /// byte-identical to the per-pixel <c>WriteGpu</c> loop for a 4-byte
+    /// aligned surface on a little-endian host, with no watch bookkeeping
+    /// (the caller's GPU batch already suppresses it).
+    /// </summary>
+    private static void FillSurfaceRows(
+        byte[] ramBytes,
+        uint offset,
+        uint pitch,
+        uint xmin,
+        uint ymin,
+        uint xmax,
+        uint ymax,
+        uint pixel)
+    {
+        int width = (int)(xmax - xmin + 1);
+        Span<uint> ram = MemoryMarshal.Cast<byte, uint>(ramBytes.AsSpan());
+        for (uint y = ymin; y <= ymax; y++)
+        {
+            int start = (int)((offset + (y * pitch)) >> 2) + (int)xmin;
+            ram.Slice(start, width).Fill(pixel);
         }
     }
 

@@ -10,6 +10,8 @@ public sealed class PfifoPusherTests
     {
         private readonly byte[] _data = new byte[size];
 
+        public byte[] Bytes => _data;
+
         public void WritePhysical(uint address, uint value)
         {
             _data[address] = (byte)value;
@@ -40,6 +42,135 @@ public sealed class PfifoPusherTests
         nv2A.Write(Base + 0x7111C4u, 4, 0x0000FFFFu);
         nv2A.Write(Base + 0x7111C8u, 4, 0x00000000u);
         return (nv2A, memory);
+    }
+
+    /// <summary>
+    /// The production adapter's fast lanes: the RAM array view plus the batched
+    /// direct word write the clear fast path replaces (§239).
+    /// </summary>
+    private sealed class FastArrayMemory(int size = 0x10000) : IGpuMemory, IGpuMemoryFast
+    {
+        private readonly byte[] _data = new byte[size];
+        private bool _batch;
+
+        public byte[] Bytes => _data;
+
+        public long FastWrites { get; private set; }
+
+        public void BeginGpuBatch()
+        {
+            _batch = true;
+        }
+
+        public void EndGpuBatch()
+        {
+            _batch = false;
+        }
+
+        public bool TryReadPhysical(uint address, out uint value)
+        {
+            if (address < (uint)_data.Length && address <= (uint)_data.Length - 4u)
+            {
+                value = ReadPhysical(address);
+                return true;
+            }
+
+            value = 0;
+            return false;
+        }
+
+        public bool TryWritePhysical(uint address, uint value)
+        {
+            if (!_batch || address > (uint)_data.Length - 4u)
+            {
+                return false;
+            }
+
+            WritePhysical(address, value);
+            FastWrites++;
+            return true;
+        }
+
+        public bool TryGetRamBytes(out byte[] bytes, out uint size)
+        {
+            bytes = _data;
+            size = (uint)_data.Length;
+            return true;
+        }
+
+        public void WritePhysical(uint address, uint value)
+        {
+            _data[address] = (byte)value;
+            _data[address + 1] = (byte)(value >> 8);
+            _data[address + 2] = (byte)(value >> 16);
+            _data[address + 3] = (byte)(value >> 24);
+        }
+
+        public uint ReadPhysical(uint address)
+        {
+            return (uint)(_data[address] | (_data[address + 1] << 8) | (_data[address + 2] << 16) |
+                          (_data[address + 3] << 24));
+        }
+    }
+
+    private static (Nv2AMmio Nv2a, FastArrayMemory Memory) CreateFastChannel()
+    {
+        var memory = new FastArrayMemory();
+        var nv2A = new Nv2AMmio(64u * 1024 * 1024, "NV2A", memory);
+        nv2A.Write(Base + 0x2504u, 4, 1u);
+        nv2A.Write(Base + 0x3200u, 4, 1u);
+        nv2A.Write(Base + 0x3204u, 4, 0x100u);
+        nv2A.Write(Base + 0x3220u, 4, 1u);
+        nv2A.Write(Base + 0x322Cu, 4, 0x111Cu);
+        nv2A.Write(Base + 0x3250u, 4, 1u);
+        nv2A.Write(Base + 0x400720u, 4, 1u);
+        nv2A.Write(Base + 0x7111C0u, 4, 0x00000002u);
+        nv2A.Write(Base + 0x7111C4u, 4, 0x0000FFFFu);
+        nv2A.Write(Base + 0x7111C8u, 4, 0x00000000u);
+        return (nv2A, memory);
+    }
+
+    /// <summary>
+    /// §239 clear-fill fast lane: a 32-bit surface clear must write exactly the
+    /// bytes the per-pixel <c>WriteGpu</c> loop wrote - proven by running the
+    /// same clear through a fast adapter (span fill) and a plain one (per-pixel
+    /// loop) and comparing the whole RAM image. The unaligned-pitch case pins
+    /// that the fast lane declines instead of filling at the wrong addresses.
+    /// </summary>
+    [Theory]
+    [InlineData(0x00000100u, 0x00000200u, 0x40u)]
+    [InlineData(0x00000100u, 0x00000200u, 0x42u)]
+    public void SurfaceClear_FastFillLane_MatchesPerPixelFill(uint colorOffset, uint zetaOffset, uint pitch)
+    {
+        (Nv2AMmio plain, ArrayMemory plainMemory) = CreateChannel();
+        (Nv2AMmio fast, FastArrayMemory fastMemory) = CreateFastChannel();
+
+        foreach ((Nv2AMmio nv2A, IGpuMemory memory) in new (Nv2AMmio, IGpuMemory)[]
+                 {
+                     (plain, plainMemory), (fast, fastMemory),
+                 })
+        {
+            memory.WritePhysical(0x0000u, 0x00100208u);
+            memory.WritePhysical(0x0004u, pitch);
+            memory.WritePhysical(0x0008u, 0x00100010u);
+            memory.WritePhysical(0x000Cu, 0x00001000u);
+            memory.WritePhysical(0x0010u, 0x00002000u);
+            memory.WritePhysical(0x0014u, 0x00080200u);
+            memory.WritePhysical(0x0018u, 0x00040000u);
+            memory.WritePhysical(0x001Cu, 0x00040000u);
+            memory.WritePhysical(0x0020u, 0x00081D98u);
+            memory.WritePhysical(0x0024u, 0x00030000u);
+            memory.WritePhysical(0x0028u, 0x00030000u);
+            memory.WritePhysical(0x002Cu, 0x00141D8Cu);
+            memory.WritePhysical(0x0030u, 0x00FFFFFFu);
+            memory.WritePhysical(0x0034u, 0xFF112233u);
+            memory.WritePhysical(0x0038u, 0x000000F3u);
+            memory.WritePhysical(0x003Cu, colorOffset);
+            nv2A.Write(Base + 0x800040u, 4, zetaOffset);
+            Assert.Equal(1u, nv2A.ClearsExecuted);
+        }
+
+        Assert.Equal(plainMemory.Bytes, fastMemory.Bytes);
     }
 
     [Fact]
