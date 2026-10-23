@@ -49,6 +49,7 @@ internal static unsafe class RawBlockEmitter
     private const int F_EFLAGS = ShadowSpace + 0x24;
     private const int F_EIP = ShadowSpace + 0x28;
     private const int F_TSC = ShadowSpace + 0x30;
+    private const int F_TSC_NOW = ShadowSpace + 0x58;
     private const int F_VALUE = ShadowSpace + 0x38;
     private const int F_PHYS = ShadowSpace + 0x40;
     private const int F_VALUE64 = ShadowSpace + 0x48;
@@ -195,6 +196,18 @@ internal static unsafe class RawBlockEmitter
         private bool _flagsLive;
         private bool _memberHelper;
 
+        // Static per-member accounting (§239). A block is straight-line, so the
+        // guest EIP, the TSC tick count and the served count of every point in
+        // it are compile-time constants. The emitter therefore never writes
+        // them per member: an *edge* (an exit, a helper call, or the linear
+        // fall-through) publishes them once through EmitPublishAccounting, and
+        // F_TSC stays the TSC of the block entry (the base) for the whole
+        // block. That removes 11 emitted instructions per member (two EIP
+        // stores, three TSC accesses and three served accesses) from every
+        // guest instruction the raw runner serves.
+        private uint _memberEip;
+        private int _membersDone;
+
         /// <summary>Gets the in-frame chain target resolved by <see cref="Build"/> (0 when not chainable).</summary>
         public nint ChainEntry { get; private set; }
 
@@ -229,6 +242,10 @@ internal static unsafe class RawBlockEmitter
                 }
             }
 
+            // The linear fall-through edge: every member ran, so the block's
+            // own accounting is published here (every other edge publishes its
+            // own before jumping to _exit).
+            EmitPublishAccounting(plans.Length, plans.Length, eip);
             EmitEpilogue();
 
             byte* memory = RawCodeMemory.Allocate(64 * 1024);
@@ -361,6 +378,7 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.R9), Field(Register.R11, OffTsc));
             a.mov(R64(Register.RAX), MemOp(Register.R9, null, 1, 0));
             a.mov(Slot(F_TSC), R64(Register.RAX));
+            a.mov(Slot(F_TSC_NOW), R64(Register.RAX));
 
             a.mov(R64(Register.R9), Field(Register.R11, OffEip));
             a.mov(R32(Register.EAX), MemOp(Register.R9, null, 1, 0));
@@ -590,6 +608,12 @@ internal static unsafe class RawBlockEmitter
             // at its own chain entry, which reloads the guest state and flags.
             // EIP is already the target's head (the probe matched it) and the
             // carry now holds this block's served count.
+            //
+            // §239: the target's accounting is relative to its own entry, so
+            // the published TSC becomes the target's base and the served slot
+            // restarts at zero.
+            a.mov(R64(Register.R8), Slot(F_TSC_NOW));
+            a.mov(Slot(F_TSC), R64(Register.R8));
             a.mov(Slot(F_BUDGET), R32(Register.ESI));
             a.mov(R64(Register.R8), MemOp(Register.RDI, null, 1, 24)); // Entries
             a.mov(Slot(F_ENTRIES), R64(Register.R8));
@@ -674,9 +698,10 @@ internal static unsafe class RawBlockEmitter
             a.mov(R64(Register.R9), Field(Register.R11, OffEip));
             a.mov(MemOp(Register.R9, null, 1, 0), R32(Register.EAX));
 
-            // TSC is ticked once per member before its body (the interpreter's rule),
-            // so the frame slot already holds the exact value.
-            a.mov(R64(Register.R10), Slot(F_TSC));
+            // §239: the per-edge publish already folded this block's ticks into
+            // F_TSC_NOW (base + members completed), so the exact interpreter
+            // value is one load away.
+            a.mov(R64(Register.R10), Slot(F_TSC_NOW));
             a.mov(R64(Register.R9), Field(Register.R11, OffTsc));
             a.mov(MemOp(Register.R9, null, 1, 0), R64(Register.R10));
         }
@@ -696,9 +721,14 @@ internal static unsafe class RawBlockEmitter
         /// last <c>cmp</c>/<c>and</c> result, and the reload after the helper
         /// would hand those to the next flag consumer (found by the
         /// <c>--jit-mmio</c> boot divergence at 25.1M steps, decisions 202).
+        ///
+        /// <para>§239: the helper is an edge, so the static accounting is
+        /// published first - the in-progress member is TSC-ticked but not
+        /// served, and the guest EIP is the member's own.</para>
         /// </summary>
         private void EmitSyncGuestStateForHelper()
         {
+            EmitPublishAccounting(_membersDone + 1, _membersDone, _memberEip);
             EmitStoreGuestState();
             Assembler a = _a;
             // Fault progress includes every block already chained into this
@@ -738,29 +768,34 @@ internal static unsafe class RawBlockEmitter
             LoadGuestRegisters(a, Register.R9);
         }
 
-        /// <summary>One TSC tick per member, before the body (interpreter parity).</summary>
-        private void EmitTscTick()
+        /// <summary>
+        /// Publishes the block's static accounting at an edge: the TSC value,
+        /// the served count and (when the edge's EIP is static) the guest EIP.
+        /// A block is straight-line, so <paramref name="tscTicks"/> is the
+        /// number of TSC ticks since the block entry - the in-progress member
+        /// is already counted, because the interpreter ticks TSC before a
+        /// member's body - and <paramref name="served"/> is the number of
+        /// members that have *completed*. F_TSC keeps the entry TSC (the base)
+        /// for the whole block; the published value lands in F_TSC_NOW, which
+        /// <see cref="EmitStoreGuestState"/> copies into the context.
+        ///
+        /// <para>R10 only: never a guest register, and the moves/lea leave the
+        /// host arithmetic flags intact (an edge publishes while they are still
+        /// live, before the edge's own materialize).</para>
+        /// </summary>
+        private void EmitPublishAccounting(int tscTicks, int served, uint? eip)
         {
-            _a.mov(R64(Register.R10), Slot(F_TSC));
-            _a.lea(R64(Register.R10), MemOp(Register.R10, null, 1, 1));
-            _a.mov(Slot(F_TSC), R64(Register.R10));
-        }
-
-        private void EmitServedIncrement()
-        {
-            // Memory increment has no inferable size; go through R10D (free
-            // between members: the EIP lives in its frame slot).
-            // lea keeps the live host arithmetic flags intact between a
-            // flag-setting member and the branch that consumes them.
-            _a.mov(R32(Register.R10D), Slot(F_SERVED));
-            _a.lea(R32(Register.R10D), MemOp(Register.R10, null, 1, 1));
-            _a.mov(Slot(F_SERVED), R32(Register.R10D));
-        }
-
-        private void EmitSetEip(uint eip)
-        {
-            _a.mov(R32(Register.R10D), unchecked((int)eip));
-            _a.mov(Slot(F_EIP), R32(Register.R10D));
+            Assembler a = _a;
+            a.mov(R64(Register.R10), Slot(F_TSC));
+            a.lea(R64(Register.R10), MemOp(Register.R10, null, 1, tscTicks));
+            a.mov(Slot(F_TSC_NOW), R64(Register.R10));
+            a.mov(R32(Register.R10D), served);
+            a.mov(Slot(F_SERVED), R32(Register.R10D));
+            if (eip is { } value)
+            {
+                a.mov(R32(Register.R10D), unchecked((int)value));
+                a.mov(Slot(F_EIP), R32(Register.R10D));
+            }
         }
 
         /// <summary>
@@ -784,15 +819,6 @@ internal static unsafe class RawBlockEmitter
             }
 
             a.mov(Slot(F_CTRL), R32(Register.R10D));
-        }
-
-        /// <summary>Advances the frame EIP by the member length (lea: no host-flag clobber).</summary>
-        private void EmitAdvanceEip(int length)
-        {
-            Assembler a = _a;
-            a.mov(R32(Register.R10D), Slot(F_EIP));
-            a.lea(R32(Register.R10D), MemOp(Register.R10, null, 1, length));
-            a.mov(Slot(F_EIP), R32(Register.R10D));
         }
 
         /// <summary>
@@ -841,11 +867,21 @@ internal static unsafe class RawBlockEmitter
 
             if (advanceEip)
             {
-                EmitAdvanceEip(length);
+                // The delivery boundary ticks TSC once more (the member's own
+                // tick is counted, plus one for the interrupt step RunJitBlock
+                // adds), exactly as the per-member accounting did.
+                EmitPublishAccounting(
+                    _membersDone + 2,
+                    _membersDone + 1,
+                    unchecked(_memberEip + (uint)length));
+            }
+            else
+            {
+                // The helper already advanced the context EIP; the published
+                // value (reloaded by EmitReloadAfterHelper) is authoritative.
+                EmitPublishAccounting(_membersDone + 2, _membersDone + 1, null);
             }
 
-            EmitTscTick();
-            EmitServedIncrement();
             // A pending delivery must return to RunJitBlock (it adds the
             // delivery's own step); publish the boundary state and skip the
             // chain attempt.
@@ -858,8 +894,8 @@ internal static unsafe class RawBlockEmitter
         private void EmitMember(in JitMemberPlan plan, uint eip, int index)
         {
             _memberHelper = false;
-            EmitSetEip(eip);
-            EmitTscTick();
+            _memberEip = eip;
+            _membersDone = index;
 
             switch (plan.Kind)
             {
@@ -1130,8 +1166,10 @@ internal static unsafe class RawBlockEmitter
                     break;
 
                 case JitKind.JmpRel:
-                    EmitSetEip(unchecked(eip + (uint)plan.Length + plan.Immediate));
-                    EmitServedIncrement();
+                    EmitPublishAccounting(
+                        _membersDone + 1,
+                        _membersDone + 1,
+                        unchecked(eip + (uint)plan.Length + plan.Immediate));
                     // Normalize the frame flags on this exit edge (the
                     // epilogue does not re-materialize).
                     EmitMaterializeFlags();
@@ -1163,7 +1201,9 @@ internal static unsafe class RawBlockEmitter
                     EmitHelperMember(index);
                     if (plan.IsTerminator)
                     {
-                        EmitServedIncrement();
+                        // The handler owns the exit EIP (null keeps whatever
+                        // EmitReloadAfterHelper published).
+                        EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
                         EmitMaterializeFlags();
                         _a.jmp(_exit);
                         return;
@@ -1183,16 +1223,6 @@ internal static unsafe class RawBlockEmitter
             {
                 EmitPostPoll(plan.Length, advanceEip: !_memberHelper);
             }
-
-            // Non-terminator native members advance EIP after completion (the
-            // interpreter's boundary); helpers and spec handlers advance it
-            // themselves, exactly like the IL runner's convention.
-            if (!plan.IsTerminator && !_memberHelper)
-            {
-                EmitAdvanceEip(plan.Length);
-            }
-
-            EmitServedIncrement();
         }
 
         private void EmitMovReg(in JitMemberPlan plan)
@@ -1470,7 +1500,6 @@ internal static unsafe class RawBlockEmitter
                 // The fast path owns the EIP advance (the slow path's helper
                 // advances it; EmitHelperMember set _memberHelper, so the
                 // outer member epilogue skips it for both paths).
-                EmitAdvanceEip(plan.Length);
                 a.jmp(done);
 
                 a.Label(ref slow);
@@ -1547,7 +1576,6 @@ internal static unsafe class RawBlockEmitter
             // the SS base. lea keeps every host-flag consumer irrelevant here
             // (F_EFLAGS is authoritative after the materialize above).
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1575,7 +1603,6 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), RamAt());
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, 4));
             a.mov(R32(Gpr32[plan.RegIndex]), R32(Register.R8D));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1604,14 +1631,16 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), unchecked((int)(eip + (uint)plan.Length)));
             a.mov(RamAt(), R32(Register.R8D));
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
-            EmitSetEip(unchecked(eip + (uint)plan.Length + plan.Immediate));
-            EmitServedIncrement();
+            EmitPublishAccounting(
+                _membersDone + 1,
+                _membersDone + 1,
+                unchecked(eip + (uint)plan.Length + plan.Immediate));
             EmitMaterializeFlags();
             a.jmp(_exit);
 
             a.Label(ref slow);
             EmitHelperMember(index);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
@@ -1632,13 +1661,13 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), RamAt());
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, 4 + unchecked((int)plan.Immediate)));
             a.mov(Slot(F_EIP), R32(Register.R8D));
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
 
             a.Label(ref slow);
             EmitHelperMember(index);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
@@ -1654,6 +1683,11 @@ internal static unsafe class RawBlockEmitter
         private void EmitParkedHelper(ulong target, Action setArgs, Register? resultReg = null)
         {
             Assembler a = _a;
+            // §239: an edge - the parked helpers are host-side state mutations
+            // that cannot fault architecturally, but a captured host fault must
+            // still report this member's boundary. R10 only; R8/R9 (argument
+            // scratch prepared by the caller) survive.
+            EmitPublishAccounting(_membersDone + 1, _membersDone, _memberEip);
             a.mov(R64(Register.R10), Slot(F_CPU));
             a.mov(R64(Register.RSI), target);
             a.push(R64(Register.RAX));
@@ -1695,7 +1729,6 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R64(Register.RCX), R64(Register.R10));
                 a.mov(R32(Register.EDX), R32(Register.R9D));
             });
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1729,7 +1762,6 @@ internal static unsafe class RawBlockEmitter
                     () => a.mov(R64(Register.RCX), R64(Register.R10)));
             }
 
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1763,7 +1795,6 @@ internal static unsafe class RawBlockEmitter
                     () => a.mov(R64(Register.RCX), R64(Register.R10)));
             }
 
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1852,7 +1883,6 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R64(Register.RCX), R64(Register.R10));
                 a.mov(R32(Register.EDX), R32(Register.R9D));
             });
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1938,7 +1968,6 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R64(Register.RCX), R64(Register.R10));
                 a.mov(R32(Register.EDX), R32(Register.R9D));
             });
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -1995,7 +2024,6 @@ internal static unsafe class RawBlockEmitter
                     a.mov(R64(Register.RCX), R64(Register.R10));
                     a.mov(R32(Register.EDX), R32(Register.R9D));
                 });
-                EmitAdvanceEip(plan.Length);
                 a.jmp(done);
 
                 a.Label(ref slow);
@@ -2023,7 +2051,6 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(4, isStore: true, slowStore, null);
             a.mov(R32(Register.R8D), Slot(F_FPU));
             a.mov(RamAt(), R32(Register.R8D));
-            EmitAdvanceEip(plan.Length);
             a.jmp(doneStore);
 
             a.Label(ref slowStore);
@@ -2068,7 +2095,6 @@ internal static unsafe class RawBlockEmitter
                 },
                 resultReg: Register.R8);
             a.mov(R32(Gpr32[plan.RegIndex]), R32(Register.R8D));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2092,7 +2118,6 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), RamAt());
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Ebp], null, 1, 4));
             a.mov(R32(Gpr32[(int)Gpr.Ebp]), R32(Register.R8D));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2148,7 +2173,6 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R64(Register.RCX), R64(Register.R10));
                 a.mov(R32(Register.EDX), R32(Register.R9D));
             });
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2177,7 +2201,6 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), Slot(F_VALUE));
             a.mov(RamAt(), R32(Register.R8D));
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2244,13 +2267,13 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(4, isStore: false, slow, null);
             a.mov(R32(Register.R8D), RamAt());
             a.mov(Slot(F_EIP), R32(Register.R8D));
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
 
             a.Label(ref slow);
             EmitHelperMember(index);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
@@ -2275,13 +2298,13 @@ internal static unsafe class RawBlockEmitter
             a.lea(R32(Gpr32[(int)Gpr.Esp]), MemOp(Gpr64[(int)Gpr.Esp], null, 1, -4));
             a.mov(R32(Register.R8D), Slot(F_VALUE));
             a.mov(Slot(F_EIP), R32(Register.R8D));
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
 
             a.Label(ref slow);
             EmitHelperMember(index);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, null);
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
@@ -2303,7 +2326,6 @@ internal static unsafe class RawBlockEmitter
                 a.mov(R32(Register.EDX), mmxIndex);
                 a.mov(R64(Register.R8), R64(Register.R9));
             });
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2335,7 +2357,6 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(8, isStore: true, slow, null);
             a.mov(R64(Register.R8), Slot(F_VALUE64));
             a.mov(RamAt(), R64(Register.R8));
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -2546,8 +2567,7 @@ internal static unsafe class RawBlockEmitter
             uint fallThrough = unchecked(eip + (uint)plan.Length);
             Label taken = a.CreateLabel(string.Empty);
             EmitJccOp(plan.Condition, taken);
-            EmitSetEip(fallThrough);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, fallThrough);
             // Both arms normalize the frame flags before exiting (the
             // epilogue does not re-materialize). EmitLoadFlags above left the
             // host FLAGS live with the branch condition's values, and both
@@ -2558,8 +2578,7 @@ internal static unsafe class RawBlockEmitter
             a.jmp(_exit);
             a.Label(ref taken);
             _flagsLive = true;
-            EmitSetEip(target);
-            EmitServedIncrement();
+            EmitPublishAccounting(_membersDone + 1, _membersDone + 1, target);
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
@@ -3002,7 +3021,6 @@ internal static unsafe class RawBlockEmitter
             // outer EmitMember would skip it for both paths because
             // EmitHelperMember sets _memberHelper, and a member that ends the
             // block would leave EIP on its own first byte).
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -3044,7 +3062,6 @@ internal static unsafe class RawBlockEmitter
             EmitAluMemoryOp(plan, RamAt());
             // Fast-path EIP advance (see EmitCmpMemorySource): the slow path's
             // helper owns the advance there.
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -3064,7 +3081,6 @@ internal static unsafe class RawBlockEmitter
             EmitMoveFromMemory(plan.Size, 0, RamAt(), scratchOnly: true);
             EmitTestScratch(plan);
             // Fast-path EIP advance (see EmitCmpMemorySource).
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
@@ -3083,7 +3099,6 @@ internal static unsafe class RawBlockEmitter
             EmitProbe(plan.Size / 8, isStore: true, slow, null);
             EmitIncDecMemoryOp(plan, RamAt());
             // Fast-path EIP advance (see EmitCmpMemorySource).
-            EmitAdvanceEip(plan.Length);
             a.jmp(done);
 
             a.Label(ref slow);
