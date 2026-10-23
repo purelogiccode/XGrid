@@ -100,7 +100,7 @@ per-sample evidence).
 
 | Sample | Provenance | Boot | First frame | Render | Audio | Known gaps | Anchor (1B fast) | Command |
 |---|---|---|---|---|---|---|---|---|
-| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI emulated, **no host sink** | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `AF1FF8ED` / CPU `F5D61C94` (`--frame-first` leg); last frame `4EF1FBF6`; scanout `51658B3D`; gl `B6116DAE` (policy) | `-Sample dashboard` |
+| **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI + the GP/EP DSP core; the EP FIFO sinks, but the VP mixer and AC'97 codec are missing, so it is silent | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `AF1FF8ED` / CPU `F5D61C94` (`--frame-first` leg); last frame `4EF1FBF6`; scanout `51658B3D`; gl `B6116DAE` (policy) | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **6.08 s** vs 10.45 s sw (gate media, after §237/§238) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
 | **xgu `bump_cubemap_reflect`, GL replace (§236 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`) | **gap 12 CLOSED (2026-10-22, §236):** the cube stage samples a host 2D-array texture decoded from the guest's six swizzled faces, so GL replace now presents the reflection panel. At 4.4B the GL frame is 19,042 colours / 0% black and differs from the software frame by **2 pixels of 307,200 (maxDelta 3)**; at 3.6B by **1 pixel (maxDelta 4)**, 21,041 colours both. `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0` | n/a | none on the render path; a HILO dot-map input (maps 4-7) is still one word per stage - no measured row uses one | sw 4.4B 18,980 colours / mean (57.4, 89.3, 34.2); gl 4.4B 19,042 / 0% black; sw+gl 3.6B 21,041 / (58.0, 98.7, 29.8) | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
@@ -114,7 +114,7 @@ per-sample evidence).
 | **nxdk `hello`** | nxdk `a6c31ee` `samples/hello` | yes | same (`debugPrint` writes text into the framebuffer) | 0 extra draws | n/a | text visible only through the scanout export (2 colours, 302 px) | RAM `4650454F` / CPU `C3371A8C`; scanout `72D33DC2`; **display `72D33DC2`**; GL replace `72D33DC2` (§234) (the text) | `-Sample hello` |
 | **nxdk `led`** | nxdk `a6c31ee` `samples/led` | yes | no video output at all (toggles the SMC LED) | 0 extra draws | n/a | scanout equals the flipped frame — the correct negative control | RAM `3D1F72DB` / CPU `1C98838F`; scanout `18C7CC83`; **display `18C7CC83`**; GL replace `18C7CC83` (backend frame, §234) | `-Sample led` |
 | **nxdk `usb`** (§229) | nxdk `a6c31ee` `samples/usb`, built by `scripts/build-nxdk-samples.ps1` | yes | no new flip: `debugPrint` writes the scanout (gap 1) | 0 extra text draws; the guest's own USB host stack (`usbh_core_init`) enumerates the daughterboard hub and prints **`Device connected on USB hub port 1 (VID: 0409 PID: 55aa)`** on the display export | n/a | the text is only in the scanout/display export (flipped surface black); decode-line is deterministic (hard-coded hub descriptor) | RAM `ACDB5720` / CPU `1590C697`; last frame `18C7CC83`; scanout/display `119AFA48` at 1B; GL replace `119AFA48` (§234) | `-Sample usb` |
-| **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised**, but no host sink - nothing audible to verify | audio correctness unverifiable until a PCM sink exists | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
+| **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised** (voice/DSP frames); the EP FIFO sinks to WAV, but the VP mixer and AC'97 codec are missing, so there is nothing audible to verify | the PCM sink exists; the remaining audio gap is the VP mixer/AC'97 codec path, so correctness is still unverified by ear | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
 | **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
 | **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase. **GL replace leg (2026-10-21, §220d):** 14 declined draws compose 7 of 41 flips from guest RAM and the presented frame is `DA0750EE…` = the software anchor (gap 8 closed) | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B; GL replace RAM `19D576A8` / CPU `D5D38C64` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` / `… -Gpu gl -GpuReplace` |
@@ -122,9 +122,6 @@ per-sample evidence).
 | **xgu `swizzle_texture`** (swizzled 2D texture) | xgu repo, built 2026-10-21 | yes | flips yes, own scene at 3B | 87 flips / 2,725 draws / 45.1M px / 1,620 colours, full coverage; samples `0x3A` 3.14M with 0 misses | n/a | no reference screenshot in the xgu repo, so no oracle row; exercises the swizzled byte-order path (the §207h/§209 formats) | RAM `E2EB41ED` / CPU `B887B3C6`; last frame `FE32FB3C`, scanout/display `869CB402` at 3B | `-Sample xgu-swizzle_texture -Steps 3000000000` |
 | **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes; **fogged room renders** with `--ffp` | 2,730 draws / 84.2M px on, / 42.0M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat orange (gap 6) | **on:** RAM `12BAD517` / CPU `571363B4`, 7,601 colours, mean (129.4, 50.2, 37.4); **off:** RAM `AFF08085` / CPU `571363B4`, 26 colours | `-Sample xgu-distance_fog_ffp -Steps 3000000000 -Ffp` |
 | **xgu `spheremap_ffp`** (fixed-function sphere map) | xgu repo, built 2026-10-21 | yes | flips yes; **sphere-mapped sphere renders** with `--ffp` | 2,728 draws / 70.2M px on, / 42.2M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat blue (gap 6) | **on:** RAM `8062CFB5` / CPU `F0075C2F`, 7,358 colours, mean (27.8, 16.3, 163.1); **off:** RAM `B5747761` / CPU `F0075C2F`, 2 colours | `-Sample xgu-spheremap_ffp -Steps 3000000000 -Ffp` |
-| **xgu examples** (spinning cubes, textures) | https://github.com/Voxel9/xbox-xgu-examples | **blocked** - needs the examples fetched (toolchain now available) | - | textured 3D | - | fetch + build | - | - |
-| **nxdk_vsh_tests** (VS goldens) | https://github.com/abaire/nxdk_vsh_tests | **blocked** - needs the repo fetched | - | vertex-shader oracle data | - | fetch + compare, not a boot row | - | - |
-| **OpenXDK framebuffer demos** | xbdev.net / OpenXDK | **blocked** - needs the demos fetched | - | raw framebuffer | - | would exercise the direct-framebuffer gap above | - | - |
 
 ### 6. The fixed-function transform pipeline - **CLOSED 2026-10-21 (213 + 215), opt-in `--ffp`**
 
@@ -582,19 +579,29 @@ sequence (an operator-visible route), not more steps.
   implements the same tent, convolution, decoded wrap modes and border colour
   since §220c (both renderers agree within one 8-bit step on `vp_lighting` in
   both flag states).
-- **Audio:** emulated, but no streaming consumer and no host output.
+- **Audio:** the APU voice processor and the ACI (AC'97) register block run, and
+  the ported xemu 0.8.139 GP/EP DSP executes the guest's microcode with the EP
+  output FIFO feeding a 48 kHz/16-bit stereo sink (`--apu-dsp --audio-out`,
+  opt-in). The VP mixer (`vp.c`) and the AC'97 codec path are missing, so the
+  measured boots are silent and no audio row is claimed.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 
 ## Sample wish list (cheapest first)
 
-1. **nxdk toolchain on the host** (blocker: MSYS2 has no clang/make; C: has
-   247 MB free so an install must target D:). Unblocks `nxdk-mesh` (textured
-   3D), `nxdk-hello`, `nxdk-triangle`, `nxdk-led` - four rows from sources
-   already in `data/test-samples/`.
-2. **xgu examples** once nxdk exists (spinning cubes, textures).
-3. **nxdk_vsh_tests** once nxdk exists (vertex-shader oracle data).
-4. **OpenXDK framebuffer demos** (non-D3D surface path).
+The toolchain blocker is gone: H1 has the nxdk build chain (MSYS2 + clang/lld/
+llvm, `scripts/build-nxdk-samples.ps1`, §207/§229), which produced the `nxdk/*`
+and `xgu/*` rows. What is still missing from the corpus:
 
-The two "blocked" rows are the cheapest breadth win: the toolchain turns four
-existing source samples into four rows.
+1. **DXT / paletted / mipmapped textures and multistream (DMA) vertices** - the
+   largest unobserved NV2A families; a row needs a sample that uses them.
+2. **An animated retail-like title** with a load/streaming phase, so the
+   storage and APU paths get a row beyond the boot animation.
+3. **A non-D3D framebuffer sample** (OpenXDK-style direct surface writes).
+4. **xemu reference frames for the `*_ffp` and `bumpenv_ripple` rows** - they
+   have XGrid captures but no second-emulator oracle (gap 9).
+5. **`nxdk_vsh_tests` vertex-shader goldens** - fetch the repo and compare VS
+   output directly; that is an oracle table, not a boot row.
+
+A row is added only with a recorded command, step anchor and measured pair; see
+the rules above.
 
