@@ -34,10 +34,25 @@ locally. The sequence lives in `docs/status.json`.
   closes the task as done.
 - `-Negative -Evidence "<measurement>" -Reopen "<condition>"` records a
   measured negative.
+- `-Negative -Task <id> -Evidence "<why>" -Reopen "<condition>"` closes a
+  parked/queued conditional task (e.g. D4 after D2 chose the device path)
+  without changing the active task.
 - A completed or negative task is removed from the queue, so no later worker
   can pick it again. That is the duplicate-work guard.
 - If no eligible task remains, `-Next` prints SEQUENCE COMPLETE; the remaining
   RepoFleet slots are no-ops.
+
+## Closing a parked conditional task
+
+A conditional task that never opened (its trigger did not happen) is not a
+failed attempt. Close it without making it active:
+
+```text
+pwsh -File scripts/status.ps1 -Negative -Task D4 -Evidence "<why it did not open>" -Reopen "<what would open it>"
+```
+
+It leaves the queue, lands in the `negatives` table, and the active task is
+unchanged. Do not leave it `blocked` forever; the queue must be able to empty.
 
 ## What the worker must do
 
@@ -69,6 +84,8 @@ locally. The sequence lives in `docs/status.json`.
   rows.
 - Do not create or switch branches; RepoFleet stays on main/master.
 - Do not commit `.repofleet-task.md`.
+- Do not leave a dirty tree; `-Next` refuses one (any tracked or untracked
+  change except `.repofleet-task.md`).
 - Do not leave uncommitted work; the harness's fallback message is generic
   (`<title> (RepoFleet task #N)`), so the task-id protocol is lost.
 - Do not rewrite the status narrative in `next-session.md`, `AGENTS.md`, the
@@ -87,8 +104,10 @@ locally. The sequence lives in `docs/status.json`.
 - The harness commits any remaining changes as `<title> (RepoFleet task #N)` and
   pushes. If the agent commits itself, the harness pushes that commit. The task
   command asks the agent to commit so the message follows the repo protocol.
-- The harness refuses to start on a dirty or unpushed checkout. A failed slot
-  that leaves a dirty tree blocks the next slot; clean it before retrying.
+- The harness refuses to start on a dirty or unpushed checkout. On a failed
+  (non-zero) opencode run it resets the workspace to the start commit and
+  preserves any agent commit on `repofleet/failed-<taskId>`, so the next slot
+  starts clean.
 - `ExtraInstructions` is machine-wide; do not put XGrid rules there.
 
 ## Why this shape
@@ -133,3 +152,7 @@ Close (negative): pwsh -File scripts/status.ps1 -Negative -Evidence "<measuremen
 Acceptance: <the task's acceptance test>
 Price/ceiling: <the task's price>
 ```
+
+`-Next` first refuses a dirty tree (any tracked or untracked change except
+`.repofleet-task.md`), so a failed or crashed slot cannot leak files into the
+next task.

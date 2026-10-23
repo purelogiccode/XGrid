@@ -4,7 +4,7 @@
 **Current status (2026-10-23):** M-D / **D5 - Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 78.2% (84.43 of 108). **Next:** P1 (Host audio: APU GP/EP DSP execution + PCM sink), R1 (Release: packaging, installer, licensing review).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 15.
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -307,9 +307,11 @@ code changed.
 
 - **RepoFleet (remote):** the task command is static:
   `pwsh -File scripts/status.ps1 -Next` prints the active task and the exact
-  close commands; `-Complete`/`-Negative` advance the queue. Queue the same
-  command once per task; RepoFleet serializes one active task per repository.
-  The full contract is `docs/repofleet-worker.md`.
+  close commands; `-Complete`/`-Negative` advance the queue. A parked
+  conditional task is closed with `-Negative -Task <id> -Evidence ... -Reopen ...`;
+  `-Next` refuses a dirty tree. Queue the same command once per task; RepoFleet
+  serializes one active task per repository. The full contract is
+  `docs/repofleet-worker.md`.
 1. `pwsh -File scripts/host-doctor.ps1` — read the VERDICT.
 2. `pwsh -File scripts/status.ps1 -Check -Show` - the active task and the queue;
    a red check stops the session.

@@ -10,8 +10,8 @@
     "status": "active",
     "started": "2026-10-23",
     "attempts": 0,
-    "acceptance": ">=10% menu wall; exact counters; no guest change",
-    "price": "the draw-flush half is D1; the remaining device stage (method dispatch) is unpriced"
+    "acceptance": "same-window A/B >=10% menu wall (>=20% device/engine) on 3 interleaved 1B gl+replace pairs; exact menu RAM B06BA6E5 / CPU F5D61C94 and counters 33638/1402/696/686/686; triangle 4F1FCBC0/7DAB63EB unchanged; no guest-visible change; ktest log byte-identical",
+    "price": "D3 decomposed the menu device stage: 6.57 s of a 15.0-15.2 s 1B gl+replace wall (41.6%): flushes 6.15 s (transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26), other writes 0.42, clears 0.07. D3 priced the combined draw-flush slice at ~-10.5% (its 8.0-9.9% plus the per-draw PgraphDrawInfo cache ~0.3-0.4 s = 2.5%) - that is D5's first step; re-measure at 1B with 3 interleaved pairs before implementing."
   },
   "position": {
     "host": "H1",
@@ -232,18 +232,6 @@
   ],
   "queue": [
     {
-      "id": "D4",
-      "title": "Conditional: implement the engine shape chosen in D2",
-      "plan": "E3",
-      "status": "blocked",
-      "depends": [
-        "D2"
-      ],
-      "acceptance": "only starts if D2 chooses it and the price is >=10% wall or >=20% engine; two-iteration kill criterion; exact differentials",
-      "price": "D2 chose (a) (docs/research-notes/xgrid-architecture-decisions.md 242): no engine-shape candidate is above the bar today (encoder 8.0% triangle / 4.9% menu; trace boundary population 6.04% / 4.35%; code volume 0% wall; the C4 host-pointer probe measured null; the register-liveness edge inexact). It reopens only on a per-member probe of ONE candidate transformation showing >=20% engine; two iterations, each gated, then stop and record",
-      "evidence": []
-    },
-    {
       "id": "D5",
       "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
       "plan": "E5",
@@ -251,8 +239,8 @@
       "depends": [
         "D1"
       ],
-      "acceptance": ">=10% menu wall; exact counters; no guest change",
-      "price": "the draw-flush half is D1; the remaining device stage (method dispatch) is unpriced",
+      "acceptance": "same-window A/B >=10% menu wall (>=20% device/engine) on 3 interleaved 1B gl+replace pairs; exact menu RAM B06BA6E5 / CPU F5D61C94 and counters 33638/1402/696/686/686; triangle 4F1FCBC0/7DAB63EB unchanged; no guest-visible change; ktest log byte-identical",
+      "price": "D3 decomposed the menu device stage: 6.57 s of a 15.0-15.2 s 1B gl+replace wall (41.6%): flushes 6.15 s (transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26), other writes 0.42, clears 0.07. D3 priced the combined draw-flush slice at ~-10.5% (its 8.0-9.9% plus the per-draw PgraphDrawInfo cache ~0.3-0.4 s = 2.5%) - that is D5's first step; re-measure at 1B with 3 interleaved pairs before implementing.",
       "evidence": []
     },
     {
@@ -438,6 +426,13 @@
       "date": "2026-10-23",
       "evidence": "menu 1B gl+replace decomposed by temporary stage probes: wall 15.0-15.2 s (this window) = device 6.57 s (41.6%; flushes 6.15 = transform plan 2.2-2.5, fill 2.7-3.1, fetch 0.9-1.2, epilogue 0.3, setup 0.26; other writes 0.42; clears 0.07) + engine non-device 9.4 s (59%); raster 0 (replace), readback 0, boot 1.6-1.9 s shared. Menu-only mass +9.3 s = 57% device + 43% engine. Top item priced by building the draw-flush hoist (reject-before-setup, per-draw scratch, read-slot fetch mask, plan operand locals): 3 interleaved pairs 14.996->13.786 (-8.03%), 15.238->13.728 (-9.90%), 14.899->13.729 (-7.87%), executeMs -7.6%, runnerMs 12,604->10,617 (-15.8%); menu RAM B06BA6E5/CPU F5D61C94, 33638/1402/696/686/686, culled 41035, GL 2733736 tris, BackendUnsupported=0 exact; VshProgramPlanTests 8/8. Below the 10% wall / 20% engine bar -> reverted; triangle 1B 4F1FCBC0/7DAB63EB 5.669 s exact.",
       "reopen": "a combined draw-flush slice (this measured price + the per-draw PgraphDrawInfo state cache, ~0.3-0.4 s = 2.5%, priced ~-10.5%) measures >=10% wall on 3/3 interleaved pairs with exact 1B anchors - D5's first step"
+    },
+    {
+      "id": "D4",
+      "title": "Conditional: implement the engine shape chosen in D2",
+      "date": "2026-10-23",
+      "evidence": "D2 chose (a): keep the raw engine and take the device/draw-flush path. D4's condition (one engine-shape candidate at >=20% engine on a per-member probe) was not met: encoder 3.4x = 8.0% triangle / 4.9% menu, trace boundary 6.04% / 4.35%, code volume 0% wall, C4 host-pointer probe null, register-liveness edge inexact. Parked, not a failed experiment; no code changed.",
+      "reopen": "a per-member probe of ONE candidate transformation shows >=20% engine; two iterations, each gated, then stop and record"
     }
   ],
   "rules": {

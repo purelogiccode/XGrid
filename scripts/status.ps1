@@ -8,9 +8,10 @@
 #   pwsh -File scripts/status.ps1 -Check              # validate (default)
 #   pwsh -File scripts/status.ps1 -Show               # current task + queue
 #   pwsh -File scripts/status.ps1 -Prompt             # ready-to-paste task command
-#   pwsh -File scripts/status.ps1 -Next               # worker: claim/print the active task
+#   pwsh -File scripts/status.ps1 -Next               # worker: refuse a dirty tree, claim/print the active task
 #   pwsh -File scripts/status.ps1 -Complete -Evidence "<evidence>" -CommitMessage "<area>: <summary> (D1)"
 #   pwsh -File scripts/status.ps1 -Negative -Evidence "<measurement>" -Reopen "<condition>"
+#   pwsh -File scripts/status.ps1 -Negative -Task D4 -Evidence "<why>" -Reopen "<condition>"  # parked/queued task
 #   pwsh -File scripts/status.ps1 -Sync               # validate + write blocks + graph
 #   pwsh -File scripts/status.ps1 -Sync -NoGraph      # blocks only
 param(
@@ -21,6 +22,7 @@ param(
     [switch]$Next,
     [switch]$Complete,
     [switch]$Negative,
+    [string]$Task = "",
     [string]$Evidence = "",
     [string]$CommitMessage = "",
     [string]$Reopen = "only with a new measurement",
@@ -126,9 +128,20 @@ $doSync = [bool]$Sync
 $nextTask = $null
 if ($Complete -or $Negative) {
     if ([string]::IsNullOrWhiteSpace($Evidence)) { throw "-Evidence is required for -Complete/-Negative" }
-    $active = @($status.queue | Where-Object { $_.status -eq 'active' })
-    if ($active.Count -ne 1) { throw "expected exactly one active task, found $($active.Count)" }
-    $q = $active[0]
+    if ($Complete -and -not [string]::IsNullOrWhiteSpace($Task)) {
+        throw "-Complete closes the active task; -Task is only for -Negative (parked/queued tasks)"
+    }
+    $q = $null
+    if (-not [string]::IsNullOrWhiteSpace($Task)) {
+        $found = @($status.queue | Where-Object { $_.id -eq $Task })
+        if ($found.Count -ne 1) { throw "task '$Task' is not in the queue" }
+        $q = $found[0]
+    } else {
+        $active = @($status.queue | Where-Object { $_.status -eq 'active' })
+        if ($active.Count -ne 1) { throw "expected exactly one active task, found $($active.Count)" }
+        $q = $active[0]
+    }
+    $wasActive = $q.status -eq 'active'
     if ($Complete) {
         $message = if ([string]::IsNullOrWhiteSpace($CommitMessage)) { "this commit ($($q.id))" } else { $CommitMessage }
         $doneItem = [ordered]@{
@@ -150,13 +163,28 @@ if ($Complete -or $Negative) {
         $status.negatives = @($status.negatives) + $negItem
     }
     $status.queue = @($status.queue | Where-Object { $_.id -ne $q.id })
-    $promoted = Get-EligibleTask
-    if ($promoted) { Set-CurrentFromQueue $promoted } else { Set-CurrentComplete }
+    $activeAfter = @($status.queue | Where-Object { $_.status -eq 'active' })
+    if ($activeAfter.Count -gt 1) { throw "more than one active task after closing $($q.id)" }
+    if ($activeAfter.Count -eq 1) {
+        if ($status.current.id -ne $activeAfter[0].id) { Set-CurrentFromQueue $activeAfter[0] }
+    } else {
+        $promoted = Get-EligibleTask
+        if ($promoted) { Set-CurrentFromQueue $promoted } else { Set-CurrentComplete }
+    }
     Save-Status
     $doSync = $true
-    Write-Host "Closed $($q.id) as $(if ($Complete) { 'done' } else { 'negative' }); next: $($status.current.id) - $($status.current.title)"
+    Write-Host "Closed $($q.id) as $(if ($Complete) { 'done' } else { 'negative' }); current: $($status.current.id) - $($status.current.title)"
 }
 if ($Next) {
+    if ([string]::IsNullOrWhiteSpace($DataPath)) {
+        $dirty = @(& git status --porcelain 2>$null | Where-Object { $_ -and $_ -notmatch '\.repofleet-task\.md$' })
+        if ($dirty.Count -gt 0) {
+            Write-Host "STOP: working tree is dirty. The next task must start clean:"
+            $dirty | ForEach-Object { Write-Host "  $_" }
+            Write-Host "Commit or discard these changes, then rerun -Next."
+            exit 1
+        }
+    }
     $active = @($status.queue | Where-Object { $_.status -eq 'active' })
     if ($active.Count -eq 0) {
         $promoted = Get-EligibleTask
@@ -241,6 +269,12 @@ if (-not $isComplete) {
     if ([string]::IsNullOrWhiteSpace([string]$status.current.price)) { Fail 'current.price is empty' }
     if ([string]::IsNullOrWhiteSpace([string]$status.current.plan)) { Fail 'current.plan is empty' }
 }
+if (-not $isComplete -and $active.Count -eq 1) {
+    $aq = $active[0]
+    if ([string]$status.current.plan -ne [string]$aq.plan) { Fail "current.plan != queue $($aq.id).plan" }
+    if ([string]$status.current.acceptance -ne [string]$aq.acceptance) { Fail "current.acceptance != queue $($aq.id).acceptance" }
+    if ([string]$status.current.price -ne [string]$aq.price) { Fail "current.price != queue $($aq.id).price" }
+}
 
 # Every queued task must be named in the detailed execution plan (E1/E2..E6).
 $planText = [System.IO.File]::ReadAllText($planPath)
@@ -257,11 +291,13 @@ foreach ($q in $status.queue) {
 }
 
 foreach ($d in $status.done) {
+    if ($queueIds.ContainsKey([string]$d.id)) { Fail "done $($d.id) is still in the queue" }
     if ([string]::IsNullOrWhiteSpace([string]$d.evidence)) { Fail "done $($d.id): no evidence" }
     $hasCommit = (@($d.commits).Count -gt 0) -or (-not [string]::IsNullOrWhiteSpace([string]$d.commitMessage))
     if (-not $hasCommit) { Fail "done $($d.id): no commits or commitMessage" }
 }
 foreach ($n in $status.negatives) {
+    if ($queueIds.ContainsKey([string]$n.id)) { Fail "negative $($n.id) is still in the queue" }
     if ([string]::IsNullOrWhiteSpace([string]$n.evidence)) { Fail "negative $($n.id): no evidence" }
     if ([string]::IsNullOrWhiteSpace([string]$n.reopen)) { Fail "negative $($n.id): no reopen condition" }
     if ($planText -notmatch [regex]::Escape([string]$n.id)) { Fail "negative $($n.id): not named in the execution plan" }
