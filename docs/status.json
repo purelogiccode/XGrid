@@ -88,6 +88,7 @@
     {
       "id": "D1",
       "title": "C6 draw-flush half: compile or cache the active transform program",
+      "plan": "E2",
       "status": "active",
       "depends": [],
       "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
@@ -97,6 +98,7 @@
     {
       "id": "D2",
       "title": "C7 engine-shape decision",
+      "plan": "E3",
       "status": "queued",
       "depends": ["D1"],
       "acceptance": "a written decision table with a measured ceiling, cost, risk and kill criterion for each option; one option chosen and recorded in the decisions file",
@@ -106,6 +108,7 @@
     {
       "id": "D3",
       "title": "Menu-only wall decomposition and the top menu item",
+      "plan": "E4",
       "status": "queued",
       "depends": ["D2"],
       "acceptance": "the menu wall (18.8-20.0 s) is decomposed into CPU engine, device, GL and raster; the top menu-only item is priced; land only if >=10% wall or >=20% engine",
@@ -115,6 +118,7 @@
     {
       "id": "D4",
       "title": "Conditional: implement the engine shape chosen in D2",
+      "plan": "E3",
       "status": "blocked",
       "depends": ["D2"],
       "acceptance": "only starts if D2 chooses it and the price is >=10% wall or >=20% engine; two-iteration kill criterion; exact differentials",
@@ -124,6 +128,7 @@
     {
       "id": "D5",
       "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
+      "plan": "E5",
       "status": "queued",
       "depends": ["D1"],
       "acceptance": ">=10% menu wall; exact counters; no guest change",
@@ -133,6 +138,7 @@
     {
       "id": "P1",
       "title": "Host audio: APU GP/EP DSP execution + PCM sink",
+      "plan": "E6",
       "status": "queued",
       "depends": [],
       "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
@@ -142,6 +148,7 @@
     {
       "id": "R1",
       "title": "Release: packaging, installer, licensing review",
+      "plan": "E6",
       "status": "queued",
       "depends": [],
       "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",

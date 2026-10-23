@@ -89,8 +89,8 @@ The full routine is `ImplementationPlan.md` -> "Execution plan (current)".
 `docs/status.json` is the single source of truth; `scripts/status.ps1` validates
 it and regenerates the status blocks and the completion graph.
 
-1. **One active task (WIP=1).** `pwsh -File scripts/status.ps1 -Show`; work only
-   on the active task. No parallel agents on the same area.
+1. **One active task (WIP=1).** `pwsh -File scripts/status.ps1 -Check -Show`;
+   work only on the active task. No parallel agents on the same area.
 2. **Price before build.** A measured ceiling first; <10% wall or <20% engine
    -> record a negative and stop.
 3. **Acceptance test first.** Write the differential/golden before the code.
@@ -107,6 +107,12 @@ it and regenerates the status blocks and the completion graph.
 9. **Stop after two failures.** Reassess; do not grind a third variation.
 10. **History is append-only.** Mark old status blocks superseded; do not
     rewrite them.
+
+**RepoFleet:** generate the task command with
+`pwsh -File scripts/status.ps1 -Prompt`; the full worker contract is
+`docs/repofleet-worker.md`. The command is a thin pointer to the active task;
+do not restate the rules in RepoFleet. RepoFleet's one-active-task-per-repo
+queue is the WIP limit.
 
 ## Development direction (required; course-corrected 2026-10-22)
 

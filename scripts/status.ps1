@@ -8,12 +8,14 @@
 # Usage:
 #   pwsh -File scripts/status.ps1 -Check     # validate (default)
 #   pwsh -File scripts/status.ps1 -Show      # current task + queue
+#   pwsh -File scripts/status.ps1 -Prompt    # ready-to-paste RepoFleet task command
 #   pwsh -File scripts/status.ps1 -Sync      # validate + write blocks + graph
 #   pwsh -File scripts/status.ps1 -Sync -NoGraph   # blocks only
 param(
     [switch]$Check,
     [switch]$Sync,
     [switch]$Show,
+    [switch]$Prompt,
     [switch]$NoGraph
 )
 $ErrorActionPreference = 'Stop'
@@ -85,6 +87,12 @@ foreach ($q in $status.queue) {
     if ($planText -notmatch [regex]::Escape([string]$q.id)) {
         Fail "queue $($q.id): not named in the execution plan"
     }
+    $planSection = [string]$q.plan
+    if ([string]::IsNullOrWhiteSpace($planSection)) {
+        Fail "queue $($q.id): no plan section (E2..E6)"
+    } elseif ($planText -notmatch ('(?m)^## ' + [regex]::Escape($planSection) + '\.')) {
+        Fail "queue $($q.id): plan section $planSection is missing"
+    }
 }
 
 foreach ($d in $status.done) {
@@ -95,6 +103,30 @@ foreach ($n in $status.negatives) {
     if ([string]::IsNullOrWhiteSpace([string]$n.evidence)) { Fail "negative $($n.id): no evidence" }
     if ([string]::IsNullOrWhiteSpace([string]$n.reopen)) { Fail "negative $($n.id): no reopen condition" }
     if ($planText -notmatch [regex]::Escape([string]$n.id)) { Fail "negative $($n.id): not named in the execution plan" }
+}
+
+# ---------- RepoFleet task prompt ----------
+if ($Prompt) {
+    $t = $status.current
+    $plan = [string]$t.plan
+    if ([string]::IsNullOrWhiteSpace($plan)) { $plan = 'E2' }
+    $lines = @(
+        "Title: XGrid $($t.id) - $($t.title)",
+        "Repository: CSharp_XboxEmulator",
+        "",
+        "Work only on the active task in docs/status.json ($($t.id)). Read ImplementationPlan.md -> Execution plan (current) -> $plan ($($t.id)) and follow its checkboxes in order.",
+        "1. Start with ``pwsh -File scripts/status.ps1 -Check -Show``; if the check fails, stop and report. Do not start D2/D3/D5/P1/R1 or a docs refresh.",
+        "2. Price first: the first unchecked box is the price measurement. If the ceiling is <10% wall or <20% engine, record a new negative in docs/status.json, run ``pwsh -File scripts/status.ps1 -Check -Sync``, commit only the status change, and stop.",
+        "3. If the ceiling clears the bar, follow the remaining checkboxes exactly: acceptance test first, smallest implementation, exact 1B anchors, 3 interleaved pairs, the definition of done.",
+        "4. Do not retry a measured negative (docs/status.json negatives); cite a new measurement or stop.",
+        "5. Close with ``pwsh -File scripts/status.ps1 -Check -Sync``. Commit code + tests + status + graph in one commit: ``<area>: <summary> ($($t.id))``. Commit yourself so the message follows this protocol; if you leave changes uncommitted, the harness commits them as ``<title> (RepoFleet task #N)``.",
+        "6. Finish with: task id, what changed, evidence (numbers/anchors), and any stop condition.",
+        "",
+        "Acceptance: $($t.acceptance)",
+        "Price/ceiling: $($t.price)"
+    )
+    $lines -join "`n"
+    exit 0
 }
 
 # ---------- plan table ----------

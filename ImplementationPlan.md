@@ -255,8 +255,13 @@ Record the negative and stop.
 
 **Start:**
 
+- **RepoFleet:** the admin's task command is generated with
+  `pwsh -File scripts/status.ps1 -Prompt`; the worker contract is
+  `docs/repofleet-worker.md`. The command names the active task and points
+  back here; do not restate the rules in RepoFleet.
 1. `pwsh -File scripts/host-doctor.ps1` — read the VERDICT.
-2. `pwsh -File scripts/status.ps1 -Show` — the active task and the queue.
+2. `pwsh -File scripts/status.ps1 -Check -Show` - the active task and the queue;
+   a red check stops the session.
 3. Read the active task's steps and the negatives table; do not start anything
    else.
 4. `dotnet build XGrid.sln -c Release --nologo --no-restore`.
@@ -288,11 +293,13 @@ Record the negative and stop.
   status blocks, the graph data and the artifacts.
 - A docs-only status commit is a failure of the routine; fix the status file and
   regenerate instead.
+- RepoFleet commits remaining changes as `<title> (RepoFleet task #N)`; commit
+  yourself so the message follows this protocol, and the harness pushes.
 
 ## E11. Adding or reopening a task
 
-- Add it to `docs/status.json` `queue` with an id, title, depends, acceptance and
-  price.
+- Add it to `docs/status.json` `queue` with an id, title, plan section, depends,
+  acceptance and price.
 - It cannot become active until the price is measured and the acceptance test is
   written.
 - A negative is reopened only by adding a new measurement to its `reopen` field;
