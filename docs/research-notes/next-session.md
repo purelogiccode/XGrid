@@ -1,5 +1,13 @@
 # Next session instructions (updated 2026-10-22 very late, after §239/§240: the device stage was measured, its clear fill went through spans for **-10.6% / -10.6%** on the two headline legs, and the raw runner's per-member bookkeeping became static for a measured 3% engine / 0% wall)
 
+> **Routine change (2026-10-22):** the current task, queue and status are in
+> `docs/status.json`. Start every session with
+> `pwsh -File scripts/status.ps1 -Show` and work only on the active task
+> (`ImplementationPlan.md` -> "Execution plan (current)"). This file is the
+> detailed handoff and history, not the task queue; do not rewrite it as a
+> status report. Add only the measurements a task needs, then let
+> `scripts/status.ps1 -Sync` regenerate the canonical blocks.
+
 **Read in this order:** `docs/development-direction.md` §0 (the 2026-10-22
 course correction: xemu-class performance is the long-run objective, Track C
 re-opened, C4-C6, now with the §239/§240 status line), §1-§3 (priority stack,

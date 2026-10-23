@@ -83,7 +83,39 @@ remote-origin deletions of `References/`); both names stay git-ignored.
 Record extracted facts in `docs/research-notes/xgrid-architecture-decisions.md` (with source
 file references) and update `ImplementationPlan.md` status when a device or phase changes.
 
+## How to work (required; 2026-10-22 routine)
+
+The full routine is `ImplementationPlan.md` -> "Execution plan (current)".
+`docs/status.json` is the single source of truth; `scripts/status.ps1` validates
+it and regenerates the status blocks and the completion graph.
+
+1. **One active task (WIP=1).** `pwsh -File scripts/status.ps1 -Show`; work only
+   on the active task. No parallel agents on the same area.
+2. **Price before build.** A measured ceiling first; <10% wall or <20% engine
+   -> record a negative and stop.
+3. **Acceptance test first.** Write the differential/golden before the code.
+4. **Definition of done.** The per-type checklist in `ImplementationPlan.md`
+   E8; "landed" without it is not done.
+5. **No redo without a new measurement.** `docs/status.json` negatives are
+   binding.
+6. **One status file.** Edit `docs/status.json`; run
+   `pwsh -File scripts/status.ps1 -Check -Sync`; never write a second status
+   narrative.
+7. **One task per commit.** Code + tests + status + graph together; no generic
+   messages.
+8. **Row-scoped corpus.** Full sweep only at milestone close.
+9. **Stop after two failures.** Reassess; do not grind a third variation.
+10. **History is append-only.** Mark old status blocks superseded; do not
+    rewrite them.
+
 ## Development direction (required; course-corrected 2026-10-22)
+
+<!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
+**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active).
+**Position (H1, 1B, fast):** triangle gl+replace 5.61-5.74 s / sw 10.03 s; menu gl+replace 18.8-20.0 s / sw 30.35 s; gap ~4.7x / ~14x.
+**Phase score:** 78.2% (84.43 of 108). **Next:** D2 (C7 engine-shape decision), D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
+<!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
 `docs/research-notes/jit-track-charter.md`; corpus plan:

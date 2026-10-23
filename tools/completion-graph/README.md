@@ -26,7 +26,7 @@ is useful.
 
 | File | What |
 |---|---|
-| `completion-data.json` | Source of truth: phase id, name, weight, percent done. |
+| `completion-data.json` | Generated from `docs/status.json` by `scripts/status.ps1`; do not edit by hand. |
 | `generate.ps1` | Renders the SVG + self-contained HTML (+ optional PNG) from the JSON. |
 | `completion-treemap.svg` / `.html` / `.png` | **The canonical graph** (solid heat-color style); the only committed variant. |
 
@@ -42,10 +42,17 @@ pwsh -File tools/completion-graph/generate.ps1 -Png
 
 ## Updating the numbers
 
-Edit `completion-data.json` (weights and percents must match the
-`ImplementationPlan.md` assessment table), then re-run with `-Png` so the
-committed SVG/HTML/PNG stay current. Keep data and plan in sync in the same
-commit.
+Do not edit `completion-data.json` by hand. Edit `docs/status.json` (the single
+source of truth), then run:
+
+```powershell
+pwsh -File scripts/status.ps1 -Check -Sync
+```
+
+That validates the status file against the `ImplementationPlan.md` assessment
+table, regenerates `completion-data.json`, the three status blocks and the
+SVG/HTML/PNG. `-NoGraph` skips the image refresh. The old manual path
+(`generate.ps1` alone) is only for style experiments.
 
 Note for script authors: the generator pins InvariantCulture — pt-BR hosts
 would otherwise write `389,6` into SVG coordinates and break every rect.

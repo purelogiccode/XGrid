@@ -1,5 +1,304 @@
 # XGrid — Detailed Implementation Plan
 
+<!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
+**Current status (2026-10-22):** M-D / **D1 - C6 draw-flush half: compile or cache the active transform program** (active).
+**Position (H1, 1B, fast):** triangle gl+replace 5.61-5.74 s / sw 10.03 s; menu gl+replace 18.8-20.0 s / sw 30.35 s; gap ~4.7x / ~14x.
+**Phase score:** 78.2% (84.43 of 108). **Next:** D2 (C7 engine-shape decision), D3 (Menu-only wall decomposition and the top menu item), D5 (Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix), P1 (Host audio: APU GP/EP DSP execution + PCM sink).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 14.
+<!-- STATUS:END -->
+
+# Execution plan (current) — the checklist
+
+> **A session starts here.** The generated block above is the current status.
+> `docs/status.json` is the single source of truth; `scripts/status.ps1` validates
+> it and regenerates the status blocks and the completion graph. The detailed
+> narrative below is history, not the current task list.
+
+## E0. How we work (binding)
+
+**The one rule:** one active task at a time. The active task is the only thing a
+session works on. A session may fix a build break caused by the active task, but
+it may not start a second task, a "quick" refactor, or a docs refresh.
+
+**The task lifecycle:**
+
+```text
+queued -> priced -> active -> validating -> done
+                         \-> negative (recorded, not retried)
+```
+
+- `queued`: has an id, a title, a dependency list, and a price placeholder.
+- `priced`: a measured ceiling exists (a 100M-step ablation, a stage timer, or a
+  counted usage). If the ceiling is <10% wall or <20% engine, the task goes to
+  `negative` instead of `active`.
+- `active`: the acceptance test is written or the exact differential is defined.
+  Exactly one task is active.
+- `validating`: the implementation is in; the definition-of-done checklist (E8)
+  is being run.
+- `done`: the evidence bundle is in `docs/status.json`, the graph is regenerated,
+  and the commit contains code + tests + status + graph.
+- `negative`: the measured result is in `docs/status.json` under `negatives`,
+  with a reopen condition. It is not retried without a new measurement.
+
+**The ten rules:**
+
+1. **One active task.** WIP = 1. No parallel agents on the same area, no
+   "while I'm here" work.
+2. **Price before build.** A task needs a measured ceiling before it becomes
+   active. If the ceiling is below the bar, stop and record a negative. This is
+   the rule that would have prevented the C4/C4b double implementation.
+3. **Acceptance test first.** Write the differential, golden, or exact counter
+   check before the implementation.
+4. **Definition of done.** A task is done only when its DoD checklist (E8) is
+   complete. "Landed" without the evidence is not done.
+5. **No redo without a new measurement.** The negatives registry (E7) is
+   binding. A retry must cite a new measurement that invalidates the old
+   evidence.
+6. **One status file.** `docs/status.json` is the only place current status is
+   edited. The three docs' status blocks are generated. No docs-only status
+   commits.
+7. **One task per commit.** Code, tests, status and graph land together. No
+   mixed commits, no generic messages.
+8. **Row-scoped corpus.** Re-verify only the rows the change can affect; a full
+   sweep is a milestone-close event, not a per-slice ritual.
+9. **Stop after two failures.** If a task fails its acceptance test twice, stop
+   and reassess the approach; do not grind a third variation.
+10. **History is append-only.** Do not rewrite old status blocks. Mark them
+    superseded and put the current state in `status.json` + the generated block.
+
+**The forbidden patterns (the ones that caused the 2026-10-22 churn):**
+
+- Re-implementing a measured negative (C4 probe, ROM cache alone, word pool).
+- Declaring a GPU/shader slice "landed" without a live driver compile.
+- Rewriting the same status in `next-session.md`, `AGENTS.md`, the decisions
+  file, the plan, the charter and the direction doc.
+- Refreshing the completion graph separately from the assessment.
+- Running the full 22-row corpus after every slice.
+- A generic commit message (`Task (RepoFleet task #37)`) with no task id.
+
+## E1. Current milestone: M-D (xemu-class)
+
+**Target:** triangle `gl+replace` ≤ 1.20 s and menu ≤ 1.36 s at 1B, with the
+fast engine, measured against xemu where an oracle exists.
+**Current:** triangle 5.61-5.74 s, menu 18.8-20.0 s; gap ~4.7x / ~14x.
+**Exit:** the target band, or a measured reassessment after the D2 decision. The
+milestone is not "done" on a single leg.
+
+| id | task | status | depends | acceptance |
+|---|---|---|---|---|
+| D1 | C6 draw-flush half: compile or cache the active transform program | **active** | — | ≥10% wall or ≥20% engine; exact anchors; no vertex output change |
+| D2 | C7 engine-shape decision | queued | D1 | a written decision with a measured ceiling per option |
+| D3 | Menu-only wall decomposition and the top menu item | queued | D2 | the menu-only ~13 s is decomposed and the top item is priced |
+| D4 | Conditional: implement the engine shape chosen in D2 | blocked | D2 | only if D2 chooses it and the price clears the bar |
+| D5 | Remaining device/MMIO: hot NV2A method dispatch | queued | D1 | ≥10% menu wall; exact counters |
+| P1 | Host audio: APU GP/EP DSP execution + PCM sink | queued | — | a real voice stream produces PCM; no gate regression |
+| R1 | Release: packaging, installer, licensing | queued | — | reproducible packages + license review |
+
+## E2. D1 — C6 draw-flush half (ACTIVE)
+
+**Why this is the active task:** the device stage is 1.31 s of the 6.1 s
+triangle wall; 766 ms of that is draw flushes, and 413-435 ms is the interpreted
+vertex program. It is the largest measured unowned item. The clear half already
+landed (§240).
+
+**The measured facts (do not re-derive):**
+
+- 2,706 draw flushes at 1B; 63,524 vertices; 27.7 VS instructions per vertex.
+- The VS interpreter costs ~245 ns per instruction; allocation removal was
+  measured null (§240).
+- The row's own transform program is 28 instructions; a per-program compiled
+  evaluator is a bounded item.
+- The draw-flush split: VS interpreter 413-435 ms, GL submission 173-181 ms,
+  setup 61-66 ms, attribute fetch 34-36 ms, epilogue ~70 ms.
+
+**Steps:**
+
+- [ ] **D1.1 Price the draw-flush half.** Run a 100M-step ablation that removes
+  the VS interpreter from the flush (or time it with the existing stage probe).
+  Record the ceiling in `docs/status.json` (D1.price). Acceptance: the ceiling
+  is ≥10% wall or ≥20% engine. If not, stop and record a new negative.
+- [ ] **D1.2 Freeze the baseline.** Capture the triangle and menu 1B anchors, the
+  draw/flip counters, and a draw-flush trace (the 2,706 flushes, vertex counts,
+  program ids). This is the differential baseline.
+- [ ] **D1.3 Write the differential first.** A test that runs the same draw
+  stream through the interpreter and the new path and compares every vertex
+  output bit-for-bit; a frame golden (`A1740DE0`, `B6116DAE`, `7A860ED7`); a
+  corpus row (`xgu vp_lighting` 3B, `xgu bump_cubemap_reflect` 3.6B).
+- [ ] **D1.4 Implement the smallest compiled/cached form.** One host delegate
+  per token or a hoisted operand predecode; no float operation change; keep the
+  interpreter as the fallback. Do not rewrite the program loader.
+- [ ] **D1.5 Validate.** Build + tests + format; triangle and menu 1B
+  SHAs/counters exact; both accurate goldens; ktest log byte-identical;
+  `BackendUnsupported=0`; both GL frames.
+- [ ] **D1.6 Measure.** At least 3 interleaved same-window pairs; report
+  draw-flush ms, ns/vertex, wall, and the 3/3 sign. A single run is not a claim.
+- [ ] **D1.7 Close.** Add the done item to `docs/status.json` with the evidence
+  and commit hashes; run `pwsh -File scripts/status.ps1 -Check -Sync`; commit
+  code + tests + status + graph in one commit. Then promote D2.
+
+**Stop conditions:** the ceiling is <10% wall or <20% engine; the differential
+cannot be made bit-exact; two implementation attempts fail the acceptance test.
+Record the negative and stop.
+
+## E3. D2 — C7 engine-shape decision (QUEUED, depends D1)
+
+**The decision inputs (already measured):**
+
+- Encoder: `Assemble` 390 ns vs a single-pass 120 ns per instruction = ~7%
+  triangle / ~3% menu (§234e). Below the bar.
+- Code volume: 11 instructions per member removed = -3% engine, 0% wall; the
+  runner is latency-bound (§239). Closed.
+- Boundary population: ~350 ms = 3-5% of the wall (§235). Below the bar.
+- Device stage: 766 ms of draw flushes (D1) and 816 ms total after the clear
+  fill (§240).
+
+**Steps:**
+
+- [ ] **D2.1 Re-read the prices.** Confirm each number is still the current
+  measurement; do not re-run a negative.
+- [ ] **D2.2 Write the decision table.** Options: (a) keep the current engine
+  and take the device/draw-flush path; (b) a trace/native core; (c) a different
+  execution model. For each: measured ceiling, cost, risk, kill criterion.
+- [ ] **D2.3 Decide.** One option, with a written rationale. If (b)/(c), file D4
+  with a price and a two-iteration kill criterion; if (a), close C and promote
+  D3.
+- [ ] **D2.4 Record.** Decisions file §; `docs/status.json` current/queue;
+  generated block.
+
+## E4. D3 — menu-only wall (QUEUED, depends D2)
+
+- [ ] **D3.1 Decompose.** Menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s
+  is menu-only. Split it into CPU engine, device, GL, raster and boot; use the
+  stage timers, not a guess.
+- [ ] **D3.2 Rank and price.** Take the top menu-only item; write the ceiling.
+- [ ] **D3.3 Land or negative.** Only with the gate; otherwise record the
+  negative.
+
+## E5. D5 — remaining device/MMIO (QUEUED, depends D1)
+
+- [ ] **D5.1 Price the hot NV2A method dispatch and the menu's device mix.** The
+  draw-flush half is D1; this is the rest.
+- [ ] **D5.2 Land or negative.** ≥10% menu wall; exact counters.
+
+## E6. P1 / R1 — parallel product and release
+
+- [ ] **P1.1 Scope the APU DSP model** against
+  `References2/xemu-0.8.137/hw/xbox/mcpx/apu/dsp/`; the interpreter is the
+  oracle, not a code source.
+- [ ] **P1.2 Add the PCM sink and a voice-stream test.** Product smoke, no gate
+  regression.
+- [ ] **R1.1 Package the frontend and CLI** for Windows/Linux/macOS; license
+  review; release notes.
+- These do not start while D1 is active. WIP = 1.
+
+## E7. Measured negatives (binding — do not retry)
+
+| id | negative | evidence | reopen only if |
+|---|---|---|---|
+| N1 | C4 host-pointer translate probe | `runnerMs` 15,872 -> 16,026 menu; 3,407 -> 3,382 triangle; walls within noise | a new measurement shows the probe is the wall |
+| N2 | read-only-ROM decode cache alone | `nonRamSkips` -> 0, wall/`nonJitMs` flat | a new cache question (e.g. store tracking) |
+| N3 | full trace/superblock formation | ~350 ms = 3-5% of the wall | a new measurement shows a larger boundary population |
+| N4 | own the encoder | 390 vs 120 ns = ~7% triangle | a new formation profile makes it >10% |
+| N5 | per-member EIP/TSC/served removal | -3% engine, 0% wall | an edge-removal design |
+| N6 | VshProgram allocations | 3.5M allocations removed, 413 -> 426 ms | a new allocation profile |
+| N7 | B3 word pool (`uGuestWord[96]`) | superseded by the 2D-array; code deleted | never; use the 2D-array |
+| N8 | block fusion | -82% invocations, +40% wall | a new design that keeps the spin skip |
+| N9 | 1024-slot data translate cache | neutral | a new TLB design |
+| N10 | `JitSpecSlice` below 64 | formation eats the gain | a cheaper formation path |
+| N11 | k1 fold / alpha-1 skip / AggressiveInlining | neutral | a new profile |
+| N12 | GPU "landed" without a live compile | §227: the shaders never compiled | never; the gate is DoD |
+| N13 | full corpus after every slice | two sweeps in one day | milestone close or a shared sampler/decoder change |
+| N14 | docs-only status rewrites | next-session 24 touches, AGENTS 23, decisions 22 | never; status.json + generated blocks |
+
+## E8. Definition of done (per task type)
+
+**Code/device:**
+
+- [ ] `dotnet build XGrid.sln -c Release` clean (0 warnings).
+- [ ] `dotnet test XGrid.sln -c Release` green.
+- [ ] `dotnet format XGrid.sln --no-restore --verify-no-changes` clean.
+- [ ] 1B triangle and menu SHAs/counters exact; flag-off byte-identical.
+- [ ] ktest log byte-identical (when the task touches the CPU/device path).
+- [ ] `docs/status.json` done item with evidence + commit hashes.
+
+**GPU/shader:**
+
+- [ ] The shader compiles and links on the driver (the §227 live gate), not just
+  a string compare.
+- [ ] The frame differential vs software (policy: violations 0, maxDelta ≤1) or
+  the corpus pair.
+- [ ] `BackendUnsupported=0`, `fatal=0`, the expected `composedFrames`.
+- [ ] Both 1B GL frames byte-identical where the task is host-side only.
+
+**Performance:**
+
+- [ ] A measured ceiling before the build (100M-step ablation or stage timer).
+- [ ] ≥3 interleaved same-window pairs, 3/3 sign.
+- [ ] ≥10% wall or ≥20% engine; otherwise negative.
+- [ ] The exact anchors and counters on both titles; no mixed engine.
+
+**Docs/status:**
+
+- [ ] `pwsh -File scripts/status.ps1 -Check` green.
+- [ ] `-Sync` regenerated the three status blocks and the graph.
+- [ ] No new duplicate status prose outside the generated block.
+- [ ] The commit contains the code/test/status/graph, not a docs-only follow-up.
+
+**Product:**
+
+- [ ] Frontend build + manual smoke; no core/CLI/test file touched unless the
+  task is core.
+- [ ] Settings/save/load/input still work; a screenshot or a session log is the
+  evidence.
+
+## E9. Session checklist
+
+**Start:**
+
+1. `pwsh -File scripts/host-doctor.ps1` — read the VERDICT.
+2. `pwsh -File scripts/status.ps1 -Show` — the active task and the queue.
+3. Read the active task's steps and the negatives table; do not start anything
+   else.
+4. `dotnet build XGrid.sln -c Release --nologo --no-restore`.
+
+**Work:**
+
+5. Write the acceptance test/differential first.
+6. Price the stage; if below the bar, record the negative and stop.
+7. Implement the smallest change; keep the fallback.
+8. Validate against the DoD.
+
+**Close:**
+
+9. Edit `docs/status.json` once: current, queue, done/negative, position.
+10. `pwsh -File scripts/status.ps1 -Check -Sync` — green.
+11. Run the gates (build, test, format, ktest when applicable).
+12. Commit code + tests + status + graph in one commit. No generic message.
+13. Do not write a second status narrative in `next-session.md`/`AGENTS.md`/the
+    decisions file; the generated block is the status.
+
+## E10. Commit protocol
+
+- One task per commit. If the task needs a test-only prep commit, use the task
+  id in both.
+- Message: `area: imperative summary (task id)`.
+  - Good: `nv2a: fill 32-bit clears through a span (D1)`.
+  - Bad: `Task (RepoFleet task #37)`.
+- The closing commit contains: code, tests, `docs/status.json`, the generated
+  status blocks, the graph data and the artifacts.
+- A docs-only status commit is a failure of the routine; fix the status file and
+  regenerate instead.
+
+## E11. Adding or reopening a task
+
+- Add it to `docs/status.json` `queue` with an id, title, depends, acceptance and
+  price.
+- It cannot become active until the price is measured and the acceptance test is
+  written.
+- A negative is reopened only by adding a new measurement to its `reopen` field;
+  the old evidence stays.
+- Delete nothing from `done` or `negatives`; history is append-only.
+
 ## 0. Project Overview
 
 **Project name:** XGrid  
@@ -115,6 +414,10 @@ Instead:
 > Reimplement the documented/reverse-engineered Xbox hardware behavior in an independently designed C# architecture.
 
 ### Development direction (binding, revised 2026-10-22)
+
+> **Superseded as the current task list by the execution plan at the top of this
+> file.** This section is the plan's narrative history; `docs/status.json` and
+> the generated block are the current state.
 
 Canonical priority order: `docs/development-direction.md` (summarized in
 `AGENTS.md` "Development direction"). The **2026-10-22 operator decision** makes
@@ -3504,6 +3807,10 @@ Current test baseline: **1865 tests passing** (2026-10-22, `dotnet test XGrid.sl
 `dotnet build -c Release` clean (0 warnings); `dotnet format --verify-no-changes` clean (verified 2026-10-21).
 
 ## Project completion assessment (2026-10-19; refreshed 2026-10-22 (39th session) for the C4/C5/C6 performance slices §§237–240 - instruction fetches from immutable image windows, the non-JIT run slice at 64, the raw emitter's static per-edge accounting and the device-stage clear fill through `Span<uint>` (-10.6% on both headline legs, every anchor byte-identical) - and, in the 36th session, for the closed B3 computed-mode panel - gap 12, a cube stage sampled as a decoded host 2D-array texture - and, in the 34th session, §234 - the GPU display-source rule (a direct-framebuffer guest now shows its own buffer under the OpenGL renderer) and the C7 encoder price that closes "own the encoder" (~7% triangle wall, below the stage bar) - and earlier for the B3 computed-mode GPU slices §§226–228, the `reach[...]` combiner read-set diagnostics §230, the `nxdk/usb` corpus row §229 (the matrix is now 22 rows over 17 samples), the full CI/release pipeline (`81bc8b3`), the zero-warning/zero-inspectcode-findings tree (`8840073`/`2b7d144`) and the **2026-10-22 performance re-aim** (operator: xemu-class or better is the long-run objective; Track C re-opened, C4-C6 filed, no score change until a slice lands); the previous refresh covered the Track B GL slices §§219–220, the frontend GPU renderer + per-title renderer + threaded snapshots §§221–224, the CPU correctness campaign §225, the fixed-function vertex stage and its lighting §§213/215, PTIMER §216, the display model §208, the compatibility corpus at 20 rows over 16 samples §§207–210, Track P (XInput pad + save states §206, per-title overrides + persistent EEPROM §217/§219d) and the APU XGSCNT fix §218; earlier refreshes covered §§184–205)
+
+> The phase table below is current and is checked against `docs/status.json` by
+> `scripts/status.ps1 -Check`; the prose in this section is history. The
+> completion graph is generated from `docs/status.json`.
 
 Weighted estimate over the 24 plan phases (0–23). Phase fractions reflect
 implemented-vs-planned surface (behavior, tests, reference parity), and the

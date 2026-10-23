@@ -1,0 +1,296 @@
+{
+  "schema": 1,
+  "updated": "2026-10-22",
+  "objective": "xemu-class performance or better on the same content (operator decision 2026-10-22)",
+  "current": {
+    "milestone": "M-D",
+    "id": "D1",
+    "title": "C6 draw-flush half: compile or cache the active transform program",
+    "status": "active",
+    "started": "2026-10-22",
+    "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
+    "price": "766 ms of draw flushes at 1B (413-435 ms interpreted vertex program) = 14% of the triangle gl+replace wall; re-measure the ceiling with a 100M-step ablation before implementing"
+  },
+  "position": {
+    "host": "H1",
+    "steps": 1000000000,
+    "mode": "fast",
+    "legs": {
+      "triangle_gl_replace": {
+        "wall": "5.61-5.74 s",
+        "ram": "B45254CA",
+        "cpu": "7DAB63EB",
+        "frame": "7A860ED7"
+      },
+      "triangle_sw": {
+        "wall": "10.03 s"
+      },
+      "menu_gl_replace": {
+        "wall": "18.8-20.0 s",
+        "ram": "B06BA6E5",
+        "cpu": "F5D61C94",
+        "frame": "B6116DAE"
+      },
+      "menu_sw": {
+        "wall": "30.35 s"
+      }
+    },
+    "accurate": {
+      "triangle_ram": "812EA159",
+      "triangle_cpu": "2F632483",
+      "menu_ram": "6AB39AB0",
+      "menu_cpu": "3D2740B8",
+      "triangle_frame": "A1740DE0",
+      "menu_frame": "4EF1FBF6"
+    },
+    "gap": {
+      "triangle_x": 4.7,
+      "menu_x": 14.0
+    },
+    "ktest": {
+      "steps": 792800535,
+      "log_sha": "CA5D3867",
+      "log_bytes": 40797
+    }
+  },
+  "result": {
+    "points": 84.43,
+    "weight": 108,
+    "percent": 78.2
+  },
+  "phases": [
+    { "p": 0, "name": "Bootstrap", "weight": 1, "done": 100, "track": "LLE core (real console chain)" },
+    { "p": 1, "name": "Core", "weight": 2, "done": 100, "track": "LLE core (real console chain)" },
+    { "p": 2, "name": "Memory", "weight": 3, "done": 100, "track": "LLE core (real console chain)" },
+    { "p": 3, "name": "CPU (x86 PIII)", "weight": 11, "done": 96, "track": "LLE core (real console chain)" },
+    { "p": 4, "name": "MMU", "weight": 3, "done": 100, "track": "LLE core (real console chain)" },
+    { "p": 5, "name": "Bus & IRQ", "weight": 6, "done": 85, "track": "LLE core (real console chain)" },
+    { "p": 6, "name": "MCPX", "weight": 6, "done": 80, "track": "LLE core (real console chain)" },
+    { "p": 7, "name": "Firmware & Boot", "weight": 5, "done": 90, "track": "LLE core (real console chain)" },
+    { "p": 8, "name": "Storage", "weight": 5, "done": 86, "track": "LLE core (real console chain)" },
+    { "p": 9, "name": "XBE Loader", "weight": 3, "done": 90, "track": "LLE core (real console chain)" },
+    { "p": 10, "name": "Kernel Interface", "weight": 2, "done": 5, "track": "LLE core (real console chain)" },
+    { "p": 11, "name": "NV2A (GPU)", "weight": 15, "done": 93, "track": "LLE core (real console chain)" },
+    { "p": 12, "name": "APU (audio)", "weight": 4, "done": 55, "track": "LLE core (real console chain)" },
+    { "p": 13, "name": "USB & Controllers", "weight": 4, "done": 70, "track": "LLE core (real console chain)" },
+    { "p": 14, "name": "Networking", "weight": 4, "done": 70, "track": "LLE core (real console chain)" },
+    { "p": 15, "name": "CPU JIT", "weight": 11, "done": 90, "track": "Performance & finish" },
+    { "p": 16, "name": "CPU Optimization", "weight": 3, "done": 35, "track": "Performance & finish" },
+    { "p": 17, "name": "Memory Optimization", "weight": 2, "done": 40, "track": "Performance & finish" },
+    { "p": 18, "name": "GPU Optimization", "weight": 4, "done": 78, "track": "Performance & finish" },
+    { "p": 19, "name": "Debugger", "weight": 3, "done": 30, "track": "Performance & finish" },
+    { "p": 20, "name": "Automated Testing", "weight": 3, "done": 82, "track": "Performance & finish" },
+    { "p": 21, "name": "CLI & Frontend", "weight": 3, "done": 75, "track": "Performance & finish" },
+    { "p": 22, "name": "Save States & Replay", "weight": 2, "done": 30, "track": "Performance & finish" },
+    { "p": 23, "name": "Release", "weight": 3, "done": 18, "track": "Performance & finish" }
+  ],
+  "queue": [
+    {
+      "id": "D1",
+      "title": "C6 draw-flush half: compile or cache the active transform program",
+      "status": "active",
+      "depends": [],
+      "acceptance": "same-window A/B >=10% wall or >=20% engine on the triangle and menu 1B legs; exact 1B SHAs/counters; flag-off byte-identical; ktest log byte-identical; the draw-flush device time falls and no vertex output changes",
+      "price": "766 ms of draw flushes at 1B (413-435 ms interpreted vertex program) = 14% of the triangle gl+replace wall; re-measure the ceiling with a 100M-step ablation before implementing",
+      "evidence": []
+    },
+    {
+      "id": "D2",
+      "title": "C7 engine-shape decision",
+      "status": "queued",
+      "depends": ["D1"],
+      "acceptance": "a written decision table with a measured ceiling, cost, risk and kill criterion for each option; one option chosen and recorded in the decisions file",
+      "price": "encoder ~7% triangle / ~3% menu; code volume 0% wall; boundary population 3-5%; device stage 766 ms (all measured)",
+      "evidence": []
+    },
+    {
+      "id": "D3",
+      "title": "Menu-only wall decomposition and the top menu item",
+      "status": "queued",
+      "depends": ["D2"],
+      "acceptance": "the menu wall (18.8-20.0 s) is decomposed into CPU engine, device, GL and raster; the top menu-only item is priced; land only if >=10% wall or >=20% engine",
+      "price": "menu 18.8-20.0 s vs triangle 5.61-5.74 s: about 13 s is menu-only; the decomposition is the first step",
+      "evidence": []
+    },
+    {
+      "id": "D4",
+      "title": "Conditional: implement the engine shape chosen in D2",
+      "status": "blocked",
+      "depends": ["D2"],
+      "acceptance": "only starts if D2 chooses it and the price is >=10% wall or >=20% engine; two-iteration kill criterion; exact differentials",
+      "price": "to be written by D2",
+      "evidence": []
+    },
+    {
+      "id": "D5",
+      "title": "Remaining device/MMIO: hot NV2A method dispatch and the menu's device mix",
+      "status": "queued",
+      "depends": ["D1"],
+      "acceptance": ">=10% menu wall; exact counters; no guest change",
+      "price": "the draw-flush half is D1; the remaining device stage (method dispatch) is unpriced",
+      "evidence": []
+    },
+    {
+      "id": "P1",
+      "title": "Host audio: APU GP/EP DSP execution + PCM sink",
+      "status": "queued",
+      "depends": [],
+      "acceptance": "a real APU voice stream produces PCM through a host sink; no gate regression; product smoke",
+      "price": "product gap; no oracle yet; scope after the DSP model is measured",
+      "evidence": []
+    },
+    {
+      "id": "R1",
+      "title": "Release: packaging, installer, licensing review",
+      "status": "queued",
+      "depends": [],
+      "acceptance": "a reproducible packaged build on Windows/Linux/macOS; license review; release notes",
+      "price": "not on the M-D critical path",
+      "evidence": []
+    }
+  ],
+  "done": [
+    {
+      "id": "C6.1",
+      "title": "A 32-bit surface clear fills rows through Span<uint>.Fill",
+      "date": "2026-10-22",
+      "evidence": "device time 1,306 -> 816 ms; triangle gl+replace 5.61/5.74/5.73 s (-10.6%, 3/3); menu 19.98/18.82 s; every 1B SHA/counter/frame exact",
+      "commits": ["e955b64", "42e161b"]
+    },
+    {
+      "id": "C5.1",
+      "title": "C5 slice 1: lazy IL runner + in-frame chain entry",
+      "date": "2026-10-22",
+      "evidence": "triangle -4.2% / menu -3.0% (3/3); all four fast anchors and both accurate goldens byte-identical",
+      "commits": ["8dc8429", "1ef1b8d", "de652dd"]
+    },
+    {
+      "id": "C4b.1",
+      "title": "Image-window decode class: fetch and block flash/BIOS/mirror/overlay",
+      "date": "2026-10-22",
+      "evidence": "nonRamSkips 359,476 -> 0; nonJitCalls 523k -> 169k; triangle -6.4%; exact 1B anchors",
+      "commits": ["415d87a", "5355e2d"]
+    },
+    {
+      "id": "B3.1",
+      "title": "Gap 12 closed: a cube stage samples a host 2D-array texture",
+      "date": "2026-10-22",
+      "evidence": "the corpus row agrees with software within 2 pixels of 307,200 at both anchors; the word-pool code is deleted",
+      "commits": ["766c28d", "bfb2933"]
+    }
+  ],
+  "negatives": [
+    {
+      "id": "N1",
+      "title": "C4 host-pointer translate probe",
+      "date": "2026-10-22",
+      "evidence": "menu runnerMs 15,872 -> 16,026; triangle 3,407 -> 3,382; walls within noise; SHAs exact; reverted",
+      "reopen": "only with a new measurement that shows the probe is the wall"
+    },
+    {
+      "id": "N2",
+      "title": "Read-only-ROM decode caching alone",
+      "date": "2026-10-22",
+      "evidence": "nonRamSkips -> 0 but the wall and nonJitMs flat; the win was block formation, not caching (237)",
+      "reopen": "only for a new cache question (for example store tracking), not a retry of the same path"
+    },
+    {
+      "id": "N3",
+      "title": "Full trace/superblock formation",
+      "date": "2026-10-22",
+      "evidence": "removes about 350 ms of boundary population = 3-5% of the wall (235), below the stage bar",
+      "reopen": "only if a new measurement shows the boundary population is larger"
+    },
+    {
+      "id": "N4",
+      "title": "Own the encoder (Assembler rewrite)",
+      "date": "2026-10-22",
+      "evidence": "390 ns vs 120 ns per instruction = about 7% triangle / 3% menu (234e), below the bar",
+      "reopen": "only with a new formation profile that makes it >10%"
+    },
+    {
+      "id": "N5",
+      "title": "Remove the raw emitter's per-member EIP/TSC/served",
+      "date": "2026-10-22",
+      "evidence": "-3% engine, 0% wall; the runner is latency-bound (239)",
+      "reopen": "only with an edge-removal design, not another instruction-count cut"
+    },
+    {
+      "id": "N6",
+      "title": "VshProgram.Execute allocations / scratch reuse",
+      "date": "2026-10-22",
+      "evidence": "about 3.5M allocations removed; 413 -> 426 ms; null (240)",
+      "reopen": "only with a new allocation profile"
+    },
+    {
+      "id": "N7",
+      "title": "The B3 word-pool design (uGuestWord[96])",
+      "date": "2026-10-22",
+      "evidence": "superseded by the host sampler2DArray; the pool code was deleted (236)",
+      "reopen": "never; use the 2D-array design"
+    },
+    {
+      "id": "N8",
+      "title": "Block fusion",
+      "date": "2026-10-20",
+      "evidence": "-82% invocations but +40% wall; disabled the spin skip (199d)",
+      "reopen": "only with a new fusion design that keeps the spin skip"
+    },
+    {
+      "id": "N9",
+      "title": "1024-slot data translate cache",
+      "date": "2026-10-20",
+      "evidence": "neutral, reverted (199o)",
+      "reopen": "only with a new TLB design"
+    },
+    {
+      "id": "N10",
+      "title": "JitSpecSlice below 64",
+      "date": "2026-10-22",
+      "evidence": "nonJitMs falls but formation eats it; 64 is the wall minimum (238)",
+      "reopen": "only with a cheaper formation path"
+    },
+    {
+      "id": "N11",
+      "title": "k1 constant fold / alpha-1 blend skip / AggressiveInlining",
+      "date": "2026-10-20",
+      "evidence": "neutral (202)",
+      "reopen": "only with a new profile"
+    },
+    {
+      "id": "N12",
+      "title": "Claiming a GPU shader slice landed without a live compile",
+      "date": "2026-10-22",
+      "evidence": "227 found the shaders never compiled; the live driver gate is mandatory",
+      "reopen": "never; the gate is a definition-of-done item"
+    },
+    {
+      "id": "N13",
+      "title": "Full corpus sweep after every slice",
+      "date": "2026-10-22",
+      "evidence": "two full sweeps in one day (c7f4825, 5355e2d); row-scoped re-verification is enough unless the change is global",
+      "reopen": "only at milestone close or when the change touches the shared sampler/decoder"
+    },
+    {
+      "id": "N14",
+      "title": "Docs-only status rewrites in five files",
+      "date": "2026-10-22",
+      "evidence": "next-session 24 touches, AGENTS 23, decisions 22 in one day; the same status rewritten",
+      "reopen": "never; status.json plus generated blocks"
+    }
+  ],
+  "rules": {
+    "wip": 1,
+    "price_before_build": true,
+    "acceptance_test_first": true,
+    "definition_of_done": true,
+    "no_redo_without_new_measurement": true,
+    "single_status_file": "docs/status.json",
+    "generated_status_block": true,
+    "one_task_per_commit": true,
+    "no_generic_commit_messages": true,
+    "row_scoped_corpus": true,
+    "full_sweep_at_milestone_only": true,
+    "stop_after_two_failed_iterations": true
+  }
+}
