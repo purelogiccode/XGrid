@@ -85,18 +85,22 @@ members is another 816 ms (§240), so the menu's gap is the helper/device mix. A
    (766 ms of draw flushes, 413-435 ms of it the interpreted vertex program);
    C4 measured null (§232a) and §239 proved the runner is latency- not
    instruction-bound, so the CPU-side lever left is *edge* removal.**
+   **C7 is due after the draw-flush slice:** the encoder (~7%) and the
+   code-volume question (§239, 0% wall) are priced out, so the decision is the
+   engine shape (trace/native core or a different execution model), not another
+   micro-slice.
 2. **B — bounded finish of the in-flight B3 slice — DONE 2026-10-22 (§236).**
    The GL product renderer's computed-mode panel was black because a cube stage
    had no word source; it now samples a host 2D-array texture decoded from the
    guest's swizzled faces and agrees with software within 2 pixels of 307,200 at
-   both of the row's anchors. **B stops here** until C has a measured result; no
-   new B fidelity rows.
+   both of the row's anchors. **B stops here**; no new B fidelity rows while C
+   leads.
 3. **E — corpus steers.** Keep the matrix; add the performance rows
    (Msteps/s, wall per presented frame) and the xemu comparison where it is a
-   valid oracle. No new corpus breadth beyond the standing rows until C4 lands.
+   valid oracle. No new corpus breadth beyond the standing rows while C leads.
 4. **P — product (parallel, not blocking).** Host audio remains the largest
    product gap; it needs APU GP/EP DSP execution + a PCM sink. Run it parallel
-   to C or after C4's first measured stage; do not let it displace C.
+   to C; do not let it displace C.
 5. **D — only with a measured >2% ceiling.** Unchanged.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency; the
    performance program never relaxes the ceremony.
@@ -104,13 +108,16 @@ members is another 816 ms (§240), so the menu's gap is the helper/device mix. A
 **Price every stage first.** Each stage starts with a 100M-step ablation that
 prices its ceiling (the §199n pattern: elide the mechanism, measure the wall).
 If the ceiling is <10% wall, stop and re-scope rather than land a polish pass.
-C5 must re-measure the block-fusion negative (§199d) at trace granularity: if
-the per-block poll/state cost is not the bottleneck, skip it.
+**C5 slice 1 landed and the full trace was priced at 3-5% (§235), so the
+block-fusion re-measure is moot; the next stage is the draw-flush half.**
 
 **Kill/reassess.** If C4+C5 do not reach ≥3× engine improvement after two
 structural iterations, stop and reassess the approach (memory model, trace
 formation, or a native core) rather than polishing. The xemu-class target is
-the aim, not a promise; the measured stage results decide.
+the aim, not a promise; the measured stage results decide. **Status 2026-10-22
+very late:** the criterion is met (C4 null, C5 slice 1 -3/-4%); C6's device
+stage paid -10.6%, so the reassessment is scheduled after the draw-flush half —
+the last priced CPU-side item.
 
 **Why not B first?** B3 is a correctness item for one homebrew row; C is
 ~70-90% of every product wall and the stated long-run objective. B3 is bounded
@@ -204,9 +211,28 @@ the first 100M steps) at ~1.5 µs each because the decode cache refuses non-RAM
 pages — **priced 0.54 s/run, 7.8% of the triangle wall**. Landed: the unified
 interrupt poll (C6 slice 1, architecture; wall delta below resolution) and a
 correctness fix for a raw store that lost its translate slot when CR0.WP was
-clear. Next: **C4b** read-only-ROM decode path, then C5 trace formation
-(measured against `nonJitMs`), then C6. Price stages with stashed interleaved
+clear. **The plan at that point was C4b (read-only-ROM decode path), then C5
+trace formation (measured against `nonJitMs`), then C6 - all three are now done;
+see the 39th-session status below.** Price stages with stashed interleaved
 A/B legs, never with env-gated ablations that change guest behavior (§232e).
+
+**Status 2026-10-22 very late (39th session, §§237–240): the "next" list above
+is done and the device stage is now the paying track.** C4b landed as the
+image-window class (§237: `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k,
+triangle `gl+replace` -6.4%), the non-JIT run slice went 256 → 64 (§238:
+`nonJitInstructions` 5.48M → 2.62M, `nonJitMs` 2190 → 1650, triangle -3.7%),
+and the raw emitter's per-member EIP/TSC/served became one static publish per
+edge (§239: engine 6.3 → 6.1 ns/member, wall flat — the runner is
+**latency-bound, not instruction-bound**, so the CPU-side lever is *edge*
+removal). The device stage was measured for the first time (1.31 s of the
+triangle 1B `gl+replace` wall inside 44,030 device writes: 766 ms draw flushes,
+~540 ms clears) and its clear half was won (§240: `Span<uint>.Fill`, device
+time 1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%). **Next: the
+draw-flush half** (766 ms, of which 413-435 ms is the interpreted vertex
+program), then the **C7 engine-shape decision** — the encoder (~7%) and the
+code-volume question (§239, 0% wall) are already priced out. Price stages with
+stashed interleaved A/B legs, never with env-gated ablations that change guest
+behavior (§232e).
 
 **Status 2026-10-22 (course correction): Track C is re-opened and leads; B3 is
 a bounded finish; E steers; P runs parallel.** The engine is ~17 s of the
@@ -252,14 +278,14 @@ host audio (APU DSP execution first).
 2. **B — bounded B3 finish — CLOSED 2026-10-22 (§236).** A cube stage samples a
    host 2D-array texture decoded from the guest's swizzled faces, so the GL
    product renderer's computed-mode panel renders and agrees with software within
-   2 pixels of 307,200. No new B fidelity rows until C has a measured result. The
+   2 pixels of 307,200. No new B fidelity rows while C leads. The
    present path itself is closed (readback opt-in, batching, sampler parity,
    replace-mode composition).
 3. **E — compatibility corpus.** `docs/compatibility.md` + the harness +
    performance rows (Msteps/s, wall per presented frame). Every row has a
    reproducible command and a step anchor; a fidelity landing cites the row it
    fixes and the histogram that proves usage. No new corpus breadth beyond the
-   standing 22 rows / 17 samples until C4 lands.
+   standing 22 rows / 17 samples while C leads.
 4. **P — product completeness (parallel, not blocking).** Host audio output is
    the remaining large item (APU GP/EP DSP execution + a PCM sink); pad
    binding, save-state V1, per-title config, renderer choice, frame stepping
@@ -267,7 +293,7 @@ host audio (APU DSP execution first).
 5. **D — cheap wins with a measured ceiling.** Page-end wait, bookkeeping.
 6. **Gates — unchanged and non-negotiable.** Accurate mode is currency.
 
-## 2. Measured position (1B fast-mode legs, reference host, 2026-10-20)
+## 2. Measured position (1B fast-mode legs, reference host; 2026-10-20 table + 2026-10-22 very late current position)
 
 1 guest-second ≈ 733M steps (§68), so 1B steps ≈ 1.364 guest-seconds.
 **"xemu-class" means the same content runs at wall ≤ guest-time**, measured
@@ -280,14 +306,15 @@ same legs cost **11.3 s sw / 7.5 s `gl+replace`** at 1B on H1 (2,706 draws /
 68 frames / 57.7M px). Read the table as the boot-animation workload it actually
 measured; M-A's triangle target needs re-basing before it is chased.
 
-**Re-aim 2026-10-22:** the present path is done and the CPU engine is the wall
-again. Current H1 position: menu `gl+replace` **24.3 s** (CPU engine ~17 s,
-block builds ~1.4 s, interpreter ~2.5 s, boot ~2 s, GL ~0.7 s; readback only
-when capturing), triangle `gl+replace` **7.5-7.9 s**, menu `sw` ~32 s (raster
-~11.5 s), triangle `sw` 11.5 s. xemu-class is **1.20 s** on the triangle (830
-Msteps/s) and **1.36 s** on the menu (real-time band; xemu has no menu oracle),
-so the gap is **~6.6x / ~17.8x**. ktest 2B is already ahead (9-10 s vs xemu
-15 s). **M-D is now the lead milestone, not the last one.**
+**Current position (2026-10-22 very late, after §§237–240):** the present path
+is done and the CPU/device engine is the wall again. On H1 at 1B: menu
+`gl+replace` **18.8-20.0 s** / `sw` 30.35 s (raster ~11.2 s), triangle
+`gl+replace` **5.61-5.74 s** / `sw` 10.03 s. xemu-class is **1.20 s** on the
+triangle (830 Msteps/s) and **1.36 s** on the menu (real-time band; xemu has no
+menu oracle), so the gap is **~4.7x / ~14x** (was ~6.6x / ~17.8x before
+§§237–240). ktest 2B is already ahead (9-10 s vs xemu 15 s). **M-D is the lead
+milestone, not the last one.** The table below is the 2026-10-20 measurement
+(pre-§237) and is retained as history.
 
 | leg | wall | raster | xemu reference | gap |
 |---|---:|---:|---|---:|
@@ -321,9 +348,11 @@ projection that is ~23.8 s against the 24 s M-A target. What is left of
 submission is ~803 ms of block packing (100 float stores × 2.76M), not GL calls.
 
 
-Anchors (fast mode): menu RAM `660CA11B…` / CPU `F5D61C94…`; triangle
-`F57934BF…` / `CF79FC17…`. Accurate mode: menu `D9C99A58…`/`3D2740B8…`,
-triangle `F57934BF…`/`9B5AFC2A…`. 1B walls are continuity anchors only.
+Anchors (fast mode, H1, 2026-10-22): menu RAM `34973510…` / CPU `F5D61C94…`;
+triangle RAM `B45254CA…` / CPU `7DAB63EB…`. Accurate mode: menu
+`6AB39AB0…`/`3D2740B8…`, triangle `812EA159…`/`2F632483…`; frames
+`4EF1FBF6…` / `A1740DE0…`. The full per-leg table is `next-session.md` §0;
+1B walls are continuity anchors only.
 
 **Two hosts, two anchor classes (2026-10-20).** Development runs on two machines
 that share this Dropbox tree; `docs/hosts.md` holds their fingerprints and which
@@ -339,9 +368,10 @@ anchors reproduce on each. Every measured table must say which class it is:
   Host-local, not comparable across machines; only same-window A/B pairs count.
 
 **Reference host** is whichever machine reproduces the quiet-host absolutes (menu
-`--gpu sw` ~33 s, triangle ~8.7 s at 1B on the *unmodified baseline*). M-A can
-only be recorded there; on any other host `present-path-acceptance.ps1`'s SUMMARY
-is a ratio, not a milestone.
+`--gpu sw` ~30-33 s, triangle `--gpu sw` ~10-11.3 s at 1B on the *unmodified
+baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
+(§208d). M-A can only be recorded there; on any other host
+`present-path-acceptance.ps1`'s SUMMARY is a ratio, not a milestone.
 
 ## 3. Milestone ladder
 
@@ -350,17 +380,21 @@ is a ratio, not a milestone.
   by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
   overhead (~7.9 s) is removed and measured (menu `gl+replace` -20.5% 3/3,
   triangle -0.9% 3/3 same-window; `drawMs` 12.55 → 2.1 s; readback 1.5 s → 0).
-  **M-A itself is not decidable on today's host:** the unmodified baseline build
+  **M-A itself was not decidable on the 2026-10-20 host:** the unmodified baseline build
   measures menu sw 62.6 s / triangle sw 14.0 s against the recorded 33.3 / 8.69
   with an idle CPU, so absolute walls are not comparable. Re-run
   `scripts/present-path-acceptance.ps1` on the reference host state (menu sw
-  ~33 s) before recording M-A. If the menu is still over, per-triangle batching
+  ~33 s) before recording M-A; the 39th-session status below records it on H1. If
+  the menu is still over, per-triangle batching
   is the structural step. **The in-app GL display landed 2026-10-22 (§220):** the
   frontend's Renderer setting runs the GPU backend headless with the per-flip readback (-29% wall at 1B through the real session), opt-in and not the default. The in-app switch is +9.8%/+8.2% guest throughput on the dashboard with every gate anchor unchanged (§223).
   **Closed/re-based 2026-10-22:** the present path is done (readback opt-in,
-  batching, sampler parity, replace-mode composition); the menu is at the M-A
-  boundary (~24 s), and the triangle ≤6 s target was measured on the wrong media
-  (§208d) and is re-based. M-A is no longer the lead.
+  batching, sampler parity, replace-mode composition). **Status 2026-10-22 very
+  late (§§237–240): the numeric targets are met on H1 on the corrected HDD+DVD
+  media — triangle `gl+replace` 5.61-5.74 s (≤6 s) and menu 18.8-20.0 s (≤24 s),
+  with `BackendUnsupported=0`, exact SHAs/counters and a present-driven display.
+  M-A is MET; the lead is M-D.** The `sw` legs (10.03 s / 30.35 s) are not part
+  of M-A.
 - **Display model (Track E/P) - LANDED 2026-10-21 (§208).** The console now
   presents what the display controller scans out: the VGA CRTC behind
   `NV_PRMCIO` is decoded (pitch/size/depth), `TryCopyDisplayFrame` +

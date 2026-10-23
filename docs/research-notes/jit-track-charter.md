@@ -581,24 +581,35 @@ Stages:
 |---|---|---|
 | **C4** | ~~Flat memory model / soft TLB: direct host-pointer RAM pages, exact non-RAM/MMIO fallback; remove the per-access probe~~ **MEASURED NULL 2026-10-22 late (232a), reverted** | ~~≥2× menu engine, ≥1.5× triangle~~ |
 | **C4b** | ~~Read-only-ROM decode path: classify read-only physical windows as cacheable code, skip the tracked-page bitset for them, flush on overlay-disable/reset~~ **LANDED as the image-window class 2026-10-22 late (§237)** - decode caching alone was measured null (232f); the win is that blocks now *form* over the ROM: `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k, **-6.4% triangle `gl+replace`**, exact 1B anchors | met (6.4% wall, 9% non-JIT engine) |
-| **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first; keep `outerMs - runnerMs` flat | ≥1.3× engine |
-| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | ≥10% menu wall |
-| **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | measured decision |
+| **C5** | Trace/superblock formation: hot successors in one native trace, state across blocks, poll at every boundary (the §193 wakeup contract); re-measure the §199d block-fusion negative first; keep `outerMs - runnerMs` flat | **slice 1 landed (§233: -4.2% triangle / -3.0% menu); the full trace removes ~350 ms of boundary population = 3-5% of the wall (§235), below the stage bar** |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, landed 232c as architecture) | **clear-fill slice landed (§240: device time 1,306 → 816 ms, -10.6% on both headline legs); next is the draw-flush half (766 ms, 413-435 ms the interpreted vertex program)** |
+| **C7** | Reassess if C4b+C5 miss 3× after two structural iterations (including the native-core option) | **criterion met (C4 null, C5 -3/-4%); decision due after the draw-flush slice — the encoder (~7%) and code volume (0% wall) are priced out, so the choice is the engine shape** |
 
 **§237 follow-up (2026-10-22 late).** C4b is closed *and repriced*: the ROM share
 of the non-JIT population is 317k of 3.65M instructions (9%), so "a superblock
 for the boot" was a 6.4% lever, not 8-13%; the rest of the boot is 55,215 RAM
 heads below the 16-visit build threshold (523k → 169k non-JIT calls, only 1,122
 blocks), whose remaining cost is formation (~326 µs of Iced `Assemble` each) —
-the encoder price, not a cache gap. The largest non-JIT line is now
+the encoder price, not a cache gap. The largest non-JIT line at that point was
 `RunSpecBlock` at ~375 ns/member (~2.0 s of the 6.24 s triangle `gl+replace`
-wall), which is the next C item; it is *not* trace-formation territory (§235
-priced that at 3-5% because a trace removes block-boundary population, not this
-one).
+wall), which was then the next C item (superseded by the §238-240 follow-up
+below); it is *not* trace-formation territory (§235 priced that at 3-5%
+because a trace removes block-boundary population, not this one).
+
+**§238–240 follow-up (2026-10-22 very late).** The non-JIT shape moved twice:
+`JitSpecSlice` 256 → 64 cut `nonJitInstructions` 5.48M → 2.62M and `nonJitMs`
+2190 → 1650 (§238), and the raw emitter's per-member EIP/TSC/served became one
+static publish per edge (§239: engine 6.3 → 6.1 ns/member, wall flat — the
+runner is **latency-bound, not instruction-bound**). The device stage was then
+measured (1.31 s of the triangle 1B `gl+replace` wall inside 44,030 device
+writes) and its clear half was won (§240: `Span<uint>.Fill`, device time
+1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%). **The next C item is the
+draw-flush half** (766 ms, of which 413-435 ms is the interpreted vertex
+program); after it the C7 engine-shape decision is due.
 
 **C7 decision inputs (2026-10-22 late, §234e).** The charter's kill criterion is
-met (C4 measured null, C5 slice 1 is -3/-4%), so the next C work is the decision,
-and its two cheapest numbers are now measured: (i) **owning the encoder is a ~7%
+met (C4 measured null, C5 slice 1 is -3/-4%), so the decision is due after the
+draw-flush slice, and its two cheapest numbers are now measured: (i) **owning the encoder is a ~7%
 wall lever** - `Assembler.Assemble` 390 ns/instruction vs a single-pass
 `Encoder.Encode` 120 ns (3.2x), and `Assemble` is 682 ms of the triangle's
 1,026 ms formation, so the whole rewrite buys ~7% triangle / ~3% menu, below the

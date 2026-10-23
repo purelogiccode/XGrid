@@ -142,8 +142,8 @@ usable). Current order:
    **repriced the "superblock for the boot" lever out**: the ROM share of the
    non-JIT population was 9%, not 100%, so its ceiling was 6.4% and the remaining
    boot mass is 55k RAM heads below the build threshold (an encoder price, §234e).
-   **C4 and C4b are closed.** Next stage: the `RunSpecBlock` `TryMemo`-handoff
-   probe was **priced and rejected** (§238 §4: 4.2-4.9% of non-JIT members sit at
+   **C4 and C4b are closed.** The next candidate, the `RunSpecBlock` `TryMemo`-handoff
+   probe, was **priced and rejected** (§238 §4: 4.2-4.9% of non-JIT members sit at
    a built head = ~1.2% of the wall), and **§239 closed the code-volume question**:
    removing the raw emitter's per-member EIP/TSC/served bookkeeping (11 emitted
    instructions per member, static per edge instead) moved the engine 6.3 → 6.1
@@ -3152,7 +3152,8 @@ Shaders
 > (-8.9%)**, menu 20.456 → 19.762 s (-3.4%), 100M boot phase 2.276 → 1.813 s
 > (-20.3%), every 1B SHA/counter/frame byte-identical. §237 reprized the
 > "superblock for the boot" lever out (the ROM share of the non-JIT population is
-> 9%). The next C item is a priced `RunSpecBlock` handoff probe.
+> 9%). The next C item at that point was a priced `RunSpecBlock` handoff probe;
+> §238 rejected it and §240 then won the device stage (see the status above).
 >
 > **Status 2026-10-22 (course correction): Track C leads again.** Operator:
 > xemu-class performance or better is the long-run objective. The present path
@@ -3629,7 +3630,10 @@ within 2 pixels of software), and host audio is the largest product gap.
 > path; each stage gated on a same-window A/B (>=10% wall or >=20% engine),
 > exact 1B SHAs/counters, flag-off byte-identical and a byte-identical ktest
 > log. C3-x/y/z is closed; this is not a resumption of 2-3% slices. The
-> 2026-10-19 table and status below are retained as history.
+> 2026-10-19 table and status below are retained as history. **Post-§237–240
+> position:** triangle `gl+replace` 5.61-5.74 s and menu 18.8-20.0 s (see the
+> Target definition below); C4 is closed null, C4b / C5 slice 1 / C6's clear
+> fill landed, and the next C item is the draw-flush half.
 
 **Why the plan changed.** The fast-mode JIT campaign (§§190–194) finished
 its coverage/speed work: 99% served, menu 1B bit-exact, ktest 2B 3.76×
@@ -3671,12 +3675,13 @@ slices are measured in fast mode with verified guest-work equivalence
 
 **2026-10-22 program (C4-C6) — the current lead.**
 
-| Stage | Work | Acceptance target |
+| Stage | Work | Acceptance target / status |
 |---|---|---|
-| **C4** | Flat memory model / soft TLB: remove the per-access translate probe from the raw emitter's memory members; direct host-pointer RAM pages with an exact fallback for non-RAM/MMIO | ≥2× engine on the menu, ≥1.5× triangle (same-window A/B); exact 1B SHAs/counters; flag-off byte-identical |
-| **C5** | Trace/superblock formation: follow hot successors into one native trace, keep state across blocks, poll at every block boundary (the §193 wakeup contract) | ≥1.3× engine; exact differentials; no lost wakeups |
-| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix | ≥10% menu wall; exact counters |
-| **C7** | Reassess: if C4+C5 miss 3× engine after two structural iterations, stop and reassess (including the native-core option) | measured decision |
+| **C4** | ~~Flat memory model / soft TLB: remove the per-access translate probe from the raw emitter's memory members; direct host-pointer RAM pages with an exact fallback for non-RAM/MMIO~~ | ~~≥2× engine on the menu, ≥1.5× triangle (same-window A/B)~~ **MEASURED NULL 2026-10-22 (§232a), reverted** |
+| **C4b** | Read-only image windows: classify flash/BIOS/mirror/MCPX-overlay fetches as cacheable code, no store path, wholesale flush on a host image move; blocks form over them | **LANDED (§237): `nonRamSkips` 359,476 → 0, `nonJitCalls` 523k → 169k, triangle `gl+replace` -6.4%; exact 1B anchors** |
+| **C5** | Trace/superblock formation: follow hot successors into one native trace, keep state across blocks, poll at every block boundary (the §193 wakeup contract) | **slice 1 landed (§233): -4.2% triangle / -3.0% menu; the full trace removes ~350 ms of boundary population = 3-5% of the wall (§235), below the stage bar** |
+| **C6** | Device/MMIO fast path: hot NV2A method dispatch and the menu's device mix (slice 1, the unified interrupt poll, §232c) | **clear-fill slice landed (§240): device time 1,306 → 816 ms, triangle -10.6% / menu -10.6%/-9.4%, every anchor exact; next is the draw-flush half (766 ms, 413-435 ms the interpreted vertex program)** |
+| **C7** | Reassess: if C4+C5 miss 3× engine after two structural iterations, stop and reassess (including the native-core option) | **criterion met (C4 null, C5 -3/-4%); decision due after the draw-flush slice — the encoder (~7%) and code volume (0% wall) are priced out, so the choice is the engine shape** |
 
 Gate rules unchanged: accurate mode is gate currency; headless `--gpu sw`
 default; never mix; no async; quiet-host medians for wall claims (pause and

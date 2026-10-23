@@ -92,26 +92,29 @@ Canonical order: `docs/development-direction.md`; fast-mode charter:
 better** (operator decision 2026-10-22). Hard rules:
 
 1. **Track C (performance) leads; the 2026-10-20 freeze is lifted.** The GL
-   present path is done (~1.3 s of the menu wall, was ~9.9 s), but the CPU
-   engine is ~17 s of the 24.3 s menu `gl+replace` wall (~70%) and the dominant
-   part of the 7.5-7.9 s triangle wall — >50% of a measured wall, the stated
-   re-open condition. Measured gap: triangle ~6.6× to xemu's 1.2 s at 1B; menu
-   ~17.8× to the 1.36 s real-time band (no xemu menu oracle). Program: **C4**
-   flat memory model/soft TLB, **C5** trace/superblock formation, **C6**
-   device/MMIO fast path. Each stage: same-window A/B ≥10% wall or ≥20%
-   engine, exact 1B SHAs/counters on both titles, flag-off byte-identical,
-   ktest log byte-identical. Incremental sub-2% slices remain banned. If C4+C5
-   miss 3× engine after two structural iterations, stop and reassess.
-2. **Track B is a bounded B3 finish.** The GL product renderer still paints the
-   computed-mode panel black (gap 12): texel-word fetch + MUX-lsb/final-lerp
-   differential. Finish that, then stop; no new B fidelity rows until C4 has a
-   measured result. The present path itself is closed (readback opt-in,
-   batching, sampler parity, replace-mode composition).
+   present path is done (~1.3 s of the menu wall, was ~9.9 s), and §§237–240
+   moved the headline legs to **triangle `gl+replace` 5.61-5.74 s / menu
+   18.8-20.0 s** at 1B — a ~4.7× / ~14× gap to xemu's 1.2 s and the 1.36 s
+   real-time band. The CPU/device engine is still the dominant share. Program:
+   **C4** flat memory model/soft TLB (**measured null, §232a**), **C4b** image
+   windows (**landed, §237**), **C5** trace formation (**slice 1, §233**; the
+   full trace is priced at 3-5%, §235), **C6** device/MMIO fast path (**clear
+   fill landed, §240**; next is the draw-flush half, 766 ms of which 413-435 ms
+   is the interpreted vertex program), then the **C7** engine-shape decision.
+   Each stage: same-window A/B ≥10% wall or ≥20% engine, exact 1B SHAs/counters
+   on both titles, flag-off byte-identical, ktest log byte-identical.
+   Incremental sub-2% slices remain banned. The C7 reassessment is due after the
+   draw-flush slice.
+2. **Track B is closed (§236).** The GL product renderer's computed-mode panel
+   now renders: a cube stage samples a host 2D-array texture decoded from the
+   guest's swizzled faces (gap 12), agreeing with software within 2 pixels of
+   307,200. No new B fidelity rows while C leads. The present path itself is
+   closed (readback opt-in, batching, sampler parity, replace-mode composition).
 3. **Track E (corpus) steers.** Gate currency stays `data/test-samples/`.
    Maintain `docs/compatibility.md` (22 rows / 17 samples) and the
    boot-to-first-frame harness; add performance rows (Msteps/s, wall per
    presented frame) and the xemu comparison where it is a valid oracle. No new
-   corpus breadth beyond the standing rows until C4 lands. Real ISOs stay
+   corpus breadth beyond the standing rows while C leads. Real ISOs stay
    benchmark-only. **No NV2A/APU fidelity polish beyond the matrix + a sample
    histogram.**
 4. **Track P (product completeness) runs in parallel, not blocking.** Host
