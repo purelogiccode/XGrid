@@ -8,15 +8,20 @@ goldens and the ktest smoke.
 
 ## Media
 
-`D:\Samples\XBOXReady` no longer exists on H1. The retail ISOs live at
-`H:\Tests\XBOXTest` (37 titles, ~7.3 GB each, Redump where noted). They are
-local media: never committed, never CI, never gate currency.
+The oracle media is the **optimized XDVDFS set** at `H:\Tests\XBOXReady`. Both
+files were verified as XDVDFS (`MICROSOFT*XBOX*MEDIA` at `0x10000`, `XBEH` at
+`0x84800`). They are local media: never committed, never CI, never gate
+currency.
 
-| File | Notes |
-|---|---|
-| `H:\Tests\XBOXTest\007 - Agent Under Fire [NTSC-U][Redump].iso` | **M-G target (MG1)**; the XBE executes today. |
-| the other 36 ISOs | MG2 picks the second title from these. |
-| ~~`4x4 Evo 2 (USA)`~~ | **not present** in the current set; the 2026-10-23 kernel-idle probe cannot be re-run here. |
+| File | Size | Notes |
+|---|---:|---|
+| `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso` | 1.72 GB | **M-G target (MG1)**; the XBE executes today. |
+| `H:\Tests\XBOXReady\Halo - Combat Evolved (USA) (v1.09) (Redump).iso` | 3.63 GB | MG2 second title (the only other optimized image). |
+
+**The 37 full-disc Redump ISOs at `H:\Tests\XBOXTest` are not oracle media:**
+xemu 0.8.139 cannot boot them (operator, 2026-10-24). They remain XGrid-only
+benchmark media. `D:\Samples\XBOXReady` no longer exists; 4x4 Evo 2 is not in
+the current sets, so its kernel-idle probe is historical.
 
 Boot media: the gate HDD (`wt-data\chain-199l\hdd.qcow2`, EvoX dashboard) and
 the firmware set in `data\xemu` (`Complex_4627.bin`, `mcpx_1.0.bin`,
@@ -24,20 +29,20 @@ the firmware set in `data\xemu` (`Complex_4627.bin`, `mcpx_1.0.bin`,
 
 ## The oracle
 
-**xemu 0.8.139** at `data\xemu\xemu.exe`, same ISO, same firmware/EEPROM, same
-scripted input. `data\xemu\xemu.toml` is **stale** (it still points at
-`D:\Samples\XBOXReady` and `007 - Agent Under Fire (USA).iso`) - MG0 fixes it and
-adds an `-IsoPath` parameter to `scripts/xemu-oracle.ps1`. The QEMU monitor
-socket fails to bind on H1, so the capture is a window screenshot; the
-comparison is the software frame at the same guest time, never a
-cross-renderer pixel-exact claim.
+**xemu 0.8.139** at `data\xemu\xemu.exe`, the same **optimized** ISO, the same
+firmware/EEPROM, the same scripted input. `data\xemu\xemu.toml` is **stale** (it
+still points at `D:\Samples\XBOXReady` and `007 - Agent Under Fire (USA).iso`) -
+MG0 fixes it to `H:\Tests\XBOXReady` and adds an `-IsoPath` parameter to
+`scripts/xemu-oracle.ps1`. The QEMU monitor socket fails to bind on H1, so the
+capture is a window screenshot; the comparison is the software frame at the same
+guest time, never a cross-renderer pixel-exact claim.
 
 ## Command
 
 ```powershell
 pwsh -File scripts/boot-to-first-frame.ps1 `
   -Sample 007 `
-  -IsoPath "H:\Tests\XBOXTest\007 - Agent Under Fire [NTSC-U][Redump].iso" `
+  -IsoPath "H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso" `
   -FirmwareDir "data\xemu" `
   -Hdd "wt-data\chain-199l\hdd.qcow2" `
   -Steps 5000000000

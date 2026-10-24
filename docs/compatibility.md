@@ -46,16 +46,22 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
 
 ### Local real-game probes (the M-G lead acceptance)
 
-**2026-10-24:** retail gameplay is the lead milestone (M-G). The media moved:
-`D:\Samples\XBOXReady` no longer exists; the 37 ISOs are at
-`H:\Tests\XBOXTest` (compat/benchmark media, never gates). 4x4 Evo 2 is not in
-the set. The oracle is xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO with
+**2026-10-24:** retail gameplay is the lead milestone (M-G). The oracle media is
+the **optimized XDVDFS set** at `H:\Tests\XBOXReady`:
+`007 - Agent Under Fire [NTSC-U][Redump].iso` (1.72 GB) and
+`Halo - Combat Evolved (USA) (v1.09) (Redump).iso` (3.63 GB). **xemu 0.8.139
+cannot boot the 37 full-disc Redump ISOs at `H:\Tests\XBOXTest`**, so those are
+XGrid-only benchmark media and never the oracle. `D:\Samples\XBOXReady` is gone.
+The oracle is xemu 0.8.139 (`data/xemu/xemu.exe`) on the same optimized ISO with
 the same firmware/EEPROM.
 
 - **007 - Agent Under Fire [NTSC-U][Redump]**: boots; at 5B steps the EIP is
   `0x0001FC66` (the loaded XBE), 201 flips, 2,672 draws, no fault. The first
-  frame is still the boot animation; gameplay is the M-G target (MG1).
-- **Second title**: picked from the 37 in MG2 after 007 reaches gameplay.
+  frame is still the boot animation; gameplay is the M-G target (MG1). The
+  optimized image is byte-identical in size to the one that probe used, so the
+  result still stands.
+- **Halo - Combat Evolved (v1.09)**: the MG2 second title (the only other
+  optimized image).
 
 **Answer for the compatibility question:** XGrid boots retail discs but **does
 not yet claim playable real games**; M-G exists to change that. A real-game row

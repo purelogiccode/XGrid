@@ -10,12 +10,15 @@ day-to-day agent entry point; this file is the priority order every agent follow
 (port the xemu engine to C#) -> M-D (xemu-class speed)**. The previous order
 (performance first) is closed: its queue emptied with a restated target and a
 measured 4.9x / 11.7x gap. The 2026-10-14 "no real Xbox games" rule is
-**superseded** - retail ISOs at `H:\Tests\XBOXTest` are the lead acceptance for
-M-G (never merge gates; `data/test-samples/` stays gate currency).
+**superseded** - the **optimized** retail ISOs at `H:\Tests\XBOXReady` are the
+lead acceptance for M-G (never merge gates; `data/test-samples/` stays gate
+currency). The 37 full-disc Redump ISOs at `H:\Tests\XBOXTest` cannot be booted
+by xemu and are not oracle media.
 
-**M-G exit:** `007 - Agent Under Fire [NTSC-U][Redump].iso` reaches its first
-interactive gameplay frame, advanced by a scripted pad input, verified against
-xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO. The four-part definition
+**M-G exit:** `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso`
+reaches its first interactive gameplay frame, advanced by a scripted pad input,
+verified against xemu 0.8.139 (`data/xemu/xemu.exe`) on the same optimized ISO.
+The four-part definition
 is in `ImplementationPlan.md` E1. Speed is not claimed.
 
 **M-P exit:** every xemu 0.8.139 module on the title's execution path is ported
@@ -33,7 +36,7 @@ plan never priced.
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
 **Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
-**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXReady, optimized XDVDFS) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
@@ -580,12 +583,13 @@ gate (same-window A/B ≥10% wall or ≥20% engine, exact 1B differentials).
   (Track E gates it). Exotics, DXT/BRDF/mipmaps, cost model, seeds, writeback
   stay gated on observed usage.
 
-**Corpus.** `data/test-samples/` stays gate currency. Real Xbox ISOs at
-`H:\Tests\XBOXTest` are authorized for fast-mode **benchmark-only** use
-(wall/throughput, xemu-class comparisons) — never gates, never accurate-mode
-acceptance, never fidelity work. A title quirk is allowed only when isolated,
-documented, and not a substitute for the hardware behavior (the 007 EOS quirk is
-the historical precedent, not a pattern to extend).
+**Corpus.** `data/test-samples/` stays gate currency. The **optimized** retail
+ISOs at `H:\Tests\XBOXReady` are the M-G acceptance and the xemu-oracle media
+(never gates). The 37 full-disc Redump ISOs at `H:\Tests\XBOXTest` are
+XGrid-only **benchmark** media (xemu cannot boot them) - never gates, never
+accurate-mode acceptance, never fidelity work. A title quirk is allowed only
+when isolated, documented, and not a substitute for the hardware behavior (the
+007 EOS quirk is the historical precedent, not a pattern to extend).
 
 ## 5. Hard non-goals
 

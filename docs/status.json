@@ -10,7 +10,7 @@
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "The 007 ISO is run to its park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM, and one candidate second title is sampled; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (D:\\Samples\\XBOXReady is gone; the ISOs live at H:\\Tests\\XBOXTest) and xemu.toml / xemu-oracle.ps1 take an ISO.",
+    "acceptance": "Both optimized ISOs (007 and Halo) are run to their park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (the optimized set is H:\\Tests\\XBOXReady; the 37 full-disc Redump ISOs at H:\\Tests\\XBOXTest cannot be booted by xemu and are not oracle media) and xemu.toml / xemu-oracle.ps1 take an ISO.",
     "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply).",
     "bar": "correctness"
   },
@@ -56,10 +56,11 @@
       "log_bytes": 40797
     },
     "gameplay": {
-      "target": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXTest)",
+      "target": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady, optimized XDVDFS)",
       "state": "XBE executes; boot animation at 5B steps; gameplay not yet reached",
-      "second": "no second title selected (4x4 Evo 2 media is no longer present)",
-      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM"
+      "second": "Halo - Combat Evolved (USA) (v1.09) (Redump).iso (H:\\Tests\\XBOXReady)",
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM",
+      "redump": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs) - xemu cannot boot them; not oracle media"
     }
   },
   "result": {
@@ -252,7 +253,7 @@
       "depends": [],
       "plan": "E1a",
       "bar": "correctness",
-      "acceptance": "The 007 ISO is run to its park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM, and one candidate second title is sampled; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (D:\\Samples\\XBOXReady is gone; the ISOs live at H:\\Tests\\XBOXTest) and xemu.toml / xemu-oracle.ps1 take an ISO.",
+      "acceptance": "Both optimized ISOs (007 and Halo) are run to their park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (the optimized set is H:\\Tests\\XBOXReady; the 37 full-disc Redump ISOs at H:\\Tests\\XBOXTest cannot be booted by xemu and are not oracle media) and xemu.toml / xemu-oracle.ps1 take an ISO.",
       "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply)."
     },
     {
@@ -264,7 +265,7 @@
       ],
       "plan": "E1a",
       "bar": "correctness",
-      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four fast 1B anchors, the four accurate goldens and the ktest log stay byte-identical.",
+      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady) reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four fast 1B anchors, the four accurate goldens and the ktest log stay byte-identical.",
       "price": "2-5 sessions, sized by MG0; correctness bar (no wall claim)."
     },
     {
@@ -276,7 +277,7 @@
       ],
       "plan": "E1a",
       "bar": "correctness",
-      "acceptance": "A second title from H:\\Tests\\XBOXTest reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, xemu comparison); the media and probe docs are updated; no gate regression.",
+      "acceptance": "Halo - Combat Evolved (USA) (v1.09) (Redump).iso (H:\\Tests\\XBOXReady) reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, xemu comparison); the media and probe docs are updated; no gate regression.",
       "price": "1-3 sessions; correctness bar."
     },
     {

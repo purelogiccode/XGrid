@@ -39,7 +39,7 @@ Captured 2026-10-20 by `scripts/host-doctor.ps1`.
 | Free disk | C: 81.2 GB · D: 435.6 GB · H: 4.48 TB |
 | Toolchain | git, gcc (mingw64) on PATH; **nxdk toolchain present inside MSYS2** at `C:\msys64` (clang, lld, llvm-dlltool, make, bison, flex, cmake) - not on PATH (2026-10-22) |
 | `References2` | 9 sets, 43,153 files — manifest PASS |
-| Real-ISO corpus | `D:\Samples\XBOXReady` (2 ISOs, local probes: 007, 4x4 Evo 2) + `H:\Tests\XBOXTest` (37 ISOs, benchmark-only when mounted) |
+| Real-ISO corpus | `H:\Tests\XBOXReady` (**2 optimized XDVDFS ISOs**: 007, Halo v1.09 - the xemu oracle set) + `H:\Tests\XBOXTest` (37 full-disc Redump ISOs, XGrid-only benchmark media; xemu cannot boot them) |
 | xemu runtime | `data\xemu` (xemu 0.8.139, `xemu.toml` points at the local media; `-bios` passed explicitly) |
 | Gate media | all present (`hdd.qcow2`, `triangle.iso`, samples, BIOS/MCPX/EEPROM) |
 | GL vendor/version | **not captured** — run any `--gpu gl` leg and record it |

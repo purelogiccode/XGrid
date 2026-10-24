@@ -141,7 +141,7 @@ serializes one active task per repository. The full contract is
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
 **Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
-**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXReady, optimized XDVDFS) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
@@ -151,9 +151,11 @@ serializes one active task per repository. The full contract is
 
 1. **M-G: boot a retail game to a gameplay frame, at any speed.** 007 - Agent
    Under Fire is the target; xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO
-   is the oracle; the media lives at `H:\Tests\XBOXTest` (`D:\Samples\XBOXReady`
-   is gone). The 2026-10-14 "no real Xbox games" rule is **superseded** - retail
-   ISOs are the lead acceptance now, still never merge gates.
+   is the oracle; the media is the **optimized** set at `H:\Tests\XBOXReady`
+   (`D:\Samples\XBOXReady` is gone; the 37 full-disc Redump ISOs at
+   `H:\Tests\XBOXTest` cannot be booted by xemu). The 2026-10-14 "no real Xbox
+   games" rule is **superseded** - retail ISOs are the lead acceptance now, still
+   never merge gates.
 2. **M-P: port the entire xemu engine to managed C#** (CPU TCG-shaped
    translator, memory/softmmu, NV2A core + GL, APU VP mixer + AC'97,
    storage/block, USB, PCI/SMBus/SMC/net), each module behind the existing seams
@@ -581,7 +583,7 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   past every review point with no checkpoint return, then closed by
   **standing operator rule: no real Xbox games at this stage; all title
   work uses `data/test-samples/`** (superseded 2026-10-24: retail gameplay is
-  M-G; the ISOs at `H:\Tests\XBOXTest` are the lead acceptance) (`triangle.xbe`, `nxdk-hello/led/
+  M-G; the optimized ISOs at `H:\Tests\XBOXReady` are the lead acceptance) (`triangle.xbe`, `nxdk-hello/led/
   mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
   **1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
 - **Wave 10 (2026-10-14, §§128–130; five tasks, all green, three merges).**
@@ -3266,8 +3268,9 @@ reverted.
    **1359/1359 tests**, format clean.
 3. **Standing operator rule: NO real Xbox games.** All title work uses
    `data/test-samples/`. 007/real-game probes deferred. **Superseded
-   2026-10-24:** retail gameplay is M-G; the ISOs at `H:\Tests\XBOXTest` are the
-   lead acceptance (never merge gates), and the xemu port (M-P) follows.
+   2026-10-24:** retail gameplay is M-G; the optimized ISOs at
+   `H:\Tests\XBOXReady` are the lead acceptance (never merge gates), and the
+   xemu port (M-P) follows.
 4. **Operator decision: swapchain/windowing** — brief filed at
    `docs/research-notes/gpu-swapchain-brief.md` (O2 = opt-in `--window`,
    pure user32/gdi32 interop on the existing WGL context, vsync off,

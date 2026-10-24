@@ -2,7 +2,7 @@
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
 **Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
-**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXReady, optimized XDVDFS) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
 **Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
@@ -97,10 +97,11 @@ engine is ported rather than re-derived. The 2026-10-14 "no real Xbox games"
 rule is **superseded** - retail ISOs are now the lead acceptance (never merge
 gates; `data/test-samples/` stays gate currency).
 
-**M-G target:** `007 - Agent Under Fire [NTSC-U][Redump].iso` reaches its first
-interactive gameplay frame, advanced by a scripted pad input, on the current
-engine, verified against **xemu 0.8.139** (`data/xemu/xemu.exe`) running the
-same ISO with the same firmware/EEPROM.
+**M-G target:** `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso`
+(an optimized XDVDFS image, 1.72 GB) reaches its first interactive gameplay
+frame, advanced by a scripted pad input, on the current engine, verified against
+**xemu 0.8.139** (`data/xemu/xemu.exe`) running the same ISO with the same
+firmware/EEPROM.
 
 **Definition of a gameplay frame (binding).** All four must hold:
 
@@ -114,11 +115,17 @@ same ISO with the same firmware/EEPROM.
 4. No fault, no hang, and the four fast 1B anchors, the four accurate goldens
    and the ktest log stay byte-identical.
 
-**Media correction (2026-10-24).** `D:\Samples\XBOXReady` no longer exists; the
-37 ISOs live at `H:\Tests\XBOXTest` (compat/benchmark media, never gates).
-4x4 Evo 2 is not in the set, so MG2 picks its second title from the 37.
-`data/xemu/xemu.toml` still points at the old path and a missing filename - MG0
-fixes both and makes `scripts/xemu-oracle.ps1` take an ISO.
+**Media correction (2026-10-24).** The oracle media is the **optimized XDVDFS
+set** at `H:\Tests\XBOXReady`: `007 - Agent Under Fire [NTSC-U][Redump].iso`
+(1.72 GB) and `Halo - Combat Evolved (USA) (v1.09) (Redump).iso` (3.63 GB),
+both verified as XDVDFS (`MICROSOFT*XBOX*MEDIA` at `0x10000`, `XBEH` at
+`0x84800`). **xemu 0.8.139 cannot boot the 37 full-disc Redump ISOs at
+`H:\Tests\XBOXTest`** (operator, 2026-10-24), so those are XGrid-only benchmark
+media and never the oracle. `D:\Samples\XBOXReady` no longer exists;
+`data/xemu/xemu.toml` still points at it and at a missing filename - MG0 fixes
+both and makes `scripts/xemu-oracle.ps1` take an ISO. The 007 optimized image is
+byte-identical in size to the one the 2026-10-23 probe used, so that probe's
+results still stand.
 
 ### The budget the target implies (M-D reference, measured 2026-10-23)
 
@@ -188,7 +195,8 @@ triage of the wait between "XBE runs" and "gameplay", not a rewrite. Every M-G
 task is a **correctness task**: the performance bar does not apply, and a
 negative is recorded only if the behavior cannot be reached.
 
-**The oracle.** xemu 0.8.139 at `data/xemu/xemu.exe`, same ISO, same
+**The oracle.** xemu 0.8.139 at `data/xemu/xemu.exe`, the same **optimized
+XDVDFS** ISO, same
 `Complex_4627.bin` / `mcpx_1.0.bin` / `eeprom.bin`, same scripted input. The
 QEMU monitor socket fails to bind on H1, so the capture is a window screenshot
 (`scripts/xemu-oracle.ps1`); the comparison is the software frame at the same
@@ -197,15 +205,17 @@ guest time, never a cross-renderer pixel-exact claim.
 ### MG0 - Retail gameplay triage + xemu oracle harness (ACTIVE)
 
 - [ ] **MG0.1 Fix the media and the oracle config.** Point `data/xemu/xemu.toml`
-  at `H:\Tests\XBOXTest\007 - Agent Under Fire [NTSC-U][Redump].iso`; add an
+  at `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso`; add an
   `-IsoPath` parameter to `scripts/xemu-oracle.ps1` (pass `-cdrom` explicitly)
-  and a deterministic capture time. Record the 37-ISO list in
-  `docs/research-notes/real-game-probes.md` and delete the stale
+  and a deterministic capture time. Record the two optimized ISOs in
+  `docs/research-notes/real-game-probes.md`, note that the 37 full-disc Redump
+  ISOs at `H:\Tests\XBOXTest` cannot be booted by xemu, and delete the stale
   `D:\Samples\XBOXReady` rows.
 - [ ] **MG0.2 Capture the xemu oracle.** Run xemu 0.8.139 with 007 and a fixed
   input script; capture the first gameplay frame (screenshot + wall time) and
   the boot timeline (dashboard -> disc -> title -> gameplay).
-- [ ] **MG0.3 Run XGrid to the same guest time.** Boot 007 from the ISO on the
+- [ ] **MG0.3 Run XGrid to the same guest time.** Boot 007 from
+  `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso` on the
   gate HDD with `--jit --jit-spin --jit-raw`, a `--pad-script` and
   `--save-state` anchors at 5B, 20B and 60B; capture the frames and the park
   EIP/thread. (The historical audio gate was ~56B; the DSP port landed after
@@ -233,8 +243,9 @@ guest time, never a cross-renderer pixel-exact claim.
 
 ### MG2 - Second retail title: gameplay or a documented wait
 
-- [ ] Pick a second ISO from `H:\Tests\XBOXTest` (prefer one that reaches its
-  XBE quickly), run the MG0 recipe, and record gameplay or a documented wait.
+- [ ] Pick `Halo - Combat Evolved (USA) (v1.09) (Redump).iso` from
+  `H:\Tests\XBOXReady`, run the MG0 recipe, and record gameplay or a documented
+  wait. (It is the only other optimized image; the Redump set has no oracle.)
 - [ ] No gate regression; the media/probe docs are updated.
 
 ### MG3 - Retail rows + one-command probe harness

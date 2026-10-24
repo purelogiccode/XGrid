@@ -7,8 +7,10 @@
 > `docs/status.json` and the detail is `ImplementationPlan.md` E1a/E1b/E1c.
 > **Start with MG0** (`pwsh -File scripts/status.ps1 -Next`), not with the
 > performance options below. The 2026-10-14 "no real Xbox games" rule is
-> superseded: retail ISOs at `H:\Tests\XBOXTest` are the lead acceptance now
-> (never gates). `D:\Samples\XBOXReady` is gone; `data\xemu\xemu.toml` and
+> superseded: the **optimized** retail ISOs at `H:\Tests\XBOXReady` are the lead
+> acceptance now (never gates); the 37 full-disc Redump ISOs at
+> `H:\Tests\XBOXTest` cannot be booted by xemu, so they are not oracle media.
+> `D:\Samples\XBOXReady` is gone; `data\xemu\xemu.toml` and
 > `scripts/xemu-oracle.ps1` still point at it - fixing both is MG0.1.
 
 > **MG3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
