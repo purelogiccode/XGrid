@@ -1,10 +1,9 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G3 - Consolidated gate re-baseline for the ported NV2A** (active, attempt 0).
-**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** .
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
+**Current status (2026-10-24):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
+**Phase score:** 79.9% (86.34 of 108).
+**Do not retry without a new measurement:** see docs/status.json for all 20.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -140,18 +139,22 @@ their own >= 10% bars.
 | D8 | Engine-shape decision v2: the per-member/edge and boot probe | **negative 2026-10-24 (§247: measured; no option >= 20% engine, target restated)** | D5 | a measured attribution table + one selected option with a ceiling |
 | G1 | NV2A PGRAPH core port (xemu 0.8.139 `pgraph/`) | queued after D7 | D8 | 73 recorded methods handled/declined; formats decoded; software anchors exact |
 | G2 | GL renderer port (xemu `pgraph/gl` + the glsl pieces it needs) | queued after G1 | G1 | 22 rows re-verified/re-baselined; batching/sampler/composition preserved |
-| G3 | Consolidated gate re-baseline for the ported NV2A | queued after G2 | G2 | all anchors + corpus + ktest + package gate in one place |
+| G3 | Consolidated gate re-baseline for the ported NV2A | **done 2026-10-24 (§252: all four fast anchors, four accurate goldens, 22 corpus rows, ktest 7/7 and PACKAGE PASS in one commit; six stale anchors re-baselined)** | G2 | all anchors + corpus + ktest + package gate in one place |
 | P1 | Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#) | done 2026-10-23 (§246) | — | the ported DSP executes the guest microcode and a real voice stream produces PCM; no gate regression |
 | R1 | Release: packaging, installer, licensing | done 2026-10-23 (R1.1: 4-RID packages + license review + release notes) | — | reproducible packages + GPL-2.0/third-party license review |
 
-The queue is **D8 → D6 → D7 → G1 → G2 → G3** (WIP = 1; D8 first because it is
+The queue was **D8 → D6 → D7 → G1 → G2 → G3** (WIP = 1; D8 first because it is
 a cheap measurement that decides whether the next spend is engine work or a
 target restatement). G1-G3 are the optional wholesale NV2A port in E5c: queued
 because the operator asked for it, scoped as a compatibility milestone, and
 explicitly not the path to the band. **G2 was priced by site and closed negative
 (§251)**: the removable CPU vertex stage is 4.0-4.2% of the triangle wall and the
 reference design's per-draw submission (no instancing) costs 3x the menu's gross
-saving. The product gaps that are not on this queue:
+saving. **G3 closed the milestone (done 2026-10-24, §252)**: every gate, all 22
+corpus rows, the ktest smoke and the package gate were verified in one commit
+and six stale anchors were re-baselined; the E5c port milestone is complete
+(G1 done, G2 negative, G3 done) and **no task is queued**. The product gaps that
+are not on this queue:
 the VP mixer / AC'97 codec (audible output) and the 4x4 retail probe's
 kernel-idle wait; both are recorded in E6 and
 `docs/research-notes/next-session.md` and are picked up as separate tasks, not
@@ -602,6 +605,26 @@ allows blocks the merge, not the row.
 
 ### G3 - Consolidated gate re-baseline and differential harness
 
+**Result (2026-10-24, done) - decisions §252.** The whole acceptance bundle ran
+in one session on one Release build (no mixed engine). Every gate is exact: the
+four fast 1B anchors (triangle gl `4F1FCBC0`/`7DAB63EB`, menu gl
+`B06BA6E5`/`F5D61C94`, triangle sw `B45254CA`/`7DAB63EB` 57,663,082 px, menu sw
+`34973510`/`F5D61C94` 253,998,498 px), the four accurate goldens (menu
+`4EF1FBF6`/`B6116DAE` `diff=2602 violations=0 maxDelta=1`, triangle
+`A1740DE0`/`7A860ED7` `diff=27849 violations=0 maxDelta=1`, accurate RAM/CPU
+`6AB39AB0`/`3D2740B8` and `812EA159`/`2F632483`), all 22 corpus rows PASS, the
+ktest smoke (park `4E03A` at 792,800,535 steps, 40,797 B `CA5D3867` log
+byte-identical, 7/7) and the package gate (**PACKAGE PASS: 8 archives, version
+0.1.0, 4 RIDs, licenses complete**, 19 ported files). Six documented values were
+stale and are re-baselined with the measurement that moved each (cubemap 3B GL
+frame `5174B1EB` -> `673477F7` now 1 px from software; cubemap 4.4B colours
+18,980 -> 19,042 and 3.6B pair 1 px/maxDelta 4; cubemap 3B software colours
+13,925; alpha_blending 4.6B mean (22.7, 18.7, 230.4) within 2.8/255; dashboard
+2B 16.94 msps with the same 217,622 draws / `535C48FA` frame; ktest BTFF RAM).
+Nothing regressed: the G1 format port moved no gate and G2 landed nothing, so
+this is the milestone's single re-baseline. Suite 1965, build 0 warnings,
+format clean, no score change (verification, not landed capability).
+
 **Price:** 2-3 sessions. G1/G2 each keep the software anchors exact, so this is
 the one place where the GL frames, the 22 corpus rows and the documented anchors
 may move together; doing it once avoids per-task re-baseline churn.
@@ -610,6 +633,37 @@ may move together; doing it once avoids per-task re-baseline churn.
 rows, the ktest smoke and `scripts/package-verify.ps1` (PACKAGE PASS) verified
 in one commit; the new anchors recorded in `docs/status.json`, `docs/compatibility.md`
 and the task evidence; no mixed engine and no stale GLSL goldens.
+
+- [x] **Price / scope.** G3's price is a 2-3 session verification budget, not a
+  wall gate: it implements nothing, so the >=10% wall / >=20% engine stage rule
+  does not apply (the same shape as G1's module boundary). Measured outcome: one
+  session.
+- [x] **One build, no mixed engine.** Full solution Release build (0 warnings),
+  one test run (**1965** green), then every leg from those binaries; the GpuGl
+  suite (104 green) carries the GLSL string goldens and the 99-program live
+  compile gate, so no stale GLSL golden survives.
+- [x] **Both 1B fast legs (all four anchors).** triangle/menu, `gl+replace` and
+  `sw`, exact RAM/CPU, pixels and counters (table in §252).
+- [x] **All four accurate goldens.** menu sw/gl and triangle sw/gl, policy
+  `violations=0 maxDelta=1`, counters identical, `BackendUnsupported=0
+  composedFrames=0`; accurate-mode RAM/CPU exact too.
+- [x] **The 22 corpus rows.** Every documented anchor reproduced except six
+  stale values, each re-baselined with its measurement (§252's list): the
+  cubemap 3B GL frame, the cubemap 4.4B colour count/mean and 3.6B pair, the
+  cubemap 3B colour count, the alpha_blending 4.6B phase mean, the dashboard 2B
+  throughput and the ktest BTFF RAM rows.
+- [x] **ktest smoke.** Park `4E03A` at 792,800,535 steps, 40,797 B suite log
+  `CA5D3867` byte-identical, `ktest_diff.py` SMOKE PASS 7/7 (071/319/344 fail on
+  both, 224/231 XGrid-ahead - the §120 deltas). Driven with the script's own
+  command on the prepared media: the sibling `CSharp_XISOSharp` and `xemu.exe`
+  are absent here, so the diff reads the stored §120 oracle log.
+- [x] **Package gate.** `scripts/package.ps1` + `scripts/package-verify.ps1`:
+  PACKAGE PASS, 8 archives, version 0.1.0, 4 RIDs, licenses complete (19 ported
+  files), win-x64 CLI smoke `XGrid 0.1.0`.
+- [x] **Anchors recorded.** `docs/status.json` (G3 evidence), `docs/compatibility.md`
+  (matrix status + the six moved rows + the refreshed measured-rows table),
+  `AGENTS.md` session note and §252; no code, no snapshot change (Nv2a v10,
+  audio v3); phase score unchanged at 79.9% (86.34 of 108).
 
 ## E6. P1 / R1 — parallel product and release
 

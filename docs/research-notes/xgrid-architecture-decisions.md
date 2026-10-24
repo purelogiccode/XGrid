@@ -16960,3 +16960,127 @@ The ktest XGrid leg re-ran on the prepared media: park `4E03A` after
 an `xemu.exe` that is not in this workspace, so the leg was driven with the
 script's own command). Suite **1965** green, build 0 warnings, format clean.
 No code change, no snapshot change.
+
+
+## 252 G3: the consolidated gate re-baseline - every gate, all 22 corpus rows and the package gate verified in one commit, and six stale anchors replaced by measurement (2026-10-24, fifty-second session) - G3
+
+**What G3 is.** E5c's last task: "Consolidated gate re-baseline and differential
+harness". Its price is a **2-3 session verification budget, not a wall gate** -
+G3 implements nothing, so the >=10% wall / >=20% engine stage rule cannot apply
+to it (the same shape as G1's "the price is the module boundary and the
+acceptance"). The acceptance is a bundle: both 1B fast legs, all four accurate
+goldens, the 22 corpus rows, the ktest smoke and `scripts/package-verify.ps1`,
+verified in **one commit from one Release build**, with every new anchor
+recorded in `docs/status.json` and `docs/compatibility.md`. It is the one place
+where GL frames and documented anchors may move together, so it also had to
+prove that nothing moved for a reason nobody can name.
+
+**Method.** One full solution build (`dotnet build XGrid.sln -c Release`, 0
+warnings) and one test run (**1965 green**), then every gate on the same
+binaries: no mixed engine, no rebuilt-between-legs tree. Fast legs use the
+standing flag set (`--jit --jit-threshold 16 --jit-spin --jit-raw`), accurate
+legs no JIT, corpus legs the `scripts/boot-to-first-frame.ps1` harness at each
+row's documented step anchor and flag set (HDD + DVD - the §208d trap),
+the ktest leg on the prepared smoke media with the script's own command (the
+sibling `CSharp_XISOSharp` and `xemu.exe` are absent here, so the differential
+runs against the stored §120 oracle log), and the package gate through
+`scripts/package.ps1`, which builds the 4-RID tree and runs
+`scripts/package-verify.ps1` at the end.
+
+**Fast 1B anchors (H1, gate media) - all four byte-identical.**
+
+| leg | RAM | CPU | wall | counters |
+|---|---|---|---|---|
+| triangle `gl+replace` | `4F1FCBC0` | `7DAB63EB` | 6.311 s | 2,706 draws / 68 flips / 34 stalls |
+| menu `gl+replace` | `B06BA6E5` | `F5D61C94` | 14.706 s | 33,638 / 686 / 686 |
+| triangle `sw` | `B45254CA` | `7DAB63EB` | 10.808 s | 57,663,082 px |
+| menu `sw` | `34973510` | `F5D61C94` | 25.630 s | 253,998,498 px |
+
+**Accurate 1B goldens - four legs, policy PASS.**
+
+| title | sw frame | gl frame | policy | counters |
+|---|---|---|---|---|
+| menu | `4EF1FBF6` | `B6116DAE` | `diff=2602 violations=0 outsideBand=0 maxDelta=1` | 33,632 / 686 / 686 |
+| triangle | `A1740DE0` | `7A860ED7` | `diff=27849 violations=0 outsideBand=0 maxDelta=1` | 2,706 / 68 / 34 |
+
+Accurate-mode guest anchors also reproduce exactly: triangle
+`812EA159`/`2F632483` (46.858 s), menu `6AB39AB0`/`3D2740B8` (62.406 s). Every
+GL leg reports `BackendUnsupported=0`, `fatal=0`, `composedFrames=0`,
+`presentUploads=0`.
+
+**The 22 corpus rows - all PASS at their documented anchors.** Every row's
+RAM/CPU pair, last-frame SHA, scanout/display SHA and counter set reproduced
+except the six values below, each of which is now re-baselined with the
+measurement that moved it (the rest of the matrix is unchanged):
+
+1. **`xgu bump_cubemap_reflect` 3B GL replace: frame `5174B1EB` -> `673477F7`.**
+   The old value predates §236: before the cube 2D-array decode and the
+   dot-map gating, that leg's 8-stage dot program was declined and the frame was
+   a two-colour GPU image (§227). It is now the computed panel and
+   **1 pixel of 307,200 from the software frame** (`DA0750EE`, maxDelta 20),
+   `unsupported=0 fatal=0 composedFrames=0` - the same agreement the row already
+   records at 3.6B/4.4B.
+2. **`xgu bump_cubemap_reflect` 4.4B software colour count 18,980 -> 19,042**
+   (both renderers), mean `(57.1, 89.0, 34.4)`; the pair is **2 px, maxDelta 3**
+   as recorded. 3.6B re-measures at **1 px, maxDelta 4**, 21,041 colours both
+   (the matrix row already carried the 1 px/4 figure; the gap-12 narrative's
+   "2 px/maxDelta 3" was the older build).
+3. **`xgu bump_cubemap_reflect` 3B software frame is 13,925 colours**, mean
+   `(90.9, 130.1, 20.4)` - the row's "21,041 colours" is the 3.6B anchor
+   (21,041 is exact there). 3B draws 2,679 / 42,780,566 px are unchanged.
+4. **`xgu alpha_blending` 4.6B mean `(25.6, 21.2, 229.0)` -> `(22.7, 18.7,
+   230.4)`** against the reference `(20.8, 17.2, 233.2)`: now within **2.8/255**
+   (was 4.8), still "matches". The sample ping-pongs its shader transparency, so
+   the exact frame at a fixed step is phase-sensitive (§208f); the 3B
+   RAM/CPU anchors (`40081D03`/`1C5C575D`) are exact and the 3B draw count reads
+   2,952 (was 2,962 - the same one-frame phase difference).
+5. **dashboard 2B: 5.8 -> 16.94 msps** (118.06 s wall). The identity anchors are
+   exact: 217,622 draws, 4,867 flips, last frame `535C48FA`; the RAM/CPU pair is
+   recorded for the first time (`7DF2F343`/`B912C955`). The 5.8 msps figure
+   predates the §§180-200 rasterizer campaign.
+6. **ktest BTFF RAM rows** `4573E131`/`71C0FD0F` -> `F708B07D`/`7D667575` in the
+   2026-10-21 measured table; the row's real anchor, the suite log, is unchanged
+   (`CA5D3867`, 40,797 B, 792,800,535 steps). The BTFF leg is the boot
+   animation, so its RAM is not a gate.
+
+**Everything else reproduced exactly**, including the ones that matter most:
+`vp_lighting` 3B `162DAFF1`/`0380C502`/`72B2F490` and its GL pair
+(`E68070A3` legacy, `A9E09139` registers, 4,227/4,508 px, maxDelta 1, flag moves
+both renderers ~6.4% at maxDelta 80), `bump_cubemap_reflect` 3.6B
+`5ACD06FF`/`C848610E`/`BFC41A59` and 4.4B `D90376B9`/`EBAC6B99`/`5A949A40`,
+`bumpenv_ripple` 5B BTFF `7A11CBEF`/`5B0665B2` and plain
+`AA10223C`/`1AB9F002` (3,036 draws / 216 flips), `swizzle_texture` 3B
+`E2EB41ED`/`B887B3C6`/`FE32FB3C`, the two `*_ffp` rows off/on
+(`AFF08085`/`12BAD517` and `B5747761`/`8062CFB5`, CPU unchanged per row), the
+display-source rule (`gamma` `D3EBF420`, `hello` `72D33DC2`, `usb` `119AFA48`,
+`led` `18C7CC83`, all `source=memory-scanout` where the guest owns the scanout
+and `mesh` `A7442AB1` backend), `mesh` `D6A41BAC`/`6DA19D89`/`806CBEA7`, the
+four direct-framebuffer rows, `xaudio` (APU reads 135 / writes 203,
+`voiceOff=1`, ISTS bit 4), and the dashboard 1B row
+(`AF1FF8ED`/`F5D61C94`, frame `4EF1FBF6`, scanout `51658B3D`, GL `B6116DAE`).
+
+**ktest smoke.** The XGrid leg parks at EIP `4E03A` after **792,800,535**
+steps; the FATX readback is the **40,797-byte** suite log with SHA-256
+`CA5D3867...` byte-identical to the accepted baseline; `ktest_diff.py` reads
+**SMOKE PASS 7/7** (071/319/344 fail on both emulators, 224/231 pass on XGrid
+and fail on xemu - the §120 known deltas).
+
+**Package gate.** `scripts/package.ps1` published the 4-RID tree and
+`scripts/package-verify.ps1` returned **PACKAGE PASS: 8 archives, version
+0.1.0, 4 RIDs, licenses complete** (19 ported files recorded; the win-x64 CLI
+smoke prints `XGrid 0.1.0`). Archive SHAs are recorded in the session evidence.
+
+**What G3 says about the ported NV2A state.** The G1 state (the texture-format
+table + the recorded-method audit) and the negative G2 (no GL renderer port)
+leave every software anchor byte-identical and the GL frames policy-clean, so
+the port milestone closes with **one** re-baseline: G1's format port moved no
+gate, G2 moved nothing because it landed nothing, and G3's own drift list is
+six documentation/phase values, not a regression. **No stale GLSL goldens**: the
+`XGrid.GpuGl.Tests` suite (104 green) carries the string goldens plus the
+99-program live driver compile gate; **no mixed engine**: every leg above ran on
+the one Release build.
+
+**No score change.** G3 is verification, not landed capability - the phase table
+stays at 79.9% (86.34 of 108) by the "the score only moves with landed work"
+rule. No code change, no snapshot change (Nv2a v10, audio v3), suite 1965,
+build 0 warnings, format clean.

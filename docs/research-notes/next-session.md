@@ -1,4 +1,28 @@
-# Next session instructions (updated 2026-10-24, after G2 closed negative: the GL renderer port's removable share is the CPU vertex stage at 4.0-4.2% of the triangle wall, and the reference design's per-draw submission costs 3x the menu's gross saving; the queue is G3)
+# Next session instructions (updated 2026-10-24, after G3 closed the port milestone: every gate, all 22 corpus rows, the ktest smoke and the package gate verified in one commit, six stale anchors re-baselined; the queue is empty)
+
+> **G3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
+> nothing regressed.** One Release build, one test run (**1965** green), then
+> every gate on the same binaries: the four fast 1B anchors byte-identical
+> (triangle gl `4F1FCBC0`/`7DAB63EB`, menu gl `B06BA6E5`/`F5D61C94`, triangle sw
+> `B45254CA`/`7DAB63EB` 57,663,082 px, menu sw `34973510`/`F5D61C94`
+> 253,998,498 px), the four accurate goldens PASS (menu `4EF1FBF6`/`B6116DAE`
+> `diff=2602 violations=0 maxDelta=1`, triangle `A1740DE0`/`7A860ED7`
+> `diff=27849`; accurate RAM/CPU `6AB39AB0`/`3D2740B8` and
+> `812EA159`/`2F632483`), **all 22 corpus rows PASS**, the ktest smoke (park
+> `4E03A` at 792,800,535 steps, 40,797 B `CA5D3867` log byte-identical, 7/7) and
+> **PACKAGE PASS: 8 archives, version 0.1.0, 4 RIDs, licenses complete** (19
+> ported files). Six documented values were stale and are re-baselined with the
+> measurement that moved each: the cubemap 3B GL frame (`5174B1EB` ->
+> `673477F7`, now 1 px from software), its 4.4B colour count/mean (18,980 ->
+> 19,042; `(57.1, 89.0, 34.4)`), its 3B software colour count (13,925; the
+> 21,041 figure is the 3.6B anchor), the alpha_blending 4.6B phase mean
+> (`(22.7, 18.7, 230.4)`, within 2.8/255), the dashboard 2B throughput (16.94
+> msps, same 217,622 draws / `535C48FA`) and the ktest BTFF RAM rows. Decisions
+> §252. **The E5c port milestone is complete (G1 done, G2 negative, G3 done) and
+> no task is queued** - `scripts/status.ps1 -Next` prints SEQUENCE COMPLETE.
+> The next session needs an operator task; the standing backlog is the VP mixer
+> (`vp.c`) / AC'97 codec, the 4x4 retail probe's kernel-idle wait and the
+> remaining corpus gaps (§2 Option C).
 
 > **G2 RESULT (2026-10-24, 51st session) - the port is priced by site, not by the
 > plan's whole-device figure.** The post-D5 device stage was split with temporary
@@ -124,7 +148,7 @@ pwsh -File scripts/host-doctor.ps1     # fingerprint + gate media + References2 
 git log --oneline -1        # expect: the §240 commit ("nv2a: a 32-bit clear fills rows through a span")
 git status --short          # must be clean (a harness file like .repofleet-task.md is not ours)
 dotnet build XGrid.sln -c Release --nologo --no-restore
-dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1865 green
+dotnet test  XGrid.sln -c Release --nologo --no-build     # expect 1965 green
 ```
 
 **Two machines share this tree** (`docs/hosts.md`). Start with
@@ -191,9 +215,9 @@ Accurate-mode anchors (JIT off, HDD+DVD): triangle RAM `812EA159…` / CPU
 (policy diff, never byte-exact; both reproduce with `diff=2602` / `diff=27849`,
 `violations=0`, `maxDelta=1`, `BackendUnsupported=0`).
 
-- **1865 tests green**, build/format clean. The ktest XGrid leg is
-  **792,800,535** steps, suite log 40,797 B, SHA `CA5D3867…` (re-run this
-  session, byte-identical).
+- **1965 tests green**, build/format clean. The ktest XGrid leg is
+  **792,800,535** steps, suite log 40,797 B, SHA `CA5D3867…` (re-run in G3,
+  byte-identical).
 - Fast mode is opt-in (`--jit`, `--jit-raw`); accurate mode is gate currency.
   **`--ffp`, `--tex-filter registers` and the OpenGL renderer are opt-in too**,
   and all three are settings in the Avalonia frontend (§217, §221, §223).
@@ -328,8 +352,11 @@ triangle (+7.9%)** - so G2 closed negative (decisions §251).
 > `docs/status.json`. Option A was **D6** (compiled transform evaluator) and
 > closed negative (§248); Option B's edge-removal idea was **D8** and closed
 > negative (§247/§249); Option C stays the corpus backlog. **G2 closed negative
-> (§251)** and the active queue is **G3** (consolidated gate re-baseline on the
-> G1 state). The bounded vertex-stage slice G2's reopen condition names (a GPU
+> (§251)** and **G3 closed the milestone (done 2026-10-24, §252)** - the
+> consolidated re-baseline verified every gate, all 22 corpus rows, the ktest
+> smoke and the package gate in one commit, so **the queue is empty** and the
+> next session needs an operator task. The bounded vertex-stage slice G2's
+> reopen condition names (a GPU
 > vertex program that keeps the instanced submission and removes >=10% of the
 > triangle wall) is the only new performance shape in this file's Option A; do
 > not start it without that measurement.

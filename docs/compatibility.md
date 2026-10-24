@@ -1,17 +1,22 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **every row re-verified 2026-10-22 late after §237/§238** (the image-window
-decode class and the non-JIT run slice): all 1B rows reproduce their `ram`/`cpu`
-pairs and frame/scanout/display SHAs exactly, and the deep rows reproduce at
-their own anchors (`xgu-vp_lighting` 3B, `xgu-bump_cubemap_reflect` 3B/3.6B/4.4B,
-`xgu-alpha_blending` 3B, `xgu-swizzle_texture` 3B, `xgu-bumpenv_ripple` 5B,
-`xgu-distance_fog_ffp` and `xgu-spheremap_ffp` 3B off/on, `nxdk/usb` 1B). Walls
-moved with §237/§238 (e.g. the dashboard leg 30.9 -> 29.5 s, the triangle
-`gl+replace` 6.67 -> 6.08 s); SHAs did not. One stale anchor was corrected while
-re-verifying: the dashboard row's fast RAM is `AF1FF8ED…` (the recorded
-`51B56687…` predates §218's APU `XGSCNT` change; the base build reproduces
-`AF1FF8ED` too). Earlier: rows re-measured 2026-10-21 after §208 (display model),
-and 2026-10-20 after §205 (draw-command batching) with both backends per sample.**
+Status: **every row re-verified 2026-10-24 in the G3 consolidated re-baseline**
+(decisions §252: one Release build, both 1B fast legs, all four accurate
+goldens, all 22 rows, the ktest smoke and the package gate in one commit). Every
+documented `ram`/`cpu` pair, frame/scanout/display SHA and counter set
+reproduced except six stale values, each replaced here with its measurement:
+the `xgu bump_cubemap_reflect` 3B GL frame (`5174B1EB` -> `673477F7`, now 1 px
+from software), its 4.4B software colour count/mean (18,980 -> 19,042;
+`(57.1, 89.0, 34.4)`), its 3B software colour count (the 21,041 figure is the
+3.6B anchor; 3B is 13,925), the `xgu alpha_blending` 4.6B phase mean
+(`(22.7, 18.7, 230.4)`, within 2.8/255 of the reference), the dashboard 2B
+throughput (16.94 msps, same 217,622 draws / `535C48FA`) and the ktest BTFF RAM
+rows in the measured-rows table (the suite log is the anchor and is unchanged).
+Earlier: rows re-verified 2026-10-22 late after §237/§238 (all 1B rows
+reproduced their `ram`/`cpu` pairs and frame/scanout/display SHAs exactly; the
+dashboard leg 30.9 -> 29.5 s, the triangle `gl+replace` 6.67 -> 6.08 s), and
+2026-10-21 after §208 (display model), and 2026-10-20 after §205 (draw-command
+batching) with both backends per sample.**
 This is the steering document for
 fidelity work, not a gate document. A row is evidence from a recorded run; gates
 stay in `docs/development-direction.md` §6 and `docs/research-notes/next-session.md`.
@@ -103,11 +108,11 @@ per-sample evidence).
 | **EvoX dashboard** (`xboxdash.xbe` on HDD, softmod) | `data/xemu-0.8.136-windows-x86_64` boot media; XBE 770,048 B, entry `0x12A17` | yes - MCPX ROM -> 1BL -> 2BL -> kernel -> XBE | **yes**, step 50M (boot animation), menu content from flip 33 | colored menu (32,789 colors; 7,389 RGB-diff px vs neutral) | APU/ACI + the GP/EP DSP core; the EP FIFO sinks, but the VP mixer and AC'97 codec are missing, so it is silent | submenu state-100 pixel-negative; NV2A method coverage partial (see nv097 coverage); 686 flips/1B | RAM `AF1FF8ED` / CPU `F5D61C94` (`--frame-first` leg); last frame `4EF1FBF6`; scanout `51658B3D`; gl `B6116DAE` (policy) | `-Sample dashboard` |
 | **triangle.xbe** (nxdk `f998bdc`) | XboxDev ghidra-xbe `tests/xbefiles/triangle.xbe` | yes | **yes**, step 32M | colored Gouraud triangle, 68 frames / 34 stalls | n/a | none on this stream; CPU-bound leg | RAM `B45254CA` / CPU `7DAB63EB` (HDD+DVD, §208d); accurate frame `A1740DE0`; display `AB50EF68`; gl `7A860ED7` (policy) | `-Sample triangle` |
 | **triangle.xbe, GL replace** | same XBE | yes | yes, step 32M | GPU rasterized, `BackendUnsupported=0`; 1B `gl+replace` **6.08 s** vs 10.45 s sw (gate media, after §237/§238) | n/a | the old "<= 6 s target" was measured on a DVD-only leg that never launched the XBE (§208d); re-base before chasing | CPU `7DAB63EB`; frame `7A860ED7` (policy) | `-Sample triangle -Gpu gl -GpuReplace` |
-| **xgu `bump_cubemap_reflect`, GL replace (§236 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`) | **gap 12 CLOSED (2026-10-22, §236):** the cube stage samples a host 2D-array texture decoded from the guest's six swizzled faces, so GL replace now presents the reflection panel. At 4.4B the GL frame is 19,042 colours / 0% black and differs from the software frame by **2 pixels of 307,200 (maxDelta 3)**; at 3.6B by **1 pixel (maxDelta 4)**, 21,041 colours both. `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0` | n/a | none on the render path; a HILO dot-map input (maps 4-7) is still one word per stage - no measured row uses one | sw 4.4B 18,980 colours / mean (57.4, 89.3, 34.2); gl 4.4B 19,042 / 0% black; sw+gl 3.6B 21,041 / (58.0, 98.7, 29.8) | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
-| **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized, and since §236 the cube stage samples its decoded host array texture, so the dot family renders on the GPU too. At 3B this row's executed combiner is still the one-stage `PROJECT2D`/`0x03` shape (`stages=1 texmodes=0000`), so the panel is the GPU image and `unsupported=0 fatal=0 programs=9` | n/a | none on the render path; gap 12 closed at 4.4B (see the row above) | 3B `-Gpu gl -GpuReplace`: `unsupported=0`, `fatal=0`; CPU `D5D38C64` (unchanged) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
+| **xgu `bump_cubemap_reflect`, GL replace (§236 phase anchor)** | same | yes | yes, own scene at 3B; **the dot-mode programs run at 4.4B** (`tm=0332`/`1332`) | **gap 12 CLOSED (2026-10-22, §236):** the cube stage samples a host 2D-array texture decoded from the guest's six swizzled faces, so GL replace now presents the reflection panel. At 4.4B the GL frame is 19,042 colours / 0% black and differs from the software frame by **2 pixels of 307,200 (maxDelta 3)**; at 3.6B by **1 pixel (maxDelta 4)**, 21,041 colours both. `unsupported=0 fatal=0 composedFrames=0 guestWordDraws=0 guestWordMisses=0` | n/a | none on the render path; a HILO dot-map input (maps 4-7) is still one word per stage - no measured row uses one | **G3 re-baseline:** sw+gl 4.4B **19,042 colours** / mean (57.1, 89.0, 34.4) (the pre-§236 record's "18,980 / (57.4, 89.3, 34.2)" is superseded); sw+gl 3.6B 21,041 / (58.0, 98.7, 29.8); sw+gl 3B 13,925 / (90.9, 130.1, 20.4) | `-Sample xgu-bump_cubemap_reflect -Steps 4400000000 -Gpu gl -GpuReplace` |
+| **xgu `bump_cubemap_reflect`, GL replace** | same | yes | yes, own scene at 3B | GPU rasterized, and since §236 the cube stage samples its decoded host array texture, so the dot family renders on the GPU too. At 3B this row's executed combiner is still the one-stage `PROJECT2D`/`0x03` shape (`stages=1 texmodes=0000`), so the panel is the GPU image and `unsupported=0 fatal=0 programs=9` | n/a | none on the render path; gap 12 closed at 4.4B (see the row above) | 3B `-Gpu gl -GpuReplace`: `unsupported=0`, `fatal=0`; CPU `D5D38C64` (unchanged); **frame `673477F7`** (G3; **1 px of 307,200 from the software frame `DA0750EE`, maxDelta 20** - the `5174B1EB` recorded before §236 was the two-colour pre-fix image) | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000 -Gpu gl -GpuReplace` |
 | **xgu `vp_lighting`, TEXFILTER parity** | same | yes | yes, own scene from ~3B | replace mode, **`pixels=0`** (no fallback): the GL fragment shader runs the tent/convolution/wrap path | n/a | none; the flag moves both renderers by the same ~6.5% and they agree within one 8-bit step in both states (§220c) | gl legacy `E68070A3` vs sw `72B2F490` (dmean 0.00/0.01/0.01, maxDelta 1); gl registers `A9E09139` vs sw `CF698444` (same); CPU `0380C502` in all four | `-Sample xgu-vp_lighting -Steps 3000000000 -Gpu gl -GpuReplace [-TexFilter registers]` |
-| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B byte-identical; smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
-| **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.64B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / `5.8 msps`; last frame `535C48FA` | `-Sample dashboard -Steps 2000000000` |
+| **kernel-test-suite-default.xbe** | Cxbx-Reloaded release `20260819191914-da80f1f` | yes | n/a (console output; `disable-video=1`) | n/a | n/a | 378/378 execute; known deltas 319 `RtlWalkFrameChain`, 344 `XcVerifyPKCS1Signature`; xemu leg cannot bind its monitor socket on this host | XGrid leg **792,800,535** steps, suite log 40,797 B SHA-256 `CA5D3867` byte-identical (G3 re-ran it); smoke 7/7 rows green | `-Sample ktest` (needs the staged ISO) / `scripts/ktest-smoke.ps1 -SkipXemu` |
+| **dashboard, 2B-step animation probe** | same HDD + gate pad script | yes | yes, 4,867 flips | same menu content (239 colors, same means); pixel-heavy 1.61B px | n/a | A-press does not reach a submenu; the submenu state-100 gap is unfixed | 2B run: 217,622 draws / **16.94 msps** (118.06 s; G3 - the recorded `5.8 msps` predates the §180-200 rasterizer campaign); last frame `535C48FA`; RAM `7DF2F343` / CPU `B912C955` | `-Sample dashboard -Steps 2000000000` |
 | **nxdk `mesh`** (textured, lit 3D) | nxdk `a6c31ee` `samples/mesh`, built by `scripts/build-nxdk-samples.ps1` | yes | **yes**, step 40M | 66 flips / 2,864 draws / 42.6M px; 5,115 clears, 44 programs, 48,627 triangles culled | n/a | renders its own content — the only corpus sample that does | RAM `D6A41BAC` / CPU `6DA19D89`; last frame `806CBEA7`, scanout/display `7328A99F`; **GL replace frame `A7442AB1` = the flip image (`source=backend`, §234)** | `-Sample mesh` |
 | **nxdk `gamma`** | nxdk `a6c31ee` `samples/gamma` | yes | **no new flip**: writes the scanout buffer directly (`XVideoGetFB`) and never flips | 0 extra NV2A draws (34 boot flips) | n/a | output visible only through the scanout export (768 colours, 298,744 px — the gradient); the flipped frame is a single black colour | RAM `4EE18F78` / CPU `C3371A8C`; scanout `D3EBF420`; **display `D3EBF420`**; GL replace `D3EBF420` (§234) | `-Sample gamma` |
 | **nxdk `gamma-fade`** | nxdk `a6c31ee` `samples/gamma-fade` | yes | same as `gamma` | 0 extra draws | n/a | same | RAM `ED83DC23` / CPU `D0A7BB8A`; scanout `2BC1C443`; **display `2BC1C443`** | `-Sample gamma-fade` |
@@ -116,8 +121,8 @@ per-sample evidence).
 | **nxdk `usb`** (§229) | nxdk `a6c31ee` `samples/usb`, built by `scripts/build-nxdk-samples.ps1` | yes | no new flip: `debugPrint` writes the scanout (gap 1) | 0 extra text draws; the guest's own USB host stack (`usbh_core_init`) enumerates the daughterboard hub and prints **`Device connected on USB hub port 1 (VID: 0409 PID: 55aa)`** on the display export | n/a | the text is only in the scanout/display export (flipped surface black); decode-line is deterministic (hard-coded hub descriptor) | RAM `ACDB5720` / CPU `1590C697`; last frame `18C7CC83`; scanout/display `119AFA48` at 1B; GL replace `119AFA48` (§234) | `-Sample usb` |
 | **nxdk `xaudio`** | nxdk `a6c31ee` `samples/xaudio` | yes | same as `gamma` (it is an audio sample) | 0 extra draws; **APU live**: 135 reads / 203 writes, `voiceOff=1`, ISTS bit 4 | **exercised** (voice/DSP frames); the EP FIFO sinks to WAV, but the VP mixer and AC'97 codec are missing, so there is nothing audible to verify | the PCM sink exists; the remaining audio gap is the VP mixer/AC'97 codec path, so correctness is still unverified by ear | RAM `B0C863C5` / CPU `07DB79D2`; scanout `8A969D86` | `-Sample xaudio` |
 | **xgu `vp_lighting`** (vertex-program lighting) | Voxel9/xbox-xgu-examples, built against nxdk `a6c31ee` | yes | **yes**, step 80M; its own scene from ~3B steps | 90 flips / 2,728 draws / **1,592 colours**, full coverage | n/a | needs 3B steps (1B only reaches the boot animation); **output matches the reference screenshot** (gap 5) | RAM `162DAFF1` / CPU `0380C502`; last frame `72B2F490` | `-Sample xgu-vp_lighting -Steps 3000000000` |
-| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | 2,962 draws at 3B; **renders correctly** - within 4.8/255 of the reference at 4.6B, mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 25.6/21.2/229.0 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
-| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / 21,041 colours / 0% black | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase. **GL replace leg (2026-10-21, §220d):** 14 declined draws compose 7 of 41 flips from guest RAM and the presented frame is `DA0750EE…` = the software anchor (gap 8 closed) | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B; GL replace RAM `19D576A8` / CPU `D5D38C64` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` / `… -Gpu gl -GpuReplace` |
+| **xgu `alpha_blending`** | same | yes | yes, own scene from ~3B | **2,952 draws at 3B (G3; the earlier 2,962 was a one-frame phase difference at the same RAM/CPU anchors); renders correctly** - within **2.8/255** of the reference at 4.6B (G3 re-measured `(22.7, 18.7, 230.4)` vs `(20.8, 17.2, 233.2)`; the earlier 4.8/255 was a different ping-pong phase), mid-fade at 3B (the shader transparency ping-pongs every 100 frames) | n/a | none on the render path; the oracle needs a phase sweep (§208f) | RAM `40081D03` / CPU `1C5C575D` at 3B; **oracle anchor 4.6B** (mean 22.7/18.7/230.4 vs 20.8/17.2/233.2) | `-Sample xgu-alpha_blending -Steps 4600000000` |
+| **xgu `bump_cubemap_reflect`** | same | yes | flips yes, own scene at 3B | **renders the reflection**: 2,679 draws / 42.8M px / full coverage / **13,925 colours / 0% black at 3B** (G3: the row's earlier "21,041 colours" is the 3.6B oracle anchor, where it is exact) | n/a | none on the render path (gap 3 closed 2026-10-21); the environment-map hatch at grazing phases is the content, not a bug - compare at the right phase. **GL replace leg (2026-10-21, §220d):** 14 declined draws compose 7 of 41 flips from guest RAM and the presented frame is `DA0750EE…` = the software anchor (gap 8 closed) | RAM `DDB59317` / CPU `D5D38C64`; last frame `DA0750EE`, scanout/display `668D7A48` at 3B; oracle anchor 3.6B (21,041 colours, frame `BFC41A59`, RAM `5ACD06FF` / CPU `C848610E`); GL replace 3B CPU `D5D38C64`, frame `673477F7` | `-Sample xgu-bump_cubemap_reflect -Steps 3000000000` / `… -Gpu gl -GpuReplace` |
 | **xgu `bumpenv_ripple`** (programmable bump env) | xgu repo, built 2026-10-21 | yes | own scene from ~5B (216 flips) | 3,036 draws / 9.7M depth px; 41,399 culled | n/a | **renders black at 5.0-5.6B** - diagnosed 2026-10-21 (§211): every presented surface is the colour clear; the two per-frame quads resolve their colour from `T1` (stage 1 `NONE` in one draw by construction, black texels in the bump draw) and the zeta clear (`0x00711174`, `LEQUAL`) is nearer than every fragment, so nothing passes. Forcing the clear far or the depth test off gives the same 406-colour wedge instead of the reference's full-screen reflection. Format `0x28` was the §209g fix; gap 10 stays open for the app-state question | RAM `7A11CBEF` / CPU `5B0665B2` at 5B (BTFF leg); plain leg RAM `AA10223C` / CPU `1AB9F002`; last frame `18C7CC83` | `-Sample xgu-bumpenv_ripple -Steps 5000000000` |
 | **xgu `swizzle_texture`** (swizzled 2D texture) | xgu repo, built 2026-10-21 | yes | flips yes, own scene at 3B | 87 flips / 2,725 draws / 45.1M px / 1,620 colours, full coverage; samples `0x3A` 3.14M with 0 misses | n/a | no reference screenshot in the xgu repo, so no oracle row; exercises the swizzled byte-order path (the §207h/§209 formats) | RAM `E2EB41ED` / CPU `B887B3C6`; last frame `FE32FB3C`, scanout/display `869CB402` at 3B | `-Sample xgu-swizzle_texture -Steps 3000000000` |
 | **xgu `distance_fog_ffp`** (fixed-function fog) | xgu repo, built 2026-10-21 | yes | flips yes; **fogged room renders** with `--ffp` | 2,730 draws / 84.2M px on, / 42.0M off | n/a | lighting complete since 215 (no row enables a light: 39 lit draws, all with lights off); flag off = flat orange (gap 6) | **on:** RAM `12BAD517` / CPU `571363B4`, 7,601 colours, mean (129.4, 50.2, 37.4); **off:** RAM `AFF08085` / CPU `571363B4`, 26 colours | `-Sample xgu-distance_fog_ffp -Steps 3000000000 -Ffp` |
@@ -432,7 +437,10 @@ software sampler's own decoder), so `xgu bump_cubemap_reflect`'s reflection pane
 now renders on the GPU: at 4.4B the GL replace frame is 19,042 colours / 0% black
 and differs from the software frame by **2 pixels of 307,200** (maxDelta 3); at
 3.6B by **2 pixels** (maxDelta 3, 21,041 colours on both). The frame is the clear
-plus the panel no longer.
+plus the panel no longer. (G3 re-measured 2026-10-24: 3.6B is **1 pixel, maxDelta
+4**, and 3B is **1 pixel, maxDelta 20** - the 2 px/maxDelta 3 figures were the
+pre-§237/§238 build; the 3B GL frame is `673477F7`, not the two-colour
+`5174B1EB` the pre-§236 backend produced.)
 
 Four defects had to go, invisible to each other while the first made every cube
 sample read a zero word (details: decisions §236):
@@ -494,11 +502,12 @@ Measured at 1B, GL replace (`displaySha`, and the software row it must match):
 Every guest `ram`/`cpu` SHA is unchanged, so this is host-side display only.
 `-Corpus -Gpu gl -GpuReplace` at 1B: all 14 rows PASS; the xgu scene rows keep
 their recorded GL anchors (`vp_lighting` 3B `E68070A3`, `bump_cubemap_reflect`
-3B `5174B1EB`, both `source=backend`), and the xgu rows at 1B show black because
+3B `5174B1EB` at the time, re-baselined to `673477F7` by G3 in §252 - both
+`source=backend`), and the xgu rows at 1B show black because
 their XBE has switched the display base to its own (not yet drawn) framebuffer.
 
 
-## Measured rows (2026-10-20, refreshed after §206g/§207)
+## Measured rows (2026-10-20, refreshed after §206g/§207 and again 2026-10-24 by G3)
 
 > **Anchor note (updated 2026-10-21, §208d):** a fast-mode **RAM** SHA is only
 > meaningful with its exact flag set. The triangle at 1B fast reads
@@ -509,10 +518,13 @@ their XBE has switched the display base to its own (not yet drawn) framebuffer.
 > table.
 
 Recorded with `scripts/boot-to-first-frame.ps1 -All` at 1B steps (ktest at 600M).
-Rows re-measured **2026-10-21** on the display-model build (§208): the `display`
-column is the product path, and it equals the flipped anchor on the GL legs by
-design (the backend owns the presented image) and lags it by one buffer on the
-double-buffered software legs.
+Rows re-measured **2026-10-24** (G3, decisions §252) on one Release build; the
+dashboard RAM moved to `AF1FF8ED` (the §218 APU `XGSCNT` change), the ktest BTFF
+RAM rows to `F708B07D`/`7D667575` (the suite log is that row's anchor and is
+unchanged), and the walls are this session's window. The `display` column is the
+product path: it equals the flipped anchor on the GL legs by design (the backend
+owns the presented image) and lags it by one buffer on the double-buffered
+software legs.
 
 **Software frames are exact anchors; GL frames are policy-validated** (diff
 against the software frame: flat regions byte-exact, `±1 px` edge band, per-channel
@@ -523,12 +535,12 @@ software frame stayed byte-identical and both GL gates still report
 
 | Row | wall | msps | frames | first frame | last frame (flip) | display | SHAs (ram/cpu) |
 |---|---:|---:|---:|---|---|---|---|
-| triangle, `sw` | 12.1 s | 82.7 | 68 | step 32M, `6F780A33` | `A1740DE0` | `AB50EF68` | `0117A5E2` / `7DAB63EB` |
-| triangle, `gl+replace` | 7.2 s | 139.5 | 68 | step 32M, `6F780A33` | `7A860ED7` (policy) | `7A860ED7` | `8AE82781` / `7DAB63EB` |
-| dashboard, `sw` | 44.0 s | 22.7 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `51658B3D` | `94A6D53C` / `F5D61C94` |
-| dashboard, `gl+replace` | 29.9 s | 33.5 | 686 | step 50M, `6F780A33` | `B6116DAE` (policy) | `B6116DAE` | `CF151863` / `F5D61C94` |
-| ktest (600M, `disable-video=1`), `sw` | 8.6 s | 69.7 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `4573E131` / `76002239` |
-| ktest (600M, `disable-video=1`), `gl+replace` | 7.3 s | 82.0 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `71C0FD0F` / `76002239` |
+| triangle, `sw` | 10.4 s | 96.1 | 68 | step 32M, `6F780A33` | `A1740DE0` | `AB50EF68` | `0117A5E2` / `7DAB63EB` |
+| triangle, `gl+replace` | 5.7 s | 175.8 | 68 | step 32M, `6F780A33` | `7A860ED7` (policy) | `7A860ED7` | `8AE82781` / `7DAB63EB` |
+| dashboard, `sw` | 24.5 s | 40.8 | 686 | step 50M, `6F780A33` | `4EF1FBF6` | `51658B3D` | `AF1FF8ED` / `F5D61C94` |
+| dashboard, `gl+replace` | 15.2 s | 65.7 | 686 | step 50M, `6F780A33` | `B6116DAE` (policy) | `B6116DAE` | `C5DE4605` / `F5D61C94` |
+| ktest (600M, `disable-video=1`), `sw` | 7.4 s | 81.4 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `F708B07D` / `76002239` |
+| ktest (600M, `disable-video=1`), `gl+replace` | 5.6 s | 106.6 | 34 (boot animation only) | step 36M, `6F780A33` | `18C7CC83` | `18C7CC83` | `7D667575` / `76002239` |
 
 Reading: the first presented frame is the boot animation (`6F780A33`) in every
 row - a boot-chain anchor, not a title anchor. The title anchors are the

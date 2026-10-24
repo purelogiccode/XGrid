@@ -140,10 +140,9 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G3 - Consolidated gate re-baseline for the ported NV2A** (active, attempt 0).
-**Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** .
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
+**Current status (2026-10-24):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
+**Phase score:** 79.9% (86.34 of 108).
+**Do not retry without a new measurement:** see docs/status.json for all 20.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -821,6 +820,48 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (fifty-second; G3 ran the consolidated re-baseline - every
+gate, all 22 corpus rows, the ktest smoke and the package gate verified in one
+commit, and six stale anchors replaced by measurement - decisions §252).**
+
+- **The milestone's single re-baseline, not a code change.** One full solution
+  Release build (0 warnings), one test run (**1965** green), then every leg from
+  those binaries (no mixed engine). The four fast 1B anchors are byte-identical:
+  triangle gl `4F1FCBC0`/`7DAB63EB` (6.311 s), menu gl `B06BA6E5`/`F5D61C94`
+  (14.706 s), triangle sw `B45254CA`/`7DAB63EB` (57,663,082 px, 10.808 s), menu
+  sw `34973510`/`F5D61C94` (253,998,498 px, 25.630 s).
+- **All four accurate goldens PASS**: menu sw `4EF1FBF6` / gl `B6116DAE`
+  (`diff=2602 violations=0 outsideBand=0 maxDelta=1`, counters 33,632/686/686),
+  triangle sw `A1740DE0` / gl `7A860ED7` (`diff=27849`, 2,706/68/34); accurate
+  RAM/CPU also exact (menu `6AB39AB0`/`3D2740B8`, triangle
+  `812EA159`/`2F632483`). `BackendUnsupported=0 composedFrames=0` everywhere.
+- **All 22 corpus rows PASS at their documented anchors.** The exceptions are
+  six stale values, each re-baselined with its measurement: the
+  `xgu bump_cubemap_reflect` 3B GL frame `5174B1EB` -> **`673477F7`** (now
+  **1 px** of 307,200 from the software frame; the old value was the pre-§236
+  two-colour image), its 4.4B colour count/mean 18,980 -> **19,042 /
+  `(57.1, 89.0, 34.4)`** (pair 2 px maxDelta 3), its 3.6B pair **1 px maxDelta
+  4** (21,041 colours both), its 3B software colour count **13,925** (21,041 is
+  the 3.6B anchor), `xgu alpha_blending` 4.6B mean **`(22.7, 18.7, 230.4)`**
+  (within 2.8/255 of `(20.8, 17.2, 233.2)`; 3B draws 2,952 at the same
+  RAM/CPU), the dashboard 2B throughput **16.94 msps** (same 217,622 draws /
+  `535C48FA`) and the ktest BTFF RAM rows (`F708B07D`/`7D667575`).
+- **ktest smoke**: park `4E03A` at **792,800,535** steps, the 40,797-byte suite
+  log `CA5D3867` byte-identical, `ktest_diff.py` **SMOKE PASS 7/7** (071/319/344
+  fail on both, 224/231 XGrid-ahead). Driven with the script's own command on
+  the prepared media - the sibling `CSharp_XISOSharp` and `xemu.exe` are absent
+  here, so the diff reads the stored §120 oracle log.
+- **Package gate**: `scripts/package.ps1` + `scripts/package-verify.ps1` ->
+  **PACKAGE PASS: 8 archives, version 0.1.0, 4 RIDs, licenses complete** (19
+  ported files; win-x64 CLI smoke `XGrid 0.1.0`).
+- **Close**: G3 **done**; the E5c port milestone is complete (G1 done, G2
+  negative, G3 done) and **the queue is empty** (`-Next` prints SEQUENCE
+  COMPLETE). No code and no snapshot change (Nv2a v10, audio v3); phase score
+  unchanged at 79.9% (86.34 of 108) - verification, not landed capability.
+  Docs: decisions §252, `docs/compatibility.md` refreshed (status line, six
+  rows, the measured-rows table), `ImplementationPlan.md` E5c/G3 checkboxes,
+  this note and `next-session.md`.
 
 **Session 2026-10-24 (fifty-first; G2 priced by site - the GL renderer port's
 removable share is the CPU vertex stage, 4.0-4.2% of the triangle wall, and the
