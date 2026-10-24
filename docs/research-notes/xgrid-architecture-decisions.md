@@ -16852,3 +16852,111 @@ mipmapped 3D and is unchanged, so this is a decode, not a re-baseline.
 - **Provenance:** `S3tcDecoder.cs` MIT, `TextureFormats.cs` LGPL-2+ (included
   under GPL-2.0 via LGPL §3), both recorded in `THIRD_PARTY_NOTICES.md` and
   `sources.md`; the oracle is development-only.
+
+## 251 G2 priced: the GL renderer port's removable share is the CPU vertex stage, and the reference design's per-draw submission costs more than it saves (2026-10-24, fifty-first session) - G2, negative
+
+**What was priced.** G2 is the optional wholesale port of xemu 0.8.139's GL
+renderer (`hw/xbox/nv2a/pgraph/gl/`, 6,348 C LOC, plus the GLSL pieces it
+needs; the plan prices it at ~11.2k C LOC / 5-8 sessions). The harness gate is
+the stage rule: a measured ceiling of **>=10% wall or >=20% engine**, else the
+task closes negative. The plan's own price line ("menu device 6.57 s pre-D5,
+triangle 0.62 s") is the *whole* device stage, which is an upper bound no port
+can reach: the device stage also contains clears, attribute fetch, the fill
+predicates, the CPU primitive assembly and the submission, none of which is
+GL-renderer work that a port removes. So the price was measured by site on the
+post-D5 build, and the port's own submission shape was measured against the
+current instanced one.
+
+**Method.** Temporary `Stopwatch` probes (stripped before the commit, the
+section 240/243 pattern) at `Nv2aMmio.Write` (already permanent as the
+`--gpu-time` device total), `FlushDraw`, the per-vertex fetch / plan execute /
+epilogue block in `Vertex()`, `FillTrianglePsh`, the backend branch
+(`BuildCachedDrawInfo` + `TryDraw`) and `FillSurface`. Sampled 1-in-16 draw
+flushes (169 triangle / 2,190 menu sampled of 2,706 / 35,040) so the timestamp
+overhead stays under ~30 ms; the printed seconds are the sampled sums scaled by
+16. Two runs per title, 1B fast (`--jit --jit-threshold 16 --jit-spin
+--jit-raw --gpu gl --gpu-replace`), H1, gate media.
+
+**The measured device stage (H1, two runs each).**
+
+| site | triangle | menu |
+|---|---:|---:|
+| wall | 5.786 / 5.866 s | 14.817 / 14.621 s |
+| device writes (total) | 0.576 / 0.594 s = **9.9-10.1%** | 5.261 / 5.202 s = **35.5-35.6%** |
+| draw flushes | 0.589 / 0.628 s | 5.417 / 5.410 s |
+| - attribute fetch | 0.031 / 0.032 | 0.650 / 0.639 |
+| - **vertex transform (plan)** | **0.225 / 0.238** | **2.317 / 2.332** |
+| - **vertex epilogue** | **0.008 / 0.008** | **0.311 / 0.309** |
+| - fill (`FillTrianglePsh`, incl. backend) | 0.036 / 0.040 | 1.073 / 1.080 |
+| - of which backend submission | 0.029 / 0.032 | 0.770 / 0.776 |
+| - other flush (assembly, setup, batch bookkeeping) | 0.289 / 0.310 | 1.066 / 1.050 |
+| surface clears | 0.012 / 0.011 | 0.043 / 0.049 |
+
+Anchors exact on every probed run: triangle `4F1FCBC0` / `7DAB63EB`, menu
+`B06BA6E5` / `F5D61C94`, `BackendUnsupported=0 fatal=0 composedFrames=0`.
+
+**The removable ceiling.** A GL renderer that executes the NV2A vertex program
+on the GPU (xemu `glsl/vsh-prog.c` -> GLSL) removes the CPU transform and the
+vertex epilogue, and nothing else: the attribute fetch, the fill predicates,
+the primitive assembly, the clears and the submission all remain. Gross:
+
+- triangle **0.233 / 0.246 s = 4.0-4.2% of the wall** (5.0-5.3% of `outerMs`
+  4.604-4.668; 4.1% of the full engine 5.75 s).
+- menu **2.628 / 2.641 s = 17.7-18.1% of the wall** (20.3-20.4% of `outerMs`
+  12.8-12.9; 18.1% of the full engine 14.53 s).
+
+So the triangle - the headline leg, and the one the charter's "both titles" rule
+binds - cannot reach either bar even if the port's submission were free: it
+would need **0.58 s, 2.4x** the measured 0.246 s. The whole device stage is
+10.0% of the triangle wall, so only a port that also removed the clears, the
+fetch, the predicates and the assembly could just touch 10%, and those are not
+GL-renderer code.
+
+**The submission is not free, and the reference design makes it worse.** xemu's
+`pgraph_gl_flush_draw` submits one `glDrawArrays`/`glDrawElements`/
+`glMultiDrawArrays` per draw command from CPU-built vertex buffers, with the
+vertex program on the GPU; XGrid's backend instead uploads one `uTri[25]` block
+per triangle and submits **one instanced draw per draw command** (section 205).
+The repo already has the A/B for giving that up: `XGRID_GL_NO_BATCH=1` on the
+same build measured **menu 14.817 -> 22.660 s (+7.843 s, +52.9%)** and
+**triangle 5.786 -> 6.242 s (+0.456 s, +7.9%)**, with `drawMs` 8,623 ms on the
+menu and every anchor exact. That proxy is per-*triangle*, not per-draw-command,
+so it overstates the port's penalty (xemu would do 33,638 draws, not 2.73M);
+but it is the only measured shape, it is *leaner* per draw than xemu's (no
+shader/surface rebinding), and it is 3x the gross menu saving. Even at a third
+of it the menu net is negative.
+
+**Why the compatibility half does not rescue it.** The corpus's GL rows already
+agree with the software oracle: `xgu bump_cubemap_reflect` 3.6B/4.4B present
+2 px of 307,200 from software (maxDelta 3), `vp_lighting` 3B is
+`E68070A3`/`A9E09139` (legacy/registers) against software `72B2F490`/`CF698444`,
+the display-source rule reproduces `gamma`/`hello`/`usb`/`led`/`mesh`, and
+`composedFrames=0` on the gate media. Gap 10 (`bumpenv_ripple`'s black frame) is
+a guest-state answer in both renderers (section 211), and G1's audit already
+dispositioned all 73 recorded methods (1 handled, 72 declined with measured
+reasons). A port would add exact surface/texture-cache semantics that **no row
+exercises**, at the cost of the measured submission regression.
+
+**Decision.** G2 closes **negative** on the price gate: the measured ceiling is
+4.0-4.2% wall / 5.0-5.3% engine on the triangle, and the menu's 17.7-18.1% is
+eaten by the reference design's per-draw submission (measured proxy +52.9%).
+The 11.2k-LOC / 5-8-session price is not justified by a delta that is one
+bounded slice: the CPU vertex stage. **Reopen** with (a) a bounded GPU
+vertex-program slice that keeps the instanced per-draw-command submission and is
+measured to remove >=10% of the *triangle* wall (>=0.58 s, 2.4x today's 0.246 s)
+with the four fast 1B anchors and both accurate goldens exact, or (b) an
+operator re-scope of G2 as a compatibility task whose acceptance is the 22-row
+matrix rather than the 10% wall bar (G3 would then be the vehicle). Do not
+re-open the wholesale port on the "6.57 s menu device" figure - that is the
+whole device stage, and 80% of it is not renderer work.
+
+**Gates (this session, H1, tree byte-identical to `da1bf43`).** Fast 1B
+`gl+replace`: triangle `4F1FCBC0`/`7DAB63EB` (5.948 s), menu
+`B06BA6E5`/`F5D61C94` (14.727 s). Fast 1B `sw`: triangle
+`B45254CA`/`7DAB63EB` 57,663,082 px, menu `34973510`/`F5D61C94` 253,998,498 px.
+The ktest XGrid leg re-ran on the prepared media: park `4E03A` after
+**792,800,535** steps, 40,797-byte log, SHA-256 `CA5D3867…` byte-identical
+(the smoke *script* needs the sibling `CSharp_XISOSharp` to rebuild its ISO and
+an `xemu.exe` that is not in this workspace, so the leg was driven with the
+script's own command). Suite **1965** green, build 0 warnings, format clean.
+No code change, no snapshot change.

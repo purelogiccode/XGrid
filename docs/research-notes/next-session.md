@@ -1,20 +1,42 @@
-# Next session instructions (updated 2026-10-24, after D7 closed negative: the boot is priced cell by cell and the queue is G1 -> G2 -> G3)
+# Next session instructions (updated 2026-10-24, after G2 closed negative: the GL renderer port's removable share is the CPU vertex stage at 4.0-4.2% of the triangle wall, and the reference design's per-draw submission costs 3x the menu's gross saving; the queue is G3)
+
+> **G2 RESULT (2026-10-24, 51st session) - the port is priced by site, not by the
+> plan's whole-device figure.** The post-D5 device stage was split with temporary
+> probes (1-in-16 flushes) on both 1B `gl+replace` legs: **triangle 0.576-0.594 s
+> (9.9-10.1% of 5.79-5.87 s) / menu 5.20-5.26 s (35.5-35.6% of 14.6-14.8 s)**,
+> with the CPU vertex stage (transform + epilogue) at **0.233-0.246 s triangle =
+> 4.0-4.2% wall / 5.0-5.3% engine** and **2.63-2.64 s menu = 17.7-18.1% wall /
+> 20.3% engine**. A GPU vertex program removes only that; clears, attribute
+> fetch, fill predicates, primitive assembly and submission stay, and the whole
+> device stage is only 10.0% of the triangle wall. The reference design submits
+> per draw command from CPU-built vertex buffers (no instancing), and the repo's
+> own A/B for giving up §205 batching (`XGRID_GL_NO_BATCH=1`) is **+7.843 s menu
+> (+52.9%) / +0.456 s triangle (+7.9%)** - 3x the menu's gross saving. **G2
+> closes negative** (decisions §251). Reopen only with a bounded GPU
+> vertex-program slice that keeps the instanced submission and removes >=10% of
+> the *triangle* wall (>=0.58 s), or an operator re-scope of G2 as a
+> compatibility task (22-row acceptance, not the wall bar). **Do not re-open on
+> the "6.57 s menu device" figure** - it is the whole device stage, ~80% of it
+> not renderer work. The active queue is now **G3** (consolidated gate
+> re-baseline on the G1 state).
+>
+> Gates this session: four fast 1B anchors byte-identical (triangle gl
+> `4F1FCBC0`/`7DAB63EB` 5.948 s, menu gl `B06BA6E5`/`F5D61C94` 14.727 s, triangle
+> sw `B45254CA`/`7DAB63EB` 57,663,082 px, menu sw `34973510`/`F5D61C94`
+> 253,998,498 px); ktest XGrid leg 792,800,535 steps, 40,797 B `CA5D3867` log
+> byte-identical; suite 1965. No code or snapshot change.
 
 > **D7 RESULT (2026-10-24, 49th session) - the boot is measured, not a lever.**
-> The active queue is now **G1 -> G2 -> G3** (the optional NV2A/PGRAPH port,
-> `ImplementationPlan.md` E5c). D7 closed **negative** (decisions §249):
-> boot 1.87-1.91 s triangle = runner 41-45% + formation 25% (Iced `Assemble`
-> 18-21%) + non-JIT 26% + lookup 4%; the unbuilt heads are **99.6% RAM** (the
-> 151 image heads are the MCPX ROM) and building them costs 19.4 s to remove a
-> 1.26 s cell (**15x negative**). The new levers, already sized and exact:
-> `Step` fast fetch **2.5%** of the triangle wall (1.1 us of each 3.2 us Step is
-> the byte-at-a-time 15-byte fetch; the JIT's own `TryFillDecodeEntry` fetch is
-> the fix), spec-run cursor loop **1.8%**, image plan cache 0.9-1.4%. The
-> encoder (N4) is 9.4% and below its own >10% reopen bar; trace (N3) 3-5%.
-> The `--jit-timing` attribution now prints a fifth line
-> (`Jit attribution pending heads=… bySource[…] formMsPerBlock=… buildAllMs=…`).
-> Gates this session: four fast 1B anchors byte-identical, ktest 792,800,535
-> steps with the 40,797 B `CA5D3867` log and SMOKE PASS 7/7, suite 1925.
+> The unbuilt-head population is now a permanent `--jit-timing` line: 55,005
+> pending heads at 1B are 99.6% RAM (the 151 image heads are the MCPX ROM, whose
+> blocks already form), and building them all costs 19.4 s triangle / 5.1 s menu
+> against non-JIT cells of 1.26 s / 1.71 s (**15x / 3x negative**). The boot
+> (1.87-1.91 s = 31% of a 6.1 s wall) is runner 41-45% + formation 25% (Iced
+> `Assemble` 18-21%) + non-JIT 26% + lookup 4%; the non-JIT cell splits 34%
+> `Step` (3.2 us each, 1.1 us of it the byte-at-a-time fetch) / 66% spec body.
+> The largest unretried lever is the `Step` fast fetch at 2.5% of the wall, then
+> the spec cursor loop at 1.8% and the image plan cache at 0.9-1.4%. D7 closed
+> **negative** (decisions §249).
 
 > **STATUS 2026-10-23 (47th session) - the release task R1 is COMPLETE and the
 > performance queue is set.** R1.1 shipped a reproducible 4-RID release tree
@@ -276,13 +298,41 @@ first step, and the reopen condition for `D3`.
 - **xemu-class is 1.20 s** on the triangle (830 Msteps/s) and 1.36 s on the menu
   (real-time band), so the gap is now **~4.7x / ~14x**.
 
+### §251 - the post-D5 device stage, measured by site (2026-10-24)
+
+Same probes as §243/§240 (temporary, sampled 1-in-16 flushes, stripped before the
+commit), both 1B `gl+replace` legs, H1:
+
+| site | triangle (2 runs) | menu (2 runs) |
+|---|---:|---:|
+| wall | 5.786 / 5.866 s | 14.817 / 14.621 s |
+| device writes | 0.576 / 0.594 s (9.9-10.1%) | 5.261 / 5.202 s (35.5%) |
+| flushes | 0.589 / 0.628 | 5.417 / 5.410 |
+| - attribute fetch | 0.031 / 0.032 | 0.650 / 0.639 |
+| - **vertex transform** | **0.225 / 0.238** | **2.317 / 2.332** |
+| - **vertex epilogue** | 0.008 / 0.008 | 0.311 / 0.309 |
+| - fill (incl. backend submission) | 0.036 / 0.040 (0.029 / 0.032) | 1.073 / 1.080 (0.770 / 0.776) |
+| - other (assembly, setup, batch) | 0.289 / 0.310 | 1.066 / 1.050 |
+| clears | 0.012 / 0.011 | 0.043 / 0.049 |
+
+The **CPU vertex stage** (transform + epilogue) is therefore the only part a GPU
+vertex program can remove: **0.233-0.246 s triangle (4.0-4.2% wall, 5.0-5.3%
+engine) / 2.63-2.64 s menu (17.7-18.1% wall, 20.3% engine)**. The whole device
+stage is 10.0% of the triangle wall. Giving up §205 instancing (the reference
+design's shape) costs `XGRID_GL_NO_BATCH=1` **+7.843 s menu (+52.9%) / +0.456 s
+triangle (+7.9%)** - so G2 closed negative (decisions §251).
+
 ## 2. Recommended next session - pick one
 
-> **Queue mapping (2026-10-23):** the options below are superseded by
-> `docs/status.json`: Option A is **D6** (compiled transform evaluator, priced
-> 9.5-10.7% menu), Option B's edge-removal idea is one of **D8**'s candidates,
-> and the active task is **D8** (measurement + decision). Option C stays the
-> corpus backlog. Do not start A or B before D8 selects it.
+> **Queue mapping (2026-10-24):** the options below are superseded by
+> `docs/status.json`. Option A was **D6** (compiled transform evaluator) and
+> closed negative (§248); Option B's edge-removal idea was **D8** and closed
+> negative (§247/§249); Option C stays the corpus backlog. **G2 closed negative
+> (§251)** and the active queue is **G3** (consolidated gate re-baseline on the
+> G1 state). The bounded vertex-stage slice G2's reopen condition names (a GPU
+> vertex program that keeps the instanced submission and removes >=10% of the
+> triangle wall) is the only new performance shape in this file's Option A; do
+> not start it without that measurement.
 
 ### Option A (Track C/B): the interpreted vertex program is 428 ms of the triangle and ~x2.7 of the menu
 
@@ -325,6 +375,17 @@ decide that against xemu first.
 - The HILO dot-map input one-word-per-stage limitation (§236) - no row uses it.
 
 ## 3. Measured negatives - do NOT re-try without a new measurement
+
+- **The wholesale GL renderer port (`G2`, §251)**: the removable CPU vertex stage
+  is **4.0-4.2% of the triangle wall / 5.0-5.3% engine** (0.233-0.246 s) and
+  17.7-18.1% wall / 20.3% engine on the menu (2.63-2.64 s); the whole device
+  stage is only 10.0% of the triangle wall, and the reference design's per-draw
+  submission (no instancing) is measured at `XGRID_GL_NO_BATCH=1` **+7.843 s
+  menu (+52.9%) / +0.456 s triangle (+7.9%)**. Reopen only with a bounded GPU
+  vertex-program slice that keeps the instanced submission and removes >=10% of
+  the *triangle* wall (>=0.58 s), or an operator re-scope as a compatibility
+  task. **Never price it on the "6.57 s menu device" figure** - ~80% of that is
+  not renderer work.
 
 - **The menu draw-flush hoist alone** (§243, `D3`): reject-before-setup +
   per-draw register files + read-slot fetch mask + plan operand locals measured

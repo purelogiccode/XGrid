@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G2 - GL renderer port (xemu pgraph/gl + the glsl pieces it needs)** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G3 - Consolidated gate re-baseline for the ported NV2A** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
+**Phase score:** 79.9% (86.34 of 108). **Next:** .
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -821,6 +821,54 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (fifty-first; G2 priced by site - the GL renderer port's
+removable share is the CPU vertex stage, 4.0-4.2% of the triangle wall, and the
+reference design's per-draw submission costs 3x the menu's gross saving - the
+port closes negative - decisions §251).**
+
+- **The price, measured not assumed.** The plan's G2 figure ("menu device 6.57 s
+  pre-D5, triangle 0.62 s") is the *whole* device stage, which no port can
+  remove. Temporary probes (stripped before the commit, sampled 1-in-16 flushes)
+  split it on the post-D5 build at 1B `gl+replace`, H1: **triangle wall
+  5.786/5.866 s, device 0.576/0.594 s (9.9-10.1%)**, of which flush 0.589/0.628
+  = fetch 0.031 + **transform 0.225/0.238** + epilogue 0.008 + fill 0.036
+  (backend 0.029) + **other 0.289/0.310** (assembly/setup/batch), clears 0.012.
+  **Menu wall 14.817/14.621 s, device 5.261/5.202 s (35.5%)**, of which flush
+  5.417/5.410 = fetch 0.650 + **transform 2.317/2.332** + epilogue 0.311 + fill
+  1.073 (backend 0.770) + **other 1.066/1.050**, clears 0.043. Every anchor
+  exact on every probed run.
+- **The removable ceiling.** A GPU vertex program (xemu `glsl/vsh-prog.c`)
+  removes transform + epilogue only: **triangle 0.233-0.246 s = 4.0-4.2% wall /
+  5.0-5.3% engine; menu 2.63-2.64 s = 17.7-18.1% wall / 20.3% engine**. The
+  triangle - the leg the charter's "both titles" rule binds - needs 0.58 s
+  (2.4x) to reach 10%, and the whole device stage is only 10.0% of its wall.
+- **The submission is the killer.** xemu's GL path submits per draw command from
+  CPU-built vertex buffers and has no instancing; XGrid's backend submits one
+  instanced draw per command (§205). The repo's own A/B for giving that up,
+  `XGRID_GL_NO_BATCH=1` on the same build: **menu 14.817 -> 22.660 s (+7.843 s,
+  +52.9%)**, triangle 5.786 -> 6.242 s (+0.456 s, +7.9%), `drawMs` 8,623 ms,
+  anchors exact. Per-triangle rather than per-draw-command, so it overstates -
+  but it is the only measured shape and it is 3x the menu's gross saving.
+- **Compatibility does not rescue it:** the corpus's GL rows already match
+  software (cubemap 2 px, `vp_lighting`, the display-source rows,
+  `composedFrames=0`), gap 10 is a guest-state answer in both renderers, and
+  G1's audit already dispositioned the 73 recorded methods. A port would add
+  exact surface/texture-cache semantics that no row exercises.
+- **Close:** G2 **negative** on the stage gate. Reopen only with (a) a bounded
+  GPU vertex-program slice that keeps the instanced per-draw-command submission
+  and removes >=10% of the *triangle* wall (>=0.58 s) with the anchors and both
+  accurate goldens exact, or (b) an operator re-scope of G2 as a compatibility
+  task (acceptance = the 22-row matrix, not the 10% wall bar), G3 as the
+  vehicle. **Do not re-open on the "6.57 s menu device" figure.**
+- **Gates (tree byte-identical to `da1bf43`):** fast 1B `gl+replace` triangle
+  `4F1FCBC0`/`7DAB63EB` (5.948 s), menu `B06BA6E5`/`F5D61C94` (14.727 s); fast
+  1B `sw` triangle `B45254CA`/`7DAB63EB` 57,663,082 px, menu
+  `34973510`/`F5D61C94` 253,998,498 px; ktest XGrid leg park `4E03A` after
+  **792,800,535** steps, 40,797 B log `CA5D3867…` byte-identical (the smoke
+  *script* needs the sibling `CSharp_XISOSharp` and an `xemu.exe` absent here, so
+  the leg ran with the script's own command on the prepared media); suite
+  **1965** green, build 0 warnings, format clean. No code/snapshot change.
 
 **Session 2026-10-24 (forty-ninth; D7 priced the boot cell by cell - the unbuilt
 heads are 99.6% RAM code and building them is 15x negative, so the boot item

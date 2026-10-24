@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "G2",
-    "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
+    "id": "G3",
+    "title": "Consolidated gate re-baseline for the ported NV2A",
     "plan": "E5c",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "22-row matrix re-verified or re-baselined with the policy diff (violations=0, maxDelta<=1), BackendUnsupported=0 fatal=0 and the expected composedFrames, batching/sampler/composition/display-source preserved, software anchors and ktest log byte-identical",
-    "price": "~11.2k C LOC, 5-8 sessions; menu device 6.57 s pre-D5, triangle 0.62 s"
+    "acceptance": "both 1B fast legs, all four accurate goldens, the 22 corpus rows, the ktest smoke and scripts/package-verify.ps1 verified in one commit; new anchors recorded in status.json/compatibility.md",
+    "price": "2-3 sessions; the one place GL frames and documented anchors may move"
   },
   "position": {
     "host": "H1",
@@ -232,22 +232,10 @@
   ],
   "queue": [
     {
-      "id": "G2",
-      "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
-      "plan": "E5c",
-      "status": "active",
-      "depends": [
-        "G1"
-      ],
-      "acceptance": "22-row matrix re-verified or re-baselined with the policy diff (violations=0, maxDelta<=1), BackendUnsupported=0 fatal=0 and the expected composedFrames, batching/sampler/composition/display-source preserved, software anchors and ktest log byte-identical",
-      "price": "~11.2k C LOC, 5-8 sessions; menu device 6.57 s pre-D5, triangle 0.62 s",
-      "evidence": []
-    },
-    {
       "id": "G3",
       "title": "Consolidated gate re-baseline for the ported NV2A",
       "plan": "E5c",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "G2"
       ],
@@ -489,6 +477,13 @@
       "date": "2026-10-24",
       "evidence": "D7 price measured (decisions 249). Boot 0-100M is 1.87-1.91 s triangle (31% of a 6.1 s wall) = runner 760-856 ms (41-45%) + formation 465-522 (25%, Iced Assemble 347-400) + non-JIT 479-525 (26%) + lookup/loop 70-80 (4%); menu 1.62 s = 691+413+445+66. New permanent --jit-timing census (JitBlockCache records each head's fetch source at first sight; JitAttribution prints pending heads/visits bySource with formMsPerBlock and buildAllMs; JitAttributionTests): pending heads triangle 34,197 at 100M / 55,005 at 1B, menu 31,720 / 31,257; by source triangle 1B ram 54,854 / image 151 / other 0, 100M ram 34,046 / image 151, menu 100M ram 31,569 / image 151 -> the image share is the MCPX ROM whose blocks already form, so a prebuilt/plan cache for immutable image code is worth 0.9-1.4%. Building all pending heads costs 19.4 s (triangle) / 5.1 s (menu) at the measured 0.16-0.39 ms per block against non-JIT cells of 1.26 / 1.71 s = 15x / 3x negative. Non-JIT split (temporary probe, removed before the commit): 34% Step (133,499 calls at 3.21 us, 150 ms of it the 15-byte byte-at-a-time fetch) / 66% spec body (2.49M members at 358 ns: handler 671 ms + cursor loop 219 ms); decoded-block Form is 43 ms over 293k calls. Ceiling: Step fast fetch 2.5% of the triangle wall, spec loop 1.8%, image plan cache 0.9-1.4% = 5.7% of new levers; encoder (N4) 9.4% and below its own >10% reopen bar, trace (N3) 3-5%, runner (D8) uniform -> no 10% wall. Gates: fast 1B triangle gl 4F1FCBC0/7DAB63EB frame 7A860ED7, menu gl B06BA6E5/F5D61C94 frame B6116DAE, triangle sw B45254CA/7DAB63EB 57,663,082 px (2706/68/34, culled 41,035), menu sw 34973510/F5D61C94 253,998,498 px (33638/1402/696/686/686); ktest parks at 4E03A after 792,800,535 steps with the 40,797 B log CA5D3867 byte-identical and SMOKE PASS 7/7 against the stored xemu oracle log; suite 1922 -> 1925, build 0 warnings, format clean; no snapshot change.",
       "reopen": "a boot/engine lever measured at >=10% of the triangle wall or >=20% engine. The first candidate is the Step fast fetch (2.5%, exact by construction - the JIT's own TryFillDecodeEntry fetch, one translate + span instead of 15 bus reads), then the spec-run cursor loop (1.8%). N4 (encoder) reopens only with a formation profile where a 3.2x encoder saves >=10% of the wall (Assemble >= 900 ms at a 6.1 s wall; this profile reads 827 ms = 9.4%), and N3 (trace) only if the boundary population grows."
+    },
+    {
+      "id": "G2",
+      "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
+      "date": "2026-10-24",
+      "evidence": "Device stage split by site (temporary Stopwatch probes, sampled 1-in-16 flushes, stripped before commit; H1, 1B fast gl+replace, two runs each). Triangle: wall 5.786/5.866 s, device 0.576/0.594 s (9.9-10.1%), flush 0.589/0.628 = fetch 0.031 + transform 0.225/0.238 + epilogue 0.008 + fill 0.036 (backend 0.029) + other 0.289/0.310, clears 0.012. Menu: wall 14.817/14.621 s, device 5.261/5.202 s (35.5%), flush 5.417/5.410 = fetch 0.650 + transform 2.317/2.332 + epilogue 0.311 + fill 1.073 (backend 0.770) + other 1.066/1.050, clears 0.043. The removable CPU vertex stage (the only part a GPU vertex program takes) is 0.233-0.246 s triangle = 4.0-4.2% wall / 5.0-5.3% engine (10% needs 0.58 s, 2.4x) and 2.63-2.64 s menu = 17.7-18.1% wall / 20.3% engine; the whole device stage is 10.0% of the triangle wall, so clears/fetch/predicates/assembly are not renderer work. The reference design submits per draw command with no instancing, and the repo's own A/B for giving up 205 batching (XGRID_GL_NO_BATCH=1) measured +7.843 s menu (+52.9%) / +0.456 s triangle (+7.9%) - 3x the menu's gross saving. Anchors exact on every probed run: triangle 4F1FCBC0/7DAB63EB, menu B06BA6E5/F5D61C94. Tree byte-identical to da1bf43; four fast 1B anchors exact on the clean build (tri gl 4F1FCBC0/7DAB63EB 5.948 s, menu gl B06BA6E5/F5D61C94 14.727 s, tri sw B45254CA/7DAB63EB 57,663,082 px, menu sw 34973510/F5D61C94 253,998,498 px); ktest 792,800,535 steps with the 40,797 B CA5D3867 log byte-identical; suite 1965 green.",
+      "reopen": "bounded GPU vertex-program slice that keeps the instanced per-draw-command submission and removes >=10% of the triangle wall (>=0.58 s, 2.4x today's 0.246 s) with the four fast 1B anchors and both accurate goldens exact; or an operator re-scope of G2 as a compatibility task (22-row acceptance, not the 10% wall bar) with G3 as the vehicle"
     }
   ],
   "rules": {

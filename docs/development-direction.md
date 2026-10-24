@@ -7,10 +7,10 @@ day-to-day agent entry point; this file is the priority order every agent follow
 ## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G2 - GL renderer port (xemu pgraph/gl + the glsl pieces it needs)** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G3 - Consolidated gate re-baseline for the ported NV2A** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
+**Phase score:** 79.9% (86.34 of 108). **Next:** .
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
 > The generated block above is the current status; the narrative below is
@@ -134,10 +134,14 @@ in §242), and the device stage after D1 is ~596 ms of the triangle wall (§240 
 3. **E — corpus steers.** Keep the matrix; add the performance rows
    (Msteps/s, wall per presented frame) and the xemu comparison where it is a
    valid oracle. No new corpus breadth beyond the standing rows while C leads.
-   **G1-G3 (queued after D8/D6/D7, E5c)** are the optional wholesale NV2A/PGRAPH
-   port: a compatibility milestone (73 recorded methods, DXT/mipmap/multistage
-   formats, exact cache semantics), not the path to the band. The software
-   rasterizer stays as the oracle; only GL frames may be re-baselined.
+   **G1-G3 (E5c)** are the optional wholesale NV2A/PGRAPH port: a compatibility
+   milestone (73 recorded methods, DXT/mipmap/multistage formats, exact cache
+   semantics), not the path to the band. **G1 landed** (the method audit + the
+   texture-format table); **G2 closed negative (§251)** because the removable
+   CPU vertex stage is 4.0-4.2% of the triangle wall and the reference design's
+   per-draw submission costs 3x the menu's gross saving; **G3** is the
+   consolidated re-baseline. The software rasterizer stays as the oracle; only
+   GL frames may be re-baselined.
 4. **P — product (parallel, not blocking).** The **APU DSP port is landed**
    (P1.2-P1.4: interpreter, GP/EP glue, 48 kHz PCM sink). The largest remaining
    product gap is audible output: the **VP mixer** and the AC'97 codec path.

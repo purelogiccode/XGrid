@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G2 - GL renderer port (xemu pgraph/gl + the glsl pieces it needs)** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G3 - Consolidated gate re-baseline for the ported NV2A** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
+**Phase score:** 79.9% (86.34 of 108). **Next:** .
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -148,7 +148,10 @@ The queue is **D8 → D6 → D7 → G1 → G2 → G3** (WIP = 1; D8 first becaus
 a cheap measurement that decides whether the next spend is engine work or a
 target restatement). G1-G3 are the optional wholesale NV2A port in E5c: queued
 because the operator asked for it, scoped as a compatibility milestone, and
-explicitly not the path to the band. The product gaps that are not on this queue:
+explicitly not the path to the band. **G2 was priced by site and closed negative
+(§251)**: the removable CPU vertex stage is 4.0-4.2% of the triangle wall and the
+reference design's per-draw submission (no instancing) costs 3x the menu's gross
+saving. The product gaps that are not on this queue:
 the VP mixer / AC'97 codec (audible output) and the 4x4 retail probe's
 kernel-idle wait; both are recorded in E6 and
 `docs/research-notes/next-session.md` and are picked up as separate tasks, not
@@ -571,6 +574,31 @@ diff; `BackendUnsupported=0 fatal=0` and the expected `composedFrames`;
 so; batching retained (or a measured reason it is slower); software anchors and
 ktest log byte-identical. **Guard:** any row that regresses more than the policy
 allows blocks the merge, not the row.
+
+- [x] **Price / scope (2026-10-24) - measured, and it does not clear the gate
+  (negative, decisions §251).** The device stage was split by site on the
+  post-D5 build (temporary probes, 1-in-16 flushes): triangle 0.576-0.594 s
+  (9.9-10.1% of 5.79-5.87 s) / menu 5.20-5.26 s (35.5-35.6% of 14.6-14.8 s),
+  with the CPU vertex stage (transform + epilogue) at **0.233-0.246 s triangle
+  (4.0-4.2% wall, 5.0-5.3% engine) / 2.63-2.64 s menu (17.7-18.1% wall,
+  20.3% engine)**. A GL renderer that runs the vertex program on the GPU
+  removes only that; the clears, attribute fetch, fill predicates, primitive
+  assembly and submission stay. The reference design submits per draw command
+  from CPU-built vertex buffers and has no instancing, and the repo's own
+  proxy for giving up §205 batching (`XGRID_GL_NO_BATCH=1`) measured
+  **+7.84 s menu (+52.9%) / +0.456 s triangle (+7.9%)**. The triangle cannot
+  reach either bar even with a free submission (it would need 0.58 s, 2.4x),
+  and the menu's gross saving is 3x smaller than the measured submission
+  penalty. **Reopen** only with (a) a bounded GPU vertex-program slice that
+  keeps the instanced per-draw-command submission and removes >=10% of the
+  triangle wall (>=0.58 s) with the anchors and both accurate goldens exact, or
+  (b) an operator re-scope of G2 as a compatibility task (acceptance = the
+  22-row matrix, not the 10% wall bar), with G3 as the vehicle. Do not re-open
+  on the "6.57 s menu device" figure - it is the whole device stage and ~80% of
+  it is not renderer work.
+- [ ] **Deferred to G3:** nothing from G2 (the port is not owned); G3's
+  consolidated re-baseline still runs on the G1 state.
+
 
 ### G3 - Consolidated gate re-baseline and differential harness
 
