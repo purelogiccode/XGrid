@@ -692,6 +692,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private long _rasterCompiledTicks;
     private long _rasterLegacyTicks;
     private long _rasterPshTicks;
+    private long _deviceWriteTicks;
     private readonly uint[] _boundEngine = new uint[8];
     private readonly uint[] _boundInstance = new uint[8];
     private readonly uint[] _pfifo = new uint[PfifoSize / 4];
@@ -1038,6 +1039,22 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the accumulated combiner fill-path wall time (seconds). Diagnostics.</summary>
     public double RasterPshSeconds => _rasterPshTicks / (double)Stopwatch.Frequency;
+
+    /// <summary>
+    /// Gets or sets the device-write timing (the <c>--gpu-time</c> diagnostic,
+    /// D8): every register write is wrapped in two timestamp calls so the whole
+    /// device stage - draw flushes, clears, method dispatch - is attributed
+    /// instead of inferred. Writes are rare (tens of thousands per 1B steps),
+    /// so the two calls are ~1 ms; host-only, never snapshotted, never affects
+    /// guest state.
+    /// </summary>
+    public bool DeviceTimingEnabled { get; set; }
+
+    /// <summary>Gets the number of timed device register writes. Diagnostics.</summary>
+    public long DeviceWriteCount { get; private set; }
+
+    /// <summary>Gets the accumulated device register-write wall time (seconds). Diagnostics.</summary>
+    public double DeviceWriteSeconds => _deviceWriteTicks / (double)Stopwatch.Frequency;
 
     /// <summary>
     /// Gets the compiled transform program for the active program window,
@@ -2408,6 +2425,20 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <param name="size">Access size in bytes (1, 2, or 4).</param>
     /// <param name="value">Value to write, in the low <paramref name="size"/> bytes.</param>
     public void Write(uint address, int size, uint value)
+    {
+        if (DeviceTimingEnabled)
+        {
+            long start = Stopwatch.GetTimestamp();
+            WriteCore(address, size, value);
+            _deviceWriteTicks += Stopwatch.GetTimestamp() - start;
+            DeviceWriteCount++;
+            return;
+        }
+
+        WriteCore(address, size, value);
+    }
+
+    private void WriteCore(uint address, int size, uint value)
     {
         uint offset = address - BaseAddress;
         if (size == 4)

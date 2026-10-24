@@ -235,8 +235,22 @@ public sealed unsafe partial class XboxCpu
     /// timestamp calls plus bucket accounting per block invocation cost
     /// ~15-25 ns each, which is a large fraction of the fixed per-block cost
     /// on call-heavy code. Default off; the bucket counts stay exact.
+    /// Enabling it also arms the D8 engine attribution
+    /// (<see cref="JitAttribution"/>): the runner split by block length and
+    /// member class, the edge census, the formation split and the head-lookup
+    /// share, printed by <see cref="FormatJitAttribution"/>.
     /// </summary>
-    public bool JitTiming { get; set; }
+    public bool JitTiming
+    {
+        get => _attribution is not null;
+        set => _attribution = value ? _attribution ?? new JitAttribution() : null;
+    }
+
+    /// <summary>The engine attribution tables (null unless <see cref="JitTiming"/> is on).</summary>
+    private JitAttribution? _attribution;
+
+    /// <summary>Gets the engine attribution report (empty unless <see cref="JitTiming"/> is on).</summary>
+    public string FormatJitAttribution() => _attribution?.Format() ?? string.Empty;
 
     /// <summary>Cap on guest steps advanced per idle-wait skip (two PIT ticks).</summary>
     private const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
@@ -367,20 +381,23 @@ public sealed unsafe partial class XboxCpu
         {
             uint fetchLinear = csBase + Context.Eip;
             JitBlock? block = jit.TryMemo(fetchLinear, generation);
+            long lookupStart = _attribution is not null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             if (block is null)
             {
                 switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
                 {
                     case JitBlockCache.Verdict.Pending:
                         JitYieldReasons[0]++;
+                        NoteHeadLookup(lookupStart);
 
                         return total;
                     case JitBlockCache.Verdict.Rejected:
                         JitYieldReasons[1]++;
+                        NoteHeadLookup(lookupStart);
 
                         return total;
                     case JitBlockCache.Verdict.Stale:
-                        if (block is not null && RevalidateJitBlock(block))
+                        if (block is not null && TryRevalidateJitBlock(block))
                         {
                             // The bytes under this linear are unchanged: the
                             // baked block is still exact — keep it and skip
@@ -398,6 +415,7 @@ public sealed unsafe partial class XboxCpu
                         if (block is null)
                         {
                             JitYieldReasons[2]++;
+                            NoteHeadLookup(lookupStart);
 
                             return total;
                         }
@@ -408,6 +426,7 @@ public sealed unsafe partial class XboxCpu
                         if (block is null)
                         {
                             JitYieldReasons[2]++;
+                            NoteHeadLookup(lookupStart);
 
                             return total;
                         }
@@ -415,6 +434,8 @@ public sealed unsafe partial class XboxCpu
                         break;
                 }
             }
+
+            NoteHeadLookup(lookupStart);
 
             if (block is null)
             {
@@ -485,6 +506,7 @@ public sealed unsafe partial class XboxCpu
             }
 
             int served;
+            int chainEdges = 0;
             uint blockEntryEip = Context.Eip;
             long runnerStart = JitTiming ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             try
@@ -514,6 +536,11 @@ public sealed unsafe partial class XboxCpu
                     try
                     {
                         served = block.RawRunner(selfHandle, rawState, entriesPointer, budget - total);
+
+                        // The frame's chain counter is still live here: RawExit
+                        // resets it. This is the D8 edge census (one chain
+                        // jump per in-frame target).
+                        chainEdges = (int)_rawScratch[ScratchChainCount];
                     }
                     finally
                     {
@@ -554,11 +581,17 @@ public sealed unsafe partial class XboxCpu
                     JitRun? ilRunner = block.Runner;
                     if (ilRunner is null)
                     {
+                        long ilStart = _attribution is not null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
                         ilRunner = JitEmitter.Build(
                             block.HeadLinear,
                             block.Plans,
                             JitExact,
                             JitMmioFast);
+                        if (_attribution is not null)
+                        {
+                            _attribution.NoteIlBuild(System.Diagnostics.Stopwatch.GetTimestamp() - ilStart);
+                        }
+
                         block.Runner = ilRunner;
                     }
 
@@ -625,6 +658,7 @@ public sealed unsafe partial class XboxCpu
                 int bucket = served <= 1 ? 0 : served <= 4 ? 1 : served <= 16 ? 2 : served <= 31 ? 3 : 4;
                 _jitBucketTicks[bucket] += runnerTicks;
                 _jitBucketCounts[bucket]++;
+                _attribution?.NoteInvocation(block.MemberCount, served, chainEdges, block.Statics, runnerTicks);
             }
 
             // Exact mode: a runner reported a pending vector at a member
@@ -674,6 +708,23 @@ public sealed unsafe partial class XboxCpu
         DecodeCacheEntry[] entries = block.Entries;
         IntPtr entriesPointer = Unsafe.As<DecodeCacheEntry[], IntPtr>(ref entries);
         PublishRawChainBlock(block.HeadEip, generation, block.MemberCount, block.RawEntry, entriesPointer);
+    }
+
+    /// <summary>
+    /// Times one lazy revalidation for the D8 attribution, then runs it.
+    /// </summary>
+    private bool TryRevalidateJitBlock(JitBlock block)
+    {
+        JitAttribution? attribution = _attribution;
+        if (attribution is null)
+        {
+            return RevalidateJitBlock(block);
+        }
+
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool kept = RevalidateJitBlock(block);
+        attribution.NoteRevalidation(System.Diagnostics.Stopwatch.GetTimestamp() - start);
+        return kept;
     }
 
     /// <summary>
@@ -826,6 +877,54 @@ public sealed unsafe partial class XboxCpu
     }
 
     /// <summary>
+    /// Records one memo-miss head lookup (pending visit, rejection, revalidation
+    /// or formation) for the D8 attribution. No-op unless <c>--jit-timing</c>.
+    /// </summary>
+    private void NoteHeadLookup(long start)
+    {
+        if (_attribution is not null && start != 0L)
+        {
+            _attribution.NoteLookup(System.Diagnostics.Stopwatch.GetTimestamp() - start);
+        }
+    }
+
+    /// <summary>
+    /// Times one block formation and classifies the head's fetch source (RAM /
+    /// immutable image / other) for the D8 attribution. The classifier is the
+    /// decode cache's own rule, so the source cell means what the cache means.
+    /// </summary>
+    private JitBlock? FormJitBlock(DecodeCache cache, JitBlockCache jit, uint headLinear, ulong generation)
+    {
+        JitAttribution? attribution = _attribution;
+        if (attribution is null)
+        {
+            return FormJitBlockCore(cache, jit, headLinear, generation);
+        }
+
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        JitBlock? block = FormJitBlockCore(cache, jit, headLinear, generation);
+        attribution.NoteFormation(System.Diagnostics.Stopwatch.GetTimestamp() - start, ClassifyFormationSource(headLinear));
+        return block;
+    }
+
+    /// <summary>Classifies a head's fetch source for the formation attribution (0 RAM, 1 image, 2 other).</summary>
+    private int ClassifyFormationSource(uint headLinear)
+    {
+        uint physical = Mmu.Translate(headLinear, isWrite: false, isInstruction: true, out bool faulted, out _);
+        if (faulted)
+        {
+            return 2;
+        }
+
+        return ClassifyFetch(physical, out _, out _) switch
+        {
+            DecodeFetchClass.Ram => 0,
+            DecodeFetchClass.Image => 1,
+            _ => 2,
+        };
+    }
+
+    /// <summary>
     /// Forms the block headed at <paramref name="headLinear"/>: members are
     /// consecutive decode-cache entries (cross-page windows supported since
     /// D3b, so heads in the last 14 bytes of a page form too), each planned
@@ -836,7 +935,7 @@ public sealed unsafe partial class XboxCpu
     /// member has no native shape is a cached permanent rejection until the
     /// generation moves.
     /// </summary>
-    private JitBlock? FormJitBlock(DecodeCache cache, JitBlockCache jit, uint headLinear, ulong generation)
+    private JitBlock? FormJitBlockCore(DecodeCache cache, JitBlockCache jit, uint headLinear, ulong generation)
     {
         int operandSize = Context.DefaultOperandSize;
         int addressSize = Context.DefaultAddressSize;
@@ -938,6 +1037,7 @@ public sealed unsafe partial class XboxCpu
         RawRun? rawRunner = null;
         nint rawPointer = 0;
         nint rawChainEntry = 0;
+        RawBuildStatics rawStatics = default;
         JitRun? runner;
 
         if (JitRawBlocks && !JitExact)
@@ -947,11 +1047,17 @@ public sealed unsafe partial class XboxCpu
                 plans.AsSpan(0, count),
                 JitMmioFast,
                 chainable: RawChainEnabled && !hasSti,
-                out rawChainEntry);
+                out rawChainEntry,
+                out rawStatics);
             if (rawPointer != 0)
             {
                 rawRunner = Marshal.GetDelegateForFunctionPointer<RawRun>(rawPointer);
                 NoteRawBlockBuilt();
+            }
+
+            if (_attribution is not null)
+            {
+                _attribution.NoteRawBuild(rawStatics.AssembleTicks, rawStatics.EmitTicks);
             }
         }
 
@@ -963,7 +1069,13 @@ public sealed unsafe partial class XboxCpu
         // cannot build is still a permanent rejection (unchanged semantics).
         if (rawRunner is null)
         {
+            long ilStart = _attribution is not null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             runner = JitEmitter.Build(headLinear, plans.AsSpan(0, count), JitExact, JitMmioFast);
+            if (_attribution is not null)
+            {
+                _attribution.NoteIlBuild(System.Diagnostics.Stopwatch.GetTimestamp() - ilStart);
+            }
+
             if (runner is null)
             {
                 jit.Store(headLinear, generation, null);
@@ -983,7 +1095,8 @@ public sealed unsafe partial class XboxCpu
 
         var block = new JitBlock(
             headLinear, headEip, operandSize, addressSize, generation, count,
-            pinnedEntries, plans.AsSpan(0, count).ToArray(), runner, rawRunner, rawChainEntry, hasSti, hasStore);
+            pinnedEntries, plans.AsSpan(0, count).ToArray(), runner, rawRunner, rawChainEntry, hasSti, hasStore,
+            BuildStatics(plans.AsSpan(0, count), rawStatics));
         if (RawTraceEnabled)
         {
             RawTrace($"  form head={headEip:X5} raw={rawPointer != 0} count={count} hasStore={hasStore} chainEnabled={RawChainEnabled} runnerNull={rawRunner is null}");

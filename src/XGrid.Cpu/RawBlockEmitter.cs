@@ -6,6 +6,34 @@ using Iced.Intel;
 namespace XGrid.Cpu;
 
 /// <summary>
+/// What one native emission produced (D8 census): the host instruction count of
+/// each region of the emitted function and the two formation timings. The
+/// regions are straight-line, so their instruction counts times the
+/// entry/edge counts are the engine's exact host-instruction census.
+/// </summary>
+[StructLayout(LayoutKind.Auto)]
+internal readonly struct RawBuildStatics
+{
+    /// <summary>Gets the emitted instructions of the external entry prologue.</summary>
+    public int PrologueInstructions { get; init; }
+
+    /// <summary>Gets the emitted instructions of the in-frame chain entry (0 when not chainable).</summary>
+    public int ChainEntryInstructions { get; init; }
+
+    /// <summary>Gets the emitted instructions of the member bodies.</summary>
+    public int MemberInstructions { get; init; }
+
+    /// <summary>Gets the emitted instructions of the exit edge (publish + chain attempt + return).</summary>
+    public int ExitInstructions { get; init; }
+
+    /// <summary>Gets the ticks spent inside Iced's <c>Assembler.Assemble</c> (0 unless attributed).</summary>
+    public long AssembleTicks { get; init; }
+
+    /// <summary>Gets the ticks spent in the emitter's own instruction building (0 unless attributed).</summary>
+    public long EmitTicks { get; init; }
+}
+
+/// <summary>
 /// C3 raw emitter: one native x86-64 function per block (Windows x64 only).
 ///
 /// <para>Guest state lives in fixed host registers across the whole block -
@@ -86,6 +114,7 @@ internal static unsafe class RawBlockEmitter
     private static readonly int OffIrqPending = (int)Marshal.OffsetOf<RawState>(nameof(RawState.IrqPending));
     private static readonly int OffChainServed = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ChainServed));
     private static readonly int OffChainCount = (int)Marshal.OffsetOf<RawState>(nameof(RawState.ChainCount));
+    private static readonly int OffSelfLoopEdges = (int)Marshal.OffsetOf<RawState>(nameof(RawState.SelfLoopEdges));
     private static readonly int OffFault = (int)Marshal.OffsetOf<RawState>(nameof(RawState.Fault));
     private static readonly int OffSegments = (int)Marshal.OffsetOf<RawState>(nameof(RawState.SegmentBases));
 
@@ -132,9 +161,11 @@ internal static unsafe class RawBlockEmitter
         ReadOnlySpan<JitMemberPlan> plans,
         bool mmioFast,
         bool chainable,
-        out nint chainEntry)
+        out nint chainEntry,
+        out RawBuildStatics statics)
     {
         chainEntry = 0;
+        statics = default;
         if (!RawCodeMemory.IsSupported || plans.Length == 0)
         {
             return 0;
@@ -166,6 +197,7 @@ internal static unsafe class RawBlockEmitter
             if (entry != 0)
             {
                 chainEntry = ctx.ChainEntry;
+                statics = ctx.Statics;
             }
 
             return entry;
@@ -211,8 +243,12 @@ internal static unsafe class RawBlockEmitter
         /// <summary>Gets the in-frame chain target resolved by <see cref="Build"/> (0 when not chainable).</summary>
         public nint ChainEntry { get; private set; }
 
+        /// <summary>Gets the emitted-region census and the Assemble/emit split (D8).</summary>
+        public RawBuildStatics Statics { get; private set; }
+
         public nint Build()
         {
+            long buildStart = System.Diagnostics.Stopwatch.GetTimestamp();
             _exit = _a.CreateLabel(string.Empty);
             _ret = _a.CreateLabel(string.Empty);
             _leave = _a.CreateLabel(string.Empty);
@@ -220,6 +256,7 @@ internal static unsafe class RawBlockEmitter
             _chainIn = _a.CreateLabel(string.Empty);
             _body = _a.CreateLabel(string.Empty);
             EmitPrologue();
+            int prologueEnd = _a.Instructions.Count;
             if (chainable)
             {
                 // The external entry falls through into the body; a chain jump
@@ -231,6 +268,7 @@ internal static unsafe class RawBlockEmitter
                 _a.Label(ref _body);
             }
 
+            int bodyStart = _a.Instructions.Count;
             uint eip = headEip;
             for (int i = 0; i < plans.Length; i++)
             {
@@ -242,11 +280,16 @@ internal static unsafe class RawBlockEmitter
                 }
             }
 
+            int membersEnd = _a.Instructions.Count;
+
             // The linear fall-through edge: every member ran, so the block's
             // own accounting is published here (every other edge publishes its
             // own before jumping to _exit).
             EmitPublishAccounting(plans.Length, plans.Length, eip);
             EmitEpilogue();
+
+            int instructionsGenerated = _a.Instructions.Count;
+            long assembleStart = System.Diagnostics.Stopwatch.GetTimestamp();
 
             byte* memory = RawCodeMemory.Allocate(64 * 1024);
             if (memory is null)
@@ -262,6 +305,23 @@ internal static unsafe class RawBlockEmitter
                 writer,
                 (ulong)memory,
                 BlockEncoderOptions.ReturnNewInstructionOffsets);
+
+            long assembleEnd = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            // D8 census: the regions are straight-line, so counting the
+            // assembled instructions at each label boundary gives the exact
+            // host instruction cost of an entry, a chained edge, a member and
+            // an exit without a counter in the emitted code (one integer read
+            // per boundary at formation).
+            Statics = new RawBuildStatics
+            {
+                PrologueInstructions = prologueEnd,
+                ChainEntryInstructions = bodyStart - prologueEnd,
+                MemberInstructions = membersEnd - bodyStart,
+                ExitInstructions = instructionsGenerated - membersEnd,
+                AssembleTicks = assembleEnd - assembleStart,
+                EmitTicks = assembleStart - buildStart,
+            };
             if (chainable)
             {
                 // Resolve the in-frame chain target. GetLabelRIP returns an
@@ -582,6 +642,21 @@ internal static unsafe class RawBlockEmitter
             a.mov(R32(Register.R8D), MemOp(Register.R9, null, 1, 0));
             a.cmp(R32(Register.R8D), MemOp(Register.RDI, null, 1, 8)); // entry Generation
             a.jne(_ret);
+
+            if (XboxCpu.SelfLoopProbeEnabled)
+            {
+                // D8 self-loop probe: the resolved target head is the next EIP;
+                // when it equals this block's own head the edge is a self-loop.
+                // R10D/R9 are host scratch here and every later check reloads
+                // what it needs, so the compare's flags cannot leak.
+                Label notSelf = a.CreateLabel(string.Empty);
+                a.cmp(R32(Register.R10D), unchecked((int)headEip));
+                a.jne(notSelf);
+                a.mov(R64(Register.R9), Field(Register.R11, OffSelfLoopEdges));
+                a.mov(R32(Register.R8D), 1);
+                a.add(MemOp(Register.R9, null, 1, 0), R32(Register.R8D));
+                a.Label(ref notSelf);
+            }
 
             // remaining = F_BUDGET - F_SERVED (the budget is already net of
             // every prior chained block; the served carry is accounting only).
@@ -2582,6 +2657,7 @@ internal static unsafe class RawBlockEmitter
             EmitMaterializeFlags();
             a.jmp(_exit);
         }
+
 
         private void EmitJccOp(ConditionCode condition, Label target)
         {

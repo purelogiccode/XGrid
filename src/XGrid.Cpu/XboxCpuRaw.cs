@@ -40,6 +40,7 @@ public sealed unsafe partial class XboxCpu
     private const int ScratchChain = 4;
     private const int ScratchChainCount = 5;
     private const int ScratchFault = 6;
+    private const int ScratchSelfLoop = 7;
     private const int ScratchWords = 8;
 
     internal static readonly bool RawTraceEnabled =
@@ -51,6 +52,15 @@ public sealed unsafe partial class XboxCpu
     /// </summary>
     private static readonly bool RawChainEnabled =
         !string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_CHAIN"), "0", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Gets whether the D8 self-loop probe is armed (<c>XGRID_RAW_SELFLOOP=1</c>):
+    /// every successful chain jump whose target is the source block increments
+    /// <see cref="RawState.SelfLoopEdges"/>. Three instructions on the chain
+    /// path; never emitted otherwise.
+    /// </summary>
+    internal static readonly bool SelfLoopProbeEnabled =
+        string.Equals(Environment.GetEnvironmentVariable("XGRID_RAW_SELFLOOP"), "1", StringComparison.Ordinal);
 
     /// <summary>Gets or sets whether fast mode may use the C3 raw block emitter.</summary>
     public bool JitRawBlocks { get; set; }
@@ -82,6 +92,9 @@ public sealed unsafe partial class XboxCpu
     /// <summary>Gets the number of chain-table clears (diagnostic).</summary>
     private ulong RawChainClears { get; set; }
 
+    /// <summary>Gets the number of successful chain jumps that returned to their own block (D8 probe).</summary>
+    public long RawSelfLoopEdges => _rawScratch is null ? 0 : (long)_rawScratch[ScratchSelfLoop];
+
     /// <summary>
     /// Builds the raw machine view for the current call. Segment bases and the
     /// RAM size are refreshed because they can change between calls; the
@@ -111,6 +124,7 @@ public sealed unsafe partial class XboxCpu
             _rawStateTemplate.ChainServed = (int*)(_rawScratch + ScratchChain);
             _rawStateTemplate.ChainCount = (int*)(_rawScratch + ScratchChainCount);
             _rawStateTemplate.Fault = (int*)(_rawScratch + ScratchFault);
+            _rawStateTemplate.SelfLoopEdges = _rawScratch + ScratchSelfLoop;
         }
 
         RawState* state = _rawStateBlock;
@@ -431,6 +445,10 @@ public sealed unsafe partial class XboxCpu
         }
 
         _rawScratch = (ulong*)NativeMemory.Alloc(ScratchWords * sizeof(ulong));
+
+        // The scratch block is native memory (uninitialised): clear it so a slot
+        // no entry writes (the D8 self-loop counter) reads 0, not heap noise.
+        new Span<byte>(_rawScratch, ScratchWords * sizeof(ulong)).Clear();
         _rawStateBlock = (RawState*)NativeMemory.Alloc((nuint)sizeof(RawState));
         _rawChainTable = (RawChainEntry*)NativeMemory.Alloc(
             (nuint)(RawChainHash.TableSize * sizeof(RawChainEntry)));

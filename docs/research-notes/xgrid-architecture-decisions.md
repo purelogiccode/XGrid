@@ -16318,3 +16318,200 @@ P1.4 wired.  A product audio feature therefore needs: the VP mixer, the EP
 microcode actually started by the guest (or an AC97 codec model reading the GP
 ring), and a real-time host device backend behind `IAudioBackend` (the WAVE
 backend is the test/record sink).
+## 247 D8: the engine attributed - 28 cycles per guest member, uniform across classes, and the edge is not the cost (2026-10-24, forty-seventh session) - D8, negative
+
+**What this is.** D8 exists to decide, with numbers, whether the next spend on the
+M-D target (`triangle gl+replace <= 1.20 s`, `menu <= 1.36 s` at 1B) is engine
+work or a target restatement.  It is a measurement task: the deliverable is a
+four-cell attribution of the fast engine on both gate titles, and one selected
+option with a ceiling.  The instrumentation is permanent and free when off
+(`--jit-timing` arms it; the per-invocation accounting site already existed):
+
+- `JitAttribution` (`src/XGrid.Cpu/XboxCpuAttribution.cs`): runner split by block
+  member count (1-4 / 5-8 / 9+) and by dominant member class; the edge census
+  (entries, in-frame chain edges, members per edge, the *static* host
+  instruction count of each emitted region); the formation split (Iced
+  `Assemble` vs emitter body vs IL build vs head lookup vs revalidation) and the
+  heads it forms by fetch source (RAM / immutable image / other); printed as
+  four `Jit attribution` lines.
+- `JitBlockStatics`: each block's emitted-region instruction counts and member
+  class composition, captured once at formation from
+  `Assembler.Instructions.Count` at the region boundaries - no counter in the
+  emitted code, no Stopwatch per member.
+- `NV2A device writes n= ms=` behind `--gpu-time`: the whole device stage timed
+  instead of inferred (two timestamps per register write; 13.5k writes at 100M,
+  44k/54.6k at 1B).
+- `rawSelfLoops=` behind `XGRID_RAW_SELFLOOP=1`: a successful chain jump whose
+  target is the source block (the only instrument that prices option (a)).
+
+Guest-visible behaviour is untouched: all four 1B fast anchors and all four
+accurate goldens are byte-identical (see 4).
+
+### 1. The four tables (gate media, fast mode, `gl+replace`, 1B and 100M)
+
+Host window: loaded (triangle `gl+replace` 7.02-7.23 s against the recorded
+5.72-6.15 band; menu 19.1-20.2 s against 15.6-17.5), so read **shares and
+ratios**, not absolutes.
+
+**(1) Runner, by block length** - ns per served member in invocations whose
+entry block holds that many members, and the whole-run figure:
+
+| title | bucket | invocations | members | ns/member |
+|---|---|---:|---:|---:|
+| triangle | 1-4 | 373,638 | 464,880,603 | 7.60 |
+| triangle | 5-8 | 335,474 | 47,964,184 | 8.27 |
+| triangle | 9+ | 73,961 | 33,874,335 | 20.62 |
+| triangle | all | 783,073 | 546,719,122 | **8.47** |
+| menu | 1-4 | 1,865,964 | 607,216,915 | 9.22 |
+| menu | 5-8 | 696,477 | 117,722,132 | 59.26 |
+| menu | 9+ | 435,683 | 141,693,843 | 18.38 |
+| menu | all | 2,998,124 | 866,632,890 | **17.51** |
+
+The 5-8 menu bucket (59 ns/member) is the device-heavy one: 696k invocations
+carry most of the NV2A draw flushes, i.e. the engine is waiting on the device
+inside the frame, which table 4 confirms (7.3 s of device time in a 19.1 s wall).
+
+**(1b) Runner, by member class** - measured ns/member for invocations whose
+entry block is dominated by that class, with the *exact* static member mix:
+
+| title | load | store | alu | branch | other |
+|---|---:|---:|---:|---:|---:|
+| triangle ns/member | 8.93 | 7.74 | 9.92 | 7.44 | 24.76 |
+| triangle mix | 14.7% | 25.8% | 23.0% | 32.7% | 3.7% |
+| menu ns/member | 11.07 | 10.44 | 39.13 | 7.57 | 34.19 |
+| menu mix | 18.4% | 23.1% | 28.8% | 26.1% | 3.7% |
+
+**The triangle's per-member cost is uniform** across memory, ALU and branch
+dominated blocks (7.4-9.9 ns): there is no hot shape to specialise.  The 25-34 ns
+`other` blocks are the helper-routed x87/MMX/SSE members and they are 3.7% of the
+mix.  The menu's `alu` cell (39 ns) is the same device contamination as 5-8.
+
+**(2) Edge census** - chained edges vs entries, members per edge and the emitted
+host instructions of every region:
+
+| cell | triangle | menu |
+|---|---:|---:|
+| entries (frame round trips) | 783,073 | 2,998,124 |
+| in-frame chain edges | 124,621,105 | 160,220,926 |
+| members per edge | 4.36 | 5.31 |
+| members per entry | 698.2 | 289.1 |
+| host instructions: prologue | 29,378,468 | 122,849,612 |
+| host instructions: chain entry | 1,869,316,575 | 2,403,313,890 |
+| host instructions: member bodies | 28,242,906,221 | 46,397,228,629 |
+| host instructions: exit edge (publish + probe) | 12,522,364,103 | 16,317,487,115 |
+| host instructions per served member | 78.0 | 75.3 |
+| host instructions per edge | 340.2 | 399.7 |
+| self-loop share of the edges (`XGRID_RAW_SELFLOOP=1`) | 76.8% | 67.8% |
+
+**Entry vs chained, measured by ablation** (`XGRID_RAW_CHAIN=0`, same binary,
+both 1B anchors exact): the runner goes **4,628 -> 8,803.7 ms** (triangle, 783k ->
+125.4M entries) and **15,177 -> 20,822 ms** (menu, 3.0M -> 163.2M entries), i.e.
+an in-frame chain edge saves **33.5 ns** (triangle) / **35.2 ns** (menu) against a
+managed round trip.  Chaining is worth 1.9x the runner; it is the largest single
+engine win already landed (C5 slice 1, -4.2%).
+
+**(3) Boot split (steps 0-100M)** - where the first 100M steps go:
+
+| cell | triangle ms | menu ms |
+|---|---:|---:|
+| wall (= `Execute`) | 1,833 | 1,550 |
+| runner | 752 (41%) | 623 (40%) |
+| formation (whole; Iced `Assemble` inside) | 518 (28%; 386) | 407 (26%; 292) |
+| non-JIT (spec runs + `Step` tail) | 489 (27%) | 454 (29%) |
+| head lookup + loop + poll (formation excluded) | 74 | 66 |
+| device writes (inclusive in the two cells above) | 39 | 38 |
+| blocks formed / pending heads / pending visits | 1,203 / 34,197 / 102,565 | 1,006 / 31,720 / 85,563 |
+| formed by fetch source (RAM / image / other) | 1,197 / 6 / 0 | 1,000 / 6 / 0 |
+
+**Formation costs 321 us per block** (386 ms / 1,203 blocks at the triangle's
+100M leg) and Iced's `Assemble` is 75-80% of it (the N4 ratio, 390 ns per
+assembled instruction, reproduces).  The 6 image-window blocks (MCPX ROM) cost
+33 ms of the 518.
+
+**(4) Steady state (1B minus 100M)** - the boot does not hide engine work:
+
+| cell | triangle | menu |
+|---|---:|---:|
+| wall | 5,396 ms (6.0 ns/step) | 17,556 ms (19.5 ns/step) |
+| runner | 3,876 (72%) | 14,554 (83%) |
+| ns per served member | 7.90 | 18.08 |
+| formation | 509 (9.4%) | 1,056 (6.0%) |
+| non-JIT | 892 (16.5%) | 1,482 (8.4%) |
+| device writes (inclusive) | 616 (11.4%) | 7,266 (41%) |
+| lookup + loop + poll | 119 (2.2%) | 464 (2.6%) |
+
+### 2. The options, each with its measured ceiling
+
+**(a) self-loop / edge elimination - BUILT, MEASURED, REVERTED.**  The census
+made it the only candidate with a plausible ceiling: 76.8% (triangle) / 67.8%
+(menu) of all chain edges return to the block they left, and each such edge pays
+the exit publish plus the chain probe (99.9 + 15 emitted instructions) before
+re-entering the target's chain entry.  The experiment (`XGRID_RAW_SELFLOOP_FAST`)
+re-entered the body in the same frame with the budget, the interrupt gate and the
+generation re-checked on the edge (the chain probe's own contracts) and the host
+FLAGS saved across it.  Result: **the one 1B leg that completed was 16% *slower*
+in the runner (5,390 vs 4,628 ms) and 8% slower in the wall with the same
+anchors; two of three runs died with `0xC0000005` inside the emitted frame.**
+Reverted, with the probe counter kept.  Ceiling: **<= 0% engine.**  This is N5's
+lesson repeated with a bigger hammer: the per-edge instructions are store-buffer
+work, not the critical path, and `pushfq`/`popfq` per iteration costs more than
+the ~95 instructions it saves.
+
+**(b) trace / short-block fusion.**  N8 (-82% invocations, +40% wall) and N3
+(350 ms of boundary population = 3-5% of the wall) are binding; nothing measured
+today enlarges that population (members per edge is 4.4-5.3, and the entry cost
+is the 33.5 ns above).  Ceiling stays **3-5%**.
+
+**(c) memory-probe / data-path reshape.**  N1 (host-pointer page table) and N9
+(1024-slot data cache) are both measured null, and the class table now says why:
+the per-member cost is uniform (7.4-9.9 ns) across load/store/ALU/branch, so the
+probe is not a class-specific cost.  Ceiling **0%** without a new design.
+
+**(d) port the reference's engine shape.**  Not a performance answer for this
+budget: on CPU-bound code the raw engine already beats the reference's TCG
+(ktest 2B 9-10 s vs xemu 15 s), the per-member cost is uniform (no shape to
+replace), and the title's remaining mass is device (7.3 s menu), formation and
+non-JIT - each already queued with its own price.  It stays the **compatibility**
+milestone G1-G3.
+
+**(e) restate the target.**  The arithmetic is now measured, not assumed:
+
+- The triangle band (<= 1.20 s) needs the **boot 1.83 -> <= 0.20 s** and the
+  **steady state 5.40 -> <= 1.00 s** (a 5.4x cut of every cell in table 4).  Even
+  a free runner (3.88 s, 72%) leaves 1.52 s of wall.
+- No option in (a)-(c) clears >= 10% wall / >= 20% engine; the organic levers
+  already queued are D6 (device, 10-41% of a wall), D7 (boot + formation +
+  non-JIT, 9.4% + 16.5% of the triangle steady state) and N4 (encoder, ~8%
+  triangle / ~3% menu).  Their sum is ~25-30%, not 5.4x.
+
+So **D8 selects (e)** and closes negative.  The replacement target:
+
+- **Primary currency:** ns per served member *with the device stage excluded*,
+  and **wall per presented frame** on the corpus rows (`docs/compatibility.md`),
+  plus the real-time ratio (guest steps per host second / 733M).
+- **Gate:** every queued task keeps its own bar (D6 >= 10% menu wall, D7 >= 10%
+  triangle wall) with exact 1B anchors and the four accurate goldens.
+- **Retire** "triangle <= 1.20 s at 1B" as a *milestone* target; keep it as the
+  real-time reference point in reports.
+
+### 3. Reopen condition (recorded in `docs/status.json`)
+
+Reopen D8 only when one candidate measures >= 20% engine on this attribution.
+Today's ceilings, all measured: (a) 0% (built and reverted), (b) 3-5% (N3),
+(c) null (N1/N9), formation ~8% (N4's 3.2x encoder on 820-1,123 ms), device
+10-41% (owned by D6/G1-G2).  A new xemu 1B oracle showing the gap is in the CPU
+engine rather than the device would also reopen it.
+
+### 4. Gates (this session, H1)
+
+- Fast 1B `gl+replace`, both titles: triangle `4F1FCBC0`/`7DAB63EB` frame
+  `7A860ED7`, menu `B06BA6E5`/`F5D61C94` frame `B6116DAE`.
+- Fast 1B `sw`: triangle `B45254CA`/`7DAB63EB` 57,663,082 px, menu
+  `34973510`/`F5D61C94` 253,998,498 px.
+- Accurate goldens: triangle sw `A1740DE0` / gl `7A860ED7` (2,706/68/34, diff
+  27,849, violations 0, maxDelta 1); menu sw `4EF1FBF6` / gl `B6116DAE`
+  (33,632/686/686, diff 2,602, violations 0, maxDelta 1).
+- Suite **1922** green (14 projects), build 0 warnings, format clean.
+- ktest was not re-run: the change is host-side diagnostic only (no CPU/device
+  path change; every 1B anchor above is byte-identical) and the smoke script
+  needs the sibling `CSharp_XISOSharp` tool, which is outside this workspace.

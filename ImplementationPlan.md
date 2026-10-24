@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-23):** M-D / **D8 - Engine-shape decision v2: the per-member/edge and boot probe** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **D6 - Device remainder: compiled transform execution and the fill path** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** D6 (Device remainder: compiled transform execution and the fill path), D7 (Boot path: make the first 100M steps cheaper), G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 16.
+**Phase score:** 79.9% (86.34 of 108). **Next:** D7 (Boot path: make the first 100M steps cheaper), G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 17.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -108,6 +108,15 @@ served member. **The boot alone is 1.6x the triangle target, and the triangle's
 runner alone is 2.9x it** - so no combination of the priced single-digit slices
 closes the band. That is the arithmetic D8 exists to resolve.
 
+**D8 resolved it (2026-10-24, §247): the target is restated.** The measured
+attribution (8.47 ns per served member triangle / 17.51 menu, uniform across
+member classes; a self-loop fast edge built and reverted at <= 0%) shows no
+engine-shape option at >= 10% wall / >= 20% engine, so the 1B band is retired as
+a milestone target and kept as the real-time reference. The currency is now
+**ns per served member outside the device stage** and **wall per presented
+frame** on the corpus rows; D6 (device) and D7 (boot/formation/non-JIT) keep
+their own >= 10% bars.
+
 ### Reporting currency (binding)
 
 - Primary: **ns per served member** (steady state = the 1B leg minus the 100M
@@ -128,7 +137,7 @@ closes the band. That is the arithmetic D8 exists to resolve.
 | D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
 | D6 | Device remainder: compiled transform evaluator + fill path | queued after D8 | D5 | ≥10% menu wall; exact anchors; executor fallback |
 | D7 | Boot path: make the first 100M steps cheaper | queued after D8 | D5 | ≥10% triangle wall; exact anchors; ktest log identical |
-| D8 | Engine-shape decision v2: the per-member/edge and boot probe | **active** | D5 | a measured attribution table + one selected option with a ceiling |
+| D8 | Engine-shape decision v2: the per-member/edge and boot probe | **negative 2026-10-24 (§247: measured; no option >= 20% engine, target restated)** | D5 | a measured attribution table + one selected option with a ceiling |
 | G1 | NV2A PGRAPH core port (xemu 0.8.139 `pgraph/`) | queued after D7 | D8 | 73 recorded methods handled/declined; formats decoded; software anchors exact |
 | G2 | GL renderer port (xemu `pgraph/gl` + the glsl pieces it needs) | queued after G1 | G1 | 22 rows re-verified/re-baselined; batching/sampler/composition preserved |
 | G3 | Consolidated gate re-baseline for the ported NV2A | queued after G2 | G2 | all anchors + corpus + ktest + package gate in one place |
@@ -309,6 +318,25 @@ a number instead of a guess. D2 left exactly that hook open (D4 reopens on a
 >=20% engine probe). Order: **D8 -> D6 -> D7**, WIP = 1.
 
 ### D8 - Engine-shape decision v2 (measurement + written decision)
+
+**Result (2026-10-24, negative) - decisions §247.** The four tables are measured
+on both gate titles at 100M and 1B with a permanent, free-when-off
+instrumentation (`--jit-timing` + `JitAttribution`): runner by block length and
+member class, the edge census with the static host instruction count of every
+emitted region, the boot split (formation/`Assemble`/non-JIT/device/lookup) and
+the steady-state delta. Headline: **8.47 ns per served member (triangle) /
+17.51 ns (menu), uniform across load/store/ALU/branch classes (7.4-9.9 ns), 78
+emitted host instructions per member, 4.4-5.3 members per chain edge, and an
+in-frame chain edge saves 33.5/35.2 ns against a managed entry**. Option (a) was
+**priced by building it** (self-loop fast edge, 76.8%/67.8% of edges are
+self-loops): 16% slower runner on the one completing leg and two native crashes,
+reverted -> ceiling <= 0%. (b) 3-5% (N3), (c) null (N1/N9), (d) is the
+compatibility path (the engine already beats the reference's TCG on CPU-bound
+code; the title's mass is device/formation/non-JIT). **No engine-shape option
+clears >= 10% wall / >= 20% engine, so D8 selects option (e): the target is
+restated** - ns per served member outside the device stage plus wall per
+presented frame on the corpus, with the 1B band kept only as the real-time
+reference. Reopen condition: one candidate at >= 20% engine on this attribution.
 
 **Price:** a measurement task; it claims no wall. It exists because the priced
 levers cannot close E1's arithmetic, so the next spend must be decided by data.

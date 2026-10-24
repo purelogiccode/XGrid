@@ -93,6 +93,14 @@ internal unsafe struct RawState
     public int* ChainCount;
 
     /// <summary>
+    /// Self-loop chain counter (diagnostic, <c>XGRID_RAW_SELFLOOP=1</c>): a
+    /// successful chain jump whose target is the block it came from. Measured
+    /// for the D8 self-loop price; the probe costs three instructions on the
+    /// chain path and is never emitted otherwise.
+    /// </summary>
+    public ulong* SelfLoopEdges;
+
+    /// <summary>
     /// Non-zero once a helper captured an exception (see
     /// <c>XboxCpu.RawCaptureFault</c>): the emitted code tests this after every
     /// helper call and exits with the fault sentinel instead of continuing.

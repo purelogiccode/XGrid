@@ -36,7 +36,8 @@ internal sealed class JitBlock(
     RawRun? rawRunner,
     nint rawEntry,
     bool hasSti,
-    bool hasStore)
+    bool hasStore,
+    JitBlockStatics statics)
 {
 
     /// <summary>Gets the linear fetch address of the block head (the cache key).</summary>
@@ -88,6 +89,9 @@ internal sealed class JitBlock(
 
     /// <summary>Gets whether the block contains a member with a memory/side-effect write (fast-mode idle-wait detection).</summary>
     public bool HasStore { get; } = hasStore;
+
+    /// <summary>Gets the block's static profile (host instruction counts and member classes, D8 attribution).</summary>
+    public JitBlockStatics Statics { get; } = statics;
 }
 
 /// <summary>

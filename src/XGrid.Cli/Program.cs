@@ -554,6 +554,7 @@ internal static class Program
             if (gpuTime)
             {
                 machine.Nv2A.RasterTimingEnabled = true;
+                machine.Nv2A.DeviceTimingEnabled = true;
                 Console.WriteLine("GPU raster timing=on (host-only diagnostic; no guest state change)");
             }
 
@@ -1991,6 +1992,7 @@ internal static class Program
                 $"nonJitCalls={machine.Cpu.NonJitCalls} nonJitInstructions={machine.Cpu.NonJitInstructions} " +
                 $"slowMembers={machine.Cpu.JitSlowMembers} slowMem={machine.Cpu.RawSlowMemoryMembers} slowDev={machine.Cpu.RawSlowDeviceMembers} " +
                 (machine.Cpu.JitRawBlocks ? $"rawBuilt={machine.Cpu.JitRawBlocksBuilt} rawInv={machine.Cpu.JitRawInvocations} rawServed={machine.Cpu.JitRawServedMembers} rawChained={machine.Cpu.JitRawChainedBlocks} rawBuildFails={XboxCpu.RawBuildFailures} " : string.Empty) +
+                (machine.Cpu.JitRawBlocks && machine.Cpu.RawSelfLoopEdges > 0 ? $"rawSelfLoops={machine.Cpu.RawSelfLoopEdges} " : string.Empty) +
                 (machine.Cpu.JitMmioFast ? $"mmioMembers={machine.Cpu.JitMmioMembers} " : string.Empty) +
                 (machine.Cpu.JitSpinSkip ? $"spinSkips={machine.Cpu.JitSpinSkips} spinSkippedSteps={machine.Cpu.JitSpinSkippedSteps} " : string.Empty) + $"yieldReasons={string.Join('/', machine.Cpu.JitYieldReasons)} " +
                 FormatJitBuckets(machine.Cpu.JitBuckets) + " " +
@@ -2001,6 +2003,14 @@ internal static class Program
                 $"fullFlushes={machine.Cpu.DecodeCacheFullFlushes} revalidations={machine.Cpu.JitRevalidations} " +
                 $"flushSrc(pt={machine.Cpu.FlushFromPtStore} mmu={machine.Cpu.FlushFromMmu} " +
                 $"invlpg={machine.Cpu.FlushFromFlushPage} host={machine.Cpu.FlushFromHost})");
+
+            // D8 engine attribution: four tables (runner by block length and
+            // member class, edge census, formation split, head lookup). Only
+            // with --jit-timing; every other mode's log is untouched.
+            if (machine.Cpu.JitTiming)
+            {
+                Console.WriteLine(machine.Cpu.FormatJitAttribution());
+            }
 
             if (machine.Cpu.JitTally
                 || string.Equals(Environment.GetEnvironmentVariable("XGRID_JIT_TAIL"), "1", StringComparison.Ordinal))
@@ -2235,6 +2245,9 @@ internal static class Program
                 $"psh={machine.Nv2A.RasterPshSeconds:F2} " +
                 $"calls={machine.Nv2A.RasterLegacyCalls}/{machine.Nv2A.RasterPshCalls} " +
                 $"fastfills={machine.Nv2A.FastKindDebug} (host-only diagnostic)");
+            Console.WriteLine(
+                $"NV2A device writes n={machine.Nv2A.DeviceWriteCount} " +
+                $"ms={machine.Nv2A.DeviceWriteSeconds * 1000.0:F0} (host-only diagnostic)");
             var configs = new List<KeyValuePair<string, (long Draws, long Pixels)>>(machine.Nv2A.CombinerConfigStats);
             configs.Sort((a, b) => b.Value.Pixels.CompareTo(a.Value.Pixels));
             for (int i = 0; i < configs.Count && i < 10; i++)
