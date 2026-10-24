@@ -1,17 +1,17 @@
 {
   "schema": 1,
   "updated": "2026-10-24",
-  "objective": "Boot a retail Xbox game to gameplay first, then port the xemu engine to C# and use it to reach xemu-class speed; full managed C#; GPL-2.0 (operator decision 2026-10-24)",
+  "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
-    "milestone": "M-G",
-    "id": "MG0",
-    "title": "Retail gameplay triage + xemu oracle harness",
-    "plan": "E1a",
+    "milestone": "M-T",
+    "id": "TM0",
+    "title": "Title matrix harness + first sweep",
+    "plan": "E1",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "Both optimized ISOs (007 and Halo) are run to their park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (the optimized set is H:\\Tests\\XBOXReady; the 37 full-disc Redump ISOs at H:\\Tests\\XBOXTest cannot be booted by xemu and are not oracle media) and xemu.toml / xemu-oracle.ps1 take an ISO.",
-    "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply).",
+    "acceptance": "scripts/title-matrix.ps1 runs every ISO under H:\\Tests\\XBOXReady and H:\\Tests\\XBOXTest at a fixed step budget with a per-title timeout, writes one JSON per title plus a summary and a Markdown table, and every title has a row (boot stage, own render, park EIP, frames/draws/pixels, fault, wall); the top 3 closest titles and the top 3 shared failure shapes are named in docs/research-notes/title-matrix.md; no emulator source or gate anchor changes.",
+    "price": "1 session; ~2-3 hours of runs on 24 logical cores; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -56,11 +56,11 @@
       "log_bytes": 40797
     },
     "gameplay": {
-      "target": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady, optimized XDVDFS)",
-      "state": "XBE executes; boot animation at 5B steps; gameplay not yet reached",
-      "second": "Halo - Combat Evolved (USA) (v1.09) (Redump).iso (H:\\Tests\\XBOXReady)",
-      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM",
-      "redump": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs) - xemu cannot boot them; not oracle media"
+      "target": "H:\\Tests\\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB)",
+      "state": "title matrix in progress; 007 XBE executes but gameplay is not reached",
+      "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM",
+      "matrix": "scripts/title-matrix.ps1 -> docs/research-notes/title-matrix.md"
     }
   },
   "result": {
@@ -247,158 +247,110 @@
   ],
   "queue": [
     {
-      "id": "MG0",
-      "title": "Retail gameplay triage + xemu oracle harness",
+      "id": "TM0",
+      "title": "Title matrix harness + first sweep",
       "status": "active",
       "depends": [],
-      "plan": "E1a",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "Both optimized ISOs (007 and Halo) are run to their park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (the optimized set is H:\\Tests\\XBOXReady; the 37 full-disc Redump ISOs at H:\\Tests\\XBOXTest cannot be booted by xemu and are not oracle media) and xemu.toml / xemu-oracle.ps1 take an ISO.",
-      "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply)."
+      "acceptance": "scripts/title-matrix.ps1 runs every ISO under H:\\Tests\\XBOXReady and H:\\Tests\\XBOXTest at a fixed step budget with a per-title timeout, writes one JSON per title plus a summary and a Markdown table, and every title has a row (boot stage, own render, park EIP, frames/draws/pixels, fault, wall); the top 3 closest titles and the top 3 shared failure shapes are named in docs/research-notes/title-matrix.md; no emulator source or gate anchor changes.",
+      "price": "1 session; ~2-3 hours of runs on 24 logical cores; correctness bar."
     },
     {
-      "id": "MG1",
-      "title": "007 to a gameplay frame",
+      "id": "TM1",
+      "title": "Blocker probe for the top 3 closest titles",
       "status": "queued",
       "depends": [
-        "MG0"
+        "TM0"
       ],
-      "plan": "E1a",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady) reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four accurate goldens and the ktest log stay byte-identical, and any homebrew anchor the fix legitimately moves is re-baselined in the same commit with the measured reason.",
-      "price": "2-5 sessions, sized by MG0; correctness bar (no wall claim)."
+      "acceptance": "For each of the top 3 titles: a run to park with --save-state anchors, the guest EIP, the current thread and wait object, the last device I/O and the NV2A method histogram; the xemu 0.8.139 state at the same scene for the XBOXReady titles (and a documented xemu-cannot-boot-it for the XBOXTest titles); exactly one shared blocker selected with a measured citation and the xemu 0.8.139 file that owns it; the report is in docs/research-notes/real-game-probes.md.",
+      "price": "1-2 sessions; measurement only; correctness bar."
     },
     {
-      "id": "MG2",
-      "title": "Second retail title: gameplay or a documented wait",
+      "id": "TM2",
+      "title": "Fix shared blocker #1 and re-run the matrix",
       "status": "queued",
       "depends": [
-        "MG1"
+        "TM1"
       ],
-      "plan": "E1a",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "Halo - Combat Evolved (USA) (v1.09) (Redump).iso (H:\\Tests\\XBOXReady) reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, xemu comparison); the media and probe docs are updated; no gate regression.",
+      "acceptance": "The blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical (a legitimate homebrew anchor move is re-baselined in the same commit with the measured reason).",
+      "price": "2-4 sessions; correctness bar."
+    },
+    {
+      "id": "TM3",
+      "title": "Fix shared blocker #2 and re-run the matrix",
+      "status": "queued",
+      "depends": [
+        "TM2"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "The second shared blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical.",
+      "price": "2-4 sessions; correctness bar."
+    },
+    {
+      "id": "TM4",
+      "title": "007 playability gate",
+      "status": "queued",
+      "depends": [
+        "TM3"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "007 reaches gameplay, a scripted pad input advances guest state and the frame, it runs 10 minutes / 100B steps with no fault or hang, save/load round-trips, and the xemu 0.8.139 frame at a comparable scene matches within the screenshot policy; the four accurate goldens and the ktest log stay byte-identical.",
+      "price": "2-5 sessions; correctness bar."
+    },
+    {
+      "id": "TM5",
+      "title": "Halo playability gate (or documented wait)",
+      "status": "queued",
+      "depends": [
+        "TM4"
+      ],
+      "plan": "E1",
+      "bar": "correctness",
+      "acceptance": "Halo reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, last device I/O, xemu state); the media and probe docs are updated; no gate regression.",
       "price": "1-3 sessions; correctness bar."
     },
     {
-      "id": "MG3",
-      "title": "Retail rows + one-command probe harness",
+      "id": "TM6",
+      "title": "Second-tier titles: the next 5 from the matrix",
       "status": "queued",
       "depends": [
-        "MG2"
+        "TM5"
       ],
-      "plan": "E1a",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "scripts/retail-game-probe.ps1 runs one ISO through XGrid and xemu and writes both screenshots plus a step/state report; the first real-game rows land in docs/compatibility.md with the command, the step anchor and the xemu comparison.",
-      "price": "1 session; correctness bar."
-    },
-    {
-      "id": "MP1",
-      "title": "CPU engine: QEMU TCG-shaped translator prototype",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "One hot loop (the guest idle loop) and one full gate leg execute bit-exactly through the ported translator against the current engine in exact mode (accurate RAM/CPU SHAs and counters identical); ns/member and host instructions/member are reported; fast-mode anchors may move and are re-baselined with the policy; no other module changes.",
-      "price": "tcg 22.6k + accel 19.1k C LOC; prototype 4-6 sessions, full engine 20+; bar: the prototype must beat the current raw runner on one hot loop by >=2x ns/member with bit-exact behavior, else stop at the prototype and re-price M-D."
-    },
-    {
-      "id": "MP2",
-      "title": "Memory: softmmu translate + TLB port",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "The ported memory path replaces AddressSpace's translate/TLB behind the existing seam; both 1B fast anchors and both accurate RAM/CPU SHAs exact; page-fault, watchpoint and MMIO tests exact.",
-      "price": "2-4 sessions; correctness bar; exactness is the acceptance."
-    },
-    {
-      "id": "MP3",
-      "title": "NV2A PGRAPH core: the 72 declined methods, context DMA, immediate mode",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "Every one of the 73 recorded methods is handled or declined with a measured reason and a corpus/histogram citation; context DMA, immediate mode, window clip and per-pixel mip LOD decode; the software 1B anchors stay exact.",
-      "price": "4-6 sessions; correctness bar (compatibility), no wall claim."
-    },
-    {
-      "id": "MP4",
-      "title": "NV2A GL renderer port (xemu pgraph/gl + the glsl it needs)",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "The 22-row matrix is re-verified or re-baselined with violations=0; the retail screenshots match; batching, sampler parity and one-writer composition are preserved; BackendUnsupported=0 fatal=0.",
-      "price": "5-8 sessions; correctness bar; this is G2's reopen condition (b), the operator re-scope to compatibility."
-    },
-    {
-      "id": "MP5",
-      "title": "APU: VP mixer + AC97 codec (audible output)",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "A retail title produces non-silent PCM through --audio-out with the VP mixer running; the AC97 codec path answers the guest; no gate regression.",
-      "price": "3-5 sessions; correctness bar; timing parity, not sample-exact."
-    },
-    {
-      "id": "MP6",
-      "title": "Storage: IDE/ATAPI + block layer (qcow2/CHD/ISO)",
-      "status": "queued",
-      "depends": [
-        "MG3"
-      ],
-      "plan": "E1b",
-      "bar": "correctness",
-      "acceptance": "The ported block layer serves the gate HDD and the retail ISO byte-identically; retail loads advance; the ktest log stays byte-identical.",
+      "acceptance": "The next 5 titles from the matrix each reach gameplay or a documented wait with the same evidence; the matrix is re-run; no gate regression.",
       "price": "3-5 sessions; correctness bar."
     },
     {
-      "id": "MP7",
-      "title": "USB/OHCI + XID port",
+      "id": "TM7",
+      "title": "Publish the compatibility table + one-command probe harness",
       "status": "queued",
       "depends": [
-        "MG3"
+        "TM6"
       ],
-      "plan": "E1b",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "Hub/XID enumeration is identical to the reference; a scripted pad input reaches a retail title; the nxdk usb row stays exact.",
-      "price": "2-4 sessions; correctness bar."
+      "acceptance": "scripts/retail-game-probe.ps1 <iso> runs XGrid and xemu, writes both screenshots plus a step/state report; the real-game rows land in docs/compatibility.md with the command, the step anchor and the xemu comparison.",
+      "price": "1 session; correctness bar."
     },
     {
-      "id": "MP8",
-      "title": "PCI/SMBus/SMC/EEPROM/nvnet port",
+      "id": "TM8",
+      "title": "First targeted xemu port (default: APU VP mixer + AC97)",
       "status": "queued",
       "depends": [
-        "MG3"
+        "TM2"
       ],
-      "plan": "E1b",
+      "plan": "E1",
       "bar": "correctness",
-      "acceptance": "Register/IRQ parity against xemu; the DHCP DISCOVER frame is field-identical; SMC/EEPROM state round-trips; no gate regression.",
-      "price": "2-4 sessions; correctness bar."
-    },
-    {
-      "id": "MD9",
-      "title": "Post-port re-baseline + the xemu-class budget",
-      "status": "queued",
-      "depends": [
-        "MP1"
-      ],
-      "plan": "E1c",
-      "bar": "perf",
-      "acceptance": "Both gate titles and the retail titles are re-baselined on the ported engine; a budget table of measured ceilings sums to the 1B band (or a written restatement); the first slice is selected by that table and the per-slice 10% bar is replaced by the budget.",
-      "price": "2 sessions of measurement, then the density program; the ported translator is the lever (78 host instructions/member today)."
+      "acceptance": "The xemu 0.8.139 module the matrix proves (default hw/xbox/mcpx/apu/vp.c plus the AC97 codec) is ported to managed C# behind the existing seam with its differential exact, provenance recorded, the titles it blocked advanced, and the accurate goldens plus the ktest log byte-identical; package-verify passes with the new notices rows.",
+      "price": "3-5 sessions; correctness bar."
     }
   ],
   "done": [
@@ -664,7 +616,8 @@
     "row_scoped_corpus": true,
     "full_sweep_at_milestone_only": true,
     "stop_after_two_failed_iterations": true,
-    "operator_order_2026_10_24": "gameplay first, then the xemu port, then speed; the 2026-10-14 no-real-games rule is superseded (retail ISOs are the lead acceptance, never merge gates)",
-    "perf_bar": "applies to M-D slices only; M-G and M-P are correctness tasks whose price is a session budget"
+    "operator_order_2026_10_24": "playable titles first: run the title matrix, fix the shared blockers in the current engine, and port an xemu module only when the matrix proves it blocks >=3 titles or >=20%; speed is reported, never claimed, until the playability gate is met",
+    "perf_bar": "applies to M-D slices only; M-G and M-P are correctness tasks whose price is a session budget",
+    "port_rule": "port only what the title matrix proves: >=3 titles or >=20% of the matrix; never port tcg/ or softmmu/ unless the matrix shows the CPU is the blocker"
   }
 }

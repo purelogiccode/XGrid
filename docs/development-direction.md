@@ -4,41 +4,47 @@ Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 0. Course correction (2026-10-24): gameplay first, then the xemu port, then speed
+## 0. Course correction (2026-10-24, second): a playable emulator, not a wholesale port
 
-**Operator decision.** The order is now **M-G (boot a game, any speed) -> M-P
-(port the xemu engine to C#) -> M-D (xemu-class speed)**. The previous order
-(performance first) is closed: its queue emptied with a restated target and a
-measured 4.9x / 11.7x gap. The 2026-10-14 "no real Xbox games" rule is
-**superseded** - the **optimized** retail ISOs at `H:\Tests\XBOXReady` are the
-lead acceptance for M-G (never merge gates; `data/test-samples/` stays gate
-currency). The 37 full-disc Redump ISOs at `H:\Tests\XBOXTest` cannot be booted
-by xemu and are not oracle media.
+**Operator decision.** The goal is a **playable Xbox emulator**: at least three
+retail titles reach gameplay with input, audio and save/load. The previous
+order (M-G -> M-P -> M-D) is replaced because it committed 40-60 sessions to a
+136k-LOC xemu port before measuring how broad the gap was. The new order is
+**M-T: title matrix -> blocker probe -> fix the shared blocker -> playability
+gate -> grow the matrix**.
 
-**M-G exit:** `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso`
-reaches its first interactive gameplay frame, advanced by a scripted pad input,
-verified against xemu 0.8.139 (`data/xemu/xemu.exe`) on the same optimized ISO.
-The four-part definition
-is in `ImplementationPlan.md` E1. Speed is not claimed.
+**The port rule.** xemu 0.8.139 is the oracle and the source for specific
+modules, not the base to rewrite. Port a module only when the title matrix
+shows the same xemu source file blocks **>=3 titles or >=20% of the matrix**,
+and keep the old path as the fallback until the differential is exact. Never
+port `tcg/` or `softmmu/` unless the matrix proves the CPU is the blocker -
+today it is not (ktest 2B is bit-exact and faster than xemu).
 
-**M-P exit:** every xemu 0.8.139 module on the title's execution path is ported
-to managed C# behind XGrid's seams, with its differential exact and its
-provenance recorded. Out of scope: the Qt/SDL UI, the Vulkan renderer, the host
-TCG backends and the block formats no title needs.
+**Why.** The current engine already boots the real firmware to the dashboard,
+runs 007's XBE, enumerates USB, streams DVD/HDD and executes the guest DSP
+microcode. The gap is device behaviour (the APU VP mixer, a handful of NV2A
+PGRAPH behaviours, timing), not the QEMU core. A wholesale rewrite produces no
+user-visible product until late; the matrix loop produces a playable title
+every few sessions.
 
-**M-D exit:** the ported engine is re-baselined and the xemu-class budget (a sum
-of measured ceilings, not a per-slice 10% bar) either reaches the 1B band or is
-restated with the number that prevents it. The CPU TCG **is** now a port target
-(MP1) - the 78 host instructions per served member are the density gap the old
-plan never priced.
+**Media.** `H:\Tests\XBOXReady` has the two optimized ISOs (007 1.60 GB, Halo
+3.38 GB) and is oracle-grade. `H:\Tests\XBOXTest` has 37 full-disc Redump ISOs
+that xemu cannot boot; they are **XGrid-only compatibility media** that may
+prove a blocker but are never oracle rows or gates. `data/test-samples/` stays
+gate currency.
+
+**Exit (M-T):** three retail titles playable by the seven-part definition in
+`ImplementationPlan.md` E1 (own render, scripted input, 10 minutes, save/load,
+xemu frame match, audible output, gates exact). Speed is reported, never
+claimed, until then.
 
 ## 0a. Previous correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
-**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXReady, optimized XDVDFS) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Current status (2026-10-24):** M-T / **TM0 - Title matrix harness + first sweep** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - title matrix in progress; 007 XBE executes but gameplay is not reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
+**Phase score:** 73.2% (86.34 of 118). **Next:** TM1 (Blocker probe for the top 3 closest titles), TM2 (Fix shared blocker #1 and re-run the matrix), TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -472,16 +478,16 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 ## 3. Milestone ladder
 
-- **M-G (retail gameplay) - the lead milestone as of 2026-10-24:** one retail
-  title reaches a gameplay frame, at any speed, verified against xemu 0.8.139 on
-  the same ISO. Exit is the four-part definition in `ImplementationPlan.md` E1;
-  the first task is MG0 (triage + oracle harness). Retail ISOs are acceptance,
-  never merge gates.
-- **M-P (xemu engine port) - the vehicle:** the xemu 0.8.139 engine is ported
-  to managed C# module by module (CPU TCG-shaped translator, memory/softmmu,
-  NV2A core + GL, APU VP mixer + AC'97, storage/block, USB, PCI/SMBus/SMC/net),
-  each with its differential exact and its provenance recorded. The software
-  rasterizer and the existing seams stay.
+- **M-T (playable titles) - the lead milestone as of 2026-10-24:** three retail
+  titles reach gameplay with input, audio and save/load. The loop is title
+  matrix -> blocker probe -> fix the shared blocker -> playability gate. The
+  seven-part definition is in `ImplementationPlan.md` E1; the first task is TM0
+  (title matrix). Retail ISOs are acceptance, never merge gates.
+- **Port rule:** xemu 0.8.139 is the oracle and the source for the specific
+  modules the matrix proves are shared blockers (>=3 titles or >=20%). The CPU,
+  memory, chipset, storage and USB stay; the APU VP mixer + AC'97 and the NV2A
+  PGRAPH behaviours are the likely first ports. The software rasterizer and the
+  existing seams stay.
 - **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
   `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
   by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
@@ -532,12 +538,10 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
-- **M-D (xemu-class) - after the port (2026-10-24):** triangle
-  ≤ 1.2 s (xemu 830 Msteps/s), menu ≤ 1.36 s (real-time band) at 1B with the
-  fast engine; measured against xemu where an oracle exists. This is the
-  long-run objective, now scheduled after M-P; its rule is the milestone budget
-  in `ImplementationPlan.md` E1c, not the old per-slice 10% bar. ktest 2B
-  already beats xemu (9-10 s vs 15 s).
+- **Speed (after M-T):** xemu-class is the long-run objective, but it is
+  reported, never claimed, until the playability gate is met. The 1B reference
+  stays (triangle ≤ 1.2 s, menu ≤ 1.36 s); ktest 2B already beats xemu (9-10 s
+  vs 15 s). The old per-slice 10% bar is not the rule for M-T.
 
 ## 4. Rules
 

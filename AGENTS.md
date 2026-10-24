@@ -140,97 +140,65 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
-**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXReady, optimized XDVDFS) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Current status (2026-10-24):** M-T / **TM0 - Title matrix harness + first sweep** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - title matrix in progress; 007 XBE executes but gameplay is not reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
+**Phase score:** 73.2% (86.34 of 118). **Next:** TM1 (Blocker probe for the top 3 closest titles), TM2 (Fix shared blocker #1 and re-run the matrix), TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
-**Operator decision 2026-10-24 - the order is M-G -> M-P -> M-D.**
+**Operator decision 2026-10-24 (second) - the order is M-T: playable titles.**
 
-1. **M-G: boot a retail game to a gameplay frame, at any speed.** 007 - Agent
-   Under Fire is the target; xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO
-   is the oracle; the media is the **optimized** set at `H:\Tests\XBOXReady`
-   (`D:\Samples\XBOXReady` is gone; the 37 full-disc Redump ISOs at
-   `H:\Tests\XBOXTest` cannot be booted by xemu). The 2026-10-14 "no real Xbox
-   games" rule is **superseded** - retail ISOs are the lead acceptance now, still
-   never merge gates.
-2. **M-P: port the entire xemu engine to managed C#** (CPU TCG-shaped
-   translator, memory/softmmu, NV2A core + GL, APU VP mixer + AC'97,
-   storage/block, USB, PCI/SMBus/SMC/net), each module behind the existing seams
-   with an exact differential and its provenance. The CPU TCG is now a port
-   target: the 78 host instructions per served member are the density gap the
-   old plan never priced.
-3. **M-D: xemu-class speed after the port**, decided by a milestone budget (sum
-   of measured ceilings), not the old per-slice 10% bar.
+1. **M-T: a playable emulator, not a wholesale port.** The title matrix
+   (`scripts/title-matrix.ps1`) runs every ISO at a fixed budget; the closest
+   titles are probed for one blocker each; the shared blocker is fixed in the
+   current engine; the matrix is re-run. A title is playable by the seven-part
+   definition in `ImplementationPlan.md` E1 (own render, scripted input, 10
+   minutes, save/load, xemu frame match, audible output, gates exact).
+2. **Port only what the matrix proves.** xemu 0.8.139 is the oracle and the
+   source for specific modules. Port a module only when the same xemu source
+   file blocks **>=3 titles or >=20% of the matrix**; keep the old path as the
+   fallback until the differential is exact. Never port `tcg/` or `softmmu/`
+   unless the matrix shows the CPU is the blocker - today it is not (ktest 2B
+   is bit-exact and faster than xemu). The likely first port is the APU VP
+   mixer + AC'97 codec; the NV2A PGRAPH behaviours follow the measured methods.
+3. **Media.** `H:\Tests\XBOXReady` has the two optimized ISOs (007 1.60 GB,
+   Halo 3.38 GB) and is oracle-grade. `H:\Tests\XBOXTest` has 37 full-disc
+   Redump ISOs that xemu cannot boot; they are XGrid-only compatibility media,
+   never oracle rows or gates. `data/test-samples/` stays gate currency.
 
 The live queue is `docs/status.json`; the task detail is
-`ImplementationPlan.md` E1a (M-G), E1b (M-P), E1c (M-D).
+`ImplementationPlan.md` E1 (TM0-TM8).
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
 `docs/research-notes/jit-track-charter.md`; corpus plan:
 `docs/research-notes/compatibility-corpus.md`; sample matrix:
 `docs/compatibility.md`. **The long-run objective is xemu-class performance or
-better, scheduled after M-G/M-P** (operator decision 2026-10-24). Hard rules:
+better, after the playability gate** (operator decision 2026-10-24, second). Hard rules:
 
-1. **Track C (performance) leads; the 2026-10-20 freeze is lifted.** The GL
-   present path is done (~1.3 s of the menu wall, was ~9.9 s), and the campaign
-   has moved the headline legs to **triangle `gl+replace` 5.72-6.15 s / menu
-   15.6-17.5 s** at 1B — a ~4.9x / ~11.7x gap to xemu's 1.2 s and the 1.36 s
-   real-time band. The CPU/device engine is still the dominant share. Program:
-   **C4** flat memory model/soft TLB (**measured null, §232a**), **C4b** image
-   windows (**landed, §237**), **C5** trace formation (**slice 1, §233**; the
-   full trace is priced at 3-5%, §235), **C6** device/MMIO and draw flush
-   (**clears -10.6% §240, transform plan -25/-31% menu D1 §241, combined
-   draw-flush -10.3% menu D5 §244**), then the **D8** engine-shape decision v2
-   (measurement first; see `ImplementationPlan.md` E1/E5b). The budget decides
-   it: the triangle's runner alone is 2.9x the target and its boot alone is 1.6x,
-   so the queue is **D8 -> D6 -> D7** and D8 may select a ported reference shape
-   (GPL-2.0, full managed C#) as well as edge/trace/memory designs.
-   Each stage: same-window A/B >=10% wall or >=20% engine, exact 1B SHAs/counters
-   on both titles, flag-off byte-identical, ktest log byte-identical.
-   Incremental sub-2% slices remain banned.
-2. **Track B is closed (§236).** The GL product renderer's computed-mode panel
-   now renders: a cube stage samples a host 2D-array texture decoded from the
-   guest's swizzled faces (gap 12), agreeing with software within 2 pixels of
-   307,200. No new B fidelity rows while C leads. The present path itself is
-   closed (readback opt-in, batching, sampler parity, replace-mode composition).
-3. **Track E (corpus) steers.** Gate currency stays `data/test-samples/`.
-   Maintain `docs/compatibility.md` (22 rows / 17 samples) and the
-   boot-to-first-frame harness; add performance rows (Msteps/s, wall per
-   presented frame) and the xemu comparison where it is a valid oracle. No new
-   corpus breadth beyond the standing rows while C leads. Real ISOs stay
-   benchmark-only. **No NV2A/APU fidelity polish beyond the matrix + a sample
-   histogram.**
-4. **Track P (product completeness) runs in parallel, not blocking.** Host
-   audio is the largest remaining product gap (APU GP/EP DSP execution + a PCM
-   sink); pad binding, save states, per-title config, renderer choice, frame
-   stepping and persistent EEPROM are landed. Do not let P displace C.
-5. **Track D only with a measured >2% ceiling** (page-end wait, bookkeeping).
-6. **Gates unchanged.** Accurate mode is currency: median-of-3, exact
-   SHAs/counters, `verifyFailures=0`, flag-off byte-identical; ktest smoke 7/7.
+1. **Playable titles lead.** The title matrix is the progress bar: every task
+   must move at least one title one stage (own render, gameplay, 10 minutes,
+   audible). Performance is reported, never claimed, until the playability gate
+   is met.
+2. **Fix the shared blocker first.** One blocker per task, chosen by the matrix
+   (how many titles it blocks), fixed in the current engine unless the matrix
+   proves an xemu module is broad (>=3 titles or >=20%).
+3. **Ports are surgical.** Differential first, old path as fallback, provenance
+   recorded. Never port `tcg/` or `softmmu/` unless the matrix shows the CPU is
+   the blocker.
+4. **The matrix is evidence, not a gate.** Retail rows never merge gates; the
+   four accurate goldens + ktest + package stay the gates.
+5. **No performance slices while M-T is open.** The 1B reference is reported in
+   the matrix context, not optimized. The old per-slice 10% bar does not apply.
+6. **Gates unchanged.** Accurate mode is currency: exact SHAs/counters, ktest
+   log byte-identical, `format --verify-no-changes` clean.
 7. **Direct development** — wave runner retired, no worktrees/detached servers.
 
-**Position (2026-10-22 very late, after §§239/240, 1B fast mode, H1):** menu
-**18.8-20.0 s** `gl+replace` / 30.35 s sw (raster ~11.2 s); triangle **5.61-5.74 s**
-`gl+replace` / 10.03 s sw. **The device stage was measured this session and is
-14% of the triangle wall (§240):** 816 ms of device writes, 766 of them in the
-2,706 draw flushes (interpreted vertex program **413-435 ms**, GL submission
-173-181 ms, setup 61-66, attribute fetch 34-36) and the rest in the surface
-clears, which now fill through spans (1.31 s -> 0.82 s, -10.6% on both headline
-legs). **The CPU engine is unchanged in shape:** `RunJitBlock` ~4.4 s
-(`runnerMs` ~3.35 s for 547M members at **6.1 ns/member**, formation/chain ~1.0 s)
-+ `RunNonJit` ~1.81 s (2.62M instructions, device-heavy short runs) + 816 ms of
-device work inside them; §239 removed 11 emitted instructions per member for
-**-3% engine and 0% wall**, which proves the runner is latency-bound, not
-instruction-bound - so C's next lever has to remove *edges* (the chain edge is
-~60 host instructions per 4-member loop iteration), not instructions. **C4's
-host-pointer probe measured NULL and was reverted** (§232a). xemu triangle
-≈830 Msteps/s = 1.2 s at 1B; 1 guest-second ≈ 733M steps, so the real-time band is
-1.36 s at 1B. ktest 2B is already ahead (XGrid 9-10 s vs xemu 15 s). Report
-ns/served member + wall per presented frame, not 1B walls alone, and price stages
-with stashed interleaved A/B legs (§232e).
+**Position (2026-10-22, 1B fast mode, H1) - history, not the current target:**
+triangle `gl+replace` 5.72-6.15 s / sw 10.21 s; menu `gl+replace` 15.6-17.5 s /
+sw 27.01 s; gap ~4.9x / ~11.7x. ktest 2B is already ahead of xemu (9-10 s vs
+15 s). Performance is reported in the matrix context, never claimed, until the
+playability gate is met.
 
 ## Build / test / format
 
