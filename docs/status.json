@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "D6",
-    "title": "Device remainder: compiled transform execution and the fill path",
+    "id": "D7",
+    "title": "Boot path: make the first 100M steps cheaper",
     "plan": "E5b",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": ">=10% menu wall on 3/3 interleaved pairs (or >=20% executeMs), exact anchors, BackendUnsupported=0 composedFrames=0, both 1B GL frames byte-identical, 400-program fuzz + per-vertex bit-identity",
-    "price": "compiled transform evaluator priced at 9.5-10.7% menu wall (S243); post-D1 transform is 2.2-2.5 s of the menu wall"
+    "acceptance": ">=10% triangle wall on 3/3 interleaved pairs, exact anchors, byte-identical ktest log; else record the negative and hand the target to D8 option (e)",
+    "price": "boot is 1.93 s triangle / 1.62 s menu (33%/10% of the walls); encoder 8.0%/4.9% and trace 3-5% are the known levers"
   },
   "position": {
     "host": "H1",
@@ -232,23 +232,10 @@
   ],
   "queue": [
     {
-      "id": "D6",
-      "title": "Device remainder: compiled transform execution and the fill path",
-      "plan": "E5b",
-      "status": "active",
-      "depends": [
-        "D5",
-        "D8"
-      ],
-      "acceptance": ">=10% menu wall on 3/3 interleaved pairs (or >=20% executeMs), exact anchors, BackendUnsupported=0 composedFrames=0, both 1B GL frames byte-identical, 400-program fuzz + per-vertex bit-identity",
-      "price": "compiled transform evaluator priced at 9.5-10.7% menu wall (S243); post-D1 transform is 2.2-2.5 s of the menu wall",
-      "evidence": []
-    },
-    {
       "id": "D7",
       "title": "Boot path: make the first 100M steps cheaper",
       "plan": "E5b",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "D5",
         "D8"
@@ -506,6 +493,13 @@
       "date": "2026-10-24",
       "evidence": "D8 measured the fast engine on both gate titles at 100M and 1B (permanent --jit-timing instrumentation): runner 8.47 ns/served member triangle / 17.51 menu, UNIFORM across member classes (load 8.93, store 7.74, alu 9.92, branch 7.44; other 24.76 on 3.7% of the mix), 78.0/75.3 emitted host instructions per member, 4.4/5.3 members per chain edge, 783k/3.0M entries against 124.6M/160.2M in-frame chain edges. Edge census: exit publish+probe is 12.52B/16.32B emitted instructions; XGRID_RAW_CHAIN=0 ablation says an entry costs 33.5 ns (triangle) / 35.2 ns (menu) more than a chain edge (runner 4,628->8,804 ms and 15,177->20,822 ms, both 1B anchors exact), and XGRID_RAW_SELFLOOP says 76.8%/67.8% of edges are self-loops. Boot split 0-100M: triangle 1.833 s = runner 752 + formation 518 (Iced Assemble 386, 321 us/block) + non-JIT 489 + lookup/loop 74 (device 39 inclusive); menu 1.550 s = 623 + 407 (292) + 454 + 66 (38). Steady state 1B-100M: triangle 5.396 s (6.0 ns/step) = runner 3,876 + formation 509 + non-JIT 892 + device 616 (inclusive); menu 17.556 s (19.5 ns/step) = runner 14,554 + formation 1,056 + non-JIT 1,482 + device 7,266 (inclusive, 41%). Option (a) self-loop/edge elimination PRICED BY BUILDING IT: the fast edge re-entered the body with budget/IRQ/generation re-checked, measured 16% SLOWER runner (5,390 vs 4,628 ms) and 8% slower wall on the one completing 1B leg, plus two 0xC0000005 crashes in three runs -> reverted, ceiling <=0%. (b) trace/fusion N8/N3 binding 3-5%; (c) memory-probe N1/N9 null and the class table explains why (no class-specific cost); (d) the reference shape is the compatibility path (the raw engine already beats TCG on CPU-bound ktest 2B 9-10 s vs xemu 15 s). No engine-shape option clears >=10% wall / >=20% engine, so D8 selects option (e): target restated to ns per served member outside the device stage + wall per presented frame (decisions S247). Gates: fast 1B triangle 4F1FCBC0/7DAB63EB frame 7A860ED7, menu B06BA6E5/F5D61C94 frame B6116DAE, triangle sw B45254CA 57,663,082 px, menu sw 34973510 253,998,498 px; accurate goldens A1740DE0/7A860ED7 (2706/68/34) and 4EF1FBF6/B6116DAE (33632/686/686) PASS violations 0; suite 1922 green, build 0 warnings, format clean.",
       "reopen": "one engine candidate measures >=20% engine on this attribution (today's ceilings: (a) <=0% built+reverted, (b) 3-5%, (c) null, encoder ~8%, device 10-41% but owned by D6/G1-G2), or a new xemu 1B oracle shows the gap is in the CPU engine rather than the device"
+    },
+    {
+      "id": "D6",
+      "title": "Device remainder: compiled transform execution and the fill path",
+      "date": "2026-10-24",
+      "evidence": "D6 priced by building it: the compiled transform evaluator (one DynamicMethod per plan emitted from the plan's own decode, flat constant/input/output files, the reference zero rule/dots/masks/oFog prefix/ARL-relative constants, the interpreter kept as the fallback) is differentially EXACT - VshProgramPlanTests 10/10 comparing VshProgram vs kernel vs interpreter incl. the 400-program fuzz - and 3.2x SLOWER than the interpreter: 1,028 ns/vertex (11,762 ms / 11,439,040 calls, unconditional) vs 330 ns, so menu 1B gl+replace 19.237 -> 31.242 s (+62.4%) and 19.585 -> 29.548/30.938 s (+51/+58%) in same-window pairs, device writes 7.39 -> 18.60 s, runnerMs 15,395 -> 25,287, GL drawMs 999 -> 941 ms (unchanged), triangle 7.084 -> 6.778 s (no regression; 3% item). Every anchor exact: menu RAM B06BA6E5/CPU F5D61C94, triangle 4F1FCBC0/7DAB63EB, counters 33,638/1,402/696/686/686 culled 41,035, GL 2,733,736 tris, BackendUnsupported=0 composedFrames=0. Cause: the per-instruction unrolled emission costs ~150-250 host instructions per VS instruction (bounds-checked flat-array loads/stores plus the per-component zero-rule branches) = 7-15 KB of straight-line code per plan, so the body cannot stay uop-cache resident (IPC ~0.6 against the interpreter's ~2.5). Ceiling: the menu transform is 3.72 s = 19.3% of a 19.24 s wall, so the bar needs >=2.4x the interpreter (<=135 ns/vertex); this design is 3.2x slower -> ceiling <=0%, and S243's 9.5-10.7% is repriced to a negative. Reverted; no snapshot change (host-side only, Nv2a v9 / audio v3).",
+      "reopen": "a different transform emission priced by building it and measuring <=135 ns/vertex (>=2.4x the interpreter's 325 ns); the only candidate with a plausible ceiling is a 4-component Vector128 emission (~12 host instructions per VS instruction) with the dots and the zero rule kept scalar because the reference accumulation order is not associative"
     }
   ],
   "rules": {

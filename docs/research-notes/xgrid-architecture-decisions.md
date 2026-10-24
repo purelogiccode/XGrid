@@ -16515,3 +16515,120 @@ engine rather than the device would also reopen it.
 - ktest was not re-run: the change is host-side diagnostic only (no CPU/device
   path change; every 1B anchor above is byte-identical) and the smoke script
   needs the sibling `CSharp_XISOSharp` tool, which is outside this workspace.
+
+## 248 D6: the compiled transform evaluator is exact but 3.2x slower than the interpreter - the ceiling for unrolled per-instruction emission is <=0% (2026-10-24, forty-eighth session) - D6, negative
+
+**Why this was built rather than estimated.** S243 priced "a compiled transform
+evaluator" at 1.5-1.7 s of capture = **9.5-10.7% menu wall**, flagged high risk,
+and S244 called it "explicitly at-or-below the bar on its own". A price that
+straddles the 10% bar cannot be settled by another estimate (S243's own estimate
+was the only number in the table that had never been built), so D6's first
+checkbox - the price measurement - was answered by building the evaluator and
+measuring it. The result is a **negative with a cause**: the design is
+differentially exact and 3.2x slower than the interpreter it replaces.
+
+### 1. The measured price (H1, gate media, 1B, fast mode, `gl+replace`)
+
+The transform stage first, with a sampled (1/64) timer inside
+`VshProgramPlan.Execute` on the **pre-change** build, so the item is priced in
+the same window as everything else:
+
+| leg | vertices | VS instructions | per vertex | total | share of wall |
+|---|---|---|---|---|---|
+| menu (33,638 draws) | 11,439,040 | 138,269,607 (12.1/vertex) | **325 ns** | **3.72 s** | **19.3%** of 19.24 s |
+| triangle (2,706 draws) | 63,524 | 1,762,191 (27.7/vertex) | 3,609 ns | 229 ms | 3.2% of 7.08 s |
+
+The menu's per-instruction cost is 26.8 ns (init is 12% of the stage); the
+triangle's is 130 ns because its program is dominated by ILU transcendentals
+(`exp`/`log`/`lit`), which is why this is a menu item and not a triangle one.
+
+### 2. What was built (D6.1, reverted)
+
+One `DynamicMethod` per plan, emitted from the plan's **own decoded
+`Instruction[]`** (never a second decoder), with:
+
+- flat four-component files for constants (768 floats), inputs and outputs (64
+  each), so no component load pays a jagged indirection;
+- the MAC ops as straight-line IL: `mov`, `mul` with the reference's zero rule
+  (`a == 0 || b == 0 -> +0.0f`, emitted as compute-then-overwrite so `0 * inf`
+  cannot leak a NaN), `add`, `mad`, `dp3`/`dp4`/`dph` with the reference's
+  `0.0f`-seeded left-to-right accumulation, `dst`, `min`/`max`/`slt`/`sge` and
+  `arl` through the same static helpers the interpreter uses;
+- ILU through one shared body (`ComputeIluAt`, which the interpreter now also
+  calls) so there is exactly one implementation of every transcendental;
+- `WriteMasked` as constant-folded per-component stores with the hardware's
+  bit-reversed mask order, `WriteFogMasked` as the destination-prefix rule, the
+  ORB mux/oA0/oFog paths and the paired-register-1 rule;
+- `Array.Clear` + `InitializeOutputs` for the per-vertex file reset, and the
+  shader epilogue through the same `RoundScreenCoords`/`ClampAwayZeroInf`.
+
+`VshProgramPlan.Execute(float[][], ...)` stays the public contract as a
+pack/unpack adapter, `ExecuteFlat(float[], float[], float[], out bool)` is the
+device entry, and the interpreter is retained as the executor when a host
+cannot emit - both driven by the same decode.
+
+**Exactness was never the problem.** `VshProgramPlanTests` grew to compare three
+executors per case - `VshProgram` (reference), the compiled kernel and the
+interpreted fallback - and all 10 tests pass, including the 400-program fuzz
+over arbitrary MAC/ILU fields, the 256-swizzle sweep, ARL-relative constants
+with the address output, every oFog mask, and the paired r1 rule. The three
+initial emitter bugs were all caught by that differential (a swapped
+`ComputeIluAt` argument order, a missing swizzle on relative constants, and an
+ARL emitted for the undefined MAC ops 14/15).
+
+### 3. The measurement: 1,028 ns per vertex against the interpreter's 330 ns
+
+| leg | base (stashed HEAD) | compiled kernel | delta |
+|---|---|---|---|
+| menu 1B `gl+replace` | 19.237 s | 31.242 s | **+62.4%** |
+| menu 1B `gl+replace` | 19.585 s | 29.548 s / 30.938 s | +51% / +58% |
+| device writes | 7.39 s | 18.60 s | +152% |
+| `runnerMs` | 15,395 | 25,287 | +64% |
+| GL submission (`drawMs`) | 999 ms | 941 ms | unchanged |
+| triangle 1B `gl+replace` | 7.084 s | 6.778 s | -4.3% (no claim; 3% item) |
+
+An unconditional timer around the kernel (11,439,040 calls, 11,762 ms) reads
+**1,028 ns per vertex**; the same build with `compile: false` reads the
+interpreter at **330 ns** (sampled, flat files).  So the compiled form is
+**3.2x slower**, and every anchor is exact while it is (menu RAM `B06BA6E5` /
+CPU `F5D61C94`, triangle `4F1FCBC0` / `7DAB63EB`, counters
+33,638/1,402/696/686/686, culled 41,035, GL 2,733,736 triangles,
+`BackendUnsupported=0 composedFrames=0`): the numbers are the evaluator's cost,
+not a behavior change.
+
+### 4. Why: code volume, not arithmetic
+
+The per-instruction unrolled emission costs **~150-250 host instructions per VS
+instruction**: 12 operand loads and 12 stores per instruction (each a
+bounds-checked `ldelem.r4`/`stelem.r4` against a flat array), the per-component
+zero-rule branches for `mul`/`mad`, and the per-component masked stores.  A
+12-instruction menu program becomes **7-15 KB of straight-line code per plan**.
+The interpreter's loop body is ~150 instructions for the *whole* program and
+stays uop-cache resident; the compiled body cannot, so it runs at IPC ~0.6
+against the interpreter's ~2.5.  This is the same lesson as S239 in the CPU
+engine ("the runner is latency-bound, not instruction-bound") with the opposite
+sign: here the interpreter wins *because* its code is small.
+
+### 5. The repriced ceiling and the reopen condition
+
+The menu transform is 3.72 s = 19.3% of a 19.24 s wall (22.8% of a quiet 16.3 s
+window).  A 10% wall cut therefore needs a transform evaluator that beats the
+interpreter by **>= 2.4x** (<= 135 ns per vertex).  The unrolled design is 3.2x
+*slower*, so its ceiling is **<= 0%** and S243's 9.5-10.7% is repriced to a
+negative.  Reverted; no snapshot change (host-side only, Nv2a v9 / audio v3).
+
+Reopen only with a *different* emission strategy that is priced by building it
+and measures <= 135 ns/vertex: the only one with a plausible ceiling is a
+**4-component vector emission** (`Vector128`/SSE arithmetic per register
+instead of per component: 3 vector loads, 2-3 vector ALU ops and one blended
+store per VS instruction, ~12 host instructions instead of ~200), which keeps
+the code I-cache resident and would need the dots and the zero rule scalar
+because the reference's accumulation order is not associative.
+
+### 6. Gates
+
+No code changed (the slice was reverted; the tree is HEAD byte-identical).  The
+reverted build re-verified in this window: menu 1B `gl+replace` `B06BA6E5` /
+`F5D61C94` (16.316 s), triangle `4F1FCBC0` / `7DAB63EB` (6.186 s),
+`BackendUnsupported=0`, no fault; build 0 warnings; suite 1922 green (the
+compiled-path tests were reverted with the code).

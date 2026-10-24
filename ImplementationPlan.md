@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **D6 - Device remainder: compiled transform execution and the fill path** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **D7 - Boot path: make the first 100M steps cheaper** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** D7 (Boot path: make the first 100M steps cheaper), G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 17.
+**Phase score:** 79.9% (86.34 of 108). **Next:** G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 18.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -393,10 +393,38 @@ this plan.
 
 ### D6 - Device remainder: compiled transform execution and the fill path
 
+**Result (2026-10-24, negative) - decisions §248.** The compiled transform
+evaluator was **priced by building it**: one `DynamicMethod` per plan emitted
+from the plan's own decoded instruction list, flat four-component files, the
+reference's zero rule/dots/masks/oFog prefix/ARL-relative constants, with the
+interpreter kept as the fallback. It is **differentially exact** (the
+`VshProgramPlanTests` gate now compares `VshProgram`, the kernel and the
+interpreter on every case including the 400-program fuzz) and **3.2x slower**:
+**1,028 ns per vertex** against the interpreter's 330 ns, so the menu 1B
+`gl+replace` wall goes 19.237 -> 31.242 s (+62.4%) and 19.585 -> 29.548/30.938 s
+in same-window pairs, device writes 7.39 -> 18.60 s, `runnerMs` 15,395 ->
+25,287, GL submission unchanged; the triangle leg is 7.084 -> 6.778 s (no
+regression - the transform is 3% there). Every anchor stayed exact throughout.
+Cause: the per-instruction unrolled emission costs ~150-250 host instructions
+per VS instruction (bounds-checked flat-array loads/stores plus the
+per-component zero-rule branches) = 7-15 KB of straight-line code per plan, so
+the body cannot stay uop-cache resident (IPC ~0.6 against the interpreter's
+~2.5). The menu transform is 3.72 s = 19.3% of the wall, so the bar needs an
+evaluator **>= 2.4x faster than the interpreter (<= 135 ns/vertex)**; this
+design's ceiling is **<= 0%**. Reverted.
+
+**Reopen:** a different emission strategy priced by building it and measuring
+<= 135 ns/vertex - the only one with a plausible ceiling is a 4-component
+vector emission (`Vector128` per register: 3 vector loads, 2-3 vector ALU ops
+and one blended store per VS instruction, ~12 host instructions instead of
+~200), with the dots and the zero rule scalar because the reference's
+accumulation order is not associative.
+
 **Price:** the compiled transform evaluator was priced at **9.5-10.7% menu
-wall** (§243, flagged high risk); the fill-path hoist already landed in D5.
-Post-D1 the menu transform is 2.2-2.5 s of the wall; the triangle transform is
-~202 ms, so this is a menu item.
+wall** (§243, flagged high risk); that estimate is superseded by §248's
+measurement (a negative). The fill-path hoist already landed in D5.
+Post-D1 the menu transform is 2.2-3.7 s of the wall (measured 3.72 s this
+session); the triangle transform is ~230 ms, so this is a menu item.
 
 **Acceptance:** >=10% menu wall on 3/3 interleaved pairs (or >=20% `executeMs`
 when the wall is host-noise bound), `--jit-timing` on every leg, exact anchors,

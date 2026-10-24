@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **D6 - Device remainder: compiled transform execution and the fill path** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **D7 - Boot path: make the first 100M steps cheaper** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** D7 (Boot path: make the first 100M steps cheaper), G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 17.
+**Phase score:** 79.9% (86.34 of 108). **Next:** G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 18.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -821,6 +821,64 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (forty-eighth; D6 priced by building it - the compiled
+transform evaluator is exact but 3.2x slower than the interpreter, so the
+device-remainder item closes negative - decisions §248).**
+
+- **Why build it.** §243 priced "a compiled transform evaluator" at 1.5-1.7 s of
+  capture = **9.5-10.7% menu wall**, flagged high risk, and §244 called it
+  at-or-below the bar on its own. A price that straddles the bar cannot be
+  settled by another estimate, so D6's first checkbox (the price measurement)
+  was answered by building the evaluator.
+- **The stage, measured first (pre-change build, sampled 1/64).** Menu 1B
+  `gl+replace`: **11,439,040 vertices / 138,269,607 VS instructions (12.1 each)
+  at 325 ns/vertex = 3.72 s = 19.3% of a 19.24 s wall**. Triangle: 63,524
+  vertices at 3,609 ns (27.7 instructions, transcendental-heavy) = 229 ms = 3.2%.
+  So this is a menu item and its whole ceiling is 19.3% of the wall.
+- **What was built (reverted).** One `DynamicMethod` per plan, emitted from the
+  plan's **own decoded instruction list** (never a second decoder), with flat
+  four-component files for constants/inputs/outputs; the reference's zero rule
+  (`a == 0 || b == 0 -> +0.0f` as compute-then-overwrite, so `0 * inf` cannot
+  leak a NaN), the `0.0f`-seeded left-to-right `dp3`/`dp4`/`dph` accumulation,
+  `dst`, `min`/`max`/`slt`/`sge`/`arl` through the interpreter's own helpers,
+  the ILU through one shared `ComputeIluAt` body, constant-folded masked stores
+  with the bit-reversed hardware mask order, the oFog destination-prefix rule,
+  the ORB/oA0 paths and the paired-register-1 rule. `Execute(float[][])` stays
+  the public contract as a pack/unpack adapter and `ExecuteFlat` is the device
+  entry; the interpreter stays the fallback.
+- **Exactness was never the problem.** `VshProgramPlanTests` compared three
+  executors per case (`VshProgram`, the kernel, the interpreter) and 10/10
+  passed, including the 400-program fuzz, the 256-swizzle sweep, ARL-relative
+  constants with the address output, every oFog mask and the paired r1 rule.
+  All three emitter bugs were caught by that differential (swapped
+  `ComputeIluAt` arguments, a missing swizzle on relative constants, ARL
+  emitted for the undefined MAC ops 14/15).
+- **The measurement.** **1,028 ns per vertex** (11,762 ms / 11,439,040 calls,
+  unconditional) against the interpreter's **330 ns** - **3.2x slower**. Menu 1B
+  `gl+replace` **19.237 -> 31.242 s (+62.4%)** and 19.585 -> 29.548/30.938 s in
+  same-window pairs; device writes 7.39 -> 18.60 s, `runnerMs` 15,395 ->
+  25,287, GL `drawMs` 999 -> 941 ms (unchanged); triangle 7.084 -> 6.778 s (no
+  regression). Every anchor stayed exact throughout (menu `B06BA6E5` /
+  `F5D61C94`, triangle `4F1FCBC0` / `7DAB63EB`, counters
+  33,638/1,402/696/686/686, culled 41,035, GL 2,733,736 tris,
+  `BackendUnsupported=0 composedFrames=0`).
+- **Cause.** The per-instruction unrolled emission costs ~150-250 host
+  instructions per VS instruction (bounds-checked flat-array loads/stores plus
+  the per-component zero-rule branches) = **7-15 KB of straight-line code per
+  plan**, so the body cannot stay uop-cache resident: IPC ~0.6 against the
+  interpreter's ~2.5. The interpreter wins *because* its code is small - the
+  mirror image of §239's "latency-bound, not instruction-bound".
+- **Ceiling and reopen.** The bar needs an evaluator **>=2.4x the interpreter
+  (<=135 ns/vertex)**; this design is 3.2x slower, so its ceiling is <=0% and
+  §243's 9.5-10.7% is repriced to a negative. Reopen only with a *different*
+  emission priced by building it: a 4-component `Vector128` emission (~12 host
+  instructions per VS instruction) with the dots and the zero rule scalar,
+  because the reference's accumulation order is not associative.
+- **Gates.** Tree reverted to HEAD byte-identical; re-verified in this window -
+  menu 1B `gl+replace` `B06BA6E5`/`F5D61C94` (16.316 s), triangle
+  `4F1FCBC0`/`7DAB63EB` (6.186 s), no fault; build 0 warnings, suite **1922**
+  green, format clean. No snapshot change.
 
 **Session 2026-10-23 (forty-sixth; the GP/EP frame glue runs the guest's real
 DSP microcode and the EP output FIFO feeds a host PCM sink - P1.3 and P1.4 land,
