@@ -30,10 +30,10 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
   the error that rule prevents).
 - Rows do not gate merges. The gates are the accurate-mode 1B goldens and the
   ktest smoke; this matrix decides *what fidelity work is worth doing*.
-- Real Xbox ISOs are **not rows**. They are local compatibility/benchmark
-  probes (`docs/research-notes/real-game-probes.md`): never committed, never
-  gates, and a row is added only after a run reaches a gameplay frame or a
-  documented wait.
+- Real Xbox ISOs are **the M-G lead acceptance, not merge gates** (operator
+  decision 2026-10-24). They are tracked in
+  `docs/research-notes/real-game-probes.md`: never committed, never CI, and a
+  row is added only after a run reaches a gameplay frame or a documented wait.
 - Update a row in the same change that alters its behavior, with the commit and
   the measured evidence.
 - A fidelity landing must cite the row it fixes and the histogram that proves
@@ -44,26 +44,24 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
   sample and a benchmark probe). Reference orientation:
   `docs/research-notes/gpu-reference-map.md`.
 
-### Local real-game probes
+### Local real-game probes (the M-G lead acceptance)
 
-The operator's `D:\Samples\XBOXReady` ISOs are tracked in
-`docs/research-notes/real-game-probes.md`.  First results (2026-10-23):
+**2026-10-24:** retail gameplay is the lead milestone (M-G). The media moved:
+`D:\Samples\XBOXReady` no longer exists; the 37 ISOs are at
+`H:\Tests\XBOXTest` (compat/benchmark media, never gates). 4x4 Evo 2 is not in
+the set. The oracle is xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO with
+the same firmware/EEPROM.
 
-- **007 - Agent Under Fire (USA)**: boots; at 5B steps the EIP is `0x0001FC66`
-  (the loaded XBE), 201 flips, 2,672 draws, no fault.  The first frame is still
-  the boot animation; gameplay is not yet claimed.
-- **4x4 Evo 2 (USA)**: boots; at 5B steps the EIP is `0x8001A68C` (kernel idle),
-  no fault, 219 flips.  It is waiting, not executing game code - the first
-  real-game compatibility gap to triage.
+- **007 - Agent Under Fire [NTSC-U][Redump]**: boots; at 5B steps the EIP is
+  `0x0001FC66` (the loaded XBE), 201 flips, 2,672 draws, no fault. The first
+  frame is still the boot animation; gameplay is the M-G target (MG1).
+- **Second title**: picked from the 37 in MG2 after 007 reaches gameplay.
 
 **Answer for the compatibility question:** XGrid boots retail discs but **does
-not yet claim playable real games**. Both probes reach the loaded game image (or
-a wait) with no fault, but neither reaches a gameplay frame: 007 is still showing
-the boot animation at 5B steps and 4x4 Evo 2 sits in the kernel idle loop. The
-verified, measured surface is the homebrew corpus above (17 samples); real-game
-rows are added only after a run reaches a gameplay frame or a documented wait.
-
-These are probes, not rows.  The gate media remains `data/test-samples/`.
+not yet claim playable real games**; M-G exists to change that. A real-game row
+is added only after a run reaches a gameplay frame or a documented wait. These
+rows are acceptance, not merge gates; the gate media remains
+`data/test-samples/`.
 
 ## The harness (one invocation per row)
 

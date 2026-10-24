@@ -1,17 +1,18 @@
 {
   "schema": 1,
   "updated": "2026-10-24",
-  "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
+  "objective": "Boot a retail Xbox game to gameplay first, then port the xemu engine to C# and use it to reach xemu-class speed; full managed C#; GPL-2.0 (operator decision 2026-10-24)",
   "current": {
-    "milestone": "M-D",
-    "id": "NONE",
-    "title": "No eligible queued task; add one to docs/status.json",
-    "plan": "",
-    "status": "complete",
+    "milestone": "M-G",
+    "id": "MG0",
+    "title": "Retail gameplay triage + xemu oracle harness",
+    "plan": "E1a",
+    "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "",
-    "price": ""
+    "acceptance": "The 007 ISO is run to its park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM, and one candidate second title is sampled; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (D:\\Samples\\XBOXReady is gone; the ISOs live at H:\\Tests\\XBOXTest) and xemu.toml / xemu-oracle.ps1 take an ISO.",
+    "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply).",
+    "bar": "correctness"
   },
   "position": {
     "host": "H1",
@@ -53,12 +54,18 @@
       "steps": 792800535,
       "log_sha": "CA5D3867",
       "log_bytes": 40797
+    },
+    "gameplay": {
+      "target": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXTest)",
+      "state": "XBE executes; boot animation at 5B steps; gameplay not yet reached",
+      "second": "no second title selected (4x4 Evo 2 media is no longer present)",
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM"
     }
   },
   "result": {
     "points": 86.34,
-    "weight": 108,
-    "percent": 79.9
+    "weight": 118,
+    "percent": 73.2
   },
   "phases": [
     {
@@ -228,9 +235,171 @@
       "weight": 3,
       "done": 55,
       "track": "Performance & finish"
+    },
+    {
+      "p": 24,
+      "name": "Retail gameplay & xemu port",
+      "weight": 10,
+      "done": 0,
+      "track": "Retail & port"
     }
   ],
-  "queue": [],
+  "queue": [
+    {
+      "id": "MG0",
+      "title": "Retail gameplay triage + xemu oracle harness",
+      "status": "active",
+      "depends": [],
+      "plan": "E1a",
+      "bar": "correctness",
+      "acceptance": "The 007 ISO is run to its park with the xemu 0.8.139 oracle on the same media and the same firmware/EEPROM, and one candidate second title is sampled; a written report names, for each title, the guest EIP, the thread/wait object, the last device interaction and the xemu state at the same guest time; exactly one blocker is selected with a measured citation (method histogram, kernel import or device register); the media table is corrected (D:\\Samples\\XBOXReady is gone; the ISOs live at H:\\Tests\\XBOXTest) and xemu.toml / xemu-oracle.ps1 take an ISO.",
+      "price": "1-2 sessions, measurement only; correctness bar (the performance bar does not apply)."
+    },
+    {
+      "id": "MG1",
+      "title": "007 to a gameplay frame",
+      "status": "queued",
+      "depends": [
+        "MG0"
+      ],
+      "plan": "E1a",
+      "bar": "correctness",
+      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four fast 1B anchors, the four accurate goldens and the ktest log stay byte-identical.",
+      "price": "2-5 sessions, sized by MG0; correctness bar (no wall claim)."
+    },
+    {
+      "id": "MG2",
+      "title": "Second retail title: gameplay or a documented wait",
+      "status": "queued",
+      "depends": [
+        "MG1"
+      ],
+      "plan": "E1a",
+      "bar": "correctness",
+      "acceptance": "A second title from H:\\Tests\\XBOXTest reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, xemu comparison); the media and probe docs are updated; no gate regression.",
+      "price": "1-3 sessions; correctness bar."
+    },
+    {
+      "id": "MG3",
+      "title": "Retail rows + one-command probe harness",
+      "status": "queued",
+      "depends": [
+        "MG2"
+      ],
+      "plan": "E1a",
+      "bar": "correctness",
+      "acceptance": "scripts/retail-game-probe.ps1 runs one ISO through XGrid and xemu and writes both screenshots plus a step/state report; the first real-game rows land in docs/compatibility.md with the command, the step anchor and the xemu comparison.",
+      "price": "1 session; correctness bar."
+    },
+    {
+      "id": "MP1",
+      "title": "CPU engine: QEMU TCG-shaped translator prototype",
+      "status": "queued",
+      "depends": [
+        "MG3"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "One hot loop (the guest idle loop) and one full gate leg execute bit-exactly through the ported translator against the current engine (RAM/CPU SHAs and counters identical in exact mode); ns/member and host instructions/member are reported; no other module changes.",
+      "price": "tcg 22.6k + accel 19.1k C LOC; prototype 4-6 sessions, full engine 20+; bar: the prototype must beat the current raw runner on one hot loop by >=2x ns/member with bit-exact behavior, else stop at the prototype and re-price M-D."
+    },
+    {
+      "id": "MP2",
+      "title": "Memory: softmmu translate + TLB port",
+      "status": "queued",
+      "depends": [
+        "MP1"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "The ported memory path replaces AddressSpace's translate/TLB behind the existing seam; both 1B fast anchors and both accurate RAM/CPU SHAs exact; page-fault, watchpoint and MMIO tests exact.",
+      "price": "2-4 sessions; correctness bar; exactness is the acceptance."
+    },
+    {
+      "id": "MP3",
+      "title": "NV2A PGRAPH core: the 72 declined methods, context DMA, immediate mode",
+      "status": "queued",
+      "depends": [
+        "MP2"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "Every one of the 73 recorded methods is handled or declined with a measured reason and a corpus/histogram citation; context DMA, immediate mode, window clip and per-pixel mip LOD decode; the software 1B anchors stay exact.",
+      "price": "4-6 sessions; correctness bar (compatibility), no wall claim."
+    },
+    {
+      "id": "MP4",
+      "title": "NV2A GL renderer port (xemu pgraph/gl + the glsl it needs)",
+      "status": "queued",
+      "depends": [
+        "MP3"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "The 22-row matrix is re-verified or re-baselined with violations=0; the retail screenshots match; batching, sampler parity and one-writer composition are preserved; BackendUnsupported=0 fatal=0.",
+      "price": "5-8 sessions; correctness bar; this is G2's reopen condition (b), the operator re-scope to compatibility."
+    },
+    {
+      "id": "MP5",
+      "title": "APU: VP mixer + AC97 codec (audible output)",
+      "status": "queued",
+      "depends": [
+        "MP4"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "A retail title produces non-silent PCM through --audio-out with the VP mixer running; the AC97 codec path answers the guest; no gate regression.",
+      "price": "3-5 sessions; correctness bar; timing parity, not sample-exact."
+    },
+    {
+      "id": "MP6",
+      "title": "Storage: IDE/ATAPI + block layer (qcow2/CHD/ISO)",
+      "status": "queued",
+      "depends": [
+        "MP5"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "The ported block layer serves the gate HDD and the retail ISO byte-identically; retail loads advance; the ktest log stays byte-identical.",
+      "price": "3-5 sessions; correctness bar."
+    },
+    {
+      "id": "MP7",
+      "title": "USB/OHCI + XID port",
+      "status": "queued",
+      "depends": [
+        "MP6"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "Hub/XID enumeration is identical to the reference; a scripted pad input reaches a retail title; the nxdk usb row stays exact.",
+      "price": "2-4 sessions; correctness bar."
+    },
+    {
+      "id": "MP8",
+      "title": "PCI/SMBus/SMC/EEPROM/nvnet port",
+      "status": "queued",
+      "depends": [
+        "MP7"
+      ],
+      "plan": "E1b",
+      "bar": "correctness",
+      "acceptance": "Register/IRQ parity against xemu; the DHCP DISCOVER frame is field-identical; SMC/EEPROM state round-trips; no gate regression.",
+      "price": "2-4 sessions; correctness bar."
+    },
+    {
+      "id": "MD9",
+      "title": "Post-port re-baseline + the xemu-class budget",
+      "status": "queued",
+      "depends": [
+        "MP1"
+      ],
+      "plan": "E1c",
+      "bar": "perf",
+      "acceptance": "Both gate titles and the retail titles are re-baselined on the ported engine; a budget table of measured ceilings sums to the 1B band (or a written restatement); the first slice is selected by that table and the per-slice 10% bar is replaced by the budget.",
+      "price": "2 sessions of measurement, then the density program; the ported translator is the lever (78 host instructions/member today)."
+    }
+  ],
   "done": [
     {
       "id": "P1.0",
@@ -493,6 +662,8 @@
     "no_generic_commit_messages": true,
     "row_scoped_corpus": true,
     "full_sweep_at_milestone_only": true,
-    "stop_after_two_failed_iterations": true
+    "stop_after_two_failed_iterations": true,
+    "operator_order_2026_10_24": "gameplay first, then the xemu port, then speed; the 2026-10-14 no-real-games rule is superseded (retail ISOs are the lead acceptance, never merge gates)",
+    "perf_bar": "applies to M-D slices only; M-G and M-P are correctness tasks whose price is a session budget"
   }
 }

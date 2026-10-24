@@ -137,19 +137,40 @@ task is closed with `-Negative -Task <id> -Evidence ... -Reopen ...`, and
 serializes one active task per repository. The full contract is
 `docs/repofleet-worker.md`.
 
-## Development direction (required; course-corrected 2026-10-22)
+## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 20.
+**Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
+
+**Operator decision 2026-10-24 - the order is M-G -> M-P -> M-D.**
+
+1. **M-G: boot a retail game to a gameplay frame, at any speed.** 007 - Agent
+   Under Fire is the target; xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO
+   is the oracle; the media lives at `H:\Tests\XBOXTest` (`D:\Samples\XBOXReady`
+   is gone). The 2026-10-14 "no real Xbox games" rule is **superseded** - retail
+   ISOs are the lead acceptance now, still never merge gates.
+2. **M-P: port the entire xemu engine to managed C#** (CPU TCG-shaped
+   translator, memory/softmmu, NV2A core + GL, APU VP mixer + AC'97,
+   storage/block, USB, PCI/SMBus/SMC/net), each module behind the existing seams
+   with an exact differential and its provenance. The CPU TCG is now a port
+   target: the 78 host instructions per served member are the density gap the
+   old plan never priced.
+3. **M-D: xemu-class speed after the port**, decided by a milestone budget (sum
+   of measured ceilings), not the old per-slice 10% bar.
+
+The live queue is `docs/status.json`; the task detail is
+`ImplementationPlan.md` E1a (M-G), E1b (M-P), E1c (M-D).
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
 `docs/research-notes/jit-track-charter.md`; corpus plan:
 `docs/research-notes/compatibility-corpus.md`; sample matrix:
 `docs/compatibility.md`. **The long-run objective is xemu-class performance or
-better** (operator decision 2026-10-22). Hard rules:
+better, scheduled after M-G/M-P** (operator decision 2026-10-24). Hard rules:
 
 1. **Track C (performance) leads; the 2026-10-20 freeze is lifted.** The GL
    present path is done (~1.3 s of the menu wall, was ~9.9 s), and the campaign
@@ -559,7 +580,8 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   as the next slice, no codegen). T5 007 long probe CLOSED-unrun — stuck
   past every review point with no checkpoint return, then closed by
   **standing operator rule: no real Xbox games at this stage; all title
-  work uses `data/test-samples/`** (`triangle.xbe`, `nxdk-hello/led/
+  work uses `data/test-samples/`** (superseded 2026-10-24: retail gameplay is
+  M-G; the ISOs at `H:\Tests\XBOXTest` are the lead acceptance) (`triangle.xbe`, `nxdk-hello/led/
   mesh/triangle/`, `kernel-test-suite-default.xbe`); 007 probes deferred.
   **1250 tests.** Poll-discipline lesson folded into the BOSS protocol.
 - **Wave 10 (2026-10-14, §§128–130; five tasks, all green, three merges).**
@@ -3243,7 +3265,9 @@ reverted.
    2-leg 1B spec goldens PASS + `--block-exec` cross-check PASS.
    **1359/1359 tests**, format clean.
 3. **Standing operator rule: NO real Xbox games.** All title work uses
-   `data/test-samples/`. 007/real-game probes deferred.
+   `data/test-samples/`. 007/real-game probes deferred. **Superseded
+   2026-10-24:** retail gameplay is M-G; the ISOs at `H:\Tests\XBOXTest` are the
+   lead acceptance (never merge gates), and the xemu port (M-P) follows.
 4. **Operator decision: swapchain/windowing** — brief filed at
    `docs/research-notes/gpu-swapchain-brief.md` (O2 = opt-in `--window`,
    pure user32/gdi32 interop on the existing WGL context, vsync off,

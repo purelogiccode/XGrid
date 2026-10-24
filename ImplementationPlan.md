@@ -1,9 +1,11 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 20.
+**Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -75,20 +77,54 @@ queued -> priced -> active -> validating -> done
 - Running the full 22-row corpus after every slice.
 - A generic commit message (`Task (RepoFleet task #37)`) with no task id.
 
-## E1. Current milestone: M-D (xemu-class)
+## E1. Current milestone: M-G (retail gameplay first)
 
-**Target:** triangle `gl+replace` ≤ 1.20 s and menu ≤ 1.36 s at 1B, with the
-fast engine, measured against xemu where an oracle exists.
-**Current:** the generated position block at the top of this file is the source
-(1B fast: triangle 5.72-6.15 s, menu 15.6-17.5 s; ~4.9x / ~11.7x from the band).
-**Exit:** the target band, or a written restatement from D8 if no measured engine
-option clears the bar. The milestone is not "done" on a single leg.
+**Operator decision 2026-10-24 - the order is now:**
 
-### The budget the target implies (measured 2026-10-23)
+1. **M-G - boot a game, at any speed.** A retail title reaches a gameplay
+   frame. Speed is explicitly out of scope and the performance bar does not
+   apply.
+2. **M-P - port the xemu engine to C#.** The whole engine, module by module,
+   full managed C#, GPL-2.0 provenance. This is the vehicle for both
+   compatibility and speed.
+3. **M-D - xemu-class speed.** After the port. The 1B band stays the reference;
+   the per-slice 10% bar is replaced by a milestone budget (E1c).
+
+**Why the change.** The previous order (performance first) ended with an empty
+queue, a restated target and a measured 4.9x / 11.7x gap. The operator has
+re-scoped: a game that boots is the product; speed follows; and the reference
+engine is ported rather than re-derived. The 2026-10-14 "no real Xbox games"
+rule is **superseded** - retail ISOs are now the lead acceptance (never merge
+gates; `data/test-samples/` stays gate currency).
+
+**M-G target:** `007 - Agent Under Fire [NTSC-U][Redump].iso` reaches its first
+interactive gameplay frame, advanced by a scripted pad input, on the current
+engine, verified against **xemu 0.8.139** (`data/xemu/xemu.exe`) running the
+same ISO with the same firmware/EEPROM.
+
+**Definition of a gameplay frame (binding).** All four must hold:
+
+1. The frame is produced by the title's own render path - not the boot
+   animation; the draw/vertex-program stream differs from the boot shape.
+2. A scripted pad input advances guest state (menu -> mission, or an in-game
+   transition) and the frame changes accordingly.
+3. The xemu 0.8.139 frame at the same guest time matches within the documented
+   screenshot policy (no cross-renderer pixel-exact claim; the software frame
+   is the comparison).
+4. No fault, no hang, and the four fast 1B anchors, the four accurate goldens
+   and the ktest log stay byte-identical.
+
+**Media correction (2026-10-24).** `D:\Samples\XBOXReady` no longer exists; the
+37 ISOs live at `H:\Tests\XBOXTest` (compat/benchmark media, never gates).
+4x4 Evo 2 is not in the set, so MG2 picks its second title from the 37.
+`data/xemu/xemu.toml` still points at the old path and a missing filename - MG0
+fixes both and makes `scripts/xemu-oracle.ps1` take an ISO.
+
+### The budget the target implies (M-D reference, measured 2026-10-23)
 
 D2 (post-D1) and D3's stage timers, 1B fast `gl+replace`, gate media. Device
 writes are *inclusive* (they execute inside the non-JIT runs), so the rows do not
-sum.
+sum. Retained as the M-D reference; it does not gate M-G or M-P.
 
 | stage | triangle | menu | note |
 |---|---:|---:|---|
@@ -99,66 +135,200 @@ sum.
 | - device writes | 0.62 s | 6.57 s pre-D5 | draw flushes are the bulk |
 | boot, steps 0-100M | **1.93 s** | 1.62 s | shared by every 1B leg |
 
-**What the target actually requires:** 1B ≤ 1.20 s means the boot must cost
-≤ 0.20 s and the remaining 900M steps ≤ 1.00 s (**≤ 1.11 ns/step** including
-device and non-JIT). Today the 900M steady state is ~3.9 s triangle (4.3 ns/step)
-and ~14.0 s menu (15.6 ns/step), and the native runner is 6.3 / 14.8 ns per
-served member. **The boot alone is 1.6x the triangle target, and the triangle's
-runner alone is 2.9x it** - so no combination of the priced single-digit slices
-closes the band. That is the arithmetic D8 exists to resolve.
-
-**D8 resolved it (2026-10-24, §247): the target is restated.** The measured
-attribution (8.47 ns per served member triangle / 17.51 menu, uniform across
-member classes; a self-loop fast edge built and reverted at <= 0%) shows no
-engine-shape option at >= 10% wall / >= 20% engine, so the 1B band is retired as
-a milestone target and kept as the real-time reference. The currency is now
-**ns per served member outside the device stage** and **wall per presented
-frame** on the corpus rows; D6 (device) and D7 (boot/formation/non-JIT) keep
-their own >= 10% bars.
+**What the target requires:** 1B <= 1.20 s means the boot must cost <= 0.20 s
+and the remaining 900M steps <= 1.00 s (**<= 1.11 ns/step** including device and
+non-JIT). Today the 900M steady state is ~3.9 s triangle (4.3 ns/step) and
+~14.0 s menu (15.6 ns/step), and the native runner is 6.3 / 14.8 ns per served
+member. **The boot alone is 1.6x the triangle target, and the triangle's runner
+alone is 2.9x it.** D8 measured the attribution (8.47 ns per served member
+triangle / 17.51 menu, uniform across member classes; 78 emitted host
+instructions per member) and restated the target because no priced *slice*
+cleared the bar. **The port changes that arithmetic:** a TCG-shaped translator
+is a code-density change (MP1), which is the one lever the attribution table
+points at and the old plan never priced.
 
 ### Reporting currency (binding)
 
-- Primary: **ns per served member** (steady state = the 1B leg minus the 100M
-  leg), **wall per presented frame**, and **real-time ratio** (guest steps per
-  host second / 733M).
-- 1B walls remain continuity anchors, never the only evidence. Every A/B leg
-  carries `--jit-timing` and the 100M leg so a boot/device win is reported as
-  such instead of being read as an engine win (D3's lesson).
-- A task is "on track" only if it moves a primary metric, or if it delivers a
-  measured decision that changes the target.
+- **M-G:** gameplay reached (yes/no), the xemu frame comparison and the step
+  anchor. Wall is reported, never claimed.
+- **M-P:** module parity (exact anchors, oracle diffs, the row matrix) plus the
+  port provenance. A module that moves no gate still needs its differential.
+- **M-D:** ns per served member, wall per presented frame, real-time ratio, and
+  the milestone budget (E1c). 1B walls remain continuity anchors, never the only
+  evidence; every A/B leg carries `--jit-timing` and the 100M leg.
+
+### The queue (WIP = 1; `docs/status.json` is the authority)
 
 | id | task | status | depends | acceptance |
 |---|---|---|---|---|
-| D1 | C6 draw-flush half: compile or cache the active transform program | done 2026-10-23 (§241) | — | ≥10% wall or ≥20% engine; exact anchors; no vertex output change |
-| D2 | C7 engine-shape decision | done 2026-10-23 (§242) | D1 | a written decision with a measured ceiling per option |
-| D3 | Menu-only wall decomposition and the top menu item | done 2026-10-23 (§243, negative: the hoist alone is -8.0%) | D2 | the menu-only ~13 s is decomposed and the top item is priced |
-| D4 | Conditional: implement the engine shape selected by D8 | parked (negative; reopens only if D8 selects a candidate) | D2, D8 | ≥20% engine or ≥10% wall on 3/3 interleaved pairs |
-| D5 | Remaining device/MMIO: hot NV2A method dispatch | done 2026-10-23 (§244: combined draw-flush slice -10.33/-17.20/-10.29%) | D1 | ≥10% menu wall; exact counters |
-| D6 | Device remainder: compiled transform evaluator + fill path | queued after D8 | D5 | ≥10% menu wall; exact anchors; executor fallback |
-| D7 | Boot path: make the first 100M steps cheaper | queued after D8 | D5 | ≥10% triangle wall; exact anchors; ktest log identical |
-| D8 | Engine-shape decision v2: the per-member/edge and boot probe | **negative 2026-10-24 (§247: measured; no option >= 20% engine, target restated)** | D5 | a measured attribution table + one selected option with a ceiling |
-| G1 | NV2A PGRAPH core port (xemu 0.8.139 `pgraph/`) | queued after D7 | D8 | 73 recorded methods handled/declined; formats decoded; software anchors exact |
-| G2 | GL renderer port (xemu `pgraph/gl` + the glsl pieces it needs) | queued after G1 | G1 | 22 rows re-verified/re-baselined; batching/sampler/composition preserved |
-| G3 | Consolidated gate re-baseline for the ported NV2A | **done 2026-10-24 (§252: all four fast anchors, four accurate goldens, 22 corpus rows, ktest 7/7 and PACKAGE PASS in one commit; six stale anchors re-baselined)** | G2 | all anchors + corpus + ktest + package gate in one place |
-| P1 | Host audio: port the xemu 0.8.139 APU GP/EP DSP + PCM sink (GPL-2.0, full C#) | done 2026-10-23 (§246) | — | the ported DSP executes the guest microcode and a real voice stream produces PCM; no gate regression |
-| R1 | Release: packaging, installer, licensing | done 2026-10-23 (R1.1: 4-RID packages + license review + release notes) | — | reproducible packages + GPL-2.0/third-party license review |
+| MG0 | Retail gameplay triage + xemu oracle harness | **active** | - | wait report for both ISOs, one blocker selected, media/oracle fixed |
+| MG1 | 007 to a gameplay frame | queued | MG0 | the four-part gameplay definition above |
+| MG2 | Second retail title: gameplay or a documented wait | queued | MG1 | same evidence, second ISO |
+| MG3 | Retail rows + one-command probe harness | queued | MG2 | `retail-game-probe.ps1` + the first rows |
+| MP1 | CPU engine: QEMU TCG-shaped translator prototype | queued | MG3 | >=2x ns/member on a hot loop, bit-exact, or stop |
+| MP2 | Memory: softmmu translate + TLB port | queued | MP1 | exact RAM/CPU SHAs, faults and watchpoints |
+| MP3 | NV2A PGRAPH core (72 declined methods, context DMA, immediate mode) | queued | MP2 | handled/declined with citations; software anchors exact |
+| MP4 | NV2A GL renderer port | queued | MP3 | 22 rows, `violations=0`, retail screenshots |
+| MP5 | APU: VP mixer + AC'97 codec | queued | MP4 | non-silent PCM from a retail title |
+| MP6 | Storage: IDE/ATAPI + block layer | queued | MP5 | byte-identical media service; ktest log |
+| MP7 | USB/OHCI + XID port | queued | MP6 | enumeration + input reaches the game |
+| MP8 | PCI/SMBus/SMC/EEPROM/nvnet port | queued | MP7 | register/IRQ parity; DHCP frame |
+| MD9 | Post-port re-baseline + the xemu-class budget | queued | MP1 | budget table + the first slice |
 
-The queue was **D8 → D6 → D7 → G1 → G2 → G3** (WIP = 1; D8 first because it is
-a cheap measurement that decides whether the next spend is engine work or a
-target restatement). G1-G3 are the optional wholesale NV2A port in E5c: queued
-because the operator asked for it, scoped as a compatibility milestone, and
-explicitly not the path to the band. **G2 was priced by site and closed negative
-(§251)**: the removable CPU vertex stage is 4.0-4.2% of the triangle wall and the
-reference design's per-draw submission (no instancing) costs 3x the menu's gross
-saving. **G3 closed the milestone (done 2026-10-24, §252)**: every gate, all 22
-corpus rows, the ktest smoke and the package gate were verified in one commit
-and six stale anchors were re-baselined; the E5c port milestone is complete
-(G1 done, G2 negative, G3 done) and **no task is queued**. The product gaps that
-are not on this queue:
-the VP mixer / AC'97 codec (audible output) and the 4x4 retail probe's
-kernel-idle wait; both are recorded in E6 and
-`docs/research-notes/next-session.md` and are picked up as separate tasks, not
-folded into a performance slice.
+**The old queue is closed.** D1-D8, MG1-MG3, MP1 and R1 are done or measured
+negatives; E2-E6 are history, not the current task list. **The negatives stay
+binding for the old engine**, but N4/N5/N8 were measured inside the current
+emitter shape and are re-priced, not inherited, by the ported engine (E1c).
+
+## E1a. M-G - retail gameplay first (MG0-MG3)
+
+**Why this is first.** The product question is not "how fast" but "does a game
+run". The current engine already executes 007's XBE, so the milestone is a
+triage of the wait between "XBE runs" and "gameplay", not a rewrite. Every M-G
+task is a **correctness task**: the performance bar does not apply, and a
+negative is recorded only if the behavior cannot be reached.
+
+**The oracle.** xemu 0.8.139 at `data/xemu/xemu.exe`, same ISO, same
+`Complex_4627.bin` / `mcpx_1.0.bin` / `eeprom.bin`, same scripted input. The
+QEMU monitor socket fails to bind on H1, so the capture is a window screenshot
+(`scripts/xemu-oracle.ps1`); the comparison is the software frame at the same
+guest time, never a cross-renderer pixel-exact claim.
+
+### MG0 - Retail gameplay triage + xemu oracle harness (ACTIVE)
+
+- [ ] **MG0.1 Fix the media and the oracle config.** Point `data/xemu/xemu.toml`
+  at `H:\Tests\XBOXTest\007 - Agent Under Fire [NTSC-U][Redump].iso`; add an
+  `-IsoPath` parameter to `scripts/xemu-oracle.ps1` (pass `-cdrom` explicitly)
+  and a deterministic capture time. Record the 37-ISO list in
+  `docs/research-notes/real-game-probes.md` and delete the stale
+  `D:\Samples\XBOXReady` rows.
+- [ ] **MG0.2 Capture the xemu oracle.** Run xemu 0.8.139 with 007 and a fixed
+  input script; capture the first gameplay frame (screenshot + wall time) and
+  the boot timeline (dashboard -> disc -> title -> gameplay).
+- [ ] **MG0.3 Run XGrid to the same guest time.** Boot 007 from the ISO on the
+  gate HDD with `--jit --jit-spin --jit-raw`, a `--pad-script` and
+  `--save-state` anchors at 5B, 20B and 60B; capture the frames and the park
+  EIP/thread. (The historical audio gate was ~56B; the DSP port landed after
+  it, so re-run rather than trust the old probe.)
+- [ ] **MG0.4 Write the wait report.** For each title: guest EIP, the thread and
+  wait object, the last device interaction (DVD read, pad poll, APU, NV2A
+  fence), and the xemu state at the same guest time. One page in
+  `docs/research-notes/real-game-probes.md`.
+- [ ] **MG0.5 Select exactly one blocker** with a measured citation (method
+  histogram, kernel import, device register). If the blocker is a missing
+  device behavior, name the xemu 0.8.139 file that owns it (the port candidate).
+- [ ] **MG0.6 Close.** `pwsh -File scripts/status.ps1 -Complete -Evidence ...`;
+  commit the harness + the report + status in one commit.
+
+### MG1 - 007 to a gameplay frame
+
+- [ ] **MG1.1 Reproduce MG0's blocker** with the exact command and step anchor.
+- [ ] **MG1.2 Fix the smallest behavior** (device register, wait/IRQ, kernel
+  object) and keep every other path unchanged.
+- [ ] **MG1.3 Prove the four-part gameplay definition** (E1) with the xemu frame
+  comparison and a scripted input edge.
+- [ ] **MG1.4 Gates:** four fast 1B anchors, four accurate goldens, ktest log
+  byte-identical; `BackendUnsupported=0`.
+- [ ] **MG1.5 Close** with the frame SHAs, the step anchor and the xemu capture.
+
+### MG2 - Second retail title: gameplay or a documented wait
+
+- [ ] Pick a second ISO from `H:\Tests\XBOXTest` (prefer one that reaches its
+  XBE quickly), run the MG0 recipe, and record gameplay or a documented wait.
+- [ ] No gate regression; the media/probe docs are updated.
+
+### MG3 - Retail rows + one-command probe harness
+
+- [ ] `scripts/retail-game-probe.ps1 <iso>`: XGrid + xemu, both screenshots,
+  the step/state report, one JSON row.
+- [ ] Add the first real-game rows to `docs/compatibility.md` (command, step
+  anchor, xemu comparison). Rows are evidence, not merge gates.
+
+## E1b. M-P - the xemu engine port (MP1-MP8)
+
+**What "entire engine" means.** Every xemu module on the title's execution
+path, ported to managed C# behind XGrid's existing seams
+(`IMmioDevice`/`IGpuMemory`/`IPgraphBackend`), with the provenance rules in
+`docs/porting-policy.md`. Out of scope by design: the Qt/SDL UI, the Vulkan
+renderer, the host TCG backends (KVM/WHPX/HAXM), and the block formats no title
+needs. "Entire" is the program, not one task; WIP = 1 and each module is priced
+and gated on its own differential.
+
+| module | xemu 0.8.139 source | C LOC | XGrid today | task |
+|---|---|---:|---|---|
+| CPU TCG core | `tcg/` + `accel/tcg/` | 22.6k + 19.1k | IL + raw emitter | MP1 |
+| memory/softmmu | `softmmu/`, `exec/` | ~15k | AddressSpace/MMU | MP2 |
+| NV2A PGRAPH core | `hw/xbox/nv2a/` (no `gl/`, `vk/`, `glsl/`) | ~12k | `Nv2aMmio` | MP3 |
+| NV2A GL | `hw/xbox/nv2a/pgraph/gl/` + needed `glsl/` | ~11k | `XGrid.GpuGl` | MP4 |
+| APU | `hw/xbox/mcpx/apu/` (DSP already ported) | ~4k | `McpxApuDevice` | MP5 |
+| storage | `hw/ide/` + the block formats used | 9.2k + subset | `XGrid.Storage` | MP6 |
+| USB | `hw/usb/` | 35.2k | `OhciUsbController` | MP7 |
+| PCI/SMBus/SMC/nvnet | `hw/xbox/*.c`, `hw/net/` | ~8k | `XGrid.Bus` | MP8 |
+
+**Order.** MP1 first: it is both the speed lever and the biggest risk, and its
+stop rule can end the port cheaply if the density does not move. Then the
+compatibility modules (MP3-MP5) and the remaining plumbing (MP6-MP8). MP2 is
+the memory foundation MP1 and MP3 both need.
+
+**Invariants (all port tasks).**
+
+- The software rasterizer stays: it is the accurate-mode gate currency and the
+  oracle for the GL port.
+- The seams stay; the port adapts to them and does not import QEMU's
+  `MemoryRegion`/thread model.
+- Every ported file carries SPDX + `Ported from` + a `THIRD_PARTY_NOTICES.md`
+  row (`scripts/package-verify.ps1` enforces it).
+- Software 1B anchors, the four accurate goldens and the ktest log stay
+  byte-identical; only GL frames may be re-baselined, and only with the policy
+  diff (`violations=0`, `maxDelta<=1`).
+- A module is "done" when its differential is exact, not when it compiles.
+
+### MP1 - CPU engine: QEMU TCG-shaped translator prototype
+
+- [ ] **MP1.1 Price by building:** one hot loop (the guest idle loop) through a
+  ported TCG-shaped translator, differentially exact against the current raw
+  engine; report ns/member and host instructions/member.
+- [ ] **MP1.2 Stop rule:** if it is not >=2x the current runner on that loop with
+  bit-exact behavior, stop at the prototype, record the negative, and re-price
+  M-D. Do not grind a third emission design.
+- [ ] **MP1.3 If it clears:** one full gate leg in exact mode, then the module
+  plan for the full CPU (lazy flags, guest-register allocation, chaining).
+
+### MP2-MP8
+
+Each task follows the same recipe: port the module behind the seam, write the
+differential first (exact RAM/CPU SHAs, fault/watchpoint cases, the row matrix),
+then replace the old path; keep the old path as the fallback until the
+differential is exact. The acceptance for each is in `docs/status.json`.
+
+## E1c. M-D v2 - xemu-class speed after the port (MD9)
+
+**The rule change.** The old per-slice bar (>=10% wall or >=20% engine) is
+replaced by a **milestone budget**: a table of measured ceilings that *sums* to
+the target. A task may be 3% on its own if the budget says the set reaches the
+band; the evidence rules per task are unchanged (exact anchors, 3 interleaved
+pairs, flag-off byte-identical, ktest log identical). The old bar is what turned
+the last six levers into negatives and then restated the target.
+
+**The lever.** The ported translator (MP1) is the density change the attribution
+table points at: 78 emitted host instructions per served member today, ~25-30
+cycles per member at IPC ~3. If MP1 cannot beat that, M-D is restated honestly as
+a scope decision, not silently retired.
+
+**Negatives.** N1-N14 stay binding for the old engine. N4/N5/N8 were measured
+inside the raw emitter's shape and are **re-priced** by the ported engine (a new
+measurement, not a retry). N3 (trace formation) and N10 (`JitSpecSlice`) are
+re-priced by MP1's block shape.
+
+### MD9 - Post-port re-baseline + the xemu-class budget
+
+- [ ] **MD9.1 Re-baseline** both gate titles and the retail titles on the ported
+  engine (fast + accurate, gl + sw, `--jit-timing`).
+- [ ] **MD9.2 Write the budget table** (measured ceiling per remaining item,
+  summed against 1.20 s / 1.36 s) or a written restatement with the number that
+  prevents it.
+- [ ] **MD9.3 Promote the first slice** from the budget, not from a per-slice
+  bar.
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -717,6 +887,11 @@ project is GPL-2.0, same as xemu/QEMU. It is a sized option in D8 because the ra
 emitter is already bit-exact on both 1B gates and faster than xemu on the
 CPU-bound ktest; the measured gap is the boot/short-block/device shape, and D8
 prices a TCG-shaped port against the edge/formation options.
+
+> **Superseded 2026-10-24:** the CPU TCG **is** now a port target (**MP1** in
+> E1b). D8's attribution (78 emitted host instructions per served member,
+> 8.47 ns/member, uniform across member classes) is the density gap the old plan
+> never priced, and the operator re-scoped the port to the whole engine.
 
 WIP = 1: the queue is **D8 → D6 → D7** (see E1/E5b); `docs/status.json` is the
 authority.
@@ -4416,8 +4591,9 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 21 CLI & Frontend | 3 | 75% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f`** and is now a product shell: Settings → Renderer picks software or the host-GPU OpenGL backend (§§221/223 — headless WGL created on the emulation thread, logged fallback, thread-correct snapshot save/load), per-title overrides V2 (`title:XXXXXXXX`, a CHD resolved through the §222 XDVDFS reader) offer `inherit`/`software`/`OpenGL` per title (§§217/219d/224), persistent EEPROM state (`--eeprom-out`), `--ffp`/`--tex-filter` settings, XInput pad merged with the keyboard (§206), save/load UI (F8/F9 + picker), frame stepping (F7/Shift+F7, §220e), and the display follows the display controller rather than the renderer (`TryCopyDisplayFrame` + a recently-presented-surface ring, §208/§234: a direct-framebuffer guest shows its own buffer under OpenGL, a flipping title shows the GPU frame),  `tests/XGrid.Frontend.Tests` (50 tests) + `tools/frontend-smoke` cover it; §204 CLI observability (`--frame-first`, `readback=on\|off`, `methods=`); **§234 (34th session): the display source follows the display controller under a GPU backend** (a recently-presented-surface ring: a direct-framebuffer guest shows RAM, a flipping title shows the GPU frame; the session-level latch is gone and both renderers verify at the same 306,817-px dashboard picture), and the `tools/frontend-smoke` harness (broken since §217) is fixed and now in `XGrid.sln`; since the previous refresh the Library shows each XBE's title id (§228) and `--gpu-time`'s combiner rows print `tm=`/`sf=`/`reach[...]` (§§228/230) and `ts&lt;n&gt;=` per texture slot (§236)**; the OpenGL product renderer now samples cube maps exactly (gap 12 closed, §236: 2 pixels of 307,200 from the software frame at both corpus anchors); remaining: **host audio output** (needs APU GP/EP DSP execution), debugger panes, performance-overlay polish |
 | 22 Save States & Replay | 2 | 30% | snapshot/replay — **V1 save states landed and productized**: `.xgs` covers CPU/RAM/machine scalars plus every registered device, per-device versions (NV2A **v9**, APU **v3** with a v2 fallback, machine section v1), unknown sections skipped on load, and the frontend marshals save/load onto the emulation thread (a load resets backend state; 72 MB round trip with GL attached, §223). Remaining: replay recording (initial state + inputs + timing events), a whole-file checksum, and version migration |
 | 23 Release | 3 | 55% | packaging, installer, licensing review; **compatibility list exists — `docs/compatibility.md` with 22 measured rows over 17 samples (both backends, flag variants, phase anchors), reproducible commands, the `scripts/boot-to-first-frame.ps1` harness and the `scripts/build-nxdk-samples.ps1` toolchain (Track E; M-B met: ≥8 rows, ≥2 beyond dashboard/triangle/ktest)**. **Since the last refresh:** a full CI pipeline (`.github/workflows/ci.yml` + `release.yml`, `81bc8b3`: Release build and the full suite on Windows/GNU-Linux/macOS, coverage/inspectcode/vulnerability gates, CodeQL, dependency review and Dependabot), a zero-warning / zero-inspectcode-finding tree (`8840073`/`2b7d144`) and generated golden images dropped from git (`6fbf46a`); packaging and the licensing review are done (R1.1: scripts/package.ps1 + scripts/package-verify.ps1, docs/release-licensing-review.md, docs/release-notes/v0.1.0.md); an OS installer and code signing/notarization remain and are deferred by scope decision |
+| 24 Retail gameplay & xemu port | 10 | 0% | 007 to a gameplay frame on the current engine (G0-G3), then the wholesale xemu 0.8.139 port to managed C#: CPU TCG-shaped translator (P1), memory/softmmu (P2), NV2A PGRAPH core (P3), NV2A GL renderer (P4), APU VP mixer + AC97 codec (P5), storage/block (P6), USB (P7), PCI/SMBus/SMC/nvnet (P8); D9 re-baselines and sets the xemu-class budget |
 
-**Result: ~78% complete overall** (weighted: 84.43 of 108 weight-points = 78.2%, recomputed 2026-10-22 (39th session) after §§237–240: P15 CPU JIT 88→90, P18 GPU Optimization 76→78 and P20 Automated Testing 81→82, with P11 NV2A 92→93 and P21 CLI & Frontend 73→75 carried over from the §234/§236 refreshes; was 84.10 = 77.9% after §236: P21 CLI & Frontend 74->75, the OpenGL renderer's computed-mode panel; was 84.07 = 77.8% after §234: P11 NV2A 92->93 and P21 CLI & Frontend 73->74 (the GPU display source follows the display controller; the C7 encoder is priced out and moves no phase); was 83.89 = 77.7% after the §226–§230 B3 slices and the CI/quality landing: P11 NV2A 91→92, P20 Automated Testing 80→81, P21 CLI & Frontend 72→73 and P23 Release 14→18; was 83.56 = 77.4% after the §206–§225 refresh: P3 CPU 95→96, P8 Storage 85→86, P11 NV2A 88→91, P18 GPU Optimization 72→76, P20 Automated Testing 73→80, P21 CLI & Frontend 63→72, P22 Save States 5→30 and P23 Release 11→14; was 81.72 = 75.7% after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work — and the 2026-10-22 operator decision changes it again: xemu-class performance or better is the long-run objective, so Track C is re-opened and leads (C4-C6). The score only moves with landed work; §§237–§240 are the first landed performance slices, which is why it moves now).
+**Result: 73.2% (86.34 of 118)** after the 2026-10-24 scope change added phase 24 (Retail gameplay & xemu port, weight 10, done 0; the 24-phase score was 79.9%, 86.34 of 108). The pre-change history reads: ~78% complete overall (weighted: 84.43 of 108 weight-points = 78.2%, recomputed 2026-10-22 (39th session) after §§237–240: P15 CPU JIT 88→90, P18 GPU Optimization 76→78 and P20 Automated Testing 81→82, with P11 NV2A 92→93 and P21 CLI & Frontend 73→75 carried over from the §234/§236 refreshes; was 84.10 = 77.9% after §236: P21 CLI & Frontend 74->75, the OpenGL renderer's computed-mode panel; was 84.07 = 77.8% after §234: P11 NV2A 92->93 and P21 CLI & Frontend 73->74 (the GPU display source follows the display controller; the C7 encoder is priced out and moves no phase); was 83.89 = 77.7% after the §226–§230 B3 slices and the CI/quality landing: P11 NV2A 91→92, P20 Automated Testing 80→81, P21 CLI & Frontend 72→73 and P23 Release 14→18; was 83.56 = 77.4% after the §206–§225 refresh: P3 CPU 95→96, P8 Storage 85→86, P11 NV2A 88→91, P18 GPU Optimization 72→76, P20 Automated Testing 73→80, P21 CLI & Frontend 63→72, P22 Save States 5→30 and P23 Release 11→14; was 81.72 = 75.7% after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work — and the 2026-10-22 operator decision changes it again: xemu-class performance or better is the long-run objective, so Track C is re-opened and leads (C4-C6). The score only moves with landed work; §§237–§240 are the first landed performance slices, which is why it moves now).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:

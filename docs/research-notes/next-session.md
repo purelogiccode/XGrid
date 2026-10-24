@@ -1,6 +1,17 @@
-# Next session instructions (updated 2026-10-24, after G3 closed the port milestone: every gate, all 22 corpus rows, the ktest smoke and the package gate verified in one commit, six stale anchors re-baselined; the queue is empty)
+# Next session instructions (updated 2026-10-24: the order is M-G (boot a game) -> M-P (xemu port) -> M-D (speed); the queue is MG0)
 
-> **G3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
+> **ORDER CHANGE (2026-10-24) - gameplay first, then the xemu port, then speed.**
+> The operator re-scoped the project: **M-G** = one retail title reaches a
+> gameplay frame at any speed; **M-P** = port the xemu 0.8.139 engine to managed
+> C#; **M-D** = xemu-class speed after the port. The queue is in
+> `docs/status.json` and the detail is `ImplementationPlan.md` E1a/E1b/E1c.
+> **Start with MG0** (`pwsh -File scripts/status.ps1 -Next`), not with the
+> performance options below. The 2026-10-14 "no real Xbox games" rule is
+> superseded: retail ISOs at `H:\Tests\XBOXTest` are the lead acceptance now
+> (never gates). `D:\Samples\XBOXReady` is gone; `data\xemu\xemu.toml` and
+> `scripts/xemu-oracle.ps1` still point at it - fixing both is MG0.1.
+
+> **MG3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
 > nothing regressed.** One Release build, one test run (**1965** green), then
 > every gate on the same binaries: the four fast 1B anchors byte-identical
 > (triangle gl `4F1FCBC0`/`7DAB63EB`, menu gl `B06BA6E5`/`F5D61C94`, triangle sw
@@ -348,18 +359,13 @@ triangle (+7.9%)** - so G2 closed negative (decisions §251).
 
 ## 2. Recommended next session - pick one
 
-> **Queue mapping (2026-10-24):** the options below are superseded by
-> `docs/status.json`. Option A was **D6** (compiled transform evaluator) and
-> closed negative (§248); Option B's edge-removal idea was **D8** and closed
-> negative (§247/§249); Option C stays the corpus backlog. **G2 closed negative
-> (§251)** and **G3 closed the milestone (done 2026-10-24, §252)** - the
-> consolidated re-baseline verified every gate, all 22 corpus rows, the ktest
-> smoke and the package gate in one commit, so **the queue is empty** and the
-> next session needs an operator task. The bounded vertex-stage slice G2's
-> reopen condition names (a GPU
-> vertex program that keeps the instanced submission and removes >=10% of the
-> triangle wall) is the only new performance shape in this file's Option A; do
-> not start it without that measurement.
+> **Queue mapping (2026-10-24):** the options below are the **M-D backlog**;
+> the current order is **M-G -> M-P -> M-D** (`docs/status.json`). Option A was
+> **D6** (compiled transform evaluator) and closed negative (§248); Option B's
+> edge-removal idea was **D8** and closed negative (§247/§249); Option C stays
+> the corpus backlog. **G2 closed negative (§251)** and **G3 closed the port
+> milestone (done 2026-10-24, §252)**. Do not start any option below before G0-G3
+> and the P1 prototype: M-D is now scheduled after the port.
 
 ### Option A (Track C/B): the interpreted vertex program is 428 ms of the triangle and ~x2.7 of the menu
 

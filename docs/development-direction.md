@@ -1,15 +1,42 @@
-# XGrid — Development Direction (canonical, revised 2026-10-22)
+# XGrid — Development Direction (canonical, revised 2026-10-24)
 
 Direct development. The wave runner is retired (`tools/wave/` to be deleted).
 No BOSS protocol, no worktrees, no detached servers. `AGENTS.md` stays the
 day-to-day agent entry point; this file is the priority order every agent follows.
 
-## 0. Course correction (2026-10-22): xemu-class performance is the long-run objective
+## 0. Course correction (2026-10-24): gameplay first, then the xemu port, then speed
+
+**Operator decision.** The order is now **M-G (boot a game, any speed) -> M-P
+(port the xemu engine to C#) -> M-D (xemu-class speed)**. The previous order
+(performance first) is closed: its queue emptied with a restated target and a
+measured 4.9x / 11.7x gap. The 2026-10-14 "no real Xbox games" rule is
+**superseded** - retail ISOs at `H:\Tests\XBOXTest` are the lead acceptance for
+M-G (never merge gates; `data/test-samples/` stays gate currency).
+
+**M-G exit:** `007 - Agent Under Fire [NTSC-U][Redump].iso` reaches its first
+interactive gameplay frame, advanced by a scripted pad input, verified against
+xemu 0.8.139 (`data/xemu/xemu.exe`) on the same ISO. The four-part definition
+is in `ImplementationPlan.md` E1. Speed is not claimed.
+
+**M-P exit:** every xemu 0.8.139 module on the title's execution path is ported
+to managed C# behind XGrid's seams, with its differential exact and its
+provenance recorded. Out of scope: the Qt/SDL UI, the Vulkan renderer, the host
+TCG backends and the block formats no title needs.
+
+**M-D exit:** the ported engine is re-baselined and the xemu-class budget (a sum
+of measured ceilings, not a per-slice 10% bar) either reaches the 1B band or is
+restated with the number that prevents it. The CPU TCG **is** now a port target
+(MP1) - the 78 host instructions per served member are the density gap the old
+plan never priced.
+
+## 0a. Previous correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** SEQUENCE COMPLETE - no eligible queued task. Add one to docs/status.json.
-**Phase score:** 79.9% (86.34 of 108).
-**Do not retry without a new measurement:** see docs/status.json for all 20.
+**Current status (2026-10-24):** M-G / **MG0 - Retail gameplay triage + xemu oracle harness** (active, attempt 0).
+**Gameplay (M-G):** 007 - Agent Under Fire [NTSC-U][Redump].iso (H:\Tests\XBOXTest) - XBE executes; boot animation at 5B steps; gameplay not yet reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
+**Phase score:** 73.2% (86.34 of 118). **Next:** MG1 (007 to a gameplay frame), MG2 (Second retail title: gameplay or a documented wait), MG3 (Retail rows + one-command probe harness), MP1 (CPU engine: QEMU TCG-shaped translator prototype).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
 > The generated block above is the current status; the narrative below is
@@ -248,6 +275,11 @@ that serves none of B/E/P is rejected even if it is interesting.
 
 ## 1. Priority stack (in order)
 
+**Status 2026-10-24: the order is M-G -> M-P -> M-D (section 0).** The
+performance stack below is retained as the M-D reference and is not the current
+task order; the live queue is `docs/status.json` and the task detail is
+`ImplementationPlan.md` E1a/E1b/E1c.
+
 **Status 2026-10-22 late (§232): C4 measured NULL; the levers are now measured,
 not assumed.** The host-pointer translate probe was implemented and priced on an
 interleaved 1B A/B (menu `runnerMs` 15,872 → 16,026, triangle 3,407 → 3,382,
@@ -437,6 +469,16 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 ## 3. Milestone ladder
 
+- **M-G (retail gameplay) - the lead milestone as of 2026-10-24:** one retail
+  title reaches a gameplay frame, at any speed, verified against xemu 0.8.139 on
+  the same ISO. Exit is the four-part definition in `ImplementationPlan.md` E1;
+  the first task is MG0 (triage + oracle harness). Retail ISOs are acceptance,
+  never merge gates.
+- **M-P (xemu engine port) - the vehicle:** the xemu 0.8.139 engine is ported
+  to managed C# module by module (CPU TCG-shaped translator, memory/softmmu,
+  NV2A core + GL, APU VP mixer + AC'97, storage/block, USB, PCI/SMBus/SMC/net),
+  each with its differential exact and its provenance recorded. The software
+  rasterizer and the existing seams stay.
 - **M-A (Track B, present path):** menu fast+gl ≤ 24 s, triangle ≤ 6 s at 1B;
   `BackendUnsupported=0`; SHAs/counters exact; the Avalonia display is driven
   by presents, not a per-frame readback. **Status 2026-10-20 (§204):** the GL
@@ -487,11 +529,12 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
 
 - **M-C (Track P, playability):** audio output, physical pad, save/load in the
   frontend; no CLI required.
-- **M-D (xemu-class) — the lead milestone as of 2026-10-22:** triangle
+- **M-D (xemu-class) - after the port (2026-10-24):** triangle
   ≤ 1.2 s (xemu 830 Msteps/s), menu ≤ 1.36 s (real-time band) at 1B with the
-  fast engine; measured against xemu where an oracle exists. This is now the
-  long-run objective and the C4-C6 program's exit; it is no longer "after
-  A/B/C". ktest 2B already beats xemu (9-10 s vs 15 s).
+  fast engine; measured against xemu where an oracle exists. This is the
+  long-run objective, now scheduled after M-P; its rule is the milestone budget
+  in `ImplementationPlan.md` E1c, not the old per-slice 10% bar. ktest 2B
+  already beats xemu (9-10 s vs 15 s).
 
 ## 4. Rules
 
@@ -566,6 +609,14 @@ the historical precedent, not a pattern to extend).
 
 ## 6. Standing gates
 
+- **M-G (gameplay):** the four-part gameplay definition (`ImplementationPlan.md`
+  E1) with the xemu 0.8.139 frame at the same guest time, a scripted input edge,
+  no fault, and the four fast 1B anchors + four accurate goldens + ktest log
+  byte-identical. Gameplay is acceptance, not a merge gate.
+- **M-P (port):** the module's differential is exact (RAM/CPU SHAs, fault and
+  watchpoint cases, or the row matrix), the software anchors stay exact, and
+  `scripts/package-verify.ps1` passes with the new notices rows. A module is not
+  "done" because it compiles.
 - `dotnet build XGrid.sln -c Release`, `dotnet test`, `dotnet format
   --verify-no-changes` clean; warnings are errors.
 - Release changes: `scripts/package.ps1` on every affected RID and

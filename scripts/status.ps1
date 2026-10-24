@@ -83,6 +83,7 @@ function Set-CurrentFromQueue($q) {
         attempts = 0
         acceptance = [string]$q.acceptance
         price = [string]$q.price
+        bar = [string]$q.bar
     }
 }
 function Set-CurrentComplete {
@@ -109,8 +110,16 @@ function Get-TaskPrompt($q, [int]$attempt) {
         "",
         "Work only on the active task in docs/status.json ($($q.id)). Read ImplementationPlan.md -> Execution plan (current) -> $plan ($($q.id)) and follow its checkboxes in order.",
         "1. Start with ``pwsh -File scripts/status.ps1 -Check -Show``; if the check fails, stop and report. Do not start any other task or a docs refresh.",
-        "2. Price first: the first unchecked box is the price measurement. If the ceiling is <10% wall or <20% engine, run the negative close below and stop.",
-        "3. If the ceiling clears the bar, follow the remaining checkboxes exactly: acceptance test first, smallest implementation, exact 1B anchors, 3 interleaved pairs, the definition of done.",
+        $(if ([string]$q.bar -eq 'correctness') {
+            "2. This is a CORRECTNESS task: the performance bar (>=10% wall / >=20% engine) does NOT apply. The price is the session budget; the acceptance is behavior (gameplay, oracle parity, port fidelity). A negative is recorded only if the behavior cannot be reached, with the measurement that shows it."
+        } else {
+            "2. Price first: the first unchecked box is the price measurement. If the ceiling is <10% wall or <20% engine, run the negative close below and stop."
+        }),
+        $(if ([string]$q.bar -eq 'correctness') {
+            "3. Follow the remaining checkboxes exactly: the acceptance differential first, the smallest implementation, the exact anchors, and the definition of done. The acceptance is behavior, not wall clock."
+        } else {
+            "3. If the ceiling clears the bar, follow the remaining checkboxes exactly: acceptance test first, smallest implementation, exact 1B anchors, 3 interleaved pairs, the definition of done."
+        }),
         "4. Do not retry a measured negative (docs/status.json negatives); cite a new measurement or stop.",
         "5. Close with the matching command below. Commit code + tests + status + graph in one commit. Commit yourself so the message follows this protocol; if you leave changes uncommitted, the harness commits them as ``<title> (RepoFleet task #N)``.",
         "6. Finish with: task id, what changed, evidence (numbers/anchors), and any stop condition.",
@@ -225,7 +234,7 @@ foreach ($p in $status.phases) {
     $totalWeight += [double]$p.weight
     $donePoints += [double]$p.weight * [double]$p.done / 100.0
 }
-if ($phaseIds.Count -ne 24) { Fail "expected 24 phases, found $($phaseIds.Count)" }
+if ($phaseIds.Count -ne 25) { Fail "expected 25 phases, found $($phaseIds.Count)" }
 if ([Math]::Abs($totalWeight - [double]$status.result.weight) -gt 0.001) {
     Fail "phase weights sum to $totalWeight, result.weight is $($status.result.weight)"
 }
@@ -324,7 +333,7 @@ foreach ($line in [System.IO.File]::ReadAllLines($planPath)) {
         $planPhases[[int]$Matches[1]] = @([int]$Matches[2], [int]$Matches[3])
     }
 }
-if ($planPhases.Count -ne 24) { Fail "plan assessment table has $($planPhases.Count) phases, expected 24" }
+if ($planPhases.Count -ne 25) { Fail "plan assessment table has $($planPhases.Count) phases, expected 25" }
 foreach ($p in $status.phases) {
     $pl = $planPhases[[int]$p.p]
     if ($null -eq $pl) { Fail "phase $($p.p): missing from the plan assessment table" }
@@ -350,12 +359,18 @@ function Get-StatusBlock {
     $neg = @($status.negatives |
         Select-Object -First 6 |
         ForEach-Object { "$($_.id) $($_.title)" })
+    $gp = $status.position.gameplay
+    $gameplayLine = if ($null -ne $gp) {
+        "**Gameplay ($($status.current.milestone)):** $($gp.target) - $($gp.state). Oracle: $($gp.oracle)."
+    } else { $null }
+    $positionPrefix = if ($null -ne $gp) { "Perf reference (M-D, deferred; $($status.position.host), $($steps), $($status.position.mode))" } else { "Position ($($status.position.host), $($steps), $($status.position.mode))" }
     @(
         "**Current status ($($status.updated)):** $($status.current.milestone) / **$($status.current.id) - $($status.current.title)** ($($status.current.status), attempt $($status.current.attempts)).",
-        "**Position ($($status.position.host), $($steps), $($status.position.mode)):** triangle gl+replace $($status.position.legs.triangle_gl_replace.wall) / sw $($status.position.legs.triangle_sw.wall); menu gl+replace $($status.position.legs.menu_gl_replace.wall) / sw $($status.position.legs.menu_sw.wall); gap ~$($status.position.gap.triangle_x)x / ~$($status.position.gap.menu_x)x.",
+        $gameplayLine,
+        "**$($positionPrefix):** triangle gl+replace $($status.position.legs.triangle_gl_replace.wall) / sw $($status.position.legs.triangle_sw.wall); menu gl+replace $($status.position.legs.menu_gl_replace.wall) / sw $($status.position.legs.menu_sw.wall); gap ~$($status.position.gap.triangle_x)x / ~$($status.position.gap.menu_x)x.",
         "**Phase score:** $($status.result.percent)% ($($status.result.points) of $($status.result.weight)). **Next:** $($next -join ', ').",
         "**Do not retry without a new measurement:** $($neg -join ', '). See docs/status.json for all $($status.negatives.Count)."
-    )
+    ) | Where-Object { $_ }
 }
 
 $pattern = '(?s)(<!-- STATUS:BEGIN[^>]*-->).*?(<!-- STATUS:END -->)'
@@ -384,7 +399,7 @@ foreach ($doc in $docs) {
 
 # ---------- completion graph ----------
 if ($doSync -and -not $NoSync) {
-    $trackNames = @('LLE core (real console chain)', 'Performance & finish')
+    $trackNames = @($status.phases | ForEach-Object { [string]$_.track } | Select-Object -Unique)
     $tracks = @()
     foreach ($trackName in $trackNames) {
         $phases = @($status.phases |
@@ -430,6 +445,9 @@ if ($Show -or $failures.Count -gt 0) {
         Write-Host "Current: $($status.current.milestone) / $($status.current.id) - $($status.current.title) [$($status.current.status), attempt $($status.current.attempts)]"
     }
     Write-Host "Position: triangle $($status.position.legs.triangle_gl_replace.wall) gl+replace, menu $($status.position.legs.menu_gl_replace.wall); gap ~$($status.position.gap.triangle_x)x / ~$($status.position.gap.menu_x)x"
+    if ($null -ne $status.position.gameplay) {
+        Write-Host "Gameplay: $($status.position.gameplay.target) - $($status.position.gameplay.state)"
+    }
     Write-Host "Score: $($status.result.percent)% ($($status.result.points) of $($status.result.weight))"
     Write-Host 'Queue:'
     foreach ($q in $status.queue) {

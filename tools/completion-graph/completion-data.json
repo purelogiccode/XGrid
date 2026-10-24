@@ -156,6 +156,17 @@
           "done": 55
         }
       ]
+    },
+    {
+      "name": "Retail & port",
+      "phases": [
+        {
+          "p": 24,
+          "name": "Retail gameplay & xemu port",
+          "weight": 10,
+          "done": 0
+        }
+      ]
     }
   ]
 }
