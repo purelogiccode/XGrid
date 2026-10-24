@@ -213,7 +213,9 @@ guest time, never a cross-renderer pixel-exact claim.
   `D:\Samples\XBOXReady` rows.
 - [ ] **MG0.2 Capture the xemu oracle.** Run xemu 0.8.139 with 007 and a fixed
   input script; capture the first gameplay frame (screenshot + wall time) and
-  the boot timeline (dashboard -> disc -> title -> gameplay).
+  the boot timeline (dashboard -> disc -> title -> gameplay). Capture the client
+  area at **1x scale / 640x480**, no window scaling or overlay, and record the
+  guest time of the frame from the boot timeline.
 - [ ] **MG0.3 Run XGrid to the same guest time.** Boot 007 from
   `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso` on the
   gate HDD with `--jit --jit-spin --jit-raw`, a `--pad-script` and
@@ -237,8 +239,11 @@ guest time, never a cross-renderer pixel-exact claim.
   object) and keep every other path unchanged.
 - [ ] **MG1.3 Prove the four-part gameplay definition** (E1) with the xemu frame
   comparison and a scripted input edge.
-- [ ] **MG1.4 Gates:** four fast 1B anchors, four accurate goldens, ktest log
-  byte-identical; `BackendUnsupported=0`.
+- [ ] **MG1.4 Gates:** the four accurate goldens and the ktest log stay
+  byte-identical, and the accurate RAM/CPU SHAs are exact. A fix that
+  legitimately moves a homebrew anchor (a shared device/timing behavior) may
+  re-baseline it in the same commit with the measured reason - the §218
+  precedent. Fast-mode 1B anchors are continuity anchors, not gate currency.
 - [ ] **MG1.5 Close** with the frame SHAs, the step anchor and the xemu capture.
 
 ### MG2 - Second retail title: gameplay or a documented wait
@@ -276,10 +281,15 @@ and gated on its own differential.
 | USB | `hw/usb/` | 35.2k | `OhciUsbController` | MP7 |
 | PCI/SMBus/SMC/nvnet | `hw/xbox/*.c`, `hw/net/` | ~8k | `XGrid.Bus` | MP8 |
 
-**Order.** MP1 first: it is both the speed lever and the biggest risk, and its
-stop rule can end the port cheaply if the density does not move. Then the
-compatibility modules (MP3-MP5) and the remaining plumbing (MP6-MP8). MP2 is
-the memory foundation MP1 and MP3 both need.
+**Order and budget.** MP1 first: it is both the speed lever and the biggest risk,
+and its stop rule can end the port cheaply if the density does not move. Then the
+compatibility modules (MP3-MP5) and the remaining plumbing (MP6-MP8); MP2 is the
+memory foundation MP1 and MP3 both need. **The queue order is a default, not a
+lock:** if MG0/MG1 names a device blocker, that module is promoted ahead of MP1
+(reorder `docs/status.json`; `depends` is for hard prerequisites only). **Program
+size:** ~136k C LOC across the table, realistically 40-60 sessions. Two
+checkpoints: after MP1 (does the prototype clear 2x?) and after MP2 (is the full
+CPU port on track?). Stop the program if either answer is no.
 
 **Invariants (all port tasks).**
 
@@ -289,9 +299,14 @@ the memory foundation MP1 and MP3 both need.
   `MemoryRegion`/thread model.
 - Every ported file carries SPDX + `Ported from` + a `THIRD_PARTY_NOTICES.md`
   row (`scripts/package-verify.ps1` enforces it).
-- Software 1B anchors, the four accurate goldens and the ktest log stay
-  byte-identical; only GL frames may be re-baselined, and only with the policy
-  diff (`violations=0`, `maxDelta<=1`).
+- The four accurate goldens and the ktest log stay byte-identical, and the
+  accurate RAM/CPU SHAs are exact. **Fast-mode 1B anchors are not gate
+  currency** (the dual-mode contract): a port that legitimately moves them is
+  re-baselined with the documented policy (`violations=0`, the measured reason,
+  the same commit), exactly as G3 did. Do not block a correct port on a fast
+  anchor.
+- GL frames may be re-baselined only with the policy diff (`violations=0`,
+  `maxDelta<=1` where the software frame is the oracle).
 - A module is "done" when its differential is exact, not when it compiles.
 
 ### MP1 - CPU engine: QEMU TCG-shaped translator prototype

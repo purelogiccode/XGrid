@@ -265,7 +265,7 @@
       ],
       "plan": "E1a",
       "bar": "correctness",
-      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady) reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four fast 1B anchors, the four accurate goldens and the ktest log stay byte-identical.",
+      "acceptance": "007 - Agent Under Fire [NTSC-U][Redump].iso (H:\\Tests\\XBOXReady) reaches its first interactive gameplay frame, advanced by a scripted pad input, matching the xemu 0.8.139 frame at the same guest time within the documented screenshot policy, with no fault; the four accurate goldens and the ktest log stay byte-identical, and any homebrew anchor the fix legitimately moves is re-baselined in the same commit with the measured reason.",
       "price": "2-5 sessions, sized by MG0; correctness bar (no wall claim)."
     },
     {
@@ -301,7 +301,7 @@
       ],
       "plan": "E1b",
       "bar": "correctness",
-      "acceptance": "One hot loop (the guest idle loop) and one full gate leg execute bit-exactly through the ported translator against the current engine (RAM/CPU SHAs and counters identical in exact mode); ns/member and host instructions/member are reported; no other module changes.",
+      "acceptance": "One hot loop (the guest idle loop) and one full gate leg execute bit-exactly through the ported translator against the current engine in exact mode (accurate RAM/CPU SHAs and counters identical); ns/member and host instructions/member are reported; fast-mode anchors may move and are re-baselined with the policy; no other module changes.",
       "price": "tcg 22.6k + accel 19.1k C LOC; prototype 4-6 sessions, full engine 20+; bar: the prototype must beat the current raw runner on one hot loop by >=2x ns/member with bit-exact behavior, else stop at the prototype and re-price M-D."
     },
     {
@@ -309,7 +309,7 @@
       "title": "Memory: softmmu translate + TLB port",
       "status": "queued",
       "depends": [
-        "MP1"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -321,7 +321,7 @@
       "title": "NV2A PGRAPH core: the 72 declined methods, context DMA, immediate mode",
       "status": "queued",
       "depends": [
-        "MP2"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -333,7 +333,7 @@
       "title": "NV2A GL renderer port (xemu pgraph/gl + the glsl it needs)",
       "status": "queued",
       "depends": [
-        "MP3"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -345,7 +345,7 @@
       "title": "APU: VP mixer + AC97 codec (audible output)",
       "status": "queued",
       "depends": [
-        "MP4"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -357,7 +357,7 @@
       "title": "Storage: IDE/ATAPI + block layer (qcow2/CHD/ISO)",
       "status": "queued",
       "depends": [
-        "MP5"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -369,7 +369,7 @@
       "title": "USB/OHCI + XID port",
       "status": "queued",
       "depends": [
-        "MP6"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
@@ -381,7 +381,7 @@
       "title": "PCI/SMBus/SMC/EEPROM/nvnet port",
       "status": "queued",
       "depends": [
-        "MP7"
+        "MG3"
       ],
       "plan": "E1b",
       "bar": "correctness",
