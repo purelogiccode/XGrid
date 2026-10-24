@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-22)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **D7 - Boot path: make the first 100M steps cheaper** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G1 - NV2A PGRAPH core port (xemu 0.8.139 pgraph/)** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 18.
+**Phase score:** 79.9% (86.34 of 108). **Next:** G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
 <!-- STATUS:END -->
 
 Canonical order: `docs/development-direction.md`; fast-mode charter:
@@ -821,6 +821,43 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (forty-ninth; D7 priced the boot cell by cell - the unbuilt
+heads are 99.6% RAM code and building them is 15x negative, so the boot item
+closes negative with the largest unretried lever at 2.5% - decisions §249).**
+
+- **The plan's box, measured.** The unbuilt-head population is now a permanent
+  `--jit-timing` line: `JitBlockCache` records each head's fetch source at first
+  sight, `FormatJitAttribution` prints `pending heads=… bySource[ram/image/
+  other/unknown] visits[…] formMsPerBlock=… buildAllMs=…`, and
+  `JitAttributionTests` pins it. On the gate titles: **triangle 100M 34,197
+  heads (34,046 RAM / 151 image) / 1B 55,005 (54,854 / 151); menu 31,720 /
+  31,257**. The image share is the MCPX ROM, whose blocks already form, so the
+  "prebuilt/plan cache for immutable image code" is worth 0.9-1.4%.
+- **Building them all is negative by construction:** 19.4 s triangle / 5.1 s
+  menu at the measured 0.16-0.39 ms per block, against non-JIT cells of 1.26 s /
+  1.71 s (15x / 3x). The heads are 1-3-visit cold code.
+- **The boot split (0-100M):** 1.87-1.91 s triangle (31% of a 6.1 s wall) =
+  runner 41-45% + formation 25% (Iced `Assemble` 18-21%) + non-JIT 26% +
+  lookup/loop 4%; menu 1.62 s. The non-JIT cell splits 34% `Step` (3.2 us each,
+  1.1 us of it the byte-at-a-time 15-byte fetch) / 66% spec body (270-358
+  ns/member: the interpreter handler plus an 88-106 ns cursor loop). `Form` is
+  0.14 us a call, not the cost.
+- **Ceiling:** Step fast fetch 2.5% of the wall, spec loop 1.8%, image plan
+  cache 0.9-1.4% -> **5.7% of new levers**; the encoder (N4) is 9.4% and below
+  its own >10% reopen bar, trace (N3) 3-5%, the runner (D8) uniform. The plan's
+  combined shape is 10.8% on paper and 87% N4, so D7 closes **negative** and
+  hands the target to D8 option (e) / G1-G3. The three sized candidates are in
+  §249 for a future engine task.
+- **Gates:** all four fast 1B anchors byte-identical (triangle gl
+  `4F1FCBC0`/`7DAB63EB`, menu gl `B06BA6E5`/`F5D61C94`, triangle sw
+  `B45254CA`/`7DAB63EB` 57,663,082 px, menu sw `34973510`/`F5D61C94`
+  253,998,498 px); ktest XGrid leg parks at `4E03A` after **792,800,535**
+  steps with the **40,797 B `CA5D3867` log byte-identical** and `ktest_diff.py`
+  reads **SMOKE PASS 7/7** against the stored xemu oracle log (the smoke script
+  still needs the absent sibling `CSharp_XISOSharp` to rebuild the ISO, so the
+  leg ran with the script's own command on the prepared media). Suite 1922 ->
+  **1925**, build 0 warnings, format clean. No snapshot change.
 
 **Session 2026-10-24 (forty-eighth; D6 priced by building it - the compiled
 transform evaluator is exact but 3.2x slower than the interpreter, so the

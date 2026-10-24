@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "D7",
-    "title": "Boot path: make the first 100M steps cheaper",
-    "plan": "E5b",
+    "id": "G1",
+    "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
+    "plan": "E5c",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": ">=10% triangle wall on 3/3 interleaved pairs, exact anchors, byte-identical ktest log; else record the negative and hand the target to D8 option (e)",
-    "price": "boot is 1.93 s triangle / 1.62 s menu (33%/10% of the walls); encoder 8.0%/4.9% and trace 3-5% are the known levers"
+    "acceptance": "73 recorded methods handled or declined with a measured reason, DXT/paletted/mipmap/multistage formats decoded, software 1B anchors and ktest log byte-identical, notices rows for every ported file",
+    "price": "~4.7k C LOC, 4-6 sessions; compatibility item, not the draw cost (device stage 41.6% menu / 10.9% triangle)"
   },
   "position": {
     "host": "H1",
@@ -232,23 +232,10 @@
   ],
   "queue": [
     {
-      "id": "D7",
-      "title": "Boot path: make the first 100M steps cheaper",
-      "plan": "E5b",
-      "status": "active",
-      "depends": [
-        "D5",
-        "D8"
-      ],
-      "acceptance": ">=10% triangle wall on 3/3 interleaved pairs, exact anchors, byte-identical ktest log; else record the negative and hand the target to D8 option (e)",
-      "price": "boot is 1.93 s triangle / 1.62 s menu (33%/10% of the walls); encoder 8.0%/4.9% and trace 3-5% are the known levers",
-      "evidence": []
-    },
-    {
       "id": "G1",
       "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
       "plan": "E5c",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "D8"
       ],
@@ -500,6 +487,13 @@
       "date": "2026-10-24",
       "evidence": "D6 priced by building it: the compiled transform evaluator (one DynamicMethod per plan emitted from the plan's own decode, flat constant/input/output files, the reference zero rule/dots/masks/oFog prefix/ARL-relative constants, the interpreter kept as the fallback) is differentially EXACT - VshProgramPlanTests 10/10 comparing VshProgram vs kernel vs interpreter incl. the 400-program fuzz - and 3.2x SLOWER than the interpreter: 1,028 ns/vertex (11,762 ms / 11,439,040 calls, unconditional) vs 330 ns, so menu 1B gl+replace 19.237 -> 31.242 s (+62.4%) and 19.585 -> 29.548/30.938 s (+51/+58%) in same-window pairs, device writes 7.39 -> 18.60 s, runnerMs 15,395 -> 25,287, GL drawMs 999 -> 941 ms (unchanged), triangle 7.084 -> 6.778 s (no regression; 3% item). Every anchor exact: menu RAM B06BA6E5/CPU F5D61C94, triangle 4F1FCBC0/7DAB63EB, counters 33,638/1,402/696/686/686 culled 41,035, GL 2,733,736 tris, BackendUnsupported=0 composedFrames=0. Cause: the per-instruction unrolled emission costs ~150-250 host instructions per VS instruction (bounds-checked flat-array loads/stores plus the per-component zero-rule branches) = 7-15 KB of straight-line code per plan, so the body cannot stay uop-cache resident (IPC ~0.6 against the interpreter's ~2.5). Ceiling: the menu transform is 3.72 s = 19.3% of a 19.24 s wall, so the bar needs >=2.4x the interpreter (<=135 ns/vertex); this design is 3.2x slower -> ceiling <=0%, and S243's 9.5-10.7% is repriced to a negative. Reverted; no snapshot change (host-side only, Nv2a v9 / audio v3).",
       "reopen": "a different transform emission priced by building it and measuring <=135 ns/vertex (>=2.4x the interpreter's 325 ns); the only candidate with a plausible ceiling is a 4-component Vector128 emission (~12 host instructions per VS instruction) with the dots and the zero rule kept scalar because the reference accumulation order is not associative"
+    },
+    {
+      "id": "D7",
+      "title": "Boot path: make the first 100M steps cheaper",
+      "date": "2026-10-24",
+      "evidence": "D7 price measured (decisions 249). Boot 0-100M is 1.87-1.91 s triangle (31% of a 6.1 s wall) = runner 760-856 ms (41-45%) + formation 465-522 (25%, Iced Assemble 347-400) + non-JIT 479-525 (26%) + lookup/loop 70-80 (4%); menu 1.62 s = 691+413+445+66. New permanent --jit-timing census (JitBlockCache records each head's fetch source at first sight; JitAttribution prints pending heads/visits bySource with formMsPerBlock and buildAllMs; JitAttributionTests): pending heads triangle 34,197 at 100M / 55,005 at 1B, menu 31,720 / 31,257; by source triangle 1B ram 54,854 / image 151 / other 0, 100M ram 34,046 / image 151, menu 100M ram 31,569 / image 151 -> the image share is the MCPX ROM whose blocks already form, so a prebuilt/plan cache for immutable image code is worth 0.9-1.4%. Building all pending heads costs 19.4 s (triangle) / 5.1 s (menu) at the measured 0.16-0.39 ms per block against non-JIT cells of 1.26 / 1.71 s = 15x / 3x negative. Non-JIT split (temporary probe, removed before the commit): 34% Step (133,499 calls at 3.21 us, 150 ms of it the 15-byte byte-at-a-time fetch) / 66% spec body (2.49M members at 358 ns: handler 671 ms + cursor loop 219 ms); decoded-block Form is 43 ms over 293k calls. Ceiling: Step fast fetch 2.5% of the triangle wall, spec loop 1.8%, image plan cache 0.9-1.4% = 5.7% of new levers; encoder (N4) 9.4% and below its own >10% reopen bar, trace (N3) 3-5%, runner (D8) uniform -> no 10% wall. Gates: fast 1B triangle gl 4F1FCBC0/7DAB63EB frame 7A860ED7, menu gl B06BA6E5/F5D61C94 frame B6116DAE, triangle sw B45254CA/7DAB63EB 57,663,082 px (2706/68/34, culled 41,035), menu sw 34973510/F5D61C94 253,998,498 px (33638/1402/696/686/686); ktest parks at 4E03A after 792,800,535 steps with the 40,797 B log CA5D3867 byte-identical and SMOKE PASS 7/7 against the stored xemu oracle log; suite 1922 -> 1925, build 0 warnings, format clean; no snapshot change.",
+      "reopen": "a boot/engine lever measured at >=10% of the triangle wall or >=20% engine. The first candidate is the Step fast fetch (2.5%, exact by construction - the JIT's own TryFillDecodeEntry fetch, one translate + span instead of 15 bus reads), then the spec-run cursor loop (1.8%). N4 (encoder) reopens only with a formation profile where a 3.2x encoder saves >=10% of the wall (Assemble >= 900 ms at a 6.1 s wall; this profile reads 827 ms = 9.4%), and N3 (trace) only if the boundary population grows."
     }
   ],
   "rules": {

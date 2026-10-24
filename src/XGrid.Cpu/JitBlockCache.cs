@@ -188,12 +188,17 @@ internal sealed class JitBlockCache
     /// which matters because the guest rewrites page tables thousands of
     /// times per 100M steps.
     /// </summary>
-    public Verdict Lookup(uint headLinear, ulong generation, int buildThreshold, out JitBlock? block)
+    public Verdict Lookup(uint headLinear, ulong generation, int buildThreshold, out JitBlock? block, int fetchSource = -1)
     {
         block = null;
         if (!_heads.TryGetValue(headLinear, out Entry entry))
         {
-            _heads[headLinear] = new Entry { Generation = generation, Visits = 1 };
+            _heads[headLinear] = new Entry
+            {
+                Generation = generation,
+                Visits = 1,
+                Source = fetchSource < 0 ? (byte)255 : (byte)fetchSource,
+            };
             PendingVisits++;
             return Verdict.Pending;
         }
@@ -356,6 +361,38 @@ internal sealed class JitBlockCache
         return pending;
     }
 
+    /// <summary>
+    /// D7 census of the heads that never reached the build threshold: how many
+    /// there are and how many visits they took, by the fetch source recorded
+    /// when the head was first seen (0 RAM, 1 immutable image, 2 other,
+    /// 3 unknown), plus a histogram of their visit counts. Diagnostic only;
+    /// called once when the attribution is printed.
+    /// </summary>
+    /// <param name="headsBySource">Receives the pending head count per source.</param>
+    /// <param name="visitsBySource">Receives the pending visit count per source.</param>
+    /// <param name="visitBuckets">Receives the head count per visit bucket (1-3, 4-7, 8-15, 16+).</param>
+    /// <returns>The number of pending heads seen.</returns>
+    public int CountPendingHeadsBySource(long[] headsBySource, long[] visitsBySource, long[] visitBuckets)
+    {
+        int pending = 0;
+        foreach (Entry entry in _heads.Values)
+        {
+            if (entry.Block is not null || entry.Rejected)
+            {
+                continue;
+            }
+
+            pending++;
+            int source = entry.Source < 3 ? entry.Source : 3;
+            headsBySource[source]++;
+            visitsBySource[source] += entry.Visits;
+            int bucket = entry.Visits <= 3 ? 0 : entry.Visits <= 7 ? 1 : entry.Visits <= 15 ? 2 : 3;
+            visitBuckets[bucket]++;
+        }
+
+        return pending;
+    }
+
     private struct Entry
     {
         public ulong Generation { get; set; }
@@ -367,5 +404,8 @@ internal sealed class JitBlockCache
         public int Visits { get; set; }
 
         public int RetryAtVisits { get; set; }
+
+        /// <summary>Fetch source recorded at first sight for the D7 pending-head census (255 unknown).</summary>
+        public byte Source { get; set; }
     }
 }

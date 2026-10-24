@@ -126,6 +126,18 @@ internal sealed class JitAttribution
     /// <summary>Gets the number of memo-miss head lookups.</summary>
     public long LookupCalls { get; private set; }
 
+    /// <summary>Pending heads below the build threshold (D7 census, recorded at print time).</summary>
+    private long[] _pendingHeads = new long[4];
+
+    /// <summary>Visits taken by the pending heads, by fetch source.</summary>
+    private long[] _pendingVisits = new long[4];
+
+    /// <summary>Pending heads by visit-count bucket (1-3, 4-7, 8-15, 16+).</summary>
+    private long[] _pendingBuckets = new long[4];
+
+    /// <summary>The pending head count (0 until <see cref="NotePendingHeads"/> runs).</summary>
+    private long _pendingCount;
+
     /// <summary>Gets the ticks spent in block formation (planning + emitter + assemble + IL build).</summary>
     public long FormTicks { get; private set; }
 
@@ -256,6 +268,25 @@ internal sealed class JitAttribution
         RevalidateTicks += ticks;
     }
 
+    /// <summary>
+    /// Records the D7 census of heads that never reached the build threshold:
+    /// how many there are, their visits, and their fetch source (0 RAM,
+    /// 1 immutable image, 2 other, 3 unknown), recorded when the head was
+    /// first seen. Printed with the run's own mean formation cost, so the
+    /// "what if they were all built" price is measured, not assumed.
+    /// </summary>
+    /// <param name="count">The number of pending heads.</param>
+    /// <param name="headsBySource">Pending heads per fetch source.</param>
+    /// <param name="visitsBySource">Pending visits per fetch source.</param>
+    /// <param name="visitBuckets">Pending heads per visit bucket (1-3, 4-7, 8-15, 16+).</param>
+    public void NotePendingHeads(int count, long[] headsBySource, long[] visitsBySource, long[] visitBuckets)
+    {
+        _pendingCount = count;
+        Array.Copy(headsBySource, _pendingHeads, 4);
+        Array.Copy(visitsBySource, _pendingVisits, 4);
+        Array.Copy(visitBuckets, _pendingBuckets, 4);
+    }
+
     /// <summary>Formats the four attribution tables as diagnostic lines.</summary>
     public string Format()
     {
@@ -353,6 +384,34 @@ internal sealed class JitAttribution
         }
 
         builder.Append(']');
+
+        // D7: the heads that never reached the build threshold, by fetch
+        // source and visit count, with the run's own measured formation cost
+        // per block applied to them - the price of "build them all" instead of
+        // an estimate.
+        builder.AppendLine();
+        string[] pendingSources = ["ram", "image", "other", "unknown"];
+        builder.Append("Jit attribution pending heads=").Append(_pendingCount)
+            .Append(" visits=").Append(_pendingVisits[0] + _pendingVisits[1] + _pendingVisits[2] + _pendingVisits[3])
+            .Append(" bySource[");
+        for (int i = 0; i < pendingSources.Length; i++)
+        {
+            if (i != 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(pendingSources[i]).Append("=n:").Append(_pendingHeads[i])
+                .Append("/v:").Append(_pendingVisits[i]);
+        }
+
+        builder.Append("] visits[1-3=").Append(_pendingBuckets[0])
+            .Append(" 4-7=").Append(_pendingBuckets[1])
+            .Append(" 8-15=").Append(_pendingBuckets[2])
+            .Append(" 16+=").Append(_pendingBuckets[3]).Append(']');
+        double perBlockMs = FormAttempts == 0 ? 0 : FormTicks * NanosecondsPerTick / 1_000_000.0 / FormAttempts;
+        builder.Append(" formMsPerBlock=").Append(perBlockMs.ToString("F3", CultureInfo.InvariantCulture))
+            .Append(" buildAllMs=").Append((perBlockMs * _pendingCount).ToString("F0", CultureInfo.InvariantCulture));
         return builder.ToString();
     }
 

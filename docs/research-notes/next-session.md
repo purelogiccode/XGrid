@@ -1,4 +1,20 @@
-# Next session instructions (updated 2026-10-23, after R1 closed: the release tree and licensing review landed; the performance queue is D8 -> D6 -> D7)
+# Next session instructions (updated 2026-10-24, after D7 closed negative: the boot is priced cell by cell and the queue is G1 -> G2 -> G3)
+
+> **D7 RESULT (2026-10-24, 49th session) - the boot is measured, not a lever.**
+> The active queue is now **G1 -> G2 -> G3** (the optional NV2A/PGRAPH port,
+> `ImplementationPlan.md` E5c). D7 closed **negative** (decisions §249):
+> boot 1.87-1.91 s triangle = runner 41-45% + formation 25% (Iced `Assemble`
+> 18-21%) + non-JIT 26% + lookup 4%; the unbuilt heads are **99.6% RAM** (the
+> 151 image heads are the MCPX ROM) and building them costs 19.4 s to remove a
+> 1.26 s cell (**15x negative**). The new levers, already sized and exact:
+> `Step` fast fetch **2.5%** of the triangle wall (1.1 us of each 3.2 us Step is
+> the byte-at-a-time 15-byte fetch; the JIT's own `TryFillDecodeEntry` fetch is
+> the fix), spec-run cursor loop **1.8%**, image plan cache 0.9-1.4%. The
+> encoder (N4) is 9.4% and below its own >10% reopen bar; trace (N3) 3-5%.
+> The `--jit-timing` attribution now prints a fifth line
+> (`Jit attribution pending heads=… bySource[…] formMsPerBlock=… buildAllMs=…`).
+> Gates this session: four fast 1B anchors byte-identical, ktest 792,800,535
+> steps with the 40,797 B `CA5D3867` log and SMOKE PASS 7/7, suite 1925.
 
 > **STATUS 2026-10-23 (47th session) - the release task R1 is COMPLETE and the
 > performance queue is set.** R1.1 shipped a reproducible 4-RID release tree

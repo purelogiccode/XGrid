@@ -16632,3 +16632,136 @@ reverted build re-verified in this window: menu 1B `gl+replace` `B06BA6E5` /
 `F5D61C94` (16.316 s), triangle `4F1FCBC0` / `7DAB63EB` (6.186 s),
 `BackendUnsupported=0`, no fault; build 0 warnings; suite 1922 green (the
 compiled-path tests were reverted with the code).
+
+## 249 D7: the boot priced cell by cell - the unbuilt heads are 99.6% RAM, building them is 15x negative, and the largest unretried lever is 2.5% (2026-10-24, forty-ninth session) - D7, negative
+
+**What this is.** D7 exists to make the first 100M steps cheaper: the boot is
+**1.87-1.91 s of the triangle's 6.1 s wall (31%)** and **1.62 s of the menu's
+14.8 s (11%)**, and D8's split left three cells (runner, formation, non-JIT).
+The plan's first box was a price measurement: split the boot by stage and
+**price the unbuilt-head population by source class**, because the only shape
+that could clear 10% on paper was "encoder + a prebuilt/plan cache for
+immutable image code".  Both halves are now measured; neither clears the bar.
+
+The pending-head census is **permanent instrumentation** (`--jit-timing` only,
+free when off): `JitBlockCache` records each head's fetch source at first
+sight (0 RAM, 1 immutable image, 2 other, 255 unknown) and
+`XboxCpu.FormatJitAttribution` adds one line at print time -
+
+```
+Jit attribution pending heads=34197 visits=83860 bySource[ram=n:34046/v:83534
+  image=n:151/v:326 other=n:0/v:0 unknown=n:0/v:0]
+  visits[1-3=28472 4-7=2571 8-15=3154 16+=0] formMsPerBlock=0.373 buildAllMs=12760
+```
+
+- with `buildAllMs` = pending heads x the run's own mean formation cost per
+block, i.e. the measured price of "build them all" instead of an estimate.
+`JitAttributionTests` pins the shape (3 tests: census counts, empty without the
+attribution, smaller when the heads are built).
+
+### 1. The boot split (0-100M, gate media, fast mode, `--jit-timing`)
+
+Host window: loaded (triangle `gl+replace` 6.10-6.86 s against the recorded
+5.72-6.15 band; menu 14.77-15.80 s against 15.6-17.5), so read shares.
+
+| cell | triangle ms | menu ms |
+|---|---:|---:|
+| wall (= `Execute`) | 1,870-1,905 | 1,617-1,623 |
+| runner | 760-856 (41-45%) | 691 (43%) |
+| formation (whole; Iced `Assemble` inside) | 465-522 (25%; 347-400) | 413 (25%; 295) |
+| non-JIT (`RunSpecBlock` + `Step`) | 479-525 (26%) | 445 (27%) |
+| head lookup + loop + poll | 70-80 (4%) | 66 (4%) |
+| pending heads / pending visits | 34,197 / 83,860 | 31,720 / 69,828 |
+| formation ms per block | 0.373 | 0.394 |
+| **build-all price** | **12,760 ms** | **12,489 ms** |
+
+The whole-run cells at 1B (same window): triangle 6.10 s = runner 3,590 (59%)
++ formation 1,058 (17%; Assemble 827) + non-JIT 1,259 (21%) + device 577
+(inclusive); menu 14.77 s = runner 11,293 (76%) + formation 1,290 (9%;
+Assemble 963) + non-JIT 1,711 (12%) + device 5,221 (inclusive).  The device
+number is D6/G1-G2's, not this task's.
+
+### 2. The unbuilt heads, by source class (the plan's box)
+
+| run | pending heads | RAM | immutable image | other/unknown | visits |
+|---|---:|---:|---:|---:|---:|
+| triangle 100M | 34,197 | 34,046 (99.6%) | 151 (0.4%) | 0 | 83,860 |
+| triangle 1B | 55,005 | 54,854 (99.7%) | 151 (0.3%) | 0 | 144,231 |
+| menu 100M | 31,720 | 31,569 (99.5%) | 151 (0.5%) | 0 | 69,828 |
+| menu 1B | 31,257 | 31,257 (100%) | 0 | 0 | 109,300 |
+
+Visit buckets (triangle 1B): 44,251 heads at 1-3 visits, 5,924 at 4-7, 4,830
+at 8-15, **0 at 16+** (the build threshold is 16, so the population is exactly
+the heads that never earned a block).  The image share is 151 heads = the MCPX
+ROM window; its blocks are already formed (6 image blocks, 33-35 ms of
+formation), so **a prebuilt/plan cache for immutable image code is worth at
+most 53-87 ms = 0.9-1.4% of the wall** - the hypothesis D7 was built around is
+dead by measurement.
+
+And the population as a whole is correctly unbuilt: **building all 55,005
+costs 19.4 s (triangle) / 5.1 s (menu)** to remove a non-JIT cell of 1.26 s /
+1.71 s - **15x and 3x negative**.  The heads are 1-3-visit cold code; the
+per-block formation cost (0.16-0.39 ms) cannot be amortised over 2.6 visits.
+
+### 3. The non-JIT cell, split by path (temporary probe, removed before commit)
+
+| cell | triangle 100M | triangle 1B |
+|---|---:|---:|
+| `RunSpecBlock` total (members) | 301 ms (1.11M) | 890 ms (2.49M) |
+| - handler (`spec`/`ExecuteInstruction`) | 183 ms (165 ns/member) | 671 ms (270 ns/member) |
+| - loop (`TryNext`, poll, counters) | 118 ms (106 ns/member) | 219 ms (88 ns/member) |
+| `Step` tail | 217 ms (79,255 calls) | 429 ms (133,499 calls) |
+| - fetch + decode inside `Step` | 75 ms | 150 ms |
+| decoded-block `Form` | 27 ms / 167k calls | 43 ms / 293k calls |
+| spec ns/member / Step us each | 271 ns / 2.74 us | 358 ns / 3.21 us |
+
+`Form` is not the cost (0.14-0.16 us a call, 96% of them produce nothing and
+fall through to `Step`), so the `Step` path is the fetch: 15 bytes fetched one
+`Memory.Read8` at a time, ~1.1 us of the 3.2 us.  The handler half is the
+interpreter itself (the same 70-90 ns/step accurate mode pays); the loop half
+is the decoded-block cursor.
+
+### 4. The ceiling, cell by cell
+
+| lever | measured value | share of the triangle 1B wall |
+|---|---:|---:|
+| Step fast fetch (one translate + span instead of 15 bus reads) | 150 ms | **2.5%** |
+| spec-run loop halved (88-106 ns/member) | 110 ms | 1.8% |
+| prebuilt/plan cache for immutable image code | 53-87 ms | 0.9-1.4% |
+| build the pending heads (measured) | -19.4 s cost vs 1.26 s cell | negative 15x |
+| encoder (N4: 390 -> 120 ns/instruction) | 571 ms of 827 ms Assemble | 9.4% (recorded negative; reopen bar >10% not met) |
+| trace formation (N3) | 350 ms | 3-5% (recorded negative) |
+| runner (D8) | 3,590 ms | 59% (uniform, every option measured <=0%) |
+
+The new (unretried) levers sum to **5.7%**; the plan's combined shape (encoder
++ image plan cache) is **9.4 + 1.4 = 10.8% on paper, 87% of it N4**, whose own
+reopen bar ("a new formation profile that makes it >10%") is not met: this
+session's profile reads 9.4% for the encoder's *saving* (12.6-13.5% is its
+*share*).  Nothing here is a 10% triangle wall.
+
+So **D7 closes negative** and the target goes to D8's option (e) (already
+restated to ns per served member outside the device stage + wall per presented
+frame) and to the G1-G3 port milestone for the device half.  The priced,
+sized candidates for a future engine task, in order: the `Step` fast fetch
+(2.5%, exact by construction - it is the JIT's own `TryFillDecodeEntry` fetch),
+the spec-run loop (1.8%), and only then anything that reopens N4.
+
+### 5. Gates (this session, H1)
+
+- Fast 1B `gl+replace`: triangle `4F1FCBC0` / `7DAB63EB` (frame `7A860ED7`),
+  menu `B06BA6E5` / `F5D61C94` (frame `B6116DAE`), `BackendUnsupported=0`.
+- Fast 1B `sw`: triangle `B45254CA` / `7DAB63EB` 57,663,082 px (2,706/68/34,
+  culled 41,035); menu `34973510` / `F5D61C94` 253,998,498 px (33,638/1,402/
+  696/686/686, culled 41,035).
+- ktest: the XGrid leg parks at `4E03A` after **792,800,535** steps and the
+  suite log is **40,797 B / `CA5D3867` byte-identical**; `ktest_diff.py`
+  against the stored xemu oracle log reads **SMOKE: PASS 7/7** (051/282 green,
+  224/231 XGrid-ahead, 071/319/344 faithful failures).  The smoke *script*
+  still needs the sibling `CSharp_XISOSharp` tool to rebuild the ISO, which is
+  absent on this host, so the leg was run with the script's own command
+  against the prepared media.
+- Suite **1922 -> 1925** (3 new `JitAttributionTests`), build 0 warnings,
+  format clean.  No snapshot change (host-side only; Nv2a v9, audio v3).
+- The wall absolutes in this window are loaded (triangle `gl+replace` 6.10 s at
+  best, 6.86 s on the plain leg); every claim above is a share or a ratio, and
+  the anchors are the invariant.

@@ -250,7 +250,24 @@ public sealed unsafe partial class XboxCpu
     private JitAttribution? _attribution;
 
     /// <summary>Gets the engine attribution report (empty unless <see cref="JitTiming"/> is on).</summary>
-    public string FormatJitAttribution() => _attribution?.Format() ?? string.Empty;
+    public string FormatJitAttribution()
+    {
+        JitAttribution? attribution = _attribution;
+        if (attribution is null)
+        {
+            return string.Empty;
+        }
+
+        // D7: the unbuilt-head census is a print-time pass over the head table
+        // (the sources were recorded at first sight), so it costs nothing on
+        // the run path.
+        long[] heads = new long[4];
+        long[] visits = new long[4];
+        long[] buckets = new long[4];
+        int pending = _jitBlocks?.CountPendingHeadsBySource(heads, visits, buckets) ?? 0;
+        attribution.NotePendingHeads(pending, heads, visits, buckets);
+        return attribution.Format();
+    }
 
     /// <summary>Cap on guest steps advanced per idle-wait skip (two PIT ticks).</summary>
     private const int JitSpinMaxSkipSteps = 16 * 1024 * 1024;
@@ -384,7 +401,12 @@ public sealed unsafe partial class XboxCpu
             long lookupStart = _attribution is not null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
             if (block is null)
             {
-                switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block))
+                // D7: classify the head's fetch source only while the
+                // attribution is armed; the census is what tells the boot's
+                // unbuilt-head population apart (RAM code vs the immutable
+                // image), i.e. whether a prebuilt plan cache could ever pay.
+                int fetchSource = _attribution is not null ? ClassifyFormationSource(fetchLinear) : -1;
+                switch (jit.Lookup(fetchLinear, generation, JitBuildThreshold, out block, fetchSource))
                 {
                     case JitBlockCache.Verdict.Pending:
                         JitYieldReasons[0]++;

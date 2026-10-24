@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **D7 - Boot path: make the first 100M steps cheaper** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G1 - NV2A PGRAPH core port (xemu 0.8.139 pgraph/)** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G1 (NV2A PGRAPH core port (xemu 0.8.139 pgraph/)), G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
-**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 18.
+**Phase score:** 79.9% (86.34 of 108). **Next:** G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
 <!-- STATUS:END -->
 
 # Execution plan (current) — the checklist
@@ -434,6 +434,29 @@ the 400-program fuzz plus the per-vertex bit-identity against `VshProgramPlan`.
 replacement, never a second semantic source.
 
 ### D7 - The boot: the first 100M steps are 33% of the triangle wall
+
+**Result (2026-10-24, negative) - decisions §249.** The price measurement was
+run as the plan asked: the boot was split by stage and the **unbuilt-head
+population was priced by source class** with new permanent instrumentation
+(`--jit-timing`; `JitBlockCache` records each head's fetch source at first
+sight, `FormatJitAttribution` prints one `pending` line with the run's own
+mean formation cost applied to it, pinned by `JitAttributionTests`). Headline:
+the boot is **1.87-1.91 s triangle (31% of a 6.1 s wall) / 1.62 s menu (11%)**
+= runner 41-45% + formation 25% (Iced `Assemble` 18-21%) + non-JIT 26% +
+lookup/loop 4%. The pending heads are **99.6% RAM code** (34,046 of 34,197 at
+100M; 54,854 of 55,005 at 1B; the 151 image heads are the MCPX ROM, whose
+blocks already form), and **building them all costs 19.4 s (triangle) / 5.1 s
+(menu)** to remove a non-JIT cell of 1.26 s / 1.71 s - **15x and 3x negative**.
+The non-JIT cell itself splits 34% `Step` (3.2 us each, 1.1 us of it the
+byte-at-a-time fetch) / 66% spec-run body (270-358 ns/member: 165-270 the
+interpreter handler, 88-106 the cursor loop); `Form` is 0.14 us a call and not
+the cost. **The largest unretried lever is the `Step` fast fetch at 2.5% of the
+wall** (the JIT's own `TryFillDecodeEntry` fetch), then the spec-run loop at
+1.8% and the image plan cache at 0.9-1.4%; the plan's combined shape (encoder
++ image plan cache) is 9.4% + 1.4% on paper, 87% of it N4, whose own reopen bar
+(>10% from a new formation profile) this profile does not meet. No 10% wall, so
+the target goes to D8's option (e) and the device half to G1-G3. The three
+sized candidates are recorded for a future engine task.
 
 **Price:** boot is **1.93 s triangle / 1.62 s menu** (D3.1), and 1.20 s cannot be
 met with a 1.93 s boot. The known levers are the encoder (8.0% triangle / 4.9%
