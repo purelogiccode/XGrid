@@ -4,14 +4,14 @@
   "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
     "milestone": "M-T",
-    "id": "TM1",
-    "title": "Blocker probe for the top 3 closest titles",
+    "id": "TM2",
+    "title": "Fix shared blocker #1 and re-run the matrix",
     "plan": "E1",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "For each of the top 3 titles: a run to park with --save-state anchors, the guest EIP, the current thread and wait object, the last device I/O and the NV2A method histogram; the xemu 0.8.139 state at the same scene for the XBOXReady titles (and a documented xemu-cannot-boot-it for the XBOXTest titles); exactly one shared blocker selected with a measured citation and the xemu 0.8.139 file that owns it; the report is in docs/research-notes/real-game-probes.md.",
-    "price": "1-2 sessions; measurement only; correctness bar.",
+    "acceptance": "The blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical (a legitimate homebrew anchor move is re-baselined in the same commit with the measured reason).",
+    "price": "2-4 sessions; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -247,21 +247,9 @@
   ],
   "queue": [
     {
-      "id": "TM1",
-      "title": "Blocker probe for the top 3 closest titles",
-      "status": "active",
-      "depends": [
-        "TM0"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "For each of the top 3 titles: a run to park with --save-state anchors, the guest EIP, the current thread and wait object, the last device I/O and the NV2A method histogram; the xemu 0.8.139 state at the same scene for the XBOXReady titles (and a documented xemu-cannot-boot-it for the XBOXTest titles); exactly one shared blocker selected with a measured citation and the xemu 0.8.139 file that owns it; the report is in docs/research-notes/real-game-probes.md.",
-      "price": "1-2 sessions; measurement only; correctness bar."
-    },
-    {
       "id": "TM2",
       "title": "Fix shared blocker #1 and re-run the matrix",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "TM1"
       ],
@@ -455,6 +443,13 @@
       "date": "2026-10-24",
       "evidence": "matrix: 39 ISO rows at 1B (36 shared dashboard menu 33,638/253,998,498/686; optimized 007 boot animation 2,672/41,995,882/55; Arx Fatalis boot animation 35 frames; Halo fast-mode #UD at 604M, accurate mode clean); 007 reaches its own Harrier/carrier intro at 20B (frame 2666CFBC..., 38,350 colours, 7.8% black) and stalls at 30B/50B in EIP 0x1C4787 with APU ISTS 0x79/InterruptAsserted=True and PIC req=0; xemu 0.8.139 reaches 007 gameplay in 15 s; no emulator source or gate anchor changed",
       "commitMessage": "matrix: build the title matrix harness and sweep 39 retail ISOs (TM0)"
+    },
+    {
+      "id": "TM1",
+      "title": "Blocker probe for the top 3 closest titles",
+      "date": "2026-10-24",
+      "evidence": "TM1 probe: top 3 = 007 (own render at 20B; stalls at 30B/50B at EIP 0x1C4787 with 79,581 draws / 603,250,282 px / 2,594 frames and a black display; APU ISTS 0x79 asserted=True while PIC req=0x00; 30B save state + method histogram in wt-data/title-probe-007-30b), Halo (optimized ISO; fast-mode #UD vec=6 at 604M EIP 0x180AEC, accurate mode clean; xemu 0.8.139 reaches its beach gameplay in 50 s, wt-data/xemu-halo-test.png), Redump group (36 rows on the shared dashboard at 1B, park at EIP 0x800422B0 with NV2A asserted=True and PIC req=0x00). One shared blocker selected: level-triggered PCI interrupts are lost after the first acknowledge - the guest programs ELCR 0x4D0=0x68 / 0x4D1=0x18 (IRQ3/5/6/11/12 level) and XGrid had no ELCR (the writes were unmapped) and cleared the request on every acknowledge; xemu 0.8.139 hw/intc/i8259.c owns the semantics (pic_set_irq keeps irr for ltim/elcr lines, pic_intack only clears edge lines). Report in docs/research-notes/real-game-probes.md; no emulator source change in TM1.",
+      "commitMessage": "matrix: probe the 007 APU stall and the Halo fast-mode fault (TM1)"
     }
   ],
   "negatives": [

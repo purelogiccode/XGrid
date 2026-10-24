@@ -146,15 +146,137 @@ fault), not a missing guest instruction. Retail probes use accurate mode
 (`-NoFast`) or `--jit-exact` for correctness; the fast mode stays a speed
 experiment. Record it as a JIT correctness item, not a title blocker.
 
-## What to do next (TM1)
+## TM1 findings (2026-10-24)
 
-1. 007 at 30B/50B in **accurate mode** (or `--jit-exact`) with the game-menu A
-   press, exporting the display frame at each anchor; the 20B frame is the
-   Harrier intro.
-2. Halo at 20B in **accurate mode** (the fast-mode `#UD` is a JIT bug, not a
-   title blocker); name its first own-render frame or its park.
-3. Compare the 007/Halo frames with xemu 0.8.139 (the gameplay capture is
-   `wt-data/xemu-007-test.png`) and name the next blocker.
+**Ranking.** The 1B matrix ranks **007** first (its own render at 20B), **Halo**
+second (the only other oracle ISO; fast-mode fault, accurate mode clean) and the
+**36-row Redump group** third (the shared dashboard display at 1B). The probes
+name one shared device bug and two independent items.
+
+### B1 - a level-triggered IRQ is lost after its first acknowledge (shared)
+
+The 007 stall and the Redump group's dashboard park are **the same defect**: a
+device holds its PCI interrupt line high, the PIC latched the request once,
+`AcknowledgeLine` cleared the request bit, and nothing ever re-latched the level.
+The device's own `SetAsserted` de-dupes, so no second edge is produced.
+
+**007 - Agent Under Fire, the anchor table (fast engine, `--gpu sw`, HDD+DVD):**
+
+| steps | stage | EIP | draws | pixels | frames | wall | source |
+|---:|---|---|---:|---:|---:|---:|---|
+| 1B | boot animation | 0x138D3 | 2,672 | 41,995,882 | 55 | 18.0 s | `wt-data/title-matrix-1b` |
+| 10B | boot animation | - | 2,672 | 41,995,882 | - | - | `wt-data/title-probe-007-10b` |
+| 20B (no pad) | **own render** (Harrier/carrier intro) | 0x21307 | 2,672 | 41,995,882 | 764 | 1486 s | `wt-data/title-probe-007-20b` |
+| 30B (A at 20B) | own render, **stalled** | 0x1C478D | 79,581 | 603,250,282 | 2,594 | 396.7 s | `wt-data/title-matrix-007-30b` |
+| 50B (A at 20B) | own render, **stalled** | 0x1C4787 | 79,581 | 603,250,282 | 2,594 | 504.1 s | `wt-data/title-matrix-007-50b` |
+
+30B and 50B are **counter-identical** (same draws/pixels/frames, same EIP
+neighbourhood): the guest stopped rendering at 30B and spent the next 20B steps
+in one loop. The 30B save state is `wt-data/title-probe-007-30b/*.xgs`.
+
+**The device evidence at the 50B park** (`wt-data/title-matrix-007-50b/logs/`):
+
+```
+PIC master base=0x30 mask=0x98 slaveMask=0xA6 req=0x00 isr=0x00
+Interrupts delivered=87784
+NV2A irq pgraphEn=FFFFFFFF pgraphPending=00000000 pmcEn=00000001 notifications=2615 asserted=True
+APU ist=00000079 ien=00000AFB fectl=00001FEF asserted=True reads=5323 writes=25034 voiceOff=15
+APU log: idle-voice 237
+APU log: raise ist=00000079 ien=00000AFB fectl=00001FEF      (repeated ~60x in the ring)
+```
+
+`APU asserted=True` with `PIC req=0x00` and IRQ5 unmasked (`mask=0x98`) is the
+bug in one line: the APU's level line is high, the PIC does not have the
+request. `ists=0x79` carries GINTSTS plus the voice-completion bits the ISR
+would clear, and `voiceOff=15` says 15 voices completed before the stall.
+
+**The same line shape parks the Redump group.** A 1B Redump row (GTA: San
+Andreas) ends with
+
+```
+PIC master base=0x30 mask=0xE0 slaveMask=0xA6 req=0x00 isr=0x00
+NV2A irq pgraphEn=FFFFFFFF pgraphPending=00000000 pmcEn=00000001 notifications=700 asserted=True
+EIP=0x800422B0  (kernel idle spin: mov eax,[esp]; mov [rsp],rax; jnz)
+```
+
+`NV2A asserted=True` (its level line is held by a pending source) with
+`PIC req=0x00` and IRQ3 unmasked (`mask=0xE0` masks only 5-7) is the same lost
+level on a different line. The guest is in the kernel idle thread, which only
+leaves on an interrupt.
+
+**Owner.** xemu 0.8.139 `hw/intc/i8259.c`: `pic_set_irq` keeps `irr` set while a
+level line is high (`s->ltim || (s->elcr & mask)`), and `pic_intack` does **not**
+clear `irr` for a level line (`if (!s->ltim && !(s->elcr & (1 << irq)))`). XGrid
+`src/XGrid.Bus/Interrupts/Pic8259.cs` clears `RequestRegister` on every
+acknowledge and ignores ICW1 bit 3 (LTIM), so a held level is never re-delivered.
+
+**The measured citation (TM2's first probe).** A temporary port trace shows the
+guest programs the **edge/level control register** and XGrid discarded the writes
+(nothing was mapped at 0x4D0/0x4D1):
+
+```
+UNMAPPED PORT WRITE 4D0<=0 / 4D0<=40 / 4D0<=60 / 4D0<=68   (master: IRQ3 NV2A, IRQ5 APU, IRQ6 ACI level)
+UNMAPPED PORT WRITE 4D1<=0 / 4D1<=08 / 4D1<=18              (slave:  IRQ11 USB0, IRQ12 USB1 level)
+```
+
+The PIC programming is otherwise edge mode (`ICW1 = 0x11` on 0x20 and 0xA0), so
+the ELCR is the only level switch - and it was dropped. That is the whole
+blocker: the guest asks for level delivery on exactly the PCI lines, the
+emulator answers with edge-only latches, and every held line is lost after its
+first acknowledge.
+
+**The method histogram at the park** (`wt-data/title-probe-007-30b/`, 30B steps,
+`--pgraph` + `--eip-hist 24`, wall 1254 s): the stall is a guest spin -
+`EIP=0x1C4787` at the sample, top EIP `0x1C478D` with **73,815,723** hits - and
+the NV097 stream is the boot-animation/intro set (`0x1800` x58577, `0x1EA4`
+x9185, `0x0B80`-`0x0B9C` constants, `0x17FC` x5344, `0x1D90` x3860), i.e. the
+game's own draws use the same method families the engine already runs. The 30B
+save state is `wt-data/title-probe-007-30b/*.xgs` (72 MB).
+
+**xemu 0.8.139 at the same scene:** 007 reaches a gameplay frame (beach/pool,
+player + flamethrower) within 15 s of boot, `wt-data/xemu-007-test.png`. XGrid
+(pre-fix) at 50B is still in a black transition, so the gap is guest progress,
+not pixels.
+
+### B2 - the Halo fast-mode `#UD` is a JIT correctness item, not a title blocker
+
+The optimized Halo row faults at **592-604M steps**, `vec=6` (`#UD`) at
+`EIP=0x180AEC`, only in fast mode; the accurate run at the same step has
+`LastFault vec=0` and runs past it. The fault is not deterministic across fast
+runs (a second fast run without the probe flags did not fault), so it is a
+raw-engine correctness item, not a missing guest instruction. Retail probes use
+`-NoFast` / `--jit-exact` until it is fixed.
+
+**xemu 0.8.139 at the same scene:** the optimized Halo ISO reaches its beach
+gameplay within 50 s (`wt-data/xemu-halo-test.png`, palm/beach scene). XGrid at
+1B is still on the dashboard animation, so Halo's blocker is guest progress
+(B1-class: the dashboard never launches the disc), not its own render path.
+
+### B3 - the Redump group never launches through the dashboard
+
+36 of 39 rows present the shared dashboard display at 1B (`33,638` draws /
+`253,998,498` px / `686` frames). The disc reads complete, then the guest parks
+in the kernel idle spin with the NV2A line asserted and no PIC request (B1).
+xemu 0.8.139 cannot boot these images at all, so they are XGrid-only
+compatibility media: they may prove a blocker, never an oracle row.
+
+### The selected shared blocker
+
+**B1** (level-triggered IRQ re-latch) is the TM2 fix: it is the only blocker
+that stops the closest title from progressing, it is one device-correctness
+bug, and it covers the 007 stall and the 36-row dashboard park (same line
+shape, two different devices). B2 is recorded as a JIT correctness item; B3
+follows B1 (re-run the matrix after the fix to see how many rows leave the
+dashboard).
+
+## What to do next (TM2)
+
+1. Fix B1 in `Pic8259` (model the input level and ICW1 LTIM; re-latch on EOI and
+   unmask), with a differential test that fails on the current source.
+2. Re-run 007 from the 30B save state (and then a full 30B/50B run) with the
+   frame export; the acceptance is that it leaves `0x1C4787` and the intro
+   FMV/gameplay appears.
+3. Re-run the matrix and the four accurate goldens + the ktest log.
 4. Add a real-game row to `docs/compatibility.md` only after a run reaches a
    gameplay frame or a documented wait; a dashboard-only run is a probe, not a
    compatibility row.
