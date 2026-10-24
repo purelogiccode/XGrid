@@ -4,14 +4,14 @@
   "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
     "milestone": "M-T",
-    "id": "TM0",
-    "title": "Title matrix harness + first sweep",
+    "id": "TM1",
+    "title": "Blocker probe for the top 3 closest titles",
     "plan": "E1",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "scripts/title-matrix.ps1 runs every ISO under H:\\Tests\\XBOXReady and H:\\Tests\\XBOXTest at a fixed step budget with a per-title timeout, writes one JSON per title plus a summary and a Markdown table, and every title has a row (boot stage, own render, park EIP, frames/draws/pixels, fault, wall); the top 3 closest titles and the top 3 shared failure shapes are named in docs/research-notes/title-matrix.md; no emulator source or gate anchor changes.",
-    "price": "1 session; ~2-3 hours of runs on 24 logical cores; correctness bar.",
+    "acceptance": "For each of the top 3 titles: a run to park with --save-state anchors, the guest EIP, the current thread and wait object, the last device I/O and the NV2A method histogram; the xemu 0.8.139 state at the same scene for the XBOXReady titles (and a documented xemu-cannot-boot-it for the XBOXTest titles); exactly one shared blocker selected with a measured citation and the xemu 0.8.139 file that owns it; the report is in docs/research-notes/real-game-probes.md.",
+    "price": "1-2 sessions; measurement only; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -57,10 +57,10 @@
     },
     "gameplay": {
       "target": "H:\\Tests\\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB)",
-      "state": "title matrix in progress; 007 XBE executes but gameplay is not reached",
+      "state": "007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).",
       "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
       "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM",
-      "matrix": "scripts/title-matrix.ps1 -> docs/research-notes/title-matrix.md"
+      "matrix": "39-title 1B sweep + 007/Halo 20B probes; see docs/research-notes/title-matrix.md"
     }
   },
   "result": {
@@ -247,19 +247,9 @@
   ],
   "queue": [
     {
-      "id": "TM0",
-      "title": "Title matrix harness + first sweep",
-      "status": "active",
-      "depends": [],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "scripts/title-matrix.ps1 runs every ISO under H:\\Tests\\XBOXReady and H:\\Tests\\XBOXTest at a fixed step budget with a per-title timeout, writes one JSON per title plus a summary and a Markdown table, and every title has a row (boot stage, own render, park EIP, frames/draws/pixels, fault, wall); the top 3 closest titles and the top 3 shared failure shapes are named in docs/research-notes/title-matrix.md; no emulator source or gate anchor changes.",
-      "price": "1 session; ~2-3 hours of runs on 24 logical cores; correctness bar."
-    },
-    {
       "id": "TM1",
       "title": "Blocker probe for the top 3 closest titles",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "TM0"
       ],
@@ -458,6 +448,13 @@
       "date": "2026-10-24",
       "evidence": "price: G3 is a verification bundle, not a wall gate (it implements nothing), so the 10%/20% stage rule does not apply; measured outcome one session. One full Release build (0 warnings) + 1965 tests + format clean, then every leg from those binaries (no mixed engine). Fast 1B anchors exact: triangle gl 4F1FCBC0/7DAB63EB (6.311 s), menu gl B06BA6E5/F5D61C94 (14.706 s), triangle sw B45254CA/7DAB63EB 57,663,082 px (10.808 s), menu sw 34973510/F5D61C94 253,998,498 px (25.630 s). Accurate 1B goldens PASS: menu 4EF1FBF6/B6116DAE diff=2602 violations=0 maxDelta=1 counters 33632/686/686, triangle A1740DE0/7A860ED7 diff=27849 2706/68/34; accurate RAM/CPU 6AB39AB0/3D2740B8 and 812EA159/2F632483. All 22 corpus rows PASS at their documented anchors; six stale values re-baselined with the measurement that moved each: cubemap 3B GL frame 5174B1EB -> 673477F7 (now 1 px of 307,200 from software), cubemap 4.4B 18,980 -> 19,042 colours / mean (57.1, 89.0, 34.4) (pair 2 px maxDelta 3) and 3.6B pair 1 px maxDelta 4 (21,041 both), cubemap 3B software 13,925 colours (21,041 is the 3.6B anchor), alpha_blending 4.6B mean (22.7, 18.7, 230.4) within 2.8/255 (3B 2,952 draws at 40081D03/1C5C575D), dashboard 2B 16.94 msps / 217,622 draws / frame 535C48FA (RAM 7DF2F343 CPU B912C955), ktest BTFF RAM F708B07D/7D667575. ktest smoke: park 4E03A at 792,800,535 steps, 40,797 B CA5D3867 suite log byte-identical, ktest_diff SMOKE PASS 7/7 (071/319/344 both, 224/231 XGrid-ahead). PACKAGE PASS: 8 archives, version 0.1.0, 4 RIDs, licenses complete (19 ported files; win-x64 cli 126f1b53..., frontend 408675a7..., CLI smoke XGrid 0.1.0). No code and no snapshot change (Nv2a v10, audio v3); phase score unchanged 79.9% (86.34 of 108).",
       "commitMessage": "gates: re-baseline every gate, the 22-row corpus, ktest and the package tree (G3)"
+    },
+    {
+      "id": "TM0",
+      "title": "Title matrix harness + first sweep",
+      "date": "2026-10-24",
+      "evidence": "matrix: 39 ISO rows at 1B (36 shared dashboard menu 33,638/253,998,498/686; optimized 007 boot animation 2,672/41,995,882/55; Arx Fatalis boot animation 35 frames; Halo fast-mode #UD at 604M, accurate mode clean); 007 reaches its own Harrier/carrier intro at 20B (frame 2666CFBC..., 38,350 colours, 7.8% black) and stalls at 30B/50B in EIP 0x1C4787 with APU ISTS 0x79/InterruptAsserted=True and PIC req=0; xemu 0.8.139 reaches 007 gameplay in 15 s; no emulator source or gate anchor changed",
+      "commitMessage": "matrix: build the title matrix harness and sweep 39 retail ISOs (TM0)"
     }
   ],
   "negatives": [

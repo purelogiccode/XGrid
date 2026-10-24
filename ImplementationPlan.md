@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM0 - Title matrix harness + first sweep** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - title matrix in progress; 007 XBE executes but gameplay is not reached. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Current status (2026-10-24):** M-T / **TM1 - Blocker probe for the top 3 closest titles** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - 007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** TM1 (Blocker probe for the top 3 closest titles), TM2 (Fix shared blocker #1 and re-run the matrix), TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate).
+**Phase score:** 73.2% (86.34 of 118). **Next:** TM2 (Fix shared blocker #1 and re-run the matrix), TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 

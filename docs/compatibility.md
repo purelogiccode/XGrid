@@ -55,19 +55,42 @@ XGrid-only benchmark media and never the oracle. `D:\Samples\XBOXReady` is gone.
 The oracle is xemu 0.8.139 (`data/xemu/xemu.exe`) on the same optimized ISO with
 the same firmware/EEPROM.
 
-- **007 - Agent Under Fire [NTSC-U][Redump]**: boots; at 5B steps the EIP is
-  `0x0001FC66` (the loaded XBE), 201 flips, 2,672 draws, no fault. The first
-  frame is still the boot animation; gameplay is the M-G target (MG1). The
-  optimized image is byte-identical in size to the one that probe used, so the
-  result still stands.
+- **007 - Agent Under Fire [NTSC-U][Redump]**: boots; the 5B probe is still the
+  dashboard animation (201 flips, 2,672 draws, no fault). The **20B snapshot**
+  presents the game's own Harrier/carrier intro scene
+  (`wt-data/xgs-20b-display.png`, frame `2666CFBC...`, 640x480, mean
+  (52.9, 39.7, 56.3), 38,350 colours, 7.8% black), so the title has launched
+  and is rendering its own content; the launch happens between 10B and 20B.
+  The next anchor is the game-menu input at ~20B and a 30B/50B run (TM1/TM4).
 - **Halo - Combat Evolved (v1.09)**: the MG2 second title (the only other
   optimized image).
 
 **Answer for the compatibility question:** XGrid boots retail discs but **does
-not yet claim playable real games**; M-G exists to change that. A real-game row
+not yet claim playable real games**; M-T exists to change that. A real-game row
 is added only after a run reaches a gameplay frame or a documented wait. These
 rows are acceptance, not merge gates; the gate media remains
 `data/test-samples/`.
+
+### The retail title matrix (M-T, 2026-10-24)
+
+`scripts/title-matrix.ps1` is the progress bar for the playable-title program.
+It runs every ISO at a fixed step budget (default 5B), records the stage
+(`own-render` / `boot-animation` / `fault` / `timeout`), the final EIP, the NV2A
+counters and the wall, and writes `docs/research-notes/title-matrix.md` plus
+`wt-data/title-matrix/`. The 2 optimized ISOs in `H:\Tests\XBOXReady` are the
+oracle set; the 37 full-disc ISOs in `H:\Tests\XBOXTest` are XGrid-only
+compatibility media (xemu cannot boot them). Rows are evidence, not gates.
+
+```powershell
+pwsh -File scripts/title-matrix.ps1 -MediaDir "H:\Tests\XBOXReady" -AlsoDir "H:\Tests\XBOXTest" -Steps 5000000000 -Parallel 6
+```
+
+`stage=own-render` means the NV2A draw/pixel shape differs from the dashboard
+boot animation; `boot-animation` means the title still presents the intro. The
+top 3 rows are the TM1 probe targets. `scripts/title-probe.ps1 <iso>` is the
+follow-up: it runs one title to a step anchor with `--save-state`, `--pgraph`
+and `--jit-timing`, and writes the EIP, fault, top PGRAPH methods and engine
+split that a blocker report needs.
 
 ## The harness (one invocation per row)
 
