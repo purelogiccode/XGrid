@@ -85,6 +85,37 @@ Counts are Halo / triangle over their windows:
 | 0x1D7C | `SET_ANTI_ALIASING_CONTROL` | 72 | — | recorded |
 | 0x0330..0x0338 | poly-offset point/line/fill enable | 72 | — | recorded |
 
+## Recorded-method parameters (G1 audit, 2026-10-24)
+
+The G1 audit needed the *values* the gate titles program into the recorded
+methods, not just the counts. Repro: the same `--pgraph` windows as Probe A and
+the 1B dashboard (`--pgraph-max 3000000` / `4000000`), then group the third
+column. The full per-method decision table is `nv097-coverage.md` "G1 audit".
+
+| Method | Triangle 300M | Menu 1B | Reading |
+|---|---|---|---|
+| `WAIT_FOR_IDLE` | 21 x `00000000` | 185 x `00000000` | No-op. |
+| `SET_CONTEXT_DMA_*` | handles 2/3/4/7/0x0B/0x11/0x0C | same plus 0x19 | No non-zero context base in any frame. |
+| `SET_WINDOW_CLIP_TYPE` | 61 x 0 | 113 x 0 | Inside mode, all surfaces. |
+| `SET_WINDOW_CLIP_HORIZONTAL` | `04FF0000` (0..1279) x37, `027F0000` (0..639) x17, `00FF0000` (0..255) x6, `03FF0000` x1 | `04FF0000` x71, `027F0000` x34, `00FF0000` x6, `03FF0000` x1, `02800000` x1 | Every rect starts at 0 and covers a bound surface; a scissor would not narrow the gate frames. |
+| `SET_WINDOW_CLIP_VERTICAL` | `01DF0000` (0..479) x54, `00FF0000` x6, `03FF0000` x1, `00000003` x1 | `01DF0000` x105, `00FF0000` x6, `03FF0000` x1, `00000003` x2, `01E00000` x1 | Same. |
+| `SET_DITHER_ENABLE` | 18 x 0, 17 x 1 | 172 x 1, 36 x 0 | xemu's GL path ignores dither; the menu would move by construction. |
+| `SET_POINT_PARAMS_ENABLE` / `POINT_SMOOTH` | 40 x 0 | 75 x 0 | Points off. |
+| `SET_LINE_SMOOTH` / `POLY_SMOOTH` | 35 x 0 | 1851 x 0 | Off. |
+| `SET_POLY_OFFSET_*_ENABLE` | 36 x 0 | 72 x 0 | Off. |
+| `SET_SHADE_MODE` | `00001D01` (SMOOTH) | `00001D01` | Already interpolated. |
+| `SET_FRONT/BACK_POLYGON_MODE` | `00001B02` (FILL) x71 | `00001B02` x2061 | Already filled. |
+| `SET_PROVOKING_VERTEX` | 1 | 1 | Only flat shading reads it. |
+| `SET_POLYGON_OFFSET_SCALE/BIAS` | `80000000` (-0.0f) x35 / x35 | `80000000` x70 | Enables are 0. |
+| `SET_ANTI_ALIASING_CONTROL` | `FFFF0001` x35 | `FFFF0001` x69 | Surface AA field is 0 (`0x128`/`0x228`), so the factor is 1. |
+| `SET_EYE_VECTOR` | 108 x 0 | 108 x 0 | Two-sided lighting unused. |
+| `SET_SHADOW_ZSLOPE_THRESHOLD` | 1 x `7F800000` (+inf) | 2 x `7F800000` | No depth texture bound. |
+| `SET_SURFACE_FORMAT` | `00000128` x37, `08080228` x12, `08080128` x6, `0A0A0228` x2, `0A0A0128` x1 | same | AA = 0 in every word. |
+| `SET_TEXTURE_PALETTE` | 0 | 0 | Handled in G1; no measured user. |
+
+Immediate-mode vertices, weights, the report/query methods, the XVSS methods and
+the back-light/eye-direction context are all **0 writes** in both windows.
+
 ## What this buys
 
 1. **Culling was the highest-count genuine gap**, and the gate sample uses it —

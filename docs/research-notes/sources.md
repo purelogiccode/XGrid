@@ -47,6 +47,10 @@ license notice and is listed in `THIRD_PARTY_NOTICES.md`; the binding rules are 
 | `src/XGrid.Audio/Dsp/McpxApuDsp.cs` | xemu 0.8.139 `hw/xbox/mcpx/apu/dsp/gp_ep.c` (LGPL-2+), `dsp.c` + `dsp_c.c` (GPL-2+), `apu/fpconv.h` (LGPL-2+) | GPL-2+ (combined work) | Ported (GP/EP sub-windows, `proc_rst_write`, scatter/gather scratch, FIFO rings, peripheral halt/interrupt/DMA, the frame loop, `float_to_24b`). |
 | `tests/XGrid.Audio.Tests/TestData/dsp-vectors.txt` | generated from the xemu 0.8.139 reference interpreter | GPL-2+ (derived data) | Differential vectors; regenerate with `tools/dsp-oracle/build.ps1 -Regenerate`. |
 | `tools/dsp-oracle/` | xemu 0.8.139 `interp/` (compiled from `References2/` at run time) | GPL-2+ | Development-only oracle; not part of the build or distribution. |
+| `src/XGrid.Nv2a/S3tcDecoder.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/s3tc.c` / `s3tc.h` | MIT | Ported (DXT1/3/5 block decompression). |
+| `src/XGrid.Nv2a/TextureFormats.cs` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/texture.c`, `pgraph/gl/constants.h`, `pgraph/util.h` | LGPL-2+ | Ported (color-format table, 8/16-bit word decoders, YUV conversion, palette entry, mip-chain layout). |
+| `tests/XGrid.Nv2a.Tests/TestData/s3tc-vectors.txt` | generated from the xemu 0.8.139 `s3tc.c` reference | MIT (derived data) | Differential vectors; regenerate with `tools/texture-oracle/build.ps1 -Regenerate`. |
+| `tools/texture-oracle/` | xemu 0.8.139 `hw/xbox/nv2a/pgraph/s3tc.c` (compiled from `References2/` at run time) | MIT | Development-only oracle; not part of the build or distribution. |
 
 See `THIRD_PARTY_NOTICES.md` for the full list and `docs/porting-policy.md` for
 the workflow.

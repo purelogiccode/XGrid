@@ -34,4 +34,8 @@
     <ProjectReference Include="..\..\src\XGrid.Nv2a\XGrid.Nv2a.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -1,9 +1,9 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-D / **G1 - NV2A PGRAPH core port (xemu 0.8.139 pgraph/)** (active, attempt 0).
+**Current status (2026-10-24):** M-D / **G2 - GL renderer port (xemu pgraph/gl + the glsl pieces it needs)** (active, attempt 0).
 **Position (H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 79.9% (86.34 of 108). **Next:** G2 (GL renderer port (xemu pgraph/gl + the glsl pieces it needs)), G3 (Consolidated gate re-baseline for the ported NV2A).
+**Phase score:** 79.9% (86.34 of 108). **Next:** G3 (Consolidated gate re-baseline for the ported NV2A).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 19.
 <!-- STATUS:END -->
 
@@ -530,6 +530,33 @@ still reproduces the 1B accurate goldens and the ktest log is byte-identical;
 notices rows for every ported file. **Fallback:** keep the current switch for
 any method whose port would change a gate frame; a method that no row exercises
 is not worth a regression.
+
+- [x] **Price / scope (2026-10-24).** The price is the module boundary and the
+  acceptance, not a wall gate: G1 is the compatibility half and does not move
+  the draw/fill cost (G2). The slice landed as a bounded audit + format port.
+- [x] **Audit the 73 recorded methods.** `--pgraph` probes on the triangle 300M
+  and the dashboard 1B windows; `docs/research-notes/nv097-coverage.md` "G1
+  audit" records every entry with its measured writes and a decision (1
+  handled, 72 declined; `SET_TEXTURE_PALETTE` now has a sink). The parameter
+  table is `usage-histogram.md` "Recorded-method parameters".
+- [x] **Port the texture formats.** `S3tcDecoder.cs` (MIT) + `TextureFormats.cs`
+  (LGPL-2+): the 66-entry format table, DXT1/3/5 blocks, the paletted I8 lane,
+  Y8/AY8/A8/A8Y8/Y16/R6G5B5, YUY2/UYVY and the mip-chain layout. The software
+  sampler takes the new lanes; the compiled fills keep their existing fast
+  formats. Differential vectors: `tools/texture-oracle` +
+  `tests/XGrid.Nv2a.Tests/TestData/s3tc-vectors.txt` (16 blocks).
+- [x] **Gates.** Fast 1B `gl+replace` triangle `4F1FCBC0`/`7DAB63EB` and menu
+  `B06BA6E5`/`F5D61C94`; fast 1B `sw` triangle `B45254CA`/`7DAB63EB`
+  (57,663,082 px) and menu `34973510`/`F5D61C94` (253,998,498 px); accurate
+  goldens triangle `A1740DE0`/`7A860ED7` and menu `4EF1FBF6`/`B6116DAE`
+  (`violations=0`); ktest 792,800,535 steps with the 40,797 B `CA5D3867` log
+  byte-identical and `ktest_diff.py` SMOKE PASS 7/7; suite 1965 green.
+- [x] **Provenance.** Notices + sources rows for both new files and the oracle;
+  snapshot **v10** (the palette state).
+- [ ] **Deferred to G2/G3:** the window-clip 8-rect per-fragment test (a GL
+  `clipRegion[8]` port), the context-DMA map, the immediate-mode vertex path,
+  and per-pixel mip LOD selection. None is exercised by the gate media; the
+  audit is the measured reason.
 
 ### G2 - GL renderer: submission, surface/texture cache and shader pipeline
 

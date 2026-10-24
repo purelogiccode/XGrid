@@ -631,6 +631,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             stamp = StampWord(stamp, _textureControl1[i]);
             stamp = StampWord(stamp, _textureImageRect[i]);
             stamp = StampWord(stamp, _textureFilter[i]);
+            stamp = StampWord(stamp, _texturePalette[i]);
         }
 
         if (stamp != _guestTexelStateStamp)
@@ -806,6 +807,15 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private readonly uint[] _textureFilter = new uint[MaxTextureSlots];
     private readonly uint[] _textureImageRect = new uint[MaxTextureSlots];
     private readonly uint[] _textureBorderColor = new uint[MaxTextureSlots];
+
+    /// <summary>
+    /// NV097_SET_TEXTURE_PALETTE per slot: DMA select (bit 0), length index
+    /// (bits 2-3) and the 64-byte-aligned palette offset (bits 6-31). The
+    /// paletted I8 format reads a 32-bit A8R8G8B8 entry from this offset plus
+    /// <c>index * 4</c> (xemu <c>pgraph_get_texture_palette_phys_addr_length</c>
+    /// and <c>pgraph_convert_texture_data</c>).
+    /// </summary>
+    private readonly uint[] _texturePalette = new uint[MaxTextureSlots];
     private uint _shaderClipMode;
     private uint _shadowDepthFunc;
     private readonly float[][] _bumpMatrices = new float[MaxTextureSlots - 1][];
@@ -1554,6 +1564,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Array.Clear(_textureFilter);
         Array.Clear(_textureImageRect);
         Array.Clear(_textureBorderColor);
+        Array.Clear(_texturePalette);
         _shaderClipMode = 0;
         _shadowDepthFunc = ShadowDepthFuncNever;
         foreach (float[] matrix in _bumpMatrices)
@@ -1819,6 +1830,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         WriteUints(writer, _textureFilter);
         WriteUints(writer, _textureImageRect);
         WriteUints(writer, _textureBorderColor);
+        WriteUints(writer, _texturePalette);
         writer.Write(_shaderClipMode);
         writer.Write(_shadowDepthFunc);
         for (int i = 0; i < _bumpMatrices.Length; i++)
@@ -2152,6 +2164,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         ReadUints(reader, _textureFilter);
         ReadUints(reader, _textureImageRect);
         ReadUints(reader, _textureBorderColor);
+        ReadUints(reader, _texturePalette);
         _shaderClipMode = reader.ReadUInt32();
         _shadowDepthFunc = reader.ReadUInt32();
         for (int i = 0; i < _bumpMatrices.Length; i++)
@@ -2317,7 +2330,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         Backend?.ResetState();
     }
 
-    private const int Nv2ASnapshotVersion = 9;
+    private const int Nv2ASnapshotVersion = 10;
 
     private static void WriteUints(BinaryWriter writer, uint[] values)
     {
@@ -4002,6 +4015,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     case 0x1Cu:
                         _textureImageRect[slot] = parameter;
                         break;
+                    case 0x20u:
+                        _texturePalette[slot] = parameter;
+                        break;
                     case 0x24u:
                         _textureBorderColor[slot] = parameter;
                         break;
@@ -5677,6 +5693,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         RecordSamplerTap(plan, u, v, rawX, rawY, x, y, wrapped: true);
         TrackTextureCoords(x, y);
 
+        if (TryDecodeSpecialTexel(in plan, x, y, out r, out g, out b, out a, out uint specialAddress,
+                out uint specialTexel))
+        {
+            return CountSample(specialAddress, specialTexel, r, g, b);
+        }
+
         uint bytesPerTexel = plan.BytesPerTexel;
         if (bytesPerTexel == 0)
         {
@@ -5705,9 +5727,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                         InterleaveBits((uint)y, plan.SwizzleMaskY)) * bytesPerTexel;
         }
 
-        uint texel = bytesPerTexel == 2
-            ? ReadGpu(address) & 0xFFFFu
-            : ReadGpu(address);
+        uint texel = bytesPerTexel switch
+        {
+            1u => ReadByte(address),
+            2u => ReadGpu(address) & 0xFFFFu,
+            _ => ReadGpu(address),
+        };
         DecodeTextureTexel(color, texel, out r, out g, out b, out a);
         return CountSample(address, texel, r, g, b);
     }
@@ -5833,6 +5858,118 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     }
 
     /// <summary>
+    /// Decodes a texel whose format needs more than the 1/2/4-byte word at its
+    /// address: a paletted I8 index (a 32-bit palette lookup), an S3TC block
+    /// (the 4x4 block decode) or a YUV pair (the chroma neighbour bytes).
+    /// Returns false for every other format so the caller takes the word lane
+    /// unchanged. The address returned is the texel (or block) address the
+    /// diagnostic records.
+    /// </summary>
+    private bool TryDecodeSpecialTexel(ref readonly SamplerPlan plan, int x, int y,
+        out float r, out float g, out float b, out float a, out uint address, out uint texel)
+    {
+        r = 1f;
+        g = 1f;
+        b = 1f;
+        a = 1f;
+        address = 0u;
+        texel = 0u;
+        if (GpuMemory is null)
+        {
+            return false;
+        }
+
+        if (TextureFormats.IsPaletted(plan.Color))
+        {
+            address = TexelAddress(in plan, x, y);
+            byte index = ReadByte(address);
+            uint paletteOffset = _texturePalette[plan.Slot] & 0xFFFFFFC0u;
+            uint entry = GpuMemory.ReadPhysical(paletteOffset + ((uint)index * 4u));
+            TextureFormats.DecodePaletteEntry(index, entry, out r, out g, out b, out a);
+            texel = entry;
+            return true;
+        }
+
+        if (TextureFormats.IsCompressed(plan.Color))
+        {
+            int blockBytes = S3tcDecoder.BlockBytes(plan.Color);
+            int blocksPerRow = Math.Max((plan.Width + 3) / 4, 1);
+            int blockX = x >> 2;
+            int blockY = y >> 2;
+            address = plan.Offset + (uint)((((long)blockY * blocksPerRow) + blockX) * blockBytes);
+            Span<byte> block = stackalloc byte[16];
+            for (int i = 0; i < blockBytes; i += 4)
+            {
+                uint word = ReadGpu(address + (uint)i);
+                block[i] = (byte)word;
+                block[i + 1] = (byte)(word >> 8);
+                block[i + 2] = (byte)(word >> 16);
+                block[i + 3] = (byte)(word >> 24);
+            }
+
+            if (!S3tcDecoder.TryDecodeTexel(plan.Color, block[..blockBytes], ((y & 3) << 2) | (x & 3),
+                    out byte br, out byte bg, out byte bb, out byte ba))
+            {
+                return false;
+            }
+
+            r = br / 255f;
+            g = bg / 255f;
+            b = bb / 255f;
+            a = ba / 255f;
+            texel = ((uint)ba << 24) | ((uint)br << 16) | ((uint)bg << 8) | bb;
+            return true;
+        }
+
+        if (TextureFormats.IsYuv(plan.Color))
+        {
+            bool odd = (x & 1) != 0;
+            uint baseAddress = plan.Offset + (uint)(y * plan.Pitch) + ((uint)x * 2u);
+            if (odd && baseAddress < 2u)
+            {
+                return false;
+            }
+
+            uint windowAddress = odd ? baseAddress - 2u : baseAddress;
+            Span<byte> window = stackalloc byte[4];
+            for (int i = 0; i < 4; i++)
+            {
+                window[i] = ReadByte(windowAddress + (uint)i);
+            }
+
+            TextureFormats.TryDecodeYuv(plan.Color, window, odd, out r, out g, out b);
+            a = 1f;
+            address = baseAddress;
+            texel = (uint)(window[0] | (window[1] << 8) | (window[2] << 16) | (window[3] << 24));
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The byte address of one texel under the plan's layout (the same linear
+    /// pitch walk and Morton/interleave fold the generic sampler uses).
+    /// </summary>
+    private static uint TexelAddress(ref readonly SamplerPlan plan, int x, int y)
+    {
+        if (plan.Linear)
+        {
+            return plan.Offset + (uint)((y * plan.Pitch) + (x * (int)plan.BytesPerTexel));
+        }
+
+        if (plan.MortonMasks)
+        {
+            uint swizzled = (SpreadMortonBits((uint)x) & plan.SwizzleMaskX)
+                          | ((SpreadMortonBits((uint)y) << 1) & plan.SwizzleMaskY);
+            return plan.Offset + (swizzled * plan.BytesPerTexel);
+        }
+
+        return plan.Offset + ((InterleaveBits((uint)x, plan.SwizzleMaskX) |
+                               InterleaveBits((uint)y, plan.SwizzleMaskY)) * plan.BytesPerTexel);
+    }
+
+    /// <summary>
     /// Reads and decodes one texel of a plan at an unwrapped coordinate: the
     /// per-tap half of <see cref="SampleBilinear"/>, sharing the generic
     /// sampler's border, wrap, layout and decode rules.
@@ -5868,6 +6005,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
         int x = WrapCoordinatePlanned(rawX, plan.Width, plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
         int y = WrapCoordinatePlanned(rawY, plan.Height, plan.WrapModeV, plan.WrapMaskV, plan.MirrorMaskV);
+        if (TryDecodeSpecialTexel(in plan, x, y, out r, out g, out b, out a, out address, out texel))
+        {
+            return true;
+        }
+
         uint bytesPerTexel = plan.BytesPerTexel;
         if (bytesPerTexel == 0)
         {
@@ -5891,7 +6033,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                              InterleaveBits((uint)y, plan.SwizzleMaskY)) * bytesPerTexel;
         }
 
-        texel = bytesPerTexel == 2 ? ReadGpu(bytesAddress) & 0xFFFFu : ReadGpu(bytesAddress);
+        texel = bytesPerTexel switch
+        {
+            1u => ReadByte(bytesAddress),
+            2u => ReadGpu(bytesAddress) & 0xFFFFu,
+            _ => ReadGpu(bytesAddress),
+        };
         DecodeTextureTexel(plan.Color, texel, out r, out g, out b, out a);
         address = bytesAddress;
         return true;
@@ -6120,7 +6267,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             plan.Width = width;
             plan.Height = height;
             uint bytesPerTexel = TextureFormatBytesPerTexel(color);
-            plan.BytesPerTexel = bytesPerTexel;
+            plan.BytesPerTexel = TextureFormats.IsCompressed(color) ? 0u : bytesPerTexel;
             int pitch = (int)(_textureControl1[slot] >> 16);
             if (pitch <= 0)
             {
@@ -6164,16 +6311,16 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             plan.FastWrapV = 0;
             plan.DecodeKind = color switch
             {
-                0x02u or 0x10u or 0x03u or 0x1Cu or 0x04u or 0x1Du or 0x05u or 0x11u or 0x07u or 0x1Eu
-                    => color is 0x04u or 0x1Du ? 1 : 2,
-                // Byte-order variants are 32-bit but not A8R8G8B8: they must take
-                // the generic decode or their channels silently swap.
-                0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 2,
-                // G8B8/R8B8 are 16-bit two-channel words: generic decode too.
-                0x17u or 0x28u or 0x29u => 2,
-                _ => 0,
+                0x06u or 0x12u => 0,
+                0x04u or 0x1Du => 1,
+                // Every other format (the 16-bit RGB families, the byte-order
+                // variants, G8B8/R8B8, A8Y8/Y16/R6G5B5 and the new 8-bit
+                // formats) takes the generic DecodeTextureTexel branch; the
+                // previous default of 0 silently decoded them as A8R8G8B8.
+                _ => 2,
             };
             if (bytesPerTexel is 2 or 4 && width > 0 && height > 0 && !DiagnosticGenericSampler &&
+                !TextureFormats.IsCompressed(color) && !TextureFormats.IsYuv(color) &&
                 plan.UAddr != (int)TextureAddressBorder && plan.VAddr != (int)TextureAddressBorder)
             {
                 int fastU = FastWrapKind(plan.WrapModeU, plan.WrapMaskU, plan.MirrorMaskU);
@@ -6210,7 +6357,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             plan.CubeMorton = false;
             if (cubeBytes != 0 && cubeWidth > 0 && cubeHeight > 0)
             {
-                plan.CubeFaceStride = CubeFaceStride(slot, cubeWidth, cubeHeight, cubeBytes);
+                plan.CubeFaceStride = CubeFaceStride(slot, cubeWidth, cubeHeight);
                 ComputeSwizzleMasks(cubeWidth, cubeHeight, out uint cubeMaskX, out uint cubeMaskY);
                 plan.CubeMaskX = cubeMaskX;
                 plan.CubeMaskY = cubeMaskY;
@@ -6384,28 +6531,23 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// <returns>True for the linear formats; false for swizzled formats.</returns>
     public static bool IsLinearTextureFormat(uint color)
     {
-        return color is 0x10u or 0x11u or 0x12u or 0x1Cu or 0x1Du or 0x1Eu or 0x3Fu or 0x40u or 0x41u or 0x17u;
+        return TextureFormats.IsLinear(color);
     }
 
     /// <summary>
-    /// Gets the bytes per texel for a texture color format: 2 for the 16-bit
-    /// formats (0x02-0x05, their linear twins and the G8B8/R8B8 pair), 4 for the
-    /// 32-bit formats (0x06/0x07, their linear twins, and the byte-order variants
-    /// 0x3A-0x3C / 0x3F-0x41), 0 for unsupported formats (the caller counts a
-    /// format miss).
+    /// Gets the bytes per texel for a texture color format: 1 for the 8-bit
+    /// formats (Y8/AY8/A8 and the paletted I8), 2 for the 16-bit formats
+    /// (0x02-0x05, their linear twins, G8B8/R8B8, A8Y8, Y16, R6G5B5 and the
+    /// YUV pairs), 4 for the 32-bit formats (0x06/0x07, their linear twins, the
+    /// byte-order variants 0x3A-0x3C / 0x3F-0x41 and the S3TC formats' decoded
+    /// texel), 0 for unsupported formats and the depth formats (which sample
+    /// through the shadow path; the caller counts a format miss otherwise).
     /// </summary>
     /// <param name="color">Texture color-format id (FORMAT bits 8-15).</param>
-    /// <returns>2, 4, or 0 when the format is not backed by the sampler.</returns>
+    /// <returns>1, 2, 4, or 0 when the format is not backed by the sampler.</returns>
     public static uint TextureFormatBytesPerTexel(uint color)
     {
-        return color switch
-        {
-            0x02u or 0x03u or 0x04u or 0x05u or 0x10u or 0x11u or 0x1Cu or 0x1Du
-                or 0x17u or 0x28u or 0x29u => 2u,
-            0x06u or 0x07u or 0x12u or 0x1Eu => 4u,
-            0x3Au or 0x3Bu or 0x3Cu or 0x3Fu or 0x40u or 0x41u => 4u,
-            _ => 0u,
-        };
+        return TextureFormats.BytesPerTexel(color);
     }
 
     /// <summary>
@@ -6527,6 +6669,11 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 a = 1f;
                 break;
             default:
+                if (TextureFormats.TryDecodeWord(color, texel, out r, out g, out b, out a))
+                {
+                    break;
+                }
+
                 a = Unit255[(int)((texel >> 24) & 0xFFu)];
                 r = Unit255[(int)((texel >> 16) & 0xFFu)];
                 g = Unit255[(int)((texel >> 8) & 0xFFu)];
@@ -6714,7 +6861,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     /// size), rounded up to the 128-byte face alignment. Matches xemu's
     /// <c>pgraph_get_texture_length</c> cubemap path.
     /// </summary>
-    private uint CubeFaceStride(int slot, int width, int height, uint bytes)
+    private uint CubeFaceStride(int slot, int width, int height)
     {
         int levels = (int)((_textureFormat[slot] & TextureFormatMipmapLevels) >> 16);
         int maxLevel = (int)((_textureControl0[slot] >> 6) & 0x3FFu);
@@ -6726,19 +6873,8 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         }
 
         levels = Math.Min(Math.Max(levels, 1), Math.Min(maxLevel + 1, logMax + 1));
-        uint total = 0u;
-        int w = width;
-        int h = height;
-        for (int level = 0; level < levels; level++)
-        {
-            w = Math.Max(w, 1);
-            h = Math.Max(h, 1);
-            total += (uint)(w * h) * bytes;
-            w /= 2;
-            h /= 2;
-        }
-
-        return (total + 127u) & ~127u;
+        uint color = (_textureFormat[slot] >> 8) & 0xFFu;
+        return (uint)TextureFormats.CubeFaceStride(color, width, height, levels);
     }
 
     /// <summary>
@@ -8911,6 +9047,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         int x = _samplerLastX[input];
         int y = _samplerLastY[input];
         bool aligned = plan.Width > 0 && plan.Height > 0 && plan.BytesPerTexel is 2u or 4u &&
+                       TextureFormats.IsWordDecodable(plan.Color) &&
                        SemanticallyEqual(plan, _samplerLastPlan[input]) && _samplerLastValid[input] &&
                        x < plan.Width && y < plan.Height && x >= 0 && y >= 0;
         if (!aligned)

@@ -4,14 +4,14 @@
   "objective": "xemu-class performance and compatibility on the same content; full managed C#; GPL-2.0 (operator decision 2026-10-23)",
   "current": {
     "milestone": "M-D",
-    "id": "G1",
-    "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
+    "id": "G2",
+    "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
     "plan": "E5c",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "73 recorded methods handled or declined with a measured reason, DXT/paletted/mipmap/multistage formats decoded, software 1B anchors and ktest log byte-identical, notices rows for every ported file",
-    "price": "~4.7k C LOC, 4-6 sessions; compatibility item, not the draw cost (device stage 41.6% menu / 10.9% triangle)"
+    "acceptance": "22-row matrix re-verified or re-baselined with the policy diff (violations=0, maxDelta<=1), BackendUnsupported=0 fatal=0 and the expected composedFrames, batching/sampler/composition/display-source preserved, software anchors and ktest log byte-identical",
+    "price": "~11.2k C LOC, 5-8 sessions; menu device 6.57 s pre-D5, triangle 0.62 s"
   },
   "position": {
     "host": "H1",
@@ -232,22 +232,10 @@
   ],
   "queue": [
     {
-      "id": "G1",
-      "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
-      "plan": "E5c",
-      "status": "active",
-      "depends": [
-        "D8"
-      ],
-      "acceptance": "73 recorded methods handled or declined with a measured reason, DXT/paletted/mipmap/multistage formats decoded, software 1B anchors and ktest log byte-identical, notices rows for every ported file",
-      "price": "~4.7k C LOC, 4-6 sessions; compatibility item, not the draw cost (device stage 41.6% menu / 10.9% triangle)",
-      "evidence": []
-    },
-    {
       "id": "G2",
       "title": "GL renderer port (xemu pgraph/gl + the glsl pieces it needs)",
       "plan": "E5c",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "G1"
       ],
@@ -359,6 +347,13 @@
       "date": "2026-10-23",
       "evidence": "release tree: scripts/package.ps1 publishes the CLI and frontend self-contained for win-x64/linux-x64/osx-x64/osx-arm64 (8 archives, 32.7-47.7 MB) at 0.1.0 with COPYING (GPL-2.0, 17,880 B) + LICENSE + THIRD_PARTY_NOTICES.md + RELEASE-NOTES.md + VERSION, sorted fixed-timestamp archives, SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json; reproducibility: two independent runs of the same commit produced 8/8 byte-identical archives, and the recipe was re-run on the reviewed tree with the same result (the binaries embed 0.1.0+<commit> in InformationalVersion by design, so a new commit changes every archive; each run writes per-archive SHA-256 into SHA256SUMS-<rid>.txt, SHA256SUMS.txt and package-manifest.json); acceptance gate scripts/package-verify.ps1 fails the pre-fix recipe with 22 problems (no COPYING/THIRD_PARTY_NOTICES/RELEASE-NOTES/manifest/checksums, VERSION v0.1.0 vs 0.1.0, XML docs shipped) and passes the new tree (17 ported files recorded, per-RID MZ/ELF/Mach-O magic, checksum+manifest cross-check, packaged CLI --version = XGrid 0.1.0); license review docs/release-licensing-review.md findings F1-F6: F1 the full license set now ships in every archive (release.yml was LICENSE+README only), F2 one version source in Directory.Build.props (the CLI printed 0.1.0 while assemblies were 1.0.0) plus VERSION/manifest/checksums, F3 six NV2A transcriptions (PshCombiner, VshProgram, VshProgramPlan, FixedFunctionVertex, FixedFunctionVertexState, SpecularPowerCurve) gain SPDX + original copyright + notices rows and the gate now fails any src file declaring Ported from/Derived from without both, F4 0.8.137 citations made version-accurate, F5 OS installer deferred by scope decision (portable archives, no install-time state), F6 unsigned/notarized status and the macOS quarantine command documented; release notes docs/release-notes/v0.1.0.md; release.yml, docs/ci.md and README aligned; build 0 warnings, 1922 tests green, format clean; no emulator path changed so the 1B anchors are carried (triangle gl 4F1FCBC0/7DAB63EB, menu gl B06BA6E5/F5D61C94, accurate 4EF1FBF6/B6116DAE and A1740DE0/7A860ED7, ktest 792,800,535 steps log CA5D3867); phase 23 Release 18 -> 55%, score 78.9 -> 79.9% (86.34 of 108)",
       "commitMessage": "release: package the CLI and frontend for four RIDs with a licensing gate (R1)"
+    },
+    {
+      "id": "G1",
+      "title": "NV2A PGRAPH core port (xemu 0.8.139 pgraph/)",
+      "date": "2026-10-24",
+      "evidence": "73 recorded methods audited (1 handled: SET_TEXTURE_PALETTE + paletted lane; 72 declined with measured writes/values, nv097-coverage.md G1 audit); DXT1/3/5 + paletted I8 + Y8/AY8/A8/A8Y8/Y16/R6G5B5 + YUY2/UYVY + mip-chain layout ported (S3tcDecoder/TextureFormats, 16 reference block vectors, 40 tests); fast 1B gl+replace triangle 4F1FCBC0/7DAB63EB 5.707 s, menu B06BA6E5/F5D61C94 14.199 s; fast 1B sw triangle B45254CA/7DAB63EB 57,663,082 px, menu 34973510/F5D61C94 253,998,498 px; accurate goldens triangle A1740DE0/7A860ED7, menu 4EF1FBF6/B6116DAE violations=0; ktest 792,800,535 steps, 40,797 B CA5D3867 log byte-identical, SMOKE PASS 7/7; suite 1965 green; snapshot v10",
+      "commitMessage": "nv2a: audit the 73 recorded methods and port the texture-format table (G1)"
     }
   ],
   "negatives": [

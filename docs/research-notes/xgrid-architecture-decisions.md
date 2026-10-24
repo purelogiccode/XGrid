@@ -16765,3 +16765,90 @@ the spec-run loop (1.8%), and only then anything that reopens N4.
 - The wall absolutes in this window are loaded (triangle `gl+replace` 6.10 s at
   best, 6.86 s on the plain leg); every claim above is a share or a ratio, and
   the anchors are the invariant.
+
+## 250 G1: the 73 recorded methods audited and the texture-format table ported (2026-10-24, fiftieth session) - G1
+
+**What this is.** G1 is the compatibility half of the optional wholesale NV2A
+port (`ImplementationPlan.md` E5c): the PGRAPH core's method dispatch, state and
+formats, with the software rasterizer kept as the oracle and the default
+renderer. This session lands the first bounded slice: the **recorded-method
+audit** (the acceptance's "73 handled or declined with a measured reason") and
+the **texture-format table + decoders** (DXT, paletted, the 8/16-bit families,
+YUV and the mip-chain layout). No draw/fill cost moves (that is G2).
+
+**Why the price is not a wall gate.** The plan prices G1 as ~4.7k C LOC / 4-6
+sessions and calls it "the compatibility half: it does not change the draw/fill
+cost (that is G2)". Its value is the acceptance, not a 10% wall: the device
+stage is 41.6% of the menu wall but 10.9% of the triangle's, and the runner/boot
+are untouched. The measured wall of this slice is therefore 0% by construction;
+the evidence is the anchors and the test/vector surface.
+
+### 1. The method audit (the 73 recorded entries)
+
+Probe: `--pgraph` on `triangle.xbe` 300M steps and the dashboard 1B (fast,
+`--pgraph-max 3000000/4000000`). The full table is
+`docs/research-notes/nv097-coverage.md` "G1 audit"; the parameter table is
+`usage-histogram.md` "Recorded-method parameters". Result: **1 handled, 72
+declined**.
+
+- **Handled: `SET_TEXTURE_PALETTE` (0x1B20).** State sink `_texturePalette[4]`
+  (snapshot **v10**) and the paletted I8 sampler lane. No measured row binds
+  0x0B; the synthetic test is the evidence.
+- **No-op / already-correct values:** `WAIT_FOR_IDLE` (all 0, synchronous
+  pusher); `SET_SHADE_MODE` = `V_SMOOTH`; `SET_PROVOKING_VERTEX` = 1 (only flat
+  shading reads it); `SET_FRONT/BACK_POLYGON_MODE` = `V_FILL`; the polygon
+  offset scale/bias are -0.0/0 with the fill enable 0.
+- **Off in every measured row:** point/line/poly smooth, point params, the
+  polygon-offset enables, logic op, color key (all 0), the report/occlusion
+  methods (0 writes), the immediate-mode vertices and weights (0 writes), the
+  XVSS methods (0 writes), the back-light/eye-direction context (0 writes; no
+  row enables a light).
+- **Measured but deliberately declined:** window clip (61/113 writes, type 0,
+  every rect starts at 0 and covers a bound surface; a scissor cannot narrow
+  the gate frames, and the general 8-rect per-fragment test is a G2 GL item);
+  dither (the menu enables it 172x, but xemu's GL path ignores it and there is
+  no oracle); anti-aliasing (`0xFFFF0001` with the surface AA field 0, factor
+  1); the context-DMA handles (2/3/4/7/0x0B/0x11/0x0C/0x19, with the guest's
+  absolute offsets already correct in every frame); `SET_SHADOW_ZSLOPE_THRESHOLD`
+  (+inf, no depth texture bound).
+
+**The audit is a measurement, not an assumption.** A 0 in the table means "not
+issued in that window", not "never issued"; the table names the window.
+
+### 2. The texture-format port
+
+`src/XGrid.Nv2a/S3tcDecoder.cs` (MIT, xemu 0.8.139 `s3tc.c`): DXT1/DXT3/DXT5
+block decode, full-block and single-texel entry points. `src/XGrid.Nv2a/
+TextureFormats.cs` (LGPL-2+, xemu `texture.c` + `gl/constants.h` + `util.h`):
+the 66-entry color-format table (bytes/linear), the Y8/AY8/A8/A8Y8/Y16/R6G5B5
+word decoders, the palette entry, the YUY2/UYVY conversion and the mip-chain
+length/offset/face-stride math. The software sampler gains three special lanes
+(palette lookup, S3TC block, YUV pair) and reads 1-byte formats; the compiled
+fills stay on their existing fast formats (`DecodeKind` now defaults to the
+generic branch instead of silently decoding an unknown format as A8R8G8B8).
+The cube face stride is now the shared `TextureFormats.CubeFaceStride` (same
+formula; the gate/corpus frames confirm it).
+
+**Differential evidence.** `tools/texture-oracle/` compiles the reference
+`s3tc.c` standalone and generates 16 block vectors (edge cases + deterministic
+random blocks); `tests/XGrid.Nv2a.Tests/Nv2aTextureFormatTests.cs` replays them
+through the port and also checks the single-texel entry point, the new word
+decoders, the mip math and four sampler lanes. The vector file is
+`TestData/s3tc-vectors.txt`.
+
+**Mipmaps.** The chain layout is decoded and shared with the cube face stride;
+sampling still uses level 0 (no per-pixel LOD). The `mesh` corpus row is
+mipmapped 3D and is unchanged, so this is a decode, not a re-baseline.
+
+### 3. Gates (this session, H1)
+
+- Fast 1B `gl+replace`: triangle `4F1FCBC0` / `7DAB63EB` (5.663 s), menu
+  `B06BA6E5` / `F5D61C94` (14.399 s).
+- Fast 1B `sw`: triangle `B45254CA` / `7DAB63EB` 57,663,082 px; menu
+  `34973510` / `F5D61C94` 253,998,498 px.
+- Nv2a suite 476 green (39 new format tests); the full solution suite and the
+  ktest smoke are the close gate. Snapshot **v10** (the palette state), so old
+  `.xgs` files are invalid.
+- **Provenance:** `S3tcDecoder.cs` MIT, `TextureFormats.cs` LGPL-2+ (included
+  under GPL-2.0 via LGPL §3), both recorded in `THIRD_PARTY_NOTICES.md` and
+  `sources.md`; the oracle is development-only.
