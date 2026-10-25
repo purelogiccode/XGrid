@@ -497,3 +497,143 @@ never mixed into the EP's input: the **VP mixer (`vp.c`) is not modelled**, and
 the AC'97 codec has no PCM path. That is TM8's default scope, so part 6 of the
 playability definition is a **documented silence**, not a claim.
 
+
+## TM5 outcome (2026-10-25)
+
+**Halo launched and rendered its own main menu.** The blocker was ours: the APU
+DSP bridge knew only 007's mixer-block address.
+
+### The blocker: the mixer block was hard-coded to 007's page
+
+From the 10B snapshot (no fault) the guest spins at `0x195EC0`
+(`cmp dword [eax+0x10],0; jne`) on a DirectSound mixer state word at
+`0x82034810` (phys `0x02034810`) holding 3 (parameters loaded). The block is the
+XDK DirectSound submission: a six-dword descriptor at scratch page + 0x800 and
+its state word at + 0x810 (`2` = submit posted, `3` = parameters loaded; the DSP
+writes `0` when it consumes the block). 007 posts the **same** block at
+`0x03924800` - and `McpxApuDevice` carried that address as a constant
+(`DspStateWordPhys`), so only 007's submission was ever absorbed.
+
+`McpxApuDevice` now discovers the block from the guest's own GP scratch
+(`GPSADDR`) SGE table: for every mapped page it reads page + 0x810 and absorbs a
+`2`/`3` (`TryGetMixerStateWord`). The per-title constant is gone; the mapping is
+the guest's, and the DSP can only touch guest RAM through it.
+
+Evidence: with the fix the log reads `dsp-absorb 3->0 n=1`, `2->0 n=2`,
+`3->0 n=3` and the guest leaves the spin at once (EIP `0x1C8FC0`). Three new
+tests; two fail on the pre-fix source
+(`Absorb_StateWordDiscoveredFromTheScratchMapping`,
+`Absorb_PostedSubmitOnASecondScratchPageRaisesBit3`).
+
+### The progress
+
+| anchor | steps | draws | pixels | frames | state |
+|---|---:|---:|---:|---:|---|
+| 1B matrix | 1B | 2,672 | 41,995,882 | 35 | dashboard animation, own XBE code |
+| first probe | 1.5B | - | - | - | **the mixer wait** (EIP `0x195EC0`) |
+| +0.5B after the fix | 10.5B | 2,694 | 48,139,882 | 56 | past the wait (EIP `0x1C8FC0`) |
+| 15B | 15B | 2,889 | 108,043,882 | 251 | **Halo loading screen** (blue capsules + clock) |
+| 35B | 35B | 3,247 | 191,496,512 | 516 | **Halo main menu** |
+| 100B | 100B | 3,247 | 191,496,512 | 516 | unchanged - the second wait |
+
+The frames: `wt-data/tm5/halo-15b-display.png` (loading) and
+`wt-data/tm5/halo-35b-display.png` (the main menu: HALO / CAMPAIGN /
+MULTIPLAYER / SETTINGS / GAME DEMOS, 97,235 colours, mean (153.5, 157.7, 176.0),
+0% black).
+
+### The 1B matrix moved: 6 own-render rows (was 2)
+
+The same fix is what the matrix rule looks for - one shared blocker across many
+titles. Re-running `scripts/title-matrix.ps1` (44 rows, 1B, same media and pad
+script) gives **6 own-render / 38 dashboard / 0 fault / 0 timeout**, and the
+oracle rows show it:
+
+| title | before (TM4 matrix) | after (TM5) |
+|---|---|---|
+| Ninja Gaiden Black | 2,672 / 41,995,882 / **35** frames, EIP `0x37DC15` | 2,672 / 41,995,882 / **6,475** frames, EIP `0x21A97D` |
+| Tak | 2,675 / 41,995,882 / 42 frames | 3,701 / 41,995,882 / **1,068** frames, EIP `0x2B893E` |
+| 50 Cent | 2,672 / 41,995,882 / 34 frames | 2,864 / **100,987,370** / 98 frames, EIP `0x1E0863` |
+| Bad Boys II | 2,672 / 41,995,882 / 34 frames | 2,673 / **42,303,082** / 35 frames, EIP `0x8001B02E` |
+| Destroy All Humans! | dashboard menu 33,638 / 253,998,498 / 686 | 2,672 / 41,995,882 / 34 frames, EIP `0x8001434F` |
+| 007 / Halo | 2,672 / 41,995,882 / 55 and 35 | unchanged |
+
+The differential is clean: the **pre-fix** build reproduces Ninja Gaiden Black's
+old row exactly (2,672 / 41,995,882 / 35 frames, EIP `0x37DC15`), and the fixed
+build logs `dsp-absorb 3->0`, `2->0`, `2->0`, `2->0` on the same run. Five of the
+seven oracle titles now leave the boot animation at 1B. Two caveats, stated
+rather than hidden: `own-render` is a tuple-uniqueness rule, so Destroy All
+Humans! (34 frames vs the animation's 35) counts as one although it only changed
+stage, and the 37 XBOXTest rows are unchanged (they present the dashboard menu
+tuple).
+
+### The remaining wait: a guest D3D resource retry loop
+
+The menu renders, then the guest busy-waits:
+
+```
+001810F0  mov eax,[esp+4]              ; handle
+001810F4  mov edx,[0x192390]           ; resource table (0x18F800)
+001810FC  shr ecx,8                    ; bucket
+001810FF  and eax,0xFF                 ; slot
+00181105  mov esi,[edx+ecx*4+0x48C]    ; bucket 0 -> 0x80060000
+0018110F  mov ecx,[eax+esi+0xC]        ; slot field
+00181115  cmp ecx,-1
+00181119  jne 0x181123
+0018111B  mov eax,0x88760828           ; D3DERR_NOTFOUND
+00181120  ret 0xC
+...
+00063476  call 0x1810F0
+0006347B  cmp eax,0x88760828
+00063480  jne 0x63499                ; resolved -> continue
+00063482  ... retry while NOTFOUND
+```
+
+The handle is **0** on every call (`--break-log`: `arg=00000000`, ESI=0), the
+bucket pointer at `[0x18FC8C]` is `0x80060000` (which maps to physical
+`0x00060000`, Halo's own code image) and the slot field is `-1`, so the lookup
+never resolves. 99.99% of 280M sampled instructions are the 23 EIPs of this
+loop; `--eip-hist 40` puts every other EIP at 46-381 samples of 7,000,000.
+
+Last device I/O at the park: IDE `lastCmd=0xC8` (READ DMA, 32,216 accesses),
+APU `reads=14,173,492 writes=14,173,551 voiceOff=7` with the mixer absorbs,
+NV2A 538 notifications / 3,247 draws / 191,496,512 px / 516 frames, PIC
+`elcr=0x78/0x18` (IRQ3 level) `req=0x00`. Interrupts keep arriving (165,903 by
+100B) and `LastFault vec=0`, so the guest is not wedged: it waits for a
+guest-side resource that never appears.
+
+The pad does reach the guest: an A press at 19.5B changes the frame phase
+(frames 449 vs 511 at the same budget) but does not move the menu, because the
+menu logic is already inside the wait.
+
+### The xemu comparison
+
+`scripts/xemu-oracle.ps1` on the same ISO reaches **the same main menu at 70 s**
+(`wt-data/tm5/xemu-halo-70s.png`) and **in-game gameplay at 150 s**
+(`wt-data/tm5/xemu-halo-150s.png`: first-person Master Chief, HUD, "RELOAD"
+prompt) - so the remaining wait is ours, not the title's.
+
+The capture had to be fixed twice as well: a screen copy caught the editor
+behind xemu (the window had lost the top slot), so the script re-asserts
+topmost/foreground and now captures through `PrintWindow` (client-only), falling
+back to the screen copy when the GL surface answers black.
+
+**Screenshot policy at the menu: not met.** xemu's menu at 70 s reads mean
+(44.0, 49.5, 54.9) with 31,998 colours and 0.0% black; XGrid's at 35B reads
+(145.9, 150.1, 168.2) with 39,040 colours and 0.0% black -
+`dmean=(101.8, 100.6, 113.3)`, far outside the 25/255 bar. The scene is the same
+(the logo and the four entries are in both) but XGrid's menu background renders
+far brighter, so no frame-policy claim is made for Halo.
+
+### Audio: silent, measured
+
+`--apu-dsp --audio-out` on Halo writes a 44-byte WAV header and **0 PCM frames**
+(`gpFrames=0 epFrames=0`): the guest starts the GP/EP (`GP DSP start`, `EP DSP
+start` in the APU log) but the pair never runs a frame in this state. Same TM8
+gap as 007, one stage earlier.
+
+### Gates
+
+Not one anchor moved: accurate menu `4EF1FBF6` / `B6116DAE`
+(`5C0CF968`/`E2B4D327`, 33,632/686/686), accurate triangle `5B50373D` /
+`79142DE4` (`E58AE5D7`/`C43D5B49`, 2,707/69/34), ktest `CA5D3867` (40,797 B) at
+792,800,535 steps. Suite 1990 -> 1993, build 0 warnings, format clean.

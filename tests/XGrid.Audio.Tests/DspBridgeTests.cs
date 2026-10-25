@@ -86,6 +86,62 @@ public sealed class DspBridgeTests
     }
 
     [Fact]
+    public void Absorb_StateWordDiscoveredFromTheScratchMapping()
+    {
+        // Halo posts its mixer block at 0x02034800 (page 0x02034000); the bridge used
+        // to know only 007's 0x03924810, so the submission was never consumed and the
+        // guest spun on the state word forever (TM5).
+        const uint haloSgeTable = 0x00100000;
+        const uint haloStateWord = 0x02034810u;
+        var memory = new FakeMemory();
+        var apu = new McpxApuDevice(memory);
+        apu.Write(Base + GpsAddr, 4, haloSgeTable);
+        memory.Write32(haloSgeTable, 0x02034000u);
+        apu.Write(Base + GpRst, 4, 3);
+        memory.Write32(haloStateWord, 3);
+
+        apu.Advance(OneFrame);
+
+        Assert.Equal(0u, memory.Read32(haloStateWord));
+        Assert.Equal(1, apu.DspAbsorbs);
+    }
+
+    [Fact]
+    public void Absorb_PostedSubmitOnASecondScratchPageRaisesBit3()
+    {
+        var memory = new FakeMemory();
+        var apu = new McpxApuDevice(memory);
+        apu.Write(Base + GpsAddr, 4, SgeTable);
+        memory.Write32(SgeTable, 0x00100000u);
+        memory.Write32(SgeTable + 8, 0x02034000u);
+        apu.Write(Base + GpRst, 4, 3);
+        apu.Write(Base + Ien, 4, 0xAFB);
+        memory.Write32(0x02034810u, 2);
+
+        apu.Advance(OneFrame);
+
+        Assert.Equal(0u, memory.Read32(0x02034810u));
+        Assert.Equal(1, apu.DspAbsorbs);
+        Assert.Equal(1, apu.DspBit3Raises);
+    }
+
+    [Fact]
+    public void NoAbsorb_WhenScratchPageStateIsUnrelated()
+    {
+        var memory = new FakeMemory();
+        var apu = new McpxApuDevice(memory);
+        apu.Write(Base + GpsAddr, 4, SgeTable);
+        memory.Write32(SgeTable, 0x02034000u);
+        apu.Write(Base + GpRst, 4, 3);
+        memory.Write32(0x02034810u, 1);
+
+        apu.Advance(OneFrame);
+
+        Assert.Equal(1u, memory.Read32(0x02034810u));
+        Assert.Equal(0, apu.DspAbsorbs);
+    }
+
+    [Fact]
     public void NoAbsorb_WhenGpStopped()
     {
         var memory = new FakeMemory();

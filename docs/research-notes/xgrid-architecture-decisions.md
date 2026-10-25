@@ -17381,3 +17381,95 @@ differs): 50M steps gives RAM `68E22299` (no input) / `0FFAF650` (stick right) /
 cutscene is skipped). Across the boot the pad edge is the stage switch: 20B with
 no pad is the Harrier intro (38,350 colours), with the A press it is gameplay.
 
+
+## 256 TM5: the APU mixer block was hard-coded to 007's page - Halo launches and renders its own menu (2026-10-25, fifty-sixth session) - TM5
+
+**The blocker was a per-title constant.** `McpxApuDevice` modelled the XDK
+DirectSound mixer submission by absorbing a state word at the fixed physical
+address `0x03924810` (`DspStateWordPhys`), guarded by an SGE-page check. That is
+007's block. Halo posts the *same* six-dword block at `0x02034800` with its state
+word at `0x02034810`, so the bridge never saw it: the guest set state 3
+("parameters loaded") and spun at EIP `0x195EC0`
+(`cmp dword [eax+0x10],0; jne`) from ~1.5B steps, with no fault and no further
+frames.
+
+The block layout is identical in both titles, which is what makes the rule
+general: a descriptor at GP-scratch page + 0x800 and the state word at + 0x810
+(2 = submit posted, 3 = parameters loaded; the DSP writes 0 when it consumes it).
+The fix replaces the constant with `TryGetMixerStateWord`: scan the guest's own
+`GPSADDR` SGE table (16 entries, xemu `MCPX_HW_MAX_PRD_ENTRIES_PER_SSL`), read
+page + 0x810 for each mapped page, absorb a 2 or 3. The DSP can only touch guest
+RAM through that mapping (xemu `gp_scratch_rw`), so the mapping is the correct
+authority and a title that never programs it never absorbs.
+
+**Evidence.** From `wt-data/tm5/halo-10b.xgs` the pre-fix build spins forever
+(2B steps, 99.99% of samples at the loop); the fixed build logs
+`dsp-absorb 3->0 n=1`, `2->0 n=2`, `3->0 n=3` and leaves the spin at once
+(EIP `0x1C8FC0`, frames 35 -> 56 in 500M steps). Two of the three new tests fail
+on the pre-fix source (`Absorb_StateWordDiscoveredFromTheScratchMapping`,
+`Absorb_PostedSubmitOnASecondScratchPageRaisesBit3`); the third
+(`NoAbsorb_WhenScratchPageStateIsUnrelated`) guards against absorbing a page
+whose +0x810 happens to hold some other small value.
+
+**The title's progress** (fast engine, `--gpu sw`, HDD + DVD):
+
+| steps | draws | pixels | frames | state |
+|---:|---:|---:|---:|---|
+| 1B (matrix) | 2,672 | 41,995,882 | 35 | dashboard animation, own XBE code |
+| 10.5B | 2,694 | 48,139,882 | 56 | past the mixer wait |
+| 15B | 2,889 | 108,043,882 | 251 | Halo's loading screen |
+| 35B | 3,247 | 191,496,512 | 516 | **Halo's main menu** |
+| 100B | 3,247 | 191,496,512 | 516 | unchanged: the second wait |
+
+**The remaining wait is guest-side.** After the menu renders the guest busy-waits
+in a D3D resource lookup: `0x1810F0` (called from `0x6348B`) reads a bucket table
+at `[0x192390] = 0x18F800`, takes `buckets[handle >> 8]` from `+0x48C`, indexes a
+16-byte slot by `handle & 0xFF`, and returns `0x88760828` (D3DERR_NOTFOUND) when
+the slot field is `-1`; the caller retries while it is NOTFOUND. The handle is
+**0** on every call (`--break-log arg=00000000`, ESI=0) and the bucket pointer
+`[0x18FC8C]` is `0x80060000` (physical `0x00060000`, Halo's own code image) with
+the slot field `-1`, so it never resolves. `--eip-hist 40` over 280M steps puts
+99.99% of samples in the 23 EIPs of that loop. Interrupts keep arriving (165,903
+by 100B), `LastFault vec=0`, and the last device I/O is IDE READ DMA `0xC8`
+(32,216 accesses) with the APU at `reads/writes` 14.17M and NV2A 538
+notifications - the guest is waiting for a resource, not for a device.
+
+**xemu 0.8.139 on the same ISO** shows the same menu at 70 s and in-game gameplay
+at 150 s, so the wait is ours. Two oracle defects were fixed to capture it: the
+window had lost the top slot, so a plain screen copy caught the editor behind
+xemu - the script re-asserts topmost/foreground and captures through
+`PrintWindow` (client-only), falling back to the screen copy when the GL surface
+answers black. **The screenshot policy is not met at the menu**:
+`dmean=(101.8, 100.6, 113.3)` (xemu mean (44.0, 49.5, 54.9) vs XGrid
+(145.9, 150.1, 168.2), colours 31,998 vs 39,040, black 0.0% both) - the same
+scene, but XGrid's menu background renders far brighter.
+
+**Audio is silent, measured.** `--apu-dsp --audio-out` writes a 44-byte WAV and
+0 PCM frames (`gpFrames=0 epFrames=0`): the guest starts the GP/EP but the pair
+never runs a frame in this state. Same TM8 gap as 007, one stage earlier.
+
+**Gates: not one anchor moved.** The gate titles post no mixer block that the new
+rule absorbs differently, so the four accurate 1B goldens are byte-identical
+(`4EF1FBF6`/`B6116DAE` with `5C0CF968`/`E2B4D327` and 33,632/686/686;
+`5B50373D`/`79142DE4` with `E58AE5D7`/`C43D5B49` and 2,707/69/34) and the ktest
+log is `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps. Suite 1990 ->
+**1993**, build 0 warnings, format clean. Also landed: the PIC state line prints
+`elcr=` (the TM2 register, needed to rule the level-line theory in and out here).
+
+**The 1B matrix moved, and the differential is clean.** Re-running
+`scripts/title-matrix.ps1` (44 rows, 1B) gives **6 own-render / 38 dashboard /
+0 fault / 0 timeout** (was 2 / 42 / 0 / 0): Ninja Gaiden Black 35 -> **6,475**
+frames (EIP `0x21A97D`), Tak 42 -> **1,068** frames with 3,701 draws, 50 Cent
+34 -> 98 frames and 100,987,370 px (EIP `0x1E0863`), Bad Boys II 42,303,082 px,
+Destroy All Humans! off the dashboard menu (34 frames, kernel EIP). The pre-fix
+build reproduces Ninja Gaiden Black's old row exactly (2,672 / 41,995,882 / 35
+frames, EIP `0x37DC15`) while the fixed build logs `dsp-absorb 3->0 / 2->0 / 2->0
+/ 2->0` on the same command - so five of the seven oracle titles now leave the
+boot animation at 1B. Caveat kept in the report: `own-render` is a
+tuple-uniqueness rule, so Destroy All Humans! (34 frames vs 35) counts as one
+although it only changed stage.
+
+**Next (TM6):** the second-tier titles. The D3D resource loop is the first
+candidate for a shared blocker (Halo, and plausibly Ninja Gaiden Black / 50 Cent
+/ Bad Boys II, which are all past their XBE entry and still on the dashboard at
+1B) - probe those four at 10-40B before choosing.

@@ -96,6 +96,7 @@ public static class XemuOracleWin32 {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
 }
 '@
 
@@ -158,6 +159,12 @@ try {
     # Re-read the client origin now: a window can settle (or be nudged) while it
     # boots, and capturing from a stale origin shifts the frame and drags the
     # window chrome into the shot.
+    # Re-assert topmost/foreground immediately before the grab: another window can
+    # take the top slot during the boot wait, and the capture is a screen copy (the
+    # first Halo attempt caught the editor behind xemu).
+    [XemuOracleWin32]::SetWindowPos($h, [IntPtr](-1), 40, 40, 0, 0, 0x0001 -bor 0x0002) | Out-Null
+    [XemuOracleWin32]::SetForegroundWindow($h) | Out-Null
+    Start-Sleep -Milliseconds 400
     [XemuOracleWin32]::GetClientRect($h, [ref]$cr) | Out-Null
     $cw = $cr.Right - $cr.Left
     $ch = $cr.Bottom - $cr.Top
@@ -167,9 +174,32 @@ try {
     Write-Host "Capturing client ${cw}x${ch} at $($pt.X),$($pt.Y)"
 
     Add-Type -AssemblyName System.Drawing
+
+    # Prefer PrintWindow: it asks the window to render its own client area, so an
+    # occluded xemu still captures (a plain screen copy caught the editor behind
+    # xemu on the first Halo attempt). An SDL/GL window can answer with an empty
+    # surface, so a mostly-black result falls back to the screen copy.
     $bmp = New-Object System.Drawing.Bitmap $cw, $ch
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($pt.X, $pt.Y, 0, 0, $bmp.Size)
+    $hdc = $g.GetHdc()
+    [XemuOracleWin32]::PrintWindow($h, $hdc, 3) | Out-Null
+    $g.ReleaseHdc($hdc)
+    $dark = 0
+    $samples = 0
+    for ($y = 0; $y -lt $ch; $y += 16) {
+        for ($x = 0; $x -lt $cw; $x += 16) {
+            $c = $bmp.GetPixel($x, $y)
+            $samples++
+            if ($c.R -lt 8 -and $c.G -lt 8 -and $c.B -lt 8) { $dark++ }
+        }
+    }
+    if ($samples -gt 0 -and ($dark / $samples) -gt 0.5) {
+        Write-Host "PrintWindow returned a mostly black surface ($dark/$samples); using the screen copy"
+        $g.CopyFromScreen($pt.X, $pt.Y, 0, 0, $bmp.Size)
+    }
+    else {
+        Write-Host "Captured through PrintWindow"
+    }
 
     if (-not $OutPath) {
         $stamp = Get-Date -Format "yyyyMMdd-HHmmss"

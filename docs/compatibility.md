@@ -57,7 +57,7 @@ media and never the oracle. `D:\Samples\XBOXReady` is gone.
 |---:|---|---:|---|---|
 | 1 | `007 - Agent Under Fire [NTSC-U][Redump]` | 1.6 GB | own-render | **PLAYABLE** (TM4) - 100B steps, no fault, gameplay frame, xemu frame match |
 | 2 | `Nickelodeon Tak - The Great Juju Challenge (Europe)` | 2.5 GB | own-render | draws its own content (2,675 draws / 42 frames), EIP `0x39CE8B` |
-| 3 | `Halo - Combat Evolved (USA) (v1.09) (Redump)` | 3.5 GB | dashboard | own XBE code at EIP `0xAC3AC`; **TM5 target** |
+| 3 | `Halo - Combat Evolved (USA) (v1.09) (Redump)` | 3.5 GB | own-render | **own main menu** (TM5) - 35B steps / 516 frames; gameplay waits on a guest D3D resource loop |
 | 4 | `Ninja Gaiden Black (USA) (En,Ja)` | 6.0 GB | dashboard | own XBE code at EIP `0x37DC15` |
 | 5 | `50 Cent - Bulletproof (France)` | 5.6 GB | dashboard | own XBE code at EIP `0x26FB54` |
 | 6 | `Bad Boys II (Germany)` | 1.9 GB | dashboard | own XBE code at EIP `0x281D05` |
@@ -92,22 +92,35 @@ animation, and the EIP says whether the title's own code is executing.
   **same scene at 150 s** (`wt-data/tm4/xemu-007-150s.png`: 63,994 colours, 6.8%
   black, mean `(96.8, 85.5, 58.8)`); `frame-compare --crop-top 0.25` reads
   `dmean=(18.0, 22.6, 14.6)` with black coverage 4.1% vs 4.2%.
-- **Halo - Combat Evolved (v1.09)**: the TM5 target. At the 1B matrix budget it
-  presents the shared dashboard animation while its own XBE code executes
-  (EIP `0xAC3AC` fast / `0xAC543` accurate, 2,672 draws / 35 frames), so the disc
-  has not launched by 1B - probe deep like 007. The 2026-10-24 fast-mode `#UD` at
-  604M was **fixed by TM3** (missing `SAHF`/`LAHF`, decisions §254); it is not a
-  Halo blocker. The `wt-data/xemu-halo-test.png` capture predates the
-  `scripts/xemu-oracle.ps1` fixes, so it is **not** a valid Halo oracle frame -
-  TM5 must capture it again.
+- **Halo - Combat Evolved (v1.09)**: **TM5 (2026-10-25) - the title launches
+  and renders its own main menu.** The blocker was ours: `McpxApuDevice`'s DSP
+  bridge absorbed only 007's mixer block (`0x03924810` hard-coded), so Halo's
+  DirectSound submission at `0x02034810` was never consumed and the guest spun at
+  EIP `0x195EC0` from ~1.5B. The block is now discovered from the guest's own GP
+  scratch (SGE) table (page + 0x810), which is the same rule for both titles.
+  Progress: the **loading screen at 15B** (blue capsules, 251 frames) and the
+  **main menu at 35B** (`wt-data/tm5/halo-35b-display.png`: HALO / CAMPAIGN /
+  MULTIPLAYER / SETTINGS / GAME DEMOS, 97,235 colours, 0% black, 516 frames,
+  3,247 draws). **100B steps run with no fault** (`LastFault vec=0`) but the
+  guest then waits in a guest-side D3D resource retry loop (EIP `0x1810F0` /
+  `0x6348B`, `D3DERR_NOTFOUND` for handle 0, 99.99% of samples) - so gameplay is
+  a **documented wait**, not a claim. xemu 0.8.139 on the same ISO shows the same
+  menu at 70 s (`wt-data/tm5/xemu-halo-70s.png`) and in-game gameplay at 150 s
+  (`wt-data/tm5/xemu-halo-150s.png`). The menu frame is the same scene but
+  `dmean=(101.8, 100.6, 113.3)` against the xemu capture, so the screenshot
+  policy is **not** met (XGrid's menu background is much brighter). Audio is
+  silent (`--audio-out` writes 0 PCM frames). Details:
+  `docs/research-notes/real-game-probes.md` -> TM5 outcome.
 
 **Answer for the compatibility question:** XGrid boots retail discs and, since
 TM4 (2026-10-25), **one retail title is playable**: 007 Agent Under Fire reaches
 gameplay, runs 100B steps with no fault, and matches the xemu 0.8.139 frame at
-the same scene within the mean/colour/coverage policy. A real-game row is added
-only after a run reaches a gameplay frame or a documented wait (that is the bar
-the 007 row above meets). These rows are acceptance, not merge gates; the gate
-media remains `data/test-samples/`.
+the same scene within the mean/colour/coverage policy. **Halo (TM5)** launches
+and renders its own main menu after 35B steps (100B with no fault) and then
+waits on a guest-side D3D resource loop - a documented wait, not a playable row.
+A real-game row is added only after a run reaches a gameplay frame or a
+documented wait (that is the bar both rows above meet). These rows are
+acceptance, not merge gates; the gate media remains `data/test-samples/`.
 
 ### The retail title matrix (M-T, 2026-10-24)
 
@@ -129,6 +142,14 @@ top 3 rows are the TM1 probe targets. `scripts/title-probe.ps1 <iso>` is the
 follow-up: it runs one title to a step anchor with `--save-state`, `--pgraph`
 and `--jit-timing`, and writes the EIP, fault, top PGRAPH methods and engine
 split that a blocker report needs.
+
+**TM5 re-run (2026-10-25): 6 own-render / 38 dashboard / 0 fault / 0 timeout**
+(was 2 / 42 / 0 / 0). The APU mixer-bridge fix is the reason: Ninja Gaiden Black
+35 -> 6,475 frames (EIP `0x21A97D`), Tak 42 -> 1,068 frames with 3,701 draws,
+50 Cent 34 -> 98 frames and 100,987,370 px, Bad Boys II 42,303,082 px, Destroy
+All Humans! off the dashboard menu. The pre-fix build reproduces Ninja Gaiden
+Black's old row exactly, so the advance is the fix, not the harness. The 37
+XBOXTest rows are unchanged (dashboard menu tuple).
 
 ## The harness (one invocation per row)
 
@@ -675,9 +696,10 @@ sequence (an operator-visible route), not more steps.
   measured boots are silent and no audio row is claimed: 007 at 28B steps writes
   877,568 bytes / 219,392 frames of PCM that are **all zero** (TM4), because the
   voices are never mixed into the EP's input. TM8 owns that gap.
-- **Retail:** 007 - Agent Under Fire is playable (TM4). Of the seven optimized
-  ISOs, **two** take the display at 1B (007, and Tak which draws its own
-  content) and **five** still present the dashboard: Halo, Ninja Gaiden Black,
+- **Retail:** 007 - Agent Under Fire is playable (TM4); Halo launches and
+  renders its own main menu (TM5), then waits on a guest D3D resource loop. Of
+  the seven optimized ISOs, **three** now take the display (007, Tak, and Halo
+  past 15B) and **four** still present the dashboard at 1B: Ninja Gaiden Black,
   50 Cent and Bad Boys II while their own XBE code runs, Destroy All Humans!
   while the kernel executes. The 37 XBOXTest rows are dashboard-only evidence.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.

@@ -1911,7 +1911,8 @@ internal static class Program
         Console.WriteLine(
             $"PIC master base=0x{machine.Bus.Pic.MasterBase:X2} mask=0x{machine.Bus.Pic.MasterMask:X2} " +
             $"slaveMask=0x{machine.Bus.Pic.SlaveMask:X2} " +
-            $"req=0x{machine.Bus.Pic.MasterRequest:X2} isr=0x{machine.Bus.Pic.MasterInService:X2}");
+            $"req=0x{machine.Bus.Pic.MasterRequest:X2} isr=0x{machine.Bus.Pic.MasterInService:X2} " +
+            $"elcr=0x{machine.Bus.Pic.MasterElcr:X2}/0x{machine.Bus.Pic.SlaveElcr:X2}");
         Console.WriteLine(
             $"PIT ch0 divisor={machine.Bus.Pit.Channel0Divisor} mode={machine.Bus.Pit.Channel0Mode}");
         Console.WriteLine($"Interrupts delivered={machine.Cpu.InterruptCount}");

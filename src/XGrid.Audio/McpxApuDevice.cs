@@ -137,11 +137,13 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     private const uint VoiceEnvelopeHold = 3;
 
     // DSP mixer-block mailbox (observed XDK DSOUND protocol fact): the GP DSP's
-    // scratch window (GPSADDR SGE table) maps the shared mixer block, and the state
-    // word is DSP scratch address 0x810 (phys 0x3924810, VA 0x83924810). State 2 is a
-    // posted mixer submission, state 3 is loaded parameters; the DSP absorbs either
-    // (writes 0) when it consumes the block.
-    private const uint DspStateWordPhys = 0x03924810u;
+    // scratch window (GPSADDR SGE table) maps the shared mixer block, and the block's
+    // state word is scratch address 0x810 (block at +0x800, status at +0x10). State 2
+    // is a posted mixer submission, state 3 is loaded parameters; the DSP absorbs
+    // either (writes 0) when it consumes the block. The page itself is title-specific
+    // (007 posts at 0x3924000, Halo at 0x2034000), so the address is discovered from
+    // the guest's own SGE table instead of being hard-coded.
+    private const uint DspMixerStateOffset = 0x810u;
     private const uint DspStateSubmitPosted = 2u;
     private const uint DspStateParamsLoaded = 3u;
     private const uint PageMask = ~0xFFFu;
@@ -617,18 +619,17 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             return;
         }
 
-        if (!GpRunning || !IsStateWordMapped())
+        if (!GpRunning)
         {
             return;
         }
 
-        uint state = _memory.Read32(DspStateWordPhys);
-        if (state != DspStateSubmitPosted && state != DspStateParamsLoaded)
+        if (!TryGetMixerStateWord(out uint stateAddress, out uint state))
         {
             return;
         }
 
-        _memory.Write32(DspStateWordPhys, 0u);
+        _memory.Write32(stateAddress, 0u);
         DspAbsorbs++;
         Log($"dsp-absorb {state}->0 n={DspAbsorbs}");
         if (state == DspStateSubmitPosted && _framesSinceWake >= MinWakeGapFrames)
@@ -639,23 +640,36 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     }
 
     /// <summary>
-    /// Reports whether the DSP mixer-block mailbox page is covered by the guest's
-    /// GP scratch (SGE) mapping. The DSP can only touch guest RAM through this
-    /// mapping (xemu gp_scratch_rw), so an unprogrammed title never absorbs.
+    /// Finds the guest's pending mixer submission: the DirectSound block sits at the
+    /// start of a GP scratch (SGE) page plus 0x800, and its state word at +0x810.
+    /// The DSP can only touch guest RAM through this mapping (xemu gp_scratch_rw), so
+    /// an unprogrammed title never absorbs, and the page is whatever the guest mapped
+    /// rather than a per-title constant.
     /// </summary>
-    private bool IsStateWordMapped()
+    private bool TryGetMixerStateWord(out uint address, out uint state)
     {
+        address = 0;
+        state = 0;
         uint table = _regs[GpsAddr >> 2];
         if (table == 0)
         {
             return false;
         }
 
-        uint wantPage = DspStateWordPhys & PageMask;
         for (int i = 0; i < DspSgeScanEntries; i++)
         {
-            if ((_memory.Read32(table + (uint)(i * 8)) & PageMask) == wantPage)
+            uint page = _memory.Read32(table + (uint)(i * 8)) & PageMask;
+            if (page == 0)
             {
+                continue;
+            }
+
+            uint candidate = page + DspMixerStateOffset;
+            uint value = _memory.Read32(candidate);
+            if (value == DspStateSubmitPosted || value == DspStateParamsLoaded)
+            {
+                address = candidate;
+                state = value;
                 return true;
             }
         }

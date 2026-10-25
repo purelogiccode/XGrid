@@ -82,7 +82,7 @@
           "p": 12,
           "name": "APU (audio)",
           "weight": 4,
-          "done": 80
+          "done": 85
         },
         {
           "p": 13,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 30
+          "done": 40
         }
       ]
     }

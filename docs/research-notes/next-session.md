@@ -1,4 +1,52 @@
-# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM5)
+# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM6)
+
+> **TM5 RESULT (2026-10-25, 56th session) - Halo launches and renders its own main
+> menu; gameplay is a documented wait, and the blocker was a per-title constant.**
+> `McpxApuDevice` absorbed the XDK DirectSound mixer block at the fixed physical
+> address `0x03924810` - 007's block. Halo posts the *same* six-dword descriptor
+> (page + 0x800, state word at + 0x810: 2 = submit posted, 3 = parameters loaded)
+> at `0x02034800`, so the submission was never consumed and the guest spun at
+> `EIP 0x195EC0` from ~1.5B with no fault. The bridge now discovers the block from
+> the guest's own GP scratch (`GPSADDR`) SGE table (`TryGetMixerStateWord`, page +
+> 0x810, 16 entries), which is the same rule for both titles. Evidence: the pre-fix
+> build spins forever from `wt-data/tm5/halo-10b.xgs`; the fixed build logs
+> `dsp-absorb 3->0 / 2->0 / 3->0` and leaves the spin at once (frames 35 -> 56 in
+> 500M steps). Two of three new tests fail on the pre-fix source.
+> **Progress:** loading screen at 15B (251 frames), **main menu at 35B**
+> (`wt-data/tm5/halo-35b-display.png`: HALO / CAMPAIGN / MULTIPLAYER / SETTINGS /
+> GAME DEMOS, 97,235 colours, 0% black, 516 frames / 3,247 draws / 191,496,512 px),
+> and **100B steps with `LastFault vec=0`** (fast engine, `--gpu sw`, 314 msps on
+> the wait).
+> **The 1B matrix moved with it: 6 own-render / 38 dashboard / 0 fault / 0
+> timeout** (was 2/42) - Ninja Gaiden Black 35 -> 6,475 frames (EIP `0x21A97D`),
+> Tak 42 -> 1,068 frames / 3,701 draws, 50 Cent 98 frames / 100,987,370 px, Bad
+> Boys II 42,303,082 px, Destroy All Humans! off the dashboard menu. The pre-fix
+> build reproduces Ninja Gaiden Black's old row exactly (2,672 / 41,995,882 / 35,
+> EIP `0x37DC15`), so the advance is the fix. Caveat: `own-render` is a tuple rule,
+> so Destroy All Humans! (34 frames vs 35) counts although it only changed stage.
+> **The remaining wait is guest-side:** a D3D resource retry loop at `0x1810F0`
+> (called from `0x6348B`) - bucket table `[0x192390] = 0x18F800`, buckets at
+> `+0x48C`, bucket 0 = `0x80060000`, slot field `-1`, handle **0** on every call
+> (`--break-log arg=00000000`) -> `D3DERR_NOTFOUND` (0x88760828) retried forever;
+> 99.99% of 280M samples are its 23 EIPs. Last device I/O: IDE READ DMA `0xC8`
+> (32,216 accesses), APU reads/writes 14.17M, NV2A 538 notifications.
+> **xemu 0.8.139 on the same ISO** shows the same menu at 70 s
+> (`wt-data/tm5/xemu-halo-70s.png`) and in-game gameplay at 150 s
+> (`wt-data/tm5/xemu-halo-150s.png`), so the wait is ours. The oracle script now
+> captures through `PrintWindow` (a screen copy caught the editor behind xemu).
+> **The screenshot policy is not met at the menu** (`dmean=(101.8, 100.6, 113.3)`;
+> XGrid's menu background is much brighter). Audio is silent: `--audio-out` writes
+> a 44-byte WAV and 0 PCM frames (`gpFrames=0`).
+> **Gates: not one anchor moved** - accurate menu `4EF1FBF6`/`B6116DAE`
+> (`5C0CF968`/`E2B4D327`, 33,632/686/686), accurate triangle `5B50373D`/
+> `79142DE4` (`E58AE5D7`/`C43D5B49`, 2,707/69/34), ktest `CA5D3867` (40,797 B)
+> byte-identical at 792,800,535 steps. Suite 1990 -> **1993**, build 0 warnings,
+> format clean. Decisions §256.
+> **Next: TM6 (the next 5 titles).** The D3D resource loop is the first shared
+> candidate (Halo plus Ninja Gaiden Black / 50 Cent / Bad Boys II, all past their
+> XBE entry and still on the dashboard at 1B) - probe those at 10-40B before
+> choosing a blocker. `wt-data/tm5/halo-15b.xgs` and `halo-35b.xgs` are the resume
+> points (~5 s per probe).
 
 > **TM4 RESULT (2026-10-25, 55th session) - 007 Agent Under Fire is PLAYABLE, and
 > the 26.5B `#PF` was our duplicate idle-voice trap.** `McpxApuDevice.VoiceOff`
