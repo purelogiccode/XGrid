@@ -30,6 +30,14 @@ locally. The sequence lives in `docs/status.json`.
 - `-Next` increments the attempt counter and prints `Attempt N of 2`. A task
   that is still active after a failed slot is retried by the next slot; after
   two attempts `-Next` prints STOP, and the worker records the negative.
+  The counter counts **claims**, so call `-Next` once per slot - a second call
+  in the same session is a new attempt. A refused call changes nothing: the
+  counter stops at the budget, so repeated `-Next` calls keep printing the same
+  STOP line. `-Prompt` is the read-only form and never increments: it prints the
+  attempt the current session is running (the same number `-Next` printed), so a
+  session on its last attempt can still read its own task. Both commands report
+  the **budget** in the STOP line (`has been attempted 2 times`), never the raw
+  counter.
 - `-Complete -Evidence "<numbers/anchors>" -CommitMessage "<area>: <summary> (<id>)"`
   closes the task as done.
 - `-Negative -Evidence "<measurement>" -Reopen "<condition>"` records a

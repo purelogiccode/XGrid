@@ -211,15 +211,19 @@ if ($Next) {
     $q = $active[0]
     if ($q.id -ne $status.current.id) { throw "current.id '$($status.current.id)' does not match the active queue item '$($q.id)'" }
     $q | Add-Member -NotePropertyName attempts -NotePropertyValue ([int]$q.attempts + 1) -Force
+    if ($q.attempts -gt [int]$status.rules.maxAttempts) {
+        # A refused claim must not change the recorded state: otherwise every
+        # repeated -Next keeps incrementing the counter (and the status block
+        # would read "attempt 4" for a budget of 2). Report the budget, not the
+        # counter.
+        Write-Host "STOP: $($q.id) has been attempted $($status.rules.maxAttempts) times. Do not start another attempt."
+        Write-Host "Run: pwsh -File scripts/status.ps1 -Negative -Evidence `"<what failed>`" -Reopen `"<condition>`""
+        exit 0
+    }
     Set-CurrentFromQueue $q
     $status.current['attempts'] = $q.attempts
     $status.current['started'] = $status.updated
     Save-Status
-    if ($q.attempts -gt [int]$status.rules.maxAttempts) {
-        Write-Host "STOP: $($q.id) has been attempted $($q.attempts - 1) times. Do not start another attempt."
-        Write-Host "Run: pwsh -File scripts/status.ps1 -Negative -Evidence `"<what failed>`" -Reopen `"<condition>`""
-        exit 0
-    }
     $nextTask = $q
 }
 
@@ -318,7 +322,19 @@ if ($Prompt) {
         Write-Host "SEQUENCE COMPLETE: no eligible queued task. Add one to docs/status.json."
         exit 0
     }
-    (Get-TaskPrompt $status.current ([int]$status.current.attempts + 1)) -join "`n"
+
+    # Mirror -Next: attempts counts claims already issued, so an already-claimed
+    # task is displayed as the attempt it is running (not +1). A task whose
+    # recorded attempts already exceed the budget (a hand-edited status.json -
+    # -Next never persists a refused claim) gets the same STOP sentence.
+    $promptAttempt = [Math]::Max([int]$status.current.attempts, 1)
+    if ($promptAttempt -gt [int]$status.rules.maxAttempts) {
+        Write-Host "STOP: $($status.current.id) has been attempted $($status.rules.maxAttempts) times. Do not start another attempt."
+        Write-Host "Run: pwsh -File scripts/status.ps1 -Negative -Evidence `"<what failed>`" -Reopen `"<condition>`""
+        exit 0
+    }
+
+    (Get-TaskPrompt $status.current $promptAttempt) -join "`n"
     exit 0
 }
 
