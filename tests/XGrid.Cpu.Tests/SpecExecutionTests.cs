@@ -23,6 +23,15 @@ public sealed class SpecExecutionTests
     private const uint PageTable = 0x5000;
 
     [Fact]
+    public void FlagTransfer_Shapes_MatchInterpreter()
+    {
+        RunShapes(
+            ("sahf", [0x9E]),
+            ("lahf", [0x9F]),
+            ("lahf;sahf", [0x9F, 0x9E]));
+    }
+
+    [Fact]
     public void Mov_Shapes_AtAllSizes_MatchInterpreter()
     {
         RunShapes(

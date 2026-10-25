@@ -827,6 +827,34 @@ def lock_prefix_cases():
     ]
 
 
+def flag_transfer_cases():
+    # SAHF loads SF/ZF/AF/PF/CF from AH (bits 7/6/4/2/0) and leaves OF and every
+    # non-condition bit alone; LAHF stores those five plus bit 1 into AH. The
+    # FPREM tail every retail title runs is `fnstsw ax; sahf; jp`.
+    cases = []
+    for ah in (0x00, 0xD5, 0x55, 0x80, 0x04, 0xFF):
+        cases.append(case(
+            f"sahf_{ah:02x}",
+            ["sahf"],
+            regs={"eax": 0x11110000 | (ah << 8)},
+            eflags=0xED7,  # OF/DF set (the harness clears IF); OF is compared
+        ))
+    for eflags in (0x202, 0x8D7, 0x8D5, 0x8D0, 0x2C3):
+        cases.append(case(
+            f"lahf_{eflags:03x}",
+            ["lahf"],
+            regs={"eax": 0x12345678},
+            eflags=eflags | 0x2,
+        ))
+    cases.append(case(
+        "lahf_sahf_roundtrip",
+        ["lahf", "sahf"],
+        regs={"eax": 0xDEAD0200},
+        eflags=0xED7,
+    ))
+    return cases
+
+
 def stack_edge_cases():
     return [
         case("push_esp_relative", ["pushl   -4(%esp)", "popl    %eax"],
@@ -872,6 +900,7 @@ def build_corpus():
     cases.extend(sse_edge_cases())
     cases.extend(lock_prefix_cases())
     cases.extend(stack_edge_cases())
+    cases.extend(flag_transfer_cases())
     return cases
 
 

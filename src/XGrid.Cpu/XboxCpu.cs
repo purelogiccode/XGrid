@@ -756,6 +756,22 @@ public sealed partial class XboxCpu
                 Context.Eflags = Pop(instruction.OperandSize, instruction.AddressSize) | FlagBits.Reserved1;
                 break;
 
+            case Mnemonic.Sahf:
+                // SF/ZF/AF/PF/CF come from AH's bits 7/6/4/2/0; OF and every
+                // non-condition bit stay (xemu 0.8.139 gen_SAHF). This is the
+                // FPREM loop tail's `sahf; jp` input.
+                Context.Eflags = (Context.Eflags & ~FlagBits.ConditionMask)
+                                 | (Context.ReadRegister8(4) & FlagBits.ConditionMask);
+                break;
+
+            case Mnemonic.Lahf:
+                // AH = the five condition flags with bit 1 set and bits 3/5
+                // clear (xemu 0.8.139 gen_LAHF: cc | 0x02 deposited at bit 8).
+                Context.WriteRegister8(
+                    4,
+                    (byte)((Context.Eflags & FlagBits.ConditionMask) | FlagBits.Reserved1));
+                break;
+
             case Mnemonic.Shl:
             case Mnemonic.Shr:
             case Mnemonic.Sar:

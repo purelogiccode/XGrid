@@ -509,6 +509,7 @@ public sealed class DecodedBlockCache
             or Mnemonic.Andps or Mnemonic.Andnps or Mnemonic.Orps or Mnemonic.Xorps
             or Mnemonic.Cmpps or Mnemonic.Cmpss or Mnemonic.Comiss or Mnemonic.Ucomiss
             or Mnemonic.Popf or Mnemonic.Rdtsc
+            or Mnemonic.Sahf or Mnemonic.Lahf
             or Mnemonic.Cli or Mnemonic.Sti
             or Mnemonic.Fldcw or Mnemonic.Fnstcw or Mnemonic.Fwait or Mnemonic.Emms);
     }

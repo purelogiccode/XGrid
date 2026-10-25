@@ -371,6 +371,14 @@ public static class Decoder
             case 0x9D:
                 return Make(Mnemonic.Popf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
 
+            case 0x9E:
+                // SAHF/LAHF: the FPREM loop tail (`fnstsw ax; sahf; jp`) and
+                // the kernel's exception state (xemu 0.8.139
+                // target/i386/tcg/emit.c.inc gen_SAHF/gen_LAHF).
+                return Make(Mnemonic.Sahf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
+            case 0x9F:
+                return Make(Mnemonic.Lahf, Operand.None, Operand.None, position, operandSize, addressSize, opcode);
+
             case 0xA0 or 0xA1 or 0xA2 or 0xA3:
                 {
                     int moffsSize = opcode is 0xA0 or 0xA2 ? 8 : operandSize;

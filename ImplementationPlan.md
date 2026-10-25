@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM3 - Fix shared blocker #2 and re-run the matrix** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - 007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Current status (2026-10-24):** M-T / **TM4 - 007 playability gate** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM3's SAHF/LAHF decoder fix removed the last fault rows: Halo, Tak and Ninja Gaiden Black now run the full 1B steps with LastFault vec=0 in fast and accurate mode (Halo EIP 0xAC3AC/0xAC543, Tak 0x39CE8B, NGB 0x37DC15) and the 44-row matrix reads 2 own-render / 42 dashboard / 0 fault / 0 timeout - Tak is now the second own-render row (2,675 draws / 41,995,882 px / 42 frames). 007: TM2's level-interrupt fix unblocked the APU ISR; at 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, EIP 0x1FD0E); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR - the TM4 blocker. The Redump group advanced too: GTA: San Andreas at 5B presents the disc's own Xbox boot screen (27,543 colours). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 74.3% (87.64 of 118). **Next:** TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness).
+**Phase score:** 74.8% (88.25 of 118). **Next:** TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness), TM8 (First targeted xemu port (default: APU VP mixer + AC97)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -128,8 +128,8 @@ title every few sessions.
 |---|---|---|---|---|
 | TM0 | Title matrix harness + first sweep | **active** | - | every ISO in XBOXReady + XBOXTest has a row; top 3 named; no gate file changed |
 | TM1 | Blocker probe for the top 3 titles | queued | TM0 | one blocker per title, measured; one shared blocker selected |
-| TM2 | Fix shared blocker #1 + re-run the matrix | queued | TM1 | affected titles advance one stage; accurate goldens + ktest exact |
-| TM3 | Fix shared blocker #2 + re-run the matrix | queued | TM2 | same |
+| TM2 | Fix shared blocker #1 + re-run the matrix | **done** | TM1 | affected titles advance one stage; accurate goldens + ktest exact |
+| TM3 | Fix shared blocker #2 + re-run the matrix | **done** | TM2 | same |
 | TM4 | 007 playability gate | queued | TM3 | the seven-part definition |
 | TM5 | Halo playability gate (or documented wait) | queued | TM4 | gameplay or a documented wait with the same evidence |
 | TM6 | Second-tier titles (next 5 from the matrix) | queued | TM5 | each reaches gameplay or a documented wait |
@@ -207,6 +207,34 @@ ISR null-dereference (1 title, deeper) and the fast-mode `#UD` that now hits
 **3 of the 7 oracle titles** (Halo/Tak/Ninja Gaiden Black) - the latter meets the
 matrix's ">=3 titles" threshold and is a JIT correctness bug, so it leads.
 
+TM3 (DONE 2026-10-24, decisions §254): the missing `SAHF`/`LAHF` one-byte opcodes.
+
+- [x] Reproduce with the exact command and step anchor: the Halo repro faults at
+  **604,260,882 steps**, `vec=6`, `EIP=0x00180AEC` in **every** engine - raw, IL,
+  `--jit-exact` and accurate mode - so the fault is not a JIT bug.
+- [x] Fix the smallest behaviour: `Decoder` `0x9E`/`0x9F` -> `Sahf`/`Lahf`,
+  `XboxCpu` + spec handlers implement the reference `gen_SAHF`/`gen_LAHF`
+  semantics (`ConditionMask = CF|PF|AF|ZF|SF`), the block executor continues
+  through both. The instruction at `0x180AEC` is `9E`, the tail of the retail
+  `fprem; fnstsw ax; sahf; jp` loop; the `0x800151EF` "last EIP" was the
+  kernel's `#UD` handler, which is why three titles shared it.
+- [x] Differential: `tools/cpu-oracle` gained 12 SAHF/LAHF cases (corpus
+  629 -> **641**, QEMU TCG via Unicorn, all green; a mask mutation fails the
+  oracle), plus `FlagTransferTests` (15 tests total across decoder,
+  interpreter, spec and JIT loops).
+- [x] Re-run the matrix (44 titles at 1B): **2 own-render, 42 dashboard,
+  0 fault, 0 timeout** (was 2 / 39 / 3 / 0). **Tak is now the second
+  own-render row** (2,675 draws / 41,995,882 px / 42 frames); Halo and Ninja
+  Gaiden Black run their own XBE code (`0xAC3AC` / `0x37DC15`) with no fault.
+- [x] Gates: no anchor moved - the four accurate 1B goldens are byte-identical
+  (`4EF1FBF6`/`B6116DAE`, `5B50373D`/`79142DE4`) with the same RAM/CPU and
+  counters, the four fast anchors are exact, and the ktest log stays
+  `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps.
+- [x] Filed for the next title fault: the remaining one-byte decoder holes
+  (`27 2F 37 3F` DAA/DAS/AAA/AAS, `62` BOUND, `82` group-1 alias, `C4 C5`
+  LES/LDS, `D6` SALC, `F1` INT1) - the reference accepts them all in 32-bit
+  mode; no measured row executes one today.
+
 ### TM4 / TM5 - The playability gates
 
 - [ ] 007: gameplay frame, scripted input edge, 10 minutes / 100B steps, no
@@ -265,7 +293,7 @@ matrix's ">=3 titles" threshold and is a JIT correctness bug, so it leads.
 - **Ports:** the module's differential, the titles it unblocked, provenance.
 - **Performance:** reported, never claimed, until the playability gate is met.
 
-### Standing gates (re-baselined 2026-10-24 by TM2)
+### Standing gates (re-baselined 2026-10-24 by TM2; TM3 moved nothing)
 
 - Four accurate 1B goldens and the accurate RAM/CPU SHAs exact: menu sw
   `4EF1FBF6` / gl `B6116DAE` (`5C0CF968` / `E2B4D327`, counters 33,632/686/686
@@ -282,6 +310,9 @@ matrix's ">=3 titles" threshold and is a JIT correctness bug, so it leads.
   gl `6CBBFE75`/`AB39AEE9` frame `79142DE4`, menu gl `EF1BF776`/`D726C97A` frame
   `B6116DAE`, triangle sw `457719AC`/`AB39AEE9` 58,123,882 px frame `5B50373D`,
   menu sw `FD12563B`/`D726C97A` 253,998,498 px frame `4EF1FBF6`.
+- **TM3 (2026-10-24) verified all of the above byte-identical** after the
+  SAHF/LAHF decoder fix: the gate titles execute neither instruction, so no
+  anchor moved and no re-baseline was needed (decisions §254).
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -4523,7 +4554,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 0 Bootstrap | 1 | 100% | — |
 | 1 Core | 2 | 100% | — |
 | 2 Memory | 3 | 100% | — |
-| 3 CPU | 11 | 96% | x87 double-rounding limitation; the §225 independent x86 differential (333 → 629 cases) closed the rare-op defects it found (PMINSW/PMAXSW sign, PSRAW/PSRAD saturation, XLAT, 16-bit `[SI]`/`[DI]`, x87 NaN payloads, FUCOM quiet-NaN IE, FSQRT-negative C2, MIN/MAX equal-operand source); no SSE2 by design (the CPU is a Pentium III) |
+| 3 CPU | 11 | 97% | x87 double-rounding limitation; the §225 independent x86 differential (333 → 629 cases) closed the rare-op defects it found (PMINSW/PMAXSW sign, PSRAW/PSRAD saturation, XLAT, 16-bit `[SI]`/`[DI]`, x87 NaN payloads, FUCOM quiet-NaN IE, FSQRT-negative C2, MIN/MAX equal-operand source); **§254/TM3 added SAHF/LAHF (the retail `fprem; fnstsw ax; sahf; jp` tail) with 12 more oracle cases (corpus 641)**; the remaining one-byte holes are filed (DAA/DAS/AAA/AAS, BOUND, the `0x82` alias, LES/LDS, SALC, INT1); no SSE2 by design (the CPU is a Pentium III) |
 | 4 MMU | 3 | 100% | — |
 | 5 Bus & IRQ | 6 | 90% | DMA helper, ELCR (landed TM2: 0x4D0/0x4D1 + level delivery), Super-I/O, GPE |
 | 6 MCPX | 6 | 80% | flash command set, GPE/GPIO, Super I/O |
@@ -4544,7 +4575,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 21 CLI & Frontend | 3 | 75% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f`** and is now a product shell: Settings → Renderer picks software or the host-GPU OpenGL backend (§§221/223 — headless WGL created on the emulation thread, logged fallback, thread-correct snapshot save/load), per-title overrides V2 (`title:XXXXXXXX`, a CHD resolved through the §222 XDVDFS reader) offer `inherit`/`software`/`OpenGL` per title (§§217/219d/224), persistent EEPROM state (`--eeprom-out`), `--ffp`/`--tex-filter` settings, XInput pad merged with the keyboard (§206), save/load UI (F8/F9 + picker), frame stepping (F7/Shift+F7, §220e), and the display follows the display controller rather than the renderer (`TryCopyDisplayFrame` + a recently-presented-surface ring, §208/§234: a direct-framebuffer guest shows its own buffer under OpenGL, a flipping title shows the GPU frame),  `tests/XGrid.Frontend.Tests` (50 tests) + `tools/frontend-smoke` cover it; §204 CLI observability (`--frame-first`, `readback=on\|off`, `methods=`); **§234 (34th session): the display source follows the display controller under a GPU backend** (a recently-presented-surface ring: a direct-framebuffer guest shows RAM, a flipping title shows the GPU frame; the session-level latch is gone and both renderers verify at the same 306,817-px dashboard picture), and the `tools/frontend-smoke` harness (broken since §217) is fixed and now in `XGrid.sln`; since the previous refresh the Library shows each XBE's title id (§228) and `--gpu-time`'s combiner rows print `tm=`/`sf=`/`reach[...]` (§§228/230) and `ts&lt;n&gt;=` per texture slot (§236)**; the OpenGL product renderer now samples cube maps exactly (gap 12 closed, §236: 2 pixels of 307,200 from the software frame at both corpus anchors); remaining: **host audio output** (needs APU GP/EP DSP execution), debugger panes, performance-overlay polish |
 | 22 Save States & Replay | 2 | 30% | snapshot/replay — **V1 save states landed and productized**: `.xgs` covers CPU/RAM/machine scalars plus every registered device, per-device versions (NV2A **v9**, APU **v3** with a v2 fallback, machine section v1), unknown sections skipped on load, and the frontend marshals save/load onto the emulation thread (a load resets backend state; 72 MB round trip with GL attached, §223). Remaining: replay recording (initial state + inputs + timing events), a whole-file checksum, and version migration |
 | 23 Release | 3 | 55% | packaging, installer, licensing review; **compatibility list exists — `docs/compatibility.md` with 22 measured rows over 17 samples (both backends, flag variants, phase anchors), reproducible commands, the `scripts/boot-to-first-frame.ps1` harness and the `scripts/build-nxdk-samples.ps1` toolchain (Track E; M-B met: ≥8 rows, ≥2 beyond dashboard/triangle/ktest)**. **Since the last refresh:** a full CI pipeline (`.github/workflows/ci.yml` + `release.yml`, `81bc8b3`: Release build and the full suite on Windows/GNU-Linux/macOS, coverage/inspectcode/vulnerability gates, CodeQL, dependency review and Dependabot), a zero-warning / zero-inspectcode-finding tree (`8840073`/`2b7d144`) and generated golden images dropped from git (`6fbf46a`); packaging and the licensing review are done (R1.1: scripts/package.ps1 + scripts/package-verify.ps1, docs/release-licensing-review.md, docs/release-notes/v0.1.0.md); an OS installer and code signing/notarization remain and are deferred by scope decision |
-| 24 Retail gameplay & targeted port | 10 | 10% | the title matrix (TM0), the shared-blocker probes and fixes (TM1-TM3), the 007/Halo playability gates (TM4-TM5), the next 5 titles and the probe harness (TM6-TM7), and the first targeted xemu port the matrix proves (TM8); port a module only at >=3 titles or >=20% of the matrix. **Landed: TM0's first 39-title matrix and TM2's 44-title re-run, TM1's blocker probe (the guest programs ELCR 0x68/0x18 and the writes were discarded) and TM2's PIC level-interrupt fix; 007 now reaches its own title screen at 50B and the game's render path before faulting in the APU ISR (CR2=0xE4)** |
+| 24 Retail gameplay & targeted port | 10 | 15% | the title matrix (TM0), the shared-blocker probes and fixes (TM1-TM3), the 007/Halo playability gates (TM4-TM5), the next 5 titles and the probe harness (TM6-TM7), and the first targeted xemu port the matrix proves (TM8); port a module only at >=3 titles or >=20% of the matrix. **Landed: TM0's first 39-title matrix and TM2's 44-title re-run, TM1's blocker probe (the guest programs ELCR 0x68/0x18 and the writes were discarded) and TM2's PIC level-interrupt fix; 007 now reaches its own title screen at 50B and the game's render path before faulting in the APU ISR (CR2=0xE4); TM3 fixed the missing SAHF/LAHF opcodes, so the 44-row matrix has 0 faults, Tak is a second own-render row, and Halo/Ninja Gaiden Black run their own XBE code to 1B** |
 
 **Result: 74.3% (87.64 of 118)** after TM2's level-interrupt fix (2026-10-24: P5 Bus & IRQ 85->90 for the ELCR/level model, P24 Retail 0->10 for the first retail advance; the 2026-10-24 scope change had added phase 24 (Retail gameplay & xemu port, weight 10, done 0; the 24-phase score was 79.9%, 86.34 of 108). The pre-change history reads: ~78% complete overall (weighted: 84.43 of 108 weight-points = 78.2%, recomputed 2026-10-22 (39th session) after §§237–240: P15 CPU JIT 88→90, P18 GPU Optimization 76→78 and P20 Automated Testing 81→82, with P11 NV2A 92→93 and P21 CLI & Frontend 73→75 carried over from the §234/§236 refreshes; was 84.10 = 77.9% after §236: P21 CLI & Frontend 74->75, the OpenGL renderer's computed-mode panel; was 84.07 = 77.8% after §234: P11 NV2A 92->93 and P21 CLI & Frontend 73->74 (the GPU display source follows the display controller; the C7 encoder is priced out and moves no phase); was 83.89 = 77.7% after the §226–§230 B3 slices and the CI/quality landing: P11 NV2A 91→92, P20 Automated Testing 80→81, P21 CLI & Frontend 72→73 and P23 Release 14→18; was 83.56 = 77.4% after the §206–§225 refresh: P3 CPU 95→96, P8 Storage 85→86, P11 NV2A 88→91, P18 GPU Optimization 72→76, P20 Automated Testing 73→80, P21 CLI & Frontend 63→72, P22 Save States 5→30 and P23 Release 11→14; was 81.72 = 75.7% after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work — and the 2026-10-22 operator decision changes it again: xemu-class performance or better is the long-run objective, so Track C is re-opened and leads (C4-C6). The score only moves with landed work; §§237–§240 are the first landed performance slices, which is why it moves now).
 

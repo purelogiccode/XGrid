@@ -393,6 +393,19 @@ public sealed partial class XboxCpu
                 return first == OperandKind.None && second == OperandKind.None
                     ? SpecStiHandler
                     : null;
+            case Mnemonic.Sahf:
+                // TM3: the FPREM loop tail's flag load (`fnstsw ax; sahf; jp`)
+                // - operandless, and the body is the verbatim interpreter case
+                // so a JIT block keeps flowing through it.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecSahfHandler
+                    : null;
+            case Mnemonic.Lahf:
+                // TM3: the kernel's exception state reads the condition flags
+                // back through AH; same operandless shape as Sahf.
+                return first == OperandKind.None && second == OperandKind.None
+                    ? SpecLahfHandler
+                    : null;
             case Mnemonic.Pop:
                 return first == OperandKind.Register && second == OperandKind.None
                     ? ResolveSpecPop(size)
@@ -1536,6 +1549,8 @@ public sealed partial class XboxCpu
     private static readonly SpecHandler SpecRdtscHandler = SpecRdtsc;
     private static readonly SpecHandler SpecCliHandler = SpecCli;
     private static readonly SpecHandler SpecStiHandler = SpecSti;
+    private static readonly SpecHandler SpecSahfHandler = SpecSahf;
+    private static readonly SpecHandler SpecLahfHandler = SpecLahf;
     private static readonly SpecHandler SpecPushMemHandler = SpecPushMem;
     private static readonly SpecHandler SpecShlCountClHandler = SpecShlCountCl;
     private static readonly SpecHandler SpecShrCountClHandler = SpecShrCountCl;
@@ -3477,6 +3492,25 @@ public sealed partial class XboxCpu
         // boundary argument as Cli; the 1-instruction STI shadow was
         // never modeled — delivery fires at the next poll either way).
         cpu.Context.Eflags |= FlagBits.If;
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecSahf(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // TM3: verbatim interpreter `Sahf` case (SF/ZF/AF/PF/CF from AH; OF
+        // and every non-condition bit kept).
+        cpu.Context.Eflags = (cpu.Context.Eflags & ~FlagBits.ConditionMask)
+                             | (cpu.Context.ReadRegister8(4) & FlagBits.ConditionMask);
+        cpu.Context.Eip += (uint)instruction.Length;
+    }
+
+    private static void SpecLahf(XboxCpu cpu, in DecodedInstruction instruction)
+    {
+        // TM3: verbatim interpreter `Lahf` case (five condition flags plus the
+        // reserved bit 1 into AH).
+        cpu.Context.WriteRegister8(
+            4,
+            (byte)((cpu.Context.Eflags & FlagBits.ConditionMask) | FlagBits.Reserved1));
         cpu.Context.Eip += (uint)instruction.Length;
     }
 

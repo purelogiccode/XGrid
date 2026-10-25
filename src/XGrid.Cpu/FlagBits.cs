@@ -35,4 +35,11 @@ public static class FlagBits
 
     /// <summary>Flags affected by arithmetic and logic instructions.</summary>
     public const uint ArithmeticMask = Cf | Pf | Af | Zf | Sf | Of;
+
+    /// <summary>
+    /// The condition-code bits SAHF loads from AH and LAHF stores into AH
+    /// (the reference's CC_S|CC_Z|CC_A|CC_P|CC_C). OF and every non-condition
+    /// bit are not part of the transfer.
+    /// </summary>
+    public const uint ConditionMask = Cf | Pf | Af | Zf | Sf;
 }

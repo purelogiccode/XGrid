@@ -957,4 +957,10 @@ public enum Mnemonic
 
     /// <summary>Table look-up translation (AL = [base + AL]).</summary>
     Xlat = 317,
+
+    /// <summary>Store AH into the condition flags (SF/ZF/AF/PF/CF).</summary>
+    Sahf = 318,
+
+    /// <summary>Load AH from the condition flags (SF/ZF/AF/PF/CF + bit 1).</summary>
+    Lahf = 319,
 }

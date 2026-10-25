@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM3 - Fix shared blocker #2 and re-run the matrix** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - 007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Current status (2026-10-24):** M-T / **TM4 - 007 playability gate** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM3's SAHF/LAHF decoder fix removed the last fault rows: Halo, Tak and Ninja Gaiden Black now run the full 1B steps with LastFault vec=0 in fast and accurate mode (Halo EIP 0xAC3AC/0xAC543, Tak 0x39CE8B, NGB 0x37DC15) and the 44-row matrix reads 2 own-render / 42 dashboard / 0 fault / 0 timeout - Tak is now the second own-render row (2,675 draws / 41,995,882 px / 42 frames). 007: TM2's level-interrupt fix unblocked the APU ISR; at 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, EIP 0x1FD0E); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR - the TM4 blocker. The Redump group advanced too: GTA: San Andreas at 5B presents the disc's own Xbox boot screen (27,543 colours). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 74.3% (87.64 of 118). **Next:** TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness).
+**Phase score:** 74.8% (88.25 of 118). **Next:** TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness), TM8 (First targeted xemu port (default: APU VP mixer + AC97)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -810,8 +810,62 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   `nonJitInstructions` 5.48M -> 2.62M, every 1B SHA/counter/frame and every
   corpus row byte-identical. §237 also **repriced the "superblock for the boot"
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
+- **TM3 (2026-10-24, decisions §254): SAHF/LAHF were the second shared
+  blocker.** The three fast-mode `#UD` rows (Halo/Tak/Ninja Gaiden Black) were
+  not a JIT bug: the decoder had no one-byte `0x9E`/`0x9F`, so the retail x87
+  tail `fprem; fnstsw ax; sahf; jp` raised `#UD` in **every** engine and the
+  kernel halted. Both instructions now decode and execute with the reference
+  `gen_SAHF`/`gen_LAHF` semantics (12 new QEMU-TCG oracle cases, corpus 641);
+  all three titles run 1B steps with `LastFault vec=0`, the 44-row matrix is
+  **2 own-render / 42 dashboard / 0 fault / 0 timeout** (Tak is a new
+  own-render row), and **no gate anchor moved**. The remaining one-byte decoder
+  holes are filed in `real-game-probes.md`.
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (fifty-fourth; TM3 found the second shared blocker in the
+decoder - SAHF/LAHF were missing, so the retail `fprem; fnstsw ax; sahf; jp`
+tail raised #UD in every engine - and three oracle titles now run 1B steps with
+no fault, Tak becomes a second own-render row, and no gate anchor moved -
+decisions 254).**
+
+- **The blocker, in one line.** Halo's deterministic `#UD` (`vec=6`,
+  `EIP=0x00180AEC`, 604,260,882 steps) reproduces with `--jit-raw`, without it
+  (IL), with `--jit-exact` **and in accurate mode** - so it was never a JIT bug.
+  `--break`/`--break-log` show one visit to `0x180AEC`; `--dumpv` shows the byte
+  is **`0x9E` = SAHF**, the tail of the x87 loop `fprem; fnstsw ax; sahf; jp`
+  (`0x180AE6` FPREM -> `0x180AE9` FNSTSW AX -> `0x180AEC` SAHF -> `0x180AED`
+  `jp 0x180AE6`). The decoder had no case for `0x9E`/`0x9F`, so the guest got a
+  `#UD`, the kernel's dispatcher (`EAX=0x1E`, `ECX=0xC000001D`) halted at
+  `0x800151EF` - the "shared last EIP" of the three matrix rows.
+- **The fix** (xemu 0.8.139 `target/i386/tcg/emit.c.inc` `gen_SAHF`/`gen_LAHF`):
+  `Decoder` `0x9E`->`Sahf`, `0x9F`->`Lahf`; `XboxCpu` implements
+  `Eflags = (Eflags & ~ConditionMask) | (AH & ConditionMask)` with
+  `ConditionMask = CF|PF|AF|ZF|SF` (`0xD5` - OF and every non-condition bit
+  stay) and `AH = (Eflags & ConditionMask) | Reserved1`; `SpecSahf`/`SpecLahf`
+  keep the hot FPREM loop JIT-served; `DecodedBlockCache.Terminates` continues
+  through both.
+- **Evidence.** 15 new tests (`FlagTransferTests`, `JitTests.SahfLahfLoop`,
+  `SpecExecutionTests` shapes) - the pre-fix build throws
+  `Unsupported instruction 0x9E`; the independent QEMU-TCG oracle gained 12
+  cases (corpus 629 -> **641**, all green, a mask mutation fails it); the three
+  titles run **1B steps, `LastFault vec=0`** (Halo `0xAC3AC` fast / `0xAC543`
+  accurate, Tak `0x39CE8B`, NGB `0x37DC15`).
+- **The matrix re-run (44 rows, 1B): 2 own-render, 42 dashboard, 0 fault,
+  0 timeout** (was 2/39/3/0). **Tak is the second own-render row** (unique
+  2,675 draws / 41,995,882 px / 42 frames - seven more frames than the boot
+  animation), Halo/NGB execute their own XBE code.
+- **Gates: not one anchor moved** (the gate titles execute neither opcode) -
+  four accurate 1B goldens byte-identical (`4EF1FBF6`/`B6116DAE`,
+  `5B50373D`/`79142DE4`, same RAM/CPU and counters), four fast anchors exact,
+  ktest `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps. Suite
+  1973 -> **1988**, build 0 warnings, format clean, no snapshot change.
+- **Filed:** the remaining one-byte decoder holes (`27 2F 37 3F` DAA/DAS/AAA/AAS,
+  `62` BOUND, `82` the 32-bit group-1 alias, `C4 C5` LES/LDS, `D6` SALC,
+  `F1` INT1) - the reference accepts them all in 32-bit mode; no measured row
+  executes one. **Next: TM4** - 007's `#PF` at 26.5B (`EIP 0x1C386E`,
+  CR2=`0xE4`) inside the APU ISR is untouched by this fix and is the title's
+  blocker.
 
 **Session 2026-10-24 (fifty-third; TM1 named the blocker - the guest programs the
 8259 edge/level register and XGrid discarded the writes - and TM2 landed the

@@ -17188,3 +17188,96 @@ not change the 1B dashboard shape - but the deeper anchors do move:
 **Score.** P5 Bus & IRQ 85 -> 90 (the ELCR/level model) and P24 Retail 0 -> 10
 (the first retail advance): 74.3% (87.64 of 118). Suite 1965 -> 1973 (the eight
 PIC level tests), build 0 warnings, format clean, package gate untouched.
+
+## 254 TM3: the missing SAHF/LAHF one-byte opcodes were the whole #UD - three oracle titles run past their fault (2026-10-24, fifty-fourth session) - TM3
+
+**The blocker was not a JIT bug.** TM2's matrix left three oracle rows faulting
+`vec=6` in fast mode (Halo `0x180AEC` at 604M, Tak `0x33C810` at 673M, Ninja
+Gaiden Black `0x30D63D` at 660M, all with the kernel's `0x800151EF` as the last
+EIP). TM1 had called it a fast-mode JIT correctness item. The engine ladder
+disproves that on the first measurement: the fault reproduces at **exactly
+604,260,882 steps** with `--jit-raw`, **without** `--jit-raw` (IL, same step),
+with `--jit-exact` (per-member poll, same step) and in **accurate mode**
+(604,264,734 steps, `LastFault vec=6 EIP=0x00180AEC`). So the fault is not the
+raw emitter, not the poll boundary and not the JIT at all - the guest raises
+`#UD` in every engine, and the step differences are interrupt timing only.
+
+**The fault site.** `--break 0x180AEC` stops there cleanly (no fault yet) and
+`--break-log 0x180AEC` logs exactly **one** visit before the machine halts at
+the kernel's exception handler, so the instruction at that EIP is the fault:
+
+```
+--dumpv 0x180AE0,64
+00180AE0: DC 00 00 00 D9 C9 D9 F8 9B DF E0 9B 9E 7A F7 DD
+00180AF0: D9 C3 CC CC 83 EC 0C DD 14 24 E8 41 18 EA FF E8
+```
+
+`0x180AEC` is **`9E` = SAHF**, the tail of the classic x87 loop
+`fprem; fnstsw ax; sahf; jp` (`0x180AE6` FPREM -> `0x180AE9` FNSTSW AX ->
+`0x180AEC` SAHF -> `0x180AED` `jp 0x180AE6`). The decoder had no case for
+`0x9E` (or `0x9F` LAHF), so it returned invalid, `XboxCpu.Step` raised vector 6
+and the kernel's `#UD` dispatcher (EAX=`0x1E` exception number, ECX=`0xC000001D`
+`STATUS_ILLEGAL_INSTRUCTION`, EBX/EDX = the fault EIP) halted the machine. The
+halting EIP `0x800151EF` in the matrix rows is the **handler**, not the fault -
+which is why three titles with different fault EIPs shared it.
+
+**The fix** (xemu 0.8.139 `target/i386/tcg/emit.c.inc` `gen_SAHF`/`gen_LAHF`):
+
+- `Decoder`: `0x9E` -> `Mnemonic.Sahf`, `0x9F` -> `Mnemonic.Lahf` (one byte,
+  no operands);
+- `XboxCpu`: `Sahf` = `Eflags = (Eflags & ~ConditionMask) | (AH & ConditionMask)`
+  with `ConditionMask = CF|PF|AF|ZF|SF` (`0xD5`), so **OF and every
+  non-condition bit stay** (the reference keeps `CC_O` and re-derives the rest);
+  `Lahf` = `AH = (Eflags & ConditionMask) | Reserved1` (bits 3/5 clear, bit 1
+  set - the reference's `cc_src | 0x02` deposited at bit 8);
+- `XboxCpuSpecExec`: `SpecSahf`/`SpecLahf` (verbatim bodies) so a JIT block keeps
+  flowing through the instruction - the FPREM tail is a *hot loop*, not a
+  one-off; `DecodedBlockCache.Terminates` whitelists both.
+
+**Evidence, three levels.**
+
+1. **Unit + differential**: `FlagTransferTests` (decode, the five-flag transfer
+   for six AH patterns, LAHF's five-flag+bit-1 store, the `sahf; jp` FPREM branch
+   both ways, the LAHF/SAHF round trip), `JitTests.SahfLahfLoop` (IL+raw vs
+   interpreter over a loop, block stays served), `SpecExecutionTests`
+   (`sahf`/`lahf`/`lahf;sahf` spec vs interpreter). The pre-fix build throws
+   `UnsupportedInstructionException: Unsupported instruction 0x9E` - the exact
+   guest-visible fault.
+2. **The independent oracle**: `tools/cpu-oracle/corpus.py` gained 12 cases
+   (`sahf_00/d5/55/80/04/ff`, `lahf_202/8d7/8d5/8d0/2c3`, the round trip) and
+   the corpus was regenerated against QEMU's TCG core via Unicorn 2.1.4:
+   **641 cases**, all green. The reference confirms the semantics exactly
+   (`sahf_d5`: `0xCD7` unchanged; `sahf_00`: `0xCD7 -> 0xC02`; `lahf_8d5`:
+   AH `0xD7`, not `0xD5`). A mutation of the mask to include OF fails the
+   oracle test, so the differential is live, not decorative.
+3. **The titles**: Halo, Tak and Ninja Gaiden Black each run the **full 1B
+   steps with no fault** (`LastFault vec=0`) in fast and accurate mode:
+   Halo `0xAC3AC` (fast) / `0xAC543` (accurate), Tak `0x39CE8B`, NGB `0x37DC15`,
+   all inside their own XBE `.text`.
+
+**The matrix re-run (44 titles at 1B): 2 own-render, 42 dashboard, 0 fault, 0
+timeout** (was 2 / 39 / 3 / 0). The three fault rows are gone; **Tak is now the
+second own-render row** (unique `2,675` draws / `41,995,882` px / `42` frames,
+EIP `0x39CE8B` - seven more frames and three more draws than the shared boot
+animation, so it is drawing its own content), and Halo/NGB present the shared
+boot animation with their own XBE code executing (`0xAC3AC` / `0x37DC15`).
+
+**Gates: not one anchor moved.** The gate titles never execute SAHF/LAHF, so all
+four accurate 1B goldens are byte-identical (`4EF1FBF6` / `B6116DAE`,
+`5B50373D` / `79142DE4`) with the same RAM/CPU (`5C0CF968`/`E2B4D327`,
+`E58AE5D7`/`C43D5B49`) and counters (33,632/686/686, 2,707/69/34); the four fast
+1B continuity anchors are exact (`FD12563B`/`D726C97A`, `EF1BF776`/`D726C97A`,
+`457719AC`/`AB39AEE9` 58,123,882 px, `6CBBFE75`/`AB39AEE9`); the ktest log is
+`CA5D3867` (40,797 B) byte-identical at **792,800,535** steps. Suite 1973 ->
+**1988**, build 0 warnings, format clean. No snapshot change (CPU-only, no
+device state).
+
+**The one-byte opcode audit (filed, not fixed).** A temporary decoder sweep of
+all 256 one-byte opcodes reports the remaining holes:
+`27 2F 37 3F` (DAA/DAS/AAA/AAS), `62` (BOUND), `82` (the 32-bit alias of the
+`0x80` group - QEMU accepts it), `C4 C5` (LES/LDS), `D6` (SALC), `F1` (INT1),
+plus `8F`/`FE` whose only invalid forms are the reg fields my probe used. The
+reference implements every one of them in 32-bit mode (`chk(i64)`), so they are
+the next candidates *if* a title proves them - today no measured row executes
+any of them. Recorded in `real-game-probes.md` so TM4/TM5 start from the list
+rather than from another blind probe.

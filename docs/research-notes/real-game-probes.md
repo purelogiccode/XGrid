@@ -324,3 +324,42 @@ re-presents it (decisions §253).
    playability gate.
 
 
+
+## TM3 outcome (2026-10-24)
+
+**The "fast-mode `#UD`" was a missing instruction, not a JIT bug.** The engine
+ladder on the deterministic Halo repro settles it: `--jit-raw`, plain IL
+(no `--jit-raw`), `--jit-exact` and **accurate mode** all fault at
+`EIP=0x00180AEC` with `vec=6` (604,260,882 steps fast / 604,264,734 accurate;
+the difference is interrupt timing). `--dumpv` shows the byte there is `0x9E`
+= **SAHF**, the tail of the retail x87 loop `fprem; fnstsw ax; sahf; jp`, and
+the decoder had no case for `0x9E` or `0x9F` (LAHF). The kernel then took the
+`#UD` (EAX=`0x1E` exception number, ECX=`0xC000001D`) and halted - the
+`0x800151EF` "last EIP" in the matrix rows is that handler, which is why three
+titles with different fault addresses shared it.
+
+**The fix.** `Decoder` 0x9E/0x9F -> `Mnemonic.Sahf`/`Lahf`; `XboxCpu` and the
+spec-exec handlers implement the reference `gen_SAHF`/`gen_LAHF` rules
+(SF/ZF/AF/PF/CF from AH bits 7/6/4/2/0, OF and every non-condition bit kept;
+LAHF stores those five plus bit 1 into AH); the block executor continues through
+both so the FPREM loop stays JIT-served. Decisions §254.
+
+**Evidence.**
+
+| level | result |
+|---|---|
+| unit / JIT / spec differentials | 15 tests; the pre-fix build throws `Unsupported instruction 0x9E` |
+| independent oracle | 12 new QEMU-TCG (Unicorn) cases, corpus 629 -> **641**, all green; a mask mutation fails the oracle |
+| titles | Halo `0xAC3AC` (fast) / `0xAC543` (accurate), Tak `0x39CE8B`, Ninja Gaiden Black `0x37DC15` - **1B steps, `LastFault vec=0`** |
+| matrix (44 rows, 1B) | **2 own-render, 42 dashboard, 0 fault, 0 timeout** (was 2 / 39 / 3 / 0); **Tak is now the second own-render row** (2,675 draws / 41,995,882 px / 42 frames) |
+| gates | four accurate 1B goldens byte-identical, four fast anchors exact, ktest `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps, suite 1988 |
+
+**The remaining one-byte decoder holes (filed, not fixed).** A temporary sweep of
+all 256 one-byte opcodes reports: `27 2F 37 3F` (DAA/DAS/AAA/AAS), `62` (BOUND),
+`82` (the 32-bit alias of the `0x80` group - QEMU accepts it), `C4 C5` (LES/LDS),
+`D6` (SALC), `F1` (INT1). The reference implements all of them in 32-bit mode.
+No measured row executes any of them today; if a title faults `#UD` again, check
+this list before probing anything else.
+
+**Next (TM4, 007).** The 007 `#PF` at 26.5B (`EIP 0x1C386E`, CR2=`0xE4`) inside
+the APU ISR is still the title's blocker; the SAHF fix does not touch it.

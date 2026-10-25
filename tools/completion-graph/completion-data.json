@@ -28,7 +28,7 @@
           "p": 3,
           "name": "CPU (x86 PIII)",
           "weight": 11,
-          "done": 96
+          "done": 97
         },
         {
           "p": 4,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 10
+          "done": 15
         }
       ]
     }

@@ -19500,6 +19500,378 @@
     "eip": "0x00053a26"
    },
    "record": 628
+  },
+  {
+   "name": "sahf_00",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x11110000",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006ea040",
+    "edi": "0x006ea080",
+    "esp": "0x006eb800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x11110000",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006eb800",
+     "ebp": "0x55555555",
+     "esi": "0x006ea040",
+     "edi": "0x006ea080"
+    },
+    "eflags": "0x00000c02",
+    "eip": "0x00053a93"
+   },
+   "record": 629
+  },
+  {
+   "name": "sahf_d5",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x1111d500",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006ec040",
+    "edi": "0x006ec080",
+    "esp": "0x006ed800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1111d500",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006ed800",
+     "ebp": "0x55555555",
+     "esi": "0x006ec040",
+     "edi": "0x006ec080"
+    },
+    "eflags": "0x00000cd7",
+    "eip": "0x00053b13"
+   },
+   "record": 630
+  },
+  {
+   "name": "sahf_55",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x11115500",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006ee040",
+    "edi": "0x006ee080",
+    "esp": "0x006ef800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x11115500",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006ef800",
+     "ebp": "0x55555555",
+     "esi": "0x006ee040",
+     "edi": "0x006ee080"
+    },
+    "eflags": "0x00000c57",
+    "eip": "0x00053b93"
+   },
+   "record": 631
+  },
+  {
+   "name": "sahf_80",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x11118000",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006f0040",
+    "edi": "0x006f0080",
+    "esp": "0x006f1800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x11118000",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006f1800",
+     "ebp": "0x55555555",
+     "esi": "0x006f0040",
+     "edi": "0x006f0080"
+    },
+    "eflags": "0x00000c82",
+    "eip": "0x00053c13"
+   },
+   "record": 632
+  },
+  {
+   "name": "sahf_04",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x11110400",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006f2040",
+    "edi": "0x006f2080",
+    "esp": "0x006f3800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x11110400",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006f3800",
+     "ebp": "0x55555555",
+     "esi": "0x006f2040",
+     "edi": "0x006f2080"
+    },
+    "eflags": "0x00000c06",
+    "eip": "0x00053c93"
+   },
+   "record": 633
+  },
+  {
+   "name": "sahf_ff",
+   "code": "dbe30f770fae1500101f009e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x1111ff00",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006f4040",
+    "edi": "0x006f4080",
+    "esp": "0x006f5800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1111ff00",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006f5800",
+     "ebp": "0x55555555",
+     "esi": "0x006f4040",
+     "edi": "0x006f4080"
+    },
+    "eflags": "0x00000cd7",
+    "eip": "0x00053d13"
+   },
+   "record": 634
+  },
+  {
+   "name": "lahf_202",
+   "code": "dbe30f770fae1500101f009f0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x12345678",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006f6040",
+    "edi": "0x006f6080",
+    "esp": "0x006f7800"
+   },
+   "eflags": "0x00000002",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x12340278",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006f7800",
+     "ebp": "0x55555555",
+     "esi": "0x006f6040",
+     "edi": "0x006f6080"
+    },
+    "eflags": "0x00000002",
+    "eip": "0x00053d93"
+   },
+   "record": 635
+  },
+  {
+   "name": "lahf_8d7",
+   "code": "dbe30f770fae1500101f009f0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x12345678",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006f8040",
+    "edi": "0x006f8080",
+    "esp": "0x006f9800"
+   },
+   "eflags": "0x000008d7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1234d778",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006f9800",
+     "ebp": "0x55555555",
+     "esi": "0x006f8040",
+     "edi": "0x006f8080"
+    },
+    "eflags": "0x000008d7",
+    "eip": "0x00053e13"
+   },
+   "record": 636
+  },
+  {
+   "name": "lahf_8d5",
+   "code": "dbe30f770fae1500101f009f0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x12345678",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006fa040",
+    "edi": "0x006fa080",
+    "esp": "0x006fb800"
+   },
+   "eflags": "0x000008d7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1234d778",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006fb800",
+     "ebp": "0x55555555",
+     "esi": "0x006fa040",
+     "edi": "0x006fa080"
+    },
+    "eflags": "0x000008d7",
+    "eip": "0x00053e93"
+   },
+   "record": 637
+  },
+  {
+   "name": "lahf_8d0",
+   "code": "dbe30f770fae1500101f009f0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x12345678",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006fc040",
+    "edi": "0x006fc080",
+    "esp": "0x006fd800"
+   },
+   "eflags": "0x000008d2",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1234d278",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006fd800",
+     "ebp": "0x55555555",
+     "esi": "0x006fc040",
+     "edi": "0x006fc080"
+    },
+    "eflags": "0x000008d2",
+    "eip": "0x00053f13"
+   },
+   "record": 638
+  },
+  {
+   "name": "lahf_2c3",
+   "code": "dbe30f770fae1500101f009f0fae0500001f00cd30",
+   "registers": {
+    "eax": "0x12345678",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x006fe040",
+    "edi": "0x006fe080",
+    "esp": "0x006ff800"
+   },
+   "eflags": "0x000000c3",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0x1234c378",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x006ff800",
+     "ebp": "0x55555555",
+     "esi": "0x006fe040",
+     "edi": "0x006fe080"
+    },
+    "eflags": "0x000000c3",
+    "eip": "0x00053f93"
+   },
+   "record": 639
+  },
+  {
+   "name": "lahf_sahf_roundtrip",
+   "code": "dbe30f770fae1500101f009f9e0fae0500001f00cd30",
+   "registers": {
+    "eax": "0xdead0200",
+    "ecx": "0x22222222",
+    "edx": "0x33333333",
+    "ebx": "0x44444444",
+    "ebp": "0x55555555",
+    "esi": "0x00700040",
+    "edi": "0x00700080",
+    "esp": "0x00701800"
+   },
+   "eflags": "0x00000cd7",
+   "flagsMask": "0x000008d5",
+   "expect": {
+    "registers": {
+     "eax": "0xdeadd700",
+     "ecx": "0x22222222",
+     "edx": "0x33333333",
+     "ebx": "0x44444444",
+     "esp": "0x00701800",
+     "ebp": "0x55555555",
+     "esi": "0x00700040",
+     "edi": "0x00700080"
+    },
+    "eflags": "0x00000cd7",
+    "eip": "0x00054014"
+   },
+   "record": 640
   }
  ]
 }

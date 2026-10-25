@@ -426,6 +426,35 @@ public sealed class JitTests
     }
 
     [Fact]
+    public void SahfLahfLoop_MatchesInterpreter()
+    {
+        // The retail FPREM tail shape inside a loop: lahf; sahf; add ah,1;
+        // dec ecx; jne. Both engines must agree on the flags each iteration
+        // and the block must stay JIT-served (SAHF/LAHF have spec handlers).
+        byte[] code =
+        [
+            0xB9, 0x08, 0x00, 0x00, 0x00, // mov ecx,8
+            0x9F,                         // lahf
+            0x9E,                         // sahf
+            0x80, 0xC4, 0x01,             // add ah,1
+            0x49,                         // dec ecx
+            0x75, 0xF8,                   // jne -8
+            0xF4,                         // hlt
+        ];
+
+        XboxCpu plain = CpuHarness.Create(code);
+        XboxCpu jit = CreateJit(code);
+        Preset(plain);
+        Preset(jit);
+
+        plain.Execute(1000);
+        jit.Execute(1000);
+
+        AssertSameState(plain, jit);
+        Assert.True(jit.JitServedTotal > 0);
+    }
+
+    [Fact]
     public void MemoryAluForms_MatchInterpreter()
     {
         // RMW memory forms: add [m],r; inc dword [m]; cmp [m],imm;

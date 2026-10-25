@@ -1,17 +1,30 @@
-# Next session instructions (updated 2026-10-24: the order is M-G (boot a game) -> M-P (xemu port) -> M-D (speed); the queue is MG0)
+# Next session instructions (updated 2026-10-24: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM4)
 
-> **ORDER CHANGE (2026-10-24) - gameplay first, then the xemu port, then speed.**
-> The operator re-scoped the project: **M-G** = one retail title reaches a
-> gameplay frame at any speed; **M-P** = port the xemu 0.8.139 engine to managed
-> C#; **M-D** = xemu-class speed after the port. The queue is in
-> `docs/status.json` and the detail is `ImplementationPlan.md` E1a/E1b/E1c.
-> **Start with MG0** (`pwsh -File scripts/status.ps1 -Next`), not with the
-> performance options below. The 2026-10-14 "no real Xbox games" rule is
-> superseded: the **optimized** retail ISOs at `H:\Tests\XBOXReady` are the lead
-> acceptance now (never gates); the 37 full-disc Redump ISOs at
-> `H:\Tests\XBOXTest` cannot be booted by xemu, so they are not oracle media.
-> `D:\Samples\XBOXReady` is gone; `data\xemu\xemu.toml` and
-> `scripts/xemu-oracle.ps1` still point at it - fixing both is MG0.1.
+> **TM3 RESULT (2026-10-24, 54th session) - SAHF/LAHF were the second shared
+> blocker, and no gate anchor moved.** The three fast-mode `#UD` rows were not a
+> JIT bug: the fault reproduces in **every** engine (`--jit-raw`, IL,
+> `--jit-exact`, accurate mode) at Halo's `EIP=0x00180AEC`, and the byte there is
+> `0x9E` = **SAHF** - the tail of the retail x87 loop `fprem; fnstsw ax; sahf;
+> jp`. The decoder had no `0x9E`/`0x9F`, so the guest got a `#UD` and the kernel
+> halted at `0x800151EF` (its exception handler - the "shared last EIP"). Both
+> instructions now decode and execute with the reference `gen_SAHF`/`gen_LAHF`
+> semantics (`ConditionMask = CF|PF|AF|ZF|SF`; OF and every non-condition bit
+> kept), have spec handlers (the FPREM loop stays JIT-served) and 12 new
+> QEMU-TCG oracle cases (corpus **641**). **Halo, Tak and Ninja Gaiden Black run
+> 1B steps with `LastFault vec=0`**; the 44-row matrix is **2 own-render / 42
+> dashboard / 0 fault / 0 timeout** (Tak is a new own-render row at 2,675 draws /
+> 42 frames). **No gate moved**: four accurate 1B goldens byte-identical
+> (`4EF1FBF6`/`B6116DAE`, `5B50373D`/`79142DE4`, same RAM/CPU and counters),
+> four fast anchors exact, ktest `CA5D3867` (40,797 B) byte-identical at
+> 792,800,535 steps, suite **1988**. Decisions §254.
+> **Next: TM4** - 007's `#PF` at 26.5B (`EIP 0x1C386E`, CR2=`0xE4`) inside the
+> APU ISR. Start by dumping the guest code around `0x1C386E` and naming the null
+> structure at `[0xE4]`; the APU ISR now runs (ISTS `0x11` = GINTSTS +
+> FETINTSTS, voiceOff 18), so the question is whether the ISR walks the VP /
+> FE-trap state (`hw/xbox/mcpx/apu/vp/vp.c`) or a kernel object. Also filed: the
+> remaining one-byte decoder holes (DAA/DAS/AAA/AAS, BOUND, the `0x82` alias,
+> LES/LDS, SALC, INT1) in `real-game-probes.md` - check that list first if a new
+> title faults `#UD`.
 
 > **TM2 RESULT (2026-10-24, 53rd session) - the ELCR was the whole blocker, and
 > 007 is past it.** The guest programs the 8259 edge/level register
@@ -22,13 +35,11 @@
 > Fire title screen at 50B** (21,186 colours, EIP `0x1FD0E`, no fault) and, with
 > the 20B A press, reaches the game's own render before faulting at **26.5B** in
 > guest code at EIP `0x1C386E` (`#PF`, CR2=`0xE4`) inside the APU ISR - that is
-> the TM3 blocker. The ktest log is **byte-identical**; the accurate anchors were
+> the TM4 blocker. The ktest log is **byte-identical**; the accurate anchors were
 > re-baselined (menu frame/counters unchanged; triangle +1 draw/frame:
 > `A1740DE0` -> `5B50373D`, gl `7A860ED7` -> `79142DE4`; RAM/CPU moved on both
 > titles because the previously-lost interrupts now run - decisions 253).
 > `H:\Tests\XBOXReady` now has **7** optimized ISOs, so the matrix is 44 rows.
-> **Next: TM3** - the APU ISR null-dereference (`CR2=0xE4`) and the VP mixer /
-> AC'97 gap it exposes.
 
 > **MG3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
 > nothing regressed.** One Release build, one test run (**1965** green), then
