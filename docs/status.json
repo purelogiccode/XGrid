@@ -1,17 +1,17 @@
 {
   "schema": 1,
-  "updated": "2026-10-24",
+  "updated": "2026-10-25",
   "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
     "milestone": "M-T",
-    "id": "TM4",
-    "title": "007 playability gate",
+    "id": "TM5",
+    "title": "Halo playability gate (or documented wait)",
     "plan": "E1",
     "status": "active",
-    "started": "2026-10-24",
+    "started": "2026-10-25",
     "attempts": 0,
-    "acceptance": "007 reaches gameplay, a scripted pad input advances guest state and the frame, it runs 10 minutes / 100B steps with no fault or hang, save/load round-trips, and the xemu 0.8.139 frame at a comparable scene matches within the screenshot policy; the four accurate goldens and the ktest log stay byte-identical.",
-    "price": "2-5 sessions; correctness bar.",
+    "acceptance": "Halo reaches gameplay or a documented wait with the same evidence (EIP, thread/wait object, last device I/O, xemu state); the media and probe docs are updated; no gate regression.",
+    "price": "1-3 sessions; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -67,16 +67,16 @@
     },
     "gameplay": {
       "target": "H:\\Tests\\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black)",
-      "state": "TM3's SAHF/LAHF decoder fix removed the last fault rows: Halo, Tak and Ninja Gaiden Black now run the full 1B steps with LastFault vec=0 in fast and accurate mode (Halo EIP 0xAC3AC/0xAC543, Tak 0x39CE8B, NGB 0x37DC15) and the 44-row matrix reads 2 own-render / 42 dashboard / 0 fault / 0 timeout - Tak is now the second own-render row (2,675 draws / 41,995,882 px / 42 frames). 007: TM2's level-interrupt fix unblocked the APU ISR; at 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, EIP 0x1FD0E); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR - the TM4 blocker. The Redump group advanced too: GTA: San Andreas at 5B presents the disc's own Xbox boot screen (27,543 colours)",
+      "state": "TM4 (2026-10-25): 007 Agent Under Fire is PLAYABLE - 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu 0.8.139 oracle on the same ISO reaches the same scene at 150 s (mean (96.8,85.5,58.8), 63,994 colours, dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap: McpxApuDevice.VoiceOff queued one on top of the VP frame walk, so the guest freed the voice on the first trap and dereferenced null on the second. Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene (cinematic -> black at the same step). Audio is a measured silence: --apu-dsp --audio-out writes 877,568 bytes of zero PCM (the VP mixer vp.c + AC'97 are TM8). The 44-row 1B matrix is unchanged: 2 own-render / 42 dashboard / 0 fault / 0 timeout",
       "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
-      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM",
-      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: 2 own-render, 42 dashboard, 0 fault, 0 timeout"
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 now selects the disc with -config_path and captures a DPI-correct client area",
+      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: 2 own-render, 42 dashboard, 0 fault, 0 timeout (TM4 re-run, unchanged)"
     }
   },
   "result": {
-    "points": 88.25,
+    "points": 90.15,
     "weight": 118,
-    "percent": 74.8
+    "percent": 76.4
   },
   "phases": [
     {
@@ -167,7 +167,7 @@
       "p": 12,
       "name": "APU (audio)",
       "weight": 4,
-      "done": 75,
+      "done": 80,
       "track": "LLE core (real console chain)"
     },
     {
@@ -237,7 +237,7 @@
       "p": 22,
       "name": "Save States & Replay",
       "weight": 2,
-      "done": 30,
+      "done": 40,
       "track": "Performance & finish"
     },
     {
@@ -251,27 +251,15 @@
       "p": 24,
       "name": "Retail gameplay & xemu port",
       "weight": 10,
-      "done": 15,
+      "done": 30,
       "track": "Retail & port"
     }
   ],
   "queue": [
     {
-      "id": "TM4",
-      "title": "007 playability gate",
-      "status": "active",
-      "depends": [
-        "TM3"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "007 reaches gameplay, a scripted pad input advances guest state and the frame, it runs 10 minutes / 100B steps with no fault or hang, save/load round-trips, and the xemu 0.8.139 frame at a comparable scene matches within the screenshot policy; the four accurate goldens and the ktest log stay byte-identical.",
-      "price": "2-5 sessions; correctness bar."
-    },
-    {
       "id": "TM5",
       "title": "Halo playability gate (or documented wait)",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "TM4"
       ],
@@ -450,6 +438,13 @@
       "date": "2026-10-24",
       "evidence": "TM3: the second shared blocker was the missing SAHF/LAHF one-byte opcodes (0x9E/0x9F), not a JIT bug. The Halo repro (H:\\Tests\\XBOXReady\\Halo ... v1.09) faults at exactly 604,260,882 steps, vec=6, EIP=0x00180AEC with --jit-raw, WITHOUT --jit-raw (IL), with --jit-exact and in accurate mode (604,264,734) - so every engine raises it. --break/--break-log show a single visit to 0x180AEC and --dumpv shows the byte is 0x9E = SAHF, the tail of the retail x87 loop fprem; fnstsw ax; sahf; jp (0x180AE6 FPREM -> 0x180AE9 FNSTSW AX -> 0x180AEC SAHF -> 0x180AED jp 0x180AE6); the decoder had no case for 0x9E/0x9F, so it raised #UD and the kernel's handler (EAX=0x1E exception number, ECX=0xC000001D STATUS_ILLEGAL_INSTRUCTION, EBX/EDX = fault EIP) halted at 0x800151EF - the shared 'last EIP' in the matrix rows. Fix (xemu 0.8.139 target/i386/tcg/emit.c.inc gen_SAHF/gen_LAHF): Decoder 0x9E->Mnemonic.Sahf, 0x9F->Mnemonic.Lahf; XboxCpu Sahf = (Eflags & ~ConditionMask) | (AH & ConditionMask) with ConditionMask=CF|PF|AF|ZF|SF (0xD5, OF and every non-condition bit kept), Lahf = AH = (Eflags & ConditionMask) | Reserved1; SpecSahf/SpecLahf verbatim bodies + DecodedBlockCache.Terminates whitelist so the hot FPREM loop stays JIT-served. Evidence: FlagTransferTests (decode, six AH patterns, LAHF five-flag+bit-1 store, the sahf;jp FPREM branch both ways, round trip), JitTests.SahfLahfLoop (IL+raw vs interpreter, block served), SpecExecutionTests flag-transfer shapes - 15 tests, pre-fix build throws 'Unsupported instruction 0x9E'; tools/cpu-oracle gained 12 SAHF/LAHF cases and was regenerated against QEMU TCG (Unicorn 2.1.4), corpus 629 -> 641 all green (the reference confirms sahf_00 0xCD7->0xC02, sahf_d5 unchanged, lahf_8d5 AH=0xD7; a mask mutation fails the oracle). Titles: Halo 0xAC3AC fast / 0xAC543 accurate, Tak 0x39CE8B, Ninja Gaiden Black 0x37DC15 - 1B steps, LastFault vec=0. Matrix re-run (44 titles at 1B, serial): 2 own-render, 42 dashboard, 0 fault, 0 timeout (was 2/39/3/0); Tak is now the second own-render row (unique 2,675 draws / 41,995,882 px / 42 frames, EIP 0x39CE8B), Halo/NGB execute their own XBE code with no fault. Gates: no anchor moved - the four accurate 1B goldens are byte-identical (menu sw 4EF1FBF6 / gl B6116DAE, RAM 5C0CF968 / CPU E2B4D327, 33,632/686/686; triangle sw 5B50373D / gl 79142DE4, RAM E58AE5D7 / CPU C43D5B49, 2,707/69/34), the four fast 1B continuity anchors are exact (menu sw FD12563B/D726C97A 253,998,498 px, menu gl EF1BF776/D726C97A, triangle sw 457719AC/AB39AEE9 58,123,882 px, triangle gl 6CBBFE75/AB39AEE9), the ktest log is CA5D3867 (40,797 B) byte-identical at 792,800,535 steps, suite 1973 -> 1988, build 0 warnings, format clean, no snapshot change. Filed: the remaining one-byte decoder holes (27 2F 37 3F DAA/DAS/AAA/AAS, 62 BOUND, 82 group-1 alias, C4 C5 LES/LDS, D6 SALC, F1 INT1 - all accepted by the reference in 32-bit mode, none executed by a measured row). Score P3 CPU 96->97, P24 Retail 10->15 = 74.8% (88.25 of 118).",
       "commitMessage": "cpu: decode SAHF/LAHF so the FPREM loop tail runs (TM3)"
+    },
+    {
+      "id": "TM4",
+      "title": "007 playability gate",
+      "date": "2026-10-25",
+      "evidence": "007 Agent Under Fire is playable: 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); xemu 0.8.139 on the same ISO reaches the same scene at 150 s (63,994 colours, 6.8% black, mean (96.8,85.5,58.8); frame-compare --crop-top 0.25 dmean=(18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF (EIP 0x1C386E, CR2=0xE4) was our own duplicate SE2FE_IDLE_VOICE: McpxApuDevice.VoiceOff queued one on top of the VP frame walk (xemu voice_off sends none, mcpx_apu_vp_frame is the only sender), so the guest freed the voice on the first trap and dereferenced null on the second; the queue is gone and APU snapshot v5 keeps v2-v4 loadable. Scripted input from the 100B snapshot: 50M steps gives RAM 68E22299 (none) / 0FFAF650 (stick right) / 946C590A (stick left); at 300M the display is the plane-crash cinematic (13,754 colours) with no input or a held D-pad and black with a held A (cutscene skipped); across the boot the 20B no-pad frame is the Harrier intro and the A edge is what reaches gameplay. Save/load round-trips through the real EmulatorSession (72,110,280 B at 1.6B steps, faulted=False, tools/frontend-smoke) and the 100B snapshot resumes. Audio is a measured silence: --apu-dsp --audio-out writes 877,568 bytes / 219,392 frames of zero PCM (the VP mixer vp.c + AC97 are TM8). Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327, 33,632/686/686), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49, 2,707/69/34), ktest CA5D3867 (40,797 B) at 792,800,535 steps; 44-row 1B matrix re-run unchanged (2 own-render / 42 dashboard / 0 fault / 0 timeout); suite 1988 -> 1990, build 0 warnings, format clean. Tooling: scripts/xemu-oracle.ps1 selects the disc through -config_path and captures a DPI-aware client area; tools/frontend-smoke falls back to data/xemu firmware.",
+      "commitMessage": "audio: the idle-voice trap belongs to the VP frame walk, so 007 reaches gameplay (TM4)"
     }
   ],
   "negatives": [

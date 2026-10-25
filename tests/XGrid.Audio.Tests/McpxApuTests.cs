@@ -20,12 +20,12 @@ public sealed class McpxApuTests
     private const uint VpVaddr = 0x202C;
     private const uint VpPioFree = 0x20010;
     private const uint VpVoiceOff = 0x20128;
+    private const uint VpVoiceListTop = 0x2054;
 
     private const uint Gintsts = 1u << 0;
     private const uint Fetintsts = 1u << 4;
     private const uint Fenintsts = 1u << 5;
     private const uint Fevintsts = 1u << 6;
-    private const uint Se2FeIdleVoice = 0x8000;
 
     [Fact]
     public void PioFree_ReadsAsEmpty()
@@ -51,11 +51,18 @@ public sealed class McpxApuTests
     }
 
     [Fact]
-    public void VoiceOff_DeliversIdleVoiceMessageOnNextFrame()
+    public void VoiceOff_UnlinkedVoiceSendsNoIdleVoiceTrap()
     {
+        // xemu's voice_off only clears ACTIVE_VOICE and writes the notifier; the
+        // SE2FE_IDLE_VOICE trap comes from the VP frame walk, which never sees an
+        // unlinked voice. Queuing one here gave the guest a second completion for
+        // the same voice (007 frees the voice on the first and faulted on [0xE4]).
         var apu = new McpxApuDevice(new FakeMemory());
         apu.Write(Base + Ien, 4, Gintsts | Fetintsts | Fevintsts | Fenintsts);
         apu.Write(Base + FetForce1, 4, 1u << 15);
+        apu.Write(Base + VpVoiceListTop, 4, 0xFFFF);
+        apu.Write(Base + VpVoiceListTop + 0xC, 4, 0xFFFF);
+        apu.Write(Base + VpVoiceListTop + 0x18, 4, 0xFFFF);
         apu.Write(Base + VpVoiceOff, 4, 64);
         apu.Write(Base + IsTs, 4, apu.InterruptStatus);
 
@@ -63,10 +70,8 @@ public sealed class McpxApuTests
 
         apu.Advance(4_000_000);
 
-        Assert.Equal(Se2FeIdleVoice, apu.Read(Base + FedecMeth, 4));
-        Assert.Equal(64u, apu.Read(Base + FedecParam, 4));
-        Assert.Equal((Fetintsts | Gintsts), apu.InterruptStatus);
-        Assert.True(apu.InterruptAsserted);
+        Assert.Equal(0u, apu.Read(Base + FedecMeth, 4));
+        Assert.Equal(0u, apu.Read(Base + FedecParam, 4));
     }
 
     [Fact]

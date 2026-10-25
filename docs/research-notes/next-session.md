@@ -1,4 +1,45 @@
-# Next session instructions (updated 2026-10-24: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM4)
+# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM5)
+
+> **TM4 RESULT (2026-10-25, 55th session) - 007 Agent Under Fire is PLAYABLE, and
+> the 26.5B `#PF` was our duplicate idle-voice trap.** `McpxApuDevice.VoiceOff`
+> cleared the active bit, wrote the notifier **and queued a `SE2FE_IDLE_VOICE`
+> trap**; the VP frame walk then delivered the same voice again, because it was
+> still linked into a list. xemu 0.8.139's `voice_off` (`vp.c:118-132`) sends no
+> trap - `mcpx_apu_vp_frame` (`vp.c:1833-1835`) is the only sender - so the guest
+> freed the voice object on the first trap and the second dereferenced a null slot
+> at `EIP=0x1C386E` (`CR2=0xE4`). The queue is gone (APU snapshot **v5**; v2-v4
+> still load), three new tests fail on the pre-fix source, and the title now runs
+> **100,000,000,000 steps with `LastFault vec=0`** (134,004 draws /
+> 1,005,989,482 px / 6,478 frames, EIP `0x000214C2`, wall 1,284.8 s), presenting
+> the first-level Z8-on-the-docks scene (`wt-data/tm4/007-100b-display.png`,
+> 48,208 colours, 6.8% black, mean `(78.7, 65.5, 45.3)`).
+> **The xemu oracle is real now.** `scripts/xemu-oracle.ps1` had three defects -
+> `-cdrom` is not an xemu option (the disc is `sys.files.dvd_path`, selected with
+> `-config_path`), an ISO path with spaces was split into option tokens
+> (`xemu.exe: -: invalid option` - the old "007 gameplay" capture was a different
+> disc), and the capture was DPI-virtualized so every shot was shifted into the
+> window chrome. xemu 0.8.139 on the same ISO reaches **the same driving scene at
+> 150 s**; `frame-compare --crop-top 0.25` reads mean `(94.6, 87.6, 63.3)` vs
+> `(76.6, 64.9, 48.7)`, colours 43,921 vs 39,912, black 4.1% vs 4.2%,
+> `dmean=(18.0, 22.6, 14.6)`. **xemu cannot be driven on this host** (pad input is
+> SDL-gamepad only and the configured GUID is absent), so it sits in the
+> attract/intro loop; the scripted-input evidence is XGrid-side (the 20B no-pad
+> frame is the Harrier intro, the 26B+ pad frame is gameplay, and every pad
+> variant produces a distinct RAM/CPU SHA).
+> **Gates: not one anchor moved** (the gate titles never take the voice-off path
+> at 1B): accurate menu `4EF1FBF6`/`B6116DAE` (`5C0CF968`/`E2B4D327`,
+> 33,632/686/686), accurate triangle `5B50373D`/`79142DE4` (`E58AE5D7`/`C43D5B49`,
+> 2,707/69/34), ktest `CA5D3867` (40,797 B) byte-identical at 792,800,535 steps.
+> Suite 1988 -> **1990**, build 0 warnings, format clean. Decisions §255.
+> **Next: TM5 (Halo)** - the same gate or a documented wait. Halo's 1B matrix row
+> is still the shared **boot animation** (`2,672` draws / `41,995,882` px / `35`
+> frames, EIP `0xAC3AC` fast / `0xAC543` accurate), so the disc has not launched
+> at 1B: probe deep like 007 (a `--save-at` anchor around 20B, then
+> `--load-state` for ~5 s probes) and use `scripts/xemu-oracle.ps1 -IsoPath ...`
+> for the xemu scene (it now works, and note xemu cannot be driven here - no pad
+> device - so it stays in the attract/intro loop and the comparison is at a
+> comparable scene, not at a scripted moment). Halo's audio is the same VP-mixer
+> gap as 007's, so part 6 will be a documented silence until TM8.
 
 > **TM3 RESULT (2026-10-24, 54th session) - SAHF/LAHF were the second shared
 > blocker, and no gate anchor moved.** The three fast-mode `#UD` rows were not a
@@ -17,14 +58,9 @@
 > (`4EF1FBF6`/`B6116DAE`, `5B50373D`/`79142DE4`, same RAM/CPU and counters),
 > four fast anchors exact, ktest `CA5D3867` (40,797 B) byte-identical at
 > 792,800,535 steps, suite **1988**. Decisions §254.
-> **Next: TM4** - 007's `#PF` at 26.5B (`EIP 0x1C386E`, CR2=`0xE4`) inside the
-> APU ISR. Start by dumping the guest code around `0x1C386E` and naming the null
-> structure at `[0xE4]`; the APU ISR now runs (ISTS `0x11` = GINTSTS +
-> FETINTSTS, voiceOff 18), so the question is whether the ISR walks the VP /
-> FE-trap state (`hw/xbox/mcpx/apu/vp/vp.c`) or a kernel object. Also filed: the
-> remaining one-byte decoder holes (DAA/DAS/AAA/AAS, BOUND, the `0x82` alias,
-> LES/LDS, SALC, INT1) in `real-game-probes.md` - check that list first if a new
-> title faults `#UD`.
+> Also filed: the remaining one-byte decoder holes (DAA/DAS/AAA/AAS, BOUND, the
+> `0x82` alias, LES/LDS, SALC, INT1) in `real-game-probes.md` - check that list
+> first if a new title faults `#UD`.
 
 > **TM2 RESULT (2026-10-24, 53rd session) - the ELCR was the whole blocker, and
 > 007 is past it.** The guest programs the 8259 edge/level register

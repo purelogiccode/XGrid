@@ -17281,3 +17281,103 @@ reference implements every one of them in 32-bit mode (`chk(i64)`), so they are
 the next candidates *if* a title proves them - today no measured row executes
 any of them. Recorded in `real-game-probes.md` so TM4/TM5 start from the list
 rather than from another blind probe.
+## 255 TM4: the duplicate SE2FE_IDLE_VOICE trap was 007's #PF - the title reaches gameplay and runs 100B steps (2026-10-25, fifty-fifth session) - TM4
+
+**The blocker was ours, not the guest's.** TM2 left 007 faulting at 26.5B with
+`#PF EIP=0x1C386E CR2=0xE4` inside the APU ISR, and TM3 confirmed it was not the
+SAHF/LAHF class. The guest code at the fault is a voice lookup:
+
+```
+001C3BF1  mov eax,[esp+4]              ; index
+001C3BF5  cmp eax,0x100               ; jae  -> return
+001C3BFC  cmp dword [ecx+0x2C0],0     ; jne  -> return
+001C3C06  mov esi,[0x1C9944]          ; the 256 x 0x80 per-voice record table
+001C3C11  test [edx+esi+4],0x800000   ; jne  -> return (voice not serviceable)
+001C3C1D  call 0x1C3863               ; Lookup(index)
+001C3863  mov eax,[esp+4]
+001C3867  mov ecx,[ecx+eax*4+0x2C4]   ; this->voices[index]
+001C386E  mov edx,[ecx+0xE4]          ; ECX == 0 here -> #PF CR2=0xE4
+```
+
+`this` is the guest's `DSND` (DirectSound) device at `0xD001C008`; `+0x2C4` is a
+256-entry voice-object array. The ISR was servicing the FE trap for voice `0x2E`
+(46) - `FEDECMETH=0x00008000` (`SE2FE_IDLE_VOICE`), `FEDECPARAM=0x2E` - while the
+guest had already freed the voice.
+
+**Why it was freed too early: we sent the trap twice.** `McpxApuDevice.VoiceOff`
+cleared the active bit, wrote the notifier **and queued an idle-voice** that
+`ProcessFrame` delivered on the next frame; the VP frame walk then delivered the
+same voice again, because the voice was still linked into a list. xemu 0.8.139
+has no such queue: `voice_off` (`vp.c:118-132`) only clears
+`NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE` and calls `set_notify_status`, and the
+**only** `SE2FE_IDLE_VOICE` sender is `mcpx_apu_vp_frame`
+(`vp.c:1833-1835`, one trap per frame for every inactive linked voice). The APU
+event log at the fault shows the shape exactly:
+
+```
+voice-off 46 / raise 61 / ack        (guest PIO write)
+voice-off 46 / raise 61 / ack        (guest PIO write)
+idle-voice 46 / raise 11             (queued #1)
+idle-voice 46 / raise 11             (queued #2)
+...
+voice-off 47 ... idle-voice 47       (walk)
+idle-voice 46                        (walk) -> the ISR re-reads 46, table null -> #PF
+```
+
+The queued pair is the defect: with one trap per voice the guest unlinks the
+voice on the first one, so the walk never sees it again.
+
+**The fix** (`src/XGrid.Audio/McpxApuDevice.cs`): `_pendingIdleVoices` is gone,
+`CompleteVoiceOff` has no `queueIdle` parameter, and `ProcessFrame` no longer pops
+a pending entry. The VP frame walk is the only trap sender, as in the reference.
+APU snapshot **v5** drops the queue from the payload; **v2-v4 still load** (the
+old list is read and discarded), and the DSP payload gate moved to
+`SnapshotVersionV4` so a v4 state keeps its DSP block.
+
+**Evidence.**
+
+| level | result |
+|---|---|
+| unit | 3 new tests fail on the pre-fix source (`VoiceOff_UnlinkedVoiceSendsNoIdleVoiceTrap`, `FrameAdvance_VoiceOffSendsOneIdleVoiceTrapNotTwo`, `FrameAdvance_VoiceOffOnAnUnlinkedVoiceSendsNoTrap`); `VoiceOff_DeliversIdleVoiceMessageOnNextFrame` became `VoiceOff_UnlinkedVoiceSendsNoIdleVoiceTrap` (it pinned the defect) |
+| snapshot probe | from `wt-data/tm4/007-26b.xgs` the pre-fix build faults at +474,312,790 steps (`#PF EIP=0x1C386E CR2=0xE4`); the fixed build runs 3B steps with `LastFault vec=0` |
+| the title | **100,000,000,000 steps, no fault, not halted**, EIP `0x000214C2`, 134,004 draws / 1,005,989,482 px / 6,478 frames, wall 1,284.8 s |
+| the frame | `wt-data/tm4/007-100b-display.png`: the Z8 on the docks, 48,208 colours, 6.8% black, mean `(78.7, 65.5, 45.3)` |
+| the oracle | xemu 0.8.139, same ISO, **same scene at 150 s** (`wt-data/tm4/xemu-007-150s.png`); `frame-compare --crop-top 0.25`: mean `(94.6, 87.6, 63.3)` vs `(76.6, 64.9, 48.7)`, colours 43,921 vs 39,912, black 4.1% vs 4.2%, `dmean=(18.0, 22.6, 14.6)` |
+
+**Gates: not one anchor moved.** The gate titles never take the voice-off path at
+1B, so the four accurate goldens are byte-identical (`4EF1FBF6` / `B6116DAE` with
+`5C0CF968`/`E2B4D327` and 33,632/686/686; `5B50373D` / `79142DE4` with
+`E58AE5D7`/`C43D5B49` and 2,707/69/34) and the ktest log is `CA5D3867`
+(40,797 B) byte-identical at **792,800,535** steps. Suite 1988 -> **1990**, build
+0 warnings, format clean.
+
+**Tooling fixed in the same task** (the oracle is part of the acceptance):
+
+- `scripts/xemu-oracle.ps1` passed `-cdrom`, which xemu does not have (the disc
+  is the settings key `sys.files.dvd_path`); it now writes a temporary config and
+  selects it with `-config_path`. `Start-Process -ArgumentList` does not quote, so
+  an ISO path with spaces was split into option tokens (`xemu.exe: -: invalid
+  option` - the earlier "007 gameplay" capture in `real-game-probes.md` was a
+  different disc because of it).
+- the capture was DPI-virtualized: every shot was shifted by the caption height
+  and included the window chrome. `SetProcessDPIAware()` plus a client-origin
+  re-read immediately before `CopyFromScreen` makes it a clean 640x480 client
+  grab.
+- CLI diagnostics: `--break-log` prints EBX/ECX/EDX/EBP (the null-pointer hunt
+  needed ECX), and the APU state line prints `fedec=<method>/<param>`.
+
+**What TM4 still owes (documented, not claimed):** xemu cannot be driven on this
+host (its pad input is SDL-gamepad only, and the configured GUID is absent), so
+the comparable-scene comparison is at the intro/driving scene and the scripted
+input edge is XGrid-side; audio is measured **silent** - `--apu-dsp --audio-out`
+at 28B steps writes 877,568 bytes / 219,392 frames of PCM and every sample is
+zero, because the voices are never mixed into the EP input (the VP mixer `vp.c`
+is not modelled and the AC'97 codec has no PCM path - TM8's scope).
+
+**Scripted input, from the 100B snapshot** (same state, same budget, only the pad
+differs): 50M steps gives RAM `68E22299` (no input) / `0FFAF650` (stick right) /
+`946C590A` (stick left); at 300M the display is the plane-crash cinematic
+(13,754 colours) with no input or a held D-pad, and **black** with a held A (the
+cutscene is skipped). Across the boot the pad edge is the stage switch: 20B with
+no pad is the Harrier intro (38,350 colours), with the A press it is gameplay.
+

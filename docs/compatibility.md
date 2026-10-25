@@ -69,6 +69,17 @@ the same firmware/EEPROM.
   603,250,282 px / 2,594 frames) and then faults at **26.5B** in guest code at
   EIP `0x1C386E` (`#PF`, CR2=`0xE4`, err=0) inside the APU ISR - the next
   blocker (TM3). xemu 0.8.139 reaches gameplay in 15 s on the same ISO.
+  **TM4 (2026-10-25): PLAYABLE.** The 26.5B fault was a duplicated
+  `SE2FE_IDLE_VOICE` trap (the VP frame walk plus a pending queue in
+  `McpxApuDevice`), so the guest freed the voice on the first trap and
+  dereferenced a null slot on the second. With the queue removed the title runs
+  **100,000,000,000 steps with no fault** (`LastFault vec=0`, 134,004 draws /
+  1,005,989,482 px / 6,478 frames, EIP `0x000214C2`) and presents the first-level
+  driving scene (`wt-data/tm4/007-100b-display.png`: 48,208 colours, 6.8% black,
+  mean `(78.7, 65.5, 45.3)`). The xemu 0.8.139 oracle on the same ISO reaches the
+  **same scene at 150 s** (`wt-data/tm4/xemu-007-150s.png`: 63,994 colours, 6.8%
+  black, mean `(96.8, 85.5, 58.8)`); `frame-compare --crop-top 0.25` reads
+  `dmean=(18.0, 22.6, 14.6)` with black coverage 4.1% vs 4.2%.
 - **Halo - Combat Evolved (v1.09)**: the MG2 second title (the only other
   optimized image). xemu 0.8.139 reaches its beach gameplay in 50 s
   (`wt-data/xemu-halo-test.png`). XGrid's fast mode faults `#UD` at 604M
@@ -76,11 +87,13 @@ the same firmware/EEPROM.
   now carries **7** optimized ISOs (the two above plus 50 Cent, Bad Boys II,
   Destroy All Humans!, Tak and Ninja Gaiden Black).
 
-**Answer for the compatibility question:** XGrid boots retail discs but **does
-not yet claim playable real games**; M-T exists to change that. A real-game row
-is added only after a run reaches a gameplay frame or a documented wait. These
-rows are acceptance, not merge gates; the gate media remains
-`data/test-samples/`.
+**Answer for the compatibility question:** XGrid boots retail discs and, since
+TM4 (2026-10-25), **one retail title is playable**: 007 Agent Under Fire reaches
+gameplay, runs 100B steps with no fault, and matches the xemu 0.8.139 frame at
+the same scene within the mean/colour/coverage policy. A real-game row is added
+only after a run reaches a gameplay frame or a documented wait (that is the bar
+the 007 row above meets). These rows are acceptance, not merge gates; the gate
+media remains `data/test-samples/`.
 
 ### The retail title matrix (M-T, 2026-10-24)
 

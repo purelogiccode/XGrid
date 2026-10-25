@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM4 - 007 playability gate** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM3's SAHF/LAHF decoder fix removed the last fault rows: Halo, Tak and Ninja Gaiden Black now run the full 1B steps with LastFault vec=0 in fast and accurate mode (Halo EIP 0xAC3AC/0xAC543, Tak 0x39CE8B, NGB 0x37DC15) and the 44-row matrix reads 2 own-render / 42 dashboard / 0 fault / 0 timeout - Tak is now the second own-render row (2,675 draws / 41,995,882 px / 42 frames). 007: TM2's level-interrupt fix unblocked the APU ISR; at 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, EIP 0x1FD0E); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR - the TM4 blocker. The Redump group advanced too: GTA: San Andreas at 5B presents the disc's own Xbox boot screen (27,543 colours). Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Current status (2026-10-25):** M-T / **TM5 - Halo playability gate (or documented wait)** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - TM4 (2026-10-25): 007 Agent Under Fire is PLAYABLE - 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu 0.8.139 oracle on the same ISO reaches the same scene at 150 s (mean (96.8,85.5,58.8), 63,994 colours, dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap: McpxApuDevice.VoiceOff queued one on top of the VP frame walk, so the guest freed the voice on the first trap and dereferenced null on the second. Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene (cinematic -> black at the same step). Audio is a measured silence: --apu-dsp --audio-out writes 877,568 bytes of zero PCM (the VP mixer vp.c + AC'97 are TM8). The 44-row 1B matrix is unchanged: 2 own-render / 42 dashboard / 0 fault / 0 timeout. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 now selects the disc with -config_path and captures a DPI-correct client area.
 **Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
-**Phase score:** 74.8% (88.25 of 118). **Next:** TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness), TM8 (First targeted xemu port (default: APU VP mixer + AC97)).
+**Phase score:** 76.4% (90.15 of 118). **Next:** TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness), TM8 (First targeted xemu port (default: APU VP mixer + AC97)).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -822,6 +822,69 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   holes are filed in `real-game-probes.md`.
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-25 (fifty-fifth; TM4 closed the 007 #PF - the APU delivered the
+idle-voice trap twice per voice, the guest freed the voice on the first one and
+dereferenced null on the second, and 007 Agent Under Fire now runs 100B steps and
+presents its first-level driving scene - decisions 255).**
+
+- **The blocker, in one line.** `McpxApuDevice.VoiceOff` cleared the voice's
+  active bit, wrote the notifier **and queued a `SE2FE_IDLE_VOICE` trap** that
+  `ProcessFrame` delivered on the next frame; the VP frame walk then delivered the
+  same voice again because it was still linked. xemu 0.8.139's `voice_off`
+  (`vp.c:118-132`) sends **no** trap - `mcpx_apu_vp_frame` (`vp.c:1833-1835`) is
+  the only sender - so the guest got two completions for one voice, freed the
+  voice object on the first, and the second dereferenced
+  `[this->voices[0x2E]] == null` at `EIP=0x1C386E` (`CR2=0xE4`).
+- **The evidence chain** (all from a 26B snapshot, ~5 s per probe): the
+  `--break-log 0x1C3BF1`/`0x1C386E` pair shows the caller `0x1C3C22` with arg
+  `0x2E` and a live voice object on every visit except the last, where `ECX=0`;
+  `--dumpv` shows the guest's `DSND` device voice table (256 entries at
+  `this+0x2C4`) fully populated at the first call and **all zero** at the fault;
+  the APU state at the fault reads `fedec=00008000/0000002E`
+  (`SE2FE_IDLE_VOICE`, voice 46) and the event log shows `voice-off 46` x2, then
+  `idle-voice 46` **x2** (the queued pair), then the walk's `idle-voice 47`,
+  `idle-voice 46`.
+- **The fix.** The pending queue is gone; `CompleteVoiceOff` has no `queueIdle`
+  parameter and the frame walk is the only trap sender. APU snapshot **v5** (v2-v4
+  still load; the old list is read and dropped, and the DSP payload gate moved to
+  `SnapshotVersionV4`). Three new tests fail on the pre-fix source; the old
+  `VoiceOff_DeliversIdleVoiceMessageOnNextFrame` pinned the defect and became
+  `VoiceOff_UnlinkedVoiceSendsNoIdleVoiceTrap`.
+- **007 is playable.** **100,000,000,000 steps, `LastFault vec=0`**, 134,004 draws
+  / 1,005,989,482 px / 6,478 frames, EIP `0x000214C2`, wall 1,284.8 s; the display
+  is the Z8 on the docks (`wt-data/tm4/007-100b-display.png`, 48,208 colours, 6.8%
+  black, mean `(78.7, 65.5, 45.3)`). The 20B no-pad frame is the Harrier intro
+  (`wt-data/tm4/007-20b-nopad-display.png`, 38,350 colours) and the 26B+ pad frame
+  is gameplay, so the scripted A edge moves the guest a whole stage.
+- **The xemu oracle had never been captured.** `scripts/xemu-oracle.ps1` passed
+  `-cdrom` (not an xemu option - the disc is `sys.files.dvd_path`, now selected
+  with `-config_path`), lost any ISO path containing spaces to unquoted argv
+  splitting (`xemu.exe: -: invalid option`), and captured a DPI-virtualized rect
+  so every shot was shifted into the window chrome. Fixed all three; xemu 0.8.139
+  on the same ISO reaches **the same driving scene at 150 s**
+  (`wt-data/tm4/xemu-007-150s.png`), and `frame-compare --crop-top 0.25` reads
+  mean `(94.6, 87.6, 63.3)` vs `(76.6, 64.9, 48.7)`, colours 43,921 vs 39,912,
+  black 4.1% vs 4.2%, `dmean=(18.0, 22.6, 14.6)`. xemu cannot be driven on this
+  host (pad input is SDL-gamepad only), so it sits in the attract/intro loop.
+- **Gates: not one anchor moved** (the gate titles never take the voice-off path
+  at 1B): accurate menu `4EF1FBF6`/`B6116DAE` (`5C0CF968`/`E2B4D327`,
+  33,632/686/686), accurate triangle `5B50373D`/`79142DE4`
+  (`E58AE5D7`/`C43D5B49`, 2,707/69/34), ktest `CA5D3867` (40,797 B) byte-identical
+  at 792,800,535 steps. Suite 1988 -> **1990**, build 0 warnings, format clean.
+- **Also:** `--break-log` now prints EBX/ECX/EDX/EBP and the APU state line prints
+  `fedec=<method>/<param>` - the null-pointer hunt needed ECX and the trap decode.
+- **Scripted input** (from the 100B snapshot, same state, only the pad differs):
+  50M steps gives RAM `68E22299` (none) / `0FFAF650` (stick right) / `946C590A`
+  (stick left); at 300M the display is the plane-crash cinematic (13,754 colours)
+  with no input or a held D-pad and **black** with a held A (cutscene skipped).
+  Across the boot the pad edge is the stage switch: 20B with no pad is the Harrier
+  intro (38,350 colours), with the A press it is gameplay.
+- **Audio is measured silent:** `--apu-dsp --audio-out` at 28B steps writes
+  877,568 bytes / 219,392 frames of PCM, every sample zero (`gpFrames=6914
+  gpUndefined=0 gpLimitHits=0 epFrames=863`): the voices are never mixed into the
+  EP input (the VP mixer `vp.c` is not modelled; the AC'97 codec has no PCM path).
+  Part 6 is a documented silence, and that is TM8's default scope.
 
 **Session 2026-10-24 (fifty-fourth; TM3 found the second shared blocker in the
 decoder - SAHF/LAHF were missing, so the retail `fprem; fnstsw ax; sahf; jp`

@@ -64,7 +64,19 @@ $args = @(
     "-device", "smbus-storage,file=$eeprom",
     "-snapshot"
 )
-if ($IsoPath) { $args += @("-cdrom", $IsoPath) }
+if ($IsoPath) {
+    # xemu has no -cdrom: the disc is the settings key sys.files.dvd_path. Write a
+    # temporary config that points at the ISO and select it with -config_path
+    # (a bare -cdrom also loses an ISO path containing spaces: Start-Process joins
+    # the argument list without quoting, and the split tokens are parsed as options).
+    $configText = Get-Content -LiteralPath $config -Raw
+    $iso = (Resolve-Path -LiteralPath $IsoPath).Path
+    $configText = [regex]::Replace($configText, "(?m)^dvd_path\s*=.*$", "")
+    $configText = $configText -replace "\[sys\.files\]", "[sys.files]`ndvd_path = '$iso'"
+    $oracleConfig = Join-Path $root "wt-data\xemu-oracle.toml"
+    Set-Content -LiteralPath $oracleConfig -Value $configText -NoNewline
+    $args += @("-config_path", $oracleConfig)
+}
 
 Write-Host "Starting xemu 0.8.139 from $base"
 if ($IsoPath) { Write-Host "DVD: $IsoPath" }
@@ -83,10 +95,16 @@ public static class XemuOracleWin32 {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 }
 '@
 
 try {
+    # Physical pixels only: a DPI-unaware process gets virtualized rects while the
+    # screen capture is physical, which shifts the shot and drags in the window
+    # chrome (the first TM4 capture was off by the caption height).
+    [XemuOracleWin32]::SetProcessDPIAware() | Out-Null
+
     $deadline = (Get-Date).AddSeconds(90)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 500
@@ -98,7 +116,9 @@ try {
 
     $h = $p.MainWindowHandle
     [XemuOracleWin32]::ShowWindow($h, 9) | Out-Null      # SW_RESTORE
-    [XemuOracleWin32]::SetWindowPos($h, [IntPtr]::Zero, 40, 40, 1280, 760, 0x0040) | Out-Null
+    # HWND_TOPMOST (-1) so the capture sees xemu even when another window owns the
+    # foreground (SetForegroundWindow is refused for a background caller on Win11).
+    [XemuOracleWin32]::SetWindowPos($h, [IntPtr](-1), 40, 40, 1280, 760, 0x0040) | Out-Null
     [XemuOracleWin32]::SetForegroundWindow($h) | Out-Null
 
     if (-not $NoResize) {
@@ -131,15 +151,20 @@ try {
         # Fallback: capture the window area the previous script used.
         $cw = 1280
         $ch = 760
-        $pt.X = 40
-        $pt.Y = 40
-    } else {
-        $pt.X = 0
-        $pt.Y = 0
-        [XemuOracleWin32]::ClientToScreen($h, [ref]$pt) | Out-Null
     }
-    Write-Host "Booting for $Seconds s (client ${cw}x${ch} at $($pt.X),$($pt.Y))"
+    Write-Host "Booting for $Seconds s (client ${cw}x${ch})"
     Start-Sleep -Seconds $Seconds
+
+    # Re-read the client origin now: a window can settle (or be nudged) while it
+    # boots, and capturing from a stale origin shifts the frame and drags the
+    # window chrome into the shot.
+    [XemuOracleWin32]::GetClientRect($h, [ref]$cr) | Out-Null
+    $cw = $cr.Right - $cr.Left
+    $ch = $cr.Bottom - $cr.Top
+    $pt.X = 0
+    $pt.Y = 0
+    [XemuOracleWin32]::ClientToScreen($h, [ref]$pt) | Out-Null
+    Write-Host "Capturing client ${cw}x${ch} at $($pt.X),$($pt.Y)"
 
     Add-Type -AssemblyName System.Drawing
     $bmp = New-Object System.Drawing.Bitmap $cw, $ch

@@ -215,7 +215,6 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
 
     private readonly uint[] _regs = new uint[WindowSize / 4];
     private readonly IApuMemory _memory;
-    private readonly List<ushort> _pendingIdleVoices = [];
     private readonly ulong[] _voiceLocked = new ulong[MaxVoices / 64];
     private readonly uint[] _sslBase = new uint[MaxVoices * 2];
     private readonly byte[] _sslCount = new byte[MaxVoices * 2];
@@ -341,6 +340,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     // ReSharper disable once UnusedMember.Global
     public uint VoicePageAddress => _regs[VpVaddr >> 2];
 
+    /// <summary>Gets the front-end decoder method register (the last FE trap method delivered to the guest).</summary>
+    public uint FrontEndMethod => _regs[FedecMeth >> 2];
+
+    /// <summary>Gets the front-end decoder parameter register (the last FE trap argument delivered to the guest).</summary>
+    public uint FrontEndParameter => _regs[FedecParam >> 2];
+
     /// <summary>Gets whether the APU interrupt line is asserted, for diagnostics.</summary>
     public bool InterruptAsserted { get; private set; }
 
@@ -349,11 +354,10 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
 
     private readonly List<string> _eventLog = [];
 
-    /// <summary>Returns the APU to its power-on state: clears registers, voice-lock and SSL state, empties the pending idle-voice queue, and deasserts the interrupt line.</summary>
+    /// <summary>Returns the APU to its power-on state: clears registers, voice-lock and SSL state, and deasserts the interrupt line.</summary>
     public void Reset()
     {
         Array.Clear(_regs);
-        _pendingIdleVoices.Clear();
         Array.Clear(_voiceLocked);
         Array.Clear(_sslBase);
         Array.Clear(_sslCount);
@@ -382,12 +386,6 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         for (int i = 0; i < _regs.Length; i++)
         {
             writer.Write(_regs[i]);
-        }
-
-        writer.Write(_pendingIdleVoices.Count);
-        foreach (ushort voice in _pendingIdleVoices)
-        {
-            writer.Write(voice);
         }
 
         for (int i = 0; i < _voiceLocked.Length; i++)
@@ -459,7 +457,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
     {
         ArgumentNullException.ThrowIfNull(reader);
         int version = reader.ReadInt32();
-        if (version != SnapshotVersion && version != SnapshotVersionV3 && version != SnapshotVersionV2)
+        if (version != SnapshotVersion && version != SnapshotVersionV4
+            && version != SnapshotVersionV3 && version != SnapshotVersionV2)
         {
             throw new InvalidDataException($"Unsupported APU snapshot version {version}.");
         }
@@ -469,16 +468,21 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             _regs[i] = reader.ReadUInt32();
         }
 
-        int pending = reader.ReadInt32();
-        if (pending < 0 || pending > MaxVoices)
+        if (version < SnapshotVersion)
         {
-            throw new InvalidDataException("Bad APU pending-voice snapshot.");
-        }
+            // V2-V4 carried the pending idle-voice queue, which the voice processor
+            // now owns outright (xemu mcpx_apu_vp_frame is the only SE2FE_IDLE_VOICE
+            // sender); read and drop it so an old state still loads.
+            int pending = reader.ReadInt32();
+            if (pending < 0 || pending > MaxVoices)
+            {
+                throw new InvalidDataException("Bad APU pending-voice snapshot.");
+            }
 
-        _pendingIdleVoices.Clear();
-        for (int i = 0; i < pending; i++)
-        {
-            _pendingIdleVoices.Add(reader.ReadUInt16());
+            for (int i = 0; i < pending; i++)
+            {
+                _ = reader.ReadUInt16();
+            }
         }
 
         for (int i = 0; i < _voiceLocked.Length; i++)
@@ -539,7 +543,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             _eventLog.Add(reader.ReadString());
         }
 
-        if (version >= SnapshotVersion)
+        if (version >= SnapshotVersionV4)
         {
             bool hasDsp = reader.ReadBoolean();
             if (hasDsp)
@@ -566,7 +570,8 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         }
     }
 
-    private const int SnapshotVersion = 4;
+    private const int SnapshotVersion = 5;
+    private const int SnapshotVersionV4 = 4;
     private const int SnapshotVersionV3 = 3;
     private const int SnapshotVersionV2 = 2;
     private const int MaxDspSnapshotBytes = 4 * 1024 * 1024;
@@ -704,13 +709,6 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
                 _regs[currentReg] = _regs[nextReg];
             }
         }
-
-        if (_pendingIdleVoices.Count > 0)
-        {
-            ushort voice = _pendingIdleVoices[0];
-            _pendingIdleVoices.RemoveAt(0);
-            DeliverIdleVoice(voice);
-        }
     }
 
     private bool IsFrameVisited(uint voice)
@@ -760,7 +758,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             if ((fmt & VoiceFmtPersist) == 0)
             {
                 _sslIndex[voice] = 0;
-                CompleteVoiceOff(voice, queueIdle: false);
+                CompleteVoiceOff(voice);
             }
             else
             {
@@ -808,14 +806,14 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
             else
             {
                 cbo = ebo;
-                CompleteVoiceOff(voice, queueIdle: false);
+                CompleteVoiceOff(voice);
             }
         }
 
         SetVoiceMask(voice, VoiceParOffset, OffsetMask24, cbo);
     }
 
-    private void CompleteVoiceOff(uint voice, bool queueIdle)
+    private void CompleteVoiceOff(uint voice)
     {
         SetVoiceMask(voice, VoiceParState, VoiceStateActiveVoice, 0);
         bool stream = (GetVoiceMask(voice, VoiceCfgFmt, VoiceFmtDataType) != 0);
@@ -826,14 +824,12 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         }
 
         WriteNotifierStatus(voice, notifier);
-        if (queueIdle)
-        {
-            // The voice processor reports the idle voice on its next frame, not
-            // synchronously: delivering it now would race the front end's in-flight
-            // operation counter.
-            _pendingIdleVoices.Add((ushort)voice);
-        }
 
+        // The idle-voice trap belongs to the voice processor alone: the next VP
+        // frame walk reports every inactive voice still linked into a list
+        // (xemu mcpx_apu_vp_frame -> fe_method(SE2FE_IDLE_VOICE)). Queuing a
+        // second trap here gives the guest two completions for one voice, and a
+        // title that frees the voice on the first one then dereferences null.
         VoiceOffCompletions++;
     }
 
@@ -1196,7 +1192,7 @@ public sealed class McpxApuDevice : IMmioDevice, IXboxDevice, ISnapshotable, IAp
         }
 
         Log($"voice-off {voice}");
-        CompleteVoiceOff(voice, queueIdle: true);
+        CompleteVoiceOff(voice);
     }
 
     /// <summary>

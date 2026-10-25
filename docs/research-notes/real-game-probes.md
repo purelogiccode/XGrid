@@ -363,3 +363,125 @@ this list before probing anything else.
 
 **Next (TM4, 007).** The 007 `#PF` at 26.5B (`EIP 0x1C386E`, CR2=`0xE4`) inside
 the APU ISR is still the title's blocker; the SAHF fix does not touch it.
+
+## TM4 outcome (2026-10-24/25)
+
+**007 Agent Under Fire is playable.** It runs **100,000,000,000 steps with no
+fault** (`LastFault vec=0`, not halted), 6,478 frames / 134,004 draws /
+1,005,989,482 pixels, and presents the game's own first-level driving scene (the
+Z8 on the docks, `wt-data/tm4/007-100b-display.png`: 640x480, 48,208 colours,
+6.8% black, mean `(78.7, 65.5, 45.3)`).
+
+### The blocker: a duplicated `SE2FE_IDLE_VOICE`
+
+The 26.5B `#PF` was not a guest bug. `McpxApuDevice` delivered the idle-voice FE
+trap **twice per voice completion**: once from the VP frame walk (xemu-faithful)
+and once from a pending queue that `VoiceOff` filled. xemu 0.8.139's `voice_off`
+only clears `NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE` and writes the notifier; the
+**only** `SE2FE_IDLE_VOICE` sender is `mcpx_apu_vp_frame` (`vp.c:1833-1835`).
+
+The guest's ISR frees the voice object on the first trap and leaves a null in the
+device's 256-entry voice table; the duplicate trap then dereferences
+`[null + 0xE4]`.
+
+**The evidence chain** (all from a 26B snapshot, so each probe is ~5 s):
+
+| step | observation |
+|---|---|
+| `--save-at 26000000000` | `wt-data/tm4/007-26b.xgs`, EIP `0x40B1F` |
+| `--break 0x1C386E` (first visit) | ECX=`0xD00D9548` - a live voice object, no fault |
+| `--break-log 0x1C3BF1` + `0x1C386E` | caller `0x1C3C22`, arg `0x2E`; the last visit has **ECX=0** |
+| `--dumpv 0xD001C2C0,0x400` at the first call | the `DSND` device's voice table at `this+0x2C4` is fully populated |
+| same dump at the fault | the whole 256-entry table is **zero** (the guest freed every voice) |
+| APU state at the fault | `fedec=00008000/0000002E` (SE2FE_IDLE_VOICE, voice 46), `ISTS=0x11` |
+| APU event log | `voice-off 46` x2, then `idle-voice 46` **x2** (the queued pair), then the walk's `idle-voice 47`, `idle-voice 46` |
+
+The guest code at the fault is `0x1C3BF1`: `if (index >= 0x100) return;
+if (this->[0x2C0]) return; if (table[index].flags & 0x800000) return;
+Lookup(index)`, and `Lookup` (`0x1C3863`) is
+`ecx = this->voices[index]; edx = [ecx+0xE4]; ...` - so a null table slot faults
+at `0xE4`.
+
+**The fix** (`src/XGrid.Audio/McpxApuDevice.cs`): the pending idle-voice queue is
+gone. `CompleteVoiceOff` clears the active bit and writes the notifier; the VP
+frame walk is the only trap sender. Snapshot **v5** drops the queue (v2-v4 still
+load - the list is read and dropped).
+
+**Evidence, three levels.** Three new tests fail on the pre-fix source
+(`VoiceOff_UnlinkedVoiceSendsNoIdleVoiceTrap`,
+`FrameAdvance_VoiceOffSendsOneIdleVoiceTrapNotTwo`,
+`FrameAdvance_VoiceOffOnAnUnlinkedVoiceSendsNoTrap`); the gate titles execute
+neither path differently - all four accurate 1B goldens are byte-identical and
+the ktest log is unchanged.
+
+### The 100B run
+
+```
+steps=100000000000  wall=1284.8 s  EIP=0x000214C2  LastFault vec=0  Halted=False
+NV2A draws=134004 pixels=1005989482 frames=6478
+APU ist=00000000 ien=00000AFB voiceOff=60
+```
+
+The pad script (`down`/`A` at 950M-976M, `A` at 20B) is the same one TM2 used;
+the A edge at 20B is what launches the game from the dashboard.
+
+### The xemu comparison (same scene)
+
+`scripts/xemu-oracle.ps1` was broken for this (three real defects, fixed): xemu
+has no `-cdrom` (the disc is `sys.files.dvd_path`, selected with `-config_path`),
+an ISO path containing spaces was split into option tokens, and the capture was
+DPI-virtualized so every shot was shifted into the window chrome.
+
+xemu 0.8.139 with the same ISO reaches **the same first-level driving scene at
+150 s** (`wt-data/tm4/xemu-007-150s.png`). `scripts/frame-compare.py --crop-top
+0.25` (the documented scene policy: mean / colour count / coverage, never a
+pixel-exact claim):
+
+| frame | mean | colours | black |
+|---|---|---|---|
+| xemu 150 s | `(94.6, 87.6, 63.3)` | 43,921 | 4.1% |
+| XGrid 100B | `(76.6, 64.9, 48.7)` | 39,912 | 4.2% |
+
+`dmean=(18.0, 22.6, 14.6)`, `histL1=48.7`. Same framing, same letterbox, same
+black coverage, the same palette family; XGrid renders ~15-23/255 darker and with
+~9% fewer distinct colours (no cross-renderer pixel claim). The two frames are not
+the same animation phase - xemu's explosion is at a different moment - so the
+mean delta is an upper bound.
+
+**xemu cannot be driven here.** Its Xbox pad input comes only from an SDL gamepad
+(`hw/xbox/usb-xbox-gamepad.c`; the config binds a GUID that is not present), so
+xemu sits in the attract/intro loop and never reaches gameplay by itself. The
+comparable-scene comparison is therefore at the intro/driving scene, and the
+scripted-input evidence comes from XGrid.
+
+### Scripted input
+
+From the **100B snapshot** (`wt-data/tm4/007-100b.xgs`), same state, same step
+budget, only the pad differs:
+
+| leg | steps | RAM SHA | CPU SHA | display frame |
+|---|---:|---|---|---|
+| no input | 50M | `68E22299` | `81D90AE1` | driving scene, 47,168 colours |
+| left stick right | 50M | `0FFAF650` | `3AC5D22D` | same scene |
+| left stick left | 50M | `946C590A` | `3AC5D22D` | same scene |
+| no input | 300M | `A36065AE` | `80D8006F` | plane-crash cinematic, 13,754 colours |
+| D-pad right (held) | 300M | `0CD320B0` | `435E4374` | same cinematic |
+| **A (held)** | 300M | `604FBC7D` | `74FAA5FA` | **black** - the cutscene is skipped |
+
+Every variant changes guest state; the A edge also changes the presented frame.
+Across the whole boot the pad edge is what moves the guest between stages: at
+20B with no pad the guest presents the Harrier intro
+(`wt-data/tm4/007-20b-nopad-display.png`, 38,350 colours, mean
+`(52.9, 39.7, 56.3)`), and with the A press it launches the game and reaches
+gameplay.
+
+### Audio: silent, measured
+
+`--apu-dsp --audio-out` on 007 (28B steps, past the old fault, no fault) writes
+**877,568 bytes / 219,392 frames** of 48 kHz 16-bit stereo PCM - and every sample
+is **zero** (`peak 0`, `nonzero 0.0%`). The guest's DSP microcode runs
+(`gpFrames=6914 gpUndefined=0 gpLimitHits=0 epFrames=863`), but the voices are
+never mixed into the EP's input: the **VP mixer (`vp.c`) is not modelled**, and
+the AC'97 codec has no PCM path. That is TM8's default scope, so part 6 of the
+playability definition is a **documented silence**, not a claim.
+

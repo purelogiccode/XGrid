@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-24",
+  "generated": "2026-10-25",
   "source": "Generated from docs/status.json by scripts/status.ps1. The phase weights/done are the single source; ImplementationPlan.md's assessment table is checked against them.",
   "note": "Area = phase weight (remaining-effort share). Color = percent done.",
   "tracks": [
@@ -82,7 +82,7 @@
           "p": 12,
           "name": "APU (audio)",
           "weight": 4,
-          "done": 75
+          "done": 80
         },
         {
           "p": 13,
@@ -147,7 +147,7 @@
           "p": 22,
           "name": "Save States & Replay",
           "weight": 2,
-          "done": 30
+          "done": 40
         },
         {
           "p": 23,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 15
+          "done": 30
         }
       ]
     }

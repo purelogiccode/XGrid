@@ -271,7 +271,7 @@ public sealed class DspBridgeTests
         using var output = new MemoryStream();
         using var writer = new BinaryWriter(output);
 
-        Assert.Equal(4, reader.ReadInt32());
+        Assert.Equal(5, reader.ReadInt32());
         writer.Write(2);
 
         const int regCount = 0x80000 / 4;
@@ -280,12 +280,8 @@ public sealed class DspBridgeTests
             writer.Write(reader.ReadUInt32());
         }
 
-        int pending = reader.ReadInt32();
-        writer.Write(pending);
-        for (int i = 0; i < pending; i++)
-        {
-            writer.Write(reader.ReadUInt16());
-        }
+        // V5 dropped the pending idle-voice queue; the V2 payload still carries it.
+        writer.Write(0);
 
         for (int i = 0; i < 4; i++)
         {

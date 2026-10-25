@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Xunit;
@@ -143,6 +144,39 @@ public sealed class ApuVoiceProcessorTests
     }
 
     [Fact]
+    public void FrameAdvance_VoiceOffSendsOneIdleVoiceTrapNotTwo()
+    {
+        // The VP frame walk owns the idle-voice trap; a second delivery queued by
+        // the VOICE_OFF method itself gave 007 two completions for one voice and
+        // the title freed the voice on the first (a #PF at 26.5B steps).
+        var memory = new FakeMemory();
+        var apu = Create(memory);
+        apu.Write(Base + FetForce1, 4, 1u << 15);
+        apu.Write(Base + TvL2D, 4, 0xFFFF);
+        apu.Write(Base + PioSetAntecedentVoice, 4, 1 << 16);
+        apu.Write(Base + PioVoiceOn, 4, 0x40);
+        apu.Write(Base + PioVoiceOff, 4, 0x40);
+
+        apu.Advance(OneFrame);
+
+        Assert.Equal(1, CountIdleVoiceDeliveries(apu, 0x40));
+    }
+
+    [Fact]
+    public void FrameAdvance_VoiceOffOnAnUnlinkedVoiceSendsNoTrap()
+    {
+        var memory = new FakeMemory();
+        var apu = Create(memory);
+        apu.Write(Base + FetForce1, 4, 1u << 15);
+        apu.Write(Base + PioVoiceOff, 4, 0x40);
+
+        apu.Advance(OneFrame);
+
+        Assert.Equal(0, CountIdleVoiceDeliveries(apu, 0x40));
+        Assert.Equal(0u, apu.Read(Base + 0x1300, 4));
+    }
+
+    [Fact]
     public void Stream_SegmentCompletionFlipsSslAndNotifies()
     {
         var memory = new FakeMemory();
@@ -269,6 +303,20 @@ public sealed class ApuVoiceProcessorTests
         apu.Write(Base + PioSetVoiceSslA, 4, sslACount);
         apu.Write(Base + PioSetVoiceSslB, 4, 0);
         apu.Write(Base + PioVoiceOn, 4, voice);
+    }
+
+    private static int CountIdleVoiceDeliveries(McpxApuDevice apu, uint voice)
+    {
+        int count = 0;
+        foreach (string entry in apu.EventLog)
+        {
+            if (string.Equals(entry, $"idle-voice {voice}", StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static byte[] Save(McpxApuDevice device)

@@ -47,9 +47,9 @@ internal static class Program
 
         var settings = new EmulatorSettings
         {
-            BiosPath = Path.Combine(root, @"data\xemu-0.8.136-windows-x86_64\Complex_4627.bin"),
-            McpxRomPath = Path.Combine(root, @"data\xemu-0.8.136-windows-x86_64\mcpx_1.0.bin"),
-            EepromPath = Path.Combine(root, @"data\xemu-0.8.136-windows-x86_64\eeprom.bin"),
+            BiosPath = ResolveFirmware(root, "Complex_4627.bin"),
+            McpxRomPath = ResolveFirmware(root, "mcpx_1.0.bin"),
+            EepromPath = ResolveFirmware(root, "eeprom.bin"),
             HddPath = Path.Combine(root, @"wt-data\chain-199l\hdd.qcow2"),
             Renderer = renderer,
             FastMode = true,
@@ -116,6 +116,12 @@ internal static class Program
         Thread.Sleep(500);
         Console.WriteLine($"DONE running={session.IsRunning} steps={session.Steps}");
         return frames > 0 ? 0 : 1;
+    }
+
+    private static string ResolveFirmware(string root, string name)
+    {
+        string legacy = Path.Combine(root, @"data\xemu-0.8.136-windows-x86_64", name);
+        return File.Exists(legacy) ? legacy : Path.Combine(root, @"data\xemu", name);
     }
 
     private static bool TryParseArguments(

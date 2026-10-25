@@ -820,6 +820,7 @@ internal static class Program
 
                         Console.WriteLine(
                             $"HIT {executed} EIP={logs.Eip:X8} ESI={logs.Esi:X8} EDI={logs.Edi:X8} EAX={logs.Eax:X8} " +
+                            $"EBX={logs.Ebx:X8} ECX={logs.Ecx:X8} EDX={logs.Edx:X8} EBP={logs.Ebp:X8} " +
                             $"EFLAGS={logs.Eflags:X8} ESP={logs.Esp:X8} " +
                             $"caller={caller:X8} arg={argument:X8}");
                     }
@@ -2310,7 +2311,9 @@ internal static class Program
             $"w10={machine.Nv2A.ReadRaminWord(0x10):X8}");
         Console.WriteLine(
             $"APU ist={machine.Apu.InterruptStatus:X8} ien={machine.Apu.InterruptEnable:X8} " +
-            $"fectl={machine.Apu.FrontEndControl:X8} asserted={machine.Apu.InterruptAsserted} " +
+            $"fectl={machine.Apu.FrontEndControl:X8} " +
+            $"fedec={machine.Apu.FrontEndMethod:X8}/{machine.Apu.FrontEndParameter:X8} " +
+            $"asserted={machine.Apu.InterruptAsserted} " +
             $"reads={machine.Apu.ReadCount} writes={machine.Apu.WriteCount} voiceOff={machine.Apu.VoiceOffCompletions}");
         if (machine.Apu.Dsp is { } dsp)
         {
