@@ -1,10 +1,10 @@
 # XGrid — Detailed Implementation Plan
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM2 - Fix shared blocker #1 and re-run the matrix** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - 007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
-**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix).
+**Current status (2026-10-24):** M-T / **TM3 - Fix shared blocker #2 and re-run the matrix** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - 007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
+**Phase score:** 74.3% (87.64 of 118). **Next:** TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -176,17 +176,36 @@ prerequisites only.
 
 ### TM2 / TM3 - Fix the shared blockers
 
-- [ ] Reproduce the blocker with the exact command and step anchor.
-- [ ] Fix the smallest behaviour in the current engine. If the blocker is a
-  broad xemu module (>=3 titles / >=20%), port that file instead, with the
-  differential first and the old path as the fallback.
-- [ ] Re-run the matrix; the affected titles must advance at least one stage.
-- [ ] Gates: four accurate goldens + ktest byte-identical; a fix that
-  legitimately moves a homebrew anchor re-baselines it in the same commit with
-  the measured reason (the 218 precedent). Fast 1B anchors are continuity, not
-  currency.
+TM2 (DONE 2026-10-24, decisions §253): the level-triggered PCI interrupt.
+
+- [x] Reproduce the blocker with the exact command and step anchor: 007 at 30B/50B
+  with the A press (`--pad-script ...a@20000000000+hold,none@20100000000`) parks
+  at EIP 0x1C4787 with APU ISTS 0x79 asserted and PIC req=0x00; the 30B save
+  state is `wt-data/title-probe-007-30b/*.xgs`.
+- [x] Fix the smallest behaviour in the current engine: `Pic8259` gains the ELCR
+  ports 0x4D0/0x4D1 (masks 0xF8/0xDE), the xemu 0.8.139 `i8259.c` level
+  semantics (a level line's request survives the acknowledge), the cascade
+  re-drive on every state change, and snapshot v2. `Pic8259LevelTests` (8 tests,
+  3 fail on the pre-fix behaviour).
+- [x] Re-run the matrix (44 titles: 7 oracle + 37 compat) - see
+  `docs/research-notes/title-matrix.md`: **2 own-render, 39 dashboard, 3 fault,
+  0 timeout**. The deeper anchors are where the fix shows: 007's title screen at
+  50B and GTA: San Andreas' own Xbox boot screen at 5B.
+- [x] Gates: the four accurate goldens re-baselined in the same commit with the
+  measured reason (menu frame/counters unchanged, triangle +1 draw/frame, RAM/CPU
+  moved on both titles because the previously-lost interrupts now run); the ktest
+  log stays byte-identical (`CA5D3867`, 792,800,535 steps).
 - [ ] Record the negative if the behaviour cannot be reached, with the
-  measurement that shows it.
+  measurement that shows it. (Not applicable - the fix landed.)
+
+**TM2 result.** 007 presents its own title screen at 50B (21,186 colours, EIP
+`0x1FD0E`, no fault); with the 20B A press it reaches the game's own render and
+faults at 26.5B at EIP `0x1C386E` (`#PF`, CR2=`0xE4`) inside the APU ISR. The
+Redump group's 5B run now presents the disc's own Xbox boot screen (GTA: San
+Andreas, 27,543 colours) instead of the dashboard. **TM3's candidates:** the APU
+ISR null-dereference (1 title, deeper) and the fast-mode `#UD` that now hits
+**3 of the 7 oracle titles** (Halo/Tak/Ninja Gaiden Black) - the latter meets the
+matrix's ">=3 titles" threshold and is a JIT correctness bug, so it leads.
 
 ### TM4 / TM5 - The playability gates
 
@@ -246,14 +265,23 @@ prerequisites only.
 - **Ports:** the module's differential, the titles it unblocked, provenance.
 - **Performance:** reported, never claimed, until the playability gate is met.
 
-### Standing gates (unchanged)
+### Standing gates (re-baselined 2026-10-24 by TM2)
 
-- Four accurate 1B goldens (`4EF1FBF6` / `B6116DAE` / `A1740DE0` / `7A860ED7`)
-  and the accurate RAM/CPU SHAs exact.
-- ktest log `CA5D3867` (40,797 B) at 792,800,535 steps, SMOKE PASS 7/7.
+- Four accurate 1B goldens and the accurate RAM/CPU SHAs exact: menu sw
+  `4EF1FBF6` / gl `B6116DAE` (`5C0CF968` / `E2B4D327`, counters 33,632/686/686
+  unchanged), triangle sw `5B50373D` / gl `79142DE4` (`E58AE5D7` / `C43D5B49`,
+  2,707/69/34 - one more draw/frame than the pre-TM2 2,706/68/34 because the PIC
+  now delivers the held level interrupts; decisions §253). The pre-TM2 values
+  (`A1740DE0` / `7A860ED7`, `6AB39AB0`/`3D2740B8`, `812EA159`/`2F632483`) are
+  superseded, not a regression: the pre-fix build reproduces them exactly.
+- ktest log `CA5D3867` (40,797 B) at 792,800,535 steps, SMOKE PASS 7/7 -
+  byte-identical before and after TM2.
 - `dotnet build`, `dotnet test`, `dotnet format --verify-no-changes` clean;
   package gate green when a release changes.
-- Fast 1B anchors are continuity anchors, re-baselined with the policy.
+- Fast 1B anchors are continuity anchors, re-baselined with the policy: triangle
+  gl `6CBBFE75`/`AB39AEE9` frame `79142DE4`, menu gl `EF1BF776`/`D726C97A` frame
+  `B6116DAE`, triangle sw `457719AC`/`AB39AEE9` 58,123,882 px frame `5B50373D`,
+  menu sw `FD12563B`/`D726C97A` 253,998,498 px frame `4EF1FBF6`.
 
 ## E2. D1 — C6 draw-flush half (DONE 2026-10-23; §241)
 
@@ -4455,7 +4483,7 @@ earlier one except where explicitly parallel (Track B/C).
 | 2 — Memory System | **Done** | `PhysicalMemory`, `Endian`, `AddressSpace` (regions/priority/aliases), `IMmioDevice`, RAM benchmark; flash/MCPX/PCI-hole regions register in their phases |
 | 3 — x86/Pentium III CPU | **Done** | Tiers 1–10 done (integer, control flow, shifts/rotates, MUL/DIV, strings, system incl. CPUID/RDTSC/MSR/SETcc/CMOVcc, x87, MMX, SSE1) plus boot-path instructions (WBINVD/INVD, ARPL, BSWAP, LEAVE, ENTER, 0F 00 group, `FF /6`, `8F /0`, INS/OUTS, XADD/CMPXCHG, BSF/BSR, BT/BTS/BTR/BTC, AAM/AAD with #DE on base 0 and QEMU-verified flag semantics); exceptions #DE/#UD/#PF/#BP; x87 arithmetic uses double-precision rounding (documented limitation). Fixed 2026-10-10: `FCOM`/`FCOMP` memory operands (`D8`/`DC`) compared ST0 with itself instead of memory (research-notes §34) |
 | 4 — x86 MMU | **Done** | 4 KB/4 MB paging, software TLB (large pages always walk), A/D bits, WP, `#PF` error codes, MOV CR/DR, INVLPG, CR0/CR3/CR4 TLB flushes, paging-aware GDT/IDT access |
-| 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI devices with xemu IDs — OHCI USB0/USB1 (`OhciUsbController`, 0:2.0/0:3.0, `0xFED00000`/`0xFED08000`, IRQ1/IRQ9) with a synchronous schedule engine + the xemu-faithful USB daughterboard hub chain and `XidGamepad` behind it (§§54–55, §69) + latched and step-timed `--pad` injection (§56, `--pad-step` §70 — XPP
+| 5 — Bus & Interrupts | **Partial** | I/O port space + CPU IN/OUT, PCI bus (0xCF8/0xCFC, BAR sizing, command, secondary-bus routing, interrupt raise + lower events), host/AGP bridges, LPC routing (INT/PIRQ/ACPI bytes) + ROM overlay + ACPI PM, dual 8259 PIC + CPU interrupt injection, PIT 8254 (verified firing at ~1060 Hz during real boot), MC146818 RTC (ports 0x70/0x71, periodic IRQ8); PCI devices with xemu IDs — OHCI USB0/USB1 (`OhciUsbController`, 0:2.0/0:3.0, `0xFED00000`/`0xFED08000`, IRQ1/IRQ9) with a synchronous schedule engine + the xemu-faithful USB daughterboard hub chain and `XidGamepad` behind it (§§54–55, §69) + latched and step-timed `--pad` injection (§56, `--pad-step` §70 - XPP; **TM2 (2026-10-24): the 8259 now models the edge/level control register (0x4D0/0x4D1, master 0xF8 / slave 0xDE masks) and the xemu 0.8.139 `i8259.c` level semantics - a level line's request survives the acknowledge and the EOI re-presents it; the guest programs ELCR 0x68/0x18 for the PCI lines (NV2A IRQ3, APU IRQ5, ACI IRQ6, USB IRQ11/12), which unblocked 007's APU ISR (decisions §253)**
            opens the pad and polls it live) + scripted `--pad-script` sequences (§74); nvnet MMIO (`McpxNvNetDevice`, `0xFEF00000`, idle/link-up/MDIO, §52–53); APU MMIO in `XGrid.Audio`, ACI in `XGrid.Bus/Aci`; bus-1 NV2A; IDE corrected to nForce 10DE:01BC; SMBus completion IRQ wired end-to-end (device raise/lower → ACPI byte 1 → PIC, xemu `amd_smbus.c` parity); CLI prints PIC/PIT/interrupt/IDE/PCI/MMIO/SMC/SMBus/NV2A/USB/NVNET diagnostics (USB `ctl/intr/addr/cfg` + transfer/request logs, NVNET `reads/writes`, 1MB unmapped buckets + top pages, EIP-tagged 250M progress); DMA helper pending |
 | 6 — MCPX | **Partial** | AMD756 SMBus controller (exact status/protocol semantics + xemu-parity IRQ raise on completion with `HCYC_EN` / lower on status write + transaction diagnostics with 192-entry history), 24C02 EEPROM (user-supplied image), SMC (version/challenge/scratch, `TRAYCLOSED` set at realize and `SHORT_ANIMATION` scratch default per xemu), Conexant CX25871 encoder stub, **MCPX ACI (AC'97) register model at 0xFEC00000, xemu `ac97.c`-faithful NAM/NABM (`McpxAciDevice`)** + **APU at 0xFE800000 (`McpxApuDevice`, §33)**; the real MCPX 1.0 ROM executes end-to-end (boot-script PCI/SMBus/MMIO interpreter, decrypt loop); flash AMD/SST command set, GPE/GPIO, Super I/O pending |
 | 7 — Firmware & Boot | **Partial** | `XboxMachine` (RAM/aliases, flash window + 16 MB alias, MCPX 512-byte overlay with disable/reset semantics), BIOS loader, `xgrid boot` CLI debugger (`--trace/--trace-regs/--trace-start/--dump/--dumpv/--scan/--break/--break-log/--watch/--ramdump/--ramin/--fb/--frame/--pgraph/--pgraph-max/--writedump/--pad-buttons/--pad-analog/--pad-sticks/--pad-step/--pad-script`, 250M-step progress with EIP trail, `ulong` steps; `xgrid sector` raw LBA dump); real MCPX 1.0 ROM -> 1BL -> 2BL -> kernel executes (LLE). **Kernel cold-boot init completes and the system runs menu-idle at 5B steps with no fault** (EIP `0x2D3B9`, live dashboard render loop, configured USB pad + link-up NIC, black degenerate flips; §§51–61): SMC handshake, PCI setup, RTC, NV2A driver, HDD unlock, DVD probe, 27 READ DMA (~828 KB), EvoX XBE in RAM. The animation wait (§32), ACI/APU gates (§33) and the CPU `fcomp` bug (§34) are resolved; the boot runs the full intro animation, **executes the dashboard XBE**, renders through NV2A (M5–M8, §37–43), discovers content (§45) and re-saves `C:\evox.ini` (§47) — then runs its menu loop. The Xbox PIT frequency is fixed to 1,125,001 (§68, pump = 10 guest-ms) and the full input path is live (§§69–70): the USB hub chain unblocks XPP, the dashboard opens the pad, polls `GetState` every frame, D-pad levels move the menu selection and a            step-timed A edge (`--pad-step`) fires the activation writer `0x1859D`. See M9 + research-notes §31-34, §51-61, §68-72, §74 |
@@ -4497,7 +4525,7 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 2 Memory | 3 | 100% | — |
 | 3 CPU | 11 | 96% | x87 double-rounding limitation; the §225 independent x86 differential (333 → 629 cases) closed the rare-op defects it found (PMINSW/PMAXSW sign, PSRAW/PSRAD saturation, XLAT, 16-bit `[SI]`/`[DI]`, x87 NaN payloads, FUCOM quiet-NaN IE, FSQRT-negative C2, MIN/MAX equal-operand source); no SSE2 by design (the CPU is a Pentium III) |
 | 4 MMU | 3 | 100% | — |
-| 5 Bus & IRQ | 6 | 85% | DMA helper, ELCR, Super-I/O, GPE |
+| 5 Bus & IRQ | 6 | 90% | DMA helper, ELCR (landed TM2: 0x4D0/0x4D1 + level delivery), Super-I/O, GPE |
 | 6 MCPX | 6 | 80% | flash command set, GPE/GPIO, Super I/O |
 | 7 Firmware & Boot | 5 | 90% | ATA-security edge cases; guest XBE-loader items |
 | 8 Storage | 5 | 86% | writable host-side FATX; DVD media edge cases. §222 added `XdvdfsSectorReader` (XDVDFS over any `IDvdImage`, so a CHD resolves its XBE title id) |
@@ -4516,9 +4544,9 @@ dominate). This is an estimate, not a metric — treat it as ±5 points.
 | 21 CLI & Frontend | 3 | 75% | opt-in `--window` live present sink (§184); **Avalonia frontend landed `ea8b38f`** and is now a product shell: Settings → Renderer picks software or the host-GPU OpenGL backend (§§221/223 — headless WGL created on the emulation thread, logged fallback, thread-correct snapshot save/load), per-title overrides V2 (`title:XXXXXXXX`, a CHD resolved through the §222 XDVDFS reader) offer `inherit`/`software`/`OpenGL` per title (§§217/219d/224), persistent EEPROM state (`--eeprom-out`), `--ffp`/`--tex-filter` settings, XInput pad merged with the keyboard (§206), save/load UI (F8/F9 + picker), frame stepping (F7/Shift+F7, §220e), and the display follows the display controller rather than the renderer (`TryCopyDisplayFrame` + a recently-presented-surface ring, §208/§234: a direct-framebuffer guest shows its own buffer under OpenGL, a flipping title shows the GPU frame),  `tests/XGrid.Frontend.Tests` (50 tests) + `tools/frontend-smoke` cover it; §204 CLI observability (`--frame-first`, `readback=on\|off`, `methods=`); **§234 (34th session): the display source follows the display controller under a GPU backend** (a recently-presented-surface ring: a direct-framebuffer guest shows RAM, a flipping title shows the GPU frame; the session-level latch is gone and both renderers verify at the same 306,817-px dashboard picture), and the `tools/frontend-smoke` harness (broken since §217) is fixed and now in `XGrid.sln`; since the previous refresh the Library shows each XBE's title id (§228) and `--gpu-time`'s combiner rows print `tm=`/`sf=`/`reach[...]` (§§228/230) and `ts&lt;n&gt;=` per texture slot (§236)**; the OpenGL product renderer now samples cube maps exactly (gap 12 closed, §236: 2 pixels of 307,200 from the software frame at both corpus anchors); remaining: **host audio output** (needs APU GP/EP DSP execution), debugger panes, performance-overlay polish |
 | 22 Save States & Replay | 2 | 30% | snapshot/replay — **V1 save states landed and productized**: `.xgs` covers CPU/RAM/machine scalars plus every registered device, per-device versions (NV2A **v9**, APU **v3** with a v2 fallback, machine section v1), unknown sections skipped on load, and the frontend marshals save/load onto the emulation thread (a load resets backend state; 72 MB round trip with GL attached, §223). Remaining: replay recording (initial state + inputs + timing events), a whole-file checksum, and version migration |
 | 23 Release | 3 | 55% | packaging, installer, licensing review; **compatibility list exists — `docs/compatibility.md` with 22 measured rows over 17 samples (both backends, flag variants, phase anchors), reproducible commands, the `scripts/boot-to-first-frame.ps1` harness and the `scripts/build-nxdk-samples.ps1` toolchain (Track E; M-B met: ≥8 rows, ≥2 beyond dashboard/triangle/ktest)**. **Since the last refresh:** a full CI pipeline (`.github/workflows/ci.yml` + `release.yml`, `81bc8b3`: Release build and the full suite on Windows/GNU-Linux/macOS, coverage/inspectcode/vulnerability gates, CodeQL, dependency review and Dependabot), a zero-warning / zero-inspectcode-finding tree (`8840073`/`2b7d144`) and generated golden images dropped from git (`6fbf46a`); packaging and the licensing review are done (R1.1: scripts/package.ps1 + scripts/package-verify.ps1, docs/release-licensing-review.md, docs/release-notes/v0.1.0.md); an OS installer and code signing/notarization remain and are deferred by scope decision |
-| 24 Retail gameplay & targeted port | 10 | 0% | the title matrix (TM0), the shared-blocker probes and fixes (TM1-TM3), the 007/Halo playability gates (TM4-TM5), the next 5 titles and the probe harness (TM6-TM7), and the first targeted xemu port the matrix proves (TM8); port a module only at >=3 titles or >=20% of the matrix |
+| 24 Retail gameplay & targeted port | 10 | 10% | the title matrix (TM0), the shared-blocker probes and fixes (TM1-TM3), the 007/Halo playability gates (TM4-TM5), the next 5 titles and the probe harness (TM6-TM7), and the first targeted xemu port the matrix proves (TM8); port a module only at >=3 titles or >=20% of the matrix. **Landed: TM0's first 39-title matrix and TM2's 44-title re-run, TM1's blocker probe (the guest programs ELCR 0x68/0x18 and the writes were discarded) and TM2's PIC level-interrupt fix; 007 now reaches its own title screen at 50B and the game's render path before faulting in the APU ISR (CR2=0xE4)** |
 
-**Result: 73.2% (86.34 of 118)** after the 2026-10-24 scope change added phase 24 (Retail gameplay & xemu port, weight 10, done 0; the 24-phase score was 79.9%, 86.34 of 108). The pre-change history reads: ~78% complete overall (weighted: 84.43 of 108 weight-points = 78.2%, recomputed 2026-10-22 (39th session) after §§237–240: P15 CPU JIT 88→90, P18 GPU Optimization 76→78 and P20 Automated Testing 81→82, with P11 NV2A 92→93 and P21 CLI & Frontend 73→75 carried over from the §234/§236 refreshes; was 84.10 = 77.9% after §236: P21 CLI & Frontend 74->75, the OpenGL renderer's computed-mode panel; was 84.07 = 77.8% after §234: P11 NV2A 92->93 and P21 CLI & Frontend 73->74 (the GPU display source follows the display controller; the C7 encoder is priced out and moves no phase); was 83.89 = 77.7% after the §226–§230 B3 slices and the CI/quality landing: P11 NV2A 91→92, P20 Automated Testing 80→81, P21 CLI & Frontend 72→73 and P23 Release 14→18; was 83.56 = 77.4% after the §206–§225 refresh: P3 CPU 95→96, P8 Storage 85→86, P11 NV2A 88→91, P18 GPU Optimization 72→76, P20 Automated Testing 73→80, P21 CLI & Frontend 63→72, P22 Save States 5→30 and P23 Release 11→14; was 81.72 = 75.7% after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work — and the 2026-10-22 operator decision changes it again: xemu-class performance or better is the long-run objective, so Track C is re-opened and leads (C4-C6). The score only moves with landed work; §§237–§240 are the first landed performance slices, which is why it moves now).
+**Result: 74.3% (87.64 of 118)** after TM2's level-interrupt fix (2026-10-24: P5 Bus & IRQ 85->90 for the ELCR/level model, P24 Retail 0->10 for the first retail advance; the 2026-10-24 scope change had added phase 24 (Retail gameplay & xemu port, weight 10, done 0; the 24-phase score was 79.9%, 86.34 of 108). The pre-change history reads: ~78% complete overall (weighted: 84.43 of 108 weight-points = 78.2%, recomputed 2026-10-22 (39th session) after §§237–240: P15 CPU JIT 88→90, P18 GPU Optimization 76→78 and P20 Automated Testing 81→82, with P11 NV2A 92→93 and P21 CLI & Frontend 73→75 carried over from the §234/§236 refreshes; was 84.10 = 77.9% after §236: P21 CLI & Frontend 74->75, the OpenGL renderer's computed-mode panel; was 84.07 = 77.8% after §234: P11 NV2A 92->93 and P21 CLI & Frontend 73->74 (the GPU display source follows the display controller; the C7 encoder is priced out and moves no phase); was 83.89 = 77.7% after the §226–§230 B3 slices and the CI/quality landing: P11 NV2A 91→92, P20 Automated Testing 80→81, P21 CLI & Frontend 72→73 and P23 Release 14→18; was 83.56 = 77.4% after the §206–§225 refresh: P3 CPU 95→96, P8 Storage 85→86, P11 NV2A 88→91, P18 GPU Optimization 72→76, P20 Automated Testing 73→80, P21 CLI & Frontend 63→72, P22 Save States 5→30 and P23 Release 11→14; was 81.72 = 75.7% after the §220 frontend renderer switch (phase 21 60→63); earlier, recomputed 2026-10-20 after the §204 Track B present path (phase 18 40→45), the §205 draw-command batching (phase 18 45→72 after re-deriving it from the phase's own checklist, phase 20 72→73), the Track E corpus harness (phase 20 71→72), the Avalonia frontend `ea8b38f` (phase 21 52→60) and the compatibility matrix (phase 23 10→11); was 80.02 before the frontend. The 2026-10-20 course correction changed the *order* — Track B/E/P before further Track C work — and the 2026-10-22 operator decision changes it again: xemu-class performance or better is the long-run objective, so Track C is re-opened and leads (C4-C6). The score only moves with landed work; §§237–§240 are the first landed performance slices, which is why it moves now).
 
 Visual treemap of the table above: `tools/completion-graph/` (SVG + interactive HTML; regenerate with `pwsh -File tools/completion-graph/generate.ps1`).
 By track:

@@ -140,10 +140,10 @@ serializes one active task per repository. The full contract is
 ## Development direction (required; course-corrected 2026-10-24)
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM2 - Fix shared blocker #1 and re-run the matrix** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - 007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
-**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix).
+**Current status (2026-10-24):** M-T / **TM3 - Fix shared blocker #2 and re-run the matrix** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - 007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
+**Phase score:** 74.3% (87.64 of 118). **Next:** TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 
@@ -812,6 +812,61 @@ see `tools/wave/README.md` and `tools/wave/examples/wave.plan.json`
   lever out** (the ROM share of the non-JIT population is 9%, not 100%).
 
 ## Session notes - newest first (wave runner retired 2026-10-15).
+
+**Session 2026-10-24 (fifty-third; TM1 named the blocker - the guest programs the
+8259 edge/level register and XGrid discarded the writes - and TM2 landed the
+level-line model: 007 now reaches its own title screen, the ktest log stays
+byte-identical, and the accurate anchors are re-baselined by one triangle frame -
+decisions 253).**
+
+- **TM1 (probe, its own commit).** The top 3 are 007, Halo and the 36-row Redump
+  group. 007 stalls at 30B/50B in a guest spin at EIP `0x1C4787` (79,581 draws /
+  603,250,282 px / 2,594 frames, black display, APU ISTS `0x79` asserted while
+  PIC `req=0x00`); the Redump rows park at `0x800422B0` with the NV2A line
+  asserted and no PIC request; Halo's fast-mode `#UD` at 604M is a JIT item
+  (accurate mode clean). xemu 0.8.139 reaches 007 gameplay in 15 s and Halo's
+  beach gameplay in 50 s (`wt-data/xemu-007-test.png`,
+  `wt-data/xemu-halo-test.png`). Report: `docs/research-notes/real-game-probes.md`.
+- **The blocker, in one line.** A temporary unmapped-port trace showed the guest
+  writing the **ELCR**: `4D0<=68` (IRQ3 NV2A / IRQ5 APU / IRQ6 ACI level) and
+  `4D1<=18` (IRQ11 USB0 / IRQ12 USB1 level). XGrid had no ELCR and the PIC was
+  edge-only, so a held PCI line was lost after its first acknowledge.
+- **TM2 landed** (`src/XGrid.Bus/Interrupts/Pic8259.cs`): the ELCR ports
+  0x4D0/0x4D1 (masks 0xF8/0xDE), the xemu 0.8.139 `hw/intc/i8259.c` level
+  semantics (an acknowledge does not clear a level line's request, so the EOI
+  re-presents it), the slave INT re-driven into IR2 on every state change, and
+  snapshot v2 (v1 states still load, as edge-only). `Pic8259LevelTests` (8 tests,
+  3 fail with the pre-fix `IsLevel`), new `XGRID_PIC_TRACE=1` diagnostic. Suite
+  1965 -> **1973**.
+- **007 advanced two stages.** At 50B with the dashboard pad script it presents
+  **its own 007 Agent Under Fire title screen** (`wt-data/007-50b-fixed-display.png`:
+  21,186 colours, 49.7% black, EIP `0x1FD0E` in the XBE `.text`, 1,914 flips, no
+  fault) where TM1 saw a frozen black transition; with the 20B A press it reaches
+  the game's own render (79,581 draws) and then faults at **26.5B** at EIP
+  `0x1C386E` (`#PF`, CR2=`0xE4`, err=0) inside the APU ISR - the TM3 blocker.
+  Interrupts delivered +5 (menu) / +10 (triangle), no storm.
+- **Gates.** ktest **byte-identical** (`CA5D3867`, 40,797 B, 792,800,535 steps,
+  7/7). The accurate goldens re-baselined with the measured reason: the menu
+  frame and its 33,632/686/686 counters are **unchanged** (`4EF1FBF6` /
+  `B6116DAE`, RAM `5C0CF968`/`E2B4D327`), the triangle moves `A1740DE0` ->
+  **`5B50373D`** (2,706/68/34 -> 2,707/69/34) and gl `7A860ED7` ->
+  **`79142DE4`** (RAM `E58AE5D7`/`C43D5B49`); the pre-fix build reproduces the
+  old values exactly. Fast anchors re-recorded (triangle gl
+  `6CBBFE75`/`AB39AEE9` frame `79142DE4`, menu gl `EF1BF776`/`D726C97A` frame
+  `B6116DAE`, triangle sw `457719AC`/`AB39AEE9` 58,123,882 px frame `5B50373D`,
+  menu sw `FD12563B`/`D726C97A` 253,998,498 px frame `4EF1FBF6`). Build 0
+  warnings, format clean.
+- **Media change:** `H:\Tests\XBOXReady` now carries **7** optimized ISOs (the
+  operator added 50 Cent, Bad Boys II, Destroy All Humans!, Tak and Ninja Gaiden
+  Black), so the matrix re-run is **44 rows**, not 39. The matrix result:
+  **2 own-render, 39 dashboard, 3 fault, 0 timeout**. The Redump group advanced
+  too - GTA: San Andreas at 5B now presents the disc's own Xbox boot screen
+  (`wt-data/gta-5b-fixed-display.png`, 27,543 colours, 0.1% black, EIP `0x2DC4F`,
+  17,410 flips, no fault) where the pre-fix 5B sweep showed the dashboard. The
+  three faults are one fast-mode `#UD` on **3 of the 7 oracle titles**
+  (Halo `0x180AEC`, Tak `0x33C810`, Ninja Gaiden Black `0x30D63D`) - the TM3
+  lead candidate by the matrix's ">=3 titles" rule.
+- **Score:** P5 Bus & IRQ 85 -> 90, P24 Retail 0 -> 10 = **74.3%** (87.64 of 118).
 
 **Session 2026-10-24 (fifty-second; G3 ran the consolidated re-baseline - every
 gate, all 22 corpus rows, the ktest smoke and the package gate verified in one

@@ -4,13 +4,13 @@
   "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
     "milestone": "M-T",
-    "id": "TM2",
-    "title": "Fix shared blocker #1 and re-run the matrix",
+    "id": "TM3",
+    "title": "Fix shared blocker #2 and re-run the matrix",
     "plan": "E1",
     "status": "active",
     "started": "2026-10-24",
     "attempts": 0,
-    "acceptance": "The blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical (a legitimate homebrew anchor move is re-baselined in the same commit with the measured reason).",
+    "acceptance": "The second shared blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical.",
     "price": "2-4 sessions; correctness bar.",
     "bar": "correctness"
   },
@@ -20,31 +20,41 @@
     "mode": "fast",
     "legs": {
       "triangle_gl_replace": {
-        "wall": "5.72-6.15 s",
-        "ram": "4F1FCBC0",
-        "cpu": "7DAB63EB",
-        "frame": "7A860ED7"
+        "wall": "6.40 s",
+        "ram": "6CBBFE75",
+        "cpu": "AB39AEE9",
+        "frame": "79142DE4"
       },
       "triangle_sw": {
-        "wall": "10.21 s"
+        "wall": "11.10 s",
+        "ram": "457719AC",
+        "cpu": "AB39AEE9",
+        "pixels": 58123882,
+        "frame": "5B50373D"
       },
       "menu_gl_replace": {
-        "wall": "15.6-17.5 s",
-        "ram": "B06BA6E5",
-        "cpu": "F5D61C94",
+        "wall": "17.63 s",
+        "ram": "EF1BF776",
+        "cpu": "D726C97A",
         "frame": "B6116DAE"
       },
       "menu_sw": {
-        "wall": "27.01 s"
+        "wall": "27.40 s",
+        "ram": "FD12563B",
+        "cpu": "D726C97A",
+        "pixels": 253998498,
+        "frame": "4EF1FBF6"
       }
     },
     "accurate": {
-      "triangle_ram": "812EA159",
-      "triangle_cpu": "2F632483",
-      "menu_ram": "6AB39AB0",
-      "menu_cpu": "3D2740B8",
-      "triangle_frame": "A1740DE0",
-      "menu_frame": "4EF1FBF6"
+      "triangle_ram": "E58AE5D7",
+      "triangle_cpu": "C43D5B49",
+      "menu_ram": "5C0CF968",
+      "menu_cpu": "E2B4D327",
+      "triangle_frame": "5B50373D",
+      "triangle_gl_frame": "79142DE4",
+      "menu_frame": "4EF1FBF6",
+      "menu_gl_frame": "B6116DAE"
     },
     "gap": {
       "triangle_x": 4.9,
@@ -56,17 +66,17 @@
       "log_bytes": 40797
     },
     "gameplay": {
-      "target": "H:\\Tests\\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB)",
-      "state": "007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).",
+      "target": "H:\\Tests\\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black)",
+      "state": "007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate",
       "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
       "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM",
-      "matrix": "39-title 1B sweep + 007/Halo 20B probes; see docs/research-notes/title-matrix.md"
+      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md"
     }
   },
   "result": {
-    "points": 86.34,
+    "points": 87.64,
     "weight": 118,
-    "percent": 73.2
+    "percent": 74.3
   },
   "phases": [
     {
@@ -108,7 +118,7 @@
       "p": 5,
       "name": "Bus & IRQ",
       "weight": 6,
-      "done": 85,
+      "done": 90,
       "track": "LLE core (real console chain)"
     },
     {
@@ -241,27 +251,15 @@
       "p": 24,
       "name": "Retail gameplay & xemu port",
       "weight": 10,
-      "done": 0,
+      "done": 10,
       "track": "Retail & port"
     }
   ],
   "queue": [
     {
-      "id": "TM2",
-      "title": "Fix shared blocker #1 and re-run the matrix",
-      "status": "active",
-      "depends": [
-        "TM1"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "The blocker is reproduced with the exact command and step anchor, fixed in the current engine (or ported from the named xemu file when the matrix proves >=3 titles or >=20%), the affected titles advance at least one matrix stage, the matrix is re-run, and the four accurate goldens plus the ktest log are byte-identical (a legitimate homebrew anchor move is re-baselined in the same commit with the measured reason).",
-      "price": "2-4 sessions; correctness bar."
-    },
-    {
       "id": "TM3",
       "title": "Fix shared blocker #2 and re-run the matrix",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "TM2"
       ],
@@ -450,6 +448,13 @@
       "date": "2026-10-24",
       "evidence": "TM1 probe: top 3 = 007 (own render at 20B; stalls at 30B/50B at EIP 0x1C4787 with 79,581 draws / 603,250,282 px / 2,594 frames and a black display; APU ISTS 0x79 asserted=True while PIC req=0x00; 30B save state + method histogram in wt-data/title-probe-007-30b), Halo (optimized ISO; fast-mode #UD vec=6 at 604M EIP 0x180AEC, accurate mode clean; xemu 0.8.139 reaches its beach gameplay in 50 s, wt-data/xemu-halo-test.png), Redump group (36 rows on the shared dashboard at 1B, park at EIP 0x800422B0 with NV2A asserted=True and PIC req=0x00). One shared blocker selected: level-triggered PCI interrupts are lost after the first acknowledge - the guest programs ELCR 0x4D0=0x68 / 0x4D1=0x18 (IRQ3/5/6/11/12 level) and XGrid had no ELCR (the writes were unmapped) and cleared the request on every acknowledge; xemu 0.8.139 hw/intc/i8259.c owns the semantics (pic_set_irq keeps irr for ltim/elcr lines, pic_intack only clears edge lines). Report in docs/research-notes/real-game-probes.md; no emulator source change in TM1.",
       "commitMessage": "matrix: probe the 007 APU stall and the Halo fast-mode fault (TM1)"
+    },
+    {
+      "id": "TM2",
+      "title": "Fix shared blocker #1 and re-run the matrix",
+      "date": "2026-10-24",
+      "evidence": "TM2: reproduced the blocker (007 at 30B/50B with the A press parks at EIP 0x1C4787, APU ISTS 0x79 asserted while PIC req=0x00; 30B save state + method histogram in wt-data/title-probe-007-30b) and found the mechanism with a temporary unmapped-port trace: the guest programs the 8259 edge/level register (4D0=0x68 = NV2A IRQ3 / APU IRQ5 / ACI IRQ6 level, 4D1=0x18 = USB IRQ11/12 level) and XGrid had nothing mapped at 0x4D0/0x4D1. Fixed in the current engine: Pic8259 gains the ELCR ports (PIIX3 masks 0xF8/0xDE), the xemu 0.8.139 hw/intc/i8259.c level semantics (an acknowledge does not clear a level line's request, so the EOI re-presents it), the slave INT re-driven into IR2 on every state change, ICW1 keeping the level requests, and snapshot v2 (v1 states load as edge-only - verified on the 30B 007 state). New Pic8259LevelTests (8; 3 fail with the pre-fix IsLevel) and the XGRID_PIC_TRACE=1 diagnostic. Titles advanced: 007 at 50B with the dashboard pad script presents its own Agent Under Fire title screen (21,186 colours, 49.7% black, EIP 0x1FD0E, 1,914 flips, no fault) where TM1 saw a frozen black transition, and with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) before faulting at 26.5B at EIP 0x1C386E (#PF, CR2=0xE4) inside the APU ISR (the TM3 blocker); GTA: San Andreas (Redump) at 5B now presents the disc's own Xbox boot screen (27,543 colours, EIP 0x2DC4F, 17,410 flips) where the pre-fix 5B sweep showed the dashboard. Interrupts delivered +5 (menu) / +10 (triangle), no storm. The matrix was re-run: 44 titles (7 oracle + 37 compat, the operator added five optimized ISOs): 2 own-render, 39 dashboard, 3 fault, 0 timeout; the three faults are one fast-mode #UD on 3 of the 7 oracle titles (Halo 0x180AEC, Tak 0x33C810, Ninja Gaiden Black 0x30D63D) - the TM3 lead candidate. Gates: the ktest log is byte-identical (CA5D3867, 40,797 B, 792,800,535 steps, 7/7); the four accurate goldens are re-baselined with the measured reason - the menu frame and its 33,632/686/686 counters are unchanged (4EF1FBF6 / B6116DAE, RAM 5C0CF968 / E2B4D327), the triangle moves A1740DE0 -> 5B50373D (2,706/68/34 -> 2,707/69/34) and gl 7A860ED7 -> 79142DE4 (RAM E58AE5D7 / C43D5B49), and the pre-fix build reproduces the old values exactly; fast anchors re-recorded (triangle gl 6CBBFE75/AB39AEE9 frame 79142DE4, menu gl EF1BF776/D726C97A frame B6116DAE, triangle sw 457719AC/AB39AEE9 58,123,882 px frame 5B50373D, menu sw FD12563B/D726C97A 253,998,498 px frame 4EF1FBF6). Suite 1965 -> 1973, build 0 warnings, format clean; P5 Bus & IRQ 85 -> 90, P24 Retail 0 -> 10 = 74.3% (87.64 of 118).",
+      "commitMessage": "bus: model the 8259 edge/level register and level interrupt delivery (TM2)"
     }
   ],
   "negatives": [

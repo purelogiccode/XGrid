@@ -41,10 +41,10 @@ claimed, until then.
 ## 0a. Previous correction (2026-10-22): xemu-class performance is the long-run objective
 
 <!-- STATUS:BEGIN (generated from docs/status.json by scripts/status.ps1; do not edit) -->
-**Current status (2026-10-24):** M-T / **TM2 - Fix shared blocker #1 and re-run the matrix** (active, attempt 0).
-**Gameplay (M-T):** H:\Tests\XBOXReady (2 optimized ISOs: 007 1.60 GB, Halo 3.38 GB) - 007 renders its own Harrier/carrier intro scene at 20B steps (wt-data/xgs-20b-display.png), not the dashboard animation; the 10B run is still the dashboard. Gameplay is the next anchor (30B/50B with a menu input).. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
-**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 5.72-6.15 s / sw 10.21 s; menu gl+replace 15.6-17.5 s / sw 27.01 s; gap ~4.9x / ~11.7x.
-**Phase score:** 73.2% (86.34 of 118). **Next:** TM3 (Fix shared blocker #2 and re-run the matrix), TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix).
+**Current status (2026-10-24):** M-T / **TM3 - Fix shared blocker #2 and re-run the matrix** (active, attempt 0).
+**Gameplay (M-T):** H:\Tests\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black) - 007: TM2's level-interrupt fix unblocked the APU ISR. At 50B with the dashboard pad script the guest presents its own 007 Agent Under Fire title screen (21,186 colours, frame 0x1FD0E in the XBE .text); with the 20B A press it reaches the game's own render (79,581 draws / 603,250,282 px) and then faults at 26.5B in guest code at EIP 0x1C386E (CR2=0xE4, #PF) inside the APU ISR. The Redump group advanced too: GTA: San Andreas at 5B now presents the disc's own Xbox boot screen (27,543 colours) instead of the dashboard. The matrix's 3 fast-mode #UD rows (Halo/Tak/Ninja Gaiden Black) cover 3 of the 7 oracle titles and are the TM3 lead candidate. Oracle: data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM.
+**Perf reference (M-D, deferred; H1, 1B, fast):** triangle gl+replace 6.40 s / sw 11.10 s; menu gl+replace 17.63 s / sw 27.40 s; gap ~4.9x / ~11.7x.
+**Phase score:** 74.3% (87.64 of 118). **Next:** TM4 (007 playability gate), TM5 (Halo playability gate (or documented wait)), TM6 (Second-tier titles: the next 5 from the matrix), TM7 (Publish the compatibility table + one-command probe harness).
 **Do not retry without a new measurement:** N1 C4 host-pointer translate probe, N2 Read-only-ROM decode caching alone, N3 Full trace/superblock formation, N4 Own the encoder (Assembler rewrite), N5 Remove the raw emitter's per-member EIP/TSC/served, N6 VshProgram.Execute allocations / scratch reuse. See docs/status.json for all 20.
 <!-- STATUS:END -->
 

@@ -61,9 +61,20 @@ the same firmware/EEPROM.
   (`wt-data/xgs-20b-display.png`, frame `2666CFBC...`, 640x480, mean
   (52.9, 39.7, 56.3), 38,350 colours, 7.8% black), so the title has launched
   and is rendering its own content; the launch happens between 10B and 20B.
-  The next anchor is the game-menu input at ~20B and a 30B/50B run (TM1/TM4).
+  **TM2 (2026-10-24):** the level-interrupt fix unblocked the APU ISR. At **50B**
+  with the dashboard pad script the guest presents **its own 007 Agent Under Fire
+  title screen** (`wt-data/007-50b-fixed-display.png`: 640x480, 21,186 colours,
+  49.7% black, EIP `0x1FD0E` in the XBE `.text`, 1,914 flips, no fault). With
+  the **A press at 20B** the guest reaches the game's own render (79,581 draws /
+  603,250,282 px / 2,594 frames) and then faults at **26.5B** in guest code at
+  EIP `0x1C386E` (`#PF`, CR2=`0xE4`, err=0) inside the APU ISR - the next
+  blocker (TM3). xemu 0.8.139 reaches gameplay in 15 s on the same ISO.
 - **Halo - Combat Evolved (v1.09)**: the MG2 second title (the only other
-  optimized image).
+  optimized image). xemu 0.8.139 reaches its beach gameplay in 50 s
+  (`wt-data/xemu-halo-test.png`). XGrid's fast mode faults `#UD` at 604M
+  (EIP `0x180AEC`); accurate mode is clean. 2026-10-24: `H:\Tests\XBOXReady`
+  now carries **7** optimized ISOs (the two above plus 50 Cent, Bad Boys II,
+  Destroy All Humans!, Tak and Ninja Gaiden Black).
 
 **Answer for the compatibility question:** XGrid boots retail discs but **does
 not yet claim playable real games**; M-T exists to change that. A real-game row
@@ -77,12 +88,12 @@ rows are acceptance, not merge gates; the gate media remains
 It runs every ISO at a fixed step budget (default 5B), records the stage
 (`own-render` / `boot-animation` / `fault` / `timeout`), the final EIP, the NV2A
 counters and the wall, and writes `docs/research-notes/title-matrix.md` plus
-`wt-data/title-matrix/`. The 2 optimized ISOs in `H:\Tests\XBOXReady` are the
+`wt-data/title-matrix/`. The 7 optimized ISOs in `H:\Tests\XBOXReady` are the
 oracle set; the 37 full-disc ISOs in `H:\Tests\XBOXTest` are XGrid-only
 compatibility media (xemu cannot boot them). Rows are evidence, not gates.
 
 ```powershell
-pwsh -File scripts/title-matrix.ps1 -MediaDir "H:\Tests\XBOXReady" -AlsoDir "H:\Tests\XBOXTest" -Steps 5000000000 -Parallel 6
+pwsh -File scripts/title-matrix.ps1 -MediaDir "H:\Tests\XBOXReady" -AlsoDir "H:\Tests\XBOXTest" -Steps 1000000000 -Parallel 1
 ```
 
 `stage=own-render` means the NV2A draw/pixel shape differs from the dashboard
@@ -119,6 +130,17 @@ the first frame, so the `ram`/`cpu` SHAs here are fast-mode anchors, **not** the
 accurate-mode gate SHAs. A row with `verdict=CHECK` (fault, no frame) is red.
 
 ## Matrix
+
+> **TM2 anchor note (2026-10-24).** The PIC edge/level fix changes interrupt
+> delivery, so **every 1B guest anchor moved** (the ktest suite log is the
+> exception: still `CA5D3867`). The gate anchors are the re-baselined values in
+> `ImplementationPlan.md` -> "Standing gates"; the per-row 1B anchors in the table
+> below predate TM2 and are historical measurements, not current expectations.
+> The re-measured ones: triangle fast sw
+> `457719AC`/`AB39AEE9` (58,123,882 px), triangle accurate sw `5B50373D`
+> (`E58AE5D7`/`C43D5B49`), triangle GL `79142DE4`; menu fast sw
+> `FD12563B`/`D726C97A` (253,998,498 px, unchanged), menu accurate sw
+> `4EF1FBF6` (`5C0CF968`/`E2B4D327`), menu GL `B6116DAE`.
 
 `displaySha` is the frame the **product** path shows (CLI `--frame-display`, the
 Avalonia frontend): the display controller's scanout, decoded from the VGA CRTC

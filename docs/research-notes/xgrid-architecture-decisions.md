@@ -17084,3 +17084,107 @@ the one Release build.
 stays at 79.9% (86.34 of 108) by the "the score only moves with landed work"
 rule. No code change, no snapshot change (Nv2a v10, audio v3), suite 1965,
 build 0 warnings, format clean.
+
+## 253 TM2: the ELCR was the whole blocker - level PCI interrupts land and 007 reaches its own title screen (2026-10-24, fifty-third session) - TM2
+
+**The probe answered the question the title matrix asked.** TM1 left one shared
+blocker: a device holds its PCI interrupt line high, the PIC latched the request
+once, `AcknowledgeLine` cleared it, and nothing re-latched the level, so the
+interrupt was lost (007's APU IRQ5, the Redump rows' NV2A IRQ3). The first TM2
+probe (the new `XGRID_PIC_TRACE=1` diagnostic plus a temporary unmapped-port
+trace) found the mechanism in one line: the guest **programs the edge/level
+control register** and XGrid had nothing mapped at 0x4D0/0x4D1, so the writes
+were discarded:
+
+```
+UNMAPPED PORT WRITE 4D0<=0 / 40 / 60 / 68   (master: IRQ3 NV2A, IRQ5 APU, IRQ6 ACI level)
+UNMAPPED PORT WRITE 4D1<=0 / 08 / 18        (slave:  IRQ11 USB0, IRQ12 USB1 level)
+```
+
+The PIC is otherwise programmed edge mode (`ICW1=0x11` on 0x20 and 0xA0), so the
+ELCR is the only level switch. That is the whole blocker.
+
+**The fix** (`src/XGrid.Bus/Interrupts/Pic8259.cs`, the xemu 0.8.139
+`hw/intc/i8259.c` semantics):
+
+- the ELCR ports 0x4D0/0x4D1 with the PIIX3 masks (0xF8 master, 0xDE slave);
+- `IsLevel(line) = ltim || elcr bit`; `AcknowledgeLine` clears the request only
+  for an edge line, so a level line's request survives the acknowledge and the
+  EOI re-presents it (`pic_intack`: "We don't clear a level sensitive interrupt
+  here");
+- `SetIrq` keeps the existing edge behaviour (a raised line sets the request, a
+  lowered line clears it) - the PIT's held-high model still works because IRQ0
+  stays edge, and the PIT pulse is not re-latched;
+- the slave's INT output is re-driven into the master's IR2 on every state change
+  (acknowledge, EOI, mask write), not only on `SetIrq`, so a held slave line is
+  not stranded;
+- ICW1 clears the request/in-service latches but keeps the level lines' requests
+  (`pic_reset_common`: `irr &= elcr`), and snapshot **v2** adds the ELCR + LTIM
+  (v1 states still load, as edge-only - verified by loading the 30B 007 state).
+
+`Pic8259LevelTests` (8 tests) pins it: a held level line is delivered again after
+the EOI without a device edge; a lowered line is not; a masked-then-unmasked
+level line is not lost; an edge line is not re-delivered (the pre-fix
+behaviour); LTIM marks every line level; a held slave line re-delivers after the
+slave EOI; the ELCR masks; and the snapshot round-trip. Three of the eight fail
+with the pre-fix `IsLevel` (proven by a temporary patch - the full pre-fix
+source cannot compile the tests because the API is new).
+
+**What it moved.**
+
+| title / leg | pre-TM2 | post-TM2 |
+|---|---|---|
+| 007 50B, dashboard pad script | black transition, stall at EIP `0x1C4787` (2,594 frozen frames) | **own 007 title screen**, 21,186 colours, EIP `0x1FD0E`, 1,914 flips, no fault |
+| 007 26.5B, A press at 20B | stall at `0x1C4787` (same counters at 30B/50B) | game's own render (79,581 draws / 603,250,282 px) then **#PF at EIP `0x1C386E`, CR2=`0xE4`, err=0 inside the APU ISR** - the next blocker (TM3) |
+| interrupts delivered, menu 1B accurate | 3,153 | 3,158 (+5) |
+| interrupts delivered, triangle 1B accurate | 1,883 | 1,893 (+10) |
+| APU voice completions at the 007 fault | 15 | 18 |
+
+The +5/+10 are exactly the previously-lost level interrupts: no storm (the walls
+move ~1%), and the menu's frame and NV2A counters are untouched.
+
+**The anchor re-baseline (measured, not assumed).** The pre-fix build reproduces
+the old anchors exactly, so the move is the fix:
+
+| leg | pre-TM2 | post-TM2 |
+|---|---|---|
+| accurate menu sw | `4EF1FBF6`, 33,632/686/686, `6AB39AB0`/`3D2740B8` | **`4EF1FBF6`, 33,632/686/686**, `5C0CF968`/`E2B4D327` |
+| accurate menu gl | `B6116DAE` | **`B6116DAE`** (same RAM/CPU) |
+| accurate triangle sw | `A1740DE0`, 2,706/68/34, `812EA159`/`2F632483` | `5B50373D`, **2,707/69/34**, `E58AE5D7`/`C43D5B49` |
+| accurate triangle gl | `7A860ED7` | `79142DE4` |
+| fast triangle gl+replace | `4F1FCBC0`/`7DAB63EB`, frame `7A860ED7` | `6CBBFE75`/`AB39AEE9`, frame `79142DE4` |
+| fast triangle sw | `B45254CA`/`7DAB63EB`, 57,663,082 px | `457719AC`/`AB39AEE9`, 58,123,882 px, frame `5B50373D` |
+| fast menu gl+replace | `B06BA6E5`/`F5D61C94` | `EF1BF776`/`D726C97A`, frame `B6116DAE` |
+| fast menu sw | `34973510`/`F5D61C94`, 253,998,498 px | `FD12563B`/`D726C97A`, **253,998,498 px**, frame `4EF1FBF6` |
+| ktest | `CA5D3867`, 40,797 B at 792,800,535 steps | **byte-identical** |
+
+The menu's rendered output is unchanged (frame, counters, pixels); the triangle
+gains exactly one draw/frame because its flip interrupt is now delivered. That is
+the "legitimate homebrew anchor move" the E1 gate rule allows, re-baselined in
+the same commit with the measurement above.
+
+**The matrix re-run.** 44 titles (7 oracle + 37 compat; the operator added five
+optimized ISOs to `H:\Tests\XBOXReady` between TM0 and TM2): **2 own-render,
+39 dashboard, 3 fault, 0 timeout** at 1B. The 1B rows are the shared dashboard
+menu for 39 of them (33,638 draws / 253,998,498 px / 686 frames) - the fix does
+not change the 1B dashboard shape - but the deeper anchors do move:
+
+- **007 (oracle) 1B:** the boot animation (`2,672` / `41,995,882` / `55`, EIP
+  `0x138D3`), unchanged because its launch needs more than 1B steps.
+- **007 50B:** its own title screen (above), where TM1 saw a frozen black
+  transition.
+- **GTA: San Andreas (Redump) 5B:** the pre-fix 5B sweep presented the dashboard
+  (801,359 draws / 5,447,672,941 px / 16,673 frames, EIP `0x39FC4`); the fixed
+  build presents **the disc's own Xbox boot screen** ("SELECT A / B BACK",
+  27,543 colours, 0.1% black) with 769,527 draws / 5,690,277,680 px / 17,410
+  frames at EIP `0x2DC4F`, no fault. That is the shared-blocker proof on the
+  NV2A IRQ3 line: one fix moved 007 (APU IRQ5) and the Redump group (NV2A IRQ3).
+- **Three oracle rows fault `#UD` in fast mode:** Halo (`0x180AEC` at 604M), Tak
+  (`0x33C810` at 673M) and Ninja Gaiden Black (`0x30D63D` at 660M), all `vec=6`
+  with the kernel's `0x800151EF` as the last EIP. That is one JIT correctness bug
+  across **3 of the 7 oracle titles** - the matrix's ">=3 titles" threshold - and
+  it is the TM3 candidate (accurate mode runs past it).
+
+**Score.** P5 Bus & IRQ 85 -> 90 (the ELCR/level model) and P24 Retail 0 -> 10
+(the first retail advance): 74.3% (87.64 of 118). Suite 1965 -> 1973 (the eight
+PIC level tests), build 0 warnings, format clean, package gate untouched.

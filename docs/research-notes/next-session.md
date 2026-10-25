@@ -13,6 +13,23 @@
 > `D:\Samples\XBOXReady` is gone; `data\xemu\xemu.toml` and
 > `scripts/xemu-oracle.ps1` still point at it - fixing both is MG0.1.
 
+> **TM2 RESULT (2026-10-24, 53rd session) - the ELCR was the whole blocker, and
+> 007 is past it.** The guest programs the 8259 edge/level register
+> (`4D0<=68` = NV2A IRQ3 / APU IRQ5 / ACI IRQ6 level, `4D1<=18` = USB IRQ11/12
+> level) and XGrid had nothing mapped there, so every held PCI line was lost
+> after its first acknowledge. TM2 landed the ELCR + the xemu `i8259.c` level
+> semantics in `Pic8259` (snapshot v2). **007 now presents its own Agent Under
+> Fire title screen at 50B** (21,186 colours, EIP `0x1FD0E`, no fault) and, with
+> the 20B A press, reaches the game's own render before faulting at **26.5B** in
+> guest code at EIP `0x1C386E` (`#PF`, CR2=`0xE4`) inside the APU ISR - that is
+> the TM3 blocker. The ktest log is **byte-identical**; the accurate anchors were
+> re-baselined (menu frame/counters unchanged; triangle +1 draw/frame:
+> `A1740DE0` -> `5B50373D`, gl `7A860ED7` -> `79142DE4`; RAM/CPU moved on both
+> titles because the previously-lost interrupts now run - decisions 253).
+> `H:\Tests\XBOXReady` now has **7** optimized ISOs, so the matrix is 44 rows.
+> **Next: TM3** - the APU ISR null-dereference (`CR2=0xE4`) and the VP mixer /
+> AC'97 gap it exposes.
+
 > **MG3 RESULT (2026-10-24, 52nd session) - the consolidated re-baseline ran, and
 > nothing regressed.** One Release build, one test run (**1965** green), then
 > every gate on the same binaries: the four fast 1B anchors byte-identical

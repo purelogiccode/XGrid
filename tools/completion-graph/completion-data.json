@@ -40,7 +40,7 @@
           "p": 5,
           "name": "Bus & IRQ",
           "weight": 6,
-          "done": 85
+          "done": 90
         },
         {
           "p": 6,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 0
+          "done": 10
         }
       ]
     }

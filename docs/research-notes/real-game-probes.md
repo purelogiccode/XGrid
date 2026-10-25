@@ -269,14 +269,51 @@ shape, two different devices). B2 is recorded as a JIT correctness item; B3
 follows B1 (re-run the matrix after the fix to see how many rows leave the
 dashboard).
 
-## What to do next (TM2)
+## TM2 outcome (2026-10-24)
 
-1. Fix B1 in `Pic8259` (model the input level and ICW1 LTIM; re-latch on EOI and
-   unmask), with a differential test that fails on the current source.
-2. Re-run 007 from the 30B save state (and then a full 30B/50B run) with the
-   frame export; the acceptance is that it leaves `0x1C4787` and the intro
-   FMV/gameplay appears.
-3. Re-run the matrix and the four accurate goldens + the ktest log.
-4. Add a real-game row to `docs/compatibility.md` only after a run reaches a
-   gameplay frame or a documented wait; a dashboard-only run is a probe, not a
-   compatibility row.
+**The fix.** `src/XGrid.Bus/Interrupts/Pic8259.cs` now models the edge/level
+control register (0x4D0/0x4D1) and the xemu 0.8.139 `hw/intc/i8259.c` level
+semantics, so a held PCI line's request survives the acknowledge and the EOI
+re-presents it (decisions §253).
+
+**007 advanced two stages.**
+
+- **50B, dashboard pad script:** the guest presents **its own 007 Agent Under
+  Fire title screen** (`wt-data/007-50b-fixed-display.png`: 640x480, 21,186
+  colours, 49.7% black, EIP `0x1FD0E` in the XBE `.text`, 1,914 flips, no
+  fault). TM1's same-step run was a frozen black transition.
+- **26.5B, A press at 20B:** the game's own render (79,581 draws / 603,250,282 px
+  / 2,594 frames) and then a `#PF` at **EIP `0x1C386E`, CR2=`0xE4`, err=0**
+  inside the APU ISR (`PIC req=0x20 isr=0x20`, `APU ISTS=0x11`, `voiceOff=18`).
+- **GTA: San Andreas (Redump) 5B:** the pre-fix 5B sweep presented the dashboard
+  (801,359 draws / 5,447,672,941 px / 16,673 frames, EIP `0x39FC4`); the fixed
+  build presents **the disc's own Xbox boot screen** ("SELECT A / B BACK",
+  27,543 colours, 0.1% black) with 769,527 draws / 5,690,277,680 px / 17,410
+  frames at EIP `0x2DC4F`, no fault. The NV2A IRQ3 half of the blocker is fixed
+  for the Redump group too.
+
+**The next blockers (TM3 candidates).**
+
+1. **The APU ISR null-dereference** (007, 1 title): the ISR now runs (that is the
+   fix), reads a null structure at `[0xE4]` and faults. `ISTS=0x11` is GINTSTS +
+   FETINTSTS, so the ISR is handling an `idle-voice` FE trap when it faults. The
+   xemu 0.8.139 files that own this are `hw/xbox/mcpx/apu/vp/vp.c` (the voice
+   processor / FE trap semantics) and `apu.c`.
+2. **The fast-mode `#UD`** (Halo `0x180AEC` at 604M, Tak `0x33C810` at 673M,
+   Ninja Gaiden Black `0x30D63D` at 660M): one JIT correctness bug across **3 of
+   the 7 oracle titles** - the matrix's ">=3 titles" threshold - with accurate
+   mode clean. This leads TM3 by the matrix rule.
+
+## What to do next (TM3)
+
+1. Reproduce the fast-mode `#UD` on the three titles with `--jit-raw` and the
+   block trace (`XGRID_BLOCK_TRACE=1`, `XGRID_RAW_DUMP=1`); the differential is
+   IL vs raw at the faulting block, and the acceptance is all three titles past
+   the fault with the accurate anchors unchanged.
+2. Then the 007 APU ISR fault: dump the guest code around `0x1C386E` to name the
+   null structure; decide whether it is the FE-trap/VP path (port `vp.c`) or a
+   kernel object, by the same matrix rule.
+3. Re-run 007 past 26.5B; the acceptance is the intro FMV/gameplay, then TM4's
+   playability gate.
+
+
