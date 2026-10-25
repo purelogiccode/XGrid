@@ -23,12 +23,22 @@ are usable and ship as self-contained packages. The APU voice processor and the
 ported xemu 0.8.139 GP/EP DSP core execute the guest microcode (the VP mixer and
 the AC'97 codec path are still missing, so output is not yet audible).
 
-**Real games:** two retail ISOs boot with no fault (007 - Agent Under Fire runs
-its own XBE code; 4x4 Evo 2 still parks in the kernel idle loop), but no real
-title has reached a claimed gameplay frame. The verified surface is the homebrew
-corpus and the compatibility matrix in `docs/compatibility.md`; local retail
-probes are recorded in `docs/research-notes/real-game-probes.md`. The gates are
-run locally (CI is disabled; see `docs/ci.md`).
+**Real games:** the oracle set is the **seven optimized ISOs** in
+`H:\Tests\XBOXReady`. **007 - Agent Under Fire is playable** (2026-10-25, TM4):
+it runs 100 billion instructions with no fault, presents its own first-level
+driving scene, takes scripted pad input, round-trips a save state through the
+frontend and matches the xemu 0.8.139 frame at the same scene within the
+documented screenshot policy (`docs/compatibility.md`, decisions §255). Audio is
+the remaining gap on that title - the voices are not mixed into the DSP output
+yet (the VP mixer and the AC'97 codec are TM8) - so its PCM is a measured
+silence. The other six boot with no fault at the 1B matrix budget: **Tak**
+renders its own content, **Halo**, **Ninja Gaiden Black**, **50 Cent** and
+**Bad Boys II** present the dashboard while their own XBE code executes, and
+**Destroy All Humans!** is still in the kernel; Halo is the active TM5 target.
+The verified homebrew surface is the corpus and the compatibility matrix in
+`docs/compatibility.md`; local retail probes are recorded in
+`docs/research-notes/real-game-probes.md`. The gates are run locally (CI is
+disabled; see `docs/ci.md`).
 
 ## Goals
 

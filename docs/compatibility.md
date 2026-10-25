@@ -44,16 +44,28 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
   sample and a benchmark probe). Reference orientation:
   `docs/research-notes/gpu-reference-map.md`.
 
-### Local real-game probes (the M-G lead acceptance)
+### Local real-game probes (the M-T lead acceptance)
 
-**2026-10-24:** retail gameplay is the lead milestone (M-G). The oracle media is
-the **optimized XDVDFS set** at `H:\Tests\XBOXReady`:
-`007 - Agent Under Fire [NTSC-U][Redump].iso` (1.72 GB) and
-`Halo - Combat Evolved (USA) (v1.09) (Redump).iso` (3.63 GB). **xemu 0.8.139
-cannot boot the 37 full-disc Redump ISOs at `H:\Tests\XBOXTest`**, so those are
-XGrid-only benchmark media and never the oracle. `D:\Samples\XBOXReady` is gone.
-The oracle is xemu 0.8.139 (`data/xemu/xemu.exe`) on the same optimized ISO with
-the same firmware/EEPROM.
+**2026-10-25:** retail gameplay is the lead milestone (M-T/M-G). The oracle media
+is the **optimized XDVDFS set** of **seven ISOs** at `H:\Tests\XBOXReady` - every
+one of them is a row of the 1B matrix below, and xemu 0.8.139 boots the same
+images with the same firmware/EEPROM. **xemu 0.8.139 cannot boot the 37
+full-disc Redump ISOs at `H:\Tests\XBOXTest`**, so those are XGrid-only benchmark
+media and never the oracle. `D:\Samples\XBOXReady` is gone.
+
+| # | optimized ISO | size | 1B matrix stage | note |
+|---:|---|---:|---|---|
+| 1 | `007 - Agent Under Fire [NTSC-U][Redump]` | 1.6 GB | own-render | **PLAYABLE** (TM4) - 100B steps, no fault, gameplay frame, xemu frame match |
+| 2 | `Nickelodeon Tak - The Great Juju Challenge (Europe)` | 2.5 GB | own-render | draws its own content (2,675 draws / 42 frames), EIP `0x39CE8B` |
+| 3 | `Halo - Combat Evolved (USA) (v1.09) (Redump)` | 3.5 GB | dashboard | own XBE code at EIP `0xAC3AC`; **TM5 target** |
+| 4 | `Ninja Gaiden Black (USA) (En,Ja)` | 6.0 GB | dashboard | own XBE code at EIP `0x37DC15` |
+| 5 | `50 Cent - Bulletproof (France)` | 5.6 GB | dashboard | own XBE code at EIP `0x26FB54` |
+| 6 | `Bad Boys II (Germany)` | 1.9 GB | dashboard | own XBE code at EIP `0x281D05` |
+| 7 | `Destroy All Humans! (Germany)` | 2.2 GB | dashboard | kernel EIP `0x8001434F` at 1B |
+
+`own-render` means the NV2A draw/pixel shape is unique (the title took the
+display); `dashboard` means the row still matches the shared dashboard
+animation, and the EIP says whether the title's own code is executing.
 
 - **007 - Agent Under Fire [NTSC-U][Redump]**: boots; the 5B probe is still the
   dashboard animation (201 flips, 2,672 draws, no fault). The **20B snapshot**
@@ -68,7 +80,7 @@ the same firmware/EEPROM.
   the **A press at 20B** the guest reaches the game's own render (79,581 draws /
   603,250,282 px / 2,594 frames) and then faults at **26.5B** in guest code at
   EIP `0x1C386E` (`#PF`, CR2=`0xE4`, err=0) inside the APU ISR - the next
-  blocker (TM3). xemu 0.8.139 reaches gameplay in 15 s on the same ISO.
+  blocker (TM3).
   **TM4 (2026-10-25): PLAYABLE.** The 26.5B fault was a duplicated
   `SE2FE_IDLE_VOICE` trap (the VP frame walk plus a pending queue in
   `McpxApuDevice`), so the guest freed the voice on the first trap and
@@ -80,12 +92,14 @@ the same firmware/EEPROM.
   **same scene at 150 s** (`wt-data/tm4/xemu-007-150s.png`: 63,994 colours, 6.8%
   black, mean `(96.8, 85.5, 58.8)`); `frame-compare --crop-top 0.25` reads
   `dmean=(18.0, 22.6, 14.6)` with black coverage 4.1% vs 4.2%.
-- **Halo - Combat Evolved (v1.09)**: the MG2 second title (the only other
-  optimized image). xemu 0.8.139 reaches its beach gameplay in 50 s
-  (`wt-data/xemu-halo-test.png`). XGrid's fast mode faults `#UD` at 604M
-  (EIP `0x180AEC`); accurate mode is clean. 2026-10-24: `H:\Tests\XBOXReady`
-  now carries **7** optimized ISOs (the two above plus 50 Cent, Bad Boys II,
-  Destroy All Humans!, Tak and Ninja Gaiden Black).
+- **Halo - Combat Evolved (v1.09)**: the TM5 target. At the 1B matrix budget it
+  presents the shared dashboard animation while its own XBE code executes
+  (EIP `0xAC3AC` fast / `0xAC543` accurate, 2,672 draws / 35 frames), so the disc
+  has not launched by 1B - probe deep like 007. The 2026-10-24 fast-mode `#UD` at
+  604M was **fixed by TM3** (missing `SAHF`/`LAHF`, decisions §254); it is not a
+  Halo blocker. The `wt-data/xemu-halo-test.png` capture predates the
+  `scripts/xemu-oracle.ps1` fixes, so it is **not** a valid Halo oracle frame -
+  TM5 must capture it again.
 
 **Answer for the compatibility question:** XGrid boots retail discs and, since
 TM4 (2026-10-25), **one retail title is playable**: 007 Agent Under Fire reaches
@@ -658,7 +672,14 @@ sequence (an operator-visible route), not more steps.
   the ported xemu 0.8.139 GP/EP DSP executes the guest's microcode with the EP
   output FIFO feeding a 48 kHz/16-bit stereo sink (`--apu-dsp --audio-out`,
   opt-in). The VP mixer (`vp.c`) and the AC'97 codec path are missing, so the
-  measured boots are silent and no audio row is claimed.
+  measured boots are silent and no audio row is claimed: 007 at 28B steps writes
+  877,568 bytes / 219,392 frames of PCM that are **all zero** (TM4), because the
+  voices are never mixed into the EP's input. TM8 owns that gap.
+- **Retail:** 007 - Agent Under Fire is playable (TM4). Of the seven optimized
+  ISOs, **two** take the display at 1B (007, and Tak which draws its own
+  content) and **five** still present the dashboard: Halo, Ninja Gaiden Black,
+  50 Cent and Bad Boys II while their own XBE code runs, Destroy All Humans!
+  while the kernel executes. The 37 XBOXTest rows are dashboard-only evidence.
 - **Storage:** HDD boot + DVD/CHD boot; no per-title DVD streaming row.
 
 ## Sample wish list (cheapest first)

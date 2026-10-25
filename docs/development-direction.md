@@ -483,6 +483,13 @@ baseline* — the old ~8.7 s triangle figure was the DVD-only boot animation
   matrix -> blocker probe -> fix the shared blocker -> playability gate. The
   seven-part definition is in `ImplementationPlan.md` E1; the first task is TM0
   (title matrix). Retail ISOs are acceptance, never merge gates.
+  **Status 2026-10-25 (TM4, decisions §255): 1 of 3 titles playable.** 007 Agent
+  Under Fire runs 100B steps with `LastFault vec=0`, presents its own first-level
+  driving scene, takes scripted input, round-trips a save state through the
+  frontend session and matches the xemu 0.8.139 frame at the same scene within
+  the mean/colour/coverage policy; audio is a measured silence (the VP mixer and
+  the AC'97 codec are TM8). TM0-TM4 are done, TM5 (Halo) is active, TM6/TM7
+  (breadth + the published table) and TM8 (the first targeted port) follow.
 - **Port rule:** xemu 0.8.139 is the oracle and the source for the specific
   modules the matrix proves are shared blockers (>=3 titles or >=20%). The CPU,
   memory, chipset, storage and USB stay; the APU VP mixer + AC'97 and the NV2A

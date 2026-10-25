@@ -79,6 +79,12 @@ queued -> priced -> active -> validating -> done
 
 ## E1. M-T - the playable-title program (2026-10-24 rewrite)
 
+**Status 2026-10-25 (TM4, decisions §255): 1 of 3 titles playable.** 007 Agent
+Under Fire is the first: 100B steps with `LastFault vec=0`, its own first-level
+frame, scripted input, a frontend save/load round trip and the xemu frame match;
+audio is the one part documented as silence (TM8). TM0-TM4 are done, TM5 (Halo)
+is active.
+
 **The goal is a playable emulator, not a complete port.** A title is *playable*
 when all of these hold:
 
@@ -94,6 +100,17 @@ when all of these hold:
    silence is documented as the remaining gap.
 7. The four accurate goldens, the ktest log and the package gate stay
    byte-identical. Retail rows are acceptance, never merge gates.
+
+**The screenshot policy (defined by TM4, 2026-10-25).** A retail frame is
+compared with xemu 0.8.139 on the **same ISO at a comparable scene** (same
+level, same camera context) - never pixel-exact, and never across two different
+scenes. `scripts/frame-compare.py` reports per-channel `mean`, the distinct
+colour count and the black coverage; `--crop-top` drops a letterboxed band from
+both images. A row **passes** when black coverage is within 2 percentage points,
+the colour count is within 25%, and `|dmean|` is <= 25/255 on every channel. The
+007 gate measured `dmean=(18.0, 22.6, 14.6)`, black 4.1% vs 4.2% and 43,921 vs
+39,912 colours - a pass with its worst channel at 22.6/255, and an upper bound
+because the two captures are at different animation phases.
 
 **The rule that replaces the wholesale port.**
 
@@ -126,12 +143,12 @@ title every few sessions.
 
 | id | task | status | depends | acceptance |
 |---|---|---|---|---|
-| TM0 | Title matrix harness + first sweep | **active** | - | every ISO in XBOXReady + XBOXTest has a row; top 3 named; no gate file changed |
-| TM1 | Blocker probe for the top 3 titles | queued | TM0 | one blocker per title, measured; one shared blocker selected |
+| TM0 | Title matrix harness + first sweep | **done** | - | every ISO in XBOXReady + XBOXTest has a row; top 3 named; no gate file changed |
+| TM1 | Blocker probe for the top 3 titles | **done** | TM0 | one blocker per title, measured; one shared blocker selected |
 | TM2 | Fix shared blocker #1 + re-run the matrix | **done** | TM1 | affected titles advance one stage; accurate goldens + ktest exact |
 | TM3 | Fix shared blocker #2 + re-run the matrix | **done** | TM2 | same |
-| TM4 | 007 playability gate | queued | TM3 | the seven-part definition |
-| TM5 | Halo playability gate (or documented wait) | queued | TM4 | gameplay or a documented wait with the same evidence |
+| TM4 | 007 playability gate | **done** | TM3 | the seven-part definition |
+| TM5 | Halo playability gate (or documented wait) | **active** | TM4 | gameplay or a documented wait with the same evidence |
 | TM6 | Second-tier titles (next 5 from the matrix) | queued | TM5 | each reaches gameplay or a documented wait |
 | TM7 | Publish the compatibility table + probe harness | queued | TM6 | `scripts/retail-game-probe.ps1` + the rows |
 | TM8 | First targeted xemu port (default: APU VP mixer + AC'97) | queued | TM2 | the module the matrix proves; differential exact; provenance |

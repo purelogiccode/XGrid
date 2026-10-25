@@ -1,22 +1,27 @@
 # Real-game probes (local media, not gates)
 
-Status: **2026-10-24.** Retail gameplay is now the lead milestone (**M-G**,
-operator decision 2026-10-24): one retail title must reach a gameplay frame at
-any speed, verified against xemu 0.8.139 on the same ISO. These probes are
-**acceptance, not merge gates**; the standing gates remain the 1B accurate
-goldens and the ktest smoke.
+Status: **2026-10-25.** Retail gameplay is the lead milestone (**M-T**, operator
+decision 2026-10-24): titles must reach gameplay with input, verified against
+xemu 0.8.139 on the same ISO. **007 Agent Under Fire is playable** (TM4); Halo is
+the active TM5 target. These probes are **acceptance, not merge gates**; the
+standing gates remain the 1B accurate goldens and the ktest smoke.
 
 ## Media
 
-The oracle media is the **optimized XDVDFS set** at `H:\Tests\XBOXReady`. Both
-files were verified as XDVDFS (`MICROSOFT*XBOX*MEDIA` at `0x10000`, `XBEH` at
-`0x84800`). They are local media: never committed, never CI, never gate
+The oracle media is the **optimized XDVDFS set** at `H:\Tests\XBOXReady` - seven
+ISOs, all verified as XDVDFS (`MICROSOFT*XBOX*MEDIA` at `0x10000`, `XBEH` in the
+root `default.xbe`). They are local media: never committed, never CI, never gate
 currency.
 
 | File | Size | Notes |
 |---|---:|---|
-| `H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso` | 1.60 GB | **M-T target**; the XBE executes today. |
-| `H:\Tests\XBOXReady\Halo - Combat Evolved (USA) (v1.09) (Redump).iso` | 3.38 GB | second title (the only other optimized image). |
+| `007 - Agent Under Fire [NTSC-U][Redump].iso` | 1.6 GB | **PLAYABLE** (TM4); the M-T target. |
+| `Nickelodeon Tak - The Great Juju Challenge (Europe).iso` | 2.5 GB | own-render at 1B (TM3's second row). |
+| `Halo - Combat Evolved (USA) (v1.09) (Redump).iso` | 3.5 GB | **TM5 target**; dashboard at 1B, own XBE code running. |
+| `Ninja Gaiden Black (USA) (En,Ja).iso` | 6.0 GB | dashboard at 1B, own XBE code running. |
+| `50 Cent - Bulletproof (France).iso` | 5.6 GB | dashboard at 1B, own XBE code running. |
+| `Bad Boys II (Germany).iso` | 1.9 GB | dashboard at 1B, own XBE code running. |
+| `Destroy All Humans! (Germany).iso` | 2.2 GB | dashboard at 1B, kernel EIP. |
 
 **The 37 full-disc Redump ISOs at `H:\Tests\XBOXTest` are not oracle media:**
 xemu 0.8.139 cannot boot them (operator, 2026-10-24). They remain XGrid-only
@@ -30,21 +35,28 @@ the firmware set in `data\xemu` (`Complex_4627.bin`, `mcpx_1.0.bin`,
 ## The oracle
 
 **xemu 0.8.139** at `data\xemu\xemu.exe`, the same **optimized** ISO, the same
-firmware/EEPROM, the same scripted input. `data\xemu\xemu.toml` now points
-`games_dir` at `H:\Tests\XBOXReady`, and `scripts/xemu-oracle.ps1` takes
-`-IsoPath` and passes it as `-cdrom` (the capture is the window's client area).
-The QEMU monitor socket fails to bind on H1, so the capture is a window
-screenshot; the comparison is the software frame at the same scene, never a
-cross-renderer pixel-exact claim.
+firmware/EEPROM. `data\xemu\xemu.toml` points `games_dir` at
+`H:\Tests\XBOXReady`, and `scripts/xemu-oracle.ps1 -IsoPath <iso>` selects the
+disc the way xemu actually supports it: a temporary config whose
+`sys.files.dvd_path` is the ISO, passed with `-config_path` (xemu has no
+`-cdrom`). The capture is the window's **client area** at 1:1 scale, taken by a
+DPI-aware process. The QEMU monitor socket fails to bind on H1, so the capture is
+a window screenshot; the comparison is the software frame at the same scene,
+never a cross-renderer pixel-exact claim. **xemu cannot be driven on this host:**
+its Xbox pad comes only from an SDL gamepad (`hw/xbox/usb-xbox-gamepad.c`) and
+the configured GUID is absent, so it stays in the attract/intro loop - a retail
+comparison is always at a scene both reach without input.
 
-**2026-10-24 capture:** xemu 0.8.139 reaches a **007 gameplay frame within
-15 s** of wall time on H1 (a beach/pool scene with the player character and a
-flamethrower), captured at `wt-data/xemu-007-test.png`. The capture carries
-xemu's performance overlay, so the clean 640x480 oracle (overlay off, same
-scene) is a TM1 step. The contrast is the M-T measurement: **XGrid at 1B steps
-is still presenting the boot animation** (`draws=2672`, `pixels=41,995,882`,
-EIP `0x000138B0`), while xemu is already in gameplay. The gap is guest
-progress, not just speed.
+**2026-10-24 capture (SUPERSEDED - it was the wrong disc).** That run passed
+`-cdrom`, which xemu does not have, and `Start-Process` split the ISO path on its
+spaces, so xemu booted whatever its config pointed at: `wt-data/xemu-007-test.png`
+is **not** 007 (it is a different title entirely). The real oracle capture is
+`wt-data/tm4/xemu-007-150s.png`, taken after TM4 fixed `scripts/xemu-oracle.ps1`
+(disc selected through `sys.files.dvd_path` + `-config_path`, DPI-aware client
+capture); it shows 007's first-level driving scene and is the frame compared in
+the TM4 outcome below. The historical contrast stands as a *progress* statement,
+not as a 007 frame: XGrid at 1B was still presenting the boot animation
+(`draws=2672`, `pixels=41,995,882`, EIP `0x000138B0`).
 
 ## Command
 
