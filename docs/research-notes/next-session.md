@@ -1,4 +1,47 @@
-# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM6)
+# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM7)
+
+> **TM6 RESULT (2026-10-25, 57th session) - the second-tier five were probed and
+> the shared blocker was our own NV2A: `NV097_INLINE_ARRAY` was a screen-space
+> shortcut.** `FlushInlineDraw` demanded float attributes, read the first
+> attribute as the screen position and the second as the colour, and never ran
+> the vertex program; the reference (`pgraph_gl_bind_inline_array`) treats the
+> word stream as a packed vertex buffer decoded by the array formats and
+> transformed by the program. Ninja Gaiden Black's D3D FVF vertices (F32x4
+> position + `UB_D3D` colour + F32x2 texcoord, 28 bytes) hit the format check, so
+> at 10B it had **1,073,213 skipped draws** and a black display.
+> **The fix** (`BuildInlineArrayLayout` + `FetchInlineArrayAttribute` through the
+> shared `DecodeVertexAttribute` + `VertexFetchMode.InlineArray`, with the legacy
+> path kept as the fallback when no program can run) makes Ninja Gaiden Black
+> render its own animated stormy-sea intro: 720x480, 13,789 colours, 0.5% black,
+> 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, `LastFault vec=0`, the
+> kernel idle loop `0x8001B02E` between frames, and a held A changes the scene.
+> Three new tests (`Nv2aInlineArrayTests`) fail on the pre-fix source. The NV2A
+> line gained `skipReasons=` (eight counters) - that is what localised the black
+> screen in one probe.
+> **The other four:** **50 Cent** renders its own 3D scene (18,638 colours, 3,534
+> draws / 299,139,810 px, EIP `0x1455BA`, PIC `req=0x08`); **Tak** renders its own
+> scene and then a ~910-draw/frame one where the software rasterizer is the wall
+> (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments);
+> **Bad Boys II** is a documented wait (own-code resource-handle scan
+> `0x1A3C80` -> `0x1A2250`, handles 0x300C5+, no device traffic, black display);
+> **Destroy All Humans!** renders its own Pandemic logo card and then spins in a
+> kernel stall loop (`KeStallExecutionProcessor` `0x800153D0`, 25% of samples).
+> **The matrix is re-run:** 6 own-render / 38 dashboard / 0 fault / 0 timeout (unchanged counts) and Ninja Gaiden Black's row advanced 2,672 -> 12,800 draws and 41,995,882 -> 166,119,138 px at the same 6,475 frames; the dashboard tuple moved 33,638/253,998,498 -> 34,339/268,744,098 because the 701 format-skipped inline draws now run the program.
+> **Gates: not one anchor moved** - accurate menu `4EF1FBF6`/`B6116DAE`
+> (`5C0CF968`/`E2B4D327`), accurate triangle `5B50373D`/`79142DE4`
+> (`E58AE5D7`/`C43D5B49`), fast triangle sw `457719AC`/`AB39AEE9` 58,123,882 px,
+> fast menu sw `FD12563B`/`D726C97A`, ktest `CA5D3867` (40,797 B) byte-identical
+> at 792,800,535 steps. The menu's draw counters move 33,638/1,402 ->
+> 34,333/701 for the same pixels (the 701 format-skipped inline draws now run the
+> program; 701 legacy-path draws are now skipped as non-triangle primitives).
+> Suite 1993 -> **1996**, build 0 warnings, format clean. Decisions 257.
+> **The xemu oracle could not be captured this session** (another agent owns the
+> desktop: PrintWindow returns black, the screen copy catches the editor,
+> `screendump` is not a command in this build and F12 needs focus), so no xemu
+> frame is claimed for TM6.
+> **Next: TM7** - `scripts/retail-game-probe.ps1` + the compatibility rows, with
+> Bad Boys II's resource scan and Destroy All Humans!' stall loop as the first
+> two documented rows. Resume points: `wt-data/tm6/*-10b.xgs` for all five.
 
 > **TM5 RESULT (2026-10-25, 56th session) - Halo launches and renders its own main
 > menu; gameplay is a documented wait, and the blocker was a per-title constant.**

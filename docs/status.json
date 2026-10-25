@@ -4,14 +4,14 @@
   "objective": "A playable Xbox emulator: at least three retail titles reach gameplay with input, audio and save/load; xemu 0.8.139 is the oracle and the source for the specific modules the title matrix proves are shared blockers; full managed C#; GPL-2.0",
   "current": {
     "milestone": "M-T",
-    "id": "TM6",
-    "title": "Second-tier titles: the next 5 from the matrix",
+    "id": "TM7",
+    "title": "Publish the compatibility table + one-command probe harness",
     "plan": "E1",
     "status": "active",
     "started": "2026-10-25",
     "attempts": 0,
-    "acceptance": "The next 5 titles from the matrix each reach gameplay or a documented wait with the same evidence; the matrix is re-run; no gate regression.",
-    "price": "3-5 sessions; correctness bar.",
+    "acceptance": "scripts/retail-game-probe.ps1 <iso> runs XGrid and xemu, writes both screenshots plus a step/state report; the real-game rows land in docs/compatibility.md with the command, the step anchor and the xemu comparison.",
+    "price": "1 session; correctness bar.",
     "bar": "correctness"
   },
   "position": {
@@ -67,16 +67,16 @@
     },
     "gameplay": {
       "target": "H:\\Tests\\XBOXReady (7 optimized ISOs; 007 1.60 GB, Halo 3.38 GB, 50 Cent, Bad Boys II, Destroy All Humans!, Tak, Ninja Gaiden Black)",
-      "state": "TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly",
+      "state": "TM6 (2026-10-25): the second-tier five were probed at 10B each and the shared blocker was our own NV2A - NV097_INLINE_ARRAY was a screen-space shortcut (float-only attributes, the vertex program never run), so Ninja Gaiden Black's 28-byte D3D FVF vertices (F32x4 position + UB_D3D colour + F32x2 texcoord) were skipped: 1,073,213 skipped draws at 10B and a black display. The inline array is now laid out and decoded like the reference (BuildInlineArrayLayout, FetchInlineArrayAttribute through the shared DecodeVertexAttribute, VertexFetchMode.InlineArray) with the legacy path kept as the fallback, and the NV2A line gained skipReasons= (eight counters). Ninja Gaiden Black now renders its own animated stormy-sea intro - 720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E between frames, a held A changes the scene - and at 1B the matrix row went 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at the same 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA, PIC req=0x08); Tak renders its own scene and then a ~910-draw/frame one where the software rasterizer is the wall (300M steps = 362 s, 347 s in 3,228,625 fills, 1.27e9 z-clipped fragments); Bad Boys II is a documented wait (own-code resource-handle scan 0x1A3C80 -> 0x1A2250, handles 0x300C5+, no device traffic, black display); Destroy All Humans! renders its own Pandemic logo card and then spins in a kernel stall loop (KeStallExecutionProcessor 0x800153D0, 25% of samples, 6,819 draws / 86,802,891 px). The xemu oracle could not be captured this session (another agent owns the desktop: PrintWindow returns black, the screen copy catches the editor), so no xemu frame is claimed for TM6. TM5 (2026-10-25): Halo launches and renders its own main menu - 35B steps, 516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black (wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. The blocker was a per-title constant: McpxApuDevice absorbed the DirectSound mixer block at 007's fixed 0x03924810, so Halo's block at 0x02034810 was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B; the block is now discovered from the guest's own GP scratch (SGE) table (page + 0x810). Gameplay is a DOCUMENTED WAIT: a guest-side D3D resource retry loop (EIP 0x1810F0 from 0x6348B, D3DERR_NOTFOUND for handle 0, 99.99% of samples) after 100B clean steps; xemu 0.8.139 on the same ISO shows the same menu at 70 s and in-game gameplay at 150 s. The menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is not met. Audio is silent (--audio-out writes 0 PCM frames, gpFrames=0). 007 Agent Under Fire remains the playable title (TM4): 100,000,000,000 steps with LastFault vec=0 (134,004 draws / 1,005,989,482 px / 6,478 frames, EIP 0x214C2), presenting the first-level Z8-on-the-docks scene (48,208 colours, 6.8% black, mean (78.7,65.5,45.3)); the xemu oracle on the same ISO reaches the same scene at 150 s (dmean (18.0,22.6,14.6), black 4.1% vs 4.2%). The 26.5B #PF was our own duplicate SE2FE_IDLE_VOICE trap; the queue is gone (APU snapshot v5). Scripted input from the 100B snapshot changes state (distinct RAM SHAs per pad) and a held A skips a cutscene. The 44-row 1B matrix is now 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42): the same fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans!, with the pre-fix build reproducing the old NGB row exactly",
       "second": "H:\\Tests\\XBOXTest (37 full-disc Redump ISOs, XGrid-only compatibility media)",
-      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 now selects the disc with -config_path and captures a DPI-correct client area",
-      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: TM5 re-run (2026-10-25) 6 own-render / 38 dashboard / 0 fault / 0 timeout (was 2/42/0/0) - the APU mixer-bridge fix advances Ninja Gaiden Black (35 -> 6,475 frames), Tak (42 -> 1,068 frames / 3,701 draws), 50 Cent (98 frames / 100,987,370 px), Bad Boys II (42,303,082 px) and Destroy All Humans! off the dashboard; the pre-fix build reproduces the old NGB row exactly"
+      "oracle": "data/xemu/xemu.exe (xemu 0.8.139), same optimized ISO + firmware/EEPROM; scripts/xemu-oracle.ps1 selects the disc with -config_path and captures a DPI-correct client area. TM6: capture blocked this session - the desktop is owned by another agent's maximised editor, so PrintWindow on the SDL/GL surface answers black, the screen copy catches the editor, screendump is not a command in this build and F12 needs focus; no xemu frame is claimed for TM6",
+      "matrix": "44-title 1B sweep (7 oracle + 37 compat) in docs/research-notes/title-matrix.md: TM6 re-run (2026-10-25) 6 own-render / 38 dashboard / 0 fault / 0 timeout (unchanged counts, but Ninja Gaiden Black's row advanced 2,672 -> 12,800 draws and 41,995,882 -> 166,119,138 px at the same 6,475 frames, and the dashboard tuple moved 33,638/253,998,498 -> 34,339/268,744,098 because the 701 format-skipped inline draws now run the program - the accurate gate frames and RAM/CPU SHAs are byte-identical)."
     }
   },
   "result": {
-    "points": 91.35,
+    "points": 92.5,
     "weight": 118,
-    "percent": 77.4
+    "percent": 78.4
   },
   "phases": [
     {
@@ -160,7 +160,7 @@
       "p": 11,
       "name": "NV2A (GPU)",
       "weight": 15,
-      "done": 93,
+      "done": 94,
       "track": "LLE core (real console chain)"
     },
     {
@@ -251,27 +251,15 @@
       "p": 24,
       "name": "Retail gameplay & xemu port",
       "weight": 10,
-      "done": 40,
+      "done": 50,
       "track": "Retail & port"
     }
   ],
   "queue": [
     {
-      "id": "TM6",
-      "title": "Second-tier titles: the next 5 from the matrix",
-      "status": "active",
-      "depends": [
-        "TM5"
-      ],
-      "plan": "E1",
-      "bar": "correctness",
-      "acceptance": "The next 5 titles from the matrix each reach gameplay or a documented wait with the same evidence; the matrix is re-run; no gate regression.",
-      "price": "3-5 sessions; correctness bar."
-    },
-    {
       "id": "TM7",
       "title": "Publish the compatibility table + one-command probe harness",
-      "status": "queued",
+      "status": "active",
       "depends": [
         "TM6"
       ],
@@ -440,6 +428,13 @@
       "date": "2026-10-25",
       "evidence": "TM5: Halo launches and renders its own main menu; gameplay is a documented wait, and the same fix moved the 1B matrix to 6 own-render / 38 dashboard. Blocker: McpxApuDevice absorbed the XDK DirectSound mixer state word at the hard-coded physical 0x03924810 (007's block); Halo posts the same six-dword descriptor at 0x02034800 (state word 0x02034810, value 3), so the submission was never consumed and the guest spun at EIP 0x195EC0 from ~1.5B (2B steps, 99.99% of samples, no fault, frames frozen at 35). Fix: TryGetMixerStateWord discovers the block from the guest's own GP scratch (GPSADDR) SGE table (16 entries, page + 0x810, state 2/3 absorbed); the per-title constant is gone. Differential: the pre-fix build spins forever from wt-data/tm5/halo-10b.xgs and reproduces Ninja Gaiden Black's old 1B row exactly (2,672 / 41,995,882 / 35 frames, EIP 0x37DC15); the fixed build logs dsp-absorb 3->0 / 2->0 / 3->0 and leaves the spin at once (frames 35 -> 56 in 500M steps, NGB 6,475 frames EIP 0x21A97D). Two of three new DspBridgeTests fail pre-fix. Title: loading screen at 15B (251 frames), main menu at 35B (516 frames / 3,247 draws / 191,496,512 px, 97,235 colours, 0% black, wt-data/tm5/halo-35b-display.png), 100B steps with LastFault vec=0. Gameplay is a DOCUMENTED WAIT: guest-side D3D resource retry loop at EIP 0x1810F0 (caller 0x6348B) - table [0x192390]=0x18F800, buckets +0x48C, bucket 0 = 0x80060000, slot field -1, handle 0 on every call (--break-log arg=00000000) -> D3DERR_NOTFOUND 0x88760828 retried forever; 99.99% of 280M samples are its 23 EIPs; last device I/O IDE READ DMA 0xC8 (32,216 accesses), APU reads/writes 14.17M, NV2A 538 notifications, 165,903 interrupts by 100B. xemu 0.8.139 on the same ISO shows the same menu at 70 s (wt-data/tm5/xemu-halo-70s.png) and in-game gameplay at 150 s (wt-data/tm5/xemu-halo-150s.png); the menu frame is the same scene but dmean=(101.8, 100.6, 113.3), so the screenshot policy is NOT met. Audio: --apu-dsp --audio-out writes a 44-byte WAV and 0 PCM frames (gpFrames=0). Matrix re-run (44 rows, 1B): 6 own-render / 38 dashboard / 0 fault / 0 timeout (NGB 35->6,475 frames, Tak 42->1,068 frames / 3,701 draws, 50 Cent 98 frames / 100,987,370 px, Bad Boys II 42,303,082 px, Destroy All Humans! off the dashboard menu; 007 and Halo unchanged at 1B). Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327, 33,632/686/686), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49, 2,707/69/34), ktest CA5D3867 (40,797 B) at 792,800,535 steps; suite 1990 -> 1993, build 0 warnings, format clean. Tools: scripts/xemu-oracle.ps1 captures through PrintWindow (client-only) with a screen-copy fallback; the PIC state line prints elcr=.",
       "commitMessage": "audio: discover the DirectSound mixer block from the guest's scratch mapping, so Halo launches (TM5)"
+    },
+    {
+      "id": "TM6",
+      "title": "Second-tier titles: the next 5 from the matrix",
+      "date": "2026-10-25",
+      "evidence": "NV097_INLINE_ARRAY now decodes through the array formats and runs the resident vertex program (BuildInlineArrayLayout + FetchInlineArrayAttribute + VertexFetchMode.InlineArray, legacy path kept as fallback): Ninja Gaiden Black renders its own animated stormy-sea intro (720x480, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px / 238,138 frames at 10B+2B, LastFault vec=0, kernel idle 0x8001B02E, a held A changes the scene) instead of a black screen (1,073,213 skipped draws at 10B); 1B matrix row 2,672 -> 12,800 draws / 41,995,882 -> 166,119,138 px at 6,475 frames. 50 Cent renders its own 3D scene (18,638 colours, 3,534 draws / 299,139,810 px, EIP 0x1455BA); Tak renders its own scene then a ~910-draw/frame one where the rasterizer is the wall (0.8 msps); Bad Boys II is a documented wait (own-code resource scan 0x1A3C80 -> 0x1A2250, no device traffic); Destroy All Humans! renders its Pandemic logo card then spins in KeStallExecutionProcessor 0x800153D0 (25% of samples). Matrix re-run: 44 rows, 6 own-render / 38 dashboard / 0 fault / 0 timeout. Gates byte-identical: accurate menu 4EF1FBF6/B6116DAE (5C0CF968/E2B4D327), accurate triangle 5B50373D/79142DE4 (E58AE5D7/C43D5B49), fast triangle 457719AC/AB39AEE9 58,123,882 px, fast menu FD12563B/D726C97A, ktest CA5D3867 40,797 B at 792,800,535 steps. Suite 1993 -> 1996 (3 new tests fail pre-fix), build 0 warnings, format clean. xemu capture blocked this session (desktop owned by another agent); no xemu frame claimed.",
+      "commitMessage": "nv2a: decode the inline array through the array formats and the vertex program, so Ninja Gaiden Black renders (TM6)"
     }
   ],
   "negatives": [

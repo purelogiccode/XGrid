@@ -17473,3 +17473,101 @@ although it only changed stage.
 candidate for a shared blocker (Halo, and plausibly Ninja Gaiden Black / 50 Cent
 / Bad Boys II, which are all past their XBE entry and still on the dashboard at
 1B) - probe those four at 10-40B before choosing.
+
+## 257 TM6: the inline array is a vertex buffer - Ninja Gaiden Black renders its own scene (2026-10-25, fifty-seventh session) - TM6
+
+**The blocker was a shortcut in our own NV2A.** `NV097_INLINE_ARRAY` (`0x1818`)
+accumulates raw words and is flushed at `SET_BEGIN_END`. XGrid's
+`FlushInlineDraw` treated that buffer as pre-transformed 2D vertices: the first
+attribute had to be float (type nibble 2), its first two components were the
+screen position, the second attribute was the colour, the texcoords were
+constant zero, and **the resident transform program was never run**. The
+reference does the opposite: `pgraph_gl_bind_inline_array` (xemu 0.8.139,
+`hw/xbox/nv2a/pgraph/gl/vertex.c`) lays the words out as a packed vertex buffer
+- each attribute at the current offset rounded up to its component size, the
+stride being the total - and binds it with `inline_data=true`, so the array
+formats decode it and the vertex program (or the fixed-function stage)
+transforms it, exactly like `DRAW_ARRAYS`.
+
+Ninja Gaiden Black submits D3D FVF vertices through that path: `F32x4`
+position (slot 0), `UB_D3D` colour (slot 3, four packed bytes) and `F32x2`
+texcoord (slot 9), 28 bytes per vertex, with a programmable program (mode 2,
+start 0, length 11). The old path hit its `(format & 0xF) != 2` check on slot 3
+and skipped the draw. At 10B steps the title had **1,073,213 skipped draws**
+against 2,672 executed (the dashboard's animation) and a black display.
+
+**The diagnostic that named it.** The NV2A line now carries `skipReasons=`
+(eight counters: no transform program / zero-length program / unusable
+surface or clip / non-triangle primitive / legacy-inline begin mode /
+legacy-inline vertex format / legacy-inline layout / legacy-inline clip). A 5M
+step probe from the title's 10B snapshot read `0/0/0/0/0/184/0/0`, which
+localises a black title to one check without a rebuild.
+
+**The fix (three pieces, all in `Nv2aMmio`).**
+`BuildInlineArrayLayout` computes the per-attribute byte offsets and the stride
+with the reference's alignment rule (component size 1 for `UB_*`, 2 for
+`S1`/`S32K`, 4 for `F`/`CMP`; a format whose type has no known size declines).
+`FetchInlineArrayAttribute` decodes one attribute from `_inlineWords` through
+the *same* `DecodeVertexAttribute` the array path uses - the reader is chosen by
+an `inlineSource` flag, so the six format branches exist once.
+`VertexFetchMode.InlineArray` runs it through the program path
+(`AssemblePrimitives(0, InlineArrayVertexCount)`), and `FlushDrawCommand`
+routes a non-empty inline buffer there only when `CanRunProgramDraw` says a
+program (or the opt-in fixed-function stage) can run; otherwise the legacy
+screen-space path stays as the fallback, so a title without a resident program
+renders exactly as before.
+
+**Evidence.** Ninja Gaiden Black goes from a black screen to its own animated
+stormy-sea intro: 720x480, 13,789 colours, 0.5% black, 4,252 draws /
+187,381,609 px / 238,138 frames at 10B+2B steps, `LastFault vec=0`, EIP
+`0x8001B02E` (the kernel idle loop) between frames, and a held A changes the
+scene. The three new tests (`Nv2aInlineArrayTests`) all fail on the pre-fix
+source: the packed `UB_D3D` colour decodes through the program, the 28-byte
+aligned layout is what makes vertex 1 land correctly, and a program that writes
+`oPos` from slot 1 puts the triangle where slot 1 says rather than where the
+raw first attribute would.
+
+**Gates: not one anchor moved.** The four accurate 1B legs are byte-identical -
+menu `4EF1FBF6`/`B6116DAE` (`5C0CF968`/`E2B4D327`), triangle
+`5B50373D`/`79142DE4` (`E58AE5D7`/`C43D5B49`) - and the ktest log is
+`CA5D3867` (40,797 B) at 792,800,535 steps. The menu's draw counters move
+(33,638 executed / 1,402 skipped -> 34,333 executed / 701 skipped): the 701
+inline-array draws that were skipped for their format now run through the
+program and the 701 draws the old path executed are now skipped as non-triangle
+primitives - the same pixels, so the frame and the RAM/CPU SHAs are identical.
+That the dashboard's own inline draws render bit-identically through the
+program is the differential: its program is a pass-through for the 2D overlay,
+and running it changes nothing.
+
+**The five second-tier titles (10B each, then +1-2B from the snapshot).**
+Ninja Gaiden Black is the one the fix moves (own render, above). **50 Cent**
+renders its own 3D scene (18,638-20,103 colours, 3,534 draws / 299,139,810 px,
+EIP `0x1455BA`, PIC `req=0x08` - presenting). **Tak** renders its own scene too
+(two characters at 2.7B) and then a ~910-draw/frame scene in which the software
+rasterizer is the wall: 300M steps take 362 s, 347 s of it in 3,228,625 fills
+(1.67e9 textured samples, 1.27e9 z-clipped fragments) - a performance wall, not
+a guest wait. **Bad Boys II** is a documented wait in its own code: `0x1A3C80`
+scans resource handles through `0x1A2250` (`--break-log` shows
+`arg=000300C5, 000300C6, ...`, ~92 steps per call) with no device traffic
+(IDE 7,772 accesses, APU 2,175/573, NV2A 71 notifications) and a black display;
+its shape is Halo's D3D retry loop but in the title's own manager, and it is the
+next probe target. **Destroy All Humans!** renders its own Pandemic
+developer-logo card (a black-background "FILMED IN PANDEMIC" card, 221 colours)
+and then spins in a kernel stall loop: 25% of samples at `0x800153D0`
+(`sub eax,1; jne` - `KeStallExecutionProcessor`) plus the `0x8001434A` IRQL
+helpers, with the guest still rendering (6,819 draws / 86,802,891 px / 685
+frames).
+
+**The xemu oracle is blocked this session, and that is recorded rather than
+papered over.** xemu 0.8.139 runs (GL 4.0 on the RTX 4070) but its window
+cannot be captured while another agent owns the desktop: `PrintWindow` on the
+SDL/GL surface answers black (1200/1200 samples), the screen-copy fallback
+catches the editor behind it (a dashboard control run captured the editor's
+Solution pane at xemu's client rect), `screendump` is not a command in this
+build and F12 (`ActionScreenshot`) does not reach the SDL input handler without
+focus. No xemu frame is claimed for TM6; the TM4/TM5 captures remain the only
+oracle frames.
+
+**Next (TM7):** publish the compatibility table and the one-command probe
+harness (`scripts/retail-game-probe.ps1`), with Bad Boys II's resource scan and
+Destroy All Humans!' stall loop as the first two documented rows.

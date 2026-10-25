@@ -2231,6 +2231,7 @@ internal static class Program
         Console.WriteLine($"NV2A regs:{nv2ALog}");
         Console.WriteLine(
             $"NV2A draws executed={machine.Nv2A.DrawsExecuted} skipped={machine.Nv2A.SkippedDraws} " +
+            $"skipReasons={machine.Nv2A.SkipReasonDebug} " +
             $"pixels={machine.Nv2A.DrawnPixels} textured={machine.Nv2A.TexturedPixels} clears={machine.Nv2A.ClearsExecuted} " +
             $"blended={machine.Nv2A.BlendedPixels} depth={machine.Nv2A.DepthTestedPixels} " +
             $"zclip={machine.Nv2A.ZclipClampedPixels} zclipCull={machine.Nv2A.ZclipCulledPixels} " +

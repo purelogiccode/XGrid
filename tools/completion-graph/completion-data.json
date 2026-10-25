@@ -76,7 +76,7 @@
           "p": 11,
           "name": "NV2A (GPU)",
           "weight": 15,
-          "done": 93
+          "done": 94
         },
         {
           "p": 12,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 40
+          "done": 50
         }
       ]
     }

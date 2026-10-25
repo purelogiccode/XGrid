@@ -779,6 +779,12 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
     private int _recentPresentedNext;
     private readonly uint[] _vertexFormat = new uint[16];
     private readonly uint[] _vertexArrayOffset = new uint[16];
+
+    // NV097_INLINE_ARRAY layout: the byte offset of each attribute inside one
+    // inline vertex and the vertex stride, both derived from _vertexFormat by
+    // BuildInlineArrayLayout (xemu pgraph_gl_bind_inline_array's rule).
+    private readonly int[] _inlineArrayOffset = new int[16];
+    private int _inlineArrayStride;
     private readonly uint[][] _transformProgram = new uint[MaxTransformProgramLength][];
     private readonly uint[][] _transformConstants = new uint[MaxVertexShaderConstants][];
     private uint _transformProgramStart;
@@ -1297,6 +1303,17 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
 
     /// <summary>Gets the number of draws skipped for unsupported layouts. Diagnostics.</summary>
     public ulong SkippedDraws { get; private set; }
+
+    private readonly long[] _skipReason = new long[8];
+
+    /// <summary>
+    /// Gets the per-reason skipped-draw counters, in this order: no transform
+    /// program, zero-length program, unusable surface/clip, non-triangle
+    /// primitive, legacy-inline begin mode, legacy-inline vertex format,
+    /// legacy-inline vertex layout, legacy-inline clip. Diagnostics: a black
+    /// title that submits draws is almost always one of these.
+    /// </summary>
+    public string SkipReasonDebug => string.Join('/', _skipReason);
 
     /// <summary>Gets the number of executed draws whose transform execution mode was not programmable. Diagnostics.</summary>
     public ulong NonProgrammableModeDraws { get; private set; }
@@ -4865,6 +4882,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 _beginMode != BeginEndTriangleFan && _beginMode != BeginEndQuads)
             {
                 SkippedDraws++;
+                _skipReason[4]++;
                 return;
             }
 
@@ -4883,6 +4901,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 if ((format & 0xFu) != 2u)
                 {
                     SkippedDraws++;
+                    _skipReason[5]++;
                     return;
                 }
 
@@ -4902,6 +4921,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 _inlineWords.Count % (cursor / 4) != 0)
             {
                 SkippedDraws++;
+                _skipReason[6]++;
                 return;
             }
 
@@ -4910,6 +4930,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (bytes != 4 && bytes != 2)
             {
                 SkippedDraws++;
+                _skipReason[2]++;
                 return;
             }
 
@@ -4920,6 +4941,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             if (clipW == 0 || clipH == 0 || pitch == 0)
             {
                 SkippedDraws++;
+                _skipReason[7]++;
                 return;
             }
 
@@ -5055,7 +5077,46 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             return;
         }
 
+        if (_inlineWords.Count != 0 && CanRunProgramDraw())
+        {
+            // NV097_INLINE_ARRAY is a packed vertex buffer: the reference
+            // decodes it through the same attribute formats and vertex program
+            // as a DRAW_ARRAYS (xemu pgraph_gl_bind_inline_array), so it must
+            // not take the pre-transformed screen-space shortcut below.
+            if (BuildInlineArrayLayout())
+            {
+                FlushInlineArrayDraw();
+                return;
+            }
+
+            SkippedDraws++;
+            _skipReason[5]++;
+            return;
+        }
+
         FlushInlineDraw();
+    }
+
+    /// <summary>
+    /// True when a draw can run the vertex pipeline: the reference's
+    /// programmable mode needs a resident transform program, and the
+    /// fixed-function mode needs the opt-in stage. Anything else keeps the
+    /// legacy screen-space inline path as the fallback.
+    /// </summary>
+    private bool CanRunProgramDraw()
+    {
+        if (GpuMemory is null)
+        {
+            return false;
+        }
+
+        if (FixedFunctionTransform && _transformExecutionMode == TransformModeFixed)
+        {
+            return true;
+        }
+
+        return TransformProgramLoadDebug != 0 &&
+            ActiveTransformProgramLength(ActiveTransformProgramStart()) != 0;
     }
 
     private void FlushDrawArraysDraw()
@@ -5073,11 +5134,98 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         FlushProgramDraw(VertexFetchMode.Inline);
     }
 
+    private void FlushInlineArrayDraw()
+    {
+        FlushProgramDraw(VertexFetchMode.InlineArray);
+    }
+
+    /// <summary>
+    /// Lays out the NV097_INLINE_ARRAY word stream as a packed vertex buffer,
+    /// exactly like the reference (xemu pgraph_gl_bind_inline_array): each
+    /// attribute with a non-zero count starts at the current offset rounded up
+    /// to its component size, and the vertex stride is the total rounded the
+    /// same way. Returns false when a format's component size is unknown.
+    /// </summary>
+    private bool BuildInlineArrayLayout()
+    {
+        int offset = 0;
+        for (int slot = 0; slot < _vertexFormat.Length; slot++)
+        {
+            _inlineArrayOffset[slot] = -1;
+            uint format = _vertexFormat[slot];
+            int count = (int)((format >> 4) & 0xFu);
+            if (count == 0)
+            {
+                continue;
+            }
+
+            int size = VertexComponentSize((int)(format & 0xFu));
+            if (size == 0)
+            {
+                return false;
+            }
+
+            offset = (offset + size - 1) / size * size;
+            _inlineArrayOffset[slot] = offset;
+            offset += size * count;
+            offset = (offset + size - 1) / size * size;
+        }
+
+        _inlineArrayStride = offset;
+        return offset > 0;
+    }
+
+    /// <summary>Gets the byte size of one component of an array format type.</summary>
+    private static int VertexComponentSize(int type) => type switch
+    {
+        0 or 4 => 1,
+        1 or 5 => 2,
+        2 or 6 => 4,
+        _ => 0,
+    };
+
+    private int InlineArrayVertexCount =>
+        _inlineArrayStride == 0 ? 0 : _inlineWords.Count * 4 / _inlineArrayStride;
+
+    /// <summary>Reads one byte of the inline array at a byte offset.</summary>
+    private byte ReadInlineArrayByte(uint byteOffset)
+    {
+        int word = (int)(byteOffset >> 2);
+        int shift = (int)(byteOffset & 3u) * 8;
+        return word < _inlineWords.Count ? (byte)(_inlineWords[word] >> shift) : (byte)0;
+    }
+
+    /// <summary>Reads one 16-bit value of the inline array at a byte offset.</summary>
+    private short ReadInlineArrayInt16(uint byteOffset)
+    {
+        int word = (int)(byteOffset >> 2);
+        int shift = (int)(byteOffset & 3u) * 8;
+        uint value = word < _inlineWords.Count ? _inlineWords[word] >> shift : 0u;
+        if (shift > 16 && word + 1 < _inlineWords.Count)
+        {
+            value |= _inlineWords[word + 1] << (32 - shift);
+        }
+
+        return (short)(value & 0xFFFFu);
+    }
+
+    /// <summary>
+    /// Reads one 32-bit word of the inline array at a 4-byte-aligned offset (the
+    /// layout aligns every 4-byte component to its size, so the F and CMP
+    /// decoders only ever ask for aligned words).
+    /// </summary>
+    private uint ReadInlineArrayWord(uint byteOffset)
+    {
+        int word = (int)(byteOffset >> 2);
+        return word < _inlineWords.Count ? _inlineWords[word] : 0u;
+    }
+
     private enum VertexFetchMode
     {
         Arrays,
         Elements,
         Inline,
+        InlineArray,
     }
 
     /// <summary>
@@ -5175,6 +5323,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (GpuMemory is null || (!fixedFunction && TransformProgramLoadDebug == 0))
         {
             SkippedDraws++;
+            _skipReason[0]++;
             return;
         }
 
@@ -5183,6 +5332,7 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if (!fixedFunction && programLength == 0)
         {
             SkippedDraws++;
+            _skipReason[1]++;
             return;
         }
 
@@ -5201,12 +5351,14 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
         if ((bytes != 4 && bytes != 2) || pitch == 0 || clipW == 0 || clipH == 0)
         {
             SkippedDraws++;
+            _skipReason[2]++;
             return;
         }
 
         if (_beginMode is not (BeginEndTriangles or BeginEndTriangleStrip or BeginEndTriangleFan or BeginEndQuads))
         {
             SkippedDraws++;
+            _skipReason[3]++;
             return;
         }
 
@@ -5314,6 +5466,9 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             case VertexFetchMode.Inline:
                 AssemblePrimitives(0, InlineVertexCount);
                 break;
+            case VertexFetchMode.InlineArray:
+                AssemblePrimitives(0, InlineArrayVertexCount);
+                break;
             default:
                 AssemblePrimitives(0, elements.Length);
                 break;
@@ -5385,6 +5540,10 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                 if (mode == VertexFetchMode.Inline)
                 {
                     CopyInlineVertex(index, slot, inputs[slot]);
+                }
+                else if (mode == VertexFetchMode.InlineArray)
+                {
+                    FetchInlineArrayAttribute(slot, index, inputs[slot]);
                 }
                 else
                 {
@@ -5570,45 +5729,81 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
             address += (uint)(index * stride);
         }
 
+        DecodeVertexAttribute(type, count, address, inlineSource: false, destination);
+    }
+
+    /// <summary>
+    /// Fetches one attribute of an NV097_INLINE_ARRAY vertex. The word stream is
+    /// a packed vertex buffer whose per-attribute offsets follow the array
+    /// formats (see BuildInlineArrayLayout), so the decode is the same one the
+    /// array path uses, only sourced from the inline words.
+    /// </summary>
+    private void FetchInlineArrayAttribute(int slot, int index, float[] destination)
+    {
+        float[] inline = _inlineValues[slot];
+        destination[0] = inline[0];
+        destination[1] = inline[1];
+        destination[2] = inline[2];
+        destination[3] = inline[3];
+
+        uint format = _vertexFormat[slot];
+        int count = (int)((format >> 4) & 0xFu);
+        int offset = _inlineArrayOffset[slot];
+        if (count == 0 || offset < 0)
+        {
+            return;
+        }
+
+        uint address = (uint)(offset + (index * _inlineArrayStride));
+        DecodeVertexAttribute((int)(format & 0xFu), count, address, inlineSource: true, destination);
+    }
+
+    private void DecodeVertexAttribute(
+        int type, int count, uint address, bool inlineSource, float[] destination)
+    {
+        byte Byte(uint at) => inlineSource ? ReadInlineArrayByte(at) : ReadByte(at);
+        short Int16(uint at) => inlineSource ? ReadInlineArrayInt16(at) : ReadInt16(at);
+        uint Word(uint at) => inlineSource ? ReadInlineArrayWord(at) : ReadGpu(at);
+
         switch (type)
         {
             case 0:
-                destination[0] = ReadByte(address + 2) / 255f;
-                destination[1] = ReadByte(address + 1) / 255f;
-                destination[2] = ReadByte(address) / 255f;
-                destination[3] = ReadByte(address + 3) / 255f;
+                destination[0] = Byte(address + 2) / 255f;
+                destination[1] = Byte(address + 1) / 255f;
+                destination[2] = Byte(address) / 255f;
+                destination[3] = Byte(address + 3) / 255f;
                 break;
             case 1:
                 for (int i = 0; i < count; i++)
                 {
-                    destination[i] = Math.Max(-1f, ReadInt16(address + (uint)(i * 2)) / 32767f);
+                    destination[i] = Math.Max(-1f, Int16(address + (uint)(i * 2)) / 32767f);
                 }
 
                 break;
             case 2:
                 for (int i = 0; i < count; i++)
                 {
-                    destination[i] = BitConverter.Int32BitsToSingle((int)ReadGpu(address + (uint)(i * 4)));
+                    destination[i] = BitConverter.Int32BitsToSingle((int)Word(address + (uint)(i * 4)));
                 }
 
                 break;
             case 4:
                 for (int i = 0; i < count; i++)
                 {
-                    destination[i] = ReadByte(address + (uint)i) / 255f;
+                    destination[i] = Byte(address + (uint)i) / 255f;
                 }
 
                 break;
             case 5:
                 for (int i = 0; i < count; i++)
                 {
-                    destination[i] = ReadInt16(address + (uint)(i * 2));
+                    destination[i] = Int16(address + (uint)(i * 2));
                 }
 
                 break;
             case 6:
                 {
-                    int packed = (int)ReadGpu(address);
+                    int packed = (int)Word(address);
                     int x = SignExtend(packed & 0x7FF, 11);
                     int y = SignExtend((packed >> 11) & 0x7FF, 11);
                     int z = SignExtend((packed >> 22) & 0x3FF, 10);
@@ -5618,7 +5813,6 @@ public sealed class Nv2AMmio : IMmioDevice, IXboxDevice, ISnapshotable
                     destination[3] = 1f;
                     break;
                 }
-
         }
     }
 

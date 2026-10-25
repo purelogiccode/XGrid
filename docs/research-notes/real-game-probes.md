@@ -637,3 +637,137 @@ Not one anchor moved: accurate menu `4EF1FBF6` / `B6116DAE`
 (`5C0CF968`/`E2B4D327`, 33,632/686/686), accurate triangle `5B50373D` /
 `79142DE4` (`E58AE5D7`/`C43D5B49`, 2,707/69/34), ktest `CA5D3867` (40,797 B) at
 792,800,535 steps. Suite 1990 -> 1993, build 0 warnings, format clean.
+
+## TM6 outcome (2026-10-25)
+
+**The five second-tier titles were probed at 10B steps each, and the shared
+blocker was ours: `NV097_INLINE_ARRAY` was a screen-space shortcut.** Every
+inline-array draw whose vertex format was not plain float was skipped, and the
+draws that did run bypassed the vertex program entirely - so a title that packs
+its vertices the D3D way (float position + `UB_D3D` colour) rendered nothing.
+Ninja Gaiden Black was exactly that title: black screen, 1,073,213 skipped
+draws, and an endless re-initialisation loop in its own code.
+
+### The blocker: the inline array is a vertex buffer, not screen-space quads
+
+`FlushInlineDraw` treated the `NV097_INLINE_ARRAY` (`0x1818`) word stream as
+pre-transformed 2D vertices: the first attribute had to be `F32` (type nibble
+2), it was read as the screen position, the second attribute as the colour, and
+the resident transform program was never run. The reference does none of that:
+`pgraph_gl_bind_inline_array` lays the words out as a packed vertex buffer -
+each attribute at the current offset rounded up to its component size, stride
+= the total - and binds it through `pgraph_gl_bind_vertex_attributes` with
+`inline_data=true`, i.e. the same formats and the same vertex program as
+`DRAW_ARRAYS`.
+
+Ninja Gaiden Black's inline vertices are `F32x4` position (slot 0), `UB_D3D`
+colour (slot 3, four packed bytes) and `F32x2` texcoord (slot 9) - a 28-byte
+D3D FVF vertex - with a programmable vertex program (mode 2, program start 0,
+length 11). The old path hit its `(format & 0xF) != 2` check on slot 3 and
+skipped the draw; at 10B that was **1,073,213 skipped draws** against 2,672
+executed (the dashboard's boot animation) and a black display.
+
+The new `skipReasons=` diagnostic on the NV2A line is what named it: the eight
+counters split the skip sites (no program / zero-length program / surface /
+primitive / legacy-inline begin / legacy-inline format / legacy-inline layout /
+legacy-inline clip). Ninja Gaiden Black read `0/0/0/0/0/184/0/0` on a 5M-step
+probe from its 10B snapshot.
+
+### The fix
+
+`FlushDrawCommand` now sends a non-empty `_inlineWords` buffer down the program
+path when one can run (`CanRunProgramDraw`: a resident program, or the opt-in
+fixed-function stage), through the new `VertexFetchMode.InlineArray`:
+
+- `BuildInlineArrayLayout` computes the per-attribute byte offsets and the
+  vertex stride with the reference's alignment rule (component size 1 for
+  `UB_*`, 2 for `S1`/`S32K`, 4 for `F`/`CMP`).
+- `FetchInlineArrayAttribute` decodes one attribute from the inline words with
+  the same `DecodeVertexAttribute` the array path uses (the reader is selected
+  by an `inlineSource` flag, so there is one decode, not two).
+- The legacy screen-space path stays as the fallback for draws that cannot run
+  a program, so a title without a resident program behaves exactly as before.
+
+Three tests pin it (`Nv2aInlineArrayTests`, all three fail on the pre-fix
+source): the packed `UB_D3D` colour decodes through the program, the 28-byte
+aligned layout is what makes vertex 1 land where it should, and a program that
+writes `oPos` from slot 1 puts the triangle where slot 1 says rather than where
+the raw first attribute would.
+
+### The five titles (10B snapshot, then +1-2B from it)
+
+| title | before (10B) | after | classification |
+|---|---|---|---|
+| Ninja Gaiden Black | black, 2,672 draws, 236k flips, EIP `0x1CA813` | **own render**: 720x480 stormy-sea intro scene, 13,789 colours, 0.5% black, 4,252 draws / 187,381,609 px, EIP `0x8001B02E` (kernel idle) | own render + documented idle wait |
+| Nickelodeon Tak | own render at 2.7B (two characters, 640x480) | unchanged | own render; then a ~910-draw/frame 3D scene where the software rasterizer runs at **0.8 msps** (1.27e9 z-clipped fragments per 300M steps) |
+| 50 Cent | own render (3D scene with a character) | 18,638-20,103 colours, 3,534 draws / 299,139,810 px, EIP `0x1455BA` | own render |
+| Bad Boys II | black, 2,695 draws, 57 frames | unchanged | documented wait: own-code resource-handle scan |
+| Destroy All Humans! | dark (67-71 colours, diagonal edge) | **own render**: the Pandemic developer-logo card (221 colours, black by design), 6,819 draws / 86,802,891 px / 685 frames | own render + kernel stall wait |
+
+**Ninja Gaiden Black.** The fix moves it from "no pixels" to its own animated
+scene: at 10B+2B steps it presents 238,138 frames of the stormy-sea intro
+(`wt-data/tm6/gb-12b-display.png`), the scene animates (the waves move between
+probes) and a held A changes it (`gb-11b-pad-display.png`). `LastFault vec=0`.
+Between frames the CPU sits in the **kernel idle loop** (`0x8001B02E`,
+`sti; nop; nop; cli; je`), the last device I/O is IDE READ DMA `0xC8` (18,980
+accesses) with the APU at 11,820 reads / 1,109 writes and NV2A 476,255
+notifications - a guest that renders and then waits, not a wedge. The residual
+rendering defect is a dithered dot pattern over parts of the sky and water.
+
+**Nickelodeon Tak.** It renders its own scene (two characters on a green field,
+`wt-data/tm6/tak-27b-display.png`) and then reaches a much heavier 3D scene:
+300M steps from 2.7B take 362 s because the software rasterizer spends **347 s**
+in 3,228,625 fills (1.67e9 textured samples, 1.27e9 z-clipped fragments,
+46,395 draws, 51 frames). That is a *performance* wall, not a guest wait, and
+it is reported as such: no fault, no park, the guest keeps drawing.
+
+**50 Cent.** A 3D scene with a character (`wt-data/tm6/50cent-deep-display.png`,
+18,638 colours, 0.0% black) at 11B steps with 3,534 draws / 299,139,810 px /
+721 frames, EIP `0x1455BA` in its render loop, PIC `req=0x08` (NV2A IRQ3
+pending, i.e. actively presenting), IDE READ DMA `0xCA` 43,796 accesses.
+
+**Bad Boys II.** Black display, 2,695 draws / 57 frames, no fault, and a
+resource-handle scan in its own code: `0x1A3C80` calls `0x1A2250` with a handle
+that increments every iteration (`--break-log 0x1A2250` shows
+`arg=000300C5, 000300C6, 000300C7, ...`, ~92 steps per call); `0x1A2250`
+selects a bucket with `(handle >> 16) & 0xF` and returns `D3DERR`-style failure
+when the slot is empty. `--eip-hist 200` over 2B steps puts every sample in the
+`0x1A3C80-0x1A3E60` scan. Last device I/O: IDE `0xC8` 7,772 accesses, APU 2,175
+reads / 573 writes, NV2A 71 notifications - the guest is not waiting on a
+device. **This is the next probe target** (it has the same shape as Halo's D3D
+resource retry loop, but in the title's own resource manager).
+
+**Destroy All Humans!.** It renders its own **Pandemic developer-logo card**
+(`wt-data/tm6/dah-deep-display.png`: "FILMED IN PANDEMIC", 221 colours, 55.5%
+black, mean 8.2 - a black-background logo card, which is why the first look read
+as a dark frame), and the CPU is in **kernel** code:
+`--eip-hist 200` over 2B steps puts 25% of samples at `0x800153D0`
+(`sub eax,1; jne` - the kernel's `KeStallExecutionProcessor` delay loop) and
+~3.4% each across `0x8001434A-0x80014383` (the `mov al,[0x80035C00];
+mov byte [0x80035C00],n; ret` IRQL helpers). 6,819 draws / 86,802,891 px /
+685 frames, IDE `0xC8` 12,344 accesses, APU 6,667 reads / 18,262 writes, NV2A
+699 notifications. A driver stall loop with the guest still rendering.
+
+### The xemu comparison is blocked this session
+
+xemu 0.8.139 boots on this host (GL 4.0 on the RTX 4070) but **cannot be
+captured**: the desktop is owned by another agent's maximised editor, so
+`PrintWindow` on xemu's SDL/GL surface answers black (1200/1200 samples) and the
+screen-copy fallback catches the editor instead (a dashboard control run
+captured the editor's Solution pane at the xemu client rect). `screendump` is
+not a QEMU command in this build (`unknown command: 'screendump'`) and F12
+(`ActionScreenshot`) does not reach the SDL input handler without focus.
+**No xemu frame is claimed for TM6**; the per-title evidence above is XGrid-side
+(EIP, wait object, device I/O) and the TM4/TM5 xemu captures remain the only
+oracle frames on record.
+
+### Gates
+
+Not one anchor moved. Accurate menu `4EF1FBF6` / `B6116DAE`
+(`5C0CF968`/`E2B4D327`), accurate triangle `5B50373D` / `79142DE4`
+(`E58AE5D7`/`C43D5B49`), ktest `CA5D3867` (40,797 B) at 792,800,535 steps. The
+menu's draw counters move (33,638 executed / 1,402 skipped -> 34,333 executed /
+701 skipped) because the 701 inline-array draws that were skipped for their
+format now run through the program, and 701 draws the old path executed are now
+skipped as non-triangle primitives - the same pixels, different bookkeeping, so
+the frame and the RAM/CPU SHAs are byte-identical.
