@@ -303,6 +303,13 @@ re-presents it (decisions §253).
    Ninja Gaiden Black `0x30D63D` at 660M): one JIT correctness bug across **3 of
    the 7 oracle titles** - the matrix's ">=3 titles" threshold - with accurate
    mode clean. This leads TM3 by the matrix rule.
+   **The Halo repro is deterministic** (verified twice on the post-TM2 build):
+   the command in `wt-data/title-matrix-1b-fixed/*Halo*-8ce45d.json` faults at
+   exactly **604,260,882 steps, `vec=6`, EIP `0x180AEC`**, 2,672 draws / 35
+   frames, every counter identical across runs. TM0's "nondeterministic" note
+   was a different flag set; `--jit --jit-threshold 16 --jit-spin --jit-raw` is
+   stable. Start TM3 with `XGRID_BLOCK_TRACE=1` + `XGRID_RAW_DUMP=1` around that
+   step and compare the IL and raw blocks at the faulting head.
 
 ## What to do next (TM3)
 
