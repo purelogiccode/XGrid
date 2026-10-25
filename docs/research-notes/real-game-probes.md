@@ -771,3 +771,122 @@ menu's draw counters move (33,638 executed / 1,402 skipped -> 34,333 executed /
 format now run through the program, and 701 draws the old path executed are now
 skipped as non-triangle primitives - the same pixels, different bookkeeping, so
 the frame and the RAM/CPU SHAs are byte-identical.
+
+## TM7 outcome (2026-10-25)
+
+**One command per retail row, and the xemu oracle came back.** TM7 added no
+emulator behaviour: it published the M-T evidence as a reproducible table and
+built the harness that produces it. The one hard part of the task - capturing
+xemu while another agent owns the desktop - resolved itself this session (the
+desktop was free), so **six of the seven rows now carry a real xemu 0.8.139
+frame** instead of the TM6 `blocked` note.
+
+### The harness
+
+`scripts/retail-game-probe.ps1 <iso>` wraps the two halves that already existed
+and adds the comparison:
+
+| leg | script | what it contributes |
+|---|---|---|
+| XGrid | `scripts/title-probe.ps1` (extended with `-LoadState` / `-FramePath` / `-StatePath`) | EIP, fault vector, NV2A counters, top PGRAPH methods, engine split, a `.xgs` anchor and the `--frame-display` export |
+| xemu | `scripts/xemu-oracle.ps1` | the 0.8.139 window capture (disc selected through `-config_path`) |
+| compare | `scripts/frame-compare.py` | per-channel `dmean`, colour count, black coverage, `--crop-top` |
+
+Two facts it encodes, both learned the hard way in this session:
+
+- **A `.xgs` records the HDD path it was taken with and the loader refuses a
+  mismatch** (`IDE HDD path mismatch on snapshot load (snapshot='wt-data\chain-199l\hdd.qcow2',
+  live='C:\...\hdd-clean.qcow2')`). The harness reads the image out of the
+  snapshot, which is what makes the TM4/TM5/TM6 anchors reusable; `-Hdd` is only
+  for a boot-from-scratch run. The comparison is string-exact, so the path must
+  be passed to the CLI unchanged (resolving it to an absolute path breaks it).
+- **`--load-state` resets the step counter**, so `-Steps` means "steps after the
+  anchor" and a pad-script offset restarts at 0.
+
+The harness **fails soft**: a blocked xemu leg is a recorded finding
+(`xemu: blocked - <reason>`), the run still exits 0 with the XGrid evidence, and
+no comparison is fabricated. The path was exercised end to end:
+`-XemuIsoPath wt-data\does-not-exist.iso` produced
+`xemu: blocked - Missing ISO: wt-data\does-not-exist.iso`, `compare=n/a`, exit 0,
+with the full XGrid row written.
+
+### The capture guard (a real failure, caught and fixed)
+
+The first NGB attempt at 45 s "captured" a frame - and it was a **Chrome
+window**: `PrintWindow` had answered black (the SDL/GL surface was still
+starting) and the screen-copy fallback photographed whatever was in front of
+xemu. TM6's note ("the screen copy catches the editor") was the same failure
+mode. `scripts/xemu-oracle.ps1` now:
+
+1. retries `PrintWindow` up to five times (800 ms apart, re-asserting
+   topmost/foreground), because a GL surface can answer black transiently, and
+2. only uses the screen copy when `GetForegroundWindow()` **is** the xemu
+   window; otherwise it throws `capture contended: ...` and no frame is claimed.
+
+The bad file was deleted and NGB was re-captured. A black or 2-colour capture is
+also rejected by the harness (`capture is blank ...`).
+
+### The seven rows
+
+All seven were re-run from their anchors in this session. Frame statistics are
+native size; the policy numbers are `frame-compare` at 320x240 with
+`--crop-top 0.25`.
+
+| title | XGrid (anchor, EIP) | XGrid frame | xemu 0.8.139 | policy |
+|---|---|---|---|---|
+| 007 | 100B anchor + 1M, `0x0001FC9E` | 48,208 colours, 6.8% black, mean (78.7, 65.5, 45.3) | 150 s, same driving scene, 63,994 colours, 6.8% black | **PASS** `dmean=(18.0, 22.6, 14.6)` |
+| Halo | 35B anchor + 1M, `0x00063487` | 97,235 colours, 0% black, mean (153.5, 157.7, 176.0) | 70 s, same menu, 72,650 colours, 0% black | **FAIL** `dmean=(101.6, 100.4, 113.1)` |
+| NGB | 10B anchor + 2B, `0x8001B047` | 13,266 colours, 0.5% black, mean (86.6, 93.3, 89.1) | 52 s, same stormy-sea intro, 1,356 colours, 0% black | **FAIL** colour count (x9.6); `dmean=(7.7, 8.5, 11.4)` |
+| 50 Cent | 10B anchor + 1B, `0x00132FEF` | 18,638 colours, 0% black, mean (75.2, 72.9, 61.8) | 90 s, same cinematic sequence, different shot, 7,439 colours, 21.3% black | **n/a** `dmean=(28.4, 20.7, 18.7)` |
+| Tak | 27B anchor + 100M, `0x800198AE` | 6,622 colours, 0% black, mean (5.0, 30.6, 15.6) | 150 s, **title screen** (cannot be driven), 89,049 colours, 1.4% black | **n/a** |
+| Bad Boys II | 10B anchor + 1B, `0x001A3DEA` | **1 colour, 100% black** | 90 s, its own cutscene, 77,722 colours, 33.0% black | **FAIL** (documented wait, quantified) |
+| DAH | 10B anchor + 1B, `0x00218674` | 235 colours, 55.5% black, mean (5.5, 5.5, 5.5) | 90 s, **title screen**, 115,728 colours, 0% black | **n/a** |
+
+Every row reproduced its TM4/TM5/TM6 stage and counters, so the anchors are
+sound: 007 134,004 draws / 1,005,989,482 px / 6,478 frames, Halo 3,247 /
+191,496,512 / 516, NGB 4,251 / 187,315,817 / 238,137, 50 Cent 3,534 /
+299,139,810 / 721, Bad Boys II 2,695 / 49,061,482 / 57, Tak 13,691 / 42,516,749
+/ 14,503, DAH 6,785 / 81,580,491 / 651. No fault on any row (`LastFault vec=0`).
+
+### What the oracle says (the two findings)
+
+1. **Ninja Gaiden Black is the second same-scene match, on the means.** xemu's
+   52 s intro frame and XGrid's 12B frame agree within **11/255** on every
+   channel - the strongest agreement after 007 - and both are the same stormy-sea
+   shot. The row still **fails** the policy, on the colour count: after the
+   320x240 normalisation XGrid presents **12,913** colours where xemu has
+   **1,351** (native: 13,266 vs 1,356). The surplus is the dithered dot
+   pattern TM6 saw over the sky and water: the intro movie is a low-colour
+   gradient, and XGrid's dither invents thousands of distinct colours. That turns
+   a visual impression into a named, measurable rendering defect (a dither/quantise
+   question in the fragment path), and it is the first row where the *means* say
+   "correct" while the *colour count* says "not yet".
+2. **Bad Boys II's black display is now quantified.** xemu at 90 s shows its own
+   cutscene (77,722 colours, 33% black); XGrid presents one colour (100% black)
+   while scanning resource handles. The "documented wait" has an oracle frame
+   behind it now, which is what the row needed.
+
+Halo's failure is **reproduced, not new**: `dmean=(101.6, 100.4, 113.1)` against
+TM5's `(101.8, 100.6, 113.3)` - XGrid's menu background is far brighter than
+xemu's. 007 is byte-stable across sessions: `dmean=(18.0, 22.6, 14.6)`, exactly
+the TM4 numbers, because the row resumes at the 100B anchor and runs 1M steps,
+which keeps the animation phase.
+
+### The limits this table states honestly
+
+- **xemu cannot be driven on this host** (pad input is SDL-gamepad only and the
+  configured GUID is absent), so it sits on title screens for Tak, DAH and
+  NGB@70 s. Those rows are `n/a`, not failures: XGrid is in-game while the
+  oracle is on a menu, so there is no comparable scene to score.
+- **A capture is a window screenshot**, never a framebuffer dump: the policy is
+  mean / colour count / coverage, never pixel-exact.
+- **The step anchor is part of the row.** 007 at 102B (`+2B`) reads
+  `dmean=(33.0, 32.6, 20.2)` - a *different* moment of the same scene - while the
+  same anchor plus 1M reads 18.0/22.6/14.6. An animated title measured at a
+  different step is a different picture; the row names its anchor for that reason.
+
+### Gates
+
+No emulator source changed (scripts + docs only), so every anchor is untouched by
+construction; the four accurate 1B legs and the ktest log were still re-run and
+are byte-identical (see the session close).

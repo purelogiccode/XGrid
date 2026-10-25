@@ -17571,3 +17571,100 @@ oracle frames.
 **Next (TM7):** publish the compatibility table and the one-command probe
 harness (`scripts/retail-game-probe.ps1`), with Bad Boys II's resource scan and
 Destroy All Humans!' stall loop as the first two documented rows.
+
+## 258 TM7: one command per retail row - the probe harness, the seven-title table and a live xemu oracle (2026-10-25, fifty-eighth session) - TM7
+
+**What this task is.** TM7 publishes the M-T evidence: a single command that runs
+both legs of a retail row and writes the frames, the state report and the policy
+comparison, plus the refreshed `docs/compatibility.md` table. **No emulator
+source changed** - this is tooling and documentation, which is why every gate
+anchor is untouched by construction (§258f).
+
+**258a - the harness wraps, it does not rewrite.** `scripts/retail-game-probe.ps1`
+calls `scripts/title-probe.ps1` (the XGrid leg), `scripts/xemu-oracle.ps1` (the
+xemu leg) and `scripts/frame-compare.py` (the policy maths). `title-probe.ps1`
+gained three backward-compatible parameters: `-LoadState` (`--load-state`),
+`-FramePath` (`--frame-display`, the image a retail row compares) and `-StatePath`
+(where the anchor is written). The harness writes `<slug>.bmp`/`.png` (XGrid
+frame), `xemu-<slug>-<n>s.png` (oracle), `<slug>.json` (the row),
+`<slug>.md` (the report), `<slug>-xgrid.json`/`.md` (raw probe: top PGRAPH
+methods, hot EIPs, engine split), the log and the anchor, and prints one `PROBE`
+line with `xemu=captured|blocked|skipped` and `compare=dmean=(...) policy=...`.
+
+**258b - two facts the harness had to encode, both found by failing.**
+
+- **A `.xgs` records its HDD path and the loader compares it as a string.**
+  Loading `wt-data/tm4/007-100b.xgs` with `-Hdd wt-data/title-matrix-1b/hdd-clean.qcow2`
+  fails with `IDE HDD path mismatch on snapshot load (snapshot='wt-data\chain-199l\hdd.qcow2',
+  live='C:\...\hdd-clean.qcow2')`, and resolving the path to an absolute one
+  fails the same way (the stored value is relative). The harness therefore reads
+  the `*.qcow2` path out of the snapshot (scanning the device-state tail in 8 MB
+  chunks) and passes it through unchanged; `-Hdd` is only for a
+  boot-from-scratch run. This is what makes the TM4/TM5/TM6 anchors reusable
+  instead of replaying 10B-100B steps per probe.
+- **`--load-state` resets the step counter**, so `-Steps` means "steps after the
+  anchor" and a pad-script offset restarts at 0.
+
+**258c - the oracle came back, and the guard that keeps it honest.** The desktop
+was free this session, so xemu 0.8.139 was captured for six of the seven titles.
+The first NGB attempt (45 s) produced a **Chrome window**: `PrintWindow` answered
+black while the SDL/GL surface was still starting, and the screen-copy fallback
+photographed whatever was in front of xemu - TM6's "the screen copy catches the
+editor" failure, reproduced. `scripts/xemu-oracle.ps1` now (1) retries
+`PrintWindow` five times, 800 ms apart, re-asserting topmost/foreground, and
+(2) uses the screen copy **only** when `GetForegroundWindow()` is the xemu
+window, otherwise it throws `capture contended: ...` and no frame is claimed. The
+harness additionally rejects a capture that is blank (<= 2 colours or >= 99%
+black). The bad file was deleted and the row re-captured.
+
+**258d - the seven rows (all re-run from their anchors).** Every row reproduced
+its TM4/TM5/TM6 stage, counters and no-fault state, so the anchors are sound:
+
+| title | anchor + steps | draws / px / frames | EIP | xemu | policy |
+|---|---|---|---|---|---|
+| 007 | 100B + 1M | 134,004 / 1,005,989,482 / 6,478 | `0x0001FC9E` | 150 s, same scene | **PASS** `dmean=(18.0, 22.6, 14.6)` |
+| Halo | 35B + 1M | 3,247 / 191,496,512 / 516 | `0x00063487` | 70 s, same menu | **FAIL** `(101.6, 100.4, 113.1)` |
+| NGB | 10B + 2B | 4,251 / 187,315,817 / 238,137 | `0x8001B047` | 52 s, same intro | **FAIL** colour count x9.6, `dmean=(7.7, 8.5, 11.4)` |
+| 50 Cent | 10B + 1B | 3,534 / 299,139,810 / 721 | `0x00132FEF` | 90 s, different shot | **n/a** `(28.4, 20.7, 18.7)` |
+| Tak | 27B + 100M | 13,691 / 42,516,749 / 14,503 | `0x800198AE` | 150 s, title screen | **n/a** |
+| Bad Boys II | 10B + 1B | 2,695 / 49,061,482 / 57 | `0x001A3DEA` | 90 s, own cutscene | **FAIL** 100% vs 20.5% black |
+| DAH | 10B + 1B | 6,785 / 81,580,491 / 651 | `0x00218674` | 90 s, title screen | **n/a** |
+
+**258e - the two findings, and the policy's first discriminating verdict.**
+
+1. **Ninja Gaiden Black is the second same-scene match on the means and a
+   measured failure on the colour count.** xemu's 52 s intro frame and XGrid's
+   12B frame agree within **11/255** on every channel - the strongest agreement
+   after 007 - and both show the same stormy-sea shot. The row fails because the
+   colour count is **12,913 vs 1,351** (native 13,266 vs 1,356): the intro is a
+   low-colour gradient and XGrid's **dither pattern** (TM6's "dithered dot
+   pattern over parts of the sky and water") invents thousands of distinct
+   colours. This is the first time the three-part policy separates *mean
+   correctness* from *colour depth*, and it names the residual defect precisely:
+   a dither/quantise question in the fragment path, not a geometry or transform
+   error. It is the strongest next fidelity item the retail corpus has produced.
+2. **Bad Boys II's black display is quantified.** xemu at 90 s renders its own
+   cutscene (77,722 colours, 33.0% black, mean (62.1, 51.5, 44.3)); XGrid
+   presents **one colour** (100% black) while scanning resource handles. The
+   "documented wait" now has an oracle frame behind it.
+
+Halo's failure is **reproduced, not new** (`101.6/100.4/113.1` vs TM5's
+`101.8/100.6/113.3`), and 007 is byte-stable across sessions
+(`18.0/22.6/14.6`), because resuming at the 100B anchor and running 1M steps
+keeps the animation phase. The phase sensitivity is itself measured: 007 at
+102B (`+2B`) reads `(33.0, 32.6, 20.2)` - the same scene, a different moment.
+
+**258f - limits stated, not papered over.** xemu cannot be driven on this host
+(pad input is SDL-gamepad only), so it sits on title screens for Tak, DAH and
+NGB@70 s; those rows are `n/a`, never a pass and never a fail. A capture is a
+window screenshot, so the policy is mean / colour count / coverage, never
+pixel-exact. The step anchor is part of the row's identity.
+
+**258g - gates.** No `src/` change: scripts and docs only. The four accurate 1B
+legs and the ktest log were still re-run and are byte-identical (session close),
+so TM7 moved no anchor and needed no re-baseline. Suite count unchanged.
+
+**Next (TM8):** the first targeted xemu port - default `hw/xbox/mcpx/apu/vp.c`
+plus the AC'97 codec, since audio is the one silent part of the seven-part
+definition. The NGB dither finding is the first candidate for a fidelity task
+after TM8.

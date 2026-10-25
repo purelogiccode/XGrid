@@ -1,6 +1,9 @@
 # XGrid compatibility matrix (Track E)
 
-Status: **every row re-verified 2026-10-24 in the G3 consolidated re-baseline**
+Status: **the retail rows were re-published 2026-10-25 by TM7** (seven rows, one
+command each, with a live xemu 0.8.139 oracle column - decisions §258), and the
+corpus rows were last re-verified **2026-10-24 in the G3 consolidated
+re-baseline**
 (decisions §252: one Release build, both 1B fast legs, all four accurate
 goldens, all 22 rows, the ktest smoke and the package gate in one commit). Every
 documented `ram`/`cpu` pair, frame/scanout/display SHA and counter set
@@ -46,81 +49,129 @@ stay in `docs/development-direction.md` §6 and `docs/research-notes/next-sessio
 
 ### Local real-game probes (the M-T lead acceptance)
 
-**2026-10-25:** retail gameplay is the lead milestone (M-T/M-G). The oracle media
-is the **optimized XDVDFS set** of **seven ISOs** at `H:\Tests\XBOXReady` - every
-one of them is a row of the 1B matrix below, and xemu 0.8.139 boots the same
-images with the same firmware/EEPROM. **xemu 0.8.139 cannot boot the 37
-full-disc Redump ISOs at `H:\Tests\XBOXTest`**, so those are XGrid-only benchmark
-media and never the oracle. `D:\Samples\XBOXReady` is gone.
+**2026-10-25 (TM7): one command per row.** Retail gameplay is the lead milestone
+(M-T/M-G). The oracle media is the **optimized XDVDFS set** of **seven ISOs** at
+`H:\Tests\XBOXReady` - every one of them is a row of the 1B matrix below, and xemu
+0.8.139 boots the same images with the same firmware/EEPROM. **xemu 0.8.139
+cannot boot the 37 full-disc Redump ISOs at `H:\Tests\XBOXTest`**, so those are
+XGrid-only benchmark media and never the oracle. `D:\Samples\XBOXReady` is gone.
 
-| # | optimized ISO | size | 1B matrix stage | note |
-|---:|---|---:|---|---|
-| 1 | `007 - Agent Under Fire [NTSC-U][Redump]` | 1.6 GB | own-render | **PLAYABLE** (TM4) - 100B steps, no fault, gameplay frame, xemu frame match |
-| 2 | `Nickelodeon Tak - The Great Juju Challenge (Europe)` | 2.5 GB | own-render | draws its own content (2,675 draws / 42 frames), EIP `0x39CE8B` |
-| 3 | `Halo - Combat Evolved (USA) (v1.09) (Redump)` | 3.5 GB | own-render | **own main menu** (TM5) - 35B steps / 516 frames; gameplay waits on a guest D3D resource loop |
-| 4 | `Ninja Gaiden Black (USA) (En,Ja)` | 6.0 GB | dashboard | own XBE code at EIP `0x37DC15` |
-| 5 | `50 Cent - Bulletproof (France)` | 5.6 GB | dashboard | own XBE code at EIP `0x26FB54` |
-| 6 | `Bad Boys II (Germany)` | 1.9 GB | dashboard | own XBE code at EIP `0x281D05` |
-| 7 | `Destroy All Humans! (Germany)` | 2.2 GB | dashboard | kernel EIP `0x8001434F` at 1B |
+`scripts/retail-game-probe.ps1 <iso>` is the harness TM7 landed: it runs the
+XGrid leg (`scripts/title-probe.ps1`), runs the xemu 0.8.139 leg
+(`scripts/xemu-oracle.ps1`), compares the two frames under the screenshot policy
+(`scripts/frame-compare.py`) and writes one directory per row. **It fails soft**:
+when xemu cannot be captured the row records `xemu: blocked - <reason>` and the
+run still exits 0 with the XGrid evidence - a comparison is never fabricated.
 
-`own-render` means the NV2A draw/pixel shape is unique (the title took the
-display); `dashboard` means the row still matches the shared dashboard
-animation, and the EIP says whether the title's own code is executing.
+```powershell
+# one row, resumed at a saved anchor (the step anchor is part of the row)
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\<title>.iso" `
+    -LoadState wt-data\tm6\ngb-10b.xgs -Steps 2000000000 `
+    -OutDir wt-data\tm7\ngb -Label ngb -Scene "stormy-sea intro"
 
-- **007 - Agent Under Fire [NTSC-U][Redump]**: boots; the 5B probe is still the
-  dashboard animation (201 flips, 2,672 draws, no fault). The **20B snapshot**
-  presents the game's own Harrier/carrier intro scene
-  (`wt-data/xgs-20b-display.png`, frame `2666CFBC...`, 640x480, mean
-  (52.9, 39.7, 56.3), 38,350 colours, 7.8% black), so the title has launched
-  and is rendering its own content; the launch happens between 10B and 20B.
-  **TM2 (2026-10-24):** the level-interrupt fix unblocked the APU ISR. At **50B**
-  with the dashboard pad script the guest presents **its own 007 Agent Under Fire
-  title screen** (`wt-data/007-50b-fixed-display.png`: 640x480, 21,186 colours,
-  49.7% black, EIP `0x1FD0E` in the XBE `.text`, 1,914 flips, no fault). With
-  the **A press at 20B** the guest reaches the game's own render (79,581 draws /
-  603,250,282 px / 2,594 frames) and then faults at **26.5B** in guest code at
-  EIP `0x1C386E` (`#PF`, CR2=`0xE4`, err=0) inside the APU ISR - the next
-  blocker (TM3).
-  **TM4 (2026-10-25): PLAYABLE.** The 26.5B fault was a duplicated
-  `SE2FE_IDLE_VOICE` trap (the VP frame walk plus a pending queue in
-  `McpxApuDevice`), so the guest freed the voice on the first trap and
-  dereferenced a null slot on the second. With the queue removed the title runs
-  **100,000,000,000 steps with no fault** (`LastFault vec=0`, 134,004 draws /
-  1,005,989,482 px / 6,478 frames, EIP `0x000214C2`) and presents the first-level
-  driving scene (`wt-data/tm4/007-100b-display.png`: 48,208 colours, 6.8% black,
-  mean `(78.7, 65.5, 45.3)`). The xemu 0.8.139 oracle on the same ISO reaches the
-  **same scene at 150 s** (`wt-data/tm4/xemu-007-150s.png`: 63,994 colours, 6.8%
-  black, mean `(96.8, 85.5, 58.8)`); `frame-compare --crop-top 0.25` reads
-  `dmean=(18.0, 22.6, 14.6)` with black coverage 4.1% vs 4.2%.
-- **Halo - Combat Evolved (v1.09)**: **TM5 (2026-10-25) - the title launches
-  and renders its own main menu.** The blocker was ours: `McpxApuDevice`'s DSP
-  bridge absorbed only 007's mixer block (`0x03924810` hard-coded), so Halo's
-  DirectSound submission at `0x02034810` was never consumed and the guest spun at
-  EIP `0x195EC0` from ~1.5B. The block is now discovered from the guest's own GP
-  scratch (SGE) table (page + 0x810), which is the same rule for both titles.
-  Progress: the **loading screen at 15B** (blue capsules, 251 frames) and the
-  **main menu at 35B** (`wt-data/tm5/halo-35b-display.png`: HALO / CAMPAIGN /
-  MULTIPLAYER / SETTINGS / GAME DEMOS, 97,235 colours, 0% black, 516 frames,
-  3,247 draws). **100B steps run with no fault** (`LastFault vec=0`) but the
-  guest then waits in a guest-side D3D resource retry loop (EIP `0x1810F0` /
-  `0x6348B`, `D3DERR_NOTFOUND` for handle 0, 99.99% of samples) - so gameplay is
-  a **documented wait**, not a claim. xemu 0.8.139 on the same ISO shows the same
-  menu at 70 s (`wt-data/tm5/xemu-halo-70s.png`) and in-game gameplay at 150 s
-  (`wt-data/tm5/xemu-halo-150s.png`). The menu frame is the same scene but
-  `dmean=(101.8, 100.6, 113.3)` against the xemu capture, so the screenshot
-  policy is **not** met (XGrid's menu background is much brighter). Audio is
-  silent (`--audio-out` writes 0 PCM frames). Details:
-  `docs/research-notes/real-game-probes.md` -> TM5 outcome.
+# the same row against an xemu capture already on disk (no second xemu boot)
+pwsh -File scripts/retail-game-probe.ps1 <iso> -LoadState <anchor> -Steps <n> `
+    -OutDir wt-data\tm7\ngb -XemuFrame wt-data\tm7\xemu-ngb-45s.png
+```
+
+What lands in `-OutDir`: `<slug>.bmp` + `<slug>.png` (the XGrid display frame),
+`xemu-<slug>-<seconds>s.png` (the oracle frame), `<slug>.json` (the row: stage,
+EIP, fault, counters, RAM/CPU, step anchor, command, the xemu cell and the
+comparison), `<slug>.md` (the same as a report), `<slug>-xgrid.json`/`.md` (the
+raw XGrid probe: top PGRAPH methods, hot EIPs, engine split), the run log and a
+`.xgs` anchor. It prints one line:
+
+```text
+PROBE <title>: stage=… steps=… wall=… msps=… eip=… fault=… frames=… draws=… px=…
+      frame=<sha> xemu=captured|blocked|skipped compare=dmean=(…) policy=pass|fail|n/a
+```
+
+Two facts the harness resolves for you, both learned the hard way:
+
+- **A `.xgs` records the HDD path it was taken with** and the loader refuses a
+  mismatch, so the harness reads the image out of the snapshot instead of using
+  `-Hdd`. That is what makes the TM4/TM5/TM6 anchors reusable without replaying
+  billions of steps. Pass `-Hdd` only for a boot-from-scratch run.
+- **`--load-state` resets the step counter**, so a pad-script offset restarts at
+  0 and `-Steps` means "steps after the anchor". The anchor and the step count
+  are both part of the row's identity: an animated title at a different step runs
+  a different scene.
+
+The xemu leg is a **window screenshot** (`scripts/xemu-oracle.ps1`: topmost,
+DPI-correct client area, `PrintWindow` with a screen-copy fallback). It needs an
+idle desktop; a contended desktop is recorded as a block, never guessed at.
+
+
+### The seven optimized ISOs - TM7 table (2026-10-25)
+
+Every row below was produced by `scripts/retail-game-probe.ps1` in this session:
+one XGrid leg resumed from a saved anchor, one xemu 0.8.139 capture of the same
+ISO, and the screenshot policy applied to the pair. `wt-data/tm7/<slug>/` holds
+each row's frame, JSON and report. **Retail rows are evidence, never gates.**
+
+| # | title | XGrid display (stage) | step anchor | XGrid frame | xemu 0.8.139 | policy |
+|---:|---|---|---|---|---|---|
+| 1 | `007 - Agent Under Fire` | **PLAYABLE** - first-level driving scene | `wt-data/tm4/007-100b.xgs` + 1M | 640x480, 48,208 colours, 6.8% black, mean (78.7, 65.5, 45.3), EIP `0x0001FC9E`, 134,004 draws / 1,005,989,482 px / 6,478 frames | 150 s, the same driving scene, 63,994 colours, 6.8% black, mean (96.8, 85.5, 58.8) | **PASS** `dmean=(18.0, 22.6, 14.6)` |
+| 2 | `Halo - Combat Evolved` | own main menu; gameplay is a **documented wait** (D3D resource loop `0x1810F0`) | `wt-data/tm5/halo-35b.xgs` + 1M | 640x480, 97,235 colours, 0% black, mean (153.5, 157.7, 176.0), EIP `0x00063487`, 3,247 draws / 191,496,512 px / 516 frames | 70 s, the same HALO menu, 72,650 colours, 0% black, mean (39.4, 44.0, 48.7) | **FAIL** `dmean=(101.6, 100.4, 113.1)` - the menu background is far brighter |
+| 3 | `Ninja Gaiden Black` | own animated **intro movie** (stormy sea), then kernel idle `0x8001B02E` | `wt-data/tm6/ngb-10b.xgs` + 2B | 720x480, 13,266 colours, 0.5% black, mean (86.6, 93.3, 89.1), EIP `0x8001B047`, 4,251 draws / 187,315,817 px / 238,137 frames | 52 s, the same stormy-sea intro movie, 1,356 colours, 0% black, mean (74.3, 78.6, 72.8) | **FAIL** on colour count (12,913 vs 1,351, x9.6) - the means agree within `dmean=(7.7, 8.5, 11.4)`; the surplus colours are the dither pattern over sky and water |
+| 4 | `50 Cent - Bulletproof` | own intro cinematic | `wt-data/tm6/50cent-10b.xgs` + 1B | 640x480, 18,638 colours, 0% black, mean (75.2, 72.9, 61.8), EIP `0x00132FEF`, 3,534 draws / 299,139,810 px / 721 frames | 90 s, the same cinematic sequence at a different shot, 7,439 colours, 21.3% black, mean (33.6, 37.1, 32.0) | **n/a** - different shot; numbers recorded as context, `dmean=(28.4, 20.7, 18.7)` |
+| 5 | `Nickelodeon Tak` | own in-game 3D scene (rasterizer-bound) | `wt-data/tm6/tak-27b.xgs` + 100M | 640x480, 6,622 colours, 0% black, mean (5.0, 30.6, 15.6), EIP `0x800198AE`, 13,691 draws / 42,516,749 px / 14,503 frames | 150 s, the **title screen** (xemu cannot be driven past START on this host), 89,049 colours, 1.4% black | **n/a** - title screen vs in-game; no verdict claimed |
+| 6 | `Bad Boys II` | **documented wait** - own-code resource-handle scan `0x1A3C80` -> `0x1A2250`, black display | `wt-data/tm6/badboys-10b.xgs` + 1B | 640x480, **1 colour, 100% black**, EIP `0x001A3DEA`, 2,695 draws / 49,061,482 px / 57 frames | 90 s, its own cutscene, 77,722 colours, 33.0% black, mean (62.1, 51.5, 44.3) | **FAIL** (as expected) - black coverage 100% vs 20.5%, `dmean=(74.0, 61.2, 52.3)` |
+| 7 | `Destroy All Humans!` | own **Pandemic logo card**, then a kernel stall (`KeStallExecutionProcessor` `0x800153D0`) | `wt-data/tm6/dah-10b.xgs` + 1B | 640x480, 235 colours, 55.5% black, mean (5.5, 5.5, 5.5), EIP `0x00218674`, 6,785 draws / 81,580,491 px / 651 frames | 90 s, the **title screen**, 115,728 colours, 0% black, mean (41.1, 55.8, 71.5) | **n/a** - logo card vs title screen; no verdict claimed |
+
+Reading the policy column: **PASS** is the seven-part playability gate's frame
+clause (black within 2 points, colours within 25%, `|dmean| <= 25/255`);
+**FAIL** is a measured defect; **n/a** means the two captures are not the same
+scene, so no verdict is claimed (the numbers are still recorded, because they
+bound how far apart the two are). The frame statistics in the table are at
+**native size** (640x480, or 720x480 for NGB); the policy numbers come from
+`scripts/frame-compare.py` at 320x240 with `--crop-top 0.25`, which drops the
+letterbox/overlay band from both images. A row never passes because the numbers
+were convenient - the 007 row is the only one that passes, and it is the only row
+where both sides show the same scene at the same phase.
+
+**The two new findings of the TM7 table.** (1) **Ninja Gaiden Black's stormy-sea
+intro matches xemu's mean within 11/255** - the first non-007 same-scene match -
+but its colour count is 9.6x xemu's, and the surplus is exactly the dithered dot
+pattern TM6 noted over the sky and water: the intro movie is a low-colour
+gradient, and XGrid's dither invents thousands of colours. That is now a named,
+measurable rendering defect rather than a visual impression. (2) **Bad Boys II's
+black display is quantified** against a real xemu cutscene frame (100% vs 20.5%
+black), which is what "documented wait" should look like: the title renders
+nothing while the oracle renders its own content.
+
+**How to reproduce one row** - each row is exactly one command (`-XemuFrame`
+reuses the capture on disk so the XGrid leg can be re-run without a second xemu
+boot; drop it to capture again, and `-NoCompareReason` records a scene that is
+not comparable instead of inventing a verdict):
+
+```powershell
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\007 - Agent Under Fire [NTSC-U][Redump].iso" -LoadState wt-data\tm4\007-100b.xgs -Steps 1000000 -OutDir wt-data\tm7\007 -Label 007 -Scene "first-level Z8 on the docks" -XemuFrame wt-data\tm7\xemu-007-150s.png
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\Halo - Combat Evolved (USA) (v1.09) (Redump).iso" -LoadState wt-data\tm5\halo-35b.xgs -Steps 1000000 -OutDir wt-data\tm7\halo -Label halo -Scene "main menu" -XemuFrame wt-data\tm7\xemu-halo-70s.png
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\Ninja Gaiden Black (USA) (En,Ja).iso" -LoadState wt-data\tm6\ngb-10b.xgs -Steps 2000000000 -OutDir wt-data\tm7\ngb -Label ngb -Scene "stormy-sea intro" -XemuFrame wt-data\tm7\xemu-ngb-52s.png
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\50 Cent - Bulletproof (France).iso" -LoadState wt-data\tm6\50cent-10b.xgs -Steps 1000000000 -OutDir wt-data\tm7\50cent -Label 50cent -Scene "intro cinematic" -XemuFrame wt-data\tm7\xemu-50cent-90s.png -NoCompareReason "different cinematic shot"
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\Nickelodeon Tak - The Great Juju Challenge (Europe).iso" -LoadState wt-data\tm6\tak-27b.xgs -Steps 100000000 -OutDir wt-data\tm7\tak -Label tak -Scene "in-game 3D scene" -XemuFrame wt-data\tm7\xemu-tak-150s.png -NoCompareReason "xemu sits on the title screen (cannot be driven past START)"
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\Bad Boys II (Germany).iso" -LoadState wt-data\tm6\badboys-10b.xgs -Steps 1000000000 -OutDir wt-data\tm7\badboys -Label badboys -Scene "documented wait, black display" -XemuFrame wt-data\tm7\xemu-badboys-90s.png
+pwsh -File scripts/retail-game-probe.ps1 "H:\Tests\XBOXReady\Destroy All Humans! (Germany).iso" -LoadState wt-data\tm6\dah-10b.xgs -Steps 1000000000 -OutDir wt-data\tm7\dah -Label dah -Scene "Pandemic logo card, then kernel stall" -XemuFrame wt-data\tm7\xemu-dah-90s.png -NoCompareReason "xemu sits on the title screen"
+```
+
+Per-title detail (the blocker, the wait object and the device I/O) is in
+`docs/research-notes/real-game-probes.md` -> TM4/TM5/TM6/TM7 outcomes.
 
 **Answer for the compatibility question:** XGrid boots retail discs and, since
 TM4 (2026-10-25), **one retail title is playable**: 007 Agent Under Fire reaches
 gameplay, runs 100B steps with no fault, and matches the xemu 0.8.139 frame at
 the same scene within the mean/colour/coverage policy. **Halo (TM5)** launches
 and renders its own main menu after 35B steps (100B with no fault) and then
-waits on a guest-side D3D resource loop - a documented wait, not a playable row.
-A real-game row is added only after a run reaches a gameplay frame or a
-documented wait (that is the bar both rows above meet). These rows are
-acceptance, not merge gates; the gate media remains `data/test-samples/`.
+waits on a guest-side D3D resource loop - a documented wait, not a playable row;
+its menu frame fails the policy on brightness. **Ninja Gaiden Black (TM6/TM7)**
+renders its own intro and matches xemu's mean within 11/255, failing only on
+colour count (the dither). **50 Cent, Tak and Destroy All Humans!** render their
+own content but cannot be compared at the same scene yet (xemu sits on a title
+screen or a different cinematic shot); **Bad Boys II** is a documented wait with
+a measured black frame. A real-game row is added only after a run reaches a
+gameplay frame or a documented wait. These rows are acceptance, not merge gates;
+the gate media remains `data/test-samples/`.
 
 ### The retail title matrix (M-T, 2026-10-24)
 
@@ -150,6 +201,19 @@ split that a blocker report needs.
 All Humans! off the dashboard menu. The pre-fix build reproduces Ninja Gaiden
 Black's old row exactly, so the advance is the fix, not the harness. The 37
 XBOXTest rows are unchanged (dashboard menu tuple).
+
+**TM7 (2026-10-25) did not re-run the sweep** - it changed no emulator source, so
+the TM6 matrix stands (decisions §257; the matrix is only re-run when a shared
+file changes). TM7 instead re-ran the six own-render titles **from their TM6
+anchors** through the new per-row harness, which re-derives their stage, EIP,
+draws/pixels/frames and RAM/CPU from a fresh run and adds the xemu column: NGB
+`0x8001B047` (kernel idle), Tak `0x800198AE`, 50 Cent `0x00132FEF`, Bad Boys II
+`0x001A3DEA`, DAH `0x00218674`, plus Halo `0x00063487` and 007 `0x0001FC9E` from
+their TM5/TM4 anchors. Those EIPs differ from the 1B matrix rows because the
+anchors are deeper (10B-100B) - the matrix column is a 1B snapshot, not a
+contradiction. The stage tuple rule still applies: classify by the display frame,
+not the label (Bad Boys II reads `own-render` by tuple while its display is
+black).
 
 ## The harness (one invocation per row)
 

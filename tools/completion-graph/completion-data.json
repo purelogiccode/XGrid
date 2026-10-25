@@ -135,7 +135,7 @@
           "p": 20,
           "name": "Automated Testing",
           "weight": 3,
-          "done": 82
+          "done": 85
         },
         {
           "p": 21,
@@ -164,7 +164,7 @@
           "p": 24,
           "name": "Retail gameplay & xemu port",
           "weight": 10,
-          "done": 50
+          "done": 55
         }
       ]
     }

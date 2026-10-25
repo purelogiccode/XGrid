@@ -1,4 +1,52 @@
-# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM7)
+# Next session instructions (updated 2026-10-25: the order is M-T (playable titles) -> M-P (xemu port) -> M-D (speed); the queue is TM8)
+
+> **TM7 RESULT (2026-10-25, 58th session) - one command per retail row, and the
+> xemu oracle is live again.**
+> `scripts/retail-game-probe.ps1 <iso>` runs the XGrid leg (`title-probe.ps1`,
+> extended with `-LoadState`/`-FramePath`/`-StatePath`), the xemu 0.8.139 leg
+> (`xemu-oracle.ps1`) and the policy comparison (`frame-compare.py`), writes the
+> XGrid frame (`.bmp`+`.png`), the xemu frame, the row JSON, the Markdown report
+> and the raw XGrid probe into one directory, and prints one `PROBE` line. It
+> **fails soft**: a blocked xemu leg is `xemu: blocked - <reason>`, exit 0, and
+> no comparison is fabricated.
+> **Two traps it encodes:** a `.xgs` records its HDD path and the loader compares
+> it as a string (resolving it absolute breaks the load), so the harness reads the
+> image out of the snapshot - that is what makes the TM4/TM5/TM6 anchors reusable;
+> and `--load-state` resets the step counter, so `-Steps` means "steps after the
+> anchor".
+> **The capture guard was earned, not assumed.** The first NGB attempt at 45 s
+> "captured" a **Chrome window**: `PrintWindow` answered black while the GL
+> surface was starting and the screen-copy fallback photographed the browser (the
+> TM6 failure mode). The script now retries `PrintWindow` five times and only uses
+> a screen copy when xemu is the foreground window, else throws
+> `capture contended`; the harness also rejects blank captures.
+> **The seven rows** (all re-run from their anchors, `LastFault vec=0` on every
+> one): 007 **PASS** `dmean=(18.0, 22.6, 14.6)` (the TM4 numbers exactly, 134,004
+> draws / 1,005,989,482 px / 6,478 frames); Halo **FAIL** `(101.6, 100.4, 113.1)`
+> (TM5's fail reproduced, 3,247 / 191,496,512 / 516); **Ninja Gaiden Black
+> matches xemu's stormy-sea intro within 11/255 on the means and FAILS only on
+> colour count (12,913 vs 1,351)** - the dither pattern is now the next named
+> rendering defect (4,251 draws / 187,315,817 px / 238,137 frames); Bad Boys II
+> **FAIL** with 100% vs 20.5% black (the documented wait quantified against
+> xemu's own cutscene, 2,695 / 49,061,482 / 57); 50 Cent `n/a` (different
+> cinematic shot, `dmean=(28.4, 20.7, 18.7)`, 3,534 / 299,139,810 / 721); Tak
+> `n/a` (xemu sits on the title screen; 13,691 / 42,516,749 / 14,503); Destroy All
+> Humans! `n/a` (title screen vs the Pandemic logo card; 6,785 / 81,580,491 /
+> 651). EIPs: 007 `0x0001FC9E`, Halo `0x00063487`, NGB `0x8001B047`, 50 Cent
+> `0x00132FEF`, Tak `0x800198AE`, Bad Boys II `0x001A3DEA`, DAH `0x00218674`.
+> **xemu cannot be driven on this host** (SDL-gamepad input only), which is why
+> Tak/DAH/50 Cent are `n/a` rather than failures.
+> **Gates: not one anchor moved** (no `src/` change; scripts + docs only) -
+> accurate menu `4EF1FBF6`/`B6116DAE` (`5C0CF968`/`E2B4D327`), accurate triangle
+> `5B50373D`/`79142DE4` (`E58AE5D7`/`C43D5B49`), ktest park `4E03A` at
+> **792,800,535** steps with the **40,797 B `CA5D3867`** log byte-identical.
+> Suite count unchanged (no product code). Decisions 258; rows in
+> `docs/compatibility.md`.
+> **Next: TM8** - the first targeted xemu port (default `hw/xbox/mcpx/apu/vp.c`
+> + the AC'97 codec), because audio is the one silent part of the seven-part
+> playability definition. Resume points: `wt-data/tm7/*` (frames + rows) and
+> `wt-data/tm4|tm5|tm6/*.xgs` (anchors). The NGB dither finding is the first
+> fidelity candidate after TM8.
 
 > **TM6 RESULT (2026-10-25, 57th session) - the second-tier five were probed and
 > the shared blocker was our own NV2A: `NV097_INLINE_ARRAY` was a screen-space

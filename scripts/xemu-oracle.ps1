@@ -97,6 +97,7 @@ public static class XemuOracleWin32 {
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 }
 '@
 
@@ -178,23 +179,45 @@ try {
     # Prefer PrintWindow: it asks the window to render its own client area, so an
     # occluded xemu still captures (a plain screen copy caught the editor behind
     # xemu on the first Halo attempt). An SDL/GL window can answer with an empty
-    # surface, so a mostly-black result falls back to the screen copy.
+    # surface while it is still creating or resizing, so retry before deciding,
+    # and only fall back to a screen copy while xemu really is the foreground
+    # window - a screen copy of a background xemu catches whatever is in front of
+    # it (TM7 caught a browser this way at 45 s and correctly refused it).
     $bmp = New-Object System.Drawing.Bitmap $cw, $ch
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $hdc = $g.GetHdc()
-    [XemuOracleWin32]::PrintWindow($h, $hdc, 3) | Out-Null
-    $g.ReleaseHdc($hdc)
     $dark = 0
     $samples = 0
-    for ($y = 0; $y -lt $ch; $y += 16) {
-        for ($x = 0; $x -lt $cw; $x += 16) {
-            $c = $bmp.GetPixel($x, $y)
-            $samples++
-            if ($c.R -lt 8 -and $c.G -lt 8 -and $c.B -lt 8) { $dark++ }
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        $hdc = $g.GetHdc()
+        [XemuOracleWin32]::PrintWindow($h, $hdc, 3) | Out-Null
+        $g.ReleaseHdc($hdc)
+        $dark = 0
+        $samples = 0
+        for ($y = 0; $y -lt $ch; $y += 16) {
+            for ($x = 0; $x -lt $cw; $x += 16) {
+                $c = $bmp.GetPixel($x, $y)
+                $samples++
+                if ($c.R -lt 8 -and $c.G -lt 8 -and $c.B -lt 8) { $dark++ }
+            }
+        }
+        if ($samples -gt 0 -and ($dark / $samples) -le 0.5) { break }
+        if ($attempt -lt 5) {
+            Write-Host ("PrintWindow answered a mostly black surface ({0}/{1}); retrying {2}/5" -f $dark, $samples, $attempt)
+            [XemuOracleWin32]::SetWindowPos($h, [IntPtr](-1), 40, 40, 0, 0, 0x0001 -bor 0x0002) | Out-Null
+            [XemuOracleWin32]::SetForegroundWindow($h) | Out-Null
+            Start-Sleep -Milliseconds 800
         }
     }
-    if ($samples -gt 0 -and ($dark / $samples) -gt 0.5) {
-        Write-Host "PrintWindow returned a mostly black surface ($dark/$samples); using the screen copy"
+
+    $blank = ($samples -eq 0) -or (($dark / [double]$samples) -gt 0.5)
+    if ($blank) {
+        $foreground = [XemuOracleWin32]::GetForegroundWindow()
+        if ($foreground -ne $h) {
+            $bmp.Dispose()
+            $g.Dispose()
+            throw "capture contended: PrintWindow answered black and xemu is not the foreground window, so a screen copy would capture another window (no frame is claimed)"
+        }
+        Write-Host "PrintWindow returned a mostly black surface ($dark/$samples); using the screen copy (xemu is foreground)"
         $g.CopyFromScreen($pt.X, $pt.Y, 0, 0, $bmp.Size)
     }
     else {
@@ -205,6 +228,11 @@ try {
         $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $OutPath = Join-Path $base "xemu-oracle-$stamp.png"
     }
+    $outDir = Split-Path -Parent $OutPath
+    if ($outDir -and -not (Test-Path -LiteralPath $outDir)) {
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    }
+    $OutPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutPath))
     $bmp.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose()
     $bmp.Dispose()
